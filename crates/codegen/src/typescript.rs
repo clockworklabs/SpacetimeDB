@@ -83,7 +83,8 @@ impl Lang for TypeScript {
         out.indent(1);
         write_object_type_builder_fields(module, out, &product_def.elements, table.primary_key, true, true).unwrap();
         out.dedent(1);
-        writeln!(out, "}});");
+        write!(out, "}})");
+        write_product_with_serde(module, out, &product_def.elements, /* convert_case */ true);
         OutputFile {
             filename: table_module_name(&table.accessor_name) + ".ts",
             code: output.into_inner(),
@@ -520,6 +521,10 @@ fn print_index_imports(out: &mut Indenter) {
     let mut types = [
         "TypeBuilder as __TypeBuilder",
         "type AlgebraicTypeType as __AlgebraicTypeType",
+        "ConnectionId as __ConnectionId",
+        "Identity as __Identity",
+        "TimeDuration as __TimeDuration",
+        "Timestamp as __Timestamp",
         "Uuid as __Uuid",
         "DbConnectionBuilder as __DbConnectionBuilder",
         "convertToAccessorMap as __convertToAccessorMap",
@@ -560,6 +565,11 @@ fn print_type_builder_imports(out: &mut Indenter) {
     let mut types = [
         "TypeBuilder as __TypeBuilder",
         "type AlgebraicTypeType as __AlgebraicTypeType",
+        "ConnectionId as __ConnectionId",
+        "Identity as __Identity",
+        "TimeDuration as __TimeDuration",
+        "Timestamp as __Timestamp",
+        "Uuid as __Uuid",
         "type Infer as __Infer",
         "t as __t",
     ];
@@ -616,7 +626,18 @@ fn define_body_for_reducer(module: &ModuleDef, out: &mut Indenter, params: &[(Id
 ///   x: __t.f32(),
 ///   y: __t.f32(),
 ///   fooBar: __t.string(),
-/// });
+/// }).withSerde(
+///   (writer, value) => {
+///     writer.writeF32(value.x);
+///     writer.writeF32(value.y);
+///     writer.writeString(value.fooBar);
+///   },
+///   reader => ({
+///     x: reader.readF32(),
+///     y: reader.readF32(),
+///     fooBar: reader.readString(),
+///   })
+/// );
 /// export type Point = __Infer<typeof Point>;
 /// ```
 fn define_body_for_product(
@@ -627,12 +648,13 @@ fn define_body_for_product(
 ) {
     write!(out, "export const {name} = __t.object(\"{name}\", {{");
     if elements.is_empty() {
-        writeln!(out, "}});");
+        write!(out, "}})");
     } else {
         writeln!(out);
         out.with_indent(|out| write_object_type_builder_fields(module, out, elements, None, true, false).unwrap());
-        writeln!(out, "}});");
+        write!(out, "}})");
     }
+    write_product_with_serde(module, out, elements, /* convert_case */ true);
     writeln!(out, "export type {name} = __Infer<typeof {name}>;");
     out.newline();
 }
@@ -844,6 +866,473 @@ fn write_type_builder<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicT
     Ok(())
 }
 
+/// Counter used to mint unique temporary variable names while emitting
+/// static serializers/deserializers for nested types (e.g. arrays, results).
+/// Each emitted top-level function gets its own counter.
+#[derive(Default)]
+struct TempCounter(u32);
+
+impl TempCounter {
+    fn next(&mut self) -> u32 {
+        let n = self.0;
+        self.0 += 1;
+        n
+    }
+}
+
+fn primitive_write_method(p: &PrimitiveType) -> &'static str {
+    match p {
+        PrimitiveType::Bool => "writeBool",
+        PrimitiveType::I8 => "writeI8",
+        PrimitiveType::U8 => "writeU8",
+        PrimitiveType::I16 => "writeI16",
+        PrimitiveType::U16 => "writeU16",
+        PrimitiveType::I32 => "writeI32",
+        PrimitiveType::U32 => "writeU32",
+        PrimitiveType::I64 => "writeI64",
+        PrimitiveType::U64 => "writeU64",
+        PrimitiveType::I128 => "writeI128",
+        PrimitiveType::U128 => "writeU128",
+        PrimitiveType::I256 => "writeI256",
+        PrimitiveType::U256 => "writeU256",
+        PrimitiveType::F32 => "writeF32",
+        PrimitiveType::F64 => "writeF64",
+    }
+}
+
+fn primitive_read_method(p: &PrimitiveType) -> &'static str {
+    match p {
+        PrimitiveType::Bool => "readBool",
+        PrimitiveType::I8 => "readI8",
+        PrimitiveType::U8 => "readU8",
+        PrimitiveType::I16 => "readI16",
+        PrimitiveType::U16 => "readU16",
+        PrimitiveType::I32 => "readI32",
+        PrimitiveType::U32 => "readU32",
+        PrimitiveType::I64 => "readI64",
+        PrimitiveType::U64 => "readU64",
+        PrimitiveType::I128 => "readI128",
+        PrimitiveType::U128 => "readU128",
+        PrimitiveType::I256 => "readI256",
+        PrimitiveType::U256 => "readU256",
+        PrimitiveType::F32 => "readF32",
+        PrimitiveType::F64 => "readF64",
+    }
+}
+
+/// Emit JS statements that serialize the value at `value_expr` (which has type
+/// `ty`) into the in-scope `writer`. Used to bake static serializers into
+/// generated TypeScript, removing the need for runtime `Function(...)` codegen.
+fn write_serialize_value(
+    module: &ModuleDef,
+    out: &mut Indenter,
+    ty: &AlgebraicTypeUse,
+    value_expr: &str,
+    counter: &mut TempCounter,
+) {
+    match ty {
+        AlgebraicTypeUse::Unit => {
+            // Nothing to write on the wire for unit.
+        }
+        AlgebraicTypeUse::Never => {
+            writeln!(out, "throw new TypeError(\"Cannot serialize a value of type `never`\");");
+        }
+        AlgebraicTypeUse::Primitive(prim) => {
+            let m = primitive_write_method(prim);
+            writeln!(out, "writer.{m}({value_expr});");
+        }
+        AlgebraicTypeUse::String => {
+            writeln!(out, "writer.writeString({value_expr});");
+        }
+        AlgebraicTypeUse::Identity => {
+            writeln!(out, "writer.writeU256({value_expr}.__identity__);");
+        }
+        AlgebraicTypeUse::ConnectionId => {
+            writeln!(out, "writer.writeU128({value_expr}.__connection_id__);");
+        }
+        AlgebraicTypeUse::Timestamp => {
+            writeln!(
+                out,
+                "writer.writeI64({value_expr}.__timestamp_micros_since_unix_epoch__);"
+            );
+        }
+        AlgebraicTypeUse::TimeDuration => {
+            writeln!(out, "writer.writeI64({value_expr}.__time_duration_micros__);");
+        }
+        AlgebraicTypeUse::Uuid => {
+            writeln!(out, "writer.writeU128({value_expr}.__uuid__);");
+        }
+        AlgebraicTypeUse::ScheduleAt => {
+            writeln!(out, "if ({value_expr}.tag === \"Interval\") {{");
+            out.indent(1);
+            writeln!(out, "writer.writeByte(0);");
+            writeln!(
+                out,
+                "writer.writeI64({value_expr}.value.__time_duration_micros__);"
+            );
+            out.dedent(1);
+            writeln!(out, "}} else {{");
+            out.indent(1);
+            writeln!(out, "writer.writeByte(1);");
+            writeln!(
+                out,
+                "writer.writeI64({value_expr}.value.__timestamp_micros_since_unix_epoch__);"
+            );
+            out.dedent(1);
+            writeln!(out, "}}");
+        }
+        AlgebraicTypeUse::Option(inner_ty) => {
+            writeln!(
+                out,
+                "if ({value_expr} === undefined || {value_expr} === null) {{"
+            );
+            out.indent(1);
+            writeln!(out, "writer.writeByte(1);");
+            out.dedent(1);
+            writeln!(out, "}} else {{");
+            out.indent(1);
+            writeln!(out, "writer.writeByte(0);");
+            write_serialize_value(module, out, inner_ty, value_expr, counter);
+            out.dedent(1);
+            writeln!(out, "}}");
+        }
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            writeln!(out, "if (\"ok\" in {value_expr}) {{");
+            out.indent(1);
+            writeln!(out, "writer.writeByte(0);");
+            write_serialize_value(module, out, ok_ty, &format!("{value_expr}.ok"), counter);
+            out.dedent(1);
+            writeln!(out, "}} else {{");
+            out.indent(1);
+            writeln!(out, "writer.writeByte(1);");
+            write_serialize_value(module, out, err_ty, &format!("{value_expr}.err"), counter);
+            out.dedent(1);
+            writeln!(out, "}}");
+        }
+        AlgebraicTypeUse::Array(elem_ty) => {
+            if matches!(&**elem_ty, AlgebraicTypeUse::Primitive(PrimitiveType::U8)) {
+                writeln!(out, "writer.writeUInt8Array({value_expr});");
+            } else {
+                let n = counter.next();
+                let elem_var = format!("__e{n}");
+                writeln!(out, "writer.writeU32({value_expr}.length);");
+                writeln!(out, "for (const {elem_var} of {value_expr}) {{");
+                out.indent(1);
+                write_serialize_value(module, out, elem_ty, &elem_var, counter);
+                out.dedent(1);
+                writeln!(out, "}}");
+            }
+        }
+        AlgebraicTypeUse::Ref(r) => {
+            let name = type_ref_name(module, *r);
+            writeln!(out, "{name}.serialize(writer, {value_expr});");
+        }
+    }
+}
+
+/// Emit JS statements that read a value of type `ty` from the in-scope `reader`
+/// and assign it to `target` (a JS lvalue, e.g. `__x` or `__arr[__i]`).
+fn write_deserialize_into(
+    module: &ModuleDef,
+    out: &mut Indenter,
+    ty: &AlgebraicTypeUse,
+    target: &str,
+    counter: &mut TempCounter,
+) {
+    match ty {
+        AlgebraicTypeUse::Unit => {
+            writeln!(out, "{target} = {{}};");
+        }
+        AlgebraicTypeUse::Never => {
+            writeln!(out, "throw new TypeError(\"Cannot deserialize a value of type `never`\");");
+        }
+        AlgebraicTypeUse::Primitive(prim) => {
+            let m = primitive_read_method(prim);
+            writeln!(out, "{target} = reader.{m}();");
+        }
+        AlgebraicTypeUse::String => {
+            writeln!(out, "{target} = reader.readString();");
+        }
+        AlgebraicTypeUse::Identity => {
+            writeln!(out, "{target} = new __Identity(reader.readU256());");
+        }
+        AlgebraicTypeUse::ConnectionId => {
+            writeln!(out, "{target} = new __ConnectionId(reader.readU128());");
+        }
+        AlgebraicTypeUse::Timestamp => {
+            writeln!(out, "{target} = new __Timestamp(reader.readI64());");
+        }
+        AlgebraicTypeUse::TimeDuration => {
+            writeln!(out, "{target} = new __TimeDuration(reader.readI64());");
+        }
+        AlgebraicTypeUse::Uuid => {
+            writeln!(out, "{target} = new __Uuid(reader.readU128());");
+        }
+        AlgebraicTypeUse::ScheduleAt => {
+            let n = counter.next();
+            let tag_var = format!("__tag{n}");
+            writeln!(out, "{{");
+            out.indent(1);
+            writeln!(out, "const {tag_var} = reader.readByte();");
+            writeln!(out, "if ({tag_var} === 0) {{");
+            out.indent(1);
+            writeln!(
+                out,
+                "{target} = {{ tag: \"Interval\", value: new __TimeDuration(reader.readI64()) }};"
+            );
+            out.dedent(1);
+            writeln!(out, "}} else if ({tag_var} === 1) {{");
+            out.indent(1);
+            writeln!(
+                out,
+                "{target} = {{ tag: \"Time\", value: new __Timestamp(reader.readI64()) }};"
+            );
+            out.dedent(1);
+            writeln!(out, "}} else {{");
+            out.indent(1);
+            writeln!(
+                out,
+                "throw new TypeError(`Could not deserialize ScheduleAt; unknown tag ${{{tag_var}}}`);"
+            );
+            out.dedent(1);
+            writeln!(out, "}}");
+            out.dedent(1);
+            writeln!(out, "}}");
+        }
+        AlgebraicTypeUse::Option(inner_ty) => {
+            writeln!(out, "if (reader.readByte() === 0) {{");
+            out.indent(1);
+            write_deserialize_into(module, out, inner_ty, target, counter);
+            out.dedent(1);
+            writeln!(out, "}} else {{");
+            out.indent(1);
+            writeln!(out, "{target} = undefined;");
+            out.dedent(1);
+            writeln!(out, "}}");
+        }
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            let n = counter.next();
+            let tag_var = format!("__tag{n}");
+            let inner_var = format!("__r{n}");
+            writeln!(out, "{{");
+            out.indent(1);
+            writeln!(out, "const {tag_var} = reader.readByte();");
+            writeln!(out, "if ({tag_var} === 0) {{");
+            out.indent(1);
+            writeln!(out, "let {inner_var}: any;");
+            write_deserialize_into(module, out, ok_ty, &inner_var, counter);
+            writeln!(out, "{target} = {{ ok: {inner_var} }};");
+            out.dedent(1);
+            writeln!(out, "}} else {{");
+            out.indent(1);
+            writeln!(out, "let {inner_var}: any;");
+            write_deserialize_into(module, out, err_ty, &inner_var, counter);
+            writeln!(out, "{target} = {{ err: {inner_var} }};");
+            out.dedent(1);
+            writeln!(out, "}}");
+            out.dedent(1);
+            writeln!(out, "}}");
+        }
+        AlgebraicTypeUse::Array(elem_ty) => {
+            if matches!(&**elem_ty, AlgebraicTypeUse::Primitive(PrimitiveType::U8)) {
+                writeln!(out, "{target} = reader.readUInt8Array();");
+            } else {
+                let n = counter.next();
+                let len_var = format!("__len{n}");
+                let arr_var = format!("__arr{n}");
+                let i_var = format!("__i{n}");
+                writeln!(out, "{{");
+                out.indent(1);
+                writeln!(out, "const {len_var} = reader.readU32();");
+                writeln!(out, "const {arr_var}: any[] = new Array({len_var});");
+                writeln!(out, "for (let {i_var} = 0; {i_var} < {len_var}; {i_var}++) {{");
+                out.indent(1);
+                write_deserialize_into(module, out, elem_ty, &format!("{arr_var}[{i_var}]"), counter);
+                out.dedent(1);
+                writeln!(out, "}}");
+                writeln!(out, "{target} = {arr_var};");
+                out.dedent(1);
+                writeln!(out, "}}");
+            }
+        }
+        AlgebraicTypeUse::Ref(r) => {
+            let name = type_ref_name(module, *r);
+            writeln!(out, "{target} = {name}.deserialize(reader);");
+        }
+    }
+}
+
+/// Emit a `.withSerde(...)` call appended to a product-type expression. This
+/// installs static serialize/deserialize functions on the generated
+/// `__t.object(...)` / `__t.row(...)` builder, replacing the runtime
+/// closure-based tree walker for these named types.
+fn write_product_with_serde(
+    module: &ModuleDef,
+    out: &mut Indenter,
+    elements: &[(Identifier, AlgebraicTypeUse)],
+    convert_case: bool,
+) {
+    if elements.is_empty() {
+        // No-op serializer/deserializer for empty products. Match the existing
+        // runtime fast path (`unitDeserializer`) by returning `{}`.
+        writeln!(out, ".withSerde(");
+        out.indent(1);
+        writeln!(out, "() => {{}},");
+        writeln!(out, "() => ({{}}) as any");
+        out.dedent(1);
+        writeln!(out, ");");
+        return;
+    }
+
+    let field_names: Vec<String> = elements
+        .iter()
+        .map(|(ident, _)| {
+            if convert_case {
+                ident.deref().to_case(Case::Camel)
+            } else {
+                ident.deref().to_string()
+            }
+        })
+        .collect();
+
+    writeln!(out, ".withSerde(");
+    out.indent(1);
+
+    // Serializer. `value: any` because (a) generated code knows the wire
+    // shape, and (b) some inferred TS types (e.g. `Result<T, E>` ↦ `T | E`)
+    // do not match the runtime representation (`{ok}|{err}`) the wire uses.
+    let mut serializer_counter = TempCounter::default();
+    writeln!(out, "(writer, value: any) => {{");
+    out.indent(1);
+    for (i, (_ident, ty)) in elements.iter().enumerate() {
+        let field = &field_names[i];
+        let access = js_property_access("value", field);
+        write_serialize_value(module, out, ty, &access, &mut serializer_counter);
+    }
+    out.dedent(1);
+    writeln!(out, "}},");
+
+    // Deserializer.
+    let mut deserializer_counter = TempCounter::default();
+    writeln!(out, "(reader): any => {{");
+    out.indent(1);
+    for (i, (_ident, ty)) in elements.iter().enumerate() {
+        let temp = format!("__f{i}");
+        writeln!(out, "let {temp}: any;");
+        write_deserialize_into(module, out, ty, &temp, &mut deserializer_counter);
+    }
+    write!(out, "return {{ ");
+    for (i, field) in field_names.iter().enumerate() {
+        if i > 0 {
+            write!(out, ", ");
+        }
+        // Quote the key so JS reserved words (e.g. `default`) are accepted.
+        write!(out, "{:?}: __f{i}", field);
+    }
+    writeln!(out, " }};");
+    out.dedent(1);
+    writeln!(out, "}}");
+
+    out.dedent(1);
+    writeln!(out, ");");
+}
+
+/// Emit a `.withSerde(...)` call appended to a sum-type expression. Variant
+/// names must already be in their final (tag) form as they will appear in JS
+/// `value.tag` (codegen pascal-cases them).
+fn write_sum_with_serde(
+    module: &ModuleDef,
+    out: &mut Indenter,
+    variants: &[(Identifier, AlgebraicTypeUse)],
+) {
+    writeln!(out, ".withSerde(");
+    out.indent(1);
+
+    // Serializer. See `write_product_with_serde` for why we use `any` here.
+    let mut serializer_counter = TempCounter::default();
+    writeln!(out, "(writer, value: any) => {{");
+    out.indent(1);
+    writeln!(out, "switch (value.tag) {{");
+    for (i, (ident, ty)) in variants.iter().enumerate() {
+        let tag = ident.deref().to_string();
+        writeln!(out, "case {tag:?}: {{");
+        out.indent(1);
+        writeln!(out, "writer.writeByte({i});");
+        if !matches!(ty, AlgebraicTypeUse::Unit) {
+            write_serialize_value(module, out, ty, "value.value", &mut serializer_counter);
+        }
+        writeln!(out, "break;");
+        out.dedent(1);
+        writeln!(out, "}}");
+    }
+    writeln!(out, "default: {{");
+    out.indent(1);
+    writeln!(
+        out,
+        "throw new TypeError(`Could not serialize sum type; unknown tag ${{value.tag}}`);"
+    );
+    out.dedent(1);
+    writeln!(out, "}}");
+    writeln!(out, "}}");
+    out.dedent(1);
+    writeln!(out, "}},");
+
+    // Deserializer.
+    let mut deserializer_counter = TempCounter::default();
+    writeln!(out, "(reader): any => {{");
+    out.indent(1);
+    writeln!(out, "switch (reader.readByte()) {{");
+    for (i, (ident, ty)) in variants.iter().enumerate() {
+        let tag = ident.deref().to_string();
+        writeln!(out, "case {i}: {{");
+        out.indent(1);
+        if matches!(ty, AlgebraicTypeUse::Unit) {
+            // Mirror the runtime tree walker, which wraps unit variants as
+            // `{ tag, value: {} }` for uniformity with non-unit variants.
+            writeln!(out, "return {{ tag: {tag:?}, value: {{}} }};");
+        } else {
+            writeln!(out, "let __v: any;");
+            write_deserialize_into(module, out, ty, "__v", &mut deserializer_counter);
+            writeln!(out, "return {{ tag: {tag:?}, value: __v }};");
+        }
+        out.dedent(1);
+        writeln!(out, "}}");
+    }
+    writeln!(out, "default: {{");
+    out.indent(1);
+    // Preserve the runtime tree walker's behavior of returning `undefined` for
+    // out-of-range tags. (Some callers may rely on this.)
+    writeln!(out, "return undefined;");
+    out.dedent(1);
+    writeln!(out, "}}");
+    writeln!(out, "}}");
+    out.dedent(1);
+    writeln!(out, "}}");
+
+    out.dedent(1);
+    writeln!(out, ");");
+}
+
+/// Render a JS property access expression. Prefers dot-notation when the
+/// property name is a valid JS identifier, otherwise falls back to bracket
+/// notation with a quoted key.
+fn js_property_access(base: &str, property: &str) -> String {
+    if is_valid_js_identifier(property) {
+        format!("{base}.{property}")
+    } else {
+        format!("{base}[{property:?}]")
+    }
+}
+
+fn is_valid_js_identifier(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' || c == '$' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+}
+
 /// e.g.
 /// ```ts
 /// // The tagged union or sum type for the algebraic type `Option`.
@@ -874,7 +1363,8 @@ fn define_body_for_sum(
         })
         .collect();
     out.with_indent(|out| write_object_type_builder_fields(module, out, &pascal_variants, None, false, false).unwrap());
-    writeln!(out, "}});");
+    write!(out, "}})");
+    write_sum_with_serde(module, out, &pascal_variants);
     writeln!(out, "export type {name} = __Infer<typeof {name}>;");
     out.newline();
 }

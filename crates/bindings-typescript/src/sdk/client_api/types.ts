@@ -4,285 +4,1101 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
+  ConnectionId as __ConnectionId,
+  Identity as __Identity,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
   TypeBuilder as __TypeBuilder,
+  Uuid as __Uuid,
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../lib/type_builders';
 
-export const BsatnRowList = __t.object('BsatnRowList', {
-  get sizeHint() {
-    return RowSizeHint;
-  },
-  rowsData: __t.byteArray(),
-});
+export const BsatnRowList = __t
+  .object('BsatnRowList', {
+    get sizeHint() {
+      return RowSizeHint;
+    },
+    rowsData: __t.byteArray(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      RowSizeHint.serialize(writer, value.sizeHint);
+      writer.writeUInt8Array(value.rowsData);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = RowSizeHint.deserialize(reader);
+      let __f1: any;
+      __f1 = reader.readUInt8Array();
+      return { sizeHint: __f0, rowsData: __f1 };
+    }
+  );
 export type BsatnRowList = __Infer<typeof BsatnRowList>;
 
-export const CallProcedure = __t.object('CallProcedure', {
-  requestId: __t.u32(),
-  flags: __t.u8(),
-  procedure: __t.string(),
-  args: __t.byteArray(),
-});
+export const CallProcedure = __t
+  .object('CallProcedure', {
+    requestId: __t.u32(),
+    flags: __t.u8(),
+    procedure: __t.string(),
+    args: __t.byteArray(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeU32(value.requestId);
+      writer.writeU8(value.flags);
+      writer.writeString(value.procedure);
+      writer.writeUInt8Array(value.args);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readU32();
+      let __f1: any;
+      __f1 = reader.readU8();
+      let __f2: any;
+      __f2 = reader.readString();
+      let __f3: any;
+      __f3 = reader.readUInt8Array();
+      return { requestId: __f0, flags: __f1, procedure: __f2, args: __f3 };
+    }
+  );
 export type CallProcedure = __Infer<typeof CallProcedure>;
 
-export const CallReducer = __t.object('CallReducer', {
-  requestId: __t.u32(),
-  flags: __t.u8(),
-  reducer: __t.string(),
-  args: __t.byteArray(),
-});
+export const CallReducer = __t
+  .object('CallReducer', {
+    requestId: __t.u32(),
+    flags: __t.u8(),
+    reducer: __t.string(),
+    args: __t.byteArray(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeU32(value.requestId);
+      writer.writeU8(value.flags);
+      writer.writeString(value.reducer);
+      writer.writeUInt8Array(value.args);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readU32();
+      let __f1: any;
+      __f1 = reader.readU8();
+      let __f2: any;
+      __f2 = reader.readString();
+      let __f3: any;
+      __f3 = reader.readUInt8Array();
+      return { requestId: __f0, flags: __f1, reducer: __f2, args: __f3 };
+    }
+  );
 export type CallReducer = __Infer<typeof CallReducer>;
 
 // The tagged union or sum type for the algebraic type `ClientMessage`.
-export const ClientMessage = __t.enum('ClientMessage', {
-  get Subscribe() {
-    return Subscribe;
-  },
-  get Unsubscribe() {
-    return Unsubscribe;
-  },
-  get OneOffQuery() {
-    return OneOffQuery;
-  },
-  get CallReducer() {
-    return CallReducer;
-  },
-  get CallProcedure() {
-    return CallProcedure;
-  },
-});
+export const ClientMessage = __t
+  .enum('ClientMessage', {
+    get Subscribe() {
+      return Subscribe;
+    },
+    get Unsubscribe() {
+      return Unsubscribe;
+    },
+    get OneOffQuery() {
+      return OneOffQuery;
+    },
+    get CallReducer() {
+      return CallReducer;
+    },
+    get CallProcedure() {
+      return CallProcedure;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      switch (value.tag) {
+        case 'Subscribe': {
+          writer.writeByte(0);
+          Subscribe.serialize(writer, value.value);
+          break;
+        }
+        case 'Unsubscribe': {
+          writer.writeByte(1);
+          Unsubscribe.serialize(writer, value.value);
+          break;
+        }
+        case 'OneOffQuery': {
+          writer.writeByte(2);
+          OneOffQuery.serialize(writer, value.value);
+          break;
+        }
+        case 'CallReducer': {
+          writer.writeByte(3);
+          CallReducer.serialize(writer, value.value);
+          break;
+        }
+        case 'CallProcedure': {
+          writer.writeByte(4);
+          CallProcedure.serialize(writer, value.value);
+          break;
+        }
+        default: {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+      }
+    },
+    (reader): any => {
+      switch (reader.readByte()) {
+        case 0: {
+          let __v: any;
+          __v = Subscribe.deserialize(reader);
+          return { tag: 'Subscribe', value: __v };
+        }
+        case 1: {
+          let __v: any;
+          __v = Unsubscribe.deserialize(reader);
+          return { tag: 'Unsubscribe', value: __v };
+        }
+        case 2: {
+          let __v: any;
+          __v = OneOffQuery.deserialize(reader);
+          return { tag: 'OneOffQuery', value: __v };
+        }
+        case 3: {
+          let __v: any;
+          __v = CallReducer.deserialize(reader);
+          return { tag: 'CallReducer', value: __v };
+        }
+        case 4: {
+          let __v: any;
+          __v = CallProcedure.deserialize(reader);
+          return { tag: 'CallProcedure', value: __v };
+        }
+        default: {
+          return undefined;
+        }
+      }
+    }
+  );
 export type ClientMessage = __Infer<typeof ClientMessage>;
 
-export const EventTableRows = __t.object('EventTableRows', {
-  get events() {
-    return BsatnRowList;
-  },
-});
+export const EventTableRows = __t
+  .object('EventTableRows', {
+    get events() {
+      return BsatnRowList;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      BsatnRowList.serialize(writer, value.events);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = BsatnRowList.deserialize(reader);
+      return { events: __f0 };
+    }
+  );
 export type EventTableRows = __Infer<typeof EventTableRows>;
 
-export const InitialConnection = __t.object('InitialConnection', {
-  identity: __t.identity(),
-  connectionId: __t.connectionId(),
-  token: __t.string(),
-});
+export const InitialConnection = __t
+  .object('InitialConnection', {
+    identity: __t.identity(),
+    connectionId: __t.connectionId(),
+    token: __t.string(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeU256(value.identity.__identity__);
+      writer.writeU128(value.connectionId.__connection_id__);
+      writer.writeString(value.token);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = new __Identity(reader.readU256());
+      let __f1: any;
+      __f1 = new __ConnectionId(reader.readU128());
+      let __f2: any;
+      __f2 = reader.readString();
+      return { identity: __f0, connectionId: __f1, token: __f2 };
+    }
+  );
 export type InitialConnection = __Infer<typeof InitialConnection>;
 
-export const OneOffQuery = __t.object('OneOffQuery', {
-  requestId: __t.u32(),
-  queryString: __t.string(),
-});
+export const OneOffQuery = __t
+  .object('OneOffQuery', {
+    requestId: __t.u32(),
+    queryString: __t.string(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeU32(value.requestId);
+      writer.writeString(value.queryString);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readU32();
+      let __f1: any;
+      __f1 = reader.readString();
+      return { requestId: __f0, queryString: __f1 };
+    }
+  );
 export type OneOffQuery = __Infer<typeof OneOffQuery>;
 
-export const OneOffQueryResult = __t.object('OneOffQueryResult', {
-  requestId: __t.u32(),
-  get result() {
-    return __t.result(QueryRows, __t.string());
-  },
-});
+export const OneOffQueryResult = __t
+  .object('OneOffQueryResult', {
+    requestId: __t.u32(),
+    get result() {
+      return __t.result(QueryRows, __t.string());
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeU32(value.requestId);
+      if ('ok' in value.result) {
+        writer.writeByte(0);
+        QueryRows.serialize(writer, value.result.ok);
+      } else {
+        writer.writeByte(1);
+        writer.writeString(value.result.err);
+      }
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readU32();
+      let __f1: any;
+      {
+        const __tag0 = reader.readByte();
+        if (__tag0 === 0) {
+          let __r0: any;
+          __r0 = QueryRows.deserialize(reader);
+          __f1 = { ok: __r0 };
+        } else {
+          let __r0: any;
+          __r0 = reader.readString();
+          __f1 = { err: __r0 };
+        }
+      }
+      return { requestId: __f0, result: __f1 };
+    }
+  );
 export type OneOffQueryResult = __Infer<typeof OneOffQueryResult>;
 
-export const PersistentTableRows = __t.object('PersistentTableRows', {
-  get inserts() {
-    return BsatnRowList;
-  },
-  get deletes() {
-    return BsatnRowList;
-  },
-});
+export const PersistentTableRows = __t
+  .object('PersistentTableRows', {
+    get inserts() {
+      return BsatnRowList;
+    },
+    get deletes() {
+      return BsatnRowList;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      BsatnRowList.serialize(writer, value.inserts);
+      BsatnRowList.serialize(writer, value.deletes);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = BsatnRowList.deserialize(reader);
+      let __f1: any;
+      __f1 = BsatnRowList.deserialize(reader);
+      return { inserts: __f0, deletes: __f1 };
+    }
+  );
 export type PersistentTableRows = __Infer<typeof PersistentTableRows>;
 
-export const ProcedureResult = __t.object('ProcedureResult', {
-  get status() {
-    return ProcedureStatus;
-  },
-  timestamp: __t.timestamp(),
-  totalHostExecutionDuration: __t.timeDuration(),
-  requestId: __t.u32(),
-});
+export const ProcedureResult = __t
+  .object('ProcedureResult', {
+    get status() {
+      return ProcedureStatus;
+    },
+    timestamp: __t.timestamp(),
+    totalHostExecutionDuration: __t.timeDuration(),
+    requestId: __t.u32(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      ProcedureStatus.serialize(writer, value.status);
+      writer.writeI64(value.timestamp.__timestamp_micros_since_unix_epoch__);
+      writer.writeI64(
+        value.totalHostExecutionDuration.__time_duration_micros__
+      );
+      writer.writeU32(value.requestId);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = ProcedureStatus.deserialize(reader);
+      let __f1: any;
+      __f1 = new __Timestamp(reader.readI64());
+      let __f2: any;
+      __f2 = new __TimeDuration(reader.readI64());
+      let __f3: any;
+      __f3 = reader.readU32();
+      return {
+        status: __f0,
+        timestamp: __f1,
+        totalHostExecutionDuration: __f2,
+        requestId: __f3,
+      };
+    }
+  );
 export type ProcedureResult = __Infer<typeof ProcedureResult>;
 
 // The tagged union or sum type for the algebraic type `ProcedureStatus`.
-export const ProcedureStatus = __t.enum('ProcedureStatus', {
-  Returned: __t.byteArray(),
-  InternalError: __t.string(),
-});
+export const ProcedureStatus = __t
+  .enum('ProcedureStatus', {
+    Returned: __t.byteArray(),
+    InternalError: __t.string(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      switch (value.tag) {
+        case 'Returned': {
+          writer.writeByte(0);
+          writer.writeUInt8Array(value.value);
+          break;
+        }
+        case 'InternalError': {
+          writer.writeByte(1);
+          writer.writeString(value.value);
+          break;
+        }
+        default: {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+      }
+    },
+    (reader): any => {
+      switch (reader.readByte()) {
+        case 0: {
+          let __v: any;
+          __v = reader.readUInt8Array();
+          return { tag: 'Returned', value: __v };
+        }
+        case 1: {
+          let __v: any;
+          __v = reader.readString();
+          return { tag: 'InternalError', value: __v };
+        }
+        default: {
+          return undefined;
+        }
+      }
+    }
+  );
 export type ProcedureStatus = __Infer<typeof ProcedureStatus>;
 
-export const QueryRows = __t.object('QueryRows', {
-  get tables() {
-    return __t.array(SingleTableRows);
-  },
-});
+export const QueryRows = __t
+  .object('QueryRows', {
+    get tables() {
+      return __t.array(SingleTableRows);
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeU32(value.tables.length);
+      for (const __e0 of value.tables) {
+        SingleTableRows.serialize(writer, __e0);
+      }
+    },
+    (reader): any => {
+      let __f0: any;
+      {
+        const __len0 = reader.readU32();
+        const __arr0: any[] = new Array(__len0);
+        for (let __i0 = 0; __i0 < __len0; __i0++) {
+          __arr0[__i0] = SingleTableRows.deserialize(reader);
+        }
+        __f0 = __arr0;
+      }
+      return { tables: __f0 };
+    }
+  );
 export type QueryRows = __Infer<typeof QueryRows>;
 
-export const QuerySetId = __t.object('QuerySetId', {
-  id: __t.u32(),
-});
+export const QuerySetId = __t
+  .object('QuerySetId', {
+    id: __t.u32(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeU32(value.id);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readU32();
+      return { id: __f0 };
+    }
+  );
 export type QuerySetId = __Infer<typeof QuerySetId>;
 
-export const QuerySetUpdate = __t.object('QuerySetUpdate', {
-  get querySetId() {
-    return QuerySetId;
-  },
-  get tables() {
-    return __t.array(TableUpdate);
-  },
-});
+export const QuerySetUpdate = __t
+  .object('QuerySetUpdate', {
+    get querySetId() {
+      return QuerySetId;
+    },
+    get tables() {
+      return __t.array(TableUpdate);
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      QuerySetId.serialize(writer, value.querySetId);
+      writer.writeU32(value.tables.length);
+      for (const __e0 of value.tables) {
+        TableUpdate.serialize(writer, __e0);
+      }
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = QuerySetId.deserialize(reader);
+      let __f1: any;
+      {
+        const __len0 = reader.readU32();
+        const __arr0: any[] = new Array(__len0);
+        for (let __i0 = 0; __i0 < __len0; __i0++) {
+          __arr0[__i0] = TableUpdate.deserialize(reader);
+        }
+        __f1 = __arr0;
+      }
+      return { querySetId: __f0, tables: __f1 };
+    }
+  );
 export type QuerySetUpdate = __Infer<typeof QuerySetUpdate>;
 
-export const ReducerOk = __t.object('ReducerOk', {
-  retValue: __t.byteArray(),
-  get transactionUpdate() {
-    return TransactionUpdate;
-  },
-});
+export const ReducerOk = __t
+  .object('ReducerOk', {
+    retValue: __t.byteArray(),
+    get transactionUpdate() {
+      return TransactionUpdate;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeUInt8Array(value.retValue);
+      TransactionUpdate.serialize(writer, value.transactionUpdate);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readUInt8Array();
+      let __f1: any;
+      __f1 = TransactionUpdate.deserialize(reader);
+      return { retValue: __f0, transactionUpdate: __f1 };
+    }
+  );
 export type ReducerOk = __Infer<typeof ReducerOk>;
 
 // The tagged union or sum type for the algebraic type `ReducerOutcome`.
-export const ReducerOutcome = __t.enum('ReducerOutcome', {
-  get Ok() {
-    return ReducerOk;
-  },
-  OkEmpty: __t.unit(),
-  Err: __t.byteArray(),
-  InternalError: __t.string(),
-});
+export const ReducerOutcome = __t
+  .enum('ReducerOutcome', {
+    get Ok() {
+      return ReducerOk;
+    },
+    OkEmpty: __t.unit(),
+    Err: __t.byteArray(),
+    InternalError: __t.string(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      switch (value.tag) {
+        case 'Ok': {
+          writer.writeByte(0);
+          ReducerOk.serialize(writer, value.value);
+          break;
+        }
+        case 'OkEmpty': {
+          writer.writeByte(1);
+          break;
+        }
+        case 'Err': {
+          writer.writeByte(2);
+          writer.writeUInt8Array(value.value);
+          break;
+        }
+        case 'InternalError': {
+          writer.writeByte(3);
+          writer.writeString(value.value);
+          break;
+        }
+        default: {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+      }
+    },
+    (reader): any => {
+      switch (reader.readByte()) {
+        case 0: {
+          let __v: any;
+          __v = ReducerOk.deserialize(reader);
+          return { tag: 'Ok', value: __v };
+        }
+        case 1: {
+          return { tag: 'OkEmpty', value: {} };
+        }
+        case 2: {
+          let __v: any;
+          __v = reader.readUInt8Array();
+          return { tag: 'Err', value: __v };
+        }
+        case 3: {
+          let __v: any;
+          __v = reader.readString();
+          return { tag: 'InternalError', value: __v };
+        }
+        default: {
+          return undefined;
+        }
+      }
+    }
+  );
 export type ReducerOutcome = __Infer<typeof ReducerOutcome>;
 
-export const ReducerResult = __t.object('ReducerResult', {
-  requestId: __t.u32(),
-  timestamp: __t.timestamp(),
-  get result() {
-    return ReducerOutcome;
-  },
-});
+export const ReducerResult = __t
+  .object('ReducerResult', {
+    requestId: __t.u32(),
+    timestamp: __t.timestamp(),
+    get result() {
+      return ReducerOutcome;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeU32(value.requestId);
+      writer.writeI64(value.timestamp.__timestamp_micros_since_unix_epoch__);
+      ReducerOutcome.serialize(writer, value.result);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readU32();
+      let __f1: any;
+      __f1 = new __Timestamp(reader.readI64());
+      let __f2: any;
+      __f2 = ReducerOutcome.deserialize(reader);
+      return { requestId: __f0, timestamp: __f1, result: __f2 };
+    }
+  );
 export type ReducerResult = __Infer<typeof ReducerResult>;
 
 // The tagged union or sum type for the algebraic type `RowSizeHint`.
-export const RowSizeHint = __t.enum('RowSizeHint', {
-  FixedSize: __t.u16(),
-  RowOffsets: __t.array(__t.u64()),
-});
+export const RowSizeHint = __t
+  .enum('RowSizeHint', {
+    FixedSize: __t.u16(),
+    RowOffsets: __t.array(__t.u64()),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      switch (value.tag) {
+        case 'FixedSize': {
+          writer.writeByte(0);
+          writer.writeU16(value.value);
+          break;
+        }
+        case 'RowOffsets': {
+          writer.writeByte(1);
+          writer.writeU32(value.value.length);
+          for (const __e0 of value.value) {
+            writer.writeU64(__e0);
+          }
+          break;
+        }
+        default: {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+      }
+    },
+    (reader): any => {
+      switch (reader.readByte()) {
+        case 0: {
+          let __v: any;
+          __v = reader.readU16();
+          return { tag: 'FixedSize', value: __v };
+        }
+        case 1: {
+          let __v: any;
+          {
+            const __len0 = reader.readU32();
+            const __arr0: any[] = new Array(__len0);
+            for (let __i0 = 0; __i0 < __len0; __i0++) {
+              __arr0[__i0] = reader.readU64();
+            }
+            __v = __arr0;
+          }
+          return { tag: 'RowOffsets', value: __v };
+        }
+        default: {
+          return undefined;
+        }
+      }
+    }
+  );
 export type RowSizeHint = __Infer<typeof RowSizeHint>;
 
 // The tagged union or sum type for the algebraic type `ServerMessage`.
-export const ServerMessage = __t.enum('ServerMessage', {
-  get InitialConnection() {
-    return InitialConnection;
-  },
-  get SubscribeApplied() {
-    return SubscribeApplied;
-  },
-  get UnsubscribeApplied() {
-    return UnsubscribeApplied;
-  },
-  get SubscriptionError() {
-    return SubscriptionError;
-  },
-  get TransactionUpdate() {
-    return TransactionUpdate;
-  },
-  get OneOffQueryResult() {
-    return OneOffQueryResult;
-  },
-  get ReducerResult() {
-    return ReducerResult;
-  },
-  get ProcedureResult() {
-    return ProcedureResult;
-  },
-});
+export const ServerMessage = __t
+  .enum('ServerMessage', {
+    get InitialConnection() {
+      return InitialConnection;
+    },
+    get SubscribeApplied() {
+      return SubscribeApplied;
+    },
+    get UnsubscribeApplied() {
+      return UnsubscribeApplied;
+    },
+    get SubscriptionError() {
+      return SubscriptionError;
+    },
+    get TransactionUpdate() {
+      return TransactionUpdate;
+    },
+    get OneOffQueryResult() {
+      return OneOffQueryResult;
+    },
+    get ReducerResult() {
+      return ReducerResult;
+    },
+    get ProcedureResult() {
+      return ProcedureResult;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      switch (value.tag) {
+        case 'InitialConnection': {
+          writer.writeByte(0);
+          InitialConnection.serialize(writer, value.value);
+          break;
+        }
+        case 'SubscribeApplied': {
+          writer.writeByte(1);
+          SubscribeApplied.serialize(writer, value.value);
+          break;
+        }
+        case 'UnsubscribeApplied': {
+          writer.writeByte(2);
+          UnsubscribeApplied.serialize(writer, value.value);
+          break;
+        }
+        case 'SubscriptionError': {
+          writer.writeByte(3);
+          SubscriptionError.serialize(writer, value.value);
+          break;
+        }
+        case 'TransactionUpdate': {
+          writer.writeByte(4);
+          TransactionUpdate.serialize(writer, value.value);
+          break;
+        }
+        case 'OneOffQueryResult': {
+          writer.writeByte(5);
+          OneOffQueryResult.serialize(writer, value.value);
+          break;
+        }
+        case 'ReducerResult': {
+          writer.writeByte(6);
+          ReducerResult.serialize(writer, value.value);
+          break;
+        }
+        case 'ProcedureResult': {
+          writer.writeByte(7);
+          ProcedureResult.serialize(writer, value.value);
+          break;
+        }
+        default: {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+      }
+    },
+    (reader): any => {
+      switch (reader.readByte()) {
+        case 0: {
+          let __v: any;
+          __v = InitialConnection.deserialize(reader);
+          return { tag: 'InitialConnection', value: __v };
+        }
+        case 1: {
+          let __v: any;
+          __v = SubscribeApplied.deserialize(reader);
+          return { tag: 'SubscribeApplied', value: __v };
+        }
+        case 2: {
+          let __v: any;
+          __v = UnsubscribeApplied.deserialize(reader);
+          return { tag: 'UnsubscribeApplied', value: __v };
+        }
+        case 3: {
+          let __v: any;
+          __v = SubscriptionError.deserialize(reader);
+          return { tag: 'SubscriptionError', value: __v };
+        }
+        case 4: {
+          let __v: any;
+          __v = TransactionUpdate.deserialize(reader);
+          return { tag: 'TransactionUpdate', value: __v };
+        }
+        case 5: {
+          let __v: any;
+          __v = OneOffQueryResult.deserialize(reader);
+          return { tag: 'OneOffQueryResult', value: __v };
+        }
+        case 6: {
+          let __v: any;
+          __v = ReducerResult.deserialize(reader);
+          return { tag: 'ReducerResult', value: __v };
+        }
+        case 7: {
+          let __v: any;
+          __v = ProcedureResult.deserialize(reader);
+          return { tag: 'ProcedureResult', value: __v };
+        }
+        default: {
+          return undefined;
+        }
+      }
+    }
+  );
 export type ServerMessage = __Infer<typeof ServerMessage>;
 
-export const SingleTableRows = __t.object('SingleTableRows', {
-  table: __t.string(),
-  get rows() {
-    return BsatnRowList;
-  },
-});
+export const SingleTableRows = __t
+  .object('SingleTableRows', {
+    table: __t.string(),
+    get rows() {
+      return BsatnRowList;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeString(value.table);
+      BsatnRowList.serialize(writer, value.rows);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readString();
+      let __f1: any;
+      __f1 = BsatnRowList.deserialize(reader);
+      return { table: __f0, rows: __f1 };
+    }
+  );
 export type SingleTableRows = __Infer<typeof SingleTableRows>;
 
-export const Subscribe = __t.object('Subscribe', {
-  requestId: __t.u32(),
-  get querySetId() {
-    return QuerySetId;
-  },
-  queryStrings: __t.array(__t.string()),
-});
+export const Subscribe = __t
+  .object('Subscribe', {
+    requestId: __t.u32(),
+    get querySetId() {
+      return QuerySetId;
+    },
+    queryStrings: __t.array(__t.string()),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeU32(value.requestId);
+      QuerySetId.serialize(writer, value.querySetId);
+      writer.writeU32(value.queryStrings.length);
+      for (const __e0 of value.queryStrings) {
+        writer.writeString(__e0);
+      }
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readU32();
+      let __f1: any;
+      __f1 = QuerySetId.deserialize(reader);
+      let __f2: any;
+      {
+        const __len0 = reader.readU32();
+        const __arr0: any[] = new Array(__len0);
+        for (let __i0 = 0; __i0 < __len0; __i0++) {
+          __arr0[__i0] = reader.readString();
+        }
+        __f2 = __arr0;
+      }
+      return { requestId: __f0, querySetId: __f1, queryStrings: __f2 };
+    }
+  );
 export type Subscribe = __Infer<typeof Subscribe>;
 
-export const SubscribeApplied = __t.object('SubscribeApplied', {
-  requestId: __t.u32(),
-  get querySetId() {
-    return QuerySetId;
-  },
-  get rows() {
-    return QueryRows;
-  },
-});
+export const SubscribeApplied = __t
+  .object('SubscribeApplied', {
+    requestId: __t.u32(),
+    get querySetId() {
+      return QuerySetId;
+    },
+    get rows() {
+      return QueryRows;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeU32(value.requestId);
+      QuerySetId.serialize(writer, value.querySetId);
+      QueryRows.serialize(writer, value.rows);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readU32();
+      let __f1: any;
+      __f1 = QuerySetId.deserialize(reader);
+      let __f2: any;
+      __f2 = QueryRows.deserialize(reader);
+      return { requestId: __f0, querySetId: __f1, rows: __f2 };
+    }
+  );
 export type SubscribeApplied = __Infer<typeof SubscribeApplied>;
 
-export const SubscriptionError = __t.object('SubscriptionError', {
-  requestId: __t.option(__t.u32()),
-  get querySetId() {
-    return QuerySetId;
-  },
-  error: __t.string(),
-});
+export const SubscriptionError = __t
+  .object('SubscriptionError', {
+    requestId: __t.option(__t.u32()),
+    get querySetId() {
+      return QuerySetId;
+    },
+    error: __t.string(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      if (value.requestId === undefined || value.requestId === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        writer.writeU32(value.requestId);
+      }
+      QuerySetId.serialize(writer, value.querySetId);
+      writer.writeString(value.error);
+    },
+    (reader): any => {
+      let __f0: any;
+      if (reader.readByte() === 0) {
+        __f0 = reader.readU32();
+      } else {
+        __f0 = undefined;
+      }
+      let __f1: any;
+      __f1 = QuerySetId.deserialize(reader);
+      let __f2: any;
+      __f2 = reader.readString();
+      return { requestId: __f0, querySetId: __f1, error: __f2 };
+    }
+  );
 export type SubscriptionError = __Infer<typeof SubscriptionError>;
 
-export const TableUpdate = __t.object('TableUpdate', {
-  tableName: __t.string(),
-  get rows() {
-    return __t.array(TableUpdateRows);
-  },
-});
+export const TableUpdate = __t
+  .object('TableUpdate', {
+    tableName: __t.string(),
+    get rows() {
+      return __t.array(TableUpdateRows);
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeString(value.tableName);
+      writer.writeU32(value.rows.length);
+      for (const __e0 of value.rows) {
+        TableUpdateRows.serialize(writer, __e0);
+      }
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readString();
+      let __f1: any;
+      {
+        const __len0 = reader.readU32();
+        const __arr0: any[] = new Array(__len0);
+        for (let __i0 = 0; __i0 < __len0; __i0++) {
+          __arr0[__i0] = TableUpdateRows.deserialize(reader);
+        }
+        __f1 = __arr0;
+      }
+      return { tableName: __f0, rows: __f1 };
+    }
+  );
 export type TableUpdate = __Infer<typeof TableUpdate>;
 
 // The tagged union or sum type for the algebraic type `TableUpdateRows`.
-export const TableUpdateRows = __t.enum('TableUpdateRows', {
-  get PersistentTable() {
-    return PersistentTableRows;
-  },
-  get EventTable() {
-    return EventTableRows;
-  },
-});
+export const TableUpdateRows = __t
+  .enum('TableUpdateRows', {
+    get PersistentTable() {
+      return PersistentTableRows;
+    },
+    get EventTable() {
+      return EventTableRows;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      switch (value.tag) {
+        case 'PersistentTable': {
+          writer.writeByte(0);
+          PersistentTableRows.serialize(writer, value.value);
+          break;
+        }
+        case 'EventTable': {
+          writer.writeByte(1);
+          EventTableRows.serialize(writer, value.value);
+          break;
+        }
+        default: {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+      }
+    },
+    (reader): any => {
+      switch (reader.readByte()) {
+        case 0: {
+          let __v: any;
+          __v = PersistentTableRows.deserialize(reader);
+          return { tag: 'PersistentTable', value: __v };
+        }
+        case 1: {
+          let __v: any;
+          __v = EventTableRows.deserialize(reader);
+          return { tag: 'EventTable', value: __v };
+        }
+        default: {
+          return undefined;
+        }
+      }
+    }
+  );
 export type TableUpdateRows = __Infer<typeof TableUpdateRows>;
 
-export const TransactionUpdate = __t.object('TransactionUpdate', {
-  get querySets() {
-    return __t.array(QuerySetUpdate);
-  },
-});
+export const TransactionUpdate = __t
+  .object('TransactionUpdate', {
+    get querySets() {
+      return __t.array(QuerySetUpdate);
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeU32(value.querySets.length);
+      for (const __e0 of value.querySets) {
+        QuerySetUpdate.serialize(writer, __e0);
+      }
+    },
+    (reader): any => {
+      let __f0: any;
+      {
+        const __len0 = reader.readU32();
+        const __arr0: any[] = new Array(__len0);
+        for (let __i0 = 0; __i0 < __len0; __i0++) {
+          __arr0[__i0] = QuerySetUpdate.deserialize(reader);
+        }
+        __f0 = __arr0;
+      }
+      return { querySets: __f0 };
+    }
+  );
 export type TransactionUpdate = __Infer<typeof TransactionUpdate>;
 
-export const Unsubscribe = __t.object('Unsubscribe', {
-  requestId: __t.u32(),
-  get querySetId() {
-    return QuerySetId;
-  },
-  get flags() {
-    return UnsubscribeFlags;
-  },
-});
+export const Unsubscribe = __t
+  .object('Unsubscribe', {
+    requestId: __t.u32(),
+    get querySetId() {
+      return QuerySetId;
+    },
+    get flags() {
+      return UnsubscribeFlags;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeU32(value.requestId);
+      QuerySetId.serialize(writer, value.querySetId);
+      UnsubscribeFlags.serialize(writer, value.flags);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readU32();
+      let __f1: any;
+      __f1 = QuerySetId.deserialize(reader);
+      let __f2: any;
+      __f2 = UnsubscribeFlags.deserialize(reader);
+      return { requestId: __f0, querySetId: __f1, flags: __f2 };
+    }
+  );
 export type Unsubscribe = __Infer<typeof Unsubscribe>;
 
-export const UnsubscribeApplied = __t.object('UnsubscribeApplied', {
-  requestId: __t.u32(),
-  get querySetId() {
-    return QuerySetId;
-  },
-  get rows() {
-    return __t.option(QueryRows);
-  },
-});
+export const UnsubscribeApplied = __t
+  .object('UnsubscribeApplied', {
+    requestId: __t.u32(),
+    get querySetId() {
+      return QuerySetId;
+    },
+    get rows() {
+      return __t.option(QueryRows);
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeU32(value.requestId);
+      QuerySetId.serialize(writer, value.querySetId);
+      if (value.rows === undefined || value.rows === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        QueryRows.serialize(writer, value.rows);
+      }
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readU32();
+      let __f1: any;
+      __f1 = QuerySetId.deserialize(reader);
+      let __f2: any;
+      if (reader.readByte() === 0) {
+        __f2 = QueryRows.deserialize(reader);
+      } else {
+        __f2 = undefined;
+      }
+      return { requestId: __f0, querySetId: __f1, rows: __f2 };
+    }
+  );
 export type UnsubscribeApplied = __Infer<typeof UnsubscribeApplied>;
 
 // The tagged union or sum type for the algebraic type `UnsubscribeFlags`.
-export const UnsubscribeFlags = __t.enum('UnsubscribeFlags', {
-  Default: __t.unit(),
-  SendDroppedRows: __t.unit(),
-});
+export const UnsubscribeFlags = __t
+  .enum('UnsubscribeFlags', {
+    Default: __t.unit(),
+    SendDroppedRows: __t.unit(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      switch (value.tag) {
+        case 'Default': {
+          writer.writeByte(0);
+          break;
+        }
+        case 'SendDroppedRows': {
+          writer.writeByte(1);
+          break;
+        }
+        default: {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+      }
+    },
+    (reader): any => {
+      switch (reader.readByte()) {
+        case 0: {
+          return { tag: 'Default', value: {} };
+        }
+        case 1: {
+          return { tag: 'SendDroppedRows', value: {} };
+        }
+        default: {
+          return undefined;
+        }
+      }
+    }
+  );
 export type UnsubscribeFlags = __Infer<typeof UnsubscribeFlags>;

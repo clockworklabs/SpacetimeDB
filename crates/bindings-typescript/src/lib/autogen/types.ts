@@ -4,7 +4,12 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
+  ConnectionId as __ConnectionId,
+  Identity as __Identity,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
   TypeBuilder as __TypeBuilder,
+  Uuid as __Uuid,
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
@@ -14,695 +19,3234 @@ import {
 export const AlgebraicType: __TypeBuilder<
   __AlgebraicTypeType,
   __AlgebraicTypeType
-> = __t.enum('AlgebraicType', {
-  Ref: __t.u32(),
-  get Sum() {
-    return SumType;
-  },
-  get Product() {
-    return ProductType;
-  },
-  get Array() {
-    return AlgebraicType;
-  },
-  String: __t.unit(),
-  Bool: __t.unit(),
-  I8: __t.unit(),
-  U8: __t.unit(),
-  I16: __t.unit(),
-  U16: __t.unit(),
-  I32: __t.unit(),
-  U32: __t.unit(),
-  I64: __t.unit(),
-  U64: __t.unit(),
-  I128: __t.unit(),
-  U128: __t.unit(),
-  I256: __t.unit(),
-  U256: __t.unit(),
-  F32: __t.unit(),
-  F64: __t.unit(),
-});
+> = __t
+  .enum('AlgebraicType', {
+    Ref: __t.u32(),
+    get Sum() {
+      return SumType;
+    },
+    get Product() {
+      return ProductType;
+    },
+    get Array() {
+      return AlgebraicType;
+    },
+    String: __t.unit(),
+    Bool: __t.unit(),
+    I8: __t.unit(),
+    U8: __t.unit(),
+    I16: __t.unit(),
+    U16: __t.unit(),
+    I32: __t.unit(),
+    U32: __t.unit(),
+    I64: __t.unit(),
+    U64: __t.unit(),
+    I128: __t.unit(),
+    U128: __t.unit(),
+    I256: __t.unit(),
+    U256: __t.unit(),
+    F32: __t.unit(),
+    F64: __t.unit(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      switch (value.tag) {
+        case 'Ref': {
+          writer.writeByte(0);
+          writer.writeU32(value.value);
+          break;
+        }
+        case 'Sum': {
+          writer.writeByte(1);
+          SumType.serialize(writer, value.value);
+          break;
+        }
+        case 'Product': {
+          writer.writeByte(2);
+          ProductType.serialize(writer, value.value);
+          break;
+        }
+        case 'Array': {
+          writer.writeByte(3);
+          AlgebraicType.serialize(writer, value.value);
+          break;
+        }
+        case 'String': {
+          writer.writeByte(4);
+          break;
+        }
+        case 'Bool': {
+          writer.writeByte(5);
+          break;
+        }
+        case 'I8': {
+          writer.writeByte(6);
+          break;
+        }
+        case 'U8': {
+          writer.writeByte(7);
+          break;
+        }
+        case 'I16': {
+          writer.writeByte(8);
+          break;
+        }
+        case 'U16': {
+          writer.writeByte(9);
+          break;
+        }
+        case 'I32': {
+          writer.writeByte(10);
+          break;
+        }
+        case 'U32': {
+          writer.writeByte(11);
+          break;
+        }
+        case 'I64': {
+          writer.writeByte(12);
+          break;
+        }
+        case 'U64': {
+          writer.writeByte(13);
+          break;
+        }
+        case 'I128': {
+          writer.writeByte(14);
+          break;
+        }
+        case 'U128': {
+          writer.writeByte(15);
+          break;
+        }
+        case 'I256': {
+          writer.writeByte(16);
+          break;
+        }
+        case 'U256': {
+          writer.writeByte(17);
+          break;
+        }
+        case 'F32': {
+          writer.writeByte(18);
+          break;
+        }
+        case 'F64': {
+          writer.writeByte(19);
+          break;
+        }
+        default: {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+      }
+    },
+    (reader): any => {
+      switch (reader.readByte()) {
+        case 0: {
+          let __v: any;
+          __v = reader.readU32();
+          return { tag: 'Ref', value: __v };
+        }
+        case 1: {
+          let __v: any;
+          __v = SumType.deserialize(reader);
+          return { tag: 'Sum', value: __v };
+        }
+        case 2: {
+          let __v: any;
+          __v = ProductType.deserialize(reader);
+          return { tag: 'Product', value: __v };
+        }
+        case 3: {
+          let __v: any;
+          __v = AlgebraicType.deserialize(reader);
+          return { tag: 'Array', value: __v };
+        }
+        case 4: {
+          return { tag: 'String', value: {} };
+        }
+        case 5: {
+          return { tag: 'Bool', value: {} };
+        }
+        case 6: {
+          return { tag: 'I8', value: {} };
+        }
+        case 7: {
+          return { tag: 'U8', value: {} };
+        }
+        case 8: {
+          return { tag: 'I16', value: {} };
+        }
+        case 9: {
+          return { tag: 'U16', value: {} };
+        }
+        case 10: {
+          return { tag: 'I32', value: {} };
+        }
+        case 11: {
+          return { tag: 'U32', value: {} };
+        }
+        case 12: {
+          return { tag: 'I64', value: {} };
+        }
+        case 13: {
+          return { tag: 'U64', value: {} };
+        }
+        case 14: {
+          return { tag: 'I128', value: {} };
+        }
+        case 15: {
+          return { tag: 'U128', value: {} };
+        }
+        case 16: {
+          return { tag: 'I256', value: {} };
+        }
+        case 17: {
+          return { tag: 'U256', value: {} };
+        }
+        case 18: {
+          return { tag: 'F32', value: {} };
+        }
+        case 19: {
+          return { tag: 'F64', value: {} };
+        }
+        default: {
+          return undefined;
+        }
+      }
+    }
+  );
 export type AlgebraicType = __Infer<typeof AlgebraicType>;
 
 // The tagged union or sum type for the algebraic type `CaseConversionPolicy`.
-export const CaseConversionPolicy = __t.enum('CaseConversionPolicy', {
-  None: __t.unit(),
-  SnakeCase: __t.unit(),
-});
+export const CaseConversionPolicy = __t
+  .enum('CaseConversionPolicy', {
+    None: __t.unit(),
+    SnakeCase: __t.unit(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      switch (value.tag) {
+        case 'None': {
+          writer.writeByte(0);
+          break;
+        }
+        case 'SnakeCase': {
+          writer.writeByte(1);
+          break;
+        }
+        default: {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+      }
+    },
+    (reader): any => {
+      switch (reader.readByte()) {
+        case 0: {
+          return { tag: 'None', value: {} };
+        }
+        case 1: {
+          return { tag: 'SnakeCase', value: {} };
+        }
+        default: {
+          return undefined;
+        }
+      }
+    }
+  );
 export type CaseConversionPolicy = __Infer<typeof CaseConversionPolicy>;
 
 // The tagged union or sum type for the algebraic type `ExplicitNameEntry`.
-export const ExplicitNameEntry = __t.enum('ExplicitNameEntry', {
-  get Table() {
-    return NameMapping;
-  },
-  get Function() {
-    return NameMapping;
-  },
-  get Index() {
-    return NameMapping;
-  },
-});
+export const ExplicitNameEntry = __t
+  .enum('ExplicitNameEntry', {
+    get Table() {
+      return NameMapping;
+    },
+    get Function() {
+      return NameMapping;
+    },
+    get Index() {
+      return NameMapping;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      switch (value.tag) {
+        case 'Table': {
+          writer.writeByte(0);
+          NameMapping.serialize(writer, value.value);
+          break;
+        }
+        case 'Function': {
+          writer.writeByte(1);
+          NameMapping.serialize(writer, value.value);
+          break;
+        }
+        case 'Index': {
+          writer.writeByte(2);
+          NameMapping.serialize(writer, value.value);
+          break;
+        }
+        default: {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+      }
+    },
+    (reader): any => {
+      switch (reader.readByte()) {
+        case 0: {
+          let __v: any;
+          __v = NameMapping.deserialize(reader);
+          return { tag: 'Table', value: __v };
+        }
+        case 1: {
+          let __v: any;
+          __v = NameMapping.deserialize(reader);
+          return { tag: 'Function', value: __v };
+        }
+        case 2: {
+          let __v: any;
+          __v = NameMapping.deserialize(reader);
+          return { tag: 'Index', value: __v };
+        }
+        default: {
+          return undefined;
+        }
+      }
+    }
+  );
 export type ExplicitNameEntry = __Infer<typeof ExplicitNameEntry>;
 
-export const ExplicitNames = __t.object('ExplicitNames', {
-  get entries() {
-    return __t.array(ExplicitNameEntry);
-  },
-});
+export const ExplicitNames = __t
+  .object('ExplicitNames', {
+    get entries() {
+      return __t.array(ExplicitNameEntry);
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeU32(value.entries.length);
+      for (const __e0 of value.entries) {
+        ExplicitNameEntry.serialize(writer, __e0);
+      }
+    },
+    (reader): any => {
+      let __f0: any;
+      {
+        const __len0 = reader.readU32();
+        const __arr0: any[] = new Array(__len0);
+        for (let __i0 = 0; __i0 < __len0; __i0++) {
+          __arr0[__i0] = ExplicitNameEntry.deserialize(reader);
+        }
+        __f0 = __arr0;
+      }
+      return { entries: __f0 };
+    }
+  );
 export type ExplicitNames = __Infer<typeof ExplicitNames>;
 
 // The tagged union or sum type for the algebraic type `FunctionVisibility`.
-export const FunctionVisibility = __t.enum('FunctionVisibility', {
-  Private: __t.unit(),
-  ClientCallable: __t.unit(),
-});
+export const FunctionVisibility = __t
+  .enum('FunctionVisibility', {
+    Private: __t.unit(),
+    ClientCallable: __t.unit(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      switch (value.tag) {
+        case 'Private': {
+          writer.writeByte(0);
+          break;
+        }
+        case 'ClientCallable': {
+          writer.writeByte(1);
+          break;
+        }
+        default: {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+      }
+    },
+    (reader): any => {
+      switch (reader.readByte()) {
+        case 0: {
+          return { tag: 'Private', value: {} };
+        }
+        case 1: {
+          return { tag: 'ClientCallable', value: {} };
+        }
+        default: {
+          return undefined;
+        }
+      }
+    }
+  );
 export type FunctionVisibility = __Infer<typeof FunctionVisibility>;
 
-export const HttpHeaderPair = __t.object('HttpHeaderPair', {
-  name: __t.string(),
-  value: __t.byteArray(),
-});
+export const HttpHeaderPair = __t
+  .object('HttpHeaderPair', {
+    name: __t.string(),
+    value: __t.byteArray(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeString(value.name);
+      writer.writeUInt8Array(value.value);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readString();
+      let __f1: any;
+      __f1 = reader.readUInt8Array();
+      return { name: __f0, value: __f1 };
+    }
+  );
 export type HttpHeaderPair = __Infer<typeof HttpHeaderPair>;
 
-export const HttpHeaders = __t.object('HttpHeaders', {
-  get entries() {
-    return __t.array(HttpHeaderPair);
-  },
-});
+export const HttpHeaders = __t
+  .object('HttpHeaders', {
+    get entries() {
+      return __t.array(HttpHeaderPair);
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeU32(value.entries.length);
+      for (const __e0 of value.entries) {
+        HttpHeaderPair.serialize(writer, __e0);
+      }
+    },
+    (reader): any => {
+      let __f0: any;
+      {
+        const __len0 = reader.readU32();
+        const __arr0: any[] = new Array(__len0);
+        for (let __i0 = 0; __i0 < __len0; __i0++) {
+          __arr0[__i0] = HttpHeaderPair.deserialize(reader);
+        }
+        __f0 = __arr0;
+      }
+      return { entries: __f0 };
+    }
+  );
 export type HttpHeaders = __Infer<typeof HttpHeaders>;
 
 // The tagged union or sum type for the algebraic type `HttpMethod`.
-export const HttpMethod = __t.enum('HttpMethod', {
-  Get: __t.unit(),
-  Head: __t.unit(),
-  Post: __t.unit(),
-  Put: __t.unit(),
-  Delete: __t.unit(),
-  Connect: __t.unit(),
-  Options: __t.unit(),
-  Trace: __t.unit(),
-  Patch: __t.unit(),
-  Extension: __t.string(),
-});
+export const HttpMethod = __t
+  .enum('HttpMethod', {
+    Get: __t.unit(),
+    Head: __t.unit(),
+    Post: __t.unit(),
+    Put: __t.unit(),
+    Delete: __t.unit(),
+    Connect: __t.unit(),
+    Options: __t.unit(),
+    Trace: __t.unit(),
+    Patch: __t.unit(),
+    Extension: __t.string(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      switch (value.tag) {
+        case 'Get': {
+          writer.writeByte(0);
+          break;
+        }
+        case 'Head': {
+          writer.writeByte(1);
+          break;
+        }
+        case 'Post': {
+          writer.writeByte(2);
+          break;
+        }
+        case 'Put': {
+          writer.writeByte(3);
+          break;
+        }
+        case 'Delete': {
+          writer.writeByte(4);
+          break;
+        }
+        case 'Connect': {
+          writer.writeByte(5);
+          break;
+        }
+        case 'Options': {
+          writer.writeByte(6);
+          break;
+        }
+        case 'Trace': {
+          writer.writeByte(7);
+          break;
+        }
+        case 'Patch': {
+          writer.writeByte(8);
+          break;
+        }
+        case 'Extension': {
+          writer.writeByte(9);
+          writer.writeString(value.value);
+          break;
+        }
+        default: {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+      }
+    },
+    (reader): any => {
+      switch (reader.readByte()) {
+        case 0: {
+          return { tag: 'Get', value: {} };
+        }
+        case 1: {
+          return { tag: 'Head', value: {} };
+        }
+        case 2: {
+          return { tag: 'Post', value: {} };
+        }
+        case 3: {
+          return { tag: 'Put', value: {} };
+        }
+        case 4: {
+          return { tag: 'Delete', value: {} };
+        }
+        case 5: {
+          return { tag: 'Connect', value: {} };
+        }
+        case 6: {
+          return { tag: 'Options', value: {} };
+        }
+        case 7: {
+          return { tag: 'Trace', value: {} };
+        }
+        case 8: {
+          return { tag: 'Patch', value: {} };
+        }
+        case 9: {
+          let __v: any;
+          __v = reader.readString();
+          return { tag: 'Extension', value: __v };
+        }
+        default: {
+          return undefined;
+        }
+      }
+    }
+  );
 export type HttpMethod = __Infer<typeof HttpMethod>;
 
-export const HttpRequest = __t.object('HttpRequest', {
-  get method() {
-    return HttpMethod;
-  },
-  get headers() {
-    return HttpHeaders;
-  },
-  timeout: __t.option(__t.timeDuration()),
-  uri: __t.string(),
-  get version() {
-    return HttpVersion;
-  },
-});
+export const HttpRequest = __t
+  .object('HttpRequest', {
+    get method() {
+      return HttpMethod;
+    },
+    get headers() {
+      return HttpHeaders;
+    },
+    timeout: __t.option(__t.timeDuration()),
+    uri: __t.string(),
+    get version() {
+      return HttpVersion;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      HttpMethod.serialize(writer, value.method);
+      HttpHeaders.serialize(writer, value.headers);
+      if (value.timeout === undefined || value.timeout === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        writer.writeI64(value.timeout.__time_duration_micros__);
+      }
+      writer.writeString(value.uri);
+      HttpVersion.serialize(writer, value.version);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = HttpMethod.deserialize(reader);
+      let __f1: any;
+      __f1 = HttpHeaders.deserialize(reader);
+      let __f2: any;
+      if (reader.readByte() === 0) {
+        __f2 = new __TimeDuration(reader.readI64());
+      } else {
+        __f2 = undefined;
+      }
+      let __f3: any;
+      __f3 = reader.readString();
+      let __f4: any;
+      __f4 = HttpVersion.deserialize(reader);
+      return {
+        method: __f0,
+        headers: __f1,
+        timeout: __f2,
+        uri: __f3,
+        version: __f4,
+      };
+    }
+  );
 export type HttpRequest = __Infer<typeof HttpRequest>;
 
-export const HttpResponse = __t.object('HttpResponse', {
-  get headers() {
-    return HttpHeaders;
-  },
-  get version() {
-    return HttpVersion;
-  },
-  code: __t.u16(),
-});
+export const HttpResponse = __t
+  .object('HttpResponse', {
+    get headers() {
+      return HttpHeaders;
+    },
+    get version() {
+      return HttpVersion;
+    },
+    code: __t.u16(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      HttpHeaders.serialize(writer, value.headers);
+      HttpVersion.serialize(writer, value.version);
+      writer.writeU16(value.code);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = HttpHeaders.deserialize(reader);
+      let __f1: any;
+      __f1 = HttpVersion.deserialize(reader);
+      let __f2: any;
+      __f2 = reader.readU16();
+      return { headers: __f0, version: __f1, code: __f2 };
+    }
+  );
 export type HttpResponse = __Infer<typeof HttpResponse>;
 
 // The tagged union or sum type for the algebraic type `HttpVersion`.
-export const HttpVersion = __t.enum('HttpVersion', {
-  Http09: __t.unit(),
-  Http10: __t.unit(),
-  Http11: __t.unit(),
-  Http2: __t.unit(),
-  Http3: __t.unit(),
-});
+export const HttpVersion = __t
+  .enum('HttpVersion', {
+    Http09: __t.unit(),
+    Http10: __t.unit(),
+    Http11: __t.unit(),
+    Http2: __t.unit(),
+    Http3: __t.unit(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      switch (value.tag) {
+        case 'Http09': {
+          writer.writeByte(0);
+          break;
+        }
+        case 'Http10': {
+          writer.writeByte(1);
+          break;
+        }
+        case 'Http11': {
+          writer.writeByte(2);
+          break;
+        }
+        case 'Http2': {
+          writer.writeByte(3);
+          break;
+        }
+        case 'Http3': {
+          writer.writeByte(4);
+          break;
+        }
+        default: {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+      }
+    },
+    (reader): any => {
+      switch (reader.readByte()) {
+        case 0: {
+          return { tag: 'Http09', value: {} };
+        }
+        case 1: {
+          return { tag: 'Http10', value: {} };
+        }
+        case 2: {
+          return { tag: 'Http11', value: {} };
+        }
+        case 3: {
+          return { tag: 'Http2', value: {} };
+        }
+        case 4: {
+          return { tag: 'Http3', value: {} };
+        }
+        default: {
+          return undefined;
+        }
+      }
+    }
+  );
 export type HttpVersion = __Infer<typeof HttpVersion>;
 
 // The tagged union or sum type for the algebraic type `IndexType`.
-export const IndexType = __t.enum('IndexType', {
-  BTree: __t.unit(),
-  Hash: __t.unit(),
-});
+export const IndexType = __t
+  .enum('IndexType', {
+    BTree: __t.unit(),
+    Hash: __t.unit(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      switch (value.tag) {
+        case 'BTree': {
+          writer.writeByte(0);
+          break;
+        }
+        case 'Hash': {
+          writer.writeByte(1);
+          break;
+        }
+        default: {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+      }
+    },
+    (reader): any => {
+      switch (reader.readByte()) {
+        case 0: {
+          return { tag: 'BTree', value: {} };
+        }
+        case 1: {
+          return { tag: 'Hash', value: {} };
+        }
+        default: {
+          return undefined;
+        }
+      }
+    }
+  );
 export type IndexType = __Infer<typeof IndexType>;
 
 // The tagged union or sum type for the algebraic type `Lifecycle`.
-export const Lifecycle = __t.enum('Lifecycle', {
-  Init: __t.unit(),
-  OnConnect: __t.unit(),
-  OnDisconnect: __t.unit(),
-});
+export const Lifecycle = __t
+  .enum('Lifecycle', {
+    Init: __t.unit(),
+    OnConnect: __t.unit(),
+    OnDisconnect: __t.unit(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      switch (value.tag) {
+        case 'Init': {
+          writer.writeByte(0);
+          break;
+        }
+        case 'OnConnect': {
+          writer.writeByte(1);
+          break;
+        }
+        case 'OnDisconnect': {
+          writer.writeByte(2);
+          break;
+        }
+        default: {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+      }
+    },
+    (reader): any => {
+      switch (reader.readByte()) {
+        case 0: {
+          return { tag: 'Init', value: {} };
+        }
+        case 1: {
+          return { tag: 'OnConnect', value: {} };
+        }
+        case 2: {
+          return { tag: 'OnDisconnect', value: {} };
+        }
+        default: {
+          return undefined;
+        }
+      }
+    }
+  );
 export type Lifecycle = __Infer<typeof Lifecycle>;
 
 // The tagged union or sum type for the algebraic type `MiscModuleExport`.
-export const MiscModuleExport = __t.enum('MiscModuleExport', {
-  get TypeAlias() {
-    return TypeAlias;
-  },
-});
+export const MiscModuleExport = __t
+  .enum('MiscModuleExport', {
+    get TypeAlias() {
+      return TypeAlias;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      switch (value.tag) {
+        case 'TypeAlias': {
+          writer.writeByte(0);
+          TypeAlias.serialize(writer, value.value);
+          break;
+        }
+        default: {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+      }
+    },
+    (reader): any => {
+      switch (reader.readByte()) {
+        case 0: {
+          let __v: any;
+          __v = TypeAlias.deserialize(reader);
+          return { tag: 'TypeAlias', value: __v };
+        }
+        default: {
+          return undefined;
+        }
+      }
+    }
+  );
 export type MiscModuleExport = __Infer<typeof MiscModuleExport>;
 
-export const NameMapping = __t.object('NameMapping', {
-  sourceName: __t.string(),
-  canonicalName: __t.string(),
-});
+export const NameMapping = __t
+  .object('NameMapping', {
+    sourceName: __t.string(),
+    canonicalName: __t.string(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeString(value.sourceName);
+      writer.writeString(value.canonicalName);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readString();
+      let __f1: any;
+      __f1 = reader.readString();
+      return { sourceName: __f0, canonicalName: __f1 };
+    }
+  );
 export type NameMapping = __Infer<typeof NameMapping>;
 
-export const ProductType = __t.object('ProductType', {
-  get elements() {
-    return __t.array(ProductTypeElement);
-  },
-});
+export const ProductType = __t
+  .object('ProductType', {
+    get elements() {
+      return __t.array(ProductTypeElement);
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeU32(value.elements.length);
+      for (const __e0 of value.elements) {
+        ProductTypeElement.serialize(writer, __e0);
+      }
+    },
+    (reader): any => {
+      let __f0: any;
+      {
+        const __len0 = reader.readU32();
+        const __arr0: any[] = new Array(__len0);
+        for (let __i0 = 0; __i0 < __len0; __i0++) {
+          __arr0[__i0] = ProductTypeElement.deserialize(reader);
+        }
+        __f0 = __arr0;
+      }
+      return { elements: __f0 };
+    }
+  );
 export type ProductType = __Infer<typeof ProductType>;
 
-export const ProductTypeElement = __t.object('ProductTypeElement', {
-  name: __t.option(__t.string()),
-  get algebraicType() {
-    return AlgebraicType;
-  },
-});
+export const ProductTypeElement = __t
+  .object('ProductTypeElement', {
+    name: __t.option(__t.string()),
+    get algebraicType() {
+      return AlgebraicType;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      if (value.name === undefined || value.name === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        writer.writeString(value.name);
+      }
+      AlgebraicType.serialize(writer, value.algebraicType);
+    },
+    (reader): any => {
+      let __f0: any;
+      if (reader.readByte() === 0) {
+        __f0 = reader.readString();
+      } else {
+        __f0 = undefined;
+      }
+      let __f1: any;
+      __f1 = AlgebraicType.deserialize(reader);
+      return { name: __f0, algebraicType: __f1 };
+    }
+  );
 export type ProductTypeElement = __Infer<typeof ProductTypeElement>;
 
-export const RawColumnDefV8 = __t.object('RawColumnDefV8', {
-  colName: __t.string(),
-  get colType() {
-    return AlgebraicType;
-  },
-});
+export const RawColumnDefV8 = __t
+  .object('RawColumnDefV8', {
+    colName: __t.string(),
+    get colType() {
+      return AlgebraicType;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeString(value.colName);
+      AlgebraicType.serialize(writer, value.colType);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readString();
+      let __f1: any;
+      __f1 = AlgebraicType.deserialize(reader);
+      return { colName: __f0, colType: __f1 };
+    }
+  );
 export type RawColumnDefV8 = __Infer<typeof RawColumnDefV8>;
 
-export const RawColumnDefaultValueV10 = __t.object('RawColumnDefaultValueV10', {
-  colId: __t.u16(),
-  value: __t.byteArray(),
-});
+export const RawColumnDefaultValueV10 = __t
+  .object('RawColumnDefaultValueV10', {
+    colId: __t.u16(),
+    value: __t.byteArray(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeU16(value.colId);
+      writer.writeUInt8Array(value.value);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readU16();
+      let __f1: any;
+      __f1 = reader.readUInt8Array();
+      return { colId: __f0, value: __f1 };
+    }
+  );
 export type RawColumnDefaultValueV10 = __Infer<typeof RawColumnDefaultValueV10>;
 
-export const RawColumnDefaultValueV9 = __t.object('RawColumnDefaultValueV9', {
-  table: __t.string(),
-  colId: __t.u16(),
-  value: __t.byteArray(),
-});
+export const RawColumnDefaultValueV9 = __t
+  .object('RawColumnDefaultValueV9', {
+    table: __t.string(),
+    colId: __t.u16(),
+    value: __t.byteArray(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeString(value.table);
+      writer.writeU16(value.colId);
+      writer.writeUInt8Array(value.value);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readString();
+      let __f1: any;
+      __f1 = reader.readU16();
+      let __f2: any;
+      __f2 = reader.readUInt8Array();
+      return { table: __f0, colId: __f1, value: __f2 };
+    }
+  );
 export type RawColumnDefaultValueV9 = __Infer<typeof RawColumnDefaultValueV9>;
 
 // The tagged union or sum type for the algebraic type `RawConstraintDataV9`.
-export const RawConstraintDataV9 = __t.enum('RawConstraintDataV9', {
-  get Unique() {
-    return RawUniqueConstraintDataV9;
-  },
-});
+export const RawConstraintDataV9 = __t
+  .enum('RawConstraintDataV9', {
+    get Unique() {
+      return RawUniqueConstraintDataV9;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      switch (value.tag) {
+        case 'Unique': {
+          writer.writeByte(0);
+          RawUniqueConstraintDataV9.serialize(writer, value.value);
+          break;
+        }
+        default: {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+      }
+    },
+    (reader): any => {
+      switch (reader.readByte()) {
+        case 0: {
+          let __v: any;
+          __v = RawUniqueConstraintDataV9.deserialize(reader);
+          return { tag: 'Unique', value: __v };
+        }
+        default: {
+          return undefined;
+        }
+      }
+    }
+  );
 export type RawConstraintDataV9 = __Infer<typeof RawConstraintDataV9>;
 
-export const RawConstraintDefV10 = __t.object('RawConstraintDefV10', {
-  sourceName: __t.option(__t.string()),
-  get data() {
-    return RawConstraintDataV9;
-  },
-});
+export const RawConstraintDefV10 = __t
+  .object('RawConstraintDefV10', {
+    sourceName: __t.option(__t.string()),
+    get data() {
+      return RawConstraintDataV9;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      if (value.sourceName === undefined || value.sourceName === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        writer.writeString(value.sourceName);
+      }
+      RawConstraintDataV9.serialize(writer, value.data);
+    },
+    (reader): any => {
+      let __f0: any;
+      if (reader.readByte() === 0) {
+        __f0 = reader.readString();
+      } else {
+        __f0 = undefined;
+      }
+      let __f1: any;
+      __f1 = RawConstraintDataV9.deserialize(reader);
+      return { sourceName: __f0, data: __f1 };
+    }
+  );
 export type RawConstraintDefV10 = __Infer<typeof RawConstraintDefV10>;
 
-export const RawConstraintDefV8 = __t.object('RawConstraintDefV8', {
-  constraintName: __t.string(),
-  constraints: __t.u8(),
-  columns: __t.array(__t.u16()),
-});
+export const RawConstraintDefV8 = __t
+  .object('RawConstraintDefV8', {
+    constraintName: __t.string(),
+    constraints: __t.u8(),
+    columns: __t.array(__t.u16()),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeString(value.constraintName);
+      writer.writeU8(value.constraints);
+      writer.writeU32(value.columns.length);
+      for (const __e0 of value.columns) {
+        writer.writeU16(__e0);
+      }
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readString();
+      let __f1: any;
+      __f1 = reader.readU8();
+      let __f2: any;
+      {
+        const __len0 = reader.readU32();
+        const __arr0: any[] = new Array(__len0);
+        for (let __i0 = 0; __i0 < __len0; __i0++) {
+          __arr0[__i0] = reader.readU16();
+        }
+        __f2 = __arr0;
+      }
+      return { constraintName: __f0, constraints: __f1, columns: __f2 };
+    }
+  );
 export type RawConstraintDefV8 = __Infer<typeof RawConstraintDefV8>;
 
-export const RawConstraintDefV9 = __t.object('RawConstraintDefV9', {
-  name: __t.option(__t.string()),
-  get data() {
-    return RawConstraintDataV9;
-  },
-});
+export const RawConstraintDefV9 = __t
+  .object('RawConstraintDefV9', {
+    name: __t.option(__t.string()),
+    get data() {
+      return RawConstraintDataV9;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      if (value.name === undefined || value.name === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        writer.writeString(value.name);
+      }
+      RawConstraintDataV9.serialize(writer, value.data);
+    },
+    (reader): any => {
+      let __f0: any;
+      if (reader.readByte() === 0) {
+        __f0 = reader.readString();
+      } else {
+        __f0 = undefined;
+      }
+      let __f1: any;
+      __f1 = RawConstraintDataV9.deserialize(reader);
+      return { name: __f0, data: __f1 };
+    }
+  );
 export type RawConstraintDefV9 = __Infer<typeof RawConstraintDefV9>;
 
 // The tagged union or sum type for the algebraic type `RawIndexAlgorithm`.
-export const RawIndexAlgorithm = __t.enum('RawIndexAlgorithm', {
-  BTree: __t.array(__t.u16()),
-  Hash: __t.array(__t.u16()),
-  Direct: __t.u16(),
-});
+export const RawIndexAlgorithm = __t
+  .enum('RawIndexAlgorithm', {
+    BTree: __t.array(__t.u16()),
+    Hash: __t.array(__t.u16()),
+    Direct: __t.u16(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      switch (value.tag) {
+        case 'BTree': {
+          writer.writeByte(0);
+          writer.writeU32(value.value.length);
+          for (const __e0 of value.value) {
+            writer.writeU16(__e0);
+          }
+          break;
+        }
+        case 'Hash': {
+          writer.writeByte(1);
+          writer.writeU32(value.value.length);
+          for (const __e1 of value.value) {
+            writer.writeU16(__e1);
+          }
+          break;
+        }
+        case 'Direct': {
+          writer.writeByte(2);
+          writer.writeU16(value.value);
+          break;
+        }
+        default: {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+      }
+    },
+    (reader): any => {
+      switch (reader.readByte()) {
+        case 0: {
+          let __v: any;
+          {
+            const __len0 = reader.readU32();
+            const __arr0: any[] = new Array(__len0);
+            for (let __i0 = 0; __i0 < __len0; __i0++) {
+              __arr0[__i0] = reader.readU16();
+            }
+            __v = __arr0;
+          }
+          return { tag: 'BTree', value: __v };
+        }
+        case 1: {
+          let __v: any;
+          {
+            const __len1 = reader.readU32();
+            const __arr1: any[] = new Array(__len1);
+            for (let __i1 = 0; __i1 < __len1; __i1++) {
+              __arr1[__i1] = reader.readU16();
+            }
+            __v = __arr1;
+          }
+          return { tag: 'Hash', value: __v };
+        }
+        case 2: {
+          let __v: any;
+          __v = reader.readU16();
+          return { tag: 'Direct', value: __v };
+        }
+        default: {
+          return undefined;
+        }
+      }
+    }
+  );
 export type RawIndexAlgorithm = __Infer<typeof RawIndexAlgorithm>;
 
-export const RawIndexDefV10 = __t.object('RawIndexDefV10', {
-  sourceName: __t.option(__t.string()),
-  accessorName: __t.option(__t.string()),
-  get algorithm() {
-    return RawIndexAlgorithm;
-  },
-});
+export const RawIndexDefV10 = __t
+  .object('RawIndexDefV10', {
+    sourceName: __t.option(__t.string()),
+    accessorName: __t.option(__t.string()),
+    get algorithm() {
+      return RawIndexAlgorithm;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      if (value.sourceName === undefined || value.sourceName === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        writer.writeString(value.sourceName);
+      }
+      if (value.accessorName === undefined || value.accessorName === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        writer.writeString(value.accessorName);
+      }
+      RawIndexAlgorithm.serialize(writer, value.algorithm);
+    },
+    (reader): any => {
+      let __f0: any;
+      if (reader.readByte() === 0) {
+        __f0 = reader.readString();
+      } else {
+        __f0 = undefined;
+      }
+      let __f1: any;
+      if (reader.readByte() === 0) {
+        __f1 = reader.readString();
+      } else {
+        __f1 = undefined;
+      }
+      let __f2: any;
+      __f2 = RawIndexAlgorithm.deserialize(reader);
+      return { sourceName: __f0, accessorName: __f1, algorithm: __f2 };
+    }
+  );
 export type RawIndexDefV10 = __Infer<typeof RawIndexDefV10>;
 
-export const RawIndexDefV8 = __t.object('RawIndexDefV8', {
-  indexName: __t.string(),
-  isUnique: __t.bool(),
-  get indexType() {
-    return IndexType;
-  },
-  columns: __t.array(__t.u16()),
-});
+export const RawIndexDefV8 = __t
+  .object('RawIndexDefV8', {
+    indexName: __t.string(),
+    isUnique: __t.bool(),
+    get indexType() {
+      return IndexType;
+    },
+    columns: __t.array(__t.u16()),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeString(value.indexName);
+      writer.writeBool(value.isUnique);
+      IndexType.serialize(writer, value.indexType);
+      writer.writeU32(value.columns.length);
+      for (const __e0 of value.columns) {
+        writer.writeU16(__e0);
+      }
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readString();
+      let __f1: any;
+      __f1 = reader.readBool();
+      let __f2: any;
+      __f2 = IndexType.deserialize(reader);
+      let __f3: any;
+      {
+        const __len0 = reader.readU32();
+        const __arr0: any[] = new Array(__len0);
+        for (let __i0 = 0; __i0 < __len0; __i0++) {
+          __arr0[__i0] = reader.readU16();
+        }
+        __f3 = __arr0;
+      }
+      return {
+        indexName: __f0,
+        isUnique: __f1,
+        indexType: __f2,
+        columns: __f3,
+      };
+    }
+  );
 export type RawIndexDefV8 = __Infer<typeof RawIndexDefV8>;
 
-export const RawIndexDefV9 = __t.object('RawIndexDefV9', {
-  name: __t.option(__t.string()),
-  accessorName: __t.option(__t.string()),
-  get algorithm() {
-    return RawIndexAlgorithm;
-  },
-});
+export const RawIndexDefV9 = __t
+  .object('RawIndexDefV9', {
+    name: __t.option(__t.string()),
+    accessorName: __t.option(__t.string()),
+    get algorithm() {
+      return RawIndexAlgorithm;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      if (value.name === undefined || value.name === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        writer.writeString(value.name);
+      }
+      if (value.accessorName === undefined || value.accessorName === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        writer.writeString(value.accessorName);
+      }
+      RawIndexAlgorithm.serialize(writer, value.algorithm);
+    },
+    (reader): any => {
+      let __f0: any;
+      if (reader.readByte() === 0) {
+        __f0 = reader.readString();
+      } else {
+        __f0 = undefined;
+      }
+      let __f1: any;
+      if (reader.readByte() === 0) {
+        __f1 = reader.readString();
+      } else {
+        __f1 = undefined;
+      }
+      let __f2: any;
+      __f2 = RawIndexAlgorithm.deserialize(reader);
+      return { name: __f0, accessorName: __f1, algorithm: __f2 };
+    }
+  );
 export type RawIndexDefV9 = __Infer<typeof RawIndexDefV9>;
 
-export const RawLifeCycleReducerDefV10 = __t.object(
-  'RawLifeCycleReducerDefV10',
-  {
+export const RawLifeCycleReducerDefV10 = __t
+  .object('RawLifeCycleReducerDefV10', {
     get lifecycleSpec() {
       return Lifecycle;
     },
     functionName: __t.string(),
-  }
-);
+  })
+  .withSerde(
+    (writer, value: any) => {
+      Lifecycle.serialize(writer, value.lifecycleSpec);
+      writer.writeString(value.functionName);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = Lifecycle.deserialize(reader);
+      let __f1: any;
+      __f1 = reader.readString();
+      return { lifecycleSpec: __f0, functionName: __f1 };
+    }
+  );
 export type RawLifeCycleReducerDefV10 = __Infer<
   typeof RawLifeCycleReducerDefV10
 >;
 
 // The tagged union or sum type for the algebraic type `RawMiscModuleExportV9`.
-export const RawMiscModuleExportV9 = __t.enum('RawMiscModuleExportV9', {
-  get ColumnDefaultValue() {
-    return RawColumnDefaultValueV9;
-  },
-  get Procedure() {
-    return RawProcedureDefV9;
-  },
-  get View() {
-    return RawViewDefV9;
-  },
-});
+export const RawMiscModuleExportV9 = __t
+  .enum('RawMiscModuleExportV9', {
+    get ColumnDefaultValue() {
+      return RawColumnDefaultValueV9;
+    },
+    get Procedure() {
+      return RawProcedureDefV9;
+    },
+    get View() {
+      return RawViewDefV9;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      switch (value.tag) {
+        case 'ColumnDefaultValue': {
+          writer.writeByte(0);
+          RawColumnDefaultValueV9.serialize(writer, value.value);
+          break;
+        }
+        case 'Procedure': {
+          writer.writeByte(1);
+          RawProcedureDefV9.serialize(writer, value.value);
+          break;
+        }
+        case 'View': {
+          writer.writeByte(2);
+          RawViewDefV9.serialize(writer, value.value);
+          break;
+        }
+        default: {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+      }
+    },
+    (reader): any => {
+      switch (reader.readByte()) {
+        case 0: {
+          let __v: any;
+          __v = RawColumnDefaultValueV9.deserialize(reader);
+          return { tag: 'ColumnDefaultValue', value: __v };
+        }
+        case 1: {
+          let __v: any;
+          __v = RawProcedureDefV9.deserialize(reader);
+          return { tag: 'Procedure', value: __v };
+        }
+        case 2: {
+          let __v: any;
+          __v = RawViewDefV9.deserialize(reader);
+          return { tag: 'View', value: __v };
+        }
+        default: {
+          return undefined;
+        }
+      }
+    }
+  );
 export type RawMiscModuleExportV9 = __Infer<typeof RawMiscModuleExportV9>;
 
 // The tagged union or sum type for the algebraic type `RawModuleDef`.
-export const RawModuleDef = __t.enum('RawModuleDef', {
-  get V8BackCompat() {
-    return RawModuleDefV8;
-  },
-  get V9() {
-    return RawModuleDefV9;
-  },
-  get V10() {
-    return RawModuleDefV10;
-  },
-});
+export const RawModuleDef = __t
+  .enum('RawModuleDef', {
+    get V8BackCompat() {
+      return RawModuleDefV8;
+    },
+    get V9() {
+      return RawModuleDefV9;
+    },
+    get V10() {
+      return RawModuleDefV10;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      switch (value.tag) {
+        case 'V8BackCompat': {
+          writer.writeByte(0);
+          RawModuleDefV8.serialize(writer, value.value);
+          break;
+        }
+        case 'V9': {
+          writer.writeByte(1);
+          RawModuleDefV9.serialize(writer, value.value);
+          break;
+        }
+        case 'V10': {
+          writer.writeByte(2);
+          RawModuleDefV10.serialize(writer, value.value);
+          break;
+        }
+        default: {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+      }
+    },
+    (reader): any => {
+      switch (reader.readByte()) {
+        case 0: {
+          let __v: any;
+          __v = RawModuleDefV8.deserialize(reader);
+          return { tag: 'V8BackCompat', value: __v };
+        }
+        case 1: {
+          let __v: any;
+          __v = RawModuleDefV9.deserialize(reader);
+          return { tag: 'V9', value: __v };
+        }
+        case 2: {
+          let __v: any;
+          __v = RawModuleDefV10.deserialize(reader);
+          return { tag: 'V10', value: __v };
+        }
+        default: {
+          return undefined;
+        }
+      }
+    }
+  );
 export type RawModuleDef = __Infer<typeof RawModuleDef>;
 
-export const RawModuleDefV10 = __t.object('RawModuleDefV10', {
-  get sections() {
-    return __t.array(RawModuleDefV10Section);
-  },
-});
+export const RawModuleDefV10 = __t
+  .object('RawModuleDefV10', {
+    get sections() {
+      return __t.array(RawModuleDefV10Section);
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeU32(value.sections.length);
+      for (const __e0 of value.sections) {
+        RawModuleDefV10Section.serialize(writer, __e0);
+      }
+    },
+    (reader): any => {
+      let __f0: any;
+      {
+        const __len0 = reader.readU32();
+        const __arr0: any[] = new Array(__len0);
+        for (let __i0 = 0; __i0 < __len0; __i0++) {
+          __arr0[__i0] = RawModuleDefV10Section.deserialize(reader);
+        }
+        __f0 = __arr0;
+      }
+      return { sections: __f0 };
+    }
+  );
 export type RawModuleDefV10 = __Infer<typeof RawModuleDefV10>;
 
 // The tagged union or sum type for the algebraic type `RawModuleDefV10Section`.
-export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
-  get Typespace() {
-    return Typespace;
-  },
-  get Types() {
-    return __t.array(RawTypeDefV10);
-  },
-  get Tables() {
-    return __t.array(RawTableDefV10);
-  },
-  get Reducers() {
-    return __t.array(RawReducerDefV10);
-  },
-  get Procedures() {
-    return __t.array(RawProcedureDefV10);
-  },
-  get Views() {
-    return __t.array(RawViewDefV10);
-  },
-  get Schedules() {
-    return __t.array(RawScheduleDefV10);
-  },
-  get LifeCycleReducers() {
-    return __t.array(RawLifeCycleReducerDefV10);
-  },
-  get RowLevelSecurity() {
-    return __t.array(RawRowLevelSecurityDefV9);
-  },
-  get CaseConversionPolicy() {
-    return CaseConversionPolicy;
-  },
-  get ExplicitNames() {
-    return ExplicitNames;
-  },
-});
+export const RawModuleDefV10Section = __t
+  .enum('RawModuleDefV10Section', {
+    get Typespace() {
+      return Typespace;
+    },
+    get Types() {
+      return __t.array(RawTypeDefV10);
+    },
+    get Tables() {
+      return __t.array(RawTableDefV10);
+    },
+    get Reducers() {
+      return __t.array(RawReducerDefV10);
+    },
+    get Procedures() {
+      return __t.array(RawProcedureDefV10);
+    },
+    get Views() {
+      return __t.array(RawViewDefV10);
+    },
+    get Schedules() {
+      return __t.array(RawScheduleDefV10);
+    },
+    get LifeCycleReducers() {
+      return __t.array(RawLifeCycleReducerDefV10);
+    },
+    get RowLevelSecurity() {
+      return __t.array(RawRowLevelSecurityDefV9);
+    },
+    get CaseConversionPolicy() {
+      return CaseConversionPolicy;
+    },
+    get ExplicitNames() {
+      return ExplicitNames;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      switch (value.tag) {
+        case 'Typespace': {
+          writer.writeByte(0);
+          Typespace.serialize(writer, value.value);
+          break;
+        }
+        case 'Types': {
+          writer.writeByte(1);
+          writer.writeU32(value.value.length);
+          for (const __e0 of value.value) {
+            RawTypeDefV10.serialize(writer, __e0);
+          }
+          break;
+        }
+        case 'Tables': {
+          writer.writeByte(2);
+          writer.writeU32(value.value.length);
+          for (const __e1 of value.value) {
+            RawTableDefV10.serialize(writer, __e1);
+          }
+          break;
+        }
+        case 'Reducers': {
+          writer.writeByte(3);
+          writer.writeU32(value.value.length);
+          for (const __e2 of value.value) {
+            RawReducerDefV10.serialize(writer, __e2);
+          }
+          break;
+        }
+        case 'Procedures': {
+          writer.writeByte(4);
+          writer.writeU32(value.value.length);
+          for (const __e3 of value.value) {
+            RawProcedureDefV10.serialize(writer, __e3);
+          }
+          break;
+        }
+        case 'Views': {
+          writer.writeByte(5);
+          writer.writeU32(value.value.length);
+          for (const __e4 of value.value) {
+            RawViewDefV10.serialize(writer, __e4);
+          }
+          break;
+        }
+        case 'Schedules': {
+          writer.writeByte(6);
+          writer.writeU32(value.value.length);
+          for (const __e5 of value.value) {
+            RawScheduleDefV10.serialize(writer, __e5);
+          }
+          break;
+        }
+        case 'LifeCycleReducers': {
+          writer.writeByte(7);
+          writer.writeU32(value.value.length);
+          for (const __e6 of value.value) {
+            RawLifeCycleReducerDefV10.serialize(writer, __e6);
+          }
+          break;
+        }
+        case 'RowLevelSecurity': {
+          writer.writeByte(8);
+          writer.writeU32(value.value.length);
+          for (const __e7 of value.value) {
+            RawRowLevelSecurityDefV9.serialize(writer, __e7);
+          }
+          break;
+        }
+        case 'CaseConversionPolicy': {
+          writer.writeByte(9);
+          CaseConversionPolicy.serialize(writer, value.value);
+          break;
+        }
+        case 'ExplicitNames': {
+          writer.writeByte(10);
+          ExplicitNames.serialize(writer, value.value);
+          break;
+        }
+        default: {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+      }
+    },
+    (reader): any => {
+      switch (reader.readByte()) {
+        case 0: {
+          let __v: any;
+          __v = Typespace.deserialize(reader);
+          return { tag: 'Typespace', value: __v };
+        }
+        case 1: {
+          let __v: any;
+          {
+            const __len0 = reader.readU32();
+            const __arr0: any[] = new Array(__len0);
+            for (let __i0 = 0; __i0 < __len0; __i0++) {
+              __arr0[__i0] = RawTypeDefV10.deserialize(reader);
+            }
+            __v = __arr0;
+          }
+          return { tag: 'Types', value: __v };
+        }
+        case 2: {
+          let __v: any;
+          {
+            const __len1 = reader.readU32();
+            const __arr1: any[] = new Array(__len1);
+            for (let __i1 = 0; __i1 < __len1; __i1++) {
+              __arr1[__i1] = RawTableDefV10.deserialize(reader);
+            }
+            __v = __arr1;
+          }
+          return { tag: 'Tables', value: __v };
+        }
+        case 3: {
+          let __v: any;
+          {
+            const __len2 = reader.readU32();
+            const __arr2: any[] = new Array(__len2);
+            for (let __i2 = 0; __i2 < __len2; __i2++) {
+              __arr2[__i2] = RawReducerDefV10.deserialize(reader);
+            }
+            __v = __arr2;
+          }
+          return { tag: 'Reducers', value: __v };
+        }
+        case 4: {
+          let __v: any;
+          {
+            const __len3 = reader.readU32();
+            const __arr3: any[] = new Array(__len3);
+            for (let __i3 = 0; __i3 < __len3; __i3++) {
+              __arr3[__i3] = RawProcedureDefV10.deserialize(reader);
+            }
+            __v = __arr3;
+          }
+          return { tag: 'Procedures', value: __v };
+        }
+        case 5: {
+          let __v: any;
+          {
+            const __len4 = reader.readU32();
+            const __arr4: any[] = new Array(__len4);
+            for (let __i4 = 0; __i4 < __len4; __i4++) {
+              __arr4[__i4] = RawViewDefV10.deserialize(reader);
+            }
+            __v = __arr4;
+          }
+          return { tag: 'Views', value: __v };
+        }
+        case 6: {
+          let __v: any;
+          {
+            const __len5 = reader.readU32();
+            const __arr5: any[] = new Array(__len5);
+            for (let __i5 = 0; __i5 < __len5; __i5++) {
+              __arr5[__i5] = RawScheduleDefV10.deserialize(reader);
+            }
+            __v = __arr5;
+          }
+          return { tag: 'Schedules', value: __v };
+        }
+        case 7: {
+          let __v: any;
+          {
+            const __len6 = reader.readU32();
+            const __arr6: any[] = new Array(__len6);
+            for (let __i6 = 0; __i6 < __len6; __i6++) {
+              __arr6[__i6] = RawLifeCycleReducerDefV10.deserialize(reader);
+            }
+            __v = __arr6;
+          }
+          return { tag: 'LifeCycleReducers', value: __v };
+        }
+        case 8: {
+          let __v: any;
+          {
+            const __len7 = reader.readU32();
+            const __arr7: any[] = new Array(__len7);
+            for (let __i7 = 0; __i7 < __len7; __i7++) {
+              __arr7[__i7] = RawRowLevelSecurityDefV9.deserialize(reader);
+            }
+            __v = __arr7;
+          }
+          return { tag: 'RowLevelSecurity', value: __v };
+        }
+        case 9: {
+          let __v: any;
+          __v = CaseConversionPolicy.deserialize(reader);
+          return { tag: 'CaseConversionPolicy', value: __v };
+        }
+        case 10: {
+          let __v: any;
+          __v = ExplicitNames.deserialize(reader);
+          return { tag: 'ExplicitNames', value: __v };
+        }
+        default: {
+          return undefined;
+        }
+      }
+    }
+  );
 export type RawModuleDefV10Section = __Infer<typeof RawModuleDefV10Section>;
 
-export const RawModuleDefV8 = __t.object('RawModuleDefV8', {
-  get typespace() {
-    return Typespace;
-  },
-  get tables() {
-    return __t.array(TableDesc);
-  },
-  get reducers() {
-    return __t.array(ReducerDef);
-  },
-  get miscExports() {
-    return __t.array(MiscModuleExport);
-  },
-});
+export const RawModuleDefV8 = __t
+  .object('RawModuleDefV8', {
+    get typespace() {
+      return Typespace;
+    },
+    get tables() {
+      return __t.array(TableDesc);
+    },
+    get reducers() {
+      return __t.array(ReducerDef);
+    },
+    get miscExports() {
+      return __t.array(MiscModuleExport);
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      Typespace.serialize(writer, value.typespace);
+      writer.writeU32(value.tables.length);
+      for (const __e0 of value.tables) {
+        TableDesc.serialize(writer, __e0);
+      }
+      writer.writeU32(value.reducers.length);
+      for (const __e1 of value.reducers) {
+        ReducerDef.serialize(writer, __e1);
+      }
+      writer.writeU32(value.miscExports.length);
+      for (const __e2 of value.miscExports) {
+        MiscModuleExport.serialize(writer, __e2);
+      }
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = Typespace.deserialize(reader);
+      let __f1: any;
+      {
+        const __len0 = reader.readU32();
+        const __arr0: any[] = new Array(__len0);
+        for (let __i0 = 0; __i0 < __len0; __i0++) {
+          __arr0[__i0] = TableDesc.deserialize(reader);
+        }
+        __f1 = __arr0;
+      }
+      let __f2: any;
+      {
+        const __len1 = reader.readU32();
+        const __arr1: any[] = new Array(__len1);
+        for (let __i1 = 0; __i1 < __len1; __i1++) {
+          __arr1[__i1] = ReducerDef.deserialize(reader);
+        }
+        __f2 = __arr1;
+      }
+      let __f3: any;
+      {
+        const __len2 = reader.readU32();
+        const __arr2: any[] = new Array(__len2);
+        for (let __i2 = 0; __i2 < __len2; __i2++) {
+          __arr2[__i2] = MiscModuleExport.deserialize(reader);
+        }
+        __f3 = __arr2;
+      }
+      return {
+        typespace: __f0,
+        tables: __f1,
+        reducers: __f2,
+        miscExports: __f3,
+      };
+    }
+  );
 export type RawModuleDefV8 = __Infer<typeof RawModuleDefV8>;
 
-export const RawModuleDefV9 = __t.object('RawModuleDefV9', {
-  get typespace() {
-    return Typespace;
-  },
-  get tables() {
-    return __t.array(RawTableDefV9);
-  },
-  get reducers() {
-    return __t.array(RawReducerDefV9);
-  },
-  get types() {
-    return __t.array(RawTypeDefV9);
-  },
-  get miscExports() {
-    return __t.array(RawMiscModuleExportV9);
-  },
-  get rowLevelSecurity() {
-    return __t.array(RawRowLevelSecurityDefV9);
-  },
-});
+export const RawModuleDefV9 = __t
+  .object('RawModuleDefV9', {
+    get typespace() {
+      return Typespace;
+    },
+    get tables() {
+      return __t.array(RawTableDefV9);
+    },
+    get reducers() {
+      return __t.array(RawReducerDefV9);
+    },
+    get types() {
+      return __t.array(RawTypeDefV9);
+    },
+    get miscExports() {
+      return __t.array(RawMiscModuleExportV9);
+    },
+    get rowLevelSecurity() {
+      return __t.array(RawRowLevelSecurityDefV9);
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      Typespace.serialize(writer, value.typespace);
+      writer.writeU32(value.tables.length);
+      for (const __e0 of value.tables) {
+        RawTableDefV9.serialize(writer, __e0);
+      }
+      writer.writeU32(value.reducers.length);
+      for (const __e1 of value.reducers) {
+        RawReducerDefV9.serialize(writer, __e1);
+      }
+      writer.writeU32(value.types.length);
+      for (const __e2 of value.types) {
+        RawTypeDefV9.serialize(writer, __e2);
+      }
+      writer.writeU32(value.miscExports.length);
+      for (const __e3 of value.miscExports) {
+        RawMiscModuleExportV9.serialize(writer, __e3);
+      }
+      writer.writeU32(value.rowLevelSecurity.length);
+      for (const __e4 of value.rowLevelSecurity) {
+        RawRowLevelSecurityDefV9.serialize(writer, __e4);
+      }
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = Typespace.deserialize(reader);
+      let __f1: any;
+      {
+        const __len0 = reader.readU32();
+        const __arr0: any[] = new Array(__len0);
+        for (let __i0 = 0; __i0 < __len0; __i0++) {
+          __arr0[__i0] = RawTableDefV9.deserialize(reader);
+        }
+        __f1 = __arr0;
+      }
+      let __f2: any;
+      {
+        const __len1 = reader.readU32();
+        const __arr1: any[] = new Array(__len1);
+        for (let __i1 = 0; __i1 < __len1; __i1++) {
+          __arr1[__i1] = RawReducerDefV9.deserialize(reader);
+        }
+        __f2 = __arr1;
+      }
+      let __f3: any;
+      {
+        const __len2 = reader.readU32();
+        const __arr2: any[] = new Array(__len2);
+        for (let __i2 = 0; __i2 < __len2; __i2++) {
+          __arr2[__i2] = RawTypeDefV9.deserialize(reader);
+        }
+        __f3 = __arr2;
+      }
+      let __f4: any;
+      {
+        const __len3 = reader.readU32();
+        const __arr3: any[] = new Array(__len3);
+        for (let __i3 = 0; __i3 < __len3; __i3++) {
+          __arr3[__i3] = RawMiscModuleExportV9.deserialize(reader);
+        }
+        __f4 = __arr3;
+      }
+      let __f5: any;
+      {
+        const __len4 = reader.readU32();
+        const __arr4: any[] = new Array(__len4);
+        for (let __i4 = 0; __i4 < __len4; __i4++) {
+          __arr4[__i4] = RawRowLevelSecurityDefV9.deserialize(reader);
+        }
+        __f5 = __arr4;
+      }
+      return {
+        typespace: __f0,
+        tables: __f1,
+        reducers: __f2,
+        types: __f3,
+        miscExports: __f4,
+        rowLevelSecurity: __f5,
+      };
+    }
+  );
 export type RawModuleDefV9 = __Infer<typeof RawModuleDefV9>;
 
-export const RawProcedureDefV10 = __t.object('RawProcedureDefV10', {
-  sourceName: __t.string(),
-  get params() {
-    return ProductType;
-  },
-  get returnType() {
-    return AlgebraicType;
-  },
-  get visibility() {
-    return FunctionVisibility;
-  },
-});
+export const RawProcedureDefV10 = __t
+  .object('RawProcedureDefV10', {
+    sourceName: __t.string(),
+    get params() {
+      return ProductType;
+    },
+    get returnType() {
+      return AlgebraicType;
+    },
+    get visibility() {
+      return FunctionVisibility;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeString(value.sourceName);
+      ProductType.serialize(writer, value.params);
+      AlgebraicType.serialize(writer, value.returnType);
+      FunctionVisibility.serialize(writer, value.visibility);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readString();
+      let __f1: any;
+      __f1 = ProductType.deserialize(reader);
+      let __f2: any;
+      __f2 = AlgebraicType.deserialize(reader);
+      let __f3: any;
+      __f3 = FunctionVisibility.deserialize(reader);
+      return {
+        sourceName: __f0,
+        params: __f1,
+        returnType: __f2,
+        visibility: __f3,
+      };
+    }
+  );
 export type RawProcedureDefV10 = __Infer<typeof RawProcedureDefV10>;
 
-export const RawProcedureDefV9 = __t.object('RawProcedureDefV9', {
-  name: __t.string(),
-  get params() {
-    return ProductType;
-  },
-  get returnType() {
-    return AlgebraicType;
-  },
-});
+export const RawProcedureDefV9 = __t
+  .object('RawProcedureDefV9', {
+    name: __t.string(),
+    get params() {
+      return ProductType;
+    },
+    get returnType() {
+      return AlgebraicType;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeString(value.name);
+      ProductType.serialize(writer, value.params);
+      AlgebraicType.serialize(writer, value.returnType);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readString();
+      let __f1: any;
+      __f1 = ProductType.deserialize(reader);
+      let __f2: any;
+      __f2 = AlgebraicType.deserialize(reader);
+      return { name: __f0, params: __f1, returnType: __f2 };
+    }
+  );
 export type RawProcedureDefV9 = __Infer<typeof RawProcedureDefV9>;
 
-export const RawReducerDefV10 = __t.object('RawReducerDefV10', {
-  sourceName: __t.string(),
-  get params() {
-    return ProductType;
-  },
-  get visibility() {
-    return FunctionVisibility;
-  },
-  get okReturnType() {
-    return AlgebraicType;
-  },
-  get errReturnType() {
-    return AlgebraicType;
-  },
-});
+export const RawReducerDefV10 = __t
+  .object('RawReducerDefV10', {
+    sourceName: __t.string(),
+    get params() {
+      return ProductType;
+    },
+    get visibility() {
+      return FunctionVisibility;
+    },
+    get okReturnType() {
+      return AlgebraicType;
+    },
+    get errReturnType() {
+      return AlgebraicType;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeString(value.sourceName);
+      ProductType.serialize(writer, value.params);
+      FunctionVisibility.serialize(writer, value.visibility);
+      AlgebraicType.serialize(writer, value.okReturnType);
+      AlgebraicType.serialize(writer, value.errReturnType);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readString();
+      let __f1: any;
+      __f1 = ProductType.deserialize(reader);
+      let __f2: any;
+      __f2 = FunctionVisibility.deserialize(reader);
+      let __f3: any;
+      __f3 = AlgebraicType.deserialize(reader);
+      let __f4: any;
+      __f4 = AlgebraicType.deserialize(reader);
+      return {
+        sourceName: __f0,
+        params: __f1,
+        visibility: __f2,
+        okReturnType: __f3,
+        errReturnType: __f4,
+      };
+    }
+  );
 export type RawReducerDefV10 = __Infer<typeof RawReducerDefV10>;
 
-export const RawReducerDefV9 = __t.object('RawReducerDefV9', {
-  name: __t.string(),
-  get params() {
-    return ProductType;
-  },
-  get lifecycle() {
-    return __t.option(Lifecycle);
-  },
-});
+export const RawReducerDefV9 = __t
+  .object('RawReducerDefV9', {
+    name: __t.string(),
+    get params() {
+      return ProductType;
+    },
+    get lifecycle() {
+      return __t.option(Lifecycle);
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeString(value.name);
+      ProductType.serialize(writer, value.params);
+      if (value.lifecycle === undefined || value.lifecycle === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        Lifecycle.serialize(writer, value.lifecycle);
+      }
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readString();
+      let __f1: any;
+      __f1 = ProductType.deserialize(reader);
+      let __f2: any;
+      if (reader.readByte() === 0) {
+        __f2 = Lifecycle.deserialize(reader);
+      } else {
+        __f2 = undefined;
+      }
+      return { name: __f0, params: __f1, lifecycle: __f2 };
+    }
+  );
 export type RawReducerDefV9 = __Infer<typeof RawReducerDefV9>;
 
-export const RawRowLevelSecurityDefV9 = __t.object('RawRowLevelSecurityDefV9', {
-  sql: __t.string(),
-});
+export const RawRowLevelSecurityDefV9 = __t
+  .object('RawRowLevelSecurityDefV9', {
+    sql: __t.string(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeString(value.sql);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readString();
+      return { sql: __f0 };
+    }
+  );
 export type RawRowLevelSecurityDefV9 = __Infer<typeof RawRowLevelSecurityDefV9>;
 
-export const RawScheduleDefV10 = __t.object('RawScheduleDefV10', {
-  sourceName: __t.option(__t.string()),
-  tableName: __t.string(),
-  scheduleAtCol: __t.u16(),
-  functionName: __t.string(),
-});
+export const RawScheduleDefV10 = __t
+  .object('RawScheduleDefV10', {
+    sourceName: __t.option(__t.string()),
+    tableName: __t.string(),
+    scheduleAtCol: __t.u16(),
+    functionName: __t.string(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      if (value.sourceName === undefined || value.sourceName === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        writer.writeString(value.sourceName);
+      }
+      writer.writeString(value.tableName);
+      writer.writeU16(value.scheduleAtCol);
+      writer.writeString(value.functionName);
+    },
+    (reader): any => {
+      let __f0: any;
+      if (reader.readByte() === 0) {
+        __f0 = reader.readString();
+      } else {
+        __f0 = undefined;
+      }
+      let __f1: any;
+      __f1 = reader.readString();
+      let __f2: any;
+      __f2 = reader.readU16();
+      let __f3: any;
+      __f3 = reader.readString();
+      return {
+        sourceName: __f0,
+        tableName: __f1,
+        scheduleAtCol: __f2,
+        functionName: __f3,
+      };
+    }
+  );
 export type RawScheduleDefV10 = __Infer<typeof RawScheduleDefV10>;
 
-export const RawScheduleDefV9 = __t.object('RawScheduleDefV9', {
-  name: __t.option(__t.string()),
-  reducerName: __t.string(),
-  scheduledAtColumn: __t.u16(),
-});
+export const RawScheduleDefV9 = __t
+  .object('RawScheduleDefV9', {
+    name: __t.option(__t.string()),
+    reducerName: __t.string(),
+    scheduledAtColumn: __t.u16(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      if (value.name === undefined || value.name === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        writer.writeString(value.name);
+      }
+      writer.writeString(value.reducerName);
+      writer.writeU16(value.scheduledAtColumn);
+    },
+    (reader): any => {
+      let __f0: any;
+      if (reader.readByte() === 0) {
+        __f0 = reader.readString();
+      } else {
+        __f0 = undefined;
+      }
+      let __f1: any;
+      __f1 = reader.readString();
+      let __f2: any;
+      __f2 = reader.readU16();
+      return { name: __f0, reducerName: __f1, scheduledAtColumn: __f2 };
+    }
+  );
 export type RawScheduleDefV9 = __Infer<typeof RawScheduleDefV9>;
 
-export const RawScopedTypeNameV10 = __t.object('RawScopedTypeNameV10', {
-  scope: __t.array(__t.string()),
-  sourceName: __t.string(),
-});
+export const RawScopedTypeNameV10 = __t
+  .object('RawScopedTypeNameV10', {
+    scope: __t.array(__t.string()),
+    sourceName: __t.string(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeU32(value.scope.length);
+      for (const __e0 of value.scope) {
+        writer.writeString(__e0);
+      }
+      writer.writeString(value.sourceName);
+    },
+    (reader): any => {
+      let __f0: any;
+      {
+        const __len0 = reader.readU32();
+        const __arr0: any[] = new Array(__len0);
+        for (let __i0 = 0; __i0 < __len0; __i0++) {
+          __arr0[__i0] = reader.readString();
+        }
+        __f0 = __arr0;
+      }
+      let __f1: any;
+      __f1 = reader.readString();
+      return { scope: __f0, sourceName: __f1 };
+    }
+  );
 export type RawScopedTypeNameV10 = __Infer<typeof RawScopedTypeNameV10>;
 
-export const RawScopedTypeNameV9 = __t.object('RawScopedTypeNameV9', {
-  scope: __t.array(__t.string()),
-  name: __t.string(),
-});
+export const RawScopedTypeNameV9 = __t
+  .object('RawScopedTypeNameV9', {
+    scope: __t.array(__t.string()),
+    name: __t.string(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeU32(value.scope.length);
+      for (const __e0 of value.scope) {
+        writer.writeString(__e0);
+      }
+      writer.writeString(value.name);
+    },
+    (reader): any => {
+      let __f0: any;
+      {
+        const __len0 = reader.readU32();
+        const __arr0: any[] = new Array(__len0);
+        for (let __i0 = 0; __i0 < __len0; __i0++) {
+          __arr0[__i0] = reader.readString();
+        }
+        __f0 = __arr0;
+      }
+      let __f1: any;
+      __f1 = reader.readString();
+      return { scope: __f0, name: __f1 };
+    }
+  );
 export type RawScopedTypeNameV9 = __Infer<typeof RawScopedTypeNameV9>;
 
-export const RawSequenceDefV10 = __t.object('RawSequenceDefV10', {
-  sourceName: __t.option(__t.string()),
-  column: __t.u16(),
-  start: __t.option(__t.i128()),
-  minValue: __t.option(__t.i128()),
-  maxValue: __t.option(__t.i128()),
-  increment: __t.i128(),
-});
+export const RawSequenceDefV10 = __t
+  .object('RawSequenceDefV10', {
+    sourceName: __t.option(__t.string()),
+    column: __t.u16(),
+    start: __t.option(__t.i128()),
+    minValue: __t.option(__t.i128()),
+    maxValue: __t.option(__t.i128()),
+    increment: __t.i128(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      if (value.sourceName === undefined || value.sourceName === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        writer.writeString(value.sourceName);
+      }
+      writer.writeU16(value.column);
+      if (value.start === undefined || value.start === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        writer.writeI128(value.start);
+      }
+      if (value.minValue === undefined || value.minValue === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        writer.writeI128(value.minValue);
+      }
+      if (value.maxValue === undefined || value.maxValue === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        writer.writeI128(value.maxValue);
+      }
+      writer.writeI128(value.increment);
+    },
+    (reader): any => {
+      let __f0: any;
+      if (reader.readByte() === 0) {
+        __f0 = reader.readString();
+      } else {
+        __f0 = undefined;
+      }
+      let __f1: any;
+      __f1 = reader.readU16();
+      let __f2: any;
+      if (reader.readByte() === 0) {
+        __f2 = reader.readI128();
+      } else {
+        __f2 = undefined;
+      }
+      let __f3: any;
+      if (reader.readByte() === 0) {
+        __f3 = reader.readI128();
+      } else {
+        __f3 = undefined;
+      }
+      let __f4: any;
+      if (reader.readByte() === 0) {
+        __f4 = reader.readI128();
+      } else {
+        __f4 = undefined;
+      }
+      let __f5: any;
+      __f5 = reader.readI128();
+      return {
+        sourceName: __f0,
+        column: __f1,
+        start: __f2,
+        minValue: __f3,
+        maxValue: __f4,
+        increment: __f5,
+      };
+    }
+  );
 export type RawSequenceDefV10 = __Infer<typeof RawSequenceDefV10>;
 
-export const RawSequenceDefV8 = __t.object('RawSequenceDefV8', {
-  sequenceName: __t.string(),
-  colPos: __t.u16(),
-  increment: __t.i128(),
-  start: __t.option(__t.i128()),
-  minValue: __t.option(__t.i128()),
-  maxValue: __t.option(__t.i128()),
-  allocated: __t.i128(),
-});
+export const RawSequenceDefV8 = __t
+  .object('RawSequenceDefV8', {
+    sequenceName: __t.string(),
+    colPos: __t.u16(),
+    increment: __t.i128(),
+    start: __t.option(__t.i128()),
+    minValue: __t.option(__t.i128()),
+    maxValue: __t.option(__t.i128()),
+    allocated: __t.i128(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeString(value.sequenceName);
+      writer.writeU16(value.colPos);
+      writer.writeI128(value.increment);
+      if (value.start === undefined || value.start === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        writer.writeI128(value.start);
+      }
+      if (value.minValue === undefined || value.minValue === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        writer.writeI128(value.minValue);
+      }
+      if (value.maxValue === undefined || value.maxValue === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        writer.writeI128(value.maxValue);
+      }
+      writer.writeI128(value.allocated);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readString();
+      let __f1: any;
+      __f1 = reader.readU16();
+      let __f2: any;
+      __f2 = reader.readI128();
+      let __f3: any;
+      if (reader.readByte() === 0) {
+        __f3 = reader.readI128();
+      } else {
+        __f3 = undefined;
+      }
+      let __f4: any;
+      if (reader.readByte() === 0) {
+        __f4 = reader.readI128();
+      } else {
+        __f4 = undefined;
+      }
+      let __f5: any;
+      if (reader.readByte() === 0) {
+        __f5 = reader.readI128();
+      } else {
+        __f5 = undefined;
+      }
+      let __f6: any;
+      __f6 = reader.readI128();
+      return {
+        sequenceName: __f0,
+        colPos: __f1,
+        increment: __f2,
+        start: __f3,
+        minValue: __f4,
+        maxValue: __f5,
+        allocated: __f6,
+      };
+    }
+  );
 export type RawSequenceDefV8 = __Infer<typeof RawSequenceDefV8>;
 
-export const RawSequenceDefV9 = __t.object('RawSequenceDefV9', {
-  name: __t.option(__t.string()),
-  column: __t.u16(),
-  start: __t.option(__t.i128()),
-  minValue: __t.option(__t.i128()),
-  maxValue: __t.option(__t.i128()),
-  increment: __t.i128(),
-});
+export const RawSequenceDefV9 = __t
+  .object('RawSequenceDefV9', {
+    name: __t.option(__t.string()),
+    column: __t.u16(),
+    start: __t.option(__t.i128()),
+    minValue: __t.option(__t.i128()),
+    maxValue: __t.option(__t.i128()),
+    increment: __t.i128(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      if (value.name === undefined || value.name === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        writer.writeString(value.name);
+      }
+      writer.writeU16(value.column);
+      if (value.start === undefined || value.start === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        writer.writeI128(value.start);
+      }
+      if (value.minValue === undefined || value.minValue === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        writer.writeI128(value.minValue);
+      }
+      if (value.maxValue === undefined || value.maxValue === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        writer.writeI128(value.maxValue);
+      }
+      writer.writeI128(value.increment);
+    },
+    (reader): any => {
+      let __f0: any;
+      if (reader.readByte() === 0) {
+        __f0 = reader.readString();
+      } else {
+        __f0 = undefined;
+      }
+      let __f1: any;
+      __f1 = reader.readU16();
+      let __f2: any;
+      if (reader.readByte() === 0) {
+        __f2 = reader.readI128();
+      } else {
+        __f2 = undefined;
+      }
+      let __f3: any;
+      if (reader.readByte() === 0) {
+        __f3 = reader.readI128();
+      } else {
+        __f3 = undefined;
+      }
+      let __f4: any;
+      if (reader.readByte() === 0) {
+        __f4 = reader.readI128();
+      } else {
+        __f4 = undefined;
+      }
+      let __f5: any;
+      __f5 = reader.readI128();
+      return {
+        name: __f0,
+        column: __f1,
+        start: __f2,
+        minValue: __f3,
+        maxValue: __f4,
+        increment: __f5,
+      };
+    }
+  );
 export type RawSequenceDefV9 = __Infer<typeof RawSequenceDefV9>;
 
-export const RawTableDefV10 = __t.object('RawTableDefV10', {
-  sourceName: __t.string(),
-  productTypeRef: __t.u32(),
-  primaryKey: __t.array(__t.u16()),
-  get indexes() {
-    return __t.array(RawIndexDefV10);
-  },
-  get constraints() {
-    return __t.array(RawConstraintDefV10);
-  },
-  get sequences() {
-    return __t.array(RawSequenceDefV10);
-  },
-  get tableType() {
-    return TableType;
-  },
-  get tableAccess() {
-    return TableAccess;
-  },
-  get defaultValues() {
-    return __t.array(RawColumnDefaultValueV10);
-  },
-  isEvent: __t.bool(),
-});
+export const RawTableDefV10 = __t
+  .object('RawTableDefV10', {
+    sourceName: __t.string(),
+    productTypeRef: __t.u32(),
+    primaryKey: __t.array(__t.u16()),
+    get indexes() {
+      return __t.array(RawIndexDefV10);
+    },
+    get constraints() {
+      return __t.array(RawConstraintDefV10);
+    },
+    get sequences() {
+      return __t.array(RawSequenceDefV10);
+    },
+    get tableType() {
+      return TableType;
+    },
+    get tableAccess() {
+      return TableAccess;
+    },
+    get defaultValues() {
+      return __t.array(RawColumnDefaultValueV10);
+    },
+    isEvent: __t.bool(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeString(value.sourceName);
+      writer.writeU32(value.productTypeRef);
+      writer.writeU32(value.primaryKey.length);
+      for (const __e0 of value.primaryKey) {
+        writer.writeU16(__e0);
+      }
+      writer.writeU32(value.indexes.length);
+      for (const __e1 of value.indexes) {
+        RawIndexDefV10.serialize(writer, __e1);
+      }
+      writer.writeU32(value.constraints.length);
+      for (const __e2 of value.constraints) {
+        RawConstraintDefV10.serialize(writer, __e2);
+      }
+      writer.writeU32(value.sequences.length);
+      for (const __e3 of value.sequences) {
+        RawSequenceDefV10.serialize(writer, __e3);
+      }
+      TableType.serialize(writer, value.tableType);
+      TableAccess.serialize(writer, value.tableAccess);
+      writer.writeU32(value.defaultValues.length);
+      for (const __e4 of value.defaultValues) {
+        RawColumnDefaultValueV10.serialize(writer, __e4);
+      }
+      writer.writeBool(value.isEvent);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readString();
+      let __f1: any;
+      __f1 = reader.readU32();
+      let __f2: any;
+      {
+        const __len0 = reader.readU32();
+        const __arr0: any[] = new Array(__len0);
+        for (let __i0 = 0; __i0 < __len0; __i0++) {
+          __arr0[__i0] = reader.readU16();
+        }
+        __f2 = __arr0;
+      }
+      let __f3: any;
+      {
+        const __len1 = reader.readU32();
+        const __arr1: any[] = new Array(__len1);
+        for (let __i1 = 0; __i1 < __len1; __i1++) {
+          __arr1[__i1] = RawIndexDefV10.deserialize(reader);
+        }
+        __f3 = __arr1;
+      }
+      let __f4: any;
+      {
+        const __len2 = reader.readU32();
+        const __arr2: any[] = new Array(__len2);
+        for (let __i2 = 0; __i2 < __len2; __i2++) {
+          __arr2[__i2] = RawConstraintDefV10.deserialize(reader);
+        }
+        __f4 = __arr2;
+      }
+      let __f5: any;
+      {
+        const __len3 = reader.readU32();
+        const __arr3: any[] = new Array(__len3);
+        for (let __i3 = 0; __i3 < __len3; __i3++) {
+          __arr3[__i3] = RawSequenceDefV10.deserialize(reader);
+        }
+        __f5 = __arr3;
+      }
+      let __f6: any;
+      __f6 = TableType.deserialize(reader);
+      let __f7: any;
+      __f7 = TableAccess.deserialize(reader);
+      let __f8: any;
+      {
+        const __len4 = reader.readU32();
+        const __arr4: any[] = new Array(__len4);
+        for (let __i4 = 0; __i4 < __len4; __i4++) {
+          __arr4[__i4] = RawColumnDefaultValueV10.deserialize(reader);
+        }
+        __f8 = __arr4;
+      }
+      let __f9: any;
+      __f9 = reader.readBool();
+      return {
+        sourceName: __f0,
+        productTypeRef: __f1,
+        primaryKey: __f2,
+        indexes: __f3,
+        constraints: __f4,
+        sequences: __f5,
+        tableType: __f6,
+        tableAccess: __f7,
+        defaultValues: __f8,
+        isEvent: __f9,
+      };
+    }
+  );
 export type RawTableDefV10 = __Infer<typeof RawTableDefV10>;
 
-export const RawTableDefV8 = __t.object('RawTableDefV8', {
-  tableName: __t.string(),
-  get columns() {
-    return __t.array(RawColumnDefV8);
-  },
-  get indexes() {
-    return __t.array(RawIndexDefV8);
-  },
-  get constraints() {
-    return __t.array(RawConstraintDefV8);
-  },
-  get sequences() {
-    return __t.array(RawSequenceDefV8);
-  },
-  tableType: __t.string(),
-  tableAccess: __t.string(),
-  scheduled: __t.option(__t.string()),
-});
+export const RawTableDefV8 = __t
+  .object('RawTableDefV8', {
+    tableName: __t.string(),
+    get columns() {
+      return __t.array(RawColumnDefV8);
+    },
+    get indexes() {
+      return __t.array(RawIndexDefV8);
+    },
+    get constraints() {
+      return __t.array(RawConstraintDefV8);
+    },
+    get sequences() {
+      return __t.array(RawSequenceDefV8);
+    },
+    tableType: __t.string(),
+    tableAccess: __t.string(),
+    scheduled: __t.option(__t.string()),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeString(value.tableName);
+      writer.writeU32(value.columns.length);
+      for (const __e0 of value.columns) {
+        RawColumnDefV8.serialize(writer, __e0);
+      }
+      writer.writeU32(value.indexes.length);
+      for (const __e1 of value.indexes) {
+        RawIndexDefV8.serialize(writer, __e1);
+      }
+      writer.writeU32(value.constraints.length);
+      for (const __e2 of value.constraints) {
+        RawConstraintDefV8.serialize(writer, __e2);
+      }
+      writer.writeU32(value.sequences.length);
+      for (const __e3 of value.sequences) {
+        RawSequenceDefV8.serialize(writer, __e3);
+      }
+      writer.writeString(value.tableType);
+      writer.writeString(value.tableAccess);
+      if (value.scheduled === undefined || value.scheduled === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        writer.writeString(value.scheduled);
+      }
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readString();
+      let __f1: any;
+      {
+        const __len0 = reader.readU32();
+        const __arr0: any[] = new Array(__len0);
+        for (let __i0 = 0; __i0 < __len0; __i0++) {
+          __arr0[__i0] = RawColumnDefV8.deserialize(reader);
+        }
+        __f1 = __arr0;
+      }
+      let __f2: any;
+      {
+        const __len1 = reader.readU32();
+        const __arr1: any[] = new Array(__len1);
+        for (let __i1 = 0; __i1 < __len1; __i1++) {
+          __arr1[__i1] = RawIndexDefV8.deserialize(reader);
+        }
+        __f2 = __arr1;
+      }
+      let __f3: any;
+      {
+        const __len2 = reader.readU32();
+        const __arr2: any[] = new Array(__len2);
+        for (let __i2 = 0; __i2 < __len2; __i2++) {
+          __arr2[__i2] = RawConstraintDefV8.deserialize(reader);
+        }
+        __f3 = __arr2;
+      }
+      let __f4: any;
+      {
+        const __len3 = reader.readU32();
+        const __arr3: any[] = new Array(__len3);
+        for (let __i3 = 0; __i3 < __len3; __i3++) {
+          __arr3[__i3] = RawSequenceDefV8.deserialize(reader);
+        }
+        __f4 = __arr3;
+      }
+      let __f5: any;
+      __f5 = reader.readString();
+      let __f6: any;
+      __f6 = reader.readString();
+      let __f7: any;
+      if (reader.readByte() === 0) {
+        __f7 = reader.readString();
+      } else {
+        __f7 = undefined;
+      }
+      return {
+        tableName: __f0,
+        columns: __f1,
+        indexes: __f2,
+        constraints: __f3,
+        sequences: __f4,
+        tableType: __f5,
+        tableAccess: __f6,
+        scheduled: __f7,
+      };
+    }
+  );
 export type RawTableDefV8 = __Infer<typeof RawTableDefV8>;
 
-export const RawTableDefV9 = __t.object('RawTableDefV9', {
-  name: __t.string(),
-  productTypeRef: __t.u32(),
-  primaryKey: __t.array(__t.u16()),
-  get indexes() {
-    return __t.array(RawIndexDefV9);
-  },
-  get constraints() {
-    return __t.array(RawConstraintDefV9);
-  },
-  get sequences() {
-    return __t.array(RawSequenceDefV9);
-  },
-  get schedule() {
-    return __t.option(RawScheduleDefV9);
-  },
-  get tableType() {
-    return TableType;
-  },
-  get tableAccess() {
-    return TableAccess;
-  },
-});
+export const RawTableDefV9 = __t
+  .object('RawTableDefV9', {
+    name: __t.string(),
+    productTypeRef: __t.u32(),
+    primaryKey: __t.array(__t.u16()),
+    get indexes() {
+      return __t.array(RawIndexDefV9);
+    },
+    get constraints() {
+      return __t.array(RawConstraintDefV9);
+    },
+    get sequences() {
+      return __t.array(RawSequenceDefV9);
+    },
+    get schedule() {
+      return __t.option(RawScheduleDefV9);
+    },
+    get tableType() {
+      return TableType;
+    },
+    get tableAccess() {
+      return TableAccess;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeString(value.name);
+      writer.writeU32(value.productTypeRef);
+      writer.writeU32(value.primaryKey.length);
+      for (const __e0 of value.primaryKey) {
+        writer.writeU16(__e0);
+      }
+      writer.writeU32(value.indexes.length);
+      for (const __e1 of value.indexes) {
+        RawIndexDefV9.serialize(writer, __e1);
+      }
+      writer.writeU32(value.constraints.length);
+      for (const __e2 of value.constraints) {
+        RawConstraintDefV9.serialize(writer, __e2);
+      }
+      writer.writeU32(value.sequences.length);
+      for (const __e3 of value.sequences) {
+        RawSequenceDefV9.serialize(writer, __e3);
+      }
+      if (value.schedule === undefined || value.schedule === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        RawScheduleDefV9.serialize(writer, value.schedule);
+      }
+      TableType.serialize(writer, value.tableType);
+      TableAccess.serialize(writer, value.tableAccess);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readString();
+      let __f1: any;
+      __f1 = reader.readU32();
+      let __f2: any;
+      {
+        const __len0 = reader.readU32();
+        const __arr0: any[] = new Array(__len0);
+        for (let __i0 = 0; __i0 < __len0; __i0++) {
+          __arr0[__i0] = reader.readU16();
+        }
+        __f2 = __arr0;
+      }
+      let __f3: any;
+      {
+        const __len1 = reader.readU32();
+        const __arr1: any[] = new Array(__len1);
+        for (let __i1 = 0; __i1 < __len1; __i1++) {
+          __arr1[__i1] = RawIndexDefV9.deserialize(reader);
+        }
+        __f3 = __arr1;
+      }
+      let __f4: any;
+      {
+        const __len2 = reader.readU32();
+        const __arr2: any[] = new Array(__len2);
+        for (let __i2 = 0; __i2 < __len2; __i2++) {
+          __arr2[__i2] = RawConstraintDefV9.deserialize(reader);
+        }
+        __f4 = __arr2;
+      }
+      let __f5: any;
+      {
+        const __len3 = reader.readU32();
+        const __arr3: any[] = new Array(__len3);
+        for (let __i3 = 0; __i3 < __len3; __i3++) {
+          __arr3[__i3] = RawSequenceDefV9.deserialize(reader);
+        }
+        __f5 = __arr3;
+      }
+      let __f6: any;
+      if (reader.readByte() === 0) {
+        __f6 = RawScheduleDefV9.deserialize(reader);
+      } else {
+        __f6 = undefined;
+      }
+      let __f7: any;
+      __f7 = TableType.deserialize(reader);
+      let __f8: any;
+      __f8 = TableAccess.deserialize(reader);
+      return {
+        name: __f0,
+        productTypeRef: __f1,
+        primaryKey: __f2,
+        indexes: __f3,
+        constraints: __f4,
+        sequences: __f5,
+        schedule: __f6,
+        tableType: __f7,
+        tableAccess: __f8,
+      };
+    }
+  );
 export type RawTableDefV9 = __Infer<typeof RawTableDefV9>;
 
-export const RawTypeDefV10 = __t.object('RawTypeDefV10', {
-  get sourceName() {
-    return RawScopedTypeNameV10;
-  },
-  ty: __t.u32(),
-  customOrdering: __t.bool(),
-});
+export const RawTypeDefV10 = __t
+  .object('RawTypeDefV10', {
+    get sourceName() {
+      return RawScopedTypeNameV10;
+    },
+    ty: __t.u32(),
+    customOrdering: __t.bool(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      RawScopedTypeNameV10.serialize(writer, value.sourceName);
+      writer.writeU32(value.ty);
+      writer.writeBool(value.customOrdering);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = RawScopedTypeNameV10.deserialize(reader);
+      let __f1: any;
+      __f1 = reader.readU32();
+      let __f2: any;
+      __f2 = reader.readBool();
+      return { sourceName: __f0, ty: __f1, customOrdering: __f2 };
+    }
+  );
 export type RawTypeDefV10 = __Infer<typeof RawTypeDefV10>;
 
-export const RawTypeDefV9 = __t.object('RawTypeDefV9', {
-  get name() {
-    return RawScopedTypeNameV9;
-  },
-  ty: __t.u32(),
-  customOrdering: __t.bool(),
-});
+export const RawTypeDefV9 = __t
+  .object('RawTypeDefV9', {
+    get name() {
+      return RawScopedTypeNameV9;
+    },
+    ty: __t.u32(),
+    customOrdering: __t.bool(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      RawScopedTypeNameV9.serialize(writer, value.name);
+      writer.writeU32(value.ty);
+      writer.writeBool(value.customOrdering);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = RawScopedTypeNameV9.deserialize(reader);
+      let __f1: any;
+      __f1 = reader.readU32();
+      let __f2: any;
+      __f2 = reader.readBool();
+      return { name: __f0, ty: __f1, customOrdering: __f2 };
+    }
+  );
 export type RawTypeDefV9 = __Infer<typeof RawTypeDefV9>;
 
-export const RawUniqueConstraintDataV9 = __t.object(
-  'RawUniqueConstraintDataV9',
-  {
+export const RawUniqueConstraintDataV9 = __t
+  .object('RawUniqueConstraintDataV9', {
     columns: __t.array(__t.u16()),
-  }
-);
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeU32(value.columns.length);
+      for (const __e0 of value.columns) {
+        writer.writeU16(__e0);
+      }
+    },
+    (reader): any => {
+      let __f0: any;
+      {
+        const __len0 = reader.readU32();
+        const __arr0: any[] = new Array(__len0);
+        for (let __i0 = 0; __i0 < __len0; __i0++) {
+          __arr0[__i0] = reader.readU16();
+        }
+        __f0 = __arr0;
+      }
+      return { columns: __f0 };
+    }
+  );
 export type RawUniqueConstraintDataV9 = __Infer<
   typeof RawUniqueConstraintDataV9
 >;
 
-export const RawViewDefV10 = __t.object('RawViewDefV10', {
-  sourceName: __t.string(),
-  index: __t.u32(),
-  isPublic: __t.bool(),
-  isAnonymous: __t.bool(),
-  get params() {
-    return ProductType;
-  },
-  get returnType() {
-    return AlgebraicType;
-  },
-});
+export const RawViewDefV10 = __t
+  .object('RawViewDefV10', {
+    sourceName: __t.string(),
+    index: __t.u32(),
+    isPublic: __t.bool(),
+    isAnonymous: __t.bool(),
+    get params() {
+      return ProductType;
+    },
+    get returnType() {
+      return AlgebraicType;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeString(value.sourceName);
+      writer.writeU32(value.index);
+      writer.writeBool(value.isPublic);
+      writer.writeBool(value.isAnonymous);
+      ProductType.serialize(writer, value.params);
+      AlgebraicType.serialize(writer, value.returnType);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readString();
+      let __f1: any;
+      __f1 = reader.readU32();
+      let __f2: any;
+      __f2 = reader.readBool();
+      let __f3: any;
+      __f3 = reader.readBool();
+      let __f4: any;
+      __f4 = ProductType.deserialize(reader);
+      let __f5: any;
+      __f5 = AlgebraicType.deserialize(reader);
+      return {
+        sourceName: __f0,
+        index: __f1,
+        isPublic: __f2,
+        isAnonymous: __f3,
+        params: __f4,
+        returnType: __f5,
+      };
+    }
+  );
 export type RawViewDefV10 = __Infer<typeof RawViewDefV10>;
 
-export const RawViewDefV9 = __t.object('RawViewDefV9', {
-  name: __t.string(),
-  index: __t.u32(),
-  isPublic: __t.bool(),
-  isAnonymous: __t.bool(),
-  get params() {
-    return ProductType;
-  },
-  get returnType() {
-    return AlgebraicType;
-  },
-});
+export const RawViewDefV9 = __t
+  .object('RawViewDefV9', {
+    name: __t.string(),
+    index: __t.u32(),
+    isPublic: __t.bool(),
+    isAnonymous: __t.bool(),
+    get params() {
+      return ProductType;
+    },
+    get returnType() {
+      return AlgebraicType;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeString(value.name);
+      writer.writeU32(value.index);
+      writer.writeBool(value.isPublic);
+      writer.writeBool(value.isAnonymous);
+      ProductType.serialize(writer, value.params);
+      AlgebraicType.serialize(writer, value.returnType);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readString();
+      let __f1: any;
+      __f1 = reader.readU32();
+      let __f2: any;
+      __f2 = reader.readBool();
+      let __f3: any;
+      __f3 = reader.readBool();
+      let __f4: any;
+      __f4 = ProductType.deserialize(reader);
+      let __f5: any;
+      __f5 = AlgebraicType.deserialize(reader);
+      return {
+        name: __f0,
+        index: __f1,
+        isPublic: __f2,
+        isAnonymous: __f3,
+        params: __f4,
+        returnType: __f5,
+      };
+    }
+  );
 export type RawViewDefV9 = __Infer<typeof RawViewDefV9>;
 
-export const ReducerDef = __t.object('ReducerDef', {
-  name: __t.string(),
-  get args() {
-    return __t.array(ProductTypeElement);
-  },
-});
+export const ReducerDef = __t
+  .object('ReducerDef', {
+    name: __t.string(),
+    get args() {
+      return __t.array(ProductTypeElement);
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeString(value.name);
+      writer.writeU32(value.args.length);
+      for (const __e0 of value.args) {
+        ProductTypeElement.serialize(writer, __e0);
+      }
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readString();
+      let __f1: any;
+      {
+        const __len0 = reader.readU32();
+        const __arr0: any[] = new Array(__len0);
+        for (let __i0 = 0; __i0 < __len0; __i0++) {
+          __arr0[__i0] = ProductTypeElement.deserialize(reader);
+        }
+        __f1 = __arr0;
+      }
+      return { name: __f0, args: __f1 };
+    }
+  );
 export type ReducerDef = __Infer<typeof ReducerDef>;
 
-export const SumType = __t.object('SumType', {
-  get variants() {
-    return __t.array(SumTypeVariant);
-  },
-});
+export const SumType = __t
+  .object('SumType', {
+    get variants() {
+      return __t.array(SumTypeVariant);
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeU32(value.variants.length);
+      for (const __e0 of value.variants) {
+        SumTypeVariant.serialize(writer, __e0);
+      }
+    },
+    (reader): any => {
+      let __f0: any;
+      {
+        const __len0 = reader.readU32();
+        const __arr0: any[] = new Array(__len0);
+        for (let __i0 = 0; __i0 < __len0; __i0++) {
+          __arr0[__i0] = SumTypeVariant.deserialize(reader);
+        }
+        __f0 = __arr0;
+      }
+      return { variants: __f0 };
+    }
+  );
 export type SumType = __Infer<typeof SumType>;
 
-export const SumTypeVariant = __t.object('SumTypeVariant', {
-  name: __t.option(__t.string()),
-  get algebraicType() {
-    return AlgebraicType;
-  },
-});
+export const SumTypeVariant = __t
+  .object('SumTypeVariant', {
+    name: __t.option(__t.string()),
+    get algebraicType() {
+      return AlgebraicType;
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      if (value.name === undefined || value.name === null) {
+        writer.writeByte(1);
+      } else {
+        writer.writeByte(0);
+        writer.writeString(value.name);
+      }
+      AlgebraicType.serialize(writer, value.algebraicType);
+    },
+    (reader): any => {
+      let __f0: any;
+      if (reader.readByte() === 0) {
+        __f0 = reader.readString();
+      } else {
+        __f0 = undefined;
+      }
+      let __f1: any;
+      __f1 = AlgebraicType.deserialize(reader);
+      return { name: __f0, algebraicType: __f1 };
+    }
+  );
 export type SumTypeVariant = __Infer<typeof SumTypeVariant>;
 
 // The tagged union or sum type for the algebraic type `TableAccess`.
-export const TableAccess = __t.enum('TableAccess', {
-  Public: __t.unit(),
-  Private: __t.unit(),
-});
+export const TableAccess = __t
+  .enum('TableAccess', {
+    Public: __t.unit(),
+    Private: __t.unit(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      switch (value.tag) {
+        case 'Public': {
+          writer.writeByte(0);
+          break;
+        }
+        case 'Private': {
+          writer.writeByte(1);
+          break;
+        }
+        default: {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+      }
+    },
+    (reader): any => {
+      switch (reader.readByte()) {
+        case 0: {
+          return { tag: 'Public', value: {} };
+        }
+        case 1: {
+          return { tag: 'Private', value: {} };
+        }
+        default: {
+          return undefined;
+        }
+      }
+    }
+  );
 export type TableAccess = __Infer<typeof TableAccess>;
 
-export const TableDesc = __t.object('TableDesc', {
-  get schema() {
-    return RawTableDefV8;
-  },
-  data: __t.u32(),
-});
+export const TableDesc = __t
+  .object('TableDesc', {
+    get schema() {
+      return RawTableDefV8;
+    },
+    data: __t.u32(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      RawTableDefV8.serialize(writer, value.schema);
+      writer.writeU32(value.data);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = RawTableDefV8.deserialize(reader);
+      let __f1: any;
+      __f1 = reader.readU32();
+      return { schema: __f0, data: __f1 };
+    }
+  );
 export type TableDesc = __Infer<typeof TableDesc>;
 
 // The tagged union or sum type for the algebraic type `TableType`.
-export const TableType = __t.enum('TableType', {
-  System: __t.unit(),
-  User: __t.unit(),
-});
+export const TableType = __t
+  .enum('TableType', {
+    System: __t.unit(),
+    User: __t.unit(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      switch (value.tag) {
+        case 'System': {
+          writer.writeByte(0);
+          break;
+        }
+        case 'User': {
+          writer.writeByte(1);
+          break;
+        }
+        default: {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+      }
+    },
+    (reader): any => {
+      switch (reader.readByte()) {
+        case 0: {
+          return { tag: 'System', value: {} };
+        }
+        case 1: {
+          return { tag: 'User', value: {} };
+        }
+        default: {
+          return undefined;
+        }
+      }
+    }
+  );
 export type TableType = __Infer<typeof TableType>;
 
-export const TypeAlias = __t.object('TypeAlias', {
-  name: __t.string(),
-  ty: __t.u32(),
-});
+export const TypeAlias = __t
+  .object('TypeAlias', {
+    name: __t.string(),
+    ty: __t.u32(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeString(value.name);
+      writer.writeU32(value.ty);
+    },
+    (reader): any => {
+      let __f0: any;
+      __f0 = reader.readString();
+      let __f1: any;
+      __f1 = reader.readU32();
+      return { name: __f0, ty: __f1 };
+    }
+  );
 export type TypeAlias = __Infer<typeof TypeAlias>;
 
-export const Typespace = __t.object('Typespace', {
-  get types() {
-    return __t.array(AlgebraicType);
-  },
-});
+export const Typespace = __t
+  .object('Typespace', {
+    get types() {
+      return __t.array(AlgebraicType);
+    },
+  })
+  .withSerde(
+    (writer, value: any) => {
+      writer.writeU32(value.types.length);
+      for (const __e0 of value.types) {
+        AlgebraicType.serialize(writer, __e0);
+      }
+    },
+    (reader): any => {
+      let __f0: any;
+      {
+        const __len0 = reader.readU32();
+        const __arr0: any[] = new Array(__len0);
+        for (let __i0 = 0; __i0 < __len0; __i0++) {
+          __arr0[__i0] = AlgebraicType.deserialize(reader);
+        }
+        __f0 = __arr0;
+      }
+      return { types: __f0 };
+    }
+  );
 export type Typespace = __Infer<typeof Typespace>;
 
 // The tagged union or sum type for the algebraic type `ViewResultHeader`.
-export const ViewResultHeader = __t.enum('ViewResultHeader', {
-  RowData: __t.unit(),
-  RawSql: __t.string(),
-});
+export const ViewResultHeader = __t
+  .enum('ViewResultHeader', {
+    RowData: __t.unit(),
+    RawSql: __t.string(),
+  })
+  .withSerde(
+    (writer, value: any) => {
+      switch (value.tag) {
+        case 'RowData': {
+          writer.writeByte(0);
+          break;
+        }
+        case 'RawSql': {
+          writer.writeByte(1);
+          writer.writeString(value.value);
+          break;
+        }
+        default: {
+          throw new TypeError(
+            `Could not serialize sum type; unknown tag ${value.tag}`
+          );
+        }
+      }
+    },
+    (reader): any => {
+      switch (reader.readByte()) {
+        case 0: {
+          return { tag: 'RowData', value: {} };
+        }
+        case 1: {
+          let __v: any;
+          __v = reader.readString();
+          return { tag: 'RawSql', value: __v };
+        }
+        default: {
+          return undefined;
+        }
+      }
+    }
+  );
 export type ViewResultHeader = __Infer<typeof ViewResultHeader>;
