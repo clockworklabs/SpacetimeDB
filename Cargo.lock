@@ -2303,17 +2303,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "flume"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da0e4dd2a88388a1f4ccc7c9ce104604dab68d9f408dc34cd45823d5a9069095"
-dependencies = [
- "futures-core",
- "futures-sink",
- "spin",
-]
-
-[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6238,6 +6227,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "regen"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "duct",
+ "tempfile",
+]
+
+[[package]]
 name = "regex"
 version = "1.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7984,6 +7983,7 @@ dependencies = [
  "bitflags 2.10.0",
  "bytes",
  "crc32c",
+ "criterion",
  "env_logger 0.10.2",
  "futures",
  "itertools 0.12.1",
@@ -7995,6 +7995,7 @@ dependencies = [
  "proptest",
  "proptest-derive",
  "rand 0.9.2",
+ "scopeguard",
  "serde",
  "spacetimedb-commitlog",
  "spacetimedb-fs-utils",
@@ -8038,7 +8039,6 @@ dependencies = [
  "env_logger 0.10.2",
  "faststr",
  "flate2",
- "flume",
  "fs2",
  "fs_extra",
  "futures",
@@ -8817,9 +8817,6 @@ name = "spin"
 version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
-dependencies = [
- "lock_api",
-]
 
 [[package]]
 name = "sqllogictest"
@@ -11498,7 +11495,6 @@ dependencies = [
  "chrono",
  "clap 4.5.50",
  "dotenvy",
- "fs2",
  "futures",
  "heck 0.5.0",
  "regex",
@@ -11508,7 +11504,6 @@ dependencies = [
  "spacetimedb 2.2.0",
  "spacetimedb-data-structures",
  "spacetimedb-guard",
- "tempfile",
  "thiserror 2.0.17",
  "tokio",
  "urlencoding",

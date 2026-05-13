@@ -7,18 +7,12 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Instant, SystemTime};
 
-use super::messages::{OneOffQueryResponseMessage, ProcedureResultMessage};
 use super::{message_handlers, ClientActorId, MessageHandleError, OutboundMessage};
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
-use crate::host::module_host::ClientConnectedError;
-use crate::host::{
-    CallProcedureReturn, FunctionArgs, ModuleHost, NoSuchModule, ProcedureCallResult, ReducerCallError,
-    ReducerCallResult,
-};
+use crate::host::module_host::{ClientConnectedError, ProcedureResultTarget};
+use crate::host::{FunctionArgs, ModuleHost, NoSuchModule, ReducerCallError};
 use crate::subscription::module_subscription_manager::BroadcastError;
-use crate::subscription::row_list_builder_pool::JsonRowListBuilderFakePool;
-use crate::util::asyncify;
 use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
 use bytes::Bytes;
@@ -31,7 +25,7 @@ use spacetimedb_client_api_messages::websocket::{common as ws_common, v1 as ws_v
 use spacetimedb_durability::{DurableOffset, TxOffset};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::{bsatn, Identity, TimeDuration, Timestamp};
+use spacetimedb_lib::Identity;
 use tokio::sync::mpsc::error::{SendError, TrySendError};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
@@ -653,6 +647,110 @@ impl<T> MeteredSender<T> {
     }
 }
 
+/// Wraps the receiving end of an unbounded channel with a gauge for tracking the size of the channel.
+/// We subtract the size of the channel from the gauge on drop to avoid leaking the metric.
+pub struct MeteredUnboundedReceiver<T> {
+    inner: mpsc::UnboundedReceiver<T>,
+    gauge: Option<IntGauge>,
+}
+
+impl<T> MeteredUnboundedReceiver<T> {
+    pub fn new(inner: mpsc::UnboundedReceiver<T>) -> Self {
+        Self { inner, gauge: None }
+    }
+
+    pub fn with_gauge(inner: mpsc::UnboundedReceiver<T>, gauge: IntGauge) -> Self {
+        Self {
+            inner,
+            gauge: Some(gauge),
+        }
+    }
+
+    pub async fn recv(&mut self) -> Option<T> {
+        poll_fn(|cx| self.poll_recv(cx)).await
+    }
+
+    pub fn blocking_recv(&mut self) -> Option<T> {
+        self.inner.blocking_recv().inspect(|_| {
+            if let Some(gauge) = &self.gauge {
+                gauge.dec();
+            }
+        })
+    }
+
+    pub fn poll_recv(&mut self, cx: &mut Context<'_>) -> Poll<Option<T>> {
+        let poll = self.inner.poll_recv(cx);
+        if let Poll::Ready(Some(_)) = poll
+            && let Some(gauge) = &self.gauge
+        {
+            gauge.dec()
+        }
+        poll
+    }
+
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    pub fn close(&mut self) {
+        self.inner.close();
+    }
+}
+
+impl<T> Drop for MeteredUnboundedReceiver<T> {
+    fn drop(&mut self) {
+        // Record the number of elements still in the channel on drop
+        if let Some(gauge) = &self.gauge {
+            gauge.sub(self.inner.len() as _);
+        }
+    }
+}
+
+/// Wraps the transmitting end of an unbounded channel with a gauge for tracking the size of the channel.
+pub struct MeteredUnboundedSender<T> {
+    inner: mpsc::UnboundedSender<T>,
+    gauge: Option<IntGauge>,
+}
+
+impl<T> Clone for MeteredUnboundedSender<T> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            gauge: self.gauge.clone(),
+        }
+    }
+}
+
+impl<T> MeteredUnboundedSender<T> {
+    pub fn new(inner: mpsc::UnboundedSender<T>) -> Self {
+        Self { inner, gauge: None }
+    }
+
+    pub fn with_gauge(inner: mpsc::UnboundedSender<T>, gauge: IntGauge) -> Self {
+        Self {
+            inner,
+            gauge: Some(gauge),
+        }
+    }
+
+    pub fn send(&self, value: T) -> Result<(), SendError<T>> {
+        if let Some(gauge) = &self.gauge {
+            gauge.inc();
+        }
+        if let Err(err) = self.inner.send(value) {
+            if let Some(gauge) = &self.gauge {
+                gauge.dec();
+            }
+            return Err(err);
+        }
+        Ok(())
+    }
+}
+
 // if a client racks up this many messages in the queue without ACK'ing
 // anything, we boot 'em.
 const CLIENT_CHANNEL_CAPACITY: usize = 16 * KB;
@@ -775,13 +873,26 @@ impl ClientConnection {
         replica_id: u64,
         module_rx: watch::Receiver<ModuleHost>,
     ) -> Self {
+        Self::dummy_with_receiver(id, config, replica_id, module_rx).0
+    }
+
+    pub fn dummy_with_receiver(
+        id: ClientActorId,
+        config: ClientConfig,
+        replica_id: u64,
+        module_rx: watch::Receiver<ModuleHost>,
+    ) -> (Self, ClientConnectionReceiver) {
         let auth = AuthCtx::new(module_rx.borrow().database_info().database_identity, id.identity);
-        Self {
-            sender: Arc::new(ClientConnectionSender::dummy(id, config, module_rx.clone())),
-            replica_id,
-            module_rx,
-            auth,
-        }
+        let (sender, receiver) = ClientConnectionSender::dummy_with_channel(id, config, module_rx.clone());
+        (
+            Self {
+                sender: Arc::new(sender),
+                replica_id,
+                module_rx,
+                auth,
+            },
+            receiver,
+        )
     }
 
     pub fn sender(&self) -> Arc<ClientConnectionSender> {
@@ -841,7 +952,7 @@ impl ClientConnection {
         request_id: RequestId,
         timer: Instant,
         flags: ws_v1::CallReducerFlags,
-    ) -> Result<ReducerCallResult, ReducerCallError> {
+    ) -> Result<crate::host::ReducerCallResult, ReducerCallError> {
         let caller = match flags {
             ws_v1::CallReducerFlags::FullUpdate => Some(self.sender()),
             // Setting `sender = None` causes `eval_updates` to skip sending to the caller
@@ -869,9 +980,56 @@ impl ClientConnection {
         request_id: RequestId,
         timer: Instant,
         _flags: ws_v2::CallReducerFlags,
-    ) -> Result<ReducerCallResult, ReducerCallError> {
+    ) -> Result<crate::host::ReducerCallResult, ReducerCallError> {
         self.module()
             .call_reducer(
+                self.id.identity,
+                Some(self.id.connection_id),
+                Some(self.sender()),
+                Some(request_id),
+                Some(timer),
+                reducer,
+                FunctionArgs::Bsatn(args),
+            )
+            .await
+    }
+
+    pub async fn enqueue_reducer(
+        &self,
+        reducer: &str,
+        args: FunctionArgs,
+        request_id: RequestId,
+        timer: Instant,
+        flags: ws_v1::CallReducerFlags,
+    ) -> Result<(), ReducerCallError> {
+        let caller = match flags {
+            ws_v1::CallReducerFlags::FullUpdate => Some(self.sender()),
+            ws_v1::CallReducerFlags::NoSuccessNotify => None,
+        };
+
+        self.module()
+            .enqueue_reducer(
+                self.id.identity,
+                Some(self.id.connection_id),
+                caller,
+                Some(request_id),
+                Some(timer),
+                reducer,
+                args,
+            )
+            .await
+    }
+
+    pub async fn enqueue_reducer_v2(
+        &self,
+        reducer: &str,
+        args: Bytes,
+        request_id: RequestId,
+        timer: Instant,
+        _flags: ws_v2::CallReducerFlags,
+    ) -> Result<(), ReducerCallError> {
+        self.module()
+            .enqueue_reducer(
                 self.id.identity,
                 Some(self.id.connection_id),
                 Some(self.sender()),
@@ -890,22 +1048,16 @@ impl ClientConnection {
         request_id: RequestId,
         timer: Instant,
     ) -> Result<(), BroadcastError> {
-        let CallProcedureReturn { result, tx_offset } = self
-            .module()
-            .call_procedure(
+        self.module()
+            .enqueue_procedure(
                 self.id.identity,
                 Some(self.id.connection_id),
                 Some(timer),
                 procedure,
                 args,
+                ProcedureResultTarget::new(self.sender(), request_id),
             )
-            .await;
-
-        let message = ProcedureResultMessage::from_result(&result, request_id);
-
-        self.module()
-            .subscriptions()
-            .send_procedure_message(self.sender(), message, tx_offset)
+            .await
     }
 
     pub async fn call_procedure_v2(
@@ -916,48 +1068,16 @@ impl ClientConnection {
         timer: Instant,
         _flags: ws_v2::CallProcedureFlags,
     ) -> Result<(), BroadcastError> {
-        let CallProcedureReturn { result, tx_offset } = self
-            .module()
-            .call_procedure(
+        self.module()
+            .enqueue_procedure(
                 self.id.identity,
                 Some(self.id.connection_id),
                 Some(timer),
                 procedure,
                 FunctionArgs::Bsatn(args),
+                ProcedureResultTarget::new(self.sender(), request_id),
             )
-            .await;
-
-        let (status, timestamp, execution_duration) = match result {
-            Ok(ProcedureCallResult {
-                return_val,
-                execution_duration,
-                start_timestamp,
-            }) => (
-                ws_v2::ProcedureStatus::Returned(
-                    bsatn::to_vec(&return_val)
-                        .expect("Procedure return value failed to serialize to BSATN")
-                        .into(),
-                ),
-                start_timestamp,
-                TimeDuration::from(execution_duration),
-            ),
-            Err(err) => (
-                ws_v2::ProcedureStatus::InternalError(err.to_string().into()),
-                Timestamp::UNIX_EPOCH,
-                TimeDuration::ZERO,
-            ),
-        };
-
-        let message = ws_v2::ProcedureResult {
-            status,
-            timestamp,
-            total_host_execution_duration: execution_duration,
-            request_id,
-        };
-
-        self.module()
-            .subscriptions()
-            .send_procedure_message_v2(self.sender(), message, tx_offset)
+            .await
     }
 
     pub async fn subscribe_single(
@@ -965,15 +1085,9 @@ impl ClientConnection {
         subscription: ws_v1::SubscribeSingle,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
-        let me = self.clone();
         self.module()
-            .on_module_thread_async("subscribe_single", async move || {
-                let host = me.module();
-                host.subscriptions()
-                    .add_single_subscription(Some(&host), me.sender, me.auth.clone(), subscription, timer, None)
-                    .await
-            })
-            .await?
+            .call_view_add_single_subscription(self.sender(), self.auth.clone(), subscription, timer)
+            .await
     }
 
     pub async fn unsubscribe(
@@ -981,13 +1095,9 @@ impl ClientConnection {
         request: ws_v1::Unsubscribe,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
-        let me = self.clone();
-        asyncify(move || {
-            me.module()
-                .subscriptions()
-                .remove_single_subscription(me.sender, me.auth.clone(), request, timer)
-        })
-        .await
+        self.module()
+            .call_view_remove_single_subscription(self.sender(), self.auth.clone(), request, timer)
+            .await
     }
 
     pub async fn subscribe_v2(
@@ -995,30 +1105,18 @@ impl ClientConnection {
         request: ws_v2::Subscribe,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
-        let me = self.clone();
         self.module()
-            .on_module_thread_async("subscribe_v2", async move || {
-                let host = me.module();
-                host.subscriptions()
-                    .add_v2_subscription(Some(&host), me.sender, me.auth.clone(), request, timer, None)
-                    .await
-            })
-            .await?
+            .call_view_add_v2_subscription(self.sender(), self.auth.clone(), request, timer)
+            .await
     }
     pub async fn subscribe_multi(
         &self,
         request: ws_v1::SubscribeMulti,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
-        let me = self.clone();
         self.module()
-            .on_module_thread_async("subscribe_multi", async move || {
-                let host = me.module();
-                host.subscriptions()
-                    .add_multi_subscription(Some(&host), me.sender, me.auth.clone(), request, timer, None)
-                    .await
-            })
-            .await?
+            .call_view_add_multi_subscription(self.sender(), self.auth.clone(), request, timer)
+            .await
     }
 
     pub async fn unsubscribe_multi(
@@ -1026,14 +1124,9 @@ impl ClientConnection {
         request: ws_v1::UnsubscribeMulti,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
-        let me = self.clone();
         self.module()
-            .on_module_thread("unsubscribe_multi", move || {
-                me.module()
-                    .subscriptions()
-                    .remove_multi_subscription(me.sender, me.auth.clone(), request, timer)
-            })
-            .await?
+            .call_view_remove_multi_subscription(self.sender(), self.auth.clone(), request, timer)
+            .await
     }
 
     pub async fn unsubscribe_v2(
@@ -1041,27 +1134,16 @@ impl ClientConnection {
         request: ws_v2::Unsubscribe,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
-        let me = self.clone();
         self.module()
-            .on_module_thread_async("unsubscribe_v2", async move || {
-                let host = me.module();
-                host.subscriptions()
-                    .remove_v2_subscription(Some(&host), me.sender, me.auth.clone(), request, timer)
-                    .await
-            })
-            .await?
+            .call_view_remove_v2_subscription(self.sender(), self.auth.clone(), request, timer)
+            .await
     }
 
     pub async fn subscribe(&self, subscription: ws_v1::Subscribe, timer: Instant) -> Result<ExecutionMetrics, DBError> {
-        let me = self.clone();
         self.module()
-            .on_module_thread_async("subscribe", async move || {
-                let host = me.module();
-                host.subscriptions()
-                    .add_legacy_subscriber(Some(&host), me.sender, me.auth.clone(), subscription, timer, None)
-                    .await
-            })
-            .await?
+            .call_view_add_legacy_subscription(self.sender(), self.auth.clone(), subscription, timer)
+            .await
+            .map(|metrics| metrics.unwrap_or_default())
     }
 
     pub async fn one_off_query_json(
@@ -1071,14 +1153,12 @@ impl ClientConnection {
         timer: Instant,
     ) -> Result<(), anyhow::Error> {
         self.module()
-            .one_off_query::<ws_v1::JsonFormat>(
+            .one_off_query_json(
                 self.auth.clone(),
                 query.to_owned(),
                 self.sender.clone(),
                 message_id.to_owned(),
                 timer,
-                JsonRowListBuilderFakePool,
-                |msg: OneOffQueryResponseMessage<ws_v1::JsonFormat>| msg.into(),
             )
             .await
     }
@@ -1091,14 +1171,13 @@ impl ClientConnection {
     ) -> Result<(), anyhow::Error> {
         let bsatn_rlb_pool = self.module().replica_ctx().subscriptions.bsatn_rlb_pool.clone();
         self.module()
-            .one_off_query::<ws_v1::BsatnFormat>(
+            .one_off_query_bsatn(
                 self.auth.clone(),
                 query.to_owned(),
                 self.sender.clone(),
                 message_id.to_owned(),
                 timer,
                 bsatn_rlb_pool,
-                |msg: OneOffQueryResponseMessage<ws_v1::BsatnFormat>| msg.into(),
             )
             .await
     }

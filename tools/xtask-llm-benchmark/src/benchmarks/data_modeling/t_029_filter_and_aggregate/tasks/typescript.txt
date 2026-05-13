@@ -1,0 +1,21 @@
+Write a SpacetimeDB backend module in TypeScript that defines an order table and a stats table, with a reducer that computes aggregate statistics from filtered orders.
+
+TABLES
+- order
+  - Fields:
+    - id: number (u64, primary key, autoInc)
+    - category: string (index btree)
+    - amount: number (u64)
+    - fulfilled: boolean
+
+- categoryStats
+  - Fields:
+    - category: string (primary key)
+    - totalAmount: number (u64)
+    - orderCount: number (u32)
+
+REDUCERS
+- compute_stats(ctx, { category: string })
+  - Filter all orders matching the given category
+  - Count the number of matching orders and sum their amounts
+  - Insert (or update if exists) a categoryStats row with the results
