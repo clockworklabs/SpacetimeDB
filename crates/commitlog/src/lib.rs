@@ -212,7 +212,6 @@ where
             inner: RwLock::new(inner),
         })
     }
-}
 
     /// Determine the maximum transaction offset considered durable.
     ///
