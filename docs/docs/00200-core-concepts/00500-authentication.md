@@ -24,6 +24,12 @@ While being production-ready and able to support most common use cases, it is no
 as feature-rich as some third-party OIDC providers. If you need advanced features
 or customization, you may want to consider using a third-party OIDC provider instead.
 
+If you are designing a multi-tenant SaaS application with customer-managed SSO,
+SCIM, directory sync, API keys, or hosted enterprise identity services, read the
+[enterprise identity adapters guide](./00500-authentication/00425-enterprise-identity-adapters.md)
+to decide whether SpacetimeAuth, a third-party OIDC provider, or an
+application-owned identity plane should issue the token SpacetimeDB sees.
+
 ## Third-party OIDC providers
 
 You can also use any third-party OIDC provider with SpacetimeDB. Most OIDC
@@ -39,6 +45,11 @@ such as ease of integration, pricing, scalability, and security.
   sign-in, session management, and prebuilt UI components for modern web applications.
 - [Keycloak](https://www.keycloak.org/) An open-source and
   self-hosted OIDC provider with extensive features, customization options and integrations.
+- [Enterprise identity adapters](./00500-authentication/00425-enterprise-identity-adapters.md)
+  Guidance for using SpacetimeAuth, third-party OIDC providers, SAML/OIDC
+  enterprise SSO, SCIM, hosted identity services, or an app-owned auth layer
+  while keeping SpacetimeDB focused on verifiable tokens and module-local
+  authorization.
 
 ## Authenticate your services
 
