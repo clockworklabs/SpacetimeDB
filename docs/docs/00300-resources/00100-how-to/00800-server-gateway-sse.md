@@ -183,6 +183,12 @@ export class SpacetimeGateway {
     });
   }
 
+  listDocuments(tenantId: string) {
+    const conn = this.#requireConnection();
+
+    return Array.from(conn.db.document.iter()).filter(row => row.tenantId === tenantId);
+  }
+
   stop() {
     this.#conn?.disconnect();
     this.#conn = undefined;
@@ -417,6 +423,224 @@ A useful CI smoke test should mint or load a short-lived gateway token, connect 
 ## Framework placement
 
 For React full-stack apps, use loaders or SSR for the initial snapshot, server functions or API routes for mutations, and an API route for the SSE stream.
+
+## TanStack Start example
+
+In TanStack Start, keep the gateway in server-only files, expose typed mutations through server functions, and use a server route for SSE. Server functions are a good fit for same-origin application mutations, while server routes are a better fit for raw HTTP streams such as SSE.
+
+One possible layout is:
+
+```text
+src/
+  gateway/
+    events.ts
+    module-bindings.ts
+    runtime.server.ts
+    spacetime-gateway.server.ts
+  routes/
+    documents.tsx
+    api/
+      spacetime/
+        events.ts
+  utils/
+    documents.functions.ts
+    documents.schema.ts
+```
+
+The `runtime.server.ts` and `spacetime-gateway.server.ts` files should never be imported directly by client components. Put only server function wrappers in `.functions.ts` files that the client may import.
+
+### Server-only gateway runtime
+
+```ts title="src/gateway/runtime.server.ts"
+import { SpacetimeGateway } from "./spacetime-gateway.server";
+
+let gateway: SpacetimeGateway | undefined;
+
+export function getGateway() {
+  if (gateway == null) {
+    gateway = new SpacetimeGateway({
+      uri: requireEnv("SPACETIME_URI"),
+      databaseName: requireEnv("SPACETIME_DATABASE"),
+      spacetimeToken: requireEnv("SPACETIME_GATEWAY_TOKEN"),
+    });
+    gateway.start();
+  }
+
+  return gateway;
+}
+
+function requireEnv(name: string) {
+  const value = process.env[name];
+  if (value == null || value.length === 0) {
+    throw new Error(`Missing required environment variable ${name}`);
+  }
+
+  return value;
+}
+```
+
+### Shared validation schema
+
+```ts title="src/utils/documents.schema.ts"
+import { z } from "zod";
+
+export const updateDocumentSchema = z.object({
+  documentId: z.string().min(1),
+  title: z.string().min(1).max(200),
+  body: z.string(),
+});
+```
+
+### Server functions for snapshot and mutations
+
+```ts title="src/utils/documents.functions.ts"
+import { createServerFn } from "@tanstack/react-start";
+import { getGateway } from "../gateway/runtime.server";
+import { updateDocumentSchema } from "./documents.schema";
+
+export const listDocuments = createServerFn({ method: "GET" }).handler(async () => {
+  const session = await requireWebSession();
+  const tenantId = await requireActiveTenant(session);
+
+  return getGateway().listDocuments(tenantId);
+});
+
+export const updateDocument = createServerFn({ method: "POST" })
+  .inputValidator(updateDocumentSchema)
+  .handler(async ({ data }) => {
+    const session = await requireWebSession();
+    const tenantId = await requireActiveTenant(session);
+
+    await requirePermission(session, tenantId, "document:update");
+
+    await getGateway().updateDocument({
+      tenantId,
+      documentId: data.documentId,
+      title: data.title,
+      body: data.body,
+    });
+
+    return { ok: true };
+  });
+```
+
+The browser can import `updateDocument` or `listDocuments` safely because TanStack Start turns server functions into same-origin RPC calls. The actual gateway implementation and SpacetimeDB token remain server-only.
+
+### Server route for SSE
+
+```ts title="src/routes/api/spacetime/events.ts"
+import { createFileRoute } from "@tanstack/react-router";
+import { getGateway } from "../../../gateway/runtime.server";
+
+export const Route = createFileRoute("/api/spacetime/events")({
+  server: {
+    handlers: {
+      GET: async ({ request }) => {
+        const session = await requireWebSession(request);
+        const tenantId = await requireActiveTenant(session);
+
+        const gateway = getGateway();
+        const lastEventId = request.headers.get("last-event-id") ?? undefined;
+        const encoder = new TextEncoder();
+
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            for (const event of gateway.events.eventsAfter(tenantId, lastEventId)) {
+              controller.enqueue(encoder.encode(formatSse(event.event, event.id, event)));
+            }
+
+            const unsubscribe = gateway.events.subscribe(tenantId, event => {
+              controller.enqueue(encoder.encode(formatSse(event.event, event.id, event)));
+            });
+
+            request.signal.addEventListener("abort", () => {
+              unsubscribe();
+              controller.close();
+            });
+          },
+        });
+
+        return new Response(stream, {
+          headers: {
+            "content-type": "text/event-stream; charset=utf-8",
+            "cache-control": "no-cache, no-transform",
+            connection: "keep-alive",
+          },
+        });
+      },
+    },
+  },
+});
+
+function formatSse(event: string, id: string, data: unknown) {
+  return [
+    `event: ${event}`,
+    `id: ${id}`,
+    `data: ${JSON.stringify(data)}`,
+    "",
+    "",
+  ].join("\n");
+}
+```
+
+### Route loader plus browser EventSource
+
+```tsx title="src/routes/documents.tsx"
+import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { listDocuments, updateDocument } from "../utils/documents.functions";
+
+export const Route = createFileRoute("/documents")({
+  loader: () => listDocuments(),
+  component: DocumentsRoute,
+});
+
+function DocumentsRoute() {
+  const initialDocuments = Route.useLoaderData();
+  const [documents, setDocuments] = useState(initialDocuments);
+
+  useEffect(() => {
+    const source = new EventSource("/api/spacetime/events");
+
+    source.addEventListener("document.inserted", event => {
+      const envelope = JSON.parse(event.data);
+      setDocuments(current => [...current, envelope.payload]);
+    });
+
+    source.addEventListener("document.updated", event => {
+      const envelope = JSON.parse(event.data);
+      setDocuments(current =>
+        current.map(document =>
+          document.documentId === envelope.payload.documentId ? envelope.payload : document
+        )
+      );
+    });
+
+    source.addEventListener("document.deleted", event => {
+      const envelope = JSON.parse(event.data);
+      setDocuments(current =>
+        current.filter(document => document.documentId !== envelope.payload.documentId)
+      );
+    });
+
+    return () => source.close();
+  }, []);
+
+  async function save(documentId: string, title: string, body: string) {
+    await updateDocument({
+      data: {
+        documentId,
+        title,
+        body,
+      },
+    });
+  }
+
+  return <DocumentList documents={documents} onSave={save} />;
+}
+```
+
+This keeps the first paint SSR-friendly through the loader, sends mutations through a validated server function, and reserves the server route for a raw `text/event-stream` response. Add route protection with `beforeLoad`, request middleware, or the auth helpers used by your application, but keep the SpacetimeDB gateway connection and token in server-only files.
 
 For Angular or Analog apps, use server-side data fetching for the initial snapshot, Nitro or h3 server routes for mutations and SSE, and an Angular service, signal, or RxJS adapter around `EventSource`.
 
