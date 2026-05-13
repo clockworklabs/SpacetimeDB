@@ -320,6 +320,35 @@ where
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spacetimedb_lib::sats::{
+        algebraic_value::de::ValueDeserializer, de::Deserialize, GroundSpacetimeType, Typespace, WithTypespace,
+    };
+    use spacetimedb_lib::ConnectionId;
+
+    #[test]
+    fn serde_json_value_preserves_connection_id_u128() -> anyhow::Result<()> {
+        // `spacetime subscribe` reformats JSON rows through `serde_json::Value`
+        // before typed SATS deserialization. The CLI enables
+        // `serde_json/arbitrary_precision` so large `ConnectionId` values do not
+        // get rounded while inside `Value`.
+        let conn_id = ConnectionId::from_u128(u64::MAX as u128 + 1);
+        let json = serde_json::to_string(&SerializeWrapper::new(&conn_id))?;
+        let row = serde_json::from_str::<Value>(&json)?;
+
+        let typespace = Typespace::default();
+        let conn_id_ty = ConnectionId::get_type();
+        let conn_id_ty = WithTypespace::new(&typespace, &conn_id_ty);
+        let de = serde::de::DeserializeSeed::deserialize(SeedWrapper(conn_id_ty), row)?;
+        let de = ConnectionId::deserialize(ValueDeserializer::new(de)).unwrap();
+
+        assert_eq!(conn_id, de);
+        Ok(())
+    }
+}
+
 /// Print `num` [`ServerMessage::TransactionUpdate`] messages as JSON.
 /// If `num` is `None`, keep going indefinitely.
 async fn consume_transaction_updates<S>(ws: &mut S, num: Option<u32>, module_def: &RawModuleDefV9) -> Result<(), Error>
