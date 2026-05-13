@@ -56,6 +56,10 @@ To authenticate your services, you have e few options depending on your OIDC pro
   special user accounts designed for non-human users (e.g., servers, APIs). You
   can create a service account and use its credentials to obtain an access token.
 
+For application-managed API keys, webhooks, scheduled jobs, MCP servers, AI
+agents, and customer-built integrations, see
+[Machine Actors, API Keys, and Integrations](./00500-authentication/00480-machine-actors-api-keys.md).
+
 ## Authorization in your module
 
 Obtaining an OIDC token is just the first step in securing your SpacetimeDB
