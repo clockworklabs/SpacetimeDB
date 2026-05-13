@@ -20,6 +20,7 @@ membership, and any application-specific authorization checks.
 | --- | --- | --- | --- |
 | Session broker | You own the web app and want your server to decide when a user, organization member, or API key may connect to SpacetimeDB. | Better Auth sessions, `jwt`, optional `organization`, optional `apiKey`. | A short-lived JWT minted by your app server. |
 | OAuth provider | You want OAuth/OIDC clients, native apps, service clients, or MCP-style integrations to request tokens for SpacetimeDB as a protected resource. | `@better-auth/oauth-provider` plus the Better Auth `jwt` plugin. | A JWT access token with `aud` set from the requested `resource`. |
+| Enterprise SSO and SCIM | You support customer-managed identity providers, organization provisioning, and directory sync. | `@better-auth/sso`, `@better-auth/scim`, and `organization`. | A brokered or OAuth-issued JWT after Better Auth normalizes the user and organization state. |
 | API-key broker | You need robot or integration credentials. | `@better-auth/api-key` verified by your app server. | A short-lived JWT minted after API-key validation. |
 
 In every pattern, treat the JWT as authentication input, not as the complete
@@ -193,6 +194,56 @@ SpacetimeDB follows the issuer metadata to find the verification keys.
 
 The older Better Auth OIDC Provider plugin is being superseded by the OAuth
 Provider plugin. Prefer OAuth Provider mode for new integrations.
+
+## Enterprise SSO and directory sync
+
+Better Auth SSO and SCIM are useful when your application has customers that
+bring their own identity provider. Keep those integrations on the application
+side of the boundary. SpacetimeDB should receive the same normalized
+SpacetimeDB JWT whether the user signed in with email/password, OAuth, SAML,
+enterprise OIDC, or an IdP-managed directory account.
+
+The SSO plugin supports OIDC, OAuth2, and SAML 2.0 providers. Use it to register
+customer identity providers, verify domains before trusting automatic account
+linking, and provision users into the correct Better Auth organization. After
+SSO sign-in, the session broker or OAuth Provider flow can mint a SpacetimeDB
+JWT with stable application claims:
+
+```json
+{
+  "iss": "https://app.example.com/spacetime-auth",
+  "sub": "user_123",
+  "aud": "spacetimedb:my-module",
+  "token_type": "spacetime-access",
+  "actor_ref": "user:user_123",
+  "tenant_id": "org_123",
+  "auth_method": "sso",
+  "sso_provider_id": "customer-idp"
+}
+```
+
+The SCIM plugin exposes SCIM 2.0 endpoints for identity providers to create,
+update, and delete users in Better Auth. When the organization plugin is enabled,
+SCIM tokens can be restricted to an organization and SCIM provisioning can map
+users into that organization's membership. Treat SCIM as directory input for
+Better Auth, not as a SpacetimeDB credential. Never pass a SCIM bearer token to
+SpacetimeDB; validate directory-managed membership in Better Auth and mint a
+short-lived SpacetimeDB JWT after the user or service is authorized.
+
+For enterprise tenants, it is common to combine the plugins:
+
+- `organization` defines the tenant boundary, active organization, roles, and
+  custom permissions.
+- `sso` handles sign-in and maps IdP users to Better Auth users and
+  organizations.
+- `scim` keeps users and memberships synchronized from the customer directory.
+- `oauthProvider` or a session broker turns the normalized Better Auth state
+  into a SpacetimeDB-specific JWT.
+
+Reducers should not trust an enterprise domain, SSO provider ID, or SCIM-managed
+membership claim by itself. Check `iss`, `aud`, `tenant_id`, token type, and the
+module-local authorization tables that reflect the current state your app
+allows.
 
 ## API keys and service actors
 
