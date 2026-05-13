@@ -8,6 +8,8 @@ For this to work, code under test must not read clocks, randomness, scheduling, 
 
 This crate provides the execution-control part of that boundary: spawning, timeouts, virtual time, deterministic randomness, task scheduling, and fault decisions. Storage, networking, and replication should be modeled through higher-level abstractions.
 
+For a tracked view of what is currently under simulator control, what is only constrained by convention, and what still leaks host behavior, see [DETERMINISM_COVERAGE.md](./DETERMINISM_COVERAGE.md).
+
 ## Architecture
 
 [src/lib.rs](./src/lib.rs) exposes `Handle`, a small runtime handle shared code carries. It has two variants:
