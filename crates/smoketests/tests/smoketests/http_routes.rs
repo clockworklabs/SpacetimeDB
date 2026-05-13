@@ -424,11 +424,11 @@ export const router = spacetimedb.httpRouter(
 
 const NO_SUCH_ROUTE_BODY: &str = "Database has not registered a handler for this route";
 
-fn extract_rust_code_blocks(doc_path: &Path) -> String {
+fn extract_code_blocks(doc_path: &Path, regex_src: &str, language_name: &str) -> String {
     let doc = fs::read_to_string(doc_path).unwrap_or_else(|e| panic!("failed to read {}: {e}", doc_path.display()));
     let doc = doc.replace("\r\n", "\n");
 
-    let re = Regex::new(r"```rust\n([\s\S]*?)\n```").expect("regex should compile");
+    let re = Regex::new(regex_src).expect("regex should compile");
     let blocks: Vec<_> = re
         .captures_iter(&doc)
         .map(|cap| cap.get(1).expect("capture group should exist").as_str().to_string())
@@ -436,26 +436,8 @@ fn extract_rust_code_blocks(doc_path: &Path) -> String {
 
     assert!(
         !blocks.is_empty(),
-        "expected at least one rust code block in {}",
-        doc_path.display()
-    );
-
-    blocks.join("\n\n")
-}
-
-fn extract_typescript_code_blocks(doc_path: &Path) -> String {
-    let doc = fs::read_to_string(doc_path).unwrap_or_else(|e| panic!("failed to read {}: {e}", doc_path.display()));
-    let doc = doc.replace("\r\n", "\n");
-
-    let re = Regex::new(r"```(?:ts|typescript)\n([\s\S]*?)\n```").expect("regex should compile");
-    let blocks: Vec<_> = re
-        .captures_iter(&doc)
-        .map(|cap| cap.get(1).expect("capture group should exist").as_str().to_string())
-        .collect();
-
-    assert!(
-        !blocks.is_empty(),
-        "expected at least one typescript code block in {}",
+        "expected at least one {} code block in {}",
+        language_name,
         doc_path.display()
     );
 
@@ -472,17 +454,19 @@ fn rust_http_test(module_code: &str) -> (Smoketest, String) {
     (test, identity)
 }
 
-fn typescript_http_test(module_name: &str, db_name: &str, module_code: &str) -> (Smoketest, String) {
+fn typescript_http_test(name: &str, module_code: &str) -> (Smoketest, String) {
     require_pnpm!();
     let mut test = Smoketest::builder().autopublish(false).build();
-    let identity = test
-        .publish_typescript_module_source(module_name, db_name, module_code)
-        .unwrap();
+    let identity = test.publish_typescript_module_source(name, name, module_code).unwrap();
     (test, identity)
 }
 
+fn route_base(server_url: &str, identity: &str) -> String {
+    format!("{server_url}/v1/database/{identity}/route")
+}
+
 fn assert_http_routes_end_to_end(server_url: &str, identity: &str) {
-    let base = format!("{server_url}/v1/database/{identity}/route");
+    let base = route_base(server_url, identity);
     let client = reqwest::blocking::Client::new();
 
     let resp = client.get(format!("{base}/get")).send().expect("get failed");
@@ -552,7 +536,7 @@ fn assert_http_routes_end_to_end(server_url: &str, identity: &str) {
 }
 
 fn assert_http_routes_pr_example_round_trip(server_url: &str, identity: &str) {
-    let base = format!("{server_url}/v1/database/{identity}/route");
+    let base = route_base(server_url, identity);
     let client = reqwest::blocking::Client::new();
     let payload = b"hello from the PR example".to_vec();
 
@@ -588,7 +572,7 @@ fn assert_http_routes_pr_example_round_trip(server_url: &str, identity: &str) {
 }
 
 fn assert_http_routes_are_strict_for_non_root_paths(server_url: &str, identity: &str) {
-    let base = format!("{server_url}/v1/database/{identity}/route");
+    let base = route_base(server_url, identity);
     let client = reqwest::blocking::Client::new();
 
     let resp = client.get(format!("{base}/foo")).send().expect("foo failed");
@@ -612,7 +596,7 @@ fn assert_http_routes_are_strict_for_non_root_paths(server_url: &str, identity: 
 }
 
 fn assert_http_routes_are_strict_for_root_paths(server_url: &str, identity: &str) {
-    let base = format!("{server_url}/v1/database/{identity}/route");
+    let base = route_base(server_url, identity);
     let client = reqwest::blocking::Client::new();
 
     let resp = client.get(base.clone()).send().expect("empty root failed");
@@ -625,7 +609,7 @@ fn assert_http_routes_are_strict_for_root_paths(server_url: &str, identity: &str
 }
 
 fn assert_http_handler_observes_full_external_uri(server_url: &str, identity: &str) {
-    let base = format!("{server_url}/v1/database/{identity}/route");
+    let base = route_base(server_url, identity);
     let url = format!("{base}/echo-uri?alpha=beta");
     let client = reqwest::blocking::Client::new();
 
@@ -635,7 +619,7 @@ fn assert_http_handler_observes_full_external_uri(server_url: &str, identity: &s
 }
 
 fn assert_handle_request_body(server_url: &str, identity: &str) {
-    let base = format!("{server_url}/v1/database/{identity}/route");
+    let base = route_base(server_url, identity);
     let client = reqwest::blocking::Client::new();
 
     let resp = client
@@ -737,28 +721,19 @@ fn handle_request_body() {
 
 #[test]
 fn typescript_http_routes_end_to_end() {
-    let (test, identity) = typescript_http_test(
-        "http-routes-typescript-basic",
-        "http-routes-typescript-basic",
-        TS_MODULE_CODE,
-    );
+    let (test, identity) = typescript_http_test("http-routes-typescript-basic", TS_MODULE_CODE);
     assert_http_routes_end_to_end(&test.server_url, &identity);
 }
 
 #[test]
 fn typescript_http_routes_pr_example_round_trip() {
-    let (test, identity) = typescript_http_test(
-        "http-routes-typescript-example",
-        "http-routes-typescript-example",
-        TS_EXAMPLE_MODULE_CODE,
-    );
+    let (test, identity) = typescript_http_test("http-routes-typescript-example", TS_EXAMPLE_MODULE_CODE);
     assert_http_routes_pr_example_round_trip(&test.server_url, &identity);
 }
 
 #[test]
 fn typescript_http_routes_are_strict_for_non_root_paths() {
     let (test, identity) = typescript_http_test(
-        "http-routes-typescript-strict-non-root",
         "http-routes-typescript-strict-non-root",
         TS_STRICT_NON_ROOT_ROUTING_MODULE_CODE,
     );
@@ -767,28 +742,20 @@ fn typescript_http_routes_are_strict_for_non_root_paths() {
 
 #[test]
 fn typescript_http_routes_are_strict_for_root_paths() {
-    let (test, identity) = typescript_http_test(
-        "http-routes-typescript-strict-root",
-        "http-routes-typescript-strict-root",
-        TS_STRICT_ROOT_ROUTING_MODULE_CODE,
-    );
+    let (test, identity) =
+        typescript_http_test("http-routes-typescript-strict-root", TS_STRICT_ROOT_ROUTING_MODULE_CODE);
     assert_http_routes_are_strict_for_root_paths(&test.server_url, &identity);
 }
 
 #[test]
 fn typescript_http_handler_observes_full_external_uri() {
-    let (test, identity) = typescript_http_test(
-        "http-routes-typescript-full-uri",
-        "http-routes-typescript-full-uri",
-        TS_FULL_URI_MODULE_CODE,
-    );
+    let (test, identity) = typescript_http_test("http-routes-typescript-full-uri", TS_FULL_URI_MODULE_CODE);
     assert_http_handler_observes_full_external_uri(&test.server_url, &identity);
 }
 
 #[test]
 fn typescript_handle_request_body() {
     let (test, identity) = typescript_http_test(
-        "http-routes-typescript-request-body",
         "http-routes-typescript-request-body",
         TS_HANDLE_REQUEST_BODY_MODULE_CODE,
     );
@@ -798,8 +765,10 @@ fn typescript_handle_request_body() {
 /// Validates the Rust example from `docs/docs/00200-core-concepts/00200-functions/00600-HTTP-handlers.md`.
 #[test]
 fn http_handlers_tutorial_say_hello_route_works() {
-    let module_code = extract_rust_code_blocks(
+    let module_code = extract_code_blocks(
         &workspace_root().join("docs/docs/00200-core-concepts/00200-functions/00600-HTTP-handlers.md"),
+        r"```rust\n([\s\S]*?)\n```",
+        "rust",
     );
     let test = Smoketest::builder().module_code(&module_code).build();
     let identity = test.database_identity.as_ref().expect("database identity missing");
@@ -817,8 +786,10 @@ fn http_handlers_tutorial_say_hello_route_works() {
 fn typescript_http_handlers_tutorial_say_hello_route_works() {
     require_pnpm!();
 
-    let module_code = extract_typescript_code_blocks(
+    let module_code = extract_code_blocks(
         &workspace_root().join("docs/docs/00200-core-concepts/00200-functions/00600-HTTP-handlers.md"),
+        r"```(?:ts|typescript)\n([\s\S]*?)\n```",
+        "typescript",
     );
     let mut test = Smoketest::builder().autopublish(false).build();
     let identity = test

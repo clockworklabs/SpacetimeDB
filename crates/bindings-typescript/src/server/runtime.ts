@@ -301,6 +301,38 @@ export const callUserFunction = function __spacetimedb_end_short_backtrace<
   return fn(...args);
 };
 
+export function runWithTx<T, Ctx>(
+  makeCtx: (timestamp: Timestamp) => Ctx,
+  body: (ctx: Ctx) => T
+): T {
+  const run = () => {
+    const timestamp = sys.procedure_start_mut_tx();
+
+    try {
+      return body(makeCtx(new Timestamp(timestamp)));
+    } catch (e) {
+      sys.procedure_abort_mut_tx();
+      throw e;
+    }
+  };
+
+  let res = run();
+  try {
+    sys.procedure_commit_mut_tx();
+    return res;
+  } catch {
+    // ignore the commit error
+  }
+  console.warn('committing anonymous transaction failed');
+  res = run();
+  try {
+    sys.procedure_commit_mut_tx();
+    return res;
+  } catch (e) {
+    throw new Error('transaction retry failed again', { cause: e });
+  }
+}
+
 export const makeHooks = (schema: SchemaInner): ModuleHooks =>
   new ModuleHooksImpl(schema);
 
@@ -504,39 +536,11 @@ class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
   }
 
   withTx<T>(body: (ctx: any) => T): T {
-    const run = () => {
-      const timestamp = sys.procedure_start_mut_tx();
-
-      try {
-        return body(
-          new ReducerCtxImpl(
-            Identity.zero(),
-            new Timestamp(timestamp),
-            null,
-            this.#dbView()
-          )
-        );
-      } catch (e) {
-        sys.procedure_abort_mut_tx();
-        throw e;
-      }
-    };
-
-    let res = run();
-    try {
-      sys.procedure_commit_mut_tx();
-      return res;
-    } catch {
-      // ignore the commit error
-    }
-    console.warn('committing anonymous transaction failed');
-    res = run();
-    try {
-      sys.procedure_commit_mut_tx();
-      return res;
-    } catch (e) {
-      throw new Error('transaction retry failed again', { cause: e });
-    }
+    return runWithTx(
+      timestamp =>
+        new ReducerCtxImpl(Identity.zero(), timestamp, null, this.#dbView()),
+      body
+    );
   }
 
   newUuidV4(): Uuid {
