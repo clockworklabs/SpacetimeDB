@@ -2198,10 +2198,12 @@ using System;
 namespace SpacetimeDB
 {
     [SpacetimeDB.Type]
-    public enum NamespaceTestC
+    public enum NamespaceTestC : IEquatable<NamespaceTestC>
     {
         Foo,
         Bar,
+
+        public bool Equals(NamespaceTestC other) => this == other;
     }
 }
 '''
