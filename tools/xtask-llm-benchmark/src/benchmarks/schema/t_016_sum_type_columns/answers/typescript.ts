@@ -13,7 +13,7 @@ const Shape = t.enum('Shape', {
 const drawing = table({
   name: 'drawing',
 }, {
-  id: t.i32().primaryKey(),
+  id: t.u64().primaryKey().autoInc(),
   a: Shape,
   b: Shape,
 });
@@ -24,9 +24,9 @@ export default spacetimedb;
 export const seed = spacetimedb.reducer(
   ctx => {
     ctx.db.drawing.insert({
-      id: 1,
-      a: { circle: 10 },
-      b: { rectangle: { width: 4, height: 6 } },
+      id: 0n,
+      a: { tag: 'circle', value: 10 },
+      b: { tag: 'rectangle', value: { width: 4, height: 6 } },
     });
   }
 );

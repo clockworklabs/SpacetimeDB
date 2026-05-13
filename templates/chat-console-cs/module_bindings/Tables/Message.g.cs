@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class MessageHandle : RemoteTableHandle<EventContext, Message>
         {
-            protected override string RemoteTableName => "Message";
+            protected override string RemoteTableName => "message";
 
             internal MessageHandle(DbConnection conn) : base(conn)
             {
@@ -33,9 +33,9 @@ namespace SpacetimeDB.Types
 
         public MessageCols(string tableName)
         {
-            Sender = new global::SpacetimeDB.Col<Message, SpacetimeDB.Identity>(tableName, "Sender");
-            Sent = new global::SpacetimeDB.Col<Message, SpacetimeDB.Timestamp>(tableName, "Sent");
-            Text = new global::SpacetimeDB.Col<Message, string>(tableName, "Text");
+            Sender = new global::SpacetimeDB.Col<Message, SpacetimeDB.Identity>(tableName, "sender");
+            Sent = new global::SpacetimeDB.Col<Message, SpacetimeDB.Timestamp>(tableName, "sent");
+            Text = new global::SpacetimeDB.Col<Message, string>(tableName, "text");
         }
     }
 

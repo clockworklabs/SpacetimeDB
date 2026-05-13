@@ -5,14 +5,14 @@ public static partial class Module
     [Table(Accessor = "User")]
     public partial struct User
     {
-        [PrimaryKey] public int UserId;
+        [PrimaryKey, AutoInc] public ulong UserId;
         public string Name;
     }
 
     [Table(Accessor = "Group")]
     public partial struct Group
     {
-        [PrimaryKey] public int GroupId;
+        [PrimaryKey, AutoInc] public ulong GroupId;
         public string Title;
     }
 
@@ -21,22 +21,22 @@ public static partial class Module
     [SpacetimeDB.Index.BTree(Accessor = "by_group", Columns = new[] { nameof(GroupId) })]
     public partial struct Membership
     {
-        [PrimaryKey] public int Id;
-        public int UserId;
-        public int GroupId;
+        [PrimaryKey, AutoInc] public ulong Id;
+        public ulong UserId;
+        public ulong GroupId;
     }
 
     [Reducer]
     public static void Seed(ReducerContext ctx)
     {
-        ctx.Db.User.Insert(new User { UserId = 1, Name = "Alice" });
-        ctx.Db.User.Insert(new User { UserId = 2, Name = "Bob" });
+        ctx.Db.User.Insert(new User { UserId = 0, Name = "Alice" });
+        ctx.Db.User.Insert(new User { UserId = 0, Name = "Bob" });
 
-        ctx.Db.Group.Insert(new Group { GroupId = 10, Title = "Admin" });
-        ctx.Db.Group.Insert(new Group { GroupId = 20, Title = "Dev" });
+        ctx.Db.Group.Insert(new Group { GroupId = 0, Title = "Admin" });
+        ctx.Db.Group.Insert(new Group { GroupId = 0, Title = "Dev" });
 
-        ctx.Db.Membership.Insert(new Membership { Id = 1, UserId = 1, GroupId = 10 });
-        ctx.Db.Membership.Insert(new Membership { Id = 2, UserId = 1, GroupId = 20 });
-        ctx.Db.Membership.Insert(new Membership { Id = 3, UserId = 2, GroupId = 20 });
+        ctx.Db.Membership.Insert(new Membership { Id = 0, UserId = 1, GroupId = 1 });
+        ctx.Db.Membership.Insert(new Membership { Id = 0, UserId = 1, GroupId = 2 });
+        ctx.Db.Membership.Insert(new Membership { Id = 0, UserId = 2, GroupId = 2 });
     }
 }

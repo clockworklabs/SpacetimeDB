@@ -1,0 +1,15 @@
+Write a SpacetimeDB backend module in C# that schedules a one-shot reducer to fire at a specific future time.
+
+TABLE
+- Reminder
+  - Fields:
+    - ScheduledId: ulong (primary key, auto-increment)
+    - ScheduledAt: ScheduleAt (the schedule column)
+    - Message: string
+  - Scheduling:
+    - Scheduled = nameof(SendReminder)
+    - ScheduledAt = nameof(Reminder.ScheduledAt)
+
+REDUCERS
+- SendReminder: scheduled reducer triggered by Reminder (receives a Reminder row, does nothing)
+- Init (ReducerKind.Init): inserts one row into Reminder using ScheduleAt.Time with a TimeDuration of 60 seconds (60_000_000 microseconds) added to ctx.Timestamp
