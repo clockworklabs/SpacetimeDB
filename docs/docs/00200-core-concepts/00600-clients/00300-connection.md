@@ -170,6 +170,227 @@ UDbConnection* Conn = UDbConnection::Builder()
 
 The token is sent to the server during connection and validates your identity. See the [SpacetimeAuth documentation](../00500-authentication/00100-spacetimeauth/index.md) for details on obtaining and managing tokens.
 
+## Server-Side TypeScript Connections
+
+The generated TypeScript SDK can also be used from Node.js and other long-running server runtimes. This is useful when your application server owns authentication, keeps SpacetimeDB credentials out of the browser, calls reducers from request handlers, or relays subscription updates to browsers through another transport such as Server-Sent Events.
+
+For server-side TypeScript applications:
+
+- Keep the `DbConnection` in server-only code.
+- Build the connection once for the process, tenant, database, or actor boundary you are modeling.
+- Register subscriptions and row callbacks from `onConnect`.
+- Call `disconnect()` during process shutdown.
+- On disconnect, build a new connection and re-register subscriptions and callbacks.
+
+The SDK does not automatically recreate your application-level subscriptions on a new `DbConnection`. Treat reconnect as a new connection with an empty client cache, then resubscribe to the views or tables your server projection needs.
+
+:::tip[Node.js WebSocket support]
+
+Node.js 22 and newer provide a global `WebSocket`. On Node.js 18-21, install `undici` so the SDK can load its WebSocket implementation:
+
+```bash
+npm install undici
+```
+
+The runtime must also provide the standard Fetch APIs used during authenticated connection setup.
+
+:::
+
+### Long-Running Server Process
+
+In a long-running server, create a small connection manager instead of constructing a connection in every request handler. The same manager can expose reducer calls to HTTP handlers and keep a subscribed server-side cache or event stream up to date.
+
+```typescript
+import { DbConnection, tables } from './module_bindings';
+
+const HOST = process.env.SPACETIMEDB_HOST ?? 'ws://localhost:3000';
+const DB_NAME = process.env.SPACETIMEDB_DB_NAME ?? 'my_database';
+
+let conn: DbConnection | undefined;
+let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+let shuttingDown = false;
+
+export function connectToSpacetime(token?: string): DbConnection {
+  if (conn?.isActive) {
+    return conn;
+  }
+  shuttingDown = false;
+
+  conn = DbConnection.builder()
+    .withUri(HOST)
+    .withDatabaseName(DB_NAME)
+    .withToken(token)
+    .onConnect(connection => {
+      connection
+        .subscriptionBuilder()
+        .onApplied(() => {
+          console.log('SpacetimeDB subscription ready');
+        })
+        .onError((_ctx, error) => {
+          console.error('SpacetimeDB subscription error:', error);
+        })
+        // Replace `myTable` with one of your generated table accessors.
+        .subscribe(tables.myTable);
+    })
+    .onConnectError((_ctx, error) => {
+      console.error('SpacetimeDB connection failed:', error);
+      if (!shuttingDown) {
+        scheduleReconnect(token);
+      }
+    })
+    .onDisconnect((_ctx, error) => {
+      if (error) {
+        console.error('SpacetimeDB disconnected:', error);
+      }
+      conn = undefined;
+      if (!shuttingDown) {
+        scheduleReconnect(token);
+      }
+    })
+    .build();
+
+  return conn;
+}
+
+function scheduleReconnect(token?: string) {
+  if (reconnectTimer) {
+    return;
+  }
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = undefined;
+    connectToSpacetime(token);
+  }, 1_000);
+}
+
+export function shutdownSpacetime() {
+  shuttingDown = true;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = undefined;
+  }
+  conn?.disconnect();
+  conn = undefined;
+}
+```
+
+Call `shutdownSpacetime()` from your server's `SIGINT` or `SIGTERM` handler so the WebSocket is closed cleanly.
+
+### Effect v4 Runtime Pattern
+
+Effect is not required to use SpacetimeDB from a server, but it is a good fit for applications that want deterministic resource management, testable services, and CLI commands that reuse the same code as HTTP handlers. The usual pattern is:
+
+- Put the `DbConnection` behind a service.
+- Acquire the connection in a `Layer`.
+- Release it with `disconnect()` when the layer is closed.
+- Publish subscription callbacks into a bounded `PubSub`.
+- Expose reducer calls as service methods.
+- Run web handlers, jobs, tests, and CLI commands through the same runtime.
+
+The following sketch shows the shape. Replace `myTable` and `sendMessage` with accessors generated for your module.
+
+```typescript
+import { Context, Effect, Layer, PubSub, Stream } from 'effect';
+import { DbConnection, tables } from './module_bindings';
+
+type GatewayEvent =
+  | { readonly _tag: 'SubscriptionReady' }
+  | { readonly _tag: 'RowInserted'; readonly row: unknown };
+
+export class SpacetimeGateway extends Context.Service<
+  SpacetimeGateway,
+  {
+    readonly events: Stream.Stream<GatewayEvent>;
+    readonly sendMessage: (text: string) => Effect.Effect<void, unknown>;
+  }
+>()('app/SpacetimeGateway') {
+  static readonly layer = Layer.effect(
+    SpacetimeGateway,
+    Effect.gen(function* () {
+      const events = yield* PubSub.bounded<GatewayEvent>({
+        capacity: 256,
+        replay: 50,
+      });
+
+      const publish = (event: GatewayEvent) => {
+        void Effect.runPromise(PubSub.publish(events, event));
+      };
+
+      const conn = yield* Effect.acquireRelease(
+        Effect.tryPromise({
+          try: () =>
+            new Promise<DbConnection>((resolve, reject) => {
+              DbConnection.builder()
+                .withUri(process.env.SPACETIMEDB_HOST ?? 'ws://localhost:3000')
+                .withDatabaseName(
+                  process.env.SPACETIMEDB_DB_NAME ?? 'my_database'
+                )
+                .withToken(process.env.SPACETIMEDB_TOKEN)
+                .onConnect(connection => {
+                  connection
+                    .subscriptionBuilder()
+                    .onApplied(() => publish({ _tag: 'SubscriptionReady' }))
+                    .onError((_ctx, error) => console.error(error))
+                    .subscribe(tables.myTable);
+
+                  connection.db.myTable.onInsert((_ctx, row) => {
+                    publish({ _tag: 'RowInserted', row });
+                  });
+
+                  resolve(connection);
+                })
+                .onConnectError((_ctx, error) => reject(error))
+                .build();
+            }),
+          catch: cause => cause,
+        }),
+        connection => Effect.sync(() => connection.disconnect())
+      );
+
+      yield* Effect.addFinalizer(() => PubSub.shutdown(events));
+
+      return SpacetimeGateway.of({
+        events: Stream.fromPubSub(events),
+        sendMessage: text =>
+          Effect.tryPromise({
+            try: () => conn.reducers.sendMessage({ text }),
+            catch: cause => cause,
+          }),
+      });
+    })
+  );
+}
+```
+
+Framework handlers can then call the service through a shared `ManagedRuntime`, and CLI commands can launch the same layer to run smoke tests, migrations, or operational tasks. In tests, provide a different Layer for the gateway or swap dependencies such as the token provider, clock, PubSub, or WebSocket-facing service.
+
+### Reducer Calls From Server Handlers
+
+Once the connection is established, request handlers can call generated reducer methods on the server-side connection:
+
+```typescript
+export async function createMessage(text: string) {
+  const connection = connectToSpacetime(process.env.SPACETIMEDB_TOKEN);
+  // Replace `sendMessage` with one of your generated reducer accessors.
+  await connection.reducers.sendMessage({ text });
+}
+```
+
+The returned promise resolves when SpacetimeDB returns the reducer result. Any rows changed by that reducer still flow back through the connection's subscription updates and row callbacks, so use subscriptions to keep server-side projections current.
+
+### Authentication And Token Refresh
+
+Pass an OpenID Connect compliant JSON Web Token with `withToken(...)` when your server needs an authenticated SpacetimeDB identity. During connection setup, the SDK verifies that token with SpacetimeDB and exchanges it for a short-lived WebSocket token before opening the socket.
+
+A `DbConnection` is authenticated at connection time. If your server obtains a new application token or the existing token expires, build a new `DbConnection` with the fresh token, re-register subscriptions, and then disconnect the old connection after the replacement is ready.
+
+Because every reducer call on a connection uses that connection's authenticated identity, do not share a single authenticated connection across user-specific writes unless your module explicitly models delegation. For per-user sender attribution, use a user-scoped token and connection. For service or robot access, use a service-scoped token and pass only trusted, server-derived actor context to reducers.
+
+### Request-Scoped Or Serverless Use
+
+For one-off server-side reads, serverless functions, or loaders that only need an initial snapshot, it can be reasonable to connect, subscribe, wait for `onApplied`, read the client cache, and disconnect. This is the pattern used by some framework templates.
+
+For high-throughput gateways, dashboards, background workers, and SSE relays, prefer a long-lived process-level manager so you do not create a new WebSocket for every request.
+
 ## Advancing the Connection
 
 :::danger[Critical: C#, Unity, and Unreal Users]

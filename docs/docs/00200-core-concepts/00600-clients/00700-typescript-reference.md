@@ -15,6 +15,7 @@ Before diving into the reference, you may want to review:
 | Name                                                              | Description                                                                                                                            |
 | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | [Project setup](#project-setup)                                   | Configure your TypeScript project to use the SpacetimeDB TypeScript client SDK.                                                        |
+| [Node.js and server runtimes](#nodejs-and-server-runtimes)         | Runtime requirements and lifecycle guidance for using the SDK from server-side TypeScript.                                             |
 | [Generate module bindings](#generate-module-bindings)             | Use the SpacetimeDB CLI to generate module-specific types and interfaces.                                                              |
 | [`DbConnection` type](#type-dbconnection)                         | A connection to a remote database.                                                                                                     |
 | [`DbContext` interface](#interface-dbcontext)                     | Methods for interacting with the remote database. Implemented by [`DbConnection`](#type-dbconnection) and various event context types. |
@@ -51,6 +52,26 @@ npm install spacetimedb
 ```
 
 > WARNING! The `@clockworklabs/spacetimedb-sdk` package has been deprecated in favor of the `spacetimedb` package as of SpacetimeDB version 1.4.0. If you are using the old SDK package, you will need to switch to `spacetimedb`. You will also need a SpacetimeDB CLI version of 1.4.0+ to generate bindings for the new `spacetimedb` package.
+
+### Node.js and server runtimes
+
+The TypeScript SDK supports server-side TypeScript in addition to browser clients. Use the same generated `DbConnection` type from Node.js scripts, API routes, loaders, background workers, or long-running application servers.
+
+Runtime notes:
+
+- Node.js 22 and newer provide a global `WebSocket`.
+- On Node.js 18-21, install `undici` so the SDK can load a WebSocket implementation:
+
+```bash
+npm install undici
+```
+
+- The runtime must provide the standard Fetch APIs used during authenticated connection setup.
+- Keep generated bindings and `DbConnection` usage that contains secrets or service tokens in server-only files.
+- For long-running processes, create one connection manager that owns `DbConnection`, subscriptions, reconnect behavior, and shutdown.
+- For request-scoped snapshots, connect, subscribe, wait for `onApplied`, read the client cache, and then call `disconnect()`.
+
+See [Server-Side TypeScript Connections](./00300-connection.md#server-side-typescript-connections) for lifecycle guidance and examples.
 
 You should have this folder layout starting from the root of your project:
 
