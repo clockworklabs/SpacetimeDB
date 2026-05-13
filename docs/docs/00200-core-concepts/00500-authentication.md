@@ -56,6 +56,11 @@ To authenticate your services, you have e few options depending on your OIDC pro
   special user accounts designed for non-human users (e.g., servers, APIs). You
   can create a service account and use its credentials to obtain an access token.
 
+For multi-tenant SaaS authorization patterns that combine JWT claims, private
+tables, reducers, views, roles, impersonation, API-key grants, and audit logs,
+see
+[Multi-Tenant Authorization Cookbook](./00500-authentication/00490-multi-tenant-authorization-cookbook.md).
+
 ## Authorization in your module
 
 Obtaining an OIDC token is just the first step in securing your SpacetimeDB
