@@ -33,8 +33,8 @@ use spacetimedb_data_structures::map::{Equivalent, HashMap};
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v10::{
     ExplicitNames, RawConstraintDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawModuleDefV10,
-    RawModuleDefV10Section, RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10,
-    RawScopedTypeNameV10, RawSequenceDefV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10,
+    RawModuleDefV10Section, RawModuleMountV10, RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10,
+    RawScheduleDefV10, RawScopedTypeNameV10, RawSequenceDefV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10,
 };
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIndexAlgorithm, RawIndexDefV9,
@@ -617,7 +617,10 @@ impl From<ModuleDef> for RawModuleDefV10 {
 
         let mounts: Vec<_> = mounts
             .into_iter()
-            .map(|(namespace, module)| (namespace, module.into()))
+            .map(|(namespace, module)| RawModuleMountV10 {
+                namespace,
+                module: module.into(),
+            })
             .collect();
         if !mounts.is_empty() {
             sections.push(RawModuleDefV10Section::Mounts(mounts));

@@ -295,11 +295,11 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
     })
 }
 
-fn validate_mount((namespace, module): (String, RawModuleDefV10)) -> Result<(String, ModuleDef)> {
-    Identifier::new(namespace.clone().into())
+fn validate_mount(mount: RawModuleMountV10) -> Result<(String, ModuleDef)> {
+    Identifier::new(mount.namespace.clone().into())
         .map_err(|error| ValidationErrors::from(ValidationError::IdentifierError { error }))?;
 
-    Ok((namespace, validate(module)?))
+    Ok((mount.namespace, validate(mount.module)?))
 }
 
 /// Change the visibility of scheduled functions and lifecycle reducers to Internal.
@@ -1284,10 +1284,10 @@ mod tests {
             .finish();
 
         let raw = RawModuleDefV10 {
-            sections: vec![RawModuleDefV10Section::Mounts(vec![(
-                "authlib".to_string(),
-                mounted_builder.finish(),
-            )])],
+            sections: vec![RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+                namespace: "authlib".to_string(),
+                module: mounted_builder.finish(),
+            }])],
         };
 
         let def: ModuleDef = raw.try_into().expect("mounted module should validate");
@@ -1301,10 +1301,10 @@ mod tests {
     #[test]
     fn invalid_mount_namespace() {
         let raw = RawModuleDefV10 {
-            sections: vec![RawModuleDefV10Section::Mounts(vec![(
-                "".to_string(),
-                RawModuleDefV10::default(),
-            )])],
+            sections: vec![RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+                namespace: "".to_string(),
+                module: RawModuleDefV10::default(),
+            }])],
         };
 
         let result: Result<ModuleDef> = raw.try_into();

@@ -413,18 +413,6 @@ impl_st!([T] Vec<T>, ts => <[T]>::make_type(ts));
 impl_st!([T, const N: usize] SmallVec<[T; N]>, ts => <[T]>::make_type(ts));
 impl_st!([T] Option<T>, ts => AlgebraicType::option(T::make_type(ts)));
 
-// SATS derives need tuples to have a structural product representation so
-// tuple payloads like `(String, RawModuleDefV10)` can appear in wire types.
-impl<T, U> SpacetimeType for (T, U)
-where
-    T: SpacetimeType,
-    U: SpacetimeType,
-{
-    fn make_type<S: TypespaceBuilder>(ts: &mut S) -> AlgebraicType {
-        AlgebraicType::product([T::make_type(ts), U::make_type(ts)])
-    }
-}
-
 impl_st!([] spacetimedb_primitives::ArgId, AlgebraicType::U64);
 impl_st!([] spacetimedb_primitives::ColId, AlgebraicType::U16);
 impl_st!([] spacetimedb_primitives::TableId, AlgebraicType::U32);

@@ -91,7 +91,15 @@ pub enum RawModuleDefV10Section {
     ExplicitNames(ExplicitNames),
 
     /// Mounted submodules, keyed by the namespace they are mounted under.
-    Mounts(Vec<(String, RawModuleDefV10)>),
+    Mounts(Vec<RawModuleMountV10>),
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawModuleMountV10 {
+    pub namespace: String,
+    pub module: RawModuleDefV10,
 }
 
 #[derive(Debug, Clone, Copy, Default, SpacetimeType)]
@@ -514,7 +522,7 @@ pub struct RawViewDefV10 {
 
 impl RawModuleDefV10 {
     /// Get the mounted submodules for this module definition.
-    pub fn mounts(&self) -> Option<&Vec<(String, RawModuleDefV10)>> {
+    pub fn mounts(&self) -> Option<&Vec<RawModuleMountV10>> {
         self.sections.iter().find_map(|s| match s {
             RawModuleDefV10Section::Mounts(mounts) => Some(mounts),
             _ => None,
