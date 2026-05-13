@@ -223,6 +223,11 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
+            fn try_update_unique_conflict() {
+                make_test("try-update-unique-conflict").run();
+            }
+
+            #[test]
             fn insert_vec() {
                 make_test("insert-vec").run();
             }
