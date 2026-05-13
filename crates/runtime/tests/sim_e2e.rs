@@ -2,11 +2,18 @@
 
 use std::{sync::Arc, time::Duration};
 
+use futures::{
+    channel::{mpsc, oneshot},
+    StreamExt,
+};
 use spacetimedb_runtime::sim::{buggify, Rng, Runtime};
 use spin::Mutex;
 
 #[test]
 fn multi_node_runtime_coordinates_pause_resume_and_virtual_time() {
+    // Exercises the executor, node pause/resume, and timer wheel together:
+    // paused node work must not run until resumed, and all nodes must observe
+    // one shared virtual clock.
     let mut runtime = Runtime::new(101);
     let handle = runtime.handle();
     let node_a = runtime.create_node();
@@ -53,7 +60,90 @@ fn multi_node_runtime_coordinates_pause_resume_and_virtual_time() {
 }
 
 #[test]
+fn client_server_request_response_uses_virtual_time() {
+    // Models a small client/server exchange without real networking: the client
+    // sends requests over an in-memory channel, and the server replies after
+    // deterministic virtual latency on a different simulated node.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct Response {
+        id: u64,
+        value: u64,
+        at: Duration,
+    }
+
+    struct Request {
+        id: u64,
+        input: u64,
+        respond_to: oneshot::Sender<Response>,
+    }
+
+    let mut runtime = Runtime::new(404);
+    let handle = runtime.handle();
+    let client_node = runtime.create_node();
+    let server_node = runtime.create_node();
+    let (request_tx, mut request_rx) = mpsc::unbounded::<Request>();
+
+    let responses = runtime.block_on(async move {
+        let server_handle = handle.clone();
+        let server = handle.spawn_on(server_node, async move {
+            for _ in 0..3 {
+                let request = request_rx.next().await.expect("client should send request");
+                server_handle.sleep(Duration::from_millis(request.id + 1)).await;
+                request
+                    .respond_to
+                    .send(Response {
+                        id: request.id,
+                        value: request.input * 10,
+                        at: server_handle.now(),
+                    })
+                    .expect("client should wait for response");
+            }
+        });
+
+        let client = handle.spawn_on(client_node, async move {
+            let mut responses = Vec::new();
+            for (id, input) in [(2, 7), (0, 4), (1, 5)] {
+                let (respond_to, response_rx) = oneshot::channel();
+                request_tx
+                    .unbounded_send(Request { id, input, respond_to })
+                    .expect("server inbox should be open");
+                responses.push(response_rx.await.expect("server should reply"));
+            }
+            responses
+        });
+
+        let responses = client.await;
+        server.await;
+        responses
+    });
+
+    assert_eq!(
+        responses,
+        vec![
+            Response {
+                id: 2,
+                value: 70,
+                at: Duration::from_millis(3)
+            },
+            Response {
+                id: 0,
+                value: 40,
+                at: Duration::from_millis(4)
+            },
+            Response {
+                id: 1,
+                value: 50,
+                at: Duration::from_millis(6)
+            },
+        ]
+    );
+    assert_eq!(runtime.elapsed(), Duration::from_millis(6));
+}
+
+#[test]
 fn runtime_buggify_matches_standalone_rng_sequence() {
+    // Checks that runtime-owned buggify decisions consume the same seeded RNG
+    // sequence as an explicit `Rng`, making injected faults replayable by seed.
     let seed = 77;
     let runtime = Runtime::new(seed);
     let expected = Rng::new(seed);
@@ -76,6 +166,9 @@ fn runtime_buggify_matches_standalone_rng_sequence() {
 
 #[test]
 fn multi_node_timeout_uses_shared_virtual_clock() {
+    // Verifies timeout races are driven by virtual time, not wall time: the
+    // fast node completes at 2ms, then the slow node times out at the shared
+    // 4ms deadline.
     let mut runtime = Runtime::new(303);
     let handle = runtime.handle();
     let slow_node = runtime.create_node();

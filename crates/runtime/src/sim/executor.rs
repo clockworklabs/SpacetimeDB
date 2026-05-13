@@ -13,9 +13,26 @@ use core::{
 use futures_util::FutureExt;
 use spin::Mutex;
 
-use crate::sim::{time::TimeHandle, Rng, RuntimeConfig};
+use crate::sim::{time::TimeHandle, Rng};
 
 type Runnable = async_task::Runnable<NodeId>;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RuntimeConfig {
+    pub seed: u64,
+}
+
+impl RuntimeConfig {
+    pub const fn new(seed: u64) -> Self {
+        Self { seed }
+    }
+}
+
+impl Default for RuntimeConfig {
+    fn default() -> Self {
+        Self::new(0)
+    }
+}
 
 /// A unique identifier for a simulated node.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -303,7 +320,7 @@ impl fmt::Display for JoinError {
     }
 }
 
-#[cfg(feature = "simulation-std")]
+#[cfg(feature = "simulation")]
 impl std::error::Error for JoinError {}
 
 struct AbortState {
@@ -675,7 +692,7 @@ mod tests {
         let actual = (0..8).map(|_| handle.buggify_with_prob(0.5)).collect::<Vec<_>>();
 
         let expected = {
-            let mut rng = Rng::new(77);
+            let rng = Rng::new(77);
             rng.enable_buggify();
             (0..8).map(|_| rng.buggify_with_prob(0.5)).collect::<Vec<_>>()
         };
@@ -696,15 +713,14 @@ mod tests {
         assert!(!runtime.is_buggify_enabled());
     }
 
-    #[cfg(feature = "simulation-std")]
+    #[cfg(feature = "simulation")]
     #[test]
     fn current_handle_can_spawn_local_task_inside_runtime() {
-        assert!(crate::adapter::sim_std::current_handle().is_none());
+        assert!(crate::sim_std::current_handle().is_none());
 
         let mut runtime = Runtime::new(5);
-        let value = crate::adapter::sim_std::block_on(&mut runtime, async {
-            let handle =
-                crate::adapter::sim_std::current_handle().expect("sim handle should be present inside block_on");
+        let value = crate::sim_std::block_on(&mut runtime, async {
+            let handle = crate::sim_std::current_handle().expect("sim handle should be present inside block_on");
             let node = handle.create_node();
             let captured = std::rc::Rc::new(17);
             handle
@@ -716,16 +732,16 @@ mod tests {
         });
 
         assert_eq!(value, 17);
-        assert!(crate::adapter::sim_std::current_handle().is_none());
+        assert!(crate::sim_std::current_handle().is_none());
     }
 
-    #[cfg(feature = "simulation-std")]
+    #[cfg(feature = "simulation")]
     #[test]
     fn check_determinism_runs_future_twice() {
         static CALLS: AtomicUsize = AtomicUsize::new(0);
         CALLS.store(0, Ordering::SeqCst);
 
-        let value = crate::adapter::sim_std::check_determinism(3, || async {
+        let value = crate::sim_std::check_determinism(3, || async {
             CALLS.fetch_add(1, Ordering::SeqCst);
             yield_now().await;
             13
@@ -735,14 +751,14 @@ mod tests {
         assert_eq!(CALLS.load(Ordering::SeqCst), 2);
     }
 
-    #[cfg(feature = "simulation-std")]
+    #[cfg(feature = "simulation")]
     #[test]
     #[should_panic(expected = "non-determinism detected")]
     fn check_determinism_rejects_different_scheduler_sequence() {
         static FIRST_RUN: AtomicBool = AtomicBool::new(true);
         FIRST_RUN.store(true, Ordering::SeqCst);
 
-        crate::adapter::sim_std::check_determinism(4, || async {
+        crate::sim_std::check_determinism(4, || async {
             if FIRST_RUN.swap(false, Ordering::SeqCst) {
                 yield_now().await;
             }

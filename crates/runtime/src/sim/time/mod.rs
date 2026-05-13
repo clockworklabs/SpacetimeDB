@@ -194,7 +194,7 @@ impl fmt::Display for TimeoutElapsed {
     }
 }
 
-#[cfg(any(feature = "tokio", feature = "simulation-std"))]
+#[cfg(any(feature = "tokio", feature = "simulation"))]
 impl std::error::Error for TimeoutElapsed {}
 
 #[cfg(test)]

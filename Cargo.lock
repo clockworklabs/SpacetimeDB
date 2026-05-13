@@ -8486,7 +8486,6 @@ dependencies = [
  "libc",
  "spin",
  "tokio",
- "tracing",
 ]
 
 [[package]]

@@ -1,4 +1,4 @@
-#![cfg_attr(not(any(feature = "tokio", feature = "simulation-std")), no_std)]
+#![cfg_attr(not(any(feature = "tokio", feature = "simulation")), no_std)]
 
 //! Runtime and deterministic simulation utilities shared by core and DST.
 
@@ -13,12 +13,25 @@ use core::{
     time::Duration,
 };
 
-pub mod adapter;
 #[cfg(feature = "simulation")]
 pub mod sim;
+#[cfg(feature = "simulation")]
+pub mod sim_std;
 
 #[cfg(feature = "tokio")]
-pub use adapter::tokio::{current_handle_or_new_runtime, TokioHandle, TokioRuntime};
+pub type TokioHandle = tokio::runtime::Handle;
+#[cfg(feature = "tokio")]
+pub type TokioRuntime = tokio::runtime::Runtime;
+
+#[cfg(feature = "tokio")]
+pub fn current_handle_or_new_runtime() -> std::io::Result<(TokioHandle, Option<TokioRuntime>)> {
+    if let Ok(handle) = TokioHandle::try_current() {
+        return Ok((handle, None));
+    }
+
+    let runtime = TokioRuntime::new()?;
+    Ok((runtime.handle().clone(), Some(runtime)))
+}
 
 #[derive(Clone)]
 pub enum Runtime {
@@ -77,41 +90,96 @@ impl AbortHandle {
     }
 }
 
-impl fmt::Display for JoinError {
+impl JoinErrorInner {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        #[cfg(not(any(feature = "tokio", feature = "simulation")))]
-        let _ = f;
-        match &self.inner {
+        match self {
             #[cfg(feature = "tokio")]
-            JoinErrorInner::Tokio(err) => err.fmt(f),
+            Self::Tokio(err) => fmt::Display::fmt(err, f),
             #[cfg(feature = "simulation")]
-            JoinErrorInner::Simulation(err) => err.fmt(f),
-            #[cfg(not(any(feature = "tokio", feature = "simulation")))]
-            _ => unreachable!("runtime join error has no enabled backend"),
+            Self::Simulation(err) => fmt::Display::fmt(err, f),
         }
     }
 }
 
-#[cfg(any(feature = "tokio", feature = "simulation-std"))]
+impl fmt::Display for JoinError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        #[cfg(not(any(feature = "tokio", feature = "simulation")))]
+        let _ = f;
+        #[cfg(any(feature = "tokio", feature = "simulation"))]
+        return self.inner.fmt(f);
+        #[cfg(not(any(feature = "tokio", feature = "simulation")))]
+        unreachable!("runtime join error has no enabled backend")
+    }
+}
+
+#[cfg(any(feature = "tokio", feature = "simulation"))]
 impl std::error::Error for JoinError {}
 
-impl<T> JoinHandle<T> {
-    pub fn abort_handle(&self) -> AbortHandle {
-        match &self.inner {
+impl<T> JoinHandleInner<T> {
+    fn abort_handle(&self) -> AbortHandle {
+        match self {
             #[cfg(feature = "tokio")]
-            JoinHandleInner::Tokio(Some(handle)) => AbortHandle {
+            Self::Tokio(Some(handle)) => AbortHandle {
                 inner: AbortHandleInner::Tokio(handle.abort_handle()),
             },
             #[cfg(feature = "simulation")]
-            JoinHandleInner::Simulation(Some(handle)) => AbortHandle {
+            Self::Simulation(Some(handle)) => AbortHandle {
                 inner: AbortHandleInner::Simulation(handle.abort_handle()),
             },
             #[cfg(feature = "tokio")]
-            JoinHandleInner::Tokio(None) => panic!("runtime join handle aborted after detach"),
+            Self::Tokio(None) => panic!("runtime join handle aborted after detach"),
             #[cfg(feature = "simulation")]
-            JoinHandleInner::Simulation(None) => panic!("runtime join handle aborted after detach"),
-            JoinHandleInner::Detached(_) => panic!("runtime join handle aborted after completion"),
+            Self::Simulation(None) => panic!("runtime join handle aborted after detach"),
+            Self::Detached(_) => panic!("runtime join handle aborted after completion"),
         }
+    }
+
+    fn detach(&mut self) {
+        match self {
+            #[cfg(feature = "tokio")]
+            Self::Tokio(handle) => {
+                drop(handle.take());
+            }
+            #[cfg(feature = "simulation")]
+            Self::Simulation(handle) => {
+                if let Some(handle) = handle.take() {
+                    handle.detach();
+                }
+            }
+            Self::Detached(_) => {}
+        }
+    }
+
+    fn poll_result(&mut self, cx: &mut Context<'_>) -> Poll<Result<T, JoinError>> {
+        match self {
+            #[cfg(feature = "tokio")]
+            Self::Tokio(Some(handle)) => match Pin::new(handle).poll(cx) {
+                Poll::Ready(Ok(output)) => Poll::Ready(Ok(output)),
+                Poll::Ready(Err(err)) => Poll::Ready(Err(JoinError {
+                    inner: JoinErrorInner::Tokio(err),
+                })),
+                Poll::Pending => Poll::Pending,
+            },
+            #[cfg(feature = "simulation")]
+            Self::Simulation(Some(handle)) => match Pin::new(handle).poll_join(cx) {
+                Poll::Ready(Ok(output)) => Poll::Ready(Ok(output)),
+                Poll::Ready(Err(err)) => Poll::Ready(Err(JoinError {
+                    inner: JoinErrorInner::Simulation(err),
+                })),
+                Poll::Pending => Poll::Pending,
+            },
+            #[cfg(feature = "tokio")]
+            Self::Tokio(None) => panic!("runtime join handle polled after detach"),
+            #[cfg(feature = "simulation")]
+            Self::Simulation(None) => panic!("runtime join handle polled after detach"),
+            Self::Detached(_) => panic!("runtime join handle polled after completion"),
+        }
+    }
+}
+
+impl<T> JoinHandle<T> {
+    pub fn abort_handle(&self) -> AbortHandle {
+        self.inner.abort_handle()
     }
 
     pub fn detach(mut self) {
@@ -119,19 +187,7 @@ impl<T> JoinHandle<T> {
     }
 
     fn detach_inner(&mut self) {
-        match &mut self.inner {
-            #[cfg(feature = "tokio")]
-            JoinHandleInner::Tokio(handle) => {
-                drop(handle.take());
-            }
-            #[cfg(feature = "simulation")]
-            JoinHandleInner::Simulation(handle) => {
-                if let Some(handle) = handle.take() {
-                    handle.detach();
-                }
-            }
-            JoinHandleInner::Detached(_) => {}
-        }
+        self.inner.detach();
         self.inner = JoinHandleInner::Detached(PhantomData);
     }
 }
@@ -142,34 +198,13 @@ impl<T> Future for JoinHandle<T> {
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         #[cfg(not(any(feature = "tokio", feature = "simulation")))]
         let _ = cx;
-        match &mut self.inner {
-            #[cfg(feature = "tokio")]
-            JoinHandleInner::Tokio(Some(handle)) => match Pin::new(handle).poll(cx) {
-                Poll::Ready(Ok(output)) => {
-                    self.inner = JoinHandleInner::Detached(PhantomData);
-                    Poll::Ready(Ok(output))
-                }
-                Poll::Ready(Err(err)) => Poll::Ready(Err(JoinError {
-                    inner: JoinErrorInner::Tokio(err),
-                })),
-                Poll::Pending => Poll::Pending,
-            },
-            #[cfg(feature = "simulation")]
-            JoinHandleInner::Simulation(Some(handle)) => match Pin::new(handle).poll_join(cx) {
-                Poll::Ready(Ok(output)) => {
-                    self.inner = JoinHandleInner::Detached(PhantomData);
-                    Poll::Ready(Ok(output))
-                }
-                Poll::Ready(Err(err)) => Poll::Ready(Err(JoinError {
-                    inner: JoinErrorInner::Simulation(err),
-                })),
-                Poll::Pending => Poll::Pending,
-            },
-            #[cfg(feature = "tokio")]
-            JoinHandleInner::Tokio(None) => panic!("runtime join handle polled after detach"),
-            #[cfg(feature = "simulation")]
-            JoinHandleInner::Simulation(None) => panic!("runtime join handle polled after detach"),
-            JoinHandleInner::Detached(_) => panic!("runtime join handle polled after completion"),
+        match self.inner.poll_result(cx) {
+            Poll::Ready(Ok(output)) => {
+                self.inner = JoinHandleInner::Detached(PhantomData);
+                Poll::Ready(Ok(output))
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
         }
     }
 }
@@ -191,30 +226,32 @@ impl fmt::Display for RuntimeTimeout {
     }
 }
 
-#[cfg(any(feature = "tokio", feature = "simulation-std"))]
+#[cfg(any(feature = "tokio", feature = "simulation"))]
 impl std::error::Error for RuntimeTimeout {}
 
+#[cfg(feature = "tokio")]
 impl Runtime {
-    #[cfg(feature = "tokio")]
     pub fn tokio(handle: TokioHandle) -> Self {
         Self::Tokio(handle)
     }
 
-    #[cfg(feature = "tokio")]
     pub fn tokio_current() -> Self {
         Self::tokio(TokioHandle::current())
     }
+}
 
-    #[cfg(feature = "simulation")]
+#[cfg(feature = "simulation")]
+impl Runtime {
     pub fn simulation(handle: sim::Handle) -> Self {
         Self::Simulation(handle)
     }
 
-    #[cfg(feature = "simulation-std")]
     pub fn simulation_current() -> Self {
-        adapter::sim_std::simulation_current()
+        sim_std::simulation_current()
     }
+}
 
+impl Runtime {
     pub fn spawn(&self, future: impl Future<Output = ()> + Send + 'static) -> JoinHandle<()> {
         #[cfg(not(any(feature = "tokio", feature = "simulation")))]
         let _ = future;
