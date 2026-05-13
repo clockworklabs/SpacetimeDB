@@ -301,7 +301,7 @@ export function parseDemoOptions(argv: string[] = process.argv): DemoOptions {
 
   return {
     ...runtimeOptions,
-    seconds: options.seconds ?? 10,
+    seconds: options.seconds ?? 60,
     concurrency: options.concurrency ?? 50,
     alpha: options.alpha ?? 1.5,
     systems:
@@ -374,7 +374,7 @@ export function parseBenchOptions(argv: string[] = process.argv): BenchOptions {
   return {
     ...runtimeOptions,
     testName: args[0] ?? defaultBenchTestName,
-    seconds: options.seconds ?? 10,
+    seconds: options.seconds ?? 60,
     concurrency:
       contentionTests?.concurrency ?? options.concurrency ?? 50,
     alpha: concurrencyTests?.alpha ?? options.alpha ?? 1.5,

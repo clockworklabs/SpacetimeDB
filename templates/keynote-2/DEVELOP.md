@@ -27,7 +27,7 @@ The script will:
 
 **Options:**
 
-- `--seconds N` - Benchmark duration (default: 10)
+- `--seconds N` - Benchmark duration (default: 60)
 - `--concurrency N` - Concurrent connections (default: 50)
 - `--alpha N` - Contention level (default: 1.5)
 - `--systems a,b,c` - Systems to compare (default: convex,spacetimedb)
@@ -205,7 +205,7 @@ From `src/cli.ts`:
 
 - **`--seconds N`**
   - Duration of the benchmark in seconds
-  - Default: `10`
+  - Default: `60`
 
 - **`--concurrency N`**
   - Number of workers / in-flight operations
