@@ -1,9 +1,9 @@
-Write a SpacetimeDB backend module in TypeScript that tests all elementary/primitive column types.
+Write a SpacetimeDB backend module in TypeScript that defines one table and seeds one row.
 
 TABLE
 - primitive
   - Fields:
-    - id: number (i32, primary key)
+    - id: number (u64, primary key, autoInc)
     - count: number (i32)
     - total: bigint (i64)
     - price: number (f32)
@@ -12,5 +12,5 @@ TABLE
     - name: string
 
 REDUCERS
-- seed: insert one row with all field types:
-  - (id=1, count=2, total=3000000000, price=1.5, ratio=2.25, active=true, name="Alice")
+- seed: insert one row with all field types (id is auto-assigned):
+  - (count=2, total=3000000000, price=1.5, ratio=2.25, active=true, name="Alice")

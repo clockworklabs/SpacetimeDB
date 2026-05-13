@@ -17,7 +17,7 @@ use spacetimedb_lib::Identity;
 use spacetimedb_snapshot::{CompressionStats, DynSnapshotRepo};
 use tokio::sync::watch;
 
-use crate::worker_metrics::WORKER_METRICS;
+use crate::{db::snapshot, worker_metrics::WORKER_METRICS};
 use spacetimedb_runtime::Runtime;
 
 pub type SnapshotDatabaseState = Arc<RwLock<CommittedState>>;
@@ -61,7 +61,7 @@ impl Compression {
 pub struct SnapshotWorker {
     snapshot_created: watch::Sender<TxOffset>,
     request_snapshot: mpsc::UnboundedSender<Request>,
-    snapshot_repo: Arc<DynSnapshotRepo>,
+    snapshot_repository: Arc<DynSnapshotRepo>,
 }
 
 impl SnapshotWorker {
@@ -94,7 +94,7 @@ impl SnapshotWorker {
         Self {
             snapshot_created,
             request_snapshot: request_tx,
-            snapshot_repo,
+            snapshot_repository: snapshot_repo,
         }
     }
 
@@ -110,7 +110,7 @@ impl SnapshotWorker {
 
     /// Get the snapshot repo this worker is operating on.
     pub fn snapshot_repo(&self) -> Arc<DynSnapshotRepo> {
-        self.snapshot_repo.clone()
+        self.snapshot_repository.clone()
     }
 
     /// Request a snapshot to be taken.
