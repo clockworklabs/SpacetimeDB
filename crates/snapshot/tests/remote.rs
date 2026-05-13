@@ -10,7 +10,7 @@ use spacetimedb::{
         snapshot::{self, SnapshotWorker},
     },
     error::DBError,
-    runtime, Identity,
+    Identity,
 };
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::datastore::Locking;
@@ -227,7 +227,7 @@ impl SourceSnapshot {
 
 async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffset> {
     let start = Instant::now();
-    let rt = runtime::Runtime::tokio_current();
+    let rt = spacetimedb_runtime::Handle::tokio_current();
     // NOTE: `_db` needs to stay alive until the snapshot is taken,
     // because the snapshot worker holds only a weak reference.
     let (mut watch, _db) = spawn_blocking(|| {

@@ -8668,6 +8668,7 @@ dependencies = [
  "spacetimedb-lib 2.2.0",
  "spacetimedb-paths",
  "spacetimedb-primitives 2.2.0",
+ "spacetimedb-runtime",
  "spacetimedb-sats 2.2.0",
  "spacetimedb-schema",
  "spacetimedb-table",
