@@ -44,7 +44,7 @@ use spacetimedb_lib::Identity;
 use spacetimedb_paths::server::SnapshotDirPath;
 use spacetimedb_paths::server::{ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
-use spacetimedb_runtime::Runtime;
+use spacetimedb_runtime::Handle;
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
@@ -102,7 +102,7 @@ pub struct RelationalDB {
 
     inner: Locking,
     durability: Option<Arc<Durability>>,
-    durability_runtime: Option<Runtime>,
+    durability_runtime: Option<Handle>,
     snapshot_worker: Option<SnapshotWorker>,
 
     row_count_fn: RowCountFn,
@@ -136,7 +136,6 @@ impl std::fmt::Debug for RelationalDB {
 
 impl Drop for RelationalDB {
     fn drop(&mut self) {
-        log::info!("starting drop");
         // Attempt to flush the outstanding transactions.
         if let (Some(durability), Some(runtime)) = (self.durability.take(), self.durability_runtime.take()) {
             spawn_durability_close(durability, &runtime, self.database_identity);
@@ -1673,7 +1672,7 @@ pub type LocalDurability = Arc<durability::Local<ProductValue>>;
 /// of the commitlog.
 pub async fn local_durability(
     replica_dir: ReplicaDir,
-    runtime: Runtime,
+    runtime: Handle,
     snapshot_worker: Option<&SnapshotWorker>,
 ) -> Result<(LocalDurability, DiskSizeFn), DBError> {
     let on_new_segment = snapshot_worker.map(|snapshot_worker| {
@@ -1954,12 +1953,12 @@ pub mod tests_utils {
             let snapshots = want_snapshot_repo
                 .then(|| {
                     open_snapshot_repo(root.snapshots(), db_identity, replica_id).map(|repo| {
-                        SnapshotWorker::new(repo, snapshot::Compression::Disabled, Runtime::tokio(rt.clone()))
+                        SnapshotWorker::new(repo, snapshot::Compression::Disabled, Handle::tokio(rt.clone()))
                     })
                 })
                 .transpose()?;
 
-            let runtime = Runtime::tokio(rt.clone());
+            let runtime = Handle::tokio(rt.clone());
             let (local, disk_size_fn) =
                 rt.block_on(local_durability(root.clone(), runtime.clone(), snapshots.as_ref()))?;
             let history = local.as_history();
@@ -2082,11 +2081,11 @@ pub mod tests_utils {
             let snapshots = want_snapshot_repo
                 .then(|| {
                     open_snapshot_repo(root.snapshots(), Identity::ZERO, 0).map(|repo| {
-                        SnapshotWorker::new(repo, snapshot::Compression::Enabled, Runtime::tokio(rt.clone()))
+                        SnapshotWorker::new(repo, snapshot::Compression::Enabled, Handle::tokio(rt.clone()))
                     })
                 })
                 .transpose()?;
-            let runtime = Runtime::tokio(rt.clone());
+            let runtime = Handle::tokio(rt.clone());
             let (local, disk_size_fn) =
                 rt.block_on(local_durability(root.clone(), runtime.clone(), snapshots.as_ref()))?;
             let history = local.as_history();

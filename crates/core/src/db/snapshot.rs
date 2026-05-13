@@ -17,8 +17,8 @@ use spacetimedb_lib::Identity;
 use spacetimedb_snapshot::{CompressionStats, DynSnapshotRepo};
 use tokio::sync::watch;
 
-use crate::{db::snapshot, worker_metrics::WORKER_METRICS};
-use spacetimedb_runtime::Runtime;
+use crate::worker_metrics::WORKER_METRICS;
+use spacetimedb_runtime::Handle;
 
 pub type SnapshotDatabaseState = Arc<RwLock<CommittedState>>;
 
@@ -70,7 +70,7 @@ impl SnapshotWorker {
     /// The handle is only partially initialized, as it is lacking the
     /// [SnapshotDatabaseState]. This allows control code to [Self::subscribe]
     /// to future snapshots before handing off the worker to the database.
-    pub fn new(snapshot_repo: Arc<DynSnapshotRepo>, compression: Compression, runtime: Runtime) -> Self {
+    pub fn new(snapshot_repo: Arc<DynSnapshotRepo>, compression: Compression, runtime: Handle) -> Self {
         let database = snapshot_repo.database_identity();
         let latest_snapshot = snapshot_repo.latest_snapshot().ok().flatten().unwrap_or(0);
         let (snapshot_created, _) = watch::channel(latest_snapshot);
@@ -172,7 +172,7 @@ struct SnapshotWorkerActor {
     snapshot_repo: Arc<DynSnapshotRepo>,
     snapshot_created: watch::Sender<TxOffset>,
     metrics: SnapshotMetrics,
-    runtime: Runtime,
+    runtime: Handle,
     compression: Option<Compressor>,
 }
 
@@ -317,7 +317,7 @@ struct Compressor {
     snapshot_repo: Arc<DynSnapshotRepo>,
     metrics: CompressionMetrics,
     stats: Option<CompressionStats>,
-    runtime: Runtime,
+    runtime: Handle,
 }
 
 impl Compressor {

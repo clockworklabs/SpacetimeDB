@@ -19,7 +19,7 @@ use spacetimedb_commitlog::{
 };
 use spacetimedb_fs_utils::lockfile::advisory::{LockError, LockedFile};
 use spacetimedb_paths::server::ReplicaDir;
-use spacetimedb_runtime::{JoinHandle, Runtime};
+use spacetimedb_runtime::{Handle, JoinHandle};
 use thiserror::Error;
 use tokio::sync::watch;
 use tracing::{instrument, Span};
@@ -123,7 +123,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T, Fs> {
     /// This is used to capture a snapshot each new segment.
     pub fn open(
         replica_dir: ReplicaDir,
-        runtime: Runtime,
+        rt: Handle,
         opts: Options,
         on_new_segment: Option<Arc<OnNewSegmentFn>>,
     ) -> Result<Self, OpenError> {
@@ -138,7 +138,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T, Fs> {
             opts.commitlog,
             on_new_segment,
         )?);
-        Self::open_inner(clog, runtime, opts, Some(lock))
+        Self::open_inner(clog, rt, opts, Some(lock))
     }
 }
 
@@ -148,7 +148,7 @@ where
     R: RepoWithoutLockFile + Send + Sync + 'static,
 {
     /// Create a [`Local`] instance backed by the provided commitlog repo.
-    pub fn open_with_repo(repo: R, rt: Runtime, opts: Options) -> Result<Self, OpenError> {
+    pub fn open_with_repo(repo: R, rt: Handle, opts: Options) -> Result<Self, OpenError> {
         info!("open local durability");
         let clog = Arc::new(Commitlog::open_with_repo(repo, opts.commitlog)?);
         Self::open_inner(clog, rt, opts, None)
@@ -162,7 +162,7 @@ where
 {
     fn open_inner(
         clog: Arc<Commitlog<Txdata<T>, R>>,
-        runtime: Runtime,
+        rt: Handle,
         opts: Options,
         lock: Option<LockedFile>,
     ) -> Result<Self, OpenError> {
@@ -170,13 +170,13 @@ where
         let (queue, txdata_rx) = async_channel::bounded(queue_capacity);
         let queue_depth = Arc::new(AtomicU64::new(0));
         let (durable_tx, durable_rx) = watch::channel(clog.max_committed_offset());
-        let actor = runtime.spawn(
+        let actor = rt.spawn(
             Actor {
                 clog: clog.clone(),
                 durable_offset: durable_tx,
                 queue_depth: queue_depth.clone(),
                 batch_capacity: opts.batch_capacity,
-                runtime: runtime.clone(),
+                runtime: rt.clone(),
                 lock,
             }
             .run(txdata_rx),
@@ -241,7 +241,7 @@ where
     queue_depth: Arc<AtomicU64>,
 
     batch_capacity: NonZeroUsize,
-    runtime: Runtime,
+    runtime: Handle,
 
     #[allow(unused)]
     lock: Option<LockedFile>,

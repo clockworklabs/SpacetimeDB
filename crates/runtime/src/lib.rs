@@ -20,21 +20,9 @@ pub mod sim_std;
 
 #[cfg(feature = "tokio")]
 pub type TokioHandle = tokio::runtime::Handle;
-#[cfg(feature = "tokio")]
-pub type TokioRuntime = tokio::runtime::Runtime;
-
-#[cfg(feature = "tokio")]
-pub fn current_handle_or_new_runtime() -> std::io::Result<(TokioHandle, Option<TokioRuntime>)> {
-    if let Ok(handle) = TokioHandle::try_current() {
-        return Ok((handle, None));
-    }
-
-    let runtime = TokioRuntime::new()?;
-    Ok((runtime.handle().clone(), Some(runtime)))
-}
 
 #[derive(Clone)]
-pub enum Runtime {
+pub enum Handle {
     #[cfg(feature = "tokio")]
     Tokio(TokioHandle),
     #[cfg(feature = "simulation")]
@@ -230,7 +218,7 @@ impl fmt::Display for RuntimeTimeout {
 impl std::error::Error for RuntimeTimeout {}
 
 #[cfg(feature = "tokio")]
-impl Runtime {
+impl Handle {
     pub fn tokio(handle: TokioHandle) -> Self {
         Self::Tokio(handle)
     }
@@ -241,13 +229,13 @@ impl Runtime {
 }
 
 #[cfg(feature = "simulation")]
-impl Runtime {
+impl Handle {
     pub fn simulation(handle: sim::Handle) -> Self {
         Self::Simulation(handle)
     }
 }
 
-impl Runtime {
+impl Handle {
     pub fn spawn(&self, future: impl Future<Output = ()> + Send + 'static) -> JoinHandle<()> {
         #[cfg(not(any(feature = "tokio", feature = "simulation")))]
         let _ = future;
