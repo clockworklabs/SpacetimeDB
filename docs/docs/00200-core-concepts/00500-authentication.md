@@ -39,6 +39,10 @@ such as ease of integration, pricing, scalability, and security.
   sign-in, session management, and prebuilt UI components for modern web applications.
 - [Keycloak](https://www.keycloak.org/) An open-source and
   self-hosted OIDC provider with extensive features, customization options and integrations.
+- [OIDC identity migration](./00500-authentication/00475-oidc-identity-migration.md)
+  Guidance for moving between issuers, such as Keycloak, SpacetimeAuth, Auth0,
+  Clerk, or an app-owned broker, while preserving authorization and audit
+  continuity.
 
 ## Authenticate your services
 
