@@ -1,5 +1,3 @@
-//! Virtual time for the local simulation runtime.
-
 mod sleep;
 
 use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};

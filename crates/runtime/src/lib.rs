@@ -1,9 +1,3 @@
-#![cfg_attr(not(any(feature = "tokio", feature = "simulation")), no_std)]
-
-//! Runtime and deterministic simulation utilities shared by core and DST.
-
-extern crate alloc;
-
 use core::{
     fmt,
     future::Future,

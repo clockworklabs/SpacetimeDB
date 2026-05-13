@@ -1,5 +1,3 @@
-//! Minimal asynchronous executor adapted from madsim's `sim/task` loop.
-
 use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};
 use core::{
     fmt,
