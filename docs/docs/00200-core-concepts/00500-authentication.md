@@ -37,6 +37,9 @@ such as ease of integration, pricing, scalability, and security.
 - [Clerk](https://clerk.com/) A developer-focused
   authentication and user management platform that provides OIDC-compliant
   sign-in, session management, and prebuilt UI components for modern web applications.
+- [Better Auth](./00500-authentication/00450-BetterAuth.md) A TypeScript
+  authentication framework that can issue JWTs from application-owned sessions
+  or run as an OAuth 2.1/OIDC provider for SpacetimeDB clients.
 - [Keycloak](https://www.keycloak.org/) An open-source and
   self-hosted OIDC provider with extensive features, customization options and integrations.
 
