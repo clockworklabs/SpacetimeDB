@@ -214,10 +214,6 @@ where
     }
 }
 
-impl<T, R> Commitlog<T, R>
-where
-    R: Repo,
-{
     /// Determine the maximum transaction offset considered durable.
     ///
     /// The offset is `None` if the log hasn't been flushed to disk yet.

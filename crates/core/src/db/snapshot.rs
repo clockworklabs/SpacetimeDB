@@ -70,20 +70,20 @@ impl SnapshotWorker {
     /// The handle is only partially initialized, as it is lacking the
     /// [SnapshotDatabaseState]. This allows control code to [Self::subscribe]
     /// to future snapshots before handing off the worker to the database.
-    pub fn new(snapshot_repo: Arc<DynSnapshotRepo>, compression: Compression, runtime: Handle) -> Self {
-        let database = snapshot_repo.database_identity();
-        let latest_snapshot = snapshot_repo.latest_snapshot().ok().flatten().unwrap_or(0);
+    pub fn new(snapshot_repository: Arc<DynSnapshotRepo>, compression: Compression, runtime: Handle) -> Self {
+        let database = snapshot_repository.database_identity();
+        let latest_snapshot = snapshot_repository..latest_snapshot().ok().flatten().unwrap_or(0);
         let (snapshot_created, _) = watch::channel(latest_snapshot);
         let (request_tx, request_rx) = mpsc::unbounded();
 
         let actor = SnapshotWorkerActor {
             snapshot_requests: request_rx,
-            snapshot_repo: snapshot_repo.clone(),
+            snapshot_repository.: snapshot_repo.clone(),
             snapshot_created: snapshot_created.clone(),
             metrics: SnapshotMetrics::new(database),
             runtime: runtime.clone(),
             compression: compression.is_enabled().then(|| Compressor {
-                snapshot_repo: snapshot_repo.clone(),
+                snapshot_repository.: snapshot_repo.clone(),
                 metrics: CompressionMetrics::new(database),
                 stats: <_>::default(),
                 runtime: runtime.clone(),
@@ -94,7 +94,7 @@ impl SnapshotWorker {
         Self {
             snapshot_created,
             request_snapshot: request_tx,
-            snapshot_repository: snapshot_repo,
+            snapshot_repository,
         }
     }
 
@@ -172,7 +172,7 @@ struct SnapshotWorkerActor {
     snapshot_repo: Arc<DynSnapshotRepo>,
     snapshot_created: watch::Sender<TxOffset>,
     metrics: SnapshotMetrics,
-    runtime: Handle,
+   rt: Handle,
     compression: Option<Compressor>,
 }
 
@@ -317,7 +317,7 @@ struct Compressor {
     snapshot_repo: Arc<DynSnapshotRepo>,
     metrics: CompressionMetrics,
     stats: Option<CompressionStats>,
-    runtime: Handle,
+   rt: Handle,
 }
 
 impl Compressor {
@@ -349,8 +349,8 @@ impl Compressor {
         let range = start..latest_snapshot;
         let mut stats = self.stats.take().unwrap_or_default();
 
-        let runtime = self.runtime.clone();
-        let (mut stats, res) = runtime
+        let rt = self.rt.clone();
+        let (mut stats, res) = rt
             .spawn_blocking({
                 let range = range.clone();
                 move || {

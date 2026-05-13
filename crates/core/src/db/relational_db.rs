@@ -2081,7 +2081,7 @@ pub mod tests_utils {
             let snapshots = want_snapshot_repo
                 .then(|| {
                     open_snapshot_repo(root.snapshots(), Identity::ZERO, 0).map(|repo| {
-                        SnapshotWorker::new(repo, snapshot::Compression::Enabled, Handle::tokio(rt.clone()))
+                        SnapshotWorker::new(repo, snapshot::Compression::Disabled, Handle::tokio(rt.clone()))
                     })
                 })
                 .transpose()?;
