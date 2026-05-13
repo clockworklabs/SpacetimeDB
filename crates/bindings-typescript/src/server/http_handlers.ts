@@ -1,192 +1,403 @@
-import {
-  HttpRequest,
-  HttpResponse,
-  type MethodOrAny,
-  type HttpMethod,
+import type { Identity } from '../lib/identity';
+import type {
+  HttpMethod,
+  HttpVersion,
+  MethodOrAny,
 } from '../lib/autogen/types';
-import BinaryReader from '../lib/binary_reader';
-import BinaryWriter from '../lib/binary_writer';
-import { bsatnBaseSize } from '../lib/util';
-import {
-  Headers,
-  SyncResponse,
-  deserializeHeaders,
-  serializeHeaders,
-} from './http_internal';
+import type { UntypedSchemaDef } from '../lib/schema';
+import type { Timestamp } from '../lib/timestamp';
+import type { Uuid } from '../lib/uuid';
+import type { TransactionCtx } from './procedures';
+import type { HttpClient } from './http_internal';
+import type { Random } from './rng';
 import {
   exportContext,
   registerExport,
   type ModuleExport,
   type SchemaInner,
 } from './schema';
+import {
+  Headers,
+  makeResponse,
+  SyncResponse,
+  textDecoder,
+  textEncoder,
+  type BodyInit,
+  type HeadersInit,
+  type ResponseInit,
+} from './http_shared';
 
-export interface Request {
-  readonly method: string;
-  readonly url: string;
-  readonly headers: Headers;
-  readonly body: Uint8Array;
+export { Headers };
+export { SyncResponse };
+export type { BodyInit, HeadersInit, ResponseInit };
+export { makeResponse };
+export const httpHandlerFn = Symbol('SpacetimeDB.httpHandlerFn');
+
+export interface RequestInit {
+  body?: BodyInit | null;
+  headers?: HeadersInit;
+  method?: string;
+  version?: HttpVersion;
 }
 
-export type HttpHandler = (request: Request) => SyncResponse;
-export type HttpHandlerExport = HttpHandler & ModuleExport;
+type RequestInner = {
+  headers: Headers;
+  method: string;
+  uri: string;
+  version: HttpVersion;
+};
 
-type HttpMethodName = 'GET' | 'POST';
-
-type Route = {
-  method: HttpMethodName;
+type RouteSpec = {
+  handler: HttpHandlerExport<any>;
+  method: MethodOrAny;
   path: string;
-  handler: HttpHandlerExport;
 };
 
-export type HttpHandlers = HttpHandler[];
+const ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION =
+  'ASCII lowercase letters, digits and `-_~/`';
 
-const responseBaseSize = bsatnBaseSize(
-  { types: [] },
-  HttpResponse.algebraicType
-);
+export const makeRequest = Symbol('makeRequest');
 
-const routesSymbol = Symbol('SpacetimeDB.http.routes');
-const httpHandlerSymbol = Symbol('SpacetimeDB.http.handler');
-
-type RouterWithRoutes = Router & {
-  [routesSymbol]: Route[];
-};
-
-const METHODS: Record<HttpMethodName, MethodOrAny> = {
-  GET: { tag: 'Method', value: { tag: 'Get' } },
-  POST: { tag: 'Method', value: { tag: 'Post' } },
-};
-
-function methodToString(method: HttpMethod): string {
-  switch (method.tag) {
-    case 'Get':
-      return 'GET';
-    case 'Head':
-      return 'HEAD';
-    case 'Post':
-      return 'POST';
-    case 'Put':
-      return 'PUT';
-    case 'Delete':
-      return 'DELETE';
-    case 'Connect':
-      return 'CONNECT';
-    case 'Options':
-      return 'OPTIONS';
-    case 'Trace':
-      return 'TRACE';
-    case 'Patch':
-      return 'PATCH';
-    case 'Extension':
-      return method.value;
+function coerceRequestBody(body?: BodyInit | null): string | Uint8Array | null {
+  if (body == null) {
+    return null;
   }
+  if (typeof body === 'string') {
+    return body;
+  }
+  return new Uint8Array(body as any);
+}
+
+function requestBodyToBytes(body: string | Uint8Array | null): Uint8Array {
+  if (body == null) {
+    return new Uint8Array();
+  }
+  if (typeof body === 'string') {
+    return textEncoder.encode(body);
+  }
+  return body;
+}
+
+function requestBodyToText(body: string | Uint8Array | null): string {
+  if (body == null) {
+    return '';
+  }
+  if (typeof body === 'string') {
+    return body;
+  }
+  return textDecoder.decode(body);
+}
+
+function characterIsAcceptableForRoutePath(c: string) {
+  return (
+    (c >= 'a' && c <= 'z') ||
+    (c >= '0' && c <= '9') ||
+    c === '-' ||
+    c === '_' ||
+    c === '~' ||
+    c === '/'
+  );
+}
+
+function assertValidPath(path: string) {
+  if (path !== '' && !path.startsWith('/')) {
+    throw new TypeError(`Route paths must start with \`/\`: ${path}`);
+  }
+  if (![...path].every(characterIsAcceptableForRoutePath)) {
+    throw new TypeError(
+      `Route paths may contain only ${ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION}: ${path}`
+    );
+  }
+}
+
+function routesOverlap(a: RouteSpec, b: RouteSpec) {
+  const methodsMatch = (left: HttpMethod, right: HttpMethod) => {
+    if (left.tag !== right.tag) {
+      return false;
+    }
+    if (left.tag === 'Extension' && right.tag === 'Extension') {
+      return left.value === right.value;
+    }
+    return true;
+  };
+
+  return (
+    a.path === b.path &&
+    (a.method.tag === 'Any' ||
+      b.method.tag === 'Any' ||
+      (a.method.tag === 'Method' &&
+        b.method.tag === 'Method' &&
+        methodsMatch(a.method.value, b.method.value)))
+  );
+}
+
+function joinPaths(prefix: string, suffix: string) {
+  if (prefix === '/') {
+    return suffix;
+  }
+  if (suffix === '/') {
+    return prefix;
+  }
+  const joinedPrefix = prefix.replace(/\/+$/, '');
+  const joinedSuffix = suffix.replace(/^\/+/, '');
+  return `${joinedPrefix}/${joinedSuffix}`;
+}
+
+export class Request {
+  #body: string | Uint8Array | null;
+  #inner: RequestInner;
+
+  constructor(url: URL | string, init: RequestInit = {}) {
+    this.#body = coerceRequestBody(init.body);
+    this.#inner = {
+      headers: new Headers(init.headers as any),
+      method: init.method ?? 'GET',
+      uri: '' + url,
+      version: init.version ?? { tag: 'Http11' },
+    };
+  }
+
+  static [makeRequest](body: BodyInit | null, inner: RequestInner) {
+    const me = new Request(inner.uri);
+    me.#body = coerceRequestBody(body);
+    me.#inner = inner;
+    return me;
+  }
+
+  get headers(): Headers {
+    return this.#inner.headers;
+  }
+
+  get method(): string {
+    return this.#inner.method;
+  }
+
+  get uri(): string {
+    return this.#inner.uri;
+  }
+
+  get url(): string {
+    return this.#inner.uri;
+  }
+
+  get version(): HttpVersion {
+    return this.#inner.version;
+  }
+
+  arrayBuffer(): ArrayBuffer {
+    return this.bytes().buffer as ArrayBuffer;
+  }
+
+  bytes(): Uint8Array {
+    return requestBodyToBytes(this.#body);
+  }
+
+  json(): any {
+    return JSON.parse(this.text());
+  }
+
+  text(): string {
+    return requestBodyToText(this.#body);
+  }
+}
+
+export interface HandlerContext<S extends UntypedSchemaDef = UntypedSchemaDef> {
+  readonly timestamp: Timestamp;
+  readonly http: HttpClient;
+  readonly identity: Identity;
+  readonly random: Random;
+  withTx<T>(body: (ctx: TransactionCtx<S>) => T): T;
+  newUuidV4(): Uuid;
+  newUuidV7(): Uuid;
+}
+
+export type HandlerFn<S extends UntypedSchemaDef = UntypedSchemaDef> = (
+  ctx: HandlerContext<S>,
+  req: Request
+) => SyncResponse;
+
+export interface HttpHandlerExport<
+  S extends UntypedSchemaDef = UntypedSchemaDef,
+> extends ModuleExport {
+  [httpHandlerFn]: HandlerFn<S>;
+}
+
+const exportedHttpHandlerObjects = new WeakSet<object>();
+
+export interface HttpHandlerOpts {
+  name: string;
 }
 
 export class Router {
-  [routesSymbol]: Route[] = [];
+  #routes: RouteSpec[];
 
-  get(path: string, handler: HttpHandlerExport): this {
-    // TODO(v8-http-handlers): Validate route path and duplicate registrations.
-    this[routesSymbol].push({ method: 'GET', path, handler });
-    return this;
+  constructor(routes: RouteSpec[] = []) {
+    this.#routes = routes;
   }
 
-  post(path: string, handler: HttpHandlerExport): this {
-    // TODO(v8-http-handlers): Validate route path and duplicate registrations.
-    this[routesSymbol].push({ method: 'POST', path, handler });
-    return this;
+  get(path: string, handler: HttpHandlerExport<any>) {
+    return this.addRoute(
+      { tag: 'Method', value: { tag: 'Get' } },
+      path,
+      handler
+    );
+  }
+
+  head(path: string, handler: HttpHandlerExport<any>) {
+    return this.addRoute(
+      { tag: 'Method', value: { tag: 'Head' } },
+      path,
+      handler
+    );
+  }
+
+  options(path: string, handler: HttpHandlerExport<any>) {
+    return this.addRoute(
+      { tag: 'Method', value: { tag: 'Options' } },
+      path,
+      handler
+    );
+  }
+
+  put(path: string, handler: HttpHandlerExport<any>) {
+    return this.addRoute(
+      { tag: 'Method', value: { tag: 'Put' } },
+      path,
+      handler
+    );
+  }
+
+  delete(path: string, handler: HttpHandlerExport<any>) {
+    return this.addRoute(
+      { tag: 'Method', value: { tag: 'Delete' } },
+      path,
+      handler
+    );
+  }
+
+  post(path: string, handler: HttpHandlerExport<any>) {
+    return this.addRoute(
+      { tag: 'Method', value: { tag: 'Post' } },
+      path,
+      handler
+    );
+  }
+
+  patch(path: string, handler: HttpHandlerExport<any>) {
+    return this.addRoute(
+      { tag: 'Method', value: { tag: 'Patch' } },
+      path,
+      handler
+    );
+  }
+
+  any(path: string, handler: HttpHandlerExport<any>) {
+    return this.addRoute({ tag: 'Any' }, path, handler);
+  }
+
+  nest(path: string, subRouter: Router) {
+    assertValidPath(path);
+    if (this.#routes.some(route => route.path.startsWith(path))) {
+      throw new TypeError(
+        `Cannot nest router at \`${path}\`; existing routes overlap with nested path`
+      );
+    }
+    let merged = new Router(this.#routes);
+    for (const route of subRouter.#routes) {
+      merged = merged.addRoute(
+        route.method,
+        joinPaths(path, route.path),
+        route.handler
+      );
+    }
+    return merged;
+  }
+
+  merge(otherRouter: Router) {
+    let merged = new Router(this.#routes);
+    for (const route of otherRouter.#routes) {
+      merged = merged.addRoute(route.method, route.path, route.handler);
+    }
+    return merged;
+  }
+
+  intoRoutes() {
+    return this.#routes.slice();
+  }
+
+  private addRoute(
+    method: MethodOrAny,
+    path: string,
+    handler: HttpHandlerExport<any>
+  ) {
+    assertValidPath(path);
+    const candidate = { method, path, handler };
+    if (this.#routes.some(route => routesOverlap(route, candidate))) {
+      throw new TypeError(`Route conflict for \`${path}\``);
+    }
+    return new Router([...this.#routes, candidate]);
   }
 }
 
-function registerHttpHandler(
+export function makeHttpHandlerExport<S extends UntypedSchemaDef>(
   ctx: SchemaInner,
-  exportName: string,
-  fn: HttpHandler
-): void {
-  ctx.defineFunction(exportName);
-  ctx.moduleDef.httpHandlers.push({ sourceName: exportName });
-  ctx.httpHandlers.push(fn);
+  opts: HttpHandlerOpts | undefined,
+  fn: HandlerFn<S>
+): HttpHandlerExport<S> {
+  const handlerExport = {
+    [httpHandlerFn]: fn,
+    [exportContext]: ctx,
+    [registerExport](ctx: SchemaInner, exportName: string) {
+      if (exportedHttpHandlerObjects.has(handlerExport)) {
+        throw new TypeError(
+          `HTTP handler '${exportName}' was exported more than once`
+        );
+      }
+      exportedHttpHandlerObjects.add(handlerExport);
+      registerHttpHandler(ctx, exportName, fn, opts);
+      ctx.httpHandlerExports.set(
+        handlerExport as HttpHandlerExport<UntypedSchemaDef>,
+        exportName
+      );
+    },
+  };
+  return handlerExport as HttpHandlerExport<S>;
 }
 
-function makeHttpHandlerExport(
+export function makeHttpRouterExport(
   ctx: SchemaInner,
-  fn: HttpHandler
-): HttpHandlerExport {
-  const handlerExport = fn as HttpHandlerExport & {
-    [httpHandlerSymbol]?: true;
-  };
-
-  handlerExport[exportContext] = ctx;
-  handlerExport[httpHandlerSymbol] = true;
-  handlerExport[registerExport] = (ctx, exportName) => {
-    // TODO(v8-http-handlers): Reject duplicate registration of the same function object.
-    registerHttpHandler(ctx, exportName, fn);
-    ctx.functionExports.set(handlerExport, exportName);
-  };
-
-  return handlerExport;
-}
-
-function makeHttpRouterExport(ctx: SchemaInner, router: Router): ModuleExport {
+  router: Router
+): ModuleExport {
   return {
     [exportContext]: ctx,
-    [registerExport](ctx, _exportName) {
-      for (const route of (router as RouterWithRoutes)[routesSymbol]) {
-        // TODO(v8-http-handlers): Verify that handlers referenced by routers come from the same schema.
-        const handlerName = ctx.functionExports.get(route.handler);
-        if (handlerName === undefined) {
-          throw new TypeError(
-            'HTTP router references a handler that was not exported as an HTTP handler'
-          );
-        }
-        ctx.moduleDef.httpRoutes.push({
-          handlerFunction: handlerName,
-          method: METHODS[route.method],
-          path: route.path,
-        });
-      }
+    [registerExport](ctx: SchemaInner) {
+      ctx.pendingHttpRoutes.push(...router.intoRoutes());
     },
   };
 }
 
-export function makeHttpNamespace(ctx: SchemaInner) {
-  return Object.freeze({
-    Router,
-    handler(fn: HttpHandler): HttpHandlerExport {
-      return makeHttpHandlerExport(ctx, fn);
-    },
-    router(router: Router): ModuleExport {
-      if (!(router instanceof Router)) {
-        throw new TypeError('spacetime.http.router expects a Router instance');
-      }
-      return makeHttpRouterExport(ctx, router);
-    },
-  });
-}
+function registerHttpHandler<S extends UntypedSchemaDef>(
+  ctx: SchemaInner,
+  exportName: string,
+  fn: HandlerFn<S>,
+  opts?: HttpHandlerOpts
+) {
+  ctx.defineHttpHandler(exportName);
+  ctx.moduleDef.httpHandlers.push({ sourceName: exportName });
 
-export function deserializeHttpHandlerRequest(
-  requestBuf: Uint8Array,
-  requestBody: Uint8Array
-): Request {
-  const request = HttpRequest.deserialize(new BinaryReader(requestBuf));
-  return Object.freeze({
-    method: methodToString(request.method),
-    url: request.uri,
-    headers: deserializeHeaders(request.headers),
-    body: requestBody,
-  });
-}
+  if (opts?.name != null) {
+    ctx.moduleDef.explicitNames.entries.push({
+      tag: 'Function',
+      value: {
+        sourceName: exportName,
+        canonicalName: opts.name,
+      },
+    });
+  }
 
-export function serializeHttpHandlerResponse(
-  response: SyncResponse
-): [Uint8Array, Uint8Array] {
-  const responseWire: HttpResponse = {
-    code: response.status,
-    headers: serializeHeaders(response.headers),
-    version: { tag: 'Http11' },
-  };
+  if (!fn.name) {
+    Object.defineProperty(fn, 'name', { value: exportName, writable: false });
+  }
 
-  const responseBuf = new BinaryWriter(responseBaseSize);
-  HttpResponse.serialize(responseBuf, responseWire);
-  return [responseBuf.getBuffer(), response.bytes()];
+  ctx.httpHandlers.push(fn as HandlerFn<UntypedSchemaDef>);
 }
