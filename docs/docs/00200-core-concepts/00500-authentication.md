@@ -46,7 +46,7 @@ Sometimes, you may need to authenticate your servers, APIs or other services tha
 interact with your SpacetimeDB database. OIDC tokens can also be used for this
 purpose, allowing secure communication between your services and SpacetimeDB.
 
-To authenticate your services, you have e few options depending on your OIDC provider:
+To authenticate your services, you have a few options depending on your OIDC provider:
 
 - **Client credentials flow**: Many OIDC providers support the client credentials
   flow, which allows your service to obtain an access token using its own
@@ -55,6 +55,12 @@ To authenticate your services, you have e few options depending on your OIDC pro
 - **Service accounts**: Some OIDC providers offer service accounts, which are
   special user accounts designed for non-human users (e.g., servers, APIs). You
   can create a service account and use its credentials to obtain an access token.
+
+If your application server already owns browser sessions, organization
+membership, API keys, or customer SSO, see the
+[App-Owned Auth Broker](./00500-authentication/00400-app-owned-auth-broker.md)
+guide for a provider-neutral pattern that mints short-lived SpacetimeDB tokens
+from verified application sessions.
 
 ## Authorization in your module
 
@@ -67,4 +73,4 @@ validates the client's OIDC token and extracts the identity claims. These claims
 are then made available to your module's reducers, views and procedures via the context.
 
 [Check out the usage guide](./00500-authentication/00500-usage.md) for more
-information on how to access and use authentication claims in your module:
+information on how to access and use authentication claims in your module.
