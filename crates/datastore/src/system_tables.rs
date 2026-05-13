@@ -1888,9 +1888,17 @@ fn to_product_value<T: Serialize>(value: &T) -> ProductValue {
 }
 
 #[cfg(test)]
+#[path = "system_tables/test_one_point_oh_layouts.rs"]
+mod test_one_point_oh_layouts;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use spacetimedb_data_structures::map::HashSet;
+    use spacetimedb_lib::resolved_type_via_v9;
+    use spacetimedb_sats::layout::{AlgebraicTypeLayout, RowTypeLayout};
+    use std::sync::Arc;
+    use test_one_point_oh_layouts::HasOnePointOhLayout;
 
     #[test]
     fn test_index_ids_are_unique() {
@@ -2055,5 +2063,47 @@ mod tests {
                 "IndexAlgorithm round-trip failed: {original:?} -> {roundtripped:?}"
             );
         }
+    }
+
+    /// Check that the layout of a type is binary-compatible with the layout of a type that was
+    /// used at 1.0.
+    fn check_layout_compatible<T: HasOnePointOhLayout>() {
+        let ty = resolved_type_via_v9::<T>();
+        let cur_layout = match AlgebraicTypeLayout::from(ty) {
+            AlgebraicTypeLayout::Product(layout) => RowTypeLayout {
+                layout: layout.layout,
+                elements: Arc::from(layout.elements),
+            },
+            layout => panic!("expected product layout, got {layout:?}"),
+        };
+        let one_point_oh_layout = match T::get_original_layout() {
+            AlgebraicTypeLayout::Product(layout) => RowTypeLayout {
+                layout: layout.layout,
+                elements: Arc::from(layout.elements),
+            },
+            layout => panic!("expected product layout, got {layout:?}"),
+        };
+
+        if let Err(_err) = one_point_oh_layout.ensure_compatible_with(&cur_layout) {
+            panic!(
+                "1.0 layout of {} is not compatible with current layout:
+{}",
+                std::any::type_name::<T>(),
+                pretty_assertions::Comparison::new(&one_point_oh_layout, &cur_layout)
+            );
+        }
+    }
+
+    #[test]
+    fn test_layouts_binary_compatible() {
+        check_layout_compatible::<StTableRow>();
+        check_layout_compatible::<StColumnRow>();
+        check_layout_compatible::<StIndexRow>();
+        check_layout_compatible::<StSequenceRow>();
+        check_layout_compatible::<StConstraintRow>();
+        check_layout_compatible::<StModuleRow>();
+        check_layout_compatible::<StClientRow>();
+        check_layout_compatible::<StVarRow>();
+        check_layout_compatible::<StScheduledRow>();
     }
 }
