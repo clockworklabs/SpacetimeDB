@@ -21,7 +21,7 @@ use spacetimedb_lib::{
     Identity,
 };
 use spacetimedb_primitives::{SequenceId, TableId};
-use spacetimedb_runtime::Runtime;
+use spacetimedb_runtime::Handle;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_schema::{
     def::BTreeAlgorithm,
@@ -428,7 +428,7 @@ impl RelationalDbEngine {
     }
 
     fn reopen_from_history(&self) -> Result<ReopenedRelationalDb, String> {
-        let runtime = Runtime::simulation_current();
+        let runtime = Handle::tokio_current();
         let durability = Arc::new(
             InMemoryCommitlogDurability::open_with_repo(
                 self.commitlog_repo.clone(),
@@ -1493,7 +1493,7 @@ fn bootstrap_relational_db(
     commitlog_fault_config: CommitlogFaultConfig,
     snapshot_fault_config: SnapshotFaultConfig,
 ) -> anyhow::Result<RelationalDbBootstrap> {
-    let runtime = Runtime::simulation_current();
+    let runtime = Handle::tokio_current();
     let commitlog_repo = FaultableRepo::new(
         MemoryCommitlogRepo::new(8 * 1024 * 1024),
         commitlog_fault_config,

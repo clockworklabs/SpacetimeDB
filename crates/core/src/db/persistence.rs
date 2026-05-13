@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use spacetimedb_commitlog::SizeOnDisk;
 use spacetimedb_durability::{DurabilityExited, TxOffset};
 use spacetimedb_paths::server::ServerDataDir;
-use spacetimedb_runtime::Runtime;
+use spacetimedb_runtime::Handle;
 use spacetimedb_snapshot::{DynSnapshotRepo, SnapshotStore};
 
 use crate::{messages::control_db::Database, util::asyncify};
@@ -45,7 +45,7 @@ pub struct Persistence {
     /// this type.
     pub snapshots: Option<SnapshotWorker>,
     /// Runtime onto which durability-related tasks shall be spawned.
-    pub runtime: Runtime,
+    pub runtime: Handle,
 }
 
 impl Persistence {
@@ -56,14 +56,14 @@ impl Persistence {
         snapshots: Option<SnapshotWorker>,
         runtime: tokio::runtime::Handle,
     ) -> Self {
-        Self::new_with_runtime(durability, disk_size, snapshots, Runtime::tokio(runtime))
+        Self::new_with_runtime(durability, disk_size, snapshots, Handle::tokio(runtime))
     }
 
     pub fn new_with_runtime(
         durability: impl spacetimedb_durability::Durability<TxData = Txdata> + 'static,
         disk_size: impl Fn() -> io::Result<SizeOnDisk> + Send + Sync + 'static,
         snapshots: Option<SnapshotWorker>,
-        runtime: Runtime,
+        runtime: Handle,
     ) -> Self {
         let snapshot_store = snapshots.as_ref().map(SnapshotWorker::snapshot_store);
         Self {
@@ -112,7 +112,7 @@ impl Persistence {
         Option<Arc<Durability>>,
         Option<DiskSizeFn>,
         Option<SnapshotWorker>,
-        Option<Runtime>,
+        Option<Handle>,
     ) {
         this.map(
             |Self {
@@ -165,7 +165,7 @@ impl PersistenceProvider for LocalPersistenceProvider {
     async fn persistence(&self, database: &Database, replica_id: u64) -> anyhow::Result<Persistence> {
         let replica_dir = self.data_dir.replica(replica_id);
         let snapshot_dir = replica_dir.snapshots();
-        let runtime = Runtime::tokio_current();
+        let runtime = Handle::tokio_current();
 
         let database_identity = database.database_identity;
         let snapshot_worker =

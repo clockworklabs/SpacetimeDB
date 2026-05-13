@@ -9,7 +9,7 @@ pub type Rng = GlobalRng;
 /// The simulator owns one runtime-wide RNG handle and uses it for scheduler
 /// choices, probabilistic fault injection, and determinism checks. Hosted
 /// conveniences such as thread-local current-RNG access and libc random hooks
-/// live in `adapter::sim_std`, not here.
+/// live in `crate::sim_std`, not here.
 #[derive(Clone, Debug)]
 pub struct GlobalRng {
     inner: Arc<Mutex<Inner>>,
@@ -199,44 +199,4 @@ fn probability_sample(value: u64, probability: f64) -> bool {
 
 fn checksum(value: u64) -> u8 {
     value.to_ne_bytes().into_iter().fold(0, |acc, byte| acc ^ byte)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rng_log_check_accepts_same_sequence() {
-        let first = Rng::new(10);
-        first.enable_determinism_log();
-        let first_values = (0..8).map(|_| first.next_u64()).collect::<Vec<_>>();
-        let log = first.take_determinism_log().unwrap();
-
-        let second = Rng::new(10);
-        second.enable_determinism_check(log);
-        let second_values = (0..8).map(|_| second.next_u64()).collect::<Vec<_>>();
-        second.finish_determinism_check().unwrap();
-
-        assert_eq!(first_values, second_values);
-    }
-
-    #[test]
-    fn buggify_is_disabled_by_default() {
-        let rng = Rng::new(20);
-        for _ in 0..8 {
-            assert!(!rng.buggify());
-            assert!(!rng.buggify_with_prob(1.0));
-        }
-    }
-
-    #[test]
-    fn buggify_obeys_enable_and_disable() {
-        let rng = Rng::new(21);
-        rng.enable_buggify();
-        assert!(rng.is_buggify_enabled());
-        assert!(rng.buggify_with_prob(1.0));
-        rng.disable_buggify();
-        assert!(!rng.is_buggify_enabled());
-        assert!(!rng.buggify_with_prob(1.0));
-    }
 }

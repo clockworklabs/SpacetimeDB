@@ -11,7 +11,7 @@ use spacetimedb_lib::Identity;
 use spacetimedb_sats::ProductValue;
 
 use crate::db::persistence::Durability;
-use spacetimedb_runtime::Runtime;
+use spacetimedb_runtime::Handle;
 
 pub(super) fn request_durability(
     durability: &Durability,
@@ -32,7 +32,7 @@ pub(super) fn request_durability(
     }));
 }
 
-pub(super) fn spawn_close(durability: Arc<Durability>, runtime: &Runtime, database_identity: Identity) {
+pub(super) fn spawn_close(durability: Arc<Durability>, runtime: &Handle, database_identity: Identity) {
     let label = format!("[{database_identity}]");
     let runtime = runtime.clone();
     runtime.clone().spawn(async move {

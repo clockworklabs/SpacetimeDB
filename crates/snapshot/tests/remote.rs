@@ -23,7 +23,7 @@ use spacetimedb_lib::{
 };
 use spacetimedb_paths::{server::SnapshotsPath, FromPathUnchecked};
 use spacetimedb_primitives::TableId;
-use spacetimedb_runtime::Runtime;
+use spacetimedb_runtime::Handle;
 use spacetimedb_sats::{product, raw_identifier::RawIdentifier};
 use spacetimedb_schema::{
     def::ModuleDef,
@@ -228,7 +228,7 @@ impl SourceSnapshot {
 
 async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffset> {
     let start = Instant::now();
-    let rt = Runtime::tokio_current();
+    let rt = spacetimedb_runtime::Handle::tokio_current();
     // NOTE: `_db` needs to stay alive until the snapshot is taken,
     // because the snapshot worker holds only a weak reference.
     let (mut watch, _db) = spawn_blocking(move || {

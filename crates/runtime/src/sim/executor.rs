@@ -1,21 +1,36 @@
-//! Minimal asynchronous executor adapted from madsim's `sim/task` loop.
-
 use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};
 use core::{
     fmt,
     future::Future,
     pin::Pin,
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
-    task::{Context, Poll},
+    task::{Context, Poll, Waker},
     time::Duration,
 };
 
 use futures_util::FutureExt;
 use spin::Mutex;
 
-use crate::sim::{time::TimeHandle, Rng, RuntimeConfig};
+use crate::sim::{time::TimeHandle, Rng};
 
 type Runnable = async_task::Runnable<NodeId>;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RuntimeConfig {
+    pub seed: u64,
+}
+
+impl RuntimeConfig {
+    pub const fn new(seed: u64) -> Self {
+        Self { seed }
+    }
+}
+
+impl Default for RuntimeConfig {
+    fn default() -> Self {
+        Self::new(0)
+    }
+}
 
 /// A unique identifier for a simulated node.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -29,6 +44,79 @@ impl NodeId {
 impl fmt::Display for NodeId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+/// Immutable metadata attached to one simulated node.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct NodeConfig {
+    name: Option<alloc::string::String>,
+}
+
+/// Builder for configuring a simulated node before it is created.
+pub struct NodeBuilder {
+    handle: Handle,
+    config: NodeConfig,
+}
+
+impl NodeBuilder {
+    /// Assign a human-readable name to the node.
+    pub fn name(mut self, name: impl Into<alloc::string::String>) -> Self {
+        self.config.name = Some(name.into());
+        self
+    }
+
+    /// Create the node with the accumulated configuration.
+    pub fn build(self) -> Node {
+        self.handle.build_node(self.config)
+    }
+}
+
+/// Handle to one simulated node in the runtime.
+#[derive(Clone)]
+pub struct Node {
+    id: NodeId,
+    handle: Handle,
+    config: Arc<NodeConfig>,
+}
+
+impl Node {
+    /// Return the stable identifier for this simulated node.
+    pub fn id(&self) -> NodeId {
+        self.id
+    }
+
+    /// Return the optional human-readable name for this node.
+    pub fn name(&self) -> Option<&str> {
+        self.config.name.as_deref()
+    }
+
+    /// Pause scheduling for this node.
+    pub fn pause(&self) {
+        self.handle.pause(self.id);
+    }
+
+    /// Resume scheduling for this node.
+    pub fn resume(&self) {
+        self.handle.resume(self.id);
+    }
+
+    /// Spawn a `Send` future onto this simulated node.
+    pub fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        self.handle.spawn_on(self.id, future)
+    }
+
+    /// Spawn a non-`Send` future onto this simulated node.
+    pub fn spawn_local<F>(&self, future: F) -> JoinHandle<F::Output>
+    where
+        F: Future + 'static,
+        F::Output: 'static,
+    {
+        self.handle.spawn_local_on(self.id, future)
     }
 }
 
@@ -78,7 +166,7 @@ impl Runtime {
     ///
     /// Nodes are a scheduling/pausing boundary rather than separate executors:
     /// all nodes still run on the same single-threaded runtime.
-    pub fn create_node(&self) -> NodeId {
+    pub fn create_node(&self) -> NodeBuilder {
         self.handle().create_node()
     }
 
@@ -147,11 +235,6 @@ impl Runtime {
     pub(crate) fn finish_determinism_check(&self) -> Result<(), alloc::string::String> {
         self.executor.rng.finish_determinism_check()
     }
-
-    #[allow(dead_code)]
-    pub(crate) fn rng(&self) -> Rng {
-        self.executor.rng.clone()
-    }
 }
 
 /// Cloneable access to the simulation executor.
@@ -162,8 +245,21 @@ pub struct Handle {
 
 impl Handle {
     /// Create a new simulated node owned by this runtime.
-    pub fn create_node(&self) -> NodeId {
-        self.executor.create_node()
+    pub fn create_node(&self) -> NodeBuilder {
+        NodeBuilder {
+            handle: self.clone(),
+            config: NodeConfig::default(),
+        }
+    }
+
+    fn build_node(&self, config: NodeConfig) -> Node {
+        let id = self.executor.create_node(config.clone());
+        let config = self.executor.node_config(id);
+        Node {
+            id,
+            handle: self.clone(),
+            config,
+        }
     }
 
     /// Pause scheduling for a node.
@@ -247,21 +343,100 @@ impl Handle {
 
 /// A spawned simulated task.
 pub struct JoinHandle<T> {
-    task: async_task::Task<T, NodeId>,
+    task: async_task::Task<Result<T, JoinError>, NodeId>,
+    abort: AbortHandle,
 }
 
 impl<T> JoinHandle<T> {
+    /// Return a handle that can cancel this task without consuming the join
+    /// handle.
+    pub fn abort_handle(&self) -> AbortHandle {
+        self.abort.clone()
+    }
+
     /// Detach the task so it continues running without awaiting its output.
     pub fn detach(self) {
         self.task.detach();
     }
+
+    pub(crate) fn poll_join(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<T, JoinError>> {
+        Pin::new(&mut self.task).poll(cx)
+    }
 }
 
 impl<T> Future for JoinHandle<T> {
-    type Output = T;
+    type Output = Result<T, JoinError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut self.task).poll(cx)
+        self.as_mut().poll_join(cx)
+    }
+}
+
+#[derive(Clone)]
+pub struct AbortHandle {
+    state: Arc<AbortState>,
+}
+
+impl AbortHandle {
+    pub fn abort(&self) {
+        self.state.aborted.store(true, Ordering::Relaxed);
+        if let Some(waker) = self.state.waker.lock().take() {
+            waker.wake();
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct JoinError;
+
+impl fmt::Display for JoinError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("task was cancelled")
+    }
+}
+
+#[cfg(feature = "simulation")]
+impl std::error::Error for JoinError {}
+
+struct AbortState {
+    aborted: AtomicBool,
+    waker: Mutex<Option<Waker>>,
+}
+
+impl AbortState {
+    fn new() -> Self {
+        Self {
+            aborted: AtomicBool::new(false),
+            waker: Mutex::new(None),
+        }
+    }
+}
+
+struct Abortable<F> {
+    future: F,
+    abort: AbortHandle,
+}
+
+impl<F> Abortable<F> {
+    fn new(future: F, abort: AbortHandle) -> Self {
+        Self { future, abort }
+    }
+}
+
+impl<F: Future> Future for Abortable<F> {
+    type Output = Result<F::Output, JoinError>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if self.abort.state.aborted.load(Ordering::Relaxed) {
+            return Poll::Ready(Err(JoinError));
+        }
+
+        self.abort.state.waker.lock().replace(cx.waker().clone());
+
+        // SAFETY: the wrapper never moves `future` after being pinned. Only the
+        // cancellation fields outside `future` are accessed normally.
+        let mut future = unsafe { self.map_unchecked_mut(|this| &mut this.future) };
+        future.as_mut().poll(cx).map(Ok)
     }
 }
 
@@ -273,7 +448,7 @@ impl<T> Future for JoinHandle<T> {
 struct Executor {
     queue: Receiver,
     sender: Sender,
-    nodes: spin::Mutex<BTreeMap<NodeId, Arc<NodeState>>>,
+    nodes: spin::Mutex<BTreeMap<NodeId, Arc<NodeRecord>>>,
     next_node: AtomicU64,
     rng: Rng,
     time: TimeHandle,
@@ -284,7 +459,7 @@ impl Executor {
     fn new(config: RuntimeConfig) -> Self {
         let queue = Queue::new();
         let mut nodes = BTreeMap::new();
-        nodes.insert(NodeId::MAIN, Arc::new(NodeState::default()));
+        nodes.insert(NodeId::MAIN, Arc::new(NodeRecord::default()));
         Self {
             queue: queue.receiver(),
             sender: queue.sender(),
@@ -319,23 +494,33 @@ impl Executor {
         self.rng.buggify_with_prob(probability)
     }
 
-    fn create_node(&self) -> NodeId {
+    fn create_node(&self, config: NodeConfig) -> NodeId {
         let id = NodeId(self.next_node.fetch_add(1, Ordering::Relaxed));
-        self.nodes.lock().insert(id, Arc::new(NodeState::default()));
+        self.nodes.lock().insert(
+            id,
+            Arc::new(NodeRecord {
+                config: Arc::new(config),
+                state: NodeState::default(),
+            }),
+        );
         id
+    }
+
+    fn node_config(&self, node: NodeId) -> Arc<NodeConfig> {
+        self.node_record(node).config.clone()
     }
 
     /// Mark a node as paused so newly selected runnables are buffered.
     fn pause(&self, node: NodeId) {
-        self.node_state(node).paused.store(true, Ordering::Relaxed);
+        self.node_record(node).state.paused.store(true, Ordering::Relaxed);
     }
 
     /// Mark a node as runnable again and requeue any buffered tasks for it.
     fn resume(&self, node: NodeId) {
-        let state = self.node_state(node);
-        state.paused.store(false, Ordering::Relaxed);
+        let record = self.node_record(node);
+        record.state.paused.store(false, Ordering::Relaxed);
 
-        let mut paused = state.paused_queue.lock();
+        let mut paused = record.state.paused_queue.lock();
         for runnable in paused.drain(..) {
             self.sender.send(runnable);
         }
@@ -347,15 +532,19 @@ impl Executor {
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        self.node_state(node);
+        self.assert_known_node(node);
 
+        let abort = AbortHandle {
+            state: Arc::new(AbortState::new()),
+        };
+        let abortable = Abortable::new(future, abort.clone());
         let sender = self.sender.clone();
         let (runnable, task) = async_task::Builder::new()
             .metadata(node)
-            .spawn(move |_| future, move |runnable| sender.send(runnable));
+            .spawn(move |_| abortable, move |runnable| sender.send(runnable));
         runnable.schedule();
 
-        JoinHandle { task }
+        JoinHandle { task, abort }
     }
 
     /// Spawn a non-`Send` task on the single-threaded runtime.
@@ -364,17 +553,21 @@ impl Executor {
         F: Future + 'static,
         F::Output: 'static,
     {
-        self.node_state(node);
+        self.assert_known_node(node);
 
+        let abort = AbortHandle {
+            state: Arc::new(AbortState::new()),
+        };
+        let abortable = Abortable::new(future, abort.clone());
         let sender = self.sender.clone();
         let (runnable, task) = unsafe {
             async_task::Builder::new()
                 .metadata(node)
-                .spawn_unchecked(move |_| future, move |runnable| sender.send(runnable))
+                .spawn_unchecked(move |_| abortable, move |runnable| sender.send(runnable))
         };
         runnable.schedule();
 
-        JoinHandle { task }
+        JoinHandle { task, abort }
     }
 
     #[track_caller]
@@ -413,23 +606,35 @@ impl Executor {
     fn run_all_ready(&self) {
         while let Some(runnable) = self.queue.try_recv_random(&self.rng) {
             let node = *runnable.metadata();
-            let state = self.node_state(node);
-            if state.paused.load(Ordering::Relaxed) {
-                state.paused_queue.lock().push(runnable);
+            let record = self.node_record(node);
+            if record.state.paused.load(Ordering::Relaxed) {
+                record.state.paused_queue.lock().push(runnable);
                 continue;
             }
+            // TODO: Do some time advance here too
             runnable.run();
         }
     }
 
-    /// Look up the scheduling state for a node, panicking if the node is unknown.
-    fn node_state(&self, node: NodeId) -> Arc<NodeState> {
+    /// Look up the record for a node, panicking if the node is unknown.
+    fn node_record(&self, node: NodeId) -> Arc<NodeRecord> {
         self.nodes
             .lock()
             .get(&node)
             .cloned()
             .unwrap_or_else(|| panic!("unknown simulated node {node}"))
     }
+
+    fn assert_known_node(&self, node: NodeId) {
+        let _ = self.node_record(node);
+    }
+}
+
+/// One simulated node's immutable metadata plus scheduler state.
+#[derive(Clone, Default)]
+struct NodeRecord {
+    config: Arc<NodeConfig>,
+    state: NodeState,
 }
 
 /// Per-node scheduler state shared by tasks assigned to that node.
@@ -467,6 +672,7 @@ impl Future for YieldNow {
 }
 
 /// Shared runnable queue used by the simulation executor.
+/// TODO: Make it generic over T
 struct Queue {
     inner: Arc<QueueInner>,
 }
@@ -542,12 +748,12 @@ mod tests {
     #[test]
     fn paused_node_does_not_run_until_resumed() {
         let mut runtime = Runtime::new(1);
-        let node = runtime.create_node();
-        runtime.pause(node);
+        let node = runtime.create_node().name("paused").build();
+        node.pause();
 
         let runs = Arc::new(AtomicUsize::new(0));
         let task_runs = Arc::clone(&runs);
-        let task = runtime.spawn_on(node, async move {
+        let task = node.spawn(async move {
             task_runs.fetch_add(1, Ordering::SeqCst);
             7
         });
@@ -557,8 +763,8 @@ mod tests {
         });
         assert_eq!(runs.load(Ordering::SeqCst), 0);
 
-        runtime.resume(node);
-        assert_eq!(runtime.block_on(task), 7);
+        node.resume();
+        assert_eq!(runtime.block_on(task).expect("paused task should complete"), 7);
         assert_eq!(runs.load(Ordering::SeqCst), 1);
     }
 
@@ -568,8 +774,8 @@ mod tests {
         let handle = runtime.handle();
 
         let value = runtime.block_on(async move {
-            let node = handle.create_node();
-            handle.spawn_on(node, async { 11 }).await
+            let node = handle.create_node().name("spawned").build();
+            node.spawn(async { 11 }).await.expect("spawned task should complete")
         });
 
         assert_eq!(value, 11);
@@ -584,7 +790,7 @@ mod tests {
         let actual = (0..8).map(|_| handle.buggify_with_prob(0.5)).collect::<Vec<_>>();
 
         let expected = {
-            let mut rng = Rng::new(77);
+            let rng = Rng::new(77);
             rng.enable_buggify();
             (0..8).map(|_| rng.buggify_with_prob(0.5)).collect::<Vec<_>>()
         };
@@ -605,36 +811,59 @@ mod tests {
         assert!(!runtime.is_buggify_enabled());
     }
 
-    #[cfg(feature = "simulation-std")]
     #[test]
-    fn current_handle_can_spawn_local_task_inside_runtime() {
-        assert!(crate::adapter::sim_std::current_handle().is_none());
+    fn aborted_task_returns_join_error_when_awaited() {
+        let mut runtime = Runtime::new(8);
+        let node = runtime.create_node().name("abort").build();
+        let task = node.spawn(async move {
+            yield_now().await;
+            99
+        });
+        task.abort_handle().abort();
 
+        let err = runtime
+            .block_on(task)
+            .expect_err("aborted task should surface JoinError instead of panicking");
+        assert_eq!(err, JoinError);
+    }
+
+    #[cfg(feature = "simulation")]
+    #[test]
+    fn sim_std_block_on_can_spawn_local_task_with_explicit_handle() {
         let mut runtime = Runtime::new(5);
-        let value = crate::adapter::sim_std::block_on(&mut runtime, async {
-            let handle =
-                crate::adapter::sim_std::current_handle().expect("sim handle should be present inside block_on");
-            let node = handle.create_node();
+        let handle = runtime.handle();
+        let node = handle.create_node().name("local").build();
+        let value = crate::sim_std::block_on(&mut runtime, async move {
             let captured = std::rc::Rc::new(17);
-            handle
-                .spawn_local_on(node, async move {
-                    yield_now().await;
-                    *captured
-                })
-                .await
+            node.spawn_local(async move {
+                yield_now().await;
+                *captured
+            })
+            .await
+            .expect("spawned local task should complete")
         });
 
         assert_eq!(value, 17);
-        assert!(crate::adapter::sim_std::current_handle().is_none());
     }
 
-    #[cfg(feature = "simulation-std")]
+    #[test]
+    fn node_builder_sets_name() {
+        let runtime = Runtime::new(9);
+        let unnamed = runtime.create_node().build();
+        let named = runtime.create_node().name("replica-1").build();
+
+        assert_eq!(unnamed.name(), None);
+        assert_eq!(named.name(), Some("replica-1"));
+        assert_ne!(unnamed.id(), named.id());
+    }
+
+    #[cfg(feature = "simulation")]
     #[test]
     fn check_determinism_runs_future_twice() {
         static CALLS: AtomicUsize = AtomicUsize::new(0);
         CALLS.store(0, Ordering::SeqCst);
 
-        let value = crate::adapter::sim_std::check_determinism(3, || async {
+        let value = crate::sim_std::check_determinism(3, || async {
             CALLS.fetch_add(1, Ordering::SeqCst);
             yield_now().await;
             13
@@ -644,14 +873,14 @@ mod tests {
         assert_eq!(CALLS.load(Ordering::SeqCst), 2);
     }
 
-    #[cfg(feature = "simulation-std")]
+    #[cfg(feature = "simulation")]
     #[test]
     #[should_panic(expected = "non-determinism detected")]
     fn check_determinism_rejects_different_scheduler_sequence() {
         static FIRST_RUN: AtomicBool = AtomicBool::new(true);
         FIRST_RUN.store(true, Ordering::SeqCst);
 
-        crate::adapter::sim_std::check_determinism(4, || async {
+        crate::sim_std::check_determinism(4, || async {
             if FIRST_RUN.swap(false, Ordering::SeqCst) {
                 yield_now().await;
             }

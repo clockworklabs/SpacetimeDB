@@ -2104,7 +2104,7 @@ mod tests {
                 disk_size: Arc::new(|| Ok(<_>::default())),
                 snapshot_store: None,
                 snapshots: None,
-                runtime: spacetimedb_runtime::Runtime::tokio(rt),
+                runtime: spacetimedb_runtime::Handle::tokio(rt),
             }),
             None,
             0,

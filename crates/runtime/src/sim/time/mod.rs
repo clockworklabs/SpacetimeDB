@@ -1,5 +1,3 @@
-//! Virtual time for the local simulation runtime.
-
 mod sleep;
 
 use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};
@@ -194,7 +192,7 @@ impl fmt::Display for TimeoutElapsed {
     }
 }
 
-#[cfg(any(feature = "tokio", feature = "simulation-std"))]
+#[cfg(any(feature = "tokio", feature = "simulation"))]
 impl std::error::Error for TimeoutElapsed {}
 
 #[cfg(test)]
@@ -239,8 +237,8 @@ mod tests {
                     fast_order.lock().push(3);
                 });
 
-                fast.await;
-                slow.await;
+                fast.await.expect("fast timer task should complete");
+                slow.await.expect("slow timer task should complete");
             }
         });
 

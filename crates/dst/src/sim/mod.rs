@@ -9,11 +9,36 @@ pub(crate) mod snapshot;
 pub(crate) mod storage_faults;
 pub mod time;
 
-use std::{future::Future, time::Duration};
+use std::{cell::RefCell, future::Future, time::Duration};
 
-pub use spacetimedb_runtime::sim::{yield_now, Handle, JoinHandle, NodeId, Rng};
+pub use spacetimedb_runtime::sim::{yield_now, Handle, JoinHandle, Node, NodeBuilder, NodeId, Rng};
 
 use crate::seed::DstSeed;
+
+thread_local! {
+    static CURRENT_HANDLE: RefCell<Option<Handle>> = const { RefCell::new(None) };
+}
+
+struct CurrentHandleGuard {
+    previous: Option<Handle>,
+}
+
+fn enter_current_handle(handle: Handle) -> CurrentHandleGuard {
+    let previous = CURRENT_HANDLE.with(|slot| slot.replace(Some(handle)));
+    CurrentHandleGuard { previous }
+}
+
+impl Drop for CurrentHandleGuard {
+    fn drop(&mut self) {
+        CURRENT_HANDLE.with(|slot| {
+            let _ = slot.replace(self.previous.take());
+        });
+    }
+}
+
+pub(crate) fn current_handle() -> Option<Handle> {
+    CURRENT_HANDLE.with(|slot| slot.borrow().clone())
+}
 
 /// DST-facing wrapper that keeps the top-level seed type local to this crate.
 pub struct Runtime {
@@ -28,7 +53,8 @@ impl Runtime {
     }
 
     pub fn block_on<F: Future>(&mut self, future: F) -> F::Output {
-        spacetimedb_runtime::adapter::sim_std::block_on(&mut self.inner, future)
+        let _guard = enter_current_handle(self.inner.handle());
+        spacetimedb_runtime::sim_std::block_on(&mut self.inner, future)
     }
 
     pub fn elapsed(&self) -> Duration {
@@ -39,7 +65,7 @@ impl Runtime {
         self.inner.handle()
     }
 
-    pub fn create_node(&self) -> NodeId {
+    pub fn create_node(&self) -> NodeBuilder {
         self.inner.create_node()
     }
 
@@ -64,7 +90,7 @@ impl Runtime {
         F: Future + 'static,
         F::Output: Send + 'static,
     {
-        spacetimedb_runtime::adapter::sim_std::check_determinism(seed.0, make_future)
+        spacetimedb_runtime::sim_std::check_determinism(seed.0, make_future)
     }
 
     pub fn check_determinism_with<M, F>(seed: DstSeed, make_future: M) -> F::Output
@@ -73,7 +99,7 @@ impl Runtime {
         F: Future + 'static,
         F::Output: Send + 'static,
     {
-        spacetimedb_runtime::adapter::sim_std::check_determinism_with(seed.0, make_future)
+        spacetimedb_runtime::sim_std::check_determinism(seed.0, make_future)
     }
 }
 

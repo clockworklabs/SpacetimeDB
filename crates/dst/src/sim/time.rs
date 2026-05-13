@@ -1,11 +1,32 @@
 //! Virtual time for the local DST simulator.
 
-pub use spacetimedb_runtime::adapter::sim_std::{advance_time as advance, now, sleep, timeout};
+use std::time::Duration;
+
 pub use spacetimedb_runtime::sim::time::TimeoutElapsed;
 pub use spacetimedb_runtime::sim::Handle as TimeHandle;
 
+fn current_handle() -> TimeHandle {
+    super::current_handle().expect("sim::time used outside Runtime::block_on")
+}
+
 pub fn try_current_handle() -> Option<TimeHandle> {
-    spacetimedb_runtime::adapter::sim_std::current_handle()
+    super::current_handle()
+}
+
+pub fn now() -> Duration {
+    current_handle().now()
+}
+
+pub async fn sleep(duration: Duration) {
+    current_handle().sleep(duration).await
+}
+
+pub async fn timeout<T>(duration: Duration, future: impl core::future::Future<Output = T>) -> Result<T, TimeoutElapsed> {
+    current_handle().timeout(duration, future).await
+}
+
+pub fn advance(duration: Duration) {
+    current_handle().advance(duration);
 }
 
 #[cfg(test)]
@@ -49,8 +70,8 @@ mod tests {
                     fast_order.lock().expect("order poisoned").push(3);
                 });
 
-                fast.await;
-                slow.await;
+                fast.await.expect("fast timer task should complete");
+                slow.await.expect("slow timer task should complete");
             }
         });
 

@@ -1,4 +1,4 @@
-Write a SpacetimeDB backend module in TypeScript that defines a scheduled table and associated reducers.
+Write a SpacetimeDB backend module in TypeScript that defines a scheduled table and a scheduled reducer.
 
 TABLE
 - tickTimer

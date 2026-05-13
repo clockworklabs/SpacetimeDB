@@ -7,11 +7,10 @@ use std::{
 
 use spacetimedb_commitlog::{
     repo::{
-        CompressOnce, CompressionStats, Repo, SegmentLen, SegmentReader, TxOffset, TxOffsetIndex, TxOffsetIndexMut,
+        CompressOnce, CompressionStats, Repo, RepoWithoutLockFile, SegmentLen, SegmentReader, TxOffset, TxOffsetIndex, TxOffsetIndexMut,
     },
     segment::{FileLike, Header},
 };
-use spacetimedb_durability::local::RepoWithoutLockFile;
 
 use crate::{
     seed::DstSeed,
