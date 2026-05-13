@@ -4,12 +4,12 @@ TABLE
 - User
   - Struct: User
   - Fields:
-    - Id: int (primary key)
+    - Id: ulong (primary key, auto-increment)
     - Name: string
     - Age: int
     - Active: bool
 
 REDUCERS
-- Init: insert exactly these rows on initialization
-  - (Id=1, Name="Alice", Age=30, Active=true)
-  - (Id=2, Name="Bob",   Age=22, Active=false)
+- Init: insert exactly these rows on initialization (IDs are auto-assigned)
+  - (Name="Alice", Age=30, Active=true)
+  - (Name="Bob",   Age=22, Active=false)

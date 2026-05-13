@@ -4,13 +4,13 @@ TABLE
 - Account (public)
   - Struct: Account
   - Fields:
-    - Id: int (primary key)
+    - Id: ulong (primary key, auto-increment)
     - Email: string (unique)
     - Name: string
   - Indexes:
     - by_name: btree(Name)
 
 REDUCERS
-- Seed: insert exactly these rows into Account
-  - (Id=1, Email="a@example.com", Name="Alice")
-  - (Id=2, Email="b@example.com", Name="Bob")
+- Seed: insert exactly these rows into Account (IDs are auto-assigned)
+  - (Email="a@example.com", Name="Alice")
+  - (Email="b@example.com", Name="Bob")
