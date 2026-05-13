@@ -308,12 +308,12 @@ help: the trait `SpacetimeType` is not implemented for `NotSpacetimeType`
     = help: the following other types implement trait `SpacetimeType`:
               &T
               ()
-              (T, U)
               AlgebraicType
               AlgebraicTypeRef
               Arc<T>
               ArrayType
               Box<T>
+              ColumnAttribute
             and $N others
     = note: required for `Option<NotSpacetimeType>` to implement `ViewReturn`
 
@@ -377,12 +377,12 @@ help: the trait `SpacetimeType` is not implemented for `NotSpacetimeType`
     = help: the following other types implement trait `SpacetimeType`:
               &T
               ()
-              (T, U)
               AlgebraicType
               AlgebraicTypeRef
               Arc<T>
               ArrayType
               Box<T>
+              ColumnAttribute
             and $N others
     = note: required for `Option<NotSpacetimeType>` to implement `SpacetimeType`
 
