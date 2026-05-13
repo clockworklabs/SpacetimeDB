@@ -67,4 +67,10 @@ validates the client's OIDC token and extracts the identity claims. These claims
 are then made available to your module's reducers, views and procedures via the context.
 
 [Check out the usage guide](./00500-authentication/00500-usage.md) for more
-information on how to access and use authentication claims in your module:
+information on how to access and use authentication claims in your module.
+
+If your application server connects to SpacetimeDB on behalf of browser users,
+service accounts, or API integrations, see
+[Server-Side Gateways](./00500-authentication/00600-server-side-gateways.md) for
+guidance on choosing between per-user connections, service connections, and
+hybrid gateway topologies.
