@@ -128,7 +128,44 @@ class ConnectionManagerImpl {
     if (managed.connection) {
       return managed.connection as T;
     }
+    return this.#install<T>(managed, builder);
+  }
 
+  /**
+   * Tears down the current connection and re-installs one using a fresh
+   * builder, preserving the ref count and listener set.
+   *
+   * This exists because `retain()` ignores the builder once a connection is
+   * live — which is usually what you want for React ref-counting, but blocks
+   * "reconnect with a fresh token" flows. Call `rebuild()` from application
+   * reconnect logic (e.g. after a token refresh or auth change).
+   *
+   * Returns `null` if the key has no retained entry; otherwise returns the
+   * newly-installed connection.
+   *
+   * @param key - Unique identifier for the connection (use getKey to generate)
+   * @param builder - Fresh connection builder; its handlers will be rewired
+   */
+  rebuild<T extends DbConnectionImpl<any>>(
+    key: string,
+    builder: DbConnectionBuilder<T>
+  ): T | null {
+    const managed = this.#connections.get(key);
+    if (!managed || managed.refCount <= 0) {
+      return null;
+    }
+    if (managed.pendingRelease) {
+      clearTimeout(managed.pendingRelease);
+      managed.pendingRelease = null;
+    }
+    this.#teardown(managed);
+    return this.#install<T>(managed, builder);
+  }
+
+  #install<T extends DbConnectionImpl<any>>(
+    managed: ManagedConnection,
+    builder: DbConnectionBuilder<T>
+  ): T {
     const connection = builder.build();
     managed.connection = connection;
 
@@ -176,6 +213,28 @@ class ConnectionManagerImpl {
     return connection as T;
   }
 
+  #teardown(managed: ManagedConnection): void {
+    if (!managed.connection) return;
+    if (managed.onConnect) {
+      managed.connection.removeOnConnect(managed.onConnect as any);
+    }
+    if (managed.onDisconnect) {
+      managed.connection.removeOnDisconnect(managed.onDisconnect as any);
+    }
+    if (managed.onConnectError) {
+      managed.connection.removeOnConnectError(managed.onConnectError as any);
+    }
+    try {
+      managed.connection.disconnect();
+    } catch {
+      // disconnect on a dead socket is a no-op we can swallow
+    }
+    managed.connection = undefined;
+    managed.onConnect = undefined;
+    managed.onDisconnect = undefined;
+    managed.onConnectError = undefined;
+  }
+
   release(key: string): void {
     const managed = this.#connections.get(key);
     if (!managed) {
@@ -192,20 +251,7 @@ class ConnectionManagerImpl {
       if (managed.refCount > 0) {
         return;
       }
-      if (managed.connection) {
-        if (managed.onConnect) {
-          managed.connection.removeOnConnect(managed.onConnect as any);
-        }
-        if (managed.onDisconnect) {
-          managed.connection.removeOnDisconnect(managed.onDisconnect as any);
-        }
-        if (managed.onConnectError) {
-          managed.connection.removeOnConnectError(
-            managed.onConnectError as any
-          );
-        }
-        managed.connection.disconnect();
-      }
+      this.#teardown(managed);
       this.#connections.delete(key);
     }, 0);
   }
