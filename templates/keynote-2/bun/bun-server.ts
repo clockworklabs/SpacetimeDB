@@ -3,15 +3,16 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { pgTable, integer, bigint as pgBigint } from 'drizzle-orm/pg-core';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { RpcRequest, RpcResponse } from '../src/connectors/rpc/rpc_common';
-// import { poolMaxFromEnv } from '../src/helpers';
 
 const DB_URL = process.env.BUN_PG_URL ?? process.env.PG_URL;
 if (!DB_URL) throw new Error('BUN_PG_URL or PG_URL not set');
 
+const poolMax = Number(process.env.MAX_POOL ?? 64);
+
 const pool = new Pool({
   connectionString: DB_URL,
   application_name: 'bun-rpc-drizzle',
-  // max: poolMaxFromEnv()
+  max: poolMax,
 });
 
 const accounts = pgTable('accounts', {
