@@ -14,13 +14,21 @@ This guide focuses on the SpacetimeDB integration choices. It assumes your
 Better Auth app already handles sign-in, session cookies, organization
 membership, and any application-specific authorization checks.
 
+The same boundary works when Better Auth is one adapter in a broader enterprise
+identity plane. For example, a SaaS app may federate with Microsoft Entra ID,
+Google Workspace, Okta, Keycloak, Auth0, or a hosted enterprise identity service
+such as WorkOS, then normalize the result into Better Auth users,
+organizations, memberships, and API clients before minting a SpacetimeDB token.
+SpacetimeDB does not need a provider-specific integration for each enterprise
+identity system; it needs a verifiable JWT and module-local authorization data.
+
 ## Choose an integration
 
 | Pattern | Use when | Better Auth pieces | SpacetimeDB token |
 | --- | --- | --- | --- |
 | Session broker | You own the web app and want your server to decide when a user, organization member, or API key may connect to SpacetimeDB. | Better Auth sessions, `jwt`, optional `organization`, optional `apiKey`. | A short-lived JWT minted by your app server. |
 | OAuth provider | You want OAuth/OIDC clients, native apps, service clients, or MCP-style integrations to request tokens for SpacetimeDB as a protected resource. | `@better-auth/oauth-provider` plus the Better Auth `jwt` plugin. | A JWT access token with `aud` set from the requested `resource`. |
-| Enterprise SSO and SCIM | You support customer-managed identity providers, organization provisioning, and directory sync. | `@better-auth/sso`, `@better-auth/scim`, and `organization`. | A brokered or OAuth-issued JWT after Better Auth normalizes the user and organization state. |
+| Enterprise SSO and SCIM | You support customer-managed identity providers, organization provisioning, directory sync, or WorkOS-style enterprise identity adapters. | `@better-auth/sso`, `@better-auth/scim`, and `organization`. | A brokered or OAuth-issued JWT after Better Auth normalizes the user and organization state. |
 | API-key broker | You need robot or integration credentials. | `@better-auth/api-key` verified by your app server. | A short-lived JWT minted after API-key validation. |
 
 In every pattern, treat the JWT as authentication input, not as the complete
@@ -244,6 +252,59 @@ Reducers should not trust an enterprise domain, SSO provider ID, or SCIM-managed
 membership claim by itself. Check `iss`, `aud`, `tenant_id`, token type, and the
 module-local authorization tables that reflect the current state your app
 allows.
+
+## Provider-adapter enterprise identity
+
+Enterprise SaaS apps often need a WorkOS-style control plane where each
+customer can bring its own identity provider, directory, SSO metadata, SCIM
+token, allowed domains, and delegated admin users. Keep that control plane in
+the application layer. SpacetimeDB should receive the normalized outcome, not
+raw IdP assertions, SCIM bearer tokens, or provider-specific admin credentials.
+
+A durable app-side model usually includes records like these:
+
+- `auth_provider_adapter`: which product or adapter is active for a tenant, such
+  as Better Auth SSO, Better Auth SCIM, WorkOS, Keycloak, Auth0, Microsoft Entra
+  ID, Google Workspace, or a custom OIDC/SAML adapter.
+- `enterprise_sso_connection`: tenant-scoped SAML, OIDC, or OAuth SSO metadata,
+  verified domains, issuer/entity IDs, signing and encryption requirements, and
+  IdP-initiated SSO policy.
+- `directory_sync_connection`: tenant-scoped SCIM or directory sync state,
+  token secret references, attribute mappings, deprovisioning behavior,
+  checkpoints, and last-run health.
+- `federated_identity_link`: a stable mapping from external `issuer` plus
+  external `subject` to the application's user, actor, or profile record. Treat
+  email addresses and domains as hints, not durable identity keys.
+- `oauth_client_application`: customer-built or first-party app registrations,
+  redirect URIs, allowed origins, PKCE policy, scopes, token lifetimes, and
+  lifecycle status.
+
+This model lets an app choose between self-hosted Better Auth plugins and a
+hosted enterprise identity vendor without changing SpacetimeDB reducer logic.
+The provider adapter handles the enterprise handshake. Better Auth or the app's
+auth layer normalizes the session, organization, and directory state. The
+SpacetimeDB broker then issues a short-lived token with stable application
+claims such as `sub`, `tenant_id`, `actor_ref`, and `token_type`.
+
+Prefer fail-closed rules at the application boundary:
+
+- Verify domains before trusting automatic account linking.
+- Prefer SP-initiated SSO unless a tenant explicitly enables IdP-initiated SSO
+  and the `RelayState` or redirect target passes the same allowlist checks as a
+  normal login.
+- Scope SCIM tokens to one tenant or organization and store only token hashes or
+  secret references outside the secret manager.
+- Do not grant application access solely because a SCIM user exists. Provisioned
+  users should still be constrained by tenant agreements, roles, app grants, and
+  module-local authorization tables.
+- Do not put raw IdP assertions, SCIM profiles, directory payloads, or long-lived
+  provider credentials in SpacetimeDB unless your module is explicitly designed
+  to store that sensitive data.
+
+With this boundary, Microsoft Entra ID, Google Workspace, and other enterprise
+providers are inputs to your application-owned identity plane. SpacetimeDB stays
+focused on realtime state, reducers, subscriptions, and the authorization state
+your module needs to make safe decisions.
 
 ## API keys and service actors
 
