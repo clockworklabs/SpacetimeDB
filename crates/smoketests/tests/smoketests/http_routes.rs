@@ -589,11 +589,11 @@ SPACETIMEDB_HTTP_ROUTER(router) {
 
 const NO_SUCH_ROUTE_BODY: &str = "Database has not registered a handler for this route";
 
-fn extract_rust_code_blocks(doc_path: &Path) -> String {
+fn extract_code_blocks(doc_path: &Path, regex_src: &str, language_name: &str) -> String {
     let doc = fs::read_to_string(doc_path).unwrap_or_else(|e| panic!("failed to read {}: {e}", doc_path.display()));
     let doc = doc.replace("\r\n", "\n");
 
-    let re = Regex::new(r"```rust\n([\s\S]*?)\n```").expect("regex should compile");
+    let re = Regex::new(regex_src).expect("regex should compile");
     let blocks: Vec<_> = re
         .captures_iter(&doc)
         .map(|cap| cap.get(1).expect("capture group should exist").as_str().to_string())
@@ -601,26 +601,8 @@ fn extract_rust_code_blocks(doc_path: &Path) -> String {
 
     assert!(
         !blocks.is_empty(),
-        "expected at least one rust code block in {}",
-        doc_path.display()
-    );
-
-    blocks.join("\n\n")
-}
-
-fn extract_cpp_code_blocks(doc_path: &Path) -> String {
-    let doc = fs::read_to_string(doc_path).unwrap_or_else(|e| panic!("failed to read {}: {e}", doc_path.display()));
-    let doc = doc.replace("\r\n", "\n");
-
-    let re = Regex::new(r"```(?:cpp|c\+\+)\n([\s\S]*?)\n```").expect("regex should compile");
-    let blocks: Vec<_> = re
-        .captures_iter(&doc)
-        .map(|cap| cap.get(1).expect("capture group should exist").as_str().to_string())
-        .collect();
-
-    assert!(
-        !blocks.is_empty(),
-        "expected at least one cpp code block in {}",
+        "expected at least one {} code block in {}",
+        language_name,
         doc_path.display()
     );
 
@@ -637,17 +619,21 @@ fn rust_http_test(module_code: &str) -> (Smoketest, String) {
     (test, identity)
 }
 
-fn cpp_http_test(module_name: &str, db_name: &str, module_code: &str) -> (Smoketest, String) {
+fn cpp_http_test(name: &str, module_code: &str) -> (Smoketest, String) {
     require_emscripten!();
     let mut test = Smoketest::builder().autopublish(false).build();
     let identity = test
-        .publish_cpp_module_source(module_name, db_name, module_code)
+        .publish_cpp_module_source(name, name, module_code)
         .unwrap();
     (test, identity)
 }
 
+fn route_base(server_url: &str, identity: &str) -> String {
+    format!("{server_url}/v1/database/{identity}/route")
+}
+
 fn assert_http_routes_end_to_end(server_url: &str, identity: &str) {
-    let base = format!("{server_url}/v1/database/{identity}/route");
+    let base = route_base(server_url, identity);
     let client = reqwest::blocking::Client::new();
 
     let resp = client.get(format!("{base}/get")).send().expect("get failed");
@@ -717,7 +703,7 @@ fn assert_http_routes_end_to_end(server_url: &str, identity: &str) {
 }
 
 fn assert_http_routes_pr_example_round_trip(server_url: &str, identity: &str) {
-    let base = format!("{server_url}/v1/database/{identity}/route");
+    let base = route_base(server_url, identity);
     let client = reqwest::blocking::Client::new();
     let payload = b"hello from the PR example".to_vec();
 
@@ -753,7 +739,7 @@ fn assert_http_routes_pr_example_round_trip(server_url: &str, identity: &str) {
 }
 
 fn assert_http_routes_are_strict_for_non_root_paths(server_url: &str, identity: &str) {
-    let base = format!("{server_url}/v1/database/{identity}/route");
+    let base = route_base(server_url, identity);
     let client = reqwest::blocking::Client::new();
 
     let resp = client.get(format!("{base}/foo")).send().expect("foo failed");
@@ -777,7 +763,7 @@ fn assert_http_routes_are_strict_for_non_root_paths(server_url: &str, identity: 
 }
 
 fn assert_http_routes_are_strict_for_root_paths(server_url: &str, identity: &str) {
-    let base = format!("{server_url}/v1/database/{identity}/route");
+    let base = route_base(server_url, identity);
     let client = reqwest::blocking::Client::new();
 
     let resp = client.get(base.clone()).send().expect("empty root failed");
@@ -790,7 +776,7 @@ fn assert_http_routes_are_strict_for_root_paths(server_url: &str, identity: &str
 }
 
 fn assert_http_handler_observes_full_external_uri(server_url: &str, identity: &str) {
-    let base = format!("{server_url}/v1/database/{identity}/route");
+    let base = route_base(server_url, identity);
     let url = format!("{base}/echo-uri?alpha=beta");
     let client = reqwest::blocking::Client::new();
 
@@ -800,7 +786,7 @@ fn assert_http_handler_observes_full_external_uri(server_url: &str, identity: &s
 }
 
 fn assert_handle_request_body(server_url: &str, identity: &str) {
-    let base = format!("{server_url}/v1/database/{identity}/route");
+    let base = route_base(server_url, identity);
     let client = reqwest::blocking::Client::new();
 
     let resp = client
@@ -902,65 +888,47 @@ fn handle_request_body() {
 
 #[test]
 fn cpp_http_routes_end_to_end() {
-    let (test, identity) = cpp_http_test("http-routes-cpp-basic", "http-routes-cpp-basic", CPP_MODULE_CODE);
+    let (test, identity) = cpp_http_test("http-routes-cpp-basic", CPP_MODULE_CODE);
     assert_http_routes_end_to_end(&test.server_url, &identity);
 }
 
 #[test]
 fn cpp_http_routes_pr_example_round_trip() {
-    let (test, identity) = cpp_http_test(
-        "http-routes-cpp-example",
-        "http-routes-cpp-example",
-        CPP_EXAMPLE_MODULE_CODE,
-    );
+    let (test, identity) = cpp_http_test("http-routes-cpp-example", CPP_EXAMPLE_MODULE_CODE);
     assert_http_routes_pr_example_round_trip(&test.server_url, &identity);
 }
 
 #[test]
 fn cpp_http_routes_are_strict_for_non_root_paths() {
-    let (test, identity) = cpp_http_test(
-        "http-routes-cpp-strict-non-root",
-        "http-routes-cpp-strict-non-root",
-        CPP_STRICT_NON_ROOT_ROUTING_MODULE_CODE,
-    );
+    let (test, identity) = cpp_http_test("http-routes-cpp-strict-non-root", CPP_STRICT_NON_ROOT_ROUTING_MODULE_CODE);
     assert_http_routes_are_strict_for_non_root_paths(&test.server_url, &identity);
 }
 
 #[test]
 fn cpp_http_routes_are_strict_for_root_paths() {
-    let (test, identity) = cpp_http_test(
-        "http-routes-cpp-strict-root",
-        "http-routes-cpp-strict-root",
-        CPP_STRICT_ROOT_ROUTING_MODULE_CODE,
-    );
+    let (test, identity) = cpp_http_test("http-routes-cpp-strict-root", CPP_STRICT_ROOT_ROUTING_MODULE_CODE);
     assert_http_routes_are_strict_for_root_paths(&test.server_url, &identity);
 }
 
 #[test]
 fn cpp_http_handler_observes_full_external_uri() {
-    let (test, identity) = cpp_http_test(
-        "http-routes-cpp-full-uri",
-        "http-routes-cpp-full-uri",
-        CPP_FULL_URI_MODULE_CODE,
-    );
+    let (test, identity) = cpp_http_test("http-routes-cpp-full-uri", CPP_FULL_URI_MODULE_CODE);
     assert_http_handler_observes_full_external_uri(&test.server_url, &identity);
 }
 
 #[test]
 fn cpp_handle_request_body() {
-    let (test, identity) = cpp_http_test(
-        "http-routes-cpp-request-body",
-        "http-routes-cpp-request-body",
-        CPP_HANDLE_REQUEST_BODY_MODULE_CODE,
-    );
+    let (test, identity) = cpp_http_test("http-routes-cpp-request-body", CPP_HANDLE_REQUEST_BODY_MODULE_CODE);
     assert_handle_request_body(&test.server_url, &identity);
 }
 
 /// Validates the Rust example from `docs/docs/00200-core-concepts/00200-functions/00600-HTTP-handlers.md`.
 #[test]
 fn http_handlers_tutorial_say_hello_route_works() {
-    let module_code = extract_rust_code_blocks(
+    let module_code = extract_code_blocks(
         &workspace_root().join("docs/docs/00200-core-concepts/00200-functions/00600-HTTP-handlers.md"),
+        r"```rust\n([\s\S]*?)\n```",
+        "rust",
     );
     let test = Smoketest::builder().module_code(&module_code).build();
     let identity = test.database_identity.as_ref().expect("database identity missing");
@@ -978,8 +946,10 @@ fn http_handlers_tutorial_say_hello_route_works() {
 fn cpp_http_handlers_tutorial_say_hello_route_works() {
     require_emscripten!();
 
-    let module_code = extract_cpp_code_blocks(
+    let module_code = extract_code_blocks(
         &workspace_root().join("docs/docs/00200-core-concepts/00200-functions/00600-HTTP-handlers.md"),
+        r"```(?:cpp|c\+\+)\n([\s\S]*?)\n```",
+        "cpp",
     );
     let mut test = Smoketest::builder().autopublish(false).build();
     let identity = test
