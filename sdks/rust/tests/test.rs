@@ -513,6 +513,52 @@ procedure_tests!(typescript_procedures, "-ts");
 procedure_tests!(cpp_procedures, "-cpp");
 procedure_tests!(csharp_procedures, "-cs");
 
+mod rust_procedure_concurrency {
+    use spacetimedb_testing::sdk::Test;
+
+    const MODULE: &str = "sdk-test-procedure-concurrency";
+    const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/procedure-concurrency-client");
+
+    fn make_test(subcommand: &str) -> Test {
+        super::platform_test_builder(CLIENT, Some(subcommand))
+            .with_name(subcommand)
+            .with_module(MODULE)
+            .with_language("rust")
+            .with_generate_private_items(true)
+            .with_bindings_dir("src/module_bindings")
+            .build()
+    }
+
+    #[test]
+    fn procedure_reducer_interleaving() {
+        make_test("procedure-reducer-interleaving").run()
+    }
+
+    /// Test for the behavior tracked in https://github.com/clockworklabs/SpacetimeDB/issues/4954 .
+    ///
+    /// We're not attached to this behavior, and in fact the ticket is to change it.
+    /// At that time, this test should be altered as described in the doc comment on
+    /// ./procedure_concurrency_client/src/test_handlers.rs#exec_procedure_reducer_same_client_not_interleaved .
+    #[test]
+    fn procedure_reducer_same_client_not_interleaved() {
+        make_test("procedure-reducer-same-client-not-interleaved").run()
+    }
+
+    #[test]
+    fn procedure_concurrent_with_scheduled_reducer() {
+        make_test("procedure-concurrent-with-scheduled-reducer").run()
+    }
+
+    /// Similar to [`procedure_reducer_same_client_not_interleaved`],
+    /// but with the scheduler subsystem acting as the "client."
+    ///
+    /// As with the linked test, we're not attached to this behavior.
+    #[test]
+    fn scheduled_procedure_scheduled_reducer_not_interleaved() {
+        make_test("scheduled-procedure-scheduled-reducer-not-interleaved").run()
+    }
+}
+
 macro_rules! view_tests {
     ($mod_name:ident, $suffix:literal) => {
         mod $mod_name {

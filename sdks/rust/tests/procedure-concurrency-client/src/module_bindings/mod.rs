@@ -6,51 +6,31 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-pub mod insert_with_tx_commit_procedure;
-pub mod insert_with_tx_rollback_procedure;
-pub mod invalid_request_procedure;
-pub mod my_table_table;
-pub mod my_table_type;
-pub mod pk_uuid_table;
-pub mod pk_uuid_type;
-pub mod proc_inserts_into_table;
-pub mod proc_inserts_into_type;
-pub mod read_my_schema_procedure;
-pub mod return_enum_a_procedure;
-pub mod return_enum_b_procedure;
-pub mod return_enum_type;
-pub mod return_primitive_procedure;
-pub mod return_struct_procedure;
-pub mod return_struct_type;
-pub mod schedule_proc_reducer;
-pub mod scheduled_proc_procedure;
-pub mod scheduled_proc_table_table;
-pub mod scheduled_proc_table_type;
-pub mod sorted_uuids_insert_procedure;
-pub mod will_panic_procedure;
+pub mod insert_reducer_row_reducer;
+pub mod insert_scheduled_reducer_reducer;
+pub mod procedure_concurrency_row_table;
+pub mod procedure_concurrency_row_type;
+pub mod procedure_schedule_reducer_between_inserts_procedure;
+pub mod procedure_sleep_between_inserts_procedure;
+pub mod schedule_procedure_then_reducer_reducer;
+pub mod scheduled_procedure_row_table;
+pub mod scheduled_procedure_row_type;
+pub mod scheduled_procedure_sleep_between_inserts_procedure;
+pub mod scheduled_reducer_row_table;
+pub mod scheduled_reducer_row_type;
 
-pub use insert_with_tx_commit_procedure::insert_with_tx_commit;
-pub use insert_with_tx_rollback_procedure::insert_with_tx_rollback;
-pub use invalid_request_procedure::invalid_request;
-pub use my_table_table::*;
-pub use my_table_type::MyTable;
-pub use pk_uuid_table::*;
-pub use pk_uuid_type::PkUuid;
-pub use proc_inserts_into_table::*;
-pub use proc_inserts_into_type::ProcInsertsInto;
-pub use read_my_schema_procedure::read_my_schema;
-pub use return_enum_a_procedure::return_enum_a;
-pub use return_enum_b_procedure::return_enum_b;
-pub use return_enum_type::ReturnEnum;
-pub use return_primitive_procedure::return_primitive;
-pub use return_struct_procedure::return_struct;
-pub use return_struct_type::ReturnStruct;
-pub use schedule_proc_reducer::schedule_proc;
-pub use scheduled_proc_procedure::scheduled_proc;
-pub use scheduled_proc_table_table::*;
-pub use scheduled_proc_table_type::ScheduledProcTable;
-pub use sorted_uuids_insert_procedure::sorted_uuids_insert;
-pub use will_panic_procedure::will_panic;
+pub use insert_reducer_row_reducer::insert_reducer_row;
+pub use insert_scheduled_reducer_reducer::insert_scheduled_reducer;
+pub use procedure_concurrency_row_table::*;
+pub use procedure_concurrency_row_type::ProcedureConcurrencyRow;
+pub use procedure_schedule_reducer_between_inserts_procedure::procedure_schedule_reducer_between_inserts;
+pub use procedure_sleep_between_inserts_procedure::procedure_sleep_between_inserts;
+pub use schedule_procedure_then_reducer_reducer::schedule_procedure_then_reducer;
+pub use scheduled_procedure_row_table::*;
+pub use scheduled_procedure_row_type::ScheduledProcedureRow;
+pub use scheduled_procedure_sleep_between_inserts_procedure::scheduled_procedure_sleep_between_inserts;
+pub use scheduled_reducer_row_table::*;
+pub use scheduled_reducer_row_type::ScheduledReducerRow;
 
 #[derive(Clone, PartialEq, Debug)]
 
@@ -60,7 +40,9 @@ pub use will_panic_procedure::will_panic;
 /// to indicate which reducer caused the event.
 
 pub enum Reducer {
-    ScheduleProc,
+    InsertReducerRow,
+    InsertScheduledReducer { schedule: ScheduledReducerRow },
+    ScheduleProcedureThenReducer,
 }
 
 impl __sdk::InModule for Reducer {
@@ -70,14 +52,24 @@ impl __sdk::InModule for Reducer {
 impl __sdk::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
-            Reducer::ScheduleProc => "schedule_proc",
+            Reducer::InsertReducerRow => "insert_reducer_row",
+            Reducer::InsertScheduledReducer { .. } => "insert_scheduled_reducer",
+            Reducer::ScheduleProcedureThenReducer => "schedule_procedure_then_reducer",
             _ => unreachable!(),
         }
     }
     #[allow(clippy::clone_on_copy)]
     fn args_bsatn(&self) -> Result<Vec<u8>, __sats::bsatn::EncodeError> {
         match self {
-            Reducer::ScheduleProc => __sats::bsatn::to_vec(&schedule_proc_reducer::ScheduleProcArgs {}),
+            Reducer::InsertReducerRow => __sats::bsatn::to_vec(&insert_reducer_row_reducer::InsertReducerRowArgs {}),
+            Reducer::InsertScheduledReducer { schedule } => {
+                __sats::bsatn::to_vec(&insert_scheduled_reducer_reducer::InsertScheduledReducerArgs {
+                    schedule: schedule.clone(),
+                })
+            }
+            Reducer::ScheduleProcedureThenReducer => {
+                __sats::bsatn::to_vec(&schedule_procedure_then_reducer_reducer::ScheduleProcedureThenReducerArgs {})
+            }
             _ => unreachable!(),
         }
     }
@@ -87,10 +79,9 @@ impl __sdk::Reducer for Reducer {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct DbUpdate {
-    my_table: __sdk::TableUpdate<MyTable>,
-    pk_uuid: __sdk::TableUpdate<PkUuid>,
-    proc_inserts_into: __sdk::TableUpdate<ProcInsertsInto>,
-    scheduled_proc_table: __sdk::TableUpdate<ScheduledProcTable>,
+    procedure_concurrency_row: __sdk::TableUpdate<ProcedureConcurrencyRow>,
+    scheduled_procedure_row: __sdk::TableUpdate<ScheduledProcedureRow>,
+    scheduled_reducer_row: __sdk::TableUpdate<ScheduledReducerRow>,
 }
 
 impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
@@ -99,18 +90,15 @@ impl TryFrom<__ws::v2::TransactionUpdate> for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_update in __sdk::transaction_update_iter_table_updates(raw) {
             match &table_update.table_name[..] {
-                "my_table" => db_update
-                    .my_table
-                    .append(my_table_table::parse_table_update(table_update)?),
-                "pk_uuid" => db_update
-                    .pk_uuid
-                    .append(pk_uuid_table::parse_table_update(table_update)?),
-                "proc_inserts_into" => db_update
-                    .proc_inserts_into
-                    .append(proc_inserts_into_table::parse_table_update(table_update)?),
-                "scheduled_proc_table" => db_update
-                    .scheduled_proc_table
-                    .append(scheduled_proc_table_table::parse_table_update(table_update)?),
+                "procedure_concurrency_row" => db_update
+                    .procedure_concurrency_row
+                    .append(procedure_concurrency_row_table::parse_table_update(table_update)?),
+                "scheduled_procedure_row" => db_update
+                    .scheduled_procedure_row
+                    .append(scheduled_procedure_row_table::parse_table_update(table_update)?),
+                "scheduled_reducer_row" => db_update
+                    .scheduled_reducer_row
+                    .append(scheduled_reducer_row_table::parse_table_update(table_update)?),
 
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name("table", unknown, "DatabaseUpdate").into());
@@ -129,12 +117,15 @@ impl __sdk::DbUpdate for DbUpdate {
     fn apply_to_client_cache(&self, cache: &mut __sdk::ClientCache<RemoteModule>) -> AppliedDiff<'_> {
         let mut diff = AppliedDiff::default();
 
-        diff.my_table = cache.apply_diff_to_table::<MyTable>("my_table", &self.my_table);
-        diff.pk_uuid = cache.apply_diff_to_table::<PkUuid>("pk_uuid", &self.pk_uuid);
-        diff.proc_inserts_into =
-            cache.apply_diff_to_table::<ProcInsertsInto>("proc_inserts_into", &self.proc_inserts_into);
-        diff.scheduled_proc_table = cache
-            .apply_diff_to_table::<ScheduledProcTable>("scheduled_proc_table", &self.scheduled_proc_table)
+        diff.procedure_concurrency_row = cache.apply_diff_to_table::<ProcedureConcurrencyRow>(
+            "procedure_concurrency_row",
+            &self.procedure_concurrency_row,
+        );
+        diff.scheduled_procedure_row = cache
+            .apply_diff_to_table::<ScheduledProcedureRow>("scheduled_procedure_row", &self.scheduled_procedure_row)
+            .with_updates_by_pk(|row| &row.scheduled_id);
+        diff.scheduled_reducer_row = cache
+            .apply_diff_to_table::<ScheduledReducerRow>("scheduled_reducer_row", &self.scheduled_reducer_row)
             .with_updates_by_pk(|row| &row.scheduled_id);
 
         diff
@@ -143,17 +134,14 @@ impl __sdk::DbUpdate for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_rows in raw.tables {
             match &table_rows.table[..] {
-                "my_table" => db_update
-                    .my_table
+                "procedure_concurrency_row" => db_update
+                    .procedure_concurrency_row
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "pk_uuid" => db_update
-                    .pk_uuid
+                "scheduled_procedure_row" => db_update
+                    .scheduled_procedure_row
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "proc_inserts_into" => db_update
-                    .proc_inserts_into
-                    .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
-                "scheduled_proc_table" => db_update
-                    .scheduled_proc_table
+                "scheduled_reducer_row" => db_update
+                    .scheduled_reducer_row
                     .append(__sdk::parse_row_list_as_inserts(table_rows.rows)?),
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name("table", unknown, "QueryRows").into());
@@ -166,17 +154,14 @@ impl __sdk::DbUpdate for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_rows in raw.tables {
             match &table_rows.table[..] {
-                "my_table" => db_update
-                    .my_table
+                "procedure_concurrency_row" => db_update
+                    .procedure_concurrency_row
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "pk_uuid" => db_update
-                    .pk_uuid
+                "scheduled_procedure_row" => db_update
+                    .scheduled_procedure_row
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "proc_inserts_into" => db_update
-                    .proc_inserts_into
-                    .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
-                "scheduled_proc_table" => db_update
-                    .scheduled_proc_table
+                "scheduled_reducer_row" => db_update
+                    .scheduled_reducer_row
                     .append(__sdk::parse_row_list_as_deletes(table_rows.rows)?),
                 unknown => {
                     return Err(__sdk::InternalError::unknown_name("table", unknown, "QueryRows").into());
@@ -191,10 +176,9 @@ impl __sdk::DbUpdate for DbUpdate {
 #[allow(non_snake_case)]
 #[doc(hidden)]
 pub struct AppliedDiff<'r> {
-    my_table: __sdk::TableAppliedDiff<'r, MyTable>,
-    pk_uuid: __sdk::TableAppliedDiff<'r, PkUuid>,
-    proc_inserts_into: __sdk::TableAppliedDiff<'r, ProcInsertsInto>,
-    scheduled_proc_table: __sdk::TableAppliedDiff<'r, ScheduledProcTable>,
+    procedure_concurrency_row: __sdk::TableAppliedDiff<'r, ProcedureConcurrencyRow>,
+    scheduled_procedure_row: __sdk::TableAppliedDiff<'r, ScheduledProcedureRow>,
+    scheduled_reducer_row: __sdk::TableAppliedDiff<'r, ScheduledReducerRow>,
     __unused: std::marker::PhantomData<&'r ()>,
 }
 
@@ -204,12 +188,19 @@ impl __sdk::InModule for AppliedDiff<'_> {
 
 impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
     fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {
-        callbacks.invoke_table_row_callbacks::<MyTable>("my_table", &self.my_table, event);
-        callbacks.invoke_table_row_callbacks::<PkUuid>("pk_uuid", &self.pk_uuid, event);
-        callbacks.invoke_table_row_callbacks::<ProcInsertsInto>("proc_inserts_into", &self.proc_inserts_into, event);
-        callbacks.invoke_table_row_callbacks::<ScheduledProcTable>(
-            "scheduled_proc_table",
-            &self.scheduled_proc_table,
+        callbacks.invoke_table_row_callbacks::<ProcedureConcurrencyRow>(
+            "procedure_concurrency_row",
+            &self.procedure_concurrency_row,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<ScheduledProcedureRow>(
+            "scheduled_procedure_row",
+            &self.scheduled_procedure_row,
+            event,
+        );
+        callbacks.invoke_table_row_callbacks::<ScheduledReducerRow>(
+            "scheduled_reducer_row",
+            &self.scheduled_reducer_row,
             event,
         );
     }
@@ -869,11 +860,13 @@ impl __sdk::SpacetimeModule for RemoteModule {
     type QueryBuilder = __sdk::QueryBuilder;
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
-        my_table_table::register_table(client_cache);
-        pk_uuid_table::register_table(client_cache);
-        proc_inserts_into_table::register_table(client_cache);
-        scheduled_proc_table_table::register_table(client_cache);
+        procedure_concurrency_row_table::register_table(client_cache);
+        scheduled_procedure_row_table::register_table(client_cache);
+        scheduled_reducer_row_table::register_table(client_cache);
     }
-    const ALL_TABLE_NAMES: &'static [&'static str] =
-        &["my_table", "pk_uuid", "proc_inserts_into", "scheduled_proc_table"];
+    const ALL_TABLE_NAMES: &'static [&'static str] = &[
+        "procedure_concurrency_row",
+        "scheduled_procedure_row",
+        "scheduled_reducer_row",
+    ];
 }
