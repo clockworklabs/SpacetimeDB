@@ -56,10 +56,11 @@ use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
 use spacetimedb_execution::RelValue;
 use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
+use spacetimedb_lib::http::{Request as HttpRequest, Response as HttpResponse};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{bsatn, ConnectionId, TimeDuration, Timestamp};
-use spacetimedb_primitives::{ArgId, ProcedureId, TableId, ViewFnPtr, ViewId};
+use spacetimedb_primitives::{ArgId, HttpHandlerId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue};
@@ -1097,6 +1098,13 @@ impl CallProcedureParams {
     }
 }
 
+pub struct CallHttpHandlerParams {
+    pub timestamp: Timestamp,
+    pub handler_id: HttpHandlerId,
+    pub request: HttpRequest,
+    pub request_body: Bytes,
+}
+
 /// Holds a [`Module`] and a set of [`Instance`]s from it,
 /// and allocates the [`Instance`]s to be used for function calls.
 ///
@@ -1511,6 +1519,21 @@ pub enum ProcedureCallError {
     NoSuchProcedure,
     #[error("Procedure terminated due to insufficient budget")]
     OutOfEnergy,
+    #[error("The module instance encountered a fatal error: {0}")]
+    InternalError(String),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum HttpHandlerCallError {
+    #[error(transparent)]
+    NoSuchModule(#[from] NoSuchModule),
+    #[error("no such http handler")]
+    NoSuchHandler,
+
+    // TODO(v8-http-handlers): Remove this error variant.
+    #[error("http handlers are not supported for this host type")]
+    UnsupportedHostType,
+
     #[error("The module instance encountered a fatal error: {0}")]
     InternalError(String),
 }
@@ -2719,6 +2742,33 @@ impl ModuleHost {
             |params, inst| inst.call_procedure(params).await,
             |params, inst| inst.call_procedure(params).await,
         )
+    }
+
+    pub async fn call_http_handler(
+        &self,
+        handler_id: HttpHandlerId,
+        request: HttpRequest,
+        request_body: Bytes,
+    ) -> Result<(HttpResponse, Bytes), HttpHandlerCallError> {
+        if self.info.module_def.get_http_handler_by_id(handler_id).is_none() {
+            return Err(HttpHandlerCallError::NoSuchHandler);
+        }
+
+        let params = CallHttpHandlerParams {
+            timestamp: Timestamp::now(),
+            handler_id,
+            request,
+            request_body,
+        };
+
+        call_pooled_instance!(
+            self,
+            "http handler",
+            params,
+            |params, inst| inst.call_http_handler(params).await,
+            // TODO(v8-http-handlers): Do something useful here.
+            |_params, _inst| Err(HttpHandlerCallError::UnsupportedHostType),
+        )?
     }
 
     pub(super) async fn call_scheduled_reducer(

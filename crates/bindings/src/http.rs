@@ -5,17 +5,396 @@
 //! The [`get`](HttpClient::get) helper can be used for simple `GET` requests,
 //! while [`send`](HttpClient::send) allows more complex requests with headers, bodies and other methods.
 
-use bytes::Bytes;
-
 use crate::{
     rt::{read_bytes_source_as, read_bytes_source_into},
-    IterBuf,
+    try_with_tx, with_tx, IterBuf, StdbRng, Timestamp, TxContext,
 };
-use spacetimedb_lib::{bsatn, http as st_http, TimeDuration};
+use bytes::Bytes;
+#[cfg(feature = "rand")]
+use rand08::RngCore;
+use spacetimedb_lib::db::raw_def::v10::MethodOrAny;
+use spacetimedb_lib::http::{
+    self as st_http, character_is_acceptable_for_route_path, ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION,
+};
+use spacetimedb_lib::{bsatn, Identity, TimeDuration, Uuid};
+use std::cell::{Cell, OnceCell};
+use std::str::FromStr;
 
 pub type Request<T = Body> = http::Request<T>;
 
 pub type Response<T = Body> = http::Response<T>;
+
+/// Define an HTTP handler, a special database function which handles HTTP requests.
+///
+/// HTTP handlers must be functions of two arguments, [`&mut HandlerContext`](HandlerContext) and [`Request`],
+/// and must return [`Response`].
+///
+/// ```no_run
+/// # use spacetimedb::http::{handler, Request, Response, Body, HandlerContext};
+/// #[handler]
+/// fn hello_world(_ctx: &mut HandlerContext, _req: Request) -> Response {
+///     Response::new(Body::from_bytes("Hello, world!"))
+/// }
+/// ```
+///
+/// In order to be reachable, a handler must be registered in the database's [macro@router].
+///
+/// This macro will shadow the original function definition, making it no longer callable by name.
+///
+/// ```compile_fail
+/// # use spacetimedb::http::{handler, Request, Response, Body, HandlerContext};
+/// # #[handler]
+/// # fn hello_world(_ctx: &mut HandlerContext, _req: Request) -> Response {
+/// #     Response::new(Body::from_bytes("Hello, world!"))
+/// # }
+/// # fn foo() {
+/// # let ctx: HandlerContext = todo!();
+/// # let ctx: &mut HandlerContext = &mut ctx;
+/// # let req: Request = todo!();
+/// hello_world(ctx, req); // Won't compile, as our handler `hello_world`'s function was shadowed.
+/// # }
+/// ```
+#[doc(inline)]
+pub use spacetimedb_bindings_macro::http_handler as handler;
+
+/// Register a [`Router`](struct@Router) to route HTTP requests to handlers.
+///
+/// This should annotate a function of no arguments which returns a [`Router`](struct@router).
+///
+/// ```no_run
+/// # use spacetimedb::http::{handler, router, Request, Response, Body, HandlerContext, Router};
+/// # #[handler]
+/// # fn hello_world(_ctx: &mut HandlerContext, _req: Request) -> Response {
+/// #     Response::new(Body::from_bytes("Hello, world!"))
+/// # }
+/// #[router]
+/// fn my_router() -> Router {
+///     Router::new().get("/hello-world", hello_world)
+/// }
+/// ```
+#[doc(inline)]
+pub use spacetimedb_bindings_macro::http_router as router;
+
+/// The context that any HTTP handler is provided with.
+///
+/// Each HTTP handler must accept `&mut spacetimedb::http::HandlerContext` as its first argument.
+///
+/// Includes the time of invocation and exposes methods for running transactions
+/// and performing side-effecting operations.
+#[non_exhaustive]
+pub struct HandlerContext {
+    /// The time at which the handler was started.
+    pub timestamp: Timestamp,
+
+    /// Methods for performing HTTP requests.
+    pub http: HttpClient,
+
+    #[cfg(feature = "rand08")]
+    pub(crate) rng: OnceCell<StdbRng>,
+
+    /// A counter used for generating UUIDv7 values.
+    /// **Note:** must be 0..=u32::MAX
+    #[cfg(feature = "rand")]
+    pub(crate) counter_uuid: Cell<u32>,
+}
+
+impl HandlerContext {
+    pub(crate) fn new(timestamp: Timestamp) -> Self {
+        Self {
+            timestamp,
+            http: HttpClient {},
+            #[cfg(feature = "rand08")]
+            rng: OnceCell::new(),
+            #[cfg(feature = "rand")]
+            counter_uuid: Cell::new(0),
+        }
+    }
+
+    /// Read the current module's [`Identity`].
+    pub fn identity(&self) -> Identity {
+        Identity::from_byte_array(spacetimedb_bindings_sys::identity())
+    }
+
+    /// Acquire a mutable transaction and execute `body` with read-write access.
+    pub fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
+        with_tx(body)
+    }
+
+    /// Acquire a mutable transaction and execute `body` with read-write access.
+    pub fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
+        try_with_tx(body)
+    }
+
+    /// Create a new random [`Uuid`] `v4` using the built-in RNG.
+    #[cfg(feature = "rand")]
+    pub fn new_uuid_v4(&self) -> anyhow::Result<Uuid> {
+        let mut bytes = [0u8; 16];
+        self.rng().try_fill_bytes(&mut bytes)?;
+        Ok(Uuid::from_random_bytes_v4(bytes))
+    }
+
+    /// Create a new sortable [`Uuid`] `v7` using the built-in RNG, counter and timestamp.
+    #[cfg(feature = "rand")]
+    pub fn new_uuid_v7(&self) -> anyhow::Result<Uuid> {
+        let mut random_bytes = [0u8; 4];
+        self.rng().try_fill_bytes(&mut random_bytes)?;
+        Uuid::from_counter_v7(&self.counter_uuid, self.timestamp, &random_bytes)
+    }
+}
+
+/// Describes an HTTP handler function for use with [`Router`].
+///
+/// The [`handler`] macro will define a constant of type [`Handler`],
+/// which can be used to refer to the handler function when registering it to handle a route.
+#[derive(Clone, Copy)]
+pub struct Handler {
+    name: &'static str,
+}
+
+impl Handler {
+    /// Emitted by the [`handler`] macro.
+    ///
+    /// User code should not call this method. In order for a `Handler` to be valid,
+    /// its `name` must refer to a function registered with the SpacetimeDB host as an HTTP handler.
+    /// The only supported way to do this is by annotating a function with the [`handler`] macro.
+    #[doc(hidden)]
+    pub const fn new(name: &'static str) -> Self {
+        Self { name }
+    }
+
+    pub(crate) fn name(&self) -> &'static str {
+        self.name
+    }
+}
+
+/// A collection of routes bound to HTTP handlers.
+///
+/// Define HTTP handlers with the [`handler`] macro.
+///
+/// Bind handlers to paths with:
+/// - [`Self::get`]
+/// - [`Self::head`]
+/// - [`Self::put`]
+/// - [`Self::options`]
+/// - [`Self::put`]
+/// - [`Self::delete`]
+/// - [`Self::post`]
+/// - [`Self::patch`]
+/// - [`Self::any`]
+///
+/// ## Paths
+///
+/// Each route binds a handler to an HTTP method at a path.
+///
+/// The empty string `""` is a valid path, which refers to the root route.
+///
+/// All other paths must start with a slash `/`.
+///
+/// Only characters described by [`spacetimedb_lib::http::ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION`]
+/// are valid for use in paths. This set may be expanded in the future.
+///
+/// SpacetimeDB uses strict routing, meaning that trailing slashes `/` in paths are significant.
+/// `/foo` and `/foo/` are distinct paths.
+///
+/// ## Registering
+///
+/// Register a `Handler` as the root handler of your database with the [`handler` macro](macro@handler).
+#[derive(Clone, Default)]
+pub struct Router {
+    routes: Vec<RouteSpec>,
+}
+
+#[derive(Clone)]
+pub(crate) struct RouteSpec {
+    pub method: MethodOrAny,
+    pub path: String,
+    pub handler: Handler,
+}
+
+impl Router {
+    /// Returns a new, empty `Router`.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Registers `handler` to handle `GET` requests at `path`.
+    ///
+    /// Panics if `self` already has a handler on this method at this path,
+    /// including one registered with [`Self::any`],
+    /// or if this path overlaps with a nested router registered by [`Self::nest`].
+    ///
+    /// Panics if the `path` is [invalid](Self#paths).
+    pub fn get(self, path: impl Into<String>, handler: Handler) -> Self {
+        self.add_route(MethodOrAny::Method(st_http::Method::Get), path, handler)
+    }
+
+    /// Registers `handler` to handle `HEAD` requests at `path`.
+    ///
+    /// Panics if `self` already has a handler on this method at this path,
+    /// including one registered with [`Self::any`],
+    /// or if this path overlaps with a nested router registered by [`Self::nest`].
+    ///
+    /// Panics if the `path` is [invalid](Self#paths).
+    pub fn head(self, path: impl Into<String>, handler: Handler) -> Self {
+        self.add_route(MethodOrAny::Method(st_http::Method::Head), path, handler)
+    }
+
+    /// Registers `handler` to handle `OPTIONS` requests at `path`.
+    ///
+    /// Panics if `self` already has a handler on this method at this path,
+    /// including one registered with [`Self::any`],
+    /// or if this path overlaps with a nested router registered by [`Self::nest`].
+    ///
+    /// Panics if the `path` is [invalid](Self#paths).
+    pub fn options(self, path: impl Into<String>, handler: Handler) -> Self {
+        self.add_route(MethodOrAny::Method(st_http::Method::Options), path, handler)
+    }
+
+    /// Registers `handler` to handle `PUT` requests at `path`.
+    ///
+    /// Panics if `self` already has a handler on this method at this path,
+    /// including one registered with [`Self::any`],
+    /// or if this path overlaps with a nested router registered by [`Self::nest`].
+    ///
+    /// Panics if the `path` is [invalid](Self#paths).
+    pub fn put(self, path: impl Into<String>, handler: Handler) -> Self {
+        self.add_route(MethodOrAny::Method(st_http::Method::Put), path, handler)
+    }
+
+    /// Registers `handler` to handle `DELETE` requests at `path`.
+    ///
+    /// Panics if `self` already has a handler on this method at this path,
+    /// including one registered with [`Self::any`],
+    /// or if this path overlaps with a nested router registered by [`Self::nest`].
+    ///
+    /// Panics if the `path` is [invalid](Self#paths).
+    pub fn delete(self, path: impl Into<String>, handler: Handler) -> Self {
+        self.add_route(MethodOrAny::Method(st_http::Method::Delete), path, handler)
+    }
+
+    /// Registers `handler` to handle `POST` requests at `path`.
+    ///
+    /// Panics if `self` already has a handler on this method at this path,
+    /// including one registered with [`Self::any`],
+    /// or if this path overlaps with a nested router registered by [`Self::nest`].
+    ///
+    /// Panics if the `path` is [invalid](Self#paths).
+    pub fn post(self, path: impl Into<String>, handler: Handler) -> Self {
+        self.add_route(MethodOrAny::Method(st_http::Method::Post), path, handler)
+    }
+
+    /// Registers `handler` to handle `PATCH` requests at `path`.
+    ///
+    /// Panics if `self` already has a handler on this method at this path,
+    /// including one registered with [`Self::any`],
+    /// or if this path overlaps with a nested router registered by [`Self::nest`].
+    ///
+    /// Panics if the `path` is [invalid](Self#paths).
+    pub fn patch(self, path: impl Into<String>, handler: Handler) -> Self {
+        self.add_route(MethodOrAny::Method(st_http::Method::Patch), path, handler)
+    }
+
+    /// Registers `handler` to handle requests of any HTTP method at `path`.
+    ///
+    /// Panics if `self` already has a handler on at least one method at this path,
+    /// or if this path overlaps with a nested router registered by [`Self::nest`].
+    ///
+    /// Panics if the `path` is [invalid](Self#paths).
+    pub fn any(self, path: impl Into<String>, handler: Handler) -> Self {
+        self.add_route(MethodOrAny::Any, path, handler)
+    }
+
+    /// Causes requests which start with `path` to be processed by `sub_router`.
+    ///
+    /// `sub_router` will be used by stripping the leading `path` from the path of the request.
+    ///
+    /// Panics if `self` already has any handlers registered on paths which start with `path`.
+    ///
+    /// Panics if the `path` is [invalid](Self#paths).
+    pub fn nest(self, path: impl Into<String>, sub_router: Self) -> Self {
+        let path = path.into();
+        assert_valid_path(&path);
+
+        // FIXME: either this check is too restrictive, or the checks in the other methods are too lenient.
+        // Do we want it to be the case that the `sub_router` effectively takes ownership of the whole route below `path`,
+        // or just the routes it actually contains?
+        if self.routes.iter().any(|route| route.path.starts_with(&path)) {
+            panic!("Cannot nest router at `{path}`; existing routes overlap with nested path");
+        }
+
+        let mut merged = self;
+        for route in sub_router.routes {
+            let nested_path = join_paths(&path, &route.path);
+            merged = merged.add_route(route.method, nested_path, route.handler);
+        }
+        merged
+    }
+
+    /// Combines all of the routes in `self` and `other_router` into a single [`Router`].
+    ///
+    /// Panics if any of the routes in `self` conflict with any of the routes in `other_router`.
+    pub fn merge(self, other_router: Self) -> Self {
+        let mut merged = self;
+        for route in other_router.routes {
+            merged = merged.add_route(route.method, route.path, route.handler);
+        }
+        merged
+    }
+
+    pub(crate) fn into_routes(self) -> Vec<RouteSpec> {
+        self.routes
+    }
+
+    fn add_route(mut self, method: MethodOrAny, path: impl Into<String>, handler: Handler) -> Self {
+        let path = path.into();
+        assert_valid_path(&path);
+
+        let candidate = RouteSpec {
+            method: method.clone(),
+            path: path.clone(),
+            handler,
+        };
+
+        // TODO(perf): Adding a route is O(n), which means that building a router is O(n^2)
+        if self.routes.iter().any(|route| routes_overlap(route, &candidate)) {
+            panic!("Route conflict for `{path}`");
+        }
+
+        self.routes.push(candidate);
+        self
+    }
+}
+
+fn join_paths(prefix: &str, suffix: &str) -> String {
+    if prefix == "/" {
+        return suffix.to_string();
+    }
+    if suffix == "/" {
+        return prefix.to_string();
+    }
+    let prefix = prefix.trim_end_matches('/');
+    let suffix = suffix.trim_start_matches('/');
+    format!("{prefix}/{suffix}")
+}
+
+fn assert_valid_path(path: &str) {
+    if !path.is_empty() && !path.starts_with('/') {
+        panic!("Route paths must start with `/`: {path}");
+    }
+    if !path.chars().all(character_is_acceptable_for_route_path) {
+        panic!(
+            "Route paths may contain only {}: {path}",
+            ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION
+        );
+    }
+}
+
+fn routes_overlap(a: &RouteSpec, b: &RouteSpec) -> bool {
+    if a.path != b.path {
+        return false;
+    }
+    matches!(a.method, MethodOrAny::Any) || matches!(b.method, MethodOrAny::Any) || a.method == b.method
+}
 
 /// Allows performing HTTP requests via [`HttpClient::send`] and [`HttpClient::get`].
 ///
@@ -44,8 +423,8 @@ impl HttpClient {
     /// Send a `POST` request with the header `Content-Type: text/plain`, a string body,
     /// and a timeout of 100 milliseconds, then treat the response as a string and log it:
     ///
-    /// ```norun
-    /// # use spacetimedb::{procedure, ProcedureContext, http::Timeout};
+    /// ```no_run
+    /// # use spacetimedb::{procedure, ProcedureContext, TimeDuration, http::{Timeout, Request}};
     /// # use std::time::Duration;
     /// # #[procedure]
     /// # fn post_somewhere(ctx: &mut ProcedureContext) {
@@ -54,7 +433,7 @@ impl HttpClient {
     ///     .method("POST")
     ///     .header("Content-Type", "text/plain")
     ///     // Set a timeout of 100 ms, further restricting the default timeout.
-    ///     .extension(Timeout::from(Duration::from_millis(100)))
+    ///     .extension(Timeout::from(TimeDuration::from(Duration::from_millis(100))))
     ///     .body("This is the body of the HTTP request")
     ///     .expect("Building `Request` object failed");
     ///
@@ -199,6 +578,80 @@ fn convert_response(response: st_http::Response) -> http::Result<http::response:
     Ok(response)
 }
 
+pub(crate) fn request_from_wire(request: st_http::Request, body: Bytes) -> http::Request<Body> {
+    let st_http::Request {
+        method,
+        headers,
+        timeout: _,
+        uri,
+        version,
+    } = request;
+
+    let method = match method {
+        st_http::Method::Get => http::Method::GET,
+        st_http::Method::Head => http::Method::HEAD,
+        st_http::Method::Post => http::Method::POST,
+        st_http::Method::Put => http::Method::PUT,
+        st_http::Method::Delete => http::Method::DELETE,
+        st_http::Method::Connect => http::Method::CONNECT,
+        st_http::Method::Options => http::Method::OPTIONS,
+        st_http::Method::Trace => http::Method::TRACE,
+        st_http::Method::Patch => http::Method::PATCH,
+        st_http::Method::Extension(ext) => {
+            http::Method::from_bytes(ext.as_bytes()).expect("Invalid HTTP method from host")
+        }
+    };
+
+    let request = http::Request::builder()
+        .method(method)
+        .uri(http::Uri::from_str(&uri).expect("Invalid URI from host"))
+        .body(Body::from_bytes(body))
+        .expect("Failed to build request");
+
+    let (mut parts, body) = request.into_parts();
+    parts.version = match version {
+        st_http::Version::Http09 => http::Version::HTTP_09,
+        st_http::Version::Http10 => http::Version::HTTP_10,
+        st_http::Version::Http11 => http::Version::HTTP_11,
+        st_http::Version::Http2 => http::Version::HTTP_2,
+        st_http::Version::Http3 => http::Version::HTTP_3,
+    };
+    parts.headers = headers
+        .into_iter()
+        .map(|(k, v)| {
+            let name = http::HeaderName::from_bytes(k.as_bytes()).expect("Invalid header name from host");
+            let value = http::HeaderValue::from_bytes(v.as_ref()).expect("Invalid header value from host");
+            (name, value)
+        })
+        .collect();
+
+    http::Request::from_parts(parts, body)
+}
+
+pub(crate) fn response_into_wire(response: http::Response<Body>) -> (st_http::Response, Bytes) {
+    let (parts, body) = response.into_parts();
+    let st_response = st_http::Response {
+        headers: parts
+            .headers
+            .into_iter()
+            .map(|(k, v)| (k.map(|k| k.as_str().into()), v.as_bytes().into()))
+            .collect(),
+        version: match parts.version {
+            http::Version::HTTP_09 => st_http::Version::Http09,
+            http::Version::HTTP_10 => st_http::Version::Http10,
+            http::Version::HTTP_11 => st_http::Version::Http11,
+            http::Version::HTTP_2 => st_http::Version::Http2,
+            http::Version::HTTP_3 => st_http::Version::Http3,
+            _ => unreachable!("Unknown HTTP version: {:?}", parts.version),
+        },
+        code: parts.status.as_u16(),
+    };
+
+    // TODO(streaming-http): stop collecting the whole response body here once handler
+    // responses can write incrementally to a body sink.
+    (st_response, body.into_bytes())
+}
+
 /// Represents the body of an HTTP request or response.
 pub struct Body {
     inner: BodyInner,
@@ -328,5 +781,65 @@ impl From<http::Error> for Error {
         Error {
             message: err.to_string(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn request_from_wire_preserves_metadata_and_body() {
+        let request = st_http::Request {
+            method: st_http::Method::Post,
+            headers: vec![
+                (
+                    Some("content-type".into()),
+                    b"application/octet-stream".as_slice().into(),
+                ),
+                (Some("x-echo".into()), b"value".as_slice().into()),
+            ]
+            .into_iter()
+            .collect(),
+            timeout: None,
+            uri: "https://example.invalid/upload?x=1".to_string(),
+            version: st_http::Version::Http2,
+        };
+
+        let request = request_from_wire(request, Bytes::from_static(b"payload"));
+
+        assert_eq!(request.method(), http::Method::POST);
+        assert_eq!(request.version(), http::Version::HTTP_2);
+        assert_eq!(
+            request.uri(),
+            &http::Uri::from_static("https://example.invalid/upload?x=1")
+        );
+        assert_eq!(request.headers()["content-type"], "application/octet-stream");
+        assert_eq!(request.headers()["x-echo"], "value");
+        assert_eq!(request.into_body().into_bytes(), Bytes::from_static(b"payload"));
+    }
+
+    #[test]
+    fn response_into_wire_splits_metadata_and_body() {
+        let response = http::Response::builder()
+            .status(201)
+            .version(http::Version::HTTP_11)
+            .header("content-type", "text/plain")
+            .header("x-result", "ok")
+            .body(Body::from_bytes("created"))
+            .expect("response builder should not fail");
+
+        let (response_meta, response_body) = response_into_wire(response);
+
+        assert_eq!(response_meta.code, 201);
+        assert!(matches!(response_meta.version, st_http::Version::Http11));
+
+        let headers = response_meta.headers.into_iter().collect::<Vec<_>>();
+        assert_eq!(headers.len(), 2);
+        assert_eq!(headers[0].0.as_ref(), "content-type");
+        assert_eq!(&headers[0].1[..], b"text/plain");
+        assert_eq!(headers[1].0.as_ref(), "x-result");
+        assert_eq!(&headers[1].1[..], b"ok");
+        assert_eq!(response_body, Bytes::from_static(b"created"));
     }
 }
