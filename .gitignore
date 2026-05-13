@@ -261,6 +261,11 @@ nul
 /sdks/csharp/packages/
 /sdks/csharp/packages.meta
 
+# kotlin SDK
+/sdks/kotlin/.kotlin/
+/sdks/kotlin/.gradle/
+/sdks/kotlin/build/
+
 # AI agent config
 .codex
 .claude
