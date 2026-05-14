@@ -316,8 +316,10 @@ private:
 
 } // namespace SpacetimeDB
 
-// Include implementation after class definition to avoid circular dependencies
-#ifdef SPACETIMEDB_UNSTABLE_FEATURES
+// Include implementation dependencies after class definition to avoid circular dependencies
+#if defined(SPACETIMEDB_UNSTABLE_FEATURES) && !defined(SPACETIMEDB_HTTP_CONVERT_H)
+#include "spacetimedb/logger.h"
+#include "spacetimedb/http_convert.h"
 #include "spacetimedb/http_client_impl.h"
 #endif
 

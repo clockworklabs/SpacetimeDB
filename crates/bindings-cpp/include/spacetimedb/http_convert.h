@@ -281,4 +281,9 @@ inline std::pair<wire::HttpResponse, std::vector<uint8_t>> to_wire_split(const H
 } // namespace convert
 } // namespace SpacetimeDB
 
+#ifdef SPACETIMEDB_UNSTABLE_FEATURES
+#include "spacetimedb/logger.h"
+#include "spacetimedb/http_client_impl.h"
+#endif
+
 #endif // SPACETIMEDB_HTTP_CONVERT_H

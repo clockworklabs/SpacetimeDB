@@ -12,17 +12,9 @@
 #include <memory>
 #include "../autogen_base.h"
 #include "spacetimedb/bsatn/bsatn.h"
-#include "spacetimedb/http_wire.h"
+#include "HttpMethod.g.h"
 
 namespace SpacetimeDB::Internal {
 
-SPACETIMEDB_INTERNAL_PRODUCT_TYPE(MethodOrAny_Method_Wrapper) {
-    SpacetimeDB::wire::HttpMethod value;
-    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
-        ::SpacetimeDB::bsatn::serialize(writer, value);
-    }
-    SPACETIMEDB_PRODUCT_TYPE_EQUALITY(value)
-};
-
-SPACETIMEDB_INTERNAL_TAGGED_ENUM(MethodOrAny, std::monostate, MethodOrAny_Method_Wrapper)
+SPACETIMEDB_INTERNAL_TAGGED_ENUM(MethodOrAny, std::monostate, SpacetimeDB::Internal::HttpMethod)
 } // namespace SpacetimeDB::Internal

@@ -1013,8 +1013,7 @@ impl Smoketest {
             .replace('\\', "/");
         let cmakelists = CPP_SMOKETEST_CMAKELISTS.replace("@SPACETIMEDB_CPP_LIBRARY_PATH@", &bindings_cpp_path);
 
-        fs::write(module_path.join("CMakeLists.txt"), cmakelists)
-            .context("Failed to write C++ CMakeLists.txt")?;
+        fs::write(module_path.join("CMakeLists.txt"), cmakelists).context("Failed to write C++ CMakeLists.txt")?;
         fs::write(src_dir.join("lib.cpp"), module_source).context("Failed to write C++ module code")?;
 
         let module_path_str = module_path.to_str().context("Invalid C++ module path")?;

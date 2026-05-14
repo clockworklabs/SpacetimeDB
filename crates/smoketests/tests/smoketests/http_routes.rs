@@ -622,9 +622,7 @@ fn rust_http_test(module_code: &str) -> (Smoketest, String) {
 fn cpp_http_test(name: &str, module_code: &str) -> (Smoketest, String) {
     require_emscripten!();
     let mut test = Smoketest::builder().autopublish(false).build();
-    let identity = test
-        .publish_cpp_module_source(name, name, module_code)
-        .unwrap();
+    let identity = test.publish_cpp_module_source(name, name, module_code).unwrap();
     (test, identity)
 }
 
@@ -900,7 +898,10 @@ fn cpp_http_routes_pr_example_round_trip() {
 
 #[test]
 fn cpp_http_routes_are_strict_for_non_root_paths() {
-    let (test, identity) = cpp_http_test("http-routes-cpp-strict-non-root", CPP_STRICT_NON_ROOT_ROUTING_MODULE_CODE);
+    let (test, identity) = cpp_http_test(
+        "http-routes-cpp-strict-non-root",
+        CPP_STRICT_NON_ROOT_ROUTING_MODULE_CODE,
+    );
     assert_http_routes_are_strict_for_non_root_paths(&test.server_url, &identity);
 }
 
@@ -953,11 +954,7 @@ fn cpp_http_handlers_tutorial_say_hello_route_works() {
     );
     let mut test = Smoketest::builder().autopublish(false).build();
     let identity = test
-        .publish_cpp_module_source(
-            "http-handlers-docs-cpp",
-            "http-handlers-docs-cpp",
-            &module_code,
-        )
+        .publish_cpp_module_source("http-handlers-docs-cpp", "http-handlers-docs-cpp", &module_code)
         .unwrap();
 
     let url = format!("{}/v1/database/{identity}/route/say-hello", test.server_url);

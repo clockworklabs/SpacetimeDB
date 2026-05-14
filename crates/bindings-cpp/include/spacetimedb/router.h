@@ -6,7 +6,6 @@
 #endif
 
 #include <spacetimedb/http.h>
-#include <spacetimedb/http_convert.h>
 #include <spacetimedb/internal/autogen/MethodOrAny.g.h>
 #include <spacetimedb/internal/runtime_registration.h>
 #include <cstdio>
@@ -141,9 +140,34 @@ private:
         if (a.method.is<0>() || b.method.is<0>()) {
             return true;
         }
-        const auto& a_method = a.method.template get<1>().value;
-        const auto& b_method = b.method.template get<1>().value;
-        return a_method == b_method;
+        return method_key(a.method.template get<1>()) == method_key(b.method.template get<1>());
+    }
+
+    static std::string method_key(const Internal::HttpMethod& method) {
+        switch (method.get_tag()) {
+        case 0:
+            return "GET";
+        case 1:
+            return "HEAD";
+        case 2:
+            return "POST";
+        case 3:
+            return "PUT";
+        case 4:
+            return "DELETE";
+        case 5:
+            return "CONNECT";
+        case 6:
+            return "OPTIONS";
+        case 7:
+            return "TRACE";
+        case 8:
+            return "PATCH";
+        case 9:
+            return method.template get<9>();
+        default:
+            fail_router_registration("Unsupported internal HTTP method tag");
+        }
     }
 
     static Internal::MethodOrAny make_any() {
@@ -154,9 +178,33 @@ private:
 
     static Internal::MethodOrAny make_method(const HttpMethod& method) {
         Internal::MethodOrAny result;
-        Internal::MethodOrAny_Method_Wrapper wrapper;
-        wrapper.value = convert::to_wire(method);
-        result.set<1>(wrapper);
+        result.set<1>(to_internal_http_method(method));
+        return result;
+    }
+
+    static Internal::HttpMethod to_internal_http_method(const HttpMethod& method) {
+        Internal::HttpMethod result;
+        if (method.value == "GET") {
+            result.set<0>(std::monostate{});
+        } else if (method.value == "HEAD") {
+            result.set<1>(Internal::HttpMethod_Head_Wrapper{});
+        } else if (method.value == "POST") {
+            result.set<2>(Internal::HttpMethod_Post_Wrapper{});
+        } else if (method.value == "PUT") {
+            result.set<3>(Internal::HttpMethod_Put_Wrapper{});
+        } else if (method.value == "DELETE") {
+            result.set<4>(Internal::HttpMethod_Delete_Wrapper{});
+        } else if (method.value == "CONNECT") {
+            result.set<5>(Internal::HttpMethod_Connect_Wrapper{});
+        } else if (method.value == "OPTIONS") {
+            result.set<6>(Internal::HttpMethod_Options_Wrapper{});
+        } else if (method.value == "TRACE") {
+            result.set<7>(Internal::HttpMethod_Trace_Wrapper{});
+        } else if (method.value == "PATCH") {
+            result.set<8>(Internal::HttpMethod_Patch_Wrapper{});
+        } else {
+            result.set<9>(method.value);
+        }
         return result;
     }
 
