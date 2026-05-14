@@ -517,29 +517,31 @@ fn build_typescript_sdk() -> Result<()> {
 }
 
 /// Points the `spacetimedb` entry in `package.json` at the local TypeScript
-/// SDK and writes a matching package-local lockfile.
-fn setup_typescript_sdk_in_package_json(package_json_path: &Path, lockfile_importer: &str) -> Result<()> {
+/// SDK and writes a matching package-local lockfile from the smoketest fixture.
+fn setup_typescript_sdk_in_package_json(package_json_path: &Path, fixture_importer: &str) -> Result<()> {
     let sdk_path = workspace_root().join("crates/bindings-typescript");
     update_package_json_dependency(package_json_path, "spacetimedb", &sdk_path)?;
-    write_template_lockfile(package_json_path.parent().unwrap(), lockfile_importer, &sdk_path)?;
+    write_template_lockfile(package_json_path.parent().unwrap(), fixture_importer, &sdk_path)?;
 
     Ok(())
 }
 
-fn write_template_lockfile(package_dir: &Path, lockfile_importer: &str, sdk_path: &Path) -> Result<()> {
+fn write_template_lockfile(package_dir: &Path, fixture_importer: &str, sdk_path: &Path) -> Result<()> {
     let workspace = workspace_root();
-    let root_lock_path = workspace.join("pnpm-lock.yaml");
-    let root_lock = fs::read_to_string(&root_lock_path).context("Failed to read root pnpm-lock.yaml")?;
-    let mut lockfile = YamlLoader::load_from_str(&root_lock)
-        .context("Failed to parse root pnpm-lock.yaml")?
+    let fixture_lock_path = workspace.join("crates/smoketests/fixtures/typescript-template.pnpm-lock.yaml");
+    let fixture_lock =
+        fs::read_to_string(&fixture_lock_path).context("Failed to read TypeScript template lockfile fixture")?;
+    let mut lockfile = YamlLoader::load_from_str(&fixture_lock)
+        .context("Failed to parse TypeScript template lockfile fixture")?
         .remove(0);
 
-    // The template is copied to a temp directory before the test rewrites its
-    // package.json. A workspace lockfile importer such as `templates/astro-ts`
-    // will not match that temp package; package-local lockfiles use `.`.
-    let importer = lockfile["importers"][lockfile_importer]
+    // `spacetime init` copies templates to temp directories outside the repo's
+    // pnpm workspace. The fixture keeps the checked-in template importers, then
+    // this test writes a package-local lockfile whose only importer is `.` so
+    // `pnpm install --frozen-lockfile` can run without resolving new versions.
+    let importer = lockfile["importers"][fixture_importer]
         .as_hash()
-        .with_context(|| format!("pnpm-lock.yaml has no importer {lockfile_importer:?}"))?
+        .with_context(|| format!("TypeScript template lockfile fixture has no importer {fixture_importer:?}"))?
         .clone();
 
     let mut importers = YamlHash::new();
@@ -549,9 +551,9 @@ fn write_template_lockfile(package_dir: &Path, lockfile_importer: &str, sdk_path
     };
     lockfile_root.insert(Yaml::String("importers".to_string()), Yaml::Hash(importers));
 
-    // The checked-in lockfile points `spacetimedb` at the repo workspace. The
-    // temp package is outside that workspace, so the link target must be
-    // rewritten to the absolute local SDK path used in package.json.
+    // The fixture points `spacetimedb` at the checked-in workspace package. The
+    // temp package intentionally points at the local SDK checkout instead, so
+    // patch only that lockfile entry to match the package.json rewrite above.
     let local_specifier = normalize_dependency_path(sdk_path);
     let local_version = format!(
         "link:{}",
