@@ -235,9 +235,7 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
             let ready_len = tx_buf.len();
             self.queue_depth.fetch_sub(ready_len as u64, Relaxed);
             tx_buf = spawn_blocking(move || -> io::Result<Vec<PreparedTx<Txdata<T>>>> {
-                for tx in tx_buf.drain(..) {
-                    clog.commit([tx.into_transaction()])?;
-                }
+                clog.commit(tx_buf.drain(..).map(|tx| tx.into_transaction()))?;
                 Ok(tx_buf)
             })
             .await

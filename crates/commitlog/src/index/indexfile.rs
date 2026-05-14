@@ -161,7 +161,7 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
     /// Errors
     /// - `IndexError::InvalidInput`: Either Key or Value is 0
     /// - `IndexError::OutOfMemory`: Append after index file is already full.
-    pub fn append(&mut self, key: Key, value: u64) -> Result<(), IndexError> {
+    pub fn append(&mut self, key: Key, value: u64) -> Result<usize, IndexError> {
         let key = key.into();
         let last_key = self.last_key()?;
         if last_key >= key {
@@ -179,7 +179,7 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
         self.inner[start..start + KEY_SIZE].copy_from_slice(&key_bytes);
         self.inner[start + KEY_SIZE..start + ENTRY_SIZE].copy_from_slice(&value_bytes);
         self.num_entries += 1;
-        Ok(())
+        Ok(start)
     }
 
     /// Asynchronously flushes any pending changes to the index file
@@ -188,6 +188,14 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
     /// an `Err` value indicates it definitely did not succeed
     pub fn async_flush(&self) -> io::Result<()> {
         self.inner.flush_async()
+    }
+
+    /// Asynchronously flushes the index entry starting at `offset`.
+    ///
+    /// The underlying `msync` is page-granular; `memmap2` will align this small
+    /// range to the page containing the entry rather than flushing the full map.
+    pub fn async_flush_entry(&self, offset: usize) -> io::Result<()> {
+        self.inner.flush_async_range(offset, ENTRY_SIZE)
     }
 
     /// Truncates the index file starting from the entry with a key greater than
