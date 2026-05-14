@@ -1753,7 +1753,6 @@ record ProcedureDeclaration
 record HttpHandlerDeclaration
 {
     public readonly string Name;
-    public readonly string? CanonicalName;
     public readonly string FullName;
     private readonly bool HasWrongSignature;
 
@@ -1763,11 +1762,46 @@ record HttpHandlerDeclaration
     {
         var methodSyntax = (MethodDeclarationSyntax)context.TargetNode;
         var method = (IMethodSymbol)context.TargetSymbol;
-        var attr = context.Attributes.Single().ParseAs<HttpHandlerAttribute>();
+        var compilation = context.SemanticModel.Compilation;
+
+        if (method.Arity != 0 || method.Parameters.Length != 2)
+        {
+            diag.Report(ErrorDescriptor.HttpHandlerSignature, methodSyntax);
+            HasWrongSignature = true;
+        }
 
         if (
             method.Parameters.FirstOrDefault()?.Type
-            is not INamedTypeSymbol { Name: "HandlerContext" }
+            is not INamedTypeSymbol
+            {
+                Name: "HandlerContext",
+                Arity: 0,
+                ContainingType: null,
+                ContainingNamespace:
+                {
+                    Name: "SpacetimeDB",
+                    ContainingNamespace: { IsGlobalNamespace: true }
+                }
+            }
+            && methodSyntax.ParameterList.Parameters.FirstOrDefault()?.Type
+                is not IdentifierNameSyntax { Identifier.ValueText: "HandlerContext" }
+            && methodSyntax.ParameterList.Parameters.FirstOrDefault()?.Type
+                is not QualifiedNameSyntax
+                {
+                    Left: IdentifierNameSyntax { Identifier.ValueText: "SpacetimeDB" },
+                    Right: IdentifierNameSyntax { Identifier.ValueText: "HandlerContext" }
+                }
+            && methodSyntax.ParameterList.Parameters.FirstOrDefault()?.Type
+                is not QualifiedNameSyntax
+                {
+                    Left:
+                        AliasQualifiedNameSyntax
+                        {
+                            Alias.Identifier.ValueText: "global",
+                            Name: IdentifierNameSyntax { Identifier.ValueText: "SpacetimeDB" }
+                        },
+                    Right: IdentifierNameSyntax { Identifier.ValueText: "HandlerContext" }
+                }
         )
         {
             diag.Report(ErrorDescriptor.HttpHandlerContextParam, methodSyntax);
@@ -1775,8 +1809,10 @@ record HttpHandlerDeclaration
         }
 
         if (
-            method.Parameters.ElementAtOrDefault(1)?.Type
-            is not INamedTypeSymbol { Name: "HttpRequest" }
+            method.Parameters.ElementAtOrDefault(1)?.Type is not { } requestType
+            || compilation.GetTypeByMetadataName("SpacetimeDB.HttpRequest")
+                is not { } expectedRequestType
+            || !SymbolEqualityComparer.Default.Equals(requestType, expectedRequestType)
         )
         {
             diag.Report(ErrorDescriptor.HttpHandlerRequestParam, methodSyntax);
@@ -1784,7 +1820,9 @@ record HttpHandlerDeclaration
         }
 
         if (
-            method.ReturnType is not INamedTypeSymbol { Name: "HttpResponse" }
+            compilation.GetTypeByMetadataName("SpacetimeDB.HttpResponse")
+                is not { } expectedResponseType
+            || !SymbolEqualityComparer.Default.Equals(method.ReturnType, expectedResponseType)
         )
         {
             diag.Report(ErrorDescriptor.HttpHandlerReturnType, methodSyntax);
@@ -1801,15 +1839,14 @@ record HttpHandlerDeclaration
             }
         }
 
-        CanonicalName = attr.Name;
         FullName = SymbolToName(method);
     }
 
     public string GenerateClass()
     {
-        var invocation = HasWrongSignature
-            ? "throw new System.InvalidOperationException(\"Invalid HTTP handler signature.\")"
-            : $"{FullName}((SpacetimeDB.HandlerContext)ctx, request)";
+        var body = HasWrongSignature
+            ? "throw new System.InvalidOperationException(\"Invalid HTTP handler signature.\");"
+            : $"return {FullName}((SpacetimeDB.HandlerContext)ctx, request);";
 
         return $$"""
             class {{Identifier}} : SpacetimeDB.Internal.IHttpHandler {
@@ -1821,7 +1858,7 @@ record HttpHandlerDeclaration
                     SpacetimeDB.HandlerContextBase ctx,
                     SpacetimeDB.HttpRequest request
                 ) {
-                    return {{invocation}};
+                    {{body}}
                 }
             }
             """;
@@ -1837,11 +1874,14 @@ record HttpRouterDeclaration
     {
         var methodSyntax = (MethodDeclarationSyntax)context.TargetNode;
         var method = (IMethodSymbol)context.TargetSymbol;
+        var compilation = context.SemanticModel.Compilation;
 
         if (
             !method.IsStatic
+            || method.Arity != 0
             || method.Parameters.Length != 0
-            || method.ReturnType is not INamedTypeSymbol { Name: "Router" }
+            || compilation.GetTypeByMetadataName("SpacetimeDB.Router") is not { } expectedRouterType
+            || !SymbolEqualityComparer.Default.Equals(method.ReturnType, expectedRouterType)
         )
         {
             diag.Report(ErrorDescriptor.HttpRouterSignature, methodSyntax);
@@ -2199,27 +2239,23 @@ public class Module : IIncrementalGenerator
             "HttpHandler",
             context,
             httpHandlers
-                .Select((h, ct) => (h.Name, h.FullName, h.CanonicalName, Class: h.GenerateClass()))
+                .Select((h, ct) => (h.Name, h.FullName, Class: h.GenerateClass()))
                 .WithTrackingName("SpacetimeDB.HttpHandler.GenerateClass"),
             h => h.Name,
             h => h.FullName
         );
 
-        var httpRouters = CollectDistinct(
-            "HttpRouter",
-            context,
-            context
-                .SyntaxProvider.ForAttributeWithMetadataName(
-                    fullyQualifiedMetadataName: typeof(HttpRouterAttribute).FullName,
-                    predicate: (node, ct) => true,
-                    transform: (context, ct) =>
-                        context.ParseWithDiags(diag => new HttpRouterDeclaration(context, diag))
-                )
-                .ReportDiagnostics(context)
-                .WithTrackingName("SpacetimeDB.HttpRouter.Parse"),
-            r => r.FullName,
-            r => r.FullName
-        );
+        var httpRouters = context
+            .SyntaxProvider.ForAttributeWithMetadataName(
+                fullyQualifiedMetadataName: typeof(HttpRouterAttribute).FullName,
+                predicate: (node, ct) => true,
+                transform: (context, ct) =>
+                    context.ParseWithDiags(diag => new HttpRouterDeclaration(context, diag))
+            )
+            .ReportDiagnostics(context)
+            .Collect()
+            .Select((routers, ct) => new EquatableArray<HttpRouterDeclaration>(routers))
+            .WithTrackingName("SpacetimeDB.HttpRouter.Collect");
 
         var tableAccessors = CollectDistinct(
             "Table",
@@ -2316,6 +2352,15 @@ public class Module : IIncrementalGenerator
                     );
                 }
 
+                if (httpRouters.Array.Length > 1)
+                {
+                    context.ReportDiagnostic(
+                        ErrorDescriptor.DuplicateHttpRouters.ToDiag(
+                            httpRouters.Array.Select(r => r.FullName)
+                        )
+                    );
+                }
+
                 var settingsRegistration =
                     settings.Array.Length == 1
                     && settings.Array[0].CaseConversionPolicy is { } policyName
@@ -2344,13 +2389,6 @@ public class Module : IIncrementalGenerator
                                 .Array.Where(p => !string.IsNullOrEmpty(p.CanonicalName))
                                 .Select(p =>
                                     $"SpacetimeDB.Internal.Module.RegisterExplicitFunctionName(\"{EscapeStringLiteral(p.Name)}\", \"{EscapeStringLiteral(p.CanonicalName!)}\");"
-                                )
-                        )
-                        .Concat(
-                            addHttpHandlers
-                                .Array.Where(h => !string.IsNullOrEmpty(h.CanonicalName))
-                                .Select(h =>
-                                    $"SpacetimeDB.Internal.Module.RegisterExplicitFunctionName(\"{EscapeStringLiteral(h.Name)}\", \"{EscapeStringLiteral(h.CanonicalName!)}\");"
                                 )
                         )
                         .Concat(
@@ -2396,6 +2434,10 @@ public class Module : IIncrementalGenerator
                     "\n",
                     tableDecls.Array.SelectMany(t => t.GenerateQueryBuilderMembers())
                 );
+                if (string.IsNullOrWhiteSpace(queryBuilderMembers))
+                {
+                    queryBuilderMembers = "public readonly partial struct QueryBuilder { }";
+                }
                 // Don't generate the FFI boilerplate if there are no tables or reducers.
                 if (
                     tableAccessors.Array.IsEmpty
@@ -2425,6 +2467,11 @@ public class Module : IIncrementalGenerator
 
                     namespace SpacetimeDB {
                         {{queryBuilderMembers}}
+                        public static class Handlers {
+                            {{string.Join("\n", addHttpHandlers.Select(r =>
+                                $"public static readonly global::SpacetimeDB.Handler {EscapeIdentifier(r.Name)} = new(nameof({r.FullName}));"
+                            ))}}
+                        }
                         public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext {
                             public readonly Identity Sender;
                             public readonly ConnectionId? ConnectionId;
@@ -2732,10 +2779,10 @@ public class Module : IIncrementalGenerator
                                 "\n",
                                 tableAccessors.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t.tableName}, SpacetimeDB.Internal.TableHandles.{EscapeIdentifier(t.tableAccessorName)}>();")
                             )}}
-                            {{string.Join(
-                                "\n",
-                                httpRouters.Where(r => r.IsValid)
-                                    .Select(r => $"SpacetimeDB.Internal.Module.RegisterHttpRouter({r.FullName}());")
+                            {{(
+                                httpRouters.Array.FirstOrDefault(r => r.IsValid) is { } router
+                                    ? $"SpacetimeDB.Internal.Module.RegisterHttpRouter({router.FullName}());"
+                                    : string.Empty
                             )}}
                             {{string.Join(
                                 "\n",
@@ -2815,12 +2862,16 @@ public class Module : IIncrementalGenerator
                             uint id,
                             SpacetimeDB.Timestamp timestamp,
                             SpacetimeDB.Internal.BytesSource request,
-                            SpacetimeDB.Internal.BytesSink result_sink
+                            SpacetimeDB.Internal.BytesSource request_body,
+                            SpacetimeDB.Internal.BytesSink response_sink,
+                            SpacetimeDB.Internal.BytesSink response_body_sink
                         ) => SpacetimeDB.Internal.Module.__call_http_handler__(
                             id,
                             timestamp,
                             request,
-                            result_sink
+                            request_body,
+                            response_sink,
+                            response_body_sink
                         );
                         
                         [UnmanagedCallersOnly(EntryPoint = "__call_view__")]

@@ -205,10 +205,7 @@ namespace SpacetimeDB
     }
 
     [AttributeUsage(AttributeTargets.Method, Inherited = false)]
-    public sealed class HttpHandlerAttribute() : Attribute
-    {
-        public string? Name { get; init; }
-    }
+    public sealed class HttpHandlerAttribute() : Attribute { }
 
     [AttributeUsage(AttributeTargets.Method, Inherited = false)]
     public sealed class HttpRouterAttribute() : Attribute { }

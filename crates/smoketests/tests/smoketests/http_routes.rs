@@ -1,5 +1,5 @@
 use regex::Regex;
-use spacetimedb_smoketests::{workspace_root, Smoketest};
+use spacetimedb_smoketests::{require_dotnet, workspace_root, Smoketest};
 use std::{fs, path::Path};
 
 const MODULE_CODE: &str = r#"
@@ -230,13 +230,350 @@ fn router() -> Router {
 }
 "#;
 
+const CS_MODULE_CODE: &str = r#"
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using SpacetimeDB;
+
+#pragma warning disable STDB_UNSTABLE
+public static partial class Module
+{
+    [SpacetimeDB.Table(Accessor = "Entry", Name = "entry", Public = true)]
+    public partial struct Entry
+    {
+        [SpacetimeDB.PrimaryKey]
+        public ulong Id;
+
+        public string Value;
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse GetSimple(HandlerContext ctx, HttpRequest request)
+    {
+        _ = ctx;
+        _ = request;
+        return TextResponse(200, "ok");
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse PostInsert(HandlerContext ctx, HttpRequest request)
+    {
+        _ = request;
+        ctx.WithTx((HandlerTxContext tx) =>
+        {
+            var id = tx.Db.Entry.Count;
+            tx.Db.Entry.Insert(new Entry { Id = id, Value = "posted" });
+            return 0;
+        });
+        return TextResponse(200, "inserted");
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse GetCount(HandlerContext ctx, HttpRequest request)
+    {
+        _ = request;
+        var count = ctx.WithTx((HandlerTxContext tx) => tx.Db.Entry.Count);
+        return TextResponse(200, count.ToString());
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse AnyHandler(HandlerContext ctx, HttpRequest request)
+    {
+        _ = ctx;
+        _ = request;
+        return TextResponse(200, "any");
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse HeaderEcho(HandlerContext ctx, HttpRequest request)
+    {
+        _ = ctx;
+        return TextResponse(200, HeaderValueUtf8(request, "x-echo"));
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse SetResponseHeader(HandlerContext ctx, HttpRequest request)
+    {
+        _ = ctx;
+        _ = request;
+        return new HttpResponse(
+            200,
+            HttpVersion.Http11,
+            new List<HttpHeader> { new("x-response", "set") },
+            HttpBody.FromString("header-set")
+        );
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse BodyHandler(HandlerContext ctx, HttpRequest request)
+    {
+        _ = ctx;
+        _ = request;
+        return TextResponse(200, "non-empty");
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse Teapot(HandlerContext ctx, HttpRequest request)
+    {
+        _ = ctx;
+        _ = request;
+        return TextResponse(418, "teapot");
+    }
+
+    [SpacetimeDB.HttpRouter]
+    public static Router Router() =>
+        SpacetimeDB.Router.New()
+            .Get("/get", Handlers.GetSimple)
+            .Post("/post", Handlers.PostInsert)
+            .Get("/count", Handlers.GetCount)
+            .Any("/any", Handlers.AnyHandler)
+            .Get("/header", Handlers.HeaderEcho)
+            .Get("/set-header", Handlers.SetResponseHeader)
+            .Get("/body", Handlers.BodyHandler)
+            .Get("/teapot", Handlers.Teapot);
+
+    private static string HeaderValueUtf8(HttpRequest request, string headerName)
+    {
+        foreach (var header in request.Headers)
+        {
+            if (string.Equals(header.Name, headerName, StringComparison.OrdinalIgnoreCase))
+            {
+                return Encoding.UTF8.GetString(header.Value);
+            }
+        }
+        return string.Empty;
+    }
+
+    private static HttpResponse TextResponse(ushort statusCode, string body) =>
+        new(
+            statusCode,
+            HttpVersion.Http11,
+            new List<HttpHeader>(),
+            HttpBody.FromString(body)
+        );
+}
+"#;
+
+const CS_EXAMPLE_MODULE_CODE: &str = r#"
+using System.Collections.Generic;
+using SpacetimeDB;
+
+#pragma warning disable STDB_UNSTABLE
+public static partial class Module
+{
+    [SpacetimeDB.Table(Accessor = "Data", Name = "data", Public = true)]
+    public partial struct Data
+    {
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
+        public ulong Id;
+
+        public byte[] Body;
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse Insert(HandlerContext ctx, HttpRequest request)
+    {
+        var body = request.Body.ToBytes();
+        var id = ctx.WithTx((HandlerTxContext tx) => tx.Db.Data.Insert(new Data { Id = 0, Body = body }).Id);
+        return TextResponse(200, id.ToString());
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse Retrieve(HandlerContext ctx, HttpRequest request)
+    {
+        var idText = request.Uri.Split("id=", 2)[1];
+        var id = ulong.Parse(idText);
+        var body = ctx.WithTx((HandlerTxContext tx) => tx.Db.Data.Id.Find(id)?.Body);
+
+        if (body is not null)
+        {
+            return BytesResponse(200, body);
+        }
+
+        return new HttpResponse(404, HttpVersion.Http11, new List<HttpHeader>(), HttpBody.Empty);
+    }
+
+    [SpacetimeDB.HttpRouter]
+    public static Router Router() =>
+        SpacetimeDB.Router.New()
+            .Post("/insert", Handlers.Insert)
+            .Get("/retrieve", Handlers.Retrieve);
+
+    private static HttpResponse BytesResponse(ushort statusCode, byte[] body) =>
+        new(statusCode, HttpVersion.Http11, new List<HttpHeader>(), new HttpBody(body));
+
+    private static HttpResponse TextResponse(ushort statusCode, string body) =>
+        new(statusCode, HttpVersion.Http11, new List<HttpHeader>(), HttpBody.FromString(body));
+}
+"#;
+
+const CS_STRICT_ROOT_ROUTING_MODULE_CODE: &str = r#"
+using System.Collections.Generic;
+using SpacetimeDB;
+
+public static partial class Module
+{
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse EmptyRoot(HandlerContext ctx, HttpRequest request)
+    {
+        _ = ctx;
+        _ = request;
+        return TextResponse("empty");
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse SlashRoot(HandlerContext ctx, HttpRequest request)
+    {
+        _ = ctx;
+        _ = request;
+        return TextResponse("slash");
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse Foo(HandlerContext ctx, HttpRequest request)
+    {
+        _ = ctx;
+        _ = request;
+        return TextResponse("foo");
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse FooSlash(HandlerContext ctx, HttpRequest request)
+    {
+        _ = ctx;
+        _ = request;
+        return TextResponse("foo-slash");
+    }
+
+    [SpacetimeDB.HttpRouter]
+    public static Router Router() =>
+        SpacetimeDB.Router.New()
+            .Get("", Handlers.EmptyRoot)
+            .Get("/", Handlers.SlashRoot)
+            .Get("/foo", Handlers.Foo)
+            .Get("/foo/", Handlers.FooSlash);
+
+    private static HttpResponse TextResponse(string body) =>
+        new(200, HttpVersion.Http11, new List<HttpHeader>(), HttpBody.FromString(body));
+}
+"#;
+
+const CS_STRICT_NON_ROOT_ROUTING_MODULE_CODE: &str = r#"
+using System.Collections.Generic;
+using SpacetimeDB;
+
+public static partial class Module
+{
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse Foo(HandlerContext ctx, HttpRequest request)
+    {
+        _ = ctx;
+        _ = request;
+        return TextResponse("foo");
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse FooSlash(HandlerContext ctx, HttpRequest request)
+    {
+        _ = ctx;
+        _ = request;
+        return TextResponse("foo-slash");
+    }
+
+    [SpacetimeDB.HttpRouter]
+    public static Router Router() =>
+        SpacetimeDB.Router.New()
+            .Get("/foo", Handlers.Foo)
+            .Get("/foo/", Handlers.FooSlash);
+
+    private static HttpResponse TextResponse(string body) =>
+        new(200, HttpVersion.Http11, new List<HttpHeader>(), HttpBody.FromString(body));
+}
+"#;
+
+const CS_FULL_URI_MODULE_CODE: &str = r#"
+using System.Collections.Generic;
+using SpacetimeDB;
+
+public static partial class Module
+{
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse EchoUri(HandlerContext ctx, HttpRequest request)
+    {
+        _ = ctx;
+        return new HttpResponse(
+            200,
+            HttpVersion.Http11,
+            new List<HttpHeader>(),
+            HttpBody.FromString(request.Uri)
+        );
+    }
+
+    [SpacetimeDB.HttpRouter]
+    public static Router Router() =>
+        SpacetimeDB.Router.New().Get("/echo-uri", Handlers.EchoUri);
+}
+"#;
+
+const CS_HANDLE_REQUEST_BODY_MODULE_CODE: &str = r#"
+using System;
+using System.Collections.Generic;
+using System.Text;
+using SpacetimeDB;
+
+public static partial class Module
+{
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse ReverseBytes(HandlerContext ctx, HttpRequest request)
+    {
+        _ = ctx;
+        var reversed = request.Body.ToBytes();
+        Array.Reverse(reversed);
+        return BytesResponse(200, reversed);
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse ReverseWords(HandlerContext ctx, HttpRequest request)
+    {
+        _ = ctx;
+        string body;
+        try
+        {
+            body = new UTF8Encoding(false, true).GetString(request.Body.ToBytes());
+        }
+        catch (DecoderFallbackException)
+        {
+            return TextResponse(400, "request body must be valid UTF-8");
+        }
+
+        var reversed = string.Join(" ", body.Split(' ').Reverse());
+        return TextResponse(200, reversed);
+    }
+
+    [SpacetimeDB.HttpRouter]
+    public static Router Router() =>
+        SpacetimeDB.Router.New()
+            .Post("/reverse-bytes", Handlers.ReverseBytes)
+            .Post("/reverse-words", Handlers.ReverseWords);
+
+    private static HttpResponse BytesResponse(ushort statusCode, byte[] body) =>
+        new(statusCode, HttpVersion.Http11, new List<HttpHeader>(), new HttpBody(body));
+
+    private static HttpResponse TextResponse(ushort statusCode, string body) =>
+        new(statusCode, HttpVersion.Http11, new List<HttpHeader>(), HttpBody.FromString(body));
+}
+"#;
+
 const NO_SUCH_ROUTE_BODY: &str = "Database has not registered a handler for this route";
 
-fn extract_rust_code_blocks(doc_path: &Path) -> String {
+fn extract_code_blocks(doc_path: &Path, regex_src: &str, language_name: &str) -> String {
     let doc = fs::read_to_string(doc_path).unwrap_or_else(|e| panic!("failed to read {}: {e}", doc_path.display()));
     let doc = doc.replace("\r\n", "\n");
 
-    let re = Regex::new(r"```rust\n([\s\S]*?)\n```").expect("regex should compile");
+    let re = Regex::new(regex_src).expect("regex should compile");
     let blocks: Vec<_> = re
         .captures_iter(&doc)
         .map(|cap| cap.get(1).expect("capture group should exist").as_str().to_string())
@@ -244,19 +581,36 @@ fn extract_rust_code_blocks(doc_path: &Path) -> String {
 
     assert!(
         !blocks.is_empty(),
-        "expected at least one rust code block in {}",
+        "expected at least one {} code block in {}",
+        language_name,
         doc_path.display()
     );
 
     blocks.join("\n\n")
 }
 
-#[test]
-fn http_routes_end_to_end() {
-    let test = Smoketest::builder().module_code(MODULE_CODE).build();
-    let identity = test.database_identity.as_ref().expect("database identity missing");
+fn rust_http_test(module_code: &str) -> (Smoketest, String) {
+    let test = Smoketest::builder().module_code(module_code).build();
+    let identity = test
+        .database_identity
+        .as_ref()
+        .expect("database identity missing")
+        .clone();
+    (test, identity)
+}
 
-    let base = format!("{}/v1/database/{}/route", test.server_url, identity);
+fn csharp_http_test(name: &str, module_code: &str) -> (Smoketest, String) {
+    let mut test = Smoketest::builder().autopublish(false).build();
+    let identity = test.publish_csharp_module_source(name, name, module_code).unwrap();
+    (test, identity)
+}
+
+fn route_base(server_url: &str, identity: &str) -> String {
+    format!("{server_url}/v1/database/{identity}/route")
+}
+
+fn assert_http_routes_end_to_end(server_url: &str, identity: &str) {
+    let base = route_base(server_url, identity);
     let client = reqwest::blocking::Client::new();
 
     let resp = client.get(format!("{base}/get")).send().expect("get failed");
@@ -311,10 +665,7 @@ fn http_routes_end_to_end() {
     assert_eq!(resp.text().expect("missing route body"), NO_SUCH_ROUTE_BODY);
 
     let resp = client
-        .get(format!(
-            "{}/v1/database/{}/schema?version=10",
-            test.server_url, identity
-        ))
+        .get(format!("{server_url}/v1/database/{identity}/schema?version=10"))
         .header("authorization", "Bearer not-a-jwt")
         .send()
         .expect("schema request failed");
@@ -328,12 +679,8 @@ fn http_routes_end_to_end() {
     assert!(resp.status().is_success());
 }
 
-#[test]
-fn http_routes_pr_example_round_trip() {
-    let test = Smoketest::builder().module_code(EXAMPLE_MODULE_CODE).build();
-    let identity = test.database_identity.as_ref().expect("database identity missing");
-
-    let base = format!("{}/v1/database/{}/route", test.server_url, identity);
+fn assert_http_routes_pr_example_round_trip(server_url: &str, identity: &str) {
+    let base = route_base(server_url, identity);
     let client = reqwest::blocking::Client::new();
     let payload = b"hello from the PR example".to_vec();
 
@@ -368,14 +715,8 @@ fn http_routes_pr_example_round_trip() {
     assert!(resp.status().is_server_error());
 }
 
-#[test]
-fn http_routes_are_strict_for_non_root_paths() {
-    let test = Smoketest::builder()
-        .module_code(STRICT_NON_ROOT_ROUTING_MODULE_CODE)
-        .build();
-    let identity = test.database_identity.as_ref().expect("database identity missing");
-
-    let base = format!("{}/v1/database/{}/route", test.server_url, identity);
+fn assert_http_routes_are_strict_for_non_root_paths(server_url: &str, identity: &str) {
+    let base = route_base(server_url, identity);
     let client = reqwest::blocking::Client::new();
 
     let resp = client.get(format!("{base}/foo")).send().expect("foo failed");
@@ -398,14 +739,8 @@ fn http_routes_are_strict_for_non_root_paths() {
     assert_eq!(resp.text().expect("double slash foo body"), NO_SUCH_ROUTE_BODY);
 }
 
-#[test]
-fn http_routes_are_strict_for_root_paths() {
-    let test = Smoketest::builder()
-        .module_code(STRICT_ROOT_ROUTING_MODULE_CODE)
-        .build();
-    let identity = test.database_identity.as_ref().expect("database identity missing");
-
-    let base = format!("{}/v1/database/{}/route", test.server_url, identity);
+fn assert_http_routes_are_strict_for_root_paths(server_url: &str, identity: &str) {
+    let base = route_base(server_url, identity);
     let client = reqwest::blocking::Client::new();
 
     let resp = client.get(base.clone()).send().expect("empty root failed");
@@ -417,12 +752,8 @@ fn http_routes_are_strict_for_root_paths() {
     assert_eq!(resp.text().expect("slash root body"), "slash");
 }
 
-#[test]
-fn http_handler_observes_full_external_uri() {
-    let test = Smoketest::builder().module_code(FULL_URI_MODULE_CODE).build();
-    let identity = test.database_identity.as_ref().expect("database identity missing");
-
-    let base = format!("{}/v1/database/{}/route", test.server_url, identity);
+fn assert_http_handler_observes_full_external_uri(server_url: &str, identity: &str) {
+    let base = route_base(server_url, identity);
     let url = format!("{base}/echo-uri?alpha=beta");
     let client = reqwest::blocking::Client::new();
 
@@ -431,14 +762,8 @@ fn http_handler_observes_full_external_uri() {
     assert_eq!(resp.text().expect("echo-uri body"), url);
 }
 
-#[test]
-fn handle_request_body() {
-    let test = Smoketest::builder()
-        .module_code(HANDLE_REQUEST_BODY_MODULE_CODE)
-        .build();
-    let identity = test.database_identity.as_ref().expect("database identity missing");
-
-    let base = format!("{}/v1/database/{}/route", test.server_url, identity);
+fn assert_handle_request_body(server_url: &str, identity: &str) {
+    let base = route_base(server_url, identity);
     let client = reqwest::blocking::Client::new();
 
     let resp = client
@@ -502,14 +827,122 @@ fn handle_request_body() {
     );
 }
 
+#[test]
+fn http_routes_end_to_end() {
+    let (test, identity) = rust_http_test(MODULE_CODE);
+    assert_http_routes_end_to_end(&test.server_url, &identity);
+}
+
+#[test]
+fn http_routes_pr_example_round_trip() {
+    let (test, identity) = rust_http_test(EXAMPLE_MODULE_CODE);
+    assert_http_routes_pr_example_round_trip(&test.server_url, &identity);
+}
+
+#[test]
+fn http_routes_are_strict_for_non_root_paths() {
+    let (test, identity) = rust_http_test(STRICT_NON_ROOT_ROUTING_MODULE_CODE);
+    assert_http_routes_are_strict_for_non_root_paths(&test.server_url, &identity);
+}
+
+#[test]
+fn http_routes_are_strict_for_root_paths() {
+    let (test, identity) = rust_http_test(STRICT_ROOT_ROUTING_MODULE_CODE);
+    assert_http_routes_are_strict_for_root_paths(&test.server_url, &identity);
+}
+
+#[test]
+fn http_handler_observes_full_external_uri() {
+    let (test, identity) = rust_http_test(FULL_URI_MODULE_CODE);
+    assert_http_handler_observes_full_external_uri(&test.server_url, &identity);
+}
+
+#[test]
+fn handle_request_body() {
+    let (test, identity) = rust_http_test(HANDLE_REQUEST_BODY_MODULE_CODE);
+    assert_handle_request_body(&test.server_url, &identity);
+}
+
+#[test]
+fn csharp_http_routes_end_to_end() {
+    require_dotnet!();
+    let (test, identity) = csharp_http_test("http-routes-csharp-basic", CS_MODULE_CODE);
+    assert_http_routes_end_to_end(&test.server_url, &identity);
+}
+
+#[test]
+fn csharp_http_routes_pr_example_round_trip() {
+    require_dotnet!();
+    let (test, identity) = csharp_http_test("http-routes-csharp-example", CS_EXAMPLE_MODULE_CODE);
+    assert_http_routes_pr_example_round_trip(&test.server_url, &identity);
+}
+
+#[test]
+fn csharp_http_routes_are_strict_for_non_root_paths() {
+    require_dotnet!();
+    let (test, identity) = csharp_http_test(
+        "http-routes-csharp-strict-non-root",
+        CS_STRICT_NON_ROOT_ROUTING_MODULE_CODE,
+    );
+    assert_http_routes_are_strict_for_non_root_paths(&test.server_url, &identity);
+}
+
+#[test]
+fn csharp_http_routes_are_strict_for_root_paths() {
+    require_dotnet!();
+    let (test, identity) = csharp_http_test(
+        "http-routes-csharp-strict-root",
+        CS_STRICT_ROOT_ROUTING_MODULE_CODE,
+    );
+    assert_http_routes_are_strict_for_root_paths(&test.server_url, &identity);
+}
+
+#[test]
+fn csharp_http_handler_observes_full_external_uri() {
+    require_dotnet!();
+    let (test, identity) = csharp_http_test("http-routes-csharp-full-uri", CS_FULL_URI_MODULE_CODE);
+    assert_http_handler_observes_full_external_uri(&test.server_url, &identity);
+}
+
+#[test]
+fn csharp_handle_request_body() {
+    require_dotnet!();
+    let (test, identity) = csharp_http_test(
+        "http-routes-csharp-request-body",
+        CS_HANDLE_REQUEST_BODY_MODULE_CODE,
+    );
+    assert_handle_request_body(&test.server_url, &identity);
+}
+
 /// Validates the Rust example from `docs/docs/00200-core-concepts/00200-functions/00600-HTTP-handlers.md`.
 #[test]
 fn http_handlers_tutorial_say_hello_route_works() {
-    let module_code = extract_rust_code_blocks(
+    let module_code = extract_code_blocks(
         &workspace_root().join("docs/docs/00200-core-concepts/00200-functions/00600-HTTP-handlers.md"),
+        r"```rust\n([\s\S]*?)\n```",
+        "rust",
     );
     let test = Smoketest::builder().module_code(&module_code).build();
     let identity = test.database_identity.as_ref().expect("database identity missing");
+
+    let url = format!("{}/v1/database/{}/route/say-hello", test.server_url, identity);
+    let client = reqwest::blocking::Client::new();
+
+    let resp = client.get(&url).send().expect("say-hello failed");
+    assert!(resp.status().is_success());
+    assert_eq!(resp.text().expect("say-hello body"), "Hello!");
+}
+
+/// Validates the C# example from `docs/docs/00200-core-concepts/00200-functions/00600-HTTP-handlers.md`.
+#[test]
+fn csharp_http_handlers_tutorial_say_hello_route_works() {
+    require_dotnet!();
+    let module_code = extract_code_blocks(
+        &workspace_root().join("docs/docs/00200-core-concepts/00200-functions/00600-HTTP-handlers.md"),
+        r"```csharp\n([\s\S]*?)\n```",
+        "csharp",
+    );
+    let (test, identity) = csharp_http_test("http-handlers-docs-csharp", &module_code);
 
     let url = format!("{}/v1/database/{}/route/say-hello", test.server_url, identity);
     let client = reqwest::blocking::Client::new();

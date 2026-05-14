@@ -4,6 +4,9 @@ using System;
 using System.Collections.Generic;
 using Internal;
 
+public readonly record struct Handler(string FunctionName)
+{ }
+
 public sealed class Router
 {
     internal readonly record struct RouteSpec(MethodOrAny Method, string Path, string HandlerFunction);
@@ -20,33 +23,40 @@ public sealed class Router
 
     public static Router New() => new([]);
 
-    public Router Get(string path, string handlerFunction) =>
-        AddRoute(new MethodOrAny.Method(new Internal.HttpMethod.Get(default)), path, handlerFunction);
+    public Router Get(string path, Handler handler) =>
+        AddRoute(new MethodOrAny.Method(new Internal.HttpMethod.Get(default)), path, handler);
 
-    public Router Head(string path, string handlerFunction) =>
-        AddRoute(new MethodOrAny.Method(new Internal.HttpMethod.Head(default)), path, handlerFunction);
+    public Router Head(string path, Handler handler) =>
+        AddRoute(new MethodOrAny.Method(new Internal.HttpMethod.Head(default)), path, handler);
 
-    public Router Options(string path, string handlerFunction) =>
-        AddRoute(new MethodOrAny.Method(new Internal.HttpMethod.Options(default)), path, handlerFunction);
+    public Router Options(string path, Handler handler) =>
+        AddRoute(new MethodOrAny.Method(new Internal.HttpMethod.Options(default)), path, handler);
 
-    public Router Put(string path, string handlerFunction) =>
-        AddRoute(new MethodOrAny.Method(new Internal.HttpMethod.Put(default)), path, handlerFunction);
+    public Router Put(string path, Handler handler) =>
+        AddRoute(new MethodOrAny.Method(new Internal.HttpMethod.Put(default)), path, handler);
 
-    public Router Delete(string path, string handlerFunction) =>
-        AddRoute(new MethodOrAny.Method(new Internal.HttpMethod.Delete(default)), path, handlerFunction);
+    public Router Delete(string path, Handler handler) =>
+        AddRoute(new MethodOrAny.Method(new Internal.HttpMethod.Delete(default)), path, handler);
 
-    public Router Post(string path, string handlerFunction) =>
-        AddRoute(new MethodOrAny.Method(new Internal.HttpMethod.Post(default)), path, handlerFunction);
+    public Router Post(string path, Handler handler) =>
+        AddRoute(new MethodOrAny.Method(new Internal.HttpMethod.Post(default)), path, handler);
 
-    public Router Patch(string path, string handlerFunction) =>
-        AddRoute(new MethodOrAny.Method(new Internal.HttpMethod.Patch(default)), path, handlerFunction);
+    public Router Patch(string path, Handler handler) =>
+        AddRoute(new MethodOrAny.Method(new Internal.HttpMethod.Patch(default)), path, handler);
 
-    public Router Any(string path, string handlerFunction) =>
-        AddRoute(new MethodOrAny.Any(default), path, handlerFunction);
+    public Router Any(string path, Handler handler) =>
+        AddRoute(new MethodOrAny.Any(default), path, handler);
 
     public Router Nest(string path, Router subRouter)
     {
         AssertValidPath(path);
+        if (routes.Exists(route => route.Path.StartsWith(path, StringComparison.Ordinal)))
+        {
+            throw new ArgumentException(
+                $"Cannot nest router at `{path}`; existing routes overlap with nested path",
+                nameof(path)
+            );
+        }
 
         var merged = CloneRoutes();
         foreach (var route in subRouter.routes)
@@ -71,10 +81,10 @@ public sealed class Router
 
     internal IReadOnlyList<RouteSpec> GetRoutes() => routes;
 
-    private Router AddRoute(MethodOrAny method, string path, string handlerFunction)
+    private Router AddRoute(MethodOrAny method, string path, Handler handler)
     {
         var merged = CloneRoutes();
-        AddRoute(merged, method, path, handlerFunction);
+        AddRoute(merged, method, path, handler.FunctionName);
         return new Router(merged);
     }
 
@@ -98,7 +108,6 @@ public sealed class Router
 
         routes.Add(candidate);
     }
-
     private static string JoinPaths(string prefix, string suffix)
     {
         if (prefix == "/")

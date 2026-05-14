@@ -324,6 +324,14 @@ public static class Module
     {
         foreach (var route in router.GetRoutes())
         {
+            if (!httpHandlers.Any(handler => handler.MakeHandlerDef().SourceName == route.HandlerFunction))
+            {
+                throw new ArgumentException(
+                    $"HTTP router references unknown handler `{route.HandlerFunction}`",
+                    nameof(router)
+                );
+            }
+
             moduleDef.RegisterHttpRoute(
                 new RawHttpRouteDefV10(
                     HandlerFunction: route.HandlerFunction,
@@ -565,7 +573,14 @@ public static class Module
         }
     }
 
-    public static Errno __call_http_handler__(uint id, Timestamp timestamp, BytesSource request, BytesSink resultSink)
+    public static Errno __call_http_handler__(
+        uint id,
+        Timestamp timestamp,
+        BytesSource request,
+        BytesSource requestBody,
+        BytesSink responseSink,
+        BytesSink responseBodySink
+    )
     {
         try
         {
@@ -576,17 +591,19 @@ public static class Module
             var requestBytes = request.Consume();
             using var stream = new MemoryStream(requestBytes);
             using var reader = new BinaryReader(stream);
-            var requestAndBody = new HttpRequestAndBodyWire.BSATN().Read(reader);
+            var requestWire = new HttpRequestWire.BSATN().Read(reader);
             if (stream.Position != stream.Length)
             {
                 throw new Exception("Unrecognised extra bytes in the HTTP handler request");
             }
 
-            var response = httpHandlers[(int)id].Invoke(ctx, SpacetimeDB.HttpClient.FromWire(requestAndBody));
-            var responseWire = SpacetimeDB.HttpClient.ToWire(response);
-            resultSink.Write(
-                IStructuralReadWrite.ToBytes(new HttpResponseAndBodyWire.BSATN(), responseWire)
+            var response = httpHandlers[(int)id].Invoke(
+                ctx,
+                SpacetimeDB.HttpClient.FromWire(requestWire, requestBody.Consume())
             );
+            var (responseWire, responseBody) = SpacetimeDB.HttpClient.ToWire(response);
+            responseSink.Write(IStructuralReadWrite.ToBytes(new HttpResponseWire.BSATN(), responseWire));
+            responseBodySink.Write(responseBody);
 
             return Errno.OK;
         }

@@ -75,19 +75,3 @@ public partial struct HttpResponseWire
     public HttpVersionWire Version;
     public ushort Code;
 }
-
-[Type]
-[EditorBrowsable(EditorBrowsableState.Never)]
-public partial struct HttpRequestAndBodyWire
-{
-    public HttpRequestWire Request;
-    public byte[] Body;
-}
-
-[Type]
-[EditorBrowsable(EditorBrowsableState.Never)]
-public partial struct HttpResponseAndBodyWire
-{
-    public HttpResponseWire Response;
-    public byte[] Body;
-}

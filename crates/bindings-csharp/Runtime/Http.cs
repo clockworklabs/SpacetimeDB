@@ -418,23 +418,19 @@ public sealed class HttpClient
     private static HttpHeaderPairWire ToWireHeader(HttpHeader header) =>
         new() { Name = header.Name, Value = header.Value };
 
-    internal static HttpRequest FromWire(HttpRequestAndBodyWire requestAndBodyWire)
-    {
-        var requestWire = requestAndBodyWire.Request;
-        return new HttpRequest
+    internal static HttpRequest FromWire(HttpRequestWire requestWire, byte[] body) =>
+        new()
         {
             Uri = requestWire.Uri,
             Method = FromWireMethod(requestWire.Method),
             Headers = requestWire.Headers.Entries.Select(h => new HttpHeader(h.Name, h.Value, false)).ToList(),
-            Body = new HttpBody(requestAndBodyWire.Body),
+            Body = new HttpBody(body),
             Version = FromWireVersion(requestWire.Version),
         };
-    }
 
-    internal static HttpResponseAndBodyWire ToWire(HttpResponse response) =>
-        new()
-        {
-            Response = new HttpResponseWire
+    internal static (HttpResponseWire Response, byte[] Body) ToWire(HttpResponse response) =>
+        (
+            new HttpResponseWire
             {
                 Headers = new HttpHeadersWire
                 {
@@ -443,8 +439,8 @@ public sealed class HttpClient
                 Version = ToWireVersion(response.Version),
                 Code = response.StatusCode,
             },
-            Body = response.Body.ToBytes(),
-        };
+            response.Body.ToBytes()
+        );
 
     private static HttpMethod FromWireMethod(HttpMethodWire methodWire) =>
         methodWire switch
