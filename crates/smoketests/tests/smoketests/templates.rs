@@ -521,7 +521,13 @@ fn setup_typescript_sdk_in_package_json(package_json_path: &Path) -> Result<()> 
     update_package_json_dependency(package_json_path, "spacetimedb", &sdk_path)?;
 
     run_pnpm(
-        &["install", "--lockfile-only", "--offline", "--ignore-scripts"],
+        &[
+            "update",
+            "spacetimedb",
+            "--lockfile-only",
+            "--offline",
+            "--ignore-scripts",
+        ],
         package_json_path.parent().unwrap(),
     )?;
     Ok(())
