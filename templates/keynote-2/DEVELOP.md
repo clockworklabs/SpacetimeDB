@@ -28,7 +28,7 @@ The script will:
 **Options:**
 
 - `--seconds N` - Benchmark duration (default: 60)
-- `--concurrency N` - Concurrent connections (default: 50)
+- `--concurrency N` - Concurrent connections (default: 64)
 - `--alpha N` - Contention level (default: 1.5)
 - `--systems a,b,c` - Systems to compare (default: convex,spacetimedb)
 - `--stdb-compression none|gzip` - SpacetimeDB client compression mode (default: none)
@@ -193,11 +193,18 @@ pnpm run bench test-1 --connectors spacetimedb --stdb-compression gzip
 
 # Only run selected connectors
 pnpm run bench test-1 --connectors spacetimedb,sqlite_rpc
+
+# Sweep alpha values for a connector set
+pnpm run bench test-1 --alpha 0,1.5 --connectors postgres_rpc,bun --seconds 300
+
+# Sweep contention (alpha) for a single connector: start,end,step,concurrency
+pnpm run bench test-1 --connectors cockroach_rpc --contention-tests 0,1.5,0.5,64
+
+# Sweep concurrency for a single connector: start,end,factor,alpha
+pnpm run bench test-1 --connectors cockroach_rpc --concurrency-tests 16,512,2,1.5
 ```
 
 ## CLI Arguments
-
-From `src/cli.ts`:
 
 - **`test-name`** (positional)
   - Name of the test folder under `src/tests/`
@@ -209,10 +216,10 @@ From `src/cli.ts`:
 
 - **`--concurrency N`**
   - Number of workers / in-flight operations
-  - Default: `50`
+  - Default: `64`
 
 - **`--alpha A`**
-  - Zipf α parameter for account selection (hot vs cold distribution)
+  - Zipf alpha parameter for account selection (hot vs cold distribution)
   - Default: `1.5`
 
 - **`--connectors list`**
@@ -227,15 +234,34 @@ From `src/cli.ts`:
   - The valid names come from `tc.system` in the test modules and the keys in `CONNECTORS`
   - Valid names: `convex`, `spacetimedb`, `bun`, `postgres_rpc`, `cockroach_rpc`, `sqlite_rpc`, `supabase_rpc`, `planetscale_pg_rpc`
 
-- **`--contention-tests startAlpha endAlpha step concurrency`**
-  - Runs a sweep over Zipf α values for a single connector
-  - Uses `startAlpha`, `endAlpha`, and `step` to choose the α values
-  - Uses the provided `concurrency` for all runs
+- **`--systems list`**
+  - Alias for `--connectors` in bench mode
 
-- **`--concurrency-tests startConc endConc step alpha`**
-  - Runs a sweep over concurrency levels for a single connector
-  - Uses `startConc`, `endConc`, and `step` to choose the concurrency values
-  - Uses the provided `alpha` for all runs
+- **`--runs N`**
+  - Repeat each `(connector, alpha)` combination `N` times
+  - Default: `1`
+
+- **`--prep-between-alphas`**
+  - Run `pnpm run prep` before each `(connector, alpha)` combination
+
+- **`--contention-tests start,end,step,concurrency`**
+  - Sweep Zipf alpha values for one connector
+
+- **`--concurrency-tests start,end,factor,alpha`**
+  - Sweep concurrency values for one connector
+
+- **`--bench-pipelined` / `--no-bench-pipelined`**
+  - Force pipelining on or off across connectors
+
+- **`--max-inflight-per-worker N`**
+  - Max in-flight requests per worker when pipelining is enabled
+  - Required when `--bench-pipelined` is enabled
+
+- **`--log-errors`**
+  - Log per-operation errors during runs
+
+- **`--verify-transactions`**
+  - Run connector verification at end of run
 
 ---
 
@@ -244,7 +270,7 @@ From `src/cli.ts`:
 You can also run the benchmark via Docker instead of Node directly:
 
 ```bash
-docker compose run --rm bench -- --seconds 5 --concurrency 50 --alpha 1 --connectors convex
+docker compose run --rm bench -- --seconds 5 --concurrency 64 --alpha 1 --connectors convex
 ```
 
 If using Docker, make sure to set `USE_DOCKER=1` in `.env`, verify docker-compose env variables, verify you've run supabase init, and run `pnpm run prep` before running bench.
@@ -257,4 +283,7 @@ Every run writes a JSON file into `./runs/`:
 - Filename: `<test-name>-<timestamp>.json`
   - Example: `test-1-2025-11-17T16-45-12-345Z.json`
 
-Point your visualizations / CSV exports at `./runs/` and you’re good.
+For rollup tables, compute steady-state stats after a 30-second warmup window (`tSec >= 30`). The `scripts/bench-stats.py` default matches this (`--warmup-sec 30`).
+
+Point your visualizations / CSV exports at `./runs/` and you're good.
+

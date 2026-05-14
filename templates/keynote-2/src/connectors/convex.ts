@@ -53,7 +53,6 @@ export default function convex(url: string): RpcConnector {
 
   const root: RpcConnector = {
     name: 'convex',
-    maxInflightPerWorker: 16,
 
     async open() {},
     async close() {},

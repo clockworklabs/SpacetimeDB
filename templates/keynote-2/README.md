@@ -20,26 +20,59 @@ The demo compares SpacetimeDB and Convex by default, since both are easy for any
 
 ## Results Summary
 
-All tests run for 300 seconds with 50 concurrent connections, with a transfer workload (read-modify-write transaction between two accounts).
+All tests run for 300 seconds with 64 concurrent connections, with a transfer workload (read-modify-write transaction between two accounts).
 
 The SpacetimeDB rows were obtained using a single-node SpacetimeDB Standalone instance, so the published numbers are reproducible with the public, downloadable server.
 
-Each cell shows **mean TPS ± sample standard deviation** of the per-second throughput within a single 300-second run, with the sample variance in parentheses. Cells where the standard deviation approaches or exceeds the mean (e.g. CockroachDB and Convex at ~80% contention) indicate that the system's throughput is unstable across the run.
+Each row reports mean TPS and sample standard deviation of per-second throughput within a single 300-second run. `alpha=1.5` corresponds to ~80% contention. When standard deviation approaches or exceeds mean TPS, throughput is unstable across the run.
 
-| System                                  | Mean TPS ± σ (Var) (~0% Contention) | Mean TPS ± σ (Var) (~80% Contention) |
-| --------------------------------------- | ----------------------------------- | ------------------------------------ |
-| SpacetimeDB (TypeScript Module)         | 294,827 ± 5,266 (27,728,435)        | 304,865 ± 4,751 (22,569,090)         |
-| SpacetimeDB (Rust Module)               | 266,139 ± 4,662 (21,730,912)        | 278,070 ± 4,279 (18,312,134)         |
-| SQLite + Node HTTP + Drizzle            | 3,109 ± 86 (7,326)                  | 3,228 ± 80 (6,396)                   |
-| Bun + Drizzle + Postgres                | 10,662 ± 215 (46,418)               | 2,773 ± 83 (6,930)                   |
-| Supabase + Node HTTP + Drizzle          | 6,853 ± 1,017 (1,034,915)           | 2,896 ± 111 (12,414)                 |
-| Postgres + Node HTTP + Drizzle          | 9,933 ± 184 (33,704)                | 2,169 ± 56 (3,161)                   |
-| CockroachDB + Node HTTP + Drizzle       | 3,353 ± 25 (630)                    | 79 ± 127 (16,059)                    |
-| Convex (self-hosted local)              | 1,120 ± 161 (25,856)                | 118 ± 97 (9,335)                     |
-| PlanetScale PS-2560 (single-node, EBS)  | 1,513 ± 26 (678)                    | 289 ± 15 (238)                       |
-| PlanetScale M-15360 (Metal NVMe, HA)    | 1,351 ± 25 (637)                    | 279 ± 16 (257)                       |
+Data description: reported summary metrics are computed from steady-state windows after a 30-second warmup (`tSec >= 30`), using the recorded per-second `timeSeries` data.
 
-**Key Finding:** SpacetimeDB reaches hundreds of thousands of TPS for the transfer workload, while the best non-SpacetimeDB result shown here is SQLite at 3,228 TPS. Traditional databases also suffer significant degradation under high contention (CockroachDB drops 98%).
+### Alpha = 0
+
+| System | clients | pipelining | max_pool | TPS | TPS Stddev | p50 lat ms | p99 lat ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| SpacetimeDB | 64 | 40 | N/A | 279,024 | 4,763 | 8 | 12 |
+| Node.js + SQLite | 64 | off | N/A | 3,121 | 80 | 19 | 40 |
+| Node.js + Supabase | 64 | off | 64 | 7,362 | 1,179 | 6 | 18 |
+| Bun + Postgres | 64 | off | 64 | 10,729 | 146 | 5 | 11 |
+| Node.js + Postgres | 64 | off | 64 | 9,904 | 223 | 6 | 11 |
+| Node.js + PlanetScale (SN) | 64 | off | 64 | 4,535 | 117 | 14 | 20 |
+| Node.js + PlanetScale (HA) | 384 | off | 384 | 4,275 | 135 | 89 | 110 |
+| Convex | 64 | off | N/A | 1,140 | 118 | 53 | 62 |
+| Node.js + CockroachDB (5 node) | 320 | off | 320 | 4,253 | 561 | 71 | 120 |
+| HAProxy - Node.js + CockroachDB (5 node) | 320 | off | 320 | 5,481 | 566 | 57 | 95 |
+
+### Alpha = 1.5
+
+| System | clients | pipelining | max_pool | TPS | TPS Stddev | p50 lat ms | p99 lat ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| SpacetimeDB | 64 | 40 | N/A | 303,919 | 4,712 | 7 | 11 |
+| Node.js + SQLite | 64 | off | N/A | 3,188 | 73 | 18 | 39 |
+| Node.js + Supabase | 64 | off | 64 | 2,534 | 57 | 2 | 197 |
+| Bun + Postgres | 64 | off | 64 | 2,772 | 61 | 7 | 13 |
+| Node.js + Postgres | 64 | off | 64 | 961 | 25 | 10 | 16 |
+| Node.js + PlanetScale (SN) | 64 | off | 64 | 235 | 12 | 20 | 2,504 |
+| Node.js + PlanetScale (HA) | 384 | off | 384 | 248 | 13 | 416 | 10,121 |
+| Convex | 64 | off | N/A | 126 | 52 | 20 | 1,081 |
+| Node.js + CockroachDB (5 node) | 320 | off | 320 | 0.03 | 0.18 | 698 | 9,695 |
+| HAProxy - Node.js + CockroachDB (5 node) | 64 | off | 64 | 6.87 | 9.12 | 5,943 | 9,880 |
+
+### Alpha = 0 (Pipelined)
+
+| System | clients | pipelining | max_pool | TPS | TPS Stddev | p50 lat ms | p99 lat ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Node.js + SQLite | 64 | 40 | N/A | 2,977 | 84 | 722 | 747 |
+| Node.js + Supabase | 64 | 40 | 64 | 8,874 | 308 | 284 | 303 |
+| Bun + Postgres | 64 | 40 | 64 | 10,184 | 120 | 250.1 | 260.5 |
+| Node.js + Postgres | 64 | 40 | 64 | 9,165 | 145 | 276 | 290 |
+| Node.js + PlanetScale (SN) | 64 | 40 | 64 | 4,325 | 85 | 590 | 604 |
+| Node.js + PlanetScale (HA) | 384 | 40 | 384 | 3,355 | 327 | 4,354 | 4,438 |
+| Convex | 64 | 40 | N/A | 1,154 | 134 | 2,119 | 2,150 |
+| Node.js + CockroachDB (5 node) | 320 | 40 | 320 | 4,250 | 766 | 3,030 | 3,161 |
+| HAProxy - Node.js + CockroachDB (5 node) | 320 | 40 | 320 | 5,992 | 1,765 | 2,431 | 2,562 |
+
+**Key Finding:** In these runs, SpacetimeDB is the only system sustaining hundreds of thousands of TPS in both alpha profiles. Non-SpacetimeDB systems remain in the low-thousands TPS range at best, and several show severe contention sensitivity at `alpha=1.5` with large tail-latency growth.
 
 ## Methodology
 
@@ -48,6 +81,18 @@ All systems were tested with **out-of-the-box default settings**, with one excep
 The managed Postgres services (Supabase, PlanetScale) run at their default isolation level of `READ COMMITTED`.
 
 Throughput is counted from successful operations that the benchmark client observes completing inside the configured test window for every system.
+
+### Published Benchmark Defaults
+
+The reported tables in this README use the following defaults unless a row explicitly shows a different value:
+
+- `clients`: `64`
+- `pipelining`: `off` for non-pipelined tables
+- `MAX_POOL`: `64` for pg-based RPC servers (`postgres_rpc`, `cockroach_rpc`, `supabase_rpc`, `planetscale_pg_rpc`)
+- Pipelined table runs use `BENCH_PIPELINED=1` and `MAX_INFLIGHT_PER_WORKER=40`
+- `MAX_INFLIGHT_PER_WORKER` is required whenever `BENCH_PIPELINED=1`
+
+For rows that scale client count above 64 (for example, some HA topologies), `max_pool` is scaled to match the row values shown in the table.
 
 ### Test Architecture
 
@@ -99,12 +144,14 @@ pnpm run bench --alpha 0,1.5 --connectors <connectors> --seconds 300       # one
 
 `--alpha` and `--connectors` both accept comma-separated values. The bench writes one JSON per (connector, alpha, run) tuple into `runs/`.
 
+When aggregating these JSONs into summary tables, use a 30-second warmup cutoff (`--warmup-sec 30`) to match the published numbers.
+
 Useful flags:
 
 - `--alpha <csv>`: Zipf alpha. This benchmark reports `0` (uniform / ~0% contention) and `1.5` (Zipf / ~80% contention).
 - `--connectors <csv>`: which connectors to run. Defaults to every test in `src/tests/test-1/`.
 - `--seconds <num>`: duration of each run.
-- `--concurrency <num>`: number of concurrent clients (default: `50`).
+- `--concurrency <num>`: number of concurrent clients (default: `64`).
 - `--runs <num>`: repeat each (connector, alpha) combination this many times (default: `1`). Each repeat writes its own JSON.
 - `--prep-between-alphas`: run `pnpm run prep` before each (connector, alpha) combination to reset DB state.
 - `--stdb-compression <none|gzip>`: SpacetimeDB client compression mode (default: `none`).
@@ -181,3 +228,4 @@ Benchmark results are written to `./runs/` as JSON files with TPS and latency st
 ## License
 
 See repository root for license information.
+

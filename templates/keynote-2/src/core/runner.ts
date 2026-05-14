@@ -125,16 +125,20 @@ export async function runOne({
     `[${connector.name}] precomputed ${transferPairs.count} pairs in ${(precomputeElapsedMs / 1000).toFixed(2)}s`,
   );
 
-  const PIPELINED = benchPipelined ?? !!connector.maxInflightPerWorker;
-  const MAX_INFLIGHT_PER_WORKER =
-    maxInflightPerWorker === undefined
-      ? (connector.maxInflightPerWorker ?? 8)
-      : maxInflightPerWorker == 0
-        ? Infinity
-        : maxInflightPerWorker;
+  const PIPELINED = benchPipelined ?? false;
+  let MAX_INFLIGHT_PER_WORKER = 1;
+  if (PIPELINED && maxInflightPerWorker === undefined) {
+    throw new Error(
+      `[${connector.name}] pipelining is enabled, but max inflight per worker is not set. Set MAX_INFLIGHT_PER_WORKER or pass --max-inflight-per-worker.`,
+    );
+  }
+  if (PIPELINED) {
+    MAX_INFLIGHT_PER_WORKER =
+      maxInflightPerWorker == 0 ? Infinity : maxInflightPerWorker!;
+  }
 
   console.log(
-    `[${connector.name}] pipelined=${PIPELINED} max-inflight-per-worker=${MAX_INFLIGHT_PER_WORKER} pool-max=${runtimeConfig.poolMax}`,
+    `[${connector.name}] pipelined=${PIPELINED} max-inflight-per-worker=${PIPELINED ? MAX_INFLIGHT_PER_WORKER : 'n/a'} pool-max=${runtimeConfig.poolMax}`,
   );
   const run = async (seconds: number) => {
     const start = performance.now();
