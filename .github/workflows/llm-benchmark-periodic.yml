@@ -30,6 +30,7 @@ concurrency:
 jobs:
   run-benchmarks:
     runs-on: spacetimedb-new-runner
+    environment: llm-benchmark-update
     container:
       image: localhost:5000/spacetimedb-ci:latest
       options: >-

@@ -7,6 +7,7 @@ on:
 jobs:
   discordNotification:
     runs-on: ubuntu-latest
+    environment: coordination
     if: github.event.pull_request.merged == true &&
       github.event.pull_request.base.ref == 'master'
     env:
@@ -73,6 +74,7 @@ jobs:
 
   invokePrivate:
     runs-on: ubuntu-latest
+    environment: coordination
     if: github.event.pull_request.merged == true &&
       github.event.pull_request.base.ref == 'master'
     permissions:

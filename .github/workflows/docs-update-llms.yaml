@@ -15,6 +15,7 @@ on:
 jobs:
   update-llms:
     runs-on: spacetimedb-new-runner-2
+    environment: release
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3

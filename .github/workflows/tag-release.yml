@@ -6,6 +6,7 @@ jobs:
   on-release:
     name: Re-tag latest
     runs-on: ubuntu-latest
+    environment: release
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
