@@ -8,12 +8,12 @@ namespace SpacetimeDB
     {
         private const string SingletonNodeName = nameof(STDBUpdateManager);
 
-        private static STDBUpdateManager _instance;
-        private static STDBUpdateManager Instance => EnsureInstance();
+        private static STDBUpdateManager? _instance;
+        private static STDBUpdateManager? Instance => EnsureInstance();
 
         private List<IDbConnection> Connections { get; } = new();
 
-        private static STDBUpdateManager EnsureInstance()
+        private static STDBUpdateManager? EnsureInstance()
         {
             if (IsInstanceValid(_instance))
             {
@@ -44,13 +44,12 @@ namespace SpacetimeDB
             {
                 Name = SingletonNodeName,
             };
-            root.AddChild(_instance, false, InternalMode.Front);
+            root.CallDeferred(Node.MethodName.AddChild, _instance, false, (int)InternalMode.Front);
             return _instance;
         }
 
         public static bool Add(IDbConnection conn)
         {
-            if (conn == null) return false;
             var connections = Instance?.Connections;
             if (connections == null || connections.Contains(conn)) return false;
             connections.Add(conn);
@@ -59,7 +58,6 @@ namespace SpacetimeDB
 
         public static bool Remove(IDbConnection conn, bool disconnect = false)
         {
-            if (conn == null) return false;
             var connections = Instance?.Connections;
             if (connections != null && connections.Remove(conn))
             {
@@ -102,7 +100,7 @@ namespace SpacetimeDB
         {
             foreach (var conn in Connections)
             {
-                conn?.FrameTick();
+                conn.FrameTick();
             }
         }
     }
