@@ -18,6 +18,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
+use yaml_rust::yaml::Hash as YamlHash;
+use yaml_rust::{Yaml, YamlEmitter, YamlLoader};
 
 // ============================================================================
 // Template metadata
@@ -515,22 +517,93 @@ fn build_typescript_sdk() -> Result<()> {
 }
 
 /// Points the `spacetimedb` entry in `package.json` at the local TypeScript
-/// SDK and updates the temporary lockfile without installing or running scripts.
-fn setup_typescript_sdk_in_package_json(package_json_path: &Path) -> Result<()> {
+/// SDK and writes a matching package-local lockfile.
+fn setup_typescript_sdk_in_package_json(package_json_path: &Path, lockfile_importer: &str) -> Result<()> {
     let sdk_path = workspace_root().join("crates/bindings-typescript");
     update_package_json_dependency(package_json_path, "spacetimedb", &sdk_path)?;
+    write_template_lockfile(package_json_path.parent().unwrap(), lockfile_importer, &sdk_path)?;
 
-    run_pnpm(
-        &[
-            "update",
-            "spacetimedb",
-            "--lockfile-only",
-            "--offline",
-            "--ignore-scripts",
-        ],
-        package_json_path.parent().unwrap(),
-    )?;
     Ok(())
+}
+
+fn write_template_lockfile(package_dir: &Path, lockfile_importer: &str, sdk_path: &Path) -> Result<()> {
+    let workspace = workspace_root();
+    let root_lock_path = workspace.join("pnpm-lock.yaml");
+    let root_lock = fs::read_to_string(&root_lock_path).context("Failed to read root pnpm-lock.yaml")?;
+    let mut lockfile = YamlLoader::load_from_str(&root_lock)
+        .context("Failed to parse root pnpm-lock.yaml")?
+        .remove(0);
+
+    // The template is copied to a temp directory before the test rewrites its
+    // package.json. A workspace lockfile importer such as `templates/astro-ts`
+    // will not match that temp package; package-local lockfiles use `.`.
+    let importer = lockfile["importers"][lockfile_importer]
+        .as_hash()
+        .with_context(|| format!("pnpm-lock.yaml has no importer {lockfile_importer:?}"))?
+        .clone();
+
+    let mut importers = YamlHash::new();
+    importers.insert(Yaml::String(".".to_string()), Yaml::Hash(importer));
+    let Yaml::Hash(lockfile_root) = &mut lockfile else {
+        panic!("pnpm lockfile root is a map");
+    };
+    lockfile_root.insert(Yaml::String("importers".to_string()), Yaml::Hash(importers));
+
+    // The checked-in lockfile points `spacetimedb` at the repo workspace. The
+    // temp package is outside that workspace, so the link target must be
+    // rewritten to the absolute local SDK path used in package.json.
+    let local_specifier = normalize_dependency_path(sdk_path);
+    let local_version = format!(
+        "link:{}",
+        pathdiff::diff_paths(sdk_path, package_dir)
+            .context("Failed to compute local SDK relative path")?
+            .to_string_lossy()
+            .replace('\\', "/")
+    );
+    patch_spacetimedb_lock_entry(&mut lockfile, &local_specifier, &local_version);
+
+    let mut rendered = String::new();
+    YamlEmitter::new(&mut rendered)
+        .dump(&lockfile)
+        .context("Failed to render template pnpm-lock.yaml")?;
+    fs::write(package_dir.join("pnpm-lock.yaml"), rendered).context("Failed to write template pnpm-lock.yaml")?;
+
+    Ok(())
+}
+
+fn patch_spacetimedb_lock_entry(lockfile: &mut Yaml, specifier: &str, version: &str) {
+    let Yaml::Hash(root) = lockfile else {
+        panic!("pnpm lockfile root is a map");
+    };
+    let Yaml::Hash(importers) = root
+        .get_mut(&Yaml::String("importers".to_string()))
+        .expect("pnpm lockfile has importers")
+    else {
+        panic!("pnpm lockfile importers is a map");
+    };
+    let Yaml::Hash(dot_importer) = importers
+        .get_mut(&Yaml::String(".".to_string()))
+        .expect("pnpm lockfile has . importer")
+    else {
+        panic!("pnpm lockfile . importer is a map");
+    };
+
+    for section_name in ["dependencies", "devDependencies"] {
+        let Some(Yaml::Hash(section)) = dot_importer.get_mut(&Yaml::String(section_name.to_string())) else {
+            continue;
+        };
+        let Some(dep) = section.get_mut(&Yaml::String("spacetimedb".to_string())) else {
+            continue;
+        };
+        let Yaml::Hash(dep) = dep else {
+            panic!("spacetimedb lock entry is a map");
+        };
+        dep.insert(
+            Yaml::String("specifier".to_string()),
+            Yaml::String(specifier.to_string()),
+        );
+        dep.insert(Yaml::String("version".to_string()), Yaml::String(version.to_string()));
+    }
 }
 
 /// Rewires the Rust server module's `spacetimedb` dependency to the local
@@ -683,7 +756,10 @@ fn test_rust_template(test: &Smoketest, template: &Template, project_path: &Path
 fn test_typescript_template(test: &Smoketest, template: &Template, project_path: &Path) -> Result<()> {
     // Server
     let server_path = project_path.join("spacetimedb");
-    setup_typescript_sdk_in_package_json(&server_path.join("package.json"))?;
+    setup_typescript_sdk_in_package_json(
+        &server_path.join("package.json"),
+        &format!("templates/{}/spacetimedb", template.id),
+    )?;
     run_pnpm(&["install", "--frozen-lockfile", "--ignore-scripts"], &server_path)?;
 
     let domain = format!("test-{}-{}", template.id, random_string());
@@ -707,7 +783,7 @@ fn test_typescript_template(test: &Smoketest, template: &Template, project_path:
     // Client type-check (only if there's a client package.json in the project root)
     let client_package_json = project_path.join("package.json");
     if client_package_json.exists() {
-        setup_typescript_sdk_in_package_json(&client_package_json)?;
+        setup_typescript_sdk_in_package_json(&client_package_json, &format!("templates/{}", template.id))?;
         run_pnpm(&["install", "--frozen-lockfile", "--ignore-scripts"], project_path)?;
 
         // TODO: some templates don't pass tsc yet, re-enable once they're fixed.
