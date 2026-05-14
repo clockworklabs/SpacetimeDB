@@ -24,7 +24,7 @@ use scopeguard::{defer, ScopeGuard};
 use serde::Deserialize;
 use spacetimedb::client::messages::{
     serialize, serialize_v2, IdentityTokenMessage, InUseSerializeBuffer, SerializeBuffer, SwitchedServerMessage,
-    ToProtocol,
+    ToProtocol, V3ServerMessageBatchSerializer,
 };
 use spacetimedb::client::{
     ClientActorId, ClientConfig, ClientConnection, ClientConnectionReceiver, DataMessage, MessageExecutionError,
@@ -65,6 +65,9 @@ pub const BIN_PROTOCOL: HeaderValue = HeaderValue::from_static(ws_v1::BIN_PROTOC
 pub const V2_BIN_PROTOCOL: HeaderValue = HeaderValue::from_static(ws_v2::BIN_PROTOCOL);
 #[allow(clippy::declare_interior_mutable_const)]
 pub const V3_BIN_PROTOCOL: HeaderValue = HeaderValue::from_static(ws_v3::BIN_PROTOCOL);
+
+/// Mirrors the TypeScript client's v3 outbound frame cap.
+const MAX_V3_OUTBOUND_FRAME_BYTES: usize = 256 * 1024;
 
 pub trait HasWebSocketOptions {
     fn websocket_options(&self) -> WebSocketOptions;
@@ -1064,13 +1067,13 @@ enum UnorderedWsMessage {
 /// Abstraction over [`ClientConnectionReceiver`], so tests can use a plain
 /// [`mpsc::Receiver`].
 trait Receiver<T> {
-    fn recv(&mut self) -> impl Future<Output = Option<T>> + Send;
+    fn recv_many<'a>(&'a mut self, buf: &'a mut Vec<T>, max: usize) -> impl Future<Output = usize> + Send + 'a;
     fn close(&mut self);
 }
 
 impl Receiver<OutboundMessage> for ClientConnectionReceiver {
-    async fn recv(&mut self) -> Option<OutboundMessage> {
-        ClientConnectionReceiver::recv(self).await
+    async fn recv_many(&mut self, buf: &mut Vec<OutboundMessage>, max: usize) -> usize {
+        ClientConnectionReceiver::recv_many(self, buf, max).await
     }
 
     fn close(&mut self) {
@@ -1079,8 +1082,8 @@ impl Receiver<OutboundMessage> for ClientConnectionReceiver {
 }
 
 impl<T: Send> Receiver<T> for mpsc::Receiver<T> {
-    async fn recv(&mut self) -> Option<T> {
-        mpsc::Receiver::recv(self).await
+    async fn recv_many(&mut self, buf: &mut Vec<T>, max: usize) -> usize {
+        mpsc::Receiver::recv_many(self, buf, max).await
     }
 
     fn close(&mut self) {
@@ -1147,7 +1150,9 @@ async fn ws_send_loop_inner<T, U, Encoder>(
     //
     // The default frame size is 4KiB, hence we write in batches of 32KiB.
     const FRAME_BATCH_SIZE: usize = 8;
+    const MESSAGE_BATCH_SIZE: usize = 64;
     let mut frames_batch = Vec::with_capacity(FRAME_BATCH_SIZE);
+    let mut messages_batch = Vec::with_capacity(MESSAGE_BATCH_SIZE);
     let (frames_tx, mut frames_rx) = mpsc::unbounded_channel();
 
     let (encode_tx, encode_rx) = mpsc::unbounded_channel();
@@ -1159,6 +1164,7 @@ async fn ws_send_loop_inner<T, U, Encoder>(
     // prone in the past (looking at you, `also_poll`).
     tokio::spawn(encoder(encode_rx, frames_tx));
 
+    let mut messages_exhausted = false;
     'outer: loop {
         let closed = state.closed();
 
@@ -1262,12 +1268,20 @@ async fn ws_send_loop_inner<T, U, Encoder>(
             // Take on more work.
             //
             // Branch is disabled if we already sent a close frame.
-            Some(message) = messages.recv(), if !closed => {
-                encode_tx
-                    .send(message.into())
-                    // `ws_encode_task` shouldn't terminate until
-                    // `encode_tx` is dropped, except by panicking.
-                    .expect("encode task panicked");
+            n = messages.recv_many(&mut messages_batch, MESSAGE_BATCH_SIZE), if !closed && !messages_exhausted => {
+                if n == 0 {
+                    messages_exhausted = true;
+                    continue;
+                }
+
+                log::trace!("encoding batch of {n} messages");
+                for message in messages_batch.drain(..n) {
+                    encode_tx
+                        .send(message.into())
+                        // `ws_encode_task` shouldn't terminate until
+                        // `encode_tx` is dropped, except by panicking.
+                        .expect("encode task panicked");
+                }
             },
 
         }
@@ -1305,8 +1319,17 @@ async fn ws_encode_task(
     const BUF_POOL_CAPACITY: usize = 16;
     let buf_pool = ArrayQueue::new(BUF_POOL_CAPACITY);
     let mut in_use_bufs: Vec<ScopeGuard<InUseSerializeBuffer, _>> = Vec::with_capacity(BUF_POOL_CAPACITY);
+    let mut pending_message = None;
 
-    'send: while let Some(message) = messages.recv().await {
+    'send: loop {
+        let message = match pending_message.take() {
+            Some(message) => message,
+            None => match messages.recv().await {
+                Some(message) => message,
+                None => break,
+            },
+        };
+
         // Drop serialize buffers with no external referent,
         // returning them to the pool.
         in_use_bufs.retain(|in_use| !in_use.is_unique());
@@ -1344,14 +1367,36 @@ async fn ws_encode_task(
                             continue;
                         }
 
-                        let Ok(in_use) = ws_forward_frames(
-                            &metrics,
-                            &outgoing_frames,
-                            workload,
-                            num_rows,
-                            ws_encode_binary_message(config, buf, server_message, false, &bsatn_rlb_pool).await,
-                        ) else {
-                            break 'send;
+                        let in_use = if config.version == WsVersion::V3 {
+                            let (stats, in_use, frames, next_pending) = ws_encode_v3_binary_messages(
+                                config,
+                                buf,
+                                server_message,
+                                &mut messages,
+                                &bsatn_rlb_pool,
+                            )
+                            .await;
+                            metrics.report(None, None, stats);
+                            if frames
+                                .into_iter()
+                                .try_for_each(|frame| outgoing_frames.send(frame))
+                                .is_err()
+                            {
+                                break 'send;
+                            }
+                            pending_message = next_pending;
+                            in_use
+                        } else {
+                            let Ok(in_use) = ws_forward_frames(
+                                &metrics,
+                                &outgoing_frames,
+                                workload,
+                                num_rows,
+                                ws_encode_binary_message(config, buf, server_message, false, &bsatn_rlb_pool).await,
+                            ) else {
+                                break 'send;
+                            };
+                            in_use
                         };
                         in_use
                     }
@@ -1500,6 +1545,59 @@ async fn ws_encode_binary_message(
     (metrics, in_use, frames)
 }
 
+async fn ws_encode_v3_binary_messages(
+    config: ClientConfig,
+    buf: SerializeBuffer,
+    first_message: ws_v2::ServerMessage,
+    messages: &mut mpsc::UnboundedReceiver<OutboundWsMessage>,
+    bsatn_rlb_pool: &BsatnRowListBuilderPool,
+) -> (
+    EncodeMetrics,
+    InUseSerializeBuffer,
+    Vec<Frame>,
+    Option<OutboundWsMessage>,
+) {
+    debug_assert_eq!(config.version, WsVersion::V3);
+
+    let start = Instant::now();
+    let mut serializer = V3ServerMessageBatchSerializer::new(bsatn_rlb_pool, buf);
+    let max_uncompressed_body_len = MAX_V3_OUTBOUND_FRAME_BYTES.saturating_sub(1);
+
+    if serializer.try_push(first_message, max_uncompressed_body_len).is_err() {
+        unreachable!("the first v3 server message in a batch is always accepted");
+    }
+
+    let mut next_pending = None;
+    loop {
+        let next = match messages.try_recv() {
+            Ok(next) => next,
+            Err(mpsc::error::TryRecvError::Empty | mpsc::error::TryRecvError::Disconnected) => break,
+        };
+
+        match next {
+            OutboundWsMessage::Message(OutboundMessage::V2(server_message)) => {
+                if let Err(server_message) = serializer.try_push(server_message, max_uncompressed_body_len) {
+                    next_pending = Some(OutboundWsMessage::Message(OutboundMessage::V2(server_message)));
+                    break;
+                }
+            }
+            next => {
+                next_pending = Some(next);
+                break;
+            }
+        }
+    }
+
+    let (in_use, data) = serializer.finish(config.compression);
+    let metrics = EncodeMetrics {
+        timing: start.elapsed(),
+        encoded_len: data.len(),
+    };
+    let frames = fragment(data, Data::Binary, 4096).collect();
+
+    (metrics, in_use, frames, next_pending)
+}
+
 /// Split payload `data` of type `ty` into `fragment_size`d [`Frame`]s,
 /// according to the rules laid out in [RFC6455], Section 5.4.
 ///
@@ -1630,6 +1728,138 @@ mod tests {
 
     fn dummy_actor_state_with_config(config: WebSocketOptions) -> ActorState {
         ActorState::new(Identity::ZERO, dummy_client_id(), config)
+    }
+
+    fn initial_connection_message(token: impl Into<Box<str>>) -> ws_v2::ServerMessage {
+        ws_v2::ServerMessage::InitialConnection(ws_v2::InitialConnection {
+            identity: Identity::ZERO,
+            connection_id: ConnectionId::ZERO,
+            token: token.into(),
+        })
+    }
+
+    fn collect_websocket_payloads(frames: Vec<Frame>) -> Vec<Bytes> {
+        let mut payloads = Vec::new();
+        let mut current = BytesMut::new();
+        for frame in frames {
+            let is_final = frame.header().is_final;
+            current.extend_from_slice(&frame.into_payload());
+            if is_final {
+                payloads.push(current.split().freeze());
+            }
+        }
+        payloads
+    }
+
+    fn decode_v3_server_payload(payload: &[u8]) -> Vec<ws_v2::ServerMessage> {
+        assert_eq!(
+            payload[0],
+            spacetimedb_client_api_messages::websocket::common::SERVER_MSG_COMPRESSION_TAG_NONE
+        );
+
+        let mut remaining = &payload[1..];
+        let mut messages = Vec::new();
+        while !remaining.is_empty() {
+            messages.push(spacetimedb_lib::bsatn::from_reader(&mut remaining).unwrap());
+        }
+        messages
+    }
+
+    fn initial_connection_token(message: &ws_v2::ServerMessage) -> &str {
+        match message {
+            ws_v2::ServerMessage::InitialConnection(message) => &message.token,
+            message => panic!("expected InitialConnection, got {message:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn v3_binary_encoder_batches_waiting_messages() {
+        let config = ClientConfig {
+            version: WsVersion::V3,
+            compression: ws_v1::Compression::None,
+            ..ClientConfig::for_test()
+        };
+        let bsatn_rlb_pool = BsatnRowListBuilderPool::new();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        tx.send(OutboundWsMessage::Message(OutboundMessage::V2(
+            initial_connection_message("two"),
+        )))
+        .unwrap();
+        drop(tx);
+
+        let (_stats, _in_use, frames, pending) = ws_encode_v3_binary_messages(
+            config,
+            SerializeBuffer::new(config),
+            initial_connection_message("one"),
+            &mut rx,
+            &bsatn_rlb_pool,
+        )
+        .await;
+
+        assert!(pending.is_none());
+        let payloads = collect_websocket_payloads(frames);
+        assert_eq!(payloads.len(), 1);
+        let messages = decode_v3_server_payload(&payloads[0]);
+        assert_eq!(messages.len(), 2);
+        assert_eq!(initial_connection_token(&messages[0]), "one");
+        assert_eq!(initial_connection_token(&messages[1]), "two");
+    }
+
+    #[tokio::test]
+    async fn v3_binary_encoder_splits_batches_at_size_cap() {
+        let config = ClientConfig {
+            version: WsVersion::V3,
+            compression: ws_v1::Compression::None,
+            ..ClientConfig::for_test()
+        };
+        let bsatn_rlb_pool = BsatnRowListBuilderPool::new();
+        let large_one = "a".repeat((MAX_V3_OUTBOUND_FRAME_BYTES / 2) + 1024);
+        let large_two = "b".repeat((MAX_V3_OUTBOUND_FRAME_BYTES / 2) + 1024);
+
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        tx.send(OutboundWsMessage::Message(OutboundMessage::V2(
+            initial_connection_message(large_two.clone()),
+        )))
+        .unwrap();
+        tx.send(OutboundWsMessage::Message(OutboundMessage::V2(
+            initial_connection_message("tail"),
+        )))
+        .unwrap();
+        drop(tx);
+
+        let (_stats, _in_use, frames, pending) = ws_encode_v3_binary_messages(
+            config,
+            SerializeBuffer::new(config),
+            initial_connection_message(large_one.as_str()),
+            &mut rx,
+            &bsatn_rlb_pool,
+        )
+        .await;
+
+        let payloads = collect_websocket_payloads(frames);
+        assert_eq!(payloads.len(), 1);
+        assert!(payloads[0].len() <= MAX_V3_OUTBOUND_FRAME_BYTES);
+        let messages = decode_v3_server_payload(&payloads[0]);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(initial_connection_token(&messages[0]), large_one.as_str());
+
+        let pending = match pending {
+            Some(OutboundWsMessage::Message(OutboundMessage::V2(message))) => message,
+            _ => panic!("expected a pending v2 server message"),
+        };
+        assert_eq!(initial_connection_token(&pending), large_two.as_str());
+
+        let (_stats, _in_use, frames, pending) =
+            ws_encode_v3_binary_messages(config, SerializeBuffer::new(config), pending, &mut rx, &bsatn_rlb_pool).await;
+
+        assert!(pending.is_none());
+        let payloads = collect_websocket_payloads(frames);
+        assert_eq!(payloads.len(), 1);
+        assert!(payloads[0].len() <= MAX_V3_OUTBOUND_FRAME_BYTES);
+        let messages = decode_v3_server_payload(&payloads[0]);
+        assert_eq!(messages.len(), 2);
+        assert_eq!(initial_connection_token(&messages[0]), large_two.as_str());
+        assert_eq!(initial_connection_token(&messages[1]), "tail");
     }
 
     #[tokio::test(start_paused = true)] // see [NOTE: start_paused]

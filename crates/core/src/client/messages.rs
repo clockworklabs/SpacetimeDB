@@ -212,6 +212,67 @@ pub fn serialize_v2(
     finalize_binary_serialize_buffer(buffer, srv_msg_len, compression)
 }
 
+/// Serializes consecutive v2 server messages into one v3 websocket payload.
+///
+/// The websocket binary payload still starts with the usual compression tag,
+/// but the tagged body is a concatenation of BSATN-encoded
+/// [`ws_v2::ServerMessage`] values.
+pub struct V3ServerMessageBatchSerializer<'a> {
+    bsatn_rlb_pool: &'a BsatnRowListBuilderPool,
+    buffer: SerializeBuffer,
+    uncompressed_len: usize,
+    message_count: usize,
+}
+
+impl<'a> V3ServerMessageBatchSerializer<'a> {
+    pub fn new(bsatn_rlb_pool: &'a BsatnRowListBuilderPool, mut buffer: SerializeBuffer) -> Self {
+        buffer.uncompressed.put_u8(ws_common::SERVER_MSG_COMPRESSION_TAG_NONE);
+        Self {
+            bsatn_rlb_pool,
+            buffer,
+            uncompressed_len: 0,
+            message_count: 0,
+        }
+    }
+
+    /// Tries to append `msg` without exceeding `max_uncompressed_len`.
+    ///
+    /// If `msg` is the first message in the batch, it is always accepted, even
+    /// when it exceeds the limit. This matches the v3 client batching behavior:
+    /// an oversized logical message is sent alone rather than being unsendable.
+    pub fn try_push(
+        &mut self,
+        msg: ws_v2::ServerMessage,
+        max_uncompressed_len: usize,
+    ) -> Result<(), ws_v2::ServerMessage> {
+        let start = self.buffer.uncompressed.len();
+        bsatn::to_writer(&mut self.buffer.uncompressed, &msg).expect("should be able to bsatn encode v2 message");
+        let msg_len = self.buffer.uncompressed.len() - start;
+
+        if self.message_count > 0 && self.uncompressed_len + msg_len > max_uncompressed_len {
+            self.buffer.uncompressed.truncate(start);
+            return Err(msg);
+        }
+
+        self.uncompressed_len += msg_len;
+        self.message_count += 1;
+
+        // At this point, we no longer have a use for `msg`,
+        // so try to reclaim its buffers.
+        msg.consume_each_list(&mut |buffer| self.bsatn_rlb_pool.try_put(buffer));
+
+        Ok(())
+    }
+
+    pub fn finish(self, compression: ws_v1::Compression) -> (InUseSerializeBuffer, Bytes) {
+        assert!(
+            self.message_count > 0,
+            "v3 websocket payloads must contain at least one message"
+        );
+        finalize_binary_serialize_buffer(self.buffer, self.uncompressed_len, compression)
+    }
+}
+
 #[derive(Debug, From)]
 pub enum SerializableMessage {
     QueryBinary(OneOffQueryResponseMessage<ws_v1::BsatnFormat>),

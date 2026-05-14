@@ -26,7 +26,7 @@ use spacetimedb_durability::{DurableOffset, TxOffset};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
-use tokio::sync::mpsc::error::{SendError, TrySendError};
+use tokio::sync::mpsc::error::{SendError, TryRecvError, TrySendError};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
 use tracing::{trace, warn};
@@ -154,7 +154,7 @@ impl DurableOffsetSupply for Arc<RelationalDB> {
 pub struct ClientConnectionReceiver {
     confirmed_reads: bool,
     channel: MeteredReceiver<ClientUpdate>,
-    current: Option<ClientUpdate>,
+    current: VecDeque<ClientUpdate>,
     offset_supply: Box<dyn DurableOffsetSupply>,
 }
 
@@ -167,7 +167,7 @@ impl ClientConnectionReceiver {
         Self {
             confirmed_reads,
             channel,
-            current: None,
+            current: VecDeque::new(),
             offset_supply: Box::new(offset_supply),
         }
     }
@@ -203,44 +203,99 @@ impl ClientConnectionReceiver {
     /// point, it has already received a value from the underlying channel.
     /// This value is stored internally, so calling `recv` again will not lose
     /// data.
-    //
-    // TODO: Can we make a cancel-safe `recv_many` with confirmed reads semantics?
     pub async fn recv(&mut self) -> Option<OutboundMessage> {
-        let ClientUpdate { tx_offset, message } = match self.current.take() {
-            None => self.channel.recv().await?,
-            Some(update) => update,
-        };
-        if !self.confirmed_reads {
-            return Some(message);
+        let mut buf = Vec::with_capacity(1);
+        (self.recv_many(&mut buf, 1).await != 0).then(|| buf.pop().unwrap())
+    }
+
+    /// Receive multiple messages from this channel.
+    ///
+    /// If confirmed reads are enabled, this waits at most once for the maximum
+    /// transaction offset in the batch. The method is cancel safe: updates
+    /// pulled from the underlying channel are stored in `self.current` before
+    /// waiting for durability.
+    pub async fn recv_many(&mut self, buf: &mut Vec<OutboundMessage>, max: usize) -> usize {
+        if max == 0 || !self.fill_current(max).await {
+            return 0;
         }
 
-        if let Some(tx_offset) = tx_offset {
+        if !self.confirmed_reads {
+            return self.drain_current(buf, max);
+        }
+
+        if self.current.front().is_some_and(|update| update.tx_offset.is_none()) {
+            return self.drain_no_offset_prefix(buf, max);
+        }
+
+        if let Some(tx_offset) = self.max_current_tx_offset(max) {
             match self.offset_supply.durable_offset() {
                 Ok(Some(mut durable)) => {
-                    // Store the current update in case we get cancelled while
-                    // waiting for the durable offset.
-                    self.current = Some(ClientUpdate {
-                        tx_offset: Some(tx_offset),
-                        message,
-                    });
                     trace!("waiting for offset {tx_offset} to become durable");
-                    durable
+                    if durable
                         .wait_for(tx_offset)
                         .await
                         .inspect_err(|_| {
                             warn!("database went away while waiting for durable offset");
                         })
-                        .ok()?;
-                    self.current.take().map(|update| update.message)
+                        .is_err()
+                    {
+                        return 0;
+                    }
+                    self.drain_current(buf, max)
                 }
                 // Database shut down or crashed.
-                Err(NoSuchModule) => None,
+                Err(NoSuchModule) => 0,
                 // In-memory database.
-                Ok(None) => Some(message),
+                Ok(None) => self.drain_current(buf, max),
             }
         } else {
-            Some(message)
+            self.drain_current(buf, max)
         }
+    }
+
+    async fn fill_current(&mut self, max: usize) -> bool {
+        if self.current.is_empty() {
+            let Some(update) = self.channel.recv().await else {
+                return false;
+            };
+            self.current.push_back(update);
+        }
+
+        while self.current.len() < max {
+            match self.channel.try_recv() {
+                Ok(update) => self.current.push_back(update),
+                Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
+            }
+        }
+
+        true
+    }
+
+    fn max_current_tx_offset(&self, max: usize) -> Option<TxOffset> {
+        self.current
+            .iter()
+            .take(max)
+            .filter_map(|update| update.tx_offset)
+            .max()
+    }
+
+    fn drain_current(&mut self, buf: &mut Vec<OutboundMessage>, max: usize) -> usize {
+        let n = max.min(self.current.len());
+        buf.reserve(n);
+        for update in self.current.drain(..n) {
+            buf.push(update.message);
+        }
+        n
+    }
+
+    fn drain_no_offset_prefix(&mut self, buf: &mut Vec<OutboundMessage>, max: usize) -> usize {
+        let n = self
+            .current
+            .iter()
+            .take(max)
+            .take_while(|update| update.tx_offset.is_none())
+            .count();
+        self.drain_current(buf, n)
     }
 
     /// Close the receiver without dropping it.
@@ -569,6 +624,14 @@ impl<T> MeteredReceiver<T> {
 
     pub async fn recv_many(&mut self, buf: &mut Vec<T>, max: usize) -> usize {
         poll_fn(|cx| self.poll_recv_many(cx, buf, max)).await
+    }
+
+    pub fn try_recv(&mut self) -> Result<T, TryRecvError> {
+        self.inner.try_recv().inspect(|_| {
+            if let Some(gauge) = &self.gauge {
+                gauge.dec()
+            }
+        })
     }
 
     pub fn poll_recv(&mut self, cx: &mut Context<'_>) -> Poll<Option<T>> {
@@ -1295,6 +1358,13 @@ mod tests {
         assert_matches!(f.await, None);
     }
 
+    fn assert_received_update_batch(buf: &[OutboundMessage], expected_len: usize) {
+        assert_eq!(buf.len(), expected_len);
+        assert!(buf
+            .iter()
+            .all(|message| matches!(message, OutboundMessage::V1(SerializableMessage::TxUpdate(_)))));
+    }
+
     async fn assert_pending(f: &mut (impl Future<Output: fmt::Debug> + Unpin)) {
         assert_matches!(futures::poll!(f), Poll::Pending);
     }
@@ -1432,5 +1502,46 @@ mod tests {
         assert_pending(&mut pin!(receiver.recv())).await;
         offset.mark_durable_at(3);
         assert_received_update(receiver.recv()).await;
+    }
+
+    #[tokio::test]
+    async fn client_connection_receiver_recv_many_waits_for_max_durable_offset() {
+        let offset = FakeDurableOffset::new();
+        let (sender, mut receiver) = client_with_confirmed_reads(offset.clone());
+
+        for tx_offset in 0..3 {
+            sender.send_message(Some(tx_offset), empty_tx_update()).unwrap();
+        }
+
+        let mut buf = Vec::new();
+        let n = {
+            let mut recv = pin!(receiver.recv_many(&mut buf, 8));
+            assert_pending(&mut recv).await;
+            offset.mark_durable_at(1);
+            assert_pending(&mut recv).await;
+            offset.mark_durable_at(2);
+            recv.await
+        };
+        assert_eq!(n, 3);
+        assert_received_update_batch(&buf, 3);
+    }
+
+    #[tokio::test]
+    async fn client_connection_receiver_recv_many_cancel_safety() {
+        let offset = FakeDurableOffset::new();
+        let (sender, mut receiver) = client_with_confirmed_reads(offset.clone());
+
+        sender.send_message(Some(3), empty_tx_update()).unwrap();
+        sender.send_message(Some(4), empty_tx_update()).unwrap();
+
+        let mut buf = Vec::new();
+        {
+            let mut recv = pin!(receiver.recv_many(&mut buf, 8));
+            assert_pending(&mut recv).await;
+        }
+
+        offset.mark_durable_at(4);
+        assert_eq!(receiver.recv_many(&mut buf, 8).await, 2);
+        assert_received_update_batch(&buf, 2);
     }
 }
