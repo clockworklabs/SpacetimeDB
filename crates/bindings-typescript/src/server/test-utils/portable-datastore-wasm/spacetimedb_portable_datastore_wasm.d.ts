@@ -29,6 +29,7 @@ export class WasmPortableDatastore {
   indexId(index_name: string): number;
   tableId(table_name: string): number;
   commitTx(tx: WasmPortableTransaction, mode: WasmCommitMode): void;
+  runQuery(sql: string, database_identity_hex: string): Array<any>;
 }
 export class WasmPortableTransaction {
   private constructor();

@@ -83,7 +83,9 @@ pub(crate) fn type_proj(input: RelExpr, proj: ast::Project, vars: &Relvars) -> T
 
 // These types determine the size of each stack frame during type checking.
 // Changing their sizes will require updating the recursion limit to avoid stack overflows.
+#[cfg(not(target_arch = "wasm32"))]
 const _: () = assert!(size_of::<TypingResult<Expr>>() == 64);
+#[cfg(not(target_arch = "wasm32"))]
 const _: () = assert!(size_of::<SqlExpr>() == 32);
 
 fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, depth: usize) -> TypingResult<Expr> {

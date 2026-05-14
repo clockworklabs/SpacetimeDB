@@ -12,9 +12,11 @@ path = "src/lib.rs"
 bench = false
 
 [dependencies]
-spacetimedb-datastore = { path = "../datastore", version = "=2.1.0", default-features = false, features = ["portable"] }
+spacetimedb-datastore = { path = "../datastore", version = "=2.1.0", default-features = false, features = ["portable", "execution"] }
+spacetimedb-expr.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-primitives.workspace = true
+spacetimedb-query.workspace = true
 spacetimedb-schema.workspace = true
 spacetimedb-table.workspace = true
 

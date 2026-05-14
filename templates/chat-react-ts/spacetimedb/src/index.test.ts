@@ -39,4 +39,28 @@ describe('chat module unit tests', () => {
 
     expect(test.db.user.identity.find(alice)?.name).toBe('Alice');
   });
+
+  it('can run typed queries against committed test state', () => {
+    const test = createModuleTestHarness(spacetime, moduleExports);
+    const alice = new Identity(1n);
+    const bob = new Identity(2n);
+
+    test.withReducerTx(TestAuth.internal(alice), ctx => {
+      moduleExports.onConnect(ctx);
+      moduleExports.send_message(ctx, { text: 'hello from alice' });
+    });
+    test.withReducerTx(TestAuth.internal(bob), ctx => {
+      moduleExports.onConnect(ctx);
+      moduleExports.send_message(ctx, { text: 'hello from bob' });
+    });
+
+    const viewCtx = test.viewContext(TestAuth.internal(alice));
+    const aliceMessages = test.runQuery(
+      viewCtx.from.message.where(message => message.text.eq('hello from alice'))
+    );
+
+    expect(aliceMessages.map(message => message.text)).toEqual([
+      'hello from alice',
+    ]);
+  });
 });

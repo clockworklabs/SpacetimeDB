@@ -224,6 +224,10 @@ class DefaultWasmPortableDatastore implements WasmPortableDatastore {
   ): WasmValidatedAuth {
     return this.#inner.validateJwtPayload(payload, connectionIdHex);
   }
+
+  runQuery(sql: string, databaseIdentityHex: string): Uint8Array[] {
+    return arrayFromWasmRows(this.#inner.runQuery(sql, databaseIdentityHex));
+  }
 }
 
 function arrayFromWasmRows(rows: Array<unknown>): Uint8Array[] {

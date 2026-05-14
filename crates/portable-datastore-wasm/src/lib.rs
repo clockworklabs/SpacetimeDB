@@ -303,6 +303,15 @@ impl WasmPortableDatastore {
             .map_err(to_js_error)
     }
 
+    #[wasm_bindgen(js_name = runQuery)]
+    pub fn run_query(&self, sql: &str, database_identity_hex: &str) -> Result<Array, JsValue> {
+        let database_identity = Identity::from_hex(database_identity_hex).map_err(to_js_error)?;
+        self.inner
+            .run_query_bsatn(sql, database_identity)
+            .map(rows_to_js)
+            .map_err(to_js_error)
+    }
+
     fn check_tx(&self, tx: &WasmPortableTransaction) -> Result<(), JsValue> {
         if tx.datastore_id == self.id {
             Ok(())

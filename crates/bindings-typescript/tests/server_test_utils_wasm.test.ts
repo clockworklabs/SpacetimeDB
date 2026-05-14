@@ -295,6 +295,55 @@ describe('server test-utils real wasm runtime', () => {
       })
     ).toThrow();
   });
+
+  it('runs typed queries against committed wasm datastore state', () => {
+    const { spacetime, moduleExports, addPerson } = makeQueryModule();
+    const test = createModuleTestHarness(spacetime, moduleExports);
+    const viewCtx = test.viewContext(TestAuth.internal());
+
+    test.db.person.insert({ id: 1, name: 'Alice' });
+    test.withReducerTx(TestAuth.internal(), ctx => {
+      addPerson(ctx, { id: 2, name: 'Bob' });
+    });
+
+    expect(test.runQuery(viewCtx.from.person)).toEqual([
+      { id: 1, name: 'Alice' },
+      { id: 2, name: 'Bob' },
+    ]);
+    expect(
+      test.runQuery(viewCtx.from.person.where(row => row.name.eq('Bob')))
+    ).toEqual([{ id: 2, name: 'Bob' }]);
+  });
+
+  it('runs typed queries returned by views', () => {
+    const { spacetime, moduleExports, peopleNamedAlice } = makeQueryModule();
+    const test = createModuleTestHarness(spacetime, moduleExports);
+
+    test.db.person.insert({ id: 1, name: 'Alice' });
+    test.db.person.insert({ id: 2, name: 'Bob' });
+
+    expect(test.runQuery(peopleNamedAlice(test.viewContext(TestAuth.internal()), {}))).toEqual([
+      { id: 1, name: 'Alice' },
+    ]);
+  });
+
+  it('runs semijoin queries through the wasm datastore', () => {
+    const { spacetime, moduleExports } = makeQueryModule();
+    const test = createModuleTestHarness(spacetime, moduleExports);
+    const viewCtx = test.viewContext(TestAuth.internal());
+
+    test.db.person.insert({ id: 1, name: 'Alice' });
+    test.db.person.insert({ id: 2, name: 'Bob' });
+    test.db.pet.insert({ id: 10, ownerId: 2, name: 'Biscuit' });
+
+    expect(
+      test.runQuery(
+        viewCtx.from.person.leftSemijoin(viewCtx.from.pet, (person, pet) =>
+          person.id.eq(pet.ownerId)
+        )
+      )
+    ).toEqual([{ id: 2, name: 'Bob' }]);
+  });
 });
 
 function makeModule() {
@@ -329,6 +378,43 @@ function makeTableHandleModule() {
   const spacetime = schema({ item });
 
   return { spacetime, moduleExports: {} };
+}
+
+function makeQueryModule() {
+  const person = table(
+    { name: 'person', public: true },
+    {
+      id: t.u32().primaryKey(),
+      name: t.string(),
+    }
+  );
+  const pet = table(
+    { name: 'pet', public: true },
+    {
+      id: t.u32().primaryKey(),
+      ownerId: t.u32().index('btree'),
+      name: t.string(),
+    }
+  );
+  const spacetime = schema({ person, pet });
+  const addPerson = spacetime.reducer(
+    { id: t.u32(), name: t.string() },
+    (ctx, row) => {
+      ctx.db.person.insert(row);
+    }
+  );
+  const peopleNamedAlice = spacetime.view(
+    { name: 'people_named_alice', public: true },
+    t.array(person.rowType),
+    ctx => ctx.from.person.where(row => row.name.eq('Alice'))
+  );
+
+  return {
+    spacetime,
+    moduleExports: { addPerson, peopleNamedAlice },
+    addPerson,
+    peopleNamedAlice,
+  };
 }
 
 function senderForJwtPayload(payload: Record<string, unknown>): string {

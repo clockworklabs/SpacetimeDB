@@ -1,18 +1,24 @@
 //! Wasm-compatible in-memory datastore support for SpacetimeDB module unit tests.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
+use anyhow::Context;
 use spacetimedb_datastore::error::{DatastoreError, IndexError, SequenceError};
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::datastore::Locking;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::IndexScanPointOrRange;
+use spacetimedb_datastore::system_tables::{StRowLevelSecurityFields, ST_ROW_LEVEL_SECURITY_ID};
 use spacetimedb_datastore::traits::{IsolationLevel, MutTx, MutTxDatastore, Tx, TxDatastore};
 use spacetimedb_lib::bsatn::{DecodeError, EncodeError, ToBsatn};
-use spacetimedb_lib::{ConnectionId, Identity, ProductType, ProductValue, RawModuleDef};
+use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::metrics::ExecutionMetrics;
+use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductType, ProductValue, RawModuleDef};
 use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::error::ValidationErrors;
-use spacetimedb_schema::schema::{Schema, TableSchema};
+use spacetimedb_schema::schema::{Schema, TableOrViewSchema, TableSchema};
 use spacetimedb_table::page_pool::PagePool;
 use thiserror::Error;
 
@@ -335,6 +341,29 @@ impl PortableDatastore {
         })
     }
 
+    /// Run a typed querybuilder SQL query and return BSATN-encoded result rows.
+    pub fn run_query_bsatn(
+        &self,
+        sql: &str,
+        database_identity: Identity,
+    ) -> Result<Vec<Vec<u8>>, PortableDatastoreError> {
+        self.with_rollback_tx(|tx| {
+            let auth = AuthCtx::for_current(database_identity);
+            let viewer = SchemaViewer::new(tx, &auth);
+            let statement =
+                spacetimedb_query::compile_sql_stmt(sql, &viewer, &auth).map_err(PortableDatastoreError::Query)?;
+            let spacetimedb_expr::statement::Statement::Select(select) = statement else {
+                return Err(PortableDatastoreError::NonSelectQuery);
+            };
+            let mut metrics = ExecutionMetrics::default();
+            let rows = spacetimedb_query::execute_select_stmt(&auth, select, tx, &mut metrics, Ok)
+                .map_err(PortableDatastoreError::Query)?;
+            rows.into_iter()
+                .map(|row| row.to_bsatn_vec().map_err(PortableDatastoreError::from))
+                .collect()
+        })
+    }
+
     fn with_rollback_tx<T>(
         &self,
         f: impl FnOnce(&<Locking as MutTx>::MutTx) -> Result<T, PortableDatastoreError>,
@@ -407,6 +436,10 @@ pub enum PortableDatastoreError {
     InvalidJwtPayload(#[from] serde_json::Error),
     #[error("invalid JWT claims: {0}")]
     InvalidJwtClaims(#[from] anyhow::Error),
+    #[error("query error: {0}")]
+    Query(anyhow::Error),
+    #[error("only SELECT queries are supported")]
+    NonSelectQuery,
     #[error("invalid relation buffer: {0}")]
     InvalidRelation(anyhow::Error),
     #[error("transaction already finished")]
@@ -470,6 +503,63 @@ fn decode_relation(row_ty: &ProductType, relation: &[u8]) -> Result<Vec<ProductV
     (0..row_count)
         .map(|_| spacetimedb_lib::bsatn::decode(row_ty, &mut relation).map_err(PortableDatastoreError::from))
         .collect()
+}
+
+struct SchemaViewer<'a, T> {
+    tx: &'a T,
+    auth: &'a AuthCtx,
+}
+
+impl<'a, T> SchemaViewer<'a, T> {
+    fn new(tx: &'a T, auth: &'a AuthCtx) -> Self {
+        Self { tx, auth }
+    }
+}
+
+impl<T: StateView> spacetimedb_expr::check::SchemaView for SchemaViewer<'_, T> {
+    fn table_id(&self, name: &str) -> Option<TableId> {
+        self.tx
+            .table_id_from_name_or_alias(name)
+            .ok()
+            .flatten()
+            .and_then(|table_id| self.schema_for_table(table_id))
+            .filter(|schema| self.auth.has_read_access(schema.table_access))
+            .map(|schema| schema.table_id)
+    }
+
+    fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableOrViewSchema>> {
+        self.tx
+            .get_schema(table_id)
+            .filter(|schema| self.auth.has_read_access(schema.table_access))
+            .map(Arc::clone)
+            .map(TableOrViewSchema::from)
+            .map(Arc::new)
+    }
+
+    fn rls_rules_for_table(&self, table_id: TableId) -> anyhow::Result<Vec<Box<str>>> {
+        self.tx
+            .iter_by_col_eq(
+                ST_ROW_LEVEL_SECURITY_ID,
+                StRowLevelSecurityFields::TableId,
+                &AlgebraicValue::from(table_id),
+            )?
+            .map(|row| {
+                row.read_col::<AlgebraicValue>(StRowLevelSecurityFields::Sql)
+                    .with_context(|| {
+                        format!(
+                            "Failed to read value from the `sql` column of `st_row_level_security` for table_id `{table_id}`"
+                        )
+                    })
+                    .and_then(|sql| {
+                        sql.into_string().map_err(|_| {
+                            anyhow::anyhow!(
+                                "Failed to read string from the `sql` column of `st_row_level_security` for table_id `{table_id}`"
+                            )
+                        })
+                    })
+            })
+            .collect()
+    }
 }
 
 fn validate_test_jwt_claims(claims: &serde_json::Value) -> anyhow::Result<Identity> {
@@ -593,6 +683,14 @@ mod tests {
         let table_id = ds.table_id("person").unwrap();
         let mut tx = ds.begin_mut_tx();
         ds.insert_bsatn_generated_cols(&mut tx, table_id, &bsatn::to_vec(&(id, value)).unwrap())
+            .unwrap();
+        ds.commit_tx(tx, CommitMode::Normal).unwrap();
+    }
+
+    fn insert_pet(ds: &PortableDatastore, id: i64, owner_id: i64, name: &str) {
+        let table_id = ds.table_id("pet").unwrap();
+        let mut tx = ds.begin_mut_tx();
+        ds.insert_bsatn_generated_cols(&mut tx, table_id, &bsatn::to_vec(&(id, owner_id, name)).unwrap())
             .unwrap();
         ds.commit_tx(tx, CommitMode::Normal).unwrap();
     }
@@ -787,5 +885,77 @@ mod tests {
             Identity::ZERO.to_hex()
         );
         assert!(ds.validate_jwt_payload(&mismatch, connection_id).is_err());
+    }
+
+    #[test]
+    fn run_query_selects_committed_rows() {
+        let ds = datastore(raw_module_def());
+        insert_person(&ds, 1, 10);
+        insert_person(&ds, 2, 20);
+
+        let rows = ds
+            .run_query_bsatn(r#"SELECT "person".* FROM "person""#, Identity::ZERO)
+            .unwrap();
+        let decoded = rows
+            .into_iter()
+            .map(|row| bsatn::from_slice::<(i64, i64)>(&row).unwrap())
+            .collect::<Vec<_>>();
+
+        assert_eq!(decoded, vec![(1, 10), (2, 20)]);
+    }
+
+    #[test]
+    fn run_query_applies_where_filters() {
+        let ds = datastore(raw_module_def());
+        insert_person(&ds, 1, 10);
+        insert_person(&ds, 2, 20);
+
+        let rows = ds
+            .run_query_bsatn(
+                r#"SELECT "person".* FROM "person" WHERE "person"."value" = 20"#,
+                Identity::ZERO,
+            )
+            .unwrap();
+        let decoded = rows
+            .into_iter()
+            .map(|row| bsatn::from_slice::<(i64, i64)>(&row).unwrap())
+            .collect::<Vec<_>>();
+
+        assert_eq!(decoded, vec![(2, 20)]);
+    }
+
+    #[test]
+    fn run_query_supports_querybuilder_semijoin_sql() {
+        let ds = datastore(raw_module_def());
+        insert_person(&ds, 1, 10);
+        insert_person(&ds, 2, 20);
+        insert_pet(&ds, 1, 2, "Biscuit");
+
+        let rows = ds
+            .run_query_bsatn(
+                r#"SELECT "person".* FROM "pet" JOIN "person" ON "person"."id" = "pet"."owner_id""#,
+                Identity::ZERO,
+            )
+            .unwrap();
+        let decoded = rows
+            .into_iter()
+            .map(|row| bsatn::from_slice::<(i64, i64)>(&row).unwrap())
+            .collect::<Vec<_>>();
+
+        assert_eq!(decoded, vec![(2, 20)]);
+    }
+
+    #[test]
+    fn run_query_rejects_non_select_and_invalid_sql() {
+        let ds = datastore(raw_module_def());
+
+        assert!(matches!(
+            ds.run_query_bsatn(r#"INSERT INTO "person" ("id", "value") VALUES (1, 10)"#, Identity::ZERO),
+            Err(PortableDatastoreError::NonSelectQuery)
+        ));
+        assert!(matches!(
+            ds.run_query_bsatn("SELECT FROM", Identity::ZERO),
+            Err(PortableDatastoreError::Query(_))
+        ));
     }
 }

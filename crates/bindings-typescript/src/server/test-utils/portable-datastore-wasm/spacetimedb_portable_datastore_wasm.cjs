@@ -446,6 +446,22 @@ class WasmPortableDatastore {
             throw takeFromExternrefTable0(ret[0]);
         }
     }
+    /**
+     * @param {string} sql
+     * @param {string} database_identity_hex
+     * @returns {Array<any>}
+     */
+    runQuery(sql, database_identity_hex) {
+        const ptr0 = passStringToWasm0(sql, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(database_identity_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.wasmportabledatastore_runQuery(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
 }
 if (Symbol.dispose) WasmPortableDatastore.prototype[Symbol.dispose] = WasmPortableDatastore.prototype.free;
 

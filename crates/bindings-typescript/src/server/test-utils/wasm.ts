@@ -86,6 +86,7 @@ export interface WasmPortableDatastore {
     payload: string,
     connectionIdHex: string
   ): WasmValidatedAuth;
+  runQuery(sql: string, databaseIdentityHex: string): Uint8Array[];
 }
 
 export interface WasmPortableDatastoreModule {
@@ -257,8 +258,8 @@ class WasmContext implements NativeContext {
     return this.#withMutTx(target, tx => this.#ds.clearTable(tx, tableId));
   }
 
-  runQuery(): Uint8Array[] {
-    throw new Error('Wasm test datastore does not support runQuery yet.');
+  runQuery(sql: string, databaseIdentity: bigint): Uint8Array[] {
+    return this.#ds.runQuery(sql, bigintToFixedHex(databaseIdentity, 32));
   }
 
   validateJwtPayload(

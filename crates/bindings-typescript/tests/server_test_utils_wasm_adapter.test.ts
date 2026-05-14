@@ -128,6 +128,10 @@ class FakeWasmPortableDatastore {
   validateJwtPayload(): { senderHex: string; connectionIdHex: undefined } {
     return { senderHex: '00'.repeat(32), connectionIdHex: undefined };
   }
+
+  runQuery(): Uint8Array[] {
+    throw new Error('fake wasm adapter test does not implement runQuery');
+  }
 }
 
 const fakeWasmModule = { WasmPortableDatastore: FakeWasmPortableDatastore };
