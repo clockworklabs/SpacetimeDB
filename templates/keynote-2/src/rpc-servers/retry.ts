@@ -1,5 +1,5 @@
-// Retry serialization (40001) and deadlock (40P01) errors.
-const RETRYABLE_SQLSTATES = new Set(['40001', '40P01']);
+// Retry serialization (40001), deadlock (40P01), lock-not-available (55P03).
+const RETRYABLE_SQLSTATES = new Set(['40001', '40P01', '55P03']);
 
 export type RetryOptions = {
   maxAttempts?: number;
