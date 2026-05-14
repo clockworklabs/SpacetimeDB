@@ -225,6 +225,7 @@ pub fn regen_dlls() -> Result<()> {
         "SpacetimeDB.ClientSDK.Godot.csproj",
         "--configfile",
         path_arg(&nuget_config_path),
+        // TODO: It should be possible to put this in Directory.Build.props, but it caused CI failures when we did.
         "-p:BaseOutputPath=bin~/",
         "-p:BaseIntermediateOutputPath=obj~/godot/",
         "-p:MSBuildProjectExtensionsPath=obj~/godot/",
@@ -254,6 +255,7 @@ pub fn regen_dlls() -> Result<()> {
         "Release",
         "--no-restore",
         "-p:BaseOutputPath=bin~/",
+        // TODO: It should be possible to put this in Directory.Build.props, but it caused CI failures when we did.
         "-p:BaseIntermediateOutputPath=obj~/godot/",
         "-p:MSBuildProjectExtensionsPath=obj~/godot/"
     )
