@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt
 RUN npm install -g pnpm@9.15.3
 
 COPY package.json pnpm-lock.yaml* tsconfig.json* ./
-RUN pnpm install --frozen-lockfile || pnpm install
+RUN pnpm install --frozen-lockfile
 
 COPY src ./src
 

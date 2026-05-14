@@ -227,8 +227,10 @@ fn main() -> anyhow::Result<()> {
             .run()
             .expect("cargo check in crates/smoketests/modules failed!");
 
-        println!("$> pnpm install");
-        cmd!("pnpm", "install").run().expect("pnpm run build failed!");
+        println!("$> pnpm install --frozen-lockfile");
+        cmd!("pnpm", "install", "--frozen-lockfile")
+            .run()
+            .expect("pnpm install failed!");
 
         println!("$> pnpm run build");
         cmd!("pnpm", "run", "build").run().expect("pnpm run build failed!");

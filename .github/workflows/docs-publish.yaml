@@ -40,7 +40,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: docs
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Docusaurus build
         working-directory: docs
