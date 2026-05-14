@@ -1,3 +1,5 @@
+> Welcome to the Matrix!
+
 # spacetimedb-runtime
 
 `spacetimedb-runtime` is a runtime boundary that lets SpacetimeDB core code run under deterministic simulation testing (DST).
@@ -38,10 +40,6 @@ Feature flags:
 
 - `tokio`: enables the Tokio runtime backend and remains in the default feature set.
 - `simulation`: enables the deterministic simulation runtime and `sim_std` helpers.
-
-## Related documents
-
-- **[DETERMINISM_COVERAGE.md](./DETERMINISM_COVERAGE.md)** — tracks nondeterminism surfaces.
 
 ## Design Principles
 
