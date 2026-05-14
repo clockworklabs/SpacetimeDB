@@ -8,10 +8,13 @@ use core::{
     time::Duration,
 };
 
-use futures_util::FutureExt;
 use spin::Mutex;
 
 use crate::sim::{time::TimeHandle, Rng};
+
+mod task;
+pub use task::{AbortHandle, JoinError, JoinHandle};
+use task::Abortable;
 
 type Runnable = async_task::Runnable<NodeId>;
 
@@ -341,105 +344,6 @@ impl Handle {
     }
 }
 
-/// A spawned simulated task.
-pub struct JoinHandle<T> {
-    task: async_task::Task<Result<T, JoinError>, NodeId>,
-    abort: AbortHandle,
-}
-
-impl<T> JoinHandle<T> {
-    /// Return a handle that can cancel this task without consuming the join
-    /// handle.
-    pub fn abort_handle(&self) -> AbortHandle {
-        self.abort.clone()
-    }
-
-    /// Detach the task so it continues running without awaiting its output.
-    pub fn detach(self) {
-        self.task.detach();
-    }
-
-    pub(crate) fn poll_join(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<T, JoinError>> {
-        Pin::new(&mut self.task).poll(cx)
-    }
-}
-
-impl<T> Future for JoinHandle<T> {
-    type Output = Result<T, JoinError>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.as_mut().poll_join(cx)
-    }
-}
-
-#[derive(Clone)]
-pub struct AbortHandle {
-    state: Arc<AbortState>,
-}
-
-impl AbortHandle {
-    pub fn abort(&self) {
-        self.state.aborted.store(true, Ordering::Relaxed);
-        if let Some(waker) = self.state.waker.lock().take() {
-            waker.wake();
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct JoinError;
-
-impl fmt::Display for JoinError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("task was cancelled")
-    }
-}
-
-#[cfg(feature = "simulation")]
-impl std::error::Error for JoinError {}
-
-struct AbortState {
-    aborted: AtomicBool,
-    waker: Mutex<Option<Waker>>,
-}
-
-impl AbortState {
-    fn new() -> Self {
-        Self {
-            aborted: AtomicBool::new(false),
-            waker: Mutex::new(None),
-        }
-    }
-}
-
-struct Abortable<F> {
-    future: F,
-    abort: AbortHandle,
-}
-
-impl<F> Abortable<F> {
-    fn new(future: F, abort: AbortHandle) -> Self {
-        Self { future, abort }
-    }
-}
-
-impl<F: Future> Future for Abortable<F> {
-    type Output = Result<F::Output, JoinError>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if self.abort.state.aborted.load(Ordering::Relaxed) {
-            return Poll::Ready(Err(JoinError));
-        }
-
-        self.abort.state.waker.lock().replace(cx.waker().clone());
-
-        // SAFETY: the wrapper never moves `future` after being pinned. Only the
-        // cancellation fields outside `future` are accessed normally.
-        let mut future = unsafe { self.map_unchecked_mut(|this| &mut this.future) };
-        future.as_mut().poll(cx).map(Ok)
-    }
-}
-
 /// Core single-threaded scheduler backing a simulation [`Runtime`].
 ///
 /// The executor owns the runnable queue, per-node pause state, deterministic
@@ -534,9 +438,7 @@ impl Executor {
     {
         self.assert_known_node(node);
 
-        let abort = AbortHandle {
-            state: Arc::new(AbortState::new()),
-        };
+        let abort = AbortHandle::new();
         let abortable = Abortable::new(future, abort.clone());
         let sender = self.sender.clone();
         let (runnable, task) = async_task::Builder::new()
@@ -555,9 +457,7 @@ impl Executor {
     {
         self.assert_known_node(node);
 
-        let abort = AbortHandle {
-            state: Arc::new(AbortState::new()),
-        };
+        let abort = AbortHandle::new();
         let abortable = Abortable::new(future, abort.clone());
         let sender = self.sender.clone();
         let (runnable, task) = unsafe {
@@ -578,7 +478,7 @@ impl Executor {
     /// nor timers remain, the simulation is considered deadlocked.
     fn block_on<F: Future>(&self, future: F) -> F::Output {
         let sender = self.sender.clone();
-        let (runnable, task) = unsafe {
+        let (runnable, mut task) = unsafe {
             async_task::Builder::new()
                 .metadata(NodeId::MAIN)
                 .spawn_unchecked(move |_| future, move |runnable| sender.send(runnable))
@@ -588,7 +488,11 @@ impl Executor {
         loop {
             self.run_all_ready();
             if task.is_finished() {
-                return task.now_or_never().expect("finished task should resolve");
+                let waker = Waker::noop();
+                return match Pin::new(&mut task).poll(&mut Context::from_waker(&waker)) {
+                    Poll::Ready(output) => output,
+                    Poll::Pending => unreachable!("task.is_finished() was true"),
+                };
             }
 
             if self.time.wake_next_timer() {

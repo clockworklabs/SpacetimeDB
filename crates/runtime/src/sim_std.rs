@@ -139,7 +139,10 @@ unsafe extern "C" fn pthread_attr_init(attr: *mut libc::pthread_attr_t) -> libc:
 #[unsafe(no_mangle)]
 #[inline(never)]
 unsafe extern "C" fn getrandom(buf: *mut u8, buflen: usize, flags: u32) -> isize {
-    eprintln!("warning: randomness requested; delegating to host OS");
+    if in_simulation() {
+        eprintln!("warning: randomness requested; delegating to host OS");
+        eprintln!("{}", std::backtrace::Backtrace::force_capture());
+    }
     unsafe { real_getrandom()(buf, buflen, flags) }
 }
 

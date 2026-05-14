@@ -1,3 +1,5 @@
+> Welcome to the Matrix!
+
 # spacetimedb-runtime
 
 `spacetimedb-runtime` is a runtime boundary that lets SpacetimeDB core code run under deterministic simulation testing (DST).
@@ -8,19 +10,21 @@ For this to work, code under test must not read clocks, randomness, scheduling, 
 
 This crate provides the execution-control part of that boundary: spawning, timeouts, virtual time, deterministic randomness, task scheduling, and fault decisions. Storage, networking, and replication should be modeled through higher-level abstractions.
 
+For a tracked view of what is currently under simulator control, what is only constrained by convention, and what still leaks host behavior, see [DETERMINISM_COVERAGE.md](./DETERMINISM_COVERAGE.md).
+
 ## Architecture
 
-[src/lib.rs](./src/lib.rs) exposes `Runtime`, a small runtime handle shared code carries. It has two variants:
+[src/lib.rs](./src/lib.rs) exposes `Handle`, a small runtime handle shared code carries. It has two variants:
 
-- `Runtime::Tokio(TokioHandle)` for real runtime execution.
-- `Runtime::Simulation(sim::Handle)` for deterministic simulation.
+- `Handle::Tokio(TokioHandle)` for real runtime execution.
+- `Handle::Simulation(sim::Handle)` for deterministic simulation.
 
-[src/sim](./src/sim) contains the simulation core. It is single-threaded and aims toward `no_std + alloc` over time. It is written with dependency reduction in mind, though it still uses a small set of runtime-support crates today. The module includes:
+[src/sim](./src/sim) contains the simulation core. It is single-threaded and targets `no_std + alloc`. The module includes:
 
 - `executor`: single-threaded task scheduler with deterministic runnable selection.
 - `time`: virtual clock, sleeps, and timeouts.
 - `rng`: seeded deterministic randomness for scheduler and workload decisions.
-- `buggify`: seeded fault-injection decisions.
+- `buggify`: fault-injection surface. Calls rng to decide probabilistically whether to inject failures into simulated operations.
 - `node`: node builders and node-local scheduling handles.
 
 [src/sim_std.rs](./src/sim_std.rs) contains `std`/OS glue around the simulator:
@@ -37,18 +41,21 @@ Feature flags:
 - `tokio`: enables the Tokio runtime backend and remains in the default feature set.
 - `simulation`: enables the deterministic simulation runtime and `sim_std` helpers.
 
-## Scope and Limitations
+## Design Principles
 
 - **Single-threaded runtime.** The simulator exposes interleaving and timeout bugs, but not bugs that require true parallel execution. The direction is to keep deep-core code single-threaded or close to thread-per-core; simulating real parallelism is out of scope.
-
-- **One shared virtual clock.** Nodes share one clock, so their clocks cannot drift to show mismatched time.
 
 - **No built-in network, storage, or I/O simulation.** This crate provides deterministic execution primitives only. Higher-level harnesses should model message delivery, disk behavior, and failures.
 
 - **Not a Tokio replacement.** This crate does not aim to simulate APIs like `tokio::net` or `tokio::fs`. Code that depends on them needs a higher-level abstraction boundary.
 
-- **`spawn_blocking` is only a facade on the simulation runtime.** On the simulation backend, it currently delegates to a normal spawned task, so the closure still runs on the single executor thread and can block runtime progress. The direction is to avoid relying on blocking-pool semantics.
+- **Zero dependency.** The simulation core in `sim/` is already `no_std + alloc`. The `sim_std` module is a thin OS-facing wrapper — the std dependency lives there, not in the simulation core itself. It stays until the application logic above this crate also moves to `no_std`.
+
+## Current Limitations
+
+
+- **One shared virtual clock.** All simulated nodes share a single clock. This masks bugs related to timing mismatch across machines.
+
+- **No good alternative for blocking APIs.** The simulation backend has no `spawn_blocking` pool or OS thread escape hatch. API like `spawn_blocking` or `Handle::block_on` delegate to the single executor thread, so blocking inside them stalls all simulated tasks. The direction is to avoid relying on blocking semantics inside the simulation boundary.
 
 - **OS randomness is not controlled.** `sim_std` warns if code reaches OS entropy. The direction is to keep application code and testing harnesses off OS randomness entirely.
-
-- **Not fully `no_std` or allocation-controlled yet.** The simulation core is written with a `no_std + alloc` direction in mind, so moving its core further in that direction should be straightforward. Today, though, `std`/OS glue still depends on `std`, and the runtime still allocates through normal Rust container and task paths. Tight control over heap allocation is a direction, not something this crate enforces yet.

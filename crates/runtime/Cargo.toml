@@ -10,12 +10,13 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-futures.workspace = true
-futures-util.workspace = true
 tokio = { workspace = true, optional = true }
-async-task = { version = "4.4", optional = true }
+async-task = { version = "4.4", default-features = false, optional = true }
 spin = { version = "0.9", default-features = false, features = ["mutex", "spin_mutex"], optional = true }
 libc = { version = "0.2", optional = true }
+
+[dev-dependencies]
+futures.workspace = true
 
 [features]
 default = ["tokio"]

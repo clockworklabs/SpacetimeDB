@@ -1,15 +1,16 @@
 mod sleep;
 
 use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};
-use core::{fmt, future::Future, task::Waker, time::Duration};
-
-use futures_util::{select_biased, FutureExt};
+use core::{fmt, future::Future, pin::pin, task::{Poll, Waker}, time::Duration};
 use sleep::wake_all;
 use spin::Mutex;
 
 pub use sleep::Sleep;
 
 /// Shared virtual clock and timer registry for one simulation runtime.
+///
+/// Virtual clock that only advances when explicitly driven — no wall-clock
+/// progression, like Tokio's time-pause mode.
 ///
 /// All cloned handles observe the same virtual `now`, pending timers, and
 /// timer-id sequence. The executor uses this handle both for explicit
@@ -117,18 +118,24 @@ impl TimeHandle {
 
     /// Race a future against a virtual-time sleep.
     ///
-    /// This is implemented as `future` versus `sleep(duration)` using a biased
-    /// select. If both become ready in the same simulated step, the main
-    /// future wins the tie so completion beats timeout deterministically.
+    /// Uses a biased `poll_fn` that polls `future` before `sleep`. If both are
+    /// ready in the same step, the main future wins — completion beats timeout
+    /// deterministically.
     pub async fn timeout<T>(&self, duration: Duration, future: impl Future<Output = T>) -> Result<T, TimeoutElapsed> {
         let sleep = self.sleep(duration);
-        futures::pin_mut!(future);
-        futures::pin_mut!(sleep);
+        let mut future = pin!(future);
+        let mut sleep = pin!(sleep);
 
-        select_biased! {
-            output = future.fuse() => Ok(output),
-            () = sleep.fuse() => Err(TimeoutElapsed { duration }),
-        }
+        core::future::poll_fn(|cx| {
+            if let Poll::Ready(output) = future.as_mut().poll(cx) {
+                return Poll::Ready(Ok(output));
+            }
+            if let Poll::Ready(()) = sleep.as_mut().poll(cx) {
+                return Poll::Ready(Err(TimeoutElapsed { duration }));
+            }
+            Poll::Pending
+        })
+        .await
     }
 }
 

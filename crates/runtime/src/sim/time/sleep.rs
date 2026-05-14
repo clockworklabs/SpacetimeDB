@@ -10,10 +10,21 @@ use super::{TimeHandle, TimerId};
 
 /// Future returned by [`TimeHandle::sleep`].
 ///
-/// The future stores a relative duration until first poll, then converts that
-/// into an absolute deadline and a stable timer id. Subsequent polls either
-/// complete immediately if virtual time has already reached the deadline or
-/// refresh the registered waker and remain pending.
+/// Three-state machine:
+///
+/// 1. **Unregistered** — first poll. Converts the relative `duration` into an
+///    absolute `deadline` using the current virtual time and registers with the
+///    time handle's timer table. Transitions to `Registered`.
+///
+/// 2. **Registered** — subsequent polls. If virtual time has reached the
+///    deadline, the timer is cancelled and the future returns `Ready`.
+///    Otherwise, the waker is refreshed in the timer entry and the future
+///    returns `Pending`.
+///
+/// 3. **Done** — any later poll returns `Ready(()`) immediately.
+///
+/// On drop while `Registered`, the timer entry is cancelled to prevent stale
+/// wakers from firing after the future is abandoned.
 pub struct Sleep {
     duration: Duration,
     state: SleepState,
