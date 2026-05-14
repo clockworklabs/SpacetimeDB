@@ -16,6 +16,7 @@ pub use wasmtime_module::{WasmtimeInstance, WasmtimeModule};
 #[cfg(unix)]
 mod pooling_stack_creator;
 mod wasm_instance_env;
+mod wasi_stubs;
 mod wasmtime_module;
 
 pub struct WasmtimeRuntime {
