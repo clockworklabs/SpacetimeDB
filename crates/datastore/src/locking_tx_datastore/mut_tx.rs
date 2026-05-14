@@ -4,10 +4,12 @@ use super::{
     delete_table::DeleteTable,
     sequence::{Sequence, SequencesState},
     state_view::{IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, StateView},
+    time::Instant,
     tx::TxId,
     tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
     SharedMutexGuard, SharedWriteGuard,
 };
+use crate::traits::TxOffset;
 use crate::{
     error::ViewError,
     system_tables::{
@@ -38,7 +40,7 @@ use core::{cell::RefCell, iter, mem, ops::RangeBounds};
 use itertools::Either;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap};
-use spacetimedb_durability::TxOffset;
+#[cfg(feature = "execution")]
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
 use spacetimedb_lib::{
     db::raw_def::v9::RawSql,
@@ -70,11 +72,7 @@ use spacetimedb_table::{
     },
     table_index::{IndexCannotSeekRange, IndexKey, IndexSeekRangeResult, PointOrRange, TableIndex},
 };
-use std::{
-    marker::PhantomData,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{marker::PhantomData, sync::Arc, time::Duration};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ViewCallInfo {
@@ -407,6 +405,7 @@ impl MutTxId {
     }
 }
 
+#[cfg(feature = "execution")]
 impl Datastore for MutTxId {
     type TableIter<'a>
         = IterMutTx<'a>
@@ -470,6 +469,7 @@ impl Datastore for MutTxId {
 
 /// Note, deltas are evaluated using read-only transactions, not mutable ones.
 /// Nevertheless this contract is still required for query evaluation.
+#[cfg(feature = "execution")]
 impl DeltaStore for MutTxId {
     fn num_inserts(&self, _: TableId) -> usize {
         0
@@ -512,6 +512,7 @@ impl DeltaStore for MutTxId {
     }
 }
 
+#[cfg(feature = "execution")]
 impl MutDatastore for MutTxId {
     fn insert_product_value(&mut self, table_id: TableId, row: &ProductValue) -> anyhow::Result<bool> {
         Ok(match self.insert_via_serialize_bsatn(table_id, row)?.1 {
@@ -2301,6 +2302,7 @@ impl MutTxId {
     ///
     /// This is invoked when calling a view, but not subscribing to it.
     /// Such is the case for the sql http api.
+    #[allow(deprecated)]
     pub fn update_view_timestamp(&mut self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<()> {
         self.update_view_timestamp_at(view_id, arg_id, sender, Timestamp::now())
     }
@@ -2349,6 +2351,7 @@ impl MutTxId {
 
     /// Increment `num_subscribers` in `st_view_sub` to effectively subscribe a caller to a view.
     /// We insert a row if there are no current subscribers and the row does not exist.
+    #[allow(deprecated)]
     pub fn subscribe_view(&mut self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<()> {
         use StViewSubFields::*;
 
@@ -2410,12 +2413,13 @@ impl MutTxId {
     /// Returns a tuple `(cleaned, total_expired)`:
     /// - `cleaned`: Number of expired `st_view_sub` rows deleted in this run.
     /// - `total_expired`: Total number of expired rows found (even if not all were cleaned due to time budget).
+    #[allow(deprecated)]
     pub fn clear_expired_views(
         &mut self,
         expiration_duration: Duration,
         max_duration: Duration,
     ) -> Result<(usize, usize)> {
-        let start = std::time::Instant::now();
+        let start = Instant::now();
         let now = Timestamp::now();
         let expiration_threshold = now - expiration_duration;
         let mut cleaned_count = 0;
@@ -2480,6 +2484,7 @@ impl MutTxId {
     }
 
     /// Decrement `num_subscribers` in `st_view_sub` to effectively unsubscribe a caller from a view.
+    #[allow(deprecated)]
     pub fn unsubscribe_view(&mut self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<()> {
         use StViewSubFields::*;
 

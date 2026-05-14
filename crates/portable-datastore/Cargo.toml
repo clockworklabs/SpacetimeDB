@@ -1,0 +1,29 @@
+[package]
+name = "spacetimedb-portable-datastore"
+version.workspace = true
+edition.workspace = true
+license-file = "LICENSE"
+description = "Wasm-compatible in-memory datastore support for SpacetimeDB module unit tests."
+rust-version.workspace = true
+
+[lib]
+name = "spacetimedb_portable_datastore"
+path = "src/lib.rs"
+bench = false
+
+[dependencies]
+spacetimedb-datastore = { path = "../datastore", version = "=2.1.0", default-features = false, features = ["portable"] }
+spacetimedb-lib.workspace = true
+spacetimedb-primitives.workspace = true
+spacetimedb-schema.workspace = true
+spacetimedb-table.workspace = true
+
+anyhow.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+spacetimedb-lib = { workspace = true, features = ["test"] }
+
+[lints]
+workspace = true

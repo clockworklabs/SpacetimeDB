@@ -70,6 +70,21 @@ Usage: wasm-bindings
 
 - `--help`: Print help (see a summary with '-h')
 
+### `portable-datastore`
+
+Checks the portable datastore wasm boundary
+
+Ensures the table, datastore portable feature, portable datastore crate, and wasm adapter compile for wasm32-unknown-unknown, then runs the portable datastore unit tests natively.
+
+**Usage:**
+```bash
+Usage: portable-datastore
+```
+
+**Options:**
+
+- `--help`: Print help (see a summary with '-h')
+
 ### `dlls`
 
 Builds and packs C# DLLs and NuGet packages for local Unity workflows

@@ -234,6 +234,26 @@ export default defineConfig([
     },
   },
 
+  // Node module unit-test helpers.
+  {
+    entry: {
+      index: 'src/server/test-utils/index.ts',
+      vitest: 'src/server/test-utils/vitest.ts',
+      wasm: 'src/server/test-utils/wasm.ts',
+    },
+    format: 'esm',
+    target: 'es2022',
+    outDir: 'dist/server/test-utils',
+    dts: true,
+    sourcemap: true,
+    clean: false,
+    platform: 'neutral',
+    external: [/^spacetime:sys.*$/],
+    treeshake: 'smallest',
+    outExtension,
+    esbuildOptions: commonEsbuildTweaks(),
+  },
+
   // TanStack subpath (SSR-friendly): dist/tanstack/index.{mjs,cjs}
   {
     entry: { index: 'src/tanstack/index.ts' },

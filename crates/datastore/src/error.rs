@@ -6,6 +6,7 @@ use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_schema::def::error::LibError;
+#[cfg(feature = "durability")]
 use spacetimedb_snapshot::SnapshotError;
 use spacetimedb_table::{
     bflatn_to, read_column,
@@ -25,6 +26,7 @@ pub enum DatastoreError {
     Sequence(#[from] SequenceError),
     #[error(transparent)]
     // Box the inner [`SnapshotError`] to keep Clippy quiet about large `Err` variants.
+    #[cfg(feature = "durability")]
     Snapshot(#[from] Box<SnapshotError>),
     // TODO(cloutiertyler): should this be a TableError? I couldn't get it to compile
     #[error("Error reading a value from a table through BSATN: {0}")]
@@ -158,6 +160,7 @@ impl From<bflatn_to::Error> for DatastoreError {
     }
 }
 
+#[cfg(feature = "durability")]
 impl From<SnapshotError> for DatastoreError {
     fn from(e: SnapshotError) -> Self {
         DatastoreError::Snapshot(Box::new(e))

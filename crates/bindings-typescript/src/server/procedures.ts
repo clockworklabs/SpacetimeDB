@@ -11,6 +11,7 @@ import type { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
 import type { ParamsObj, ReducerCtx } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
+import type { TimeDuration } from '../lib/time_duration';
 import { Timestamp } from '../lib/timestamp';
 import {
   type Infer,
@@ -22,7 +23,8 @@ import { Uuid } from '../lib/uuid';
 import { httpClient, type HttpClient } from './http_internal';
 import type { DbView } from './db_view';
 import { makeRandom, type Random } from './rng';
-import { callUserFunction, ReducerCtxImpl, sys } from './runtime';
+import { callUserFunction, ReducerCtxImpl } from './runtime';
+import { hostBackend, type DatastoreBackend } from './backend';
 import {
   exportContext,
   registerExport,
@@ -81,6 +83,7 @@ export interface ProcedureCtx<S extends UntypedSchemaDef> {
   readonly http: HttpClient;
   readonly random: Random;
   withTx<T>(body: (ctx: TransactionCtx<S>) => T): T;
+  sleep(duration: TimeDuration): void;
   newUuidV4(): Uuid;
   newUuidV7(): Uuid;
 }
@@ -90,10 +93,6 @@ export interface TransactionCtx<S extends UntypedSchemaDef>
   extends ReducerCtx<S> {}
 
 type ITransactionCtx<S extends UntypedSchemaDef> = TransactionCtx<S>;
-
-const TransactionCtxImpl = class TransactionCtx<S extends UntypedSchemaDef>
-  extends ReducerCtxImpl<S>
-  implements ITransactionCtx<S> {};
 
 function registerProcedure<
   S extends UntypedSchemaDef,
@@ -178,25 +177,36 @@ export function callProcedure(
 }
 
 type IProcedureCtx<S extends UntypedSchemaDef> = ProcedureCtx<S>;
-const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
+export const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   implements IProcedureCtx<S>
 {
   #identity: Identity | undefined;
   #uuidCounter: { value: 0 } | undefined;
   #random: Random | undefined;
   #dbView: () => DbView<any>;
+  #backend: DatastoreBackend;
+  #http: HttpClient;
+  #sleep: (duration: TimeDuration) => void;
 
   constructor(
     readonly sender: Identity,
     readonly timestamp: Timestamp,
     readonly connectionId: ConnectionId | null,
-    dbView: () => DbView<any>
+    dbView: () => DbView<any>,
+    backend: DatastoreBackend = hostBackend,
+    http: HttpClient = httpClient,
+    sleep: (duration: TimeDuration) => void = () => {
+      throw new Error('procedure sleep is not available in this runtime');
+    }
   ) {
     this.#dbView = dbView;
+    this.#backend = backend;
+    this.#http = http;
+    this.#sleep = sleep;
   }
 
   get identity() {
-    return (this.#identity ??= new Identity(sys.identity()));
+    return (this.#identity ??= new Identity(this.#backend.identity()));
   }
 
   get random() {
@@ -204,30 +214,35 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   }
 
   get http() {
-    return httpClient;
+    return this.#http;
+  }
+
+  sleep(duration: TimeDuration): void {
+    this.#sleep(duration);
   }
 
   withTx<T>(body: (ctx: TransactionCtx<S>) => T): T {
     const run = () => {
-      const timestamp = sys.procedure_start_mut_tx();
+      const timestamp = this.#backend.procedureStartMutTx();
 
       try {
-        const ctx: TransactionCtx<S> = new TransactionCtxImpl(
+        const ctx: ITransactionCtx<S> = new ReducerCtxImpl(
           this.sender,
           new Timestamp(timestamp),
           this.connectionId,
-          this.#dbView()
-        );
+          this.#dbView(),
+          this.#backend
+        ) as ITransactionCtx<S>;
         return body(ctx);
       } catch (e) {
-        sys.procedure_abort_mut_tx();
+        this.#backend.procedureAbortMutTx();
         throw e;
       }
     };
 
     let res = run();
     try {
-      sys.procedure_commit_mut_tx();
+      this.#backend.procedureCommitMutTx();
       return res;
     } catch {
       // ignore the commit error
@@ -235,7 +250,7 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
     console.warn('committing anonymous transaction failed');
     res = run();
     try {
-      sys.procedure_commit_mut_tx();
+      this.#backend.procedureCommitMutTx();
       return res;
     } catch (e) {
       throw new Error('transaction retry failed again', { cause: e });

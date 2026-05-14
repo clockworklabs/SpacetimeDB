@@ -225,6 +225,11 @@ enum CiCmd {
     ///
     /// Runs tests for the codegen crate and builds a test module with the wasm bindings.
     WasmBindings,
+    /// Checks the portable datastore wasm boundary
+    ///
+    /// Ensures the table, datastore portable feature, portable datastore crate, and wasm adapter
+    /// compile for wasm32-unknown-unknown, then runs the portable datastore unit tests natively.
+    PortableDatastore,
     /// Builds and packs C# DLLs and NuGet packages for local Unity workflows
     ///
     /// Packs the in-repo C# NuGet packages and restores the C# SDK to populate `sdks/csharp/packages/**`.
@@ -603,6 +608,49 @@ fn main() -> Result<()> {
                 .join("target/debug/spacetimedb-cli")
                 .with_extension(std::env::consts::EXE_EXTENSION);
             cmd!(cli_path, "build", "--module-path", "modules/module-test",).run()?;
+        }
+
+        Some(CiCmd::PortableDatastore) => {
+            cmd!(
+                "cargo",
+                "check",
+                "-p",
+                "spacetimedb-table",
+                "--target",
+                "wasm32-unknown-unknown"
+            )
+            .run()?;
+            cmd!(
+                "cargo",
+                "check",
+                "-p",
+                "spacetimedb-datastore",
+                "--no-default-features",
+                "--features",
+                "portable",
+                "--target",
+                "wasm32-unknown-unknown"
+            )
+            .run()?;
+            cmd!(
+                "cargo",
+                "check",
+                "-p",
+                "spacetimedb-portable-datastore",
+                "--target",
+                "wasm32-unknown-unknown"
+            )
+            .run()?;
+            cmd!(
+                "cargo",
+                "check",
+                "-p",
+                "spacetimedb-portable-datastore-wasm",
+                "--target",
+                "wasm32-unknown-unknown"
+            )
+            .run()?;
+            cmd!("cargo", "test", "-p", "spacetimedb-portable-datastore").run()?;
         }
 
         Some(CiCmd::Dlls) => {

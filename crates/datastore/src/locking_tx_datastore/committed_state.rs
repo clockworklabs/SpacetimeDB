@@ -1,3 +1,5 @@
+#![cfg_attr(not(feature = "metrics"), allow(dead_code, unused_imports, unused_variables))]
+
 use super::{
     datastore::Result,
     delete_table::DeleteTable,
@@ -6,8 +8,10 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState},
     IterByColEqTx,
 };
+#[cfg(feature = "metrics")]
+use crate::db_metrics::DB_METRICS;
+use crate::traits::TxOffset;
 use crate::{
-    db_metrics::DB_METRICS,
     error::TableError,
     execution_context::ExecutionContext,
     locking_tx_datastore::{mut_tx::ViewReadSets, state_view::ScanOrIndex, IterByColRangeTx},
@@ -33,7 +37,6 @@ use crate::{
 use anyhow::anyhow;
 use core::{convert::Infallible, ops::RangeBounds};
 use spacetimedb_data_structures::map::{IntMap, IntSet};
-use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StTableType, Identity};
 use spacetimedb_primitives::{ColList, IndexId, TableId, ViewId};
 use spacetimedb_sats::memory_usage::MemoryUsage;
@@ -204,6 +207,7 @@ impl CommittedState {
     pub(super) fn bootstrap_system_tables(&mut self, database_identity: Identity) -> Result<()> {
         // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
         // and therefore has performance implications and must not be disabled.
+        #[cfg(feature = "metrics")]
         let with_label_values = |table_id: TableId, table_name: &str| {
             DB_METRICS
                 .rdb_num_table_rows
@@ -220,6 +224,7 @@ impl CommittedState {
         for schema in ref_schemas {
             let table_id = schema.table_id;
             // Metric for this system table.
+            #[cfg(feature = "metrics")]
             with_label_values(table_id, &schema.table_name).set(0);
 
             let row = StTableRow {
@@ -248,6 +253,7 @@ impl CommittedState {
             // Insert the meta-row into the in-memory ST_COLUMNS.
             st_columns.insert(pool, blob_store, &row)?;
             // Increment row count for st_columns.
+            #[cfg(feature = "metrics")]
             with_label_values(ST_COLUMN_ID, ST_COLUMN_NAME).inc();
         }
 
@@ -267,6 +273,7 @@ impl CommittedState {
             // Insert the meta-row into the in-memory ST_CONSTRAINTS.
             st_constraints.insert(pool, blob_store, &row)?;
             // Increment row count for st_constraints.
+            #[cfg(feature = "metrics")]
             with_label_values(ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME).inc();
         }
 
@@ -280,6 +287,7 @@ impl CommittedState {
             // Insert the meta-row into the in-memory ST_INDEXES.
             st_indexes.insert(pool, blob_store, &row)?;
             // Increment row count for st_indexes.
+            #[cfg(feature = "metrics")]
             with_label_values(ST_INDEX_ID, ST_INDEX_NAME).inc();
         }
 
@@ -334,6 +342,7 @@ impl CommittedState {
             // Insert the meta-row into the in-memory ST_SEQUENCES.
             st_sequences.insert(pool, blob_store, &row)?;
             // Increment row count for st_sequences
+            #[cfg(feature = "metrics")]
             with_label_values(ST_SEQUENCE_ID, ST_SEQUENCE_NAME).inc();
         }
 
@@ -682,6 +691,13 @@ impl CommittedState {
         for change in tx_state.pending_schema_changes.into_iter().rev() {
             self.rollback_pending_schema_change(seq_state, change);
         }
+        #[cfg(feature = "portable")]
+        if let Ok(rebuilt) = self.build_sequence_state() {
+            // Portable unit tests expect sequence allocations to roll back with the
+            // transaction. Rebuild from committed `st_sequence` rows after discarding
+            // pending table writes.
+            *seq_state = rebuilt;
+        }
         self.next_tx_offset.saturating_sub(1)
     }
 
@@ -849,6 +865,7 @@ impl CommittedState {
         )
     }
 
+    #[cfg(feature = "metrics")]
     pub fn report_data_size(&self, database_identity: Identity) {
         use crate::db_metrics::data_size::DATA_SIZE_METRICS;
 

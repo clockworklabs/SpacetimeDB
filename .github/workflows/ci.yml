@@ -329,6 +329,34 @@ jobs:
       - name: Run bindgen tests
         run: cargo ci wasm-bindings
 
+  portable_datastore:
+    name: Check portable datastore
+    runs-on: spacetimedb-new-runner-2
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+      - run: echo ::add-matcher::.github/workflows/rust_matcher.json
+
+      - name: Install wasm target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          # Let the smoketests job save the cache since it builds the most things
+          save-if: false
+          prefix-key: v1
+
+      - name: Run portable datastore checks
+        run: cargo ci portable-datastore
+
   publish_checks:
     name: Check that packages are publishable
     runs-on: spacetimedb-new-runner-2

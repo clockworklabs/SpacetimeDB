@@ -36,7 +36,7 @@ use super::{
     blob_store::{BlobHash, BlobStore},
     fixed_bit_set::FixedBitSet,
     fixed_bit_set::IterSet,
-    indexes::{max_rows_in_page, Byte, Bytes, PageOffset, PAGE_HEADER_SIZE, PAGE_SIZE},
+    indexes::{max_rows_in_page, Byte, Bytes, PageOffset},
     static_assert_size,
     table::BlobNumBytes,
     var_len::{is_granule_offset_aligned, VarLenGranule, VarLenGranuleHeader, VarLenMembers, VarLenRef},
@@ -337,7 +337,7 @@ impl MemoryUsage for PageHeader {
     }
 }
 
-static_assert_size!(PageHeader, PAGE_HEADER_SIZE);
+static_assert_size!(PageHeader, super::indexes::PAGE_HEADER_SIZE);
 
 impl PageHeader {
     /// Returns a new `PageHeader` proper a [`Page`] for holding at most `max_rows_in_page` rows.
@@ -450,7 +450,7 @@ impl MemoryUsage for Page {
     }
 }
 
-static_assert_size!(Page, PAGE_SIZE);
+static_assert_size!(Page, super::indexes::PAGE_SIZE);
 
 /// A mutable view of the fixed-len section of a [`Page`].
 pub struct FixedView<'page> {

@@ -946,6 +946,7 @@ fn st_column_accessor_schema() -> TableSchema {
 /// whereas user tables are reinstantiated with a schema computed from the snapshotted system tables.
 ///
 /// This must be kept in sync with the set of system tables.
+#[cfg(feature = "durability")]
 pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
     match table_id {
         ST_TABLE_ID => Some(st_table_schema()),

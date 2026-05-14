@@ -1,3 +1,4 @@
+#[cfg(feature = "metrics")]
 pub mod db_metrics;
 pub mod error;
 pub mod execution_context;

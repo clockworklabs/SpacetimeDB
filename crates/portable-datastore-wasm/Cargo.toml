@@ -1,0 +1,24 @@
+[package]
+name = "spacetimedb-portable-datastore-wasm"
+version.workspace = true
+edition.workspace = true
+publish = false
+description = "Wasm adapter for the SpacetimeDB portable module test datastore."
+rust-version.workspace = true
+
+[lib]
+name = "spacetimedb_portable_datastore_wasm"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+bench = false
+
+[dependencies]
+spacetimedb-lib.workspace = true
+spacetimedb-portable-datastore = { path = "../portable-datastore", version = "=2.1.0" }
+spacetimedb-primitives.workspace = true
+
+js-sys = "0.3.81"
+wasm-bindgen = "0.2.104"
+
+[lints]
+workspace = true

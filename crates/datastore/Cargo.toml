@@ -8,17 +8,17 @@ rust-version.workspace = true
 
 [dependencies]
 spacetimedb-data-structures.workspace = true
-spacetimedb-lib = { workspace = true, features = ["serde", "metrics_impls"] }
-spacetimedb-commitlog.workspace = true
-spacetimedb-durability.workspace = true
-spacetimedb-metrics.workspace = true
+spacetimedb-lib = { workspace = true, features = ["serde"] }
+spacetimedb-commitlog = { workspace = true, optional = true }
+spacetimedb-durability = { workspace = true, optional = true }
+spacetimedb-metrics = { workspace = true, optional = true }
 spacetimedb-primitives.workspace = true
-spacetimedb-paths.workspace = true
+spacetimedb-paths = { workspace = true, optional = true }
 spacetimedb-sats = { workspace = true, features = ["serde"] }
 spacetimedb-schema.workspace = true
 spacetimedb-table.workspace = true
-spacetimedb-snapshot.workspace = true
-spacetimedb-execution.workspace = true
+spacetimedb-snapshot = { workspace = true, optional = true }
+spacetimedb-execution = { workspace = true, optional = true }
 
 anyhow = { workspace = true, features = ["backtrace"] }
 bytes.workspace = true
@@ -30,7 +30,7 @@ lazy_static.workspace = true
 log.workspace = true
 once_cell.workspace = true
 parking_lot.workspace = true
-prometheus.workspace = true
+prometheus = { workspace = true, optional = true }
 smallvec.workspace = true
 strum.workspace = true
 thiserror.workspace = true
@@ -39,7 +39,17 @@ thin-vec.workspace = true
 [features]
 # Print a warning when doing an unindexed `iter_by_col_range` on a large table.
 unindexed_iter_by_col_range_warn = []
-default = ["unindexed_iter_by_col_range_warn"]
+metrics = ["dep:prometheus", "dep:spacetimedb-metrics", "spacetimedb-lib/metrics_impls"]
+durability = [
+    "dep:spacetimedb-commitlog",
+    "dep:spacetimedb-durability",
+    "dep:spacetimedb-paths",
+    "dep:spacetimedb-snapshot",
+    "metrics",
+]
+execution = ["dep:spacetimedb-execution"]
+portable = []
+default = ["durability", "execution", "unindexed_iter_by_col_range_warn"]
 # Enable test helpers and utils
 test = ["spacetimedb-commitlog/test", "spacetimedb-schema/test"]
 

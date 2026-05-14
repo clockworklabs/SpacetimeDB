@@ -23,6 +23,8 @@ members = [
   "crates/paths",
   "crates/pg",
   "crates/physical-plan",
+  "crates/portable-datastore",
+  "crates/portable-datastore-wasm",
   "crates/primitives",
   "crates/query",
   "crates/sats",

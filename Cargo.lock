@@ -8420,6 +8420,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-portable-datastore"
+version = "2.1.0"
+dependencies = [
+ "anyhow",
+ "serde_json",
+ "spacetimedb-datastore",
+ "spacetimedb-lib 2.1.0",
+ "spacetimedb-primitives 2.1.0",
+ "spacetimedb-schema",
+ "spacetimedb-table",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "spacetimedb-portable-datastore-wasm"
+version = "2.1.0"
+dependencies = [
+ "js-sys",
+ "spacetimedb-lib 2.1.0",
+ "spacetimedb-portable-datastore",
+ "spacetimedb-primitives 2.1.0",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "spacetimedb-primitives"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
