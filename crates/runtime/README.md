@@ -56,6 +56,6 @@ Feature flags:
 
 - **One shared virtual clock.** All simulated nodes share a single clock. This masks bugs related to timing mismatch across machines.
 
-- **`spawn_blocking` is only a facade on the simulation backend.** It delegates to a normal spawned task, so the closure still runs on the single executor thread and can block runtime progress. The direction is to avoid relying on blocking-pool semantics.
+- **No good alternative for blocking APIs.** The simulation backend has no `spawn_blocking` pool or OS thread escape hatch. API like `spawn_blocking` or `Handle::block_on` delegate to the single executor thread, so blocking inside them stalls all simulated tasks. The direction is to avoid relying on blocking semantics inside the simulation boundary.
 
 - **OS randomness is not controlled.** `sim_std` warns if code reaches OS entropy. The direction is to keep application code and testing harnesses off OS randomness entirely.
