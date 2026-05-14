@@ -282,7 +282,6 @@ mod tests {
         Arc,
     };
 
-
     #[cfg(feature = "simulation")]
     #[test]
     fn dropping_joinhandle_does_not_cancel_task_in_simulation() {
@@ -320,7 +319,6 @@ mod tests {
 
         rt.block_on(async move {
             let jh = handle.spawn(async move {
-                // Sleep long enough that abort fires first.
                 handle_for_spawn
                     .timeout(std::time::Duration::from_millis(100), async {})
                     .await
@@ -330,10 +328,7 @@ mod tests {
             jh.abort_handle().abort();
 
             let result = jh.await;
-            // wait to see, above task indeed cancelled.
-             let _ = handle
-                    .timeout(std::time::Duration::from_millis(500), async {})
-                    .await;
+            let _ = handle.timeout(std::time::Duration::from_millis(500), async {}).await;
             assert!(result.is_err());
             assert!(!flag.load(Ordering::Acquire));
         });
