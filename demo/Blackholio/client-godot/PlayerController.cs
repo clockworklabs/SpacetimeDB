@@ -18,6 +18,8 @@ public partial class PlayerController : Node
     private bool _lockInputTogglePressed;
     private bool _splitPressed;
     private bool _suicidePressed;
+    private bool _testInputEnabled;
+    private Vector2 _testInput;
 
     public string Username => GameManager.Conn.Db.Player.PlayerId.Find(_playerId)?.Name ?? "<Unknown>";
     public int NumberOfOwnedCircles => _ownedCircles.Count;
@@ -98,7 +100,7 @@ public partial class PlayerController : Node
 	public override void _Process(double delta)
 	{
 	    if (!IsLocalPlayer || NumberOfOwnedCircles == 0 || !GameManager.IsConnected()) return;
-	    if (GetViewport().GuiGetFocusOwner() is LineEdit) return;
+	    if (!_testInputEnabled && GetViewport().GuiGetFocusOwner() is LineEdit) return;
 
 	    var splitPressed = Input.IsPhysicalKeyPressed(Key.Space);
 	    if (splitPressed && !_splitPressed)
@@ -136,8 +138,13 @@ public partial class PlayerController : Node
 	    var mousePosition = _lockInputPosition ?? GetViewport().GetMousePosition();
 	    var screenSize = GetViewport().GetVisibleRect().Size;
 	    var centerOfScreen = screenSize / 2.0f;
-	    var direction = (mousePosition - centerOfScreen) / (screenSize.Y / 3.0f);
+	    var direction = _testInputEnabled
+	        ? _testInput
+	        : (mousePosition - centerOfScreen) / (screenSize.Y / 3.0f);
 
 	    GameManager.Conn.Reducers.UpdatePlayerInput(direction);
 	}
+
+    public void SetTestInput(Vector2 input) => _testInput = input;
+    public void EnableTestInput() => _testInputEnabled = true;
 }

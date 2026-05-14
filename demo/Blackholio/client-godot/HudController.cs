@@ -79,6 +79,14 @@ public partial class HudController : CanvasLayer
 		_deathOverlay.Visible = visible;
 	}
 
+	public void SubmitUsernameForTests(string username)
+	{
+		if (_usernameInput == null) return;
+
+		_usernameInput.Text = username;
+		SubmitUsername();
+	}
+
 	private void BuildStatusPanel(Control root)
 	{
 		var panel = CreatePanel("StatusPanel", new Color(0.025f, 0.035f, 0.07f, 0.78f));
