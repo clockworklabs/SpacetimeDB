@@ -9,6 +9,9 @@ pub use sleep::Sleep;
 
 /// Shared virtual clock and timer registry for one simulation runtime.
 ///
+/// Virtual clock that only advances when explicitly driven — no wall-clock
+/// progression, like Tokio's time-pause mode.
+///
 /// All cloned handles observe the same virtual `now`, pending timers, and
 /// timer-id sequence. The executor uses this handle both for explicit
 /// time-travel operations and for jumping directly to the next pending timer
