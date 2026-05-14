@@ -509,22 +509,21 @@ fn pin_csharp_client_sdk_package_version(project_path: &Path) -> Result<()> {
 fn build_typescript_sdk() -> Result<()> {
     let sdk_path = workspace_root().join("crates/bindings-typescript");
     eprintln!("[TEMPLATES] Building TypeScript SDK at {:?}", sdk_path);
-    run_pnpm(&["install"], &sdk_path)?;
+    run_pnpm(&["install", "--frozen-lockfile"], &sdk_path)?;
     run_pnpm(&["build"], &sdk_path)?;
     Ok(())
 }
 
 /// Points the `spacetimedb` entry in `package.json` at the local TypeScript
-/// SDK and removes the template's lockfile so pnpm re-resolves dependencies.
+/// SDK and updates the temporary lockfile without installing or running scripts.
 fn setup_typescript_sdk_in_package_json(package_json_path: &Path) -> Result<()> {
     let sdk_path = workspace_root().join("crates/bindings-typescript");
     update_package_json_dependency(package_json_path, "spacetimedb", &sdk_path)?;
 
-    // Remove the template's lockfile; the dependency changed.
-    let lockfile = package_json_path.parent().unwrap().join("pnpm-lock.yaml");
-    if lockfile.exists() {
-        fs::remove_file(&lockfile).context("Failed to remove pnpm-lock.yaml")?;
-    }
+    run_pnpm(
+        &["install", "--lockfile-only", "--offline", "--ignore-scripts"],
+        package_json_path.parent().unwrap(),
+    )?;
     Ok(())
 }
 
@@ -679,7 +678,7 @@ fn test_typescript_template(test: &Smoketest, template: &Template, project_path:
     // Server
     let server_path = project_path.join("spacetimedb");
     setup_typescript_sdk_in_package_json(&server_path.join("package.json"))?;
-    run_pnpm(&["install"], &server_path)?;
+    run_pnpm(&["install", "--frozen-lockfile", "--ignore-scripts"], &server_path)?;
 
     let domain = format!("test-{}-{}", template.id, random_string());
     test.spacetime(&[
@@ -703,7 +702,7 @@ fn test_typescript_template(test: &Smoketest, template: &Template, project_path:
     let client_package_json = project_path.join("package.json");
     if client_package_json.exists() {
         setup_typescript_sdk_in_package_json(&client_package_json)?;
-        run_pnpm(&["install"], project_path)?;
+        run_pnpm(&["install", "--frozen-lockfile", "--ignore-scripts"], project_path)?;
 
         // TODO: some templates don't pass tsc yet, re-enable once they're fixed.
         // run_pnpm(&["exec", "tsc", "--noEmit"], project_path)?;
