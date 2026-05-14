@@ -36,9 +36,9 @@ pub struct AbortHandle {
 
 enum JoinHandleInner<T> {
     #[cfg(feature = "tokio")]
-    Tokio(Option<tokio::task::JoinHandle<T>>),
+    Tokio(tokio::task::JoinHandle<T>),
     #[cfg(feature = "simulation")]
-    Simulation(Option<sim::JoinHandle<T>>),
+    Simulation(sim::JoinHandle<T>),
     Detached(PhantomData<T>),
 }
 
@@ -104,41 +104,21 @@ impl<T> JoinHandleInner<T> {
     fn abort_handle(&self) -> AbortHandle {
         match self {
             #[cfg(feature = "tokio")]
-            Self::Tokio(Some(handle)) => AbortHandle {
+            Self::Tokio(handle) => AbortHandle {
                 inner: AbortHandleInner::Tokio(handle.abort_handle()),
             },
             #[cfg(feature = "simulation")]
-            Self::Simulation(Some(handle)) => AbortHandle {
+            Self::Simulation(handle) => AbortHandle {
                 inner: AbortHandleInner::Simulation(handle.abort_handle()),
             },
-            #[cfg(feature = "tokio")]
-            Self::Tokio(None) => panic!("runtime join handle aborted after detach"),
-            #[cfg(feature = "simulation")]
-            Self::Simulation(None) => panic!("runtime join handle aborted after detach"),
-            Self::Detached(_) => panic!("runtime join handle aborted after completion"),
-        }
-    }
-
-    fn detach(&mut self) {
-        match self {
-            #[cfg(feature = "tokio")]
-            Self::Tokio(handle) => {
-                drop(handle.take());
-            }
-            #[cfg(feature = "simulation")]
-            Self::Simulation(handle) => {
-                if let Some(handle) = handle.take() {
-                    handle.detach();
-                }
-            }
-            Self::Detached(_) => {}
+            Self::Detached(_) => unreachable!("abort_handle called on a completed handle"),
         }
     }
 
     fn poll_result(&mut self, cx: &mut Context<'_>) -> Poll<Result<T, JoinError>> {
         match self {
             #[cfg(feature = "tokio")]
-            Self::Tokio(Some(handle)) => match Pin::new(handle).poll(cx) {
+            Self::Tokio(handle) => match Pin::new(handle).poll(cx) {
                 Poll::Ready(Ok(output)) => Poll::Ready(Ok(output)),
                 Poll::Ready(Err(err)) => Poll::Ready(Err(JoinError {
                     inner: JoinErrorInner::Tokio(err),
@@ -146,18 +126,14 @@ impl<T> JoinHandleInner<T> {
                 Poll::Pending => Poll::Pending,
             },
             #[cfg(feature = "simulation")]
-            Self::Simulation(Some(handle)) => match Pin::new(handle).poll_join(cx) {
+            Self::Simulation(handle) => match Pin::new(handle).poll_join(cx) {
                 Poll::Ready(Ok(output)) => Poll::Ready(Ok(output)),
                 Poll::Ready(Err(err)) => Poll::Ready(Err(JoinError {
                     inner: JoinErrorInner::Simulation(err),
                 })),
                 Poll::Pending => Poll::Pending,
             },
-            #[cfg(feature = "tokio")]
-            Self::Tokio(None) => panic!("runtime join handle polled after detach"),
-            #[cfg(feature = "simulation")]
-            Self::Simulation(None) => panic!("runtime join handle polled after detach"),
-            Self::Detached(_) => panic!("runtime join handle polled after completion"),
+            Self::Detached(_) => unreachable!("poll_result called on a completed handle"),
         }
     }
 }
@@ -165,15 +141,6 @@ impl<T> JoinHandleInner<T> {
 impl<T> JoinHandle<T> {
     pub fn abort_handle(&self) -> AbortHandle {
         self.inner.abort_handle()
-    }
-
-    pub fn detach(mut self) {
-        self.detach_inner();
-    }
-
-    fn detach_inner(&mut self) {
-        self.inner.detach();
-        self.inner = JoinHandleInner::Detached(PhantomData);
     }
 }
 
@@ -196,7 +163,14 @@ impl<T> Future for JoinHandle<T> {
 
 impl<T> Drop for JoinHandle<T> {
     fn drop(&mut self) {
-        self.detach_inner();
+        let inner = core::mem::replace(&mut self.inner, JoinHandleInner::Detached(PhantomData));
+        #[cfg(feature = "simulation")]
+        if let JoinHandleInner::Simulation(handle) = inner {
+            handle.detach();
+            return;
+        }
+        // For Tokio (and Detached), dropping the handle does not cancel the task.
+        drop(inner);
     }
 }
 
@@ -233,17 +207,17 @@ impl Handle {
 }
 
 impl Handle {
-    pub fn spawn(&self, future: impl Future<Output = ()> + Send + 'static) -> JoinHandle<()> {
+    pub fn spawn<T: Send + 'static>(&self, future: impl Future<Output = T> + Send + 'static) -> JoinHandle<T> {
         #[cfg(not(any(feature = "tokio", feature = "simulation")))]
         let _ = future;
         match self {
             #[cfg(feature = "tokio")]
             Self::Tokio(handle) => JoinHandle {
-                inner: JoinHandleInner::Tokio(Some(handle.spawn(future))),
+                inner: JoinHandleInner::Tokio(handle.spawn(future)),
             },
             #[cfg(feature = "simulation")]
             Self::Simulation(handle) => JoinHandle {
-                inner: JoinHandleInner::Simulation(Some(handle.spawn_on(sim::NodeId::MAIN, future))),
+                inner: JoinHandleInner::Simulation(handle.spawn_on(sim::NodeId::MAIN, future)),
             },
             #[cfg(not(any(feature = "tokio", feature = "simulation")))]
             _ => unreachable!("runtime dispatch has no enabled backend"),
@@ -297,5 +271,71 @@ impl Handle {
             #[cfg(not(any(feature = "tokio", feature = "simulation")))]
             _ => unreachable!("runtime dispatch has no enabled backend"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+
+
+    #[cfg(feature = "simulation")]
+    #[test]
+    fn dropping_joinhandle_does_not_cancel_task_in_simulation() {
+        use crate::sim::Runtime;
+        let mut rt = Runtime::new(4);
+        let handle = Handle::simulation(rt.handle());
+        let flag = Arc::new(AtomicBool::new(false));
+        let flag_clone = flag.clone();
+
+        rt.block_on(async {
+            let jh = handle.spawn(async move {
+                flag_clone.store(true, Ordering::Release);
+            });
+            drop(jh);
+
+            // Yield so the spawned task gets polled.
+            handle
+                .timeout(std::time::Duration::from_millis(50), async {})
+                .await
+                .ok();
+        });
+
+        assert!(flag.load(Ordering::Acquire));
+    }
+
+    #[cfg(feature = "simulation")]
+    #[test]
+    fn abort_cancels_task_in_simulation() {
+        use crate::sim::Runtime;
+        let mut rt = Runtime::new(4);
+        let handle = Handle::simulation(rt.handle());
+        let flag = Arc::new(AtomicBool::new(false));
+        let flag_clone = flag.clone();
+        let handle_for_spawn = handle.clone();
+
+        rt.block_on(async move {
+            let jh = handle.spawn(async move {
+                // Sleep long enough that abort fires first.
+                handle_for_spawn
+                    .timeout(std::time::Duration::from_millis(100), async {})
+                    .await
+                    .ok();
+                flag_clone.store(true, Ordering::Release);
+            });
+            jh.abort_handle().abort();
+
+            let result = jh.await;
+            // wait to see, above task indeed cancelled.
+             let _ = handle
+                    .timeout(std::time::Duration::from_millis(500), async {})
+                    .await;
+            assert!(result.is_err());
+            assert!(!flag.load(Ordering::Acquire));
+        });
     }
 }
