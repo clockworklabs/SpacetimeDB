@@ -27,7 +27,7 @@ The script will:
 
 **Options:**
 
-- `--seconds N` - Benchmark duration (default: 60)
+- `--seconds N` - Benchmark duration (default: 300)
 - `--concurrency N` - Concurrent connections (default: 64)
 - `--alpha N` - Contention level (default: 1.5)
 - `--systems a,b,c` - Systems to compare (default: convex,spacetimedb)
