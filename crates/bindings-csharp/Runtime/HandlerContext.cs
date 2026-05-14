@@ -22,15 +22,14 @@ public abstract class HandlerContextBase
         txState = new(
             random,
             time,
-            timestamp =>
-                new Internal.TxContext(
-                    CreateLocal(),
-                    default,
-                    null,
-                    timestamp,
-                    AuthCtx.BuildFromSystemTables(null, default),
-                    random
-                ),
+            timestamp => new Internal.TxContext(
+                CreateLocal(),
+                default,
+                null,
+                timestamp,
+                AuthCtx.BuildFromSystemTables(null, default),
+                random
+            ),
             inner => CreateTxContext(inner)
         );
     }
@@ -38,7 +37,8 @@ public abstract class HandlerContextBase
     protected abstract HandlerTxContextBase CreateTxContext(Internal.TxContext inner);
     protected internal abstract LocalBase CreateLocal();
 
-    public Internal.TxContext EnterTxContext(long timestampMicros) => txState.EnterTxContext(timestampMicros);
+    public Internal.TxContext EnterTxContext(long timestampMicros) =>
+        txState.EnterTxContext(timestampMicros);
 
     public void ExitTxContext() => txState.ExitTxContext();
 
@@ -76,7 +76,7 @@ public abstract class HandlerContextBase
             ? TxOutcome<TResult>.Success(outcome.Value!)
             : TxOutcome<TResult>.Failure(
                 outcome.Error
-                ?? new InvalidOperationException("Transaction failed without an error object.")
+                    ?? new InvalidOperationException("Transaction failed without an error object.")
             );
     }
 }
@@ -86,6 +86,7 @@ public abstract class HandlerTxContextBase(Internal.TxContext inner) : IRefresha
     internal Internal.TxContext Inner { get; private set; } = inner;
 
     internal void Refresh(Internal.TxContext inner) => Inner = inner;
+
     void IRefreshableTxContext.Refresh(Internal.TxContext inner) => Refresh(inner);
 
     public LocalBase Db => (LocalBase)Inner.Db;

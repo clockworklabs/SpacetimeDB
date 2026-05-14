@@ -237,7 +237,8 @@ public static class Module
     >? newReducerContext = null;
     private static Func<Identity, IViewContext>? newViewContext = null;
     private static Func<IAnonymousViewContext>? newAnonymousViewContext = null;
-    private static Func<Random, Timestamp, SpacetimeDB.HandlerContextBase>? newHandlerContext = null;
+    private static Func<Random, Timestamp, SpacetimeDB.HandlerContextBase>? newHandlerContext =
+        null;
 
     private static Func<
         Identity,
@@ -324,7 +325,11 @@ public static class Module
     {
         foreach (var route in router.GetRoutes())
         {
-            if (!httpHandlers.Any(handler => handler.MakeHandlerDef().SourceName == route.HandlerFunction))
+            if (
+                !httpHandlers.Any(handler =>
+                    handler.MakeHandlerDef().SourceName == route.HandlerFunction
+                )
+            )
             {
                 throw new ArgumentException(
                     $"HTTP router references unknown handler `{route.HandlerFunction}`",
@@ -597,12 +602,12 @@ public static class Module
                 throw new Exception("Unrecognised extra bytes in the HTTP handler request");
             }
 
-            var response = httpHandlers[(int)id].Invoke(
-                ctx,
-                SpacetimeDB.HttpClient.FromWire(requestWire, requestBody.Consume())
-            );
+            var response = httpHandlers[(int)id]
+                .Invoke(ctx, SpacetimeDB.HttpClient.FromWire(requestWire, requestBody.Consume()));
             var (responseWire, responseBody) = SpacetimeDB.HttpClient.ToWire(response);
-            responseSink.Write(IStructuralReadWrite.ToBytes(new HttpResponseWire.BSATN(), responseWire));
+            responseSink.Write(
+                IStructuralReadWrite.ToBytes(new HttpResponseWire.BSATN(), responseWire)
+            );
             responseBodySink.Write(responseBody);
 
             return Errno.OK;

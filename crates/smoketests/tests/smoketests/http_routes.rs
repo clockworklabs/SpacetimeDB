@@ -890,10 +890,7 @@ fn csharp_http_routes_are_strict_for_non_root_paths() {
 #[test]
 fn csharp_http_routes_are_strict_for_root_paths() {
     require_dotnet!();
-    let (test, identity) = csharp_http_test(
-        "http-routes-csharp-strict-root",
-        CS_STRICT_ROOT_ROUTING_MODULE_CODE,
-    );
+    let (test, identity) = csharp_http_test("http-routes-csharp-strict-root", CS_STRICT_ROOT_ROUTING_MODULE_CODE);
     assert_http_routes_are_strict_for_root_paths(&test.server_url, &identity);
 }
 
@@ -907,10 +904,7 @@ fn csharp_http_handler_observes_full_external_uri() {
 #[test]
 fn csharp_handle_request_body() {
     require_dotnet!();
-    let (test, identity) = csharp_http_test(
-        "http-routes-csharp-request-body",
-        CS_HANDLE_REQUEST_BODY_MODULE_CODE,
-    );
+    let (test, identity) = csharp_http_test("http-routes-csharp-request-body", CS_HANDLE_REQUEST_BODY_MODULE_CODE);
     assert_handle_request_body(&test.server_url, &identity);
 }
 

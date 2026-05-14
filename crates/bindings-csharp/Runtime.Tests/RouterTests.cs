@@ -13,7 +13,8 @@ public class RouterTests
     [Fact]
     public void AllowsDistinctMethodsOnSamePath()
     {
-        var router = Router.New()
+        var router = Router
+            .New()
             .Get("/hooks", TestHandlers.GetHandler)
             .Post("/hooks", TestHandlers.PostHandler);
 
@@ -24,9 +25,11 @@ public class RouterTests
     public void RejectsAnyConflictOnSamePath()
     {
         var ex = Assert.Throws<ArgumentException>(
-            () => Router.New()
-                .Any("/hooks", TestHandlers.GetHandler)
-                .Get("/hooks", TestHandlers.PostHandler)
+            () =>
+                Router
+                    .New()
+                    .Any("/hooks", TestHandlers.GetHandler)
+                    .Get("/hooks", TestHandlers.PostHandler)
         );
 
         Assert.Contains("Route conflict", ex.Message);
@@ -45,10 +48,7 @@ public class RouterTests
     [Fact]
     public void NestJoinsPathsWithoutDoubleSlash()
     {
-        var router = Router.New().Nest(
-            "/api",
-            Router.New().Get("/hooks", TestHandlers.GetHandler)
-        );
+        var router = Router.New().Nest("/api", Router.New().Get("/hooks", TestHandlers.GetHandler));
 
         Assert.NotNull(router);
     }
@@ -57,11 +57,11 @@ public class RouterTests
     public void NestRejectsExistingSiblingPrefix()
     {
         var ex = Assert.Throws<ArgumentException>(
-            () => Router.New().Get("/apiv2", TestHandlers.GetHandler)
-                .Nest(
-                    "/api",
-                    Router.New().Get("/hooks", TestHandlers.PostHandler)
-                )
+            () =>
+                Router
+                    .New()
+                    .Get("/apiv2", TestHandlers.GetHandler)
+                    .Nest("/api", Router.New().Get("/hooks", TestHandlers.PostHandler))
         );
 
         Assert.Contains("Cannot nest router", ex.Message);
@@ -71,11 +71,11 @@ public class RouterTests
     public void NestRejectsExistingRouteAtNestedPrefix()
     {
         var ex = Assert.Throws<ArgumentException>(
-            () => Router.New().Get("/api", TestHandlers.GetHandler)
-                .Nest(
-                    "/api",
-                    Router.New().Get("/hooks", TestHandlers.PostHandler)
-                )
+            () =>
+                Router
+                    .New()
+                    .Get("/api", TestHandlers.GetHandler)
+                    .Nest("/api", Router.New().Get("/hooks", TestHandlers.PostHandler))
         );
 
         Assert.Contains("Cannot nest router", ex.Message);
@@ -85,21 +85,21 @@ public class RouterTests
     public void NestStillRejectsExactRouteConflicts()
     {
         var ex = Assert.Throws<ArgumentException>(
-            () => Router.New().Get("/api/hooks", TestHandlers.GetHandler)
-                .Nest(
-                    "/api",
-                    Router.New().Get("/hooks", TestHandlers.PostHandler)
-                )
+            () =>
+                Router
+                    .New()
+                    .Get("/api/hooks", TestHandlers.GetHandler)
+                    .Nest("/api", Router.New().Get("/hooks", TestHandlers.PostHandler))
         );
 
         Assert.Contains("Cannot nest router", ex.Message);
     }
 
-    private sealed class TestHandlerContext()
-        : HandlerContextBase(new System.Random(), default)
+    private sealed class TestHandlerContext() : HandlerContextBase(new System.Random(), default)
     {
-        protected override HandlerTxContextBase CreateTxContext(SpacetimeDB.Internal.TxContext inner) =>
-            throw new NotSupportedException();
+        protected override HandlerTxContextBase CreateTxContext(
+            SpacetimeDB.Internal.TxContext inner
+        ) => throw new NotSupportedException();
 
         protected internal override LocalBase CreateLocal() => throw new NotSupportedException();
     }

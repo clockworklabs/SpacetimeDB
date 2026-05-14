@@ -423,7 +423,9 @@ public sealed class HttpClient
         {
             Uri = requestWire.Uri,
             Method = FromWireMethod(requestWire.Method),
-            Headers = requestWire.Headers.Entries.Select(h => new HttpHeader(h.Name, h.Value, false)).ToList(),
+            Headers = requestWire
+                .Headers.Entries.Select(h => new HttpHeader(h.Name, h.Value, false))
+                .ToList(),
             Body = new HttpBody(body),
             Version = FromWireVersion(requestWire.Version),
         };

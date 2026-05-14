@@ -1772,17 +1772,14 @@ record HttpHandlerDeclaration
 
         if (
             method.Parameters.FirstOrDefault()?.Type
-            is not INamedTypeSymbol
-            {
-                Name: "HandlerContext",
-                Arity: 0,
-                ContainingType: null,
-                ContainingNamespace:
+                is not INamedTypeSymbol
                 {
-                    Name: "SpacetimeDB",
-                    ContainingNamespace: { IsGlobalNamespace: true }
+                    Name: "HandlerContext",
+                    Arity: 0,
+                    ContainingType: null,
+                    ContainingNamespace:
+                    { Name: "SpacetimeDB", ContainingNamespace: { IsGlobalNamespace: true } }
                 }
-            }
             && methodSyntax.ParameterList.Parameters.FirstOrDefault()?.Type
                 is not IdentifierNameSyntax { Identifier.ValueText: "HandlerContext" }
             && methodSyntax.ParameterList.Parameters.FirstOrDefault()?.Type
@@ -1794,12 +1791,11 @@ record HttpHandlerDeclaration
             && methodSyntax.ParameterList.Parameters.FirstOrDefault()?.Type
                 is not QualifiedNameSyntax
                 {
-                    Left:
-                        AliasQualifiedNameSyntax
-                        {
-                            Alias.Identifier.ValueText: "global",
-                            Name: IdentifierNameSyntax { Identifier.ValueText: "SpacetimeDB" }
-                        },
+                    Left: AliasQualifiedNameSyntax
+                    {
+                        Alias.Identifier.ValueText: "global",
+                        Name: IdentifierNameSyntax { Identifier.ValueText: "SpacetimeDB" }
+                    },
                     Right: IdentifierNameSyntax { Identifier.ValueText: "HandlerContext" }
                 }
         )
@@ -2036,13 +2032,7 @@ public class Module : IIncrementalGenerator
                         (
                             (
                                 (
-                                    (
-                                        (
-                                            (TTableAccessors, TSettings),
-                                            TTableDecls
-                                        ),
-                                        TReducers
-                                    ),
+                                    (((TTableAccessors, TSettings), TTableDecls), TReducers),
                                     TProcedures
                                 ),
                                 THttpHandlers

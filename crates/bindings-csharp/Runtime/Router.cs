@@ -4,12 +4,15 @@ using System;
 using System.Collections.Generic;
 using Internal;
 
-public readonly record struct Handler(string FunctionName)
-{ }
+public readonly record struct Handler(string FunctionName) { }
 
 public sealed class Router
 {
-    internal readonly record struct RouteSpec(MethodOrAny Method, string Path, string HandlerFunction);
+    internal readonly record struct RouteSpec(
+        MethodOrAny Method,
+        string Path,
+        string HandlerFunction
+    );
 
     private const string AcceptableRoutePathCharsHumanDescription =
         "ASCII lowercase letters, digits and `-_~/`";
@@ -108,6 +111,7 @@ public sealed class Router
 
         routes.Add(candidate);
     }
+
     private static string JoinPaths(string prefix, string suffix)
     {
         if (prefix == "/")
