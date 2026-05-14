@@ -219,6 +219,16 @@ pub fn regen_dlls() -> Result<()> {
     .dir(&sdk)
     .run()?;
 
+    cmd!(
+        "dotnet",
+        "restore",
+        "SpacetimeDB.ClientSDK.Godot.csproj",
+        "--configfile",
+        path_arg(&nuget_config_path),
+    )
+    .dir(&sdk)
+    .run()?;
+
     overlay_unity_meta_skeleton(BSATN_PACKAGE_ID)?;
     overlay_unity_meta_skeleton(RUNTIME_PACKAGE_ID)?;
 
@@ -226,6 +236,17 @@ pub fn regen_dlls() -> Result<()> {
         "dotnet",
         "pack",
         "SpacetimeDB.ClientSDK.csproj",
+        "-c",
+        "Release",
+        "--no-restore"
+    )
+    .dir(&sdk)
+    .run()?;
+
+    cmd!(
+        "dotnet",
+        "pack",
+        "SpacetimeDB.ClientSDK.Godot.csproj",
         "-c",
         "Release",
         "--no-restore"

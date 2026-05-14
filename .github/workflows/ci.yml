@@ -747,7 +747,7 @@ jobs:
 
       - name: Run .NET tests
         working-directory: sdks/csharp
-        run: dotnet test -warnaserror --no-restore
+        run: dotnet test -warnaserror --no-restore SpacetimeDB.ClientSDK.csproj
 
       - name: Verify C# formatting
         working-directory: sdks/csharp
@@ -1198,6 +1198,29 @@ jobs:
       # - name: Print rows in the user table
       #   if: always()
       #   run: spacetime sql quickstart-chat "SELECT * FROM user"
+
+  godot_tests:
+    runs-on: spacetimedb-new-runner-2
+    steps:
+      - name: Install Godot
+        shell: bash
+        run: |
+          GODOT_VERSION=4.6.2
+          GODOT_STATUS=stable
+          GODOT_BIN=Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64
+
+          curl -L -o godot.zip \
+            "https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}-${GODOT_STATUS}/${GODOT_BIN}.zip"
+
+          unzip godot.zip
+          chmod +x "${GODOT_BIN}"
+          sudo mv "${GODOT_BIN}" /usr/local/bin/godot
+
+          godot --version
+
+      - name: Replace this step
+        # Fail until we've integrated Godot SDK
+        run: exit 1
 
   version_upgrade_check:
     runs-on: spacetimedb-new-runner-2
