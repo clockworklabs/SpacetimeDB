@@ -14,7 +14,7 @@ use prometheus::{Histogram, IntGauge};
 use spacetimedb_datastore::locking_tx_datastore::{committed_state::CommittedState, datastore::Locking};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::Identity;
-use spacetimedb_snapshot::{CompressionStats, SnapshotRepository};
+use spacetimedb_snapshot::{CompressionStats, DynSnapshotRepo};
 use tokio::sync::watch;
 
 use crate::{util::asyncify, worker_metrics::WORKER_METRICS};
@@ -60,7 +60,7 @@ impl Compression {
 pub struct SnapshotWorker {
     snapshot_created: watch::Sender<TxOffset>,
     request_snapshot: mpsc::UnboundedSender<Request>,
-    snapshot_repository: Arc<SnapshotRepository>,
+    snapshot_repository: Arc<DynSnapshotRepo>,
 }
 
 impl SnapshotWorker {
@@ -69,7 +69,7 @@ impl SnapshotWorker {
     /// The handle is only partially initialized, as it is lacking the
     /// [SnapshotDatabaseState]. This allows control code to [Self::subscribe]
     /// to future snapshots before handing off the worker to the database.
-    pub fn new(snapshot_repository: Arc<SnapshotRepository>, compression: Compression) -> Self {
+    pub fn new(snapshot_repository: Arc<DynSnapshotRepo>, compression: Compression) -> Self {
         let database = snapshot_repository.database_identity();
         let latest_snapshot = snapshot_repository.latest_snapshot().ok().flatten().unwrap_or(0);
         let (snapshot_created, _) = watch::channel(latest_snapshot);
@@ -105,9 +105,9 @@ impl SnapshotWorker {
             .expect("snapshot worker panicked");
     }
 
-    /// Get the [SnapshotRepository] this worker is operating on.
-    pub fn repo(&self) -> &SnapshotRepository {
-        &self.snapshot_repository
+    /// Get the snapshot repo this worker is operating on.
+    pub fn snapshot_repo(&self) -> Arc<DynSnapshotRepo> {
+        self.snapshot_repository.clone()
     }
 
     /// Request a snapshot to be taken.
@@ -166,7 +166,7 @@ enum Request {
 
 struct SnapshotWorkerActor {
     snapshot_requests: mpsc::UnboundedReceiver<Request>,
-    snapshot_repo: Arc<SnapshotRepository>,
+    snapshot_repo: Arc<DynSnapshotRepo>,
     snapshot_created: watch::Sender<TxOffset>,
     metrics: SnapshotMetrics,
     compression: Option<Compressor>,
@@ -225,7 +225,7 @@ impl SnapshotWorkerActor {
 
         let maybe_snapshot = asyncify(move || {
             let _timer = inner_timer.start_timer();
-            Locking::take_snapshot_internal(&state, &snapshot_repo)
+            Locking::take_snapshot_internal(&state, snapshot_repo.as_ref())
         })
         .await
         .with_context(|| format!("error capturing snapshot of database {}", database_identity))?;
@@ -307,7 +307,7 @@ impl CompressionMetrics {
 }
 
 struct Compressor {
-    snapshot_repo: Arc<SnapshotRepository>,
+    snapshot_repo: Arc<DynSnapshotRepo>,
     metrics: CompressionMetrics,
     stats: Option<CompressionStats>,
 }

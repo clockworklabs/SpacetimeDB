@@ -1,13 +1,14 @@
-Write a SpacetimeDB backend module in TypeScript that defines one table and a reducer that updates a row.
+Write a SpacetimeDB backend module in TypeScript that defines one table and two reducers: one that inserts a row and one that updates a row.
 
 TABLE
 - user
   - Fields:
-    - id: number (i32, primary key)
+    - id: number (u64, primary key, autoInc)
     - name: string
     - age: number (i32)
     - active: boolean
 
 REDUCERS
+- insertUser: given name:string, age:number, active:boolean, insert a new row (id is auto-assigned)
 - updateUser: given id:number, name:string, age:number, active:boolean, update the row with matching id
   - (id=id, name=name, age=age, active=active)
