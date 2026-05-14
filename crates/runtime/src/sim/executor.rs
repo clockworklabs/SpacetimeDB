@@ -8,7 +8,6 @@ use core::{
     time::Duration,
 };
 
-use futures_util::FutureExt;
 use spin::Mutex;
 
 use crate::sim::{time::TimeHandle, Rng};
@@ -578,7 +577,7 @@ impl Executor {
     /// nor timers remain, the simulation is considered deadlocked.
     fn block_on<F: Future>(&self, future: F) -> F::Output {
         let sender = self.sender.clone();
-        let (runnable, task) = unsafe {
+        let (runnable, mut task) = unsafe {
             async_task::Builder::new()
                 .metadata(NodeId::MAIN)
                 .spawn_unchecked(move |_| future, move |runnable| sender.send(runnable))
@@ -588,7 +587,11 @@ impl Executor {
         loop {
             self.run_all_ready();
             if task.is_finished() {
-                return task.now_or_never().expect("finished task should resolve");
+                let waker = Waker::noop();
+                return match Pin::new(&mut task).poll(&mut Context::from_waker(&waker)) {
+                    Poll::Ready(output) => output,
+                    Poll::Pending => unreachable!("task.is_finished() was true"),
+                };
             }
 
             if self.time.wake_next_timer() {

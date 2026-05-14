@@ -148,19 +148,23 @@ const CLIENT_REQUESTS: [(u64, u64); 5] = [(0, 4), (1, 5), (2, 7), (3, 9), (4, 11
 /// Each worker sleeps for deterministic virtual latency and may drop the reply
 /// based on buggify.
 fn run_buggified_client_server(seed: u64) -> ClientServerRun {
+    // --- setup: runtime, buggify, two nodes, and communication channels ---
     let mut runtime = Runtime::new(seed);
     buggify::enable(&runtime);
     let handle = runtime.handle();
     let client_node = runtime.create_node().name("client").build();
     let server_node = runtime.create_node().name("server").build();
+    // mpsc channel: client tasks send Request messages to the server task
     let (request_tx, mut request_rx) = mpsc::unbounded::<Request>();
     let server_events = Arc::new(Mutex::new(Vec::new()));
 
     let (responses, server_events) = runtime.block_on(async move {
+        // --- server: receive 5 requests, spawn one worker per request ---
         let server_handle = handle.clone();
         let server_events_for_server = Arc::clone(&server_events);
         let server = server_node.clone().spawn(async move {
             let mut workers = Vec::new();
+            // Receive all 5 requests before processing any replies
             for _ in 0..5 {
                 let request = request_rx.next().await.expect("client should send request");
                 server_events_for_server.lock().push(ServerEvent::Received {
@@ -168,10 +172,13 @@ fn run_buggified_client_server(seed: u64) -> ClientServerRun {
                     at: server_handle.now(),
                 });
 
+                // --- server worker: simulate latency, then drop or reply based on buggify ---
                 let worker_handle = server_handle.clone();
                 let worker_events = Arc::clone(&server_events_for_server);
                 workers.push(server_node.clone().spawn(async move {
+                    // Deterministic virtual latency: each request id has a distinct sleep
                     worker_handle.sleep(Duration::from_millis(request.id + 1)).await;
+                    // buggify decides whether to drop this request (40% probability)
                     if worker_handle.buggify_with_prob(0.4) {
                         worker_events.lock().push(ServerEvent::Dropped {
                             id: request.id,
@@ -180,6 +187,7 @@ fn run_buggified_client_server(seed: u64) -> ClientServerRun {
                         return;
                     }
 
+                    // No fault injected: send the reply
                     let response = Response {
                         id: request.id,
                         value: request.input * 10,
@@ -196,14 +204,17 @@ fn run_buggified_client_server(seed: u64) -> ClientServerRun {
                 }));
             }
 
+            // Wait for all server workers to complete
             for worker in workers {
                 worker.await.expect("server worker should complete");
             }
         });
 
+        // --- client: spawn one task per request, send them to server, collect responses ---
         let client_outer_node = client_node.clone();
         let client = client_node.spawn(async move {
             let mut requests = Vec::new();
+            // Spawn a task for each request so they submit concurrently
             for (id, input) in CLIENT_REQUESTS {
                 let request_tx = request_tx.clone();
                 let client_request_node = client_outer_node.clone();
@@ -212,11 +223,14 @@ fn run_buggified_client_server(seed: u64) -> ClientServerRun {
                     request_tx
                         .unbounded_send(Request { id, input, respond_to })
                         .expect("server inbox should be open");
+                    // Await the server's reply (None if the server dropped this request)
                     (id, response_rx.await.ok())
                 }));
             }
+            // All requests sent, close the channel so the server loop terminates
             drop(request_tx);
 
+            // Collect responses in spawn order
             let mut responses = Vec::new();
             for request in requests {
                 responses.push(request.await.expect("client request task should complete"));
@@ -224,11 +238,13 @@ fn run_buggified_client_server(seed: u64) -> ClientServerRun {
             responses
         });
 
+        // Drive both client and server to completion
         let responses = client.await.expect("client task should complete");
         server.await.expect("server task should complete");
         (responses, server_events.lock().clone())
     });
 
+    // --- package the results: client responses, server trace, and total virtual time ---
     ClientServerRun {
         responses,
         server_events,
