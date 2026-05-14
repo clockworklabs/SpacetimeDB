@@ -3,10 +3,4 @@
     <BaseOutputPath>bin~</BaseOutputPath>
     <BaseIntermediateOutputPath>obj~</BaseIntermediateOutputPath>
   </PropertyGroup>
-
-  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'SpacetimeDB.ClientSDK.Godot'">
-    <BaseOutputPath>bin~/</BaseOutputPath>
-    <BaseIntermediateOutputPath>obj~/godot/</BaseIntermediateOutputPath>
-    <MSBuildProjectExtensionsPath>obj~/godot/</MSBuildProjectExtensionsPath>
-  </PropertyGroup>
 </Project>
