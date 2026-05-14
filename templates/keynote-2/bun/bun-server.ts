@@ -131,7 +131,7 @@ async function rpcTransfer(args: Record<string, unknown>) {
         .select()
         .from(accounts)
         .where(inArray(accounts.id, [fromId, toId]))
-        .for('update', { noWait: true })
+        .for('update')
         .orderBy(accounts.id);
 
       if (rows.length !== 2) {
