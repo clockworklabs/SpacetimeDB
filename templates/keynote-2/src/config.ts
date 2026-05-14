@@ -72,7 +72,20 @@ export interface BenchOptions extends SharedRuntimeConfig {
   testName: string;
   seconds: number;
   concurrency: number;
-  alpha: number;
+  /**
+   * Alphas to sweep. The basic-bench code path writes one JSON per (connector,
+   * alpha, run) tuple. For backward compatibility, a single `--alpha N` argument
+   * resolves to a single-element array.
+   */
+  alphas: number[];
+  /** Number of times to repeat each (connector, alpha) combination. */
+  runs: number;
+  /**
+   * If true, runs `pnpm run prep` before each (connector, alpha) combination
+   * to reset DB state. Each repeat run within the same (connector, alpha) uses
+   * the same prepped state (so inter-run variance is meaningful).
+   */
+  prepBetweenAlphas: boolean;
   connectors: ConnectorKey[] | null;
   contentionTests: ContentionTests | null;
   concurrencyTests: ConcurrencyTests | null;
@@ -106,6 +119,7 @@ export type RunnerRuntimeConfig = Pick<
   | 'maxInflightPerWorker'
   | 'minOpTimeoutMs'
   | 'opTimeoutMs'
+  | 'poolMax'
   | 'precomputedTransferPairs'
   | 'tailSlackMs'
   | 'verifyTransactions'
@@ -193,6 +207,23 @@ export function readOptionalBooleanEnv(
   return parseBooleanLike(raw);
 }
 
+export function parseAlphaList(
+  raw: string | number | string[] | undefined,
+  label: string,
+): number[] | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw === 'number') return [raw];
+
+  const values = (Array.isArray(raw) ? raw : [raw])
+    .flatMap((value) => String(value).split(','))
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (values.length === 0) return undefined;
+
+  return values.map((value) => parseFiniteNumber(value, label));
+}
+
 export function parseConnectorList(
   raw: string | string[] | undefined,
   label: string,
@@ -222,7 +253,7 @@ export function getSharedRuntimeDefaults(
 ): SharedRuntimeConfig {
   return {
     accounts: readNumberEnv('SEED_ACCOUNTS', 100_000, env),
-    initialBalance: readNumberEnv('SEED_INITIAL_BALANCE', 10_000_000, env),
+    initialBalance: readNumberEnv('SEED_INITIAL_BALANCE', 1_000_000_000, env),
     stdbUrl: normalizeStdbUrl(readStringEnv('STDB_URL', '127.0.0.1:3000', env)),
     stdbModule: readStringEnv('STDB_MODULE', 'test-1', env),
     stdbModulePath: readStringEnv('STDB_MODULE_PATH', './spacetimedb', env),
@@ -232,7 +263,7 @@ export function getSharedRuntimeDefaults(
     ),
     stdbConfirmedReads: readBooleanEnv('STDB_CONFIRMED_READS', true, env),
     useDocker: readBooleanEnv('USE_DOCKER', false, env),
-    poolMax: readNumberEnv('MAX_POOL', 1000, env),
+    poolMax: readNumberEnv('MAX_POOL', 64, env),
     bunUrl: readStringEnv('BUN_URL', 'http://127.0.0.1:4000', env),
     convexUrl: readStringEnv('CONVEX_URL', 'http://127.0.0.1:3210', env),
     convexDir: readStringEnv('CONVEX_DIR', './convex-app', env),
