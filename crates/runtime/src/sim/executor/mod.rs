@@ -489,7 +489,7 @@ impl Executor {
             self.run_all_ready();
             if task.is_finished() {
                 let waker = Waker::noop();
-                return match Pin::new(&mut task).poll(&mut Context::from_waker(&waker)) {
+                return match Pin::new(&mut task).poll(&mut Context::from_waker(waker)) {
                     Poll::Ready(output) => output,
                     Poll::Pending => unreachable!("task.is_finished() was true"),
                 };

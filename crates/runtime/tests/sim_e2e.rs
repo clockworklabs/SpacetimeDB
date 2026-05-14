@@ -1,4 +1,5 @@
 #![cfg(feature = "simulation")]
+#![allow(clippy::disallowed_macros)]
 
 use std::{sync::Arc, time::Duration};
 

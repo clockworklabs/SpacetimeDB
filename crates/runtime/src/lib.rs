@@ -276,7 +276,9 @@ impl Handle {
 
 #[cfg(test)]
 mod tests {
+    #[allow(unused_imports)]
     use super::*;
+    #[cfg(any(feature = "tokio", feature = "simulation"))]
     use std::sync::{
         atomic::{AtomicBool, Ordering},
         Arc,

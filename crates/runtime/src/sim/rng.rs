@@ -169,14 +169,14 @@ impl GlobalRng {
     #[allow(dead_code)]
     pub(crate) fn finish_determinism_check(&self) -> Result<(), String> {
         let inner = self.inner.lock();
-        if let Some((log, consumed)) = &inner.check {
-            if *consumed != log.len() {
-                return Err(format!(
-                    "non-determinism detected for seed {}: consumed {consumed} of {} checkpoints",
-                    inner.seed,
-                    log.len()
-                ));
-            }
+        if let Some((log, consumed)) = &inner.check
+            && *consumed != log.len()
+        {
+            return Err(format!(
+                "non-determinism detected for seed {}: consumed {consumed} of {} checkpoints",
+                inner.seed,
+                log.len()
+            ));
         }
         Ok(())
     }
