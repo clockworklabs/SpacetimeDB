@@ -12,6 +12,7 @@ on:
 jobs:
   docker-amd64:
     runs-on: ubuntu-latest
+    environment: release
     name: Build DockerHub AMD64 Container
     steps:
       - name: Checkout
@@ -69,6 +70,7 @@ jobs:
 
   docker-arm64:
     runs-on: arm-runner
+    environment: release
     name: Build DockerHub ARM64 Container
     steps:
       - name: Install jq

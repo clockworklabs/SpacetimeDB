@@ -29,6 +29,7 @@ jobs:
 
     name: Build CLI for ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
+    environment: release
 
     steps:
       - name: Checkout
