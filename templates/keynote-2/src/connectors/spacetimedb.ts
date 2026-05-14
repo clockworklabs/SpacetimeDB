@@ -128,6 +128,15 @@ export function spacetimedb(config: SpacetimeConnectorConfig): ReducerConnector 
           });
         }
 
+        case 'transfer_with_audit': {
+          return conn.reducers.transferWithAudit({
+            from: args.from,
+            to: args.to,
+            amount: args.amount,
+            fraudLimit: BigInt((args.fraudLimit ?? args.fraud_limit) as any),
+          });
+        }
+
         default:
           throw new Error(`Unknown reducer: ${fn}`);
       }
