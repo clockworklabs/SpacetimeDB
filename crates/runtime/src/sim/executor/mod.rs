@@ -13,8 +13,8 @@ use spin::Mutex;
 use crate::sim::{time::TimeHandle, Rng};
 
 mod task;
-pub use task::{AbortHandle, JoinError, JoinHandle};
 use task::Abortable;
+pub use task::{AbortHandle, JoinError, JoinHandle};
 
 type Runnable = async_task::Runnable<NodeId>;
 

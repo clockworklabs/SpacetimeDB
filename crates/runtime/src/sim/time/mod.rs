@@ -1,7 +1,13 @@
 mod sleep;
 
 use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};
-use core::{fmt, future::Future, pin::pin, task::{Poll, Waker}, time::Duration};
+use core::{
+    fmt,
+    future::Future,
+    pin::pin,
+    task::{Poll, Waker},
+    time::Duration,
+};
 use sleep::wake_all;
 use spin::Mutex;
 

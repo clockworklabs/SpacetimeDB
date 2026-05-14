@@ -38,10 +38,7 @@ impl<T> JoinHandle<T> {
     }
 
     /// Poll the underlying async_task::Task for its output.
-    pub(crate) fn poll_join(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<T, JoinError>> {
+    pub(crate) fn poll_join(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<T, JoinError>> {
         // async_task::Task implements Future. Polling it drives the wrapped
         // Abortable future inside the executor.
         Pin::new(&mut self.task).poll(cx)
