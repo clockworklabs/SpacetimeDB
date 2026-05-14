@@ -280,8 +280,8 @@ If using Docker, make sure to set `USE_DOCKER=1` in `.env`, verify docker-compos
 Every run writes a JSON file into `./runs/`:
 
 - Directory: `./runs/`
-- Filename: `<test-name>-<timestamp>.json`
-  - Example: `test-1-2025-11-17T16-45-12-345Z.json`
+- Filename: `<test-name>-<connector>-a<alpha>-<timestamp>.json`
+  - Example: `test-1-postgres_rpc-a1.5-2025-11-17T16-45-12-345Z.json`
 
 For rollup tables, compute steady-state stats after a 30-second warmup window (`tSec >= 30`). The `scripts/bench-stats.py` default matches this (`--warmup-sec 30`).
 

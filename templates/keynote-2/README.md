@@ -20,7 +20,7 @@ The demo compares SpacetimeDB and Convex by default, since both are easy for any
 
 ## Results Summary
 
-All tests run for 300 seconds with 64 concurrent connections, with a transfer workload (read-modify-write transaction between two accounts).
+All tests run for 300 seconds with client concurrency set to 2x host vCPUs, with a transfer workload (read-modify-write transaction between two accounts).
 
 The SpacetimeDB rows were obtained using a single-node SpacetimeDB Standalone instance, so the published numbers are reproducible with the public, downloadable server.
 
@@ -58,6 +58,8 @@ Data description: reported summary metrics are computed from steady-state window
 | Node.js + CockroachDB (5 node) | 320 | off | 320 | 0.03 | 0.18 | 698 | 9,695 |
 | HAProxy - Node.js + CockroachDB (5 node) | 64 | off | 64 | 6.87 | 9.12 | 5,943 | 9,880 |
 
+Note: the HAProxy + CockroachDB `alpha=1.5` row uses 64 clients (instead of 320) because 320-way concurrency overwhelmed CRDB and did not produce stable sample data for this profile.
+
 ### Alpha = 0 (Pipelined)
 
 | System | clients | pipelining | max_pool | TPS | TPS Stddev | p50 lat ms | p99 lat ms |
@@ -72,7 +74,7 @@ Data description: reported summary metrics are computed from steady-state window
 | Node.js + CockroachDB (5 node) | 320 | 40 | 320 | 4,250 | 766 | 3,030 | 3,161 |
 | HAProxy - Node.js + CockroachDB (5 node) | 320 | 40 | 320 | 5,992 | 1,765 | 2,431 | 2,562 |
 
-**Key Finding:** In these runs, SpacetimeDB is the only system sustaining hundreds of thousands of TPS in both alpha profiles. Non-SpacetimeDB systems remain in the low-thousands TPS range at best, and several show severe contention sensitivity at `alpha=1.5` with large tail-latency growth.
+**Key Finding:** In these runs, SpacetimeDB is the only system sustaining hundreds of thousands of TPS in both alpha profiles. At `alpha=0`, the strongest non-SpacetimeDB results are in the ~10k TPS range, while at `alpha=1.5` several systems show severe contention sensitivity with large tail-latency growth and throughput collapse.
 
 ## Methodology
 
@@ -84,13 +86,13 @@ Throughput is counted from successful operations that the benchmark client obser
 
 ### Published Benchmark Defaults
 
-The reported tables in this README use the following defaults unless a row explicitly shows a different value:
+The reported tables in this README use the following profile defaults unless a row explicitly shows a different value:
 
-- `clients`: `64`
+- `clients`: `2x` host vCPUs
 - `pipelining`: `off` for non-pipelined tables
 - `MAX_POOL`: `64` for pg-based RPC servers (`postgres_rpc`, `cockroach_rpc`, `supabase_rpc`, `planetscale_pg_rpc`)
 - Pipelined table runs use `BENCH_PIPELINED=1` and `MAX_INFLIGHT_PER_WORKER=40`
-- `MAX_INFLIGHT_PER_WORKER` is required whenever `BENCH_PIPELINED=1`
+- When `BENCH_PIPELINED=1`, set `MAX_INFLIGHT_PER_WORKER` explicitly in the environment
 
 For rows that scale client count above 64 (for example, some HA topologies), `max_pool` is scaled to match the row values shown in the table.
 
