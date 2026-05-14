@@ -1,3 +1,4 @@
+extern crate alloc;
 use core::{
     fmt,
     future::Future,
