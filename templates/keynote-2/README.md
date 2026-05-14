@@ -20,7 +20,7 @@ The demo compares SpacetimeDB and Convex by default, since both are easy for any
 
 ## Results Summary
 
-All tests run for 300 seconds with client concurrency set to 2x host vCPUs, with a transfer workload (read-modify-write transaction between two accounts).
+For all tests, we ran N clients where N is 2x the number of CPUs on the database machine used for the test. Exact client counts are shown in each row. The workload is a transfer transaction (read-modify-write transaction between two accounts).
 
 The SpacetimeDB rows were obtained using a single-node SpacetimeDB Standalone instance, so the published numbers are reproducible with the public, downloadable server.
 
@@ -60,7 +60,9 @@ Data description: reported summary metrics are computed from steady-state window
 
 Note: the HAProxy + CockroachDB `alpha=1.5` row uses 64 clients (instead of 320) because 320-way concurrency overwhelmed CRDB and did not produce stable sample data for this profile.
 
-### Alpha = 0 (Pipelined)
+### Alpha = 0 (All-Connectors Pipelining Check)
+
+The headline comparison allows pipelining only for SpacetimeDB. This separate check enables pipelining for every connector to show how the other systems behave when clients submit up to 40 requests without waiting for each response.
 
 | System | clients | pipelining | max_pool | TPS | TPS Stddev | p50 lat ms | p99 lat ms |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -78,7 +80,7 @@ Note: the HAProxy + CockroachDB `alpha=1.5` row uses 64 clients (instead of 320)
 
 ## Methodology
 
-All systems were tested with **out-of-the-box default settings**, with one exception: the local Postgres instance (and Bun, which uses the same Postgres instance) is configured with `default_transaction_isolation = 'serializable'`. No other custom tuning or configuration optimization was applied.
+All systems were tested with **out-of-the-box database and platform settings**, with one exception: the local Postgres instance (and Bun, which uses the same Postgres instance) is configured with `default_transaction_isolation = 'serializable'`. For Postgres-like RPC servers, the app-side Drizzle connection pool is configured as shown in the result tables, and the benchmark connects directly to Postgres.
 
 The managed Postgres services (Supabase, PlanetScale) run at their default isolation level of `READ COMMITTED`.
 
@@ -88,10 +90,11 @@ Throughput is counted from successful operations that the benchmark client obser
 
 The reported tables in this README use the following profile defaults unless a row explicitly shows a different value:
 
-- `clients`: `2x` host vCPUs
+- `clients`: N clients where N is 2x the number of CPUs on the database machine used for the test
 - `pipelining`: `off` for non-pipelined runs
 - `MAX_POOL`: `64` for pg-based RPC servers (`postgres_rpc`, `cockroach_rpc`, `supabase_rpc`, `planetscale_pg_rpc`)
-- Pipelined runs use `BENCH_PIPELINED=1` and `MAX_INFLIGHT_PER_WORKER=40`
+- Main comparison runs use `MAX_INFLIGHT_PER_WORKER=40` for SpacetimeDB only
+- All-connectors pipelining-check runs use `BENCH_PIPELINED=1` and `MAX_INFLIGHT_PER_WORKER=40`
 - When `BENCH_PIPELINED=1`, set `MAX_INFLIGHT_PER_WORKER` explicitly in the environment
 
 For rows that scale client count above 64 (for example, some HA topologies), `max_pool` is scaled to match the row values shown in the table.
@@ -196,7 +199,7 @@ This architectural difference means SpacetimeDB can execute transactions in micr
 
 ### Client Pipelining
 
-The benchmark supports **pipelining** for all clients - sending multiple requests without waiting for responses. This maximizes throughput by keeping connections saturated.
+The benchmark supports **pipelining** for all clients - sending multiple requests without waiting for responses. The headline comparison uses this for SpacetimeDB only; the all-connectors pipelining check enables it across systems.
 
 ### Confirmed Reads (`withConfirmedReads`)
 

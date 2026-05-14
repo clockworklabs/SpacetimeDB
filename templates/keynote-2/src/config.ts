@@ -253,7 +253,7 @@ export function getSharedRuntimeDefaults(
 ): SharedRuntimeConfig {
   return {
     accounts: readNumberEnv('SEED_ACCOUNTS', 100_000, env),
-    initialBalance: readNumberEnv('SEED_INITIAL_BALANCE', 10_000_000, env),
+    initialBalance: readNumberEnv('SEED_INITIAL_BALANCE', 1_000_000_000, env),
     stdbUrl: normalizeStdbUrl(readStringEnv('STDB_URL', '127.0.0.1:3000', env)),
     stdbModule: readStringEnv('STDB_MODULE', 'test-1', env),
     stdbModulePath: readStringEnv('STDB_MODULE_PATH', './spacetimedb', env),

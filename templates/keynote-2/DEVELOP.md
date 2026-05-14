@@ -212,7 +212,7 @@ pnpm run bench test-1 --connectors cockroach_rpc --concurrency-tests 16,512,2,1.
 
 - **`--seconds N`**
   - Duration of the benchmark in seconds
-  - Default: `60`
+  - Default: `300`
 
 - **`--concurrency N`**
   - Number of workers / in-flight operations
