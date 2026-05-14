@@ -20,7 +20,7 @@ export async function fetchPeople(): Promise<PersonData[]> {
       reject(new Error('SpacetimeDB connection timeout'));
     }, 10000);
 
-    const connection = DbConnection.builder()
+    const _connection = DbConnection.builder()
       .withUri(HOST)
       .withDatabaseName(DB_NAME)
       .onConnect(conn => {
