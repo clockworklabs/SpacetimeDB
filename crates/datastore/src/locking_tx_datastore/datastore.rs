@@ -942,6 +942,14 @@ impl Locking {
         tx.rollback_downgrade(workload)
     }
 
+    #[cfg(feature = "portable")]
+    pub fn rebuild_sequence_state_from_committed(&self) -> Result<()> {
+        let mut committed_state = self.committed_state.write();
+        let sequence_state = committed_state.build_sequence_state()?;
+        *self.sequence_state.lock() = sequence_state;
+        Ok(())
+    }
+
     /// This method only updates the in-memory `committed_state`.
     /// For durability, see `RelationalDB::commit_tx_downgrade`.
     pub fn commit_mut_tx_downgrade(&self, tx: MutTxId, workload: Workload) -> (TxData, TxMetrics, TxId) {

@@ -141,7 +141,7 @@ pub(crate) fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn
         }
     };
     let test_utils_registration = native_test_utils_registration(quote! {
-        spacetimedb::rt::register_reducer_for_tests::<_, #func_name>(#func_name)
+        __register_describer()
     });
 
     Ok(quote! {

@@ -101,57 +101,84 @@ error[E0276]: impl has stricter requirements than trait
    |
    = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0599]: no method named `iter` found for reference `&test__ViewHandle` in the current scope
+error[E0599]: no method named `iter` found for struct `test__ViewHandle` in the current scope
   --> tests/ui/views.rs:15:34
    |
+ 3 | #[table(accessor = test)]
+   | ----------------------- method `iter` not found for this struct
+...
 15 |     for _ in read_only.db.test().iter() {}
-   |                                  ^^^^ method not found in `&test__ViewHandle`
+   |                                  ^^^^ method not found in `test__ViewHandle`
    |
    = help: items from traits can only be used if the trait is implemented and in scope
    = note: the following traits define an item `iter`, perhaps you need to implement one of them:
            candidate #1: `bitflags::traits::Flags`
-           candidate #2: `spacetimedb::Table`
+           candidate #2: `icu_provider::baked::DataStore`
+           candidate #3: `petgraph::visit::traversal::Walker`
+           candidate #4: `spacetimedb::Table`
+           candidate #5: `spacetimedb_datastore::locking_tx_datastore::state_view::StateView`
+           candidate #6: `spacetimedb_table::table_index::index::Index`
+           candidate #7: `strum::IntoEnumIterator`
+           candidate #8: `strum::VariantIterator`
+           candidate #9: `toml_edit::table::TableLike`
 
-error[E0599]: no method named `insert` found for reference `&test__ViewHandle` in the current scope
+error[E0599]: no method named `insert` found for struct `test__ViewHandle` in the current scope
   --> tests/ui/views.rs:22:25
    |
+ 3 | #[table(accessor = test)]
+   | ----------------------- method `insert` not found for this struct
+...
 22 |     read_only.db.test().insert(Test { id: 0, x: 0 });
-   |                         ^^^^^^ method not found in `&test__ViewHandle`
+   |                         ^^^^^^ method not found in `test__ViewHandle`
    |
    = help: items from traits can only be used if the trait is implemented and in scope
    = note: the following traits define an item `insert`, perhaps you need to implement one of them:
            candidate #1: `bitflags::traits::Flags`
            candidate #2: `ppv_lite86::types::Vec2`
            candidate #3: `ppv_lite86::types::Vec4`
-           candidate #4: `similar::algorithms::DiffHook`
-           candidate #5: `spacetimedb::Table`
+           candidate #4: `serde_with::duplicate_key_impls::error_on_duplicate::PreventDuplicateInsertsMap`
+           candidate #5: `serde_with::duplicate_key_impls::error_on_duplicate::PreventDuplicateInsertsSet`
+           candidate #6: `serde_with::duplicate_key_impls::first_value_wins::DuplicateInsertsFirstWinsMap`
+           candidate #7: `similar::algorithms::DiffHook`
+           candidate #8: `spacetimedb::Table`
+           candidate #9: `spacetimedb_table::table_index::index::Index`
+           candidate #10: `toml_edit::table::TableLike`
+           candidate #11: `wasmtime_environ::compile::CacheStore`
 
-error[E0599]: no method named `try_insert` found for reference `&test__ViewHandle` in the current scope
+error[E0599]: no method named `try_insert` found for struct `test__ViewHandle` in the current scope
   --> tests/ui/views.rs:29:25
    |
+ 3 | #[table(accessor = test)]
+   | ----------------------- method `try_insert` not found for this struct
+...
 29 |     read_only.db.test().try_insert(Test { id: 0, x: 0 });
    |                         ^^^^^^^^^^
    |
    = help: items from traits can only be used if the trait is implemented and in scope
    = note: the following traits define an item `try_insert`, perhaps you need to implement one of them:
            candidate #1: `http::header::map::into_header_name::Sealed`
-           candidate #2: `spacetimedb::Table`
+           candidate #2: `http::header::map::into_header_name::Sealed`
+           candidate #3: `spacetimedb::Table`
 help: there is a method `try_into` with a similar name, but with different arguments
   --> $RUST/core/src/convert/mod.rs
    |
    |     fn try_into(self) -> Result<T, Self::Error>;
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error[E0599]: no method named `delete` found for reference `&test__ViewHandle` in the current scope
+error[E0599]: no method named `delete` found for struct `test__ViewHandle` in the current scope
   --> tests/ui/views.rs:36:25
    |
+ 3 | #[table(accessor = test)]
+   | ----------------------- method `delete` not found for this struct
+...
 36 |     read_only.db.test().delete(Test { id: 0, x: 0 });
-   |                         ^^^^^^ method not found in `&test__ViewHandle`
+   |                         ^^^^^^ method not found in `test__ViewHandle`
    |
    = help: items from traits can only be used if the trait is implemented and in scope
    = note: the following traits define an item `delete`, perhaps you need to implement one of them:
            candidate #1: `similar::algorithms::DiffHook`
            candidate #2: `spacetimedb::Table`
+           candidate #3: `spacetimedb_table::table_index::index::Index`
 
 error[E0599]: no method named `delete` found for struct `UniqueColumnReadOnly<Tbl, ColType, Col>` in the current scope
   --> tests/ui/views.rs:43:30

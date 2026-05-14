@@ -165,7 +165,7 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
         }
     };
     let test_utils_registration = native_test_utils_registration(quote! {
-        spacetimedb::rt::ViewRegistrar::<#ctx_ty>::register_for_tests::<_, #func_name, _, _>(#func_name)
+        __register_describer()
     });
 
     let explicit_name = args.name.as_ref();

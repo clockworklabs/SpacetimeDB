@@ -691,13 +691,6 @@ impl CommittedState {
         for change in tx_state.pending_schema_changes.into_iter().rev() {
             self.rollback_pending_schema_change(seq_state, change);
         }
-        #[cfg(feature = "portable")]
-        if let Ok(rebuilt) = self.build_sequence_state() {
-            // Portable unit tests expect sequence allocations to roll back with the
-            // transaction. Rebuild from committed `st_sequence` rows after discarding
-            // pending table writes.
-            *seq_state = rebuilt;
-        }
         self.next_tx_offset.saturating_sub(1)
     }
 

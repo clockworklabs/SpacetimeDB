@@ -87,7 +87,7 @@ pub(crate) fn procedure_impl(_args: ProcedureArgs, original_function: &ItemFn) -
         }
     };
     let test_utils_registration = native_test_utils_registration(quote! {
-        spacetimedb::rt::register_procedure_for_tests::<_, _, #func_name>(#func_name)
+        __register_describer()
     });
 
     let generate_explicit_names = generate_explicit_names_impl(&procedure_name.value(), func_name, explicit_name);

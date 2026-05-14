@@ -279,36 +279,60 @@ importers:
       spacetimedb:
         specifier: workspace:^
         version: link:../../crates/bindings-typescript
+    devDependencies:
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
 
   modules/module-test-ts:
     dependencies:
       spacetimedb:
         specifier: workspace:^
         version: link:../../crates/bindings-typescript
+    devDependencies:
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
 
   modules/sdk-test-case-conversion-ts:
     dependencies:
       spacetimedb:
         specifier: workspace:^
         version: link:../../crates/bindings-typescript
+    devDependencies:
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
 
   modules/sdk-test-connect-disconnect-ts:
     dependencies:
       spacetimedb:
         specifier: workspace:^
         version: link:../../crates/bindings-typescript
+    devDependencies:
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
 
   modules/sdk-test-procedure-ts:
     dependencies:
       spacetimedb:
         specifier: workspace:^
         version: link:../../crates/bindings-typescript
+    devDependencies:
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
 
   modules/sdk-test-ts:
     dependencies:
       spacetimedb:
         specifier: workspace:^
         version: link:../../crates/bindings-typescript
+    devDependencies:
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
 
   templates/angular-ts:
     dependencies:
@@ -465,6 +489,9 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(@types/debug@4.1.12)(@types/node@24.3.0)(jiti@2.6.1)(jsdom@26.1.0)(sass@1.97.1)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2)
 
   templates/keynote-2:
     dependencies:
