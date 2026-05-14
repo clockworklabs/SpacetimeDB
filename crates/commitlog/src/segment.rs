@@ -356,9 +356,10 @@ impl OffsetIndexWriter {
             return Ok(());
         }
 
-        self.head
+        let entry_offset = self
+            .head
             .append(self.candidate_min_tx_offset, self.candidate_byte_offset)?;
-        self.head.async_flush()?;
+        self.head.async_flush_entry(entry_offset)?;
         self.reset();
 
         Ok(())
@@ -371,10 +372,6 @@ impl FileLike for OffsetIndexWriter {
         let _ = self.append_internal().map_err(|e| {
             warn!("failed to append to offset index: {e:?}");
         });
-        let _ = self
-            .head
-            .async_flush()
-            .map_err(|e| warn!("failed to flush offset index: {e:?}"));
         Ok(())
     }
 
