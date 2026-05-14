@@ -8482,7 +8482,6 @@ version = "2.2.0"
 dependencies = [
  "async-task",
  "futures",
- "futures-util",
  "libc",
  "spin",
  "tokio",
