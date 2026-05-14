@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://tests/GodotPlayModeTests.cs" id="1_tests"]
+
+[node name="GodotPlayModeTests" type="Node"]
+script = ExtResource("1_tests")
