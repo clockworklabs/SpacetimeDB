@@ -225,6 +225,9 @@ pub fn regen_dlls() -> Result<()> {
         "SpacetimeDB.ClientSDK.Godot.csproj",
         "--configfile",
         path_arg(&nuget_config_path),
+        "-p:BaseOutputPath=bin~/",
+        "-p:BaseIntermediateOutputPath=obj~/godot/",
+        "-p:MSBuildProjectExtensionsPath=obj~/godot/",
     )
     .dir(&sdk)
     .run()?;
@@ -249,7 +252,10 @@ pub fn regen_dlls() -> Result<()> {
         "SpacetimeDB.ClientSDK.Godot.csproj",
         "-c",
         "Release",
-        "--no-restore"
+        "--no-restore",
+        "-p:BaseOutputPath=bin~/",
+        "-p:BaseIntermediateOutputPath=obj~/godot/",
+        "-p:MSBuildProjectExtensionsPath=obj~/godot/"
     )
     .dir(&sdk)
     .run()?;
