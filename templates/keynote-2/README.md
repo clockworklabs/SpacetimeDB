@@ -89,9 +89,9 @@ Throughput is counted from successful operations that the benchmark client obser
 The reported tables in this README use the following profile defaults unless a row explicitly shows a different value:
 
 - `clients`: `2x` host vCPUs
-- `pipelining`: `off` for non-pipelined tables
+- `pipelining`: `off` for non-pipelined runs
 - `MAX_POOL`: `64` for pg-based RPC servers (`postgres_rpc`, `cockroach_rpc`, `supabase_rpc`, `planetscale_pg_rpc`)
-- Pipelined table runs use `BENCH_PIPELINED=1` and `MAX_INFLIGHT_PER_WORKER=40`
+- Pipelined runs use `BENCH_PIPELINED=1` and `MAX_INFLIGHT_PER_WORKER=40`
 - When `BENCH_PIPELINED=1`, set `MAX_INFLIGHT_PER_WORKER` explicitly in the environment
 
 For rows that scale client count above 64 (for example, some HA topologies), `max_pool` is scaled to match the row values shown in the table.
