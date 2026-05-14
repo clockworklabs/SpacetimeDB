@@ -62,7 +62,7 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::OnceLock;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use which::which;
 
 /// Returns the remote server URL if running against a remote server.
@@ -1166,6 +1166,12 @@ log = "0.4"
         // Now publish with --bin-path to skip rebuild
         let publish_start = Instant::now();
         let mut args = vec!["publish", "--server", &self.server_url, "--bin-path", &wasm_path_str];
+        eprintln!(
+            "[SMOKETEST] publish start: server={} module={} target={}",
+            self.server_url,
+            self.module_name,
+            name.unwrap_or("<new>")
+        );
 
         if opts.force {
             args.push("--yes");
@@ -1223,6 +1229,10 @@ log = "0.4"
     /// Arguments are passed directly to the CLI as strings.
     pub fn call(&self, name: &str, args: &[&str]) -> Result<String> {
         let identity = self.database_identity.as_ref().context("No database published")?;
+        eprintln!(
+            "[SMOKETEST] call start: server={} database={} reducer={} args={:?}",
+            self.server_url, identity, name, args
+        );
 
         let mut cmd_args = vec!["call", "--server", &self.server_url, "--", identity.as_str(), name];
         cmd_args.extend(args);
@@ -1282,6 +1292,10 @@ log = "0.4"
     /// Executes a SQL query against the database.
     pub fn sql(&self, query: &str) -> Result<String> {
         let identity = self.database_identity.as_ref().context("No database published")?;
+        eprintln!(
+            "[SMOKETEST] sql start: server={} database={} query={}",
+            self.server_url, identity, query
+        );
 
         self.spacetime(&["sql", "--server", &self.server_url, identity.as_str(), query])
     }
@@ -1289,6 +1303,10 @@ log = "0.4"
     /// Executes a SQL query with the --confirmed flag.
     pub fn sql_confirmed(&self, query: &str) -> Result<String> {
         let identity = self.database_identity.as_ref().context("No database published")?;
+        eprintln!(
+            "[SMOKETEST] confirmed sql start: server={} database={} query={}",
+            self.server_url, identity, query
+        );
 
         self.spacetime(&[
             "sql",
@@ -1314,6 +1332,49 @@ log = "0.4"
             actual_normalized, expected_normalized,
             "SQL output mismatch for query: {}\n\nExpected:\n{}\n\nActual:\n{}",
             query, expected_normalized, actual_normalized
+        );
+    }
+
+    /// Asserts that a SQL query eventually produces the expected output.
+    ///
+    /// Use this only for read-only queries after operations that can briefly
+    /// leave the database worker unavailable, such as publishing an update.
+    pub fn assert_sql_eventually(&self, query: &str, expected: &str) {
+        let expected_normalized = normalize_whitespace(expected);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut last_actual = None;
+        let mut last_error = None;
+
+        while Instant::now() < deadline {
+            match self.sql(query) {
+                Ok(actual) => {
+                    let actual_normalized = normalize_whitespace(&actual);
+                    if actual_normalized == expected_normalized {
+                        return;
+                    }
+                    last_actual = Some(actual_normalized);
+                    last_error = None;
+                }
+                Err(err) => {
+                    last_error = Some(err.to_string());
+                }
+            }
+
+            std::thread::sleep(Duration::from_millis(200));
+        }
+
+        if let Some(actual_normalized) = last_actual {
+            assert_eq!(
+                actual_normalized, expected_normalized,
+                "SQL output mismatch for query after retry: {}\n\nExpected:\n{}\n\nActual:\n{}",
+                query, expected_normalized, actual_normalized
+            );
+        }
+
+        panic!(
+            "SQL query failed after retry: {}\n\nLast error:\n{}",
+            query,
+            last_error.unwrap_or_else(|| "no attempts completed".to_string())
         );
     }
 
