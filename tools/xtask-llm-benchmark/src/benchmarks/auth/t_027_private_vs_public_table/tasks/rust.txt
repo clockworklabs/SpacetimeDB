@@ -1,0 +1,23 @@
+Write a SpacetimeDB backend module in Rust that defines a private table for sensitive data and a public table for client-visible data, with a reducer that copies safe fields from private to public.
+
+TABLES
+- user_internal
+  - Struct: UserInternal
+  - private table (default, no public attribute)
+  - Fields:
+    - id: u64 (primary key, auto_inc)
+    - name: String
+    - email: String
+    - password_hash: String
+
+- user_public
+  - Struct: UserPublic
+  - public table
+  - Fields:
+    - id: u64 (primary key)
+    - name: String
+
+REDUCERS
+- register_user(ctx, name: String, email: String, password_hash: String)
+  - Insert into user_internal (id: 0 for auto_inc)
+  - Also insert into user_public with just the id and name (safe fields only)

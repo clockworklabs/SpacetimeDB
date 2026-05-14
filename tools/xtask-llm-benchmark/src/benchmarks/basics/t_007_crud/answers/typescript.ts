@@ -5,7 +5,7 @@ const user = table(
     name: 'user',
   },
   {
-    id: t.i32().primaryKey(),
+    id: t.u64().primaryKey().autoInc(),
     name: t.string(),
     age: t.i32(),
     active: t.bool(),
@@ -16,8 +16,8 @@ const spacetimedb = schema({ user });
 export default spacetimedb;
 
 export const crud = spacetimedb.reducer(ctx => {
-  ctx.db.user.insert({ id: 1, name: 'Alice', age: 30, active: true });
-  ctx.db.user.insert({ id: 2, name: 'Bob', age: 22, active: false });
-  ctx.db.user.id.update({ id: 1, name: 'Alice2', age: 31, active: false });
-  ctx.db.user.id.delete(2);
+  ctx.db.user.insert({ id: 0n, name: 'Alice', age: 30, active: true });
+  ctx.db.user.insert({ id: 0n, name: 'Bob', age: 22, active: false });
+  ctx.db.user.id.update({ id: 1n, name: 'Alice2', age: 31, active: false });
+  ctx.db.user.id.delete(2n);
 });
