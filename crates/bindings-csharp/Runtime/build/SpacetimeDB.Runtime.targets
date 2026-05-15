@@ -60,7 +60,7 @@
   <!-- TODO: remove when https://github.com/dotnet/runtime/issues/82788 is resolved. -->
   <Target Name="ObtainWasiSdk" BeforeTargets="_SetupWasiSdk;CheckWasmSdks">
     <PropertyGroup>
-      <WasiSdkVersion>24</WasiSdkVersion>
+      <WasiSdkVersion>29</WasiSdkVersion>
 
       <WasiSdkDownloadTempFile>$([System.IO.Path]::Combine($(IntermediateOutputPath), "wasi-sdk.$(WasiSdkVersion).tar.gz"))</WasiSdkDownloadTempFile>
 

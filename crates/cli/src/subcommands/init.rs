@@ -1759,7 +1759,7 @@ pub fn init_csharp_project(project_path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Adds NativeAOT-LLVM package references to an existing C# .csproj file and creates NuGet.Config.
+/// Adds NativeAOT-LLVM project configuration to an existing C# .csproj file and creates NuGet.Config.
 /// This is called when `--native-aot` is specified during `spacetime init`.
 fn add_native_aot_packages_to_csproj(project_path: &Path) -> anyhow::Result<()> {
     let csproj_path = project_path.join("StdbModule.csproj");
@@ -1769,26 +1769,60 @@ fn add_native_aot_packages_to_csproj(project_path: &Path) -> anyhow::Result<()> 
 
     let content = std::fs::read_to_string(&csproj_path)?;
 
-    // The NativeAOT-LLVM ItemGroup to add
-    let native_aot_item_group = r#"
+    // The NativeAOT-LLVM configuration to add
+    let native_aot_config = r#"
+  <PropertyGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
+    <TargetFramework>net10.0</TargetFramework>
+    <DefineConstants>$(DefineConstants);EXPERIMENTAL_WASM_AOT</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
+    <PublishTrimmed>true</PublishTrimmed>
+    <SelfContained>true</SelfContained>
+    <WasmEnableThreads>false</WasmEnableThreads>
+  </PropertyGroup>
+
+  <Target Name="UseWasiRuntimeOverlayWithoutComponentWit"
+          Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'"
+          AfterTargets="SetupProperties"
+          BeforeTargets="LinkNativeLlvm">
+    <PropertyGroup>
+      <_OriginalIlcSdkPath>$(IlcSdkPath)</_OriginalIlcSdkPath>
+      <_WasiRuntimeOverlayDir>$(IntermediateOutputPath)native-hidden-no-wit\</_WasiRuntimeOverlayDir>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <_WasiRuntimeOverlaySource Include="$(IlcFrameworkNativePath)**\*" Exclude="$(IlcFrameworkNativePath)**\*.wit" />
+    </ItemGroup>
+
+    <RemoveDir Directories="$(_WasiRuntimeOverlayDir)" />
+    <MakeDir Directories="$(_WasiRuntimeOverlayDir)" />
+    <Copy SourceFiles="@(_WasiRuntimeOverlaySource)"
+          DestinationFiles="@(_WasiRuntimeOverlaySource->'$(_WasiRuntimeOverlayDir)%(RecursiveDir)%(Filename)%(Extension)')" />
+
+    <PropertyGroup>
+      <IlcFrameworkNativePath>$(_WasiRuntimeOverlayDir)</IlcFrameworkNativePath>
+      <IlcSdkPath>$(_OriginalIlcSdkPath)</IlcSdkPath>
+    </PropertyGroup>
+  </Target>
+
   <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
-    <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="8.0.0-*" Condition="'$(ILLinkTargetsPath)' == ''" />
-    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
-    <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
+    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
+    <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
   </ItemGroup>
 "#;
 
-    // Insert the ItemGroup before the closing </Project> tag
+    // Insert the NativeAOT config before the closing </Project> tag
     let new_content = if let Some(pos) = content.rfind("</Project>") {
         let (before, after) = content.split_at(pos);
-        format!("{}{}{}", before.trim_end(), native_aot_item_group, after)
+        format!("{}{}{}", before.trim_end(), native_aot_config, after)
     } else {
         anyhow::bail!("Invalid .csproj file: missing </Project> tag");
     };
 
     std::fs::write(&csproj_path, new_content)?;
     println!(
-        "{} Added NativeAOT-LLVM package references to {}",
+        "{} Added NativeAOT-LLVM project configuration to {}",
         "✓".green(),
         csproj_path.display()
     );

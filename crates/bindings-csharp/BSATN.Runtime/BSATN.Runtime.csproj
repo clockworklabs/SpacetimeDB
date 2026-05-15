@@ -15,6 +15,11 @@
     <!-- <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles> -->
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
+    <TargetFrameworks>netstandard2.1;net10.0</TargetFrameworks>
+    <DefineConstants>$(DefineConstants);EXPERIMENTAL_WASM_AOT</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <!-- We want to build BSATN.Codegen both to include it in our NuGet package but also we want it to transform [SpacetimeDB.Type] usages in BSATN.Runtime code itself. -->
     <ProjectReference
