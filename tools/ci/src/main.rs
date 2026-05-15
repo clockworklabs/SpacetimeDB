@@ -143,8 +143,21 @@ fn minimum_release_age(path: &Path) -> Result<u64> {
         .ok_or_else(|| anyhow::anyhow!("{} is missing minimumReleaseAge", path.display()))
 }
 
-fn npmrc_minimum_release_age(path: &Path) -> Result<u64> {
-    let contents = fs::read_to_string(path)?;
+fn npmrc_minimum_release_age(path: &Path, expected_minimum_release_age: u64) -> Result<u64> {
+    let contents = fs::read_to_string(path).map_err(|err| {
+        if err.kind() == std::io::ErrorKind::NotFound {
+            anyhow::anyhow!(
+                "{} is tracked but missing from the working tree. Restore it with:\nminimum-release-age={}",
+                path.display(),
+                expected_minimum_release_age
+            )
+        } else {
+            anyhow::anyhow!(
+                "failed to read {} while checking pnpm minimum package age: {err}",
+                path.display()
+            )
+        }
+    })?;
     contents
         .lines()
         .find_map(|line| {
@@ -152,7 +165,13 @@ fn npmrc_minimum_release_age(path: &Path) -> Result<u64> {
             let value = line.strip_prefix("minimum-release-age=")?.trim();
             value.parse::<u64>().ok()
         })
-        .ok_or_else(|| anyhow::anyhow!("{} is missing minimum-release-age", path.display()))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "{} must contain `minimum-release-age={}` to match root pnpm-workspace.yaml",
+                path.display(),
+                expected_minimum_release_age
+            )
+        })
 }
 
 fn check_pnpm_release_age_policy() -> Result<()> {
@@ -202,7 +221,7 @@ fn check_pnpm_release_age_policy() -> Result<()> {
     }
 
     for npmrc_path in git_tracked_files(":(glob)**/.npmrc")? {
-        let found_minimum_release_age = npmrc_minimum_release_age(&npmrc_path)?;
+        let found_minimum_release_age = npmrc_minimum_release_age(&npmrc_path, root_minimum_release_age)?;
         if found_minimum_release_age != root_minimum_release_age {
             bail!(
                 "{} minimum-release-age must match root pnpm-workspace.yaml: expected {}, found {}",
@@ -224,12 +243,14 @@ fn check_pnpm_release_age_policy() -> Result<()> {
         let npmrc_path = package_dir.join(".npmrc");
         if !npmrc_path.is_file() {
             bail!(
-                "{} has a package.json and must contain {}",
-                package_dir.display(),
-                npmrc_path.display()
+                "{} is required because {} is an npm/pnpm package manifest.\nAdd {} containing:\nminimum-release-age={}",
+                npmrc_path.display(),
+                package_json_path.display(),
+                npmrc_path.display(),
+                root_minimum_release_age
             );
         }
-        let found_minimum_release_age = npmrc_minimum_release_age(&npmrc_path)?;
+        let found_minimum_release_age = npmrc_minimum_release_age(&npmrc_path, root_minimum_release_age)?;
         if found_minimum_release_age != root_minimum_release_age {
             bail!(
                 "{} minimum-release-age must match root pnpm-workspace.yaml: expected {}, found {}",
