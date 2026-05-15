@@ -16,8 +16,10 @@ public partial class PlayerController : Node
     private readonly List<CircleController> _ownedCircles = new();
 
     private bool _lockInputTogglePressed;
+    private bool _splitPressed;
+    private bool _suicidePressed;
 
-    public string Username => GameManager.Conn.Db.Player.PlayerId.Find(_playerId).Name;
+    public string Username => GameManager.Conn.Db.Player.PlayerId.Find(_playerId)?.Name ?? "<Unknown>";
     public int NumberOfOwnedCircles => _ownedCircles.Count;
     public bool IsLocalPlayer => this == Local;
 
@@ -54,7 +56,10 @@ public partial class PlayerController : Node
 
     public void OnCircleDeleted(CircleController deletedCircle)
     {
-        _ownedCircles.Remove(deletedCircle);
+        if (_ownedCircles.Remove(deletedCircle) && IsLocalPlayer && _ownedCircles.Count == 0)
+        {
+            HudController.Instance?.ShowDeathScreen(true);
+        }
     }
 
     public int TotalMass() => _ownedCircles
@@ -93,6 +98,21 @@ public partial class PlayerController : Node
 	public override void _Process(double delta)
 	{
 	    if (!IsLocalPlayer || NumberOfOwnedCircles == 0 || !GameManager.IsConnected()) return;
+	    if (GetViewport().GuiGetFocusOwner() is LineEdit) return;
+
+	    var splitPressed = Input.IsPhysicalKeyPressed(Key.Space);
+	    if (splitPressed && !_splitPressed)
+	    {
+	        GameManager.Conn.Reducers.PlayerSplit();
+	    }
+	    _splitPressed = splitPressed;
+
+	    var suicidePressed = Input.IsPhysicalKeyPressed(Key.S);
+	    if (suicidePressed && !_suicidePressed)
+	    {
+	        GameManager.Conn.Reducers.Suicide();
+	    }
+	    _suicidePressed = suicidePressed;
 
 	    var lockTogglePressed = Input.IsPhysicalKeyPressed(Key.Q);
 	    if (lockTogglePressed && !_lockInputTogglePressed)
