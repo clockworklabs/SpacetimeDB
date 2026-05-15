@@ -124,6 +124,9 @@ public:
     ReducerContext(Identity s, std::optional<ConnectionId> cid, Timestamp ts)
         : sender_(s), connection_id(cid), timestamp(ts), 
           sender_auth_(AuthCtx::from_connection_id_opt(cid, s)) {}
+
+    ReducerContext(Identity s, std::optional<ConnectionId> cid, Timestamp ts, AuthCtx auth)
+        : sender_(s), connection_id(cid), timestamp(ts), sender_auth_(std::move(auth)) {}
 };
 
 } // namespace SpacetimeDB

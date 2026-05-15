@@ -59,6 +59,14 @@ struct HttpMethod {
     std::string extension; // Only valid when tag == Extension
 };
 
+inline bool operator==(const HttpMethod& lhs, const HttpMethod& rhs) {
+    return lhs.tag == rhs.tag && lhs.extension == rhs.extension;
+}
+
+inline bool operator!=(const HttpMethod& lhs, const HttpMethod& rhs) {
+    return !(lhs == rhs);
+}
+
 /**
  * @brief Wire format for HTTP version
  *

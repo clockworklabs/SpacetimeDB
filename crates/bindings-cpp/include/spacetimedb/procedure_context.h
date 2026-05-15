@@ -6,6 +6,7 @@
 #include <spacetimedb/bsatn/uuid.h> // For Uuid
 #include <spacetimedb/tx_context.h> // For TxContext
 #include <spacetimedb/abi/FFI.h> // For transaction syscalls
+#include <spacetimedb/internal/tx_execution.h>
 #include <spacetimedb/random.h> // For StdbRng
 #ifdef SPACETIMEDB_UNSTABLE_FEATURES
 #include <spacetimedb/http.h> // For HttpClient
@@ -196,46 +197,14 @@ public:
      */
     template<typename Func>
     auto with_tx(Func&& body) -> decltype(body(std::declval<TxContext&>())) {
-        using ResultType = decltype(body(std::declval<TxContext&>()));
-        
-        // Start transaction
-        int64_t tx_timestamp;
-        Status status = ::procedure_start_mut_tx(&tx_timestamp);
-        if (is_error(status)) {
-            LOG_PANIC("Failed to start transaction");
-        }
-        
-        // Create a ReducerContext for this transaction
-        // Note: connection_id converted to std::optional
-        ReducerContext reducer_ctx(
-            sender(),
-            std::optional<ConnectionId>(connection_id),
-            Timestamp::from_micros_since_epoch(tx_timestamp)
-        );
-        
-        // Create transaction context wrapping the reducer context
-        TxContext tx{reducer_ctx};
-        
-        // Execute callback
-        if constexpr (std::is_void_v<ResultType>) {
-            body(tx);
-            
-            // Commit transaction
-            status = ::procedure_commit_mut_tx();
-            if (is_error(status)) {
-                LOG_PANIC("Failed to commit transaction");
-            }
-        } else {
-            ResultType result = body(tx);
-            
-            // Commit transaction
-            status = ::procedure_commit_mut_tx();
-            if (is_error(status)) {
-                LOG_PANIC("Failed to commit transaction");
-            }
-            
-            return result;
-        }
+        auto make_reducer_ctx = [this](Timestamp tx_timestamp) {
+            return ReducerContext(
+                sender(),
+                std::optional<ConnectionId>(connection_id),
+                tx_timestamp
+            );
+        };
+        return Internal::with_tx(make_reducer_ctx, body);
     }
     
     /**
@@ -260,51 +229,14 @@ public:
      */
     template<typename Func>
     auto try_with_tx(Func&& body) -> decltype(body(std::declval<TxContext&>())) {
-        using ResultType = decltype(body(std::declval<TxContext&>()));
-        
-        // Start transaction
-        int64_t tx_timestamp;
-        Status status = ::procedure_start_mut_tx(&tx_timestamp);
-        if (is_error(status)) {
-            LOG_PANIC("Failed to start transaction");
-        }
-        
-        // Create a ReducerContext for this transaction
-        ReducerContext reducer_ctx(
-            sender(),
-            std::optional<ConnectionId>(connection_id),
-            Timestamp::from_micros_since_epoch(tx_timestamp)
-        );
-        
-        // Create transaction context wrapping the reducer context
-        TxContext tx{reducer_ctx};
-        
-        // Execute callback
-        ResultType result = body(tx);
-        
-        // For bool results, use the value to decide commit/rollback
-        // For other types, always commit (caller can use LOG_PANIC to abort)
-        if constexpr (std::is_same_v<ResultType, bool>) {
-            if (result) {
-                status = ::procedure_commit_mut_tx();
-                if (is_error(status)) {
-                    LOG_PANIC("Failed to commit transaction");
-                }
-            } else {
-                status = ::procedure_abort_mut_tx();
-                if (is_error(status)) {
-                    LOG_PANIC("Failed to rollback transaction");
-                }
-            }
-        } else {
-            // For non-bool returns, always commit
-            status = ::procedure_commit_mut_tx();
-            if (is_error(status)) {
-                LOG_PANIC("Failed to commit transaction");
-            }
-        }
-        
-        return result;
+        auto make_reducer_ctx = [this](Timestamp tx_timestamp) {
+            return ReducerContext(
+                sender(),
+                std::optional<ConnectionId>(connection_id),
+                tx_timestamp
+            );
+        };
+        return Internal::try_with_tx(make_reducer_ctx, body);
     }
 #endif
 };
