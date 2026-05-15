@@ -61,8 +61,7 @@ pub async fn exec(con: Connection) -> Result<(), anyhow::Error> {
     let api = ClientApi::new(con);
 
     loop {
-        let prompt = format!("🪐{}>", &database).green().to_string();
-        let readline = rl.readline(&prompt);
+        let readline = rl.readline(&format!("🪐{}>", &database).green().to_string());
         match readline {
             Ok(line) => match line.as_str() {
                 ".exit" => break,
