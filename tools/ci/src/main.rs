@@ -10,6 +10,8 @@ use std::path::PathBuf;
 use std::{env, fs};
 
 const README_PATH: &str = "tools/ci/README.md";
+const MINIMUM_PNPM_VERSION: (u64, u64, u64) = (10, 16, 0);
+const MINIMUM_RELEASE_AGE_MINUTES: u64 = 2880;
 
 mod ci_docs;
 mod smoketest;
@@ -86,6 +88,75 @@ fn check_global_json_policy() -> Result<()> {
 
     if !ok {
         bail!("global.json policy check failed");
+    }
+
+    Ok(())
+}
+
+fn parse_version(version: &str) -> Result<(u64, u64, u64)> {
+    let mut parts = version
+        .trim()
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|s| !s.is_empty());
+    let major = parts.next().unwrap_or_default().parse()?;
+    let minor = parts.next().unwrap_or_default().parse()?;
+    let patch = parts.next().unwrap_or_default().parse()?;
+    Ok((major, minor, patch))
+}
+
+fn pnpm_version_is_supported(version: &str) -> Result<bool> {
+    Ok(parse_version(version)? >= MINIMUM_PNPM_VERSION)
+}
+
+fn find_json_string_value(contents: &str, key: &str) -> Option<String> {
+    let key = format!("\"{key}\"");
+    let key_start = contents.find(&key)?;
+    let after_key = &contents[key_start + key.len()..];
+    let colon = after_key.find(':')?;
+    let after_colon = after_key[colon + 1..].trim_start();
+    let after_quote = after_colon.strip_prefix('"')?;
+    let end_quote = after_quote.find('"')?;
+    Some(after_quote[..end_quote].to_string())
+}
+
+fn package_json_pnpm_version(package_manager: &str) -> Option<&str> {
+    package_manager.strip_prefix("pnpm@")
+}
+
+fn check_pnpm_release_age_policy() -> Result<()> {
+    ensure_repo_root()?;
+
+    let package_json = fs::read_to_string("package.json")?;
+    let package_manager = find_json_string_value(&package_json, "packageManager")
+        .ok_or_else(|| anyhow::anyhow!("package.json is missing packageManager"))?;
+    let package_manager_version = package_json_pnpm_version(&package_manager)
+        .ok_or_else(|| anyhow::anyhow!("packageManager must be pnpm@<version>, found {package_manager:?}"))?;
+    if !pnpm_version_is_supported(package_manager_version)? {
+        bail!("packageManager must use pnpm >= 10.16.0 to support minimumReleaseAge");
+    }
+
+    let engine_pnpm = find_json_string_value(&package_json, "pnpm")
+        .ok_or_else(|| anyhow::anyhow!("package.json engines is missing pnpm"))?;
+    if !pnpm_version_is_supported(&engine_pnpm)? {
+        bail!("engines.pnpm must require pnpm >= 10.16.0 to support minimumReleaseAge");
+    }
+
+    let workspace = fs::read_to_string("pnpm-workspace.yaml")?;
+    let release_age = workspace
+        .lines()
+        .find_map(|line| {
+            let line = line.trim();
+            let value = line.strip_prefix("minimumReleaseAge:")?.trim();
+            value.parse::<u64>().ok()
+        })
+        .ok_or_else(|| anyhow::anyhow!("pnpm-workspace.yaml is missing minimumReleaseAge"))?;
+    if release_age < MINIMUM_RELEASE_AGE_MINUTES {
+        bail!("minimumReleaseAge must be at least {MINIMUM_RELEASE_AGE_MINUTES} minutes");
+    }
+
+    let pnpm_version = cmd!("pnpm", "--version").read()?;
+    if !pnpm_version_is_supported(&pnpm_version)? {
+        bail!("installed pnpm must be >= 10.16.0 to support minimumReleaseAge");
     }
 
     Ok(())
@@ -352,6 +423,7 @@ fn main() -> Result<()> {
 
         Some(CiCmd::Lint) => {
             ensure_repo_root()?;
+            check_pnpm_release_age_policy()?;
             // `cargo fmt --all` only checks files that Cargo discovers through workspace/package targets.
             // However, we also keep Rust sources in a locations that are tracked but not part of our workspace,
             // so this approach properly catches all the files, where `cargo fmt` does not.
