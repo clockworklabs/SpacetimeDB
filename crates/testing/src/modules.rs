@@ -165,6 +165,7 @@ impl CompiledModule {
             Some(PathBuf::from("src")).as_deref(),
             mode == CompilationMode::Debug,
             None,
+            false,
         )
         .expect("Module compilation failed");
         Self {

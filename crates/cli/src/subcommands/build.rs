@@ -102,7 +102,13 @@ pub fn run_build(
         ));
     }
 
-    let result = crate::tasks::build(&module_path, lint_dir.as_deref(), build_debug, features.as_ref(), native_aot)?;
+    let result = crate::tasks::build(
+        &module_path,
+        lint_dir.as_deref(),
+        build_debug,
+        features.as_ref(),
+        native_aot,
+    )?;
     println!("Build finished successfully.");
 
     Ok(result)
