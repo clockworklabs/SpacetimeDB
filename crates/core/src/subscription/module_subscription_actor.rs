@@ -8,7 +8,7 @@ use super::query::compile_query_with_hashes;
 use super::tx::DeltaTx;
 use super::{collect_table_update, TableUpdateType};
 use crate::client::messages::{
-    CloseFrame, ProcedureResultMessage, SerializableMessage, SubscriptionData, SubscriptionError, SubscriptionMessage,
+    ProcedureResultMessage, SerializableMessage, SubscriptionData, SubscriptionError, SubscriptionMessage,
     SubscriptionResult, SubscriptionRows, SubscriptionUpdateMessage, TransactionUpdateMessage,
 };
 use crate::client::{ClientActorId, ClientConnectionSender, Protocol, WsVersion};
@@ -1125,14 +1125,6 @@ impl ModuleSubscriptions {
     ) -> Result<(), BroadcastError> {
         self.broadcast_queue
             .send_client_message_v2(recipient, tx_offset, message)
-    }
-
-    pub fn disconnect_client(
-        &self,
-        recipient: Arc<ClientConnectionSender>,
-        close_frame: CloseFrame,
-    ) -> Result<(), BroadcastError> {
-        todo!()
     }
 
     pub fn send_one_off_query_message_v2(

@@ -2708,13 +2708,13 @@ impl ModuleHost {
                             Timestamp::UNIX_EPOCH,
                             TimeDuration::ZERO,
                         ),
-                        Some(code) => self.subscriptions().disconnect_client(
-                            sender,
-                            CloseFrame {
+                        Some(code) => {
+                            let _ = sender.disconnect(CloseFrame {
                                 code,
                                 reason: err.to_string().into(),
-                            },
-                        ),
+                            });
+                            Ok(())
+                        }
                     },
                 }
             }
