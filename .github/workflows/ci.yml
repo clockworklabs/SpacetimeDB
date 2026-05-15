@@ -745,7 +745,7 @@ jobs:
 
       - name: Restore .NET solution
         working-directory: sdks/csharp
-        run: dotnet restore --configfile NuGet.Config SpacetimeDB.ClientSDK.sln
+        run: dotnet restore --configfile NuGet.Config SpacetimeDB.ClientSDK.Godot.sln
 
       # Now, setup the Godot tests.
       - name: Patch spacetimedb dependency in Cargo.toml
@@ -795,14 +795,7 @@ jobs:
         working-directory: demo/Blackholio/server-rust
         run: bash ./generate.sh -y
 
-      - name: Check Unity bindings for changes
-        run: |
-          tools/check-diff.sh demo/Blackholio/client-unity/Assets/Scripts/autogen || {
-              echo 'Error: Unity bindings are dirty. Please run `demo/Blackholio/server-rust/generate.sh`.'
-              exit 1
-          }
-
-      - name: Check Godot bindings for changes
+      - name: Check for changes
         run: |
           tools/check-diff.sh demo/Blackholio/client-godot/module_bindings || {
               echo 'Error: Godot bindings are dirty. Please run `demo/Blackholio/server-rust/generate.sh`.'
