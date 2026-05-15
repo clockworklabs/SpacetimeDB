@@ -252,15 +252,12 @@ public static partial class Module
     [SpacetimeDB.HttpHandler]
     public static HttpResponse GetSimple(HandlerContext ctx, HttpRequest request)
     {
-        _ = ctx;
-        _ = request;
         return TextResponse(200, "ok");
     }
 
     [SpacetimeDB.HttpHandler]
     public static HttpResponse PostInsert(HandlerContext ctx, HttpRequest request)
     {
-        _ = request;
         ctx.WithTx((HandlerTxContext tx) =>
         {
             var id = tx.Db.Entry.Count;
@@ -273,7 +270,6 @@ public static partial class Module
     [SpacetimeDB.HttpHandler]
     public static HttpResponse GetCount(HandlerContext ctx, HttpRequest request)
     {
-        _ = request;
         var count = ctx.WithTx((HandlerTxContext tx) => tx.Db.Entry.Count);
         return TextResponse(200, count.ToString());
     }
@@ -281,23 +277,18 @@ public static partial class Module
     [SpacetimeDB.HttpHandler]
     public static HttpResponse AnyHandler(HandlerContext ctx, HttpRequest request)
     {
-        _ = ctx;
-        _ = request;
         return TextResponse(200, "any");
     }
 
     [SpacetimeDB.HttpHandler]
     public static HttpResponse HeaderEcho(HandlerContext ctx, HttpRequest request)
     {
-        _ = ctx;
         return TextResponse(200, HeaderValueUtf8(request, "x-echo"));
     }
 
     [SpacetimeDB.HttpHandler]
     public static HttpResponse SetResponseHeader(HandlerContext ctx, HttpRequest request)
     {
-        _ = ctx;
-        _ = request;
         return new HttpResponse(
             200,
             HttpVersion.Http11,
@@ -309,16 +300,12 @@ public static partial class Module
     [SpacetimeDB.HttpHandler]
     public static HttpResponse BodyHandler(HandlerContext ctx, HttpRequest request)
     {
-        _ = ctx;
-        _ = request;
         return TextResponse(200, "non-empty");
     }
 
     [SpacetimeDB.HttpHandler]
     public static HttpResponse Teapot(HandlerContext ctx, HttpRequest request)
     {
-        _ = ctx;
-        _ = request;
         return TextResponse(418, "teapot");
     }
 
@@ -419,32 +406,24 @@ public static partial class Module
     [SpacetimeDB.HttpHandler]
     public static HttpResponse EmptyRoot(HandlerContext ctx, HttpRequest request)
     {
-        _ = ctx;
-        _ = request;
         return TextResponse("empty");
     }
 
     [SpacetimeDB.HttpHandler]
     public static HttpResponse SlashRoot(HandlerContext ctx, HttpRequest request)
     {
-        _ = ctx;
-        _ = request;
         return TextResponse("slash");
     }
 
     [SpacetimeDB.HttpHandler]
     public static HttpResponse Foo(HandlerContext ctx, HttpRequest request)
     {
-        _ = ctx;
-        _ = request;
         return TextResponse("foo");
     }
 
     [SpacetimeDB.HttpHandler]
     public static HttpResponse FooSlash(HandlerContext ctx, HttpRequest request)
     {
-        _ = ctx;
-        _ = request;
         return TextResponse("foo-slash");
     }
 
@@ -470,16 +449,12 @@ public static partial class Module
     [SpacetimeDB.HttpHandler]
     public static HttpResponse Foo(HandlerContext ctx, HttpRequest request)
     {
-        _ = ctx;
-        _ = request;
         return TextResponse("foo");
     }
 
     [SpacetimeDB.HttpHandler]
     public static HttpResponse FooSlash(HandlerContext ctx, HttpRequest request)
     {
-        _ = ctx;
-        _ = request;
         return TextResponse("foo-slash");
     }
 
@@ -503,7 +478,6 @@ public static partial class Module
     [SpacetimeDB.HttpHandler]
     public static HttpResponse EchoUri(HandlerContext ctx, HttpRequest request)
     {
-        _ = ctx;
         return new HttpResponse(
             200,
             HttpVersion.Http11,
@@ -529,7 +503,6 @@ public static partial class Module
     [SpacetimeDB.HttpHandler]
     public static HttpResponse ReverseBytes(HandlerContext ctx, HttpRequest request)
     {
-        _ = ctx;
         var reversed = request.Body.ToBytes();
         Array.Reverse(reversed);
         return BytesResponse(200, reversed);
@@ -538,7 +511,6 @@ public static partial class Module
     [SpacetimeDB.HttpHandler]
     public static HttpResponse ReverseWords(HandlerContext ctx, HttpRequest request)
     {
-        _ = ctx;
         string body;
         try
         {

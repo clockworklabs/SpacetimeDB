@@ -90,8 +90,6 @@ public static partial class Module
     [SpacetimeDB.HttpHandler]
     public static HttpResponse SayHello(HandlerContext ctx, HttpRequest request)
     {
-        _ = ctx;
-        _ = request;
         return new HttpResponse(
             200,
             HttpVersion.Http11,
