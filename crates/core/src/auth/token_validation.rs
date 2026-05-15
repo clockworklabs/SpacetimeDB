@@ -138,7 +138,7 @@ struct BasicTokenValidator {
 }
 
 // Eventually we will want to add more required claims.
-static REQUIRED_CLAIMS: [&str; 2] = ["sub", "iss"];
+const REQUIRED_CLAIMS: [&str; 2] = ["sub", "iss"];
 
 #[async_trait]
 impl TokenValidator for DecodingKey {
