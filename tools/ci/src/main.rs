@@ -3,6 +3,7 @@
 use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
+use serde_json::Value;
 use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::path::Path;
@@ -86,6 +87,89 @@ fn check_global_json_policy() -> Result<()> {
 
     if !ok {
         bail!("global.json policy check failed");
+    }
+
+    Ok(())
+}
+
+fn package_json_pnpm_version(package_manager: &str) -> Option<&str> {
+    package_manager.strip_prefix("pnpm@")
+}
+
+fn git_tracked_files(pathspec: &str) -> Result<Vec<PathBuf>> {
+    let output = cmd!("git", "ls-files", pathspec).read()?;
+    Ok(output.lines().map(PathBuf::from).collect())
+}
+
+fn package_json_string_value(package_json: &Value, key: &str) -> Option<String> {
+    package_json.get(key)?.as_str().map(str::to_owned)
+}
+
+fn package_json_engines_pnpm(package_json: &Value) -> Option<String> {
+    package_json.get("engines")?.get("pnpm")?.as_str().map(str::to_owned)
+}
+
+fn read_package_json(path: &Path) -> Result<Value> {
+    let contents = fs::read_to_string(path)?;
+    Ok(serde_json::from_str(&contents)?)
+}
+
+fn minimum_release_age(path: &Path) -> Result<u64> {
+    let workspace = fs::read_to_string(path)?;
+    workspace
+        .lines()
+        .find_map(|line| {
+            let line = line.trim();
+            let value = line.strip_prefix("minimumReleaseAge:")?.trim();
+            value.parse::<u64>().ok()
+        })
+        .ok_or_else(|| anyhow::anyhow!("{} is missing minimumReleaseAge", path.display()))
+}
+
+fn check_pnpm_release_age_policy() -> Result<()> {
+    ensure_repo_root()?;
+
+    let root_package_json_path = Path::new("package.json");
+    let root_package_json = read_package_json(root_package_json_path)?;
+    let package_manager = package_json_string_value(&root_package_json, "packageManager")
+        .ok_or_else(|| anyhow::anyhow!("package.json is missing packageManager"))?;
+    let package_manager_version = package_json_pnpm_version(&package_manager)
+        .ok_or_else(|| anyhow::anyhow!("packageManager must be pnpm@<version>, found {package_manager:?}"))?;
+
+    let expected_engine_pnpm = format!(">={package_manager_version}");
+    let engine_pnpm = package_json_engines_pnpm(&root_package_json)
+        .ok_or_else(|| anyhow::anyhow!("package.json engines is missing pnpm"))?;
+    if engine_pnpm != expected_engine_pnpm {
+        bail!("package.json engines.pnpm must be {expected_engine_pnpm:?}, found {engine_pnpm:?}");
+    }
+
+    for package_json_path in git_tracked_files("package.json")? {
+        let package_json = read_package_json(&package_json_path)?;
+        let Some(found_package_manager) = package_json_string_value(&package_json, "packageManager") else {
+            continue;
+        };
+        if found_package_manager != package_manager {
+            bail!(
+                "{} packageManager must match root package.json: expected {:?}, found {:?}",
+                package_json_path.display(),
+                package_manager,
+                found_package_manager
+            );
+        }
+    }
+
+    let root_workspace_path = Path::new("pnpm-workspace.yaml");
+    let root_minimum_release_age = minimum_release_age(root_workspace_path)?;
+    for workspace_path in git_tracked_files("pnpm-workspace.yaml")? {
+        let found_minimum_release_age = minimum_release_age(&workspace_path)?;
+        if found_minimum_release_age != root_minimum_release_age {
+            bail!(
+                "{} minimumReleaseAge must match root pnpm-workspace.yaml: expected {}, found {}",
+                workspace_path.display(),
+                root_minimum_release_age,
+                found_minimum_release_age
+            );
+        }
     }
 
     Ok(())
@@ -352,6 +436,7 @@ fn main() -> Result<()> {
 
         Some(CiCmd::Lint) => {
             ensure_repo_root()?;
+            check_pnpm_release_age_policy()?;
             // `cargo fmt --all` only checks files that Cargo discovers through workspace/package targets.
             // However, we also keep Rust sources in a locations that are tracked but not part of our workspace,
             // so this approach properly catches all the files, where `cargo fmt` does not.
