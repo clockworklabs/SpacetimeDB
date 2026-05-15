@@ -37,7 +37,7 @@ bytes.workspace = true
 cargo_metadata.workspace = true
 chrono.workspace = true
 clap = { workspace = true, features = ["derive", "env", "string"] }
-colored.workspace = true
+owo-colors.workspace = true
 convert_case.workspace = true
 dirs.workspace = true
 duct.workspace = true

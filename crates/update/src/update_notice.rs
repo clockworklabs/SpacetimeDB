@@ -7,7 +7,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use colored::Colorize;
+use owo_colors::OwoColorize;
 
 use crate::cli::install::fetch_latest_release_version;
 
