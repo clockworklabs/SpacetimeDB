@@ -63,11 +63,24 @@ impl FunctionArgs {
                 bsatn: OnceCell::new(),
                 json: OnceCell::with_value(json),
             },
-            FunctionArgs::Bsatn(bytes) => ArgsTuple {
-                tuple: seed.deserialize(bsatn::Deserializer::new(&mut &bytes[..]))?,
-                bsatn: OnceCell::with_value(bytes),
-                json: OnceCell::new(),
-            },
+            FunctionArgs::Bsatn(bytes) => {
+                let mut reader = &bytes[..];
+                let tuple = seed.deserialize(bsatn::Deserializer::new(&mut reader))?;
+                // Reject inputs which leave an unused suffix after parsing the arguments:
+                // these are most likely an erroneous input of an incorrect type,
+                // where by chance a prefix of that input successfully parses at the actual argument type.
+                // E.g. this will trigger when a function accepts an i32 argument, but a client provides an i64.
+                anyhow::ensure!(
+                    reader.is_empty(),
+                    "After reading function arguments, expected EOF but found {} bytes remaining",
+                    reader.len()
+                );
+                ArgsTuple {
+                    tuple,
+                    bsatn: OnceCell::with_value(bytes),
+                    json: OnceCell::new(),
+                }
+            }
             FunctionArgs::Nullary => {
                 anyhow::ensure!(seed.params().elements.is_empty(), "failed to typecheck args");
                 ArgsTuple::nullary()
@@ -195,4 +208,49 @@ pub enum AbiCall {
     ProcedureCommitMutTransaction,
     ProcedureAbortMutTransaction,
     ProcedureHttpRequest,
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use spacetimedb_lib::sats::{AlgebraicType, ProductType, WithTypespace};
+
+    struct TestFunctionDef {
+        params: ProductType,
+        name: Identifier,
+    }
+
+    impl FunctionDef for TestFunctionDef {
+        fn params(&self) -> &ProductType {
+            &self.params
+        }
+        fn name(&self) -> &Identifier {
+            &self.name
+        }
+    }
+
+    impl TestFunctionDef {
+        fn args_seed(&'_ self) -> ArgsSeed<'_, Self> {
+            ArgsSeed(WithTypespace::empty(self))
+        }
+    }
+
+    #[test]
+    fn reject_too_long_args_buffer() {
+        let i32_args_def = TestFunctionDef {
+            params: [AlgebraicType::I32].into(),
+            name: Identifier::for_test("i32_args"),
+        };
+
+        let args = bsatn::to_vec(&-1i64).unwrap();
+
+        // Sanity check: assert that the error below from `FunctionArgs::into_tuple`
+        // is specifically due to the extra machinery in `FunctionArgs::_into_tuple`,
+        // not because the prefix of `args` fails to parse at the type in `TestFunctionDef`.
+        assert_eq!(Ok(-1i32), bsatn::from_slice::<i32>(&args[..]));
+
+        let args = FunctionArgs::Bsatn(args.into());
+        // Assert that the `FunctionArgs` reader errors when passed a buffer that's too long.
+        assert!(args.into_tuple(i32_args_def.args_seed()).is_err());
+    }
 }

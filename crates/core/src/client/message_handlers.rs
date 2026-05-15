@@ -1,4 +1,4 @@
-use super::{ClientConnection, DataMessage, WsVersion};
+use super::{messages::CloseFrame, ClientConnection, DataMessage, WsVersion};
 use crate::client::message_handlers_v1::MessageExecutionError;
 use spacetimedb_lib::bsatn;
 use std::time::Instant;
@@ -14,6 +14,9 @@ pub enum MessageHandleError {
 
     #[error(transparent)]
     Execution(#[from] MessageExecutionError),
+
+    #[error("Client should be disconnected with close frame {0:?}")]
+    DisconnectClient(CloseFrame),
 
     #[error("unsupported websocket version: {0}")]
     UnsupportedVersion(&'static str),
