@@ -44,6 +44,7 @@ pub(super) fn spawn_close(durability: Arc<Durability>, runtime: &Handle, databas
                 info!("{label} durability shut down at tx offset: {offset:?}");
             }
         }
+        log::info!("closing spawn close");
     });
 }
 

@@ -23,6 +23,7 @@ use spacetimedb_lib::{
 };
 use spacetimedb_paths::{server::SnapshotsPath, FromPathUnchecked};
 use spacetimedb_primitives::TableId;
+use spacetimedb_runtime::Handle;
 use spacetimedb_sats::{product, raw_identifier::RawIdentifier};
 use spacetimedb_schema::{
     def::ModuleDef,
@@ -230,11 +231,13 @@ async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffs
     let rt = spacetimedb_runtime::Handle::tokio_current();
     // NOTE: `_db` needs to stay alive until the snapshot is taken,
     // because the snapshot worker holds only a weak reference.
-    let (mut watch, _db) = spawn_blocking(|| {
+    let (mut watch, _db) = spawn_blocking(move || {
+        let snapshot_worker = SnapshotWorker::new(repo, snapshot::Compression::Disabled, rt.clone());
         let persistence = Persistence {
             durability: Arc::new(NoDurability::default()),
             disk_size: Arc::new(|| Ok(<_>::default())),
-            snapshots: Some(SnapshotWorker::new(repo, snapshot::Compression::Disabled, rt.clone())),
+            snapshot_store: Some(snapshot_worker.snapshot_store()),
+            snapshots: Some(snapshot_worker),
             runtime: rt,
         };
         let db = TestDB::open_db(EmptyHistory::new(), Some(persistence), None, 0)?;

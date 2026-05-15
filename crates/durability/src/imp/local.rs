@@ -199,8 +199,8 @@ where
 
 impl<T, R> Local<T, R>
 where
-    T: Send + Sync + 'static,
-    R: Repo + Send + Sync + 'static,
+    T: Encode + Send + Sync + 'static,
+    R: RepoWithoutLockFile + Send + Sync + 'static,
 {
     /// Inspect how many transactions added via [`Self::append_tx`] are pending
     /// to be applied to the underlying [`Commitlog`].

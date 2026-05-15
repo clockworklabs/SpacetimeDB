@@ -161,6 +161,8 @@ pub trait RepoWithoutLockFile: Repo {}
 
 impl<T: RepoWithoutLockFile> RepoWithoutLockFile for &T {}
 
+impl RepoWithoutLockFile for Fs {}
+
 #[cfg(any(test, feature = "test"))]
 impl RepoWithoutLockFile for Memory {}
 

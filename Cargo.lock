@@ -8195,6 +8195,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-dst"
+version = "2.2.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "futures-util",
+ "spacetimedb-commitlog",
+ "spacetimedb-core",
+ "spacetimedb-datastore",
+ "spacetimedb-durability",
+ "spacetimedb-lib 2.2.0",
+ "spacetimedb-paths",
+ "spacetimedb-primitives 2.2.0",
+ "spacetimedb-runtime",
+ "spacetimedb-sats 2.2.0",
+ "spacetimedb-schema",
+ "spacetimedb-snapshot",
+ "spacetimedb-table",
+ "tempfile",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "spacetimedb-durability"
 version = "2.2.0"
 dependencies = [

@@ -239,6 +239,17 @@ Usage: docs
 
 - `--help`: Print help
 
+### `io-boundary`
+
+**Usage:**
+```bash
+Usage: io-boundary
+```
+
+**Options:**
+
+- `--help`: Print help
+
 ### `help`
 
 **Usage:**

@@ -156,7 +156,7 @@ impl Options {
 /// The canonical commitlog API over a repository backend `R`.
 ///
 /// The default backend is the on-disk filesystem repository
-/// [`repo::Fs`], but tests may supply another [`Repo`]
+/// [`repo::Fs`], but tests and simulators may supply another [`Repo`]
 /// implementation.
 ///
 /// Records in the log are of type `T`, which canonically is instantiated to
@@ -203,7 +203,7 @@ where
 {
     /// Open the log in `repo` with [`Options`].
     ///
-    /// This is useful for tests which provide a repository
+    /// This is useful for tests and simulators which provide a repository
     /// implementation other than [`repo::Fs`].
     pub fn open_with_repo(repo: R, opts: Options) -> io::Result<Self> {
         let inner = commitlog::Generic::open(repo, opts)?;

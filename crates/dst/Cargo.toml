@@ -1,0 +1,35 @@
+[package]
+name = "spacetimedb-dst"
+version.workspace = true
+edition.workspace = true
+license-file = "LICENSE"
+description = "Deterministic simulation testing utilities for SpacetimeDB crates"
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "spacetimedb-dst"
+path = "src/main.rs"
+bench = false
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+futures-util.workspace = true
+spacetimedb-datastore = { workspace = true, features = ["test"] }
+spacetimedb_core = { package = "spacetimedb-core", path = "../core", version = "=2.2.0", features = ["test"] }
+spacetimedb-commitlog = { workspace = true, features = ["test"] }
+spacetimedb_durability = { package = "spacetimedb-durability", path = "../durability", version = "=2.2.0", features = ["test"] }
+spacetimedb-lib.workspace = true
+spacetimedb-paths.workspace = true
+spacetimedb-primitives.workspace = true
+spacetimedb-runtime = { workspace = true, features = ["simulation"] }
+spacetimedb-sats.workspace = true
+spacetimedb-schema = { workspace = true, features = ["test"] }
+spacetimedb-snapshot.workspace = true
+spacetimedb-table.workspace = true
+tempfile.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

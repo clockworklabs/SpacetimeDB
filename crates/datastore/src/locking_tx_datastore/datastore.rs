@@ -38,7 +38,7 @@ use spacetimedb_schema::{
     reducer_name::ReducerName,
     schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema},
 };
-use spacetimedb_snapshot::{BoxedPendingSnapshot, DynSnapshotRepo, ReconstructedSnapshot};
+use spacetimedb_snapshot::{BoxedPendingSnapshot, DynSnapshotRepo, ReconstructedSnapshot, SnapshotStore};
 use spacetimedb_table::{
     indexes::RowPointer,
     page_pool::PagePool,
@@ -257,6 +257,28 @@ impl Locking {
         let unflushed_snapshot = repo.create_snapshot(&mut tables, blob_store, tx_offset)?;
 
         Ok(Some((tx_offset, unflushed_snapshot)))
+    }
+
+    pub fn take_snapshot_store_internal(
+        committed_state: &RwLock<CommittedState>,
+        store: &dyn SnapshotStore,
+    ) -> Result<Option<TxOffset>> {
+        let mut committed_state = committed_state.write();
+        let Some(tx_offset) = committed_state.next_tx_offset.checked_sub(1) else {
+            return Ok(None);
+        };
+
+        log::info!(
+            "Capturing snapshot of database {:?} at TX offset {}",
+            store.database_identity(),
+            tx_offset,
+        );
+
+        let (mut tables, blob_store) = committed_state.persistent_tables_and_blob_store();
+        store
+            .capture_snapshot(&mut tables, blob_store, tx_offset)
+            .map(Some)
+            .map_err(Into::into)
     }
 
     /// Returns a list over all the currently connected clients,
@@ -2821,6 +2843,38 @@ pub(crate) mod tests {
         assert_eq!(&all_rows_tx(&read_tx_1, table_id), rows);
         let _ = read_tx_2.release();
         let _ = read_tx_1.release();
+        Ok(())
+    }
+
+    #[test]
+    fn test_try_begin_mut_tx_reports_writer_contention() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+        let tx = begin_mut_tx(&datastore);
+        assert!(datastore
+            .try_begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests)
+            .is_none());
+        let _ = datastore.rollback_mut_tx(tx);
+
+        let tx = datastore
+            .try_begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests)
+            .expect("write lock should be available after rollback");
+        let _ = datastore.rollback_mut_tx(tx);
+        Ok(())
+    }
+
+    #[test]
+    fn test_try_begin_mut_tx_reports_read_contention() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+        let tx = begin_tx(&datastore);
+        assert!(datastore
+            .try_begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests)
+            .is_none());
+        let _ = datastore.release_tx(tx);
+
+        let tx = datastore
+            .try_begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests)
+            .expect("write lock should be available after read release");
+        let _ = datastore.rollback_mut_tx(tx);
         Ok(())
     }
 

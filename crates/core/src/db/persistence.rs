@@ -4,10 +4,10 @@ use async_trait::async_trait;
 use spacetimedb_commitlog::SizeOnDisk;
 use spacetimedb_durability::{DurabilityExited, TxOffset};
 use spacetimedb_paths::server::ServerDataDir;
-use spacetimedb_snapshot::DynSnapshotRepo;
+use spacetimedb_runtime::Handle;
+use spacetimedb_snapshot::{DynSnapshotRepo, SnapshotStore};
 
 use crate::{messages::control_db::Database, util::asyncify};
-use spacetimedb_runtime::Handle;
 
 use super::{
     relational_db::{self, Txdata},
@@ -36,6 +36,8 @@ pub struct Persistence {
     /// Currently the expectation is that the reported size is the commitlog
     /// size only.
     pub disk_size: DiskSizeFn,
+    /// Optional snapshot store used during database restore.
+    pub snapshot_store: Option<Arc<dyn SnapshotStore>>,
     /// An optional [SnapshotWorker].
     ///
     /// The current expectation is that snapshots are only enabled for
@@ -63,9 +65,11 @@ impl Persistence {
         snapshots: Option<SnapshotWorker>,
         runtime: Handle,
     ) -> Self {
+        let snapshot_store = snapshots.as_ref().map(SnapshotWorker::snapshot_store);
         Self {
             durability: Arc::new(durability),
             disk_size: Arc::new(disk_size),
+            snapshot_store,
             snapshots,
             runtime,
         }
@@ -74,6 +78,13 @@ impl Persistence {
     /// If snapshots are enabled, get the [SnapshotRepo] they are stored in.
     pub fn snapshot_repo(&self) -> Option<Arc<DynSnapshotRepo>> {
         self.snapshots.as_ref().map(|worker| worker.snapshot_repo())
+    }
+
+    /// If snapshot restore is enabled, get the [SnapshotStore] to read from.
+    pub fn snapshot_store(&self) -> Option<Arc<dyn SnapshotStore>> {
+        self.snapshot_store
+            .clone()
+            .or_else(|| self.snapshots.as_ref().map(SnapshotWorker::snapshot_store))
     }
 
     /// Get the [TxOffset] reported as durable by the [Durability] impl.
@@ -107,6 +118,7 @@ impl Persistence {
             |Self {
                  durability,
                  disk_size,
+                 snapshot_store: _,
                  snapshots,
                  runtime,
              }| (Some(durability), Some(disk_size), snapshots, Some(runtime)),
@@ -173,6 +185,7 @@ impl PersistenceProvider for LocalPersistenceProvider {
         Ok(Persistence {
             durability,
             disk_size,
+            snapshot_store: Some(snapshot_worker.snapshot_store()),
             snapshots: Some(snapshot_worker),
             runtime,
         })

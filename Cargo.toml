@@ -12,6 +12,7 @@ members = [
   "crates/commitlog",
   "crates/core",
   "crates/data-structures",
+  "crates/dst",
   "crates/datastore",
   "crates/durability",
   "crates/execution",

@@ -14,7 +14,7 @@ use prometheus::{Histogram, IntGauge};
 use spacetimedb_datastore::locking_tx_datastore::{committed_state::CommittedState, datastore::Locking};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::Identity;
-use spacetimedb_snapshot::{CompressionStats, DynSnapshotRepo};
+use spacetimedb_snapshot::{BoxedPendingSnapshot, CompressionStats, DynSnapshotRepo, SnapshotRepo, SnapshotStore};
 use tokio::sync::watch;
 
 use crate::worker_metrics::WORKER_METRICS;
@@ -62,6 +62,7 @@ pub struct SnapshotWorker {
     snapshot_created: watch::Sender<TxOffset>,
     request_snapshot: mpsc::UnboundedSender<Request>,
     snapshot_repository: Arc<DynSnapshotRepo>,
+    snapshot_store: Arc<dyn SnapshotStore>,
 }
 
 impl SnapshotWorker {
@@ -70,20 +71,25 @@ impl SnapshotWorker {
     /// The handle is only partially initialized, as it is lacking the
     /// [SnapshotDatabaseState]. This allows control code to [Self::subscribe]
     /// to future snapshots before handing off the worker to the database.
-    pub fn new(snapshot_repository: Arc<DynSnapshotRepo>, compression: Compression, rt: Handle) -> Self {
-        let database = snapshot_repository.database_identity();
-        let latest_snapshot = snapshot_repository.latest_snapshot().ok().flatten().unwrap_or(0);
+    pub fn new<R>(snapshot_repo: Arc<R>, compression: Compression, rt: Handle) -> Self
+    where
+        R: SnapshotRepo<Pending = BoxedPendingSnapshot> + 'static,
+    {
+        let snapshot_store: Arc<dyn SnapshotStore> = snapshot_repo.clone();
+        let snapshot_repo: Arc<DynSnapshotRepo> = snapshot_repo;
+        let database = snapshot_repo.database_identity();
+        let latest_snapshot = snapshot_repo.latest_snapshot().ok().flatten().unwrap_or(0);
         let (snapshot_created, _) = watch::channel(latest_snapshot);
         let (request_tx, request_rx) = mpsc::unbounded();
 
         let actor = SnapshotWorkerActor {
             snapshot_requests: request_rx,
-            snapshot_repo: snapshot_repository.clone(),
+            snapshot_repo: snapshot_repo.clone(),
             snapshot_created: snapshot_created.clone(),
             metrics: SnapshotMetrics::new(database),
             rt: rt.clone(),
             compression: compression.is_enabled().then(|| Compressor {
-                snapshot_repo: snapshot_repository.clone(),
+                snapshot_repo: snapshot_repo.clone(),
                 metrics: CompressionMetrics::new(database),
                 stats: <_>::default(),
                 rt: rt.clone(),
@@ -94,7 +100,8 @@ impl SnapshotWorker {
         Self {
             snapshot_created,
             request_snapshot: request_tx,
-            snapshot_repository,
+            snapshot_repository: snapshot_repo,
+            snapshot_store,
         }
     }
 
@@ -111,6 +118,11 @@ impl SnapshotWorker {
     /// Get the snapshot repo this worker is operating on.
     pub fn snapshot_repo(&self) -> Arc<DynSnapshotRepo> {
         self.snapshot_repository.clone()
+    }
+
+    /// Get the snapshot store this worker is operating on.
+    pub fn snapshot_store(&self) -> Arc<dyn SnapshotStore> {
+        self.snapshot_store.clone()
     }
 
     /// Request a snapshot to be taken.

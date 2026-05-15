@@ -1,0 +1,52 @@
+//! Stable seed and RNG utilities used across DST runs.
+//!
+//! The important property here is repeatability, not statistical quality.
+//! `DstSeed::fork` is used to derive independent substreams without requiring
+//! callers to manually coordinate RNG state.
+
+/// Top-level seed value for a deterministic run.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub struct DstSeed(pub u64);
+
+impl DstSeed {
+    pub(crate) fn fork(self, discriminator: u64) -> Self {
+        // derive independent seed using same mixing primitive
+        Self(splitmix64(self.0 ^ discriminator.wrapping_mul(GAMMA)))
+    }
+
+    pub(crate) fn rng(self) -> DstRng {
+        DstRng {
+            state: splitmix64(self.0),
+        }
+    }
+}
+
+/// Small deterministic RNG for simulator code.
+#[derive(Clone, Debug)]
+pub(crate) struct DstRng {
+    state: u64,
+}
+
+impl DstRng {
+    pub(crate) fn next_u64(&mut self) -> u64 {
+        // advance state, then reuse splitmix64 mixing
+        self.state = self.state.wrapping_add(GAMMA);
+        splitmix64(self.state)
+    }
+
+    pub(crate) fn index(&mut self, len: usize) -> usize {
+        assert!(len > 0, "len must be non-zero");
+        (self.next_u64() as usize) % len
+    }
+}
+
+// constants reused everywhere
+const GAMMA: u64 = 0x9e37_79b9_7f4a_7c15;
+
+/// Reference: https://rosettacode.org/wiki/Pseudo-random_numbers/Splitmix64
+fn splitmix64(mut x: u64) -> u64 {
+    x = x.wrapping_add(GAMMA);
+    x = (x ^ (x >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    x ^ (x >> 31)
+}

@@ -1,12 +1,18 @@
+#[cfg(not(simulation))]
 use netstat2::{get_sockets_info, AddressFamilyFlags, ProtocolFlags, ProtocolSocketInfo, TcpState};
+#[cfg(not(simulation))]
 use spacetimedb_client_api::routes::identity::IdentityRoutes;
+#[cfg(not(simulation))]
 use spacetimedb_pg::pg_server;
+#[cfg(not(simulation))]
 use std::io::{self, Write};
+#[cfg(not(simulation))]
 use std::net::IpAddr;
 use std::sync::Arc;
 
 use crate::{StandaloneEnv, StandaloneOptions};
 use anyhow::Context;
+#[cfg(not(simulation))]
 use axum::extract::DefaultBodyLimit;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
@@ -15,11 +21,14 @@ use spacetimedb::db::{self, Storage};
 use spacetimedb::startup::{self, TracingOptions};
 use spacetimedb::util::jobs::JobCores;
 use spacetimedb::worker_metrics;
+#[cfg(not(simulation))]
 use spacetimedb_client_api::routes::database::DatabaseRoutes;
+#[cfg(not(simulation))]
 use spacetimedb_client_api::routes::router;
 use spacetimedb_client_api::routes::subscribe::WebSocketOptions;
 use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::server::{ConfigToml, ServerDataDir};
+#[cfg(not(simulation))]
 use tokio::net::TcpListener;
 
 pub fn cli() -> clap::Command {
@@ -111,6 +120,7 @@ impl ConfigFile {
 pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     let listen_addr = args.get_one::<String>("listen_addr").unwrap();
     let pg_port = args.get_one::<u16>("pg_port");
+    #[cfg(not(simulation))]
     let non_interactive = args.get_flag("non_interactive");
     let cert_dir = args.get_one::<spacetimedb_paths::cli::ConfigDir>("jwt_key_dir");
     let certs = Option::zip(
@@ -198,13 +208,26 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     );
     worker_metrics::spawn_page_pool_stats(listen_addr.clone(), ctx.page_pool().clone());
     worker_metrics::spawn_bsatn_rlb_pool_stats(listen_addr.clone(), ctx.bsatn_rlb_pool().clone());
+    #[cfg(simulation)]
+    {
+        let _ = (pg_port, ctx, listen_addr);
+        anyhow::bail!("standalone start server mode is not supported under simulation");
+    }
+
+    #[cfg(not(simulation))]
     let mut db_routes = DatabaseRoutes::default();
-    db_routes.root_post = db_routes.root_post.layer(DefaultBodyLimit::disable());
-    db_routes.db_put = db_routes.db_put.layer(DefaultBodyLimit::disable());
-    db_routes.pre_publish = db_routes.pre_publish.layer(DefaultBodyLimit::disable());
+    #[cfg(not(simulation))]
+    {
+        db_routes.root_post = db_routes.root_post.layer(DefaultBodyLimit::disable());
+        db_routes.db_put = db_routes.db_put.layer(DefaultBodyLimit::disable());
+        db_routes.pre_publish = db_routes.pre_publish.layer(DefaultBodyLimit::disable());
+    }
+    #[cfg(not(simulation))]
     let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
+    #[cfg(not(simulation))]
     let service = router(&ctx, db_routes, IdentityRoutes::default(), extra).with_state(ctx.clone());
 
+    #[cfg(not(simulation))]
     // Check if the requested port is available on both IPv4 and IPv6.
     // If not, offer to find an available port by incrementing (unless non-interactive).
     let listen_addr = if let Some((host, port_str)) = listen_addr.rsplit_once(':') {
@@ -250,40 +273,44 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
         listen_addr.to_string()
     };
 
-    let tcp = TcpListener::bind(&listen_addr).await.context(format!(
-        "failed to bind the SpacetimeDB server to '{listen_addr}', please check that the address is valid and not already in use"
-    ))?;
-    socket2::SockRef::from(&tcp).set_nodelay(true)?;
-    log::info!("Starting SpacetimeDB listening on {}", tcp.local_addr()?);
-
-    if let Some(pg_port) = pg_port {
-        let server_addr = listen_addr.split(':').next().unwrap();
-        let tcp_pg = TcpListener::bind(format!("{server_addr}:{pg_port}")).await.context(format!(
-            "failed to bind the SpacetimeDB PostgreSQL wire protocol server to {server_addr}:{pg_port}, please check that the port is valid and not already in use"
+    #[cfg(not(simulation))]
+    {
+        let tcp = TcpListener::bind(&listen_addr).await.context(format!(
+            "failed to bind the SpacetimeDB server to '{listen_addr}', please check that the address is valid and not already in use"
         ))?;
+        socket2::SockRef::from(&tcp).set_nodelay(true)?;
+        log::info!("Starting SpacetimeDB listening on {}", tcp.local_addr()?);
 
-        let notify = Arc::new(tokio::sync::Notify::new());
-        let shutdown_notify = notify.clone();
-        tokio::select! {
-            _ = pg_server::start_pg(notify.clone(), ctx, tcp_pg) => {},
-            _ = axum::serve(tcp, service).with_graceful_shutdown(async move  {
-                shutdown_notify.notified().await;
-            }) => {},
-            _ = tokio::signal::ctrl_c() => {
-                println!("Shutting down servers...");
-                notify.notify_waiters(); // Notify all tasks
+        if let Some(pg_port) = pg_port {
+            let server_addr = listen_addr.split(':').next().unwrap();
+            let tcp_pg = TcpListener::bind(format!("{server_addr}:{pg_port}")).await.context(format!(
+                "failed to bind the SpacetimeDB PostgreSQL wire protocol server to {server_addr}:{pg_port}, please check that the port is valid and not already in use"
+            ))?;
+
+            let notify = Arc::new(tokio::sync::Notify::new());
+            let shutdown_notify = notify.clone();
+            tokio::select! {
+                _ = pg_server::start_pg(notify.clone(), ctx, tcp_pg) => {},
+                _ = axum::serve(tcp, service).with_graceful_shutdown(async move  {
+                    shutdown_notify.notified().await;
+                }) => {},
+                _ = tokio::signal::ctrl_c() => {
+                    println!("Shutting down servers...");
+                    notify.notify_waiters(); // Notify all tasks
+                }
             }
+        } else {
+            log::warn!("PostgreSQL wire protocol server disabled");
+            axum::serve(tcp, service)
+                .with_graceful_shutdown(async {
+                    tokio::signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
+                    log::info!("Shutting down server...");
+                })
+                .await?;
         }
-    } else {
-        log::warn!("PostgreSQL wire protocol server disabled");
-        axum::serve(tcp, service)
-            .with_graceful_shutdown(async {
-                tokio::signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
-                log::info!("Shutting down server...");
-            })
-            .await?;
     }
 
+    #[cfg(not(simulation))]
     Ok(())
 }
 
@@ -302,6 +329,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
 /// Note: There is a small race condition between this check and the actual bind -
 /// another process could grab the port in between. This is unlikely in practice
 /// and the actual bind will fail with a clear error if it happens.
+#[cfg(not(simulation))]
 pub fn is_port_available(host: &str, port: u16) -> bool {
     let requested = match parse_host(host) {
         Some(r) => r,
@@ -336,11 +364,13 @@ pub fn is_port_available(host: &str, port: u16) -> bool {
 }
 
 #[derive(Debug, Clone, Copy)]
+#[cfg(not(simulation))]
 enum RequestedHost {
     Localhost,
     Ip(IpAddr),
 }
 
+#[cfg(not(simulation))]
 fn parse_host(host: &str) -> Option<RequestedHost> {
     let host = host.trim();
 
@@ -354,6 +384,7 @@ fn parse_host(host: &str) -> Option<RequestedHost> {
     host.parse::<IpAddr>().ok().map(RequestedHost::Ip)
 }
 
+#[cfg(not(simulation))]
 fn conflicts(requested: RequestedHost, listener_addr: IpAddr) -> bool {
     match requested {
         RequestedHost::Localhost => match listener_addr {
@@ -424,6 +455,7 @@ fn conflicts(requested: RequestedHost, listener_addr: IpAddr) -> bool {
 
 /// Find an available port starting from the requested port.
 /// Returns the first port that is available on both IPv4 and IPv6.
+#[cfg(not(simulation))]
 fn find_available_port(host: &str, requested_port: u16, max_attempts: u16) -> Option<u16> {
     for offset in 0..max_attempts {
         let port = requested_port.saturating_add(offset);
@@ -438,6 +470,7 @@ fn find_available_port(host: &str, requested_port: u16, max_attempts: u16) -> Op
 }
 
 /// Prompt the user with a yes/no question. Returns true if they answer yes.
+#[cfg(not(simulation))]
 fn prompt_yes_no(question: &str) -> bool {
     print!("{} [y/N] ", question);
     io::stdout().flush().ok();
