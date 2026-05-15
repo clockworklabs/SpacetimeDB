@@ -13,6 +13,7 @@ public partial class GodotPlayModeTests : Node
 
     public override async void _Ready()
     {
+        // This should not be needed after improving the SDK
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         
         var failures = 0;
