@@ -17,6 +17,7 @@ use spacetimedb_lib::{AlgebraicValue, ConnectionId, TimeDuration, Timestamp};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::bsatn;
 use spacetimedb_schema::table_name::TableName;
+use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -822,4 +823,38 @@ impl ToProtocol for ProcedureResultMessage {
             })),
         }
     }
+}
+
+/// Reasons for a WebSocket connection to be closed.
+///
+/// This is a subset of the WebSocket close codes defined in [RFC 6455](https://datatracker.ietf.org/doc/html/rfc6455#section-7.4),
+/// along with some extensions documented by [IANA](https://www.iana.org/assignments/websocket/websocket.xml#close-code-number).
+/// We use the same names as [Tungstenite](https://docs.rs/tungstenite/latest/tungstenite/protocol/frame/coding/enum.CloseCode.html).
+/// We don't use the actual Tungstenite `CloseCode` enum because the spacetimedb-core crate doesn't depend on Tungstenite.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CloseCode {
+    /// Closing due to receiving an invalid message from the client.
+    ///
+    /// We send this when the client sends an invalid request,
+    /// e.g. a reducer or procedure call with ill-typed or unparseable arguments.
+    Invalid,
+    /// Closing, but the client should attempt to reconnect.
+    ///
+    /// We send this e.g. when a connection closes due to a leader failover.
+    Again,
+    /// Closing because the database to which the client was connected has gone away.
+    Away,
+    /// Protocol error. The catch-all.
+    Protocol,
+}
+
+/// A WebSocket close frame.
+///
+/// We'll convert this into a [`tungstenite::protocol::frame::CloseFrame`](https://docs.rs/tungstenite/latest/tungstenite/protocol/frame/struct.CloseFrame.html)
+/// and send it to the client when issuing a server-initiated disconnection.
+/// We don't directly use the Tungstenite type because the spacetimedb-core crate doesn't depend on Tungstenite.
+#[derive(Clone, Debug)]
+pub struct CloseFrame {
+    pub code: CloseCode,
+    pub reason: Cow<'static, str>,
 }

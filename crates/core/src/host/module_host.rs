@@ -2,7 +2,9 @@ use super::{
     ArgsTuple, FunctionArgs, InvalidProcedureArguments, InvalidReducerArguments, ReducerCallResult, ReducerId,
     ReducerOutcome, Scheduler,
 };
-use crate::client::messages::{OneOffQueryResponseMessage, ProcedureResultMessage, SerializableMessage};
+use crate::client::messages::{
+    CloseCode, CloseFrame, OneOffQueryResponseMessage, ProcedureResultMessage, SerializableMessage,
+};
 use crate::client::{ClientActorId, ClientConnectionSender, WsVersion};
 use crate::database_logger::{DatabaseLogger, LogLevel, Record};
 use crate::db::relational_db::{RelationalDB, Tx};
@@ -1435,6 +1437,27 @@ pub enum ReducerCallError {
     LifecycleReducer(Lifecycle),
 }
 
+impl ReducerCallError {
+    /// When a reducer call by a client results in this error variant,
+    /// should the host disconnect that client, and what WebSocket close code should it use?
+    ///
+    /// Returns `None` if the connection should stay open.
+    pub fn close_code(&self) -> Option<CloseCode> {
+        match self {
+            // These errors all result from outdated or incorrect client bindings.
+            // The developer of the client application needs to re-run `spacetime generate`.
+            Self::Args(_) | Self::NoSuchReducer | Self::LifecycleReducer(_) => Some(CloseCode::Invalid),
+
+            // These errors all result most commonly from scheduling or replication changes.
+            // A reconnect will not necessarily result in a successful connection, but it might,
+            // and it will at least give a useful diagnostic about the new state of the database.
+            Self::NoSuchModule(_) | Self::WorkerError(_) => Some(CloseCode::Again),
+
+            Self::ScheduleReducerNotFound => unreachable!("WebSocket client's don't directly invoke schedules"),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum ViewOutcome {
     Success,
@@ -1511,8 +1534,43 @@ pub enum ProcedureCallError {
     NoSuchProcedure,
     #[error("Procedure terminated due to insufficient budget")]
     OutOfEnergy,
+    #[error("Unable to deserialize the procedure's return value: {0}")]
+    InvalidReturnValue(bsatn::DecodeError),
     #[error("The module instance encountered a fatal error: {0}")]
-    InternalError(String),
+    GuestPanic(String),
+}
+
+impl ProcedureCallError {
+    /// When a procedure call by a client results in this error variant,
+    /// should the host disconnect that client, and what WebSocket close code should it use?
+    ///
+    /// Returns `None` if the connection should stay open.
+    pub fn close_code(&self) -> Option<CloseCode> {
+        match self {
+            // These errors all result from outdated or incorrect client bindings.
+            // The developer of the client application needs to re-run `spacetime generate`.
+            Self::Args(_) | Self::NoSuchProcedure => Some(CloseCode::Invalid),
+
+            // This error results most commonly from scheduling or replication changes.
+            // A reconnect will not necessarily result in a successful connection, but it might,
+            // and it will at least give a useful diagnostic about the new state of the database.
+            Self::NoSuchModule(_) => Some(CloseCode::Again),
+
+            // A guest panic is benign, and future calls by the client may succeed.
+            Self::GuestPanic(_) => None,
+
+            // This is a weird error, and probably indicates that the database is broken somehow,
+            // but it's not a problem with the client, so I (pgoldman 2026-05-14) guess we'll just send an error message?
+            Self::InvalidReturnValue(_) => None,
+
+            // TODO(procedure-energy): Re-evaluate the correct behavior here.
+            // This error may mean that the individual procedure call was terminated due to exceeding its budget,
+            // i.e. running too long and consuming too many CPU cycles,
+            // or it may mean that the database as a whole has been suspended.
+            // Because of the former case, future calls by the client may succeed, so don't disconnect.
+            Self::OutOfEnergy => None,
+        }
+    }
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -2616,12 +2674,25 @@ impl ModuleHost {
                 self.subscriptions().send_procedure_message(sender, message, tx_offset)
             }
             WsVersion::V2 | WsVersion::V3 => {
-                let (status, timestamp, execution_duration) = match result {
+                let send_message = |sender, status, timestamp, execution_duration| {
+                    let message = ws_v2::ProcedureResult {
+                        status,
+                        timestamp,
+                        total_host_execution_duration: execution_duration,
+                        request_id,
+                    };
+
+                    self.subscriptions()
+                        .send_procedure_message_v2(sender, message, tx_offset)
+                };
+
+                match result {
                     Ok(ProcedureCallResult {
                         return_val,
                         execution_duration,
                         start_timestamp,
-                    }) => (
+                    }) => send_message(
+                        sender,
                         ws_v2::ProcedureStatus::Returned(
                             bsatn::to_vec(&return_val)
                                 .expect("Procedure return value failed to serialize to BSATN")
@@ -2630,22 +2701,22 @@ impl ModuleHost {
                         start_timestamp,
                         TimeDuration::from(execution_duration),
                     ),
-                    Err(err) => (
-                        ws_v2::ProcedureStatus::InternalError(err.to_string().into()),
-                        Timestamp::UNIX_EPOCH,
-                        TimeDuration::ZERO,
-                    ),
-                };
-
-                let message = ws_v2::ProcedureResult {
-                    status,
-                    timestamp,
-                    total_host_execution_duration: execution_duration,
-                    request_id,
-                };
-
-                self.subscriptions()
-                    .send_procedure_message_v2(sender, message, tx_offset)
+                    Err(err) => match err.close_code() {
+                        None => send_message(
+                            sender,
+                            ws_v2::ProcedureStatus::InternalError(err.to_string().into()),
+                            Timestamp::UNIX_EPOCH,
+                            TimeDuration::ZERO,
+                        ),
+                        Some(code) => self.subscriptions().disconnect_client(
+                            sender,
+                            CloseFrame {
+                                code,
+                                reason: err.to_string().into(),
+                            },
+                        ),
+                    },
+                }
             }
         }
     }

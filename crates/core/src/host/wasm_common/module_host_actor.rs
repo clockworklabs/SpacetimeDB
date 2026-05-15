@@ -791,14 +791,14 @@ impl InstanceCommon {
                 //     return Err(ProcedureCallError::OutOfEnergy);
                 // } else
                 {
-                    Err(ProcedureCallError::InternalError(format!("{err}")))
+                    Err(ProcedureCallError::GuestPanic(format!("{err}")))
                 }
             }
             Ok(return_val) => {
                 let return_type = &procedure_def.return_type;
                 let seed = spacetimedb_sats::WithTypespace::new(self.info.module_def.typespace(), return_type);
                 seed.deserialize(bsatn::Deserializer::new(&mut &return_val[..]))
-                    .map_err(|err| ProcedureCallError::InternalError(format!("{err}")))
+                    .map_err(ProcedureCallError::InvalidReturnValue)
                     .map(|return_val| ProcedureCallResult {
                         return_val,
                         execution_duration: timer.map(|timer| timer.elapsed()).unwrap_or_default(),

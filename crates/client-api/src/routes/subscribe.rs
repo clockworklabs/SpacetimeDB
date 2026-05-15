@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt::Display;
 use std::future::Future;
 use std::num::NonZeroUsize;
@@ -23,8 +24,8 @@ use prometheus::{Histogram, IntGauge};
 use scopeguard::{defer, ScopeGuard};
 use serde::Deserialize;
 use spacetimedb::client::messages::{
-    serialize, serialize_v2, IdentityTokenMessage, InUseSerializeBuffer, SerializeBuffer, SwitchedServerMessage,
-    ToProtocol,
+    serialize, serialize_v2, CloseCode as StCloseCode, CloseFrame as StCloseFrame, IdentityTokenMessage,
+    InUseSerializeBuffer, SerializeBuffer, SwitchedServerMessage, ToProtocol,
 };
 use spacetimedb::client::{
     ClientActorId, ClientConfig, ClientConnection, ClientConnectionReceiver, DataMessage, MessageExecutionError,
@@ -52,7 +53,8 @@ use tokio_tungstenite::tungstenite::Utf8Bytes;
 use crate::auth::SpacetimeAuth;
 use crate::util::serde::humantime_duration;
 use crate::util::websocket::{
-    CloseCode, CloseFrame, Message as WsMessage, WebSocketConfig, WebSocketStream, WebSocketUpgrade, WsError,
+    CloseCode as WsCloseCode, CloseFrame as WsCloseFrame, Message as WsMessage, WebSocketConfig, WebSocketStream,
+    WebSocketUpgrade, WsError,
 };
 use crate::util::{NameOrIdentity, XForwardedFor};
 use crate::{log_and_500, Authorization, ControlStateDelegate, NodeDelegate};
@@ -678,8 +680,8 @@ async fn ws_main_loop<HotswapWatcher>(
             // Branch is disabled if we already sent a close frame.
             res = &mut watch_hotswap, if !closed => {
                 if let Err(NoSuchModule) = res {
-                    let close = CloseFrame {
-                        code: CloseCode::Away,
+                    let close = StCloseFrame {
+                        code: StCloseCode::Away,
                         reason: "module exited".into()
                     };
                     unordered_tx(close.into());
@@ -791,15 +793,24 @@ async fn ws_recv_task<MessageHandler>(
                 continue;
             }
             log::debug!("Client caused error: {e}");
-            let close = CloseFrame {
-                code: CloseCode::Error,
-                reason: format!("{e:#}").into(),
-            };
+            let close = close_frame_for_error(e);
+
             // If the send task has exited, also exit this recv task.
             // No need to send the close handshake in that case; the client is already gone.
             if unordered_tx.send(close.into()).is_err() {
                 break;
             };
+        }
+    }
+}
+
+fn close_frame_for_error(e: MessageHandleError) -> StCloseFrame {
+    if let MessageHandleError::DisconnectClient(frame) = e {
+        frame
+    } else {
+        StCloseFrame {
+            code: StCloseCode::Protocol,
+            reason: format!("{e:#}").into(),
         }
     }
 }
@@ -918,9 +929,9 @@ fn ws_recv_queue(
     recv_queue_gauge: IntGauge,
     mut ws: impl Stream<Item = Result<WsMessage, WsError>> + Unpin + Send + 'static,
 ) -> impl Stream<Item = Result<WsMessage, WsError>> {
-    const CLOSE: UnorderedWsMessage = UnorderedWsMessage::Close(CloseFrame {
-        code: CloseCode::Again,
-        reason: Utf8Bytes::from_static("too many requests"),
+    const CLOSE: UnorderedWsMessage = UnorderedWsMessage::Close(StCloseFrame {
+        code: StCloseCode::Again,
+        reason: Cow::Borrowed("too many requests"),
     });
     let on_message_after_close = move |client_id| {
         log::warn!("client {client_id} sent message after close or error");
@@ -1051,7 +1062,7 @@ fn ws_client_message_handler(
 #[derive(Debug, From)]
 enum UnorderedWsMessage {
     /// Server-initiated close.
-    Close(CloseFrame),
+    Close(spacetimedb::client::messages::CloseFrame),
     /// Server-initiated ping.
     Ping(Bytes),
     /// Error calling a reducer.
@@ -1202,7 +1213,7 @@ async fn ws_send_loop_inner<T, U, Encoder>(
                         }
                         // Then send the close frame.
                         log::trace!("sending close frame");
-                        if let Err(e) = ws.send(WsMessage::Close(Some(close_frame))).await {
+                        if let Err(e) = ws.send(WsMessage::Close(Some(convert_close_frame(close_frame)))).await {
                             log::warn!("error sending close frame: {e:#}");
                             break;
                         }
@@ -1276,6 +1287,21 @@ async fn ws_send_loop_inner<T, U, Encoder>(
             log::warn!("error flushing websocket: {e}");
             break;
         }
+    }
+}
+
+fn convert_close_frame(frame: StCloseFrame) -> WsCloseFrame {
+    WsCloseFrame {
+        code: match frame.code {
+            StCloseCode::Again => WsCloseCode::Again,
+            StCloseCode::Invalid => WsCloseCode::Invalid,
+            StCloseCode::Away => WsCloseCode::Away,
+            StCloseCode::Protocol => WsCloseCode::Protocol,
+        },
+        reason: match frame.reason {
+            Cow::Borrowed(reason) => Utf8Bytes::from_static(reason),
+            Cow::Owned(reason) => reason.into(),
+        },
     }
 }
 
@@ -1523,7 +1549,7 @@ enum ClientMessage {
     Message(DataMessage),
     Ping(Bytes),
     Pong(Bytes),
-    Close(Option<CloseFrame>),
+    Close(Option<WsCloseFrame>),
 }
 
 impl ClientMessage {
@@ -1827,7 +1853,7 @@ mod tests {
 
         unordered_tx
             .send(UnorderedWsMessage::Close(CloseFrame {
-                code: CloseCode::Away,
+                code: WsCloseCode::Away,
                 reason: "done".into(),
             }))
             .unwrap();
@@ -1841,7 +1867,7 @@ mod tests {
     async fn send_loop_terminates_if_sink_cant_be_fed() {
         let input = [
             Either::Left(UnorderedWsMessage::Close(CloseFrame {
-                code: CloseCode::Away,
+                code: WsCloseCode::Away,
                 reason: "bah!".into(),
             })),
             Either::Left(UnorderedWsMessage::Ping(Bytes::new())),
@@ -1890,7 +1916,7 @@ mod tests {
     async fn send_loop_terminates_if_sink_cant_be_flushed() {
         let input = [
             Either::Left(UnorderedWsMessage::Close(CloseFrame {
-                code: CloseCode::Away,
+                code: WsCloseCode::Away,
                 reason: "bah!".into(),
             })),
             Either::Left(UnorderedWsMessage::Ping(Bytes::new())),
@@ -2189,7 +2215,7 @@ mod tests {
         unordered_tx.send(UnorderedWsMessage::Ping(Bytes::new())).unwrap();
         unordered_tx
             .send(UnorderedWsMessage::Close(CloseFrame {
-                code: CloseCode::Away,
+                code: WsCloseCode::Away,
                 reason: "we're done".into(),
             }))
             .unwrap();

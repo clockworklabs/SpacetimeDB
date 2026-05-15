@@ -127,7 +127,9 @@ fn map_procedure_error(e: ProcedureCallError, procedure: &str) -> (StatusCode, S
             StatusCode::NOT_FOUND
         }
         ProcedureCallError::OutOfEnergy => StatusCode::PAYMENT_REQUIRED,
-        ProcedureCallError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        ProcedureCallError::GuestPanic(_) | ProcedureCallError::InvalidReturnValue(_) => {
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
     };
     log::error!("Error while invoking procedure {e:#}");
     (status_code, format!("{:#}", anyhow::anyhow!(e)))
