@@ -7,6 +7,4 @@ using namespace SpacetimeDB;
 #endif
 
 SPACETIMEDB_HTTP_HANDLER(handler_no_return_type, HandlerContext ctx, HttpRequest request) {
-    (void)ctx;
-    (void)request;
 }

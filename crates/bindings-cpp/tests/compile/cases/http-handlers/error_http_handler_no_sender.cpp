@@ -3,7 +3,6 @@
 using namespace SpacetimeDB;
 
 SPACETIMEDB_HTTP_HANDLER(handler_no_sender, HandlerContext ctx, HttpRequest request) {
-    (void)request;
     auto sender = ctx.sender();
     return HttpResponse{
         200,

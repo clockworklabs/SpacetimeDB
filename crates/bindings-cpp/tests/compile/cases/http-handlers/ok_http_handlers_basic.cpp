@@ -3,8 +3,6 @@
 using namespace SpacetimeDB;
 
 SPACETIMEDB_HTTP_HANDLER(hello_handler, HandlerContext ctx, HttpRequest request) {
-    (void)ctx;
-    (void)request;
     return HttpResponse{
         200,
         HttpVersion::Http11,

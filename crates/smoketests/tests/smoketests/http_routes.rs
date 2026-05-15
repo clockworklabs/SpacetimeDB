@@ -264,13 +264,10 @@ HttpResponse text_response(uint16_t status_code, std::string body) {
 } // namespace
 
 SPACETIMEDB_HTTP_HANDLER(get_simple, HandlerContext ctx, HttpRequest request) {
-    (void)ctx;
-    (void)request;
     return text_response(200, "ok");
 }
 
 SPACETIMEDB_HTTP_HANDLER(post_insert, HandlerContext ctx, HttpRequest request) {
-    (void)request;
     ctx.with_tx([](TxContext& tx) {
         uint64_t id = tx.db[entry].count();
         tx.db[entry].insert(Entry{ id, "posted" });
@@ -279,7 +276,6 @@ SPACETIMEDB_HTTP_HANDLER(post_insert, HandlerContext ctx, HttpRequest request) {
 }
 
 SPACETIMEDB_HTTP_HANDLER(get_count, HandlerContext ctx, HttpRequest request) {
-    (void)request;
     uint64_t count = ctx.with_tx([](TxContext& tx) -> uint64_t {
         return tx.db[entry].count();
     });
@@ -287,19 +283,14 @@ SPACETIMEDB_HTTP_HANDLER(get_count, HandlerContext ctx, HttpRequest request) {
 }
 
 SPACETIMEDB_HTTP_HANDLER(any_handler, HandlerContext ctx, HttpRequest request) {
-    (void)ctx;
-    (void)request;
     return text_response(200, "any");
 }
 
 SPACETIMEDB_HTTP_HANDLER(header_echo, HandlerContext ctx, HttpRequest request) {
-    (void)ctx;
     return text_response(200, header_value_utf8(request, "x-echo"));
 }
 
 SPACETIMEDB_HTTP_HANDLER(set_response_header, HandlerContext ctx, HttpRequest request) {
-    (void)ctx;
-    (void)request;
     return HttpResponse{
         200,
         HttpVersion::Http11,
@@ -309,14 +300,10 @@ SPACETIMEDB_HTTP_HANDLER(set_response_header, HandlerContext ctx, HttpRequest re
 }
 
 SPACETIMEDB_HTTP_HANDLER(body_handler, HandlerContext ctx, HttpRequest request) {
-    (void)ctx;
-    (void)request;
     return text_response(200, "non-empty");
 }
 
 SPACETIMEDB_HTTP_HANDLER(teapot, HandlerContext ctx, HttpRequest request) {
-    (void)ctx;
-    (void)request;
     return text_response(418, "teapot");
 }
 
@@ -443,26 +430,18 @@ HttpResponse text_response(const std::string& body) {
 } // namespace
 
 SPACETIMEDB_HTTP_HANDLER(empty_root, HandlerContext ctx, HttpRequest request) {
-    (void)ctx;
-    (void)request;
     return text_response("empty");
 }
 
 SPACETIMEDB_HTTP_HANDLER(slash_root, HandlerContext ctx, HttpRequest request) {
-    (void)ctx;
-    (void)request;
     return text_response("slash");
 }
 
 SPACETIMEDB_HTTP_HANDLER(foo, HandlerContext ctx, HttpRequest request) {
-    (void)ctx;
-    (void)request;
     return text_response("foo");
 }
 
 SPACETIMEDB_HTTP_HANDLER(foo_slash, HandlerContext ctx, HttpRequest request) {
-    (void)ctx;
-    (void)request;
     return text_response("foo-slash");
 }
 
@@ -488,14 +467,10 @@ HttpResponse text_response(const std::string& body) {
 } // namespace
 
 SPACETIMEDB_HTTP_HANDLER(foo, HandlerContext ctx, HttpRequest request) {
-    (void)ctx;
-    (void)request;
     return text_response("foo");
 }
 
 SPACETIMEDB_HTTP_HANDLER(foo_slash, HandlerContext ctx, HttpRequest request) {
-    (void)ctx;
-    (void)request;
     return text_response("foo-slash");
 }
 
@@ -511,7 +486,6 @@ const CPP_FULL_URI_MODULE_CODE: &str = r#"#include "spacetimedb.h"
 using namespace SpacetimeDB;
 
 SPACETIMEDB_HTTP_HANDLER(echo_uri, HandlerContext ctx, HttpRequest request) {
-    (void)ctx;
     return HttpResponse{
         200,
         HttpVersion::Http11,
@@ -543,14 +517,12 @@ HttpResponse text_response(uint16_t status_code, const std::string& body) {
 } // namespace
 
 SPACETIMEDB_HTTP_HANDLER(reverse_bytes, HandlerContext ctx, HttpRequest request) {
-    (void)ctx;
     std::vector<uint8_t> reversed = request.body.to_bytes();
     std::reverse(reversed.begin(), reversed.end());
     return bytes_response(200, std::move(reversed));
 }
 
 SPACETIMEDB_HTTP_HANDLER(reverse_words, HandlerContext ctx, HttpRequest request) {
-    (void)ctx;
     const std::vector<uint8_t> bytes = request.body.to_bytes();
     std::string body(bytes.begin(), bytes.end());
     if (body.find(static_cast<char>(0x80)) != std::string::npos) {

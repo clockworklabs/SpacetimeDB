@@ -3,8 +3,6 @@
 using namespace SpacetimeDB;
 
 SPACETIMEDB_HTTP_HANDLER(hello_handler, HandlerContext ctx, HttpRequest request) {
-    (void)ctx;
-    (void)request;
     return HttpResponse{
         200,
         HttpVersion::Http11,
@@ -14,6 +12,5 @@ SPACETIMEDB_HTTP_HANDLER(hello_handler, HandlerContext ctx, HttpRequest request)
 }
 
 SPACETIMEDB_HTTP_ROUTER(register_http_routes, HandlerContext ctx) {
-    (void)ctx;
     return Router().get("/hello", hello_handler);
 }
