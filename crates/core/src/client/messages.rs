@@ -201,14 +201,35 @@ pub fn serialize_v2(
     compression: ws_v1::Compression,
 ) -> (InUseSerializeBuffer, Bytes) {
     let srv_msg = buffer.write_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_NONE, |w| {
-        bsatn::to_writer(w.into_inner(), &msg).expect("should be able to bsatn encode v2 message");
+        write_v2_server_message(bsatn_rlb_pool, w.into_inner(), msg);
     });
     let srv_msg_len = srv_msg.len();
 
+    finalize_binary_serialize_buffer(buffer, srv_msg_len, compression)
+}
+
+fn write_v2_server_message(bsatn_rlb_pool: &BsatnRowListBuilderPool, out: &mut BytesMut, msg: ws_v2::ServerMessage) {
+    bsatn::to_writer(out, &msg).expect("should be able to bsatn encode v2 message");
     // At this point, we no longer have a use for `msg`,
     // so try to reclaim its buffers.
     msg.consume_each_list(&mut |buffer| bsatn_rlb_pool.try_put(buffer));
+}
 
+/// Serialize one or more [`ws_v2::ServerMessage`]s into a v3 websocket payload.
+///
+/// Protocol v3 keeps the v2 message schema, but allows the uncompressed payload
+/// body to contain consecutive BSATN-encoded server messages.
+pub fn serialize_v3(
+    bsatn_rlb_pool: &BsatnRowListBuilderPool,
+    mut buffer: SerializeBuffer,
+    msgs: impl IntoIterator<Item = ws_v2::ServerMessage>,
+    compression: ws_v1::Compression,
+) -> (InUseSerializeBuffer, Bytes) {
+    buffer.uncompressed.put_u8(ws_common::SERVER_MSG_COMPRESSION_TAG_NONE);
+    for msg in msgs {
+        write_v2_server_message(bsatn_rlb_pool, &mut buffer.uncompressed, msg);
+    }
+    let srv_msg_len = buffer.uncompressed.len() - 1;
     finalize_binary_serialize_buffer(buffer, srv_msg_len, compression)
 }
 
