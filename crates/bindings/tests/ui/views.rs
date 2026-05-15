@@ -195,4 +195,36 @@ fn view_nonexistent_table(ctx: &ViewContext) -> impl Query<T> {
     ctx.from.xyz().build()
 }
 
+#[table(accessor = audit_event, event)]
+struct AuditEvent {
+    #[unique]
+    id: u64,
+}
+
+/// Event tables should not be available through `ctx.db` in views.
+#[view(accessor = event_table_view, public)]
+fn event_table_view(ctx: &ViewContext) -> Vec<AuditEvent> {
+    let _ = ctx.db.audit_event();
+    vec![]
+}
+
+/// Event tables should not be available through `ctx.db` in views.
+#[view(accessor = event_table_view_anon, public)]
+fn event_table_view_anon(ctx: &AnonymousViewContext) -> Vec<AuditEvent> {
+    let _ = ctx.db.audit_event();
+    vec![]
+}
+
+/// Event tables should not be available through `ctx.from` in views.
+#[view(accessor = event_table_view_query_builder, public)]
+fn event_table_view_query_builder(ctx: &ViewContext) -> impl Query<AuditEvent> {
+    ctx.from.audit_event()
+}
+
+/// Event tables should not be available through `ctx.from` in views.
+#[view(accessor = event_table_view_anon_query_builder, public)]
+fn event_table_view_anon_query_builder(ctx: &AnonymousViewContext) -> impl Query<AuditEvent> {
+    ctx.from.audit_event()
+}
+
 fn main() {}

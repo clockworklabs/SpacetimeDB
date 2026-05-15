@@ -181,30 +181,6 @@ namespace SpacetimeDB
             );
     }
 
-    public readonly struct PrivateTableCols
-    {
-        internal PrivateTableCols(string tableName) { }
-    }
-
-    public readonly struct PrivateTableIxCols
-    {
-        internal PrivateTableIxCols(string tableName) { }
-    }
-
-    public readonly partial struct QueryBuilder
-    {
-        public global::SpacetimeDB.Table<
-            global::PrivateTable,
-            PrivateTableCols,
-            PrivateTableIxCols
-        > PrivateTable() =>
-            new(
-                "PrivateTable",
-                new PrivateTableCols("PrivateTable"),
-                new PrivateTableIxCols("PrivateTable")
-            );
-    }
-
     public readonly struct PublicTableCols
     {
         public readonly global::SpacetimeDB.Col<global::PublicTable, int> Id;
@@ -2264,7 +2240,6 @@ namespace SpacetimeDB.Internal
         internal global::SpacetimeDB.Internal.ViewHandles.BTreeViewsReadOnly BTreeViews => new();
         public global::SpacetimeDB.Internal.ViewHandles.MultiTable1ReadOnly MultiTable1 => new();
         public global::SpacetimeDB.Internal.ViewHandles.MultiTable2ReadOnly MultiTable2 => new();
-        public global::SpacetimeDB.Internal.ViewHandles.PrivateTableReadOnly PrivateTable => new();
         public global::SpacetimeDB.Internal.ViewHandles.PublicTableReadOnly PublicTable => new();
         internal global::SpacetimeDB.Internal.ViewHandles.RegressionMultipleUniqueIndexesHadSameNameReadOnly RegressionMultipleUniqueIndexesHadSameName =>
             new();
