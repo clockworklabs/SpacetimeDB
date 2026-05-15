@@ -579,6 +579,7 @@ async fn execute_publish_configs<'a>(
                     .as_ref()
                     .expect("path_to_project must exist when publishing from source"),
                 &build_options,
+                native_aot,
             )
             .await?
         };

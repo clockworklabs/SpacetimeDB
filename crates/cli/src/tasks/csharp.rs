@@ -35,7 +35,7 @@ enum CsharpBuildPath {
     Net10Aot,
 }
 
-pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Result<PathBuf> {
+pub(crate) fn build_csharp(project_path: &Path, build_debug: bool, native_aot: bool) -> anyhow::Result<PathBuf> {
     // All `dotnet` commands must execute in the project directory, otherwise
     // global.json won't have any effect and wrong .NET SDK might be picked.
     macro_rules! dotnet {
@@ -44,7 +44,7 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
         };
     }
 
-    let native_aot_flag = std::env::var_os("EXPERIMENTAL_WASM_AOT").is_some_and(|v| v == "1");
+    let native_aot_flag = native_aot;
 
     // Check for explicit dotnet version override from CLI (--dotnet-version flag)
     // This takes precedence over auto-detection.

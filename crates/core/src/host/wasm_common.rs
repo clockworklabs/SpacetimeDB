@@ -403,6 +403,36 @@ pub struct AbiRuntimeError {
 macro_rules! abi_funcs {
     ($link_sync:ident,  $link_async:ident) => {
         $link_sync! {
+            // Net8 JIT (Mono WASM) imports all FFI functions under "bindings".
+            "bindings"::table_id_from_name,
+            "bindings"::datastore_table_row_count,
+            "bindings"::datastore_table_scan_bsatn,
+            "bindings"::row_iter_bsatn_advance,
+            "bindings"::row_iter_bsatn_close,
+            "bindings"::datastore_insert_bsatn,
+            "bindings"::datastore_update_bsatn,
+            "bindings"::datastore_delete_all_by_eq_bsatn,
+            "bindings"::bytes_source_read,
+            "bindings"::bytes_sink_write,
+            "bindings"::console_log,
+            "bindings"::console_timer_start,
+            "bindings"::console_timer_end,
+            "bindings"::index_id_from_name,
+            "bindings"::datastore_index_scan_range_bsatn,
+            "bindings"::datastore_delete_by_index_scan_range_bsatn,
+            "bindings"::datastore_btree_scan_bsatn,
+            "bindings"::datastore_delete_by_btree_scan_bsatn,
+            "bindings"::identity,
+            "bindings"::volatile_nonatomic_schedule_immediate,
+            "bindings"::bytes_source_remaining_length,
+            "bindings"::get_jwt,
+            "bindings"::procedure_start_mut_tx,
+            "bindings"::procedure_commit_mut_tx,
+            "bindings"::procedure_abort_mut_tx,
+            "bindings"::datastore_index_scan_point_bsatn,
+            "bindings"::datastore_delete_by_index_scan_point_bsatn,
+            "bindings"::datastore_clear,
+
             "spacetime_10.0"::table_id_from_name,
             "spacetime_10.0"::datastore_table_row_count,
             "spacetime_10.0"::datastore_table_scan_bsatn,
@@ -443,6 +473,9 @@ macro_rules! abi_funcs {
         }
 
         $link_async! {
+            "bindings"::procedure_sleep_until,
+            "bindings"::procedure_http_request,
+
             "spacetime_10.3"::procedure_sleep_until,
             "spacetime_10.3"::procedure_http_request,
         }
