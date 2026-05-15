@@ -1,0 +1,82 @@
+lockfileVersion: '9.0'
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+importers:
+  .:
+    dependencies:
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../crates/bindings-typescript
+    devDependencies:
+      deno:
+        specifier: ^2.6.0
+        version: 2.7.14
+packages:
+  '@deno/darwin-arm64@2.7.14':
+    resolution:
+      integrity: sha512-LqJb/Si7B2VoLkKu5uis1/GGJ8QDfa1ntDBEbPllEbVjtWoluQSS5DLlx0e2HJsGbbJ21JY3UHuDzOhzKRmA/w==
+    cpu:
+    - arm64
+    os:
+    - darwin
+  '@deno/darwin-x64@2.7.14':
+    resolution:
+      integrity: sha512-o3/0IHpprl1w1miO0r18GRW+S/prATbvnV/uEC7a2beniosy2HTOrfPDS837YtTaKdlRtDztoZ2xv84ncX3f/A==
+    cpu:
+    - x64
+    os:
+    - darwin
+  '@deno/linux-arm64-glibc@2.7.14':
+    resolution:
+      integrity: sha512-ZInk/3F8RPxYpSHt1UYdEbVvuv+C5SqY1uUsH3Ogj7tlvg3XdhzDMi0TEaKc1dBSFklcT4oDLSi/23PtNI6dtw==
+    cpu:
+    - arm64
+    os:
+    - linux
+  '@deno/linux-x64-glibc@2.7.14':
+    resolution:
+      integrity: sha512-AU+e9UrCwnfA94Yr/UrAzp5ALCkJyihUPQ5jhrWn9DCSTr/ctI41TVs9P5fEsClRMIrKyJ/zTWJpuJxlzRNoTw==
+    cpu:
+    - x64
+    os:
+    - linux
+  '@deno/win32-arm64@2.7.14':
+    resolution:
+      integrity: sha512-Ox6A54t/Qn9fxJyA/VBt4mNYIF4SWcWpPjlyc+7X0V1LBAxTjNc1G8S1X6yYo3XoCfNVRzTHmo6QSOjuTVDGZA==
+    cpu:
+    - arm64
+    os:
+    - win32
+  '@deno/win32-x64@2.7.14':
+    resolution:
+      integrity: sha512-d+6u6H244ofKQN/ulUgse0e9qG7CAXrCdWP82JVPEecv2HRNBTAlWBmiXBbUT27oy8V3Nt+YexR9xE7qZ8Puvg==
+    cpu:
+    - x64
+    os:
+    - win32
+  deno@2.7.14:
+    resolution:
+      integrity: sha512-bs9sM26x14FmH2B9BJyjSP3NpFDp7a9sOd+DcBL4+scik8PKdvTGf6WaecSHOi7Zm95/bygq3TRCV5gVHC/4SA==
+    hasBin: true
+snapshots:
+  '@deno/darwin-arm64@2.7.14':
+    optional: true
+  '@deno/darwin-x64@2.7.14':
+    optional: true
+  '@deno/linux-arm64-glibc@2.7.14':
+    optional: true
+  '@deno/linux-x64-glibc@2.7.14':
+    optional: true
+  '@deno/win32-arm64@2.7.14':
+    optional: true
+  '@deno/win32-x64@2.7.14':
+    optional: true
+  deno@2.7.14:
+    optionalDependencies:
+      '@deno/darwin-arm64': 2.7.14
+      '@deno/darwin-x64': 2.7.14
+      '@deno/linux-arm64-glibc': 2.7.14
+      '@deno/linux-x64-glibc': 2.7.14
+      '@deno/win32-arm64': 2.7.14
+      '@deno/win32-x64': 2.7.14

@@ -296,6 +296,7 @@ impl Publisher for TypeScriptPublisher {
         };
         pnpm_cmd
             .arg("install")
+            .arg("--frozen-lockfile")
             .arg("--ignore-workspace")
             .current_dir(source)
             .env("CI", "true");
@@ -309,7 +310,7 @@ impl Publisher for TypeScriptPublisher {
                 pnpm_cmd.env("PATH", new_path);
             }
         }
-        run(&mut pnpm_cmd, "pnpm install (typescript)")?;
+        run(&mut pnpm_cmd, "pnpm install --frozen-lockfile (typescript)")?;
 
         // Publish (spacetime CLI handles TypeScript compilation internally)
         run(
