@@ -548,11 +548,7 @@ impl MutTxDatastore for Locking {
         tx.sequence_id_from_name(sequence_name)
     }
 
-    fn create_constraint_mut_tx(
-        &self,
-        tx: &mut Self::MutTx,
-        constraint: ConstraintSchema,
-    ) -> Result<ConstraintId> {
+    fn create_constraint_mut_tx(&self, tx: &mut Self::MutTx, constraint: ConstraintSchema) -> Result<ConstraintId> {
         tx.create_constraint(constraint)
     }
 
@@ -3684,7 +3680,10 @@ pub(crate) mod tests {
 
         // Inserting a duplicate should now fail (index is unique).
         let dup_result = insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Charlie", 20));
-        assert!(dup_result.is_err(), "duplicate insert should fail after adding unique constraint");
+        assert!(
+            dup_result.is_err(),
+            "duplicate insert should fail after adding unique constraint"
+        );
         commit(&datastore, tx)?;
 
         Ok(())
@@ -3716,7 +3715,10 @@ pub(crate) mod tests {
         // TX4: after rollback, duplicates should be allowed again.
         let mut tx = begin_mut_tx(&datastore);
         let result = insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Charlie", 20));
-        assert!(result.is_ok(), "duplicate insert should succeed after rollback of unique constraint");
+        assert!(
+            result.is_ok(),
+            "duplicate insert should succeed after rollback of unique constraint"
+        );
         Ok(())
     }
 
@@ -3764,10 +3766,7 @@ pub(crate) mod tests {
 
         // TX3: add unique constraint on (col 0, col 2) — should succeed.
         let mut tx = begin_mut_tx(&datastore);
-        let mut constraint = ConstraintSchema::unique_for_test(
-            "Foo_id_age_unique",
-            ColSet::from(col_list![0, 2]),
-        );
+        let mut constraint = ConstraintSchema::unique_for_test("Foo_id_age_unique", ColSet::from(col_list![0, 2]));
         constraint.table_id = table_id;
         datastore.create_constraint_mut_tx(&mut tx, constraint)?;
         commit(&datastore, tx)?;
@@ -3799,7 +3798,10 @@ pub(crate) mod tests {
 
         // Inserting a duplicate on col 0 should now succeed.
         let result = insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Bob", 25));
-        assert!(result.is_ok(), "duplicate insert should succeed after dropping unique constraint");
+        assert!(
+            result.is_ok(),
+            "duplicate insert should succeed after dropping unique constraint"
+        );
         commit(&datastore, tx)?;
 
         Ok(())
@@ -3831,7 +3833,10 @@ pub(crate) mod tests {
         // TX4: after rollback, constraint should be back — duplicates should fail.
         let mut tx = begin_mut_tx(&datastore);
         let dup_result = insert(&datastore, &mut tx, table_id, &u32_str_u32(1, "Bob", 25));
-        assert!(dup_result.is_err(), "duplicate insert should fail after rollback of drop constraint");
+        assert!(
+            dup_result.is_err(),
+            "duplicate insert should fail after rollback of drop constraint"
+        );
         Ok(())
     }
 

@@ -114,9 +114,7 @@ impl<K: KeySize + Ord> UniqueBTreeIndex<K> {
     pub fn from_non_unique(map: BTreeMap<K, RowPointer>) -> Self {
         let mut result = Self::default();
         for (key, ptr) in map {
-            result
-                .insert(key, ptr)
-                .expect("duplicate key in supposedly unique map");
+            result.insert(key, ptr).expect("duplicate key in supposedly unique map");
         }
         result
     }

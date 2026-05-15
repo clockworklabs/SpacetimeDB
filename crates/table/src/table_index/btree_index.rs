@@ -222,16 +222,13 @@ impl<K: Ord + KeySize> BTreeIndex<K> {
     /// maps to more than one row. The original `BTreeIndex` is returned intact on error.
     pub(super) fn check_and_into_unique(self) -> Result<BTreeMap<K, RowPointer>, (Self, RowPointer)> {
         // First pass: check for duplicates (borrows self.map immutably).
-        let dup = self
-            .map
-            .values()
-            .find_map(|entry| {
-                if entry.count() > 1 {
-                    Some(entry.iter().next().unwrap())
-                } else {
-                    None
-                }
-            });
+        let dup = self.map.values().find_map(|entry| {
+            if entry.count() > 1 {
+                Some(entry.iter().next().unwrap())
+            } else {
+                None
+            }
+        });
 
         if let Some(ptr) = dup {
             return Err((self, ptr));

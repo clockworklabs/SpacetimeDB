@@ -45,13 +45,13 @@ use core::{fmt, iter};
 use enum_as_inner::EnumAsInner;
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
+use spacetimedb_sats::algebraic_value::Packed;
 use spacetimedb_sats::bsatn::{decode, from_reader};
 use spacetimedb_sats::buffer::{DecodeError, DecodeResult};
 use spacetimedb_sats::de::{self, DeserializeSeed, Error, ProductVisitor};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::sum_value::SumTag;
-use spacetimedb_sats::algebraic_value::Packed;
 use spacetimedb_sats::{
     i256, u256, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, SumValue, WithTypespace,
     F32, F64,

@@ -143,16 +143,13 @@ impl<K: KeySize + Eq + Hash> HashIndex<K> {
     /// maps to more than one row. The original `HashIndex` is returned intact on error.
     pub(super) fn check_and_into_unique(self) -> Result<HashMap<K, RowPointer, RandomState>, (Self, RowPointer)> {
         // First pass: check for duplicates.
-        let dup = self
-            .map
-            .values()
-            .find_map(|entry| {
-                if entry.count() > 1 {
-                    Some(entry.iter().next().unwrap())
-                } else {
-                    None
-                }
-            });
+        let dup = self.map.values().find_map(|entry| {
+            if entry.count() > 1 {
+                Some(entry.iter().next().unwrap())
+            } else {
+                None
+            }
+        });
 
         if let Some(ptr) = dup {
             return Err((self, ptr));

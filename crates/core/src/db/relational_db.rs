@@ -1484,11 +1484,7 @@ impl RelationalDB {
     }
 
     /// Creates a new constraint in the database instance.
-    pub fn create_constraint(
-        &self,
-        tx: &mut MutTx,
-        constraint: ConstraintSchema,
-    ) -> Result<ConstraintId, DBError> {
+    pub fn create_constraint(&self, tx: &mut MutTx, constraint: ConstraintSchema) -> Result<ConstraintId, DBError> {
         Ok(self.inner.create_constraint_mut_tx(tx, constraint)?)
     }
 

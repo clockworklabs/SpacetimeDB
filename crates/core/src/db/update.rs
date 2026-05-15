@@ -6,9 +6,9 @@ use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColSet, TableId};
-use spacetimedb_schema::schema::ConstraintSchema;
 use spacetimedb_schema::auto_migrate::{AutoMigratePlan, ManualMigratePlan, MigratePlan};
 use spacetimedb_schema::def::{TableDef, ViewDef};
+use spacetimedb_schema::schema::ConstraintSchema;
 use spacetimedb_schema::schema::{column_schemas_from_defs, IndexSchema, Schema, SequenceSchema, TableSchema};
 
 /// The logger used for by [`update_database`] and friends.

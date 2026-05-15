@@ -1842,7 +1842,12 @@ impl MutTxId {
         constraint.constraint_id = constraint_id;
         // This won't clone-write when creating a table but likely to otherwise.
         tx_table.with_mut_schema_and_clone(commit_table, |s| s.update_constraint(constraint.clone()));
-        self.push_schema_change(PendingSchemaChange::ConstraintAdded(table_id, constraint_id, vec![], None));
+        self.push_schema_change(PendingSchemaChange::ConstraintAdded(
+            table_id,
+            constraint_id,
+            vec![],
+            None,
+        ));
 
         log::trace!("CONSTRAINT CREATED: {constraint_id}");
         Ok((constraint_id, true))
@@ -2011,10 +2016,7 @@ impl MutTxId {
                     .project(&cols)
                     .expect("cols should be valid for this table");
                 revert(commit_table, tx_table, index_ids.len());
-                return Err(anyhow::anyhow!(
-                    "Unique constraint violation during merge: {violation:?}"
-                )
-                .into());
+                return Err(anyhow::anyhow!("Unique constraint violation during merge: {violation:?}").into());
             }
         }
 
