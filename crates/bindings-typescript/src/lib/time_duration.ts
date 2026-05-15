@@ -58,7 +58,10 @@ export class TimeDuration {
   }
 
   constructor(micros: bigint) {
-    this.__time_duration_micros__ = micros;
+    // Coerce through BigInt() so callers who arrive via JSON (where
+    // bigint precision is lost) get a clear early failure instead of
+    // silent field corruption that crashes later in arithmetic.
+    this.__time_duration_micros__ = BigInt(micros);
   }
 
   static fromMillis(millis: number): TimeDuration {
