@@ -1,0 +1,20 @@
+name: Set up pnpm
+description: Install pnpm and configure repository package-age policy before any install.
+inputs:
+  run_install:
+    description: Run pnpm install after configuring pnpm.
+    required: false
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v4
+
+    - name: Configure pnpm package age policy
+      shell: bash
+      run: pnpm config set --global minimumReleaseAge 1440
+
+    - name: Install dependencies
+      if: inputs.run_install == 'true'
+      shell: bash
+      run: pnpm install

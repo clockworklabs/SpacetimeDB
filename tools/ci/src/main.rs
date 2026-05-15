@@ -114,6 +114,23 @@ fn read_package_json(path: &Path) -> Result<Value> {
     Ok(serde_json::from_str(&contents)?)
 }
 
+fn is_npm_package_json(package_json: &Value) -> bool {
+    [
+        "bin",
+        "dependencies",
+        "devDependencies",
+        "exports",
+        "main",
+        "optionalDependencies",
+        "packageManager",
+        "peerDependencies",
+        "scripts",
+        "type",
+    ]
+    .iter()
+    .any(|key| package_json.get(key).is_some())
+}
+
 fn minimum_release_age(path: &Path) -> Result<u64> {
     let workspace = fs::read_to_string(path)?;
     workspace
@@ -124,6 +141,18 @@ fn minimum_release_age(path: &Path) -> Result<u64> {
             value.parse::<u64>().ok()
         })
         .ok_or_else(|| anyhow::anyhow!("{} is missing minimumReleaseAge", path.display()))
+}
+
+fn npmrc_minimum_release_age(path: &Path) -> Result<u64> {
+    let contents = fs::read_to_string(path)?;
+    contents
+        .lines()
+        .find_map(|line| {
+            let line = line.trim();
+            let value = line.strip_prefix("minimum-release-age=")?.trim();
+            value.parse::<u64>().ok()
+        })
+        .ok_or_else(|| anyhow::anyhow!("{} is missing minimum-release-age", path.display()))
 }
 
 fn check_pnpm_release_age_policy() -> Result<()> {
@@ -143,7 +172,7 @@ fn check_pnpm_release_age_policy() -> Result<()> {
         bail!("package.json engines.pnpm must be {expected_engine_pnpm:?}, found {engine_pnpm:?}");
     }
 
-    for package_json_path in git_tracked_files("package.json")? {
+    for package_json_path in git_tracked_files(":(glob)**/package.json")? {
         let package_json = read_package_json(&package_json_path)?;
         let Some(found_package_manager) = package_json_string_value(&package_json, "packageManager") else {
             continue;
@@ -160,7 +189,7 @@ fn check_pnpm_release_age_policy() -> Result<()> {
 
     let root_workspace_path = Path::new("pnpm-workspace.yaml");
     let root_minimum_release_age = minimum_release_age(root_workspace_path)?;
-    for workspace_path in git_tracked_files("pnpm-workspace.yaml")? {
+    for workspace_path in git_tracked_files(":(glob)**/pnpm-workspace.yaml")? {
         let found_minimum_release_age = minimum_release_age(&workspace_path)?;
         if found_minimum_release_age != root_minimum_release_age {
             bail!(
@@ -168,6 +197,55 @@ fn check_pnpm_release_age_policy() -> Result<()> {
                 workspace_path.display(),
                 root_minimum_release_age,
                 found_minimum_release_age
+            );
+        }
+    }
+
+    for npmrc_path in git_tracked_files(":(glob)**/.npmrc")? {
+        let found_minimum_release_age = npmrc_minimum_release_age(&npmrc_path)?;
+        if found_minimum_release_age != root_minimum_release_age {
+            bail!(
+                "{} minimum-release-age must match root pnpm-workspace.yaml: expected {}, found {}",
+                npmrc_path.display(),
+                root_minimum_release_age,
+                found_minimum_release_age
+            );
+        }
+    }
+
+    for package_json_path in git_tracked_files(":(glob)**/package.json")? {
+        let package_json = read_package_json(&package_json_path)?;
+        if !is_npm_package_json(&package_json) {
+            continue;
+        }
+        let package_dir = package_json_path
+            .parent()
+            .expect("git-tracked package.json path should have a parent");
+        let npmrc_path = package_dir.join(".npmrc");
+        if !npmrc_path.is_file() {
+            bail!(
+                "{} has a package.json and must contain {}",
+                package_dir.display(),
+                npmrc_path.display()
+            );
+        }
+        let found_minimum_release_age = npmrc_minimum_release_age(&npmrc_path)?;
+        if found_minimum_release_age != root_minimum_release_age {
+            bail!(
+                "{} minimum-release-age must match root pnpm-workspace.yaml: expected {}, found {}",
+                npmrc_path.display(),
+                root_minimum_release_age,
+                found_minimum_release_age
+            );
+        }
+    }
+
+    for workflow_path in git_tracked_files(".github/workflows/*")? {
+        let contents = fs::read_to_string(&workflow_path)?;
+        if contents.contains("pnpm/action-setup@v4") {
+            bail!(
+                "{} must use ./.github/actions/setup-pnpm instead of pnpm/action-setup@v4",
+                workflow_path.display()
             );
         }
     }

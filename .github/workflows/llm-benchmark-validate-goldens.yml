@@ -65,7 +65,7 @@ jobs:
 
       - name: Install pnpm
         if: matrix.lang == 'typescript'
-        uses: pnpm/action-setup@v4
+        uses: ./.github/actions/setup-pnpm
 
       - name: Build llm-benchmark tool
         run: cargo install --path tools/xtask-llm-benchmark --locked
