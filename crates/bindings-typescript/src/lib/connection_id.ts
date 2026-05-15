@@ -18,7 +18,10 @@ export class ConnectionId {
    * Creates a new `ConnectionId`.
    */
   constructor(data: bigint) {
-    this.__connection_id__ = data;
+    // Coerce through BigInt() so callers who arrive via JSON (e.g. HTTP
+    // responses or custom state caches that lose bigint precision) get
+    // a clear early failure instead of silent field corruption.
+    this.__connection_id__ = BigInt(data);
   }
 
   /**

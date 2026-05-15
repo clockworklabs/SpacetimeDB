@@ -26,7 +26,10 @@ export class Timestamp {
   }
 
   constructor(micros: bigint) {
-    this.__timestamp_micros_since_unix_epoch__ = micros;
+    // Coerce through BigInt() so callers who arrive via JSON (where
+    // bigint precision is lost) get a clear early failure instead of
+    // silent field corruption that crashes later in arithmetic.
+    this.__timestamp_micros_since_unix_epoch__ = BigInt(micros);
   }
 
   /**
