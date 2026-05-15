@@ -1,0 +1,50 @@
+<Project Sdk="Godot.NET.Sdk/4.6.2">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>9</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackageId>SpacetimeDB.ClientSDK.Godot</PackageId>
+    <Title>SpacetimeDB Godot SDK</Title>
+    <Authors>jdetter</Authors>
+    <Company>Clockwork Labs</Company>
+    <Product>SpacetimeDB</Product>
+    <Description>The SpacetimeDB Godot SDK is a software development kit (SDK) designed to simplify the interaction with SpacetimeDB server modules from Godot projects.</Description>
+    <Copyright>2024</Copyright>
+    <PackageProjectUrl>https://spacetimedb.com</PackageProjectUrl>
+    <PackageIcon>logo.png</PackageIcon>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk</RepositoryUrl>
+    <AssemblyVersion>2.2.0</AssemblyVersion>
+    <Version>2.2.0</Version>
+    <DefaultItemExcludes>$(DefaultItemExcludes);*~/**</DefaultItemExcludes>
+    <RestorePackagesPath>packages</RestorePackagesPath>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <DefineConstants>$(DefineConstants);GODOT</DefineConstants>
+    <!-- Godot.NET.Sdk defaults to .godot/mono/temp; build this package like the regular C# SDK. -->
+    <BaseOutputPath>bin~/</BaseOutputPath>
+    <OutputPath>bin~/$(Configuration)/$(TargetFramework)/</OutputPath>
+    <PackageOutputPath>bin~/$(Configuration)/</PackageOutputPath>
+    <BaseIntermediateOutputPath>obj~/godot/</BaseIntermediateOutputPath>
+    <IntermediateOutputPath>obj~/godot/$(Configuration)/$(TargetFramework)/</IntermediateOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SpacetimeDB.BSATN.Runtime" Version="2.2.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="GodotDisabledSourceGenerators" />
+    <CompilerVisibleProperty Include="GodotProjectDir" />
+    <CompilerVisibleProperty Include="GodotProjectDirBase64" />
+    <CompilerVisibleProperty Include="GodotSourceGenerators" />
+    <CompilerVisibleProperty Include="IsGodotToolsProject" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="logo.png" Pack="true" PackagePath="" />
+    <None Include="README.md" Pack="true" PackagePath="" />
+  </ItemGroup>
+
+</Project>
