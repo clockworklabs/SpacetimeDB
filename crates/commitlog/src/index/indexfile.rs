@@ -161,7 +161,7 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
     /// Errors
     /// - `IndexError::InvalidInput`: Either Key or Value is 0
     /// - `IndexError::OutOfMemory`: Append after index file is already full.
-    pub fn append(&mut self, key: Key, value: u64) -> Result<(), IndexError> {
+    pub fn append(&mut self, key: Key, value: u64) -> Result<usize, IndexError> {
         let key = key.into();
         let last_key = self.last_key()?;
         if last_key >= key {
@@ -179,7 +179,7 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
         self.inner[start..start + KEY_SIZE].copy_from_slice(&key_bytes);
         self.inner[start + KEY_SIZE..start + ENTRY_SIZE].copy_from_slice(&value_bytes);
         self.num_entries += 1;
-        Ok(())
+        Ok(start)
     }
 
     /// Asynchronously flushes any pending changes to the index file
@@ -188,6 +188,21 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
     /// an `Err` value indicates it definitely did not succeed
     pub fn async_flush(&self) -> io::Result<()> {
         self.inner.flush_async()
+    }
+
+    /// Asynchronously flushes the index entry starting at `offset` to the index file.
+    ///
+    /// On linux, the underlying `msync` is a documented no-op since the kernel already
+    /// tracks dirty pages and flushes them as needed.
+    ///
+    /// See https://man7.org/linux/man-pages/man2/msync.2.html for details.
+    ///
+    /// On macOS, it is not a documented no-op, and it explicitly states that `msync`
+    /// will only examine pages covered by the provided address range. Hence this should
+    /// be preferred over [`Self::async_flush`] when only flushing a single entry at a
+    /// time, since it may avoid examining pages across the whole mapping.
+    pub fn async_flush_entry(&self, offset: usize) -> io::Result<()> {
+        self.inner.flush_async_range(offset, ENTRY_SIZE)
     }
 
     /// Truncates the index file starting from the entry with a key greater than
