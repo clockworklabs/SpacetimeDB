@@ -703,8 +703,10 @@ impl MutTxId {
         }
 
         // Insert constraints into `st_constraints`.
+        // The fresh table has no `st_constraint` rows yet, so every row here is newly
+        // inserted — the `bool` in the returned tuple is always `true` and is ignored.
         for constraint in constraints {
-            self.create_constraint(constraint)?;
+            let _ = self.create_st_constraint(constraint)?;
         }
 
         // Insert sequences into `st_sequences`.
@@ -1783,19 +1785,29 @@ impl MutTxId {
             })
     }
 
-    /// Create a constraint.
+    /// Inserts constraint metadata into system tables only.
+    ///
+    /// This is used during `create_table` where the index is already created
+    /// with the correct uniqueness. For adding constraints to existing tables,
+    /// use [`Self::create_constraint`] instead.
     ///
     /// Requires:
     /// - `constraint.constraint_name` must not be used for any other database entity.
-    /// - `constraint.constraint_id == ConstraintId::SENTINEL`
-    /// - `constraint.table_id != TableId::SENTINEL`
-    /// - `is_unique` must be `true` if and only if a unique constraint will exist on
-    ///   `ColSet::from(&constraint.constraint_algorithm.columns())` after this transaction is committed.
+    /// - `constraint.constraint_id == ConstraintId::SENTINEL`.
+    /// - `constraint.table_id != TableId::SENTINEL`.
+    /// - The caller is responsible for ensuring that the backing indices on
+    ///   `ColSet::from(&constraint.data.unique_columns())` already have the correct
+    ///   uniqueness — this method does not touch the in-memory index uniqueness.
+    ///   Use [`Self::create_constraint`] if the indices need to be converted.
     ///
     /// Ensures:
     /// - The constraint metadata is inserted into the system tables (and other data structures reflecting them).
-    /// - The returned ID is unique and is not `constraintId::SENTINEL`.
-    fn create_constraint(&mut self, mut constraint: ConstraintSchema) -> Result<ConstraintId> {
+    /// - The returned ID is unique and is not `ConstraintId::SENTINEL`.
+    /// - The `bool` in the return value is `true` iff a new `st_constraint` row was
+    ///   inserted (and therefore a `PendingSchemaChange::ConstraintAdded` was pushed).
+    ///   It is `false` if an identical row already existed (idempotent re-insertion);
+    ///   in that case the schema and pending-changes list are untouched.
+    fn create_st_constraint(&mut self, mut constraint: ConstraintSchema) -> Result<(ConstraintId, bool)> {
         if constraint.table_id == TableId::SENTINEL {
             return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{constraint:#?}`").into());
         }
@@ -1823,20 +1835,26 @@ impl MutTxId {
         let constraint_id = constraint_row.1.collapse().read_col(StConstraintFields::ConstraintId)?;
         if let RowRefInsertion::Existed(_) = constraint_row.1 {
             log::trace!("CONSTRAINT ALREADY EXISTS: {constraint_id}");
-            return Ok(constraint_id);
+            return Ok((constraint_id, false));
         }
 
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
         constraint.constraint_id = constraint_id;
         // This won't clone-write when creating a table but likely to otherwise.
         tx_table.with_mut_schema_and_clone(commit_table, |s| s.update_constraint(constraint.clone()));
-        self.push_schema_change(PendingSchemaChange::ConstraintAdded(table_id, constraint_id));
+        self.push_schema_change(PendingSchemaChange::ConstraintAdded(
+            table_id,
+            constraint_id,
+            vec![],
+            None,
+        ));
 
         log::trace!("CONSTRAINT CREATED: {constraint_id}");
-        Ok(constraint_id)
+        Ok((constraint_id, true))
     }
 
-    pub fn drop_constraint(&mut self, constraint_id: ConstraintId) -> Result<()> {
+    /// Removes constraint metadata from system tables only.
+    fn drop_st_constraint(&mut self, constraint_id: ConstraintId) -> Result<(TableId, ConstraintSchema)> {
         // Delete row in `st_constraint`.
         let st_constraint_ref = self
             .iter_by_col_eq(
@@ -1851,12 +1869,208 @@ impl MutTxId {
 
         // Remove constraint in transaction's insert table.
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
-        // This likely will do a clone-write as over time?
-        // The schema might have found other referents.
+        // This likely will do a clone-write as over time
+        // the schema might have found other referents.
         let schema = commit_table
             .with_mut_schema_and_clone(tx_table, |s| s.remove_constraint(constraint_id))
             .expect("there should be a schema in the committed state if we reach here");
-        self.push_schema_change(PendingSchemaChange::ConstraintRemoved(table_id, schema));
+
+        Ok((table_id, schema))
+    }
+
+    /// Creates a constraint, making the corresponding indices unique.
+    ///
+    /// This inserts constraint metadata AND converts the in-memory indices
+    /// from non-unique to unique. If the existing data contains duplicate
+    /// values in the constrained columns, an error is returned.
+    ///
+    /// Pre-validation (before any system-table mutation):
+    /// - the constraint must be a unique one (the only kind supported today);
+    /// - the target table must already have at least one index on the constrained columns.
+    pub fn create_constraint(&mut self, constraint: ConstraintSchema) -> Result<ConstraintId> {
+        let table_id = constraint.table_id;
+
+        // (a) Only unique constraints are supported at the moment. Reject anything else
+        //     up front, before writing to `st_constraint`.
+        let Some(cols) = constraint.data.unique_columns().cloned() else {
+            return Err(anyhow::anyhow!(
+                "adding non-unique constraints is not supported (constraint on table {table_id})"
+            )
+            .into());
+        };
+        let col_list: ColList = cols.into();
+
+        // (b) A unique constraint must be backed by at least one index on the same columns.
+        //     Check on the committed table; the tx table's index set is kept in lockstep
+        //     with the committed one by the datastore, so agreement is an invariant.
+        {
+            let (_, (commit_table, _, _)) = self.get_or_create_insert_table_mut(table_id)?;
+            if commit_table.get_indexes_by_cols(&col_list).is_empty() {
+                return Err(anyhow::anyhow!(
+                    "unique constraint on table {table_id} column(s) {col_list:?} \
+                     requires at least one backing index on those columns"
+                )
+                .into());
+            }
+        }
+
+        // (c) Validation passed — insert metadata into system tables. On any failure
+        //     beyond this point, the tx rollback unwinds both the st_constraint row and
+        //     the pending schema change.
+        let (constraint_id, newly_inserted) = self.create_st_constraint(constraint)?;
+
+        // If the constraint already existed in `st_constraint`, nothing new was pushed
+        // to `pending_schema_changes`, and the backing indices are already in the
+        // correct state. Return early — in particular, do NOT overwrite
+        // `pending_schema_changes.last_mut()`, which would clobber an unrelated change.
+        if !newly_inserted {
+            return Ok(constraint_id);
+        }
+
+        // Re-borrow after the system-table write (self was reborrowed by create_st_constraint).
+        let ((tx_table, _, tx_delete_table), (commit_table, commit_blob_store, _)) =
+            self.get_or_create_insert_table_mut(table_id)?;
+
+        // Find all indices matching these columns. Pre-validation guarantees non-empty.
+        let index_ids: Vec<_> = commit_table
+            .get_indexes_by_cols(&col_list)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+        debug_assert!(
+            !index_ids.is_empty(),
+            "pre-validation guaranteed at least one backing index",
+        );
+
+        // Revert previously-made-unique `commit_table` and `tx_table` indices. Used on
+        // both the committed-state duplicate path and the tx-state merge-conflict path
+        // so a failing `create_constraint` leaves the tx in the same shape it had before.
+        let revert = |commit_table: &mut Table, tx_table: &mut Table, up_to: usize| {
+            for &id in &index_ids[..up_to] {
+                if let Some(idx) = commit_table.indexes.get_mut(&id) {
+                    idx.make_non_unique();
+                }
+                if let Some(idx) = tx_table.indexes.get_mut(&id) {
+                    idx.make_non_unique();
+                }
+            }
+        };
+
+        // Record whether this table had a unique index before.
+        let had_unique = commit_table.has_unique_index();
+
+        // Build a human-readable error from an index's duplicate groups. Used on both the
+        // committed-state and tx-state `make_unique` failure paths (`source` distinguishes
+        // which one fired).
+        let dup_err = |idx: &TableIndex, source: &str| {
+            let duplicates = idx.iter_duplicates();
+            let total = duplicates.len();
+            let examples: String = duplicates
+                .iter()
+                .take(10)
+                .map(|(val, count)| format!("  - {val:?} appears {count} times"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            anyhow::anyhow!(
+                "Cannot add unique constraint on table {table_id} column(s) {col_list:?} \
+                 ({source}):\n{total} duplicate group(s) found.\n{examples}{}",
+                if total > 10 { "\n  ... and more" } else { "" }
+            )
+        };
+
+        // Try to make each matching index unique on both tables. `make_unique` fails fast on
+        // the first duplicate; only if it fails do we run `iter_duplicates` to build a
+        // human-readable error (showing up to 10 duplicate groups).
+        for (i, &index_id) in index_ids.iter().enumerate() {
+            let commit_idx = commit_table.indexes.get_mut(&index_id).expect("index must exist");
+            if commit_idx.make_unique().is_err() {
+                // `make_unique` restored the failing index to non-unique on error.
+                let err = dup_err(commit_idx, "committed state");
+                revert(commit_table, tx_table, i);
+                return Err(err.into());
+            }
+
+            // Tx table can have duplicates too (same-tx inserts before the constraint add).
+            let tx_idx = tx_table.indexes.get_mut(&index_id).expect("tx index must exist");
+            if tx_idx.make_unique().is_err() {
+                let err = dup_err(tx_idx, "current transaction");
+                // Revert the just-made-unique commit index plus any earlier pair.
+                revert(commit_table, tx_table, i + 1);
+                return Err(err.into());
+            }
+        }
+
+        // Check that each pair of unique indices can be merged.
+        for &index_id in &index_ids {
+            let can_merge_result = {
+                let commit_idx = &commit_table.indexes[&index_id];
+                let tx_idx = &tx_table.indexes[&index_id];
+                let is_deleted = |ptr: &RowPointer| tx_delete_table.contains(*ptr);
+                commit_idx.can_merge(tx_idx, is_deleted)
+            };
+            if let Err(violation) = can_merge_result {
+                let cols = commit_table.indexes[&index_id].indexed_columns().clone();
+                let violation = commit_table
+                    .get_row_ref(commit_blob_store, violation)
+                    .expect("row came from scanning the table")
+                    .project(&cols)
+                    .expect("cols should be valid for this table");
+                revert(commit_table, tx_table, index_ids.len());
+                return Err(anyhow::anyhow!("Unique constraint violation during merge: {violation:?}").into());
+            }
+        }
+
+        // Take the pointer map if this is the first unique index.
+        let pointer_map = if !had_unique {
+            tx_table.take_pointer_map();
+            commit_table.take_pointer_map()
+        } else {
+            None
+        };
+
+        // Update the pending schema change with index info.
+        // The last pushed change is our ConstraintAdded from create_st_constraint.
+        // Replace it with the enriched version.
+        if let Some(last) = self.tx_state.pending_schema_changes.last_mut() {
+            *last = PendingSchemaChange::ConstraintAdded(table_id, constraint_id, index_ids, pointer_map);
+        }
+
+        Ok(constraint_id)
+    }
+
+    /// Drops a constraint, making the corresponding indices non-unique.
+    pub fn drop_constraint(&mut self, constraint_id: ConstraintId) -> Result<()> {
+        let (table_id, schema) = self.drop_st_constraint(constraint_id)?;
+
+        // If this was a unique constraint, make all matching indices non-unique.
+        let unique_cols = schema.data.unique_columns().cloned();
+        let made_non_unique_index_ids = if let Some(cols) = unique_cols {
+            let col_list: ColList = cols.into();
+
+            let ((tx_table, tx_blob_store, _), (commit_table, commit_blob_store, _)) =
+                self.get_or_create_insert_table_mut(table_id)?;
+
+            let index_ids: Vec<_> = commit_table
+                .get_indexes_by_cols(&col_list)
+                .into_iter()
+                .map(|(id, _)| id)
+                .collect();
+
+            for &index_id in &index_ids {
+                commit_table.make_index_non_unique(index_id, commit_blob_store);
+                tx_table.make_index_non_unique(index_id, tx_blob_store);
+            }
+
+            index_ids
+        } else {
+            vec![]
+        };
+
+        self.push_schema_change(PendingSchemaChange::ConstraintRemoved(
+            table_id,
+            schema,
+            made_non_unique_index_ids,
+        ));
         // TODO(1.0): we should also re-initialize `table` without a unique constraint.
         // unless some other unique constraint on the same columns exists.
         // NOTE(centril): is this already handled by dropping the corresponding index?

@@ -758,14 +758,38 @@ impl CommittedState {
                     .unwrap_or_else(|e| match e {});
             }
             // A constraint was removed. Add it back.
-            ConstraintRemoved(table_id, constraint_schema) => {
+            ConstraintRemoved(table_id, constraint_schema, index_ids) => {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.update_constraint(constraint_schema));
+                // If the constraint had unique indices, make them unique again.
+                for index_id in index_ids {
+                    if let Some(idx) = table.indexes.get_mut(&index_id) {
+                        idx.make_unique().expect("rollback: index should have no duplicates");
+                    }
+                }
+                // Forward `drop_constraint` calls `Table::make_index_non_unique`, which
+                // rebuilds the pointer map when no unique index remained. Whatever the
+                // forward path did, the table invariant "pointer map is present iff no
+                // unique index exists" (see `table.rs`) is about to be re-established
+                // by the `make_unique` calls above — drop any rebuilt map now.
+                // `take_pointer_map` is idempotent: it returns `None` when the map is
+                // already absent, so it is safe to call unconditionally.
+                table.take_pointer_map();
             }
             // A constraint was added. Remove it.
-            ConstraintAdded(table_id, constraint_id) => {
+            ConstraintAdded(table_id, constraint_id, index_ids, pointer_map) => {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.remove_constraint(constraint_id));
+                // If the constraint made indices unique, revert them to non-unique.
+                for index_id in index_ids {
+                    if let Some(idx) = table.indexes.get_mut(&index_id) {
+                        idx.make_non_unique();
+                    }
+                }
+                // Restore the pointer map if it was taken.
+                if let Some(pm) = pointer_map {
+                    table.restore_pointer_map(pm);
+                }
             }
             // A sequence was removed. Add it back.
             SequenceRemoved(table_id, seq, schema) => {

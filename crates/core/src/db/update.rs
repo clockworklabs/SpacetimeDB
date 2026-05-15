@@ -8,6 +8,7 @@ use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColSet, TableId};
 use spacetimedb_schema::auto_migrate::{AutoMigratePlan, ManualMigratePlan, MigratePlan};
 use spacetimedb_schema::def::{TableDef, ViewDef};
+use spacetimedb_schema::schema::ConstraintSchema;
 use spacetimedb_schema::schema::{column_schemas_from_defs, IndexSchema, Schema, SequenceSchema, TableSchema};
 
 /// The logger used for by [`update_database`] and friends.
@@ -232,6 +233,29 @@ fn auto_migrate_database(
                     table_def.name
                 );
                 stdb.drop_constraint(tx, constraint_schema.constraint_id)?;
+            }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddConstraint(constraint_name) => {
+                let table_def = plan
+                    .new
+                    .stored_in_table_def(constraint_name)
+                    .expect("AddConstraint references a table that should exist in the new module def");
+                let constraint_def = &table_def.constraints[constraint_name];
+                let table_id = stdb
+                    .table_id_from_name_mut(tx, &table_def.name)?
+                    .expect("table should exist in the database for AddConstraint");
+                let constraint_schema = ConstraintSchema::from_module_def(
+                    plan.new,
+                    constraint_def,
+                    table_id,
+                    spacetimedb_primitives::ConstraintId::SENTINEL,
+                );
+                log!(
+                    logger,
+                    "Adding constraint `{}` on table `{}`",
+                    constraint_name,
+                    table_def.name
+                );
+                stdb.create_constraint(tx, constraint_schema)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddSequence(sequence_name) => {
                 let table_def = plan.new.stored_in_table_def(sequence_name).unwrap();

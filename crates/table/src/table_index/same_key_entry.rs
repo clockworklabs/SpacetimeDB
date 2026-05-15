@@ -111,6 +111,14 @@ impl SameKeyEntry {
         }
     }
 
+    /// Returns the number of entries for this key.
+    pub(super) fn count(&self) -> usize {
+        match self {
+            Self::Small(list) => list.len(),
+            Self::Large(set) => set.len(),
+        }
+    }
+
     /// Returns an iterator over all the entries for this key.
     pub(super) fn iter(&self) -> SameKeyEntryIter<'_> {
         match self {
