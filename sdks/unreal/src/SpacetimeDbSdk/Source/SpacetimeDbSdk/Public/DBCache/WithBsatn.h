@@ -10,8 +10,11 @@ struct FWithBsatn
     /** Deserialized row value */
     RowType Row;
 
-    FWithBsatn() = default;
-    FWithBsatn(const TArray<uint8>& InBsatn, const RowType& InRow)
-        : Bsatn(InBsatn), Row(InRow) {
-    }
+	FWithBsatn() = default;
+	FWithBsatn(const TArray<uint8>& InBsatn, const RowType& InRow)
+	    : Bsatn(InBsatn), Row(InRow) {
+	}
+	FWithBsatn(TArray<uint8>&& InBsatn, RowType&& InRow)
+		: Bsatn(MoveTemp(InBsatn)), Row(MoveTemp(InRow)) {
+	}
 };
