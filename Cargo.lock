@@ -342,13 +342,13 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "axum"
-version = "0.8.4"
+version = "0.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "021e862c184ae977658b36c4500f7feac3221ca5da43e3f25bd04ab6c79a29b5"
+checksum = "edca88bc138befd0323b20752846e6587272d3b03b0343c8ea28a6f819e6e71f"
 dependencies = [
+ "async-trait",
  "axum-core",
  "bytes",
- "form_urlencoded",
  "futures-util",
  "http 1.3.1",
  "http-body 1.0.1",
@@ -376,12 +376,13 @@ dependencies = [
 
 [[package]]
 name = "axum-core"
-version = "0.5.2"
+version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68464cd0412f486726fb3373129ef5d2993f90c34bc2bc1c1e9943b2f4fc7ca6"
+checksum = "09f2bd6146b97ae3359fa0cc6d6b376d9539582c7b4220f041a33ec24c226199"
 dependencies = [
+ "async-trait",
  "bytes",
- "futures-core",
+ "futures-util",
  "http 1.3.1",
  "http-body 1.0.1",
  "http-body-util",
@@ -396,21 +397,22 @@ dependencies = [
 
 [[package]]
 name = "axum-extra"
-version = "0.10.1"
+version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45bf463831f5131b7d3c756525b305d40f1185b688565648a92e1392ca35713d"
+checksum = "c794b30c904f0a1c2fb7740f7df7f7972dfaa14ef6f57cb6178dc63e5dca2f04"
 dependencies = [
  "axum",
  "axum-core",
  "bytes",
+ "fastrand",
  "futures-util",
  "headers",
  "http 1.3.1",
  "http-body 1.0.1",
  "http-body-util",
  "mime",
+ "multer",
  "pin-project-lite",
- "rustversion",
  "serde",
  "tower",
  "tower-layer",
@@ -465,7 +467,7 @@ name = "basic-rs-template-module"
 version = "0.1.0"
 dependencies = [
  "log",
- "spacetimedb 2.1.0",
+ "spacetimedb 2.2.0",
 ]
 
 [[package]]
@@ -473,7 +475,7 @@ name = "benchmarks-module"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "spacetimedb 2.1.0",
+ "spacetimedb 2.2.0",
 ]
 
 [[package]]
@@ -785,6 +787,17 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "case-conversion-client"
+version = "2.2.0"
+dependencies = [
+ "anyhow",
+ "env_logger 0.10.2",
+ "futures",
+ "spacetimedb-sdk",
+ "test-counter",
 ]
 
 [[package]]
@@ -1116,7 +1129,7 @@ dependencies = [
 
 [[package]]
 name = "connect_disconnect_client"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
@@ -2148,7 +2161,7 @@ dependencies = [
 
 [[package]]
 name = "event-table-client"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
@@ -2287,17 +2300,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b09cf3155332e944990140d967ff5eceb70df778b34f77d8075db46e4704e6d8"
 dependencies = [
  "num-traits",
-]
-
-[[package]]
-name = "flume"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da0e4dd2a88388a1f4ccc7c9ce104604dab68d9f408dc34cd45823d5a9069095"
-dependencies = [
- "futures-core",
- "futures-sink",
- "spin",
 ]
 
 [[package]]
@@ -3703,7 +3705,7 @@ name = "keynote-benchmarks"
 version = "0.1.0"
 dependencies = [
  "log",
- "spacetimedb 2.1.0",
+ "spacetimedb 2.2.0",
 ]
 
 [[package]]
@@ -4004,9 +4006,9 @@ dependencies = [
 
 [[package]]
 name = "matchit"
-version = "0.8.4"
+version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
+checksum = "0e7465ac9959cc2b1404e8e2367b43684a6d13790fe23056cc8c6c5a6b7bcb94"
 
 [[package]]
 name = "md-5"
@@ -4109,7 +4111,24 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "log",
- "spacetimedb 2.1.0",
+ "spacetimedb 2.2.0",
+]
+
+[[package]]
+name = "multer"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83e87776546dc87511aa5ee218730c92b666d7264ab6ed41f9d215af9cd5224b"
+dependencies = [
+ "bytes",
+ "encoding_rs",
+ "futures-util",
+ "http 1.3.1",
+ "httparse",
+ "memchr",
+ "mime",
+ "spin",
+ "version_check",
 ]
 
 [[package]]
@@ -5285,7 +5304,7 @@ name = "perf-test-module"
 version = "0.1.0"
 dependencies = [
  "log",
- "spacetimedb 2.1.0",
+ "spacetimedb 2.2.0",
 ]
 
 [[package]]
@@ -5738,14 +5757,14 @@ dependencies = [
 
 [[package]]
 name = "procedure-client"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
  "env_logger 0.10.2",
  "futures",
  "serde_json",
- "spacetimedb-lib 2.1.0",
+ "spacetimedb-lib 2.2.0",
  "spacetimedb-sdk",
  "test-counter",
  "tokio",
@@ -5966,7 +5985,7 @@ name = "quickstart-chat-module"
 version = "0.1.0"
 dependencies = [
  "log",
- "spacetimedb 2.1.0",
+ "spacetimedb 2.2.0",
 ]
 
 [[package]]
@@ -6205,6 +6224,16 @@ dependencies = [
  "log",
  "rustc-hash",
  "smallvec",
+]
+
+[[package]]
+name = "regen"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "duct",
+ "tempfile",
 ]
 
 [[package]]
@@ -7098,10 +7127,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
+name = "sdk-test-case-conversion"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb 2.2.0",
+]
+
+[[package]]
 name = "sdk-test-event-table-module"
 version = "0.1.0"
 dependencies = [
- "spacetimedb 2.1.0",
+ "spacetimedb 2.2.0",
 ]
 
 [[package]]
@@ -7111,7 +7148,7 @@ dependencies = [
  "anyhow",
  "log",
  "paste",
- "spacetimedb 2.1.0",
+ "spacetimedb 2.2.0",
 ]
 
 [[package]]
@@ -7121,7 +7158,7 @@ dependencies = [
  "anyhow",
  "log",
  "paste",
- "spacetimedb 2.1.0",
+ "spacetimedb 2.2.0",
 ]
 
 [[package]]
@@ -7131,19 +7168,19 @@ dependencies = [
  "anyhow",
  "log",
  "paste",
- "spacetimedb 2.1.0",
+ "spacetimedb 2.2.0",
 ]
 
 [[package]]
 name = "sdk-test-view-pk"
 version = "0.1.0"
 dependencies = [
- "spacetimedb 2.1.0",
+ "spacetimedb 2.2.0",
 ]
 
 [[package]]
 name = "sdk-unreal-test-harness"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "serial_test",
  "spacetimedb-testing",
@@ -7611,7 +7648,7 @@ name = "spacetime-module"
 version = "0.1.0"
 dependencies = [
  "log",
- "spacetimedb 2.1.0",
+ "spacetimedb 2.2.0",
 ]
 
 [[package]]
@@ -7635,7 +7672,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -7648,17 +7685,17 @@ dependencies = [
  "rand 0.8.5",
  "scoped-tls",
  "serde_json",
- "spacetimedb-bindings-macro 2.1.0",
- "spacetimedb-bindings-sys 2.1.0",
- "spacetimedb-lib 2.1.0",
- "spacetimedb-primitives 2.1.0",
+ "spacetimedb-bindings-macro 2.2.0",
+ "spacetimedb-bindings-sys 2.2.0",
+ "spacetimedb-lib 2.2.0",
+ "spacetimedb-primitives 2.2.0",
  "spacetimedb-query-builder",
  "trybuild",
 ]
 
 [[package]]
 name = "spacetimedb-auth"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "serde",
@@ -7666,12 +7703,12 @@ dependencies = [
  "serde_with",
  "spacetimedb-data-structures",
  "spacetimedb-jsonwebtoken",
- "spacetimedb-lib 2.1.0",
+ "spacetimedb-lib 2.2.0",
 ]
 
 [[package]]
 name = "spacetimedb-bench"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -7703,11 +7740,11 @@ dependencies = [
  "spacetimedb-data-structures",
  "spacetimedb-datastore",
  "spacetimedb-execution",
- "spacetimedb-lib 2.1.0",
+ "spacetimedb-lib 2.2.0",
  "spacetimedb-paths",
- "spacetimedb-primitives 2.1.0",
+ "spacetimedb-primitives 2.2.0",
  "spacetimedb-query",
- "spacetimedb-sats 2.1.0",
+ "spacetimedb-sats 2.2.0",
  "spacetimedb-schema",
  "spacetimedb-standalone",
  "spacetimedb-table",
@@ -7736,13 +7773,13 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-macro"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "heck 0.4.1",
  "humantime",
  "proc-macro2",
  "quote",
- "spacetimedb-primitives 2.1.0",
+ "spacetimedb-primitives 2.2.0",
  "syn 2.0.107",
 ]
 
@@ -7757,14 +7794,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-sys"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
- "spacetimedb-primitives 2.1.0",
+ "spacetimedb-primitives 2.2.0",
 ]
 
 [[package]]
 name = "spacetimedb-cli"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
@@ -7815,9 +7852,9 @@ dependencies = [
  "spacetimedb-data-structures",
  "spacetimedb-fs-utils",
  "spacetimedb-jsonwebtoken",
- "spacetimedb-lib 2.1.0",
+ "spacetimedb-lib 2.2.0",
  "spacetimedb-paths",
- "spacetimedb-primitives 2.1.0",
+ "spacetimedb-primitives 2.2.0",
  "spacetimedb-schema",
  "syntect",
  "tabled",
@@ -7842,7 +7879,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-client-api"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -7881,7 +7918,7 @@ dependencies = [
  "spacetimedb-data-structures",
  "spacetimedb-datastore",
  "spacetimedb-jsonwebtoken",
- "spacetimedb-lib 2.1.0",
+ "spacetimedb-lib 2.2.0",
  "spacetimedb-paths",
  "spacetimedb-schema",
  "tempfile",
@@ -7899,7 +7936,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-client-api-messages"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "bytes",
  "bytestring",
@@ -7913,16 +7950,16 @@ dependencies = [
  "serde_json",
  "serde_with",
  "smallvec",
- "spacetimedb-lib 2.1.0",
- "spacetimedb-primitives 2.1.0",
- "spacetimedb-sats 2.1.0",
+ "spacetimedb-lib 2.2.0",
+ "spacetimedb-primitives 2.2.0",
+ "spacetimedb-sats 2.2.0",
  "strum",
  "thiserror 1.0.69",
 ]
 
 [[package]]
 name = "spacetimedb-codegen"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "convert_case 0.6.0",
@@ -7932,20 +7969,21 @@ dependencies = [
  "regex",
  "serde_json",
  "spacetimedb-data-structures",
- "spacetimedb-lib 2.1.0",
- "spacetimedb-primitives 2.1.0",
+ "spacetimedb-lib 2.2.0",
+ "spacetimedb-primitives 2.2.0",
  "spacetimedb-schema",
  "spacetimedb-testing",
 ]
 
 [[package]]
 name = "spacetimedb-commitlog"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "async-stream",
  "bitflags 2.10.0",
  "bytes",
  "crc32c",
+ "criterion",
  "env_logger 0.10.2",
  "futures",
  "itertools 0.12.1",
@@ -7957,12 +7995,13 @@ dependencies = [
  "proptest",
  "proptest-derive",
  "rand 0.9.2",
+ "scopeguard",
  "serde",
  "spacetimedb-commitlog",
  "spacetimedb-fs-utils",
  "spacetimedb-paths",
- "spacetimedb-primitives 2.1.0",
- "spacetimedb-sats 2.1.0",
+ "spacetimedb-primitives 2.2.0",
+ "spacetimedb-sats 2.2.0",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
@@ -7973,7 +8012,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-core"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -8000,7 +8039,6 @@ dependencies = [
  "env_logger 0.10.2",
  "faststr",
  "flate2",
- "flume",
  "fs2",
  "fs_extra",
  "futures",
@@ -8058,14 +8096,14 @@ dependencies = [
  "spacetimedb-fs-utils",
  "spacetimedb-jsonwebtoken",
  "spacetimedb-jwks",
- "spacetimedb-lib 2.1.0",
+ "spacetimedb-lib 2.2.0",
  "spacetimedb-memory-usage",
  "spacetimedb-metrics",
  "spacetimedb-paths",
  "spacetimedb-physical-plan",
- "spacetimedb-primitives 2.1.0",
+ "spacetimedb-primitives 2.2.0",
  "spacetimedb-query",
- "spacetimedb-sats 2.1.0",
+ "spacetimedb-sats 2.2.0",
  "spacetimedb-schema",
  "spacetimedb-snapshot",
  "spacetimedb-subscription",
@@ -8100,7 +8138,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-data-structures"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "ahash 0.8.12",
  "crossbeam-queue",
@@ -8116,7 +8154,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-datastore"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -8136,11 +8174,11 @@ dependencies = [
  "spacetimedb-data-structures",
  "spacetimedb-durability",
  "spacetimedb-execution",
- "spacetimedb-lib 2.1.0",
+ "spacetimedb-lib 2.2.0",
  "spacetimedb-metrics",
  "spacetimedb-paths",
- "spacetimedb-primitives 2.1.0",
- "spacetimedb-sats 2.1.0",
+ "spacetimedb-primitives 2.2.0",
+ "spacetimedb-sats 2.2.0",
  "spacetimedb-schema",
  "spacetimedb-snapshot",
  "spacetimedb-table",
@@ -8151,7 +8189,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-durability"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -8162,7 +8200,7 @@ dependencies = [
  "spacetimedb-commitlog",
  "spacetimedb-fs-utils",
  "spacetimedb-paths",
- "spacetimedb-sats 2.1.0",
+ "spacetimedb-sats 2.2.0",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
@@ -8171,22 +8209,22 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-execution"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "itertools 0.12.1",
  "spacetimedb-expr",
- "spacetimedb-lib 2.1.0",
+ "spacetimedb-lib 2.2.0",
  "spacetimedb-physical-plan",
- "spacetimedb-primitives 2.1.0",
- "spacetimedb-sats 2.1.0",
+ "spacetimedb-primitives 2.2.0",
+ "spacetimedb-sats 2.2.0",
  "spacetimedb-sql-parser",
  "spacetimedb-table",
 ]
 
 [[package]]
 name = "spacetimedb-expr"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "bigdecimal",
@@ -8194,11 +8232,11 @@ dependencies = [
  "derive_more 0.99.20",
  "ethnum",
  "pretty_assertions",
- "spacetimedb 2.1.0",
+ "spacetimedb 2.2.0",
  "spacetimedb-data-structures",
- "spacetimedb-lib 2.1.0",
- "spacetimedb-primitives 2.1.0",
- "spacetimedb-sats 2.1.0",
+ "spacetimedb-lib 2.2.0",
+ "spacetimedb-primitives 2.2.0",
+ "spacetimedb-sats 2.2.0",
  "spacetimedb-schema",
  "spacetimedb-sql-parser",
  "thiserror 1.0.69",
@@ -8206,11 +8244,13 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-fs-utils"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "fs2",
  "hex",
+ "log",
  "rand 0.9.2",
  "tempdir",
  "thiserror 1.0.69",
@@ -8220,7 +8260,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-guard"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "portpicker",
  "reqwest 0.12.24",
@@ -8278,7 +8318,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-lib"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "bitflags 2.10.0",
@@ -8297,17 +8337,17 @@ dependencies = [
  "ron",
  "serde",
  "serde_json",
- "spacetimedb-bindings-macro 2.1.0",
+ "spacetimedb-bindings-macro 2.2.0",
  "spacetimedb-memory-usage",
  "spacetimedb-metrics",
- "spacetimedb-primitives 2.1.0",
- "spacetimedb-sats 2.1.0",
+ "spacetimedb-primitives 2.2.0",
+ "spacetimedb-sats 2.2.0",
  "thiserror 1.0.69",
 ]
 
 [[package]]
 name = "spacetimedb-memory-usage"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "decorum",
  "ethnum",
@@ -8317,7 +8357,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-metrics"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "arrayvec",
  "itertools 0.12.1",
@@ -8327,7 +8367,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-paths"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -8343,7 +8383,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-pg"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8355,14 +8395,14 @@ dependencies = [
  "spacetimedb-auth",
  "spacetimedb-client-api",
  "spacetimedb-client-api-messages",
- "spacetimedb-lib 2.1.0",
+ "spacetimedb-lib 2.2.0",
  "thiserror 1.0.69",
  "tokio",
 ]
 
 [[package]]
 name = "spacetimedb-physical-plan"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "derive_more 0.99.20",
@@ -8370,8 +8410,8 @@ dependencies = [
  "pretty_assertions",
  "spacetimedb-data-structures",
  "spacetimedb-expr",
- "spacetimedb-lib 2.1.0",
- "spacetimedb-primitives 2.1.0",
+ "spacetimedb-lib 2.2.0",
+ "spacetimedb-primitives 2.2.0",
  "spacetimedb-schema",
  "spacetimedb-sql-parser",
  "spacetimedb-table",
@@ -8392,7 +8432,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-primitives"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "bitflags 2.10.0",
  "either",
@@ -8405,7 +8445,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-query"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "itertools 0.12.1",
@@ -8413,9 +8453,9 @@ dependencies = [
  "spacetimedb-client-api-messages",
  "spacetimedb-execution",
  "spacetimedb-expr",
- "spacetimedb-lib 2.1.0",
+ "spacetimedb-lib 2.2.0",
  "spacetimedb-physical-plan",
- "spacetimedb-primitives 2.1.0",
+ "spacetimedb-primitives 2.2.0",
  "spacetimedb-schema",
  "spacetimedb-sql-parser",
  "spacetimedb-table",
@@ -8423,9 +8463,9 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-query-builder"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
- "spacetimedb-lib 2.1.0",
+ "spacetimedb-lib 2.2.0",
 ]
 
 [[package]]
@@ -8456,7 +8496,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sats"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -8482,17 +8522,17 @@ dependencies = [
  "serde_json",
  "sha3",
  "smallvec",
- "spacetimedb-bindings-macro 2.1.0",
+ "spacetimedb-bindings-macro 2.2.0",
  "spacetimedb-memory-usage",
  "spacetimedb-metrics",
- "spacetimedb-primitives 2.1.0",
+ "spacetimedb-primitives 2.2.0",
  "thiserror 1.0.69",
  "uuid",
 ]
 
 [[package]]
 name = "spacetimedb-schema"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "convert_case 0.6.0",
@@ -8510,10 +8550,10 @@ dependencies = [
  "serial_test",
  "smallvec",
  "spacetimedb-data-structures",
- "spacetimedb-lib 2.1.0",
+ "spacetimedb-lib 2.2.0",
  "spacetimedb-memory-usage",
- "spacetimedb-primitives 2.1.0",
- "spacetimedb-sats 2.1.0",
+ "spacetimedb-primitives 2.2.0",
+ "spacetimedb-sats 2.2.0",
  "spacetimedb-sql-parser",
  "spacetimedb-testing",
  "termcolor",
@@ -8524,7 +8564,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sdk"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anymap3",
  "base64 0.21.7",
@@ -8551,10 +8591,10 @@ dependencies = [
  "shlex",
  "spacetimedb-client-api-messages",
  "spacetimedb-data-structures",
- "spacetimedb-lib 2.1.0",
+ "spacetimedb-lib 2.2.0",
  "spacetimedb-metrics",
  "spacetimedb-query-builder",
- "spacetimedb-sats 2.1.0",
+ "spacetimedb-sats 2.2.0",
  "spacetimedb-schema",
  "spacetimedb-testing",
  "thiserror 1.0.69",
@@ -8568,7 +8608,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-smoketests"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -8587,7 +8627,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-snapshot"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "blake3",
@@ -8605,10 +8645,10 @@ dependencies = [
  "spacetimedb-datastore",
  "spacetimedb-durability",
  "spacetimedb-fs-utils",
- "spacetimedb-lib 2.1.0",
+ "spacetimedb-lib 2.2.0",
  "spacetimedb-paths",
- "spacetimedb-primitives 2.1.0",
- "spacetimedb-sats 2.1.0",
+ "spacetimedb-primitives 2.2.0",
+ "spacetimedb-sats 2.2.0",
  "spacetimedb-schema",
  "spacetimedb-table",
  "tempfile",
@@ -8621,17 +8661,17 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sql-parser"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "derive_more 0.99.20",
- "spacetimedb-lib 2.1.0",
+ "spacetimedb-lib 2.2.0",
  "sqlparser",
  "thiserror 1.0.69",
 ]
 
 [[package]]
 name = "spacetimedb-standalone"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8656,7 +8696,7 @@ dependencies = [
  "spacetimedb-client-api-messages",
  "spacetimedb-core",
  "spacetimedb-datastore",
- "spacetimedb-lib 2.1.0",
+ "spacetimedb-lib 2.2.0",
  "spacetimedb-paths",
  "spacetimedb-pg",
  "spacetimedb-schema",
@@ -8673,22 +8713,22 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-subscription"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "spacetimedb-data-structures",
  "spacetimedb-execution",
  "spacetimedb-expr",
- "spacetimedb-lib 2.1.0",
+ "spacetimedb-lib 2.2.0",
  "spacetimedb-physical-plan",
- "spacetimedb-primitives 2.1.0",
+ "spacetimedb-primitives 2.2.0",
  "spacetimedb-query",
  "spacetimedb-schema",
 ]
 
 [[package]]
 name = "spacetimedb-table"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "ahash 0.8.12",
  "blake3",
@@ -8706,17 +8746,17 @@ dependencies = [
  "rand 0.9.2",
  "smallvec",
  "spacetimedb-data-structures",
- "spacetimedb-lib 2.1.0",
+ "spacetimedb-lib 2.2.0",
  "spacetimedb-memory-usage",
- "spacetimedb-primitives 2.1.0",
- "spacetimedb-sats 2.1.0",
+ "spacetimedb-primitives 2.2.0",
+ "spacetimedb-sats 2.2.0",
  "spacetimedb-schema",
  "thiserror 1.0.69",
 ]
 
 [[package]]
 name = "spacetimedb-testing"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -8735,7 +8775,7 @@ dependencies = [
  "spacetimedb-client-api-messages",
  "spacetimedb-core",
  "spacetimedb-data-structures",
- "spacetimedb-lib 2.1.0",
+ "spacetimedb-lib 2.2.0",
  "spacetimedb-paths",
  "spacetimedb-schema",
  "spacetimedb-standalone",
@@ -8746,7 +8786,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-update"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -8777,9 +8817,6 @@ name = "spin"
 version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
-dependencies = [
- "lock_api",
-]
 
 [[package]]
 name = "sqllogictest"
@@ -8839,7 +8876,7 @@ dependencies = [
 
 [[package]]
 name = "sqltest"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8857,8 +8894,8 @@ dependencies = [
  "rusqlite",
  "rust_decimal",
  "spacetimedb-core",
- "spacetimedb-lib 2.1.0",
- "spacetimedb-sats 2.1.0",
+ "spacetimedb-lib 2.2.0",
+ "spacetimedb-sats 2.2.0",
  "sqllogictest",
  "sqllogictest-engines",
  "tempfile",
@@ -9256,7 +9293,7 @@ checksum = "8f50febec83f5ee1df3015341d8bd429f2d1cc62bcba7ea2076759d315084683"
 
 [[package]]
 name = "test-client"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
@@ -9273,7 +9310,7 @@ dependencies = [
 
 [[package]]
 name = "test-counter"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "futures",
@@ -10047,7 +10084,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "log",
- "spacetimedb 2.1.0",
+ "spacetimedb 2.2.0",
 ]
 
 [[package]]
@@ -10261,13 +10298,13 @@ dependencies = [
 
 [[package]]
 name = "view-client"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
  "env_logger 0.10.2",
  "futures",
- "spacetimedb-lib 2.1.0",
+ "spacetimedb-lib 2.2.0",
  "spacetimedb-sdk",
  "test-counter",
  "tokio",
@@ -10277,7 +10314,7 @@ dependencies = [
 
 [[package]]
 name = "view-pk-client"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
@@ -11458,17 +11495,15 @@ dependencies = [
  "chrono",
  "clap 4.5.50",
  "dotenvy",
- "fs2",
  "futures",
  "heck 0.5.0",
  "regex",
  "reqwest 0.12.24",
  "serde",
  "serde_json",
- "spacetimedb 2.1.0",
+ "spacetimedb 2.2.0",
  "spacetimedb-data-structures",
  "spacetimedb-guard",
- "tempfile",
  "thiserror 2.0.17",
  "tokio",
  "urlencoding",

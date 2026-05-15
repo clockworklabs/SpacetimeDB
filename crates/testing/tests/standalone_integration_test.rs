@@ -46,29 +46,29 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
 
     CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
-        |module| async move {
+        |mut module| async move {
             let json =
                 r#"{"CallReducer": {"reducer": "add", "args": "[\"Tyrion\", 24]", "request_id": 0, "flags": 0 }}"#
                     .to_string();
-            module.send(json).await.unwrap();
+            module.send_reducer_and_recv_update(json, 0).await.unwrap();
 
             let json =
                 r#"{"CallReducer": {"reducer": "add", "args": "[\"Cersei\", 31]", "request_id": 1, "flags": 0 }}"#
                     .to_string();
-            module.send(json).await.unwrap();
+            module.send_reducer_and_recv_update(json, 1).await.unwrap();
 
             let json =
                 r#"{"CallReducer": {"reducer": "say_hello", "args": "[]", "request_id": 2, "flags": 0 }}"#.to_string();
-            module.send(json).await.unwrap();
+            module.send_reducer_and_recv_update(json, 2).await.unwrap();
 
             let json = r#"{"CallReducer": {"reducer": "list_over_age", "args": "[30]", "request_id": 3, "flags": 0 }}"#
                 .to_string();
-            module.send(json).await.unwrap();
+            module.send_reducer_and_recv_update(json, 3).await.unwrap();
 
             let json =
                 r#"{"CallReducer": {"reducer": "log_module_identity", "args": "[]", "request_id": 4, "flags": 0 }}"#
                     .to_string();
-            module.send(json).await.unwrap();
+            module.send_reducer_and_recv_update(json, 4).await.unwrap();
 
             assert_eq!(
                 read_logs(&module).await,
@@ -283,11 +283,11 @@ fn test_calling_with_tx() {
 ///     TestF::Baz("buzz".to_string()),
 /// ]
 /// ```
-fn test_call_query_macro_with_caller<F: Future<Output = ()>>(caller: impl FnOnce(ModuleHandle) -> F) {
+fn test_call_query_macro_with_caller<F: Future<Output = ModuleHandle>>(caller: impl FnOnce(ModuleHandle) -> F) {
     CompiledModule::compile("module-test", CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
         |module| async move {
-            caller(module.clone()).await;
+            let module = caller(module).await;
             let logs = read_logs(&module)
                 .await
                 .into_iter()
@@ -321,7 +321,7 @@ fn test_call_query_macro_with_caller<F: Future<Output = ()>>(caller: impl FnOnce
 #[serial]
 fn test_call_query_macro() {
     // Hand-written JSON. This will fail if the JSON encoding of `ClientMessage` changes.
-    test_call_query_macro_with_caller(|module| async move {
+    test_call_query_macro_with_caller(|mut module| async move {
         // Note that JSON doesn't allow multiline strings, so the encoded args string must be on one line!
         let json = r#"
 { "CallReducer": {
@@ -330,9 +330,10 @@ fn test_call_query_macro() {
     "[ { \"x\": 0, \"y\": 2, \"z\": \"Macro\" }, { \"foo\": \"Foo\" }, { \"foo\": {} }, { \"baz\": \"buzz\" } ]",
   "request_id": 0,
   "flags": 0
-} }"#
+	} }"#
             .to_string();
-        module.send(json).await.unwrap();
+        module.send_reducer_and_recv_update(json, 0).await.unwrap();
+        module
     });
 
     let args_pv = &product![
@@ -345,11 +346,13 @@ fn test_call_query_macro() {
     // JSON via the `Serialize` path.
     test_call_query_macro_with_caller(|module| async move {
         module.call_reducer_json("test", args_pv).await.unwrap();
+        module
     });
 
     // BSATN via the `Serialize` path.
     test_call_query_macro_with_caller(|module| async move {
         module.call_reducer_binary("test", args_pv).await.unwrap();
+        module
     });
 }
 

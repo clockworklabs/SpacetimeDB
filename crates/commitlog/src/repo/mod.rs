@@ -4,12 +4,14 @@ use std::{
 };
 
 use log::{debug, warn};
+use spacetimedb_fs_utils::compression::Zstd;
+pub use spacetimedb_fs_utils::compression::{CompressOnce, CompressionStats};
 
 use crate::{
     commit::Commit,
     error,
     index::{IndexFile, IndexFileMut},
-    segment::{FileLike, Header, Metadata, OffsetIndexWriter, Reader, Writer},
+    segment::{self, FileLike, Header, Metadata, OffsetIndexWriter, Reader, Writer},
     Options,
 };
 
@@ -82,12 +84,12 @@ pub trait Repo: Clone + fmt::Display {
     /// Create a new segment with the minimum transaction offset `offset`.
     ///
     /// This **must** create the segment atomically, and return
-    /// [`io::ErrorKind::AlreadyExists`] if the segment already exists.
+    /// [`io::ErrorKind::AlreadyExists`] if the segment already exists (it is
+    /// permissible to overwrite an existing segment if it is zero-length).
     ///
-    /// It is permissible, however, to successfully return the new segment if
-    /// it is completely empty (i.e. [`create_segment_writer`] did not previously
-    /// succeed in writing the segment header).
-    fn create_segment(&self, offset: u64) -> io::Result<Self::SegmentWriter>;
+    /// If the method returns successfully, the `header` **must** have been
+    /// durably written to the segment.
+    fn create_segment(&self, offset: u64, header: segment::Header) -> io::Result<Self::SegmentWriter>;
 
     /// Open an existing segment at the minimum transaction offset `offset`.
     ///
@@ -121,7 +123,13 @@ pub trait Repo: Clone + fmt::Display {
     fn remove_segment(&self, offset: u64) -> io::Result<()>;
 
     /// Compress a segment in storage, marking it as immutable.
-    fn compress_segment(&self, offset: u64) -> io::Result<()>;
+    fn compress_segment(&self, offset: u64) -> io::Result<CompressionStats> {
+        self.compress_segment_with(offset, segment_compressor())
+    }
+
+    /// Compress a segment using a supplied [CompressOnce], marking it as
+    /// immutable.
+    fn compress_segment_with(&self, offset: u64, f: impl CompressOnce) -> io::Result<CompressionStats>;
 
     /// Traverse all segments in this repository and return list of their
     /// offsets, sorted in ascending order.
@@ -144,12 +152,24 @@ pub trait Repo: Clone + fmt::Display {
     }
 }
 
+/// Marker for repos that do not require an external lock file.
+///
+/// Durability implementations can use this to expose repo-backed opening
+/// only for storage backends where skipping the filesystem `db.lock` cannot
+/// violate single-writer safety.
+pub trait RepoWithoutLockFile: Repo {}
+
+impl<T: RepoWithoutLockFile> RepoWithoutLockFile for &T {}
+
+#[cfg(any(test, feature = "test"))]
+impl RepoWithoutLockFile for Memory {}
+
 impl<T: Repo> Repo for &T {
     type SegmentWriter = T::SegmentWriter;
     type SegmentReader = T::SegmentReader;
 
-    fn create_segment(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
-        T::create_segment(self, offset)
+    fn create_segment(&self, offset: u64, header: segment::Header) -> io::Result<Self::SegmentWriter> {
+        T::create_segment(self, offset, header)
     }
 
     fn open_segment_reader(&self, offset: u64) -> io::Result<Self::SegmentReader> {
@@ -164,8 +184,8 @@ impl<T: Repo> Repo for &T {
         T::remove_segment(self, offset)
     }
 
-    fn compress_segment(&self, offset: u64) -> io::Result<()> {
-        T::compress_segment(self, offset)
+    fn compress_segment_with(&self, offset: u64, f: impl CompressOnce) -> io::Result<CompressionStats> {
+        T::compress_segment_with(self, offset, f)
     }
 
     fn existing_offsets(&self) -> io::Result<Vec<u64>> {
@@ -214,15 +234,15 @@ pub fn create_segment_writer<R: Repo>(
     epoch: u64,
     offset: u64,
 ) -> io::Result<Writer<R::SegmentWriter>> {
-    let mut storage = repo.create_segment(offset)?;
+    let mut storage = repo.create_segment(
+        offset,
+        Header {
+            log_format_version: opts.log_format_version,
+            checksum_algorithm: Commit::CHECKSUM_ALGORITHM,
+        },
+    )?;
     // Ensure we have enough space for this segment.
     fallocate(&mut storage, &opts)?;
-    Header {
-        log_format_version: opts.log_format_version,
-        checksum_algorithm: Commit::CHECKSUM_ALGORITHM,
-    }
-    .write(&mut storage)?;
-    storage.fsync()?;
 
     Ok(Writer {
         commit: Commit {
@@ -240,6 +260,27 @@ pub fn create_segment_writer<R: Repo>(
     })
 }
 
+/// Outcome of [resume_segment_writer].
+pub enum ResumedSegment<W: io::Write> {
+    /// The segment contains at most the header bytes.
+    ///
+    /// It is not safe to resume without first checking integrity of
+    /// the preceeding segment. The empty segment should be removed.
+    Empty,
+    /// The successfully resumed segment writer.
+    Resumed(Writer<W>),
+    /// The segment is valid, but should not be resumed as it is already sealed.
+    ///
+    /// The [Metadata] is guaranteed to contain at least one valid commit.
+    /// A new segment should be created at `Metadata::tx_range.end()`.
+    Sealed(Metadata),
+    /// The segment contains corrupted data and should not be resumed.
+    ///
+    /// The [Metadata] is guaranteed to contain at least one valid commit.
+    /// A new segment should be created at `Metadata::tx_range.end()`.
+    Corrupted(Metadata),
+}
+
 /// Open the existing segment at `offset` for writing.
 ///
 /// This will traverse the segment in order to find the offset of the next
@@ -253,22 +294,55 @@ pub fn create_segment_writer<R: Repo>(
 ///
 /// If only a (non-empty) prefix of the segment could be read due to a failure
 /// to decode a [`Commit`], the segment [`Metadata`] read up to the faulty
-/// commit is returned in an `Err`. In this case, a new segment should be
-/// created for writing.
+/// commit is returned. In this case, a new segment should be created for
+/// writing. Similarly if the segment is sealed.
 pub fn resume_segment_writer<R: Repo>(
     repo: &R,
     opts: Options,
     offset: u64,
-) -> io::Result<Result<Writer<R::SegmentWriter>, Metadata>> {
+) -> io::Result<ResumedSegment<R::SegmentWriter>> {
     let mut reader = repo
         .open_segment_reader(offset)
         .map_err(|source| with_segment_context("opening segment for resume", repo, offset, source))?;
+
+    // If the segment at `offset` is empty, remove it and try the previous.
+    // Return an error if no previous segment is found.
+    let len = reader
+        .segment_len()
+        .map_err(|source| with_segment_context("determining segment file size for resume", repo, offset, source))?;
+    if len <= segment::Header::LEN as u64 {
+        debug!("repo {}: segment {} is empty", repo, offset);
+        return Ok(ResumedSegment::Empty);
+    }
+
+    let guard_non_empty = |meta: &Metadata| match meta.tx_range.is_empty() {
+        true => Err(with_segment_context(
+            "checking metadata",
+            repo,
+            offset,
+            io::Error::new(io::ErrorKind::InvalidData, "no valid commits in segment"),
+        )),
+        false => Ok(()),
+    };
+
+    // The segment is now guaranteed to be non-empty, i.e. contain more bytes
+    // than the segment header.
+    //
+    // Traverse it to gather the `Metadata` and ensure that the segment is safe
+    // to resume, which is the case if:
+    //
+    // - it contains at least one commit
+    // - it does not contain corrupted commits
+    // - the existing segment passes the compatibility check
+    // - the existing segment's version is the same as
+    //   the one requested in `opts`
     let offset_index = repo.get_offset_index(offset).ok();
     let meta = match Metadata::extract(offset, &mut reader, offset_index.as_ref()) {
         Err(error::SegmentMetadata::InvalidCommit { sofar, source }) => {
-            warn!("invalid commit in segment {offset}: {source}");
+            warn!("{repo}: invalid commit in segment {offset}: {source}");
             debug!("sofar={sofar:?}");
-            return Ok(Err(sofar));
+            guard_non_empty(&sofar)?;
+            return Ok(ResumedSegment::Corrupted(sofar));
         }
         Err(error::SegmentMetadata::Io(e)) => {
             return Err(with_segment_context("extracting segment metadata", repo, offset, e));
@@ -285,7 +359,6 @@ pub fn resume_segment_writer<R: Repo>(
                 io::Error::new(io::ErrorKind::InvalidData, msg),
             )
         })?;
-    // When resuming, the log format version must be equal.
     if meta.header.log_format_version != opts.log_format_version {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -297,9 +370,10 @@ pub fn resume_segment_writer<R: Repo>(
             ),
         ));
     }
+    guard_non_empty(&meta)?;
 
     if reader.sealed() {
-        Ok(Err(meta))
+        Ok(ResumedSegment::Sealed(meta))
     } else {
         let Metadata {
             header: _,
@@ -318,7 +392,7 @@ pub fn resume_segment_writer<R: Repo>(
         // We use `O_APPEND`, but make the file offset consistent regardless.
         writer.seek(io::SeekFrom::End(0))?;
 
-        Ok(Ok(Writer {
+        Ok(ResumedSegment::Resumed(Writer {
             commit: Commit {
                 min_tx_offset: tx_range.end,
                 n: 0,
@@ -352,6 +426,17 @@ pub fn open_segment_reader<R: Repo>(
         .map_err(|source| with_segment_context("opening segment for read", repo, offset, source))?;
     Reader::new(max_log_format_version, offset, storage)
         .map_err(|source| with_segment_context("reading segment header", repo, offset, source))
+}
+
+/// Obtain the canonical [CompressOnce] compressor for segments.
+///
+/// The compressor will create seekable [Zstd] archives with a max frame size
+/// of 4KiB. That is, seeking to an arbitrary byte offset (of the uncompressed
+/// segment) within the archive will decompress 4KiB of data on average.
+pub fn segment_compressor() -> Zstd {
+    Zstd {
+        max_frame_size: Some(0x1000),
+    }
 }
 
 fn segment_label<R: Repo>(repo: &R, offset: u64) -> String {

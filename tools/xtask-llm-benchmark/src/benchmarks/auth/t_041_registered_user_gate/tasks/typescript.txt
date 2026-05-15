@@ -1,0 +1,24 @@
+Write a SpacetimeDB backend module in TypeScript that gates actions behind a registration check.
+
+TABLES
+- user
+  - private table
+  - Fields:
+    - identity: Identity (primary key)
+    - name: string
+
+- message
+  - public table
+  - Fields:
+    - id: number (u64, primary key, autoInc)
+    - sender: Identity (index btree)
+    - text: string
+
+REDUCERS
+- register(ctx, { name: string })
+  - If a user row already exists for ctx.sender, throw "already registered"
+  - Otherwise insert a new user with identity = ctx.sender and the given name
+
+- post_message(ctx, { text: string })
+  - If no user row exists for ctx.sender, throw "not registered"
+  - Otherwise insert a message with sender = ctx.sender and the given text, id = 0n for autoInc

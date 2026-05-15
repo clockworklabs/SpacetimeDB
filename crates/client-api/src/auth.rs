@@ -282,10 +282,12 @@ impl<TV: TokenValidator + Send + Sync> JwtAuthProvider for JwtKeyAuthProvider<TV
 
 #[cfg(test)]
 mod tests {
-    use crate::auth::{SpacetimeCreds, TokenClaims};
-    use anyhow::Ok;
+    use crate::auth::{AuthorizationRejection, SpacetimeCreds, TokenClaims};
+    use anyhow::{anyhow, Ok};
+    use axum::{body::to_bytes, response::IntoResponse};
+    use http::StatusCode;
 
-    use spacetimedb::auth::{token_validation::TokenValidator, JwtKeys};
+    use spacetimedb::auth::{token_validation::TokenValidationError, token_validation::TokenValidator, JwtKeys};
     use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, HashSet};
 
     // Make sure that when we encode TokenClaims, we can decode to get the expected identity.
@@ -372,6 +374,19 @@ mod tests {
         assert_eq!(keys, expected_keys);
         Ok(())
     }
+
+    #[tokio::test]
+    async fn authorization_rejection_custom_uses_display_message() -> Result<(), anyhow::Error> {
+        let response =
+            AuthorizationRejection::Custom(TokenValidationError::Other(anyhow!("invalid jwks issuer"))).into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        let body = String::from_utf8(to_bytes(response.into_body(), usize::MAX).await?.to_vec())?;
+        assert_eq!(body, "invalid jwks issuer");
+        assert!(!body.contains("Other("));
+        assert!(!body.contains("Stack backtrace"));
+        Ok(())
+    }
 }
 
 pub async fn validate_token<S: NodeDelegate>(
@@ -385,6 +400,7 @@ pub struct SpacetimeAuthHeader {
     auth: Option<SpacetimeAuth>,
 }
 
+#[async_trait::async_trait]
 impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for SpacetimeAuthHeader {
     type Rejection = AuthorizationRejection;
     async fn from_request_parts(parts: &mut request::Parts, state: &S) -> Result<Self, Self::Rejection> {
@@ -434,7 +450,7 @@ impl IntoResponse for AuthorizationRejection {
         match self {
             AuthorizationRejection::Jwt(e) if *e.kind() == JwtErrorKind::InvalidSignature => ROTATED.into_response(),
             AuthorizationRejection::Jwt(_) | AuthorizationRejection::Header(_) => INVALID.into_response(),
-            AuthorizationRejection::Custom(msg) => (StatusCode::UNAUTHORIZED, format!("{msg:?}")).into_response(),
+            AuthorizationRejection::Custom(msg) => (StatusCode::UNAUTHORIZED, msg.to_string()).into_response(),
             AuthorizationRejection::Required => REQUIRED.into_response(),
         }
     }
@@ -460,6 +476,7 @@ impl SpacetimeAuthHeader {
 
 pub struct SpacetimeAuthRequired(pub SpacetimeAuth);
 
+#[async_trait::async_trait]
 impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for SpacetimeAuthRequired {
     type Rejection = AuthorizationRejection;
     async fn from_request_parts(parts: &mut request::Parts, state: &S) -> Result<Self, Self::Rejection> {

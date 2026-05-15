@@ -8,9 +8,6 @@ edition = "2024"
 [lib]
 crate-type = ["cdylib"]
 
-[profile.release]
-debug = 1 # include some location information for backtraces
-
 [dependencies]
 spacetimedb = { path = "../../../crates/bindings" }
 log = "0.4"
