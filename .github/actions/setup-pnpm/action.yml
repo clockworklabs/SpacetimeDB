@@ -1,5 +1,5 @@
 name: Set up pnpm
-description: Install pnpm and configure repository package-age policy before any install.
+description: Install pnpm and configure repository package-age policy before any install
 inputs:
   run_install:
     description: Run pnpm install after configuring pnpm
