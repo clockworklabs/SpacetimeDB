@@ -22,11 +22,12 @@ export class Identity {
   constructor(data: string | bigint) {
     // we get a JSON with __identity__ when getting a token with a JSON API
     // and an bigint when using BSATN.
-    // Coerce non-string inputs through BigInt(): callers who go through
-    // JSON (e.g. the HTTP `/sql` endpoint or custom state caches) can
-    // end up with `number` for a u256 field, which would otherwise be
-    // stored verbatim and crash later in BSATN serialization with an
-    // opaque "Cannot mix BigInt and other types" error.
+    // Coerce non-string inputs through BigInt(): callers that go via any
+    // JSON path outside the SDK (custom state caches, hand-rolled HTTP
+    // clients, etc.) can end up with `number` for a u256 field, which
+    // would otherwise be stored verbatim and crash later in BSATN
+    // serialization with an opaque "Cannot mix BigInt and other types"
+    // error.
     this.__identity__ =
       typeof data === 'string' ? hexStringToU256(data) : BigInt(data);
   }
