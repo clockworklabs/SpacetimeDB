@@ -462,9 +462,7 @@ public:
             std::function<std::vector<uint8_t>(ViewContext&, BytesSource)> handler =
                 [func](ViewContext& ctx, BytesSource args_source) -> std::vector<uint8_t> {
                     (void)args_source;
-                    auto result = __spacetimedb_begin_short_backtrace([&] {
-                        return func(ctx);
-                    });
+                    auto result = func(ctx);
                     IterBuf buf = IterBuf::take();
                     bsatn::Writer writer(buf.get());
                     if constexpr (query_builder::QueryBuilderReturn<ReturnType>) {
@@ -482,9 +480,7 @@ public:
             std::function<std::vector<uint8_t>(AnonymousViewContext&, BytesSource)> handler =
                 [func](AnonymousViewContext& ctx, BytesSource args_source) -> std::vector<uint8_t> {
                     (void)args_source;
-                    auto result = __spacetimedb_begin_short_backtrace([&] {
-                        return func(ctx);
-                    });
+                    auto result = func(ctx);
                     IterBuf buf = IterBuf::take();
                     bsatn::Writer writer(buf.get());
                     if constexpr (query_builder::QueryBuilderReturn<ReturnType>) {
