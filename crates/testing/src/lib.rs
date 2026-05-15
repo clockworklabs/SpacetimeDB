@@ -5,19 +5,24 @@ use spacetimedb_paths::SpacetimePaths;
 use spacetimedb_schema::def::ModuleDef;
 use std::env;
 use std::process::Command;
+use std::sync::LazyLock;
 
 pub mod modules;
 pub mod sdk;
 
 #[track_caller]
 pub fn invoke_cli(paths: &SpacetimePaths, args: &[&str]) {
-    lazy_static::lazy_static! {
-        static ref RUNTIME: tokio::runtime::Runtime = tokio::runtime::Builder::new_multi_thread()
+    static RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
+        tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
-            .unwrap();
-        static ref COMMAND: ClapCommand = ClapCommand::new("spacetime").no_binary_name(true).subcommands(spacetimedb_cli::get_subcommands());
-    }
+            .unwrap()
+    });
+    static COMMAND: LazyLock<ClapCommand> = LazyLock::new(|| {
+        ClapCommand::new("spacetime")
+            .no_binary_name(true)
+            .subcommands(spacetimedb_cli::get_subcommands())
+    });
 
     // Parse once so we can decide which path to use.
     let matches = COMMAND.clone().get_matches_from(args);

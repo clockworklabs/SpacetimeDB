@@ -70,7 +70,7 @@ imara-diff.workspace = true
 indexmap.workspace = true
 itertools.workspace = true
 jsonwebtoken.workspace = true
-lazy_static.workspace = true
+
 log.workspace = true
 memchr.workspace = true
 nohash-hasher.workspace = true

@@ -3,7 +3,7 @@ use criterion::{
     measurement::{Measurement, WallTime},
     Bencher, BenchmarkGroup, Criterion,
 };
-use lazy_static::lazy_static;
+
 use spacetimedb_bench::{
     database::BenchDatabase,
     schemas::{create_sequential, u32_u64_str, u32_u64_u64, BenchTable, IndexStrategy, RandomTable},
@@ -24,9 +24,8 @@ use tikv_jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
-lazy_static! {
-    static ref RUN_ONE_MILLION: bool = std::env::var("RUN_ONE_MILLION").is_ok();
-}
+static RUN_ONE_MILLION: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("RUN_ONE_MILLION").is_ok());
 
 fn criterion_benchmark(c: &mut Criterion) {
     bench_suite::<sqlite::SQLite>(c, true).unwrap();

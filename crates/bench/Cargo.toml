@@ -63,7 +63,7 @@ criterion.workspace = true
 futures.workspace = true
 foldhash.workspace = true
 hashbrown.workspace = true
-lazy_static.workspace = true
+
 log.workspace = true
 mimalloc.workspace = true
 rand.workspace = true

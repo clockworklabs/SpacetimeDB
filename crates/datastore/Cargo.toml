@@ -26,7 +26,7 @@ derive_more.workspace = true
 enum-as-inner.workspace = true
 enum-map.workspace = true
 itertools.workspace = true
-lazy_static.workspace = true
+
 log.workspace = true
 once_cell.workspace = true
 parking_lot.workspace = true
