@@ -33,12 +33,12 @@ import {
   toSql,
   type Query,
 } from '../query';
-import { NativeDatastoreBackend } from './backend';
+import { TestDatastoreBackend } from './backend';
 import {
-  loadNativeTestRuntime,
-  type NativeContext,
-  type NativeTx,
-} from './native';
+  loadTestRuntime,
+  type TestRuntimeContext,
+  type TestRuntimeTx,
+} from './runtime';
 
 const freeze = Object.freeze;
 const rawModuleDefCache = new WeakMap<
@@ -185,15 +185,15 @@ export function createModuleTestHarness<S extends UntypedSchemaDef>(
 ): ModuleTestHarness<S> {
   const rawModuleDef = describeModule(schema, moduleExports);
   const moduleIdentity = opts.moduleIdentity ?? Identity.zero();
-  const native = loadNativeTestRuntime();
-  const nativeContext = native.createContext(
+  const runtime = loadTestRuntime();
+  const runtimeContext = runtime.createContext(
     rawModuleDef,
     moduleIdentity.__identity__
   );
 
   return new ModuleTestHarnessImpl(
     schema,
-    nativeContext,
+    runtimeContext,
     moduleIdentity,
     opts.clock ?? new TestClock(),
     new TestRng(opts.rngSeed ?? null)
@@ -228,8 +228,8 @@ class ModuleTestHarnessImpl<S extends UntypedSchemaDef>
   readonly db: DbView<S>;
 
   #schema: Schema<S>;
-  #native: NativeContext;
-  #backend: NativeDatastoreBackend;
+  #runtime: TestRuntimeContext;
+  #backend: TestDatastoreBackend;
   #httpResponder:
     | ((
         test: ModuleTestHarness<S>,
@@ -240,26 +240,26 @@ class ModuleTestHarnessImpl<S extends UntypedSchemaDef>
 
   constructor(
     schema: Schema<S>,
-    native: NativeContext,
+    runtime: TestRuntimeContext,
     moduleIdentity: Identity,
     clock: TestClock,
     rng: TestRng
   ) {
     this.#schema = schema;
-    this.#native = native;
+    this.#runtime = runtime;
     this.moduleIdentity = moduleIdentity;
     this.clock = clock;
     this.rng = rng;
-    this.#backend = new NativeDatastoreBackend(
-      native,
-      native,
+    this.#backend = new TestDatastoreBackend(
+      runtime,
+      runtime,
       moduleIdentity.__identity__
     );
     this.db = makeDbView(schema, this.#backend);
   }
 
   withReducerTx<T>(auth: TestAuth, body: (ctx: ReducerCtx<S>) => T): T {
-    const tx = this.#native.beginTx();
+    const tx = this.#runtime.beginTx();
     const backend = this.#backend.withTransaction(tx);
     const sender = this.#sender(auth);
     if (auth.jwtPayload && auth.connectionId) {
@@ -279,10 +279,10 @@ class ModuleTestHarnessImpl<S extends UntypedSchemaDef>
         this.#authCtx(auth, sender)
       );
       const ret = body(ctx as unknown as ReducerCtx<S>);
-      this.#native.commitTx(tx, 'DropEventTableRows');
+      this.#runtime.commitTx(tx, 'DropEventTableRows');
       return ret;
     } catch (e) {
-      this.#native.abortTx(tx);
+      this.#runtime.abortTx(tx);
       throw e;
     }
   }
@@ -321,7 +321,7 @@ class ModuleTestHarnessImpl<S extends UntypedSchemaDef>
       rowType,
       this.#schema.typespace
     );
-    return this.#native
+    return this.#runtime
       .runQuery(sql, this.moduleIdentity.__identity__)
       .map(row => rowDeserializer(new BinaryReader(row))) as Row[];
   }
@@ -337,7 +337,7 @@ class ModuleTestHarnessImpl<S extends UntypedSchemaDef>
   }
 
   reset(): void {
-    this.#native.reset();
+    this.#runtime.reset();
   }
 
   makeProcedureContext(
@@ -354,7 +354,7 @@ class ModuleTestHarnessImpl<S extends UntypedSchemaDef>
     const sender = this.#sender(auth);
     const backend = new ProcedureTestBackend(
       this,
-      this.#native,
+      this.#runtime,
       this.#backend,
       this.moduleIdentity.__identity__,
       hooks
@@ -385,7 +385,7 @@ class ModuleTestHarnessImpl<S extends UntypedSchemaDef>
         'authenticated test auth requires a JWT payload and connection id'
       );
     }
-    const validated = this.#native.validateJwtPayload(
+    const validated = this.#runtime.validateJwtPayload(
       auth.jwtPayload,
       auth.connectionId.__connection_id__
     );
@@ -468,14 +468,14 @@ class ProcedureContextBuilderImpl<S extends UntypedSchemaDef>
 
 class ProcedureTestBackend<
   S extends UntypedSchemaDef,
-> extends NativeDatastoreBackend {
-  #ctx: NativeContext;
-  #tx: NativeTx | null = null;
+> extends TestDatastoreBackend {
+  #ctx: TestRuntimeContext;
+  #tx: TestRuntimeTx | null = null;
 
   constructor(
     private readonly test: ModuleTestHarness<S>,
-    ctx: NativeContext,
-    base: NativeDatastoreBackend,
+    ctx: TestRuntimeContext,
+    base: TestDatastoreBackend,
     moduleIdentity: bigint,
     private readonly hooks: ProcedureTestHooks<S>
   ) {
@@ -485,7 +485,7 @@ class ProcedureTestBackend<
     void hooks;
   }
 
-  currentBackend(): NativeDatastoreBackend {
+  currentBackend(): TestDatastoreBackend {
     return this.#tx ? this.withTransaction(this.#tx) : this;
   }
 
@@ -512,7 +512,7 @@ class ProcedureTestBackend<
 
 function makeDbView<S extends UntypedSchemaDef>(
   schema: Schema<S>,
-  backend: NativeDatastoreBackend
+  backend: TestDatastoreBackend
 ): DbView<S> {
   return freeze(
     Object.fromEntries(

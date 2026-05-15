@@ -7,7 +7,7 @@ import { createWasmTestRuntime } from '../src/server/test-utils/wasm';
 type CommitMode = 'Normal' | 'DropEventTableRows';
 
 class FakeTx {
-  readonly __nativeTxBrand!: unique symbol;
+  readonly __testRuntimeTxBrand!: unique symbol;
   readonly __wasmTxBrand!: unique symbol;
 
   constructor(public rows: Uint8Array[]) {}

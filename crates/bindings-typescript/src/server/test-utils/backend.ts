@@ -1,6 +1,10 @@
 import type { u128, u16, u256, u32 } from 'spacetime:sys@2.0';
 import type { DatastoreBackend } from '../backend';
-import type { NativeContext, NativeTarget, NativeTx } from './native';
+import type {
+  TestRuntimeContext,
+  TestRuntimeTarget,
+  TestRuntimeTx,
+} from './runtime';
 
 class RowIteratorRegistry {
   #next = 1;
@@ -43,21 +47,25 @@ class RowIteratorRegistry {
   }
 }
 
-export class NativeDatastoreBackend implements DatastoreBackend {
-  readonly #ctx: NativeContext;
-  readonly #target: NativeTarget;
+export class TestDatastoreBackend implements DatastoreBackend {
+  readonly #ctx: TestRuntimeContext;
+  readonly #target: TestRuntimeTarget;
   readonly #moduleIdentity: bigint;
   readonly #jwtPayloads = new Map<bigint, string>();
   readonly #iters = new RowIteratorRegistry();
 
-  constructor(ctx: NativeContext, target: NativeTarget, moduleIdentity: bigint) {
+  constructor(
+    ctx: TestRuntimeContext,
+    target: TestRuntimeTarget,
+    moduleIdentity: bigint
+  ) {
     this.#ctx = ctx;
     this.#target = target;
     this.#moduleIdentity = moduleIdentity;
   }
 
-  withTransaction(tx: NativeTx): NativeDatastoreBackend {
-    const next = new NativeDatastoreBackend(this.#ctx, tx, this.#moduleIdentity);
+  withTransaction(tx: TestRuntimeTx): TestDatastoreBackend {
+    const next = new TestDatastoreBackend(this.#ctx, tx, this.#moduleIdentity);
     for (const [connectionId, payload] of this.#jwtPayloads) {
       next.#jwtPayloads.set(connectionId, payload);
     }

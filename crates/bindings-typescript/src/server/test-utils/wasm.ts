@@ -1,10 +1,10 @@
 import type {
-  NativeCommitMode,
-  NativeContext,
-  NativeTarget,
-  NativeTestRuntime,
-  NativeTx,
-} from './native';
+  TestRuntimeCommitMode,
+  TestRuntimeContext,
+  TestRuntimeTarget,
+  TestRuntime,
+  TestRuntimeTx,
+} from './runtime';
 
 export type WasmCommitMode = 'Normal' | 'DropEventTableRows';
 
@@ -13,7 +13,7 @@ export interface WasmValidatedAuth {
   readonly connectionIdHex: string | undefined;
 }
 
-export interface WasmPortableTransaction extends NativeTx {
+export interface WasmPortableTransaction extends TestRuntimeTx {
   readonly __wasmTxBrand?: unique symbol;
 }
 
@@ -98,7 +98,7 @@ export interface WasmPortableDatastoreModule {
 
 export function createWasmTestRuntime(
   wasm: WasmPortableDatastoreModule
-): NativeTestRuntime {
+): TestRuntime {
   return {
     createContext(moduleDef, moduleIdentity) {
       return new WasmContext(
@@ -108,15 +108,10 @@ export function createWasmTestRuntime(
         )
       );
     },
-    validateJwtPayload() {
-      throw new Error(
-        'Wasm JWT validation requires a datastore; use TestAuth.fromJwtPayload through a ModuleTestHarness.'
-      );
-    },
   };
 }
 
-class WasmContext implements NativeContext {
+class WasmContext implements TestRuntimeContext {
   readonly #ds: WasmPortableDatastore;
 
   constructor(ds: WasmPortableDatastore) {
@@ -135,20 +130,20 @@ class WasmContext implements NativeContext {
     return this.#ds.indexId(name);
   }
 
-  tableRowCount(target: NativeTarget, tableId: number): number {
+  tableRowCount(target: TestRuntimeTarget, tableId: number): number {
     return isWasmTx(target)
       ? this.#ds.tableRowCountTx(target, tableId)
       : this.#ds.tableRowCount(tableId);
   }
 
-  tableRows(target: NativeTarget, tableId: number): Uint8Array[] {
+  tableRows(target: TestRuntimeTarget, tableId: number): Uint8Array[] {
     return isWasmTx(target)
       ? this.#ds.tableRowsBsatnTx(target, tableId)
       : this.#ds.tableRowsBsatn(tableId);
   }
 
   insertBsatn(
-    target: NativeTarget,
+    target: TestRuntimeTarget,
     tableId: number,
     row: Uint8Array
   ): Uint8Array {
@@ -158,7 +153,7 @@ class WasmContext implements NativeContext {
   }
 
   deleteAllByEqBsatn(
-    target: NativeTarget,
+    target: TestRuntimeTarget,
     tableId: number,
     relation: Uint8Array
   ): number {
@@ -168,7 +163,7 @@ class WasmContext implements NativeContext {
   }
 
   indexScanPointBsatn(
-    target: NativeTarget,
+    target: TestRuntimeTarget,
     indexId: number,
     point: Uint8Array
   ): Uint8Array[] {
@@ -178,7 +173,7 @@ class WasmContext implements NativeContext {
   }
 
   indexScanRangeBsatn(
-    target: NativeTarget,
+    target: TestRuntimeTarget,
     indexId: number,
     buffer: Uint8Array,
     prefixElems: number,
@@ -209,7 +204,7 @@ class WasmContext implements NativeContext {
   }
 
   deleteByIndexScanPointBsatn(
-    target: NativeTarget,
+    target: TestRuntimeTarget,
     indexId: number,
     point: Uint8Array
   ): number {
@@ -219,7 +214,7 @@ class WasmContext implements NativeContext {
   }
 
   deleteByIndexScanRangeBsatn(
-    target: NativeTarget,
+    target: TestRuntimeTarget,
     indexId: number,
     buffer: Uint8Array,
     prefixElems: number,
@@ -244,7 +239,7 @@ class WasmContext implements NativeContext {
   }
 
   updateBsatn(
-    target: NativeTarget,
+    target: TestRuntimeTarget,
     tableId: number,
     indexId: number,
     row: Uint8Array
@@ -254,7 +249,7 @@ class WasmContext implements NativeContext {
     );
   }
 
-  clearTable(target: NativeTarget, tableId: number): number {
+  clearTable(target: TestRuntimeTarget, tableId: number): number {
     return this.#withMutTx(target, tx => this.#ds.clearTable(tx, tableId));
   }
 
@@ -272,20 +267,20 @@ class WasmContext implements NativeContext {
     );
   }
 
-  beginTx(): NativeTx {
-    return this.#ds.beginMutTx() as NativeTx;
+  beginTx(): TestRuntimeTx {
+    return this.#ds.beginMutTx() as TestRuntimeTx;
   }
 
-  commitTx(tx: NativeTx, mode: NativeCommitMode = 'Normal'): void {
+  commitTx(tx: TestRuntimeTx, mode: TestRuntimeCommitMode = 'Normal'): void {
     this.#ds.commitTx(expectWasmTx(tx), mode);
   }
 
-  abortTx(tx: NativeTx): void {
+  abortTx(tx: TestRuntimeTx): void {
     this.#ds.rollbackTx(expectWasmTx(tx));
   }
 
   #withMutTx<T>(
-    target: NativeTarget,
+    target: TestRuntimeTarget,
     body: (tx: WasmPortableTransaction) => T
   ): T {
     if (isWasmTx(target)) {
@@ -304,11 +299,11 @@ class WasmContext implements NativeContext {
   }
 }
 
-function isWasmTx(target: NativeTarget): target is WasmPortableTransaction {
+function isWasmTx(target: TestRuntimeTarget): target is WasmPortableTransaction {
   return !(target instanceof WasmContext);
 }
 
-function expectWasmTx(target: NativeTarget): WasmPortableTransaction {
+function expectWasmTx(target: TestRuntimeTarget): WasmPortableTransaction {
   if (!isWasmTx(target)) {
     throw new Error('operation requires an active wasm datastore transaction');
   }
