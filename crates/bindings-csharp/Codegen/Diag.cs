@@ -259,15 +259,6 @@ internal static class ErrorDescriptor
             _ => Location.None
         );
 
-    public static readonly ErrorDescriptor<IEnumerable<string>> DuplicateHttpRouters =
-        new(
-            group,
-            "Multiple [SpacetimeDB.HttpRouter] declarations",
-            fullNames =>
-                $"[SpacetimeDB.HttpRouter] is declared multiple times: {string.Join(", ", fullNames)}",
-            _ => Location.None
-        );
-
     public static readonly ErrorDescriptor<AttributeData> TableLevelIndexMissingAccessor =
         new(
             group,
@@ -283,15 +274,6 @@ internal static class ErrorDescriptor
             "HTTP handlers must have a first argument of type HandlerContext",
             method =>
                 $"HTTP handler method {method.Identifier} does not have a HandlerContext parameter.",
-            method => method.ParameterList
-        );
-
-    public static readonly ErrorDescriptor<MethodDeclarationSyntax> HttpHandlerSignature =
-        new(
-            group,
-            "HTTP handlers must be non-generic methods with exactly two parameters",
-            method =>
-                $"HTTP handler method {method.Identifier} must be non-generic and take exactly two parameters.",
             method => method.ParameterList
         );
 
@@ -332,5 +314,23 @@ internal static class ErrorDescriptor
             ctx =>
                 $"HTTP handler method {ctx.method.Identifier} starts with '{ctx.prefix}', which is a reserved prefix.",
             ctx => ctx.method.Identifier
+        );
+
+    public static readonly ErrorDescriptor<IEnumerable<string>> DuplicateHttpRouters =
+        new(
+            group,
+            "Multiple [SpacetimeDB.HttpRouter] declarations",
+            fullNames =>
+                $"[SpacetimeDB.HttpRouter] is declared multiple times: {string.Join(", ", fullNames)}",
+            _ => Location.None
+        );
+
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> HttpHandlerSignature =
+        new(
+            group,
+            "HTTP handlers must be non-generic methods with exactly two parameters",
+            method =>
+                $"HTTP handler method {method.Identifier} must be non-generic and take exactly two parameters.",
+            method => method.ParameterList
         );
 }
