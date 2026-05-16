@@ -8,8 +8,6 @@ export interface BaseConnector {
   } | null>;
   verify(): Promise<void>;
 
-  maxInflightPerWorker?: number;
-
   createWorker?(opts: { index: number; total: number }): Promise<BaseConnector>;
 }
 

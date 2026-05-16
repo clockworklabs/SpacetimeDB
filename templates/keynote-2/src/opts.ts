@@ -4,6 +4,7 @@ import {
   defaultBenchTestName,
   defaultDemoSystems,
   getSharedRuntimeDefaults,
+  parseAlphaList,
   parseStdbCompression,
   parseConnectorList,
   type BenchOptions,
@@ -142,7 +143,11 @@ function addSharedRuntimeOptions(parser: CLIParser): CLIParser {
   return parser
     .option('--seconds <seconds>', 'Number of seconds to benchmark for', num())
     .option('--concurrency <concurrency>', 'Concurrent clients to run', num())
-    .option('--alpha <alpha>', 'Alpha value', num())
+    .option(
+      '--alpha <alpha>',
+      'Zipf alpha. Accepts a single value or a comma-separated list (e.g. `0,1.5`).',
+      str(),
+    )
     .option('--accounts <num>', 'Number of accounts to run with', num())
     .option(
       '--initial-balance <balance>',
@@ -299,11 +304,16 @@ export function parseDemoOptions(argv: string[] = process.argv): DemoOptions {
 
   const runtimeOptions = resolveRuntimeOptions(options, runtimeDefaults);
 
+  const demoAlphas = parseAlphaList(
+    options.alpha as string | number | string[] | undefined,
+    '--alpha',
+  );
+
   return {
     ...runtimeOptions,
-    seconds: options.seconds ?? 10,
-    concurrency: options.concurrency ?? 50,
-    alpha: options.alpha ?? 1.5,
+    seconds: options.seconds ?? 300,
+    concurrency: options.concurrency ?? 64,
+    alpha: demoAlphas?.[0] ?? 1.5,
     systems:
       options.systems ?? options.connectors ?? [...defaultDemoSystems],
     skipPrep: options.skipPrep ?? false,
@@ -329,6 +339,15 @@ export function parseBenchOptions(argv: string[] = process.argv): BenchOptions {
       type: 'strings',
       possibleValues: validConnectors,
     })
+    .option(
+      '--runs <num>',
+      'Repeat each (connector, alpha) combination this many times. One JSON written per run.',
+      num(),
+    )
+    .option(
+      '--prep-between-alphas',
+      'Run `pnpm run prep` before each (connector, alpha) combination to reset DB state.',
+    )
     .option(
       '--contention-tests <spec>',
       'Run alpha sweep as start,end,step,concurrency',
@@ -371,13 +390,20 @@ export function parseBenchOptions(argv: string[] = process.argv): BenchOptions {
       }
     : null;
 
+  const parsedAlphas = parseAlphaList(
+    options.alpha as string | number | string[] | undefined,
+    '--alpha',
+  );
+
   return {
     ...runtimeOptions,
     testName: args[0] ?? defaultBenchTestName,
-    seconds: options.seconds ?? 10,
+    seconds: options.seconds ?? 300,
     concurrency:
-      contentionTests?.concurrency ?? options.concurrency ?? 50,
-    alpha: concurrencyTests?.alpha ?? options.alpha ?? 1.5,
+      contentionTests?.concurrency ?? options.concurrency ?? 64,
+    alphas: parsedAlphas ?? [concurrencyTests?.alpha ?? 1.5],
+    runs: options.runs ?? 1,
+    prepBetweenAlphas: options.prepBetweenAlphas ?? false,
     connectors: options.connectors ?? options.systems ?? null,
     contentionTests,
     concurrencyTests,

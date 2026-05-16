@@ -317,7 +317,7 @@ fn auto_migrate_database(
                     .iter()
                     .filter_map(|col_def| col_def.default_value.clone())
                     .collect();
-                stdb.add_columns_to_table(tx, table_id, column_schemas, default_values)?;
+                stdb.add_columns_to_table_mut_tx(tx, table_id, column_schemas, default_values)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::DisconnectAllUsers => {
                 log!(logger, "Disconnecting all users");

@@ -1,0 +1,22 @@
+Write a SpacetimeDB backend module in C# that defines a Player table with scores, a Leaderboard result table, and a reducer that finds the top N players by score (descending) and writes them to the result table.
+
+TABLES
+- Player
+  - Struct: Player
+  - Fields:
+    - Id: ulong (primary key, AutoInc)
+    - Name: string
+    - Score: ulong
+
+- Leaderboard
+  - Struct: LeaderboardEntry
+  - Fields:
+    - Rank: uint (primary key)
+    - PlayerName: string
+    - Score: ulong
+
+REDUCERS
+- BuildLeaderboard(ctx, uint limit)
+  - Collect all players into a list, sort by Score descending
+  - Take the first `limit` entries
+  - Insert each into Leaderboard with Rank starting at 1

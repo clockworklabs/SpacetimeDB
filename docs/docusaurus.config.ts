@@ -156,9 +156,11 @@ const config: Config = {
     navbar: {
       logo: {
         alt: 'SpacetimeDB Logo',
-        src: 'https://spacetimedb.com/images/brand.svg',
+        src: '/images/brand.svg',
         href: 'https://spacetimedb.com',
         target: '_self',
+        width: 152,
+        height: 32,
       },
       hideOnScroll: false,
       items: [
@@ -197,7 +199,6 @@ const config: Config = {
         },
       ],
     },
-    footer: {},
     prism: {},
     colorMode: {
       disableSwitch: true,
@@ -214,6 +215,20 @@ const config: Config = {
         },
         ChatButton: {
           ...inkeepConfig,
+        },
+      },
+    ],
+    [
+      '@signalwire/docusaurus-plugin-llms-txt',
+      {
+        siteTitle: 'SpacetimeDB',
+        siteDescription:
+          'SpacetimeDB is a database that lets you write your entire application as a database module. Server logic runs inside the database as WebAssembly. Clients subscribe to queries and get real-time updates over WebSocket. No separate server needed.',
+        depth: 2,
+        content: {
+          enableLlmsFullTxt: true,
+          enableMarkdownFiles: false,
+          includeVersionedDocs: false,
         },
       },
     ],
