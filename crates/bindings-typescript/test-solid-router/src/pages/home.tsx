@@ -2,11 +2,9 @@ import { useReducer, useTable } from '../../../src/solid';
 import { tables, reducers } from '../module_bindings';
 
 export default function Home() {
-  const [counter] = useTable(tables.counter);
+  const [counter] = useTable(() => tables.counter);
   const incrementCounter = useReducer(reducers.incrementCounter);
   const clearCounter = useReducer(reducers.clearCounter);
-
-  console.log('Rendering CounterPage, current counter:', counter);
 
   return (
     <section class="bg-gray-100 text-gray-700 p-8">

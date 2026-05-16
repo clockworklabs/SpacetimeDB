@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onCleanup } from 'solid-js';
+import { createSignal, onCleanup, createMemo, createComputed } from 'solid-js';
 import { useSpacetimeDB } from './useSpacetimeDB';
 import { type EventContextInterface } from '../sdk/db_connection_impl';
 import type { UntypedRemoteModule } from '../sdk/spacetime_module';
@@ -12,13 +12,14 @@ import {
   getQueryAccessorName,
   getQueryWhereClause,
 } from '../lib/query';
+import { createStore, reconcile } from 'solid-js/store';
 
 export interface UseTableCallbacks<RowType> {
   onInsert?: (row: RowType) => void;
   onDelete?: (row: RowType) => void;
   onUpdate?: (oldRow: RowType, newRow: RowType) => void;
   /** Whether the subscription is active. Defaults to `true`. */
-  enabled?: boolean;
+  enabled?: () => boolean;
 }
 
 type MembershipChange = 'enter' | 'leave' | 'stayIn' | 'stayOut';
@@ -58,14 +59,15 @@ function classifyMembership(
  * ```
  */
 export function useTable<TableDef extends UntypedTableDef>(
-  query: Query<TableDef>,
+  query: () => Query<TableDef>,
   callbacks?: UseTableCallbacks<Prettify<RowType<TableDef>>>
-): [readonly Prettify<RowType<TableDef>>[], boolean] {
+): [readonly Prettify<RowType<TableDef>>[], () => boolean] {
   type UseTableRowType = RowType<TableDef>;
-  const enabled = callbacks?.enabled ?? true;
-  const accessorName = getQueryAccessorName(query);
-  const whereExpr = getQueryWhereClause(query);
-  const querySql = toSql(query);
+  const enabled = callbacks?.enabled ?? (() => true);
+  const q = createMemo(query);
+  const accessorName = createMemo(() => getQueryAccessorName(q()));
+  const whereExpr = createMemo(() => getQueryWhereClause(q()));
+  const querySql = createMemo(() => toSql(q()));
 
   let connectionState: import('./connection_state').ConnectionState;
   try {
@@ -78,75 +80,67 @@ export function useTable<TableDef extends UntypedTableDef>(
     );
   }
 
-  const [rows, setRows] = createSignal<readonly Prettify<UseTableRowType>[]>(
-    [],
-    { equals: false }
-  );
-  const [isReady, setIsReady] = createSignal(false);
+  const [rows, setRows] = createStore<readonly Prettify<UseTableRowType>[]>([]);
 
   let latestTransactionEventId: string | null = null;
 
   const computeSnapshot = (): readonly Prettify<UseTableRowType>[] => {
-    if (!enabled) {
+    if (!enabled()) {
       return [];
     }
+
     const connection = connectionState.getConnection();
     if (!connection) {
       return [];
     }
-    const table = connection.db[accessorName];
-    const result: readonly Prettify<UseTableRowType>[] = whereExpr
+    const table = connection.db[accessorName()];
+    const result: readonly Prettify<UseTableRowType>[] = whereExpr()
       ? (Array.from(table.iter()).filter(row =>
-          evaluateBooleanExpr(whereExpr, row as Record<string, any>)
+          evaluateBooleanExpr(whereExpr()!, row as Record<string, any>)
         ) as Prettify<UseTableRowType>[])
       : (Array.from(table.iter()) as Prettify<UseTableRowType>[]);
     return result;
   };
 
-  // Manage SQL subscription
-  createEffect(() => {
-    if (!enabled) {
+  const [isReady, setIsReady] = createSignal(false);
+
+  createComputed(() => {
+    if (!enabled()) {
       setIsReady(false);
-      setRows([]);
       return;
     }
 
     const connection = connectionState.getConnection();
-    if (!connectionState.isActive || !connection) return;
+    if (!connectionState.isActive || !connection) {
+      setIsReady(false);
+      return;
+    }
 
     const cancel = connection
       .subscriptionBuilder()
       .onApplied(() => {
         setIsReady(true);
-        setRows(computeSnapshot());
       })
-      .subscribe(querySql);
+      .subscribe(querySql());
 
     onCleanup(() => {
       cancel.unsubscribe();
     });
-  });
 
-  // Bind to table events
-  createEffect(() => {
-    if (!enabled) return;
-
-    const connection = connectionState.getConnection();
-    if (!connectionState.isActive || !connection) return;
-
-    const table = connection.db[accessorName];
+    // Bind to table events
+    const table = connection.db[accessorName()];
 
     const onInsert = (
       ctx: EventContextInterface<UntypedRemoteModule>,
       row: any
     ) => {
-      if (whereExpr && !evaluateBooleanExpr(whereExpr, row)) {
+      if (whereExpr() && !evaluateBooleanExpr(whereExpr()!, row)) {
         return;
       }
       callbacks?.onInsert?.(row);
       if (ctx.event.id !== latestTransactionEventId) {
         latestTransactionEventId = ctx.event.id;
-        setRows(computeSnapshot());
+        setRows(reconcile(computeSnapshot()));
       }
     };
 
@@ -154,13 +148,13 @@ export function useTable<TableDef extends UntypedTableDef>(
       ctx: EventContextInterface<UntypedRemoteModule>,
       row: any
     ) => {
-      if (whereExpr && !evaluateBooleanExpr(whereExpr, row)) {
+      if (whereExpr() && !evaluateBooleanExpr(whereExpr()!, row)) {
         return;
       }
       callbacks?.onDelete?.(row);
       if (ctx.event.id !== latestTransactionEventId) {
         latestTransactionEventId = ctx.event.id;
-        setRows(computeSnapshot());
+        setRows(reconcile(computeSnapshot()));
       }
     };
 
@@ -169,7 +163,7 @@ export function useTable<TableDef extends UntypedTableDef>(
       oldRow: any,
       newRow: any
     ) => {
-      const change = classifyMembership(whereExpr, oldRow, newRow);
+      const change = classifyMembership(whereExpr(), oldRow, newRow);
 
       switch (change) {
         case 'leave':
@@ -187,7 +181,7 @@ export function useTable<TableDef extends UntypedTableDef>(
 
       if (ctx.event.id !== latestTransactionEventId) {
         latestTransactionEventId = ctx.event.id;
-        setRows(computeSnapshot());
+        setRows(reconcile(computeSnapshot()));
       }
     };
 
@@ -196,7 +190,7 @@ export function useTable<TableDef extends UntypedTableDef>(
     table.onUpdate?.(onUpdate);
 
     // Load initial snapshot
-    setRows(computeSnapshot());
+    setRows(reconcile(computeSnapshot()));
 
     onCleanup(() => {
       table.removeOnInsert(onInsert);
@@ -205,5 +199,5 @@ export function useTable<TableDef extends UntypedTableDef>(
     });
   });
 
-  return [rows(), isReady()];
+  return [rows, isReady];
 }

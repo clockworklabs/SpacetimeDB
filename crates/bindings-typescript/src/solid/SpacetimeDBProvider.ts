@@ -2,7 +2,7 @@ import {
   DbConnectionBuilder,
   type DbConnectionImpl,
 } from '../sdk/db_connection_impl';
-import { createEffect, onCleanup, createMemo } from 'solid-js';
+import { createEffect, onCleanup, createMemo, createComputed } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { SpacetimeDBContext } from './useSpacetimeDB';
 import type { ConnectionState } from './connection_state';
@@ -38,7 +38,7 @@ export function SpacetimeDBProvider<DbConnection extends DbConnectionImpl<any>>(
   const [state, setState] = createStore<ManagerConnectionState>(fallbackState);
 
   // Subscribe to ConnectionManager state changes
-  createEffect(() => {
+  createComputed(() => {
     const currentKey = key();
 
     const unsubscribe = ConnectionManager.subscribe(currentKey, () => {
@@ -79,7 +79,7 @@ export function SpacetimeDBProvider<DbConnection extends DbConnectionImpl<any>>(
   };
 
   // Retain / release lifecycle
-  createEffect(() => {
+  createComputed(() => {
     const currentKey = key();
     ConnectionManager.retain(currentKey, props.connectionBuilder);
 
