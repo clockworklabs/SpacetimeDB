@@ -60,6 +60,7 @@ pub mod __codegen {
         SubscriptionEventContext, SubscriptionHandle, TableUpdate,
     };
     pub use crate::subscription::{OnEndedCallback, SubscriptionBuilder, SubscriptionHandleImpl};
+    pub use crate::table::{TableLike, WithDelete, WithInsert, WithUpdate};
     pub use crate::{
         ConnectionId, DbConnectionBuilder, DbContext, Event, EventTable, Identity, ReducerEvent, ScheduleAt, Table,
         TableWithPrimaryKey, TimeDuration, Timestamp, Uuid,
