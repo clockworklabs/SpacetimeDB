@@ -110,7 +110,7 @@ When specified, tests will connect to the given URL instead of starting local se
 
 Only build binaries without running tests
 
-Use this before running `cargo test --all` to ensure binaries are built.
+Use this before running broad workspace tests to ensure binaries are built.
 
 **Usage:**
 ```bash
@@ -211,6 +211,17 @@ Usage: publish-checks
 **Usage:**
 ```bash
 Usage: typescript-test
+```
+
+**Options:**
+
+- `--help`: Print help
+
+### `csharp-tests`
+
+**Usage:**
+```bash
+Usage: csharp-tests
 ```
 
 **Options:**

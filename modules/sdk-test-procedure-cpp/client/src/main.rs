@@ -107,6 +107,7 @@ fn on_sub_error(_ctx: &ErrorContext, err: Error) {
 /// Run the procedure tests
 fn run_tests(ctx: &DbConnection) {
     println!("\n=== Running Procedure Tests ===\n");
+    let server_url: String = env::var("SPACETIMEDB_HOST").unwrap_or("http://localhost:3000".to_string());
 
     // Test return_primitive
     println!("Testing return_primitive(10, 32)...");
@@ -232,7 +233,7 @@ fn run_tests(ctx: &DbConnection) {
 
     // Test read_my_schema (HTTP)
     println!("Testing read_my_schema (HTTP)...");
-    ctx.procedures.read_my_schema_then(|_, res| match res {
+    ctx.procedures.read_my_schema_then(server_url, |_, res| match res {
         Ok(schema) => {
             if !schema.is_empty() {
                 println!("  ✓ read_my_schema returned schema data ({} bytes)", schema.len());

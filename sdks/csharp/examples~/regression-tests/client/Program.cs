@@ -1,6 +1,6 @@
 ///  tests run with a live server.
 /// To run these, run a local SpacetimeDB via `spacetime start`,
-/// then in a separate terminal run `tools~/run-regression-tests.sh PATH_TO_SPACETIMEDB_REPO_CHECKOUT`.
+/// then in a separate terminal run `cargo csharp run-regression-tests`.
 /// This is done on CI in .github/workflows/test.yml.
 using System;
 using System.Collections.Generic;
@@ -1244,6 +1244,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     Log.Debug("Calling ReadMySchemaViaHttp");
     waiting++;
     context.Procedures.ReadMySchemaViaHttp(
+        HOST,
         (IProcedureEventContext ctx, ProcedureCallbackResult<string> result) =>
         {
             try

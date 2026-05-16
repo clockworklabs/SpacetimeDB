@@ -340,6 +340,8 @@ enum CiCmd {
     PublishChecks,
     /// Runs TypeScript workspace tests and template build checks.
     TypescriptTest,
+    /// Runs C# tests through the Cargo language-test harness.
+    CsharpTests,
     /// Verifies that the repository version upgrade tool still works.
     VersionUpgradeCheck,
     /// Checks for uncommitted diffs, ignoring generated SpacetimeDB CLI version comments.
@@ -411,8 +413,15 @@ fn run_publish_checks() -> Result<()> {
 }
 
 fn run_typescript_tests() -> Result<()> {
-    cmd!("pnpm", "build").dir("crates/bindings-typescript").run()?;
-    cmd!("pnpm", "test").dir("crates/bindings-typescript").run()?;
+    cmd!(
+        "cargo",
+        "test",
+        "-p",
+        "spacetimedb-typescript-tests",
+        "--test",
+        "typescript"
+    )
+    .run()?;
     cmd!("pnpm", "generate").dir("templates/chat-react-ts").run()?;
     if has_git_diff(Path::new("templates/chat-react-ts/src/module_bindings"))? {
         bail!("Bindings are dirty. Please generate bindings again and commit them to this branch.");
@@ -424,6 +433,57 @@ fn run_typescript_tests() -> Result<()> {
     cmd!("pnpm", "-r", "--filter", "./**", "run", "build")
         .dir("crates/bindings-typescript")
         .run()?;
+    Ok(())
+}
+
+fn run_csharp_tests() -> Result<()> {
+    cmd!(
+        "cargo",
+        "run",
+        "-p",
+        "spacetimedb-codegen",
+        "--example",
+        "regen-csharp-moduledef",
+    )
+    .run()?;
+    bail_if_diff(Path::new("crates/bindings-csharp"))?;
+
+    cmd!("dotnet", "test", "-warnaserror")
+        .dir("crates/bindings-csharp")
+        .run()?;
+
+    cmd!("cargo", "regen", "csharp", "quickstart").run()?;
+    if has_git_diff(Path::new("templates/chat-console-cs/module_bindings"))? {
+        bail!("quickstart bindings have changed. Please run `cargo regen csharp quickstart`.");
+    }
+
+    cmd!(
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "spacetimedb-cli",
+        "-p",
+        "spacetimedb-standalone",
+        "--features",
+        "spacetimedb-standalone/allow_loopback_http_for_tests"
+    )
+    .run()?;
+    cmd!("cargo", "test", "-p", "spacetimedb-csharp-tests").run()?;
+
+    cmd!(
+        "dotnet",
+        "format",
+        "--no-restore",
+        "--verify-no-changes",
+        "SpacetimeDB.ClientSDK.sln"
+    )
+    .dir("sdks/csharp")
+    .run()?;
+
+    if has_git_diff(Path::new("sdks/csharp/examples~/regression-tests"))? {
+        bail!("Bindings are dirty. Please run `cargo regen csharp regression-tests`.");
+    }
     Ok(())
 }
 
@@ -469,6 +529,10 @@ fn main() -> Result<()> {
                 "spacetimedb-smoketests",
                 "--exclude",
                 "spacetimedb-sdk",
+                "--exclude",
+                "spacetimedb-typescript-tests",
+                "--exclude",
+                "spacetimedb-csharp-tests",
                 "--",
                 "--test-threads=2",
                 "--skip",
@@ -520,19 +584,6 @@ fn main() -> Result<()> {
             )
             .run()?;
             bail_if_diff(Path::new("."))?;
-            cmd!(
-                "cargo",
-                "run",
-                "-p",
-                "spacetimedb-codegen",
-                "--example",
-                "regen-csharp-moduledef",
-            )
-            .run()?;
-            bail_if_diff(Path::new("crates/bindings-csharp"))?;
-            cmd!("dotnet", "test", "-warnaserror")
-                .dir("crates/bindings-csharp")
-                .run()?;
         }
 
         Some(CiCmd::Lint) => {
@@ -716,6 +767,10 @@ fn main() -> Result<()> {
 
         Some(CiCmd::TypescriptTest) => {
             run_typescript_tests()?;
+        }
+
+        Some(CiCmd::CsharpTests) => {
+            run_csharp_tests()?;
         }
 
         Some(CiCmd::VersionUpgradeCheck) => {

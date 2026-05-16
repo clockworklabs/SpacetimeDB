@@ -799,12 +799,12 @@ public static partial class Module
 
     [SpacetimeDB.Procedure]
     [Experimental("STDB_UNSTABLE")]
-    public static string ReadMySchemaViaHttp(ProcedureContext ctx)
+    public static string ReadMySchemaViaHttp(ProcedureContext ctx, string serverUrl)
     {
         try
         {
             var moduleIdentity = ProcedureContext.Identity;
-            var uri = $"http://localhost:3000/v1/database/{moduleIdentity}/schema?version=9";
+            var uri = $"{serverUrl}/v1/database/{moduleIdentity}/schema?version=9";
             var res = ctx.Http.Get(uri, System.TimeSpan.FromSeconds(2));
             return res switch
             {
