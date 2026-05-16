@@ -1,0 +1,78 @@
+name: Validate LLM benchmark golden answers
+
+on:
+  schedule:
+    # Nightly at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: llm-benchmark-validate-goldens
+  cancel-in-progress: true
+
+jobs:
+  validate-goldens:
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        lang: [rust, csharp, typescript]
+
+    steps:
+      - name: Install spacetime CLI
+        run: |
+          curl -sSf https://install.spacetimedb.com | sh -s -- -y
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Checkout master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 1
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Setup .NET SDK
+        if: matrix.lang == 'csharp'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Install WASI workload
+        if: matrix.lang == 'csharp'
+        env:
+          DOTNET_MULTILEVEL_LOOKUP: "0"
+          DOTNET_CLI_HOME: ${{ runner.temp }}/dotnet-home
+          DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+        run: |
+          dotnet workload install wasi-experimental --skip-manifest-update --disable-parallel
+
+      - name: Set up Node.js
+        if: matrix.lang == 'typescript'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install pnpm
+        if: matrix.lang == 'typescript'
+        uses: ./.github/actions/setup-pnpm
+
+      - name: Build llm-benchmark tool
+        run: cargo install --path tools/xtask-llm-benchmark --locked
+
+      - name: Validate golden answers (${{ matrix.lang }})
+        env:
+          MSBUILDDISABLENODEREUSE: "1"
+          DOTNET_CLI_USE_MSBUILD_SERVER: "0"
+        run: |
+          llm_benchmark run --goldens-only --lang ${{ matrix.lang }}

@@ -4,7 +4,7 @@ const account = table({
   name: 'account',
   indexes: [{ name: 'byName', algorithm: 'btree', columns: ['name'] }],
 }, {
-  id: t.i32().primaryKey(),
+  id: t.u64().primaryKey().autoInc(),
   email: t.string().unique(),
   name: t.string(),
 });
@@ -14,7 +14,7 @@ export default spacetimedb;
 
 export const seed = spacetimedb.reducer(
   ctx => {
-    ctx.db.account.insert({ id: 1, email: "a@example.com", name: "Alice" });
-    ctx.db.account.insert({ id: 2, email: "b@example.com", name: "Bob" });
+    ctx.db.account.insert({ id: 0n, email: "a@example.com", name: "Alice" });
+    ctx.db.account.insert({ id: 0n, email: "b@example.com", name: "Bob" });
   }
 );

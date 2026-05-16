@@ -899,6 +899,7 @@ dependencies = [
  "env_logger 0.10.2",
  "log",
  "regex",
+ "serde_json",
  "tempfile",
 ]
 
@@ -11504,7 +11505,6 @@ dependencies = [
  "chrono",
  "clap 4.5.50",
  "dotenvy",
- "fs2",
  "futures",
  "heck 0.5.0",
  "regex",
@@ -11514,7 +11514,6 @@ dependencies = [
  "spacetimedb 2.2.0",
  "spacetimedb-data-structures",
  "spacetimedb-guard",
- "tempfile",
  "thiserror 2.0.17",
  "tokio",
  "urlencoding",

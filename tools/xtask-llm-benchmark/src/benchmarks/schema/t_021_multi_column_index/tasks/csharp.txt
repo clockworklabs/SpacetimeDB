@@ -4,7 +4,7 @@ TABLE
 - Log
   - Struct: Log
   - Fields:
-    - Id: int (primary key)
+    - Id: ulong (primary key, auto-increment)
     - UserId: int
     - Day: int
     - Message: string
@@ -12,7 +12,7 @@ TABLE
     - by_user_day: btree(UserId, Day)
 
 REDUCERS
-- Seed: insert exactly these rows into Log
-  - (Id=1, UserId=7, Day=1, Message="a")
-  - (Id=2, UserId=7, Day=2, Message="b")
-  - (Id=3, UserId=9, Day=1, Message="c")
+- Seed: insert exactly these rows into Log (IDs are auto-assigned)
+  - (UserId=7, Day=1, Message="a")
+  - (UserId=7, Day=2, Message="b")
+  - (UserId=9, Day=1, Message="c")

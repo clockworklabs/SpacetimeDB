@@ -20,16 +20,5 @@ export async function rpc_single_call(
         : 'transfer:transfer'
       : 'transfer';
 
-  for (let attempts = 0; attempts < 3; attempts++) {
-    try {
-      await api.call(fn, { amount, from_id: from, to_id: to });
-      return;
-    } catch (e: any) {
-      const msg = String(e?.message ?? '');
-      const retriable = /429|502|503|504/.test(msg);
-      if (!retriable || attempts === 2) throw e;
-
-      await new Promise((r) => setTimeout(r, 50 * (attempts + 1)));
-    }
-  }
+  await api.call(fn, { amount, from_id: from, to_id: to });
 }

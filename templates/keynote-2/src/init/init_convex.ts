@@ -50,7 +50,7 @@ export async function initConvex(config: ConvexInitConfig) {
     }
 
     // Max ~16k writes per function; keep a safety margin
-    const CHUNK = 10_000;
+    const CHUNK = 7_000;
     console.log(
       `[convex] seeding ${accounts} accounts in chunks of ${CHUNK} (initial=${initialBalance})`,
     );
@@ -65,6 +65,7 @@ export async function initConvex(config: ConvexInitConfig) {
         count,
         initial: initialBalance,
       });
+      await new Promise(r => setTimeout(r, 500));
     }
 
     console.log('[convex] seed complete.');

@@ -1,9 +1,9 @@
 {
   "private": true,
-  "packageManager": "pnpm@9.7.0",
+  "packageManager": "pnpm@10.16.0",
   "engines": {
     "node": ">=18.0.0",
-    "pnpm": ">=9.0.0"
+    "pnpm": ">=10.16.0"
   },
   "type": "module",
   "scripts": {
@@ -28,6 +28,16 @@
     "prettier": "^3.3.3",
     "rimraf": "^6.0.1",
     "typescript": "~5.6.2",
+    "typescript-eslint": "^8.18.2",
     "vitest": "^3.2.4"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "bun"
+    ],
+    "ignoredBuiltDependencies": [
+      "@parcel/watcher",
+      "esbuild"
+    ]
   }
 }

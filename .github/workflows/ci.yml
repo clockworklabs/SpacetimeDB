@@ -80,7 +80,7 @@ jobs:
         with:
           node-version: 18
 
-      - uses: pnpm/action-setup@v4
+      - uses: ./.github/actions/setup-pnpm
         with:
           run_install: true
 
@@ -220,7 +220,7 @@ jobs:
         with:
           node-version: 22
 
-      - uses: pnpm/action-setup@v4
+      - uses: ./.github/actions/setup-pnpm
         with:
           run_install: true
 
@@ -296,7 +296,7 @@ jobs:
         with:
           node-version: 22
 
-      - uses: pnpm/action-setup@v4
+      - uses: ./.github/actions/setup-pnpm
         with:
           run_install: true
 
@@ -523,7 +523,7 @@ jobs:
         with:
           node-version: 22
 
-      - uses: pnpm/action-setup@v4
+      - uses: ./.github/actions/setup-pnpm
         with:
           run_install: true
 
@@ -556,39 +556,6 @@ jobs:
       - name: Check for docs change
         run: |
           cargo ci cli-docs
-
-  llm_ci_check:
-    name: Verify LLM benchmark is up to date
-    permissions:
-      contents: read
-    runs-on: ubuntu-latest
-    # Disable the tests because they are causing us headaches with merge conflicts and re-runs etc.
-    if: false
-    steps:
-      # Build the tool from master to ensure consistent hash computation
-      # with the llm-benchmark-update workflow (which also uses master's tool).
-      - name: Checkout master (build tool from trusted code)
-        uses: actions/checkout@v4
-        with:
-          ref: master
-          fetch-depth: 1
-
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Install llm-benchmark tool from master
-        run: |
-          cargo install --path tools/xtask-llm-benchmark --locked
-          command -v llm_benchmark
-
-      # Now checkout the PR branch to verify its benchmark files
-      - name: Checkout PR branch
-        uses: actions/checkout@v4
-        with:
-          clean: false
-
-      - name: Run hash check (both langs)
-        run: llm_benchmark ci-check
 
   unity-testsuite:
     needs: [lints]
@@ -1093,7 +1060,7 @@ jobs:
         with:
           node-version: '22'
 
-      - uses: pnpm/action-setup@v4
+      - uses: ./.github/actions/setup-pnpm
         with:
           run_install: true
 
@@ -1130,7 +1097,7 @@ jobs:
         with:
           node-version: 22
 
-      - uses: pnpm/action-setup@v4
+      - uses: ./.github/actions/setup-pnpm
         with:
           run_install: true
 
@@ -1242,7 +1209,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-      - uses: pnpm/action-setup@v4
+      - uses: ./.github/actions/setup-pnpm
         with:
           run_install: true
       - name: Verify that upgrade-version still works
