@@ -1,0 +1,15 @@
+[versions]
+kotlin = "2.3.21"
+
+[libraries]
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version = "1.10.2" }
+ktor-bom = { module = "io.ktor:ktor-bom", version = "3.4.3" }
+ktor-client-core = { module = "io.ktor:ktor-client-core" }
+ktor-client-websockets = { module = "io.ktor:ktor-client-websockets" }
+ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp" }
+ktor-client-darwin = { module = "io.ktor:ktor-client-darwin" }
+brotli-dec = { module = "org.brotli:dec", version = "0.1.2" }
+
+[plugins]
+kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlinAtomicfu = { id = "org.jetbrains.kotlin.plugin.atomicfu", version.ref = "kotlin" }

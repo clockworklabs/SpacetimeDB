@@ -6,8 +6,8 @@ use clap::Arg;
 use clap::ArgAction::{Set, SetTrue};
 use fs_err as fs;
 use spacetimedb_codegen::{
-    generate, private_table_names, CodegenOptions, CodegenVisibility, Csharp, Lang, OutputFile, Rust, TypeScript,
-    UnrealCpp, AUTO_GENERATED_PREFIX,
+    generate, private_table_names, CodegenOptions, CodegenVisibility, Csharp, Kotlin, Lang, OutputFile, Rust,
+    TypeScript, UnrealCpp, AUTO_GENERATED_PREFIX,
 };
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::{sats, RawModuleDef};
@@ -289,7 +289,7 @@ pub struct GenerateRunConfig {
     pub wasm_file: Option<PathBuf>,
     pub js_file: Option<PathBuf>,
     pub lang: Language,
-    pub namespace: String,
+    pub namespace: Option<String>,
     pub module_name: Option<String>,
     pub module_prefix: Option<String>,
     pub build_options: String,
@@ -316,9 +316,7 @@ fn prepare_generate_run_configs<'a>(
         let wasm_file = command_config.get_one::<PathBuf>("wasm_file")?;
         let js_file = command_config.get_one::<PathBuf>("js_file")?;
         let requested_lang = command_config.get_one::<Language>("language")?;
-        let namespace = command_config
-            .get_one::<String>("namespace")?
-            .unwrap_or_else(|| "SpacetimeDB.Types".to_string());
+        let namespace = command_config.get_one::<String>("namespace")?;
         let module_name = command_config.get_one::<String>("unreal_module_name")?;
         let module_prefix = command_config.get_one::<String>("module_prefix")?;
         let build_options = command_config
@@ -403,6 +401,9 @@ fn detect_default_language(client_project_dir: &Path) -> anyhow::Result<Language
     {
         return Ok(Language::Csharp);
     }
+    if client_project_dir.join("build.gradle.kts").exists() || client_project_dir.join("build.gradle").exists() {
+        return Ok(Language::Kotlin);
+    }
 
     anyhow::bail!(
         "Could not auto-detect client language from '{}'. \
@@ -417,13 +418,14 @@ fn language_cli_name(lang: Language) -> &'static str {
         Language::Csharp => "csharp",
         Language::TypeScript => "typescript",
         Language::UnrealCpp => "unrealcpp",
+        Language::Kotlin => "kotlin",
     }
 }
 
 pub fn default_out_dir_for_language(lang: Language) -> Option<PathBuf> {
     match lang {
         Language::Rust | Language::TypeScript => Some(PathBuf::from("src/module_bindings")),
-        Language::Csharp => Some(PathBuf::from("module_bindings")),
+        Language::Csharp | Language::Kotlin => Some(PathBuf::from("module_bindings")),
         Language::UnrealCpp => None,
     }
 }
@@ -467,8 +469,10 @@ pub async fn run_prepared_generate_configs(
             run.project_path.display()
         );
 
-        if namespace_from_cli && run.lang != Language::Csharp {
-            return Err(anyhow::anyhow!("--namespace is only supported with --lang csharp"));
+        if namespace_from_cli && !matches!(run.lang, Language::Csharp | Language::Kotlin) {
+            return Err(anyhow::anyhow!(
+                "--namespace is only supported with --lang csharp or --lang kotlin"
+            ));
         }
 
         let module: ModuleDef = if let Some(paths) = &json_module {
@@ -509,10 +513,11 @@ pub async fn run_prepared_generate_configs(
 
         let csharp_lang;
         let unreal_cpp_lang;
+        let kotlin_lang;
         let gen_lang = match run.lang {
             Language::Csharp => {
                 csharp_lang = Csharp {
-                    namespace: &run.namespace,
+                    namespace: run.namespace.as_deref().unwrap_or_else(|| "SpacetimeDB.Types"),
                 };
                 &csharp_lang as &dyn Lang
             }
@@ -526,6 +531,17 @@ pub async fn run_prepared_generate_configs(
             }
             Language::Rust => &Rust,
             Language::TypeScript => &TypeScript,
+            Language::Kotlin => {
+                let pkg = if namespace_from_cli {
+                    run.namespace.as_deref().unwrap()
+                } else {
+                    "spacetimedb"
+                };
+                kotlin_lang = Kotlin {
+                    package_name: pkg,
+                };
+                &kotlin_lang as &dyn Lang
+            }
         };
 
         for OutputFile { filename, code } in generate(&module, gen_lang, &options) {
@@ -688,11 +704,18 @@ pub enum Language {
     Rust,
     #[serde(alias = "uecpp", alias = "ue5cpp", alias = "unreal")]
     UnrealCpp,
+    Kotlin,
 }
 
 impl clap::ValueEnum for Language {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Csharp, Self::TypeScript, Self::Rust, Self::UnrealCpp]
+        &[
+            Self::Csharp,
+            Self::TypeScript,
+            Self::Rust,
+            Self::UnrealCpp,
+            Self::Kotlin,
+        ]
     }
     fn to_possible_value(&self) -> Option<PossibleValue> {
         Some(match self {
@@ -700,6 +723,7 @@ impl clap::ValueEnum for Language {
             Self::TypeScript => clap::builder::PossibleValue::new("typescript").aliases(["ts", "TS"]),
             Self::Rust => clap::builder::PossibleValue::new("rust").aliases(["rs", "RS"]),
             Self::UnrealCpp => PossibleValue::new("unrealcpp").aliases(["uecpp", "ue5cpp", "unreal"]),
+            Self::Kotlin => PossibleValue::new("kotlin").aliases(["kt", "Kotlin"]),
         })
     }
 }
@@ -712,6 +736,7 @@ impl Language {
             Language::Csharp => "C#",
             Language::TypeScript => "TypeScript",
             Language::UnrealCpp => "Unreal C++",
+            Language::Kotlin => "Kotlin",
         }
     }
 
@@ -724,6 +749,9 @@ impl Language {
             }
             Language::UnrealCpp => {
                 // TODO: implement formatting.
+            }
+            Language::Kotlin => {
+                // TODO: implement formatting via ktlint or similar.
             }
         }
 
