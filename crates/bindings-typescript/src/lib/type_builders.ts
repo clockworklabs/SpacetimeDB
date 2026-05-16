@@ -36,12 +36,27 @@ export type Infer<T> = T extends RowObj
     ? InferTypeOfTypeBuilder<T>
     : never;
 
+type OptionalRowKeys<T extends RowObj> = {
+  [K in keyof T & string]-?: CollapseColumn<T[K]> extends OptionBuilder<any>
+    ? K
+    : never;
+}[keyof T & string];
+
+type RequiredRowKeys<T extends RowObj> = Exclude<
+  keyof T & string,
+  OptionalRowKeys<T>
+>;
+
 /**
  * Helper type to extract the type of a row from an object.
  */
-export type InferTypeOfRow<T extends RowObj> = {
-  [K in keyof T & string]: InferTypeOfTypeBuilder<CollapseColumn<T[K]>>;
-};
+export type InferTypeOfRow<T extends RowObj> = Prettify<
+  {
+    [K in RequiredRowKeys<T>]: InferTypeOfTypeBuilder<CollapseColumn<T[K]>>;
+  } & {
+    [K in OptionalRowKeys<T>]?: InferTypeOfTypeBuilder<CollapseColumn<T[K]>>;
+  }
+>;
 
 /**
  * Helper type to extract the type of a row from an object.
