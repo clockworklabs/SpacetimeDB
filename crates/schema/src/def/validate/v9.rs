@@ -202,8 +202,13 @@ impl ModuleValidatorV9<'_> {
                 })
             })?;
 
-        let mut table_in_progress =
-            TableValidator::new(raw_table_name.clone(), product_type_ref, product_type, &mut self.core)?;
+        let mut table_in_progress = TableValidator::new(
+            raw_table_name.clone(),
+            product_type_ref,
+            product_type,
+            &mut self.core,
+            CoreValidator::resolve_table_ident,
+        )?;
 
         let table_ident = table_in_progress.table_ident.clone();
 
@@ -929,6 +934,7 @@ impl CoreValidator<'_> {
 /// 2. Insert view names into the global namespace.
 pub(crate) struct ViewValidator<'a, 'b> {
     inner: TableValidator<'a, 'b>,
+    view_name: Identifier,
     params: &'a ProductType,
     params_for_generate: &'a [(Identifier, AlgebraicTypeUse)],
 }
@@ -942,8 +948,12 @@ impl<'a, 'b> ViewValidator<'a, 'b> {
         params_for_generate: &'a [(Identifier, AlgebraicTypeUse)],
         module_validator: &'a mut CoreValidator<'b>,
     ) -> Result<Self> {
+        let view_name = module_validator.resolve_function_ident(raw_name.clone())?;
         Ok(Self {
-            inner: TableValidator::new(raw_name, product_type_ref, product_type, module_validator)?,
+            inner: TableValidator::new(raw_name, product_type_ref, product_type, module_validator, |_, _| {
+                Ok(view_name.clone())
+            })?,
+            view_name,
             params,
             params_for_generate,
         })
@@ -968,25 +978,14 @@ impl<'a, 'b> ViewValidator<'a, 'b> {
                 .unwrap_or_else(|| RawIdentifier::new(format!("param_{}", col_id))),
         );
 
-        // This error will be created multiple times if the view name is invalid,
-        // but we sort and deduplicate the error stream afterwards,
-        // so it isn't a huge deal.
-        //
-        // This is necessary because we require `ErrorStream` to be nonempty.
-        // We need to put something in there if the view name is invalid.
-        let view_name = self
-            .inner
-            .module_validator
-            .resolve_identifier_with_case(self.inner.raw_name.clone());
-
-        let (name, view_name) = (name, view_name).combine_errors()?;
+        let name = name?;
 
         Ok(ViewParamDef {
             name,
             ty: column.algebraic_type.clone(),
             ty_for_generate: ty_for_generate.clone(),
             col_id,
-            view_name,
+            view_name: self.view_name.clone(),
         })
     }
 
@@ -1005,7 +1004,11 @@ impl<'a, 'b> ViewValidator<'a, 'b> {
     }
 }
 
-/// A partially validated table.
+/// A partially validated table-shaped definition.
+///
+/// This is also used by [`ViewValidator`]. Tables and views do not resolve
+/// their source names in the same namespace, so callers provide the
+/// appropriate name resolver.
 pub(crate) struct TableValidator<'a, 'b> {
     pub(crate) module_validator: &'a mut CoreValidator<'b>,
     raw_name: RawIdentifier,
@@ -1021,8 +1024,9 @@ impl<'a, 'b> TableValidator<'a, 'b> {
         product_type_ref: AlgebraicTypeRef,
         product_type: &'a ProductType,
         module_validator: &'a mut CoreValidator<'b>,
+        resolve_name: impl FnOnce(&CoreValidator<'b>, RawIdentifier) -> Result<Identifier>,
     ) -> Result<Self> {
-        let table_ident = module_validator.resolve_table_ident(raw_name.clone())?;
+        let table_ident = resolve_name(module_validator, raw_name.clone())?;
         Ok(Self {
             raw_name,
             product_type_ref,
