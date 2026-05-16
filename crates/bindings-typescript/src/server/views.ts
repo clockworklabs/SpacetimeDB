@@ -143,6 +143,12 @@ export function registerView<
     ? AnonymousViewFn<S, Params, Ret>
     : ViewFn<S, Params, Ret>
 ) {
+  // If the function isn't named (e.g. `function foobar() {}`), give it the same
+  // name as the reducer so that it's clear what it is in in backtraces.
+  if (!fn.name) {
+    Object.defineProperty(fn, 'name', { value: exportName, writable: false });
+  }
+
   const paramsBuilder = new RowBuilder(params, toPascalCase(exportName));
 
   // Register return types if they are product types

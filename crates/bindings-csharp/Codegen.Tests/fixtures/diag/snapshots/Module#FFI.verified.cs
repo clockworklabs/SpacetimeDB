@@ -2057,6 +2057,14 @@ sealed class view_def_ienumerable_return_from_filterViewDispatcher
     public byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
+    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
+
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+    )]
+    private static byte[] __spacetimedb_begin_short_backtrace(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
     )
     {
         try
@@ -2107,6 +2115,14 @@ sealed class view_def_ienumerable_return_from_iterViewDispatcher
     public byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
+    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
+
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+    )]
+    private static byte[] __spacetimedb_begin_short_backtrace(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
     )
     {
         try
@@ -2151,6 +2167,14 @@ sealed class view_def_no_contextViewDispatcher : global::SpacetimeDB.Internal.IV
     public byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
+    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
+
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+    )]
+    private static byte[] __spacetimedb_begin_short_backtrace(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
     )
     {
         try
@@ -2191,6 +2215,14 @@ sealed class view_def_no_publicViewDispatcher : global::SpacetimeDB.Internal.IVi
         );
 
     public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
+    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
+
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+    )]
+    private static byte[] __spacetimedb_begin_short_backtrace(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
     )
@@ -2235,6 +2267,14 @@ sealed class view_def_wrong_contextViewDispatcher : global::SpacetimeDB.Internal
     public byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
+    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
+
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+    )]
+    private static byte[] __spacetimedb_begin_short_backtrace(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
     )
     {
         try
@@ -2273,6 +2313,14 @@ sealed class view_def_wrong_returnViewDispatcher : global::SpacetimeDB.Internal.
         );
 
     public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
+    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
+
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+    )]
+    private static byte[] __spacetimedb_begin_short_backtrace(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
     )
@@ -2314,6 +2362,14 @@ sealed class view_no_deleteViewDispatcher : global::SpacetimeDB.Internal.IView
         );
 
     public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
+    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
+
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+    )]
+    private static byte[] __spacetimedb_begin_short_backtrace(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
     )
@@ -2361,6 +2417,14 @@ sealed class view_no_insertViewDispatcher : global::SpacetimeDB.Internal.IView
     public byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
+    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
+
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+    )]
+    private static byte[] __spacetimedb_begin_short_backtrace(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
     )
     {
         try
@@ -2404,6 +2468,14 @@ sealed class view_def_index_no_mutationViewDispatcher : global::SpacetimeDB.Inte
         );
 
     public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IAnonymousViewContext ctx
+    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
+
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+    )]
+    private static byte[] __spacetimedb_begin_short_backtrace(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IAnonymousViewContext ctx
     )
@@ -2451,6 +2523,14 @@ sealed class view_def_no_anon_identityViewDispatcher : global::SpacetimeDB.Inter
     public byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IAnonymousViewContext ctx
+    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
+
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+    )]
+    private static byte[] __spacetimedb_begin_short_backtrace(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IAnonymousViewContext ctx
     )
     {
         try
@@ -2494,6 +2574,14 @@ sealed class view_def_no_iterViewDispatcher : global::SpacetimeDB.Internal.IAnon
         );
 
     public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IAnonymousViewContext ctx
+    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
+
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+    )]
+    private static byte[] __spacetimedb_begin_short_backtrace(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IAnonymousViewContext ctx
     )
@@ -2541,6 +2629,14 @@ sealed class view_def_returns_not_a_spacetime_typeViewDispatcher
         );
 
     public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IAnonymousViewContext ctx
+    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
+
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+    )]
+    private static byte[] __spacetimedb_begin_short_backtrace(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IAnonymousViewContext ctx
     )
@@ -2985,7 +3081,13 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
+            __spacetimedb_begin_short_backtrace(reader, ctx);
+
+        [System.Runtime.CompilerServices.MethodImpl(
+            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+        )]
+        private static void __spacetimedb_begin_short_backtrace(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Reducers.__ReducerWithReservedPrefix((SpacetimeDB.ReducerContext)ctx);
         }
@@ -3008,7 +3110,13 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
+            __spacetimedb_begin_short_backtrace(reader, ctx);
+
+        [System.Runtime.CompilerServices.MethodImpl(
+            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+        )]
+        private static void __spacetimedb_begin_short_backtrace(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             TestScheduleIssues.DummyScheduledReducer(
                 (SpacetimeDB.ReducerContext)ctx,
@@ -3032,7 +3140,13 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
+            __spacetimedb_begin_short_backtrace(reader, ctx);
+
+        [System.Runtime.CompilerServices.MethodImpl(
+            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+        )]
+        private static void __spacetimedb_begin_short_backtrace(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Reducers.OnReducerWithReservedPrefix((SpacetimeDB.ReducerContext)ctx);
         }
@@ -3053,7 +3167,13 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => SpacetimeDB.Internal.Lifecycle.Init;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
+            __spacetimedb_begin_short_backtrace(reader, ctx);
+
+        [System.Runtime.CompilerServices.MethodImpl(
+            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+        )]
+        private static void __spacetimedb_begin_short_backtrace(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Reducers.TestDuplicateReducerKind1((SpacetimeDB.ReducerContext)ctx);
         }
@@ -3074,7 +3194,13 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => SpacetimeDB.Internal.Lifecycle.Init;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
+            __spacetimedb_begin_short_backtrace(reader, ctx);
+
+        [System.Runtime.CompilerServices.MethodImpl(
+            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+        )]
+        private static void __spacetimedb_begin_short_backtrace(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Reducers.TestDuplicateReducerKind2((SpacetimeDB.ReducerContext)ctx);
         }
@@ -3095,7 +3221,13 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
+            __spacetimedb_begin_short_backtrace(reader, ctx);
+
+        [System.Runtime.CompilerServices.MethodImpl(
+            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+        )]
+        private static void __spacetimedb_begin_short_backtrace(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Reducers.TestDuplicateReducerName((SpacetimeDB.ReducerContext)ctx);
         }
@@ -3116,7 +3248,13 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
+            __spacetimedb_begin_short_backtrace(reader, ctx);
+
+        [System.Runtime.CompilerServices.MethodImpl(
+            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+        )]
+        private static void __spacetimedb_begin_short_backtrace(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Reducers.TestReducerReturnType((SpacetimeDB.ReducerContext)ctx);
         }
@@ -3137,7 +3275,13 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
+            __spacetimedb_begin_short_backtrace(reader, ctx);
+
+        [System.Runtime.CompilerServices.MethodImpl(
+            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+        )]
+        private static void __spacetimedb_begin_short_backtrace(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             throw new System.InvalidOperationException();
         }
