@@ -111,6 +111,91 @@ function App() {
 }
 ```
 
+#### SolidJS Usage
+
+This module also includes SolidJS primitives to subscribe to tables under the `spacetimedb/solid` subpath. The SolidJS integration uses Solid's fine-grained reactivity system (`createSignal`, `createStore`, `createMemo`, `createComputed`) for optimal rendering performance. Reactive updates are scoped to only the data that actually changed.
+
+In order to use SpacetimeDB SolidJS primitives in your project, first add a `SpacetimeDBProvider` at the top of your component hierarchy:
+
+```tsx
+import { SpacetimeDBProvider } from 'spacetimedb/solid';
+import { DbConnection, tables } from './module_bindings';
+
+const connectionBuilder = DbConnection.builder()
+  .withUri('ws://localhost:3000')
+  .withDatabaseName('MODULE_NAME')
+  .withLightMode(true)
+  .onDisconnect(() => {
+    console.log('disconnected');
+  })
+  .onConnectError(() => {
+    console.log('client_error');
+  })
+  .onConnect((conn, identity, _token) => {
+    console.log(
+      'Connected to SpacetimeDB with identity:',
+      identity.toHexString()
+    );
+
+    conn.subscriptionBuilder().subscribe(tables.player);
+  })
+  .withToken('TOKEN');
+
+render(() => (
+  <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
+    <App />
+  </SpacetimeDBProvider>
+), document.getElementById('root')!);
+```
+
+Once you add a `SpacetimeDBProvider` to your hierarchy, you can use the SpacetimeDB SolidJS primitives in your components:
+
+```tsx
+import { useSpacetimeDB, useTable, useReducer, useProcedure } from 'spacetimedb/solid';
+
+function App() {
+  // Access the connection state (identity, token, connection error, etc.)
+  const conn = useSpacetimeDB();
+
+  // Subscribe to a table — returns a reactive store of rows and an isReady accessor
+  const [rows, isReady] = useTable(() => tables.message);
+
+  // Subscribe to a filtered view
+  const [onlineUsers, onlineReady] = useTable(
+    () => tables.user.where(r => r.online.eq(true)),
+    {
+      onInsert: (row) => console.log('User came online:', row),
+      onDelete: (row) => console.log('User went offline:', row),
+    }
+  );
+
+  // Call a reducer — queues calls made before the connection is ready
+  const sendMessage = useReducer(reducers.sendMessage);
+
+  // Call a procedure — queues calls made before the connection is ready
+  const getResult = useProcedure(procedures.getSomeResult);
+
+  return (
+    <div>
+      <Show when={isReady()} fallback={<p>Loading...</p>}>
+        <p>{rows.length} messages</p>
+        <For each={rows}>
+          {(row) => <div>{row.text}</div>}
+        </For>
+      </Show>
+      <button onClick={() => sendMessage('hello')}>Send</button>
+    </div>
+  );
+}
+```
+
+**Key differences from the React API:**
+
+- `useTable` takes a _getter function_ `() => Query<TableDef>` instead of a plain value, so the query can be reactive and update when signals change.
+- `useTable` returns `[rows, isReady]` where `rows` is a Solid reactive store and `isReady` is an accessor function `() => boolean`.
+- The `enabled` callback option is a getter `() => boolean` instead of a plain boolean, allowing it to depend on reactive state.
+- `useReducer` and `useProcedure` queue calls made before the connection is ready and flush them once connected.
+
 ### Developer notes
 
 To run the tests, do:

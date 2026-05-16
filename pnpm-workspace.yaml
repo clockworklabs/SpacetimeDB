@@ -9,6 +9,7 @@ packages:
   - 'templates/tanstack-ts'
   - 'templates/browser-ts'
   - 'templates/svelte-ts'
+  - 'templates/solid-ts'
   - 'templates/angular-ts'
   - 'templates/nuxt-ts'
   - 'templates/remix-ts'

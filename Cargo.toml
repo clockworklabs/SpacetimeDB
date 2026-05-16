@@ -69,6 +69,7 @@ members = [
   "tools/xtask-llm-benchmark",
   "crates/bindings-typescript/test-app/server",
   "crates/bindings-typescript/test-react-router-app/server",
+  "crates/bindings-typescript/test-solid-router/server",
   "crates/query-builder",
 ]
 default-members = ["crates/cli", "crates/standalone", "crates/update"]

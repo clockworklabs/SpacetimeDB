@@ -10088,6 +10088,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "typescript-test-solid-router-app"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "log",
+ "spacetimedb 2.2.0",
+]
+
+[[package]]
 name = "ucd-trie"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
