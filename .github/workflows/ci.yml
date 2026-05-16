@@ -80,7 +80,7 @@ jobs:
         with:
           node-version: 18
 
-      - uses: pnpm/action-setup@v4
+      - uses: ./.github/actions/setup-pnpm
         with:
           run_install: true
 
@@ -221,7 +221,7 @@ jobs:
         with:
           node-version: 22
 
-      - uses: pnpm/action-setup@v4
+      - uses: ./.github/actions/setup-pnpm
         with:
           run_install: true
 
@@ -297,7 +297,7 @@ jobs:
         with:
           node-version: 22
 
-      - uses: pnpm/action-setup@v4
+      - uses: ./.github/actions/setup-pnpm
         with:
           run_install: true
 
@@ -524,7 +524,7 @@ jobs:
         with:
           node-version: 22
 
-      - uses: pnpm/action-setup@v4
+      - uses: ./.github/actions/setup-pnpm
         with:
           run_install: true
 
@@ -1192,7 +1192,7 @@ jobs:
         with:
           node-version: '22'
 
-      - uses: pnpm/action-setup@v4
+      - uses: ./.github/actions/setup-pnpm
         with:
           run_install: true
 
@@ -1229,7 +1229,7 @@ jobs:
         with:
           node-version: 22
 
-      - uses: pnpm/action-setup@v4
+      - uses: ./.github/actions/setup-pnpm
         with:
           run_install: true
 
@@ -1341,7 +1341,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-      - uses: pnpm/action-setup@v4
+      - uses: ./.github/actions/setup-pnpm
         with:
           run_install: true
       - name: Verify that upgrade-version still works
