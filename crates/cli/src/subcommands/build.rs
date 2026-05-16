@@ -39,6 +39,12 @@ pub fn cli() -> clap::Command {
                 .action(SetTrue)
                 .help("Builds the module using debug instead of release (intended to speed up local iteration, not recommended for CI)"),
         )
+        .arg(
+            Arg::new("dotnet_version")
+                .long("dotnet-version")
+                .value_name("VERSION")
+                .help("Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.")
+        )
 }
 
 pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(PathBuf, &'static str), anyhow::Error> {
@@ -60,8 +66,18 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(PathBuf, &'stat
     };
     let build_debug = args.get_flag("debug");
     let features = features.cloned();
+    let dotnet_version = args.get_one::<String>("dotnet_version");
 
-    run_build(module_path, lint_dir, build_debug, features)
+    // Set dotnet version env var if explicitly specified
+    if let Some(version) = dotnet_version {
+        // SAFETY: We are single-threaded at this point and no other code is reading
+        // this environment variable concurrently.
+        unsafe {
+            std::env::set_var("SPACETIMEDB_DOTNET_VERSION", version);
+        }
+    }
+
+    run_build(module_path, lint_dir, build_debug, features, false)
 }
 
 pub fn run_build(
@@ -69,6 +85,7 @@ pub fn run_build(
     lint_dir: Option<PathBuf>,
     build_debug: bool,
     features: Option<OsString>,
+    native_aot: bool,
 ) -> Result<(PathBuf, &'static str), anyhow::Error> {
     // Create the project path, or make sure the target project path is empty.
     if module_path.exists() {
@@ -85,7 +102,13 @@ pub fn run_build(
         ));
     }
 
-    let result = crate::tasks::build(&module_path, lint_dir.as_deref(), build_debug, features.as_ref())?;
+    let result = crate::tasks::build(
+        &module_path,
+        lint_dir.as_deref(),
+        build_debug,
+        features.as_ref(),
+        native_aot,
+    )?;
     println!("Build finished successfully.");
 
     Ok(result)
@@ -94,6 +117,7 @@ pub fn run_build(
 pub async fn exec_with_argstring(
     project_path: &Path,
     arg_string: &str,
+    native_aot: bool,
 ) -> Result<(PathBuf, &'static str), anyhow::Error> {
     let argv = exec_with_argstring_argv(project_path, arg_string);
     let arg_matches = cli().get_matches_from(argv);
@@ -111,7 +135,7 @@ pub async fn exec_with_argstring(
     };
     let build_debug = arg_matches.get_flag("debug");
 
-    run_build(module_path, lint_dir, build_debug, features)
+    run_build(module_path, lint_dir, build_debug, features, native_aot)
 }
 
 fn exec_with_argstring_argv(project_path: &Path, arg_string: &str) -> Vec<OsString> {

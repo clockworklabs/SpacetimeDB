@@ -94,6 +94,26 @@ jobs:
           ./emsdk install 4.0.21
           ./emsdk activate 4.0.21
 
+      # Install WASI SDK for .NET 10 NativeAOT-LLVM compilation.
+      - name: Install WASI SDK (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          WASI_SDK_VERSION="29"
+          WASI_SDK_PATH="/opt/wasi-sdk"
+          if [ -d "$WASI_SDK_PATH" ] && [ -f "$WASI_SDK_PATH/bin/clang" ]; then
+            echo "WASI SDK already installed at $WASI_SDK_PATH"
+          else
+            echo "Installing WASI SDK version $WASI_SDK_VERSION..."
+            wget -q "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VERSION}/wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux.tar.gz"
+            tar -xzf "wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux.tar.gz"
+            sudo mv "wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux" "$WASI_SDK_PATH"
+            rm -f "wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux.tar.gz"
+            echo "WASI SDK installed successfully"
+          fi
+          echo "WASI_SDK_PATH=$WASI_SDK_PATH" >> "$GITHUB_ENV"
+          echo "Using WASI SDK at: $WASI_SDK_PATH"
+
       - name: Install emscripten (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -102,6 +122,29 @@ jobs:
           cd $env:USERPROFILE\emsdk
           .\emsdk install 4.0.21
           .\emsdk activate 4.0.21
+
+      # Install WASI SDK for .NET 10 NativeAOT-LLVM compilation.
+      - name: Install WASI SDK (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $wasiSdkVersion = "25"
+          $wasiDir = "$env:USERPROFILE\.wasi-sdk"
+          $clangPath = Join-Path $wasiDir "bin\clang.exe"
+          if (Test-Path $clangPath) {
+            Write-Host "WASI SDK already installed at $wasiDir"
+          } else {
+            Write-Host "Installing WASI SDK version $wasiSdkVersion..."
+            $wasiUrl = "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${wasiSdkVersion}/wasi-sdk-${wasiSdkVersion}.0-x86_64-windows.tar.gz"
+            Invoke-WebRequest -Uri $wasiUrl -OutFile "$env:TEMP\wasi-sdk.tar.gz"
+            New-Item -ItemType Directory -Force -Path $wasiDir | Out-Null
+            & "$env:SystemRoot\System32\tar.exe" -xzf "$env:TEMP\wasi-sdk.tar.gz" -C $wasiDir --strip-components=1
+            Remove-Item "$env:TEMP\wasi-sdk.tar.gz" -Force -ErrorAction SilentlyContinue
+            Write-Host "WASI SDK installed successfully"
+          }
+          echo "WASI_SDK_PATH=$wasiDir" >> $env:GITHUB_ENV
+          Write-Host "Using WASI SDK at: $wasiDir"
 
       - name: Install psql (Windows)
         if: runner.os == 'Windows'
@@ -123,9 +166,14 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
 
           cd modules
-          # the sdk-manifests on windows-latest are messed up, so we need to update them
           dotnet workload config --update-mode manifests
-          dotnet workload update
+          dotnet workload update --from-previous-sdk
+          # Explicitly install wasi-experimental for .NET 8 SDK (needed for test_build_csharp_module)
+          # Create temp global.json to target .NET 8 SDK for workload install
+          $sdk8Json = '{"sdk":{"version":"8.0.400","rollForward":"latestFeature"}}'
+          $sdk8Json | Out-File -FilePath global.json -Encoding utf8
+          dotnet workload install wasi-experimental
+          Remove-Item global.json
 
       - name: Override NuGet packages
         shell: bash
@@ -234,6 +282,25 @@ jobs:
           cd ~/emsdk
           ./emsdk install 4.0.21
           ./emsdk activate 4.0.21
+
+      # Install WASI SDK for .NET 10 NativeAOT-LLVM compilation (idempotent - checks if already exists).
+      - name: Install WASI SDK
+        shell: bash
+        run: |
+          WASI_SDK_VERSION="29"
+          WASI_SDK_PATH="/opt/wasi-sdk"
+          if [ -d "$WASI_SDK_PATH" ] && [ -f "$WASI_SDK_PATH/bin/clang" ]; then
+            echo "WASI SDK already installed at $WASI_SDK_PATH"
+          else
+            echo "Installing WASI SDK version $WASI_SDK_VERSION..."
+            wget -q "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VERSION}/wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux.tar.gz"
+            tar -xzf "wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux.tar.gz"
+            sudo mv "wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux" "$WASI_SDK_PATH"
+            rm -f "wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux.tar.gz"
+            echo "WASI SDK installed successfully"
+          fi
+          echo "WASI_SDK_PATH=$WASI_SDK_PATH" >> "$GITHUB_ENV"
+          echo "Using WASI SDK at: $WASI_SDK_PATH"
 
       - name: Install wasm-bindgen CLI
         run: |
@@ -727,7 +794,57 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Install .NET workloads
+        run: |
+          dotnet workload config --update-mode manifests
+          dotnet workload update --from-previous-sdk
+          # Explicitly install wasi-experimental for .NET 8 SDK (needed for test_build_csharp_module)
+          # Create temp global.json to target .NET 8 SDK for workload install
+          echo '{"sdk":{"version":"8.0.400","rollForward":"latestFeature"}}' > global.json
+          dotnet workload install wasi-experimental
+          rm global.json
+          # Reinstall wasi-experimental for .NET 10 SDK: the .NET 8 install above triggers garbage
+          # collection that removes the .NET 10 workload packs installed by `workload update`.
+          # The regression-test server targets net10.0, so we need the .NET 10 packs restored.
+          dotnet workload install wasi-experimental
+
+      # Install native WASI SDK toolchain (needed by WasiApp.Native.targets to compile native files).
+      - name: Install WASI SDK
+        run: |
+          WASI_SDK_VERSION="29"
+          WASI_SDK_PATH="/opt/wasi-sdk"
+          if [ -d "$WASI_SDK_PATH" ] && [ -f "$WASI_SDK_PATH/bin/clang" ]; then
+            echo "WASI SDK already installed at $WASI_SDK_PATH"
+          else
+            echo "Installing WASI SDK version $WASI_SDK_VERSION..."
+            wget -q "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VERSION}/wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux.tar.gz"
+            tar -xzf "wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux.tar.gz"
+            sudo mv "wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux" "$WASI_SDK_PATH"
+            rm -f "wasi-sdk-${WASI_SDK_VERSION}.0-x86_64-linux.tar.gz"
+            echo "WASI SDK installed successfully"
+          fi
+          echo "WASI_SDK_PATH=$WASI_SDK_PATH" >> "$GITHUB_ENV"
+          echo "Using WASI SDK at: $WASI_SDK_PATH"
+
+      # Ensure global.json files exist for regression tests (symlinks may not work in CI)
+      - name: Fix global.json symlinks
+        run: |
+          for dir in sdks/csharp/examples~/regression-tests/server \
+                     sdks/csharp/examples~/regression-tests/republishing/server-initial \
+                     sdks/csharp/examples~/regression-tests/republishing/server-republish; do
+            if [ -L "$dir/global.json" ] && [ ! -f "$dir/global.json" ]; then
+              echo "Fixing broken symlink at $dir/global.json"
+              rm -f "$dir/global.json"
+            fi
+            if [ ! -f "$dir/global.json" ]; then
+              echo "Creating $dir/global.json"
+              echo '{"sdk":{"version":"10.0.100","rollForward":"latestMinor"}}' > "$dir/global.json"
+            fi
+          done
+
       - name: Override NuGet packages
+        env:
+          EXPERIMENTAL_WASM_AOT: 1
         run: |
           dotnet pack crates/bindings-csharp/BSATN.Runtime
           dotnet pack crates/bindings-csharp/Runtime
@@ -822,6 +939,21 @@ jobs:
       - name: Run regression tests
         run: |
           bash sdks/csharp/tools~/run-regression-tests.sh
+          # Restore global.json symlinks (we replaced them with files to work around .NET 10 SDK bug)
+          # server is 5 levels deep from root, republishing dirs are 6 levels deep
+          if [ -f sdks/csharp/examples~/regression-tests/server/global.json ] && [ ! -L sdks/csharp/examples~/regression-tests/server/global.json ]; then
+            echo "Restoring symlink at server/global.json"
+            rm -f sdks/csharp/examples~/regression-tests/server/global.json
+            ln -s ../../../../../global.json sdks/csharp/examples~/regression-tests/server/global.json
+          fi
+          for dir in sdks/csharp/examples~/regression-tests/republishing/server-initial \
+                     sdks/csharp/examples~/regression-tests/republishing/server-republish; do
+            if [ -f "$dir/global.json" ] && [ ! -L "$dir/global.json" ]; then
+              echo "Restoring symlink at $dir/global.json"
+              rm -f "$dir/global.json"
+              ln -s ../../../../../../global.json "$dir/global.json"
+            fi
+          done
           tools/check-diff.sh sdks/csharp/examples~/regression-tests || {
               echo 'Error: Bindings are dirty. Please run `sdks/csharp/tools~/gen-regression-tests.sh`.'
               exit 1

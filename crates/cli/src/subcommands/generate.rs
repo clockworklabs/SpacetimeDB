@@ -486,7 +486,7 @@ pub async fn run_prepared_generate_configs(
                 println!("Skipping build. Instead we are inspecting {}", path.display());
                 path.clone()
             } else {
-                let (path, _) = build::exec_with_argstring(&run.project_path, &run.build_options).await?;
+                let (path, _) = build::exec_with_argstring(&run.project_path, &run.build_options, false).await?;
                 path
             };
             let spinner = indicatif::ProgressBar::new_spinner();

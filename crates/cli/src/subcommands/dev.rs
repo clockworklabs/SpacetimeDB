@@ -1011,7 +1011,7 @@ async fn generate_build_and_publish(
 ) -> Result<(), anyhow::Error> {
     println!("{}", "Building...".cyan());
     let (_path_to_program, _host_type) =
-        tasks::build(spacetimedb_dir, Some(Path::new("src")), false, None).context("Failed to build project")?;
+        tasks::build(spacetimedb_dir, Some(Path::new("src")), false, None, false).context("Failed to build project")?;
     println!("{}", "Build complete!".green());
 
     // For TypeScript client, always update .env.local with the database name

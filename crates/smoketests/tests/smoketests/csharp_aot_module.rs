@@ -1,30 +1,54 @@
 #![allow(clippy::disallowed_macros)]
 use spacetimedb_guard::ensure_binaries_built;
-use spacetimedb_smoketests::{have_emscripten, require_dotnet, workspace_root};
+use spacetimedb_smoketests::{require_dotnet, workspace_root};
 use std::process::Command;
 
+/// Detect the major version of the active .NET SDK.
+fn dotnet_major_version() -> Option<u8> {
+    Command::new("dotnet")
+        .arg("--version")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| {
+            let v = String::from_utf8_lossy(&o.stdout);
+            v.trim().split('.').next()?.parse::<u8>().ok()
+        })
+}
+
 /// Test NativeAOT-LLVM build path for C# modules.
-/// Requires emscripten to be installed.
-/// Only runs on Windows since runtime.linux-x64.Microsoft.DotNet.ILCompiler.LLVM
-/// is not available on the dotnet-experimental NuGet feed.
+///
+/// Platform support depends on the .NET SDK version:
+/// - .NET 8 AOT: Windows-only (runtime.linux-x64.Microsoft.DotNet.ILCompiler.LLVM
+///   8.0.0-* was never published to the dotnet-experimental NuGet feed).
+/// - .NET 10 AOT: Windows and Linux (both runtime packages are available).
+///
+/// NativeAOT-LLVM targets WASI and uses WASI SDK (clang), not the wasi-experimental
+/// workload or emscripten. WASI SDK is auto-downloaded by SpacetimeDB.Runtime.targets.
+/// The user must set EXPERIMENTAL_WASM_AOT=1 to enable the AOT build path.
 #[test]
 fn test_build_csharp_module_aot() {
     require_dotnet!();
 
-    // NativeAOT-LLVM is only available on Windows
-    if std::env::consts::OS != "windows" {
-        eprintln!("Skipping AOT test - NativeAOT-LLVM for .NET 8 only available on Windows");
+    let major = dotnet_major_version();
+    let target_framework = match major {
+        Some(v) if v >= 10 => "net10.0",
+        Some(8) => "net8.0",
+        _ => {
+            eprintln!("Skipping AOT test - unsupported .NET SDK version: {:?}", major);
+            return;
+        }
+    };
+
+    // .NET 8 ILCompiler.LLVM packages are only available for Windows.
+    // .NET 10+ ILCompiler.LLVM packages are available for Windows and Linux.
+    if target_framework == "net8.0" && std::env::consts::OS != "windows" {
+        eprintln!("Skipping .NET 8 AOT test - ILCompiler.LLVM 8.0.0-* only available on Windows");
         return;
     }
-
-    // Check for emscripten - fail with helpful message if not available
-    // Uses have_emscripten() which checks for both `emcc` and `emcc.bat` on Windows
-    if !have_emscripten() {
-        panic!(
-            "NativeAOT-LLVM test requires emscripten but it was not found.\n\
-             Install from: https://emscripten.org/docs/getting_started/downloads.html\n\
-             Or ensure `emcc` is in your PATH."
-        );
+    if std::env::consts::OS != "windows" && std::env::consts::OS != "linux" {
+        eprintln!("Skipping AOT test - NativeAOT-LLVM only available on Windows and Linux");
+        return;
     }
 
     let workspace = workspace_root();
@@ -57,7 +81,9 @@ fn test_build_csharp_module_aot() {
     // This ensures subsequent tests can clear NuGet locals without conflicts
     drop(nuget_packages_dir);
 
-    // Verify StdbModule.wasm was produced
-    let wasm_path = workspace.join("modules/sdk-test-cs/bin/Release/net8.0/wasi-wasm/publish/StdbModule.wasm");
+    // Verify StdbModule.wasm was produced at the correct TFM-specific output path
+    let wasm_path = workspace.join(format!(
+        "modules/sdk-test-cs/bin/Release/{target_framework}/wasi-wasm/publish/StdbModule.wasm"
+    ));
     assert!(wasm_path.exists(), "StdbModule.wasm not found at {:?}", wasm_path);
 }

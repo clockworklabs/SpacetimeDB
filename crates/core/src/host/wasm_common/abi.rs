@@ -8,6 +8,11 @@ pub fn determine_spacetime_abi<I>(
 ) -> Result<VersionTuple, AbiVersionError> {
     let it = imports.into_iter().filter_map(|imp| {
         let s = get_module(&imp);
+        if s == "bindings" {
+            // Net8 JIT (Mono WASM) imports everything under "bindings" rather than
+            // "spacetime_10.x". Treat this as ABI 10.0.
+            return Some(Ok(VersionTuple::new(10, 0)));
+        }
         s.strip_prefix(MODULE_PREFIX)
             .map(|ver| parse_abi_version(ver).ok_or_else(|| AbiVersionError::Parse { module: s.to_owned() }))
     });
