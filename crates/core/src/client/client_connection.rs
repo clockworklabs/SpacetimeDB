@@ -29,7 +29,7 @@ use spacetimedb_lib::Identity;
 use tokio::sync::mpsc::error::{SendError, TrySendError};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
-use tracing::{trace, warn};
+use tracing::trace;
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 pub enum Protocol {
@@ -154,11 +154,13 @@ impl DurableOffsetSupply for Arc<RelationalDB> {
 pub struct ClientConnectionReceiver {
     confirmed_reads: bool,
     channel: MeteredReceiver<ClientUpdate>,
-    current: Option<ClientUpdate>,
+    pending: Vec<ClientUpdate>,
     offset_supply: Box<dyn DurableOffsetSupply>,
 }
 
 impl ClientConnectionReceiver {
+    pub const DEFAULT_RECV_MANY_LIMIT: usize = 4096;
+
     fn new(
         confirmed_reads: bool,
         channel: MeteredReceiver<ClientUpdate>,
@@ -167,26 +169,28 @@ impl ClientConnectionReceiver {
         Self {
             confirmed_reads,
             channel,
-            current: None,
+            pending: Vec::new(),
             offset_supply: Box::new(offset_supply),
         }
     }
 
-    /// Receive the next message from this channel.
-    ///
-    /// If this method returns `None`, the channel is closed and no more messages
-    /// are in the internal buffers. No more messages can ever be received from
-    /// the channel.
+    #[cfg(test)]
+    pub(crate) async fn recv(&mut self) -> Option<OutboundMessage> {
+        let mut buf = Vec::with_capacity(1);
+        (self.recv_many(&mut buf, 1).await != 0).then(|| buf.remove(0))
+    }
+
+    /// Receive multiple messages from this channel.
     ///
     /// Messages are returned immediately if:
     ///
-    ///   - The (internal) [`ClientUpdate`] does not have a `tx_offset`
+    ///   - The [`ClientUpdate`] does not have a `tx_offset`
     ///     (such as for error messages).
-    ///   - The client hasn't requested confirmed reads (i.e.
-    ///     [`ClientConfig::confirmed_reads`] is `false`).
+    ///   - The client hasn't requested confirmed reads
+    ///     (i.e. [`ClientConfig::confirmed_reads`] is `false`).
     ///   - The database is configured to not persist transactions.
     ///
-    /// Otherwise, the update's `tx_offset` is compared against the module's
+    /// Otherwise, the last `tx_offset` in the batch is compared against the module's
     /// durable offset. If the durable offset is behind the `tx_offset`, the
     /// method waits until it catches up before returning the message.
     ///
@@ -198,49 +202,78 @@ impl ClientConnectionReceiver {
     ///
     /// This method is cancel safe, as long as `self` is not dropped.
     ///
-    /// If `recv` is used in a [`tokio::select!`] statement, it may get
+    /// If `recv_many` is used in a [`tokio::select!`] statement, it may get
     /// cancelled while waiting for the durable offset to catch up. At this
-    /// point, it has already received a value from the underlying channel.
-    /// This value is stored internally, so calling `recv` again will not lose
-    /// data.
-    //
-    // TODO: Can we make a cancel-safe `recv_many` with confirmed reads semantics?
-    pub async fn recv(&mut self) -> Option<OutboundMessage> {
-        let ClientUpdate { tx_offset, message } = match self.current.take() {
-            None => self.channel.recv().await?,
-            Some(update) => update,
-        };
-        if !self.confirmed_reads {
-            return Some(message);
+    /// point, it has already received values from the underlying channel.
+    /// These values are stored internally, so calling `recv_many` again will
+    /// not lose data.
+    pub async fn recv_many(&mut self, buf: &mut Vec<OutboundMessage>, max: usize) -> usize {
+        if max == 0 {
+            return 0;
         }
 
-        if let Some(tx_offset) = tx_offset {
-            match self.offset_supply.durable_offset() {
-                Ok(Some(mut durable)) => {
-                    // Store the current update in case we get cancelled while
-                    // waiting for the durable offset.
-                    self.current = Some(ClientUpdate {
-                        tx_offset: Some(tx_offset),
-                        message,
-                    });
-                    trace!("waiting for offset {tx_offset} to become durable");
-                    durable
-                        .wait_for(tx_offset)
-                        .await
-                        .inspect_err(|_| {
-                            warn!("database went away while waiting for durable offset");
-                        })
-                        .ok()?;
-                    self.current.take().map(|update| update.message)
-                }
-                // Database shut down or crashed.
-                Err(NoSuchModule) => None,
-                // In-memory database.
-                Ok(None) => Some(message),
-            }
-        } else {
-            Some(message)
+        if self.pending.is_empty() && self.channel.recv_many(&mut self.pending, max).await == 0 {
+            return 0;
         }
+
+        if !self.confirmed_reads {
+            return self.drain_pending(buf, max);
+        }
+
+        if !self.pending_update_has_offset() {
+            return self.drain_pending(buf, 1);
+        }
+
+        let (batch_len, wait_for_offset) = self.next_confirmed_reads_batch(max);
+
+        match self.offset_supply.durable_offset() {
+            Ok(Some(mut durable)) => {
+                trace!("waiting for offset {wait_for_offset} to become durable");
+                if durable.wait_for(wait_for_offset).await.is_err() {
+                    return 0;
+                }
+                self.drain_pending(buf, batch_len)
+            }
+            // Database shut down or crashed.
+            Err(NoSuchModule) => 0,
+            // In-memory database.
+            Ok(None) => self.drain_pending(buf, max),
+        }
+    }
+
+    fn next_confirmed_reads_batch(&self, max: usize) -> (usize, TxOffset) {
+        let mut wait_for_offset = 0;
+        let mut n = 0;
+        for tx_offset in self
+            .pending
+            .iter()
+            .take(max)
+            .take_while(|update| update.tx_offset.is_some())
+            .filter_map(|update| update.tx_offset)
+        {
+            if wait_for_offset > 0 {
+                debug_assert!(tx_offset > wait_for_offset);
+            }
+            n += 1;
+            wait_for_offset = tx_offset;
+        }
+        (n, wait_for_offset)
+    }
+
+    fn drain_pending(&mut self, buf: &mut Vec<OutboundMessage>, max: usize) -> usize {
+        let n = self.pending.len().min(max);
+        buf.reserve(n);
+        for update in self.pending.drain(..n) {
+            buf.push(update.message);
+        }
+        n
+    }
+
+    /// Does the next pending update have a tx offset?
+    ///
+    /// Assumes that [`Self::pending`] is not empty.
+    fn pending_update_has_offset(&self) -> bool {
+        self.pending.first().is_some_and(|update| update.tx_offset.is_some())
     }
 
     /// Close the receiver without dropping it.

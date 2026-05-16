@@ -23,8 +23,8 @@ use prometheus::{Histogram, IntGauge};
 use scopeguard::{defer, ScopeGuard};
 use serde::Deserialize;
 use spacetimedb::client::messages::{
-    serialize, serialize_v2, IdentityTokenMessage, InUseSerializeBuffer, SerializeBuffer, SwitchedServerMessage,
-    ToProtocol,
+    serialize, serialize_v2, serialize_v3, IdentityTokenMessage, InUseSerializeBuffer, SerializeBuffer,
+    SwitchedServerMessage, ToProtocol,
 };
 use spacetimedb::client::{
     ClientActorId, ClientConfig, ClientConnection, ClientConnectionReceiver, DataMessage, MessageExecutionError,
@@ -1064,13 +1064,14 @@ enum UnorderedWsMessage {
 /// Abstraction over [`ClientConnectionReceiver`], so tests can use a plain
 /// [`mpsc::Receiver`].
 trait Receiver<T> {
-    fn recv(&mut self) -> impl Future<Output = Option<T>> + Send;
+    fn recv_many(&mut self, buf: &mut Vec<T>, max: usize) -> impl Future<Output = Option<usize>> + Send;
     fn close(&mut self);
 }
 
 impl Receiver<OutboundMessage> for ClientConnectionReceiver {
-    async fn recv(&mut self) -> Option<OutboundMessage> {
-        ClientConnectionReceiver::recv(self).await
+    async fn recv_many(&mut self, buf: &mut Vec<OutboundMessage>, max: usize) -> Option<usize> {
+        let n = ClientConnectionReceiver::recv_many(self, buf, max).await;
+        (n != 0).then_some(n)
     }
 
     fn close(&mut self) {
@@ -1079,8 +1080,9 @@ impl Receiver<OutboundMessage> for ClientConnectionReceiver {
 }
 
 impl<T: Send> Receiver<T> for mpsc::Receiver<T> {
-    async fn recv(&mut self) -> Option<T> {
-        mpsc::Receiver::recv(self).await
+    async fn recv_many(&mut self, buf: &mut Vec<T>, max: usize) -> Option<usize> {
+        let n = mpsc::Receiver::recv_many(self, buf, max).await;
+        (n != 0).then_some(n)
     }
 
     fn close(&mut self) {
@@ -1148,6 +1150,8 @@ async fn ws_send_loop_inner<T, U, Encoder>(
     // The default frame size is 4KiB, hence we write in batches of 32KiB.
     const FRAME_BATCH_SIZE: usize = 8;
     let mut frames_batch = Vec::with_capacity(FRAME_BATCH_SIZE);
+    const MESSAGE_BATCH_SIZE: usize = ClientConnectionReceiver::DEFAULT_RECV_MANY_LIMIT;
+    let mut message_batch = Vec::new();
     let (frames_tx, mut frames_rx) = mpsc::unbounded_channel();
 
     let (encode_tx, encode_rx) = mpsc::unbounded_channel();
@@ -1262,12 +1266,15 @@ async fn ws_send_loop_inner<T, U, Encoder>(
             // Take on more work.
             //
             // Branch is disabled if we already sent a close frame.
-            Some(message) = messages.recv(), if !closed => {
-                encode_tx
-                    .send(message.into())
-                    // `ws_encode_task` shouldn't terminate until
-                    // `encode_tx` is dropped, except by panicking.
-                    .expect("encode task panicked");
+            Some(n) = messages.recv_many(&mut message_batch, MESSAGE_BATCH_SIZE), if !closed => {
+                log::trace!("encoding batch of {n} messages");
+                for message in message_batch.drain(..n) {
+                    encode_tx
+                        .send(message.into())
+                        // `ws_encode_task` shouldn't terminate until
+                        // `encode_tx` is dropped, except by panicking.
+                        .expect("encode task panicked");
+                }
             },
 
         }
@@ -1285,13 +1292,103 @@ enum OutboundWsMessage {
     Message(OutboundMessage),
 }
 
-/// Task that reads [`OutboundWsMessage`]s from `messages`, encodes them via
-/// [`ws_encode_message`], and sends the resuling [`Frame`]s to `outgoing_frames`.
+#[derive(Clone, Copy)]
+struct LogicalMessageMetrics {
+    workload: Option<WorkloadType>,
+    num_rows: Option<usize>,
+}
+
+impl LogicalMessageMetrics {
+    fn for_outbound_message(message: &OutboundMessage) -> Self {
+        Self {
+            workload: message.workload(),
+            num_rows: message.num_rows(),
+        }
+    }
+}
+
+struct V2OutboundMessage {
+    message: ws_v2::ServerMessage,
+    metrics: LogicalMessageMetrics,
+}
+
+fn v2_outbound_message(message: OutboundWsMessage) -> Option<V2OutboundMessage> {
+    let message = match message {
+        OutboundWsMessage::Error(message) => {
+            log::error!(
+                "dropping v1 error message sent to a binary websocket client: {:?}",
+                message
+            );
+            return None;
+        }
+        OutboundWsMessage::Message(message) => message,
+    };
+
+    let metrics = LogicalMessageMetrics::for_outbound_message(&message);
+    match message {
+        OutboundMessage::V2(message) => Some(V2OutboundMessage { message, metrics }),
+        OutboundMessage::V1(message) => {
+            log::error!("dropping v1 message for a binary websocket connection: {:?}", message);
+            None
+        }
+    }
+}
+
+const ENCODE_BATCH_SIZE: usize = ClientConnectionReceiver::DEFAULT_RECV_MANY_LIMIT;
+
+/// Tracks serialize buffers that may be reusable once their frames have been
+/// copied to the wire.
+struct SerializeBufferPool {
+    config: ClientConfig,
+    available: ArrayQueue<SerializeBuffer>,
+    in_use: Vec<InUseSerializeBuffer>,
+}
+
+impl SerializeBufferPool {
+    const CAPACITY: usize = 16;
+
+    fn new(config: ClientConfig) -> Self {
+        Self {
+            config,
+            available: ArrayQueue::new(Self::CAPACITY),
+            in_use: Vec::with_capacity(Self::CAPACITY),
+        }
+    }
+
+    fn get(&mut self) -> SerializeBuffer {
+        self.reclaim();
+        self.available
+            .pop()
+            .unwrap_or_else(|| SerializeBuffer::new(self.config))
+    }
+
+    fn hold(&mut self, in_use: InUseSerializeBuffer) {
+        if self.in_use.len() < Self::CAPACITY {
+            self.in_use.push(in_use);
+        }
+    }
+
+    fn reclaim(&mut self) {
+        let mut i = 0;
+        while i < self.in_use.len() {
+            if self.in_use[i].is_unique() {
+                let in_use = self.in_use.swap_remove(i);
+                let buf = in_use.try_reclaim().expect("buffer should be unique");
+                let _ = self.available.push(buf);
+            } else {
+                i += 1;
+            }
+        }
+    }
+}
+
+/// Task that reads [`OutboundWsMessage`]s from `messages`, encodes them, and
+/// sends the resulting [`Frame`]s to `outgoing_frames`.
 ///
 /// Meant to be [`tokio::spawn`]ed.
 ///
 /// The function also takes care of reusing serialization buffers and reporting
-/// metrics via [`SendMetrics`]..
+/// metrics via [`SendMetrics`].
 async fn ws_encode_task(
     metrics: SendMetrics,
     config: ClientConfig,
@@ -1299,91 +1396,186 @@ async fn ws_encode_task(
     outgoing_frames: mpsc::UnboundedSender<Frame>,
     bsatn_rlb_pool: BsatnRowListBuilderPool,
 ) {
-    // Serialize buffers can be reclaimed once all frames of a message are
-    // copied to the wire. Since we don't know when that will happen, we prepare
-    // for a few messages to be in-flight, i.e. encoded but not yet sent.
-    const BUF_POOL_CAPACITY: usize = 16;
-    let buf_pool = ArrayQueue::new(BUF_POOL_CAPACITY);
-    let mut in_use_bufs: Vec<ScopeGuard<InUseSerializeBuffer, _>> = Vec::with_capacity(BUF_POOL_CAPACITY);
+    let mut encoder = WsEncoder {
+        config,
+        buffers: SerializeBufferPool::new(config),
+        metrics: &metrics,
+        outgoing_frames: &outgoing_frames,
+        bsatn_rlb_pool: &bsatn_rlb_pool,
+        v3_server_messages: Vec::new(),
+        v3_logical_metrics: Vec::new(),
+    };
+    let mut message_batch = Vec::new();
 
-    'send: while let Some(message) = messages.recv().await {
-        // Drop serialize buffers with no external referent,
-        // returning them to the pool.
-        in_use_bufs.retain(|in_use| !in_use.is_unique());
-        // Get a serialize buffer from the pool,
-        // or create a fresh one.
-        let buf = buf_pool.pop().unwrap_or_else(|| SerializeBuffer::new(config));
+    while messages.recv_many(&mut message_batch, ENCODE_BATCH_SIZE).await != 0 {
+        log::trace!("encoding batch of {} websocket messages", message_batch.len());
 
-        let in_use_buf = match message {
-            OutboundWsMessage::Error(message) => {
-                if config.version != WsVersion::V1 {
-                    log::error!(
-                        "dropping v1 error message sent to a binary websocket client: {:?}",
-                        message
-                    );
-                    continue;
+        if encoder.encode_batch(&mut message_batch).await.is_err() {
+            break;
+        }
+    }
+}
+
+struct WsEncoder<'a> {
+    config: ClientConfig,
+    buffers: SerializeBufferPool,
+    metrics: &'a SendMetrics,
+    outgoing_frames: &'a mpsc::UnboundedSender<Frame>,
+    bsatn_rlb_pool: &'a BsatnRowListBuilderPool,
+    v3_server_messages: Vec<ws_v2::ServerMessage>,
+    v3_logical_metrics: Vec<LogicalMessageMetrics>,
+}
+
+impl WsEncoder<'_> {
+    async fn encode_batch(
+        &mut self,
+        message_batch: &mut Vec<OutboundWsMessage>,
+    ) -> Result<(), mpsc::error::SendError<Frame>> {
+        match self.config.version {
+            WsVersion::V1 => self.encode_v1_batch(message_batch).await,
+            WsVersion::V2 => self.encode_v2_batch(message_batch).await,
+            WsVersion::V3 => self.encode_v3_batch(message_batch).await,
+        }
+    }
+
+    async fn encode_v1_batch(
+        &mut self,
+        message_batch: &mut Vec<OutboundWsMessage>,
+    ) -> Result<(), mpsc::error::SendError<Frame>> {
+        for message in message_batch.drain(..) {
+            match message {
+                OutboundWsMessage::Error(message) => {
+                    self.encode_and_forward_v1_message(None, None, message, false).await?;
                 }
-                let Ok(in_use) = ws_forward_frames(
-                    &metrics,
-                    &outgoing_frames,
-                    None,
-                    None,
-                    ws_encode_message(config, buf, message, false, &bsatn_rlb_pool).await,
-                ) else {
-                    break 'send;
-                };
-                in_use
-            }
-            OutboundWsMessage::Message(message) => {
-                let workload = message.workload();
-                let num_rows = message.num_rows();
-                match message {
-                    OutboundMessage::V2(server_message) => {
-                        if config.version == WsVersion::V1 {
+                OutboundWsMessage::Message(message) => {
+                    let workload = message.workload();
+                    let num_rows = message.num_rows();
+                    match message {
+                        OutboundMessage::V2(_) => {
                             log::error!("dropping v2 message on v1 connection");
                             continue;
                         }
-
-                        let Ok(in_use) = ws_forward_frames(
-                            &metrics,
-                            &outgoing_frames,
-                            workload,
-                            num_rows,
-                            ws_encode_binary_message(config, buf, server_message, false, &bsatn_rlb_pool).await,
-                        ) else {
-                            break 'send;
-                        };
-                        in_use
-                    }
-                    OutboundMessage::V1(message) => {
-                        if config.version != WsVersion::V1 {
-                            log::error!("dropping v1 message for a binary websocket connection: {:?}", message);
-                            continue;
+                        OutboundMessage::V1(message) => {
+                            let is_large = num_rows.is_some_and(|n| n > 1024);
+                            self.encode_and_forward_v1_message(workload, num_rows, message, is_large)
+                                .await?;
                         }
-
-                        let is_large = num_rows.is_some_and(|n| n > 1024);
-
-                        let Ok(in_use) = ws_forward_frames(
-                            &metrics,
-                            &outgoing_frames,
-                            workload,
-                            num_rows,
-                            ws_encode_message(config, buf, message, is_large, &bsatn_rlb_pool).await,
-                        ) else {
-                            break 'send;
-                        };
-                        in_use
                     }
                 }
             }
-        };
-
-        if in_use_bufs.len() < BUF_POOL_CAPACITY {
-            in_use_bufs.push(scopeguard::guard(in_use_buf, |in_use| {
-                let buf = in_use.try_reclaim().expect("buffer should be unique");
-                let _ = buf_pool.push(buf);
-            }));
         }
+        Ok(())
+    }
+
+    async fn encode_v2_batch(
+        &mut self,
+        message_batch: &mut Vec<OutboundWsMessage>,
+    ) -> Result<(), mpsc::error::SendError<Frame>> {
+        for message in message_batch.drain(..) {
+            let Some(V2OutboundMessage {
+                message,
+                metrics: message_metrics,
+            }) = v2_outbound_message(message)
+            else {
+                continue;
+            };
+
+            self.encode_and_forward_v2_message(message_metrics, message).await?;
+        }
+        Ok(())
+    }
+
+    async fn encode_v3_batch(
+        &mut self,
+        message_batch: &mut Vec<OutboundWsMessage>,
+    ) -> Result<(), mpsc::error::SendError<Frame>> {
+        self.v3_server_messages.clear();
+        self.v3_logical_metrics.clear();
+        self.v3_server_messages.reserve(message_batch.len());
+        self.v3_logical_metrics.reserve(message_batch.len());
+
+        for message in message_batch.drain(..) {
+            let Some(V2OutboundMessage { message, metrics }) = v2_outbound_message(message) else {
+                continue;
+            };
+            self.v3_logical_metrics.push(metrics);
+            self.v3_server_messages.push(message);
+        }
+
+        if self.v3_server_messages.is_empty() {
+            return Ok(());
+        }
+
+        self.encode_and_forward_v3_messages()
+    }
+
+    async fn encode_and_forward_v1_message(
+        &mut self,
+        workload: Option<WorkloadType>,
+        num_rows: Option<usize>,
+        message: impl ToProtocol<Encoded = SwitchedServerMessage> + Send + 'static,
+        is_large: bool,
+    ) -> Result<(), mpsc::error::SendError<Frame>> {
+        let config = self.config;
+        let bsatn_rlb_pool = self.bsatn_rlb_pool;
+        self.encode_and_forward_message(workload, num_rows, |buf| {
+            ws_encode_message(config, buf, message, is_large, bsatn_rlb_pool)
+        })
+        .await
+    }
+
+    async fn encode_and_forward_v2_message(
+        &mut self,
+        metrics: LogicalMessageMetrics,
+        message: ws_v2::ServerMessage,
+    ) -> Result<(), mpsc::error::SendError<Frame>> {
+        let config = self.config;
+        let bsatn_rlb_pool = self.bsatn_rlb_pool;
+        self.encode_and_forward_message(metrics.workload, metrics.num_rows, |buf| {
+            ws_encode_binary_message(config, buf, message, false, bsatn_rlb_pool)
+        })
+        .await
+    }
+
+    fn encode_and_forward_v3_messages(&mut self) -> Result<(), mpsc::error::SendError<Frame>> {
+        let buf = self.buffers.get();
+        let (timing, in_use, data) = time_encode(|| {
+            serialize_v3(
+                self.bsatn_rlb_pool,
+                buf,
+                self.v3_server_messages.drain(..),
+                self.config.compression,
+            )
+        });
+        let encoded = ws_encode_binary_frames(timing, in_use, data);
+        let in_use = ws_forward_v3_frames(self.metrics, self.outgoing_frames, &self.v3_logical_metrics, encoded);
+        self.v3_logical_metrics.clear();
+        let in_use = in_use?;
+        self.buffers.hold(in_use);
+        Ok(())
+    }
+
+    async fn encode_and_forward_message<Encode, Fut, Frames>(
+        &mut self,
+        workload: Option<WorkloadType>,
+        num_rows: Option<usize>,
+        encode: Encode,
+    ) -> Result<(), mpsc::error::SendError<Frame>>
+    where
+        Encode: FnOnce(SerializeBuffer) -> Fut,
+        Fut: Future<Output = (EncodeMetrics, InUseSerializeBuffer, Frames)>,
+        Frames: IntoIterator<Item = Frame>,
+    {
+        let buf = self.buffers.get();
+        let in_use = ws_forward_frames(
+            self.metrics,
+            self.outgoing_frames,
+            workload,
+            num_rows,
+            encode(buf).await,
+        )?;
+        self.buffers.hold(in_use);
+        Ok(())
     }
 }
 
@@ -1402,9 +1594,21 @@ fn ws_forward_frames(
     Ok(in_use)
 }
 
+/// Reports encode metrics for an already-encoded v3 message batch and forwards
+/// its frames to the websocket send task.
+fn ws_forward_v3_frames(
+    metrics: &SendMetrics,
+    outgoing_frames: &mpsc::UnboundedSender<Frame>,
+    logical_messages: &[LogicalMessageMetrics],
+    encoded: (EncodeMetrics, InUseSerializeBuffer, impl IntoIterator<Item = Frame>),
+) -> Result<InUseSerializeBuffer, mpsc::error::SendError<Frame>> {
+    let (stats, in_use, frames) = encoded;
+    metrics.report_batch(logical_messages, stats);
+    frames.into_iter().try_for_each(|frame| outgoing_frames.send(frame))?;
+    Ok(in_use)
+}
+
 /// Some stats about serialization and compression.
-///
-/// Returned by [`ws_encode_message`].
 struct EncodeMetrics {
     /// Time it took to serialize and (potentially) compress a message.
     /// Does not include scheduling overhead.
@@ -1442,37 +1646,18 @@ async fn ws_encode_message(
     is_large_message: bool,
     bsatn_rlb_pool: &BsatnRowListBuilderPool,
 ) -> (EncodeMetrics, InUseSerializeBuffer, impl Iterator<Item = Frame>) {
-    const FRAGMENT_SIZE: usize = 4096;
+    let bsatn_rlb_pool = bsatn_rlb_pool.clone();
+    let (timing, in_use, msg_data) = maybe_spawn_encode(is_large_message, move || {
+        time_encode(|| serialize(&bsatn_rlb_pool, buf, message, config))
+    })
+    .await;
 
-    fn serialize_and_compress(
-        bsatn_rlb_pool: &BsatnRowListBuilderPool,
-        serialize_buf: SerializeBuffer,
-        message: impl ToProtocol<Encoded = SwitchedServerMessage> + Send + 'static,
-        config: ClientConfig,
-    ) -> (Duration, InUseSerializeBuffer, DataMessage) {
-        let start = Instant::now();
-        let (msg_alloc, msg_data) = serialize(bsatn_rlb_pool, serialize_buf, message, config);
-        (start.elapsed(), msg_alloc, msg_data)
-    }
-    let (timing, msg_alloc, msg_data) = if is_large_message {
-        let bsatn_rlb_pool = bsatn_rlb_pool.clone();
-        spawn_rayon(move || serialize_and_compress(&bsatn_rlb_pool, buf, message, config)).await
-    } else {
-        serialize_and_compress(bsatn_rlb_pool, buf, message, config)
-    };
-
-    let metrics = EncodeMetrics {
-        timing,
-        encoded_len: msg_data.len(),
-    };
-
+    let encoded_len = msg_data.len();
     let (data, ty) = match msg_data {
         DataMessage::Text(text) => (bytestring_to_utf8bytes(text).into(), Data::Text),
         DataMessage::Binary(bin) => (bin, Data::Binary),
     };
-    let frames = fragment(data, ty, FRAGMENT_SIZE);
-
-    (metrics, msg_alloc, frames)
+    ws_encode_frames(timing, in_use, encoded_len, data, ty)
 }
 
 async fn ws_encode_binary_message(
@@ -1482,21 +1667,47 @@ async fn ws_encode_binary_message(
     is_large_message: bool,
     bsatn_rlb_pool: &BsatnRowListBuilderPool,
 ) -> (EncodeMetrics, InUseSerializeBuffer, impl Iterator<Item = Frame> + use<>) {
-    let start = Instant::now();
     let compression = config.compression;
+    let bsatn_rlb_pool = bsatn_rlb_pool.clone();
+    let (timing, in_use, data) = maybe_spawn_encode(is_large_message, move || {
+        time_encode(|| serialize_v2(&bsatn_rlb_pool, buf, message, compression))
+    })
+    .await;
 
-    let (in_use, data) = if is_large_message {
-        let bsatn_rlb_pool = bsatn_rlb_pool.clone();
-        spawn_rayon(move || serialize_v2(&bsatn_rlb_pool, buf, message, compression)).await
+    ws_encode_binary_frames(timing, in_use, data)
+}
+
+async fn maybe_spawn_encode<T: Send + 'static>(is_large: bool, encode: impl FnOnce() -> T + Send + 'static) -> T {
+    if is_large {
+        spawn_rayon(encode).await
     } else {
-        serialize_v2(bsatn_rlb_pool, buf, message, compression)
-    };
+        encode()
+    }
+}
 
-    let metrics = EncodeMetrics {
-        timing: start.elapsed(),
-        encoded_len: data.len(),
-    };
-    let frames = fragment(data, Data::Binary, 4096);
+fn time_encode<T>(encode: impl FnOnce() -> (InUseSerializeBuffer, T)) -> (Duration, InUseSerializeBuffer, T) {
+    let start = Instant::now();
+    let (in_use, data) = encode();
+    (start.elapsed(), in_use, data)
+}
+
+fn ws_encode_binary_frames(
+    timing: Duration,
+    in_use: InUseSerializeBuffer,
+    data: Bytes,
+) -> (EncodeMetrics, InUseSerializeBuffer, impl Iterator<Item = Frame> + use<>) {
+    ws_encode_frames(timing, in_use, data.len(), data, Data::Binary)
+}
+
+fn ws_encode_frames(
+    timing: Duration,
+    in_use: InUseSerializeBuffer,
+    encoded_len: usize,
+    data: Bytes,
+    ty: Data,
+) -> (EncodeMetrics, InUseSerializeBuffer, impl Iterator<Item = Frame> + use<>) {
+    let metrics = EncodeMetrics { timing, encoded_len };
+    let frames = fragment(data, ty, 4096);
     (metrics, in_use, frames)
 }
 
@@ -1559,6 +1770,33 @@ impl SendMetrics {
         // These metrics should be updated together,
         // or not at all.
         if let (Some(workload), Some(num_rows)) = (workload, num_rows) {
+            WORKER_METRICS
+                .websocket_sent_num_rows
+                .with_label_values(&self.database, &workload)
+                .observe(num_rows as f64);
+            WORKER_METRICS
+                .websocket_sent_msg_size
+                .with_label_values(&self.database, &workload)
+                .observe(encode.encoded_len as f64);
+        }
+    }
+
+    fn report_batch(&self, logical_messages: &[LogicalMessageMetrics], encode: EncodeMetrics) {
+        self.encode_timing.observe(encode.timing.as_secs_f64());
+
+        let mut aggregate = None::<(WorkloadType, usize)>;
+        for message in logical_messages {
+            let (Some(workload), Some(num_rows)) = (message.workload, message.num_rows) else {
+                return;
+            };
+            match &mut aggregate {
+                None => aggregate = Some((workload, num_rows)),
+                Some((existing_workload, rows)) if *existing_workload == workload => *rows += num_rows,
+                Some(_) => return,
+            }
+        }
+
+        if let Some((workload, num_rows)) = aggregate {
             WORKER_METRICS
                 .websocket_sent_num_rows
                 .with_label_values(&self.database, &workload)
