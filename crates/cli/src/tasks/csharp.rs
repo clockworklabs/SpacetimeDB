@@ -26,6 +26,7 @@ fn read_tfm_major_from_csproj(project_path: &Path) -> Option<u8> {
 }
 
 /// Describes which C# build path to use.
+#[derive(Debug)]
 enum CsharpBuildPath {
     /// .NET 8 JIT via the `wasi-experimental` workload (Mono WASM).
     Net8Jit,
@@ -126,20 +127,23 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool, native_aot: b
         }
     }
 
-    // For NativeAOT paths, ensure EXPERIMENTAL_WASM_AOT is set in the environment so MSBuild
-    // conditionals in .csproj/.props/.targets files activate correctly.
+    // Manage the EXPERIMENTAL_WASM_AOT environment variable for MSBuild.
+    // - Net8Aot: must SET it — MSBuild conditionals in .props use this env var to activate
+    //   NativeAOT-LLVM mode for .NET 8 (where TFM alone doesn't imply AOT).
+    // - Net10Aot: must UNSET it — the .props auto-detects AOT via TargetFramework==net10.0.
+    //   Setting this env var unnecessarily changes MSBuild's restore input hash, causing
+    //   dotnet to re-restore with the project's local NuGet.Config (which may have stale paths).
+    // - Net8Jit: must UNSET it — prevents MSBuild from incorrectly enabling NativeAOT mode
+    //   when the env var is set globally (e.g., in CI).
     match &build_path {
-        CsharpBuildPath::Net8Aot | CsharpBuildPath::Net10Aot => {
+        CsharpBuildPath::Net8Aot => {
             // SAFETY: We are single-threaded at this point and no other code is reading
             // this environment variable concurrently.
             unsafe {
                 std::env::set_var("EXPERIMENTAL_WASM_AOT", "1");
             }
         }
-        CsharpBuildPath::Net8Jit => {
-            // Unset EXPERIMENTAL_WASM_AOT to prevent MSBuild conditionals in
-            // .props/.targets files from incorrectly enabling NativeAOT mode
-            // when the env var is set globally (e.g., in CI).
+        CsharpBuildPath::Net10Aot | CsharpBuildPath::Net8Jit => {
             // SAFETY: We are single-threaded at this point.
             unsafe {
                 std::env::remove_var("EXPERIMENTAL_WASM_AOT");
@@ -268,9 +272,36 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool, native_aot: b
             }
         }
     }
-    for output_path in possible_output_paths {
+    for output_path in &possible_output_paths {
         if output_path.exists() {
-            return Ok(output_path);
+            return Ok(output_path.clone());
+        }
+    }
+
+    // Diagnostic: list what we expected and what actually exists in the output directories
+    eprintln!("Build path: {build_path:?}, target_framework: {target_framework}, subdir: {subdir}");
+    eprintln!("Expected output in one of:");
+    for p in &possible_output_paths {
+        eprintln!("  {}", p.display());
+    }
+    for bin_dir_name in ["bin", "bin~"] {
+        let bin_dir = project_path.join(bin_dir_name);
+        if bin_dir.exists() {
+            eprintln!("Contents of {}:", bin_dir.display());
+            fn list_recursive(dir: &std::path::Path, depth: usize) {
+                if depth > 6 { return; }
+                if let Ok(entries) = std::fs::read_dir(dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        let name = path.file_name().unwrap_or_default().to_string_lossy();
+                        eprintln!("{}{}{}", "  ".repeat(depth + 1), name, if path.is_dir() { "/" } else { "" });
+                        if path.is_dir() {
+                            list_recursive(&path, depth + 1);
+                        }
+                    }
+                }
+            }
+            list_recursive(&bin_dir, 0);
         }
     }
     anyhow::bail!("Built project successfully but couldn't find the output file.");
