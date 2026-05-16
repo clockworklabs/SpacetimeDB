@@ -13,16 +13,48 @@ pub(crate) fn parse_major_version(version: &str) -> Option<u8> {
 /// This is the most reliable project-level signal of intended .NET version and takes
 /// precedence over the system-default `dotnet --version`.
 fn read_tfm_major_from_csproj(project_path: &Path) -> Option<u8> {
-    let csproj = std::fs::read_dir(project_path)
-        .ok()?
-        .filter_map(|e| e.ok())
-        .find(|e| e.path().extension().and_then(|x| x.to_str()) == Some("csproj"))?
-        .path();
-    let content = std::fs::read_to_string(csproj).ok()?;
-    // Match "<TargetFramework>netN." — handles net8.0, net10.0, etc.
+    let entries: Vec<_> = match std::fs::read_dir(project_path) {
+        Ok(rd) => rd.filter_map(|e| e.ok()).collect(),
+        Err(e) => {
+            eprintln!("read_tfm: read_dir({}) failed: {e}", project_path.display());
+            return None;
+        }
+    };
+    let csproj_entry = entries
+        .iter()
+        .find(|e| e.path().extension().and_then(|x| x.to_str()) == Some("csproj"));
+    let csproj = match csproj_entry {
+        Some(e) => e.path(),
+        None => {
+            let names: Vec<_> = entries.iter().map(|e| e.file_name()).collect();
+            eprintln!(
+                "read_tfm: no .csproj found in {}. Files: {:?}",
+                project_path.display(),
+                names
+            );
+            return None;
+        }
+    };
+    eprintln!("read_tfm: found csproj at {}", csproj.display());
+    let content = match std::fs::read_to_string(&csproj) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("read_tfm: failed to read {}: {e}", csproj.display());
+            return None;
+        }
+    };
     let tag = "<TargetFramework>net";
-    let start = content.find(tag)? + tag.len();
-    content[start..].split(['.', '<']).next()?.parse().ok()
+    let start = match content.find(tag) {
+        Some(s) => s + tag.len(),
+        None => {
+            eprintln!("read_tfm: no <TargetFramework>net tag found in {}", csproj.display());
+            return None;
+        }
+    };
+    let version_str: String = content[start..].split(['.', '<']).next()?.to_string();
+    let result = version_str.parse::<u8>().ok();
+    eprintln!("read_tfm: parsed version_str={version_str:?} -> {result:?}");
+    result
 }
 
 /// Describes which C# build path to use.
@@ -74,10 +106,18 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool, native_aot: b
     //   1. --dotnet-version CLI flag (explicit user override)
     //   2. <TargetFramework> in the project's .csproj (project author's intent)
     //   3. dotnet --version system default (last resort fallback)
+    let tfm_major = read_tfm_major_from_csproj(project_path);
+    eprintln!(
+        "dotnet version detection: override={:?}, csproj_tfm={:?}, dotnet_version={:?}, project_path={}",
+        dotnet_version_override,
+        tfm_major,
+        dotnet_version_str,
+        project_path.display()
+    );
     let dotnet_major = dotnet_version_override
         .as_deref()
         .and_then(|v| v.parse().ok())
-        .or_else(|| read_tfm_major_from_csproj(project_path))
+        .or(tfm_major)
         .or_else(|| parse_major_version(&dotnet_version_str));
 
     // Determine the build path based on SDK version and --native-aot flag.
