@@ -1,14 +1,64 @@
 name: Discord notifications
 
 on:
-  pull_request:
-    types: [closed]
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+  pull-requests: read
 
 jobs:
-  discordNotification:
+  resolvePush:
     runs-on: ubuntu-latest
-    if: github.event.pull_request.merged == true &&
-      github.event.pull_request.base.ref == 'master'
+    outputs:
+      is_pr_merge: ${{ steps.resolve.outputs.is_pr_merge }}
+      is_external: ${{ steps.resolve.outputs.is_external }}
+      pr_author: ${{ steps.resolve.outputs.pr_author }}
+      pr_head_ref: ${{ steps.resolve.outputs.pr_head_ref }}
+      pr_head_repo: ${{ steps.resolve.outputs.pr_head_repo }}
+      pr_number: ${{ steps.resolve.outputs.pr_number }}
+      pr_title: ${{ steps.resolve.outputs.pr_title }}
+      pr_url: ${{ steps.resolve.outputs.pr_url }}
+    steps:
+      - name: Resolve pushed commit
+        id: resolve
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const sha = context.sha;
+            const prs = await github.paginate(github.rest.repos.listPullRequestsAssociatedWithCommit, {
+              owner,
+              repo,
+              commit_sha: sha,
+            });
+
+            const mergedPrs = prs
+              .filter((pr) => pr.merged_at && pr.base?.ref === 'master')
+              .sort((a, b) => new Date(b.merged_at) - new Date(a.merged_at));
+            const pr = mergedPrs[0];
+
+            if (!pr) {
+              core.setOutput('is_pr_merge', 'false');
+              return;
+            }
+
+            const headRepo = pr.head?.repo?.full_name || '';
+            core.setOutput('is_pr_merge', 'true');
+            core.setOutput('is_external', String(headRepo !== `${owner}/${repo}`));
+            core.setOutput('pr_author', pr.user?.login || '');
+            core.setOutput('pr_head_ref', pr.head?.ref || '');
+            core.setOutput('pr_head_repo', headRepo);
+            core.setOutput('pr_number', String(pr.number));
+            core.setOutput('pr_title', pr.title || '');
+            core.setOutput('pr_url', pr.html_url || '');
+
+  discordNotification:
+    needs: resolvePush
+    runs-on: ubuntu-latest
+    if: needs.resolvePush.outputs.is_pr_merge == 'true'
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
@@ -24,16 +74,25 @@ jobs:
       - name: Send Discord notification
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_AUTHOR: ${{ needs.resolvePush.outputs.pr_author }}
+          PR_HEAD_REF: ${{ needs.resolvePush.outputs.pr_head_ref }}
+          PR_HEAD_REPO: ${{ needs.resolvePush.outputs.pr_head_repo }}
+          PR_IS_EXTERNAL: ${{ needs.resolvePush.outputs.is_external }}
+          PR_TITLE: ${{ needs.resolvePush.outputs.pr_title }}
+          PR_NUMBER: ${{ needs.resolvePush.outputs.pr_number }}
+          PR_URL: ${{ needs.resolvePush.outputs.pr_url }}
           MENTION_ON_FAILURE: ${{ secrets.DEV_OPS_ROLE_ID }}
           DISCORD_USER_MAP: ${{ secrets.DISCORD_USER_MAP }}
         run: |
           message="PR merged: [(#${PR_NUMBER}) ${PR_TITLE}](<${PR_URL}>)"
+          if [[ "${PR_IS_EXTERNAL}" == "true" ]]; then
+            message+=$'\n'
+            message+="External PR source: ${PR_HEAD_REPO}@${PR_HEAD_REF}"
+          fi
+
           # Note that anything besides success is treated as a failure (e.g. if the check did not run at all, or if it is still pending).
           FAILED_CHECKS="$(
-            gh pr checks "${{github.event.pull_request.html_url}}" \
+            gh pr checks "${PR_URL}" \
               --json 'workflow,state,name' |
               jq '.[]
                 | select(.workflow != "Discord notifications")
@@ -45,7 +104,7 @@ jobs:
           # Lookup PR author's Discord ID from the provided JSON map (if any)
           author_discord_id="$(
             jq -r \
-              --arg u "${{ github.event.pull_request.user.login }}" \
+              --arg u "${PR_AUTHOR}" \
               '.[$u] // empty' \
               <<<"${DISCORD_USER_MAP}"
           )"
@@ -71,10 +130,35 @@ jobs:
           data="$(jq --null-input --arg msg "$message" '.content=$msg')"
           curl -X POST -H 'Content-Type: application/json' -d "$data" "${DISCORD_WEBHOOK_URL}"
 
-  invokePrivate:
+  warnDirectPush:
+    needs: resolvePush
     runs-on: ubuntu-latest
-    if: github.event.pull_request.merged == true &&
-      github.event.pull_request.base.ref == 'master'
+    if: needs.resolvePush.outputs.is_pr_merge != 'true'
+    steps:
+      - name: Warn about non-PR push
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          COMMIT_URL: ${{ github.event.head_commit.url }}
+          PUSHER: ${{ github.event.pusher.name }}
+          SHA: ${{ github.sha }}
+        run: |
+          short_sha="${SHA:0:7}"
+          subject="$(printf '%s\n' "${COMMIT_MESSAGE}" | head -n 1)"
+          message="Warning: push to master was not associated with a merged PR."
+          message+=$'\n'
+          message+="Commit: [${short_sha}](<${COMMIT_URL}>)"
+          message+=$'\n'
+          message+="Pusher: ${PUSHER}"
+          message+=$'\n'
+          message+="Subject: ${subject}"
+          data="$(jq --null-input --arg msg "$message" '.content=$msg')"
+          curl -X POST -H 'Content-Type: application/json' -d "$data" "${DISCORD_WEBHOOK_URL}"
+
+  invokePrivate:
+    needs: resolvePush
+    runs-on: ubuntu-latest
+    if: needs.resolvePush.outputs.is_pr_merge == 'true'
     permissions:
       contents: read
     steps:
@@ -89,6 +173,6 @@ jobs:
               workflow_id: 'public-pr-merge.yml',
               ref: 'master',
               inputs: {
-                public_pr_number: String(context.payload.pull_request.number),
+                public_pr_number: '${{ needs.resolvePush.outputs.pr_number }}',
               }
             });
