@@ -20,7 +20,7 @@ clap.workspace = true
 dialoguer = { workspace = true, default-features = false }
 flate2.workspace = true
 http-body-util = "0.1.2"
-colored.workspace = true
+owo-colors.workspace = true
 indicatif.workspace = true
 log.workspace = true
 reqwest.workspace = true

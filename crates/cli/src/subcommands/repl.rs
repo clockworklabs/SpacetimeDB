@@ -1,7 +1,7 @@
 use crate::api::{ClientApi, Connection};
 use crate::sql::run_sql;
-use colored::*;
 use dirs::home_dir;
+use owo_colors::OwoColorize;
 use std::env::temp_dir;
 
 use rustyline::completion::Completer;
@@ -61,7 +61,7 @@ pub async fn exec(con: Connection) -> Result<(), anyhow::Error> {
     let api = ClientApi::new(con);
 
     loop {
-        let readline = rl.readline(&format!("🪐{}>", &database).green());
+        let readline = rl.readline(&format!("🪐{}>", &database).green().to_string());
         match readline {
             Ok(line) => match line.as_str() {
                 ".exit" => break,
