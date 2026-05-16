@@ -227,14 +227,14 @@ impl SourceSnapshot {
 
 async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffset> {
     let start = Instant::now();
-    let rt = tokio::runtime::Handle::current();
+    let rt = spacetimedb_runtime::Handle::tokio_current();
     // NOTE: `_db` needs to stay alive until the snapshot is taken,
     // because the snapshot worker holds only a weak reference.
     let (mut watch, _db) = spawn_blocking(|| {
         let persistence = Persistence {
             durability: Arc::new(NoDurability::default()),
             disk_size: Arc::new(|| Ok(<_>::default())),
-            snapshots: Some(SnapshotWorker::new(repo, snapshot::Compression::Disabled)),
+            snapshots: Some(SnapshotWorker::new(repo, snapshot::Compression::Disabled, rt.clone())),
             runtime: rt,
         };
         let db = TestDB::open_db(EmptyHistory::new(), Some(persistence), None, 0)?;
