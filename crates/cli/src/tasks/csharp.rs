@@ -136,7 +136,15 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool, native_aot: b
                 std::env::set_var("EXPERIMENTAL_WASM_AOT", "1");
             }
         }
-        CsharpBuildPath::Net8Jit => {}
+        CsharpBuildPath::Net8Jit => {
+            // Unset EXPERIMENTAL_WASM_AOT to prevent MSBuild conditionals in
+            // .props/.targets files from incorrectly enabling NativeAOT mode
+            // when the env var is set globally (e.g., in CI).
+            // SAFETY: We are single-threaded at this point.
+            unsafe {
+                std::env::remove_var("EXPERIMENTAL_WASM_AOT");
+            }
+        }
     }
 
     // For the JIT path, ensure the wasi-experimental workload is installed.
@@ -170,12 +178,18 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool, native_aot: b
 
     let config_name = if build_debug { "Debug" } else { "Release" };
 
-    // For AOT paths, force a re-restore by deleting any cached project.assets.json.
+    // For Net8Aot, force a re-restore by deleting any cached project.assets.json.
     // If a prior `dotnet restore` ran without EXPERIMENTAL_WASM_AOT=1 (e.g. as part of a
     // solution restore), the cached assets won't include ILCompiler.LLVM, causing
     // `dotnet publish` to silently fall back to the net8.0 Mono wasi-experimental path.
     // Deleting the file makes dotnet re-restore with the correct environment.
-    if matches!(build_path, CsharpBuildPath::Net8Aot | CsharpBuildPath::Net10Aot) {
+    //
+    // Net10Aot does NOT need this: the ILCompiler.LLVM dependency is unconditional for
+    // net10.0 in the Runtime.csproj, so the solution-level restore already resolves it.
+    // Deleting the assets file here would force an implicit re-restore that uses the
+    // project's local NuGet.Config, which may have stale/invalid package source paths
+    // (e.g. Windows-only paths in CI on Linux), breaking the build.
+    if matches!(build_path, CsharpBuildPath::Net8Aot) {
         for obj_dir in ["obj", "obj~"] {
             let assets = project_path.join(obj_dir).join("project.assets.json");
             if assets.exists() {
