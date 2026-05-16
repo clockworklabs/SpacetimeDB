@@ -7,6 +7,23 @@
 //! which mediate access to tables in the client cache.
 //! Obtain a table handle by calling a method on `ctx.db`, where `ctx` is a `DbConnection` or `EventContext`.
 
+/// Accesses a generated table handle from a database view.
+///
+/// This trait is implemented by generated marker types and preserves the
+/// lifetime relationship between a database view and its table handles.
+pub trait TableAccessor<DbView: ?Sized> {
+    /// The type of rows stored in this table.
+    type Row: 'static;
+
+    /// The generated table handle type for a database view borrow.
+    type Handle<'db>
+    where
+        DbView: 'db;
+
+    /// Returns the generated table handle for `db`.
+    fn get<'db>(db: &'db DbView) -> Self::Handle<'db>;
+}
+
 /// Trait implemented by table handles, which mediate access to tables in the client cache.
 ///
 /// Obtain a table handle by calling a method on `ctx.db`, where `ctx` is a `DbConnection` or `EventContext`.
