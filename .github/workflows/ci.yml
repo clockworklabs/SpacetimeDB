@@ -782,7 +782,6 @@ jobs:
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
-      EXPERIMENTAL_WASM_AOT: 1
     steps:
       - name: Checkout repository
         id: checkout-stdb
@@ -844,6 +843,8 @@ jobs:
           done
 
       - name: Override NuGet packages
+        env:
+          EXPERIMENTAL_WASM_AOT: 1
         run: |
           dotnet pack crates/bindings-csharp/BSATN.Runtime
           dotnet pack crates/bindings-csharp/Runtime
