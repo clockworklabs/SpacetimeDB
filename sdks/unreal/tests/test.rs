@@ -309,3 +309,9 @@ fn unreal_overlapping_subscriptions() {
 fn unreal_insert_result_okay() {
     make_test("InsertResultOkTest").run();
 }
+
+#[test]
+#[serial(Group6)]
+fn unreal_blueprint_query_builder_basic_flow() {
+    make_test("BlueprintQueryBuilderBasicFlowTest").run();
+}
