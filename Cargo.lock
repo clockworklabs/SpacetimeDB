@@ -899,6 +899,7 @@ dependencies = [
  "env_logger 0.10.2",
  "log",
  "regex",
+ "serde_json",
  "tempfile",
 ]
 
