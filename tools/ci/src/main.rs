@@ -16,7 +16,7 @@ mod ci_docs;
 mod smoketest;
 mod util;
 
-use util::ensure_repo_root;
+use util::{bail_if_diff, ensure_repo_root, has_git_diff};
 
 /// SpacetimeDB CI tasks
 ///
@@ -342,6 +342,12 @@ enum CiCmd {
     TypescriptTest,
     /// Verifies that the repository version upgrade tool still works.
     VersionUpgradeCheck,
+    /// Checks for uncommitted diffs, ignoring generated SpacetimeDB CLI version comments.
+    CheckDiff {
+        /// Subdirectory to check. Defaults to the whole repository.
+        #[arg(default_value = ".")]
+        subdir: PathBuf,
+    },
     /// Builds the docs site.
     Docs,
 }
@@ -373,7 +379,9 @@ fn tracked_rs_files_under(path: &str) -> Result<Vec<PathBuf>> {
 }
 
 fn run_publish_checks() -> Result<()> {
-    cmd!("bash", "-lc", "test -d venv || python3 -m venv venv").run()?;
+    if !Path::new("venv").is_dir() {
+        cmd!("python3", "-m", "venv", "venv").run()?;
+    }
     cmd!("venv/bin/pip3", "install", "argparse", "toml").run()?;
 
     let crates = cmd!(
@@ -406,13 +414,7 @@ fn run_typescript_tests() -> Result<()> {
     cmd!("pnpm", "build").dir("crates/bindings-typescript").run()?;
     cmd!("pnpm", "test").dir("crates/bindings-typescript").run()?;
     cmd!("pnpm", "generate").dir("templates/chat-react-ts").run()?;
-    let diff_status = cmd!(
-        "bash",
-        "tools/check-diff.sh",
-        "templates/chat-react-ts/src/module_bindings"
-    )
-    .run()?;
-    if !diff_status.status.success() {
+    if has_git_diff(Path::new("templates/chat-react-ts/src/module_bindings"))? {
         bail!("Bindings are dirty. Please generate bindings again and commit them to this branch.");
     }
     cmd!("pnpm", "build").dir("templates/chat-react-ts").run()?;
@@ -517,7 +519,7 @@ fn main() -> Result<()> {
                 "--test-threads=1",
             )
             .run()?;
-            cmd!("bash", "tools/check-diff.sh").run()?;
+            bail_if_diff(Path::new("."))?;
             cmd!(
                 "cargo",
                 "run",
@@ -527,7 +529,7 @@ fn main() -> Result<()> {
                 "regen-csharp-moduledef",
             )
             .run()?;
-            cmd!("bash", "tools/check-diff.sh", "crates/bindings-csharp").run()?;
+            bail_if_diff(Path::new("crates/bindings-csharp"))?;
             cmd!("dotnet", "test", "-warnaserror")
                 .dir("crates/bindings-csharp")
                 .run()?;
@@ -718,6 +720,10 @@ fn main() -> Result<()> {
 
         Some(CiCmd::VersionUpgradeCheck) => {
             run_version_upgrade_check()?;
+        }
+
+        Some(CiCmd::CheckDiff { subdir }) => {
+            bail_if_diff(&subdir)?;
         }
 
         Some(CiCmd::Docs) => {

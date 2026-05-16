@@ -132,8 +132,7 @@ jobs:
         run: |
           dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
           dotnet pack -c Release crates/bindings-csharp/Runtime
-          cd sdks/csharp
-          ./tools~/write-nuget-config.sh ../..
+          cargo csharp write-nuget-config sdks/csharp .
 
       # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
       # ChatGPT suspects that this could be due to different build invocations using the same target dir,
@@ -582,6 +581,11 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Install Rust toolchain
+        uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
       - name: Override NuGet packages
         run: |
           dotnet pack crates/bindings-csharp/BSATN.Runtime
@@ -593,8 +597,7 @@ jobs:
           # This means that (if version numbers match) we will test the local versions of the C# packages, even
           # if they're not pushed to NuGet.
           # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
-          cd sdks/csharp
-          ./tools~/write-nuget-config.sh ../..
+          cargo csharp write-nuget-config sdks/csharp .
 
       - name: Restore .NET solution
         working-directory: sdks/csharp
@@ -606,11 +609,6 @@ jobs:
         run: |
           sed -i "s|spacetimedb *=.*|spacetimedb = \{ path = \"../../../crates/bindings\" \}|" Cargo.toml
           cat Cargo.toml
-
-      - name: Install Rust toolchain
-        uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -650,7 +648,7 @@ jobs:
 
       - name: Check for changes
         run: |
-          tools/check-diff.sh demo/Blackholio/client-unity/Assets/Scripts/autogen || {
+          cargo ci check-diff demo/Blackholio/client-unity/Assets/Scripts/autogen || {
               echo 'Error: Bindings are dirty. Please run `demo/Blackholio/server-rust/generate.sh`.'
               exit 1
           }
@@ -727,6 +725,11 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Install Rust toolchain
+        uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
       - name: Override NuGet packages
         run: |
           dotnet pack crates/bindings-csharp/BSATN.Runtime
@@ -738,8 +741,7 @@ jobs:
           # This means that (if version numbers match) we will test the local versions of the C# packages, even
           # if they're not pushed to NuGet.
           # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
-          cd sdks/csharp
-          ./tools~/write-nuget-config.sh ../..
+          cargo csharp write-nuget-config sdks/csharp .
 
       - name: Restore .NET solution
         working-directory: sdks/csharp
@@ -752,11 +754,6 @@ jobs:
       - name: Verify C# formatting
         working-directory: sdks/csharp
         run: dotnet format --no-restore --verify-no-changes SpacetimeDB.ClientSDK.sln
-
-      - name: Install Rust toolchain
-        uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -798,9 +795,9 @@ jobs:
 
       - name: Check quickstart-chat bindings are up to date
         run: |
-          bash sdks/csharp/tools~/gen-quickstart.sh
-          tools/check-diff.sh templates/chat-console-cs/module_bindings || {
-              echo 'Error: quickstart-chat bindings have changed. Please run `sdks/csharp/tools~/gen-quickstart.sh`.'
+          cargo regen csharp quickstart
+          cargo ci check-diff templates/chat-console-cs/module_bindings || {
+              echo 'Error: quickstart-chat bindings have changed. Please run `cargo regen csharp quickstart`.'
               exit 1
           }
 
@@ -809,7 +806,7 @@ jobs:
       #   working-directory: sdks/csharp
       #   run: |
       #     bash tools~/gen-client-api.sh
-      #     "${GITHUB_WORKSPACE}"/tools/check-diff.sh src/SpacetimeDB/ClientApi || {
+      #     cargo ci check-diff sdks/csharp/src/SpacetimeDB/ClientApi || {
       #         echo 'Error: Client API bindings are dirty. Please run `sdks/csharp/tools~/gen-client-api.sh`.'
       #         exit 1
       #     }
@@ -822,8 +819,8 @@ jobs:
       - name: Run regression tests
         run: |
           bash sdks/csharp/tools~/run-regression-tests.sh
-          tools/check-diff.sh sdks/csharp/examples~/regression-tests || {
-              echo 'Error: Bindings are dirty. Please run `sdks/csharp/tools~/gen-regression-tests.sh`.'
+          cargo ci check-diff sdks/csharp/examples~/regression-tests || {
+              echo 'Error: Bindings are dirty. Please run `cargo regen csharp regression-tests`.'
               exit 1
           }
 

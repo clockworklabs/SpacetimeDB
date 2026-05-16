@@ -1551,6 +1551,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "csharp-tools"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "duct",
+]
+
+[[package]]
 name = "css-module-lexer"
 version = "0.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"

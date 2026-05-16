@@ -179,9 +179,8 @@ fn run_smoketest(server: Option<String>, dotnet: bool, args: Vec<String>) -> Res
     let status = cmd.args(&args).status()?;
 
     ensure!(status.success(), "Tests failed");
-    let diff_status = cmd!("bash", "tools/check-diff.sh", "crates/smoketests").run()?;
     ensure!(
-        diff_status.status.success(),
+        !util::has_git_diff(Path::new("crates/smoketests"))?,
         "There is a diff in the smoketests directory."
     );
     Ok(())

@@ -21,48 +21,99 @@ fn sdk_dir() -> PathBuf {
     workspace_dir().join("sdks/csharp")
 }
 
+fn cli_manifest() -> PathBuf {
+    workspace_dir().join("crates/cli/Cargo.toml")
+}
+
+fn standalone_manifest() -> PathBuf {
+    workspace_dir().join("crates/standalone/Cargo.toml")
+}
+
 fn path_arg(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-fn render_nuget_config(bsatn_source: &Path, runtime_source: &Path) -> String {
-    format!(
-        r#"<?xml version="1.0" encoding="utf-8"?>
-<configuration>
-  <packageSources>
-    <clear />
-    <!-- Experimental NuGet feed for Microsoft.DotNet.ILCompiler.LLVM packages -->
-    <add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />
-    <!-- Local NuGet repositories -->
-    <add key="Local SpacetimeDB.BSATN.Runtime" value="{}" />
-    <!-- We need to override the module runtime as well because the examples use it -->
-    <add key="Local SpacetimeDB.Runtime" value="{}" />
-    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
-  </packageSources>
-  <packageSourceMapping>
-    <!-- Ensure that SpacetimeDB.BSATN.Runtime is used from the local folder. -->
-    <!-- Otherwise we risk an outdated version being quietly pulled from NuGet for testing. -->
-    <packageSource key="Local SpacetimeDB.BSATN.Runtime">
-      <package pattern="SpacetimeDB.BSATN.Runtime" />
-    </packageSource>
-    <packageSource key="Local SpacetimeDB.Runtime">
-      <package pattern="SpacetimeDB.Runtime" />
-    </packageSource>
-    <!-- Experimental packages for NativeAOT-LLVM compilation -->
-    <packageSource key="dotnet-experimental">
-      <package pattern="Microsoft.DotNet.ILCompiler.LLVM" />
-      <package pattern="runtime.*" />
-    </packageSource>
-    <!-- Fallback for other packages (e.g. test deps). -->
-    <packageSource key="nuget.org">
-      <package pattern="*" />
-    </packageSource>
-  </packageSourceMapping>
-</configuration>
-"#,
-        bsatn_source.display(),
-        runtime_source.display(),
+pub fn regen_regression_tests() -> Result<()> {
+    let sdk = sdk_dir();
+    let workspace = workspace_dir();
+
+    cmd!("cargo", "build", "--manifest-path", path_arg(&standalone_manifest())).run()?;
+
+    cmd!(
+        "cargo",
+        "run",
+        "--manifest-path",
+        path_arg(&cli_manifest()),
+        "--",
+        "generate",
+        "-y",
+        "-l",
+        "csharp",
+        "-o",
+        path_arg(&sdk.join("examples~/regression-tests/client/module_bindings")),
+        "--module-path",
+        path_arg(&sdk.join("examples~/regression-tests/server")),
     )
+    .run()?;
+    cmd!(
+        "cargo",
+        "run",
+        "--manifest-path",
+        path_arg(&cli_manifest()),
+        "--",
+        "generate",
+        "-y",
+        "-l",
+        "csharp",
+        "-o",
+        path_arg(&sdk.join("examples~/regression-tests/republishing/client/module_bindings")),
+        "--module-path",
+        path_arg(&sdk.join("examples~/regression-tests/republishing/server-republish")),
+    )
+    .run()?;
+    cmd!(
+        "cargo",
+        "run",
+        "--manifest-path",
+        path_arg(&cli_manifest()),
+        "--",
+        "generate",
+        "-y",
+        "-l",
+        "csharp",
+        "-o",
+        path_arg(&sdk.join("examples~/regression-tests/procedure-client/module_bindings")),
+        "--module-path",
+        path_arg(&workspace.join("modules/sdk-test-procedure")),
+    )
+    .run()?;
+
+    Ok(())
+}
+
+pub fn regen_quickstart() -> Result<()> {
+    let workspace = workspace_dir();
+
+    cmd!("cargo", "build", "--manifest-path", path_arg(&standalone_manifest())).run()?;
+
+    cmd!(
+        "cargo",
+        "run",
+        "--manifest-path",
+        path_arg(&cli_manifest()),
+        "--",
+        "generate",
+        "-y",
+        "-l",
+        "csharp",
+        "-o",
+        path_arg(&workspace.join("templates/chat-console-cs/module_bindings")),
+        "--module-path",
+        path_arg(&workspace.join("templates/chat-console-cs/spacetimedb")),
+    )
+    .run()?;
+
+    Ok(())
 }
 
 fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
@@ -197,14 +248,15 @@ pub fn regen_dlls() -> Result<()> {
     .run()?;
 
     let nuget_config_dir = tempfile::tempdir()?;
-    let nuget_config_path = nuget_config_dir.path().join("nuget.config");
-    fs::write(
-        &nuget_config_path,
-        render_nuget_config(
-            &workspace.join("crates/bindings-csharp/BSATN.Runtime/bin/Release"),
-            &workspace.join("crates/bindings-csharp/Runtime/bin/Release"),
-        ),
-    )?;
+    let nuget_config_path = nuget_config_dir.path().join("NuGet.Config");
+    cmd!(
+        "cargo",
+        "csharp",
+        "write-nuget-config",
+        path_arg(nuget_config_dir.path()),
+        "--quiet",
+    )
+    .run()?;
 
     clear_restored_package_dirs(BSATN_PACKAGE_ID)?;
     clear_restored_package_dirs(RUNTIME_PACKAGE_ID)?;
