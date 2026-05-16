@@ -836,13 +836,26 @@ jobs:
       && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
     permissions:
       contents: read
+      pull-requests: read
     runs-on: ubuntu-latest
     env:
       TARGET_OWNER: clockworklabs
       TARGET_REPO: SpacetimeDBPrivate
     steps:
+      # Skip the private dispatch entirely when only `docs/` is touched. The job
+      # itself still completes successfully so required-status-check gating is
+      # satisfied without spending private-runner time on a docs-only change.
+      - name: Detect non-docs changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            non_docs:
+              - '!docs/**'
+
       - id: dispatch
         name: Trigger tests
+        if: steps.filter.outputs.non_docs == 'true'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
@@ -906,6 +919,7 @@ jobs:
             core.setOutput('run_url', runUrl);
   
       - name: Wait for Internal Tests to complete
+        if: steps.filter.outputs.non_docs == 'true'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
@@ -943,7 +957,7 @@ jobs:
             }
   
       - name: Cancel invoked run if workflow cancelled
-        if: ${{ cancelled() }}
+        if: ${{ cancelled() && steps.dispatch.outputs.run_id }}
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
