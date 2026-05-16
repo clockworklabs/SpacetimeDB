@@ -67,8 +67,6 @@ fn main() {
 mod criterion {
     use std::path::{Path, PathBuf};
 
-    use regex::Regex;
-
     pub fn pack(baseline_name: String, target_dir: &Path) {
         assert!(
             !baseline_name.ends_with(".json"),
@@ -100,10 +98,6 @@ mod criterion {
     /// `"{crit_dir}/"{name}.json"`
     fn packed_baseline_json_path(crit_dir: &Path, name: &str) -> PathBuf {
         crit_dir.join(format!("{name}.json"))
-    }
-
-    lazy_static::lazy_static! {
-        static ref EMOJI: Regex = Regex::new(r"(on_disk|mem)").unwrap();
     }
 
     /// Data types for deserializing stored Criterion benchmark results.

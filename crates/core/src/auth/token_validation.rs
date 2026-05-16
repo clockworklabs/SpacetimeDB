@@ -9,7 +9,7 @@ pub use jsonwebtoken::errors::ErrorKind as JwtErrorKind;
 use jsonwebtoken::{decode, Validation};
 pub use jsonwebtoken::{DecodingKey, EncodingKey};
 use jwks::Jwks;
-use lazy_static::lazy_static;
+
 use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;
@@ -137,10 +137,8 @@ struct BasicTokenValidator {
     pub issuer: Option<Box<str>>,
 }
 
-lazy_static! {
-    // Eventually we will want to add more required claims.
-    static ref REQUIRED_CLAIMS: Vec<&'static str> = vec!["sub", "iss"];
-}
+// Eventually we will want to add more required claims.
+const REQUIRED_CLAIMS: [&str; 2] = ["sub", "iss"];
 
 #[async_trait]
 impl TokenValidator for DecodingKey {

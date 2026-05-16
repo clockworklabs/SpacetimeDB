@@ -2,6 +2,7 @@ use std::env;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::LazyLock;
 use std::sync::OnceLock;
 use std::time::Instant;
 
@@ -351,9 +352,8 @@ impl ModuleLanguage for Csharp {
     const NAME: &'static str = "csharp";
 
     fn get_module() -> &'static CompiledModule {
-        lazy_static::lazy_static! {
-            pub static ref MODULE: CompiledModule = CompiledModule::compile("benchmarks-cs", COMPILATION_MODE);
-        }
+        static MODULE: LazyLock<CompiledModule> =
+            LazyLock::new(|| CompiledModule::compile("benchmarks-cs", COMPILATION_MODE));
 
         &MODULE
     }
@@ -365,9 +365,8 @@ impl ModuleLanguage for Rust {
     const NAME: &'static str = "rust";
 
     fn get_module() -> &'static CompiledModule {
-        lazy_static::lazy_static! {
-            pub static ref MODULE: CompiledModule = CompiledModule::compile("benchmarks", COMPILATION_MODE);
-        }
+        static MODULE: LazyLock<CompiledModule> =
+            LazyLock::new(|| CompiledModule::compile("benchmarks", COMPILATION_MODE));
 
         &MODULE
     }
@@ -379,9 +378,8 @@ impl ModuleLanguage for TypeScript {
     const NAME: &'static str = "typescript";
 
     fn get_module() -> &'static CompiledModule {
-        lazy_static::lazy_static! {
-            pub static ref MODULE: CompiledModule = CompiledModule::compile("benchmarks-ts", COMPILATION_MODE);
-        }
+        static MODULE: LazyLock<CompiledModule> =
+            LazyLock::new(|| CompiledModule::compile("benchmarks-ts", COMPILATION_MODE));
 
         &MODULE
     }
@@ -393,9 +391,8 @@ impl ModuleLanguage for Cpp {
     const NAME: &'static str = "cpp";
 
     fn get_module() -> &'static CompiledModule {
-        lazy_static::lazy_static! {
-            pub static ref MODULE: CompiledModule = CompiledModule::compile("benchmarks-cpp", COMPILATION_MODE);
-        }
+        static MODULE: LazyLock<CompiledModule> =
+            LazyLock::new(|| CompiledModule::compile("benchmarks-cpp", COMPILATION_MODE));
 
         &MODULE
     }

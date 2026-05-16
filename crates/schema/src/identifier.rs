@@ -4,13 +4,13 @@ use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st};
 use std::fmt::{self, Debug, Display};
 use std::ops::Deref;
+use std::sync::LazyLock;
 use unicode_ident::{is_xid_continue, is_xid_start};
 use unicode_normalization::UnicodeNormalization;
 
-lazy_static::lazy_static! {
-    /// TODO(1.0): Pull in the rest of the reserved identifiers from the Identifier Proposal once that's merged.
-    static ref RESERVED_IDENTIFIERS: HashSet<&'static str> = include_str!("reserved_identifiers.txt").lines().collect();
-}
+/// TODO(1.0): Pull in the rest of the reserved identifiers from the Identifier Proposal once that's merged.
+static RESERVED_IDENTIFIERS: LazyLock<HashSet<&'static str>> =
+    LazyLock::new(|| include_str!("reserved_identifiers.txt").lines().collect());
 
 /// A valid SpacetimeDB Identifier.
 ///

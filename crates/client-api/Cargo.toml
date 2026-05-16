@@ -17,7 +17,7 @@ spacetimedb-schema.workspace = true
 
 base64.workspace = true
 tokio = { version = "1.2", features = ["full"] }
-lazy_static = "1.4.0"
+
 log = "0.4.4"
 serde = "1.0.136"
 serde_json = { version = "1.0", features = ["raw_value"] }

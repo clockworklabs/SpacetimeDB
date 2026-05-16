@@ -39,6 +39,7 @@ use spacetimedb_table::table::RowRef;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::str::FromStr;
+use std::sync::LazyLock;
 use strum::Display;
 use v9::{RawModuleDefV9Builder, TableType};
 
@@ -697,107 +698,99 @@ fn system_module_def() -> ModuleDef {
     result
 }
 
-lazy_static::lazy_static! {
-    /// The canonical definition of the system tables.
-    ///
-    /// It's important not to leak this `ModuleDef` or the `Def`s it contains outside this file.
-    /// You should only return `Schema`s from this file, not `Def`s!
-    ///
-    /// This is because `SYSTEM_MODULE_DEF` has a `Typespace` that is DISTINCT from the typespace used in the client module.
-    /// System `TableDef`s refer to this typespace, but client `TableDef`s refer to the client typespace.
-    /// This could easily result in confusing errors!
-    /// Fortunately, when converting from `TableDef` to `TableSchema`, all `AlgebraicType`s are resolved,
-    /// so that they are self-contained and do not refer to any `Typespace`.
-    static ref SYSTEM_MODULE_DEF: ModuleDef = system_module_def();
-}
+/// The canonical definition of the system tables.
+///
+/// It's important not to leak this `ModuleDef` or the `Def`s it contains outside this file.
+/// You should only return `Schema`s from this file, not `Def`s!
+///
+/// This is because `SYSTEM_MODULE_DEF` has a `Typespace` that is DISTINCT from the typespace used in the client module.
+/// System `TableDef`s refer to this typespace, but client `TableDef`s refer to the client typespace.
+/// This could easily result in confusing errors!
+/// Fortunately, when converting from `TableDef` to `TableSchema`, all `AlgebraicType`s are resolved,
+/// so that they are self-contained and do not refer to any `Typespace`.
+static SYSTEM_MODULE_DEF: LazyLock<ModuleDef> = LazyLock::new(system_module_def);
 
-lazy_static::lazy_static! {
 // We enumerate the constraints used by system tables here, so that we can assign them stable IDs.
 // When adding a new index, we just need to make sure we are incrementing the last ID used.
-    pub static ref CONSTRAINT_IDS: HashMap<&'static str, ConstraintId> = {
-        let mut m = HashMap::new();
-        m.insert("st_table_table_id_key", ConstraintId(1));
-        m.insert("st_table_table_name_key", ConstraintId(2));
-        m.insert("st_column_table_id_col_pos_key", ConstraintId(3));
-        m.insert("st_sequence_sequence_id_key", ConstraintId(4));
-        m.insert("st_index_index_id_key", ConstraintId(5));
-        m.insert("st_constraint_constraint_id_key", ConstraintId(6));
-        m.insert("st_client_identity_connection_id_key", ConstraintId(7));
-        m.insert("st_var_name_key", ConstraintId(8));
-        m.insert("st_scheduled_schedule_id_key", ConstraintId(9));
-        m.insert("st_scheduled_table_id_key", ConstraintId(10));
-        m.insert("st_row_level_security_sql_key", ConstraintId(11));
-        m.insert("st_connection_credentials_connection_id_key", ConstraintId(12));
-        m.insert("st_view_view_id_key", ConstraintId(13));
-        m.insert("st_view_view_name_key", ConstraintId(14));
-        m.insert("st_view_param_view_id_param_pos_key", ConstraintId(15));
-        m.insert("st_view_column_view_id_col_pos_key", ConstraintId(16));
-        m.insert("st_view_arg_id_key", ConstraintId(17));
-        m.insert("st_view_arg_bytes_key", ConstraintId(18));
-        m.insert("st_event_table_table_id_key", ConstraintId(19));
-        m.insert("st_table_accessor_table_name_key", ConstraintId(20));
-        m.insert("st_table_accessor_accessor_name_key", ConstraintId(21));
-        m.insert("st_index_accessor_index_name_key", ConstraintId(22));
-        m.insert("st_index_accessor_accessor_name_key", ConstraintId(23));
-        m.insert("st_column_accessor_table_name_col_name_key", ConstraintId(24));
-        m.insert("st_column_accessor_table_name_accessor_name_key", ConstraintId(25));
-        m
-    };
-}
+pub static CONSTRAINT_IDS: LazyLock<HashMap<&'static str, ConstraintId>> = LazyLock::new(|| {
+    let mut m = HashMap::new();
+    m.insert("st_table_table_id_key", ConstraintId(1));
+    m.insert("st_table_table_name_key", ConstraintId(2));
+    m.insert("st_column_table_id_col_pos_key", ConstraintId(3));
+    m.insert("st_sequence_sequence_id_key", ConstraintId(4));
+    m.insert("st_index_index_id_key", ConstraintId(5));
+    m.insert("st_constraint_constraint_id_key", ConstraintId(6));
+    m.insert("st_client_identity_connection_id_key", ConstraintId(7));
+    m.insert("st_var_name_key", ConstraintId(8));
+    m.insert("st_scheduled_schedule_id_key", ConstraintId(9));
+    m.insert("st_scheduled_table_id_key", ConstraintId(10));
+    m.insert("st_row_level_security_sql_key", ConstraintId(11));
+    m.insert("st_connection_credentials_connection_id_key", ConstraintId(12));
+    m.insert("st_view_view_id_key", ConstraintId(13));
+    m.insert("st_view_view_name_key", ConstraintId(14));
+    m.insert("st_view_param_view_id_param_pos_key", ConstraintId(15));
+    m.insert("st_view_column_view_id_col_pos_key", ConstraintId(16));
+    m.insert("st_view_arg_id_key", ConstraintId(17));
+    m.insert("st_view_arg_bytes_key", ConstraintId(18));
+    m.insert("st_event_table_table_id_key", ConstraintId(19));
+    m.insert("st_table_accessor_table_name_key", ConstraintId(20));
+    m.insert("st_table_accessor_accessor_name_key", ConstraintId(21));
+    m.insert("st_index_accessor_index_name_key", ConstraintId(22));
+    m.insert("st_index_accessor_accessor_name_key", ConstraintId(23));
+    m.insert("st_column_accessor_table_name_col_name_key", ConstraintId(24));
+    m.insert("st_column_accessor_table_name_accessor_name_key", ConstraintId(25));
+    m
+});
 
-lazy_static::lazy_static! {
 // We enumerate the indexes used by system tables here, so that we can assign them stable IDs.
 // When adding a new index, we just need to make sure we are incrementing the last ID used.
-    pub static ref INDEX_IDS: HashMap<&'static str, IndexId> = {
-        let mut m = HashMap::new();
-        m.insert("st_table_table_id_idx_btree", IndexId(1));
-        m.insert("st_table_table_name_idx_btree", IndexId(2));
-        m.insert("st_column_table_id_col_pos_idx_btree", IndexId(3));
-        m.insert("st_sequence_sequence_id_idx_btree", IndexId(4));
-        m.insert("st_index_index_id_idx_btree", IndexId(5));
-        m.insert("st_constraint_constraint_id_idx_btree", IndexId(6));
-        m.insert("st_client_identity_connection_id_idx_btree", IndexId(7));
-        m.insert("st_var_name_idx_btree", IndexId(8));
-        m.insert("st_scheduled_schedule_id_idx_btree", IndexId(9));
-        m.insert("st_scheduled_table_id_idx_btree", IndexId(10));
-        m.insert("st_row_level_security_table_id_idx_btree", IndexId(11));
-        m.insert("st_row_level_security_sql_idx_btree", IndexId(12));
-        m.insert("st_connection_credentials_connection_id_idx_btree", IndexId(13));
-        m.insert("st_view_view_id_idx_btree", IndexId(14));
-        m.insert("st_view_view_name_idx_btree", IndexId(15));
-        m.insert("st_view_param_view_id_param_pos_idx_btree", IndexId(16));
-        m.insert("st_view_column_view_id_col_pos_idx_btree", IndexId(17));
-        m.insert("st_view_sub_identity_idx_btree", IndexId(18));
-        m.insert("st_view_sub_has_subscribers_idx_btree", IndexId(19));
-        m.insert("st_view_sub_view_id_arg_id_identity_idx_btree", IndexId(20));
-        m.insert("st_view_arg_id_idx_btree", IndexId(21));
-        m.insert("st_view_arg_bytes_idx_btree", IndexId(22));
-        m.insert("st_event_table_table_id_idx_btree", IndexId(23));
-        m.insert("st_table_accessor_table_name_idx_btree", IndexId(24));
-        m.insert("st_table_accessor_accessor_name_idx_btree", IndexId(25));
-        m.insert("st_index_accessor_index_name_idx_btree", IndexId(26));
-        m.insert("st_index_accessor_accessor_name_idx_btree", IndexId(27));
-        m.insert("st_column_accessor_table_name_col_name_idx_btree", IndexId(28));
-        m.insert("st_column_accessor_table_name_accessor_name_idx_btree", IndexId(29));
-        m
-    };
-}
+pub static INDEX_IDS: LazyLock<HashMap<&'static str, IndexId>> = LazyLock::new(|| {
+    let mut m = HashMap::new();
+    m.insert("st_table_table_id_idx_btree", IndexId(1));
+    m.insert("st_table_table_name_idx_btree", IndexId(2));
+    m.insert("st_column_table_id_col_pos_idx_btree", IndexId(3));
+    m.insert("st_sequence_sequence_id_idx_btree", IndexId(4));
+    m.insert("st_index_index_id_idx_btree", IndexId(5));
+    m.insert("st_constraint_constraint_id_idx_btree", IndexId(6));
+    m.insert("st_client_identity_connection_id_idx_btree", IndexId(7));
+    m.insert("st_var_name_idx_btree", IndexId(8));
+    m.insert("st_scheduled_schedule_id_idx_btree", IndexId(9));
+    m.insert("st_scheduled_table_id_idx_btree", IndexId(10));
+    m.insert("st_row_level_security_table_id_idx_btree", IndexId(11));
+    m.insert("st_row_level_security_sql_idx_btree", IndexId(12));
+    m.insert("st_connection_credentials_connection_id_idx_btree", IndexId(13));
+    m.insert("st_view_view_id_idx_btree", IndexId(14));
+    m.insert("st_view_view_name_idx_btree", IndexId(15));
+    m.insert("st_view_param_view_id_param_pos_idx_btree", IndexId(16));
+    m.insert("st_view_column_view_id_col_pos_idx_btree", IndexId(17));
+    m.insert("st_view_sub_identity_idx_btree", IndexId(18));
+    m.insert("st_view_sub_has_subscribers_idx_btree", IndexId(19));
+    m.insert("st_view_sub_view_id_arg_id_identity_idx_btree", IndexId(20));
+    m.insert("st_view_arg_id_idx_btree", IndexId(21));
+    m.insert("st_view_arg_bytes_idx_btree", IndexId(22));
+    m.insert("st_event_table_table_id_idx_btree", IndexId(23));
+    m.insert("st_table_accessor_table_name_idx_btree", IndexId(24));
+    m.insert("st_table_accessor_accessor_name_idx_btree", IndexId(25));
+    m.insert("st_index_accessor_index_name_idx_btree", IndexId(26));
+    m.insert("st_index_accessor_accessor_name_idx_btree", IndexId(27));
+    m.insert("st_column_accessor_table_name_col_name_idx_btree", IndexId(28));
+    m.insert("st_column_accessor_table_name_accessor_name_idx_btree", IndexId(29));
+    m
+});
 
 // We enumerate of the sequences used by system tables here, so that we can assign them stable IDs.
 // When adding a new sequence, we just need to make sure we are incrementing the last ID used.
-lazy_static::lazy_static! {
-    pub static ref SEQUENCE_IDS: HashMap<&'static str, SequenceId> = {
-        let mut m = HashMap::new();
-        m.insert("st_table_table_id_seq", SequenceId(1));
-        m.insert("st_index_index_id_seq", SequenceId(2));
-        m.insert("st_constraint_constraint_id_seq", SequenceId(3));
-        m.insert("st_scheduled_schedule_id_seq", SequenceId(4));
-        m.insert("st_sequence_sequence_id_seq", SequenceId(5));
-        m.insert("st_view_view_id_seq", SequenceId(6));
-        m.insert("st_view_arg_id_seq", SequenceId(7));
-        m
-    };
-}
+pub static SEQUENCE_IDS: LazyLock<HashMap<&'static str, SequenceId>> = LazyLock::new(|| {
+    let mut m = HashMap::new();
+    m.insert("st_table_table_id_seq", SequenceId(1));
+    m.insert("st_index_index_id_seq", SequenceId(2));
+    m.insert("st_constraint_constraint_id_seq", SequenceId(3));
+    m.insert("st_scheduled_schedule_id_seq", SequenceId(4));
+    m.insert("st_sequence_sequence_id_seq", SequenceId(5));
+    m.insert("st_view_view_id_seq", SequenceId(6));
+    m.insert("st_view_arg_id_seq", SequenceId(7));
+    m
+});
 
 fn st_schema(name: &str, id: TableId) -> TableSchema {
     let mut result = TableSchema::from_module_def(

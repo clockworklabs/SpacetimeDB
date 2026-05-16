@@ -3,7 +3,7 @@ use crate::{
     schemas::{table_name, BenchTable, IndexStrategy},
     ResultBench,
 };
-use lazy_static::lazy_static;
+
 use rusqlite::Connection;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicValue, ProductType};
@@ -12,7 +12,7 @@ use spacetimedb_schema::table_name::TableName;
 use std::{
     fmt::Write,
     hint::black_box,
-    sync::{Arc, RwLock},
+    sync::{Arc, LazyLock, RwLock},
 };
 use tempdir::TempDir;
 
@@ -253,12 +253,9 @@ fn memo_query<F: FnOnce() -> String>(bench_name: BenchName, table_id: &str, gene
     }
 }
 
-lazy_static! {
-    // bench_name -> table_id -> query.
-    // Double hashmap is necessary because of tuple dereferencing problems.
-    static ref QUERIES: RwLock<HashMap<BenchName, HashMap<String, Arc<str>>>> =
-        RwLock::default();
-}
+// bench_name -> table_id -> query.
+// Double hashmap is necessary because of tuple dereferencing problems.
+static QUERIES: LazyLock<RwLock<HashMap<BenchName, HashMap<String, Arc<str>>>>> = LazyLock::new(RwLock::default);
 
 #[inline(never)]
 fn insert_template(table_id: &str, product_type: ProductType) -> String {
