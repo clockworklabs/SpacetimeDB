@@ -287,6 +287,18 @@ interface Indexable<
   ): ColumnBuilder<Type, SpacetimeType, SetField<M, 'indexType', N>>;
 }
 
+type IndexableBuilder<Value extends TypeBuilder<any, any>> = Value &
+  Indexable<
+    InferTypeOfTypeBuilder<Value>,
+    InferSpacetimeTypeOfTypeBuilder<Value>
+  >;
+
+type UniqueableBuilder<Value extends TypeBuilder<any, any>> = Value &
+  Uniqueable<
+    InferTypeOfTypeBuilder<Value>,
+    InferSpacetimeTypeOfTypeBuilder<Value>
+  >;
+
 /**
  * Interface for types that can be converted into a column builder with auto-increment metadata.
  *
@@ -1339,6 +1351,36 @@ export class OptionBuilder<Value extends TypeBuilder<any, any>>
   constructor(value: Value) {
     super(Option.getAlgebraicType(value.algebraicType));
     this.value = value;
+  }
+  index(
+    this: OptionBuilder<IndexableBuilder<Value>>
+  ): OptionColumnBuilder<
+    Value,
+    SetField<DefaultMetadata, 'indexType', 'btree'>
+  >;
+  index<N extends NonNullable<IndexTypes>>(
+    this: OptionBuilder<IndexableBuilder<Value>>,
+    algorithm: N
+  ): OptionColumnBuilder<Value, SetField<DefaultMetadata, 'indexType', N>>;
+  index(
+    this: OptionBuilder<IndexableBuilder<Value>>,
+    algorithm: IndexTypes = 'btree'
+  ): OptionColumnBuilder<
+    Value,
+    SetField<DefaultMetadata, 'indexType', IndexTypes>
+  > {
+    return new OptionColumnBuilder(
+      this,
+      set(defaultMetadata, { indexType: algorithm })
+    );
+  }
+  unique(
+    this: OptionBuilder<UniqueableBuilder<Value>>
+  ): OptionColumnBuilder<Value, SetField<DefaultMetadata, 'isUnique', true>> {
+    return new OptionColumnBuilder(
+      this,
+      set(defaultMetadata, { isUnique: true })
+    );
   }
   default(
     value: InferTypeOfTypeBuilder<Value> | undefined
@@ -3125,6 +3167,30 @@ export class OptionColumnBuilder<
       OptionAlgebraicType<InferSpacetimeTypeOfTypeBuilder<Value>>
     >
 {
+  index(
+    this: OptionColumnBuilder<IndexableBuilder<Value>, M>
+  ): OptionColumnBuilder<Value, SetField<M, 'indexType', 'btree'>>;
+  index<N extends NonNullable<IndexTypes>>(
+    this: OptionColumnBuilder<IndexableBuilder<Value>, M>,
+    algorithm: N
+  ): OptionColumnBuilder<Value, SetField<M, 'indexType', N>>;
+  index(
+    this: OptionColumnBuilder<IndexableBuilder<Value>, M>,
+    algorithm: IndexTypes = 'btree'
+  ): OptionColumnBuilder<Value, SetField<M, 'indexType', IndexTypes>> {
+    return new OptionColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, { indexType: algorithm })
+    );
+  }
+  unique(
+    this: OptionColumnBuilder<UniqueableBuilder<Value>, M>
+  ): OptionColumnBuilder<Value, SetField<M, 'isUnique', true>> {
+    return new OptionColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, { isUnique: true })
+    );
+  }
   default(
     value: InferTypeOfTypeBuilder<Value> | undefined
   ): OptionColumnBuilder<

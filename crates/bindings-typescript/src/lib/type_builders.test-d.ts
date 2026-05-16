@@ -43,6 +43,27 @@ const _rowOptionOptionalSome: RowOptionOptional = {
   foo: 'hello',
 };
 
+// Optional columns whose inner type is filterable may be indexed and unique.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const rowOptionIndex = {
+  id: t.u64(),
+  optionalId: t.option(t.u64()).index('btree').unique(),
+};
+type RowOptionIndex = InferTypeOfRow<typeof rowOptionIndex>;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _rowOptionIndexNone: RowOptionIndex = {
+  id: 1n,
+  optionalId: undefined,
+};
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _rowOptionIndexSome: RowOptionIndex = {
+  id: 2n,
+  optionalId: 1n,
+};
+
+// @ts-expect-error optional arrays are not filterable and cannot be indexed.
+t.option(t.array(t.u64())).index('btree');
+
 // Test that a row must not allow non-TypeBuilder or ColumnBuilder values
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const row2 = {
