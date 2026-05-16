@@ -95,6 +95,15 @@ AlgebraicType V10Builder::MakeStringAlgebraicType() {
     return AlgebraicType(AlgebraicType::Tag::String);
 }
 
+AlgebraicType V10Builder::MakeQueryReturnAlgebraicType(AlgebraicType row_type) {
+    auto product = std::make_unique<ProductType>();
+    product->elements.emplace_back(std::optional<std::string>("__query__"), std::move(row_type));
+
+    AlgebraicType query_type(AlgebraicType::Tag::Product);
+    query_type.set<2>(std::move(product));
+    return query_type;
+}
+
 void V10Builder::UpsertTable(const RawTableDefV10& table) {
     auto it = std::find_if(tables_.begin(), tables_.end(), [&](const auto& existing) {
         return existing.source_name == table.source_name;

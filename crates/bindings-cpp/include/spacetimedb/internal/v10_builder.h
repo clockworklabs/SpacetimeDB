@@ -32,6 +32,7 @@
 #include "autogen/RawRowLevelSecurityDefV9.g.h"
 #include "autogen/RawTypeDefV10.g.h"
 #include "field_registration.h"
+#include "../query_builder.h"
 #include "buffer_pool.h"
 #include "runtime_registration.h"
 #include "template_utils.h"
@@ -462,10 +463,14 @@ public:
                 [func](ViewContext& ctx, BytesSource args_source) -> std::vector<uint8_t> {
                     (void)args_source;
                     auto result = func(ctx);
-                    auto result_vec = view_result_to_vec(std::move(result));
                     IterBuf buf = IterBuf::take();
-                    {
-                        bsatn::Writer writer(buf.get());
+                    bsatn::Writer writer(buf.get());
+                    if constexpr (query_builder::QueryBuilderReturn<ReturnType>) {
+                        writer.write_u8(1);
+                        bsatn::serialize(writer, result.into_sql());
+                    } else {
+                        writer.write_u8(0);
+                        auto result_vec = view_result_to_vec(std::move(result));
                         bsatn::serialize(writer, result_vec);
                     }
                     return buf.release();
@@ -476,10 +481,14 @@ public:
                 [func](AnonymousViewContext& ctx, BytesSource args_source) -> std::vector<uint8_t> {
                     (void)args_source;
                     auto result = func(ctx);
-                    auto result_vec = view_result_to_vec(std::move(result));
                     IterBuf buf = IterBuf::take();
-                    {
-                        bsatn::Writer writer(buf.get());
+                    bsatn::Writer writer(buf.get());
+                    if constexpr (query_builder::QueryBuilderReturn<ReturnType>) {
+                        writer.write_u8(1);
+                        bsatn::serialize(writer, result.into_sql());
+                    } else {
+                        writer.write_u8(0);
+                        auto result_vec = view_result_to_vec(std::move(result));
                         bsatn::serialize(writer, result_vec);
                     }
                     return buf.release();
@@ -488,8 +497,17 @@ public:
         }
 
         auto& type_reg = getModuleTypeRegistration();
-        auto bsatn_return = bsatn::bsatn_traits<ReturnType>::algebraic_type();
-        AlgebraicType return_type = type_reg.registerType(bsatn_return, "", &typeid(ReturnType));
+        AlgebraicType return_type = [&]() {
+            if constexpr (query_builder::QueryBuilderReturn<ReturnType>) {
+                using RowType = query_builder::query_row_type_t<ReturnType>;
+                auto row_bsatn = bsatn::bsatn_traits<RowType>::algebraic_type();
+                auto row_type = type_reg.registerType(row_bsatn, "", &typeid(RowType));
+                return MakeQueryReturnAlgebraicType(std::move(row_type));
+            } else {
+                auto bsatn_return = bsatn::bsatn_traits<ReturnType>::algebraic_type();
+                return type_reg.registerType(bsatn_return, "", &typeid(ReturnType));
+            }
+        }();
         bool is_anonymous = std::is_same_v<ContextType, AnonymousViewContext>;
         uint32_t index = static_cast<uint32_t>(is_anonymous ? (GetAnonymousViewHandlerCount() - 1) : (GetViewHandlerCount() - 1));
 
@@ -647,6 +665,7 @@ private:
                                                uint16_t field_idx) const;
     static AlgebraicType MakeUnitAlgebraicType();
     static AlgebraicType MakeStringAlgebraicType();
+    static AlgebraicType MakeQueryReturnAlgebraicType(AlgebraicType row_type);
 
     std::vector<std::pair<std::string, bool>> table_is_event_;
     std::optional<CaseConversionPolicy> case_conversion_policy_;

@@ -133,6 +133,7 @@
 
 // View context and macros
 #include "spacetimedb/view_macros.h"
+#include "spacetimedb/query_builder.h"
 
 // =============================================================================
 // CONVENIENCE ALIASES AND COMPATIBILITY
