@@ -127,6 +127,7 @@ impl __sdk::InModule for {type_name} {{
         let table_name = table.name.deref();
         let table_name_pascalcase = table.accessor_name.deref().to_case(Case::Pascal);
         let table_handle = table_name_pascalcase.clone() + "TableHandle";
+        let table_accessor = table_name_pascalcase.clone() + "TableAccessor";
         let insert_callback_id = table_name_pascalcase.clone() + "InsertCallbackId";
         let delete_callback_id = table_name_pascalcase.clone() + "DeleteCallbackId";
         let accessor_trait = table_access_trait_name(&table.accessor_name);
@@ -146,6 +147,18 @@ impl __sdk::InModule for {type_name} {{
 pub struct {table_handle}<'ctx> {{
     imp: __sdk::TableHandle<{row_type}>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}}
+
+/// Lifetime-aware accessor marker for the table `{table_name}`.
+pub struct {table_accessor};
+
+impl __sdk::TableAccessor<super::RemoteTables> for {table_accessor} {{
+    type Row = {row_type};
+    type Handle<'db> = {table_handle}<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {{
+        db.{accessor_method}()
+    }}
 }}
 
 #[allow(non_camel_case_types)]
