@@ -289,12 +289,19 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool, native_aot: b
         if bin_dir.exists() {
             eprintln!("Contents of {}:", bin_dir.display());
             fn list_recursive(dir: &std::path::Path, depth: usize) {
-                if depth > 6 { return; }
+                if depth > 6 {
+                    return;
+                }
                 if let Ok(entries) = std::fs::read_dir(dir) {
                     for entry in entries.flatten() {
                         let path = entry.path();
                         let name = path.file_name().unwrap_or_default().to_string_lossy();
-                        eprintln!("{}{}{}", "  ".repeat(depth + 1), name, if path.is_dir() { "/" } else { "" });
+                        eprintln!(
+                            "{}{}{}",
+                            "  ".repeat(depth + 1),
+                            name,
+                            if path.is_dir() { "/" } else { "" }
+                        );
                         if path.is_dir() {
                             list_recursive(&path, depth + 1);
                         }
