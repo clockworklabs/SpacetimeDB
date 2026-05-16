@@ -489,6 +489,8 @@ namespace SpacetimeDB
             );
     }
 
+    public static class Handlers { }
+
     public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
     {
         public readonly Identity Sender;
@@ -652,10 +654,59 @@ namespace SpacetimeDB
         }
     }
 
+    public sealed partial class HandlerContext : global::SpacetimeDB.HandlerContextBase
+    {
+        private readonly Local _db = new();
+
+        internal HandlerContext(Random random, Timestamp time)
+            : base(random, time) { }
+
+        protected override global::SpacetimeDB.LocalBase CreateLocal() => _db;
+
+        protected override global::SpacetimeDB.HandlerTxContextBase CreateTxContext(
+            Internal.TxContext inner
+        ) => _cached ??= new HandlerTxContext(inner);
+
+        private HandlerTxContext? _cached;
+
+        [Experimental("STDB_UNSTABLE")]
+        public TResult WithTx<TResult>(Func<HandlerTxContext, TResult> body) =>
+            base.WithTx(tx => body((HandlerTxContext)tx));
+
+        [Experimental("STDB_UNSTABLE")]
+        public TxOutcome<TResult> TryWithTx<TResult, TError>(
+            Func<HandlerTxContext, Result<TResult, TError>> body
+        )
+            where TError : Exception => base.TryWithTx(tx => body((HandlerTxContext)tx));
+
+        public Uuid NewUuidV4()
+        {
+            var bytes = new byte[16];
+            Rng.NextBytes(bytes);
+            return Uuid.FromRandomBytesV4(bytes);
+        }
+
+        public Uuid NewUuidV7()
+        {
+            var bytes = new byte[4];
+            Rng.NextBytes(bytes);
+            return Uuid.FromCounterV7(ref CounterUuid, Timestamp, bytes);
+        }
+    }
+
     [Experimental("STDB_UNSTABLE")]
     public sealed class ProcedureTxContext : global::SpacetimeDB.ProcedureTxContextBase
     {
         internal ProcedureTxContext(Internal.TxContext inner)
+            : base(inner) { }
+
+        public new Local Db => (Local)base.Db;
+    }
+
+    [Experimental("STDB_UNSTABLE")]
+    public sealed class HandlerTxContext : global::SpacetimeDB.HandlerTxContextBase
+    {
+        internal HandlerTxContext(Internal.TxContext inner)
             : base(inner) { }
 
         public new Local Db => (Local)base.Db;
@@ -2450,6 +2501,9 @@ static class ModuleRegistration
             (identity, connectionId, random, time) =>
                 new SpacetimeDB.ProcedureContext(identity, connectionId, random, time)
         );
+        SpacetimeDB.Internal.Module.SetHandlerContextConstructor(
+            (random, time) => new SpacetimeDB.HandlerContext(random, time)
+        );
         var __memoryStream = new MemoryStream();
         var __writer = new BinaryWriter(__memoryStream);
 
@@ -2499,6 +2553,7 @@ static class ModuleRegistration
             global::Timers.SendMessageTimer,
             SpacetimeDB.Internal.TableHandles.SendMessageTimer
         >();
+
         SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(
             global::Module.ALL_PUBLIC_TABLES
         );
@@ -2560,6 +2615,24 @@ static class ModuleRegistration
             timestamp,
             args,
             result_sink
+        );
+
+    [UnmanagedCallersOnly(EntryPoint = "__call_http_handler__")]
+    public static SpacetimeDB.Internal.Errno __call_http_handler__(
+        uint id,
+        SpacetimeDB.Timestamp timestamp,
+        SpacetimeDB.Internal.BytesSource request,
+        SpacetimeDB.Internal.BytesSource request_body,
+        SpacetimeDB.Internal.BytesSink response_sink,
+        SpacetimeDB.Internal.BytesSink response_body_sink
+    ) =>
+        SpacetimeDB.Internal.Module.__call_http_handler__(
+            id,
+            timestamp,
+            request,
+            request_body,
+            response_sink,
+            response_body_sink
         );
 
     [UnmanagedCallersOnly(EntryPoint = "__call_view__")]

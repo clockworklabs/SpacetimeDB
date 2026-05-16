@@ -267,4 +267,70 @@ internal static class ErrorDescriptor
                 $"Index attribute on a table declaration must specify Accessor. Field-level index attributes may omit Accessor and default to the field name.",
             attr => attr
         );
+
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> HttpHandlerContextParam =
+        new(
+            group,
+            "HTTP handlers must have a first argument of type HandlerContext",
+            method =>
+                $"HTTP handler method {method.Identifier} does not have a HandlerContext parameter.",
+            method => method.ParameterList
+        );
+
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> HttpHandlerRequestParam =
+        new(
+            group,
+            "HTTP handlers must have a second argument of type HttpRequest",
+            method =>
+                $"HTTP handler method {method.Identifier} does not have an HttpRequest parameter.",
+            method => method.ParameterList
+        );
+
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> HttpHandlerReturnType =
+        new(
+            group,
+            "HTTP handlers must return HttpResponse",
+            method =>
+                $"HTTP handler method {method.Identifier} returns {method.ReturnType} instead of HttpResponse.",
+            method => method.ReturnType
+        );
+
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> HttpRouterSignature =
+        new(
+            group,
+            "HTTP routers must be static parameterless methods returning Router",
+            method =>
+                $"HTTP router method {method.Identifier} must be static, parameterless, and return Router.",
+            method => method
+        );
+
+    public static readonly ErrorDescriptor<(
+        MethodDeclarationSyntax method,
+        string prefix
+    )> HttpHandlerReservedPrefix =
+        new(
+            group,
+            "HTTP handler method has a reserved name prefix",
+            ctx =>
+                $"HTTP handler method {ctx.method.Identifier} starts with '{ctx.prefix}', which is a reserved prefix.",
+            ctx => ctx.method.Identifier
+        );
+
+    public static readonly ErrorDescriptor<IEnumerable<string>> DuplicateHttpRouters =
+        new(
+            group,
+            "Multiple [SpacetimeDB.HttpRouter] declarations",
+            fullNames =>
+                $"[SpacetimeDB.HttpRouter] is declared multiple times: {string.Join(", ", fullNames)}",
+            _ => Location.None
+        );
+
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> HttpHandlerSignature =
+        new(
+            group,
+            "HTTP handlers must be non-generic methods with exactly two parameters",
+            method =>
+                $"HTTP handler method {method.Identifier} must be non-generic and take exactly two parameters.",
+            method => method.ParameterList
+        );
 }
