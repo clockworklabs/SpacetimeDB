@@ -65,6 +65,7 @@ members = [
   "tools/replace-spacetimedb",
   "tools/generate-client-api",
   "tools/gen-bindings",
+  "tools/regen",
   "tools/xtask-llm-benchmark",
   "crates/bindings-typescript/test-app/server",
   "crates/bindings-typescript/test-react-router-app/server",

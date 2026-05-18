@@ -3,7 +3,7 @@ use std::{env, sync::Arc};
 
 use crate::llm::clients::http::HttpClient;
 use crate::llm::clients::{
-    AnthropicClient, DeepSeekClient, GoogleGeminiClient, MetaLlamaClient, OpenAiClient, XaiGrokClient,
+    AnthropicClient, DeepSeekClient, GoogleGeminiClient, MetaLlamaClient, OpenAiClient, OpenRouterClient, XaiGrokClient,
 };
 use crate::llm::provider::{LlmProvider, RouterProvider};
 use crate::llm::types::Vendor;
@@ -16,27 +16,36 @@ fn force_vendor_from_env() -> Option<Vendor> {
         Some("xai") | Some("grok") => Some(Vendor::Xai),
         Some("deepseek") => Some(Vendor::DeepSeek),
         Some("meta") | Some("llama") => Some(Vendor::Meta),
+        Some("openrouter") | Some("or") => Some(Vendor::OpenRouter),
         _ => None,
     }
 }
 
 /// Env vars:
+/// - OPENROUTER_API_KEY                            (unified proxy — routes to any vendor)
 /// - OPENAI_API_KEY,        OPENAI_BASE_URL        (default https://api.openai.com)
 /// - ANTHROPIC_API_KEY,     ANTHROPIC_BASE_URL     (default https://api.anthropic.com)
 /// - GOOGLE_API_KEY,        GOOGLE_BASE_URL        (default https://generativelanguage.googleapis.com)
 /// - XAI_API_KEY,           XAI_BASE_URL           (default https://api.x.ai)
 /// - DEEPSEEK_API_KEY,      DEEPSEEK_BASE_URL      (default https://api.deepseek.com)
 /// - META_API_KEY,          META_BASE_URL          (no default)
-/// - LLM_VENDOR: openai|anthropic|google|xai|deepseek|meta
+/// - LLM_VENDOR: openai|anthropic|google|xai|deepseek|meta|openrouter
+///
+/// When OPENROUTER_API_KEY is set, it acts as a fallback for any vendor that doesn't
+/// have its own direct API key configured. This means you can set just OPENROUTER_API_KEY
+/// to run all models through OpenRouter, or mix direct keys with OpenRouter fallback.
 pub fn make_provider_from_env() -> Result<Arc<dyn LlmProvider>> {
     let http = HttpClient::new()?;
 
-    let openai_key = env::var("OPENAI_API_KEY").ok();
-    let anth_key = env::var("ANTHROPIC_API_KEY").ok();
-    let google_key = env::var("GOOGLE_API_KEY").ok();
-    let xai_key = env::var("XAI_API_KEY").ok();
-    let deep_key = env::var("DEEPSEEK_API_KEY").ok();
-    let meta_key = env::var("META_API_KEY").ok();
+    // Filter out empty strings so an empty env var falls through to OpenRouter.
+    let non_empty = |k: &str| env::var(k).ok().filter(|v| !v.trim().is_empty());
+    let openai_key = non_empty("OPENAI_API_KEY");
+    let anth_key = non_empty("ANTHROPIC_API_KEY");
+    let google_key = non_empty("GOOGLE_API_KEY");
+    let xai_key = non_empty("XAI_API_KEY");
+    let deep_key = non_empty("DEEPSEEK_API_KEY");
+    let meta_key = non_empty("META_API_KEY");
+    let openrouter_key = non_empty("OPENROUTER_API_KEY");
 
     // IMPORTANT: no trailing /v1 here; clients append their own versioned paths.
     let openai_base = env::var("OPENAI_BASE_URL").unwrap_or_else(|_| "https://api.openai.com".to_string());
@@ -72,7 +81,9 @@ pub fn make_provider_from_env() -> Result<Arc<dyn LlmProvider>> {
         _ => None,
     };
 
+    let openrouter = openrouter_key.map(|k| OpenRouterClient::new(http.clone(), k));
+
     let force = force_vendor_from_env();
-    let router = RouterProvider::new(openai, anthropic, google, xai, deepseek, meta, force);
+    let router = RouterProvider::new(openai, anthropic, google, xai, deepseek, meta, openrouter, force);
     Ok(Arc::new(router))
 }

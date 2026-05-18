@@ -166,6 +166,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         lifecycle_reducers,
         procedures,
         raw_module_def_version: RawModuleDefVersion::V9OrEarlier,
+        mounts: Vec::new(),
     })
 }
 

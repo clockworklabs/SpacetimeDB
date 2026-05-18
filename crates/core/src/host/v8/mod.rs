@@ -74,8 +74,8 @@ use crate::config::{V8Config, V8HeapPolicyConfig};
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
 use crate::host::module_host::{
-    call_identity_connected, init_database, ClientConnectedError, OneOffQueryBsatnParams, OneOffQueryJsonParams,
-    OneOffQueryV2Params, SqlCommand, SqlCommandResult, ViewCommand, ViewCommandMetric, ViewCommandResult,
+    call_identity_connected, init_database, ClientConnectedError, OneOffQueryRequest, SqlCommand, SqlCommandResult,
+    ViewCommand, ViewCommandMetric, ViewCommandResult,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::wasm_common::instrumentation::CallTimes;
@@ -564,36 +564,10 @@ impl JsMainInstance {
         self.request(CallSqlRequest { cmd }).await
     }
 
-    pub(in crate::host) async fn enqueue_one_off_query_json(
-        &self,
-        params: OneOffQueryJsonParams,
-        on_panic: JsFatalHook,
-    ) {
-        self.send_detached_request(
-            "one_off_query_json",
-            JsMainWorkerRequest::OneOffQueryJsonDetached { params, on_panic },
-        )
-        .await
-    }
-
-    pub(in crate::host) async fn enqueue_one_off_query_bsatn(
-        &self,
-        params: OneOffQueryBsatnParams,
-        on_panic: JsFatalHook,
-    ) {
-        self.send_detached_request(
-            "one_off_query_bsatn",
-            JsMainWorkerRequest::OneOffQueryBsatnDetached { params, on_panic },
-        )
-        .await
-    }
-
-    pub(in crate::host) async fn enqueue_one_off_query_v2(&self, params: OneOffQueryV2Params, on_panic: JsFatalHook) {
-        self.send_detached_request(
-            "one_off_query_v2",
-            JsMainWorkerRequest::OneOffQueryV2Detached { params, on_panic },
-        )
-        .await
+    pub(in crate::host) async fn enqueue_one_off_query(&self, request: OneOffQueryRequest, on_panic: JsFatalHook) {
+        let ctx = request.label();
+        self.send_detached_request(ctx, JsMainWorkerRequest::OneOffQueryDetached { request, on_panic })
+            .await
     }
 }
 
@@ -605,177 +579,106 @@ trait JsMainRequest {
     fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest;
 }
 
-struct UpdateDatabaseRequest {
-    program: Program,
-    old_module_info: Arc<ModuleInfo>,
-    policy: MigrationPolicy,
-}
-
-impl JsMainRequest for UpdateDatabaseRequest {
-    type Response = anyhow::Result<UpdateDatabaseResult>;
-
-    const CTX: &'static str = "update_database";
-
-    fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest {
-        JsMainWorkerRequest::UpdateDatabase {
-            reply_tx,
-            program: self.program,
-            old_module_info: self.old_module_info,
-            policy: self.policy,
+macro_rules! js_main_request {
+    (
+        $request:ident {
+            $($field:ident: $field_ty:ty),* $(,)?
+        } => $ctx:literal, $response:ty, $variant:ident
+    ) => {
+        struct $request {
+            $($field: $field_ty),*
         }
-    }
-}
 
-struct CallReducerRequest {
-    params: CallReducerParams,
-}
+        impl JsMainRequest for $request {
+            type Response = $response;
 
-impl JsMainRequest for CallReducerRequest {
-    type Response = ReducerCallResult;
+            const CTX: &'static str = $ctx;
 
-    const CTX: &'static str = "call_reducer";
-
-    fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest {
-        JsMainWorkerRequest::CallReducer {
-            reply_tx,
-            params: self.params,
+            fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest {
+                JsMainWorkerRequest::$variant {
+                    reply_tx,
+                    $($field: self.$field),*
+                }
+            }
         }
-    }
-}
+    };
+    (
+        $request:ident => $ctx:literal, $response:ty, $variant:ident
+    ) => {
+        struct $request;
 
-struct ScheduledReducerRequest {
-    params: ScheduledFunctionParams,
-}
+        impl JsMainRequest for $request {
+            type Response = $response;
 
-impl JsMainRequest for ScheduledReducerRequest {
-    type Response = CallScheduledFunctionResult;
+            const CTX: &'static str = $ctx;
 
-    const CTX: &'static str = "scheduled_reducer";
-
-    fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest {
-        JsMainWorkerRequest::ScheduledReducer {
-            reply_tx,
-            params: self.params,
+            fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest {
+                JsMainWorkerRequest::$variant(reply_tx)
+            }
         }
-    }
+    };
 }
 
-struct ClearAllClientsRequest;
-
-impl JsMainRequest for ClearAllClientsRequest {
-    type Response = anyhow::Result<()>;
-
-    const CTX: &'static str = "clear_all_clients";
-
-    fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest {
-        JsMainWorkerRequest::ClearAllClients(reply_tx)
-    }
+js_main_request! {
+    UpdateDatabaseRequest {
+        program: Program,
+        old_module_info: Arc<ModuleInfo>,
+        policy: MigrationPolicy,
+    } => "update_database", anyhow::Result<UpdateDatabaseResult>, UpdateDatabase
 }
 
-struct CallIdentityConnectedRequest {
-    caller_auth: ConnectionAuthCtx,
-    caller_connection_id: ConnectionId,
+js_main_request! {
+    CallReducerRequest {
+        params: CallReducerParams,
+    } => "call_reducer", ReducerCallResult, CallReducer
 }
 
-impl JsMainRequest for CallIdentityConnectedRequest {
-    type Response = Result<(), ClientConnectedError>;
-
-    const CTX: &'static str = "call_identity_connected";
-
-    fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest {
-        JsMainWorkerRequest::CallIdentityConnected {
-            reply_tx,
-            caller_auth: self.caller_auth,
-            caller_connection_id: self.caller_connection_id,
-        }
-    }
+js_main_request! {
+    ScheduledReducerRequest {
+        params: ScheduledFunctionParams,
+    } => "scheduled_reducer", CallScheduledFunctionResult, ScheduledReducer
 }
 
-struct CallIdentityDisconnectedRequest {
-    caller_identity: Identity,
-    caller_connection_id: ConnectionId,
+js_main_request! {
+    ClearAllClientsRequest => "clear_all_clients", anyhow::Result<()>, ClearAllClients
 }
 
-impl JsMainRequest for CallIdentityDisconnectedRequest {
-    type Response = Result<(), ReducerCallError>;
-
-    const CTX: &'static str = "call_identity_disconnected";
-
-    fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest {
-        JsMainWorkerRequest::CallIdentityDisconnected {
-            reply_tx,
-            caller_identity: self.caller_identity,
-            caller_connection_id: self.caller_connection_id,
-        }
-    }
+js_main_request! {
+    CallIdentityConnectedRequest {
+        caller_auth: ConnectionAuthCtx,
+        caller_connection_id: ConnectionId,
+    } => "call_identity_connected", Result<(), ClientConnectedError>, CallIdentityConnected
 }
 
-struct DisconnectClientRequest {
-    client_id: ClientActorId,
+js_main_request! {
+    CallIdentityDisconnectedRequest {
+        caller_identity: Identity,
+        caller_connection_id: ConnectionId,
+    } => "call_identity_disconnected", Result<(), ReducerCallError>, CallIdentityDisconnected
 }
 
-impl JsMainRequest for DisconnectClientRequest {
-    type Response = Result<(), ReducerCallError>;
-
-    const CTX: &'static str = "disconnect_client";
-
-    fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest {
-        JsMainWorkerRequest::DisconnectClient {
-            reply_tx,
-            client_id: self.client_id,
-        }
-    }
+js_main_request! {
+    DisconnectClientRequest {
+        client_id: ClientActorId,
+    } => "disconnect_client", Result<(), ReducerCallError>, DisconnectClient
 }
 
-struct InitDatabaseRequest {
-    program: Program,
+js_main_request! {
+    InitDatabaseRequest {
+        program: Program,
+    } => "init_database", anyhow::Result<Option<ReducerCallResult>>, InitDatabase
 }
 
-impl JsMainRequest for InitDatabaseRequest {
-    type Response = anyhow::Result<Option<ReducerCallResult>>;
-
-    const CTX: &'static str = "init_database";
-
-    fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest {
-        JsMainWorkerRequest::InitDatabase {
-            reply_tx,
-            program: self.program,
-        }
-    }
+js_main_request! {
+    CallViewRequest {
+        cmd: ViewCommand,
+    } => "call_view", ViewCommandResult, CallView
 }
 
-struct CallViewRequest {
-    cmd: ViewCommand,
-}
-
-impl JsMainRequest for CallViewRequest {
-    type Response = ViewCommandResult;
-
-    const CTX: &'static str = "call_view";
-
-    fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest {
-        JsMainWorkerRequest::CallView {
-            reply_tx,
-            cmd: self.cmd,
-        }
-    }
-}
-
-struct CallSqlRequest {
-    cmd: SqlCommand,
-}
-
-impl JsMainRequest for CallSqlRequest {
-    type Response = SqlCommandResult;
-
-    const CTX: &'static str = "call_sql";
-
-    fn into_worker_request(self, reply_tx: JsReplyTx<Self::Response>) -> JsMainWorkerRequest {
-        JsMainWorkerRequest::CallSql {
-            reply_tx,
-            cmd: self.cmd,
-        }
-    }
+js_main_request! {
+    CallSqlRequest {
+        cmd: SqlCommand,
+    } => "call_sql", SqlCommandResult, CallSql
 }
 
 impl JsProcedureInstance {
@@ -927,19 +830,9 @@ enum JsMainWorkerRequest {
         reply_tx: JsReplyTx<SqlCommandResult>,
         cmd: SqlCommand,
     },
-    /// See [`JsMainInstance::enqueue_one_off_query_json`].
-    OneOffQueryJsonDetached {
-        params: OneOffQueryJsonParams,
-        on_panic: JsFatalHook,
-    },
-    /// See [`JsMainInstance::enqueue_one_off_query_bsatn`].
-    OneOffQueryBsatnDetached {
-        params: OneOffQueryBsatnParams,
-        on_panic: JsFatalHook,
-    },
-    /// See [`JsMainInstance::enqueue_one_off_query_v2`].
-    OneOffQueryV2Detached {
-        params: OneOffQueryV2Params,
+    /// See [`JsMainInstance::enqueue_one_off_query`].
+    OneOffQueryDetached {
+        request: OneOffQueryRequest,
         on_panic: JsFatalHook,
     },
     /// See [`JsMainInstance::clear_all_clients`].
@@ -1358,7 +1251,6 @@ trait JsWorkerSpec {
 
     fn handle_request(
         request: Self::Request,
-        rt: &tokio::runtime::Handle,
         instance_common: &mut InstanceCommon,
         inst: &mut V8Instance<'_, '_, '_>,
         module_common: &ModuleCommon,
@@ -1395,13 +1287,12 @@ impl JsWorkerSpec for MainJsWorker {
 
     fn handle_request(
         request: Self::Request,
-        rt: &tokio::runtime::Handle,
         instance_common: &mut InstanceCommon,
         inst: &mut V8Instance<'_, '_, '_>,
         module_common: &ModuleCommon,
         replica_ctx: &Arc<ReplicaContext>,
     ) -> WorkerRequestOutcome {
-        handle_main_worker_request(request, rt, instance_common, inst, module_common, replica_ctx)
+        handle_main_worker_request(request, instance_common, inst, module_common, replica_ctx)
     }
 }
 
@@ -1427,7 +1318,6 @@ impl JsWorkerSpec for ProcedureJsWorker {
 
     fn handle_request(
         request: Self::Request,
-        _rt: &tokio::runtime::Handle,
         instance_common: &mut InstanceCommon,
         inst: &mut V8Instance<'_, '_, '_>,
         _module_common: &ModuleCommon,
@@ -1439,7 +1329,6 @@ impl JsWorkerSpec for ProcedureJsWorker {
 
 fn handle_main_worker_request(
     request: JsMainWorkerRequest,
-    _rt: &tokio::runtime::Handle,
     instance_common: &mut InstanceCommon,
     inst: &mut V8Instance<'_, '_, '_>,
     module_common: &ModuleCommon,
@@ -1495,32 +1384,11 @@ fn handle_main_worker_request(
             let (res, trapped) = instance_common.handle_sql_cmd(cmd, inst);
             (res, trapped)
         }),
-        JsMainWorkerRequest::OneOffQueryJsonDetached { params, on_panic } => {
-            handle_detached_worker_request("one_off_query_json", on_panic, || {
-                let timer = params.timer();
-                let res = ModuleHost::one_off_query_json_inner(params);
-                if let Err(err) = &res {
-                    log::warn!("detached one-off query failed: {err:#}");
-                }
-                ModuleHost::record_one_off_query_round_trip(&module_common.info(), timer);
-                false
-            })
-        }
-        JsMainWorkerRequest::OneOffQueryBsatnDetached { params, on_panic } => {
-            handle_detached_worker_request("one_off_query_bsatn", on_panic, || {
-                let timer = params.timer();
-                let res = ModuleHost::one_off_query_bsatn_inner(params);
-                if let Err(err) = &res {
-                    log::warn!("detached one-off query failed: {err:#}");
-                }
-                ModuleHost::record_one_off_query_round_trip(&module_common.info(), timer);
-                false
-            })
-        }
-        JsMainWorkerRequest::OneOffQueryV2Detached { params, on_panic } => {
-            handle_detached_worker_request("one_off_query_v2", on_panic, || {
-                let timer = params.timer();
-                let res = ModuleHost::one_off_query_v2_inner(params);
+        JsMainWorkerRequest::OneOffQueryDetached { request, on_panic } => {
+            let label = request.label();
+            handle_detached_worker_request(label, on_panic, || {
+                let timer = request.timer();
+                let res = request.run();
                 if let Err(err) = &res {
                     log::warn!("detached one-off query failed: {err:#}");
                 }
@@ -1784,14 +1652,8 @@ where
                 while let Some(request) = W::blocking_recv(&mut request_rx) {
                     core_pinner.pin_if_changed();
 
-                    let mut outcome = W::handle_request(
-                        request,
-                        &rt,
-                        &mut instance_common,
-                        &mut inst,
-                        &module_common,
-                        replica_ctx,
-                    );
+                    let mut outcome =
+                        W::handle_request(request, &mut instance_common, &mut inst, &module_common, replica_ctx);
 
                     if let WorkerRequestOutcome::Continue = outcome
                         && let Some(heap_metrics) = heap_metrics.as_mut()

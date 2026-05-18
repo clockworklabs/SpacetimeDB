@@ -1,7 +1,0 @@
-﻿services:
-  crdb-rpc-lb:
-    image: nginx:stable
-    ports:
-      - "4102:4102"
-    volumes:
-      - ./nginx-crdb.conf:/etc/nginx/nginx.conf:ro

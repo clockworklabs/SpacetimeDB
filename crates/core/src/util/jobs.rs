@@ -375,6 +375,26 @@ impl SingleCoreExecutor {
         }
     }
 
+    /// Enqueue a job for this database executor without waiting for its result.
+    pub fn enqueue_job<F>(&self, f: F)
+    where
+        F: AsyncFnOnce() + Send + 'static,
+    {
+        let span = tracing::Span::current();
+
+        self.inner
+            .job_tx
+            .send(Box::new(move || {
+                async move {
+                    if AssertUnwindSafe(f().instrument(span)).catch_unwind().await.is_err() {
+                        tracing::warn!("uncaught panic on `SingleCoreExecutor`")
+                    }
+                }
+                .boxed_local()
+            }))
+            .unwrap_or_else(|_| panic!("job thread exited"));
+    }
+
     /// Run `f` on this database executor and return its result.
     pub async fn run_sync_job<F, R>(&self, f: F) -> R
     where

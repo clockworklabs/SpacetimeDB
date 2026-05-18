@@ -618,6 +618,11 @@ Subscribe to SQL queries on the database. WARNING: This command is UNSTABLE and 
 
 Start a local SpacetimeDB instance
 
+Set a persistent default listen address in cli.toml with:
+    listen_addr = "0.0.0.0:4000"
+
+When present, `listen_addr` is used unless `--listen-addr` is passed explicitly.
+
 Run `spacetime start --help` to see all options.
 
 **Usage:** `spacetime start [OPTIONS] [args]...`

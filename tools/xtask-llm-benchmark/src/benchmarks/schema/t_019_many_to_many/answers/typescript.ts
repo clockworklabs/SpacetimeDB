@@ -5,7 +5,7 @@ const user = table(
     name: 'user',
   },
   {
-    userId: t.i32().primaryKey(),
+    userId: t.u64().primaryKey().autoInc(),
     name: t.string(),
   }
 );
@@ -15,7 +15,7 @@ const group = table(
     name: 'group',
   },
   {
-    groupId: t.i32().primaryKey(),
+    groupId: t.u64().primaryKey().autoInc(),
     title: t.string(),
   }
 );
@@ -29,9 +29,9 @@ const membership = table(
     ],
   },
   {
-    id: t.i32().primaryKey(),
-    userId: t.i32(),
-    groupId: t.i32(),
+    id: t.u64().primaryKey().autoInc(),
+    userId: t.u64(),
+    groupId: t.u64(),
   }
 );
 
@@ -39,13 +39,13 @@ const spacetimedb = schema({ user, group, membership });
 export default spacetimedb;
 
 export const seed = spacetimedb.reducer(ctx => {
-  ctx.db.user.insert({ userId: 1, name: 'Alice' });
-  ctx.db.user.insert({ userId: 2, name: 'Bob' });
+  ctx.db.user.insert({ userId: 0n, name: 'Alice' });
+  ctx.db.user.insert({ userId: 0n, name: 'Bob' });
 
-  ctx.db.group.insert({ groupId: 10, title: 'Admin' });
-  ctx.db.group.insert({ groupId: 20, title: 'Dev' });
+  ctx.db.group.insert({ groupId: 0n, title: 'Admin' });
+  ctx.db.group.insert({ groupId: 0n, title: 'Dev' });
 
-  ctx.db.membership.insert({ id: 1, userId: 1, groupId: 10 });
-  ctx.db.membership.insert({ id: 2, userId: 1, groupId: 20 });
-  ctx.db.membership.insert({ id: 3, userId: 2, groupId: 20 });
+  ctx.db.membership.insert({ id: 0n, userId: 1n, groupId: 1n });
+  ctx.db.membership.insert({ id: 0n, userId: 1n, groupId: 2n });
+  ctx.db.membership.insert({ id: 0n, userId: 2n, groupId: 2n });
 });

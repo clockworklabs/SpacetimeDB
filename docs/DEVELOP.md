@@ -126,21 +126,9 @@ $env:LLM_BENCH_ROUTE_CONCURRENCY="4"
 
 Results directory: `docs/llms`
 
-### Result Files
+### Results Storage
 
-There are two sets of result files, each serving a different purpose:
-
-| Files | Purpose | Updated By |
-|-------|---------|------------|
-| `docs-benchmark-details.json`<br>`docs-benchmark-summary.json` | Test documentation quality with a single reference model (GPT-5) | `cargo llm ci-quickfix` |
-| `llm-comparison-details.json`<br>`llm-comparison-summary.json` | Compare all LLMs against the same documentation | `cargo llm run` |
-
-- **docs-benchmark**: Used by CI to ensure documentation quality. Contains only GPT-5 results.
-- **llm-comparison**: Used for manual benchmark runs to compare LLM performance. Contains results from all configured models.
-
-> Results writes are lock-safe and atomic. The tool takes an exclusive lock and writes via a temp file, then renames it, so concurrent runs won't corrupt results.
-
-Open `llm_benchmark_stats_viewer.html` in a browser to inspect merged results locally.
+Benchmark results are stored in a remote PostgreSQL database via the spacetime-web API. Results are uploaded automatically after each benchmark batch when `LLM_BENCHMARK_UPLOAD_URL` and `LLM_BENCHMARK_API_KEY` environment variables are set. Use `--dry-run` to skip uploading.
 ### Current Benchmarks
 
 **basics**

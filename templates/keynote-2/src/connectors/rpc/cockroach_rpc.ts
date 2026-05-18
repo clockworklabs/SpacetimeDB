@@ -46,37 +46,6 @@ export default function cockroach_rpc(
     return json.result;
   }
 
-  async function callWithRetry(
-    name: string,
-    args?: Record<string, unknown>,
-    maxRetries: number = 5,
-  ) {
-    let attempts = 0;
-    while (attempts < maxRetries) {
-      try {
-        return await httpCall(name, args);
-      } catch (err: unknown) {
-        let errMsg = 'Unknown error';
-        if (err instanceof Error) {
-          errMsg = err.message;
-        } else if (typeof err === 'string') {
-          errMsg = err;
-        }
-        if (
-          errMsg.includes('serialization') ||
-          errMsg.includes('restart transaction') ||
-          errMsg.includes('40001')
-        ) {
-          attempts++;
-          if (attempts >= maxRetries) throw err;
-          continue;
-        }
-        throw err;
-      }
-    }
-    throw new Error('Max retries exceeded');
-  }
-
   const root: RpcConnector = {
     name: 'cockroach_rpc',
 
@@ -107,9 +76,6 @@ export default function cockroach_rpc(
     },
 
     async call(name: string, args?: Record<string, unknown>) {
-      if (name === 'transfer') {
-        return callWithRetry(name, args);
-      }
       return httpCall(name, args);
     },
 
