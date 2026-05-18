@@ -308,9 +308,7 @@ fn validate_mount_names_are_unique(mounts: Vec<(String, ModuleDef)>) -> Result<I
 
     for (namespace, def) in mounts {
         if map.contains_key(&namespace) {
-            errors.push(ValidationError::DuplicateName {
-                name: namespace.into(),
-            });
+            errors.push(ValidationError::DuplicateName { name: namespace.into() });
         } else {
             map.insert(namespace, def);
         }
