@@ -127,7 +127,6 @@ pub enum MethodOrAny {
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
-
 pub struct RawModuleMountV10 {
     pub namespace: String,
     pub module: RawModuleDefV10,
