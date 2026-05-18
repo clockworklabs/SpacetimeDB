@@ -1,0 +1,14 @@
+Write a SpacetimeDB backend module in C# that defines an event table for damage notifications and a reducer that publishes events to it.
+
+TABLES
+- DamageEvent
+  - Struct: DamageEvent
+  - public event table (rows exist only for the duration of the transaction, set Event = true)
+  - Fields:
+    - EntityId: ulong
+    - Damage: uint
+    - Source: string
+
+REDUCERS
+- DealDamage(ctx, ulong entityId, uint damage, string source)
+  - Insert a DamageEvent row into the event table

@@ -1,0 +1,29 @@
+Write a SpacetimeDB backend module in Rust that implements role-based access control.
+
+TABLES
+- user
+  - Struct: User
+  - private table
+  - Fields:
+    - identity: Identity (primary key)
+    - role: String  ("admin" or "member")
+
+REDUCERS
+- register(ctx)
+  - If a User row already exists for ctx.sender, panic with "already registered"
+  - Insert User { identity: ctx.sender, role: "member" }
+
+- promote(ctx, target: Identity)
+  - Load the User row for ctx.sender; if missing, panic with "not registered"
+  - If the caller's role is not "admin", panic with "not admin"
+  - Load the User row for target; if missing, panic with "target not registered"
+  - Update that row's role to "admin"
+
+- member_action(ctx)
+  - Load the User row for ctx.sender; if missing, panic with "not registered"
+  - (No further logic needed; presence of the row is sufficient)
+
+- admin_action(ctx)
+  - Load the User row for ctx.sender; if missing, panic with "not registered"
+  - If the role is not "admin", panic with "not admin"
+  - (No further logic needed beyond the guard)

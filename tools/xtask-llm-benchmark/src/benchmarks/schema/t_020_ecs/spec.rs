@@ -1,5 +1,5 @@
-use crate::eval::defaults::{default_schema_parity_scorers, make_reducer_sql_count_scorer};
-use crate::eval::{casing_for_lang, ident, table_name, BenchmarkSpec, ReducerSqlCountConfig, SqlBuilder};
+use crate::eval::defaults::{default_schema_parity_scorers, make_reducer_call_both_scorer, make_sql_count_only_scorer};
+use crate::eval::{casing_for_lang, ident, table_name, BenchmarkSpec, SqlBuilder};
 use std::time::Duration;
 pub fn spec() -> BenchmarkSpec {
     BenchmarkSpec::from_tasks_auto(file!(), |lang, route_tag, host_url| {
@@ -18,59 +18,65 @@ pub fn spec() -> BenchmarkSpec {
         let position_table = table_name("position", lang);
         let next_position_table = table_name("next_position", lang);
 
-        let base = |reducer: &str| ReducerSqlCountConfig {
-            src_file: file!(),
+        // Seed once
+        v.push(make_reducer_call_both_scorer(
+            host_url,
+            file!(),
             route_tag,
-            reducer: reducer.to_string(),
-            args: vec![],
-            sql_count_query: String::new(),
-            expected_count: 0,
-            id_str: "",
-            timeout: Duration::from_secs(10),
-        };
-
-        v.push(make_reducer_sql_count_scorer(
-            host_url,
-            ReducerSqlCountConfig {
-                sql_count_query: format!("SELECT COUNT(*) AS n FROM {position_table}"),
-                expected_count: 2,
-                id_str: "ecs_seed_position_count",
-                ..base(&seed) // or base("seed") if it's a &str
-            },
+            &seed,
+            vec![],
+            "ecs_seed",
         ));
 
-        v.push(make_reducer_sql_count_scorer(
+        v.push(make_sql_count_only_scorer(
             host_url,
-            ReducerSqlCountConfig {
-                sql_count_query: format!("SELECT COUNT(*) AS n FROM {next_position_table}"),
-                expected_count: 2,
-                id_str: "ecs_step_next_position_count",
-                ..base(&step) // or base("step")
-            },
+            file!(),
+            route_tag,
+            format!("SELECT COUNT(*) AS n FROM {position_table}"),
+            2,
+            "ecs_seed_position_count",
+            Duration::from_secs(10),
         ));
 
-        v.push(make_reducer_sql_count_scorer(
+        // Step once
+        v.push(make_reducer_call_both_scorer(
             host_url,
-            ReducerSqlCountConfig {
-                sql_count_query: format!(
-                    "SELECT COUNT(*) AS n FROM {next_position_table} WHERE {entity_id}=1 AND {x}=1 AND {y}=0",
-                ),
-                expected_count: 1,
-                id_str: "ecs_next_pos_entity1",
-                ..base(&step)
-            },
+            file!(),
+            route_tag,
+            &step,
+            vec![],
+            "ecs_step",
         ));
 
-        v.push(make_reducer_sql_count_scorer(
+        // Then just query
+        v.push(make_sql_count_only_scorer(
             host_url,
-            ReducerSqlCountConfig {
-                sql_count_query: format!(
-                    "SELECT COUNT(*) AS n FROM {next_position_table} WHERE {entity_id}=2 AND {x}=8 AND {y}=3",
-                ),
-                expected_count: 1,
-                id_str: "ecs_next_pos_entity2",
-                ..base(&step)
-            },
+            file!(),
+            route_tag,
+            format!("SELECT COUNT(*) AS n FROM {next_position_table}"),
+            2,
+            "ecs_step_next_position_count",
+            Duration::from_secs(10),
+        ));
+
+        v.push(make_sql_count_only_scorer(
+            host_url,
+            file!(),
+            route_tag,
+            format!("SELECT COUNT(*) AS n FROM {next_position_table} WHERE {entity_id}=1 AND {x}=1 AND {y}=0",),
+            1,
+            "ecs_next_pos_entity1",
+            Duration::from_secs(10),
+        ));
+
+        v.push(make_sql_count_only_scorer(
+            host_url,
+            file!(),
+            route_tag,
+            format!("SELECT COUNT(*) AS n FROM {next_position_table} WHERE {entity_id}=2 AND {x}=8 AND {y}=3",),
+            1,
+            "ecs_next_pos_entity2",
+            Duration::from_secs(10),
         ));
 
         v
