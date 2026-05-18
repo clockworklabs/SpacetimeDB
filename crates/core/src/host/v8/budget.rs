@@ -13,7 +13,7 @@ use core::ptr;
 use core::sync::atomic::Ordering;
 use core::time::Duration;
 use core::{ffi::c_void, sync::atomic::AtomicBool};
-use spacetimedb_client_api_messages::energy::FunctionBudget;
+use spacetimedb_client_api_messages::energy::{EnergyQuanta, FunctionBudget};
 use std::sync::Arc;
 use v8::{Isolate, IsolateHandle};
 
@@ -69,6 +69,7 @@ pub(super) extern "C" fn cb_noop(_: v8::UnsafeRawIsolatePtr, _: *mut c_void) {}
 ///
 /// Every `callback_every` ticks, `callback` is called.
 fn run_timeout_and_cb_every(
+    // TODO: use RemoteTerminator here once we actually call this function, and make RemoteTerminator thread-safe.
     handle: IsolateHandle,
     callback_every: u64,
     callback: InterruptCallback,
@@ -117,7 +118,12 @@ fn budget_to_duration(_budget: FunctionBudget) -> Duration {
 /// Returns [`EnergyStats`] for a reducer given its `budget`
 /// and the `duration` it took to execute.
 pub(super) fn energy_from_elapsed(budget: FunctionBudget, duration: Duration) -> EnergyStats {
-    let used = duration_to_budget(duration);
+    let used = duration.as_nanos() * EnergyQuanta::PER_EXECUTION_NANOSEC.get();
+    // in order for duration_nanos * ev_per_ns >= u64::MAX:
+    //              duration_nanos >= u64::MAX / ev_per_ns
+    //              duration_nanos >= (9223372036854775 ns = 106.75 days)
+    // so it's unlikely we'll have to worry about it
+    let used = FunctionBudget::new(u64::try_from(used).unwrap_or(u64::MAX));
     let remaining = budget - used;
     EnergyStats { budget, remaining }
 }

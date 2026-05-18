@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Containers/Ticker.h"
 #include "UObject/NoExportTypes.h"
 #include "Types/Builtins.h"
 #include "Websocket.h"
@@ -115,7 +116,7 @@ struct THasOnUpdateDelegate<T, std::void_t<decltype(&T::OnUpdate)>> : std::true_
 };
 
 UCLASS()
-class SPACETIMEDBSDK_API UDbConnectionBase : public UObject, public FTickableGameObject
+class SPACETIMEDBSDK_API UDbConnectionBase : public UObject
 {
 	GENERATED_BODY()
 
@@ -136,7 +137,7 @@ public:
 	void FrameTick();
 
 	UFUNCTION(BlueprintCallable, Category="SpacetimeDB")
-	void SetAutoTicking(bool bAutoTick) { bIsAutoTicking = bAutoTick; }
+	void SetAutoTicking(bool bAutoTick);
 
 	/** Send a raw JSON message to the server. */
 	bool SendRawMessage(const FString& Message);
@@ -259,6 +260,8 @@ public:
 
 protected:
 
+	virtual void BeginDestroy() override;
+
 	friend class UDbConnectionBuilderBase;
 	friend class UDbConnectionBuilder;
 	friend class USubscriptionHandleBase;
@@ -276,13 +279,7 @@ protected:
 	UFUNCTION()
 	void HandleWSBinaryMessage(const TArray<uint8>& Message);
 
-	virtual void Tick(float DeltaTime) override;
-
-	virtual TStatId GetStatId() const override;
-
-	virtual bool IsTickable() const override;
-
-	virtual bool IsTickableInEditor() const override;
+	bool OnTickerTick(float DeltaTime);
 
 	/** Internal handler that processes a single server message. */
 	void ProcessServerMessage(const FServerMessageType& Message);
@@ -407,6 +404,7 @@ protected:
 
 	UPROPERTY()
 	bool bIsAutoTicking = false;
+	FTSTicker::FDelegateHandle TickerHandle;
 	/** Guard to avoid repeatedly handling the same fatal protocol error. */
 	FThreadSafeBool bProtocolViolationHandled = false;
 

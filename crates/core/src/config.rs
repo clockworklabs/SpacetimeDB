@@ -1,7 +1,9 @@
+use std::num::NonZeroUsize;
 use std::path::Path;
 use std::time::Duration;
 use std::{fmt, io};
 
+use anyhow::Context;
 use serde::Deserialize;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_paths::cli::{ConfigDir, PrivKeyPath, PubKeyPath};
@@ -12,7 +14,11 @@ use spacetimedb_paths::server::{ConfigToml, MetadataTomlPath};
 /// **WARNING**: Comments and formatting in the file will be lost.
 pub fn parse_config<T: serde::de::DeserializeOwned>(path: &Path) -> anyhow::Result<Option<T>> {
     match std::fs::read_to_string(path) {
-        Ok(contents) => Ok(Some(toml::from_str(&contents)?)),
+        Ok(contents) => {
+            let config =
+                toml::from_str(&contents).with_context(|| format!("invalid TOML syntax in {}", path.display()))?;
+            Ok(Some(config))
+        }
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e.into()),
     }
@@ -127,15 +133,47 @@ impl fmt::Display for MetadataFile {
     }
 }
 
+#[derive(Default)]
+pub struct ConfigFile {
+    pub certificate_authority: Option<CertificateAuthority>,
+    pub logs: LogConfig,
+    pub wasm: WasmConfig,
+    pub v8: V8Config,
+}
+
 #[derive(serde::Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
-pub struct ConfigFile {
+struct ConfigFileToml {
     #[serde(default)]
-    pub certificate_authority: Option<CertificateAuthority>,
+    certificate_authority: Option<CertificateAuthority>,
     #[serde(default)]
-    pub logs: LogConfig,
+    logs: LogConfig,
     #[serde(default)]
-    pub v8_heap_policy: V8HeapPolicyConfig,
+    wasm: WasmConfigToml,
+    #[serde(default)]
+    v8: V8ConfigToml,
+    #[serde(default)]
+    v8_heap_policy: V8HeapPolicyConfig,
+}
+
+impl<'de> serde::Deserialize<'de> for ConfigFile {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let config = ConfigFileToml::deserialize(deserializer)?;
+        Ok(Self {
+            certificate_authority: config.certificate_authority,
+            logs: config.logs,
+            wasm: WasmConfig {
+                procedure_instance_pool_size: config.wasm.procedure_instance_pool_size,
+            },
+            v8: V8Config {
+                procedure_instance_pool_size: config.v8.procedure_instance_pool_size,
+                heap_policy: config.v8_heap_policy,
+            },
+        })
+    }
 }
 
 impl ConfigFile {
@@ -174,6 +212,77 @@ pub struct LogConfig {
     pub directives: Vec<String>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct WasmConfig {
+    pub procedure_instance_pool_size: NonZeroUsize,
+}
+
+impl Default for WasmConfig {
+    fn default() -> Self {
+        Self {
+            procedure_instance_pool_size: default_wasm_procedure_instance_pool_size(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+struct WasmConfigToml {
+    #[serde(
+        default = "default_wasm_procedure_instance_pool_size",
+        deserialize_with = "de_nz_usize"
+    )]
+    pub procedure_instance_pool_size: NonZeroUsize,
+}
+
+impl Default for WasmConfigToml {
+    fn default() -> Self {
+        Self {
+            procedure_instance_pool_size: default_wasm_procedure_instance_pool_size(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct V8Config {
+    pub procedure_instance_pool_size: NonZeroUsize,
+    pub heap_policy: V8HeapPolicyConfig,
+}
+
+impl Default for V8Config {
+    fn default() -> Self {
+        Self {
+            procedure_instance_pool_size: default_v8_procedure_instance_pool_size(),
+            heap_policy: V8HeapPolicyConfig::default(),
+        }
+    }
+}
+
+impl V8Config {
+    pub fn normalized(mut self) -> Self {
+        self.heap_policy = self.heap_policy.normalized();
+        self
+    }
+}
+
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+struct V8ConfigToml {
+    #[serde(
+        default = "default_v8_procedure_instance_pool_size",
+        deserialize_with = "de_nz_usize"
+    )]
+    pub procedure_instance_pool_size: NonZeroUsize,
+}
+
+impl Default for V8ConfigToml {
+    fn default() -> Self {
+        Self {
+            procedure_instance_pool_size: default_v8_procedure_instance_pool_size(),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct V8HeapPolicyConfig {
@@ -185,8 +294,12 @@ pub struct V8HeapPolicyConfig {
     pub heap_gc_trigger_fraction: f64,
     #[serde(default = "def_retire", deserialize_with = "de_fraction")]
     pub heap_retire_fraction: f64,
-    #[serde(default, rename = "heap-limit-mb", deserialize_with = "de_limit_mb")]
-    pub heap_limit_bytes: Option<usize>,
+    #[serde(
+        default = "def_heap_limit",
+        rename = "heap-limit-mb",
+        deserialize_with = "de_limit_mb"
+    )]
+    pub heap_limit_bytes: usize,
 }
 
 impl Default for V8HeapPolicyConfig {
@@ -196,7 +309,7 @@ impl Default for V8HeapPolicyConfig {
             heap_check_time_interval: def_time_interval(),
             heap_gc_trigger_fraction: def_gc_trigger(),
             heap_retire_fraction: def_retire(),
-            heap_limit_bytes: None,
+            heap_limit_bytes: def_heap_limit(),
         }
     }
 }
@@ -235,6 +348,28 @@ fn def_gc_trigger() -> f64 {
 /// Default heap fill fraction that retires the worker after a GC.
 fn def_retire() -> f64 {
     0.75
+}
+
+/// Default heap limit, in bytes
+fn def_heap_limit() -> usize {
+    // 1 GiB
+    1024 * 1024 * 1024
+}
+
+fn default_v8_procedure_instance_pool_size() -> NonZeroUsize {
+    std::thread::available_parallelism().unwrap_or_else(|_| NonZeroUsize::new(1).unwrap())
+}
+
+fn default_wasm_procedure_instance_pool_size() -> NonZeroUsize {
+    std::thread::available_parallelism().unwrap_or_else(|_| NonZeroUsize::new(1).unwrap())
+}
+
+fn de_nz_usize<'de, D>(deserializer: D) -> Result<NonZeroUsize, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = usize::deserialize(deserializer)?;
+    NonZeroUsize::new(value).ok_or_else(|| serde::de::Error::custom("value must be greater than 0"))
 }
 
 fn de_nz_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
@@ -289,27 +424,26 @@ where
     }
 }
 
-fn de_limit_mb<'de, D>(deserializer: D) -> Result<Option<usize>, D::Error>
+fn de_limit_mb<'de, D>(deserializer: D) -> Result<usize, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let value = u64::deserialize(deserializer)?;
     if value == 0 {
-        return Ok(None);
+        return Ok(def_heap_limit());
     }
 
     let bytes = value
         .checked_mul(1024 * 1024)
         .ok_or_else(|| serde::de::Error::custom("heap-limit-mb is too large"))?;
 
-    usize::try_from(bytes)
-        .map(Some)
-        .map_err(|_| serde::de::Error::custom("heap-limit-mb does not fit in usize"))
+    usize::try_from(bytes).map_err(|_| serde::de::Error::custom("heap-limit-mb does not fit in usize"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     fn mkver(major: u64, minor: u64, patch: u64) -> semver::Version {
         semver::Version::new(major, minor, patch)
@@ -339,6 +473,21 @@ mod tests {
             edition: "standalone".to_owned(),
             client_connection_id: None,
         }
+    }
+
+    #[test]
+    fn parse_config_reports_the_invalid_file_path() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("config.toml");
+        std::fs::write(&path, "[module]\nname = \"my-project\n").unwrap();
+
+        let err = match parse_config::<ConfigFile>(&path) {
+            Ok(_) => panic!("expected invalid TOML to fail"),
+            Err(err) => format!("{err:#}"),
+        };
+        assert!(err.contains("invalid TOML syntax"));
+        assert!(err.contains("config.toml"));
+        assert!(err.contains("line 2"));
     }
 
     #[test]
@@ -413,19 +562,33 @@ mod tests {
     fn v8_heap_policy_defaults_when_omitted() {
         let config: ConfigFile = toml::from_str("").unwrap();
 
-        assert_eq!(config.v8_heap_policy.heap_check_request_interval, Some(4_096));
         assert_eq!(
-            config.v8_heap_policy.heap_check_time_interval,
+            config.wasm.procedure_instance_pool_size,
+            default_wasm_procedure_instance_pool_size()
+        );
+        assert_eq!(
+            config.v8.procedure_instance_pool_size,
+            default_v8_procedure_instance_pool_size()
+        );
+        assert_eq!(config.v8.heap_policy.heap_check_request_interval, Some(4_096));
+        assert_eq!(
+            config.v8.heap_policy.heap_check_time_interval,
             Some(Duration::from_secs(5))
         );
-        assert_eq!(config.v8_heap_policy.heap_gc_trigger_fraction, 0.67);
-        assert_eq!(config.v8_heap_policy.heap_retire_fraction, 0.75);
-        assert_eq!(config.v8_heap_policy.heap_limit_bytes, None);
+        assert_eq!(config.v8.heap_policy.heap_gc_trigger_fraction, 0.67);
+        assert_eq!(config.v8.heap_policy.heap_retire_fraction, 0.75);
+        assert_eq!(config.v8.heap_policy.heap_limit_bytes, 1024 * 1024 * 1024);
     }
 
     #[test]
     fn v8_heap_policy_parses_from_toml() {
         let toml = r#"
+            [wasm]
+            procedure-instance-pool-size = 4
+
+            [v8]
+            procedure-instance-pool-size = 3
+
             [v8-heap-policy]
             heap-check-request-interval = 0
             heap-check-time-interval = "45s"
@@ -436,13 +599,15 @@ mod tests {
 
         let config: ConfigFile = toml::from_str(toml).unwrap();
 
-        assert_eq!(config.v8_heap_policy.heap_check_request_interval, None);
+        assert_eq!(config.wasm.procedure_instance_pool_size.get(), 4);
+        assert_eq!(config.v8.procedure_instance_pool_size.get(), 3);
+        assert_eq!(config.v8.heap_policy.heap_check_request_interval, None);
         assert_eq!(
-            config.v8_heap_policy.heap_check_time_interval,
+            config.v8.heap_policy.heap_check_time_interval,
             Some(Duration::from_secs(45))
         );
-        assert_eq!(config.v8_heap_policy.heap_gc_trigger_fraction, 0.6);
-        assert_eq!(config.v8_heap_policy.heap_retire_fraction, 0.8);
-        assert_eq!(config.v8_heap_policy.heap_limit_bytes, Some(256 * 1024 * 1024));
+        assert_eq!(config.v8.heap_policy.heap_gc_trigger_fraction, 0.6);
+        assert_eq!(config.v8.heap_policy.heap_retire_fraction, 0.8);
+        assert_eq!(config.v8.heap_policy.heap_limit_bytes, 256 * 1024 * 1024);
     }
 }

@@ -26,29 +26,34 @@
 //! we support direct unique indices, where key are indices into `Vec`s.
 
 use self::btree_index::{BTreeIndex, BTreeIndexRangeIter};
-use self::bytes_key::{size_sub_row_pointer, BytesKey};
+use self::bytes_key::{
+    required_bytes_key_size, size_for_btree_bytes_key, size_for_hash_bytes_key, BytesKey, RangeCompatBytesKey,
+};
 use self::hash_index::HashIndex;
+use self::index::Despecialize;
 use self::same_key_entry::SameKeyEntryIter;
 use self::unique_btree_index::{UniqueBTreeIndex, UniqueBTreeIndexRangeIter, UniquePointIter};
 use self::unique_direct_fixed_cap_index::{UniqueDirectFixedCapIndex, UniqueDirectFixedCapIndexRangeIter};
-use self::unique_direct_index::{UniqueDirectIndex, UniqueDirectIndexRangeIter};
+use self::unique_direct_index::{ToFromUsize, UniqueDirectIndex, UniqueDirectIndexRangeIter};
 use self::unique_hash_index::UniqueHashIndex;
 use super::indexes::RowPointer;
 use super::table::RowRef;
-use crate::table_index::bytes_key::required_bytes_key_size;
-use crate::table_index::index::Despecialize;
-use crate::table_index::unique_direct_index::ToFromUsize;
 use crate::{read_column::ReadColumn, static_assert_size};
-use core::ops::{Bound, RangeBounds};
+use core::cmp::Ordering;
+use core::ops::{Bound, Deref, RangeBounds};
 use core::{fmt, iter};
+use enum_as_inner::EnumAsInner;
 use spacetimedb_primitives::{ColId, ColList};
+use spacetimedb_sats::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use spacetimedb_sats::bsatn::{decode, from_reader};
 use spacetimedb_sats::buffer::{DecodeError, DecodeResult};
+use spacetimedb_sats::de::{self, DeserializeSeed, Error, ProductVisitor};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::sum_value::SumTag;
 use spacetimedb_sats::{
-    i256, u256, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, SumValue, F32, F64,
+    i256, u256, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, SumValue, WithTypespace,
+    F32, F64,
 };
 use spacetimedb_schema::def::IndexAlgorithm;
 
@@ -72,6 +77,7 @@ macro_rules! table_iter {
         $($(#[$vattr:meta])* $var:ident($varty:ty),)*
      }) => {
         $(#[$wattr])*
+        #[derive(Clone)]
         pub struct $wrapper<'a> {
             iter: $base<'a>,
         }
@@ -84,8 +90,15 @@ macro_rules! table_iter {
             }
         }
 
+        impl fmt::Debug for $wrapper<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                let iter = self.clone();
+                f.debug_list().entries(iter).finish()
+            }
+        }
+
         $(#[$battr])*
-        #[derive(derive_more::From)]
+        #[derive(Clone, derive_more::From)]
         enum $base<'a> {
             $($(#[$vattr])* $var($varty)),*
         }
@@ -139,6 +152,11 @@ table_iter! {
         BTreeF64(<BTreeIndex<F64> as Index>::Iter<'a>),
         BTreeString(<BTreeIndex<Box<str>> as Index>::Iter<'a>),
         BTreeAV(<BTreeIndex<AlgebraicValue> as Index>::Iter<'a>),
+        BTreeBytesKey8(<BTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_8_B>> as Index>::Iter<'a>),
+        BTreeBytesKey16(<BTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_16_B>> as Index>::Iter<'a>),
+        BTreeBytesKey32(<BTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_32_B>> as Index>::Iter<'a>),
+        BTreeBytesKey64(<BTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_64_B>> as Index>::Iter<'a>),
+        BTreeBytesKey128(<BTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_128_B>> as Index>::Iter<'a>),
 
         // All the unique btree index iterators.
         UniqueBTreeBool(<UniqueBTreeIndex<bool> as Index>::Iter<'a>),
@@ -159,6 +177,11 @@ table_iter! {
         UniqueBTreeF64(<UniqueBTreeIndex<F64> as Index>::Iter<'a>),
         UniqueBTreeString(<UniqueBTreeIndex<Box<str>> as Index>::Iter<'a>),
         UniqueBTreeAV(<UniqueBTreeIndex<AlgebraicValue> as Index>::Iter<'a>),
+        UniqueBTreeBytesKey8(<UniqueBTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_8_B>> as Index>::Iter<'a>),
+        UniqueBTreeBytesKey16(<UniqueBTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_16_B>> as Index>::Iter<'a>),
+        UniqueBTreeBytesKey32(<UniqueBTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_32_B>> as Index>::Iter<'a>),
+        UniqueBTreeBytesKey64(<UniqueBTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_64_B>> as Index>::Iter<'a>),
+        UniqueBTreeBytesKey128(<UniqueBTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_128_B>> as Index>::Iter<'a>),
 
         // All the non-unique hash index iterators.
         HashBool(<HashIndex<bool> as Index>::Iter<'a>),
@@ -216,12 +239,10 @@ table_iter! {
 
 table_iter! {
     /// An iterator over rows matching a range of [`AlgebraicValue`]s on the [`TableIndex`].
-    #[derive(Clone)]
     pub struct TableIndexRangeIter =>
     /// A ranged iterator over a [`TypedIndex`], with a specialized key type.
     ///
     /// See module docs for info about specialization.
-    #[derive(Clone)]
     enum TypedIndexRangeIter {
         /// The range itself provided was empty.
         RangeEmpty(iter::Empty<RowPointer>),
@@ -245,6 +266,11 @@ table_iter! {
         BTreeF64(BTreeIndexRangeIter<'a, F64>),
         BTreeString(BTreeIndexRangeIter<'a, Box<str>>),
         BTreeAV(BTreeIndexRangeIter<'a, AlgebraicValue>),
+        BTreeBytesKey8(BTreeIndexRangeIter<'a, RangeCompatBytesKey<BYTES_KEY_SIZE_8_B>>),
+        BTreeBytesKey16(BTreeIndexRangeIter<'a, RangeCompatBytesKey<BYTES_KEY_SIZE_16_B>>),
+        BTreeBytesKey32(BTreeIndexRangeIter<'a, RangeCompatBytesKey<BYTES_KEY_SIZE_32_B>>),
+        BTreeBytesKey64(BTreeIndexRangeIter<'a, RangeCompatBytesKey<BYTES_KEY_SIZE_64_B>>),
+        BTreeBytesKey128(BTreeIndexRangeIter<'a, RangeCompatBytesKey<BYTES_KEY_SIZE_128_B>>),
 
         // All the unique btree index iterators.
         UniqueBTreeBool(UniqueBTreeIndexRangeIter<'a, bool>),
@@ -265,23 +291,50 @@ table_iter! {
         UniqueBTreeF64(UniqueBTreeIndexRangeIter<'a, F64>),
         UniqueBTreeString(UniqueBTreeIndexRangeIter<'a, Box<str>>),
         UniqueBTreeAV(UniqueBTreeIndexRangeIter<'a, AlgebraicValue>),
+        UniqueBTreeBytesKey8(UniqueBTreeIndexRangeIter<'a, RangeCompatBytesKey<BYTES_KEY_SIZE_8_B>>),
+        UniqueBTreeBytesKey16(UniqueBTreeIndexRangeIter<'a, RangeCompatBytesKey<BYTES_KEY_SIZE_16_B>>),
+        UniqueBTreeBytesKey32(UniqueBTreeIndexRangeIter<'a, RangeCompatBytesKey<BYTES_KEY_SIZE_32_B>>),
+        UniqueBTreeBytesKey64(UniqueBTreeIndexRangeIter<'a, RangeCompatBytesKey<BYTES_KEY_SIZE_64_B>>),
+        UniqueBTreeBytesKey128(UniqueBTreeIndexRangeIter<'a, RangeCompatBytesKey<BYTES_KEY_SIZE_128_B>>),
 
         UniqueDirect(UniqueDirectIndexRangeIter<'a>),
         UniqueDirectU8(UniqueDirectFixedCapIndexRangeIter<'a>),
     }
 }
 
-impl fmt::Debug for TableIndexRangeIter<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let iter = self.clone();
-        f.debug_list().entries(iter).finish()
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, derive_more::From)]
+#[derive(Clone, Debug, Eq, derive_more::From)]
 enum BowStr<'a> {
     Borrowed(&'a str),
     Owned(Box<str>),
+}
+
+impl Deref for BowStr<'_> {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        match *self {
+            Self::Borrowed(x) => x,
+            Self::Owned(ref x) => x,
+        }
+    }
+}
+
+impl PartialEq for BowStr<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.deref() == other.deref()
+    }
+}
+
+impl PartialOrd for BowStr<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for BowStr<'_> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.deref().cmp(other.deref())
+    }
 }
 
 impl<'a> BowStr<'a> {
@@ -306,10 +359,39 @@ impl<'a> From<&'a Box<str>> for BowStr<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, derive_more::From)]
+#[derive(Clone, Debug, Eq, derive_more::From)]
 enum CowAV<'a> {
     Borrowed(&'a AlgebraicValue),
     Owned(AlgebraicValue),
+}
+
+impl Deref for CowAV<'_> {
+    type Target = AlgebraicValue;
+
+    fn deref(&self) -> &Self::Target {
+        match *self {
+            Self::Borrowed(x) => x,
+            Self::Owned(ref x) => x,
+        }
+    }
+}
+
+impl PartialEq for CowAV<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.deref() == other.deref()
+    }
+}
+
+impl PartialOrd for CowAV<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for CowAV<'_> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.deref().cmp(other.deref())
+    }
 }
 
 impl<'a> CowAV<'a> {
@@ -328,22 +410,22 @@ impl<'a> CowAV<'a> {
     }
 }
 
-// The various sizes passed to `BytesKey`.
+// The various sizes passed to `RangeCompatBytesKey` and `BytesKey`.
 // A `B` suffix is for a size used for a btree index
 // and an `H` suffix is for a size used for a hash index.
-const BYTES_KEY_SIZE_8_B: usize = 8;
-const BYTES_KEY_SIZE_8_H: usize = size_sub_row_pointer(16);
+const BYTES_KEY_SIZE_8_B: usize = size_for_btree_bytes_key(8);
+const BYTES_KEY_SIZE_8_H: usize = size_for_hash_bytes_key(16);
 const _: () = assert!(BYTES_KEY_SIZE_8_B == BYTES_KEY_SIZE_8_H);
-//const BYTES_KEY_SIZE_16_B: usize = 16;
-const BYTES_KEY_SIZE_24_H: usize = size_sub_row_pointer(32);
-//const BYTES_KEY_SIZE_32_B: usize = 32;
-const BYTES_KEY_SIZE_56_H: usize = size_sub_row_pointer(64);
-//const BYTES_KEY_SIZE_64_B: usize = 64;
-const BYTES_KEY_SIZE_120_H: usize = size_sub_row_pointer(128);
-//const BYTES_KEY_SIZE_128_B: usize = 128;
+const BYTES_KEY_SIZE_16_B: usize = size_for_btree_bytes_key(16);
+const BYTES_KEY_SIZE_24_H: usize = size_for_hash_bytes_key(32);
+const BYTES_KEY_SIZE_32_B: usize = size_for_btree_bytes_key(32);
+const BYTES_KEY_SIZE_56_H: usize = size_for_hash_bytes_key(64);
+const BYTES_KEY_SIZE_64_B: usize = size_for_btree_bytes_key(64);
+const BYTES_KEY_SIZE_120_H: usize = size_for_hash_bytes_key(128);
+const BYTES_KEY_SIZE_128_B: usize = size_for_btree_bytes_key(128);
 
 /// A key into a [`TypedIndex`].
-#[derive(enum_as_inner::EnumAsInner, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, enum_as_inner::EnumAsInner, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum TypedIndexKey<'a> {
     Bool(bool),
     U8(u8),
@@ -364,13 +446,18 @@ enum TypedIndexKey<'a> {
     String(BowStr<'a>),
     AV(CowAV<'a>),
 
-    BytesKey8(BytesKey<BYTES_KEY_SIZE_8_B>),
+    BytesKey8B(RangeCompatBytesKey<BYTES_KEY_SIZE_8_B>),
+    BytesKey8H(BytesKey<BYTES_KEY_SIZE_8_H>),
+    BytesKey16(RangeCompatBytesKey<BYTES_KEY_SIZE_16_B>),
     BytesKey24(BytesKey<BYTES_KEY_SIZE_24_H>),
+    BytesKey32(RangeCompatBytesKey<BYTES_KEY_SIZE_32_B>),
     BytesKey56(BytesKey<BYTES_KEY_SIZE_56_H>),
+    BytesKey64(RangeCompatBytesKey<BYTES_KEY_SIZE_64_B>),
     BytesKey120(BytesKey<BYTES_KEY_SIZE_120_H>),
+    BytesKey128(RangeCompatBytesKey<BYTES_KEY_SIZE_128_B>),
 }
 
-static_assert_size!(TypedIndexKey<'_>, 128);
+static_assert_size!(TypedIndexKey<'_>, 144);
 
 /// Transposes a `Bound<Result<T, E>>` to a `Result<Bound<T>, E>`.
 fn transpose_bound<T, E>(bound: Bound<Result<T, E>>) -> Result<Bound<T>, E> {
@@ -386,7 +473,7 @@ impl<'a> TypedIndexKey<'a> {
     /// Derives a [`TypedIndexKey`] from an [`AlgebraicValue`]
     /// driven by the kind of [`TypedIndex`] provided in `index`.
     #[inline]
-    fn from_algebraic_value(index: &TypedIndex, value: &'a AlgebraicValue) -> Self {
+    fn from_algebraic_value(key_type: &AlgebraicType, index: &TypedIndex, value: &'a AlgebraicValue) -> Self {
         use AlgebraicValue::*;
         use TypedIndex::*;
         match (value, index) {
@@ -426,7 +513,23 @@ impl<'a> TypedIndexKey<'a> {
 
             (av, BTreeAV(_) | HashAV(_) | UniqueBTreeAV(_) | UniqueHashAV(_)) => Self::AV(CowAV::Borrowed(av)),
 
-            (av, HashBytesKey8(_) | UniqueHashBytesKey8(_)) => Self::BytesKey8(BytesKey::from_algebraic_value(av)),
+            (av, BTreeBytesKey8(_) | UniqueBTreeBytesKey8(_)) => {
+                Self::BytesKey8B(RangeCompatBytesKey::from_algebraic_value(av, key_type))
+            }
+            (av, BTreeBytesKey16(_) | UniqueBTreeBytesKey16(_)) => {
+                Self::BytesKey16(RangeCompatBytesKey::from_algebraic_value(av, key_type))
+            }
+            (av, BTreeBytesKey32(_) | UniqueBTreeBytesKey32(_)) => {
+                Self::BytesKey32(RangeCompatBytesKey::from_algebraic_value(av, key_type))
+            }
+            (av, BTreeBytesKey64(_) | UniqueBTreeBytesKey64(_)) => {
+                Self::BytesKey64(RangeCompatBytesKey::from_algebraic_value(av, key_type))
+            }
+            (av, BTreeBytesKey128(_) | UniqueBTreeBytesKey128(_)) => {
+                Self::BytesKey128(RangeCompatBytesKey::from_algebraic_value(av, key_type))
+            }
+
+            (av, HashBytesKey8(_) | UniqueHashBytesKey8(_)) => Self::BytesKey8H(BytesKey::from_algebraic_value(av)),
             (av, HashBytesKey24(_) | UniqueHashBytesKey24(_)) => Self::BytesKey24(BytesKey::from_algebraic_value(av)),
             (av, HashBytesKey56(_) | UniqueHashBytesKey56(_)) => Self::BytesKey56(BytesKey::from_algebraic_value(av)),
             (av, HashBytesKey120(_) | UniqueHashBytesKey120(_)) => {
@@ -483,7 +586,22 @@ impl<'a> TypedIndexKey<'a> {
                 AlgebraicValue::decode(ty, reader).map(CowAV::Owned).map(Self::AV)
             }
 
-            HashBytesKey8(_) | UniqueHashBytesKey8(_) => BytesKey::from_bsatn(ty, bytes).map(Self::BytesKey8),
+            BTreeBytesKey8(_) | UniqueBTreeBytesKey8(_) => {
+                RangeCompatBytesKey::from_bsatn(ty, bytes).map(Self::BytesKey8B)
+            }
+            BTreeBytesKey16(_) | UniqueBTreeBytesKey16(_) => {
+                RangeCompatBytesKey::from_bsatn(ty, bytes).map(Self::BytesKey16)
+            }
+            BTreeBytesKey32(_) | UniqueBTreeBytesKey32(_) => {
+                RangeCompatBytesKey::from_bsatn(ty, bytes).map(Self::BytesKey32)
+            }
+            BTreeBytesKey64(_) | UniqueBTreeBytesKey64(_) => {
+                RangeCompatBytesKey::from_bsatn(ty, bytes).map(Self::BytesKey64)
+            }
+            BTreeBytesKey128(_) | UniqueBTreeBytesKey128(_) => {
+                RangeCompatBytesKey::from_bsatn(ty, bytes).map(Self::BytesKey128)
+            }
+            HashBytesKey8(_) | UniqueHashBytesKey8(_) => BytesKey::from_bsatn(ty, bytes).map(Self::BytesKey8H),
             HashBytesKey24(_) | UniqueHashBytesKey24(_) => BytesKey::from_bsatn(ty, bytes).map(Self::BytesKey24),
             HashBytesKey56(_) | UniqueHashBytesKey56(_) => BytesKey::from_bsatn(ty, bytes).map(Self::BytesKey56),
             HashBytesKey120(_) | UniqueHashBytesKey120(_) => BytesKey::from_bsatn(ty, bytes).map(Self::BytesKey120),
@@ -501,7 +619,7 @@ impl<'a> TypedIndexKey<'a> {
     /// 1. Caller promises that `cols` matches what was given at construction (`TableIndex::new`).
     /// 2. Caller promises that the projection of `row_ref`'s type's equals the index's key type.
     #[inline]
-    unsafe fn from_row_ref(index: &TypedIndex, cols: &ColList, row_ref: RowRef<'_>) -> Self {
+    unsafe fn from_row_ref(key_type: &AlgebraicType, index: &TypedIndex, cols: &ColList, row_ref: RowRef<'_>) -> Self {
         fn proj<T: ReadColumn>(cols: &ColList, row_ref: RowRef<'_>) -> T {
             // Extract the column.
             let col_pos = cols.as_singleton();
@@ -582,8 +700,23 @@ impl<'a> TypedIndexKey<'a> {
             //   This entails that each `ColId` in `self.indexed_columns`,
             //   and by 1. also `cols`,
             //   must be in-bounds of `row_ref`'s layout.
+            BTreeBytesKey8(_) | UniqueBTreeBytesKey8(_) => {
+                Self::BytesKey8B(unsafe { RangeCompatBytesKey::from_row_ref(cols, row_ref, key_type) })
+            }
+            BTreeBytesKey16(_) | UniqueBTreeBytesKey16(_) => {
+                Self::BytesKey16(unsafe { RangeCompatBytesKey::from_row_ref(cols, row_ref, key_type) })
+            }
+            BTreeBytesKey32(_) | UniqueBTreeBytesKey32(_) => {
+                Self::BytesKey32(unsafe { RangeCompatBytesKey::from_row_ref(cols, row_ref, key_type) })
+            }
+            BTreeBytesKey64(_) | UniqueBTreeBytesKey64(_) => {
+                Self::BytesKey64(unsafe { RangeCompatBytesKey::from_row_ref(cols, row_ref, key_type) })
+            }
+            BTreeBytesKey128(_) | UniqueBTreeBytesKey128(_) => {
+                Self::BytesKey128(unsafe { RangeCompatBytesKey::from_row_ref(cols, row_ref, key_type) })
+            }
             HashBytesKey8(_) | UniqueHashBytesKey8(_) => {
-                Self::BytesKey8(unsafe { BytesKey::from_row_ref(cols, row_ref) })
+                Self::BytesKey8H(unsafe { BytesKey::from_row_ref(cols, row_ref) })
             }
             HashBytesKey24(_) | UniqueHashBytesKey24(_) => {
                 Self::BytesKey24(unsafe { BytesKey::from_row_ref(cols, row_ref) })
@@ -619,10 +752,15 @@ impl<'a> TypedIndexKey<'a> {
             Self::F64(x) => TypedIndexKey::F64(*x),
             Self::String(x) => TypedIndexKey::String(x.borrow().into()),
             Self::AV(x) => TypedIndexKey::AV(x.borrow().into()),
-            Self::BytesKey8(x) => TypedIndexKey::BytesKey8(*x),
+            Self::BytesKey8B(x) => TypedIndexKey::BytesKey8B(*x),
+            Self::BytesKey8H(x) => TypedIndexKey::BytesKey8H(*x),
+            Self::BytesKey16(x) => TypedIndexKey::BytesKey16(*x),
             Self::BytesKey24(x) => TypedIndexKey::BytesKey24(*x),
+            Self::BytesKey32(x) => TypedIndexKey::BytesKey32(*x),
             Self::BytesKey56(x) => TypedIndexKey::BytesKey56(*x),
+            Self::BytesKey64(x) => TypedIndexKey::BytesKey64(*x),
             Self::BytesKey120(x) => TypedIndexKey::BytesKey120(*x),
+            Self::BytesKey128(x) => TypedIndexKey::BytesKey128(*x),
         }
     }
 
@@ -647,10 +785,15 @@ impl<'a> TypedIndexKey<'a> {
             Self::F64(x) => x.into(),
             Self::String(x) => x.into_owned().into(),
             Self::AV(x) => x.into_owned(),
-            Self::BytesKey8(x) => x.decode_algebraic_value(key_type),
+            Self::BytesKey8B(x) => x.decode_algebraic_value(key_type),
+            Self::BytesKey8H(x) => x.decode_algebraic_value(key_type),
+            Self::BytesKey16(x) => x.decode_algebraic_value(key_type),
             Self::BytesKey24(x) => x.decode_algebraic_value(key_type),
+            Self::BytesKey32(x) => x.decode_algebraic_value(key_type),
             Self::BytesKey56(x) => x.decode_algebraic_value(key_type),
+            Self::BytesKey64(x) => x.decode_algebraic_value(key_type),
             Self::BytesKey120(x) => x.decode_algebraic_value(key_type),
+            Self::BytesKey128(x) => x.decode_algebraic_value(key_type),
         }
     }
 }
@@ -682,6 +825,11 @@ enum TypedIndex {
     // TODO(perf, centril): consider `UmbraString` or some "German string".
     BTreeString(BTreeIndex<Box<str>>),
     BTreeAV(BTreeIndex<AlgebraicValue>),
+    BTreeBytesKey8(BTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_8_B>>),
+    BTreeBytesKey16(BTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_16_B>>),
+    BTreeBytesKey32(BTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_32_B>>),
+    BTreeBytesKey64(BTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_64_B>>),
+    BTreeBytesKey128(BTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_128_B>>),
 
     // All the non-unique hash index types.
     HashBool(HashIndex<bool>),
@@ -728,6 +876,11 @@ enum TypedIndex {
     // TODO(perf, centril): consider `UmbraString` or some "German string".
     UniqueBTreeString(UniqueBTreeIndex<Box<str>>),
     UniqueBTreeAV(UniqueBTreeIndex<AlgebraicValue>),
+    UniqueBTreeBytesKey8(UniqueBTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_8_B>>),
+    UniqueBTreeBytesKey16(UniqueBTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_16_B>>),
+    UniqueBTreeBytesKey32(UniqueBTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_32_B>>),
+    UniqueBTreeBytesKey64(UniqueBTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_64_B>>),
+    UniqueBTreeBytesKey128(UniqueBTreeIndex<RangeCompatBytesKey<BYTES_KEY_SIZE_128_B>>),
 
     // All the unique hash index types.
     UniqueHashBool(UniqueHashIndex<bool>),
@@ -785,6 +938,11 @@ macro_rules! same_for_all_types {
             Self::BTreeF64($this) => $body,
             Self::BTreeString($this) => $body,
             Self::BTreeAV($this) => $body,
+            Self::BTreeBytesKey8($this) => $body,
+            Self::BTreeBytesKey16($this) => $body,
+            Self::BTreeBytesKey32($this) => $body,
+            Self::BTreeBytesKey64($this) => $body,
+            Self::BTreeBytesKey128($this) => $body,
 
             Self::HashBool($this) => $body,
             Self::HashU8($this) => $body,
@@ -827,6 +985,11 @@ macro_rules! same_for_all_types {
             Self::UniqueBTreeF64($this) => $body,
             Self::UniqueBTreeString($this) => $body,
             Self::UniqueBTreeAV($this) => $body,
+            Self::UniqueBTreeBytesKey8($this) => $body,
+            Self::UniqueBTreeBytesKey16($this) => $body,
+            Self::UniqueBTreeBytesKey32($this) => $body,
+            Self::UniqueBTreeBytesKey64($this) => $body,
+            Self::UniqueBTreeBytesKey128($this) => $body,
 
             Self::UniqueHashBool($this) => $body,
             Self::UniqueHashU8($this) => $body,
@@ -948,10 +1111,16 @@ impl TypedIndex {
                 // We use a direct index here
                 AlgebraicType::Sum(sum) if sum.is_simple_enum() => UniqueBTreeSumTag(<_>::default()),
 
-                // The index is either multi-column,
-                // or we don't care to specialize on the key type,
-                // so use a map keyed on `AlgebraicValue`.
-                _ => UniqueBTreeAV(<_>::default()),
+                ty => match required_bytes_key_size(ty, true) {
+                    Some(..=BYTES_KEY_SIZE_8_B) => UniqueBTreeBytesKey8(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_16_B) => UniqueBTreeBytesKey16(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_32_B) => UniqueBTreeBytesKey32(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_64_B) => UniqueBTreeBytesKey64(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_128_B) => UniqueBTreeBytesKey128(<_>::default()),
+                    // The key type cannot use the fixed byte key optimization,
+                    // so use a map keyed on `AlgebraicValue`.
+                    Some(_) | None => UniqueBTreeAV(<_>::default()),
+                },
             }
         } else {
             match key_type {
@@ -975,10 +1144,16 @@ impl TypedIndex {
                 // For a plain enum, use `u8` as the native type.
                 AlgebraicType::Sum(sum) if sum.is_simple_enum() => BTreeSumTag(<_>::default()),
 
-                // The index is either multi-column,
-                // or we don't care to specialize on the key type,
-                // so use a map keyed on `AlgebraicValue`.
-                _ => BTreeAV(<_>::default()),
+                ty => match required_bytes_key_size(ty, true) {
+                    Some(..=BYTES_KEY_SIZE_8_B) => BTreeBytesKey8(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_16_B) => BTreeBytesKey16(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_32_B) => BTreeBytesKey32(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_64_B) => BTreeBytesKey64(<_>::default()),
+                    Some(..=BYTES_KEY_SIZE_128_B) => BTreeBytesKey128(<_>::default()),
+                    // The key type cannot use the fixed byte key optimization,
+                    // so use a map keyed on `AlgebraicValue`.
+                    Some(_) | None => BTreeAV(<_>::default()),
+                },
             }
         }
     }
@@ -1011,7 +1186,7 @@ impl TypedIndex {
                 // We use a direct index here
                 AlgebraicType::Sum(sum) if sum.is_simple_enum() => UniqueHashSumTag(<_>::default()),
 
-                ty => match required_bytes_key_size(ty) {
+                ty => match required_bytes_key_size(ty, false) {
                     Some(..=BYTES_KEY_SIZE_8_H) => UniqueHashBytesKey8(<_>::default()),
                     Some(..=BYTES_KEY_SIZE_24_H) => UniqueHashBytesKey24(<_>::default()),
                     Some(..=BYTES_KEY_SIZE_56_H) => UniqueHashBytesKey56(<_>::default()),
@@ -1043,7 +1218,7 @@ impl TypedIndex {
                 // For a plain enum, use `u8` as the native type.
                 AlgebraicType::Sum(sum) if sum.is_simple_enum() => HashSumTag(<_>::default()),
 
-                ty => match required_bytes_key_size(ty) {
+                ty => match required_bytes_key_size(ty, false) {
                     Some(..=BYTES_KEY_SIZE_8_H) => HashBytesKey8(<_>::default()),
                     Some(..=BYTES_KEY_SIZE_24_H) => HashBytesKey24(<_>::default()),
                     Some(..=BYTES_KEY_SIZE_56_H) => HashBytesKey56(<_>::default()),
@@ -1068,10 +1243,12 @@ impl TypedIndex {
         match self {
             BTreeBool(_) | BTreeU8(_) | BTreeSumTag(_) | BTreeI8(_) | BTreeU16(_) | BTreeI16(_) | BTreeU32(_)
             | BTreeI32(_) | BTreeU64(_) | BTreeI64(_) | BTreeU128(_) | BTreeI128(_) | BTreeU256(_) | BTreeI256(_)
-            | BTreeF32(_) | BTreeF64(_) | BTreeString(_) | BTreeAV(_) | HashBool(_) | HashU8(_) | HashSumTag(_)
-            | HashI8(_) | HashU16(_) | HashI16(_) | HashU32(_) | HashI32(_) | HashU64(_) | HashI64(_) | HashU128(_)
-            | HashI128(_) | HashU256(_) | HashI256(_) | HashF32(_) | HashF64(_) | HashString(_) | HashAV(_)
-            | HashBytesKey8(_) | HashBytesKey24(_) | HashBytesKey56(_) | HashBytesKey120(_) => false,
+            | BTreeF32(_) | BTreeF64(_) | BTreeString(_) | BTreeAV(_) | BTreeBytesKey8(_) | BTreeBytesKey16(_)
+            | BTreeBytesKey32(_) | BTreeBytesKey64(_) | BTreeBytesKey128(_) | HashBool(_) | HashU8(_)
+            | HashSumTag(_) | HashI8(_) | HashU16(_) | HashI16(_) | HashU32(_) | HashI32(_) | HashU64(_)
+            | HashI64(_) | HashU128(_) | HashI128(_) | HashU256(_) | HashI256(_) | HashF32(_) | HashF64(_)
+            | HashString(_) | HashAV(_) | HashBytesKey8(_) | HashBytesKey24(_) | HashBytesKey56(_)
+            | HashBytesKey120(_) => false,
             UniqueBTreeBool(_)
             | UniqueBTreeU8(_)
             | UniqueBTreeSumTag(_)
@@ -1090,6 +1267,11 @@ impl TypedIndex {
             | UniqueBTreeF64(_)
             | UniqueBTreeString(_)
             | UniqueBTreeAV(_)
+            | UniqueBTreeBytesKey8(_)
+            | UniqueBTreeBytesKey16(_)
+            | UniqueBTreeBytesKey32(_)
+            | UniqueBTreeBytesKey64(_)
+            | UniqueBTreeBytesKey128(_)
             | UniqueHashBool(_)
             | UniqueHashU8(_)
             | UniqueHashSumTag(_)
@@ -1118,6 +1300,14 @@ impl TypedIndex {
             | UniqueDirectU32(_)
             | UniqueDirectU64(_) => true,
         }
+    }
+
+    /// Returns whether this index supports range queries.
+    fn is_ranged(&self) -> bool {
+        fn is_ranged<I: Index>(_: &I) -> bool {
+            I::IS_RANGED
+        }
+        same_for_all_types!(self, this => is_ranged(this))
     }
 
     /// Add the relation `key -> ptr` to the index.
@@ -1172,6 +1362,11 @@ impl TypedIndex {
             (BTreeF64(i), F64(k)) => (i.insert(k, ptr), None),
             (BTreeString(i), String(k)) => (i.insert(k.into_owned(), ptr), None),
             (BTreeAV(i), AV(k)) => (i.insert(k.into_owned(), ptr), None),
+            (BTreeBytesKey8(i), BytesKey8B(k)) => (i.insert(k, ptr), None),
+            (BTreeBytesKey16(i), BytesKey16(k)) => (i.insert(k, ptr), None),
+            (BTreeBytesKey32(i), BytesKey32(k)) => (i.insert(k, ptr), None),
+            (BTreeBytesKey64(i), BytesKey64(k)) => (i.insert(k, ptr), None),
+            (BTreeBytesKey128(i), BytesKey128(k)) => (i.insert(k, ptr), None),
             (HashBool(i), Bool(k)) => (i.insert(k, ptr), None),
             (HashU8(i), U8(k)) => (i.insert(k, ptr), None),
             (HashSumTag(i), SumTag(k)) => (i.insert(k, ptr), None),
@@ -1190,7 +1385,7 @@ impl TypedIndex {
             (HashF64(i), F64(k)) => (i.insert(k, ptr), None),
             (HashString(i), String(k)) => (i.insert(k.into_owned(), ptr), None),
             (HashAV(i), AV(k)) => (i.insert(k.into_owned(), ptr), None),
-            (HashBytesKey8(i), BytesKey8(k)) => (i.insert(k, ptr), None),
+            (HashBytesKey8(i), BytesKey8H(k)) => (i.insert(k, ptr), None),
             (HashBytesKey24(i), BytesKey24(k)) => (i.insert(k, ptr), None),
             (HashBytesKey56(i), BytesKey56(k)) => (i.insert(k, ptr), None),
             (HashBytesKey120(i), BytesKey120(k)) => (i.insert(k, ptr), None),
@@ -1212,6 +1407,11 @@ impl TypedIndex {
             (UniqueBTreeF64(i), F64(k)) => (i.insert(k, ptr), None),
             (UniqueBTreeString(i), String(k)) => (i.insert(k.into_owned(), ptr), None),
             (UniqueBTreeAV(i), AV(k)) => (i.insert(k.into_owned(), ptr), None),
+            (UniqueBTreeBytesKey8(i), BytesKey8B(k)) => (i.insert(k, ptr), None),
+            (UniqueBTreeBytesKey16(i), BytesKey16(k)) => (i.insert(k, ptr), None),
+            (UniqueBTreeBytesKey32(i), BytesKey32(k)) => (i.insert(k, ptr), None),
+            (UniqueBTreeBytesKey64(i), BytesKey64(k)) => (i.insert(k, ptr), None),
+            (UniqueBTreeBytesKey128(i), BytesKey128(k)) => (i.insert(k, ptr), None),
             (UniqueHashBool(i), Bool(k)) => (i.insert(k, ptr), None),
             (UniqueHashU8(i), U8(k)) => (i.insert(k, ptr), None),
             (UniqueHashSumTag(i), SumTag(k)) => (i.insert(k, ptr), None),
@@ -1230,7 +1430,7 @@ impl TypedIndex {
             (UniqueHashF64(i), F64(k)) => (i.insert(k, ptr), None),
             (UniqueHashString(i), String(k)) => (i.insert(k.into_owned(), ptr), None),
             (UniqueHashAV(i), AV(k)) => (i.insert(k.into_owned(), ptr), None),
-            (UniqueHashBytesKey8(i), BytesKey8(k)) => (i.insert(k, ptr), None),
+            (UniqueHashBytesKey8(i), BytesKey8H(k)) => (i.insert(k, ptr), None),
             (UniqueHashBytesKey24(i), BytesKey24(k)) => (i.insert(k, ptr), None),
             (UniqueHashBytesKey56(i), BytesKey56(k)) => (i.insert(k, ptr), None),
             (UniqueHashBytesKey120(i), BytesKey120(k)) => (i.insert(k, ptr), None),
@@ -1279,6 +1479,11 @@ impl TypedIndex {
             (BTreeF64(i), F64(k)) => i.delete(k, ptr),
             (BTreeString(i), String(k)) => i.delete(k.borrow(), ptr),
             (BTreeAV(i), AV(k)) => i.delete(k.borrow(), ptr),
+            (BTreeBytesKey8(i), BytesKey8B(k)) => i.delete(k, ptr),
+            (BTreeBytesKey16(i), BytesKey16(k)) => i.delete(k, ptr),
+            (BTreeBytesKey32(i), BytesKey32(k)) => i.delete(k, ptr),
+            (BTreeBytesKey64(i), BytesKey64(k)) => i.delete(k, ptr),
+            (BTreeBytesKey128(i), BytesKey128(k)) => i.delete(k, ptr),
             (HashBool(i), Bool(k)) => i.delete(k, ptr),
             (HashU8(i), U8(k)) => i.delete(k, ptr),
             (HashSumTag(i), SumTag(k)) => i.delete(k, ptr),
@@ -1297,7 +1502,7 @@ impl TypedIndex {
             (HashF64(i), F64(k)) => i.delete(k, ptr),
             (HashString(i), String(k)) => i.delete(k.borrow(), ptr),
             (HashAV(i), AV(k)) => i.delete(k.borrow(), ptr),
-            (HashBytesKey8(i), BytesKey8(k)) => i.delete(k, ptr),
+            (HashBytesKey8(i), BytesKey8H(k)) => i.delete(k, ptr),
             (HashBytesKey24(i), BytesKey24(k)) => i.delete(k, ptr),
             (HashBytesKey56(i), BytesKey56(k)) => i.delete(k, ptr),
             (HashBytesKey120(i), BytesKey120(k)) => i.delete(k, ptr),
@@ -1319,6 +1524,11 @@ impl TypedIndex {
             (UniqueBTreeF64(i), F64(k)) => i.delete(k, ptr),
             (UniqueBTreeString(i), String(k)) => i.delete(k.borrow(), ptr),
             (UniqueBTreeAV(i), AV(k)) => i.delete(k.borrow(), ptr),
+            (UniqueBTreeBytesKey8(i), BytesKey8B(k)) => i.delete(k, ptr),
+            (UniqueBTreeBytesKey16(i), BytesKey16(k)) => i.delete(k, ptr),
+            (UniqueBTreeBytesKey32(i), BytesKey32(k)) => i.delete(k, ptr),
+            (UniqueBTreeBytesKey64(i), BytesKey64(k)) => i.delete(k, ptr),
+            (UniqueBTreeBytesKey128(i), BytesKey128(k)) => i.delete(k, ptr),
             (UniqueHashBool(i), Bool(k)) => i.delete(k, ptr),
             (UniqueHashU8(i), U8(k)) => i.delete(k, ptr),
             (UniqueHashSumTag(i), SumTag(k)) => i.delete(k, ptr),
@@ -1337,7 +1547,7 @@ impl TypedIndex {
             (UniqueHashF64(i), F64(k)) => i.delete(k, ptr),
             (UniqueHashString(i), String(k)) => i.delete(k.borrow(), ptr),
             (UniqueHashAV(i), AV(k)) => i.delete(k.borrow(), ptr),
-            (UniqueHashBytesKey8(i), BytesKey8(k)) => i.delete(k, ptr),
+            (UniqueHashBytesKey8(i), BytesKey8H(k)) => i.delete(k, ptr),
             (UniqueHashBytesKey24(i), BytesKey24(k)) => i.delete(k, ptr),
             (UniqueHashBytesKey56(i), BytesKey56(k)) => i.delete(k, ptr),
             (UniqueHashBytesKey120(i), BytesKey120(k)) => i.delete(k, ptr),
@@ -1373,6 +1583,11 @@ impl TypedIndex {
             (BTreeF64(this), F64(key)) => this.seek_point(key).into(),
             (BTreeString(this), String(key)) => this.seek_point(key.borrow()).into(),
             (BTreeAV(this), AV(key)) => this.seek_point(key.borrow()).into(),
+            (BTreeBytesKey8(this), BytesKey8B(key)) => this.seek_point(key).into(),
+            (BTreeBytesKey16(this), BytesKey16(key)) => this.seek_point(key).into(),
+            (BTreeBytesKey32(this), BytesKey32(key)) => this.seek_point(key).into(),
+            (BTreeBytesKey64(this), BytesKey64(key)) => this.seek_point(key).into(),
+            (BTreeBytesKey128(this), BytesKey128(key)) => this.seek_point(key).into(),
             (HashBool(this), Bool(key)) => this.seek_point(key).into(),
             (HashU8(this), U8(key)) => this.seek_point(key).into(),
             (HashSumTag(this), SumTag(key)) => this.seek_point(key).into(),
@@ -1391,7 +1606,7 @@ impl TypedIndex {
             (HashF64(this), F64(key)) => this.seek_point(key).into(),
             (HashString(this), String(key)) => this.seek_point(key.borrow()).into(),
             (HashAV(this), AV(key)) => this.seek_point(key.borrow()).into(),
-            (HashBytesKey8(this), BytesKey8(key)) => this.seek_point(key).into(),
+            (HashBytesKey8(this), BytesKey8H(key)) => this.seek_point(key).into(),
             (HashBytesKey24(this), BytesKey24(key)) => this.seek_point(key).into(),
             (HashBytesKey56(this), BytesKey56(key)) => this.seek_point(key).into(),
             (HashBytesKey120(this), BytesKey120(key)) => this.seek_point(key).into(),
@@ -1413,6 +1628,11 @@ impl TypedIndex {
             (UniqueBTreeF64(this), F64(key)) => this.seek_point(key).into(),
             (UniqueBTreeString(this), String(key)) => this.seek_point(key.borrow()).into(),
             (UniqueBTreeAV(this), AV(key)) => this.seek_point(key.borrow()).into(),
+            (UniqueBTreeBytesKey8(this), BytesKey8B(key)) => this.seek_point(key).into(),
+            (UniqueBTreeBytesKey16(this), BytesKey16(key)) => this.seek_point(key).into(),
+            (UniqueBTreeBytesKey32(this), BytesKey32(key)) => this.seek_point(key).into(),
+            (UniqueBTreeBytesKey64(this), BytesKey64(key)) => this.seek_point(key).into(),
+            (UniqueBTreeBytesKey128(this), BytesKey128(key)) => this.seek_point(key).into(),
             (UniqueHashBool(this), Bool(key)) => this.seek_point(key).into(),
             (UniqueHashU8(this), U8(key)) => this.seek_point(key).into(),
             (UniqueHashSumTag(this), SumTag(key)) => this.seek_point(key).into(),
@@ -1431,7 +1651,7 @@ impl TypedIndex {
             (UniqueHashF64(this), F64(key)) => this.seek_point(key).into(),
             (UniqueHashString(this), String(key)) => this.seek_point(key.borrow()).into(),
             (UniqueHashAV(this), AV(key)) => this.seek_point(key.borrow()).into(),
-            (UniqueHashBytesKey8(this), BytesKey8(key)) => this.seek_point(key).into(),
+            (UniqueHashBytesKey8(this), BytesKey8H(key)) => this.seek_point(key).into(),
             (UniqueHashBytesKey24(this), BytesKey24(key)) => this.seek_point(key).into(),
             (UniqueHashBytesKey56(this), BytesKey56(key)) => this.seek_point(key).into(),
             (UniqueHashBytesKey120(this), BytesKey120(key)) => this.seek_point(key).into(),
@@ -1478,51 +1698,8 @@ impl TypedIndex {
         }
 
         Ok(match self {
-            // Hash indices are not `RangeIndex`.
-            Self::HashBool(_)
-            | Self::HashU8(_)
-            | Self::HashSumTag(_)
-            | Self::HashI8(_)
-            | Self::HashU16(_)
-            | Self::HashI16(_)
-            | Self::HashU32(_)
-            | Self::HashI32(_)
-            | Self::HashU64(_)
-            | Self::HashI64(_)
-            | Self::HashU128(_)
-            | Self::HashI128(_)
-            | Self::HashF32(_)
-            | Self::HashF64(_)
-            | Self::HashU256(_)
-            | Self::HashI256(_)
-            | Self::HashString(_)
-            | Self::HashAV(_)
-            | Self::HashBytesKey8(_)
-            | Self::HashBytesKey24(_)
-            | Self::HashBytesKey56(_)
-            | Self::HashBytesKey120(_)
-            | Self::UniqueHashBool(_)
-            | Self::UniqueHashU8(_)
-            | Self::UniqueHashSumTag(_)
-            | Self::UniqueHashI8(_)
-            | Self::UniqueHashU16(_)
-            | Self::UniqueHashI16(_)
-            | Self::UniqueHashU32(_)
-            | Self::UniqueHashI32(_)
-            | Self::UniqueHashU64(_)
-            | Self::UniqueHashI64(_)
-            | Self::UniqueHashU128(_)
-            | Self::UniqueHashI128(_)
-            | Self::UniqueHashF32(_)
-            | Self::UniqueHashF64(_)
-            | Self::UniqueHashU256(_)
-            | Self::UniqueHashI256(_)
-            | Self::UniqueHashString(_)
-            | Self::UniqueHashAV(_)
-            | Self::UniqueHashBytesKey8(_)
-            | Self::UniqueHashBytesKey24(_)
-            | Self::UniqueHashBytesKey56(_)
-            | Self::UniqueHashBytesKey120(_) => return Err(IndexCannotSeekRange),
+            // Non-rangd indices are not supported here.
+            _ if !self.is_ranged() => return Err(IndexCannotSeekRange),
 
             // Ensure we don't panic inside `BTreeMap::seek_range`.
             _ if is_empty(range) => iter::empty().into(),
@@ -1548,7 +1725,11 @@ impl TypedIndex {
                 this.seek_range(&range).into()
             }
             Self::BTreeAV(this) => this.seek_range(&map(range, |k| k.as_av().map(|s| s.borrow()))).into(),
-
+            Self::BTreeBytesKey8(this) => this.seek_range(&map(range, TypedIndexKey::as_bytes_key8_b)).into(),
+            Self::BTreeBytesKey16(this) => this.seek_range(&map(range, TypedIndexKey::as_bytes_key16)).into(),
+            Self::BTreeBytesKey32(this) => this.seek_range(&map(range, TypedIndexKey::as_bytes_key32)).into(),
+            Self::BTreeBytesKey64(this) => this.seek_range(&map(range, TypedIndexKey::as_bytes_key64)).into(),
+            Self::BTreeBytesKey128(this) => this.seek_range(&map(range, TypedIndexKey::as_bytes_key128)).into(),
             Self::UniqueBTreeBool(this) => this.seek_range(&map(range, TypedIndexKey::as_bool)).into(),
             Self::UniqueBTreeU8(this) => this.seek_range(&map(range, TypedIndexKey::as_u8)).into(),
             Self::UniqueBTreeSumTag(this) => this.seek_range(&map(range, TypedIndexKey::as_sum_tag)).into(),
@@ -1570,12 +1751,18 @@ impl TypedIndex {
                 this.seek_range(&range).into()
             }
             Self::UniqueBTreeAV(this) => this.seek_range(&map(range, |k| k.as_av().map(|s| s.borrow()))).into(),
-
+            Self::UniqueBTreeBytesKey8(this) => this.seek_range(&map(range, TypedIndexKey::as_bytes_key8_b)).into(),
+            Self::UniqueBTreeBytesKey16(this) => this.seek_range(&map(range, TypedIndexKey::as_bytes_key16)).into(),
+            Self::UniqueBTreeBytesKey32(this) => this.seek_range(&map(range, TypedIndexKey::as_bytes_key32)).into(),
+            Self::UniqueBTreeBytesKey64(this) => this.seek_range(&map(range, TypedIndexKey::as_bytes_key64)).into(),
+            Self::UniqueBTreeBytesKey128(this) => this.seek_range(&map(range, TypedIndexKey::as_bytes_key128)).into(),
             Self::UniqueDirectSumTag(this) => this.seek_range(&map(range, TypedIndexKey::as_sum_tag)).into(),
             Self::UniqueDirectU8(this) => this.seek_range(&map(range, TypedIndexKey::as_u8)).into(),
             Self::UniqueDirectU16(this) => this.seek_range(&map(range, TypedIndexKey::as_u16)).into(),
             Self::UniqueDirectU32(this) => this.seek_range(&map(range, TypedIndexKey::as_u32)).into(),
             Self::UniqueDirectU64(this) => this.seek_range(&map(range, TypedIndexKey::as_u64)).into(),
+
+            _ => unreachable!("all index kinds should have been covered"),
         })
     }
 
@@ -1615,24 +1802,21 @@ impl TypedIndex {
 }
 
 /// A key into a [`TableIndex`].
-#[derive(derive_more::From)]
+#[derive(Clone, Debug, PartialEq, Eq, derive_more::From)]
 pub struct IndexKey<'a> {
     key: TypedIndexKey<'a>,
 }
 
-impl IndexKey<'_> {
-    /// Converts the key into an [`AlgebraicValue`].
-    pub fn into_algebraic_value(self, key_type: &AlgebraicType) -> AlgebraicValue {
-        self.key.into_algebraic_value(key_type)
-    }
-}
-
 /// A decoded range scan bound, which may be a point or a range.
+#[derive(Debug, PartialEq, Eq, EnumAsInner)]
 pub enum PointOrRange<'a> {
     /// A point scan.
     Point(IndexKey<'a>),
     /// A range scan, with the lower and upper bound.
     Range(Bound<IndexKey<'a>>, Bound<IndexKey<'a>>),
+    /// The index does not support range scans.
+    /// It's (probably) a hash index.
+    Unsupported,
 }
 
 /// An index on a set of [`ColId`]s of a table.
@@ -1643,12 +1827,12 @@ pub struct TableIndex {
     /// The key type of this index.
     /// This is the projection of the row type to the types of the columns indexed.
     // NOTE(centril): This is accessed in index scan ABIs for decoding, so don't `Box<_>` it.
-    pub key_type: AlgebraicType,
+    key_type: AlgebraicType,
 
     /// Given a full row, typed at some `ty: ProductType`,
     /// these columns are the ones that this index indexes.
     /// Projecting the `ty` to `self.indexed_columns` yields the index's type `self.key_type`.
-    pub indexed_columns: ColList,
+    indexed_columns: ColList,
 }
 
 impl MemoryUsage for TableIndex {
@@ -1699,12 +1883,145 @@ impl TableIndex {
         self.idx.is_unique()
     }
 
+    /// Returns whether this index supports range queries.
+    pub fn is_ranged(&self) -> bool {
+        self.idx.is_ranged()
+    }
+
+    /// Returns the indexed columns of this index.
+    pub fn indexed_columns(&self) -> &ColList {
+        &self.indexed_columns
+    }
+
+    /// Returns the key type of this index.
+    pub fn key_type(&self) -> &AlgebraicType {
+        &self.key_type
+    }
+
+    /// Recomputes the key type of the index.
+    ///
+    /// Assumes that `row_type` is layout compatible with the row type
+    /// that `self` was constructed with.
+    /// The method may panic otherwise.
+    pub fn recompute_key_type(&mut self, row_type: &ProductType) {
+        self.key_type = row_type
+            .project(&self.indexed_columns)
+            .expect("new row type should have as many columns as before")
+    }
+
+    /// Converts `key` into an [`AlgebraicValue`]
+    pub fn key_into_algebraic_value(&self, key: IndexKey<'_>) -> AlgebraicValue {
+        key.key.into_algebraic_value(&self.key_type)
+    }
+
     /// Derives a key for this index from `value`.
     ///
     /// Panics if `value` is not consistent with this index's key type.
     #[inline]
     pub fn key_from_algebraic_value<'a>(&self, value: &'a AlgebraicValue) -> IndexKey<'a> {
-        TypedIndexKey::from_algebraic_value(&self.idx, value).into()
+        TypedIndexKey::from_algebraic_value(&self.key_type, &self.idx, value).into()
+    }
+
+    /// Derives bounds from `prefix` and `bounds`
+    /// for a ranged index scan on `self`.
+    pub fn bounds_from_algbraic_value<'a>(
+        &self,
+        prefix: &'a ProductValue,
+        bounds: &'a impl RangeBounds<AlgebraicValue>,
+    ) -> Result<PointOrRange<'a>, ValueDeserializeError> {
+        use TypedIndex::*;
+
+        if !self.is_ranged() {
+            return Ok(PointOrRange::Unsupported);
+        }
+
+        let start = bounds.start_bound();
+        let end = bounds.end_bound();
+        let prefix_elems = prefix.elements.len().into();
+
+        if let AlgebraicType::Product(key_types) = &self.key_type {
+            // Multi-column index case or single-column index on a product field.
+            // We can treat the latter as the former
+            // and allow e.g., prefix scans within the product field.
+
+            // Split `key_types` into the prefix types, the range type, and the suffix length.
+            let (prefix_types, range_type, suffix_len) = Self::split_key_types(prefix_elems, key_types)?;
+
+            macro_rules! bounds_for_bytes_key {
+                ($ctor:expr) => {
+                    Self::bounds_from_algebraic_value_for_bytes_key(
+                        prefix,
+                        prefix_types,
+                        start,
+                        end,
+                        range_type,
+                        suffix_len,
+                        $ctor,
+                    )
+                };
+            }
+
+            match &self.idx {
+                BTreeBytesKey8(_) | UniqueBTreeBytesKey8(_) => bounds_for_bytes_key!(TypedIndexKey::BytesKey8B),
+                BTreeBytesKey16(_) | UniqueBTreeBytesKey16(_) => bounds_for_bytes_key!(TypedIndexKey::BytesKey16),
+                BTreeBytesKey32(_) | UniqueBTreeBytesKey32(_) => bounds_for_bytes_key!(TypedIndexKey::BytesKey32),
+                BTreeBytesKey64(_) | UniqueBTreeBytesKey64(_) => bounds_for_bytes_key!(TypedIndexKey::BytesKey64),
+                BTreeBytesKey128(_) | UniqueBTreeBytesKey128(_) => bounds_for_bytes_key!(TypedIndexKey::BytesKey128),
+                BTreeAV(_) | UniqueBTreeAV(_) => {
+                    // The index is not specialized.
+                    // We now have the types,
+                    // so proceed to verifying the prefix, and the start/end bounds.
+                    // Finally combine all of these to a single bound pair.
+                    WithTypespace::empty(prefix_types)
+                        .validate_seq_product(ValueDeserializer::from_product_ref(prefix))?;
+
+                    let from_av = |v: AlgebraicValue| TypedIndexKey::AV(v.into()).into();
+                    let range_ts = WithTypespace::empty(range_type);
+                    let validate = |b| range_ts.validate(ValueDeserializer::from_ref(b));
+
+                    // Is this really a point scan?
+                    if let Some(point) = Self::as_point_scan(&start, &end, suffix_len) {
+                        validate(point)?;
+                        let point = Self::combine_prefix_and_point(prefix.clone(), point.clone());
+                        return Ok(PointOrRange::Point(from_av(point)));
+                    }
+
+                    // It's not a point scan.
+                    let validate_bound = |b: &Bound<_>| transpose_bound(b.map(validate)).map(drop);
+                    validate_bound(&start)?;
+                    validate_bound(&end)?;
+                    let (start, end) =
+                        Self::combine_prefix_and_bounds(prefix.clone(), start.cloned(), end.cloned(), suffix_len);
+                    Ok(PointOrRange::Range(start.map(from_av), end.map(from_av)))
+                }
+                idx => unreachable!("index should be BytesKey* or AV, but was {idx:?}"),
+            }
+        } else {
+            Self::bounds_for_single_col(prefix_elems, start, end, |b| Ok(self.key_from_algebraic_value(b)))
+        }
+    }
+
+    /// Decodes `prefix` ++ `start` and `prefix` ++ `end`
+    /// as [`RangeCompatBytesKey`] bounds.
+    /// The `suffix_len` is used to determine whether this is a point scan or a range scan.
+    fn bounds_from_algebraic_value_for_bytes_key<'de, const N: usize>(
+        prefix: &'de ProductValue,
+        prefix_types: &[ProductTypeElement],
+        start: Bound<&'de AlgebraicValue>,
+        end: Bound<&'de AlgebraicValue>,
+        range_type: &AlgebraicType,
+        suffix_len: usize,
+        ctor: impl Copy + FnOnce(RangeCompatBytesKey<N>) -> TypedIndexKey<'de>,
+    ) -> Result<PointOrRange<'de>, ValueDeserializeError> {
+        Self::bounds_for_bytes_key(
+            prefix_types.is_empty(),
+            start,
+            end,
+            suffix_len,
+            || RangeCompatBytesKey::from_algebraic_value_prefix(prefix, prefix_types),
+            |b| RangeCompatBytesKey::from_algebraic_value_prefix_and_endpoint(prefix, prefix_types, b, range_type),
+            ctor,
+        )
     }
 
     /// Derives a key for this index from BSATN-encoded `bytes`.
@@ -1715,6 +2032,8 @@ impl TableIndex {
         Ok(TypedIndexKey::from_bsatn(&self.idx, &self.key_type, bytes)?.into())
     }
 
+    /// Derives bounds from `prefix`, `rstart`, and `rend`, all encoded in BSATN,
+    /// for a ranged index scan on `self`.
     pub fn bounds_from_bsatn<'de>(
         &self,
         mut prefix: &'de [u8],
@@ -1723,6 +2042,14 @@ impl TableIndex {
         rend: &'de [u8],
     ) -> DecodeResult<PointOrRange<'de>> {
         use TypedIndex::*;
+
+        if !self.is_ranged() {
+            return Ok(PointOrRange::Unsupported);
+        }
+
+        if prefix_elems.idx() == 0 && !prefix.is_empty() {
+            return Err(DecodeError::custom("a prefix was provided but `prefix_elems = 0`"));
+        }
 
         let read_bound = |mut bytes| {
             let reader = &mut bytes;
@@ -1733,99 +2060,192 @@ impl TableIndex {
         let start = read_bound(rstart)?;
         let end = read_bound(rend)?;
 
-        match &self.key_type {
+        if let AlgebraicType::Product(key_types) = &self.key_type {
             // Multi-column index case or single-column index on a product field.
             // We can treat the latter as the former
             // and allow e.g., prefix scans within the product field.
-            AlgebraicType::Product(key_types) => {
-                // Split into types for the prefix and for the rest.
-                let key_types = &*key_types.elements;
-                let (prefix_types, rest_types) = key_types
-                    .split_at_checked(prefix_elems.idx())
-                    .ok_or_else(|| DecodeError::Other("index key type has too few fields compared to prefix".into()))?;
-                // The `rstart` and `rend`s must be typed at `Bound<range_type>`.
-                // Extract that type and determine the length of the suffix.
-                let Some((range_type, suffix_types)) = rest_types.split_first() else {
-                    return Err(DecodeError::Other(
-                        "prefix length leaves no room for a range in ranged index scan".into(),
-                    ));
+
+            // Split `key_types` into the prefix types, the range type, and the suffix length.
+            let (prefix_types, range_type, suffix_len) = Self::split_key_types::<DecodeError>(prefix_elems, key_types)?;
+
+            macro_rules! bounds_for_bytes_key {
+                ($ctor:expr) => {
+                    Self::bounds_from_bsatn_for_bytes_key(
+                        prefix,
+                        prefix_types,
+                        start,
+                        end,
+                        range_type,
+                        suffix_len,
+                        $ctor,
+                    )
                 };
-                let range_type = &range_type.algebraic_type;
-                let suffix_len = suffix_types.len();
+            }
 
-                match &self.idx {
-                    BTreeAV(_) | HashAV(_) | UniqueBTreeAV(_) | UniqueHashAV(_) => {
-                        // The index is not specialized.
-                        // We now have the types,
-                        // so proceed to decoding the prefix, and the start/end bounds.
-                        // Finally combine all of these to a single bound pair.
-                        let prefix = decode(prefix_types, &mut prefix)?;
-                        let from_av = |v: AlgebraicValue| TypedIndexKey::AV(v.into()).into();
-                        let decode = |mut b| AlgebraicValue::decode(range_type, &mut b);
+            match &self.idx {
+                BTreeBytesKey8(_) | UniqueBTreeBytesKey8(_) => bounds_for_bytes_key!(TypedIndexKey::BytesKey8B),
+                BTreeBytesKey16(_) | UniqueBTreeBytesKey16(_) => bounds_for_bytes_key!(TypedIndexKey::BytesKey16),
+                BTreeBytesKey32(_) | UniqueBTreeBytesKey32(_) => bounds_for_bytes_key!(TypedIndexKey::BytesKey32),
+                BTreeBytesKey64(_) | UniqueBTreeBytesKey64(_) => bounds_for_bytes_key!(TypedIndexKey::BytesKey64),
+                BTreeBytesKey128(_) | UniqueBTreeBytesKey128(_) => bounds_for_bytes_key!(TypedIndexKey::BytesKey128),
+                BTreeAV(_) | UniqueBTreeAV(_) => {
+                    // The index is not specialized.
+                    // We now have the types,
+                    // so proceed to decoding the prefix, and the start/end bounds.
+                    // Finally combine all of these to a single bound pair.
+                    let prefix = decode(prefix_types, &mut prefix)?;
+                    let from_av = |v: AlgebraicValue| TypedIndexKey::AV(v.into()).into();
+                    let decode = |mut b| AlgebraicValue::decode(range_type, &mut b);
 
-                        // Is this really a point scan?
-                        if let Some(point) = Self::as_point_scan(&start, &end, suffix_len) {
-                            let point = decode(point)?;
-                            let point = Self::combine_prefix_and_point(prefix, point);
-                            return Ok(PointOrRange::Point(from_av(point)));
-                        }
-
-                        // It's not a point scan.
-                        let decode_bound = |b: Bound<_>| transpose_bound(b.map(decode));
-                        let start = decode_bound(start)?;
-                        let end = decode_bound(end)?;
-                        let (start, end) = Self::combine_prefix_and_bounds(prefix, start, end, suffix_len);
-                        Ok(PointOrRange::Range(start.map(from_av), end.map(from_av)))
+                    // Is this really a point scan?
+                    if let Some(point) = Self::as_point_scan(&start, &end, suffix_len) {
+                        let point = decode(point)?;
+                        let point = Self::combine_prefix_and_point(prefix, point);
+                        return Ok(PointOrRange::Point(from_av(point)));
                     }
-                    idx => unreachable!("index should be BytesKey* or AV, but was {idx:?}"),
-                }
-            }
-            // Single-column index case. We implicitly have a PT of len 1.
-            ty if prefix.is_empty() && prefix_elems.idx() == 0 => {
-                // Is this really a point scan?
-                if let Some(point) = Self::as_point_scan(&start, &end, 0) {
-                    return Ok(PointOrRange::Point(self.key_from_bsatn(point)?));
-                }
 
-                // It's not a point scan.
-                let decode = |b: Bound<_>| transpose_bound(b.map(|b| self.key_from_bsatn(b)));
-                Ok(PointOrRange::Range(decode(start)?, decode(end)?))
+                    // It's not a point scan.
+                    let decode_bound = |b: Bound<_>| transpose_bound(b.map(decode));
+                    let start = decode_bound(start)?;
+                    let end = decode_bound(end)?;
+                    let (start, end) = Self::combine_prefix_and_bounds(prefix, start, end, suffix_len);
+                    Ok(PointOrRange::Range(start.map(from_av), end.map(from_av)))
+                }
+                idx => unreachable!("index should be BytesKey* or AV, but was {idx:?}"),
             }
-            _ => Err(DecodeError::Other(
-                "a single-column index cannot be prefix scanned".into(),
-            )),
+        } else {
+            Self::bounds_for_single_col(prefix_elems, start, end, |b| self.key_from_bsatn(b))
         }
     }
 
+    /// Splits `key_types` into a prefix types and range type
+    /// and returns how large the suffix after the range type is.
+    fn split_key_types<E: de::Error>(
+        prefix_elems: ColId,
+        key_types: &ProductType,
+    ) -> Result<(&[ProductTypeElement], &AlgebraicType, usize), E> {
+        // Split into types for the prefix and for the rest.
+        let key_types = &*key_types.elements;
+        let (prefix_types, rest_types) = key_types
+            .split_at_checked(prefix_elems.idx())
+            .ok_or_else(|| E::custom("index key type has too few fields compared to prefix"))?;
+        // The `rstart` and `rend`s must be typed at `Bound<range_type>`.
+        // Extract that type and determine the length of the suffix.
+        let Some((range_type, suffix_types)) = rest_types.split_first() else {
+            return Err(E::custom(
+                "prefix length leaves no room for a range in ranged index scan",
+            ));
+        };
+        let range_type = &range_type.algebraic_type;
+        let suffix_len = suffix_types.len();
+
+        Ok((prefix_types, range_type, suffix_len))
+    }
+
     /// Decodes `prefix` ++ `start` and `prefix` ++ `end`
-    /// as BSATN-encoded bounds for a bytes key index.
+    /// as [`RangeCompatBytesKey`] bounds.
     /// The `suffix_len` is used to determine whether this is a point scan or a range scan.
-    #[allow(dead_code)]
-    fn bounds_from_bsatn_bytes_key<'de, const N: usize>(
+    fn bounds_from_bsatn_for_bytes_key<'de, const N: usize>(
         prefix: &'de [u8],
         prefix_types: &[ProductTypeElement],
         start: Bound<&'de [u8]>,
         end: Bound<&'de [u8]>,
         range_type: &AlgebraicType,
         suffix_len: usize,
-        ctor: impl Copy + FnOnce(BytesKey<N>) -> TypedIndexKey<'de>,
+        ctor: impl Copy + FnOnce(RangeCompatBytesKey<N>) -> TypedIndexKey<'de>,
     ) -> DecodeResult<PointOrRange<'de>> {
-        // Is this really a point scan?
+        Self::bounds_for_bytes_key(
+            prefix_types.is_empty(),
+            start,
+            end,
+            suffix_len,
+            || RangeCompatBytesKey::from_bsatn_prefix(prefix, prefix_types),
+            |b| RangeCompatBytesKey::from_bsatn_prefix_and_endpoint(prefix, prefix_types, b, range_type),
+            ctor,
+        )
+    }
+
+    /// Derives bounds for an index with `RangeCompatByteKey` keys.
+    fn bounds_for_bytes_key<'de, E, I: ?Sized + Ord, const N: usize>(
+        prefix_is_empty: bool,
+        start: Bound<&'de I>,
+        end: Bound<&'de I>,
+        suffix_len: usize,
+        decode_prefix: impl Copy + FnOnce() -> Result<RangeCompatBytesKey<N>, E>,
+        decode: impl Copy + FnOnce(&I) -> Result<RangeCompatBytesKey<N>, E>,
+        ctor: impl Copy + FnOnce(RangeCompatBytesKey<N>) -> TypedIndexKey<'de>,
+    ) -> Result<PointOrRange<'de>, E> {
         let from = |k| ctor(k).into();
-        let decode =
-            |bytes| BytesKey::from_bsatn_prefix_and_endpoint(prefix, prefix_types, bytes, range_type).map(from);
+        // Is this really a point scan?
         Ok(if let Some(point) = Self::as_point_scan(&start, &end, suffix_len) {
-            PointOrRange::Point(decode(point)?)
+            PointOrRange::Point(from(decode(point)?))
         } else {
             // It's not a point scan.
             let decode_bound = |b: Bound<_>| transpose_bound(b.map(decode));
-            PointOrRange::Range(decode_bound(start)?, decode_bound(end)?)
+
+            // For the start endpoint,
+            // it's only necessary to consider the `prefix`.
+            // The suffix is implicitly taken care of as a shorter slice is lesser than a longer one.
+            // That is, we have e.g., `prefix ++ [] <= prefix ++ suffix`.
+            //
+            // The exception to this is `Excluded`, where we need to fill with `Max`.
+            let start = match decode_bound(start)? {
+                Bound::Included(r) => Bound::Included(r),
+                Bound::Excluded(r) => Bound::Excluded(r.add_max_suffix()),
+                Bound::Unbounded if prefix_is_empty => Bound::Unbounded,
+                // We have a prefix, so the start is actually the prefix.
+                Bound::Unbounded => Bound::Included(decode_prefix()?),
+            };
+
+            // The end endpoint needs "max" as the suffix-filling element,
+            // as it imposes the least and acts like `Unbounded`.
+            //
+            // The exception to this is `Excluded`,
+            // where e.g., `[0]..[1]` should not find [1, 2],
+            // which it would if "max" was used.
+            // Instead, "min" must be used, but it can be omitted, as it's implicit.
+            let end = match decode_bound(end)? {
+                Bound::Included(r) => Bound::Included(r.add_max_suffix()),
+                Bound::Excluded(r) => Bound::Excluded(r),
+                // Prefix is empty, and suffix will be `Max`,
+                // so simplify `(Max, Max, ...)` to `Unbounded`.
+                Bound::Unbounded if prefix_is_empty => Bound::Unbounded,
+                Bound::Unbounded => Bound::Included(decode_prefix()?.add_max_suffix()),
+            };
+
+            PointOrRange::Range(start.map(from), end.map(from))
         })
+    }
+
+    /// Derives bounds for an index scan on a single column index.
+    fn bounds_for_single_col<'de, E: de::Error, I: 'de + ?Sized + PartialEq>(
+        prefix_elems: ColId,
+        start: Bound<&'de I>,
+        end: Bound<&'de I>,
+        decode: impl Copy + FnOnce(&'de I) -> Result<IndexKey<'de>, E>,
+    ) -> Result<PointOrRange<'de>, E> {
+        if prefix_elems.idx() != 0 {
+            return Err(E::custom("a single column index cannot be prefix scanned"));
+        }
+
+        // Single-column index case. We implicitly have a PT of len 1.
+        // Is this really a point scan?
+        if let Some(point) = Self::as_point_scan(&start, &end, 0) {
+            return Ok(PointOrRange::Point(decode(point)?));
+        }
+
+        // It's not a point scan.
+        let decode = |b: Bound<_>| transpose_bound(b.map(decode));
+        Ok(PointOrRange::Range(decode(start)?, decode(end)?))
     }
 
     /// Returns `start` if there is no suffix and `(start, end)` represents a point bound.
     /// Otherwise, `None` is returned.
-    fn as_point_scan<'de>(start: &Bound<&'de [u8]>, end: &Bound<&'de [u8]>, suffix_len: usize) -> Option<&'de [u8]> {
+    fn as_point_scan<'de, T: ?Sized + PartialEq>(
+        start: &Bound<&'de T>,
+        end: &Bound<&'de T>,
+        suffix_len: usize,
+    ) -> Option<&'de T> {
         if let (0, Bound::Included(s), Bound::Included(e)) = (suffix_len, start, end)
             && s == e
         {
@@ -1851,6 +2271,8 @@ impl TableIndex {
         suffix_len: usize,
     ) -> (Bound<AlgebraicValue>, Bound<AlgebraicValue>) {
         let prefix_is_empty = prefix.elements.is_empty();
+        // Conses value to prefix.
+        let cons = |prefix: ProductValue, val| prefix.push(val).into();
         // Concatenate prefix, value, and the most permissive value for the suffix.
         let concat = |prefix: ProductValue, val, fill| {
             let mut vals: Vec<_> = prefix.elements.into();
@@ -1859,27 +2281,34 @@ impl TableIndex {
             vals.extend(iter::repeat_n(fill, suffix_len));
             AlgebraicValue::product(vals)
         };
-        // The start endpoint needs `Min` as the suffix-filling element,
-        // as it imposes the least and acts like `Unbounded`.
-        let concat_start = |val| concat(prefix.clone(), val, AlgebraicValue::Min);
+
+        // For the start endpoint,
+        // the suffix is implicitly taken care of as a shorter slice is lesser than a longer one.
+        // That is, we have e.g., `(prefix : val) <= (prefix : val) ++ suffix`.
+        //
+        // The exception to this is `Excluded`, where we need to fill with `Max`.
         let range_start = match start {
-            Bound::Included(r) => Bound::Included(concat_start(r)),
-            Bound::Excluded(r) => Bound::Excluded(concat_start(r)),
+            Bound::Included(r) => Bound::Included(cons(prefix.clone(), r)),
+            Bound::Excluded(r) => Bound::Excluded(concat(prefix.clone(), r, AlgebraicValue::Max)),
             // Prefix is empty, and suffix will be `Min`,
             // so simplify `(Min, Min, ...)` to `Unbounded`.
             Bound::Unbounded if prefix_is_empty => Bound::Unbounded,
-            Bound::Unbounded => Bound::Included(concat_start(AlgebraicValue::Min)),
+            Bound::Unbounded => Bound::Included(prefix.clone().into()),
         };
         // The end endpoint needs `Max` as the suffix-filling element,
         // as it imposes the least and acts like `Unbounded`.
-        let concat_end = |val| concat(prefix, val, AlgebraicValue::Max);
+        //
+        // The exception to this is `Excluded`,
+        // where e.g., `[0]..[1]` should not find [1, 2],
+        // which it would if `Max` was used.
+        // Instead, `Min` must be used, but it can be omitted, as it's implicit.
         let range_end = match end {
-            Bound::Included(r) => Bound::Included(concat_end(r)),
-            Bound::Excluded(r) => Bound::Excluded(concat_end(r)),
+            Bound::Included(r) => Bound::Included(concat(prefix, r, AlgebraicValue::Max)),
+            Bound::Excluded(r) => Bound::Excluded(cons(prefix, r)),
             // Prefix is empty, and suffix will be `Max`,
             // so simplify `(Max, Max, ...)` to `Unbounded`.
             Bound::Unbounded if prefix_is_empty => Bound::Unbounded,
-            Bound::Unbounded => Bound::Included(concat_end(AlgebraicValue::Max)),
+            Bound::Unbounded => Bound::Included(concat(prefix, AlgebraicValue::Max, AlgebraicValue::Max)),
         };
         (range_start, range_end)
     }
@@ -1895,7 +2324,16 @@ impl TableIndex {
         // SAFETY:
         // 1. We're passing the same `ColList` that was provided during construction.
         // 2. Forward caller requirements.
-        unsafe { TypedIndexKey::from_row_ref(&self.idx, &self.indexed_columns, row_ref) }.into()
+        unsafe { TypedIndexKey::from_row_ref(&self.key_type, &self.idx, &self.indexed_columns, row_ref) }.into()
+    }
+
+    /// Projects `row_ref` to the columns of `self`.
+    ///
+    /// May panic if `row_ref` doesn't belong to the same table as this inex.
+    pub fn project_row(&self, row_ref: RowRef<'_>) -> AlgebraicValue {
+        row_ref
+            .project(&self.indexed_columns)
+            .expect("`row_ref` should belong to the same table as this index")
     }
 
     /// Inserts `ptr` with the value `row` to this index.
@@ -2029,6 +2467,11 @@ impl TableIndex {
             | (BTreeF64(_), BTreeF64(_))
             | (BTreeString(_), BTreeString(_))
             | (BTreeAV(_), BTreeAV(_))
+            | (BTreeBytesKey8(_), BTreeBytesKey8(_))
+            | (BTreeBytesKey16(_), BTreeBytesKey16(_))
+            | (BTreeBytesKey32(_), BTreeBytesKey32(_))
+            | (BTreeBytesKey64(_), BTreeBytesKey64(_))
+            | (BTreeBytesKey128(_), BTreeBytesKey128(_))
             | (HashBool(_), HashBool(_))
             | (HashU8(_), HashU8(_))
             | (HashSumTag(_), HashSumTag(_))
@@ -2070,6 +2513,11 @@ impl TableIndex {
             (UniqueBTreeF64(idx), UniqueBTreeF64(other)) => idx.can_merge(other, ignore),
             (UniqueBTreeString(idx), UniqueBTreeString(other)) => idx.can_merge(other, ignore),
             (UniqueBTreeAV(idx), UniqueBTreeAV(other)) => idx.can_merge(other, ignore),
+            (UniqueBTreeBytesKey8(idx), UniqueBTreeBytesKey8(other)) => idx.can_merge(other, ignore),
+            (UniqueBTreeBytesKey16(idx), UniqueBTreeBytesKey16(other)) => idx.can_merge(other, ignore),
+            (UniqueBTreeBytesKey32(idx), UniqueBTreeBytesKey32(other)) => idx.can_merge(other, ignore),
+            (UniqueBTreeBytesKey64(idx), UniqueBTreeBytesKey64(other)) => idx.can_merge(other, ignore),
+            (UniqueBTreeBytesKey128(idx), UniqueBTreeBytesKey128(other)) => idx.can_merge(other, ignore),
             (UniqueHashBool(idx), UniqueHashBool(other)) => idx.can_merge(other, ignore),
             (UniqueHashU8(idx), UniqueHashU8(other)) => idx.can_merge(other, ignore),
             (UniqueHashSumTag(idx), UniqueHashSumTag(other)) => idx.can_merge(other, ignore),
@@ -2142,19 +2590,27 @@ impl TableIndex {
 mod test {
     use super::*;
     use crate::page_pool::PagePool;
+    use crate::table::Table;
     use crate::{blob_store::HashMapBlobStore, table::test::table};
+    use core::cmp::Ordering;
     use core::ops::Bound::*;
+    use core::slice;
     use decorum::Total;
+    use proptest::array::uniform;
     use proptest::prelude::*;
     use proptest::{
         collection::{hash_set, vec},
         test_runner::TestCaseResult,
     };
     use spacetimedb_data_structures::map::HashMap;
+    use spacetimedb_lib::bsatn::to_vec;
     use spacetimedb_lib::ProductTypeElement;
-    use spacetimedb_primitives::ColId;
+    use spacetimedb_primitives::{ColId, IndexId};
     use spacetimedb_sats::algebraic_value::Packed;
-    use spacetimedb_sats::proptest::{generate_algebraic_value, generate_primitive_algebraic_type};
+    use spacetimedb_sats::proptest::{
+        gen_with, generate_algebraic_type, generate_algebraic_value, generate_primitive_algebraic_type,
+        generate_typed_value,
+    };
     use spacetimedb_sats::{
         product,
         proptest::{generate_product_value, generate_row_type},
@@ -2181,6 +2637,10 @@ mod test {
         fn gen_for_ranged() -> impl Strategy<Value = Self> {
             any::<bool>().prop_map(|is_direct| if is_direct { Self::Direct } else { Self::BTree })
         }
+    }
+
+    fn setup(ty: ProductType) -> (Table, PagePool, HashMapBlobStore) {
+        (table(ty), PagePool::new_for_test(), HashMapBlobStore::default())
     }
 
     fn new_index(row_type: &ProductType, cols: &ColList, is_unique: bool, kind: IndexKind) -> TableIndex {
@@ -2239,11 +2699,61 @@ mod test {
 
     fn seek_range<'a>(
         index: &'a TableIndex,
-        range: &impl RangeBounds<AlgebraicValue>,
+        prefix: &[AlgebraicValue],
+        bounds: &impl RangeBounds<AlgebraicValue>,
     ) -> IndexSeekRangeResult<TableIndexRangeIter<'a>> {
-        let start = range.start_bound().map(|v| index.key_from_algebraic_value(v));
-        let end = range.end_bound().map(|v| index.key_from_algebraic_value(v));
+        // Derive the index keys via BSATN.
+        let prefix = ProductValue::from(prefix.to_vec());
+        let prefix_bsatn = to_vec(&prefix).unwrap();
+        let rstart = to_vec(&bounds.start_bound()).unwrap();
+        let rend = to_vec(&bounds.end_bound()).unwrap();
+        let por_bsatn = index
+            .bounds_from_bsatn(&prefix_bsatn, prefix.elements.len().into(), &rstart, &rend)
+            .unwrap();
+
+        // Derive the index keys via `bounds_from_bsatn`.
+        let por_av = index.bounds_from_algbraic_value(&prefix, bounds).unwrap();
+
+        // Check that we get the same key when derived via BSATN as via AV.
+        assert_eq!(por_bsatn, por_av);
+
+        let (start, end) = match por_bsatn {
+            PointOrRange::Point(index_key) => {
+                let key = Included(index_key);
+                (key.clone(), key)
+            }
+            PointOrRange::Range(start, end) => (start, end),
+            PointOrRange::Unsupported => return Err(IndexCannotSeekRange),
+        };
+
         index.seek_range(&(start, end))
+    }
+
+    fn seek_point<'a>(index: &'a TableIndex, point: &AlgebraicValue) -> TableIndexPointIter<'a> {
+        let key = index.key_from_algebraic_value(point);
+
+        // Verify that we get the same key back via BSATN as well.
+        let point_bsatn = to_vec(point).unwrap();
+        let key_bsatn = index.key_from_bsatn(&point_bsatn).unwrap();
+        assert_eq!(key, key_bsatn);
+
+        index.seek_point(&key)
+    }
+
+    fn find_start_mid_end<T: Ord>(a: T, b: T, c: T) -> (T, T, T) {
+        use Ordering::*;
+        match (a.cmp(&b), b.cmp(&c)) {
+            (Less | Equal, Less | Equal) => (a, b, c),
+            (Less, Greater) => match a.cmp(&c) {
+                Less | Equal => (a, c, b),
+                Greater => (c, a, b),
+            },
+            (Greater, Less) => match a.cmp(&c) {
+                Less | Equal => (b, a, c),
+                Greater => (b, c, a),
+            },
+            (Greater | Equal, Greater | Equal) => (c, b, a),
+        }
     }
 
     proptest! {
@@ -2254,15 +2764,13 @@ mod test {
             let index = TableIndex::new(&ty, cols.clone(), IndexKind::Hash, is_unique).unwrap();
 
             let key = pv.project(&cols).unwrap();
-            assert_eq!(seek_range(&index, &(key.clone()..=key)).unwrap_err(), IndexCannotSeekRange);
+            assert_eq!(seek_range(&index, &[], &(key.clone()..=key)).unwrap_err(), IndexCannotSeekRange);
         }
 
         #[test]
         fn remove_nonexistent_noop((ty, cols, pv) in gen_row_and_cols(), kind: IndexKind, is_unique: bool) {
             let mut index = new_index(&ty, &cols, is_unique, kind);
-            let mut table = table(ty);
-            let pool = PagePool::new_for_test();
-            let mut blob_store = HashMapBlobStore::default();
+            let (mut table, pool, mut blob_store) = setup(ty);
             let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
             prop_assert_eq!(unsafe { index.delete(row_ref) }, false);
             prop_assert!(index.idx.is_empty());
@@ -2274,9 +2782,7 @@ mod test {
         #[test]
         fn insert_delete_noop((ty, cols, pv) in gen_row_and_cols(), kind: IndexKind, is_unique: bool) {
             let mut index = new_index(&ty, &cols, is_unique, kind);
-            let mut table = table(ty);
-            let pool = PagePool::new_for_test();
-            let mut blob_store = HashMapBlobStore::default();
+            let (mut table, pool, mut blob_store) = setup(ty);
             let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
             let value = get_fields(&cols, &pv);
 
@@ -2307,9 +2813,7 @@ mod test {
             let ty = ProductType::from(ty.into_boxed_slice());
 
             let mut index = new_index(&ty, &cols, false, kind);
-            let mut table = table(ty);
-            let pool = PagePool::new_for_test();
-            let mut blob_store = HashMapBlobStore::default();
+            let (mut table, pool, mut blob_store) = setup(ty);
 
             let num_vals = vals.len();
             for val in vals {
@@ -2330,9 +2834,7 @@ mod test {
         #[test]
         fn insert_again_violates_unique_constraint((ty, cols, pv) in gen_row_and_cols(), kind: IndexKind) {
             let mut index = new_index(&ty, &cols, true, kind);
-            let mut table = table(ty);
-            let pool = PagePool::new_for_test();
-            let mut blob_store = HashMapBlobStore::default();
+            let (mut table, pool, mut blob_store) = setup(ty);
             let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
             let value = get_fields(&cols, &pv);
 
@@ -2369,9 +2871,7 @@ mod test {
             let cols = 0.into();
             let ty = ProductType::from_iter([AlgebraicType::U64]);
             let mut index = new_index(&ty, &cols, is_unique, kind);
-            let mut table = table(ty);
-            let pool = PagePool::new_for_test();
-            let mut blob_store = HashMapBlobStore::default();
+            let (mut table, pool, mut blob_store) = setup(ty);
 
             let prev = needle - 1;
             let next = needle + 1;
@@ -2393,7 +2893,10 @@ mod test {
             assert_eq!(index.num_key_bytes() as usize, 3 * size_of::<u64>());
 
             fn test_seek(index: &TableIndex, val_to_ptr: &HashMap<u64, RowPointer>, range: impl RangeBounds<AlgebraicValue>, expect: impl IntoIterator<Item = u64>) -> TestCaseResult {
-                check_seek(seek_range(index, &range).unwrap().collect(), val_to_ptr, expect)
+                check_seek(seek_range(index, &[], &range).unwrap().collect(), val_to_ptr, expect)
+            }
+            fn test_seek_point(index: &TableIndex, val_to_ptr: &HashMap<u64, RowPointer>, point: &AlgebraicValue, expect: impl IntoIterator<Item = u64>) -> TestCaseResult {
+                check_seek(seek_point(index, point).collect(), val_to_ptr, expect)
             }
 
             fn check_seek(mut ptrs_in_index: Vec<RowPointer>, val_to_ptr: &HashMap<u64, RowPointer>, expect: impl IntoIterator<Item = u64>) -> TestCaseResult {
@@ -2439,10 +2942,12 @@ mod test {
 
             // Test `x..=y` (`RangeInclusive`).
             test_seek(&index, &val_to_ptr, V(prev)..=V(prev), [prev])?;
+            test_seek_point(&index, &val_to_ptr, &V(prev), [prev])?;
             test_seek(&index, &val_to_ptr, V(prev)..=V(needle), [prev, needle])?;
             test_seek(&index, &val_to_ptr, V(prev)..=V(next), [prev, needle, next])?;
             test_seek(&index, &val_to_ptr, V(needle)..=V(next), [needle, next])?;
             test_seek(&index, &val_to_ptr, V(next)..=V(next), [next])?;
+            test_seek_point(&index, &val_to_ptr, &V(next), [next])?;
 
             // Test `(x, y]` (Exclusive start, inclusive end).
             test_seek(&index, &val_to_ptr, (Excluded(V(prev)), Included(V(prev))), [])?;
@@ -2470,9 +2975,7 @@ mod test {
             let mut index = new_index(&row_ty, &[0].into(), is_unique, kind);
 
             // Construct the table and add `val` as a row.
-            let mut table = table(row_ty);
-            let pool = PagePool::new_for_test();
-            let mut blob_store = HashMapBlobStore::default();
+            let (mut table, pool, mut blob_store) = setup(row_ty);
             let pv = product![val.clone()];
             let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
 
@@ -2485,16 +2988,103 @@ mod test {
             assert_eq!(index.num_rows(), 1);
 
             // Seek the empty ranges.
-            let rows = seek_range(&index, &(&succ..&val)).unwrap().collect::<Vec<_>>();
+            let rows = seek_range(&index, &[], &(&succ..&val)).unwrap().collect::<Vec<_>>();
             assert_eq!(rows, []);
-            let rows = seek_range(&index, &(&succ..=&val)).unwrap().collect::<Vec<_>>();
+            let rows = seek_range(&index, &[], &(&succ..=&val)).unwrap().collect::<Vec<_>>();
             assert_eq!(rows, []);
-            let rows = seek_range(&index, &(Excluded(&succ), Included(&val))).unwrap().collect::<Vec<_>>();
+            let rows = seek_range(&index, &[], &(Excluded(&succ), Included(&val))).unwrap().collect::<Vec<_>>();
             assert_eq!(rows, []);
-            let rows = seek_range(&index, &(Excluded(&succ), Excluded(&val))).unwrap().collect::<Vec<_>>();
+            let rows = seek_range(&index, &[], &(Excluded(&succ), Excluded(&val))).unwrap().collect::<Vec<_>>();
             assert_eq!(rows, []);
-            let rows = seek_range(&index, &(Excluded(&val), Excluded(&val))).unwrap().collect::<Vec<_>>();
+            let rows = seek_range(&index, &[], &(Excluded(&val), Excluded(&val))).unwrap().collect::<Vec<_>>();
             assert_eq!(rows, []);
+        }
+
+        #[test]
+        fn multi_col_range_scans_work(
+            is_unique: bool,
+            index_kind in IndexKind::gen_for_ranged(),
+            (prefix_ty, prefix_val) in generate_typed_value(),
+            (middle_ty, [start, middle, end]) in gen_with(generate_algebraic_type(), |ty| uniform(generate_algebraic_value(ty))),
+            (suffix_ty, suffix_val) in generate_typed_value(),
+        ) {
+            // Make the product type.
+            let ty = ProductType::from([prefix_ty, middle_ty, suffix_ty]);
+            let index = new_index(&ty, &[0, 1, 2].into(), is_unique, index_kind);
+
+            // Find the actual start, middle, and end.
+            let (start, middle, end) = find_start_mid_end(start, middle, end);
+            let row = product![prefix_val.clone(), middle.clone(), suffix_val.clone()];
+
+            // Make a table, add the index, and insert the row.
+            let (mut table, pool, mut blob_store) = setup(ty);
+            unsafe { table.add_index(IndexId::SENTINEL, index) };
+            let (_, row_ref) = table.insert(&pool, &mut blob_store, &row).unwrap();
+            let row_ptr = row_ref.pointer();
+            let index = table.get_index_by_id(IndexId::SENTINEL).unwrap();
+
+            // Test sanity of various bounds.
+            let seek = |start, end| {
+                let iter = seek_range(index, slice::from_ref(&prefix_val), &(start, end));
+                iter.unwrap().collect::<Vec<_>>()
+            };
+            use Bound::*;
+            // An unbounded range on both ends will find the row.
+            prop_assert_eq!(seek(Unbounded::<AlgebraicValue>, Unbounded), [row_ptr]);
+            // Including middle as the start/end should find the row.
+            prop_assert_eq!(seek(Included(middle.clone()), Unbounded), [row_ptr]);
+            prop_assert_eq!(seek(Unbounded, Included(middle.clone())), [row_ptr]);
+            prop_assert_eq!(seek(Included(middle.clone()), Included(middle.clone())), [row_ptr]);
+            // Excluding middle as the start/end shouldn't find the row.
+            prop_assert_eq!(seek(Excluded(middle.clone()), Unbounded), []);
+            prop_assert_eq!(seek(Excluded(middle.clone()), Included(end.clone())), []);
+            prop_assert_eq!(seek(Unbounded, Excluded(middle.clone())), []);
+            prop_assert_eq!(seek(Included(start.clone()), Excluded(middle.clone())), []);
+            // Including start and end should find the row.
+            prop_assert_eq!(seek(Included(start.clone()), Unbounded), [row_ptr]);
+            prop_assert_eq!(seek(Unbounded, Included(end.clone())), [row_ptr]);
+            prop_assert_eq!(seek(Included(start.clone()), Included(end.clone())), [row_ptr]);
+            // Excluding start/end should find the row when `start, end != middle`.
+            if start < middle && middle < end {
+                prop_assert_eq!(seek(Excluded(start.clone()), Excluded(end.clone())), [row_ptr]);
+            }
+            if start < middle {
+                prop_assert_eq!(seek(Excluded(start.clone()), Included(end.clone())), [row_ptr]);
+                prop_assert_eq!(seek(Excluded(start.clone()), Unbounded), [row_ptr]);
+            }
+            if middle < end {
+                prop_assert_eq!(seek(Included(start.clone()), Excluded(end.clone())), [row_ptr]);
+                prop_assert_eq!(seek(Unbounded, Excluded(end.clone())), [row_ptr]);
+            }
+        }
+
+        #[test]
+        fn multi_col_point_scans_work(
+            is_unique: bool,
+            index_kind: IndexKind,
+            (prefix_ty, prefix_val) in generate_typed_value(),
+            (middle_ty, [included, excluded]) in gen_with(generate_algebraic_type(), |ty| uniform(generate_algebraic_value(ty))),
+            (suffix_ty, suffix_val) in generate_typed_value(),
+        ) {
+            prop_assume!(included != excluded);
+
+            // Make the product type.
+            let ty = ProductType::from([prefix_ty, middle_ty, suffix_ty]);
+            let index = new_index(&ty, &[0, 1, 2].into(), is_unique, index_kind);
+
+            // Make the row and the other one.
+            let row = product![prefix_val.clone(), included.clone(), suffix_val.clone()];
+            let other_row = product![prefix_val, excluded, suffix_val];
+
+            // Make a table, add the index, and insert the row.
+            let (mut table, pool, mut blob_store) = setup(ty);
+            unsafe { table.add_index(IndexId::SENTINEL, index) };
+            let (_, row_ref) = table.insert(&pool, &mut blob_store, &row).unwrap();
+            let row_ptr = row_ref.pointer();
+            let index = table.get_index_by_id(IndexId::SENTINEL).unwrap();
+
+            prop_assert_eq!(seek_point(index, &row.into()).collect::<Vec<_>>(), [row_ptr]);
+            prop_assert_eq!(seek_point(index, &other_row.into()).collect::<Vec<_>>(), []);
         }
     }
 }

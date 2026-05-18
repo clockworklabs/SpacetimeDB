@@ -13,7 +13,7 @@ use rustc_hash::FxHashMap;
 use spacetimedb_client_api_messages::energy::EnergyQuanta;
 use spacetimedb_datastore::execution_context::{ExecutionContext, ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
-use spacetimedb_datastore::system_tables::{StFields, StScheduledFields, ST_SCHEDULED_ID};
+use spacetimedb_datastore::system_tables::{StScheduledFields, ST_SCHEDULED_ID};
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::scheduler::ScheduleAt;
 use spacetimedb_lib::Timestamp;
@@ -53,6 +53,7 @@ enum MsgOrExit<T> {
 enum SchedulerMessage {
     Schedule {
         id: ScheduledFunctionId,
+        function_name: Arc<str>,
         /// The timestamp we'll tell the reducer it is.
         effective_at: Timestamp,
         /// The actual instant we're scheduling for.
@@ -62,11 +63,6 @@ enum SchedulerMessage {
         function_name: String,
         args: FunctionArgs,
     },
-}
-
-pub struct ScheduledFunction {
-    function: Box<str>,
-    bsatn_args: Vec<u8>,
 }
 
 #[derive(Clone)]
@@ -107,6 +103,8 @@ impl SchedulerStarter {
         // Find all Scheduled tables
         for st_scheduled_row in self.db.iter(&tx, ST_SCHEDULED_ID)? {
             let table_id = st_scheduled_row.read_col(StScheduledFields::TableId)?;
+            let function_name =
+                Arc::<str>::from(st_scheduled_row.read_col::<Box<str>>(StScheduledFields::ReducerName)?);
             let (id_column, at_column) = self
                 .db
                 .table_scheduled_id_and_at(&tx, table_id)?
@@ -127,7 +125,14 @@ impl SchedulerStarter {
                     id_column,
                     at_column,
                 };
-                let key = queue.insert_at(QueueItem::Id { id, at }, now_instant + duration);
+                let key = queue.insert_at(
+                    QueueItem::Id {
+                        id,
+                        function_name: function_name.clone(),
+                        at,
+                    },
+                    now_instant + duration,
+                );
 
                 // This should never happen as duplicate entries should be gated by unique
                 // constraint violation in scheduled tables.
@@ -198,6 +203,7 @@ impl Scheduler {
     /// Schedule a reducer/procedure to run from a scheduled table.
     ///
     /// `fn_start` is the timestamp of the start of the current reducer/procedure.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn schedule(
         &self,
         table_id: TableId,
@@ -205,6 +211,7 @@ impl Scheduler {
         schedule_at: ScheduleAt,
         id_column: ColId,
         at_column: ColId,
+        function_name: Arc<str>,
         fn_start: Timestamp,
     ) -> Result<(), ScheduleError> {
         // if `Timestamp::now()` is properly monotonic, use it; otherwise, use
@@ -238,6 +245,7 @@ impl Scheduler {
                 id_column,
                 at_column,
             },
+            function_name,
             effective_at,
             real_at,
         }));
@@ -270,12 +278,32 @@ struct SchedulerActor {
 
 #[derive(Clone)]
 enum QueueItem {
-    Id { id: ScheduledFunctionId, at: Timestamp },
-    VolatileNonatomicImmediate { function_name: String, args: FunctionArgs },
+    Id {
+        id: ScheduledFunctionId,
+        function_name: Arc<str>,
+        at: Timestamp,
+    },
+    VolatileNonatomicImmediate {
+        function_name: String,
+        args: FunctionArgs,
+    },
 }
 
 #[derive(Clone)]
 pub(crate) struct ScheduledFunctionParams(QueueItem);
+
+impl ScheduledFunctionParams {
+    fn function_name(&self) -> &str {
+        match &self.0 {
+            QueueItem::Id { function_name, .. } => function_name,
+            QueueItem::VolatileNonatomicImmediate { function_name, .. } => function_name,
+        }
+    }
+
+    pub(crate) fn is_procedure(&self, module: &ModuleInfo) -> bool {
+        module.module_def.procedure_full(self.function_name()).is_some()
+    }
+}
 
 #[derive(thiserror::Error, Debug)]
 pub(crate) enum CallScheduledFunctionError {
@@ -307,6 +335,7 @@ impl SchedulerActor {
         match msg {
             SchedulerMessage::Schedule {
                 id,
+                function_name,
                 effective_at,
                 real_at,
             } => {
@@ -314,7 +343,14 @@ impl SchedulerActor {
                 if let Some(key) = self.key_map.get(&id) {
                     self.queue.remove(key);
                 }
-                let key = self.queue.insert_at(QueueItem::Id { id, at: effective_at }, real_at);
+                let key = self.queue.insert_at(
+                    QueueItem::Id {
+                        id,
+                        function_name,
+                        at: effective_at,
+                    },
+                    real_at,
+                );
                 self.key_map.insert(id, key);
             }
             SchedulerMessage::ScheduleImmediate { function_name, args } => {
@@ -328,7 +364,7 @@ impl SchedulerActor {
 
     async fn handle_queued(&mut self, id: Expired<QueueItem>) {
         let item = id.into_inner();
-        let id: Option<ScheduledFunctionId> = match &item {
+        let id = match &item {
             QueueItem::Id { id, .. } => Some(*id),
             QueueItem::VolatileNonatomicImmediate { .. } => None,
         };
@@ -340,7 +376,12 @@ impl SchedulerActor {
             return;
         };
 
-        let result = module_host.call_scheduled_function(ScheduledFunctionParams(item)).await;
+        let params = ScheduledFunctionParams(item.clone());
+        let result = if params.is_procedure(module_host.info()) {
+            module_host.call_scheduled_procedure(params).await
+        } else {
+            module_host.call_scheduled_reducer(params).await
+        };
 
         match result {
             // If the module already exited, leave the `ScheduledFunction` in
@@ -352,9 +393,16 @@ impl SchedulerActor {
             Ok(CallScheduledFunctionResult {
                 reschedule: Some(Reschedule { at_ts, at_real }),
             }) => {
-                if let Some(id) = id {
+                if let QueueItem::Id { id, function_name, .. } = item {
                     // If this was repeated, we need to add it back to the queue.
-                    let key = self.queue.insert_at(QueueItem::Id { id, at: at_ts }, at_real);
+                    let key = self.queue.insert_at(
+                        QueueItem::Id {
+                            id,
+                            function_name,
+                            at: at_ts,
+                        },
+                        at_real,
+                    );
                     self.key_map.insert(id, key);
                 }
             }
@@ -381,8 +429,8 @@ pub(super) async fn call_scheduled_function(
 ) -> (CallScheduledFunctionResult, bool) {
     let ScheduledFunctionParams(item) = params;
 
-    let id: Option<ScheduledFunctionId> = match item {
-        QueueItem::Id { id, .. } => Some(id),
+    let id = match &item {
+        QueueItem::Id { id, .. } => Some(*id),
         QueueItem::VolatileNonatomicImmediate { .. } => None,
     };
     let db = &**module_info.relational_db();
@@ -606,15 +654,13 @@ fn call_params_for_queued_item(
     item: QueueItem,
 ) -> anyhow::Result<Option<(Timestamp, Instant, CallParams)>> {
     Ok(Some(match item {
-        QueueItem::Id { id, at } => {
+        QueueItem::Id { id, function_name, at } => {
             let Some(schedule_row) = get_schedule_row_mut(tx, db, id)? else {
                 // If the row is not found, it means the schedule is cancelled by the user.
                 return Ok(None);
             };
-            let ScheduledFunction { function, bsatn_args } = process_schedule(tx, db, id.table_id, &schedule_row)?;
-
-            let fun_args = FunctionArgs::Bsatn(bsatn_args.into());
-            function_to_call_params(module, &function, fun_args, Some(at))?
+            let fun_args = FunctionArgs::Bsatn(schedule_row.to_bsatn_vec()?.into());
+            function_to_call_params(module, &function_name, fun_args, Some(at))?
         }
         QueueItem::VolatileNonatomicImmediate { function_name, args } => {
             function_to_call_params(module, &function_name, args, None)?
@@ -665,28 +711,6 @@ fn function_to_call_params(
     };
 
     Ok((ts, instant, params))
-}
-
-/// Generate [`ScheduledFunction`] for given [`ScheduledFunctionId`].
-fn process_schedule(
-    tx: &MutTxId,
-    db: &RelationalDB,
-    table_id: TableId,
-    schedule_row: &RowRef<'_>,
-) -> Result<ScheduledFunction, anyhow::Error> {
-    // Get reducer name from `ST_SCHEDULED` table.
-    let table_id_col = StScheduledFields::TableId.col_id();
-    let function_name_col = StScheduledFields::ReducerName.col_id();
-    let st_scheduled_row = db
-        .iter_by_col_eq_mut(tx, ST_SCHEDULED_ID, table_id_col, &table_id.into())?
-        .next()
-        .ok_or_else(|| anyhow!("Scheduled table with id {table_id} entry does not exist in `st_scheduled`"))?;
-    let function = st_scheduled_row.read_col::<Box<str>>(function_name_col)?;
-
-    Ok(ScheduledFunction {
-        function,
-        bsatn_args: schedule_row.to_bsatn_vec()?,
-    })
 }
 
 /// Returns the `schedule_row` for `id`.

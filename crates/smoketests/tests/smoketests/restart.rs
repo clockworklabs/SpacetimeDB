@@ -141,7 +141,7 @@ fn test_add_remove_index_after_restart() {
         .autopublish(false)
         .build();
 
-    let name = format!("test-db-{}", std::process::id());
+    let name = format!("restart-add-remove-index-{}", std::process::id());
 
     // Publish and attempt subscribing to a join query.
     // There are no indices, resulting in an unsupported unindexed join.

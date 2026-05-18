@@ -46,12 +46,19 @@ fn generate_markdown(cmd: &mut Command, heading_level: usize) -> String {
             .map(|l| format!("--{}", l))
             .or_else(|| arg.get_short().map(|s| format!("-{}", s)))
             .unwrap_or_else(|| arg.get_id().to_string());
-        let help = arg.get_long_help().unwrap_or_default();
+        let help = arg
+            .get_long_help()
+            .or_else(|| arg.get_help())
+            .map(|help| help.to_string())
+            .unwrap_or_else(|| {
+                eprintln!("Warning: argument `{}` is missing help text", arg.get_id());
+                "".to_string()
+            });
         options.push_str(&format!(
             "- `{}`: {}\n{}",
             names,
             help,
-            if help.to_string().lines().count() > 1 { "\n" } else { "" }
+            if help.lines().count() > 1 { "\n" } else { "" }
         ));
     }
 

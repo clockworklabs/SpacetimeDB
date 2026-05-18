@@ -46,29 +46,29 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
 
     CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
-        |module| async move {
+        |mut module| async move {
             let json =
                 r#"{"CallReducer": {"reducer": "add", "args": "[\"Tyrion\", 24]", "request_id": 0, "flags": 0 }}"#
                     .to_string();
-            module.send(json).await.unwrap();
+            module.send_reducer_and_recv_update(json, 0).await.unwrap();
 
             let json =
                 r#"{"CallReducer": {"reducer": "add", "args": "[\"Cersei\", 31]", "request_id": 1, "flags": 0 }}"#
                     .to_string();
-            module.send(json).await.unwrap();
+            module.send_reducer_and_recv_update(json, 1).await.unwrap();
 
             let json =
                 r#"{"CallReducer": {"reducer": "say_hello", "args": "[]", "request_id": 2, "flags": 0 }}"#.to_string();
-            module.send(json).await.unwrap();
+            module.send_reducer_and_recv_update(json, 2).await.unwrap();
 
             let json = r#"{"CallReducer": {"reducer": "list_over_age", "args": "[30]", "request_id": 3, "flags": 0 }}"#
                 .to_string();
-            module.send(json).await.unwrap();
+            module.send_reducer_and_recv_update(json, 3).await.unwrap();
 
             let json =
                 r#"{"CallReducer": {"reducer": "log_module_identity", "args": "[]", "request_id": 4, "flags": 0 }}"#
                     .to_string();
-            module.send(json).await.unwrap();
+            module.send_reducer_and_recv_update(json, 4).await.unwrap();
 
             assert_eq!(
                 read_logs(&module).await,
@@ -128,7 +128,7 @@ fn test_calling_a_reducer_with_private_table() {
             let logs = read_logs(&module)
                 .await
                 .into_iter()
-                .skip_while(|r| r.starts_with("Timestamp"))
+                .filter(|r| !is_scheduled_test_log(r))
                 .collect::<Vec<_>>();
 
             assert_eq!(logs, ["Private, Tyrion!", "Private, World!",].map(String::from));
@@ -136,13 +136,18 @@ fn test_calling_a_reducer_with_private_table() {
     );
 }
 
+/// Returns `true` if `line` was produced by the `repeating_test` or `nonrepeating_test` scheduled reducers.
+fn is_scheduled_test_log(line: &str) -> bool {
+    line.starts_with("Timestamp: ") || line.starts_with("This reducers runs only once")
+}
+
 async fn read_log_skip_repeating(module: &ModuleHandle) -> String {
     let logs = read_logs(module).await;
     let mut logs = logs
         .into_iter()
-        // Filter out log lines from the `repeating_test` reducer,
-        // which runs frequently enough to appear in our logs after we've slept a second.
-        .filter(|line| !line.starts_with("Timestamp: Timestamp { __timestamp_micros_since_unix_epoch__: "))
+        // Filter out log lines from the `repeating_test` and `nonrepeating_test` reducers,
+        // which run on a schedule and can appear in our logs after we've slept.
+        .filter(|line| !is_scheduled_test_log(line))
         .collect::<Vec<_>>();
 
     if logs.len() != 1 {
@@ -150,6 +155,44 @@ async fn read_log_skip_repeating(module: &ModuleHandle) -> String {
     };
 
     logs.swap_remove(0)
+}
+
+fn test_nonrepeating_scheduled_reducer_in_module(module_name: &'static str) {
+    init();
+
+    CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |module| async move {
+            // The `init` reducer schedules `nonrepeating_test` to run 1 second in the future.
+            // Wait long enough for it to fire.
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+            let logs = read_logs(&module).await;
+
+            assert!(
+                logs.iter().any(|line| line.starts_with("This reducers runs only once")),
+                "Expected nonrepeating_test reducer to have logged, but got: {logs:#?}",
+            );
+        },
+    );
+}
+
+#[test]
+#[serial]
+fn test_nonrepeating_scheduled_reducer() {
+    test_nonrepeating_scheduled_reducer_in_module("module-test");
+}
+
+#[test]
+#[serial]
+fn test_nonrepeating_scheduled_reducer_csharp() {
+    test_nonrepeating_scheduled_reducer_in_module("module-test-cs");
+}
+
+#[test]
+#[serial]
+fn test_nonrepeating_scheduled_reducer_typescript() {
+    test_nonrepeating_scheduled_reducer_in_module("module-test-ts");
 }
 
 fn test_calling_a_procedure_in_module(module_name: &'static str) {
@@ -240,11 +283,11 @@ fn test_calling_with_tx() {
 ///     TestF::Baz("buzz".to_string()),
 /// ]
 /// ```
-fn test_call_query_macro_with_caller<F: Future<Output = ()>>(caller: impl FnOnce(ModuleHandle) -> F) {
+fn test_call_query_macro_with_caller<F: Future<Output = ModuleHandle>>(caller: impl FnOnce(ModuleHandle) -> F) {
     CompiledModule::compile("module-test", CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
         |module| async move {
-            caller(module.clone()).await;
+            let module = caller(module).await;
             let logs = read_logs(&module)
                 .await
                 .into_iter()
@@ -278,7 +321,7 @@ fn test_call_query_macro_with_caller<F: Future<Output = ()>>(caller: impl FnOnce
 #[serial]
 fn test_call_query_macro() {
     // Hand-written JSON. This will fail if the JSON encoding of `ClientMessage` changes.
-    test_call_query_macro_with_caller(|module| async move {
+    test_call_query_macro_with_caller(|mut module| async move {
         // Note that JSON doesn't allow multiline strings, so the encoded args string must be on one line!
         let json = r#"
 { "CallReducer": {
@@ -287,9 +330,10 @@ fn test_call_query_macro() {
     "[ { \"x\": 0, \"y\": 2, \"z\": \"Macro\" }, { \"foo\": \"Foo\" }, { \"foo\": {} }, { \"baz\": \"buzz\" } ]",
   "request_id": 0,
   "flags": 0
-} }"#
+	} }"#
             .to_string();
-        module.send(json).await.unwrap();
+        module.send_reducer_and_recv_update(json, 0).await.unwrap();
+        module
     });
 
     let args_pv = &product![
@@ -302,11 +346,13 @@ fn test_call_query_macro() {
     // JSON via the `Serialize` path.
     test_call_query_macro_with_caller(|module| async move {
         module.call_reducer_json("test", args_pv).await.unwrap();
+        module
     });
 
     // BSATN via the `Serialize` path.
     test_call_query_macro_with_caller(|module| async move {
         module.call_reducer_binary("test", args_pv).await.unwrap();
+        module
     });
 }
 

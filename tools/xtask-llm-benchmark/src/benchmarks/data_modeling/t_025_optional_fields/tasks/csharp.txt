@@ -1,0 +1,15 @@
+Write a SpacetimeDB backend module in C# that defines a table with optional (nullable) fields and a reducer that inserts rows with and without optional values.
+
+TABLES
+- Player
+  - Struct: Player
+  - Fields:
+    - Id: ulong (primary key, AutoInc)
+    - Name: string
+    - Nickname: string? (nullable)
+    - HighScore: uint? (nullable)
+
+REDUCERS
+- CreatePlayer(ctx, string name, string? nickname, uint? highScore)
+  - Insert a Player row, passing through the nullable fields as-is
+  - Use Id: 0 for AutoInc

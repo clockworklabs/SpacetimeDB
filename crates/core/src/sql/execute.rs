@@ -58,7 +58,7 @@ pub async fn run(
     head: &mut Vec<(RawIdentifier, AlgebraicType)>,
 ) -> Result<SqlResult, DBError> {
     match module {
-        Some(module) => module.call_view_sql(db, sql_text, auth, subs, head).await,
+        Some(module) => module.call_sql(db, sql_text, auth, subs, head).await,
         None => run_inner::<crate::host::wasmtime::WasmtimeInstance>(None, db, sql_text, auth, subs, head).map(|x| x.0),
     }
 }

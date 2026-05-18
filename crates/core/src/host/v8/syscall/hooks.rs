@@ -93,7 +93,7 @@ impl ModuleHookKey {
 }
 
 /// Context embedder slot holding the receiver (`this`) value used for hook calls.
-const RECV_SLOT_INDEX: i32 = ModuleHookKey::SenderErrorClass as i32 + 1;
+pub(super) const RECV_SLOT_INDEX: i32 = ModuleHookKey::SenderErrorClass as i32 + 1;
 
 /// Holds the `AbiVersion` used by the module
 /// and the module hooks registered by the module

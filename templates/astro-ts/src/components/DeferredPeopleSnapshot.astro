@@ -1,0 +1,31 @@
+---
+import { fetchPeople } from '../lib/spacetimedb-server';
+
+const people = await fetchPeople();
+const renderedAt = new Intl.DateTimeFormat('en', {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+}).format(new Date());
+---
+
+<div class="server-island-card">
+  <h3>Server-rendered snapshot</h3>
+  <p class="server-island-stamp">Rendered at {renderedAt}</p>
+  <p class="server-island-copy">
+    This section is a plain Astro component rendered with <code>server:defer</code>. It fetches a
+    new SpacetimeDB snapshot on its own request, separately from the live client section above.
+  </p>
+
+  {people.length === 0 ? (
+    <p class="empty-state">No people are in the table yet for this deferred snapshot.</p>
+  ) : (
+    <ul class="server-island-list">
+      {people.map(person => (
+        <li class="server-island-item">
+          <span class="person-name">{person.name}</span>
+        </li>
+      ))}
+    </ul>
+  )}
+</div>

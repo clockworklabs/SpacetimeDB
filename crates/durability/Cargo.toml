@@ -13,6 +13,7 @@ fallocate = ["spacetimedb-commitlog/fallocate"]
 
 [dependencies]
 anyhow.workspace = true
+async-channel.workspace = true
 futures.workspace = true
 itertools.workspace = true
 log.workspace = true
