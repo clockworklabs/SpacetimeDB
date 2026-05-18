@@ -5,7 +5,7 @@ use spacetimedb_sats::AlgebraicType;
 use crate::{
     client::SessionId,
     schema::{default_value_for_type, generate_supported_type, ColumnPlan, SchemaPlan, SimRow, TablePlan},
-    seed::DstRng,
+    sim::Rng,
     workload::strategy::{Index, Percent, Strategy},
 };
 
@@ -60,39 +60,11 @@ const RANDOM_CRUD_PROFILE: TableWorkloadProfile = TableWorkloadProfile {
     add_index_pct: 2,
 };
 
-const INDEXED_RANGES_PROFILE: TableWorkloadProfile = TableWorkloadProfile {
-    min_tables: 2,
-    table_count_choices: 2,
-    min_extra_cols: 3,
-    extra_col_choices: 3,
-    preferred_range_cols: 3,
-    prefer_range_compatible_pct: 90,
-    prefer_u64_pct: 90,
-    single_index_pct: 100,
-    composite2_index_pct: 100,
-    composite3_index_pct: 75,
-    insert_pct: 55,
-    begin_tx_pct: 20,
-    commit_tx_pct: 15,
-    rollback_tx_pct: 8,
-    begin_read_tx_pct: 6,
-    release_read_tx_pct: 30,
-    empty_tx_pct: 2,
-    exact_duplicate_insert_pct: 3,
-    unique_key_conflict_insert_pct: 4,
-    add_column_pct: 2,
-    add_index_pct: 4,
-};
-
-pub fn generate_schema(rng: &mut DstRng) -> SchemaPlan {
+pub fn generate_schema(rng: &Rng) -> SchemaPlan {
     generate_schema_with_profile(rng, RANDOM_CRUD_PROFILE)
 }
 
-pub fn generate_indexed_ranges_schema(rng: &mut DstRng) -> SchemaPlan {
-    generate_schema_with_profile(rng, INDEXED_RANGES_PROFILE)
-}
-
-fn generate_schema_with_profile(rng: &mut DstRng, profile: TableWorkloadProfile) -> SchemaPlan {
+fn generate_schema_with_profile(rng: &Rng, profile: TableWorkloadProfile) -> SchemaPlan {
     let table_count = profile.min_tables + Index::new(profile.table_count_choices).sample(rng);
     let mut tables = Vec::with_capacity(table_count);
 
@@ -156,10 +128,6 @@ pub fn validate_outcome(_schema: &SchemaPlan, _outcome: &TableWorkloadOutcome) -
 
 pub fn fill_pending(planner: &mut ScenarioPlanner<'_>, conn: SessionId) {
     fill_pending_with_profile(planner, conn, RANDOM_CRUD_PROFILE);
-}
-
-pub fn fill_pending_indexed_ranges(planner: &mut ScenarioPlanner<'_>, conn: SessionId) {
-    fill_pending_with_profile(planner, conn, INDEXED_RANGES_PROFILE);
 }
 
 fn fill_pending_with_profile(planner: &mut ScenarioPlanner<'_>, conn: SessionId, profile: TableWorkloadProfile) {

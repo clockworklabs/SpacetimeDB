@@ -3,8 +3,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clap::{Args, Parser, Subcommand};
 use spacetimedb_dst::{
     config::RunConfig,
-    seed::DstSeed,
-    targets::descriptor::{RelationalDbConcurrentDescriptor, TargetDescriptor},
+    targets::descriptor::{RelationalDbCommitlogDescriptor, TargetDescriptor},
+    workload::table_ops::TableScenarioId,
 };
 
 #[derive(Parser, Debug)]
@@ -31,6 +31,8 @@ struct RunArgs {
     duration: Option<String>,
     #[arg(long, help = "Deterministic interaction budget. Preferred for replayable failures.")]
     max_interactions: Option<usize>,
+    #[arg(long, help = "Scenario to run [default: random-crud]")]
+    scenario: Option<String>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -56,12 +58,13 @@ fn init_tracing() {
 fn run_command(args: RunArgs) -> anyhow::Result<()> {
     let seed = resolve_seed(args.seed);
     let config = build_config(args.duration.as_deref(), args.max_interactions)?;
+    let scenario = resolve_scenario(args.scenario.as_deref());
 
-    run_prepared_target::<RelationalDbConcurrentDescriptor>(seed, (), config)
+    run_prepared_target::<RelationalDbCommitlogDescriptor>(seed, scenario, config)
 }
 
 fn run_prepared_target<D: TargetDescriptor>(
-    seed: DstSeed,
+    seed: u64,
     scenario: D::Scenario,
     config: RunConfig,
 ) -> anyhow::Result<()>
@@ -78,14 +81,23 @@ where
     .unwrap_or_else(|payload| std::panic::resume_unwind(payload))
 }
 
-fn resolve_seed(seed: Option<u64>) -> DstSeed {
-    seed.map(DstSeed).unwrap_or_else(|| {
-        let nanos = SystemTime::now()
+fn resolve_seed(seed: Option<u64>) -> u64 {
+    seed.unwrap_or_else(|| {
+        SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("time went backwards")
-            .as_nanos() as u64;
-        DstSeed(nanos)
+            .as_nanos() as u64
     })
+}
+
+fn resolve_scenario(scenario: Option<&str>) -> TableScenarioId {
+    match scenario {
+        Some("random-crud") | None => TableScenarioId::RandomCrud,
+        Some(other) => {
+            eprintln!("unknown scenario: {other}, using random-crud");
+            TableScenarioId::RandomCrud
+        }
+    }
 }
 
 fn build_config(duration: Option<&str>, max_interactions: Option<usize>) -> anyhow::Result<RunConfig> {
@@ -93,7 +105,6 @@ fn build_config(duration: Option<&str>, max_interactions: Option<usize>) -> anyh
         (Some(duration), Some(max_interactions)) => RunConfig {
             max_interactions: Some(max_interactions),
             max_duration_ms: Some(spacetimedb_dst::config::parse_duration_spec(duration)?.as_millis() as u64),
-            ..Default::default()
         },
         (Some(duration), None) => RunConfig::with_duration_spec(duration)?,
         (None, Some(max_interactions)) => RunConfig::with_max_interactions(max_interactions),
@@ -103,7 +114,7 @@ fn build_config(duration: Option<&str>, max_interactions: Option<usize>) -> anyh
 
 #[allow(clippy::disallowed_macros)]
 async fn run_target<D: TargetDescriptor>(
-    seed: DstSeed,
+    seed: u64,
     scenario: D::Scenario,
     config: RunConfig,
 ) -> anyhow::Result<()> {

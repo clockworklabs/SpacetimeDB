@@ -1,29 +1,22 @@
 //! Shared run-budget configuration for DST targets.
 
-use std::{
-    fmt,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
-/// Coarse disk-fault profile for commitlog-backed DST targets.
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
-pub enum CommitlogFaultProfile {
+/// Storage fault-injection profile for commitlog and snapshot wrappers.
+///
+/// These are not CLI options yet; they are programmatic knobs for targeted
+/// fault-injection tests.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum CommitlogFaultProfile {
+    /// No faults injected regardless of buggify state.
     Off,
+    /// Low probability latency and short I/O only.
     Light,
+    /// Moderate-latency and short I/O only.
     #[default]
     Default,
+    /// Heavy-latency and short I/O only.
     Aggressive,
-}
-
-impl fmt::Display for CommitlogFaultProfile {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Off => f.write_str("off"),
-            Self::Light => f.write_str("light"),
-            Self::Default => f.write_str("default"),
-            Self::Aggressive => f.write_str("aggressive"),
-        }
-    }
 }
 
 /// Common stop conditions for generated DST runs.
@@ -41,8 +34,6 @@ pub struct RunConfig {
     /// with host speed and runtime behavior. Use `max_interactions` when a
     /// failure needs precise replay.
     pub max_duration_ms: Option<u64>,
-    /// Disk-fault profile for commitlog-backed targets.
-    pub commitlog_fault_profile: CommitlogFaultProfile,
 }
 
 impl Default for RunConfig {
@@ -50,7 +41,6 @@ impl Default for RunConfig {
         Self {
             max_interactions: None,
             max_duration_ms: None,
-            commitlog_fault_profile: CommitlogFaultProfile::Default,
         }
     }
 }
@@ -60,7 +50,6 @@ impl RunConfig {
         Self {
             max_interactions: Some(max_interactions),
             max_duration_ms: None,
-            ..Default::default()
         }
     }
 
@@ -68,13 +57,7 @@ impl RunConfig {
         Ok(Self {
             max_interactions: None,
             max_duration_ms: Some(parse_duration_spec(duration)?.as_millis() as u64),
-            ..Default::default()
         })
-    }
-
-    pub fn with_commitlog_fault_profile(mut self, profile: CommitlogFaultProfile) -> Self {
-        self.commitlog_fault_profile = profile;
-        self
     }
 
     /// Return the wall-clock deadline for duration-budgeted runs.

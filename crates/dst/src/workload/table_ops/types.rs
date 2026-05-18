@@ -5,7 +5,7 @@ use spacetimedb_sats::AlgebraicValue;
 use crate::{
     client::SessionId,
     schema::{ColumnPlan, SchemaPlan, SimRow},
-    seed::DstRng,
+    sim::Rng,
 };
 
 use super::generation::ScenarioPlanner;
@@ -15,7 +15,7 @@ use super::generation::ScenarioPlanner;
 /// A scenario supplies the initial schema, scenario-specific commit-time
 /// properties, and any final invariant over the collected outcome.
 pub(crate) trait TableScenario: Clone {
-    fn generate_schema(&self, rng: &mut DstRng) -> SchemaPlan;
+    fn generate_schema(&self, rng: &Rng) -> SchemaPlan;
     fn validate_outcome(&self, schema: &SchemaPlan, outcome: &TableWorkloadOutcome) -> anyhow::Result<()>;
     fn fill_pending(&self, planner: &mut ScenarioPlanner<'_>, conn: SessionId);
 }

@@ -2,7 +2,7 @@
 
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
 
-use crate::seed::DstRng;
+use crate::sim::Rng;
 
 /// Generated schema for one simulator case.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -41,7 +41,7 @@ pub struct SimRow {
     pub values: Vec<AlgebraicValue>,
 }
 
-pub fn generate_supported_type(rng: &mut DstRng) -> AlgebraicType {
+pub fn generate_supported_type(rng: &Rng) -> AlgebraicType {
     match rng.index(12) {
         0 => AlgebraicType::Bool,
         1 => AlgebraicType::I8,
@@ -58,7 +58,7 @@ pub fn generate_supported_type(rng: &mut DstRng) -> AlgebraicType {
     }
 }
 
-pub fn generate_value_for_type(rng: &mut DstRng, ty: &AlgebraicType, idx: usize) -> AlgebraicValue {
+pub fn generate_value_for_type(rng: &Rng, ty: &AlgebraicType, idx: usize) -> AlgebraicValue {
     if rng.index(5) == 0 {
         return edge_value_for_type(rng, ty, idx);
     }
@@ -127,7 +127,7 @@ pub fn distinct_value_for_type(ty: &AlgebraicType, current: &AlgebraicValue) -> 
     }
 }
 
-fn edge_value_for_type(rng: &mut DstRng, ty: &AlgebraicType, idx: usize) -> AlgebraicValue {
+fn edge_value_for_type(rng: &Rng, ty: &AlgebraicType, idx: usize) -> AlgebraicValue {
     match ty {
         AlgebraicType::Bool => AlgebraicValue::Bool(rng.index(2) == 0),
         AlgebraicType::I8 => [i8::MIN, -1, 0, 1, i8::MAX][rng.index(5)].into(),

@@ -54,9 +54,6 @@ where
     E: TargetEngine<I, Error = String>,
     P: StreamingProperties<I, E::Observation, E>,
 {
-    // Duration is a harness-level wall-clock stop condition. The reproducible
-    // budget for exact replay is `RunConfig::max_interactions`, which the
-    // source uses when it is constructed.
     let deadline = cfg.deadline();
     let mut step = 0usize;
     loop {
@@ -249,7 +246,7 @@ mod tests {
     }
 
     fn assert_not_crash_error(phase: PanicPhase, expected_phase: &str, expected_payload: &str) {
-        let mut runtime = crate::sim::Runtime::new(crate::seed::DstSeed(0)).expect("runtime");
+        let mut runtime = crate::sim::Runtime::new(0).expect("runtime");
         let err = runtime
             .block_on(run_streaming(
                 SingleStepSource::new(),

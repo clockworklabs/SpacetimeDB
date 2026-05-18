@@ -5,15 +5,12 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use crate::{
     client::SessionId,
     schema::{SchemaPlan, SimRow},
-    workload::{
-        commitlog_ops::SnapshotCaptureStatus,
-        table_ops::{TableOperation, TableScenario},
-    },
+    workload::table_ops::{TableOperation, TableScenario},
 };
 
-use super::{PropertyContext, PropertyEvent, PropertyKind, TableMutation, TableObservation, TargetPropertyAccess};
+use super::{PropertyContext, PropertyEvent, PropertyKind, TableMutation, TableObservation};
 
-pub(super) trait PropertyRule {
+pub(crate) trait PropertyRule {
     fn observe(&mut self, ctx: &PropertyContext<'_>, event: PropertyEvent<'_>) -> Result<(), String> {
         let _ = ctx;
         let _ = event;
@@ -29,11 +26,6 @@ pub(super) fn rule_for_kind(kind: PropertyKind) -> Box<dyn PropertyRule> {
         PropertyKind::SelectSelectOptimizer => Box::<NoRecRule>::default(),
         PropertyKind::WhereTrueFalseNull => Box::<TlpRule>::default(),
         PropertyKind::IndexRangeExcluded => Box::<IndexRangeExcludedRule>::default(),
-        PropertyKind::BankingTablesMatch => Box::<BankingMatchRule>::default(),
-        PropertyKind::DynamicMigrationAutoInc => Box::<DynamicMigrationAutoIncRule>::default(),
-        PropertyKind::DurableReplayMatchesModel => Box::<DurableReplayMatchesModelRule>::default(),
-        PropertyKind::SnapshotCaptureMaintainsPrefix => Box::<SnapshotCaptureMaintainsPrefixRule>::default(),
-        PropertyKind::SnapshotRestoreWithinDurablePrefix => Box::<SnapshotRestoreWithinDurablePrefixRule>::default(),
         PropertyKind::ErrorMatchesOracle => Box::<ErrorMatchesOracleRule>::default(),
         PropertyKind::NoMutationMatchesModel => Box::<NoMutationMatchesModelRule>::default(),
         PropertyKind::PointLookupMatchesModel => Box::<PointLookupMatchesModelRule>::default(),
@@ -43,7 +35,7 @@ pub(super) fn rule_for_kind(kind: PropertyKind) -> Box<dyn PropertyRule> {
     }
 }
 
-pub(super) fn oracle_table_state_rule<S>(scenario: S, schema: SchemaPlan) -> Box<dyn PropertyRule>
+pub(crate) fn oracle_table_state_rule<S>(scenario: S, schema: SchemaPlan) -> Box<dyn PropertyRule>
 where
     S: TableScenario + 'static,
 {
@@ -298,154 +290,6 @@ impl PropertyRule for IndexRangeExcludedRule {
 }
 
 #[derive(Default)]
-struct BankingMatchRule;
-
-impl PropertyRule for BankingMatchRule {
-    fn observe(&mut self, ctx: &PropertyContext<'_>, event: PropertyEvent<'_>) -> Result<(), String> {
-        match event {
-            PropertyEvent::RowInserted { in_tx: false, .. }
-            | PropertyEvent::RowDeleted { in_tx: false, .. }
-            | PropertyEvent::CommitOrRollback => check_banking_tables_match(ctx.access),
-            _ => Ok(()),
-        }
-    }
-}
-
-#[derive(Default)]
-struct DynamicMigrationAutoIncRule;
-
-impl PropertyRule for DynamicMigrationAutoIncRule {
-    fn observe(&mut self, _ctx: &PropertyContext<'_>, event: PropertyEvent<'_>) -> Result<(), String> {
-        let PropertyEvent::DynamicMigrationProbe(probe) = event else {
-            return Ok(());
-        };
-        let max_existing_id = probe
-            .existing_rows
-            .iter()
-            .filter_map(sim_row_integer_id)
-            .max()
-            .unwrap_or(0);
-        let inserted_id = sim_row_integer_id(&probe.inserted_row).ok_or_else(|| {
-            format!(
-                "[DynamicMigrationAutoInc] probe row missing integer id for slot={}, from_version={}, to_version={}: {:?}",
-                probe.slot, probe.from_version, probe.to_version, probe.inserted_row
-            )
-        })?;
-        if inserted_id <= max_existing_id {
-            return Err(format!(
-                "[DynamicMigrationAutoInc] non-advancing id for slot={}, from_version={}, to_version={}: inserted_id={}, max_existing_id={}",
-                probe.slot, probe.from_version, probe.to_version, inserted_id, max_existing_id
-            ));
-        }
-        Ok(())
-    }
-}
-
-#[derive(Default)]
-struct DurableReplayMatchesModelRule;
-
-impl PropertyRule for DurableReplayMatchesModelRule {
-    fn observe(&mut self, ctx: &PropertyContext<'_>, event: PropertyEvent<'_>) -> Result<(), String> {
-        let PropertyEvent::DurableReplay(replay) = event else {
-            return Ok(());
-        };
-        let expected_rows = ctx.models.table().committed_rows();
-        if replay.base_rows != expected_rows {
-            return Err(format!(
-                "[DurableReplayMatchesModel] replayed durable state mismatch at durable_offset {:?}, restored_snapshot {:?}: expected={expected_rows:?} actual={:?}",
-                replay.durable_offset, replay.restored_snapshot_offset, replay.base_rows
-            ));
-        }
-        Ok(())
-    }
-}
-
-#[derive(Default)]
-struct SnapshotCaptureMaintainsPrefixRule;
-
-impl PropertyRule for SnapshotCaptureMaintainsPrefixRule {
-    fn observe(&mut self, _ctx: &PropertyContext<'_>, event: PropertyEvent<'_>) -> Result<(), String> {
-        let PropertyEvent::SnapshotCapture(snapshot) = event else {
-            return Ok(());
-        };
-
-        match snapshot.status {
-            SnapshotCaptureStatus::Captured { offset } => {
-                if snapshot.latest_after != Some(offset) {
-                    return Err(format!(
-                        "[SnapshotCaptureMaintainsPrefix] captured offset {offset}, but latest snapshot is {:?}: {snapshot:?}",
-                        snapshot.latest_after
-                    ));
-                }
-                let durable = snapshot.durable_offset.ok_or_else(|| {
-                    format!(
-                        "[SnapshotCaptureMaintainsPrefix] captured snapshot {offset} without a durable offset: {snapshot:?}"
-                    )
-                })?;
-                if offset > durable {
-                    return Err(format!(
-                        "[SnapshotCaptureMaintainsPrefix] captured snapshot {offset} beyond durable offset {durable}: {snapshot:?}"
-                    ));
-                }
-            }
-            SnapshotCaptureStatus::SkippedInjectedFault => {
-                if snapshot.latest_after > snapshot.latest_before {
-                    return Err(format!(
-                        "[SnapshotCaptureMaintainsPrefix] injected snapshot fault published newer snapshot: before={:?}, after={:?}",
-                        snapshot.latest_before, snapshot.latest_after
-                    ));
-                }
-            }
-            SnapshotCaptureStatus::SkippedOpenTransaction | SnapshotCaptureStatus::SkippedNoSnapshotCreated => {
-                if snapshot.latest_after != snapshot.latest_before {
-                    return Err(format!(
-                        "[SnapshotCaptureMaintainsPrefix] skipped snapshot changed latest snapshot: before={:?}, after={:?}, status={:?}",
-                        snapshot.latest_before, snapshot.latest_after, snapshot.status
-                    ));
-                }
-            }
-        }
-        Ok(())
-    }
-}
-
-#[derive(Default)]
-struct SnapshotRestoreWithinDurablePrefixRule;
-
-impl PropertyRule for SnapshotRestoreWithinDurablePrefixRule {
-    fn observe(&mut self, _ctx: &PropertyContext<'_>, event: PropertyEvent<'_>) -> Result<(), String> {
-        let PropertyEvent::DurableReplay(replay) = event else {
-            return Ok(());
-        };
-        let Some(snapshot_offset) = replay.restored_snapshot_offset else {
-            return Ok(());
-        };
-        let durable_offset = replay.durable_offset.ok_or_else(|| {
-            format!(
-                "[SnapshotRestoreWithinDurablePrefix] restored snapshot {snapshot_offset} without durable offset: {replay:?}"
-            )
-        })?;
-        if snapshot_offset > durable_offset {
-            return Err(format!(
-                "[SnapshotRestoreWithinDurablePrefix] restored snapshot {snapshot_offset} beyond durable offset {durable_offset}: {replay:?}"
-            ));
-        }
-        if replay.latest_snapshot_offset == Some(snapshot_offset) {
-            return Ok(());
-        }
-        if let Some(latest) = replay.latest_snapshot_offset
-            && latest <= durable_offset
-            && latest > snapshot_offset
-        {
-            return Err(format!(
-                "[SnapshotRestoreWithinDurablePrefix] restored snapshot {snapshot_offset}, but newer usable snapshot {latest} exists within durable offset {durable_offset}: {replay:?}"
-            ));
-        }
-        Ok(())
-    }
-}
-
-#[derive(Default)]
 struct ErrorMatchesOracleRule;
 
 impl PropertyRule for ErrorMatchesOracleRule {
@@ -631,35 +475,9 @@ impl PropertyRule for FullScanMatchesModelRule {
     }
 }
 
-fn check_banking_tables_match(access: &dyn TargetPropertyAccess) -> Result<(), String> {
-    let schema = access.schema_plan();
-    let debit = schema.tables.iter().position(|table| table.name == "debit_accounts");
-    let credit = schema.tables.iter().position(|table| table.name == "credit_accounts");
-    let (Some(left), Some(right)) = (debit, credit) else {
-        return Ok(());
-    };
-
-    let left_rows = access.collect_rows_for_table(left)?;
-    let right_rows = access.collect_rows_for_table(right)?;
-    if left_rows != right_rows {
-        return Err(format!(
-            "[Shadow::AllTableHaveExpectedContent] banking mismatch: debit={left_rows:?}, credit={right_rows:?}"
-        ));
-    }
-    Ok(())
-}
-
 fn compare_rows_by_cols(lhs: &SimRow, rhs: &SimRow, cols: &[u16]) -> std::cmp::Ordering {
     lhs.project_key(cols)
         .to_algebraic_value()
         .cmp(&rhs.project_key(cols).to_algebraic_value())
         .then_with(|| lhs.values.cmp(&rhs.values))
-}
-
-fn sim_row_integer_id(row: &SimRow) -> Option<i128> {
-    match row.values.first() {
-        Some(AlgebraicValue::I64(value)) => Some(*value as i128),
-        Some(AlgebraicValue::U64(value)) => Some(*value as i128),
-        _ => None,
-    }
 }

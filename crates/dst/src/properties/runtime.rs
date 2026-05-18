@@ -6,19 +6,12 @@ use crate::{
     client::SessionId,
     core::{StreamingProperties, TargetEngine},
     schema::{SchemaPlan, SimRow},
-    workload::{
-        commitlog_ops::{CommitlogInteraction, CommitlogWorkloadOutcome, DurableReplaySummary, SnapshotObservation},
-        table_ops::{
-            PredictedOutcome, TableErrorKind, TableOracle, TableScenario, TableWorkloadInteraction,
-            TableWorkloadOutcome,
-        },
-    },
+    workload::table_ops::{PredictedOutcome, TableErrorKind, TableOracle, TableWorkloadInteraction, TableWorkloadOutcome},
 };
 
 use super::{
     rules::{oracle_table_state_rule, rule_for_kind, PropertyRule},
-    CommitlogObservation, DynamicMigrationProbe, PropertyContext, PropertyEvent, PropertyKind, TableMutation,
-    TableObservation, TargetPropertyAccess,
+    PropertyContext, PropertyEvent, PropertyKind, TableMutation, TableObservation, TargetPropertyAccess,
 };
 
 #[derive(Clone, Debug)]
@@ -107,7 +100,7 @@ impl PropertyRuntime {
 
     pub fn for_table_workload<S>(scenario: S, schema: SchemaPlan, num_connections: usize) -> Self
     where
-        S: TableScenario + 'static,
+        S: crate::workload::table_ops::TableScenario + 'static,
     {
         let mut runtime = Self {
             models: PropertyModels::new(schema.tables.len(), num_connections),
@@ -289,30 +282,6 @@ impl PropertyRuntime {
         self.observe_event(access, PropertyEvent::CommitOrRollback)
     }
 
-    fn on_dynamic_migration_probe(
-        &mut self,
-        access: &dyn TargetPropertyAccess,
-        probe: &DynamicMigrationProbe,
-    ) -> Result<(), String> {
-        self.observe_event(access, PropertyEvent::DynamicMigrationProbe(probe))
-    }
-
-    fn on_snapshot_capture(
-        &mut self,
-        access: &dyn TargetPropertyAccess,
-        snapshot: &SnapshotObservation,
-    ) -> Result<(), String> {
-        self.observe_event(access, PropertyEvent::SnapshotCapture(snapshot))
-    }
-
-    fn on_durable_replay(
-        &mut self,
-        access: &dyn TargetPropertyAccess,
-        replay: &DurableReplaySummary,
-    ) -> Result<(), String> {
-        self.observe_event(access, PropertyEvent::DurableReplay(replay))
-    }
-
     fn on_table_workload_finish(
         &mut self,
         access: &dyn TargetPropertyAccess,
@@ -392,37 +361,26 @@ impl PropertyRuntime {
     }
 }
 
-impl<E> StreamingProperties<CommitlogInteraction, CommitlogObservation, E> for PropertyRuntime
+impl<E> StreamingProperties<TableWorkloadInteraction, TableObservation, E> for PropertyRuntime
 where
     E: TargetEngine<
-            CommitlogInteraction,
-            Observation = CommitlogObservation,
-            Outcome = CommitlogWorkloadOutcome,
+            TableWorkloadInteraction,
+            Observation = TableObservation,
+            Outcome = TableWorkloadOutcome,
             Error = String,
         > + TargetPropertyAccess,
 {
     fn observe(
         &mut self,
         engine: &E,
-        interaction: &CommitlogInteraction,
-        observation: &CommitlogObservation,
+        interaction: &TableWorkloadInteraction,
+        observation: &TableObservation,
     ) -> Result<(), String> {
-        match (interaction, observation) {
-            (CommitlogInteraction::Table(table_interaction), CommitlogObservation::Table(table_observation)) => {
-                self.observe_table_observation(engine, table_interaction, table_observation)
-            }
-            (_, CommitlogObservation::DynamicMigrationProbe(probe)) => self.on_dynamic_migration_probe(engine, probe),
-            (_, CommitlogObservation::DurableReplay(replay)) => self.on_durable_replay(engine, replay),
-            (_, CommitlogObservation::Applied | CommitlogObservation::Skipped) => Ok(()),
-            (other, observation) => Err(format!(
-                "observation {observation:?} does not match interaction {other:?}"
-            )),
-        }
+        self.observe_table_observation(engine, interaction, observation)
     }
 
-    fn finish(&mut self, engine: &E, outcome: &CommitlogWorkloadOutcome) -> Result<(), String> {
-        self.on_durable_replay(engine, &outcome.replay)?;
-        self.on_table_workload_finish(engine, &outcome.table)
+    fn finish(&mut self, engine: &E, outcome: &TableWorkloadOutcome) -> Result<(), String> {
+        self.on_table_workload_finish(engine, outcome)
     }
 }
 
@@ -445,11 +403,6 @@ impl Default for PropertyRuntime {
             PropertyKind::SelectSelectOptimizer,
             PropertyKind::WhereTrueFalseNull,
             PropertyKind::IndexRangeExcluded,
-            PropertyKind::BankingTablesMatch,
-            PropertyKind::DynamicMigrationAutoInc,
-            PropertyKind::DurableReplayMatchesModel,
-            PropertyKind::SnapshotCaptureMaintainsPrefix,
-            PropertyKind::SnapshotRestoreWithinDurablePrefix,
             PropertyKind::ErrorMatchesOracle,
             PropertyKind::NoMutationMatchesModel,
             PropertyKind::PointLookupMatchesModel,

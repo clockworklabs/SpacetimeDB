@@ -7,13 +7,10 @@
 pub(crate) mod commitlog;
 pub(crate) mod snapshot;
 pub(crate) mod storage_faults;
-pub mod time;
 
 use std::{cell::RefCell, future::Future, time::Duration};
 
 pub use spacetimedb_runtime::sim::{yield_now, Handle, JoinHandle, Node, NodeBuilder, NodeId, Rng};
-
-use crate::seed::DstSeed;
 
 thread_local! {
     static CURRENT_HANDLE: RefCell<Option<Handle>> = const { RefCell::new(None) };
@@ -40,15 +37,28 @@ pub(crate) fn current_handle() -> Option<Handle> {
     CURRENT_HANDLE.with(|slot| slot.borrow().clone())
 }
 
+const GAMMA: u64 = 0x9e37_79b9_7f4a_7c15;
+
+fn splitmix64(mut x: u64) -> u64 {
+    x = x.wrapping_add(GAMMA);
+    x = (x ^ (x >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    x ^ (x >> 31)
+}
+
+pub(crate) fn fork_seed(seed: u64, discriminator: u64) -> u64 {
+    splitmix64(seed ^ discriminator.wrapping_mul(GAMMA))
+}
+
 /// DST-facing wrapper that keeps the top-level seed type local to this crate.
 pub struct Runtime {
     inner: spacetimedb_runtime::sim::Runtime,
 }
 
 impl Runtime {
-    pub fn new(seed: DstSeed) -> anyhow::Result<Self> {
+    pub fn new(seed: u64) -> anyhow::Result<Self> {
         Ok(Self {
-            inner: spacetimedb_runtime::sim::Runtime::new(seed.0),
+            inner: spacetimedb_runtime::sim::Runtime::new(seed),
         })
     }
 
@@ -85,28 +95,24 @@ impl Runtime {
         self.inner.spawn_on(node, future)
     }
 
-    pub fn check_determinism<F>(seed: DstSeed, make_future: fn() -> F) -> F::Output
+    pub fn check_determinism<F>(seed: u64, make_future: fn() -> F) -> F::Output
     where
         F: Future + 'static,
         F::Output: Send + 'static,
     {
-        spacetimedb_runtime::sim_std::check_determinism(seed.0, make_future)
+        spacetimedb_runtime::sim_std::check_determinism(seed, make_future)
     }
 
-    pub fn check_determinism_with<M, F>(seed: DstSeed, make_future: M) -> F::Output
+    pub fn check_determinism_with<M, F>(seed: u64, make_future: M) -> F::Output
     where
         M: Fn() -> F + Clone + Send + 'static,
         F: Future + 'static,
         F::Output: Send + 'static,
     {
-        spacetimedb_runtime::sim_std::check_determinism(seed.0, make_future)
+        spacetimedb_runtime::sim_std::check_determinism(seed, make_future)
     }
 }
-
-pub(crate) fn advance_time(duration: Duration) {
-    time::advance(duration);
-}
-
-pub(crate) fn decision_source(seed: DstSeed) -> Rng {
-    Rng::new(seed.0)
+#[allow(dead_code)]
+pub(crate) fn decision_source(seed: u64) -> Rng {
+    Rng::new(seed)
 }

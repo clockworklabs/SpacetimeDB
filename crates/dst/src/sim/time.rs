@@ -36,11 +36,11 @@ mod tests {
         time::Duration,
     };
 
-    use crate::{seed::DstSeed, sim};
+    use crate::sim;
 
     #[test]
     fn sleep_fast_forwards_virtual_time() {
-        let mut runtime = sim::Runtime::new(DstSeed(101)).unwrap();
+        let mut runtime = sim::Runtime::new(101).unwrap();
 
         runtime.block_on(async {
             assert_eq!(super::now(), Duration::ZERO);
@@ -51,7 +51,7 @@ mod tests {
 
     #[test]
     fn shorter_timer_wakes_first() {
-        let mut runtime = sim::Runtime::new(DstSeed(102)).unwrap();
+        let mut runtime = sim::Runtime::new(102).unwrap();
         let handle = runtime.handle();
         let order = Arc::new(Mutex::new(Vec::new()));
 
@@ -81,7 +81,7 @@ mod tests {
 
     #[test]
     fn explicit_advance_moves_virtual_time() {
-        let mut runtime = sim::Runtime::new(DstSeed(103)).unwrap();
+        let mut runtime = sim::Runtime::new(103).unwrap();
 
         runtime.block_on(async {
             super::advance(Duration::from_millis(7));
@@ -91,7 +91,7 @@ mod tests {
 
     #[test]
     fn timeout_returns_future_output_before_deadline() {
-        let mut runtime = sim::Runtime::new(DstSeed(104)).unwrap();
+        let mut runtime = sim::Runtime::new(104).unwrap();
 
         let output = runtime.block_on(async {
             super::timeout(Duration::from_millis(10), async {
@@ -107,7 +107,7 @@ mod tests {
 
     #[test]
     fn timeout_expires_at_virtual_deadline() {
-        let mut runtime = sim::Runtime::new(DstSeed(105)).unwrap();
+        let mut runtime = sim::Runtime::new(105).unwrap();
 
         let output = runtime.block_on(async {
             super::timeout(Duration::from_millis(4), async {

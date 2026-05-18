@@ -3,11 +3,11 @@
 //! This is intentionally minimal: we keep DST's streaming execution model and
 //! use strategies only for typed, composable input generation.
 
-use crate::seed::DstRng;
+use crate::sim::Rng;
 
 /// Typed strategy that can sample values from the shared deterministic RNG.
 pub(crate) trait Strategy<T>: Sized {
-    fn sample(&self, rng: &mut DstRng) -> T;
+    fn sample(&self, rng: &Rng) -> T;
 }
 
 /// Picks a value in `[0, upper)`.
@@ -24,7 +24,7 @@ impl Index {
 }
 
 impl Strategy<usize> for Index {
-    fn sample(&self, rng: &mut DstRng) -> usize {
+    fn sample(&self, rng: &Rng) -> usize {
         rng.index(self.upper)
     }
 }
@@ -43,7 +43,7 @@ impl Percent {
 }
 
 impl Strategy<bool> for Percent {
-    fn sample(&self, rng: &mut DstRng) -> bool {
+    fn sample(&self, rng: &Rng) -> bool {
         Index::new(100).sample(rng) < self.percent
     }
 }
@@ -64,7 +64,7 @@ impl<T> Weighted<T> {
 }
 
 impl<T: Clone> Strategy<T> for Weighted<T> {
-    fn sample(&self, rng: &mut DstRng) -> T {
+    fn sample(&self, rng: &Rng) -> T {
         let mut pick = Index::new(self.total_weight).sample(rng);
         for (weight, value) in &self.options {
             if pick < *weight {
@@ -81,25 +81,25 @@ impl<T: Clone> Strategy<T> for Weighted<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::seed::DstSeed;
+    use crate::sim::Rng;
 
     use super::{Index, Percent, Strategy, Weighted};
 
     #[test]
     fn weighted_is_deterministic_for_seed() {
         let strategy = Weighted::new(vec![(1, 10usize), (2, 20usize), (3, 30usize)]);
-        let mut rng_a = DstSeed(7).rng();
-        let mut rng_b = DstSeed(7).rng();
-        let a = (0..16).map(|_| strategy.sample(&mut rng_a)).collect::<Vec<_>>();
-        let b = (0..16).map(|_| strategy.sample(&mut rng_b)).collect::<Vec<_>>();
+        let rng_a = Rng::new(7);
+        let rng_b = Rng::new(7);
+        let a = (0..16).map(|_| strategy.sample(&rng_a)).collect::<Vec<_>>();
+        let b = (0..16).map(|_| strategy.sample(&rng_b)).collect::<Vec<_>>();
         assert_eq!(a, b);
     }
 
     #[test]
     fn index_strategy_respects_bounds() {
-        let mut rng = DstSeed(123).rng();
+        let rng = Rng::new(123);
         for _ in 0..64 {
-            let idx = Index::new(5).sample(&mut rng);
+            let idx = Index::new(5).sample(&rng);
             assert!(idx < 5);
         }
     }

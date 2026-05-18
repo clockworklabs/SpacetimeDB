@@ -5,22 +5,20 @@
 //! - [`client`] for logical client/session identifiers,
 //! - [`config`] for run budgets,
 //! - [`properties`] for reusable semantic checks,
-//! - [`seed`] for deterministic seeds,
 //! - [`workload`] for scenario identifiers,
-//! - [`targets`] for the executable relational-db + commitlog adapter.
+//! - [`targets`] for the executable relational-db adapter.
 //!
 //! ## DST principles
 //!
-//! 1. Every generated choice comes from [`seed::DstSeed`] or a simulator-provided
-//!    deterministic source. A failing run should be replayable from the printed
-//!    seed and CLI arguments. Use `--max-interactions` for exact replay; duration
-//!    budgets are wall-clock soak limits.
+//! 1. Every generated choice comes from a simulator-provided deterministic
+//!    source. A failing run should be replayable from the printed seed and CLI
+//!    arguments. Use `--max-interactions` for exact replay; duration budgets are
+//!    wall-clock soak limits.
 //! 2. Workloads describe legal but stressful user behavior. Targets may add
 //!    faults and lifecycle disruption, but the generator should not depend on
 //!    target internals.
 //! 3. Oracles should check observable state, not merely absence of panics. When
-//!    possible, compare the target against a simple model or a replayed durable
-//!    history.
+//!    possible, compare the target against a simple model.
 //! 4. Keep generation, execution, and property checking separate. This makes it
 //!    clear whether a failure came from an invalid workload, a target bug, or a
 //!    weak assertion.
@@ -41,8 +39,6 @@ pub mod core;
 /// Reusable semantic properties and oracle-model checks.
 pub(crate) mod properties;
 mod schema;
-/// Stable seed and RNG utilities used to make runs reproducible.
-pub mod seed;
 /// Local executor and deterministic-decision shim.
 pub mod sim;
 /// Concrete simulator targets.

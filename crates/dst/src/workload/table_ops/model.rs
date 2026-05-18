@@ -5,7 +5,7 @@ use spacetimedb_sats::AlgebraicValue;
 use crate::{
     client::SessionId,
     schema::{distinct_value_for_type, generate_value_for_type, ColumnPlan, SchemaPlan, SimRow},
-    seed::{DstRng, DstSeed},
+    sim::{fork_seed, Rng},
 };
 
 use super::{TableErrorKind, TableOperation};
@@ -33,19 +33,19 @@ pub(crate) struct PendingConnection {
 }
 
 impl GenerationModel {
-    pub(crate) fn new(schema: &SchemaPlan, num_connections: usize, seed: DstSeed) -> Self {
+    pub(crate) fn new(schema: &SchemaPlan, num_connections: usize, seed: u64) -> Self {
         Self {
             schema: schema.clone(),
             connections: vec![PendingConnection::default(); num_connections],
             committed: vec![Vec::new(); schema.tables.len()],
             next_ids: (0..schema.tables.len())
-                .map(|idx| seed.fork(idx as u64 + 100).0)
+                .map(|idx| fork_seed(seed, idx as u64 + 100))
                 .collect(),
             active_writer: None,
         }
     }
 
-    pub(crate) fn make_row(&mut self, rng: &mut DstRng, table: usize) -> SimRow {
+    pub(crate) fn make_row(&mut self, rng: &Rng, table: usize) -> SimRow {
         let table_plan = &self.schema.tables[table];
         let id = self.next_ids[table];
         self.next_ids[table] = self.next_ids[table].wrapping_add(1).max(1);
@@ -76,7 +76,7 @@ impl GenerationModel {
         rows
     }
 
-    pub(crate) fn absent_row(&mut self, rng: &mut DstRng, conn: SessionId, table: usize) -> SimRow {
+    pub(crate) fn absent_row(&mut self, rng: &Rng, conn: SessionId, table: usize) -> SimRow {
         let mut row = self.make_row(rng, table);
         while self.visible_rows(conn, table).iter().any(|candidate| candidate == &row) {
             row = self.make_row(rng, table);
@@ -84,7 +84,7 @@ impl GenerationModel {
         row
     }
 
-    pub(crate) fn unique_key_conflict_row(&self, rng: &mut DstRng, table: usize, source: &SimRow) -> Option<SimRow> {
+    pub(crate) fn unique_key_conflict_row(&self, rng: &Rng, table: usize, source: &SimRow) -> Option<SimRow> {
         let table_plan = &self.schema.tables[table];
         let value_count = source.values.len().min(table_plan.columns.len());
         if value_count <= 1 {

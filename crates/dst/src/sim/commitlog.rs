@@ -12,12 +12,9 @@ use spacetimedb_commitlog::{
     segment::{FileLike, Header},
 };
 
-use crate::{
-    seed::DstSeed,
-    sim::storage_faults::{
-        is_injected_fault_text, ShortIoKind, StorageFaultConfig, StorageFaultController, StorageFaultDomain,
-        StorageFaultKind, StorageFaultSummary,
-    },
+use crate::sim::storage_faults::{
+    is_injected_fault_text, ShortIoKind, StorageFaultConfig, StorageFaultController, StorageFaultDomain,
+    StorageFaultKind, StorageFaultSummary,
 };
 
 pub(crate) type CommitlogFaultConfig = StorageFaultConfig;
@@ -41,10 +38,10 @@ pub(crate) struct FaultableRepo<R> {
 }
 
 impl<R> FaultableRepo<R> {
-    pub(crate) fn new(inner: R, config: CommitlogFaultConfig, seed: DstSeed) -> Self {
+    pub(crate) fn new(inner: R, config: CommitlogFaultConfig) -> Self {
         Self {
             inner,
-            faults: StorageFaultController::new(config, StorageFaultDomain::Disk, seed),
+            faults: StorageFaultController::new(config, StorageFaultDomain::Disk),
         }
     }
 
@@ -63,7 +60,7 @@ impl<R> FaultableRepo<R> {
 
 impl<R: fmt::Display> fmt::Display for FaultableRepo<R> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}+faultable({})", self.inner, self.faults.summary().profile)
+        write!(f, "{}+faultable({:?})", self.inner, self.faults.summary().profile)
     }
 }
 
@@ -73,6 +70,7 @@ impl<R: Repo> Repo for FaultableRepo<R> {
 
     fn create_segment(&self, offset: u64, header: Header) -> io::Result<Self::SegmentWriter> {
         self.faults.maybe_latency();
+        self.faults.maybe_error(StorageFaultKind::NoSpace)?;
         self.faults.maybe_error(StorageFaultKind::Open)?;
         self.inner
             .create_segment(offset, header)
@@ -89,6 +87,7 @@ impl<R: Repo> Repo for FaultableRepo<R> {
 
     fn open_segment_writer(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
         self.faults.maybe_latency();
+        self.faults.maybe_error(StorageFaultKind::NoSpace)?;
         self.faults.maybe_error(StorageFaultKind::Open)?;
         self.inner
             .open_segment_writer(offset)
@@ -101,36 +100,42 @@ impl<R: Repo> Repo for FaultableRepo<R> {
 
     fn remove_segment(&self, offset: u64) -> io::Result<()> {
         self.faults.maybe_latency();
+        self.faults.maybe_error(StorageFaultKind::NoSpace)?;
         self.faults.maybe_error(StorageFaultKind::Metadata)?;
         self.inner.remove_segment(offset)
     }
 
     fn compress_segment_with(&self, offset: u64, f: impl CompressOnce) -> io::Result<CompressionStats> {
         self.faults.maybe_latency();
+        self.faults.maybe_error(StorageFaultKind::NoSpace)?;
         self.faults.maybe_error(StorageFaultKind::Metadata)?;
         self.inner.compress_segment_with(offset, f)
     }
 
     fn existing_offsets(&self) -> io::Result<Vec<u64>> {
         self.faults.maybe_latency();
+        self.faults.maybe_error(StorageFaultKind::NoSpace)?;
         self.faults.maybe_error(StorageFaultKind::Metadata)?;
         self.inner.existing_offsets()
     }
 
     fn create_offset_index(&self, offset: TxOffset, cap: u64) -> io::Result<TxOffsetIndexMut> {
         self.faults.maybe_latency();
+        self.faults.maybe_error(StorageFaultKind::NoSpace)?;
         self.faults.maybe_error(StorageFaultKind::Metadata)?;
         self.inner.create_offset_index(offset, cap)
     }
 
     fn remove_offset_index(&self, offset: TxOffset) -> io::Result<()> {
         self.faults.maybe_latency();
+        self.faults.maybe_error(StorageFaultKind::NoSpace)?;
         self.faults.maybe_error(StorageFaultKind::Metadata)?;
         self.inner.remove_offset_index(offset)
     }
 
     fn get_offset_index(&self, offset: TxOffset) -> io::Result<TxOffsetIndex> {
         self.faults.maybe_latency();
+        self.faults.maybe_error(StorageFaultKind::NoSpace)?;
         self.faults.maybe_error(StorageFaultKind::Metadata)?;
         self.inner.get_offset_index(offset)
     }
@@ -161,13 +166,22 @@ impl<S: Read> Read for FaultableSegment<S> {
 impl<S: Write> Write for FaultableSegment<S> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.faults.maybe_latency();
+        self.faults.check_pending_error(StorageFaultKind::Write)?;
+        self.faults.maybe_error(StorageFaultKind::NoSpace)?;
         self.faults.maybe_error(StorageFaultKind::Write)?;
+        let is_partial = self.faults.sample_partial_failure();
         let len = self.faults.maybe_short_len(buf.len(), ShortIoKind::Write);
-        self.inner.write(&buf[..len])
+        let n = self.inner.write(&buf[..len])?;
+        if is_partial && n > 0 {
+            self.faults.arm_pending_error();
+        }
+        Ok(n)
     }
 
     fn flush(&mut self) -> io::Result<()> {
         self.faults.maybe_latency();
+        self.faults.check_pending_error(StorageFaultKind::Flush)?;
+        self.faults.maybe_error(StorageFaultKind::NoSpace)?;
         self.faults.maybe_error(StorageFaultKind::Flush)?;
         self.inner.flush()
     }
@@ -191,12 +205,16 @@ impl<S: SegmentLen> SegmentLen for FaultableSegment<S> {
 impl<S: FileLike> FileLike for FaultableSegment<S> {
     fn fsync(&mut self) -> io::Result<()> {
         self.faults.maybe_latency();
+        self.faults.check_pending_error(StorageFaultKind::Fsync)?;
+        self.faults.maybe_error(StorageFaultKind::NoSpace)?;
         self.faults.maybe_error(StorageFaultKind::Fsync)?;
         self.inner.fsync()
     }
 
     fn ftruncate(&mut self, tx_offset: u64, size: u64) -> io::Result<()> {
         self.faults.maybe_latency();
+        self.faults.check_pending_error(StorageFaultKind::Metadata)?;
+        self.faults.maybe_error(StorageFaultKind::NoSpace)?;
         self.faults.maybe_error(StorageFaultKind::Metadata)?;
         self.inner.ftruncate(tx_offset, size)
     }
@@ -261,14 +279,13 @@ impl<S: SegmentReader> SegmentReader for FaultableReader<S> {
 mod tests {
     use std::io::{BufRead, Cursor};
 
-    use crate::config::CommitlogFaultProfile;
+    use crate::{config::CommitlogFaultProfile, sim};
 
     use super::*;
 
     fn always_short_read_config() -> CommitlogFaultConfig {
         CommitlogFaultConfig {
             profile: CommitlogFaultProfile::Default,
-            enabled: true,
             latency_prob: 0.0,
             long_latency_prob: 0.0,
             short_io_prob: 1.0,
@@ -279,16 +296,22 @@ mod tests {
             open_error_prob: 0.0,
             metadata_error_prob: 0.0,
             max_short_io_divisor: 2,
+            no_space_prob: 0.0,
+            partial_failure_prob: 0.0,
         }
     }
 
     #[test]
     fn buf_read_path_applies_short_read_faults() {
-        let faults = StorageFaultController::new(always_short_read_config(), StorageFaultDomain::Disk, DstSeed(55));
-        faults.enable();
-        let mut reader = FaultableReader::new(Cursor::new(vec![1, 2, 3, 4]), faults.clone());
+        let mut runtime = sim::Runtime::new(55).unwrap();
+        let handle = runtime.handle();
+        handle.enable_buggify();
+        runtime.block_on(async {
+            let faults = StorageFaultController::new(always_short_read_config(), StorageFaultDomain::Disk);
+            let mut reader = FaultableReader::new(Cursor::new(vec![1, 2, 3, 4]), faults.clone());
 
-        assert_eq!(reader.fill_buf().unwrap(), &[1, 2]);
-        assert_eq!(faults.summary().short_read, 1);
+            assert_eq!(reader.fill_buf().unwrap(), &[1, 2]);
+            assert_eq!(faults.summary().short_read, 1);
+        });
     }
 }

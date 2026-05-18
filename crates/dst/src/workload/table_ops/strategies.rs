@@ -2,7 +2,7 @@
 
 use crate::{
     client::SessionId,
-    seed::DstRng,
+    sim::Rng,
     workload::strategy::{Index, Strategy, Weighted},
 };
 
@@ -13,7 +13,7 @@ pub(crate) struct ConnectionChoice {
 }
 
 impl Strategy<SessionId> for ConnectionChoice {
-    fn sample(&self, rng: &mut DstRng) -> SessionId {
+    fn sample(&self, rng: &Rng) -> SessionId {
         SessionId::from_index(Index::new(self.connection_count).sample(rng))
     }
 }
@@ -25,7 +25,7 @@ pub(crate) struct TableChoice {
 }
 
 impl Strategy<usize> for TableChoice {
-    fn sample(&self, rng: &mut DstRng) -> usize {
+    fn sample(&self, rng: &Rng) -> usize {
         Index::new(self.table_count).sample(rng)
     }
 }
@@ -48,7 +48,7 @@ pub(crate) struct TxControlChoice {
 }
 
 impl Strategy<TxControlAction> for TxControlChoice {
-    fn sample(&self, rng: &mut DstRng) -> TxControlAction {
+    fn sample(&self, rng: &Rng) -> TxControlAction {
         let begin = self.begin_pct.min(100);
         let commit = self.commit_pct.min(100);
         let rollback = self.rollback_pct.min(100);

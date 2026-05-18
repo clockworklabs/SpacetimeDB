@@ -4,7 +4,7 @@ use crate::{
     client::SessionId,
     core::WorkloadSource,
     schema::{ColumnPlan, SchemaPlan, TablePlan},
-    seed::{DstRng, DstSeed},
+    sim::{fork_seed, Rng},
     workload::strategy::{Index, Percent, Strategy},
 };
 
@@ -21,22 +21,13 @@ use super::{
 /// memory up front.
 #[derive(Clone, Debug)]
 pub struct TableWorkloadSource<S> {
-    // Deterministic source for all planner choices.
-    rng: DstRng,
-    // Scenario-specific workload policy layered on top of the shared model.
+    rng: Rng,
     scenario: S,
-    // Generator-side model used to decide what interactions are legal.
     model: GenerationModel,
     num_connections: usize,
-    // Soft budget for scenario-generated interactions. Finish mode may emit a
-    // few extra commit/follow-up interactions to close open transactions.
     target_interactions: usize,
     emitted: usize,
-    // When the budget is exhausted, we walk connections in order and commit any
-    // still-open transaction so the stream ends in a clean state.
     finalize_conn: usize,
-    // Scenario code can enqueue a burst of interactions at once: for example a
-    // mutation followed by one or more property checks.
     pending: VecDeque<TableWorkloadInteraction>,
     finished: bool,
 }
@@ -45,7 +36,7 @@ pub struct TableWorkloadSource<S> {
 /// inspect the current model and enqueue interactions without owning the whole
 /// stream state machine.
 pub struct ScenarioPlanner<'a> {
-    rng: &'a mut DstRng,
+    rng: &'a Rng,
     model: &'a mut GenerationModel,
     pending: &'a mut VecDeque<TableWorkloadInteraction>,
 }
@@ -98,10 +89,6 @@ impl<'a> ScenarioPlanner<'a> {
         self.model.rollback(conn);
     }
 
-    /// Tries to emit one transaction control interaction for `conn`.
-    ///
-    /// The shared generator owns transaction lifecycle so scenario code can
-    /// focus on domain operations like inserts, deletes, and range checks.
     pub fn maybe_control_tx(
         &mut self,
         conn: SessionId,
@@ -197,14 +184,14 @@ impl<'a> ScenarioPlanner<'a> {
 
 impl<S: TableScenario> TableWorkloadSource<S> {
     pub fn new(
-        seed: DstSeed,
+        seed: u64,
         scenario: S,
         schema: SchemaPlan,
         num_connections: usize,
         target_interactions: usize,
     ) -> Self {
         Self {
-            rng: seed.fork(17).rng(),
+            rng: Rng::new(fork_seed(seed, 17)),
             scenario,
             model: GenerationModel::new(&schema, num_connections, seed),
             num_connections,
@@ -220,18 +207,18 @@ impl<S: TableScenario> TableWorkloadSource<S> {
         self.target_interactions = self.emitted;
     }
 
+    #[allow(dead_code)]
     pub fn has_open_read_tx(&self) -> bool {
         self.model.any_read_tx()
     }
 
+    #[allow(dead_code)]
     pub fn has_open_write_tx(&self) -> bool {
         self.model.active_writer().is_some()
     }
 
     fn fill_pending(&mut self) {
         if self.emitted >= self.target_interactions {
-            // Once the workload budget is spent, stop asking the scenario for
-            // more work and only flush any open transaction state.
             while self.finalize_conn < self.num_connections {
                 let conn = SessionId::from_index(self.finalize_conn);
                 self.finalize_conn += 1;
@@ -250,16 +237,12 @@ impl<S: TableScenario> TableWorkloadSource<S> {
             return;
         }
 
-        // Transactions stay open across interactions, but each API call is a
-        // separate synchronous step. Always choose a connection uniformly so
-        // later steps can naturally observe lock contention instead of the
-        // planner steering around open readers or writers.
         let conn = ConnectionChoice {
             connection_count: self.num_connections,
         }
-        .sample(&mut self.rng);
+        .sample(&self.rng);
         let mut planner = ScenarioPlanner {
-            rng: &mut self.rng,
+            rng: &self.rng,
             model: &mut self.model,
             pending: &mut self.pending,
         };
@@ -270,8 +253,6 @@ impl<S: TableScenario> TableWorkloadSource<S> {
 impl<S: TableScenario> TableWorkloadSource<S> {
     pub fn pull_next_interaction(&mut self) -> Option<TableWorkloadInteraction> {
         loop {
-            // Scenario planning fills `pending` in bursts, but the iterator
-            // surface stays one interaction at a time.
             if let Some(interaction) = self.pending.pop_front() {
                 self.emitted += 1;
                 return Some(interaction);

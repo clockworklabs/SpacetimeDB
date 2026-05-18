@@ -11,22 +11,6 @@
 //! target observations, target-visible state, oracle models, and final
 //! outcomes. Failures should include a stable property name and enough context
 //! to replay the seed or trace.
-//!
-//! The current catalog is intentionally small and falls into the same groups
-//! used by the proposal:
-//!
-//! - Safety properties: `NotCrash`, `ErrorMatchesOracle`,
-//!   `NoMutationMatchesModel`, `DurableReplayMatchesModel`,
-//!   `SnapshotCaptureMaintainsPrefix`, `SnapshotRestoreWithinDurablePrefix`,
-//!   `BankingTablesMatch`, and `DynamicMigrationAutoInc`.
-//! - Model/oracle properties: `PointLookupMatchesModel`,
-//!   `PredicateCountMatchesModel`, `RangeScanMatchesModel`,
-//!   `FullScanMatchesModel`, and the scenario-specific final table-state check.
-//! - Differential and metamorphic properties: `InsertSelect`, `DeleteSelect`,
-//!   `SelectSelectOptimizer`, `WhereTrueFalseNull`, and `IndexRangeExcluded`.
-//! - Coverage and progress properties are not first-class rules yet. For now,
-//!   targets expose operation and outcome counters. Those counters should become
-//!   selectable properties once long-running and replication targets need them.
 
 mod rules;
 mod runtime;
@@ -38,10 +22,7 @@ use spacetimedb_sats::AlgebraicValue;
 use crate::{
     client::SessionId,
     schema::{SchemaPlan, SimRow},
-    workload::{
-        commitlog_ops::{DurableReplaySummary, SnapshotObservation},
-        table_ops::{TableErrorKind, TableWorkloadInteraction, TableWorkloadOutcome},
-    },
+    workload::table_ops::{TableErrorKind, TableWorkloadInteraction, TableWorkloadOutcome},
 };
 
 pub(crate) use runtime::PropertyRuntime;
@@ -80,16 +61,6 @@ pub(crate) enum PropertyKind {
     WhereTrueFalseNull,
     /// Metamorphic: composite index range scans implement excluded upper bounds correctly.
     IndexRangeExcluded,
-    /// Safety: banking scenario debit and credit shadow tables remain identical.
-    BankingTablesMatch,
-    /// Safety: auto-increment IDs continue advancing after dynamic table migration.
-    DynamicMigrationAutoInc,
-    /// Safety: durable replay state equals the oracle committed model.
-    DurableReplayMatchesModel,
-    /// Safety: failed snapshot capture does not publish a newer usable snapshot.
-    SnapshotCaptureMaintainsPrefix,
-    /// Safety: restored snapshots are within the durable prefix.
-    SnapshotRestoreWithinDurablePrefix,
     /// Safety: observed errors match the model-predicted error class.
     ErrorMatchesOracle,
     /// Safety: model-predicted no-op interactions do not mutate visible state.
@@ -102,15 +73,6 @@ pub(crate) enum PropertyKind {
     RangeScanMatchesModel,
     /// Model/oracle: full scans match the oracle session-visible model.
     FullScanMatchesModel,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct DynamicMigrationProbe {
-    pub slot: u32,
-    pub from_version: u32,
-    pub to_version: u32,
-    pub existing_rows: Vec<SimRow>,
-    pub inserted_row: SimRow,
 }
 
 #[derive(Clone, Debug)]
@@ -162,16 +124,6 @@ pub(crate) enum TableObservation {
         actual: Vec<SimRow>,
     },
     CommitOrRollback,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) enum CommitlogObservation {
-    Table(TableObservation),
-    Applied,
-    Skipped,
-    DynamicMigrationProbe(DynamicMigrationProbe),
-    Snapshot(SnapshotObservation),
-    DurableReplay(DurableReplaySummary),
 }
 
 struct PropertyContext<'a> {
@@ -232,8 +184,5 @@ enum PropertyEvent<'a> {
         actual: &'a [SimRow],
     },
     CommitOrRollback,
-    DynamicMigrationProbe(&'a DynamicMigrationProbe),
-    SnapshotCapture(&'a SnapshotObservation),
-    DurableReplay(&'a DurableReplaySummary),
     TableWorkloadFinished(&'a TableWorkloadOutcome),
 }

@@ -14,12 +14,9 @@ use spacetimedb_snapshot::{
 };
 use spacetimedb_table::{blob_store::BlobStore, page_pool::PagePool, table::Table};
 
-use crate::{
-    seed::DstSeed,
-    sim::storage_faults::{
-        is_injected_fault_text, StorageFaultConfig, StorageFaultController, StorageFaultDomain, StorageFaultKind,
-        StorageFaultSummary,
-    },
+use crate::sim::storage_faults::{
+    is_injected_fault_text, StorageFaultConfig, StorageFaultController, StorageFaultDomain, StorageFaultKind,
+    StorageFaultSummary,
 };
 
 pub(crate) type SnapshotFaultConfig = StorageFaultConfig;
@@ -52,10 +49,10 @@ pub(crate) struct BuggifiedSnapshotRepo {
 }
 
 impl BuggifiedSnapshotRepo {
-    pub(crate) fn new(config: SnapshotFaultConfig, seed: DstSeed) -> anyhow::Result<Self> {
+    pub(crate) fn new(config: SnapshotFaultConfig) -> anyhow::Result<Self> {
         Ok(Self {
             repo: Arc::new(MemorySnapshotRepository::new(Identity::ZERO, 0)),
-            faults: StorageFaultController::new(config, StorageFaultDomain::Snapshot, seed),
+            faults: StorageFaultController::new(config, StorageFaultDomain::Snapshot),
         })
     }
 
@@ -129,6 +126,9 @@ impl SnapshotStore for BuggifiedSnapshotRepo {
     ) -> Result<TxOffset, SnapshotError> {
         self.faults.maybe_latency();
         self.faults
+            .maybe_error(StorageFaultKind::NoSpace)
+            .map_err(SnapshotError::Io)?;
+        self.faults
             .maybe_error(StorageFaultKind::Open)
             .map_err(SnapshotError::Io)?;
         self.faults
@@ -157,6 +157,9 @@ impl SnapshotStore for BuggifiedSnapshotRepo {
     fn latest_snapshot_older_than(&self, upper_bound: TxOffset) -> Result<Option<TxOffset>, SnapshotError> {
         self.faults.maybe_latency();
         self.faults
+            .maybe_error(StorageFaultKind::NoSpace)
+            .map_err(SnapshotError::Io)?;
+        self.faults
             .maybe_error(StorageFaultKind::Metadata)
             .map_err(SnapshotError::Io)?;
         self.repo.latest_snapshot_older_than(upper_bound)
@@ -164,6 +167,9 @@ impl SnapshotStore for BuggifiedSnapshotRepo {
 
     fn latest_snapshot(&self) -> Result<Option<TxOffset>, SnapshotError> {
         self.faults.maybe_latency();
+        self.faults
+            .maybe_error(StorageFaultKind::NoSpace)
+            .map_err(SnapshotError::Io)?;
         self.faults
             .maybe_error(StorageFaultKind::Metadata)
             .map_err(SnapshotError::Io)?;
@@ -173,6 +179,9 @@ impl SnapshotStore for BuggifiedSnapshotRepo {
     fn invalidate_newer_snapshots(&self, upper_bound: TxOffset) -> Result<(), SnapshotError> {
         self.faults.maybe_latency();
         self.faults
+            .maybe_error(StorageFaultKind::NoSpace)
+            .map_err(SnapshotError::Io)?;
+        self.faults
             .maybe_error(StorageFaultKind::Metadata)
             .map_err(SnapshotError::Io)?;
         self.repo.invalidate_newer_snapshots(upper_bound)
@@ -180,6 +189,9 @@ impl SnapshotStore for BuggifiedSnapshotRepo {
 
     fn invalidate_snapshot(&self, tx_offset: TxOffset) -> Result<(), SnapshotError> {
         self.faults.maybe_latency();
+        self.faults
+            .maybe_error(StorageFaultKind::NoSpace)
+            .map_err(SnapshotError::Io)?;
         self.faults
             .maybe_error(StorageFaultKind::Metadata)
             .map_err(SnapshotError::Io)?;
@@ -217,7 +229,7 @@ impl SnapshotRepo for BuggifiedSnapshotRepo {
 
 #[cfg(test)]
 mod tests {
-    use crate::{config::CommitlogFaultProfile, seed::DstSeed};
+    use crate::{config::CommitlogFaultProfile, sim};
 
     use super::*;
 
@@ -227,7 +239,6 @@ mod tests {
 
     fn always_metadata_error() -> SnapshotFaultConfig {
         SnapshotFaultConfig {
-            enabled: true,
             metadata_error_prob: 1.0,
             ..SnapshotFaultConfig::for_profile(CommitlogFaultProfile::Default)
         }
@@ -235,33 +246,42 @@ mod tests {
 
     #[test]
     fn repo_without_snapshots_is_not_used_for_restore() {
-        let repo = BuggifiedSnapshotRepo::new(no_faults(), DstSeed(41)).unwrap();
+        let mut runtime = sim::Runtime::new(42).unwrap();
+        runtime.block_on(async {
+            let repo = BuggifiedSnapshotRepo::new(no_faults()).unwrap();
 
-        assert!(repo.repo_for_restore(Some(0)).unwrap().store.is_none());
+            assert!(repo.repo_for_restore(Some(0)).unwrap().store.is_none());
+        })
     }
 
     #[test]
     fn injected_metadata_error_is_counted_and_recognizable() {
-        let repo = BuggifiedSnapshotRepo::new(always_metadata_error(), DstSeed(42)).unwrap();
-        repo.enable_faults();
+        let mut runtime = sim::Runtime::new(42).unwrap();
+        runtime.block_on(async {
+            let repo = BuggifiedSnapshotRepo::new(always_metadata_error()).unwrap();
+            repo.enable_faults();
 
-        let err = match repo.repo_for_restore(Some(0)) {
-            Ok(_) => panic!("expected injected snapshot metadata error"),
-            Err(err) => err,
-        };
+            let err = match repo.repo_for_restore(Some(0)) {
+                Ok(_) => panic!("expected injected snapshot metadata error"),
+                Err(err) => err,
+            };
 
-        assert!(is_injected_snapshot_error_text(&err));
-        assert_eq!(repo.fault_summary().metadata_error, 1);
+            assert!(is_injected_snapshot_error_text(&err));
+            assert_eq!(repo.fault_summary().metadata_error, 1);
+        })
     }
 
     #[test]
     fn suspended_faults_allow_restore_probe() {
-        let repo = BuggifiedSnapshotRepo::new(always_metadata_error(), DstSeed(43)).unwrap();
-        repo.enable_faults();
+        let mut runtime = sim::Runtime::new(42).unwrap();
+        runtime.block_on(async {
+            let repo = BuggifiedSnapshotRepo::new(always_metadata_error()).unwrap();
+            repo.enable_faults();
 
-        let restore = repo.with_faults_suspended(|| repo.repo_for_restore(Some(0)));
+            let restore = repo.with_faults_suspended(|| repo.repo_for_restore(Some(0)));
 
-        assert!(restore.unwrap().store.is_none());
-        assert_eq!(repo.fault_summary().metadata_error, 0);
+            assert!(restore.unwrap().store.is_none());
+            assert_eq!(repo.fault_summary().metadata_error, 0);
+        })
     }
 }
