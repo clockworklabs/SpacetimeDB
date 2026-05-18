@@ -226,7 +226,7 @@ jobs:
   test:
     needs: [lints]
     name: Test Suite
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
 
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
