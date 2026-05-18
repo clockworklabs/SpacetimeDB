@@ -271,8 +271,8 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
 
     let (tables, types, reducers, procedures, views, mounts) = (tables_types_reducers_procedures_views, mounts)
         .combine_errors()
-        .map(|((tables, types, reducers, procedures, views), mounts)| {
-            (tables, types, reducers, procedures, views, mounts)
+        .and_then(|((tables, types, reducers, procedures, views), mounts)| {
+            validate_mount_names_are_unique(mounts).map(|mounts| (tables, types, reducers, procedures, views, mounts))
         })
         .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
 
@@ -300,6 +300,23 @@ fn validate_mount(mount: RawModuleMountV10) -> Result<(String, ModuleDef)> {
         .map_err(|error| ValidationErrors::from(ValidationError::IdentifierError { error }))?;
 
     Ok((mount.namespace, validate(mount.module)?))
+}
+
+fn validate_mount_names_are_unique(mounts: Vec<(String, ModuleDef)>) -> Result<IndexMap<String, ModuleDef>> {
+    let mut errors = vec![];
+    let mut map = IndexMap::with_capacity(mounts.len());
+
+    for (namespace, def) in mounts {
+        if map.contains_key(&namespace) {
+            errors.push(ValidationError::DuplicateName {
+                name: namespace.into(),
+            });
+        } else {
+            map.insert(namespace, def);
+        }
+    }
+
+    ValidationErrors::add_extra_errors(Ok(map), errors)
 }
 
 /// Change the visibility of scheduled functions and lifecycle reducers to Internal.
@@ -902,6 +919,7 @@ mod tests {
     use spacetimedb_lib::db::raw_def::*;
     use spacetimedb_lib::ScheduleAt;
     use spacetimedb_primitives::{ColId, ColList, ColSet};
+    use spacetimedb_sats::raw_identifier::RawIdentifier;
     use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, SumValue};
     use v9::{Lifecycle, TableAccess, TableType};
 
@@ -1294,8 +1312,8 @@ mod tests {
         let mounts = def.mounts();
 
         assert_eq!(mounts.len(), 1);
-        assert_eq!(mounts[0].0, "authlib");
-        assert!(mounts[0].1.table(&expect_identifier("sessions")).is_some());
+        let mounted = mounts.get("authlib").expect("authlib mount should exist");
+        assert!(mounted.table(&expect_identifier("sessions")).is_some());
     }
 
     #[test]
@@ -1311,6 +1329,28 @@ mod tests {
 
         expect_error_matching!(result, ValidationError::IdentifierError { error } => {
             error == &IdentifierError::Empty {}
+        });
+    }
+
+    #[test]
+    fn duplicate_mount_namespace() {
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Mounts(vec![
+                RawModuleMountV10 {
+                    namespace: "authlib".to_string(),
+                    module: RawModuleDefV10::default(),
+                },
+                RawModuleMountV10 {
+                    namespace: "authlib".to_string(),
+                    module: RawModuleDefV10::default(),
+                },
+            ])],
+        };
+
+        let result: Result<ModuleDef> = raw.try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateName { name } => {
+            name == &RawIdentifier::from("authlib")
         });
     }
 
