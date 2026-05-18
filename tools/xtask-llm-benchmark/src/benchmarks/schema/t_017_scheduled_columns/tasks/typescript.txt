@@ -1,4 +1,4 @@
-Write a SpacetimeDB backend module in TypeScript that uses ScheduleAt column type for scheduling.
+Write a SpacetimeDB backend module in TypeScript that defines a scheduled table and seeds one schedule entry.
 
 TABLE
 - tickTimer

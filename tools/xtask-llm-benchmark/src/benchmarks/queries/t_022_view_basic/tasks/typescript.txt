@@ -1,0 +1,13 @@
+Write a SpacetimeDB backend module in TypeScript that defines a public anonymous view over a table.
+
+TABLE
+- announcement (public)
+  - Fields:
+    - id: u64 (primary key, auto-increment)
+    - message: string
+    - active: bool (btree index)
+
+VIEW
+- activeAnnouncements (anonymousView, public)
+  - Returns: array of announcement rows
+  - Body: return all rows where active == true using the btree index filter

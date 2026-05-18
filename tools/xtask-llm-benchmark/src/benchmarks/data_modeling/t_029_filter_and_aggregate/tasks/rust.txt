@@ -1,0 +1,23 @@
+Write a SpacetimeDB backend module in Rust that defines an order table and a stats table, with a reducer that computes aggregate statistics from filtered orders.
+
+TABLES
+- order
+  - Struct: Order
+  - Fields:
+    - id: u64 (primary key, auto_inc)
+    - category: String (index btree)
+    - amount: u64
+    - fulfilled: bool
+
+- category_stats
+  - Struct: CategoryStats
+  - Fields:
+    - category: String (primary key)
+    - total_amount: u64
+    - order_count: u32
+
+REDUCERS
+- compute_stats(ctx, category: String)
+  - Filter all orders matching the given category
+  - Count the number of matching orders and sum their amounts
+  - Insert (or update if exists) a CategoryStats row with the results

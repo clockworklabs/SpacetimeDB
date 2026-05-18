@@ -1,0 +1,11 @@
+Write a SpacetimeDB backend module in TypeScript that maintains a table of currently connected players using lifecycle reducers.
+
+TABLE
+- onlinePlayer (public)
+  - Fields:
+    - identity: identity (primary key)
+    - connectedAt: timestamp
+
+REDUCERS
+- clientConnected: lifecycle reducer (spacetimedb.clientConnected) that inserts an onlinePlayer row using ctx.sender as the identity and ctx.timestamp as connectedAt
+- clientDisconnected: lifecycle reducer (spacetimedb.clientDisconnected) that deletes the onlinePlayer row for ctx.sender
