@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+  ILLink descriptor for SpacetimeDB WASI reactor modules.
+
+  This descriptor ensures all WASM exports and module infrastructure are
+  preserved during trimming for NativeAOT-LLVM builds.
+-->
+<linker>
+  <!-- Preserve the entire user assembly since WASM exports are called by host -->
+  <assembly fullname="*" preserve="all" />
+
+  <!-- Preserve SpacetimeDB runtime assemblies -->
+  <assembly fullname="SpacetimeDB.Runtime" preserve="all" />
+  <assembly fullname="SpacetimeDB.BSATN.Runtime" preserve="all" />
+</linker>

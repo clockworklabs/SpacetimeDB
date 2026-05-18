@@ -17,7 +17,6 @@
   </PropertyGroup>
 
   <ItemGroup Condition="'$(_UseNativeAotLlvm)' == 'true'">
-    <NativeLibrary Include="$(MSBuildThisFileDirectory)..\bindings.c" />
     <UnmanagedEntryPointsAssembly Include="SpacetimeDB.Runtime" />
 
     <!-- spacetime_10.0 imports -->
@@ -62,11 +61,12 @@
     <WasmImport Include="spacetime_10.5!datastore_clear" />
 
     <CustomLinkerArg Include="-DEXPERIMENTAL_WASM_AOT" />
+    <!-- Also add bindings.c as NativeFileReference for AOT to ensure it gets compiled -->
+    <NativeFileReference Include="$(MSBuildThisFileDirectory)..\bindings.c" />
   </ItemGroup>
 
-  <!-- Only use NativeFileReference for JIT path (non-AOT). AOT uses NativeLibrary instead. -->
-  <ItemGroup Condition="'$(_UseNativeAotLlvm)' != 'true'">
-    <NativeFileReference Include="$(MSBuildThisFileDirectory)..\bindings.c" />
+  <!-- NativeFileReference is used for both JIT and AOT paths now -->
+  <ItemGroup>
     <_WasmNativeFileForLinking Include="@(NativeFileReference)" />
   </ItemGroup>
 
@@ -146,6 +146,21 @@
     <Exec Command="tar -xf &quot;$(WasiSdkDownloadTempFile)&quot; -C &quot;$(WasiSdkRoot)&quot; --strip-components=1" Condition="'$(_HasValidWasiSdkFromEnv)' != 'true' and !Exists('$(WasiClang)')" />
 
     <Message Importance="high" Text="Using WASI SDK from $(WasiSdkRoot)" />
+  </Target>
+
+  <!-- Compile bindings.c for NativeAOT-LLVM to provide gai_strerror and other stubs -->
+  <Target Name="CompileBindingsC" AfterTargets="ObtainWasiSdk" BeforeTargets="LinkNativeLlvm" Condition="'$(_UseNativeAotLlvm)' == 'true'">
+    <PropertyGroup>
+      <_BindingsCPath>$([System.IO.Path]::Combine('$(MSBuildThisFileDirectory)', '..', 'bindings.c'))</_BindingsCPath>
+      <_BindingsObjPath>$([System.IO.Path]::Combine('$(IntermediateOutputPath)', 'bindings.o'))</_BindingsObjPath>
+      <!-- Use forward slashes for linker response file compatibility -->
+      <_BindingsObjPathUnix>$(_BindingsObjPath.Replace('\', '/'))</_BindingsObjPathUnix>
+    </PropertyGroup>
+    <Message Importance="high" Text="Compiling bindings.c for WASI..." />
+    <Exec Command="&quot;$(WasiClang)&quot; --target=wasm32-wasi -c -o &quot;$(_BindingsObjPath)&quot; &quot;$(_BindingsCPath)&quot; -I&quot;$(WasiSysRoot)/include&quot; -DEXPERIMENTAL_WASM_AOT" />
+    <ItemGroup>
+      <CustomLinkerArg Include="$(_BindingsObjPathUnix)" />
+    </ItemGroup>
   </Target>
 
 </Project>

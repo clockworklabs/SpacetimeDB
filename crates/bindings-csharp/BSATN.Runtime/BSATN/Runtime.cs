@@ -129,7 +129,11 @@ public readonly struct Enum<T> : IReadWrite<T>
     /// Note: the [Type] macro rejects enums with explicitly set values (see Codegen.Tests),
     /// so this array is guaranteed to be continuous and indexed starting from 0.
     /// </summary>
+#if NET5_0_OR_GREATER
+    private static readonly T[] TagToValue = Enum.GetValues<T>();
+#else
     private static readonly T[] TagToValue = Enum.GetValues(typeof(T)).Cast<T>().ToArray();
+#endif
 
     public T Read(BinaryReader reader)
     {
