@@ -60,3 +60,4 @@ jobs:
           gh release upload "$RELEASE_TAG" ./* \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
+
