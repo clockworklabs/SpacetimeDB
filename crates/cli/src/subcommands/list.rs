@@ -6,6 +6,7 @@ use crate::util::UNSTABLE_WARNING;
 use crate::Config;
 use anyhow::Context;
 use clap::{ArgMatches, Command};
+use futures::future::join_all;
 use serde::Deserialize;
 use spacetimedb_lib::Identity;
 use tabled::{
@@ -24,12 +25,14 @@ pub fn cli() -> Command {
 
 #[derive(Deserialize)]
 struct DatabasesResult {
-    pub identities: Vec<IdentityRow>,
+    pub identities: Vec<Identity>,
 }
 
-#[derive(Tabled, Deserialize)]
-#[serde(transparent)]
-struct IdentityRow {
+#[derive(Tabled)]
+struct DatabaseRow {
+    #[tabled(rename = "Database Name(s)")]
+    pub db_names: String,
+    #[tabled(rename = "Identity")]
     pub db_identity: Identity,
 }
 
@@ -58,15 +61,32 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         .context("unable to retrieve databases for identity")?;
 
     if !result.identities.is_empty() {
-        let mut table = Table::new(result.identities);
+        let databases = assemble_rows(&config, server, result.identities).await?;
+        let mut table = Table::new(databases);
         table
             .with(Style::psql())
             .with(Modify::new(Columns::first()).with(Alignment::left()));
-        println!("Associated database identities for {identity}:\n");
+        println!("Associated databases for user {identity}:\n");
         println!("{table}");
     } else {
         println!("No databases found for {identity}.");
     }
 
     Ok(())
+}
+
+async fn assemble_rows(
+    config: &Config,
+    server: Option<&str>,
+    identities: Vec<Identity>,
+) -> anyhow::Result<Vec<DatabaseRow>> {
+    let lookups = identities.into_iter().map(|db_identity| async move {
+        let response = util::spacetime_reverse_dns(config, &db_identity.to_string(), server).await?;
+        let db_names: Vec<_> = response.names.into_iter().map(|name| name.to_string()).collect();
+        Ok(DatabaseRow {
+            db_names: db_names.join(", "),
+            db_identity,
+        })
+    });
+    join_all(lookups).await.into_iter().collect::<anyhow::Result<Vec<_>>>()
 }

@@ -1,0 +1,27 @@
+Write a SpacetimeDB backend module in C# that implements role-based access control.
+
+TABLES
+- User
+  - Struct: User
+  - private table
+  - Fields:
+    - Identity: Identity (primary key)
+    - Role: string  ("admin" or "member")
+
+REDUCERS
+- Register(ctx)
+  - If a User row already exists for ctx.Sender, throw exception with "already registered"
+  - Insert User { Identity = ctx.Sender, Role = "member" }
+
+- Promote(ctx, Identity target)
+  - Load the User row for ctx.Sender; if missing, throw exception with "not registered"
+  - If the caller's Role is not "admin", throw exception with "not admin"
+  - Load the User row for target; if missing, throw exception with "target not registered"
+  - Update that row's Role to "admin"
+
+- MemberAction(ctx)
+  - Load the User row for ctx.Sender; if missing, throw exception with "not registered"
+
+- AdminAction(ctx)
+  - Load the User row for ctx.Sender; if missing, throw exception with "not registered"
+  - If the Role is not "admin", throw exception with "not admin"

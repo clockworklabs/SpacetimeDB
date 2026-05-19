@@ -50,7 +50,7 @@ fn test_publish_fails_for_rls_on_private_table() {
         .autopublish(false)
         .build();
 
-    let name = format!("test-db-{}", std::process::id());
+    let name = format!("rls-rules-{}", std::process::id());
 
     // Publishing should fail because RLS is on a private table
     let result = test.publish_module_named(&name, false);
@@ -65,7 +65,7 @@ fn test_rls_disconnect_if_change() {
         .autopublish(false)
         .build();
 
-    let name = format!("test-db-{}", std::process::id());
+    let name = format!("rls-disconnect-{}", std::process::id());
 
     // Initial publish without RLS
     test.publish_module_named(&name, false).unwrap();
@@ -100,7 +100,7 @@ fn test_rls_no_disconnect() {
         .autopublish(false)
         .build();
 
-    let name = format!("test-db-{}", std::process::id());
+    let name = format!("rls-no-disconnect-{}", std::process::id());
 
     // Initial publish with RLS
     test.publish_module_named(&name, false).unwrap();

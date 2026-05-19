@@ -1,46 +1,34 @@
 use std::path::PathBuf;
 
 pub const DOCS_DIR_DEFAULT: &str = "../../docs";
+pub const SKILLS_DIR_DEFAULT: &str = "../../skills";
 pub const RUSTDOC_CRATE_ROOT_DEFAULT: &str = "../../crates/bindings";
 
-// Docs benchmark files (CI - single "best" model to test documentation quality)
-pub const DOCS_BENCHMARK_DETAILS_DEFAULT: &str = "../../docs/llms/docs-benchmark-details.json";
-pub const DOCS_BENCHMARK_SUMMARY_DEFAULT: &str = "../../docs/llms/docs-benchmark-summary.json";
-pub const DOCS_BENCHMARK_COMMENT_DEFAULT: &str = "../../docs/llms/docs-benchmark-comment.md";
+pub const ALL_MODES: &[&str] = &[
+    "docs",
+    "llms.md",
+    "guidelines",
+    "rustdoc_json",
+    "no_context",
+    "none",          // alias for no_context (backward compat)
+    "no_guidelines", // alias for no_context (backward compat)
+    "search",        // no docs context but web search enabled via OpenRouter :online
+];
 
-// LLM comparison files (manual runs - all models to compare LLM performance)
-pub const LLM_COMPARISON_DETAILS_DEFAULT: &str = "../../docs/llms/llm-comparison-details.json";
-pub const LLM_COMPARISON_SUMMARY_DEFAULT: &str = "../../docs/llms/llm-comparison-summary.json";
-
-pub const ALL_MODES: &[&str] = &["docs", "llms.md", "cursor_rules", "rustdoc_json", "none"];
+/// Modes that produce an empty context string (no documentation is injected).
+#[inline]
+pub fn is_empty_context_mode(mode: &str) -> bool {
+    matches!(mode, "no_context" | "none" | "no_guidelines" | "search")
+}
 
 #[inline]
 pub fn docs_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DOCS_DIR_DEFAULT)
 }
 
-// Docs benchmark paths (CI)
 #[inline]
-pub fn docs_benchmark_details() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DOCS_BENCHMARK_DETAILS_DEFAULT)
-}
-#[inline]
-pub fn docs_benchmark_summary() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DOCS_BENCHMARK_SUMMARY_DEFAULT)
-}
-#[inline]
-pub fn docs_benchmark_comment() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DOCS_BENCHMARK_COMMENT_DEFAULT)
-}
-
-// LLM comparison paths (manual)
-#[inline]
-pub fn llm_comparison_details() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(LLM_COMPARISON_DETAILS_DEFAULT)
-}
-#[inline]
-pub fn llm_comparison_summary() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(LLM_COMPARISON_SUMMARY_DEFAULT)
+pub fn skills_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(SKILLS_DIR_DEFAULT)
 }
 
 #[inline]

@@ -23,11 +23,34 @@ fn normalize_path(path: PathBuf) -> String {
     path.display().to_string().replace('\\', "/")
 }
 
+fn env_override_path(var: &str) -> Option<String> {
+    env::var(var)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| value.replace('\\', "/"))
+}
+
+fn host_unreal_platform() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "Win64"
+    } else if cfg!(target_os = "macos") {
+        "Mac"
+    } else {
+        "Linux"
+    }
+}
+
 /// Returns full path to Unreal Editor executable
 fn ue_editor_exe() -> String {
+    if let Some(path) = env_override_path("UE_EDITOR_PATH") {
+        return path;
+    }
+
     let root = ue_root();
     let path = if cfg!(target_os = "windows") {
         root.join("Engine/Binaries/Win64/UnrealEditor.exe")
+    } else if cfg!(target_os = "macos") {
+        root.join("Engine/Binaries/Mac/UnrealEditor.app/Contents/MacOS/UnrealEditor")
     } else {
         root.join("Engine/Binaries/Linux/UnrealEditor")
     };
@@ -36,9 +59,15 @@ fn ue_editor_exe() -> String {
 
 /// Returns full path to Unreal Build script (Build.bat or Build.sh)
 fn ue_build_script() -> String {
+    if let Some(path) = env_override_path("UE_BUILD_SCRIPT_PATH") {
+        return path;
+    }
+
     let root = ue_root();
     let path = if cfg!(target_os = "windows") {
         root.join("Engine/Build/BatchFiles/Build.bat")
+    } else if cfg!(target_os = "macos") {
+        root.join("Engine/Build/BatchFiles/Mac/Build.sh")
     } else {
         root.join("Engine/Build/BatchFiles/Linux/Build.sh")
     };
@@ -71,17 +100,13 @@ pub fn make_test_with_suite(suite: &TestSuite, test_name: &str) -> Test {
     assert_existing_file("uproject", &uproject_path);
 
     // Headless compile (no cook)
-    let compile_command = if cfg!(target_os = "windows") {
-        format!(
-            "\"{}\" {}Editor Win64 Development \"{}\" -waitmutex -skipbuildengine",
-            build_script, suite.unreal_module, uproject_path
-        )
-    } else {
-        format!(
-            "\"{}\" {}Editor Linux Development \"{}\" -skipbuildengine",
-            build_script, suite.unreal_module, uproject_path
-        )
-    };
+    let compile_command = format!(
+        "\"{}\" {}Editor {} Development -Project=\"{}\" -waitmutex -skipbuildengine",
+        build_script,
+        suite.unreal_module,
+        host_unreal_platform(),
+        uproject_path
+    );
 
     // Run automation test
     let run_command = format!(

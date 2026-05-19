@@ -5,7 +5,7 @@ public static partial class Module
     [Table(Accessor = "Primitive")]
     public partial struct Primitive
     {
-        [PrimaryKey] public int Id;
+        [PrimaryKey, AutoInc] public ulong Id;
         public int Count;
         public long Total;
         public float Price;
@@ -18,7 +18,7 @@ public static partial class Module
     public static void Seed(ReducerContext ctx)
     {
         ctx.Db.Primitive.Insert(new Primitive {
-            Id = 1,
+            Id = 0,
             Count = 2,
             Total = 3000000000,
             Price = 1.5f,

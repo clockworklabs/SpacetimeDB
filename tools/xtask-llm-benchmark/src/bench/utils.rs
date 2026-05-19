@@ -100,6 +100,15 @@ pub fn bench_concurrency() -> usize {
         .unwrap_or(8)
 }
 
+/// Concurrency for Rust/WASM builds. Lower default to avoid cargo registry
+/// lock contention that causes STATUS_STACK_BUFFER_OVERRUN on Windows.
+pub fn bench_rust_concurrency() -> usize {
+    env::var("LLM_BENCH_RUST_CONCURRENCY")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(2)
+}
+
 /// Concurrency for C# builds. Lower default than Rust due to dotnet/WASI SDK
 /// instability under high parallelism (causes SIGSEGV and "Pipe is broken" errors).
 pub fn bench_csharp_concurrency() -> usize {

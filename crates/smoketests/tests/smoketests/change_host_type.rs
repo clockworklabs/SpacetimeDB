@@ -99,7 +99,7 @@ fn test_repair_host_type() {
 
     let mut test = Smoketest::builder().autopublish(false).build();
 
-    test.publish_typescript_module_source("modules-basic-ts", "basic-ts", TS_MODULE_BASIC)
+    test.publish_typescript_module_source("modules-basic-ts", "basic-ts-change-host-type", TS_MODULE_BASIC)
         .unwrap();
     assert_host_type(&test, HostType::Js);
     // Set the program kind to the wrong value.

@@ -82,7 +82,7 @@ pub enum DatabaseError {
 }
 
 impl From<LockError> for DatabaseError {
-    fn from(LockError { path, source }: LockError) -> Self {
+    fn from(LockError { path, source, .. }: LockError) -> Self {
         Self::DatabasedOpened(path, source.into())
     }
 }

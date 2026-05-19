@@ -1,0 +1,22 @@
+Write a SpacetimeDB backend module in C# that defines a User table and a stats table, with a reducer that counts total users and active users without collecting into a list.
+
+TABLES
+- User
+  - Struct: User
+  - Fields:
+    - Id: ulong (primary key, AutoInc)
+    - Name: string
+    - Active: bool
+
+- UserStats
+  - Struct: UserStats
+  - Fields:
+    - Key: string (primary key)
+    - Count: ulong
+
+REDUCERS
+- ComputeUserCounts(ctx)
+  - Count total users by iterating (do not collect into a List first)
+  - Count active users by iterating and checking Active == true
+  - Insert a UserStats row with Key="total" and the total count
+  - Insert a UserStats row with Key="active" and the active count
