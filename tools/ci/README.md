@@ -143,6 +143,21 @@ Usage: help [COMMAND]...
 
 - `subcommand`: Print help for the subcommand(s)
 
+### `keynote-bench`
+
+Runs the keynote benchmark as a CI performance regression gate.
+
+Builds release SpacetimeDB binaries, runs the keynote SpacetimeDB benchmark for 60 seconds against the TypeScript and Rust modules, and fails if either throughput is below 300K TPS.
+
+**Usage:**
+```bash
+Usage: keynote-bench
+```
+
+**Options:**
+
+- `--help`: Print help (see a summary with '-h')
+
 ### `update-flow`
 
 Tests the update flow

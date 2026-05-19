@@ -13,6 +13,7 @@ use std::{env, fs};
 const README_PATH: &str = "tools/ci/README.md";
 
 mod ci_docs;
+mod keynote_bench;
 mod smoketest;
 mod util;
 
@@ -315,6 +316,11 @@ enum CiCmd {
     ///
     /// Executes the smoketests suite with some default exclusions.
     Smoketests(smoketest::SmoketestsArgs),
+    /// Runs the keynote benchmark as a CI performance regression gate.
+    ///
+    /// Builds release SpacetimeDB binaries, runs the keynote SpacetimeDB benchmark for 60 seconds
+    /// against the TypeScript and Rust modules, and fails if either throughput is below 300K TPS.
+    KeynoteBench,
     /// Tests the update flow
     ///
     /// Tests the self-update flow by building the spacetimedb-update binary for the specified
@@ -633,6 +639,11 @@ fn main() -> Result<()> {
         Some(CiCmd::Smoketests(args)) => {
             ensure_repo_root()?;
             smoketest::run(args)?;
+        }
+
+        Some(CiCmd::KeynoteBench) => {
+            ensure_repo_root()?;
+            keynote_bench::run()?;
         }
 
         Some(CiCmd::UpdateFlow {
