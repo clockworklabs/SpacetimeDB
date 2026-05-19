@@ -512,7 +512,10 @@ impl QuickstartTest {
         eprintln!("Generating server code {}: {:?}...", self.config.lang, server_path);
 
         // Initialize the project (local operation, doesn't need server)
-        let output = self.test.spacetime(&[
+        // For C#, force .NET 8 to avoid auto-detecting .NET 10 in CI environments
+        // where the system wasi-sdk may not satisfy .NET 10's version requirement.
+        let is_csharp = self.config.lang == "csharp";
+        let mut init_args = vec![
             "init",
             "--non-interactive",
             "--lang",
@@ -520,7 +523,11 @@ impl QuickstartTest {
             "--project-path",
             server_path.to_str().unwrap(),
             "spacetimedb-project",
-        ])?;
+        ];
+        if is_csharp {
+            init_args.extend_from_slice(&["--dotnet-version", "8"]);
+        }
+        let output = self.test.spacetime(&init_args)?;
         eprintln!("spacetime init output: {}", output);
 
         let project_path = server_path.join("spacetimedb");
