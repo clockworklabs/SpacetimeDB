@@ -1605,7 +1605,7 @@ impl Table {
     ///
     /// The schema of rows stored in the `pages` must exactly match `self.schema` and `self.inner.row_layout`.
     pub unsafe fn set_pages(&mut self, pages: Vec<Box<Page>>, blob_store: &dyn BlobStore) {
-        self.inner.pages.set_contents(pages, self.inner.row_layout.size());
+        self.inner.pages.set_contents(pages);
 
         // Recompute table metadata based on the new pages.
         // Compute the row count first, in case later computations want to use it as a capacity to pre-allocate.
@@ -2744,6 +2744,39 @@ pub(crate) mod test {
             // TODO(testing): Determine if there's a meaningful way to test that the blob store reporting is correct.
             // I (pgoldman 2025-01-27) doubt it, as the test would be "visit every blob and sum their size,"
             // which is already what the actual implementation does.
+        }
+
+        /// Test that the recording of non-full pages and counts of var-len granules available
+        /// by the page manager are correct after insertions and deletes.
+        ///
+        /// Tested here rather than in pages.rs because it's easier to test with typed rows than raw byte buffers.
+        #[test]
+        fn non_full_pages_consistent((ty, vals) in generate_typed_row_vec(0..SIZE, 128, 2048)) {
+            let pool = PagePool::new_for_test();
+            let mut blob_store = HashMapBlobStore::default();
+            let mut table = table(ty);
+            let mut inserted_row_ptrs = Vec::new();
+
+            table.inner.pages.assert_num_full_pages_consistent();
+
+            // Insert 3 rows at a time, then delete the last 1.
+            // This keeps the page usage growing towards fullness, but also includes some deletes.
+            for rows in vals.chunks(3) {
+                for row in rows {
+                    let row_ptr = match table.insert(&pool, &mut blob_store, row) {
+                        Ok((_, row_ref)) => row_ref.pointer(),
+                        Err(InsertError::Duplicate(_)) => continue,
+                        Err(e) => return Err(TestCaseError::fail(format!("unexpected insert error: {e:?}"))),
+                    };
+                    inserted_row_ptrs.push(row_ptr);
+                    table.inner.pages.assert_num_full_pages_consistent();
+                }
+
+                if let Some(row_ptr) = inserted_row_ptrs.pop() {
+                    table.delete(&mut blob_store, row_ptr, |_| ());
+                    table.inner.pages.assert_num_full_pages_consistent();
+                }
+            }
         }
 
         #[test]

@@ -40,8 +40,14 @@ impl IndexMut<PageIndex> for Pages {
 pub struct Pages {
     /// The collection of pages under management.
     pages: Vec<Box<Page>>,
-    /// The set of pages that aren't yet full.,
+    /// The set of pages that aren't yet full,
     /// sorted by the number of var-len granules available in each page.
+    ///
+    /// Used during insertion to locate a page with enough space to store a given row.
+    ///
+    /// The first value in the tuple is [`Page::available_var_len_granules`], and the second value is the page index.
+    ///
+    /// Pages for which `available_var_len_granules` is 0 are not stored.
     ///
     /// If multiple pages have the same number of granules available, they are then sorted by `PageIndex`.
     /// This maintains a deterministic sort order,
@@ -59,6 +65,47 @@ impl MemoryUsage for Pages {
 }
 
 impl Pages {
+    #[cfg(test)]
+    pub(crate) fn assert_num_full_pages_consistent(&self) {
+        let mut seen_page_indexes = BTreeSet::new();
+        for &(_, page_index) in &self.non_full_pages {
+            assert!(
+                seen_page_indexes.insert(page_index),
+                "page {:?} appears multiple times in non_full_pages",
+                page_index
+            );
+        }
+
+        for (idx, page) in self.pages.iter().enumerate() {
+            let page_index = PageIndex(idx as u64);
+            let available_granules = page.available_var_len_granules();
+            let entries_for_page: Vec<_> = self
+                .non_full_pages
+                .iter()
+                .copied()
+                .filter(|&(_, idx)| idx == page_index)
+                .collect();
+
+            if available_granules == 0 {
+                assert!(
+                    entries_for_page.is_empty(),
+                    "page {:?} has 0 available var-len granules but appears in non_full_pages as {:?}",
+                    page_index,
+                    entries_for_page
+                );
+            } else {
+                assert_eq!(
+                    entries_for_page,
+                    vec![(available_granules, page_index)],
+                    "page {:?} has {} available var-len granules but non_full_pages has {:?}",
+                    page_index,
+                    available_granules,
+                    entries_for_page
+                );
+            }
+        }
+    }
+
     /// Is there space to allocate another page?
     pub fn can_allocate_new_page(&self) -> Result<PageIndex, Error> {
         let new_idx = self.len();
@@ -109,7 +156,7 @@ impl Pages {
     /// returning an error if the new number of pages would overflow `PageIndex::MAX`.
     ///
     /// The new page is initially empty, but is not added to the non-full set.
-    /// Callers should call [`Pages::maybe_mark_page_non_full`] after operating on the new page.
+    /// Callers should call [`Pages::record_page_available_granules`] after operating on the new page.
     fn allocate_new_page(&mut self, pool: &PagePool, fixed_row_size: Size) -> Result<PageIndex, Error> {
         let new_idx = self.can_allocate_new_page()?;
 
@@ -122,22 +169,8 @@ impl Pages {
     /// Reserve a new, initially empty page.
     pub fn reserve_empty_page(&mut self, pool: &PagePool, fixed_row_size: Size) -> Result<PageIndex, Error> {
         let idx = self.allocate_new_page(pool, fixed_row_size)?;
-        self.mark_page_non_full(idx);
+        self.record_page_available_granules(idx);
         Ok(idx)
-    }
-
-    /// Mark the page at `idx` as non-full.
-    pub fn mark_page_non_full(&mut self, idx: PageIndex) {
-        let available_granules = self.pages[idx.idx()].available_var_len_granules();
-        self.non_full_pages.insert((available_granules, idx));
-    }
-
-    /// If the page at `page_index` is not full,
-    /// add it to the non-full set so that later insertions can access it.
-    pub fn maybe_mark_page_non_full(&mut self, page_index: PageIndex, fixed_row_size: Size) {
-        if !self[page_index].is_full(fixed_row_size) {
-            self.mark_page_non_full(page_index);
-        }
     }
 
     /// Call `f` with a reference to a page which satisfies
@@ -151,7 +184,7 @@ impl Pages {
     ) -> Result<(PageIndex, Res), Error> {
         let page_index = self.find_page_with_space_for_row(pool, fixed_row_size, num_var_len_granules)?;
         let res = f(&mut self[page_index]);
-        self.maybe_mark_page_non_full(page_index, fixed_row_size);
+        self.record_page_available_granules(page_index);
         Ok((page_index, res))
     }
 
@@ -159,7 +192,7 @@ impl Pages {
     /// containing `num_var_len_granules` granules of var-len data.
     ///
     /// Retrieving a page in this way will remove it from the non-full set.
-    /// After performing an insertion, the caller should use [`Pages::maybe_mark_page_non_full`]
+    /// After performing an insertion, the caller should use [`Pages::record_page_available_granules`]
     /// to restore the page to the non-full set.
     fn find_page_with_space_for_row(
         &mut self,
@@ -247,23 +280,69 @@ impl Pages {
         row_ptr: RowPointer,
         blob_store: &mut dyn BlobStore,
     ) -> BlobNumBytes {
-        let page = &mut self[row_ptr.page_index()];
-        let full_before = page.is_full(fixed_row_size);
-        // SAFETY:
-        // - `row_ptr.page_offset()` does point to a valid row in this page
-        //   as the caller promised that `row_ptr` points to a valid row in `self`.
-        //
-        // - `fixed_row_size` is consistent with the size in bytes of the fixed part of the row.
-        //   The size is also conistent with `var_len_visitor`.
-        let blob_store_deleted_bytes =
-            unsafe { page.delete_row(row_ptr.page_offset(), fixed_row_size, var_len_visitor, blob_store) };
+        let page_index = row_ptr.page_index();
 
-        // If the page was previously full, mark it as non-full now,
-        // since we just opened a space in it.
-        if full_before {
-            self.mark_page_non_full(row_ptr.page_index());
+        self.with_updating_non_full_pages(page_index, |this| {
+            let page = &mut this[page_index];
+
+            // SAFETY:
+            // - `row_ptr.page_offset()` does point to a valid row in this page
+            //   as the caller promised that `row_ptr` points to a valid row in `self`.
+            //
+            // - `fixed_row_size` is consistent with the size in bytes of the fixed part of the row.
+            //   The size is also conistent with `var_len_visitor`.
+            unsafe { page.delete_row(row_ptr.page_offset(), fixed_row_size, var_len_visitor, blob_store) }
+        })
+    }
+
+    /// Collect information about the page `self[page_index]` sufficient to update [`Self::non_full_pages`],
+    /// then run `body` to update the page, and finally update [`Self::non_full_pages`] for its new fullness and capacity.
+    ///
+    /// `body` should not update any pages other than the one identified by `page_index`.
+    fn with_updating_non_full_pages<Ret>(&mut self, page_index: PageIndex, body: impl FnOnce(&mut Self) -> Ret) -> Ret {
+        let page = &self[page_index];
+
+        let available_granules_before = page.available_var_len_granules();
+
+        let ret = body(self);
+
+        self.update_page_available_granules(available_granules_before, page_index);
+
+        ret
+    }
+
+    /// Update [`Self::non_full_pages`] to change the number of var-len granules available in the page at `self[page_index]`,
+    /// first deleting any old entry and then re-inserting the new entry.
+    ///
+    /// The entry for `page` in `self.non_full_granules` should not have been deleted prior to calling this method.
+    /// If the entry has already been deleted or was never present, instead use [`Self::record_page_available_ganules`].
+    ///
+    /// `available_granules_before` should be the previous count from [`Page::available_var_len_granules`],
+    /// prior to whatever operation made space available in the page.
+    /// This is necessary because `non_full_pages` is a `BTreeSet` sorted by `(available_granules, page_index)`,
+    /// so locating the `page_index` without the `available_granules` would be slow.
+    fn update_page_available_granules(&mut self, available_granules_before: usize, page_index: PageIndex) {
+        if available_granules_before != 0 {
+            let _prev = self.non_full_pages.remove(&(available_granules_before, page_index));
+            debug_assert!(_prev);
+        } else {
+            debug_assert!(!self.non_full_pages.remove(&(available_granules_before, page_index)));
         }
-        blob_store_deleted_bytes
+
+        self.record_page_available_granules(page_index);
+    }
+
+    /// Record the number of available var-len granules in the page at `self[page_index]` into [`Self::non_full_pages`].
+    ///
+    /// Prior to calling this function, there must not be an entry for `page_index` in [`Self::non_full_pages`].
+    fn record_page_available_granules(&mut self, page_index: PageIndex) {
+        debug_assert!(!self.non_full_pages.iter().any(|(_, idx)| *idx == page_index));
+
+        let available_granules = self[page_index].available_var_len_granules();
+
+        if available_granules != 0 {
+            self.non_full_pages.insert((available_granules, page_index));
+        }
     }
 
     /// Materialize a view of rows in `self` for which the  `filter` returns `true`.
@@ -368,13 +447,14 @@ impl Pages {
     /// Should only ever be called when `self.is_empty()`.
     ///
     /// Also populates `self.non_full_pages`.
-    pub fn set_contents(&mut self, pages: Vec<Box<Page>>, fixed_row_size: Size) {
+    pub fn set_contents(&mut self, pages: Vec<Box<Page>>) {
         debug_assert!(self.is_empty());
         self.non_full_pages = pages
             .iter()
             .enumerate()
             .filter_map(|(idx, page)| {
-                (!page.is_full(fixed_row_size)).then_some((page.available_var_len_granules(), PageIndex(idx as _)))
+                let num_granules = page.available_var_len_granules();
+                (num_granules != 0).then_some((page.available_var_len_granules(), PageIndex(idx as _)))
             })
             .collect();
         self.pages = pages;
