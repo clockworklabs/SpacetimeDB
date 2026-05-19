@@ -1064,13 +1064,13 @@ enum UnorderedWsMessage {
 /// Abstraction over [`ClientConnectionReceiver`], so tests can use a plain
 /// [`mpsc::Receiver`].
 trait Receiver<T> {
-    fn recv(&mut self) -> impl Future<Output = Option<T>> + Send;
+    fn recv_many(&mut self, buf: &mut Vec<T>, max: usize) -> impl Future<Output = usize> + Send;
     fn close(&mut self);
 }
 
 impl Receiver<OutboundMessage> for ClientConnectionReceiver {
-    async fn recv(&mut self) -> Option<OutboundMessage> {
-        ClientConnectionReceiver::recv(self).await
+    async fn recv_many(&mut self, buf: &mut Vec<OutboundMessage>, max: usize) -> usize {
+        ClientConnectionReceiver::recv_many(self, buf, max).await
     }
 
     fn close(&mut self) {
@@ -1079,8 +1079,8 @@ impl Receiver<OutboundMessage> for ClientConnectionReceiver {
 }
 
 impl<T: Send> Receiver<T> for mpsc::Receiver<T> {
-    async fn recv(&mut self) -> Option<T> {
-        mpsc::Receiver::recv(self).await
+    async fn recv_many(&mut self, buf: &mut Vec<T>, max: usize) -> usize {
+        mpsc::Receiver::recv_many(self, buf, max).await
     }
 
     fn close(&mut self) {
@@ -1148,6 +1148,8 @@ async fn ws_send_loop_inner<T, U, Encoder>(
     // The default frame size is 4KiB, hence we write in batches of 32KiB.
     const FRAME_BATCH_SIZE: usize = 8;
     let mut frames_batch = Vec::with_capacity(FRAME_BATCH_SIZE);
+    const MESSAGE_BATCH_SIZE: usize = ClientConnectionReceiver::DEFAULT_RECV_MANY_LIMIT;
+    let mut message_batch = Vec::new();
     let (frames_tx, mut frames_rx) = mpsc::unbounded_channel();
 
     let (encode_tx, encode_rx) = mpsc::unbounded_channel();
@@ -1262,12 +1264,15 @@ async fn ws_send_loop_inner<T, U, Encoder>(
             // Take on more work.
             //
             // Branch is disabled if we already sent a close frame.
-            Some(message) = messages.recv(), if !closed => {
-                encode_tx
-                    .send(message.into())
-                    // `ws_encode_task` shouldn't terminate until
-                    // `encode_tx` is dropped, except by panicking.
-                    .expect("encode task panicked");
+            n = messages.recv_many(&mut message_batch, MESSAGE_BATCH_SIZE), if !closed => {
+                log::trace!("encoding batch of {n} messages");
+                for message in message_batch.drain(..n) {
+                    encode_tx
+                        .send(message.into())
+                        // `ws_encode_task` shouldn't terminate until
+                        // `encode_tx` is dropped, except by panicking.
+                        .expect("encode task panicked");
+                }
             },
 
         }
