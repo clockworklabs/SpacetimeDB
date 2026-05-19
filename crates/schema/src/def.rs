@@ -2109,4 +2109,78 @@ mod tests {
             .count()
             == 2))
     }
+
+    #[test]
+    fn mounted_reducer_ids_are_depth_first() {
+        use spacetimedb_lib::db::raw_def::v10::{
+            RawModuleDefV10Builder, RawModuleDefV10Section, RawModuleMountV10,
+        };
+
+        // baz library: 1 reducer
+        let mut baz_builder = RawModuleDefV10Builder::new();
+        baz_builder.add_reducer("baz_reduce", ProductType::unit());
+
+        // auth library: 1 own reducer, mounts baz
+        let mut auth_builder = RawModuleDefV10Builder::new();
+        auth_builder.add_reducer("auth_verify", ProductType::unit());
+        let mut auth_raw = auth_builder.finish();
+        auth_raw.sections.push(RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+            namespace: "baz".to_string(),
+            module: baz_builder.finish(),
+        }]));
+
+        // consumer: 2 own reducers, mounts auth
+        let mut consumer_builder = RawModuleDefV10Builder::new();
+        consumer_builder.add_reducer("consumer_a", ProductType::unit());
+        consumer_builder.add_reducer("consumer_b", ProductType::unit());
+        let mut consumer_raw = consumer_builder.finish();
+        consumer_raw.sections.push(RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+            namespace: "auth".to_string(),
+            module: auth_raw,
+        }]));
+
+        let def: ModuleDef = consumer_raw.try_into().expect("valid module");
+
+        // Total count: 2 consumer + 1 auth + 1 baz
+        assert_eq!(def.reducer_count(), 4);
+
+        // Depth-first order: consumer_a=0, consumer_b=1, auth_verify=2, baz_reduce=3
+        let ids_and_defs = def.reducer_ids_and_defs();
+        assert_eq!(ids_and_defs.len(), 4);
+        assert_eq!(ids_and_defs[0].0, ReducerId(0));
+        assert_eq!(&*ids_and_defs[0].1.name, "consumer_a");
+        assert_eq!(ids_and_defs[1].0, ReducerId(1));
+        assert_eq!(&*ids_and_defs[1].1.name, "consumer_b");
+        assert_eq!(ids_and_defs[2].0, ReducerId(2));
+        assert_eq!(&*ids_and_defs[2].1.name, "auth_verify");
+        assert_eq!(ids_and_defs[3].0, ReducerId(3));
+        assert_eq!(&*ids_and_defs[3].1.name, "baz_reduce");
+
+        // get_reducer_by_id resolves mounted reducer IDs correctly
+        assert_eq!(&*def.reducer_by_id(ReducerId(2)).name, "auth_verify");
+        assert_eq!(&*def.reducer_by_id(ReducerId(3)).name, "baz_reduce");
+        assert!(def.get_reducer_by_id(ReducerId(4)).is_none());
+
+        // reducer_by_name routes plain names to own reducers
+        let (id, rdef) = def.reducer_by_name("consumer_a").expect("plain name resolves");
+        assert_eq!(id, ReducerId(0));
+        assert_eq!(&*rdef.name, "consumer_a");
+
+        // reducer_by_name routes qualified names to mounted reducers
+        let (id, rdef) = def.reducer_by_name("auth/auth_verify").expect("qualified name resolves");
+        assert_eq!(id, ReducerId(2));
+        assert_eq!(&*rdef.name, "auth_verify");
+
+        // reducer_by_name routes deeply nested qualified names
+        let (id, rdef) = def
+            .reducer_by_name("auth/baz/baz_reduce")
+            .expect("nested qualified name resolves");
+        assert_eq!(id, ReducerId(3));
+        assert_eq!(&*rdef.name, "baz_reduce");
+
+        // Non-existent names return None
+        assert!(def.reducer_by_name("auth/nonexistent").is_none());
+        assert!(def.reducer_by_name("nonexistent").is_none());
+        assert!(def.reducer_by_name("nonamespace/auth_verify").is_none());
+    }
 }
