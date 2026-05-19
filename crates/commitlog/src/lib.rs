@@ -111,7 +111,7 @@ impl Options {
     pub const DEFAULT_OFFSET_INDEX_INTERVAL_BYTES: NonZeroU64 = NonZeroU64::new(4096).expect("4096 > 0, qed");
     pub const DEFAULT_OFFSET_INDEX_REQUIRE_SEGMENT_FSYNC: bool = true;
     pub const DEFAULT_PREALLOCATE_SEGMENTS: bool = false;
-    pub const DEFAULT_WRITE_BUFFER_SIZE: usize = 8 * 1024;
+    pub const DEFAULT_WRITE_BUFFER_SIZE: usize = 128 * 1024;
 
     pub const DEFAULT: Self = Self {
         log_format_version: DEFAULT_LOG_FORMAT_VERSION,

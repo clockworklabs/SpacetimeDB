@@ -11,6 +11,7 @@ use axum::extract::DefaultBodyLimit;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
 use spacetimedb::config::{parse_config, CertificateAuthority};
+use spacetimedb::db::persistence::DurabilityConfig;
 use spacetimedb::db::{self, Storage};
 use spacetimedb::startup::{self, TracingOptions};
 use spacetimedb::util::jobs::JobCores;
@@ -99,6 +100,8 @@ struct ConfigFile {
     #[serde(flatten)]
     common: spacetimedb::config::ConfigFile,
     #[serde(default)]
+    durability: DurabilityConfig,
+    #[serde(default)]
     websocket: WebSocketOptions,
 }
 
@@ -181,6 +184,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     let ctx = StandaloneEnv::init(
         StandaloneOptions {
             db_config,
+            durability: config.durability,
             websocket: config.websocket,
             wasm: config.common.wasm,
             v8: config.common.v8,
@@ -525,6 +529,11 @@ mod tests {
             heap-gc-trigger-fraction = 0.6
             heap-retire-fraction = 0.8
             heap-limit-mb = 128
+
+            [durability.commitlog]
+            max-segment-size = 1048576
+            preallocate-segments = true
+            write-buffer-size = 131072
 "#;
 
         let config: ConfigFile = toml::from_str(toml).unwrap();
@@ -543,6 +552,15 @@ mod tests {
         assert_eq!(config.common.v8.heap_policy.heap_gc_trigger_fraction, 0.6);
         assert_eq!(config.common.v8.heap_policy.heap_retire_fraction, 0.8);
         assert_eq!(config.common.v8.heap_policy.heap_limit_bytes, 128 * 1024 * 1024);
+        assert_eq!(
+            config.durability.commitlog.max_segment_size.map(|val| val.get()),
+            Some(1024 * 1024)
+        );
+        assert_eq!(config.durability.commitlog.preallocate_segments, Some(true));
+        assert_eq!(
+            config.durability.commitlog.write_buffer_size.map(|val| val.get()),
+            Some(128 * 1024)
+        );
 
         assert_eq!(
             config.websocket,
