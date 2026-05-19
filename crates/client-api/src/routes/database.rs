@@ -1506,6 +1506,12 @@ pub struct DatabaseRoutes<S> {
     pub db_reset: MethodRouter<S>,
     /// GET: /database/: name_or_identity/unstable/timestamp
     pub timestamp_get: MethodRouter<S>,
+    /// ANY: /database/:name_or_identity/route
+    pub http_route_root: MethodRouter<S>,
+    /// ANY: /database/:name_or_identity/route/
+    pub http_route_root_slash: MethodRouter<S>,
+    /// ANY: /database/:name_or_identity/route/*path
+    pub http_route: MethodRouter<S>,
 }
 
 impl<S> Default for DatabaseRoutes<S>
@@ -1513,7 +1519,7 @@ where
     S: NodeDelegate + ControlStateDelegate + HasWebSocketOptions + Authorization + Clone + 'static,
 {
     fn default() -> Self {
-        use axum::routing::{delete, get, post, put};
+        use axum::routing::{any, delete, get, post, put};
         Self {
             root_post: post(publish::<S>),
             db_put: put(publish::<S>),
@@ -1531,6 +1537,9 @@ where
             pre_publish: post(pre_publish::<S>),
             db_reset: put(reset::<S>),
             timestamp_get: get(get_timestamp::<S>),
+            http_route_root: any(handle_http_route_root::<S>),
+            http_route_root_slash: any(handle_http_route_root_slash::<S>),
+            http_route: any(handle_http_route::<S>),
         }
     }
 }
@@ -1540,8 +1549,6 @@ where
     S: NodeDelegate + ControlStateDelegate + Authorization + Clone + 'static,
 {
     pub fn into_router(self, ctx: S) -> axum::Router<S> {
-        use axum::routing::any;
-
         let db_router = axum::Router::<S>::new()
             .route("/", self.db_put)
             .route("/", self.db_get)
@@ -1577,9 +1584,9 @@ where
         // Authorization headers do not trigger early rejection or attach SpacetimeAuth.
         // Keep these routes merged separately from the authenticated database router.
         let http_route_router = axum::Router::<S>::new()
-            .route("/:name_or_identity/route", any(handle_http_route_root::<S>))
-            .route("/:name_or_identity/route/", any(handle_http_route_root_slash::<S>))
-            .route("/:name_or_identity/route/*path", any(handle_http_route::<S>));
+            .route("/:name_or_identity/route", self.http_route_root)
+            .route("/:name_or_identity/route/", self.http_route_root_slash)
+            .route("/:name_or_identity/route/*path", self.http_route);
 
         axum::Router::new()
             .merge(authed_root_router)
