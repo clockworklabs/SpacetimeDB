@@ -1,6 +1,11 @@
 import { moduleHooks, type ModuleDefaultExport } from 'spacetime:sys@2.0';
 import { CaseConversionPolicy, Lifecycle } from '../lib/autogen/types';
-import type { RawModuleDefV10 } from '../lib/autogen/types';
+import type {
+  RawModuleDefV10,
+  RawReducerDefV10,
+  RawTableDefV10,
+  Typespace,
+} from '../lib/autogen/types';
 import {
   type ParamsAsObject,
   type ParamsObj,
@@ -44,6 +49,14 @@ import {
 } from './views';
 import type { UntypedTableDef } from '../lib/table';
 
+export type MountedDispatchInfo = {
+  reducerFns: Reducers;
+  reducerDefs: RawReducerDefV10[];
+  typespace: Typespace;
+  tables: Array<{ accessorName: string; tableDef: RawTableDefV10 }>;
+  subDispatches: MountedDispatchInfo[];
+};
+
 export class SchemaInner<
   S extends UntypedSchemaDef = UntypedSchemaDef,
 > extends ModuleContext {
@@ -65,6 +78,7 @@ export class SchemaInner<
     string
   > = new Map();
   pendingSchedules: PendingSchedule[] = [];
+  mountedDispatchInfos: MountedDispatchInfo[] = [];
 
   constructor(getSchemaType: (ctx: SchemaInner<S>) => S) {
     super();
@@ -162,6 +176,10 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
     return this.#ctx.typespace;
   }
 
+  get mountedDispatchInfos(): MountedDispatchInfo[] {
+    return this.#ctx.mountedDispatchInfos;
+  }
+
   /** Internal: register exports and materialize the RawModuleDefV10 for upload. */
   buildRawModuleDefV10(
     exports: object,
@@ -172,6 +190,32 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
     });
     this.#ctx.resolveSchedules();
     return this.#ctx.rawModuleDefV10();
+  }
+
+  /**
+   * @internal – called by schema() when processing a mounted namespace entry.
+   * Registers the library's exports and returns both the serialized module def
+   * and the runtime dispatch info needed by ModuleHooksImpl for __call_reducer__.
+   */
+  buildMountForDispatch(
+    exports: object
+  ): { rawDef: RawModuleDefV10; dispatch: MountedDispatchInfo } {
+    const rawDef = this.buildRawModuleDefV10(exports, {
+      ignoreNonModuleExports: true,
+    });
+    return {
+      rawDef,
+      dispatch: {
+        reducerFns: [...this.#ctx.reducers],
+        reducerDefs: [...this.#ctx.moduleDef.reducers],
+        typespace: this.#ctx.moduleDef.typespace,
+        tables: Object.values(this.#ctx.schemaType.tables).map(t => ({
+          accessorName: t.accessorName,
+          tableDef: t.tableDef,
+        })),
+        subDispatches: [...this.#ctx.mountedDispatchInfos],
+      },
+    };
   }
 
   /**
@@ -617,12 +661,9 @@ export function schema<const H extends Record<string, SchemaEntry>>(
         );
       }
       if (isMountedModuleNamespace(entry)) {
-        ctx.addMount({
-          namespace: accName,
-          module: entry.default.buildRawModuleDefV10(entry, {
-            ignoreNonModuleExports: true,
-          }),
-        });
+        const { rawDef, dispatch } = entry.default.buildMountForDispatch(entry);
+        ctx.addMount({ namespace: accName, module: rawDef });
+        ctx.mountedDispatchInfos.push(dispatch);
         continue;
       }
       if (!isUntypedTableSchema(entry)) {

@@ -114,4 +114,70 @@ describe('schema mounts', () => {
       })
     ).toThrow(/looks like a default import/);
   });
+
+  it('populates mountedDispatchInfos with reducer fns and table metadata', () => {
+    const sessions = table(
+      { name: 'sessions' },
+      { id: t.u64().primaryKey().autoInc() }
+    );
+
+    const authSchema = schema({ sessions });
+    const cleanExpiredSessions = authSchema.reducer(() => {});
+    const authLib = { default: authSchema, cleanExpiredSessions };
+
+    const players = table({ name: 'players' }, { id: t.u32().primaryKey() });
+    const consumer = schema({ players, myauth: authLib });
+
+    const infos = consumer.mountedDispatchInfos;
+    expect(infos).toHaveLength(1);
+
+    const info = infos[0];
+    expect(info.reducerFns).toHaveLength(1);
+    expect(info.reducerDefs).toHaveLength(1);
+    expect(info.reducerDefs[0].sourceName).toBe('cleanExpiredSessions');
+    expect(info.tables).toHaveLength(1);
+    expect(info.tables[0].accessorName).toBe('sessions');
+    expect(info.subDispatches).toHaveLength(0);
+  });
+
+  it('flattens nested mount dispatches depth-first', () => {
+    // baz library: 1 reducer
+    const bazTable = table({ name: 'baz_items' }, { id: t.u32().primaryKey() });
+    const bazSchema = schema({ bazTable });
+    const bazReducer = bazSchema.reducer(() => {});
+    const bazLib = { default: bazSchema, bazReducer };
+
+    // auth library: 1 own reducer, mounts baz
+    const sessions = table(
+      { name: 'sessions' },
+      { id: t.u64().primaryKey().autoInc() }
+    );
+    const authSchema = schema({ sessions, baz: bazLib });
+    const authReducer = authSchema.reducer(() => {});
+    const authLib = { default: authSchema, authReducer };
+
+    // consumer: 1 own reducer, mounts auth
+    const players = table({ name: 'players' }, { id: t.u32().primaryKey() });
+    const consumer = schema({ players, myauth: authLib });
+    const consumerReducer = consumer.reducer(() => {});
+
+    // Verify depth-first structure:
+    // consumer.mountedDispatchInfos[0] = myauth (authReducer)
+    // consumer.mountedDispatchInfos[0].subDispatches[0] = myauth.baz (bazReducer)
+    const infos = consumer.mountedDispatchInfos;
+    expect(infos).toHaveLength(1);
+
+    const authInfo = infos[0];
+    expect(authInfo.reducerFns).toHaveLength(1);
+    expect(authInfo.reducerDefs[0].sourceName).toBe('authReducer');
+    expect(authInfo.subDispatches).toHaveLength(1);
+
+    const bazInfo = authInfo.subDispatches[0];
+    expect(bazInfo.reducerFns).toHaveLength(1);
+    expect(bazInfo.reducerDefs[0].sourceName).toBe('bazReducer');
+    expect(bazInfo.subDispatches).toHaveLength(0);
+
+    // Unused variable check
+    void consumerReducer;
+  });
 });

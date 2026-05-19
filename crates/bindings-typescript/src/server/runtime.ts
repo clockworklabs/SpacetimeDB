@@ -10,6 +10,7 @@ import {
 import {
   RawModuleDef,
   ViewResultHeader,
+  type RawReducerDefV10,
   type RawTableDefV10,
   type Typespace,
 } from '../lib/autogen/types';
@@ -27,6 +28,7 @@ import {
   type UniqueIndex,
 } from '../lib/indexes';
 import { callProcedure } from './procedures';
+import type { Reducers } from './reducers';
 import {
   type AuthCtx,
   type JsonObject,
@@ -42,7 +44,7 @@ import type { DbView } from './db_view';
 import { getErrorConstructor, SenderError } from './errors';
 import { Range, type Bound } from './range';
 import { makeRandom, type Random } from './rng';
-import type { SchemaInner } from './schema';
+import type { MountedDispatchInfo, SchemaInner } from './schema';
 
 const { freeze } = Object;
 
@@ -212,13 +214,17 @@ export const ReducerCtxImpl = class ReducerCtx<
     me: InstanceType<typeof this>,
     sender: Identity,
     timestamp: Timestamp,
-    connectionId: ConnectionId | null
+    connectionId: ConnectionId | null,
+    dbView?: DbView<any>
   ) {
     me.sender = sender;
     me.timestamp = timestamp;
     me.connectionId = connectionId;
     me.#uuidCounter = undefined;
     me.#senderAuth = undefined;
+    if (dbView !== undefined) {
+      me.db = dbView;
+    }
   }
 
   get databaseIdentity() {
@@ -272,6 +278,31 @@ export const callUserFunction = function __spacetimedb_end_short_backtrace<
   return fn(...args);
 };
 
+type FlatMountDispatch = {
+  reducerFns: Reducers;
+  reducerDefs: RawReducerDefV10[];
+  tables: Array<{ accessorName: string; tableDef: RawTableDefV10 }>;
+  typespace: Typespace;
+  dbView_: DbView<any> | undefined;
+};
+
+function flattenMountDispatches(
+  dispatches: MountedDispatchInfo[]
+): FlatMountDispatch[] {
+  const result: FlatMountDispatch[] = [];
+  for (const d of dispatches) {
+    result.push({
+      reducerFns: d.reducerFns,
+      reducerDefs: d.reducerDefs,
+      tables: d.tables,
+      typespace: d.typespace,
+      dbView_: undefined,
+    });
+    result.push(...flattenMountDispatches(d.subDispatches));
+  }
+  return result;
+}
+
 export const makeHooks = (schema: SchemaInner): ModuleHooks =>
   new ModuleHooksImpl(schema);
 
@@ -279,14 +310,23 @@ class ModuleHooksImpl implements ModuleHooks {
   #schema: SchemaInner;
   #dbView_: DbView<any> | undefined;
   #reducerArgsDeserializers;
-  /** Cache the `ReducerCtx` object to avoid allocating anew for ever reducer call. */
+  #consumerReducerCount: number;
+  #flatMounts: FlatMountDispatch[];
+  /** Cache the `ReducerCtx` object to avoid allocating anew for every reducer call. */
   #reducerCtx_: InstanceType<typeof ReducerCtxImpl> | undefined;
 
   constructor(schema: SchemaInner) {
     this.#schema = schema;
-    this.#reducerArgsDeserializers = schema.moduleDef.reducers.map(
+    this.#consumerReducerCount = schema.reducers.length;
+    this.#flatMounts = flattenMountDispatches(schema.mountedDispatchInfos);
+
+    const consumerDeserializers = schema.moduleDef.reducers.map(
       ({ params }) => ProductType.makeDeserializer(params, schema.typespace)
     );
+    const mountedDeserializers = this.#flatMounts.flatMap(({ reducerDefs, typespace }) =>
+      reducerDefs.map(({ params }) => ProductType.makeDeserializer(params, typespace))
+    );
+    this.#reducerArgsDeserializers = [...consumerDeserializers, ...mountedDeserializers];
   }
 
   get #dbView() {
@@ -295,6 +335,18 @@ class ModuleHooksImpl implements ModuleHooks {
         Object.values(this.#schema.schemaType.tables).map(table => [
           table.accessorName,
           makeTableView(this.#schema.typespace, table.tableDef),
+        ])
+      )
+    ));
+  }
+
+  #getMountDbView(mountIdx: number): DbView<any> {
+    const m = this.#flatMounts[mountIdx];
+    return (m.dbView_ ??= freeze(
+      Object.fromEntries(
+        m.tables.map(({ accessorName, tableDef }) => [
+          accessorName,
+          makeTableView(m.typespace, tableDef),
         ])
       )
     ));
@@ -333,19 +385,42 @@ class ModuleHooksImpl implements ModuleHooks {
     timestamp: bigint,
     argsBuf: DataView
   ): void {
-    const moduleCtx = this.#schema;
     const deserializeArgs = this.#reducerArgsDeserializers[reducerId];
     BINARY_READER.reset(argsBuf);
     const args = deserializeArgs(BINARY_READER);
     const senderIdentity = new Identity(sender);
+
+    let fn: ((...args: any[]) => any) | undefined;
+    let dbView: DbView<any>;
+
+    if (reducerId < this.#consumerReducerCount) {
+      fn = this.#schema.reducers[reducerId];
+      dbView = this.#dbView;
+    } else {
+      let offset = this.#consumerReducerCount;
+      for (let i = 0; i < this.#flatMounts.length; i++) {
+        const m = this.#flatMounts[i];
+        if (reducerId < offset + m.reducerFns.length) {
+          fn = m.reducerFns[reducerId - offset];
+          dbView = this.#getMountDbView(i);
+          break;
+        }
+        offset += m.reducerFns.length;
+      }
+      if (fn === undefined) {
+        throw new RangeError(`unknown reducerId ${reducerId}`);
+      }
+    }
+
     const ctx = this.#reducerCtx;
     ReducerCtxImpl.reset(
       ctx,
       senderIdentity,
       new Timestamp(timestamp),
-      ConnectionId.nullIfZero(new ConnectionId(connId))
+      ConnectionId.nullIfZero(new ConnectionId(connId)),
+      dbView!
     );
-    callUserFunction(moduleCtx.reducers[reducerId], ctx, args);
+    callUserFunction(fn, ctx, args);
   }
 
   __call_view__(
