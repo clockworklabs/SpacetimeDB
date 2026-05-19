@@ -12,6 +12,7 @@ import type {
 } from './type_builders';
 import type { Values } from './type_util';
 import type { Bool as SatsBool } from './algebraic_type_variants';
+import type { Uuid } from './uuid';
 
 /**
  * Helper to get the set of table names.
@@ -623,6 +624,7 @@ type LiteralValue =
   | bigint
   | boolean
   | Identity
+  | Uuid
   | Timestamp
   | ConnectionId;
 
