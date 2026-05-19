@@ -79,6 +79,8 @@ export class SchemaInner<
   > = new Map();
   pendingSchedules: PendingSchedule[] = [];
   mountedDispatchInfos: MountedDispatchInfo[] = [];
+  pendingMergedExports: Array<[string, ModuleExport]> = [];
+  mergedSchemas: Set<SchemaInner> = new Set();
 
   constructor(getSchemaType: (ctx: SchemaInner<S>) => S) {
     super();
@@ -185,6 +187,14 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
     exports: object,
     opts?: { ignoreNonModuleExports?: boolean }
   ): RawModuleDefV10 {
+    // Register merged exports first so they are in ctx.reducers before
+    // registerModuleExports runs. Skip any already registered (e.g. if the
+    // consumer re-exports the same reducer by name).
+    for (const [name, exp] of this.#ctx.pendingMergedExports) {
+      if (!this.#ctx.functionExports.has(exp as ReducerExport<any, any>)) {
+        exp[registerExport](this.#ctx, name);
+      }
+    }
     registerModuleExports(this.#ctx, exports, {
       ignoreNonModuleExports: opts?.ignoreNonModuleExports ?? false,
     });
@@ -550,9 +560,14 @@ function isModuleExport(x: unknown): x is ModuleExport {
   );
 }
 
-/** Verify that the ModuleContext that `exp` comes from is the same as `schema` */
+/** Verify that the ModuleContext that `exp` comes from is the same as `schema`,
+ * or is a library that was merged into `schema` via merge(). */
 function checkExportContext(exp: ModuleExport, schema: SchemaInner) {
-  if (exp[exportContext] != null && exp[exportContext] !== schema) {
+  if (
+    exp[exportContext] != null &&
+    exp[exportContext] !== schema &&
+    !schema.mergedSchemas.has(exp[exportContext])
+  ) {
     throw new TypeError('multiple schemas are not supported');
   }
 }
@@ -598,7 +613,7 @@ type MountedModuleNamespace = {
   [key: string]: unknown;
 };
 
-type SchemaEntry = UntypedTableSchema | MountedModuleNamespace;
+type SchemaEntry = UntypedTableSchema | MountedModuleNamespace | ModuleExport;
 
 type ExtractTableEntries<H extends Record<string, SchemaEntry>> = {
   [K in keyof H as H[K] extends UntypedTableSchema ? K : never]: Extract<
@@ -639,6 +654,11 @@ function registerModuleExports(
       throw new TypeError('exporting something that is not a spacetime export');
     }
     checkExportContext(moduleExport, schema);
+    // Skip exports already registered via pendingMergedExports to prevent
+    // double-registration when the consumer re-exports a merged reducer by name.
+    if (schema.functionExports.has(moduleExport as ReducerExport<any, any>)) {
+      continue;
+    }
     moduleExport[registerExport](schema, name);
   }
 }
@@ -666,15 +686,31 @@ export function schema<const H extends Record<string, SchemaEntry>>(
         ctx.mountedDispatchInfos.push(dispatch);
         continue;
       }
+      if (isModuleExport(entry)) {
+        // Entry came from a merge() spread — defer registration to buildRawModuleDefV10
+        // and track the source schema so checkExportContext allows re-exports.
+        ctx.pendingMergedExports.push([accName, entry]);
+        if (entry[exportContext] != null) {
+          ctx.mergedSchemas.add(entry[exportContext]);
+        }
+        continue;
+      }
       if (!isUntypedTableSchema(entry)) {
         throw new TypeError(
-          `schema entry '${accName}' must be a table or a mounted module namespace object`
+          `schema entry '${accName}' must be a table, a mounted module namespace object, or a merge() result`
         );
       }
 
       const table = entry;
-      const tableDef = table.tableDef(ctx, accName);
-      tableSchemas[accName] = tableToSchema(accName, table, tableDef);
+      // UntypedTableSchema.tableDef is a factory fn; UntypedTableDef.tableDef is a
+      // pre-materialized RawTableDefV10 (produced by merge()). Handle both.
+      const isMaterialized = typeof (table as any).tableDef !== 'function';
+      const tableDef: RawTableDefV10 = isMaterialized
+        ? (table as unknown as UntypedTableDef).tableDef
+        : table.tableDef(ctx, accName);
+      tableSchemas[accName] = isMaterialized
+        ? (table as unknown as UntypedTableDef)
+        : tableToSchema(accName, table, tableDef);
       ctx.moduleDef.tables.push(tableDef);
       if (table.schedule) {
         ctx.pendingSchedules.push({
@@ -696,4 +732,34 @@ export function schema<const H extends Record<string, SchemaEntry>>(
   });
 
   return new Schema(ctx);
+}
+
+/**
+ * Flattens a library's tables and named exports into a plain object suitable
+ * for spreading into `schema({...})`. The library's tables and reducers land
+ * directly in the consumer's public namespace with no namespace prefix.
+ *
+ * Multiple `merge()` calls compose without `default`-key collisions:
+ * ```ts
+ * const spacetimedb = schema({
+ *   players,
+ *   ...merge(authLib),
+ *   ...merge(utilLib),
+ * });
+ * ```
+ *
+ * Libraries with scheduled reducers or user-defined compound column types
+ * should use the namespaced mount form instead: `schema({ alias: lib })`.
+ */
+export function merge(
+  lib: MountedModuleNamespace
+): Record<string, UntypedTableDef | ModuleExport> {
+  const { default: libSchema, ...namedExports } = lib as Record<string, unknown> & {
+    default: Schema<any>;
+  };
+  const tables: Record<string, UntypedTableDef> = {};
+  for (const td of Object.values(libSchema.schemaType.tables)) {
+    tables[td.accessorName] = td;
+  }
+  return { ...tables, ...(namedExports as Record<string, ModuleExport>) };
 }

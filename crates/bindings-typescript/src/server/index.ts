@@ -1,6 +1,7 @@
 export * from '../lib/type_builders';
 export {
   schema,
+  merge,
   type InferSchema,
   type ModuleExport,
   type ModuleSettings,

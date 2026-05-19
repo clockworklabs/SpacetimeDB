@@ -23,11 +23,12 @@ vi.mock('../src/server/runtime', () => ({
 
 describe('schema mounts', () => {
   let schema: typeof import('../src/server/schema').schema;
+  let merge: typeof import('../src/server/schema').merge;
   let table: typeof import('../src/lib/table').table;
   let t: typeof import('../src/lib/type_builders').t;
 
   beforeAll(async () => {
-    ({ schema } = await import('../src/server/schema'));
+    ({ schema, merge } = await import('../src/server/schema'));
     ({ table } = await import('../src/lib/table'));
     ({ t } = await import('../src/lib/type_builders'));
   });
@@ -179,5 +180,86 @@ describe('schema mounts', () => {
 
     // Unused variable check
     void consumerReducer;
+  });
+
+  it('merge() flattens library tables and reducers into the consumer namespace', () => {
+    const sessions = table(
+      { name: 'sessions' },
+      { id: t.u64().primaryKey().autoInc() }
+    );
+    const authSchema = schema({ sessions });
+    const cleanExpiredSessions = authSchema.reducer(() => {});
+    const authLib = { default: authSchema, cleanExpiredSessions };
+
+    const players = table({ name: 'players' }, { id: t.u32().primaryKey() });
+    const consumer = schema({ players, ...merge(authLib) });
+
+    const raw = consumer.buildRawModuleDefV10({});
+
+    // No namespaced mounts — library content lives in the root module
+    const mounts = raw.sections.find(section => section.tag === 'Mounts');
+    expect(mounts?.value ?? []).toHaveLength(0);
+
+    // Both tables are in the root Tables section
+    const tables = raw.sections.find(section => section.tag === 'Tables')?.value ?? [];
+    const tableNames = tables.map((t: any) => t.sourceName);
+    expect(tableNames).toContain('players');
+    expect(tableNames).toContain('sessions');
+
+    // The merged reducer is in the root Reducers section
+    const reducers = raw.sections.find(section => section.tag === 'Reducers')?.value ?? [];
+    expect(reducers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sourceName: 'cleanExpiredSessions' }),
+      ])
+    );
+  });
+
+  it('merge() allows re-exporting a merged reducer without checkExportContext error', () => {
+    const sessions = table(
+      { name: 'sessions' },
+      { id: t.u64().primaryKey().autoInc() }
+    );
+    const authSchema = schema({ sessions });
+    const cleanExpiredSessions = authSchema.reducer(() => {});
+    const authLib = { default: authSchema, cleanExpiredSessions };
+
+    const players = table({ name: 'players' }, { id: t.u32().primaryKey() });
+    const consumer = schema({ players, ...merge(authLib) });
+
+    // Simulate consumer re-exporting the merged reducer by name — should not throw
+    expect(() =>
+      consumer.buildRawModuleDefV10({ cleanExpiredSessions })
+    ).not.toThrow();
+  });
+
+  it('merge() from two libraries composes without default-key collision', () => {
+    const sessionsTable = table(
+      { name: 'sessions' },
+      { id: t.u64().primaryKey().autoInc() }
+    );
+    const authSchema = schema({ sessionsTable });
+    const authReducer = authSchema.reducer(() => {});
+    const authLib = { default: authSchema, authReducer };
+
+    const itemsTable = table({ name: 'items' }, { id: t.u32().primaryKey() });
+    const utilSchema = schema({ itemsTable });
+    const utilReducer = utilSchema.reducer(() => {});
+    const utilLib = { default: utilSchema, utilReducer };
+
+    const players = table({ name: 'players' }, { id: t.u32().primaryKey() });
+
+    // Both merges should compose cleanly
+    expect(() =>
+      schema({ players, ...merge(authLib), ...merge(utilLib) })
+    ).not.toThrow();
+
+    const consumer = schema({ players, ...merge(authLib), ...merge(utilLib) });
+    const raw = consumer.buildRawModuleDefV10({});
+
+    const reducers = raw.sections.find(section => section.tag === 'Reducers')?.value ?? [];
+    const reducerNames = reducers.map((r: any) => r.sourceName);
+    expect(reducerNames).toContain('authReducer');
+    expect(reducerNames).toContain('utilReducer');
   });
 });
