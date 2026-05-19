@@ -5,11 +5,6 @@
 #include <stdint.h>
 #include <unistd.h>
 
-// Ensure C linkage for all symbols in this file
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #ifndef EXPERIMENTAL_WASM_AOT
 #include "driver.h"
 #endif
@@ -350,12 +345,3 @@ _Noreturn void WASI_NAME(proc_exit)(int32_t code) { exit(code); }
 // https://github.com/dotnet/runtime/blob/085ddb7f9b26f01ae1b6842db7eacb6b4042e031/src/mono/mono/component/mini-wasi-debugger.c#L12-L14
 
 int32_t sock_accept(int32_t, int32_t, int32_t) { return 0; }
-
-// libSystem.Native (pal_errno.c) references gai_strerror for DNS error string
-// translation. WASI has no networking stack, so this code path is unreachable
-// at runtime, but the linker still needs the symbol to be defined.
-__attribute__((visibility("default"))) const char* gai_strerror(int) { return "gai_strerror not supported on WASI"; }
-
-#ifdef __cplusplus
-} // extern "C"
-#endif

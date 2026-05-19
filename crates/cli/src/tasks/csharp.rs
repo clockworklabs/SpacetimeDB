@@ -168,22 +168,20 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool, native_aot: b
     }
 
     // Manage the EXPERIMENTAL_WASM_AOT environment variable for MSBuild.
-    // - Net8Aot: must SET it — MSBuild conditionals in .props use this env var to activate
-    //   NativeAOT-LLVM mode for .NET 8 (where TFM alone doesn't imply AOT).
-    // - Net10Aot: must UNSET it — the .props auto-detects AOT via TargetFramework==net10.0.
-    //   Setting this env var unnecessarily changes MSBuild's restore input hash, causing
-    //   dotnet to re-restore with the project's local NuGet.Config (which may have stale paths).
+    // - Net8Aot / Net10Aot: must SET it — the ILCompiler.LLVM.targets import in
+    //   SpacetimeDB.Runtime.targets is gated on this env var. Without it, the NativeAOT
+    //   toolchain is not activated and dotnet produces managed DLLs instead of a .wasm.
     // - Net8Jit: must UNSET it — prevents MSBuild from incorrectly enabling NativeAOT mode
     //   when the env var is set globally (e.g., in CI).
     match &build_path {
-        CsharpBuildPath::Net8Aot => {
+        CsharpBuildPath::Net8Aot | CsharpBuildPath::Net10Aot => {
             // SAFETY: We are single-threaded at this point and no other code is reading
             // this environment variable concurrently.
             unsafe {
                 std::env::set_var("EXPERIMENTAL_WASM_AOT", "1");
             }
         }
-        CsharpBuildPath::Net10Aot | CsharpBuildPath::Net8Jit => {
+        CsharpBuildPath::Net8Jit => {
             // SAFETY: We are single-threaded at this point.
             unsafe {
                 std::env::remove_var("EXPERIMENTAL_WASM_AOT");
