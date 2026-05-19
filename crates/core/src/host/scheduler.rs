@@ -686,7 +686,7 @@ fn function_to_call_params(
 
     // Find the function and deserialize the arguments.
     let module = &module.module_def;
-    let (id, args) = if let Some((id, def)) = module.reducer_full(name) {
+    let (id, args) = if let Some((id, def)) = module.reducer_by_name(name) {
         let args = args.into_tuple_for_def(module, def).map_err(InvalidReducerArguments)?;
         (FunctionId::Reducer(id), args)
     } else if let Some((id, def)) = module.procedure_full(name) {

@@ -2163,7 +2163,7 @@ impl ModuleHost {
         let (reducer_id, reducer_def) = self
             .info
             .module_def
-            .reducer_full(reducer_name)
+            .reducer_by_name(reducer_name)
             .ok_or(ReducerCallError::NoSuchReducer)?;
         if let Some(lifecycle) = reducer_def.lifecycle {
             return Err(ReducerCallError::LifecycleReducer(lifecycle));

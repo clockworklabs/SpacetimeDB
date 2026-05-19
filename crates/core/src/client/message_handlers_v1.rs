@@ -49,7 +49,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             res.map_err(|e| {
                 (
                     Some(reducer),
-                    mod_info.module_def.reducer_full(&**reducer).map(|(id, _)| id),
+                    mod_info.module_def.reducer_by_name(&**reducer).map(|(id, _)| id),
                     e.into(),
                 )
             })

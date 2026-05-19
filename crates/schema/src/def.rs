@@ -205,9 +205,30 @@ impl ModuleDef {
         self.reducers.values()
     }
 
-    /// Returns an iterator over all reducer ids and definitions.
-    pub fn reducer_ids_and_defs(&self) -> impl ExactSizeIterator<Item = (ReducerId, &ReducerDef)> {
-        self.reducers.values().enumerate().map(|(idx, def)| (idx.into(), def))
+    /// Returns all reducer ids and definitions in depth-first mount order.
+    ///
+    /// IDs are assigned as follows: consumer's own reducers first (0..N), then each
+    /// mounted submodule's reducers in the order they appear in `mounts`, recursively.
+    pub fn reducer_ids_and_defs(&self) -> Vec<(ReducerId, &ReducerDef)> {
+        let mut out = Vec::with_capacity(self.reducer_count());
+        self.collect_reducers(0, &mut out);
+        out
+    }
+
+    /// Total reducer count including all mounted submodules (depth-first sum).
+    pub fn reducer_count(&self) -> usize {
+        self.reducers.len() + self.mounts.values().map(|m| m.reducer_count()).sum::<usize>()
+    }
+
+    fn collect_reducers<'a>(&'a self, offset: usize, out: &mut Vec<(ReducerId, &'a ReducerDef)>) {
+        for (i, def) in self.reducers.values().enumerate() {
+            out.push(((offset + i).into(), def));
+        }
+        let mut child_offset = offset + self.reducers.len();
+        for mount in self.mounts.values() {
+            mount.collect_reducers(child_offset, out);
+            child_offset += mount.reducer_count();
+        }
     }
 
     /// The procedures of the module definition.
@@ -304,14 +325,49 @@ impl ModuleDef {
         self.reducers.get_full(name).map(|(idx, _, def)| (idx.into(), def))
     }
 
-    /// Look up a reducer by its id.
-    pub fn reducer_by_id(&self, id: ReducerId) -> &ReducerDef {
-        &self.reducers[id.idx()]
+    /// Look up a reducer by its wire name, resolving qualified names like `"myauth/verify_token"`.
+    ///
+    /// A plain name searches the consumer's own reducers. A slash-qualified name routes to
+    /// the matching mount and recurses. Nesting is supported: `"auth/baz/cleanup"`.
+    /// Returns the depth-first `ReducerId` and the `ReducerDef`.
+    pub fn reducer_by_name(&self, name: &str) -> Option<(ReducerId, &ReducerDef)> {
+        match name.split_once('/') {
+            None => self.reducer_full(name),
+            Some((namespace, rest)) => {
+                let mut offset = self.reducers.len();
+                for (ns, mount) in &self.mounts {
+                    if ns == namespace {
+                        let (inner_id, def) = mount.reducer_by_name(rest)?;
+                        return Some(((offset + inner_id.idx()).into(), def));
+                    }
+                    offset += mount.reducer_count();
+                }
+                None
+            }
+        }
     }
 
-    /// Look up a reducer by its id.
+    /// Look up a reducer by its depth-first id.
+    pub fn reducer_by_id(&self, id: ReducerId) -> &ReducerDef {
+        self.get_reducer_by_id(id)
+            .unwrap_or_else(|| panic!("reducer id {id:?} out of range"))
+    }
+
+    /// Look up a reducer by its depth-first id, returning `None` if it doesn't exist.
     pub fn get_reducer_by_id(&self, id: ReducerId) -> Option<&ReducerDef> {
-        self.reducers.get_index(id.idx()).map(|(_, def)| def)
+        let idx = id.idx();
+        if idx < self.reducers.len() {
+            return self.reducers.get_index(idx).map(|(_, def)| def);
+        }
+        let mut offset = self.reducers.len();
+        for mount in self.mounts.values() {
+            let count = mount.reducer_count();
+            if idx < offset + count {
+                return mount.get_reducer_by_id(ReducerId::from(idx - offset));
+            }
+            offset += count;
+        }
+        None
     }
 
     /// Look up a view by its id, and whether it is anonymous.

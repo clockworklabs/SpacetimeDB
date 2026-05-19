@@ -1453,7 +1453,7 @@ impl AllVmMetrics {
         let def = &info.module_def;
         let reducers = def.reducer_ids_and_defs();
         let num_reducers = reducers.len() as u32;
-        let reducers = reducers.map(|(_, def)| def.name());
+        let reducers = reducers.into_iter().map(|(_, def)| def.name());
 
         // These are the views:
         let views = def.views().map(|def| def.name());
