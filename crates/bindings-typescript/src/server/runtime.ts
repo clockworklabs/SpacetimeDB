@@ -30,6 +30,7 @@ import {
 import { callProcedure } from './procedures';
 import type { Reducers } from './reducers';
 import {
+  type AliasViews,
   type AuthCtx,
   type JsonObject,
   type JwtClaims,
@@ -195,18 +196,21 @@ export const ReducerCtxImpl = class ReducerCtx<
   timestamp: Timestamp;
   connectionId: ConnectionId | null;
   db: DbView<SchemaDef>;
+  as: AliasViews<SchemaDef>;
 
   constructor(
     sender: Identity,
     timestamp: Timestamp,
     connectionId: ConnectionId | null,
-    dbView: DbView<any>
+    dbView: DbView<any>,
+    asViews: object = {}
   ) {
     Object.seal(this);
     this.sender = sender;
     this.timestamp = timestamp;
     this.connectionId = connectionId;
     this.db = dbView as unknown as DbView<SchemaDef>;
+    this.as = asViews as AliasViews<SchemaDef>;
   }
 
   /** Reset the `ReducerCtx` to be used for a new transaction */
@@ -215,7 +219,8 @@ export const ReducerCtxImpl = class ReducerCtx<
     sender: Identity,
     timestamp: Timestamp,
     connectionId: ConnectionId | null,
-    dbView?: DbView<any>
+    dbView?: DbView<any>,
+    asViews?: object
   ) {
     me.sender = sender;
     me.timestamp = timestamp;
@@ -224,6 +229,9 @@ export const ReducerCtxImpl = class ReducerCtx<
     me.#senderAuth = undefined;
     if (dbView !== undefined) {
       me.db = dbView;
+    }
+    if (asViews !== undefined) {
+      me.as = asViews as AliasViews<any>;
     }
   }
 
@@ -309,6 +317,7 @@ export const makeHooks = (schema: SchemaInner): ModuleHooks =>
 class ModuleHooksImpl implements ModuleHooks {
   #schema: SchemaInner;
   #dbView_: DbView<any> | undefined;
+  #consumerAs_: object | undefined;
   #reducerArgsDeserializers;
   #consumerReducerCount: number;
   #flatMounts: FlatMountDispatch[];
@@ -366,6 +375,13 @@ class ModuleHooksImpl implements ModuleHooks {
     ));
   }
 
+  get #consumerAs() {
+    return (this.#consumerAs_ ??= buildAliasCtxMap(
+      this.#reducerCtx,
+      this.#schema.mountedDispatchInfos
+    ));
+  }
+
   __describe_module__() {
     const writer = new BinaryWriter(128);
     RawModuleDef.serialize(
@@ -397,10 +413,12 @@ class ModuleHooksImpl implements ModuleHooks {
 
     let fn: ((...args: any[]) => any) | undefined;
     let dbView: DbView<any>;
+    let asViews: object;
 
     if (reducerId < this.#consumerReducerCount) {
       fn = this.#schema.reducers[reducerId];
       dbView = this.#dbView;
+      asViews = this.#consumerAs;
     } else {
       let offset = this.#consumerReducerCount;
       for (let i = 0; i < this.#flatMounts.length; i++) {
@@ -415,6 +433,7 @@ class ModuleHooksImpl implements ModuleHooks {
       if (fn === undefined) {
         throw new RangeError(`unknown reducerId ${reducerId}`);
       }
+      asViews = {};
     }
 
     const ctx = this.#reducerCtx;
@@ -423,7 +442,8 @@ class ModuleHooksImpl implements ModuleHooks {
       senderIdentity,
       new Timestamp(timestamp),
       ConnectionId.nullIfZero(new ConnectionId(connId)),
-      dbView!
+      dbView!,
+      asViews!
     );
     callUserFunction(fn, ctx, args);
   }
@@ -513,6 +533,36 @@ function buildDbViewForDispatch(dispatch: MountedDispatchInfo): object {
     buildDbViewForDispatch(sub),
   ]);
   return freeze(Object.fromEntries([...tableEntries, ...subNsEntries]));
+}
+
+function buildAliasCtx(
+  parent: InstanceType<typeof ReducerCtxImpl>,
+  dispatch: MountedDispatchInfo
+): object {
+  const nsDb = buildDbViewForDispatch(dispatch);
+  const subAs = buildAliasCtxMap(parent, dispatch.subDispatches);
+  return {
+    get sender() { return parent.sender; },
+    get databaseIdentity() { return parent.databaseIdentity; },
+    get identity() { return parent.identity; },
+    get timestamp() { return parent.timestamp; },
+    get connectionId() { return parent.connectionId; },
+    get senderAuth() { return parent.senderAuth; },
+    get random() { return parent.random; },
+    newUuidV4() { return parent.newUuidV4(); },
+    newUuidV7() { return parent.newUuidV7(); },
+    db: nsDb,
+    as: subAs,
+  };
+}
+
+function buildAliasCtxMap(
+  parent: InstanceType<typeof ReducerCtxImpl>,
+  dispatches: MountedDispatchInfo[]
+): object {
+  return freeze(
+    Object.fromEntries(dispatches.map(d => [d.namespace, buildAliasCtx(parent, d)]))
+  );
 }
 
 function makeTableView(
