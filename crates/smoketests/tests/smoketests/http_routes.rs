@@ -230,41 +230,205 @@ fn router() -> Router {
 }
 "#;
 
-const TS_HTTP_ROUTES_MODULE: &str = r#"import { schema, SyncResponse } from "spacetimedb/server";
+const TS_MODULE_CODE: &str = r#"import { Router, SyncResponse, schema, table, t } from "spacetimedb/server";
 
-const spacetimedb = schema({});
+const entry = table(
+  { name: "entry", public: true },
+  {
+    id: t.u64().primaryKey(),
+    value: t.string(),
+  }
+);
 
+const spacetimedb = schema({ entry });
 export default spacetimedb;
 
-export const get_echo = spacetimedb.http.handler(
-  req =>
-    new SyncResponse(req.headers.get("x-echo") ?? "", {
-      headers: { "x-method": "GET" },
-    })
+export const get_simple = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("ok")
 );
 
-export const post_echo = spacetimedb.http.handler(
-  req =>
-    new SyncResponse(req.body, {
-      status: 201,
-      headers: { "x-method": "POST" },
-    })
+export const post_insert = spacetimedb.httpHandler((ctx, _req) => {
+  ctx.withTx(tx => {
+    const id = BigInt(tx.db.entry.count());
+    tx.db.entry.insert({ id, value: "posted" });
+  });
+  return new SyncResponse("inserted");
+});
+
+export const get_count = spacetimedb.httpHandler((ctx, _req) => {
+  const count = ctx.withTx(tx => tx.db.entry.count());
+  return new SyncResponse(String(count));
+});
+
+export const any_handler = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("any")
 );
 
-export const router = spacetimedb.http.router(
-  new spacetimedb.http.Router()
-    .get("/echo", get_echo)
-    .post("/echo", post_echo)
+export const header_echo = spacetimedb.httpHandler((_ctx, req) =>
+  new SyncResponse(req.headers.get("x-echo") ?? "")
+);
+
+export const set_response_header = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("header-set", { headers: { "x-response": "set" } })
+);
+
+export const body_handler = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("non-empty")
+);
+
+export const teapot = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("teapot", { status: 418 })
+);
+
+export const router = spacetimedb.httpRouter(
+  new Router()
+    .get("/get", get_simple)
+    .post("/post", post_insert)
+    .get("/count", get_count)
+    .any("/any", any_handler)
+    .get("/header", header_echo)
+    .get("/set-header", set_response_header)
+    .get("/body", body_handler)
+    .get("/teapot", teapot)
+);
+"#;
+
+const TS_EXAMPLE_MODULE_CODE: &str = r#"import { Router, SyncResponse, schema, table, t } from "spacetimedb/server";
+
+const data = table(
+  { name: "data" },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    body: t.array(t.u8()),
+  }
+);
+
+const spacetimedb = schema({ data });
+export default spacetimedb;
+
+export const insert = spacetimedb.httpHandler((ctx, req) => {
+  const body = Array.from(req.bytes());
+  const id = ctx.withTx(tx => tx.db.data.insert({ id: 0n, body }).id);
+  return new SyncResponse(String(id));
+});
+
+export const retrieve = spacetimedb.httpHandler((ctx, req) => {
+  const query = req.uri.split("?", 2)[1] ?? "";
+  const idText = query.startsWith("id=") ? query.slice(3) : "";
+  const id = BigInt(idText);
+  const body = ctx.withTx(tx => tx.db.data.id.find(id)?.body);
+  if (body != null) {
+    return new SyncResponse(new Uint8Array(body));
+  }
+  return new SyncResponse(null, { status: 404 });
+});
+
+export const router = spacetimedb.httpRouter(
+  new Router().post("/insert", insert).get("/retrieve", retrieve)
+);
+"#;
+
+const TS_STRICT_ROOT_ROUTING_MODULE_CODE: &str = r#"import { Router, SyncResponse, schema } from "spacetimedb/server";
+
+const spacetimedb = schema({});
+export default spacetimedb;
+
+export const empty_root = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("empty")
+);
+
+export const slash_root = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("slash")
+);
+
+export const foo = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("foo")
+);
+
+export const foo_slash = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("foo-slash")
+);
+
+export const router = spacetimedb.httpRouter(
+  new Router()
+    .get("", empty_root)
+    .get("/", slash_root)
+    .get("/foo", foo)
+    .get("/foo/", foo_slash)
+);
+"#;
+
+const TS_STRICT_NON_ROOT_ROUTING_MODULE_CODE: &str = r#"import { Router, SyncResponse, schema } from "spacetimedb/server";
+
+const spacetimedb = schema({});
+export default spacetimedb;
+
+export const foo = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("foo")
+);
+
+export const foo_slash = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("foo-slash")
+);
+
+export const router = spacetimedb.httpRouter(
+  new Router()
+    .get("/foo", foo)
+    .get("/foo/", foo_slash)
+);
+"#;
+
+const TS_FULL_URI_MODULE_CODE: &str = r#"import { Router, SyncResponse, schema } from "spacetimedb/server";
+
+const spacetimedb = schema({});
+export default spacetimedb;
+
+export const echo_uri = spacetimedb.httpHandler((_ctx, req) =>
+  new SyncResponse(req.uri)
+);
+
+export const router = spacetimedb.httpRouter(
+  new Router().get("/echo-uri", echo_uri)
+);
+"#;
+
+const TS_HANDLE_REQUEST_BODY_MODULE_CODE: &str = r#"import { Router, SyncResponse, schema } from "spacetimedb/server";
+
+const spacetimedb = schema({});
+export default spacetimedb;
+
+export const reverse_bytes = spacetimedb.httpHandler((_ctx, req) => {
+  const reversed = req.bytes();
+  reversed.reverse();
+  return new SyncResponse(reversed);
+});
+
+export const reverse_words = spacetimedb.httpHandler((_ctx, req) => {
+  let body;
+  try {
+    body = new TextDecoder("utf-8", { fatal: true }).decode(req.bytes());
+  } catch {
+    return new SyncResponse("request body must be valid UTF-8", { status: 400 });
+  }
+
+  const reversed = body.split(" ").reverse().join(" ");
+  return new SyncResponse(reversed);
+});
+
+export const router = spacetimedb.httpRouter(
+  new Router()
+    .post("/reverse-bytes", reverse_bytes)
+    .post("/reverse-words", reverse_words)
 );
 "#;
 
 const NO_SUCH_ROUTE_BODY: &str = "Database has not registered a handler for this route";
 
-fn extract_rust_code_blocks(doc_path: &Path) -> String {
+fn extract_code_blocks(doc_path: &Path, regex_src: &str, language_name: &str) -> String {
     let doc = fs::read_to_string(doc_path).unwrap_or_else(|e| panic!("failed to read {}: {e}", doc_path.display()));
     let doc = doc.replace("\r\n", "\n");
 
-    let re = Regex::new(r"```rust\n([\s\S]*?)\n```").expect("regex should compile");
+    let re = Regex::new(regex_src).expect("regex should compile");
     let blocks: Vec<_> = re
         .captures_iter(&doc)
         .map(|cap| cap.get(1).expect("capture group should exist").as_str().to_string())
@@ -272,19 +436,37 @@ fn extract_rust_code_blocks(doc_path: &Path) -> String {
 
     assert!(
         !blocks.is_empty(),
-        "expected at least one rust code block in {}",
+        "expected at least one {} code block in {}",
+        language_name,
         doc_path.display()
     );
 
     blocks.join("\n\n")
 }
 
-#[test]
-fn http_routes_end_to_end() {
-    let test = Smoketest::builder().module_code(MODULE_CODE).build();
-    let identity = test.database_identity.as_ref().expect("database identity missing");
+fn rust_http_test(module_code: &str) -> (Smoketest, String) {
+    let test = Smoketest::builder().module_code(module_code).build();
+    let identity = test
+        .database_identity
+        .as_ref()
+        .expect("database identity missing")
+        .clone();
+    (test, identity)
+}
 
-    let base = format!("{}/v1/database/{}/route", test.server_url, identity);
+fn typescript_http_test(name: &str, module_code: &str) -> (Smoketest, String) {
+    require_pnpm!();
+    let mut test = Smoketest::builder().autopublish(false).build();
+    let identity = test.publish_typescript_module_source(name, name, module_code).unwrap();
+    (test, identity)
+}
+
+fn route_base(server_url: &str, identity: &str) -> String {
+    format!("{server_url}/v1/database/{identity}/route")
+}
+
+fn assert_http_routes_end_to_end(server_url: &str, identity: &str) {
+    let base = route_base(server_url, identity);
     let client = reqwest::blocking::Client::new();
 
     let resp = client.get(format!("{base}/get")).send().expect("get failed");
@@ -339,10 +521,7 @@ fn http_routes_end_to_end() {
     assert_eq!(resp.text().expect("missing route body"), NO_SUCH_ROUTE_BODY);
 
     let resp = client
-        .get(format!(
-            "{}/v1/database/{}/schema?version=10",
-            test.server_url, identity
-        ))
+        .get(format!("{server_url}/v1/database/{identity}/schema?version=10"))
         .header("authorization", "Bearer not-a-jwt")
         .send()
         .expect("schema request failed");
@@ -356,12 +535,8 @@ fn http_routes_end_to_end() {
     assert!(resp.status().is_success());
 }
 
-#[test]
-fn http_routes_pr_example_round_trip() {
-    let test = Smoketest::builder().module_code(EXAMPLE_MODULE_CODE).build();
-    let identity = test.database_identity.as_ref().expect("database identity missing");
-
-    let base = format!("{}/v1/database/{}/route", test.server_url, identity);
+fn assert_http_routes_pr_example_round_trip(server_url: &str, identity: &str) {
+    let base = route_base(server_url, identity);
     let client = reqwest::blocking::Client::new();
     let payload = b"hello from the PR example".to_vec();
 
@@ -396,14 +571,8 @@ fn http_routes_pr_example_round_trip() {
     assert!(resp.status().is_server_error());
 }
 
-#[test]
-fn http_routes_are_strict_for_non_root_paths() {
-    let test = Smoketest::builder()
-        .module_code(STRICT_NON_ROOT_ROUTING_MODULE_CODE)
-        .build();
-    let identity = test.database_identity.as_ref().expect("database identity missing");
-
-    let base = format!("{}/v1/database/{}/route", test.server_url, identity);
+fn assert_http_routes_are_strict_for_non_root_paths(server_url: &str, identity: &str) {
+    let base = route_base(server_url, identity);
     let client = reqwest::blocking::Client::new();
 
     let resp = client.get(format!("{base}/foo")).send().expect("foo failed");
@@ -426,14 +595,8 @@ fn http_routes_are_strict_for_non_root_paths() {
     assert_eq!(resp.text().expect("double slash foo body"), NO_SUCH_ROUTE_BODY);
 }
 
-#[test]
-fn http_routes_are_strict_for_root_paths() {
-    let test = Smoketest::builder()
-        .module_code(STRICT_ROOT_ROUTING_MODULE_CODE)
-        .build();
-    let identity = test.database_identity.as_ref().expect("database identity missing");
-
-    let base = format!("{}/v1/database/{}/route", test.server_url, identity);
+fn assert_http_routes_are_strict_for_root_paths(server_url: &str, identity: &str) {
+    let base = route_base(server_url, identity);
     let client = reqwest::blocking::Client::new();
 
     let resp = client.get(base.clone()).send().expect("empty root failed");
@@ -445,12 +608,8 @@ fn http_routes_are_strict_for_root_paths() {
     assert_eq!(resp.text().expect("slash root body"), "slash");
 }
 
-#[test]
-fn http_handler_observes_full_external_uri() {
-    let test = Smoketest::builder().module_code(FULL_URI_MODULE_CODE).build();
-    let identity = test.database_identity.as_ref().expect("database identity missing");
-
-    let base = format!("{}/v1/database/{}/route", test.server_url, identity);
+fn assert_http_handler_observes_full_external_uri(server_url: &str, identity: &str) {
+    let base = route_base(server_url, identity);
     let url = format!("{base}/echo-uri?alpha=beta");
     let client = reqwest::blocking::Client::new();
 
@@ -459,14 +618,8 @@ fn http_handler_observes_full_external_uri() {
     assert_eq!(resp.text().expect("echo-uri body"), url);
 }
 
-#[test]
-fn handle_request_body() {
-    let test = Smoketest::builder()
-        .module_code(HANDLE_REQUEST_BODY_MODULE_CODE)
-        .build();
-    let identity = test.database_identity.as_ref().expect("database identity missing");
-
-    let base = format!("{}/v1/database/{}/route", test.server_url, identity);
+fn assert_handle_request_body(server_url: &str, identity: &str) {
+    let base = route_base(server_url, identity);
     let client = reqwest::blocking::Client::new();
 
     let resp = client
@@ -531,66 +684,123 @@ fn handle_request_body() {
 }
 
 #[test]
+fn http_routes_end_to_end() {
+    let (test, identity) = rust_http_test(MODULE_CODE);
+    assert_http_routes_end_to_end(&test.server_url, &identity);
+}
+
+#[test]
+fn http_routes_pr_example_round_trip() {
+    let (test, identity) = rust_http_test(EXAMPLE_MODULE_CODE);
+    assert_http_routes_pr_example_round_trip(&test.server_url, &identity);
+}
+
+#[test]
+fn http_routes_are_strict_for_non_root_paths() {
+    let (test, identity) = rust_http_test(STRICT_NON_ROOT_ROUTING_MODULE_CODE);
+    assert_http_routes_are_strict_for_non_root_paths(&test.server_url, &identity);
+}
+
+#[test]
+fn http_routes_are_strict_for_root_paths() {
+    let (test, identity) = rust_http_test(STRICT_ROOT_ROUTING_MODULE_CODE);
+    assert_http_routes_are_strict_for_root_paths(&test.server_url, &identity);
+}
+
+#[test]
+fn http_handler_observes_full_external_uri() {
+    let (test, identity) = rust_http_test(FULL_URI_MODULE_CODE);
+    assert_http_handler_observes_full_external_uri(&test.server_url, &identity);
+}
+
+#[test]
+fn handle_request_body() {
+    let (test, identity) = rust_http_test(HANDLE_REQUEST_BODY_MODULE_CODE);
+    assert_handle_request_body(&test.server_url, &identity);
+}
+
+#[test]
 fn typescript_http_routes_end_to_end() {
-    require_pnpm!();
+    let (test, identity) = typescript_http_test("http-routes-typescript-basic", TS_MODULE_CODE);
+    assert_http_routes_end_to_end(&test.server_url, &identity);
+}
 
-    let mut test = Smoketest::builder().autopublish(false).build();
-    let identity = test
-        .publish_typescript_module_source(
-            "http-routes-typescript",
-            "http-routes-typescript",
-            TS_HTTP_ROUTES_MODULE,
-        )
-        .unwrap();
+#[test]
+fn typescript_http_routes_pr_example_round_trip() {
+    let (test, identity) = typescript_http_test("http-routes-typescript-example", TS_EXAMPLE_MODULE_CODE);
+    assert_http_routes_pr_example_round_trip(&test.server_url, &identity);
+}
 
-    let base = format!("{}/v1/database/{identity}/route", test.server_url);
-    let client = reqwest::blocking::Client::new();
+#[test]
+fn typescript_http_routes_are_strict_for_non_root_paths() {
+    let (test, identity) = typescript_http_test(
+        "http-routes-typescript-strict-non-root",
+        TS_STRICT_NON_ROOT_ROUTING_MODULE_CODE,
+    );
+    assert_http_routes_are_strict_for_non_root_paths(&test.server_url, &identity);
+}
 
-    let resp = client
-        .get(format!("{base}/echo"))
-        .header("x-echo", "hello")
-        .send()
-        .expect("typescript get echo failed");
-    let get_status = resp.status();
-    let get_headers = resp.headers().clone();
-    let get_body = resp.text().expect("typescript get echo body");
-    assert!(
-        get_status.is_success(),
-        "typescript GET /echo failed: status={get_status} headers={get_headers:?} body={get_body:?}"
-    );
-    assert_eq!(
-        get_headers.get("x-method").and_then(|value| value.to_str().ok()),
-        Some("GET")
-    );
-    assert_eq!(get_body, "hello");
+#[test]
+fn typescript_http_routes_are_strict_for_root_paths() {
+    let (test, identity) =
+        typescript_http_test("http-routes-typescript-strict-root", TS_STRICT_ROOT_ROUTING_MODULE_CODE);
+    assert_http_routes_are_strict_for_root_paths(&test.server_url, &identity);
+}
 
-    let payload = vec![0xFF, 0x00, 0xFE, 0x7F];
-    let resp = client
-        .post(format!("{base}/echo"))
-        .body(payload.clone())
-        .send()
-        .expect("typescript post echo failed");
-    assert_eq!(resp.status().as_u16(), 201);
-    assert_eq!(
-        resp.headers().get("x-method").and_then(|value| value.to_str().ok()),
-        Some("POST")
+#[test]
+fn typescript_http_handler_observes_full_external_uri() {
+    let (test, identity) = typescript_http_test("http-routes-typescript-full-uri", TS_FULL_URI_MODULE_CODE);
+    assert_http_handler_observes_full_external_uri(&test.server_url, &identity);
+}
+
+#[test]
+fn typescript_handle_request_body() {
+    let (test, identity) = typescript_http_test(
+        "http-routes-typescript-request-body",
+        TS_HANDLE_REQUEST_BODY_MODULE_CODE,
     );
-    assert_eq!(
-        resp.bytes().expect("typescript post echo body").as_ref(),
-        payload.as_slice()
-    );
+    assert_handle_request_body(&test.server_url, &identity);
 }
 
 /// Validates the Rust example from `docs/docs/00200-core-concepts/00200-functions/00600-HTTP-handlers.md`.
 #[test]
 fn http_handlers_tutorial_say_hello_route_works() {
-    let module_code = extract_rust_code_blocks(
+    let module_code = extract_code_blocks(
         &workspace_root().join("docs/docs/00200-core-concepts/00200-functions/00600-HTTP-handlers.md"),
+        r"```rust\n([\s\S]*?)\n```",
+        "rust",
     );
     let test = Smoketest::builder().module_code(&module_code).build();
     let identity = test.database_identity.as_ref().expect("database identity missing");
 
     let url = format!("{}/v1/database/{}/route/say-hello", test.server_url, identity);
+    let client = reqwest::blocking::Client::new();
+
+    let resp = client.get(&url).send().expect("say-hello failed");
+    assert!(resp.status().is_success());
+    assert_eq!(resp.text().expect("say-hello body"), "Hello!");
+}
+
+/// Validates the TypeScript example from `docs/docs/00200-core-concepts/00200-functions/00600-HTTP-handlers.md`.
+#[test]
+fn typescript_http_handlers_tutorial_say_hello_route_works() {
+    require_pnpm!();
+
+    let module_code = extract_code_blocks(
+        &workspace_root().join("docs/docs/00200-core-concepts/00200-functions/00600-HTTP-handlers.md"),
+        r"```(?:ts|typescript)\n([\s\S]*?)\n```",
+        "typescript",
+    );
+    let mut test = Smoketest::builder().autopublish(false).build();
+    let identity = test
+        .publish_typescript_module_source(
+            "http-handlers-docs-typescript",
+            "http-handlers-docs-typescript",
+            &module_code,
+        )
+        .unwrap();
+
+    let url = format!("{}/v1/database/{identity}/route/say-hello", test.server_url);
     let client = reqwest::blocking::Client::new();
 
     let resp = client.get(&url).send().expect("say-hello failed");

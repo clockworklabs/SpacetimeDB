@@ -107,15 +107,6 @@ export const HttpMethod = __t.enum('HttpMethod', {
 });
 export type HttpMethod = __Infer<typeof HttpMethod>;
 
-// The tagged union or sum type for the algebraic type `MethodOrAny`.
-export const MethodOrAny = __t.enum('MethodOrAny', {
-  Any: __t.unit(),
-  get Method() {
-    return HttpMethod;
-  },
-});
-export type MethodOrAny = __Infer<typeof MethodOrAny>;
-
 export const HttpRequest = __t.object('HttpRequest', {
   get method() {
     return HttpMethod;
@@ -166,6 +157,15 @@ export const Lifecycle = __t.enum('Lifecycle', {
   OnDisconnect: __t.unit(),
 });
 export type Lifecycle = __Infer<typeof Lifecycle>;
+
+// The tagged union or sum type for the algebraic type `MethodOrAny`.
+export const MethodOrAny = __t.enum('MethodOrAny', {
+  Any: __t.unit(),
+  get Method() {
+    return HttpMethod;
+  },
+});
+export type MethodOrAny = __Infer<typeof MethodOrAny>;
 
 // The tagged union or sum type for the algebraic type `MiscModuleExport`.
 export const MiscModuleExport = __t.enum('MiscModuleExport', {
@@ -247,6 +247,20 @@ export const RawConstraintDefV9 = __t.object('RawConstraintDefV9', {
   },
 });
 export type RawConstraintDefV9 = __Infer<typeof RawConstraintDefV9>;
+
+export const RawHttpHandlerDefV10 = __t.object('RawHttpHandlerDefV10', {
+  sourceName: __t.string(),
+});
+export type RawHttpHandlerDefV10 = __Infer<typeof RawHttpHandlerDefV10>;
+
+export const RawHttpRouteDefV10 = __t.object('RawHttpRouteDefV10', {
+  handlerFunction: __t.string(),
+  get method() {
+    return MethodOrAny;
+  },
+  path: __t.string(),
+});
+export type RawHttpRouteDefV10 = __Infer<typeof RawHttpRouteDefV10>;
 
 // The tagged union or sum type for the algebraic type `RawIndexAlgorithm`.
 export const RawIndexAlgorithm = __t.enum('RawIndexAlgorithm', {
@@ -331,20 +345,6 @@ export const RawModuleDefV10 = __t.object('RawModuleDefV10', {
   },
 });
 export type RawModuleDefV10 = __Infer<typeof RawModuleDefV10>;
-
-export const RawHttpHandlerDefV10 = __t.object('RawHttpHandlerDefV10', {
-  sourceName: __t.string(),
-});
-export type RawHttpHandlerDefV10 = __Infer<typeof RawHttpHandlerDefV10>;
-
-export const RawHttpRouteDefV10 = __t.object('RawHttpRouteDefV10', {
-  handlerFunction: __t.string(),
-  get method() {
-    return MethodOrAny;
-  },
-  path: __t.string(),
-});
-export type RawHttpRouteDefV10 = __Infer<typeof RawHttpRouteDefV10>;
 
 // The tagged union or sum type for the algebraic type `RawModuleDefV10Section`.
 export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {

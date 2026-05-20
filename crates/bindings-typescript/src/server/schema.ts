@@ -1,5 +1,9 @@
 import { moduleHooks, type ModuleDefaultExport } from 'spacetime:sys@2.0';
-import { CaseConversionPolicy, Lifecycle } from '../lib/autogen/types';
+import {
+  CaseConversionPolicy,
+  Lifecycle,
+  type MethodOrAny,
+} from '../lib/autogen/types';
 import {
   type ParamsAsObject,
   type ParamsObj,
@@ -15,6 +19,14 @@ import {
 import type { UntypedTableSchema } from '../lib/table_schema';
 import { ColumnBuilder, TypeBuilder } from '../lib/type_builders';
 import {
+  Router,
+  type HandlerFn,
+  type HttpHandlerExport,
+  type HttpHandlerOpts,
+  makeHttpHandlerExport,
+  makeHttpRouterExport,
+} from './http_handlers';
+import {
   makeProcedureExport,
   type ProcedureExport,
   type ProcedureFn,
@@ -27,11 +39,6 @@ import {
   type ReducerOpts,
   type Reducers,
 } from './reducers';
-import {
-  makeHttpNamespace,
-  type HttpHandlerExport,
-  type HttpHandlers,
-} from './http_handlers';
 import { makeHooks } from './runtime';
 
 import {
@@ -52,22 +59,25 @@ export class SchemaInner<
 > extends ModuleContext {
   schemaType: S;
   existingFunctions = new Set<string>();
+  existingHttpHandlers = new Set<string>();
   reducers: Reducers = [];
-  httpHandlers: HttpHandlers = [];
   procedures: Procedures = [];
   views: Views = [];
   anonViews: AnonViews = [];
+  httpHandlers: HandlerFn[] = [];
   /**
    * Maps ReducerExport objects to the name of the reducer.
    * Used for resolving the reducers of scheduled tables.
    */
   functionExports: Map<
     | ReducerExport<UntypedSchemaDef, any>
-    | HttpHandlerExport
     | ProcedureExport<UntypedSchemaDef, any, any>,
     string
   > = new Map();
+  httpHandlerExports: Map<HttpHandlerExport<UntypedSchemaDef>, string> =
+    new Map();
   pendingSchedules: PendingSchedule[] = [];
+  pendingHttpRoutes: PendingHttpRoute[] = [];
 
   constructor(getSchemaType: (ctx: SchemaInner<S>) => S) {
     super();
@@ -77,10 +87,19 @@ export class SchemaInner<
   defineFunction(name: string) {
     if (this.existingFunctions.has(name)) {
       throw new TypeError(
-        `There is already a reducer or procedure with the name '${name}'`
+        `There is already a reducer, procedure, or view with the name '${name}'`
       );
     }
     this.existingFunctions.add(name);
+  }
+
+  defineHttpHandler(name: string) {
+    if (this.existingHttpHandlers.has(name)) {
+      throw new TypeError(
+        `There is already an HTTP handler with the name '${name}'`
+      );
+    }
+    this.existingHttpHandlers.add(name);
   }
 
   resolveSchedules() {
@@ -98,9 +117,30 @@ export class SchemaInner<
       });
     }
   }
+
+  resolveHttpRoutes() {
+    for (const route of this.pendingHttpRoutes) {
+      const handlerFunction = this.httpHandlerExports.get(route.handler);
+      if (handlerFunction === undefined) {
+        throw new TypeError(
+          `HTTP route for path '${route.path}' refers to a handler that was not exported.`
+        );
+      }
+      this.moduleDef.httpRoutes.push({
+        handlerFunction,
+        method: route.method,
+        path: route.path,
+      });
+    }
+  }
 }
 
 type PendingSchedule = UntypedTableSchema['schedule'] & { tableName: string };
+type PendingHttpRoute = {
+  handler: HttpHandlerExport<UntypedSchemaDef>;
+  method: MethodOrAny;
+  path: string;
+};
 
 /**
  * The Schema class represents the database schema for a SpacetimeDB application.
@@ -138,12 +178,10 @@ type PendingSchedule = UntypedTableSchema['schedule'] & { tableName: string };
 // be the type of the user table.
 export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
   #ctx: SchemaInner<S>;
-  readonly http;
 
   constructor(ctx: SchemaInner<S>) {
     // TODO: TableSchema and TableDef should really be unified
     this.#ctx = ctx;
-    this.http = makeHttpNamespace(this.#ctx);
   }
 
   [moduleHooks](exports: object) {
@@ -162,6 +200,7 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
       moduleExport[registerExport](registeredSchema, name);
     }
     registeredSchema.resolveSchedules();
+    registeredSchema.resolveHttpRoutes();
     return makeHooks(registeredSchema);
   }
 
@@ -465,6 +504,27 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
         break;
     }
     return makeProcedureExport(this.#ctx, opts, params, ret, fn);
+  }
+
+  httpHandler(fn: HandlerFn<S>): HttpHandlerExport<S>;
+  httpHandler(opts: HttpHandlerOpts, fn: HandlerFn<S>): HttpHandlerExport<S>;
+  httpHandler(
+    ...args: [HandlerFn<S>] | [HttpHandlerOpts, HandlerFn<S>]
+  ): HttpHandlerExport<S> {
+    let opts: HttpHandlerOpts | undefined, fn: HandlerFn<S>;
+    switch (args.length) {
+      case 1:
+        [fn] = args;
+        break;
+      case 2:
+        [opts, fn] = args;
+        break;
+    }
+    return makeHttpHandlerExport(this.#ctx, opts, fn);
+  }
+
+  httpRouter(router: Router): ModuleExport {
+    return makeHttpRouterExport(this.#ctx, router);
   }
 
   /**
