@@ -16,7 +16,9 @@ spin = { version = "0.9", default-features = false, features = ["mutex", "spin_m
 libc = { version = "0.2", optional = true }
 
 [dev-dependencies]
+async-channel.workspace = true
 futures.workspace = true
+parking_lot = "0.12"
 
 [features]
 default = ["tokio"]

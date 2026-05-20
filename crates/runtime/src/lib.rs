@@ -14,6 +14,8 @@ use core::{
 pub mod sim;
 #[cfg(feature = "simulation")]
 pub mod sim_std;
+#[cfg(feature = "simulation")]
+pub mod hooks;
 
 #[cfg(feature = "tokio")]
 pub type TokioHandle = tokio::runtime::Handle;

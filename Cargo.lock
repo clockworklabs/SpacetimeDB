@@ -8481,9 +8481,11 @@ dependencies = [
 name = "spacetimedb-runtime"
 version = "2.2.0"
 dependencies = [
+ "async-channel",
  "async-task",
  "futures",
  "libc",
+ "parking_lot 0.12.5",
  "spin",
  "tokio",
 ]
