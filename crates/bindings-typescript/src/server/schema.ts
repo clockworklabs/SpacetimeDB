@@ -50,6 +50,7 @@ import {
 import type { UntypedTableDef } from '../lib/table';
 
 export type MountedDispatchInfo = {
+  namespace: string;
   reducerFns: Reducers;
   reducerDefs: RawReducerDefV10[];
   typespace: Typespace;
@@ -216,6 +217,7 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
     return {
       rawDef,
       dispatch: {
+        namespace: '',
         reducerFns: [...this.#ctx.reducers],
         reducerDefs: [...this.#ctx.moduleDef.reducers],
         typespace: this.#ctx.moduleDef.typespace,
@@ -622,6 +624,19 @@ type ExtractTableEntries<H extends Record<string, SchemaEntry>> = {
   >;
 };
 
+type ExtractMountSchemas<H extends Record<string, SchemaEntry>> = {
+  [K in keyof H as H[K] extends { default: Schema<any> }
+    ? K
+    : never]: H[K] extends { default: Schema<infer S extends UntypedSchemaDef> }
+    ? S
+    : never;
+};
+
+type SchemaDefForEntries<H extends Record<string, SchemaEntry>> =
+  TablesToSchema<ExtractTableEntries<H>> & {
+    namespaces: ExtractMountSchemas<H>;
+  };
+
 function isUntypedTableSchema(x: unknown): x is UntypedTableSchema {
   return typeof x === 'object' && x !== null && hasOwn(x, 'tableDef');
 }
@@ -666,8 +681,8 @@ function registerModuleExports(
 export function schema<const H extends Record<string, SchemaEntry>>(
   entries: H,
   moduleSettings?: ModuleSettings
-): Schema<TablesToSchema<ExtractTableEntries<H>>> {
-  const ctx = new SchemaInner<TablesToSchema<ExtractTableEntries<H>>>(ctx => {
+): Schema<SchemaDefForEntries<H>> {
+  const ctx = new SchemaInner<SchemaDefForEntries<H>>(ctx => {
     // Apply module settings.
     if (moduleSettings?.CASE_CONVERSION_POLICY != null) {
       ctx.setCaseConversionPolicy(moduleSettings.CASE_CONVERSION_POLICY);
@@ -682,6 +697,7 @@ export function schema<const H extends Record<string, SchemaEntry>>(
       }
       if (isMountedModuleNamespace(entry)) {
         const { rawDef, dispatch } = entry.default.buildMountForDispatch(entry);
+        dispatch.namespace = accName;
         ctx.addMount({ namespace: accName, module: rawDef });
         ctx.mountedDispatchInfos.push(dispatch);
         continue;
@@ -728,7 +744,7 @@ export function schema<const H extends Record<string, SchemaEntry>>(
         });
       }
     }
-    return { tables: tableSchemas } as TablesToSchema<ExtractTableEntries<H>>;
+    return { tables: tableSchemas } as SchemaDefForEntries<H>;
   });
 
   return new Schema(ctx);
@@ -758,7 +774,7 @@ export function merge(
     default: Schema<any>;
   };
   const tables: Record<string, UntypedTableDef> = {};
-  for (const td of Object.values(libSchema.schemaType.tables)) {
+  for (const td of Object.values(libSchema.schemaType.tables) as UntypedTableDef[]) {
     tables[td.accessorName] = td;
   }
   return { ...tables, ...(namedExports as Record<string, ModuleExport>) };

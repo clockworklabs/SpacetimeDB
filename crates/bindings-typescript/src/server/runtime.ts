@@ -40,7 +40,7 @@ import { type RowType, type Table, type TableMethods } from '../lib/table';
 import { hasOwn } from '../lib/util';
 import { type AnonymousViewCtx, type ViewCtx } from './views';
 import { isRowTypedQuery, makeQueryBuilder, toSql } from './query';
-import type { DbView } from './db_view';
+import type { DbView, ReadonlyDbView } from './db_view';
 import { getErrorConstructor, SenderError } from './errors';
 import { Range, type Bound } from './range';
 import { makeRandom, type Random } from './rng';
@@ -206,7 +206,7 @@ export const ReducerCtxImpl = class ReducerCtx<
     this.sender = sender;
     this.timestamp = timestamp;
     this.connectionId = connectionId;
-    this.db = dbView;
+    this.db = dbView as unknown as DbView<SchemaDef>;
   }
 
   /** Reset the `ReducerCtx` to be used for a new transaction */
@@ -330,14 +330,19 @@ class ModuleHooksImpl implements ModuleHooks {
   }
 
   get #dbView() {
-    return (this.#dbView_ ??= freeze(
-      Object.fromEntries(
-        Object.values(this.#schema.schemaType.tables).map(table => [
-          table.accessorName,
-          makeTableView(this.#schema.typespace, table.tableDef),
-        ])
-      )
-    ));
+    if (this.#dbView_ !== undefined) return this.#dbView_;
+    const rootTables = Object.values(this.#schema.schemaType.tables).map(
+      table => [
+        table.accessorName,
+        makeTableView(this.#schema.typespace, table.tableDef),
+      ]
+    );
+    const mountNs = this.#schema.mountedDispatchInfos.map(dispatch => [
+      dispatch.namespace,
+      buildDbViewForDispatch(dispatch),
+    ]);
+    this.#dbView_ = freeze(Object.fromEntries([...rootTables, ...mountNs])) as DbView<any>;
+    return this.#dbView_;
   }
 
   #getMountDbView(mountIdx: number): DbView<any> {
@@ -348,7 +353,7 @@ class ModuleHooksImpl implements ModuleHooks {
           accessorName,
           makeTableView(m.typespace, tableDef),
         ])
-      )
+      ) as DbView<any>
     ));
   }
 
@@ -436,7 +441,7 @@ class ModuleHooksImpl implements ModuleHooks {
       // this is the non-readonly DbView, but the typing for the user will be
       // the readonly one, and if they do call mutating functions it will fail
       // at runtime
-      db: this.#dbView,
+      db: this.#dbView as ReadonlyDbView<any>,
       from: makeQueryBuilder(moduleCtx.schemaType),
     });
     const args = deserializeParams(new BinaryReader(argsBuf));
@@ -460,7 +465,7 @@ class ModuleHooksImpl implements ModuleHooks {
       // this is the non-readonly DbView, but the typing for the user will be
       // the readonly one, and if they do call mutating functions it will fail
       // at runtime
-      db: this.#dbView,
+      db: this.#dbView as ReadonlyDbView<any>,
       from: makeQueryBuilder(moduleCtx.schemaType),
     });
     const args = deserializeParams(new BinaryReader(argsBuf));
@@ -490,13 +495,25 @@ class ModuleHooksImpl implements ModuleHooks {
       ConnectionId.nullIfZero(new ConnectionId(connection_id)),
       new Timestamp(timestamp),
       args,
-      () => this.#dbView
+      () => this.#dbView as DbView<any>
     );
   }
 }
 
 const BINARY_WRITER = new BinaryWriter(0);
 const BINARY_READER = new BinaryReader(new Uint8Array());
+
+function buildDbViewForDispatch(dispatch: MountedDispatchInfo): object {
+  const tableEntries = dispatch.tables.map(({ accessorName, tableDef }) => [
+    accessorName,
+    makeTableView(dispatch.typespace, tableDef),
+  ]);
+  const subNsEntries = dispatch.subDispatches.map(sub => [
+    sub.namespace,
+    buildDbViewForDispatch(sub),
+  ]);
+  return freeze(Object.fromEntries([...tableEntries, ...subNsEntries]));
+}
 
 function makeTableView(
   typespace: Typespace,

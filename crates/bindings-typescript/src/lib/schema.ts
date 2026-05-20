@@ -52,6 +52,7 @@ export type TableNamesOf<S extends UntypedSchemaDef> = Values<
  */
 export type UntypedSchemaDef = {
   tables: Record<string, UntypedTableDef>;
+  namespaces?: Record<string, UntypedSchemaDef>;
 };
 
 /**

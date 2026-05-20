@@ -262,4 +262,43 @@ describe('schema mounts', () => {
     expect(reducerNames).toContain('authReducer');
     expect(reducerNames).toContain('utilReducer');
   });
+
+  it('mountedDispatchInfos carry namespace and nested namespace dispatches propagate', () => {
+    const sessions = table(
+      { name: 'sessions' },
+      { id: t.u64().primaryKey().autoInc() }
+    );
+    const authSchema = schema({ sessions });
+    const authLib = { default: authSchema };
+
+    const players = table({ name: 'players' }, { id: t.u32().primaryKey() });
+    const consumer = schema({ players, myauth: authLib });
+
+    const infos = consumer.mountedDispatchInfos;
+    expect(infos).toHaveLength(1);
+    expect(infos[0].namespace).toBe('myauth');
+    expect(infos[0].tables[0].accessorName).toBe('sessions');
+  });
+
+  it('nested mounts carry their own namespace on subDispatches', () => {
+    const bazTable = table({ name: 'baz_items' }, { id: t.u32().primaryKey() });
+    const bazSchema = schema({ bazTable });
+    const bazLib = { default: bazSchema };
+
+    const sessions = table(
+      { name: 'sessions' },
+      { id: t.u64().primaryKey().autoInc() }
+    );
+    const authSchema = schema({ sessions, baz: bazLib });
+    const authLib = { default: authSchema };
+
+    const players = table({ name: 'players' }, { id: t.u32().primaryKey() });
+    const consumer = schema({ players, myauth: authLib });
+
+    const authInfo = consumer.mountedDispatchInfos[0];
+    expect(authInfo.namespace).toBe('myauth');
+    expect(authInfo.subDispatches).toHaveLength(1);
+    expect(authInfo.subDispatches[0].namespace).toBe('baz');
+    expect(authInfo.subDispatches[0].tables[0].accessorName).toBe('bazTable');
+  });
 });
