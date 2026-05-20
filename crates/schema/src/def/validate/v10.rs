@@ -2277,8 +2277,6 @@ mod tests {
         assert_eq!(schedule.function_kind, FunctionKind::Reducer);
     }
 
-    // ─── Namespace 63-char limit ───────────────────────────────────────────────
-
     #[test]
     fn namespace_exactly_63_chars_is_ok() {
         let namespace = "a".repeat(63);
@@ -2307,8 +2305,6 @@ mod tests {
             ns == &expected_ns && len == &64usize
         });
     }
-
-    // ─── Cross-mount lifecycle conflict detection ──────────────────────────────
 
     fn make_module_with_lifecycle(lifecycle: Lifecycle) -> RawModuleDefV10 {
         let mut b = RawModuleDefV10Builder::new();
