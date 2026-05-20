@@ -12,7 +12,7 @@ import type {
 } from './type_builders';
 import type { Values } from './type_util';
 import type { Bool as SatsBool } from './algebraic_type_variants';
-import type { Uuid } from './uuid';
+import { Uuid } from './uuid';
 
 /**
  * Helper to get the set of table names.
@@ -102,8 +102,7 @@ type SemijoinBuilder<TableDef extends TypedTableDef> = RowTypedQuery<
   }>;
 
 class SemijoinImpl<TableDef extends TypedTableDef>
-  implements SemijoinBuilder<TableDef>, TableTypedQuery<TableDef>
-{
+  implements SemijoinBuilder<TableDef>, TableTypedQuery<TableDef> {
   readonly [QueryBrand] = true;
   readonly type = 'semijoin' as const;
   constructor(
@@ -160,13 +159,12 @@ class SemijoinImpl<TableDef extends TypedTableDef>
 }
 
 class FromBuilder<TableDef extends TypedTableDef>
-  implements From<TableDef>, TableTypedQuery<TableDef>
-{
+  implements From<TableDef>, TableTypedQuery<TableDef> {
   readonly [QueryBrand] = true;
   constructor(
     readonly table: TableRef<TableDef>,
     readonly whereClause?: BooleanExpr<TableDef>
-  ) {}
+  ) { }
 
   where(
     predicate: (row: RowExpr<TableDef>) => PredicateExpr<TableDef>
@@ -242,8 +240,7 @@ export type TableRef<TableDef extends TypedTableDef> = Readonly<{
 }>;
 
 class TableRefImpl<TableDef extends TypedTableDef>
-  implements TableRef<TableDef>, From<TableDef>
-{
+  implements TableRef<TableDef>, From<TableDef> {
   readonly [QueryBrand] = true;
   readonly type = 'table' as const;
   sourceName: string;
@@ -399,8 +396,8 @@ type RowType<TableDef extends TypedTableDef> = {
     any,
     any
   >
-    ? T
-    : never;
+  ? T
+  : never;
 };
 
 // TODO: Consider making a smaller version of these types that doesn't expose the internals.
@@ -412,8 +409,8 @@ export type ColumnExpr<
 
 type ColumnSpacetimeType<Col extends ColumnExpr<any, any>> =
   Col extends ColumnExpr<infer T, infer N>
-    ? InferSpacetimeTypeOfColumn<T, N>
-    : never;
+  ? InferSpacetimeTypeOfColumn<T, N>
+  : never;
 
 // TODO: This checks that they match, but we also need to make sure that they are comparable types,
 // since you can use product types at all.
@@ -425,10 +422,10 @@ type ColumnSameSpacetime<
   ColumnSpacetimeType<OtherCol>,
 ]
   ? [ColumnSpacetimeType<OtherCol>] extends [
-      InferSpacetimeTypeOfColumn<ThisTable, ThisCol>,
-    ]
-    ? OtherCol
-    : never
+    InferSpacetimeTypeOfColumn<ThisTable, ThisCol>,
+  ]
+  ? OtherCol
+  : never
   : never;
 
 // Helper to get the table back from a column.
@@ -563,8 +560,8 @@ type InferSpacetimeTypeOfColumn<
     any,
     infer U
   >
-    ? U
-    : never;
+  ? U
+  : never;
 
 type ColumnNames<TableDef extends TypedTableDef> = keyof RowType<TableDef> &
   string;
@@ -572,16 +569,16 @@ type ColumnNames<TableDef extends TypedTableDef> = keyof RowType<TableDef> &
 // For composite indexes, we only consider it as an index over the first column in the index.
 type FirstIndexColumn<I extends IndexOpts<any>> =
   IndexColumns<I> extends readonly [infer Head extends string, ...infer _Rest]
-    ? Head
-    : never;
+  ? Head
+  : never;
 
 // Columns that are indexed by something in the indexes: [...] part.
 type ExplicitIndexedColumns<TableDef extends TypedTableDef> =
   TableDef['indexes'][number] extends infer I
-    ? I extends IndexOpts<ColumnNames<TableDef>>
-      ? FirstIndexColumn<I> & ColumnNames<TableDef>
-      : never
-    : never;
+  ? I extends IndexOpts<ColumnNames<TableDef>>
+  ? FirstIndexColumn<I> & ColumnNames<TableDef>
+  : never
+  : never;
 
 // Columns with an index defined on the column definition.
 type MetadataIndexedColumns<TableDef extends TypedTableDef> = {
@@ -589,8 +586,8 @@ type MetadataIndexedColumns<TableDef extends TypedTableDef> = {
     K,
     TableDef['columns'][K]['columnMetadata']
   > extends never
-    ? never
-    : K;
+  ? never
+  : K;
 }[ColumnNames<TableDef>];
 
 export type IndexedColumnNames<TableDef extends TypedTableDef> =
@@ -614,8 +611,8 @@ export type RowExpr<TableDef extends TypedTableDef> = Readonly<{
  */
 export type ColumnExprForValue<Table extends TypedTableDef, Value> = {
   [C in ColumnNames<Table>]: InferSpacetimeTypeOfColumn<Table, C> extends Value
-    ? ColumnExpr<Table, C>
-    : never;
+  ? ColumnExpr<Table, C>
+  : never;
 }[ColumnNames<Table>];
 
 type LiteralValue =
@@ -690,30 +687,30 @@ type EqExpr<Table extends TypedTableDef = any> = BooleanExpr<Table>;
 
 type BooleanExprData<Table extends TypedTableDef> = (
   | {
-      type: 'eq' | 'ne' | 'gt' | 'lt' | 'gte' | 'lte';
-      left: ValueExpr<Table, any>;
-      right: ValueExpr<Table, any>;
-    }
+    type: 'eq' | 'ne' | 'gt' | 'lt' | 'gte' | 'lte';
+    left: ValueExpr<Table, any>;
+    right: ValueExpr<Table, any>;
+  }
   | {
-      type: 'and';
-      clauses: readonly [
-        BooleanExprData<Table>,
-        BooleanExprData<Table>,
-        ...BooleanExprData<Table>[],
-      ];
-    }
+    type: 'and';
+    clauses: readonly [
+      BooleanExprData<Table>,
+      BooleanExprData<Table>,
+      ...BooleanExprData<Table>[],
+    ];
+  }
   | {
-      type: 'or';
-      clauses: readonly [
-        BooleanExprData<Table>,
-        BooleanExprData<Table>,
-        ...BooleanExprData<Table>[],
-      ];
-    }
+    type: 'or';
+    clauses: readonly [
+      BooleanExprData<Table>,
+      BooleanExprData<Table>,
+      ...BooleanExprData<Table>[],
+    ];
+  }
   | {
-      type: 'not';
-      clause: BooleanExprData<Table>;
-    }
+    type: 'not';
+    clause: BooleanExprData<Table>;
+  }
 ) & {
   _tableType?: Table;
 };
@@ -727,12 +724,12 @@ type RequireSameAndOrTable<
   Actual extends TypedTableDef,
 > = [Expected] extends [Actual]
   ? [Actual] extends [Expected]
-    ? unknown
-    : AndOrMixedTableScopeError
+  ? unknown
+  : AndOrMixedTableScopeError
   : AndOrMixedTableScopeError;
 
 export class BooleanExpr<Table extends TypedTableDef> {
-  constructor(readonly data: BooleanExprData<Table>) {}
+  constructor(readonly data: BooleanExprData<Table>) { }
 
   and<OtherTable extends TypedTableDef>(
     other: BooleanExpr<OtherTable> & RequireSameAndOrTable<Table, OtherTable>
@@ -859,6 +856,9 @@ function literalValueToSql(value: unknown): string {
   }
   if (value instanceof Timestamp) {
     return `'${value.toISOString()}'`;
+  }
+  if (value instanceof Uuid) {
+    return value.toString();
   }
   switch (typeof value) {
     case 'number':
