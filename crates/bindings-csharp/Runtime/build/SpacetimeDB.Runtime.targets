@@ -146,6 +146,13 @@
     <Exec Command="tar -xf &quot;$(WasiSdkDownloadTempFile)&quot; -C &quot;$(WasiSdkRoot)&quot; --strip-components=1" Condition="'$(_HasValidWasiSdkFromEnv)' != 'true' and !Exists('$(WasiClang)')" />
 
     <Message Importance="high" Text="Using WASI SDK from $(WasiSdkRoot)" />
+
+    <!-- Suppress the hardcoded wasi-sdk version check in .NET 10's WasiApp.targets (which
+         requires exactly 25.0). We manage wasi-sdk ourselves and support newer versions. -->
+    <PropertyGroup>
+      <_FoundExpectedWasiSdkVersion>true</_FoundExpectedWasiSdkVersion>
+      <_IsToolchainMissing>false</_IsToolchainMissing>
+    </PropertyGroup>
   </Target>
 
   <!-- Fix IL1034: ILLink's PrepareForILLink target unconditionally adds RootMode="EntryPoint"
