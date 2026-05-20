@@ -29,7 +29,12 @@ pub struct DurabilityConfig {
 #[derive(Clone, Copy, Debug, Default, serde::Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub struct CommitlogConfig {
+    pub log_format_version: Option<u8>,
     pub max_segment_size: Option<NonZeroU64>,
+    #[serde(alias = "offset-interval-bytes")]
+    pub offset_index_interval_bytes: Option<NonZeroU64>,
+    #[serde(alias = "offset-index-require-fsync")]
+    pub offset_index_require_segment_fsync: Option<bool>,
     pub preallocate_segments: Option<bool>,
     pub write_buffer_size: Option<NonZeroUsize>,
 }
@@ -44,8 +49,17 @@ impl DurabilityConfig {
 
 impl CommitlogConfig {
     fn apply_to(self, opts: &mut spacetimedb_commitlog::Options) {
+        if let Some(log_format_version) = self.log_format_version {
+            opts.log_format_version = log_format_version;
+        }
         if let Some(max_segment_size) = self.max_segment_size {
             opts.max_segment_size = max_segment_size.get();
+        }
+        if let Some(offset_index_interval_bytes) = self.offset_index_interval_bytes {
+            opts.offset_index_interval_bytes = offset_index_interval_bytes;
+        }
+        if let Some(offset_index_require_segment_fsync) = self.offset_index_require_segment_fsync {
+            opts.offset_index_require_segment_fsync = offset_index_require_segment_fsync;
         }
         if let Some(preallocate_segments) = self.preallocate_segments {
             opts.preallocate_segments = preallocate_segments;
