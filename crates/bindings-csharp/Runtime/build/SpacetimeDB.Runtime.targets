@@ -12,8 +12,12 @@
 
   <!-- Override IlcLlvmTarget AFTER the ILCompiler.LLVM.targets import (which defaults to wasip2).
        SpacetimeDB's host only supports WASI Preview 1 (wasip1). -->
+  <!-- Also suppress the Mono/WasiApp.targets pipeline entirely: it only applies to the Mono JIT
+       path and must not run for NativeAOT-LLVM. Set these after SDK targets so they take effect. -->
   <PropertyGroup Condition="'$(_UseNativeAotLlvm)' == 'true'">
     <IlcLlvmTarget>wasm32-unknown-wasip1</IlcLlvmTarget>
+    <IsWasiProject>false</IsWasiProject>
+    <WasmGenerateAppBundle>false</WasmGenerateAppBundle>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(_UseNativeAotLlvm)' == 'true'">
