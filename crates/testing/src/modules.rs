@@ -101,7 +101,8 @@ impl ModuleHandle {
     }
 
     pub async fn recv_message(&mut self) -> Option<OutboundMessage> {
-        self.receiver.recv().await
+        let mut buf = Vec::with_capacity(1);
+        (self.receiver.recv_many(&mut buf, 1).await != 0).then(|| buf.remove(0))
     }
 
     pub async fn recv_reducer_update(&mut self, request_id: RequestId) -> anyhow::Result<()> {

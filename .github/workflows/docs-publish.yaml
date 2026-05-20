@@ -20,7 +20,7 @@ jobs:
         with:
           node-version: '22'
       
-      - uses: pnpm/action-setup@v4
+      - uses: ./.github/actions/setup-pnpm
         with:
           run_install: true
 
