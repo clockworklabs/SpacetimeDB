@@ -29,7 +29,7 @@ inline void RegisterHttpHandlerMacro(const char* handler_name, Func func) {
         [func](HandlerContext& ctx, HttpRequest request) -> HttpResponse {
             return func(ctx, std::move(request));
         };
-    RegisterHttpHandlerHandler(handler_name, reinterpret_cast<const void*>(func), std::move(handler));
+    RegisterHttpHandlerHandler(handler_name, func, std::move(handler));
     getV10Builder().RegisterHttpHandlerDef(handler_name);
 }
 

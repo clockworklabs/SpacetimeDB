@@ -20,6 +20,8 @@ struct HttpResponse;
 
 namespace Internal {
 
+using HttpHandlerSymbol = HttpResponse (*)(HandlerContext, HttpRequest);
+
 void RegisterReducerHandler(const std::string& name,
                            std::function<void(ReducerContext&, BytesSource)> handler,
                            std::optional<Lifecycle> lifecycle = std::nullopt);
@@ -30,9 +32,9 @@ void RegisterAnonymousViewHandler(const std::string& name,
 void RegisterProcedureHandler(const std::string& name,
                              std::function<std::vector<uint8_t>(ProcedureContext&, BytesSource)> handler);
 void RegisterHttpHandlerHandler(const std::string& name,
-                               const void* handler_symbol,
+                               HttpHandlerSymbol handler_symbol,
                                std::function<HttpResponse(HandlerContext&, HttpRequest)> handler);
-std::string LookupHttpHandlerName(const void* handler_symbol);
+std::string LookupHttpHandlerName(HttpHandlerSymbol handler_symbol);
 size_t GetViewHandlerCount();
 size_t GetAnonymousViewHandlerCount();
 size_t GetProcedureHandlerCount();

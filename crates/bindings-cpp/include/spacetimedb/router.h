@@ -228,8 +228,7 @@ private:
 
     template<typename Func>
     static std::string resolve_handler_name(Func handler) {
-        const void* symbol = reinterpret_cast<const void*>(handler);
-        return Internal::LookupHttpHandlerName(symbol);
+        return Internal::LookupHttpHandlerName(handler);
     }
 };
 

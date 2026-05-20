@@ -63,7 +63,7 @@ namespace Internal {
 
     struct HttpHandler {
         std::string name;
-        const void* symbol;
+        HttpHandlerSymbol symbol;
         std::function<HttpResponse(HandlerContext&, HttpRequest)> handler;
     };
     static std::vector<HttpHandler> g_http_handlers;
@@ -130,12 +130,12 @@ namespace Internal {
     }
 
     void RegisterHttpHandlerHandler(const std::string& name,
-                                    const void* handler_symbol,
+                                    HttpHandlerSymbol handler_symbol,
                                     std::function<HttpResponse(HandlerContext&, HttpRequest)> handler) {
         g_http_handlers.push_back({name, handler_symbol, handler});
     }
 
-    std::string LookupHttpHandlerName(const void* handler_symbol) {
+    std::string LookupHttpHandlerName(HttpHandlerSymbol handler_symbol) {
         auto it = std::find_if(g_http_handlers.begin(), g_http_handlers.end(), [&](const auto& existing) {
             return existing.symbol == handler_symbol;
         });
@@ -726,4 +726,3 @@ void Module::RegisterExplicitIndexName(const std::string& source_name, const std
 
 
  
-
