@@ -238,7 +238,7 @@ The offset index is controlled by two parameters:
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `offset_index_interval_bytes` | 4,096 | An index entry is written whenever this many bytes have been flushed to the active segment. |
-| `offset_index_require_segment_fsync` | false | If true, the segment must be synced to disk before an index entry is written. |
+| `offset_index_require_segment_fsync` | true | If true, the segment must be synced to disk before an index entry is written. |
 
 ## Wire Format
 
