@@ -408,6 +408,11 @@ impl ModuleDef {
         self.lifecycle_reducers[lifecycle].map(|i| (i, &self.reducers[i.idx()]))
     }
 
+    /// All lifecycle reducer assignments for this module (does not include mounted submodules).
+    pub fn lifecycle_reducers_map(&self) -> &EnumMap<Lifecycle, Option<ReducerId>> {
+        &self.lifecycle_reducers
+    }
+
     /// Returns a `DeserializeSeed` that can pull data from a `Deserializer` for `def`.
     pub fn arg_seed_for<'a, T>(&'a self, def: &'a T) -> ArgsSeed<'a, T> {
         ArgsSeed(self.typespace.with_type(def))
