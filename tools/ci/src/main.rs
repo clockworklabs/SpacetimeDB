@@ -225,6 +225,9 @@ fn check_pnpm_release_age_policy() -> Result<()> {
     }
 
     for npmrc_path in git_tracked_files(":(glob)**/.npmrc")? {
+        // Template package roots are copied into projects created by `spacetime init`.
+        // They must not embed this repo's package-age policy; smoketests enforce it
+        // at the pnpm process boundary instead.
         if is_template_path(&npmrc_path) {
             continue;
         }
@@ -240,6 +243,9 @@ fn check_pnpm_release_age_policy() -> Result<()> {
     }
 
     for package_json_path in git_tracked_files(":(glob)**/package.json")? {
+        // Template package roots are copied into projects created by `spacetime init`.
+        // They must not require adjacent .npmrc files for this repo's package-age
+        // policy; smoketests enforce it at the pnpm process boundary instead.
         if is_template_path(&package_json_path) {
             continue;
         }
