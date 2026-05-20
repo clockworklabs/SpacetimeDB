@@ -1313,16 +1313,15 @@ struct V2OutboundMessage {
 
 /// Convert an outbound message into the binary websocket schema.
 ///
-/// Binary websocket connections should only receive v2 server messages. Error
-/// messages are still represented by the v1 type in the internal send path, so
-/// they are dropped here instead of being sent to a binary client.
+/// v2 connections should only receive v2 server messages.
+/// v1 messages are dropped.
+///
+/// TODO: For better type safety, [`ClientConnectionReceiver`] should be made
+/// generic over the protocol version.
 fn v2_outbound_message(message: OutboundWsMessage) -> Option<V2OutboundMessage> {
     let message = match message {
         OutboundWsMessage::Error(message) => {
-            log::error!(
-                "dropping v1 error message sent to a binary websocket client: {:?}",
-                message
-            );
+            log::error!("dropping v1 error message on v2 connection: {:?}", message);
             return None;
         }
         OutboundWsMessage::Message(message) => message,
@@ -1332,7 +1331,7 @@ fn v2_outbound_message(message: OutboundWsMessage) -> Option<V2OutboundMessage> 
     match message {
         OutboundMessage::V2(message) => Some(V2OutboundMessage { message, num_rows }),
         OutboundMessage::V1(message) => {
-            log::error!("dropping v1 message for a binary websocket connection: {:?}", message);
+            log::error!("dropping v1 message on v2 connection: {:?}", message);
             None
         }
     }
