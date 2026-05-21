@@ -2,7 +2,6 @@ on:
   push:
     branches:
       - master
-      - jgilles/fix-callgrind-again
 
   workflow_dispatch:
     inputs:
@@ -24,8 +23,10 @@ jobs:
   benchmark:
     name: run criterion benchmarks
     runs-on: benchmarks-runner
+    # disable until we fix the benchmarks
+    if: false
     # filter for a comment containing 'benchmarks please'
-    if: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(github.event.comment.body, 'benchmarks please')) }}
+    #if: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(github.event.comment.body, 'benchmarks please')) }}
     env:
       PR_NUMBER: ${{ github.event.inputs.pr_number || github.event.issue.number || null }}
     steps:
@@ -185,8 +186,10 @@ jobs:
     container:
       image: rust:1.93.0
       options: --privileged
+    # disable until we fix the benchmarks
+    if: false
     # filter for a comment containing 'benchmarks please'
-    if: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(github.event.comment.body, 'benchmarks please')) }}
+    #if: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(github.event.comment.body, 'benchmarks please')) }}
     env:
       PR_NUMBER: ${{ github.event.inputs.pr_number || github.event.issue.number || null }}
     steps:
