@@ -1,5 +1,5 @@
 use regex::Regex;
-use spacetimedb_smoketests::{require_emscripten, workspace_root, Smoketest};
+use spacetimedb_smoketests::{require_dotnet, require_emscripten, workspace_root, Smoketest};
 use std::{fs, path::Path};
 
 const MODULE_CODE: &str = r#"
@@ -559,6 +559,315 @@ SPACETIMEDB_HTTP_ROUTER(router) {
 }
 "#;
 
+const CS_MODULE_CODE: &str = r#"
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using SpacetimeDB;
+
+#pragma warning disable STDB_UNSTABLE
+public static partial class Module
+{
+    [SpacetimeDB.Table(Accessor = "Entry", Name = "entry", Public = true)]
+    public partial struct Entry
+    {
+        [SpacetimeDB.PrimaryKey]
+        public ulong Id;
+
+        public string Value;
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse GetSimple(HandlerContext ctx, HttpRequest request)
+    {
+        return TextResponse(200, "ok");
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse PostInsert(HandlerContext ctx, HttpRequest request)
+    {
+        ctx.WithTx((HandlerTxContext tx) =>
+        {
+            var id = tx.Db.Entry.Count;
+            tx.Db.Entry.Insert(new Entry { Id = id, Value = "posted" });
+            return 0;
+        });
+        return TextResponse(200, "inserted");
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse GetCount(HandlerContext ctx, HttpRequest request)
+    {
+        var count = ctx.WithTx((HandlerTxContext tx) => tx.Db.Entry.Count);
+        return TextResponse(200, count.ToString());
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse AnyHandler(HandlerContext ctx, HttpRequest request)
+    {
+        return TextResponse(200, "any");
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse HeaderEcho(HandlerContext ctx, HttpRequest request)
+    {
+        return TextResponse(200, HeaderValueUtf8(request, "x-echo"));
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse SetResponseHeader(HandlerContext ctx, HttpRequest request)
+    {
+        return new HttpResponse(
+            200,
+            HttpVersion.Http11,
+            new List<HttpHeader> { new("x-response", "set") },
+            HttpBody.FromString("header-set")
+        );
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse BodyHandler(HandlerContext ctx, HttpRequest request)
+    {
+        return TextResponse(200, "non-empty");
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse Teapot(HandlerContext ctx, HttpRequest request)
+    {
+        return TextResponse(418, "teapot");
+    }
+
+    [SpacetimeDB.HttpRouter]
+    public static Router Router() =>
+        SpacetimeDB.Router.New()
+            .Get("/get", Handlers.GetSimple)
+            .Post("/post", Handlers.PostInsert)
+            .Get("/count", Handlers.GetCount)
+            .Any("/any", Handlers.AnyHandler)
+            .Get("/header", Handlers.HeaderEcho)
+            .Get("/set-header", Handlers.SetResponseHeader)
+            .Get("/body", Handlers.BodyHandler)
+            .Get("/teapot", Handlers.Teapot);
+
+    private static string HeaderValueUtf8(HttpRequest request, string headerName)
+    {
+        foreach (var header in request.Headers)
+        {
+            if (string.Equals(header.Name, headerName, StringComparison.OrdinalIgnoreCase))
+            {
+                return Encoding.UTF8.GetString(header.Value);
+            }
+        }
+        return string.Empty;
+    }
+
+    private static HttpResponse TextResponse(ushort statusCode, string body) =>
+        new(
+            statusCode,
+            HttpVersion.Http11,
+            new List<HttpHeader>(),
+            HttpBody.FromString(body)
+        );
+}
+"#;
+
+const CS_EXAMPLE_MODULE_CODE: &str = r#"
+using System.Collections.Generic;
+using SpacetimeDB;
+
+#pragma warning disable STDB_UNSTABLE
+public static partial class Module
+{
+    [SpacetimeDB.Table(Accessor = "Data", Name = "data", Public = true)]
+    public partial struct Data
+    {
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
+        public ulong Id;
+
+        public byte[] Body;
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse Insert(HandlerContext ctx, HttpRequest request)
+    {
+        var body = request.Body.ToBytes();
+        var id = ctx.WithTx((HandlerTxContext tx) => tx.Db.Data.Insert(new Data { Id = 0, Body = body }).Id);
+        return TextResponse(200, id.ToString());
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse Retrieve(HandlerContext ctx, HttpRequest request)
+    {
+        var idText = request.Uri.Split("id=", 2)[1];
+        var id = ulong.Parse(idText);
+        var body = ctx.WithTx((HandlerTxContext tx) => tx.Db.Data.Id.Find(id)?.Body);
+
+        if (body is not null)
+        {
+            return BytesResponse(200, body);
+        }
+
+        return new HttpResponse(404, HttpVersion.Http11, new List<HttpHeader>(), HttpBody.Empty);
+    }
+
+    [SpacetimeDB.HttpRouter]
+    public static Router Router() =>
+        SpacetimeDB.Router.New()
+            .Post("/insert", Handlers.Insert)
+            .Get("/retrieve", Handlers.Retrieve);
+
+    private static HttpResponse BytesResponse(ushort statusCode, byte[] body) =>
+        new(statusCode, HttpVersion.Http11, new List<HttpHeader>(), new HttpBody(body));
+
+    private static HttpResponse TextResponse(ushort statusCode, string body) =>
+        new(statusCode, HttpVersion.Http11, new List<HttpHeader>(), HttpBody.FromString(body));
+}
+"#;
+
+const CS_STRICT_ROOT_ROUTING_MODULE_CODE: &str = r#"
+using System.Collections.Generic;
+using SpacetimeDB;
+
+public static partial class Module
+{
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse EmptyRoot(HandlerContext ctx, HttpRequest request)
+    {
+        return TextResponse("empty");
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse SlashRoot(HandlerContext ctx, HttpRequest request)
+    {
+        return TextResponse("slash");
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse Foo(HandlerContext ctx, HttpRequest request)
+    {
+        return TextResponse("foo");
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse FooSlash(HandlerContext ctx, HttpRequest request)
+    {
+        return TextResponse("foo-slash");
+    }
+
+    [SpacetimeDB.HttpRouter]
+    public static Router Router() =>
+        SpacetimeDB.Router.New()
+            .Get("", Handlers.EmptyRoot)
+            .Get("/", Handlers.SlashRoot)
+            .Get("/foo", Handlers.Foo)
+            .Get("/foo/", Handlers.FooSlash);
+
+    private static HttpResponse TextResponse(string body) =>
+        new(200, HttpVersion.Http11, new List<HttpHeader>(), HttpBody.FromString(body));
+}
+"#;
+
+const CS_STRICT_NON_ROOT_ROUTING_MODULE_CODE: &str = r#"
+using System.Collections.Generic;
+using SpacetimeDB;
+
+public static partial class Module
+{
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse Foo(HandlerContext ctx, HttpRequest request)
+    {
+        return TextResponse("foo");
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse FooSlash(HandlerContext ctx, HttpRequest request)
+    {
+        return TextResponse("foo-slash");
+    }
+
+    [SpacetimeDB.HttpRouter]
+    public static Router Router() =>
+        SpacetimeDB.Router.New()
+            .Get("/foo", Handlers.Foo)
+            .Get("/foo/", Handlers.FooSlash);
+
+    private static HttpResponse TextResponse(string body) =>
+        new(200, HttpVersion.Http11, new List<HttpHeader>(), HttpBody.FromString(body));
+}
+"#;
+
+const CS_FULL_URI_MODULE_CODE: &str = r#"
+using System.Collections.Generic;
+using SpacetimeDB;
+
+public static partial class Module
+{
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse EchoUri(HandlerContext ctx, HttpRequest request)
+    {
+        return new HttpResponse(
+            200,
+            HttpVersion.Http11,
+            new List<HttpHeader>(),
+            HttpBody.FromString(request.Uri)
+        );
+    }
+
+    [SpacetimeDB.HttpRouter]
+    public static Router Router() =>
+        SpacetimeDB.Router.New().Get("/echo-uri", Handlers.EchoUri);
+}
+"#;
+
+const CS_HANDLE_REQUEST_BODY_MODULE_CODE: &str = r#"
+using System;
+using System.Collections.Generic;
+using System.Text;
+using SpacetimeDB;
+
+public static partial class Module
+{
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse ReverseBytes(HandlerContext ctx, HttpRequest request)
+    {
+        var reversed = request.Body.ToBytes();
+        Array.Reverse(reversed);
+        return BytesResponse(200, reversed);
+    }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse ReverseWords(HandlerContext ctx, HttpRequest request)
+    {
+        string body;
+        try
+        {
+            body = new UTF8Encoding(false, true).GetString(request.Body.ToBytes());
+        }
+        catch (DecoderFallbackException)
+        {
+            return TextResponse(400, "request body must be valid UTF-8");
+        }
+
+        var reversed = string.Join(" ", body.Split(' ').Reverse());
+        return TextResponse(200, reversed);
+    }
+
+    [SpacetimeDB.HttpRouter]
+    public static Router Router() =>
+        SpacetimeDB.Router.New()
+            .Post("/reverse-bytes", Handlers.ReverseBytes)
+            .Post("/reverse-words", Handlers.ReverseWords);
+
+    private static HttpResponse BytesResponse(ushort statusCode, byte[] body) =>
+        new(statusCode, HttpVersion.Http11, new List<HttpHeader>(), new HttpBody(body));
+
+    private static HttpResponse TextResponse(ushort statusCode, string body) =>
+        new(statusCode, HttpVersion.Http11, new List<HttpHeader>(), HttpBody.FromString(body));
+}
+"#;
+
 const NO_SUCH_ROUTE_BODY: &str = "Database has not registered a handler for this route";
 
 fn extract_code_blocks(doc_path: &Path, regex_src: &str, language_name: &str) -> String {
@@ -595,6 +904,12 @@ fn cpp_http_test(name: &str, module_code: &str) -> (Smoketest, String) {
     require_emscripten!();
     let mut test = Smoketest::builder().autopublish(false).build();
     let identity = test.publish_cpp_module_source(name, name, module_code).unwrap();
+    (test, identity)
+}
+
+fn csharp_http_test(name: &str, module_code: &str) -> (Smoketest, String) {
+    let mut test = Smoketest::builder().autopublish(false).build();
+    let identity = test.publish_csharp_module_source(name, name, module_code).unwrap();
     (test, identity)
 }
 
@@ -863,8 +1178,22 @@ fn cpp_http_routes_end_to_end() {
 }
 
 #[test]
+fn csharp_http_routes_end_to_end() {
+    require_dotnet!();
+    let (test, identity) = csharp_http_test("http-routes-csharp-basic", CS_MODULE_CODE);
+    assert_http_routes_end_to_end(&test.server_url, &identity);
+}
+
+#[test]
 fn cpp_http_routes_pr_example_round_trip() {
     let (test, identity) = cpp_http_test("http-routes-cpp-example", CPP_EXAMPLE_MODULE_CODE);
+    assert_http_routes_pr_example_round_trip(&test.server_url, &identity);
+}
+
+#[test]
+fn csharp_http_routes_pr_example_round_trip() {
+    require_dotnet!();
+    let (test, identity) = csharp_http_test("http-routes-csharp-example", CS_EXAMPLE_MODULE_CODE);
     assert_http_routes_pr_example_round_trip(&test.server_url, &identity);
 }
 
@@ -878,8 +1207,25 @@ fn cpp_http_routes_are_strict_for_non_root_paths() {
 }
 
 #[test]
+fn csharp_http_routes_are_strict_for_non_root_paths() {
+    require_dotnet!();
+    let (test, identity) = csharp_http_test(
+        "http-routes-csharp-strict-non-root",
+        CS_STRICT_NON_ROOT_ROUTING_MODULE_CODE,
+    );
+    assert_http_routes_are_strict_for_non_root_paths(&test.server_url, &identity);
+}
+
+#[test]
 fn cpp_http_routes_are_strict_for_root_paths() {
     let (test, identity) = cpp_http_test("http-routes-cpp-strict-root", CPP_STRICT_ROOT_ROUTING_MODULE_CODE);
+    assert_http_routes_are_strict_for_root_paths(&test.server_url, &identity);
+}
+
+#[test]
+fn csharp_http_routes_are_strict_for_root_paths() {
+    require_dotnet!();
+    let (test, identity) = csharp_http_test("http-routes-csharp-strict-root", CS_STRICT_ROOT_ROUTING_MODULE_CODE);
     assert_http_routes_are_strict_for_root_paths(&test.server_url, &identity);
 }
 
@@ -890,8 +1236,22 @@ fn cpp_http_handler_observes_full_external_uri() {
 }
 
 #[test]
+fn csharp_http_handler_observes_full_external_uri() {
+    require_dotnet!();
+    let (test, identity) = csharp_http_test("http-routes-csharp-full-uri", CS_FULL_URI_MODULE_CODE);
+    assert_http_handler_observes_full_external_uri(&test.server_url, &identity);
+}
+
+#[test]
 fn cpp_handle_request_body() {
     let (test, identity) = cpp_http_test("http-routes-cpp-request-body", CPP_HANDLE_REQUEST_BODY_MODULE_CODE);
+    assert_handle_request_body(&test.server_url, &identity);
+}
+
+#[test]
+fn csharp_handle_request_body() {
+    require_dotnet!();
+    let (test, identity) = csharp_http_test("http-routes-csharp-request-body", CS_HANDLE_REQUEST_BODY_MODULE_CODE);
     assert_handle_request_body(&test.server_url, &identity);
 }
 
@@ -930,6 +1290,25 @@ fn cpp_http_handlers_tutorial_say_hello_route_works() {
         .unwrap();
 
     let url = format!("{}/v1/database/{identity}/route/say-hello", test.server_url);
+    let client = reqwest::blocking::Client::new();
+
+    let resp = client.get(&url).send().expect("say-hello failed");
+    assert!(resp.status().is_success());
+    assert_eq!(resp.text().expect("say-hello body"), "Hello!");
+}
+
+/// Validates the C# example from `docs/docs/00200-core-concepts/00200-functions/00600-HTTP-handlers.md`.
+#[test]
+fn csharp_http_handlers_tutorial_say_hello_route_works() {
+    require_dotnet!();
+    let module_code = extract_code_blocks(
+        &workspace_root().join("docs/docs/00200-core-concepts/00200-functions/00600-HTTP-handlers.md"),
+        r"```csharp\n([\s\S]*?)\n```",
+        "csharp",
+    );
+    let (test, identity) = csharp_http_test("http-handlers-docs-csharp", &module_code);
+
+    let url = format!("{}/v1/database/{}/route/say-hello", test.server_url, identity);
     let client = reqwest::blocking::Client::new();
 
     let resp = client.get(&url).send().expect("say-hello failed");
