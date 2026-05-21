@@ -7,6 +7,8 @@ POLL_SECONDS="${POLL_SECONDS:-300}"
 STARTUP_SECONDS="${STARTUP_SECONDS:-60}"
 TEST_SUITE_TIMEOUT_SECONDS="${TEST_SUITE_TIMEOUT_SECONDS:-5400}"
 BATCH_FAILURE_MIN_TESTS="${BATCH_FAILURE_MIN_TESTS:-6}"
+SMOKETEST_JOB_NAME="${SMOKETEST_JOB_NAME:-Smoketests (Linux)}"
+TEST_SUITE_JOB_NAME="${TEST_SUITE_JOB_NAME:-Test Suite}"
 STATE_DIR="${STATE_DIR:-}"
 RUN_ID="${RUN_ID:-}"
 DRY_RUN=0
@@ -15,9 +17,9 @@ usage() {
 	cat <<'EOF'
 Usage: tools/monitor-pr-ci-flakes.sh [options]
 
-Monitor the current branch PR's CI workflow until Smoketests and Test Suite
-complete successfully TARGET times in a row, ignoring known non-actionable
-leader-election batch failures and Test Suite timeouts/cancellations.
+Monitor the current branch PR's CI workflow until the configured smoketest and
+test suite jobs complete successfully TARGET times in a row, ignoring known
+non-actionable leader-election batch failures and test suite timeouts/cancellations.
 
 Options:
   --target N                         Consecutive successful runs required.
@@ -29,6 +31,8 @@ Options:
   -h, --help                         Show this help.
 
 Environment variables with the same upper-case names may also be used.
+SMOKETEST_JOB_NAME defaults to "Smoketests (Linux)".
+TEST_SUITE_JOB_NAME defaults to "Test Suite".
 EOF
 }
 
@@ -194,9 +198,10 @@ wait_for_ci_run() {
 }
 
 target_jobs_json() {
-	gh run view "$RUN_ID" --json jobs --jq '
+	gh run view "$RUN_ID" --json jobs \
+		| jq --arg smoketest "$SMOKETEST_JOB_NAME" --arg test_suite "$TEST_SUITE_JOB_NAME" '
 		.jobs
-		| map(select(.name == "Smoketests" or .name == "Test Suite"))
+		| map(select(.name == $smoketest or .name == $test_suite))
 		| group_by(.name)
 		| map(max_by(.startedAt))
 	'
@@ -206,7 +211,7 @@ job_field() {
 	local jobs="$1"
 	local name="$2"
 	local field="$3"
-	jq -r ".[] | select(.name == \"$name\") | .$field // empty" <<<"$jobs"
+	jq -r --arg name "$name" --arg field "$field" '.[] | select(.name == $name) | .[$field] // empty' <<<"$jobs"
 }
 
 epoch_seconds() {
@@ -259,7 +264,7 @@ rerun_workflow() {
 }
 
 cancel_run_for_timeout() {
-	log "cancelling run $RUN_ID after Test Suite exceeded ${TEST_SUITE_TIMEOUT_SECONDS}s"
+	log "cancelling run $RUN_ID after ${TEST_SUITE_JOB_NAME} exceeded ${TEST_SUITE_TIMEOUT_SECONDS}s"
 	if [[ "$DRY_RUN" != "1" ]]; then
 		gh run cancel "$RUN_ID" || true
 		gh run watch "$RUN_ID" --exit-status >/dev/null 2>&1 || true
@@ -303,7 +308,7 @@ if [[ -z "$RUN_ID" ]]; then
 	RUN_ID="$(wait_for_ci_run)"
 fi
 
-log "monitoring PR #${pr_number} ($pr_url) branch=$branch head=$head_sha run=$RUN_ID target=$TARGET"
+log "monitoring PR #${pr_number} ($pr_url) branch=$branch head=$head_sha run=$RUN_ID target=$TARGET jobs=${SMOKETEST_JOB_NAME}|${TEST_SUITE_JOB_NAME}"
 
 if [[ "$DRY_RUN" == "1" ]]; then
 	jobs="$(target_jobs_json)"
@@ -338,7 +343,7 @@ while [[ "$streak" -lt "$TARGET" ]]; do
 	failed_names=()
 	failed_jobs=()
 
-	for name in "Smoketests" "Test Suite"; do
+	for name in "$SMOKETEST_JOB_NAME" "$TEST_SUITE_JOB_NAME"; do
 		job="$(job_field "$jobs" "$name" databaseId)"
 		status="$(job_field "$jobs" "$name" status)"
 		conclusion="$(job_field "$jobs" "$name" conclusion)"
@@ -346,14 +351,14 @@ while [[ "$streak" -lt "$TARGET" ]]; do
 		completed_at="$(job_field "$jobs" "$name" completedAt)"
 		log "$name job=$job status=$status conclusion=${conclusion:-none} started=${started_at:-none} completed=${completed_at:-none}"
 
-		if [[ "$name" == "Test Suite" && "$status" != "completed" && -n "$started_at" ]]; then
+		if [[ "$name" == "$TEST_SUITE_JOB_NAME" && "$status" != "completed" && -n "$started_at" ]]; then
 			now="$(date -u +%s)"
 			started_epoch="$(epoch_seconds "$started_at")"
 			age=$((now - started_epoch))
 			if [[ "$age" -gt "$TEST_SUITE_TIMEOUT_SECONDS" ]]; then
 				ignored_count=$((ignored_count + 1))
 				save_state
-				log "Test Suite has run for ${age}s; treating as ignored timeout"
+				log "${TEST_SUITE_JOB_NAME} has run for ${age}s; treating as ignored timeout"
 				cancel_run_for_timeout
 				rerun_workflow
 				RUN_ID="$(wait_for_ci_run)"
@@ -375,9 +380,9 @@ while [[ "$streak" -lt "$TARGET" ]]; do
 	done
 
 	if [[ "$all_success" -eq 1 ]]; then
-		smoke_job="$(job_field "$jobs" "Smoketests" databaseId)"
-		test_job="$(job_field "$jobs" "Test Suite" databaseId)"
-		success_key="Smoketests:${smoke_job}|Test Suite:${test_job}"
+		smoke_job="$(job_field "$jobs" "$SMOKETEST_JOB_NAME" databaseId)"
+		test_job="$(job_field "$jobs" "$TEST_SUITE_JOB_NAME" databaseId)"
+		success_key="${SMOKETEST_JOB_NAME}:${smoke_job}|${TEST_SUITE_JOB_NAME}:${test_job}"
 
 		if [[ "$success_key" != "$last_counted_key" ]]; then
 			streak=$((streak + 1))
@@ -389,7 +394,7 @@ while [[ "$streak" -lt "$TARGET" ]]; do
 		fi
 
 		if [[ "$streak" -ge "$TARGET" ]]; then
-			notify "PR #${pr_number}: did not see an actionable Smoketests/Test Suite flake in ${TARGET} consecutive runs."
+			notify "PR #${pr_number}: did not see an actionable ${SMOKETEST_JOB_NAME}/${TEST_SUITE_JOB_NAME} flake in ${TARGET} consecutive runs."
 			log "success: reached $TARGET consecutive successful target runs"
 			exit 0
 		fi
@@ -420,8 +425,8 @@ while [[ "$streak" -lt "$TARGET" ]]; do
 			job="${failed_jobs[$i]}"
 			conclusion="$(job_field "$jobs" "$name" conclusion)"
 
-			if [[ "$name" == "Test Suite" ]] && [[ "$conclusion" == "cancelled" || "$conclusion" == "timed_out" ]]; then
-				log "ignoring Test Suite conclusion=$conclusion"
+			if [[ "$name" == "$TEST_SUITE_JOB_NAME" ]] && [[ "$conclusion" == "cancelled" || "$conclusion" == "timed_out" ]]; then
+				log "ignoring ${TEST_SUITE_JOB_NAME} conclusion=$conclusion"
 				continue
 			fi
 
