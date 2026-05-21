@@ -9,6 +9,7 @@ use crate::auth::{
     SpacetimeIdentityToken,
 };
 use crate::routes::subscribe::generate_random_connection_id;
+use crate::util::serde::humantime_duration;
 pub use crate::util::{ByteStringBody, NameOrIdentity};
 use crate::{
     log_and_500, Action, Authorization, ControlStateDelegate, DatabaseDef, DatabaseResetDef, Host, MaybeMisdirected,
@@ -20,6 +21,7 @@ use axum::response::{ErrorResponse, IntoResponse};
 use axum::routing::MethodRouter;
 use axum::Extension;
 use axum_extra::TypedHeader;
+use derive_more::From;
 use futures::TryStreamExt;
 use http::StatusCode;
 use http_body_util::BodyExt;
@@ -27,7 +29,7 @@ use log::{info, warn};
 use serde::Deserialize;
 use spacetimedb::auth::identity::ConnectionAuthCtx;
 use spacetimedb::database_logger::DatabaseLogger;
-use spacetimedb::host::module_host::ClientConnectedError;
+use spacetimedb::host::module_host::{ClientConnectedError, DurabilityExited};
 use spacetimedb::host::{CallResult, UpdateDatabaseResult};
 use spacetimedb::host::{FunctionArgs, MigratePlanResult};
 use spacetimedb::host::{ModuleHost, ReducerOutcome};
@@ -46,6 +48,9 @@ use spacetimedb_lib::{sats, AlgebraicValue, Hash, ProductValue, Timestamp};
 use spacetimedb_schema::auto_migrate::{
     MigrationPolicy as SchemaMigrationPolicy, MigrationToken, PrettyPrintStyle as AutoMigratePrettyPrintStyle,
 };
+use tokio::sync::oneshot;
+use tokio::time::error::Elapsed;
+use tokio::time::timeout;
 
 use super::subscribe::{handle_websocket, HasWebSocketOptions};
 
@@ -485,7 +490,7 @@ async fn find_leader_and_database<S: ControlStateDelegate + NodeDelegate>(
             NO_SUCH_DATABASE
         })?;
 
-    let leader = worker_ctx.leader(database.id).await.map_err(log_and_500)?;
+    let leader = worker_ctx.leader(database.id).await.map_err(Into::into)?;
 
     Ok((leader, database))
 }
@@ -893,7 +898,32 @@ pub struct PublishDatabaseQueryParams {
     parent: Option<NameOrIdentity>,
     #[serde(alias = "org")]
     organization: Option<NameOrIdentity>,
+    /// Duration to wait for a database update to become confirmed (i.e. durable).
+    ///
+    /// The value is parsed via the `humantime` crate, e.g. "1m", "23s", "5min".
+    ///
+    /// If not given, defaults to [default_update_confirmation_timeout].
+    /// The maximum timeout is capped by [MAX_UPDATE_CONFIRMATION_TIMEOUT].
+    ///
+    /// The parameter has no effect when creating a new database.
+    #[serde(with = "humantime_duration", default = "default_update_confirmation_timeout")]
+    update_confirmation_timeout: Duration,
 }
+
+/// Default timeout for a database update to become confirmed / durable.
+///
+/// Currently, the value is 5s.
+const fn default_update_confirmation_timeout() -> Duration {
+    Duration::from_secs(5)
+}
+
+/// Maximum timeout for a database update to become confirmed / durable.
+///
+/// If a replication group doesn't converge within this time span, it is
+/// probably not making progress at all.
+///
+/// Currently, the value is 5min.
+const MAX_UPDATE_CONFIRMATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
     State(ctx): State<S>,
@@ -906,6 +936,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         host_type,
         parent,
         organization,
+        update_confirmation_timeout: confirmation_timeout,
     }): Query<PublishDatabaseQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     program_bytes: Bytes,
@@ -1021,6 +1052,13 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         .await
         .map_err(log_and_500)?;
 
+    let success = || {
+        axum::Json(PublishResult::Success {
+            domain: db_name.cloned(),
+            database_identity,
+            op: publish_op,
+        })
+    };
     match maybe_updated {
         Some(UpdateDatabaseResult::AutoMigrateError(errs)) => {
             Err(bad_request(format!("Database update rejected: {errs}").into()))
@@ -1028,16 +1066,58 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         Some(UpdateDatabaseResult::ErrorExecutingMigration(err)) => Err(bad_request(
             format!("Failed to create or update the database: {err}").into(),
         )),
-        None
-        | Some(
-            UpdateDatabaseResult::NoUpdateNeeded
-            | UpdateDatabaseResult::UpdatePerformed
-            | UpdateDatabaseResult::UpdatePerformedWithClientDisconnect,
-        ) => Ok(axum::Json(PublishResult::Success {
-            domain: db_name.cloned(),
-            database_identity,
-            op: publish_op,
-        })),
+        None | Some(UpdateDatabaseResult::NoUpdateNeeded) => Ok(success()),
+        Some(
+            UpdateDatabaseResult::UpdatePerformed {
+                tx_offset,
+                durable_offset,
+            }
+            | UpdateDatabaseResult::UpdatePerformedWithClientDisconnect {
+                tx_offset,
+                durable_offset,
+            },
+        ) => {
+            timeout(confirmation_timeout.min(MAX_UPDATE_CONFIRMATION_TIMEOUT), async {
+                let tx_offset = tx_offset.await?;
+                if let Some(mut durable_offset) = durable_offset {
+                    durable_offset.wait_for(tx_offset).await?;
+                }
+
+                Ok::<_, UpdateConfirmationError>(())
+            })
+            .await
+            .map_err(Into::into)
+            .flatten()?;
+
+            Ok(success())
+        }
+    }
+}
+
+#[derive(From)]
+enum UpdateConfirmationError {
+    Cancelled(oneshot::error::RecvError),
+    Crashed(DurabilityExited),
+    Timeout(Elapsed),
+}
+
+impl From<UpdateConfirmationError> for ErrorResponse {
+    fn from(e: UpdateConfirmationError) -> Self {
+        match e {
+            UpdateConfirmationError::Cancelled(_) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Database update failed: transaction was cancelled",
+            ),
+            UpdateConfirmationError::Crashed(_) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Database update failed: database crashed while waiting for transaction confirmation",
+            ),
+            UpdateConfirmationError::Timeout(_) => (
+                StatusCode::GATEWAY_TIMEOUT,
+                "Database update failed: timeout waiting for transaction confirmation",
+            ),
+        }
+        .into()
     }
 }
 
@@ -1426,6 +1506,12 @@ pub struct DatabaseRoutes<S> {
     pub db_reset: MethodRouter<S>,
     /// GET: /database/: name_or_identity/unstable/timestamp
     pub timestamp_get: MethodRouter<S>,
+    /// ANY: /database/:name_or_identity/route
+    pub http_route_root: MethodRouter<S>,
+    /// ANY: /database/:name_or_identity/route/
+    pub http_route_root_slash: MethodRouter<S>,
+    /// ANY: /database/:name_or_identity/route/*path
+    pub http_route: MethodRouter<S>,
 }
 
 impl<S> Default for DatabaseRoutes<S>
@@ -1433,7 +1519,7 @@ where
     S: NodeDelegate + ControlStateDelegate + HasWebSocketOptions + Authorization + Clone + 'static,
 {
     fn default() -> Self {
-        use axum::routing::{delete, get, post, put};
+        use axum::routing::{any, delete, get, post, put};
         Self {
             root_post: post(publish::<S>),
             db_put: put(publish::<S>),
@@ -1451,6 +1537,9 @@ where
             pre_publish: post(pre_publish::<S>),
             db_reset: put(reset::<S>),
             timestamp_get: get(get_timestamp::<S>),
+            http_route_root: any(handle_http_route_root::<S>),
+            http_route_root_slash: any(handle_http_route_root_slash::<S>),
+            http_route: any(handle_http_route::<S>),
         }
     }
 }
@@ -1460,8 +1549,6 @@ where
     S: NodeDelegate + ControlStateDelegate + Authorization + Clone + 'static,
 {
     pub fn into_router(self, ctx: S) -> axum::Router<S> {
-        use axum::routing::any;
-
         let db_router = axum::Router::<S>::new()
             .route("/", self.db_put)
             .route("/", self.db_get)
@@ -1497,9 +1584,9 @@ where
         // Authorization headers do not trigger early rejection or attach SpacetimeAuth.
         // Keep these routes merged separately from the authenticated database router.
         let http_route_router = axum::Router::<S>::new()
-            .route("/:name_or_identity/route", any(handle_http_route_root::<S>))
-            .route("/:name_or_identity/route/", any(handle_http_route_root_slash::<S>))
-            .route("/:name_or_identity/route/*path", any(handle_http_route::<S>));
+            .route("/:name_or_identity/route", self.http_route_root)
+            .route("/:name_or_identity/route/", self.http_route_root_slash)
+            .route("/:name_or_identity/route/*path", self.http_route);
 
         axum::Router::new()
             .merge(authed_root_router)

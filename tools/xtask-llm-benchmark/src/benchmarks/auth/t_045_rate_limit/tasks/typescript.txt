@@ -1,0 +1,23 @@
+Write a SpacetimeDB backend module in TypeScript that enforces per-identity rate limiting.
+
+TABLES
+- rate_limit
+  - private table
+  - Fields:
+    - identity: Identity (primary key)
+    - last_call_us: number (u64, microsecond timestamp of the last allowed call)
+
+- action_log
+  - public table
+  - Fields:
+    - id: number (u64, primary key, autoInc)
+    - identity: Identity
+    - payload: string
+
+REDUCERS
+- limited_action(ctx, { payload: string })
+  - Get the current time in microseconds: ctx.timestamp.microsSinceUnixEpoch (a BigInt)
+  - Look up the rate_limit row for ctx.sender
+  - If a row exists and (now - last_call_us) < 1_000_000n, throw "rate limited"
+  - Insert or update the rate_limit row with last_call_us = now
+  - Insert an action_log row with identity = ctx.sender and the given payload, id = 0n for autoInc

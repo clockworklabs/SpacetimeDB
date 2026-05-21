@@ -49,6 +49,8 @@ impl ServerDataDir {
         pidfile.file.set_len(0)?;
         write!(pidfile.file, "{}", std::process::id())?;
         pidfile.file.flush()?;
+        pidfile.file.sync_data()?;
+
         Ok(pidfile)
     }
 

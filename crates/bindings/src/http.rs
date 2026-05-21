@@ -7,7 +7,7 @@
 
 use crate::{
     rt::{read_bytes_source_as, read_bytes_source_into},
-    IterBuf, ReducerContext, StdbRng, Timestamp, TxContext,
+    try_with_tx, with_tx, IterBuf, StdbRng, Timestamp, TxContext,
 };
 use bytes::Bytes;
 #[cfg(feature = "rand")]
@@ -39,7 +39,7 @@ pub type Response<T = Body> = http::Response<T>;
 ///
 /// In order to be reachable, a handler must be registered in the database's [macro@router].
 ///
-/// This macro will clobber the original function definition, making it no longer callable by name.
+/// This macro will shadow the original function definition, making it no longer callable by name.
 ///
 /// ```compile_fail
 /// # use spacetimedb::http::{handler, Request, Response, Body, HandlerContext};
@@ -51,7 +51,7 @@ pub type Response<T = Body> = http::Response<T>;
 /// # let ctx: HandlerContext = todo!();
 /// # let ctx: &mut HandlerContext = &mut ctx;
 /// # let req: Request = todo!();
-/// hello_world(ctx, req); // Won't compile, as our handler `hello_world`'s function was clobbered.
+/// hello_world(ctx, req); // Won't compile, as our handler `hello_world`'s function was shadowed.
 /// # }
 /// ```
 #[doc(inline)]
@@ -117,57 +117,12 @@ impl HandlerContext {
 
     /// Acquire a mutable transaction and execute `body` with read-write access.
     pub fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
-        use core::convert::Infallible;
-        match self.try_with_tx::<T, Infallible>(|tx| Ok(body(tx))) {
-            Ok(v) => v,
-            Err(e) => match e {},
-        }
+        with_tx(body)
     }
 
     /// Acquire a mutable transaction and execute `body` with read-write access.
     pub fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
-        let abort = || {
-            crate::sys::procedure::procedure_abort_mut_tx()
-                .expect("should have a pending mutable anon tx as `procedure_start_mut_tx` preceded")
-        };
-
-        let run = || {
-            let timestamp = crate::sys::procedure::procedure_start_mut_tx()
-                .expect("holding `&mut HandlerContext`, so should not be in a tx already; called manually elsewhere?");
-            let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp);
-
-            // Use the internal auth context (no external caller identity).
-            let tx = ReducerContext::new(crate::Local {}, Identity::ZERO, None, timestamp);
-            let tx = TxContext(tx);
-
-            struct DoOnDrop<F: Fn()>(F);
-            impl<F: Fn()> Drop for DoOnDrop<F> {
-                fn drop(&mut self) {
-                    (self.0)();
-                }
-            }
-            let abort_guard = DoOnDrop(abort);
-            let res = body(&tx);
-            core::mem::forget(abort_guard);
-            res
-        };
-
-        let mut res = run();
-
-        match res {
-            Ok(_) if crate::sys::procedure::procedure_commit_mut_tx().is_err() => {
-                log::warn!("committing anonymous transaction failed");
-                res = run();
-                match res {
-                    Ok(_) => crate::sys::procedure::procedure_commit_mut_tx().expect("transaction retry failed again"),
-                    Err(_) => abort(),
-                }
-            }
-            Ok(_) => {}
-            Err(_) => abort(),
-        }
-
-        res
+        try_with_tx(body)
     }
 
     /// Create a new random [`Uuid`] `v4` using the built-in RNG.
@@ -259,7 +214,7 @@ pub(crate) struct RouteSpec {
 impl Router {
     /// Returns a new, empty `Router`.
     pub fn new() -> Self {
-        Self { routes: Vec::new() }
+        Self::default()
     }
 
     /// Registers `handler` to handle `GET` requests at `path`.

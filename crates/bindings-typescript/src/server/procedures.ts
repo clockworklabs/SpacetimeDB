@@ -75,6 +75,8 @@ export interface ProcedureOpts {
 
 export interface ProcedureCtx<S extends UntypedSchemaDef> {
   readonly sender: Identity;
+  readonly databaseIdentity: Identity;
+  /** @deprecated Use `databaseIdentity` instead. */
   readonly identity: Identity;
   readonly timestamp: Timestamp;
   readonly connectionId: ConnectionId | null;
@@ -195,8 +197,12 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
     this.#dbView = dbView;
   }
 
-  get identity() {
+  get databaseIdentity() {
     return (this.#identity ??= new Identity(sys.identity()));
+  }
+
+  get identity() {
+    return this.databaseIdentity;
   }
 
   get random() {

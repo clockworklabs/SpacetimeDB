@@ -12,7 +12,8 @@ pub mod messages;
 
 pub use client_connection::{
     ClientConfig, ClientConnection, ClientConnectionReceiver, ClientConnectionSender, ClientSendError, DataMessage,
-    MeteredDeque, MeteredReceiver, MeteredSender, Protocol, WsVersion,
+    MeteredDeque, MeteredReceiver, MeteredSender, MeteredUnboundedReceiver, MeteredUnboundedSender, Protocol,
+    WsVersion,
 };
 pub use client_connection_index::ClientActorIndex;
 pub use message_handlers::MessageHandleError;

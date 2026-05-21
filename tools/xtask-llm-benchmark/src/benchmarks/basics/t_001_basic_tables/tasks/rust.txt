@@ -1,4 +1,4 @@
-﻿Write a SpacetimeDB backend module in Rust that defines three tables with basic columns.
+Write a SpacetimeDB backend module in Rust that defines three tables with basic columns.
 
 TABLES
 - user

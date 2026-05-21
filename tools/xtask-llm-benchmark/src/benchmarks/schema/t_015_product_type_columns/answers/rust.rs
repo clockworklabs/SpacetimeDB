@@ -15,7 +15,8 @@ pub struct Position {
 #[table(accessor = profile)]
 pub struct Profile {
     #[primary_key]
-    pub id: i32,
+    #[auto_inc]
+    pub id: u64,
     pub home: Address,
     pub work: Address,
     pub pos: Position,
@@ -24,7 +25,7 @@ pub struct Profile {
 #[reducer]
 pub fn seed(ctx: &ReducerContext) {
     ctx.db.profile().insert(Profile {
-        id: 1,
+        id: 0,
         home: Address {
             street: "1 Main".into(),
             zip: 11111,
