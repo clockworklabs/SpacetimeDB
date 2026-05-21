@@ -70,7 +70,7 @@ pub struct Options {
     /// If `true`, require that the segment must be synced to disk before an
     /// index entry is added.
     ///
-    /// Setting this to `false` (the default) will update the index every
+    /// Setting this to `false` will update the index every
     /// `offset_index_interval_bytes`, even if the commitlog wasn't synced.
     /// This means that the index could contain non-existent entries in the
     /// event of a crash.
@@ -80,7 +80,7 @@ pub struct Options {
     /// This means that the index could contain fewer index entries than
     /// strictly every `offset_index_interval_bytes`.
     ///
-    /// Default: false
+    /// Default: true
     #[cfg_attr(
         feature = "serde",
         serde(default = "Options::default_offset_index_require_segment_fsync")
@@ -95,7 +95,7 @@ pub struct Options {
     /// Size in bytes of the memory buffer holding commit data before flushing
     /// to storage.
     ///
-    /// Default: 8KiB
+    /// Default: 128KiB
     #[cfg_attr(feature = "serde", serde(default = "Options::default_write_buffer_size"))]
     pub write_buffer_size: usize,
 }
@@ -111,7 +111,7 @@ impl Options {
     pub const DEFAULT_OFFSET_INDEX_INTERVAL_BYTES: NonZeroU64 = NonZeroU64::new(4096).expect("4096 > 0, qed");
     pub const DEFAULT_OFFSET_INDEX_REQUIRE_SEGMENT_FSYNC: bool = true;
     pub const DEFAULT_PREALLOCATE_SEGMENTS: bool = false;
-    pub const DEFAULT_WRITE_BUFFER_SIZE: usize = 8 * 1024;
+    pub const DEFAULT_WRITE_BUFFER_SIZE: usize = 128 * 1024;
 
     pub const DEFAULT: Self = Self {
         log_format_version: DEFAULT_LOG_FORMAT_VERSION,
