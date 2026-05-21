@@ -8200,7 +8200,6 @@ name = "spacetimedb-durability"
 version = "2.2.0"
 dependencies = [
  "anyhow",
- "async-channel",
  "futures",
  "itertools 0.12.1",
  "log",

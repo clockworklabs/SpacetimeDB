@@ -100,7 +100,7 @@ where
     ///
     /// The queue is bounded to
     /// `Options::QUEUE_CAPACITY_MULTIPLIER * Options::batch_capacity`.
-    queue: async_channel::Sender<PreparedTx<Txdata<T>>>,
+    queue: spacetimedb_runtime::channel::Sender<PreparedTx<Txdata<T>>>,
     /// How many transactions are pending durability, including items buffered
     /// in the queue and items currently being written by the actor.
     ///
@@ -167,7 +167,7 @@ where
         lock: Option<LockedFile>,
     ) -> Result<Self, OpenError> {
         let queue_capacity = opts.queue_capacity();
-        let (queue, txdata_rx) = async_channel::bounded(queue_capacity);
+        let (queue, txdata_rx) = spacetimedb_runtime::channel::bounded(queue_capacity, rt.clone());
         let queue_depth = Arc::new(AtomicU64::new(0));
         let (durable_tx, durable_rx) = watch::channel(clog.max_committed_offset());
         let actor = rt.spawn(
@@ -253,7 +253,7 @@ where
     R: Repo + Send + Sync + 'static,
 {
     #[instrument(name = "durability::local::actor", skip_all)]
-    async fn run(self, transactions_rx: async_channel::Receiver<PreparedTx<Txdata<T>>>) {
+    async fn run(self, transactions_rx: spacetimedb_runtime::channel::Receiver<PreparedTx<Txdata<T>>>) {
         info!("starting durability actor");
 
         let mut tx_buf = Vec::with_capacity(self.batch_capacity.get());
@@ -419,8 +419,8 @@ where
     }
 }
 
-/// Implement tokio's `recv_many` for an `async_channel` receiver.
-async fn recv_many<T>(chan: &async_channel::Receiver<T>, buf: &mut Vec<T>, limit: usize) -> usize {
+/// Implement tokio's `recv_many` for a `spacetimedb_runtime::channel::Receiver` receiver.
+async fn recv_many<T>(chan: &spacetimedb_runtime::channel::Receiver<T>, buf: &mut Vec<T>, limit: usize) -> usize {
     let mut n = 0;
     if !chan.is_empty() {
         buf.reserve(chan.len().min(limit));

@@ -1,4 +1,3 @@
-#[cfg(feature = "simulation")]
 extern crate alloc;
 
 use core::{
@@ -16,6 +15,8 @@ pub mod sim;
 pub mod sim_std;
 #[cfg(feature = "simulation")]
 pub mod hooks;
+
+pub mod channel;
 
 #[cfg(feature = "tokio")]
 pub type TokioHandle = tokio::runtime::Handle;
@@ -347,6 +348,40 @@ mod tests {
             let _ = handle.timeout(std::time::Duration::from_millis(500), async {}).await;
             assert!(result.is_err());
             assert!(!flag.load(Ordering::Acquire));
+        });
+    }
+
+    #[cfg(feature = "simulation")]
+    #[test]
+    fn simulation_bounded_queue_backpressure_ticks_executor() {
+        use crate::sim::Runtime;
+        let mut rt = Runtime::new(42);
+        let handle = Handle::simulation(rt.handle());
+
+        // Small capacity so we hit backpressure quickly.
+        let cap = 4;
+        let total = 100;
+        let (tx, rx) = crate::channel::bounded::<i32>(cap, handle.clone());
+
+        // Spawn consumer on the simulation executor.
+        let consumer = handle.spawn(async move {
+            let mut count = 0u64;
+            while let Ok(_) = rx.recv().await {
+                count += 1;
+                if count == total as u64 {
+                    break;
+                }
+            }
+            count
+        });
+
+        rt.block_on(async {
+            for i in 0..total {
+                tx.send_blocking(i).unwrap();
+            }
+            tx.close();
+            let received = consumer.await.unwrap();
+            assert_eq!(received, total as u64);
         });
     }
 }

@@ -1,18 +1,33 @@
-//! Std-hosted entry points for running the deterministic simulator in tests.
-//!
-//! The portable simulator lives in [`crate::sim`]. This module is deliberately
-//! host-specific: it installs thread-local context while a simulation is
-//! running, checks determinism by replaying a seed in fresh OS threads, and
-//! intercepts a few libc calls so std code cannot silently escape determinism.
-
 #![allow(clippy::disallowed_macros)]
 
-use alloc::boxed::Box;
-use core::{cell::Cell, future::Future};
+use core::cell::Cell;
+use core::future::Future;
 
 use crate::sim;
 
-// Public entry points.
+std::thread_local! {
+    static IN_SIMULATION: Cell<bool> = const { Cell::new(false) };
+}
+
+struct SimulationThreadGuard {
+    previous: bool,
+}
+
+fn enter_simulation_thread() -> SimulationThreadGuard {
+    crate::hooks::install();
+    let previous = IN_SIMULATION.with(|state| state.replace(true));
+    SimulationThreadGuard { previous }
+}
+
+pub(crate) fn in_simulation() -> bool {
+    IN_SIMULATION.with(|state| state.get())
+}
+
+impl Drop for SimulationThreadGuard {
+    fn drop(&mut self) {
+        IN_SIMULATION.with(|state| state.set(self.previous));
+    }
+}
 
 /// Run a future to completion with std-hosted determinism guards installed.
 ///
@@ -60,44 +75,11 @@ where
     .unwrap()
 }
 
-fn panic_with_seed(seed: u64, payload: Box<dyn core::any::Any + Send>) -> ! {
-    eprintln!("note: run with --seed {seed} to reproduce this error");
+fn panic_with_seed(seed: u64, payload: alloc::boxed::Box<dyn core::any::Any + Send>) -> ! {
+    // Write panic message directly — no `eprintln!` in no_std.
+    unsafe {
+        let msg = alloc::format!("note: run with --seed {} to reproduce this error\n", seed);
+        libc::write(libc::STDERR_FILENO, msg.as_ptr() as *const _, msg.len());
+    }
     std::panic::resume_unwind(payload);
 }
-
-// Simulation thread context.
-
-// Ambient state used only while `sim_std::block_on` is driving a simulation.
-//
-// The simulator itself stays explicit-handle based. This thread-local only
-// marks whether the current OS thread is owned by a running simulation so
-// host thread creation can be rejected.
-thread_local! {
-    // Marks the current OS thread as simulation-owned so thread creation hooks
-    // can reject accidental escapes to the host scheduler.
-    static IN_SIMULATION: Cell<bool> = const { Cell::new(false) };
-}
-
-struct SimulationThreadGuard {
-    previous: bool,
-}
-
-fn enter_simulation_thread() -> SimulationThreadGuard {
-    crate::hooks::install();
-    let previous = IN_SIMULATION.with(|state| state.replace(true));
-    SimulationThreadGuard { previous }
-}
-
-pub(crate) fn in_simulation() -> bool {
-    IN_SIMULATION.with(Cell::get)
-}
-
-impl Drop for SimulationThreadGuard {
-    fn drop(&mut self) {
-        IN_SIMULATION.with(|state| {
-            state.set(self.previous);
-        });
-    }
-}
-
-

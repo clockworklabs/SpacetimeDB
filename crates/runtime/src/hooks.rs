@@ -27,11 +27,10 @@
 
 #![allow(clippy::disallowed_macros)]
 
-use std::sync::OnceLock;
-
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod imp {
-    use std::sync::OnceLock;
+    use core::sync::atomic::AtomicBool;
+    use core::sync::atomic::Ordering;
 
     const SECCOMP_SET_MODE_FILTER: libc::c_uint = 1;
     const PR_SET_NO_NEW_PRIVS: libc::c_int = 38;
@@ -46,8 +45,11 @@ mod imp {
     /// a `OnceLock`.  The first thread to enter simulation performs the
     /// syscalls; subsequent threads inherit the filter at creation time.
     pub fn install() {
-        static INSTALLED: OnceLock<()> = OnceLock::new();
-        let _ = INSTALLED.get_or_init(|| unsafe {
+        static INSTALLED: AtomicBool = AtomicBool::new(false);
+        if INSTALLED.swap(true, Ordering::Relaxed) {
+            return;
+        }
+        unsafe {
             // `PR_SET_NO_NEW_PRIVS` lets unprivileged threads install a filter.
             let ret = libc::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
             assert_eq!(ret, 0, "parking_detect: PR_SET_NO_NEW_PRIVS failed");
@@ -55,14 +57,14 @@ mod imp {
             // Install the SIGSYS handler.
             // SA_NODEFER: allow re‑entering the handler if an abort‑time
             //             syscall also hits the filter.
-            let mut sa: libc::sigaction = std::mem::zeroed();
+            let mut sa: libc::sigaction = core::mem::zeroed();
             sa.sa_flags = 0x0004 | 0x40000000; // SA_SIGINFO | SA_NODEFER
             let ptr = sigsys_handler as extern "C" fn(i32, *mut libc::siginfo_t, *mut libc::c_void);
             // The sa_handler / sa_sigaction field is a union; write via raw
             // bytes to avoid fighting the libc type definitions.
             let dst: *mut libc::c_void = (&mut sa) as *mut _ as *mut libc::c_void;
             dst.cast::<usize>().write(ptr as usize);
-            let ret = libc::sigaction(libc::SIGSYS, &sa, std::ptr::null_mut());
+            let ret = libc::sigaction(libc::SIGSYS, &sa, core::ptr::null_mut());
             assert_eq!(ret, 0, "parking_detect: sigaction(SIGSYS) failed");
 
             // ── BPF filter ──────────────────────────────────────────────────
@@ -119,7 +121,7 @@ mod imp {
                 0,
                 "parking_detect: seccomp(SECCOMP_SET_MODE_FILTER) failed",
             );
-        });
+        }
     }
 
     /// SIGSYS handler — traps a `futex_wait` inside simulation and aborts.
@@ -141,8 +143,8 @@ mod imp {
             ";
             unsafe {
                 libc::write(libc::STDERR_FILENO, MSG.as_ptr() as *const _, MSG.len());
+                libc::abort();
             }
-            std::process::abort();
         }
 
         // Outside simulation: skip the `syscall` instruction and return 0.
@@ -157,7 +159,7 @@ mod imp {
         #[cfg(not(target_arch = "x86_64"))]
         {
             let _ = ctx;
-            std::process::abort();
+            unsafe { libc::abort(); }
         }
     }
 }
@@ -175,17 +177,19 @@ mod imp {
 #[inline(never)]
 unsafe extern "C" fn pthread_attr_init(attr: *mut libc::pthread_attr_t) -> libc::c_int {
     if crate::sim_std::in_simulation() {
-        eprintln!("attempt to spawn a system thread in simulation.");
-        eprintln!("note: use simulator tasks instead.");
+        unsafe {
+            let msg = b"attempt to spawn a system thread in simulation.\nnote: use simulator tasks instead.\n";
+            libc::write(libc::STDERR_FILENO, msg.as_ptr() as *const _, msg.len());
+        }
         return -1;
     }
 
     type PthreadAttrInit = unsafe extern "C" fn(*mut libc::pthread_attr_t) -> libc::c_int;
-    static PTHREAD_ATTR_INIT: OnceLock<PthreadAttrInit> = OnceLock::new();
-    let original = PTHREAD_ATTR_INIT.get_or_init(|| unsafe {
+    static PTHREAD_ATTR_INIT: spin::once::Once<PthreadAttrInit> = spin::once::Once::new();
+    let original = PTHREAD_ATTR_INIT.call_once(|| unsafe {
         let ptr = libc::dlsym(libc::RTLD_NEXT, c"pthread_attr_init".as_ptr().cast());
         assert!(!ptr.is_null(), "failed to resolve original pthread_attr_init");
-        std::mem::transmute(ptr)
+        core::mem::transmute(ptr)
     });
     unsafe { original(attr) }
 }
@@ -197,7 +201,10 @@ unsafe extern "C" fn pthread_attr_init(attr: *mut libc::pthread_attr_t) -> libc:
 #[unsafe(no_mangle)]
 #[inline(never)]
 unsafe extern "C" fn getrandom(buf: *mut u8, buflen: usize, flags: u32) -> isize {
-    eprintln!("warning: randomness requested; delegating to host OS");
+    unsafe {
+        let msg = b"warning: randomness requested; delegating to host OS\n";
+        libc::write(libc::STDERR_FILENO, msg.as_ptr() as *const _, msg.len());
+    }
     eprintln!("{}", std::backtrace::Backtrace::force_capture());
     unsafe { real_getrandom()(buf, buflen, flags) }
 }
@@ -205,11 +212,11 @@ unsafe extern "C" fn getrandom(buf: *mut u8, buflen: usize, flags: u32) -> isize
 #[cfg(target_os = "linux")]
 fn real_getrandom() -> unsafe extern "C" fn(*mut u8, usize, u32) -> isize {
     type GetrandomFn = unsafe extern "C" fn(*mut u8, usize, u32) -> isize;
-    static GETRANDOM: OnceLock<GetrandomFn> = OnceLock::new();
-    *GETRANDOM.get_or_init(|| unsafe {
+    static GETRANDOM: spin::once::Once<GetrandomFn> = spin::once::Once::new();
+    *GETRANDOM.call_once(|| unsafe {
         let ptr = libc::dlsym(libc::RTLD_NEXT, c"getrandom".as_ptr().cast());
         assert!(!ptr.is_null(), "failed to resolve original getrandom");
-        std::mem::transmute(ptr)
+        core::mem::transmute(ptr)
     })
 }
 
