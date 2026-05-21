@@ -4,7 +4,7 @@ TABLE
 - Primitive
   - Struct: Primitive
   - Fields:
-    - Id: int (primary key)
+    - Id: ulong (primary key, auto-increment)
     - Count: int
     - Total: long
     - Price: float
@@ -13,5 +13,5 @@ TABLE
     - Name: string
 
 REDUCERS
-- Seed: insert exactly this row into Primitive
-  - (Id=1, Count=2, Total=3000000000, Price=1.5, Ratio=2.25, Active=true, Name="Alice")
+- Seed: insert exactly this row into Primitive (Id is auto-assigned)
+  - (Count=2, Total=3000000000, Price=1.5, Ratio=2.25, Active=true, Name="Alice")
