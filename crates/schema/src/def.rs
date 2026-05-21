@@ -153,7 +153,7 @@ pub struct ModuleDef {
     raw_module_def_version: RawModuleDefVersion,
 
     /// Mounted submodules, keyed by the namespace they are mounted under.
-    mounts: Vec<(String, ModuleDef)>,
+    mounts: IndexMap<String, ModuleDef>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -171,7 +171,7 @@ impl ModuleDef {
     }
 
     /// The mounted submodules of the module definition.
-    pub fn mounts(&self) -> &[(String, ModuleDef)] {
+    pub fn mounts(&self) -> &IndexMap<String, ModuleDef> {
         &self.mounts
     }
 
