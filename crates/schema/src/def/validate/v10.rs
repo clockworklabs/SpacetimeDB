@@ -81,6 +81,12 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .cloned()
         .map(ExplicitNamesLookup::new)
         .unwrap_or_default();
+    let mounts = def
+        .mounts()
+        .into_iter()
+        .flat_map(|mounts| mounts.iter().cloned())
+        .map(validate_mount)
+        .collect_all_errors::<Vec<_>>();
 
     // Original `typespace` needs to be preserved to be assign `accesor_name`s to columns.
     let typespace_with_accessor_names = typespace.clone();
@@ -263,8 +269,12 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .map(|rls| (rls.sql.clone(), rls.to_owned()))
         .collect();
 
-    let (tables, types, reducers, procedures, views) =
-        (tables_types_reducers_procedures_views).map_err(|errors| errors.sort_deduplicate())?;
+    let (tables, types, reducers, procedures, views, mounts) = (tables_types_reducers_procedures_views, mounts)
+        .combine_errors()
+        .map(|((tables, types, reducers, procedures, views), mounts)| {
+            (tables, types, reducers, procedures, views, mounts)
+        })
+        .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
 
     let typespace_for_generate = typespace_for_generate.finish();
 
@@ -281,7 +291,15 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         lifecycle_reducers,
         procedures,
         raw_module_def_version: RawModuleDefVersion::V10,
+        mounts,
     })
+}
+
+fn validate_mount(mount: RawModuleMountV10) -> Result<(String, ModuleDef)> {
+    Identifier::new(mount.namespace.clone().into())
+        .map_err(|error| ValidationErrors::from(ValidationError::IdentifierError { error }))?;
+
+    Ok((mount.namespace, validate(mount.module)?))
 }
 
 /// Change the visibility of scheduled functions and lifecycle reducers to Internal.
@@ -359,8 +377,13 @@ impl<'a> ModuleValidatorV10<'a> {
                 })
             })?;
 
-        let mut table_validator =
-            TableValidator::new(raw_table_name.clone(), product_type_ref, product_type, &mut self.core)?;
+        let mut table_validator = TableValidator::new(
+            raw_table_name.clone(),
+            product_type_ref,
+            product_type,
+            &mut self.core,
+            CoreValidator::resolve_table_ident,
+        )?;
 
         let table_ident = table_validator.table_ident.clone();
 
@@ -701,10 +724,12 @@ impl<'a> ModuleValidatorV10<'a> {
                 })
             })?;
 
+        let name = self.core.resolve_function_ident(accessor_name.clone())?;
+
         let params_for_generate =
             self.core
                 .params_for_generate(&params, |position, arg_name| TypeLocation::ViewArg {
-                    view_name: accessor_name.clone(),
+                    view_name: name.as_raw().clone(),
                     position,
                     arg_name,
                 })?;
@@ -718,12 +743,10 @@ impl<'a> ModuleValidatorV10<'a> {
 
         let return_type_for_generate = self.core.validate_for_type_use(
             || TypeLocation::ViewReturn {
-                view_name: accessor_name.clone(),
+                view_name: name.as_raw().clone(),
             },
             &return_type_for_generate_input,
         );
-
-        let name = self.core.resolve_function_ident(accessor_name.clone())?;
 
         let mut view_validator = ViewValidator::new(
             accessor_name.clone(),
@@ -877,7 +900,9 @@ mod tests {
 
     use itertools::Itertools;
     use spacetimedb_data_structures::expect_error_matching;
-    use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, RawModuleDefV10Builder};
+    use spacetimedb_lib::db::raw_def::v10::{
+        CaseConversionPolicy, RawModuleDefV10, RawModuleDefV10Builder, RawModuleDefV10Section, RawModuleMountV10,
+    };
     use spacetimedb_lib::db::raw_def::v9::{btree, direct, hash};
     use spacetimedb_lib::db::raw_def::*;
     use spacetimedb_lib::ScheduleAt;
@@ -1253,6 +1278,44 @@ mod tests {
             &table[..] == "Bananas" &&
             &def[..] == "bananas_b_col_55_idx_btree" &&
             column == &55.into()
+        });
+    }
+
+    #[test]
+    fn validates_mounted_submodules_recursively() {
+        let mut mounted_builder = RawModuleDefV10Builder::new();
+        mounted_builder
+            .build_table_with_new_type("Sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
+            .finish();
+
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+                namespace: "authlib".to_string(),
+                module: mounted_builder.finish(),
+            }])],
+        };
+
+        let def: ModuleDef = raw.try_into().expect("mounted module should validate");
+        let mounts = def.mounts();
+
+        assert_eq!(mounts.len(), 1);
+        assert_eq!(mounts[0].0, "authlib");
+        assert!(mounts[0].1.table(&expect_identifier("sessions")).is_some());
+    }
+
+    #[test]
+    fn invalid_mount_namespace() {
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+                namespace: "".to_string(),
+                module: RawModuleDefV10::default(),
+            }])],
+        };
+
+        let result: Result<ModuleDef> = raw.try_into();
+
+        expect_error_matching!(result, ValidationError::IdentifierError { error } => {
+            error == &IdentifierError::Empty {}
         });
     }
 
@@ -2111,5 +2174,42 @@ mod tests {
         );
         assert_eq!(schedule.at_column, 1.into());
         assert_eq!(schedule.function_kind, FunctionKind::Reducer);
+    }
+
+    #[test]
+    fn test_child_defs_use_explicit_view_name() {
+        use spacetimedb_lib::db::raw_def::v10::ExplicitNames;
+
+        let id = |s: &str| Identifier::for_test(s);
+
+        let mut builder = RawModuleDefV10Builder::new();
+        let return_type_ref = builder.add_algebraic_type(
+            [],
+            "Person",
+            AlgebraicType::product([("PersonId", AlgebraicType::U64)]),
+            true,
+        );
+        builder.add_view(
+            "PersonAtLevel2",
+            0,
+            true,
+            true,
+            ProductType::from([("Level", AlgebraicType::U32)]),
+            AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+        );
+
+        let mut explicit = ExplicitNames::default();
+        explicit.insert_function("PersonAtLevel2", "Level2Person");
+        builder.add_explicit_names(explicit);
+
+        let def: ModuleDef = builder.finish().try_into().unwrap();
+        let view = def
+            .view("Level2Person")
+            .expect("view should use explicit canonical name");
+
+        assert_eq!(view.name, id("Level2Person"));
+        assert_eq!(view.accessor_name, id("PersonAtLevel2"));
+        assert_eq!(view.return_columns[0].view_name, id("Level2Person"));
+        assert_eq!(view.param_columns[0].view_name, id("Level2Person"));
     }
 }

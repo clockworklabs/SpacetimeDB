@@ -20,39 +20,84 @@ The demo compares SpacetimeDB and Convex by default, since both are easy for any
 
 ## Results Summary
 
-All tests use 50 concurrent connections with a transfer workload (read-modify-write transaction between two accounts).
+For all tests, we ran N clients where N is 2x the number of CPUs on the database machine used for the test. Exact client counts are shown in each row. The workload is a transfer transaction (read-modify-write transaction between two accounts).
 
-| System                            | TPS (~0% Contention) | TPS (~80% Contention) |
-| --------------------------------- | -------------------- | --------------------- |
-| SpacetimeDB (TypeScript Module)   |                      | 307,074               |
-| SpacetimeDB (Rust Module)         |                      | 265,542               |
-| SQLite + Node HTTP + Drizzle      |                      | 3,236                 |
-| Bun + Drizzle + Postgres          | 7,115                | 2,074                 |
-| Postgres + Node HTTP + Drizzle    | 6,429                | 2,798                 |
-| Supabase + Node HTTP + Drizzle    | 6,310                | 1,268                 |
-| CockroachDB + Node HTTP + Drizzle | 5,129                | 197                   |
-| PlanetScale + Node HTTP + Drizzle | 477                  | 30                    |
-| Convex                            | 438                  | 58                    |
+The SpacetimeDB rows were obtained using a single-node SpacetimeDB Standalone instance, so the published numbers are reproducible with the public, downloadable server.
 
-**Key Finding:** SpacetimeDB reaches hundreds of thousands of TPS for the transfer workload, while the best non-SpacetimeDB result shown here is SQLite RPC at 3,236 TPS. Traditional databases also suffer significant degradation under high contention (CockroachDB drops 96%).
+Each row reports mean TPS and sample standard deviation of per-second throughput within a single 300-second run. `alpha=1.5` corresponds to ~80% contention. When standard deviation approaches or exceeds mean TPS, throughput is unstable across the run.
 
-### Contention Impact
+Data description: reported summary metrics are computed from steady-state windows after a 30-second warmup (`tSec >= 30`), using the recorded per-second `timeSeries` data.
 
-![Contention Chart](./contention-chart.png)
+### Alpha = 0
 
-The chart above shows TPS vs Zipf Alpha (contention level). Higher alpha values concentrate more transactions on fewer "hot" accounts, increasing contention. SpacetimeDB maintains consistent performance regardless of contention level, while traditional database architectures show significant degradation.
+| System | clients | pipelining | max_pool | TPS | TPS Stddev | p50 lat ms | p99 lat ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| SpacetimeDB | 64 | 40 | N/A | 279,024 | 4,763 | 8 | 12 |
+| Node.js + SQLite | 64 | off | N/A | 3,121 | 80 | 19 | 40 |
+| Node.js + Supabase | 64 | off | 64 | 7,362 | 1,179 | 6 | 18 |
+| Bun + Postgres | 64 | off | 64 | 10,729 | 146 | 5 | 11 |
+| Node.js + Postgres | 64 | off | 64 | 9,904 | 223 | 6 | 11 |
+| Node.js + PlanetScale (SN) | 64 | off | 64 | 4,535 | 117 | 14 | 20 |
+| Node.js + PlanetScale (HA) | 384 | off | 384 | 4,275 | 135 | 89 | 110 |
+| Convex | 64 | off | N/A | 1,140 | 118 | 53 | 62 |
+| Node.js + CockroachDB (5 node) | 320 | off | 320 | 4,253 | 561 | 71 | 120 |
+| HAProxy - Node.js + CockroachDB (5 node) | 320 | off | 320 | 5,481 | 566 | 57 | 95 |
+
+### Alpha = 1.5
+
+| System | clients | pipelining | max_pool | TPS | TPS Stddev | p50 lat ms | p99 lat ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| SpacetimeDB | 64 | 40 | N/A | 303,919 | 4,712 | 7 | 11 |
+| Node.js + SQLite | 64 | off | N/A | 3,188 | 73 | 18 | 39 |
+| Node.js + Supabase | 64 | off | 64 | 2,534 | 57 | 2 | 197 |
+| Bun + Postgres | 64 | off | 64 | 2,772 | 61 | 7 | 13 |
+| Node.js + Postgres | 64 | off | 64 | 961 | 25 | 10 | 16 |
+| Node.js + PlanetScale (SN) | 64 | off | 64 | 235 | 12 | 20 | 2,504 |
+| Node.js + PlanetScale (HA) | 384 | off | 384 | 248 | 13 | 416 | 10,121 |
+| Convex | 64 | off | N/A | 126 | 52 | 20 | 1,081 |
+| Node.js + CockroachDB (5 node) | 320 | off | 320 | 0.03 | 0.18 | 698 | 9,695 |
+| HAProxy - Node.js + CockroachDB (5 node) | 64 | off | 64 | 6.87 | 9.12 | 5,943 | 9,880 |
+
+Note: the HAProxy + CockroachDB `alpha=1.5` row uses 64 clients (instead of 320) because 320-way concurrency overwhelmed CRDB and did not produce stable sample data for this profile.
+
+### Alpha = 0 (All-Connectors Pipelining Check)
+
+The headline comparison allows pipelining only for SpacetimeDB. This separate check enables pipelining for every connector to show how the other systems behave when clients submit up to 40 requests without waiting for each response.
+
+| System | clients | pipelining | max_pool | TPS | TPS Stddev | p50 lat ms | p99 lat ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Node.js + SQLite | 64 | 40 | N/A | 2,977 | 84 | 722 | 747 |
+| Node.js + Supabase | 64 | 40 | 64 | 8,874 | 308 | 284 | 303 |
+| Bun + Postgres | 64 | 40 | 64 | 10,184 | 120 | 250.1 | 260.5 |
+| Node.js + Postgres | 64 | 40 | 64 | 9,165 | 145 | 276 | 290 |
+| Node.js + PlanetScale (SN) | 64 | 40 | 64 | 4,325 | 85 | 590 | 604 |
+| Node.js + PlanetScale (HA) | 384 | 40 | 384 | 3,355 | 327 | 4,354 | 4,438 |
+| Convex | 64 | 40 | N/A | 1,154 | 134 | 2,119 | 2,150 |
+| Node.js + CockroachDB (5 node) | 320 | 40 | 320 | 4,250 | 766 | 3,030 | 3,161 |
+| HAProxy - Node.js + CockroachDB (5 node) | 320 | 40 | 320 | 5,992 | 1,765 | 2,431 | 2,562 |
+
+**Key Finding:** In these runs, SpacetimeDB is the only system sustaining hundreds of thousands of TPS in both alpha profiles. At `alpha=0`, the strongest non-SpacetimeDB results are in the ~10k TPS range, while at `alpha=1.5` several systems show severe contention sensitivity with large tail-latency growth and throughput collapse.
 
 ## Methodology
 
-All systems were tested with **out-of-the-box default settings** - no custom tuning, no configuration optimization. This reflects what developers experience when they first adopt these technologies.
+All systems were tested with **out-of-the-box database and platform settings**, with one exception: the local Postgres instance (and Bun, which uses the same Postgres instance) is configured with `default_transaction_isolation = 'serializable'`. For Postgres-like RPC servers, the app-side Drizzle connection pool is configured as shown in the result tables, and the benchmark connects directly to Postgres.
 
-For cloud services, we tested paid tiers to give them their best chance:
+The managed Postgres services (Supabase, PlanetScale) run at their default isolation level of `READ COMMITTED`.
 
-- **PlanetScale**: PS-2560 (32 vCPUs, 256 GB RAM), single node, us-central1.
-- **Supabase**: Pro tier
-- **Convex**: Pro tier
+Throughput is counted from successful operations that the benchmark client observes completing inside the configured test window for every system.
 
-The reported SpacetimeDB module results were run against a 5-way replicated cluster rather than a single standalone node.
+### Published Benchmark Defaults
+
+The reported tables in this README use the following profile defaults unless a row explicitly shows a different value:
+
+- `clients`: N clients where N is 2x the number of CPUs on the database machine used for the test
+- `pipelining`: `off` for non-pipelined runs
+- `MAX_POOL`: `64` for pg-based RPC servers (`postgres_rpc`, `cockroach_rpc`, `supabase_rpc`, `planetscale_pg_rpc`)
+- Main comparison runs use `MAX_INFLIGHT_PER_WORKER=40` for SpacetimeDB only
+- All-connectors pipelining-check runs use `BENCH_PIPELINED=1` and `MAX_INFLIGHT_PER_WORKER=40`
+- When `BENCH_PIPELINED=1`, set `MAX_INFLIGHT_PER_WORKER` explicitly in the environment
+
+For rows that scale client count above 64 (for example, some HA topologies), `max_pool` is scaled to match the row values shown in the table.
 
 ### Test Architecture
 
@@ -70,7 +115,15 @@ Client → Integrated Platform (compute + storage colocated)
 
 This ensures we're measuring real-world application performance, not raw database throughput.
 
-Throughput is counted from successful operations that the benchmark client observes completing inside the configured test window for every system.
+### Machine Topology
+
+The reported numbers use a single benchmark host wherever possible. This means client, server, and database were all run on the same machine.
+
+We did this mainly because it was the most favorable benchmarking setup for the competitor platforms, because it minimizes server to database latency, but also because it allows others to easily reproduce the results.
+
+For completeness, we also tested separated-machine topologies, where the benchmark client, server, and database processes were not colocated on one machine. However, in each case we found that doing so either did not change or reduced the throughput of other systems due to the additional network hop. We published the most favorable numbers for our competitors.
+
+The platforms that cannot use this exact topology are PlanetScale and CockroachDB. PlanetScale operates a managed cloud database and does not have a self-hosted variant of the service, so the benchmark client and RPC server are colocated on a benchmark host in the same region and availability zone as the database host. CockroachDB is a distributed database running across multiple nodes, so the benchmark client and RPC server cannot be colocated with the database on a single node.
 
 ### The Transaction
 
@@ -86,48 +139,42 @@ This is a classic read-modify-write workload that tests transactional integrity 
 
 ### Test Command
 
+The numbers in the table above were collected with `pnpm run bench`:
+
 ```bash
-docker compose run --rm bench -- --seconds 10 --concurrency 50 --alpha XX --connectors YY
+pnpm install
+pnpm run prep                                                              # seed all backing databases once
+pnpm run bench --alpha 0,1.5 --connectors <connectors> --seconds 300       # one JSON per (connector, alpha)
 ```
 
-- `--seconds 10`: Duration of benchmark run
-- `--concurrency 50`: Number of concurrent client connections
-- `--alpha 0`: ~0% contention (uniform account distribution)
-- `--alpha 1.5`: ~80% contention (Zipf distribution concentrating on hot accounts)
-- `--stdb-compression none|gzip`: SpacetimeDB client compression mode (default: `none`)
+`--alpha` and `--connectors` both accept comma-separated values. The bench writes one JSON per (connector, alpha, run) tuple into `runs/`.
+
+When aggregating these JSONs into summary tables, use a 30-second warmup cutoff (`--warmup-sec 30`) to match the published numbers.
+
+Useful flags:
+
+- `--alpha <csv>`: Zipf alpha. This benchmark reports `0` (uniform / ~0% contention) and `1.5` (Zipf / ~80% contention).
+- `--connectors <csv>`: which connectors to run. Defaults to every test in `src/tests/test-1/`.
+- `--seconds <num>`: duration of each run.
+- `--concurrency <num>`: number of concurrent clients (default: `64`).
+- `--runs <num>`: repeat each (connector, alpha) combination this many times (default: `1`). Each repeat writes its own JSON.
+- `--prep-between-alphas`: run `pnpm run prep` before each (connector, alpha) combination to reset DB state.
+- `--stdb-compression <none|gzip>`: SpacetimeDB client compression mode (default: `none`).
 
 ### Hardware Configuration
 
-**Server Machine (Variant A - PhoenixNAP):**
+**Server Machine (all systems except PlanetScale):**
 
-- s3.c3.medium bare metal instance - Intel i9-14900k 24 cores (32 threads), 128GB DDR5 Memory, OS: Ubuntu 24.04
+- PhoenixNAP s3.c3.medium bare metal instance - Intel i9-14900k 24 cores (32 threads), 128GB DDR5 Memory, OS: Ubuntu 24.04
 
-**Server Machine (Variant B - Google Cloud):**
+**Bench client for PlanetScale:**
 
-- c4-standard-32-lssd (32 vCPUs, 120 GB Memory) OS: Ubuntu 24.04
-- RAID 0 on 5 Local SSDs
-- Region: us-central1
-
-**Client Machine:**
-
-- c4-standard-32 (32 vCPUs, 120 GB Memory) OS: Ubuntu 24.04
-- Region: us-central1
-- Runs on a **separate machine** from the server
-
-**Note:** All services (databases, web servers, benchmark runner) except Convex local dev backend run in the same Docker environment on the server machine.
-
-### Why Separate Client Machines?
-
-Running clients on separate machines ensures:
-
-- Network round-trip latency is measured (realistic production scenario)
-- Client CPU/memory doesn't compete with server resources
-- Results reflect actual deployment conditions
+- AWS `m7i.8xlarge` in `us-east-2`, colocated with the PlanetScale cluster. Clusters tested: PS-2560 single-node EBS, M-15360 Metal HA (1 primary + 2 replicas). Both Postgres 18.3.
 
 ### Account Seeding
 
 - 100,000 accounts seeded before each benchmark
-- Initial balance: 10,000,000 per account
+- Initial balance: 1,000,000,000 per account
 - Zipf distribution controls which accounts are selected for transfers
 
 ## Technical Notes
@@ -152,7 +199,7 @@ This architectural difference means SpacetimeDB can execute transactions in micr
 
 ### Client Pipelining
 
-The benchmark supports **pipelining** for all clients - sending multiple requests without waiting for responses. This maximizes throughput by keeping connections saturated.
+The benchmark supports **pipelining** for all clients - sending multiple requests without waiting for responses. The headline comparison uses this for SpacetimeDB only; the all-connectors pipelining check enables it across systems.
 
 ### Confirmed Reads (`withConfirmedReads`)
 
@@ -160,13 +207,13 @@ SpacetimeDB supports `withConfirmedReads` mode which ensures transactions are du
 
 ### Cloud vs Local Results
 
-PlanetScale results (~477 TPS) demonstrate the **significant impact of cloud database latency**. When the database is accessed over the network (even within the same cloud region), round-trip latency dominates performance. This is why SpacetimeDB's colocated architecture provides such dramatic improvements.
+PlanetScale results (~280 TPS under high contention, regardless of cluster tier) demonstrate the **significant impact of cloud database latency**. When the database is accessed over the network (even within the same cloud region), round-trip latency dominates performance. This is why SpacetimeDB's colocated architecture provides such dramatic improvements.
 
 ## Systems Tested
 
 | System                            | Architecture                                            |
 | --------------------------------- | ------------------------------------------------------- |
-| SpacetimeDB                       | Integrated platform.                                    |
+| SpacetimeDB Standalone            | Integrated platform; single-node downloadable server.   |
 | SQLite + Node HTTP + Drizzle      | Node.js HTTP server → Drizzle ORM → SQLite              |
 | Bun + Drizzle + Postgres          | Bun HTTP server → Drizzle ORM → PostgreSQL              |
 | Postgres + Node HTTP + Drizzle    | Node.js HTTP server → Drizzle ORM → PostgreSQL          |
@@ -186,3 +233,4 @@ Benchmark results are written to `./runs/` as JSON files with TPS and latency st
 ## License
 
 See repository root for license information.
+

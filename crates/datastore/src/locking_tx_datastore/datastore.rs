@@ -30,7 +30,6 @@ use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
 use spacetimedb_lib::{ConnectionId, Identity};
-use spacetimedb_paths::server::SnapshotDirPath;
 use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId, ViewId};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
@@ -39,7 +38,7 @@ use spacetimedb_schema::{
     reducer_name::ReducerName,
     schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema},
 };
-use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository, UnflushedSnapshot};
+use spacetimedb_snapshot::{BoxedPendingSnapshot, DynSnapshotRepo, ReconstructedSnapshot};
 use spacetimedb_table::{
     indexes::RowPointer,
     page_pool::PagePool,
@@ -223,11 +222,11 @@ impl Locking {
     ///   (i.e. no transactions have been committed yet)
     ///   and therefore no snapshot was created
     ///
-    /// - or `Some` path to the newly created snapshot directory
+    /// - or `Some` transaction offset for the newly created snapshot
     ///
-    /// Returns an error if [`SnapshotRepository::create_snapshot`] returns an
+    /// Returns an error if [`DynSnapshotRepo::create_snapshot`] returns an
     /// error.
-    pub fn take_snapshot(&self, repo: &SnapshotRepository) -> Result<Option<SnapshotDirPath>> {
+    pub fn take_snapshot(&self, repo: &DynSnapshotRepo) -> Result<Option<TxOffset>> {
         Self::take_snapshot_internal(&self.committed_state, repo)?
             .map(|(_offset, snap)| snap.sync_all())
             .transpose()
@@ -241,8 +240,8 @@ impl Locking {
 
     pub fn take_snapshot_internal(
         committed_state: &RwLock<CommittedState>,
-        repo: &SnapshotRepository,
-    ) -> Result<Option<(TxOffset, UnflushedSnapshot)>> {
+        repo: &DynSnapshotRepo,
+    ) -> Result<Option<(TxOffset, BoxedPendingSnapshot)>> {
         let mut committed_state = committed_state.write();
         let Some(tx_offset) = committed_state.next_tx_offset.checked_sub(1) else {
             return Ok(None);
@@ -254,8 +253,8 @@ impl Locking {
             tx_offset,
         );
 
-        let (tables, blob_store) = committed_state.persistent_tables_and_blob_store();
-        let unflushed_snapshot = repo.create_snapshot(tables, blob_store, tx_offset)?;
+        let (mut tables, blob_store) = committed_state.persistent_tables_and_blob_store();
+        let unflushed_snapshot = repo.create_snapshot(&mut tables, blob_store, tx_offset)?;
 
         Ok(Some((tx_offset, unflushed_snapshot)))
     }
@@ -924,6 +923,29 @@ impl MutTx for Locking {
 }
 
 impl Locking {
+    #[cfg(any(feature = "test", test))]
+    pub fn try_begin_mut_tx(&self, _isolation_level: IsolationLevel, workload: Workload) -> Option<MutTxId> {
+        let metrics = ExecutionMetrics::default();
+        let ctx = ExecutionContext::with_workload(self.database_identity, workload);
+
+        let timer = Instant::now();
+        let committed_state_write_lock = self.committed_state.try_write_arc()?;
+        let sequence_state_lock = self.sequence_state.try_lock_arc()?;
+        let lock_wait_time = timer.elapsed();
+
+        Some(MutTxId {
+            committed_state_write_lock,
+            sequence_state_lock,
+            tx_state: TxState::default(),
+            lock_wait_time,
+            read_sets: <_>::default(),
+            timer,
+            ctx,
+            metrics,
+            _not_send: std::marker::PhantomData,
+        })
+    }
+
     pub fn rollback_mut_tx_downgrade(&self, tx: MutTxId, workload: Workload) -> (TxMetrics, TxId) {
         tx.rollback_downgrade(workload)
     }
