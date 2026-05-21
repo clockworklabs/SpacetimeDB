@@ -286,12 +286,12 @@ RawModuleDefV10 V10Builder::BuildModuleDef() const {
     }
     if (!http_handlers_.empty()) {
         RawModuleDefV10Section section_http_handlers;
-        section_http_handlers.set<11>(http_handlers_);
+        section_http_handlers.set<12>(http_handlers_);
         v10_module.sections.push_back(std::move(section_http_handlers));
     }
     if (!http_routes_.empty()) {
         RawModuleDefV10Section section_http_routes;
-        section_http_routes.set<12>(http_routes_);
+        section_http_routes.set<13>(http_routes_);
         v10_module.sections.push_back(std::move(section_http_routes));
     }
     if (!row_level_security_.empty()) {

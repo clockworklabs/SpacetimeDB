@@ -12,21 +12,21 @@
 #include <memory>
 #include "../autogen_base.h"
 #include "spacetimedb/bsatn/bsatn.h"
-#include "AlgebraicType.g.h"
-#include "ProductType.g.h"
+
+namespace SpacetimeDB::Internal {
+struct RawModuleDefV10;
+} // namespace SpacetimeDB::Internal
 
 namespace SpacetimeDB::Internal {
 
-SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawProcedureDefV9) {
-    std::string name;
-    SpacetimeDB::Internal::ProductType params;
-    SpacetimeDB::Internal::AlgebraicType return_type;
+SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawModuleMountV10) {
+    std::string namespace_;
+    std::shared_ptr<SpacetimeDB::Internal::RawModuleDefV10> module;
 
     void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
-        ::SpacetimeDB::bsatn::serialize(writer, name);
-        ::SpacetimeDB::bsatn::serialize(writer, params);
-        ::SpacetimeDB::bsatn::serialize(writer, return_type);
+        ::SpacetimeDB::bsatn::serialize(writer, namespace_);
+        ::SpacetimeDB::bsatn::serialize(writer, *module);
     }
-    SPACETIMEDB_PRODUCT_TYPE_EQUALITY(name, params, return_type)
+    SPACETIMEDB_PRODUCT_TYPE_EQUALITY(namespace_, module)
 };
 } // namespace SpacetimeDB::Internal
