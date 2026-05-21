@@ -1605,7 +1605,7 @@ impl Table {
     ///
     /// The schema of rows stored in the `pages` must exactly match `self.schema` and `self.inner.row_layout`.
     pub unsafe fn set_pages(&mut self, pages: Vec<Box<Page>>, blob_store: &dyn BlobStore) {
-        self.inner.pages.set_contents(pages);
+        self.inner.pages.set_contents(pages, self.inner.row_layout.size());
 
         // Recompute table metadata based on the new pages.
         // Compute the row count first, in case later computations want to use it as a capacity to pre-allocate.
@@ -2757,7 +2757,7 @@ pub(crate) mod test {
             let mut table = table(ty);
             let mut inserted_row_ptrs = Vec::new();
 
-            table.inner.pages.assert_num_full_pages_consistent();
+            table.inner.pages.assert_non_full_pages_consistent(table.inner.row_layout.size());
 
             // Insert 3 rows at a time, then delete the last 1.
             // This keeps the page usage growing towards fullness, but also includes some deletes.
@@ -2769,12 +2769,12 @@ pub(crate) mod test {
                         Err(e) => return Err(TestCaseError::fail(format!("unexpected insert error: {e:?}"))),
                     };
                     inserted_row_ptrs.push(row_ptr);
-                    table.inner.pages.assert_num_full_pages_consistent();
+                    table.inner.pages.assert_non_full_pages_consistent(table.inner.row_layout.size());
                 }
 
                 if let Some(row_ptr) = inserted_row_ptrs.pop() {
                     table.delete(&mut blob_store, row_ptr, |_| ());
-                    table.inner.pages.assert_num_full_pages_consistent();
+                    table.inner.pages.assert_non_full_pages_consistent(table.inner.row_layout.size());
                 }
             }
         }
@@ -2840,6 +2840,55 @@ pub(crate) mod test {
                     .map(move |po| RowPointer::new(false, pi, po, table.squashed_offset))
             });
         assert!(complex.eq(simple));
+    }
+
+    /// Assert that we prefer inserting into lower-`PageIndex` pages when possible,
+    /// and that `non_full_pages` is correctly updated even for pages with no var-len granules available.
+    ///
+    /// A previous incorrect implementation of [`Pages`]
+    /// used only the available number of var-len granules to decide if a page was full,
+    /// not considering that a page with zero var-len granules available could still have space for one or more rows,
+    /// provided those rows were entirely fixed-len.
+    /// This test demonstrates that we will insert an entirely fixed-len row into a non-full page with zero granules available.
+    ///
+    /// This test also demonstrates that, when searching for a page to insert into, we'll prefer the lowest-indexed page,
+    /// assuming no other reason to prefer a different page.
+    #[test]
+    fn prefer_earlier_non_full_page() {
+        let pool = PagePool::new_for_test();
+        let mut blob_store = HashMapBlobStore::default();
+        let mut table = table(ProductType::from([AlgebraicType::I32]));
+
+        let mut inserted_ptrs = Vec::new();
+        let mut next_value = 0i32;
+        while table.num_pages() < 2 {
+            let (_, row_ref) = table.insert(&pool, &mut blob_store, &product![next_value]).unwrap();
+            inserted_ptrs.push(row_ref.pointer());
+            next_value += 1;
+        }
+
+        let first_page = &table.inner.pages[PageIndex(0)];
+        let second_page = &table.inner.pages[PageIndex(1)];
+        assert!(first_page.is_full(table.row_size()));
+        assert_eq!(first_page.available_var_len_granules(), 0);
+        assert!(!second_page.is_full(table.row_size()));
+        assert!(second_page.available_var_len_granules() > 0);
+
+        let first_ptr = inserted_ptrs[0];
+        table.delete(&mut blob_store, first_ptr, |_| ());
+
+        let first_page = &table.inner.pages[PageIndex(0)];
+        assert!(!first_page.is_full(table.row_size()));
+        assert_eq!(first_page.available_var_len_granules(), 0);
+
+        let (_, row_ref) = table.insert(&pool, &mut blob_store, &product![next_value]).unwrap();
+        let new_ptr = row_ref.pointer();
+        assert_eq!(new_ptr.page_index(), first_ptr.page_index());
+        assert_eq!(new_ptr.page_offset(), first_ptr.page_offset());
+
+        let first_page = &table.inner.pages[PageIndex(0)];
+        assert!(first_page.is_full(table.row_size()));
+        assert_eq!(first_page.available_var_len_granules(), 0);
     }
 
     #[test]

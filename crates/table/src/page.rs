@@ -1380,6 +1380,12 @@ impl Page {
         gap_in_granules >= needed_granules_after_freelist
     }
 
+    /// Returns whether the row is full with respect to storing a fixed row with `fixed_row_size`
+    /// and no variable component.
+    pub(crate) fn is_full(&self, fixed_row_size: Size) -> bool {
+        !self.has_space_for_row(fixed_row_size, 0)
+    }
+
     /// Will leave partially-allocated chunks if fails prematurely,
     /// so always check `Self::has_space_for_row` before calling.
     ///
