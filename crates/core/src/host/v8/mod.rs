@@ -1362,10 +1362,7 @@ fn handle_main_worker_request(
         }
         JsMainWorkerRequest::ScheduledReducer { reply_tx, params } => {
             handle_worker_request("scheduled_reducer", reply_tx, || {
-                let (res, trapped) = instance_common
-                    .call_scheduled_function(params, inst)
-                    .now_or_never()
-                    .expect("our call_scheduled_function implementation is not actually async");
+                let (res, trapped) = instance_common.call_scheduled_reducer(params, inst);
                 (res, trapped)
             })
         }
@@ -1463,9 +1460,9 @@ fn handle_procedure_worker_request(
         JsProcedureWorkerRequest::ScheduledProcedure { reply_tx, params } => {
             handle_worker_request("scheduled_procedure", reply_tx, || {
                 let (res, trapped) = instance_common
-                    .call_scheduled_function(params, inst)
+                    .call_scheduled_procedure(params, inst)
                     .now_or_never()
-                    .expect("our call_scheduled_function implementation is not actually async");
+                    .expect("our call_scheduled_procedure implementation is not actually async");
                 (res, trapped)
             })
         }
