@@ -23,17 +23,7 @@ permissions:
 
 jobs:
   unity-testsuite:
-    needs: [lints]
-    # Skip if this is an external contribution.
-    # The license secrets will be empty, so the step would fail anyway.
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
-    permissions:
-      contents: read
-      checks: write
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - run: |
           s="${{ secrets.UNITY_EMAIL }}"
