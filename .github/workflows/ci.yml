@@ -731,8 +731,8 @@ jobs:
 
       - name: Override NuGet packages
         run: |
-          dotnet pack crates/bindings-csharp/BSATN.Runtime
-          dotnet pack crates/bindings-csharp/Runtime
+          dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
+          dotnet pack -c Release crates/bindings-csharp/Runtime
 
           # Write out the nuget config file to `nuget.config`. This causes the spacetimedb-csharp-sdk repository
           # to be aware of the local versions of the `bindings-csharp` packages in SpacetimeDB, and use them if
@@ -815,14 +815,16 @@ jobs:
           version: 4.6.2
           use-dotnet: true
 
-      - uses: actions/cache@v3
-        with:
-          path: demo/Blackholio/client-godot/.godot
-          key: Godot-${{ github.head_ref }}
-          restore-keys: Godot-
+      - name: Restore Godot project
+        working-directory: demo/Blackholio/client-godot
+        run: dotnet restore --configfile ../../../NuGet.Config blackholio.csproj
+
+      - name: Build Godot .NET project
+        working-directory: demo/Blackholio/client-godot
+        run: dotnet build --no-restore -v normal blackholio.csproj
 
       - name: Build Godot project
-        run: godot --headless --path demo/Blackholio/client-godot --build-solutions --quit
+        run: godot --headless --verbose --path demo/Blackholio/client-godot --build-solutions --quit
 
       - name: Start SpacetimeDB
         run: |
