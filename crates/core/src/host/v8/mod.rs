@@ -923,11 +923,23 @@ enum WorkerRequestOutcome {
 }
 
 impl WorkerRequestOutcome {
+    fn from_recreate_instance(recreate_instance: bool) -> Self {
+        if recreate_instance {
+            Self::RecreateInstance
+        } else {
+            Self::Continue
+        }
+    }
+
     fn recreate_instance(self) -> Self {
         match self {
             Self::Continue | Self::RecreateInstance => Self::RecreateInstance,
             Self::Fatal => Self::Fatal,
         }
+    }
+
+    fn should_return_instance(&self) -> bool {
+        matches!(self, Self::Continue | Self::RecreateInstance)
     }
 }
 
@@ -939,14 +951,68 @@ fn handle_worker_request<T: 'static>(
     match panic::catch_unwind(AssertUnwindSafe(f)) {
         Ok((value, recreate_instance)) => {
             send_worker_reply(ctx, reply_tx, value);
-            if recreate_instance {
-                WorkerRequestOutcome::RecreateInstance
-            } else {
-                WorkerRequestOutcome::Continue
-            }
+            WorkerRequestOutcome::from_recreate_instance(recreate_instance)
         }
         Err(panic) => {
             send_worker_panic_reply(ctx, reply_tx, panic);
+            WorkerRequestOutcome::Fatal
+        }
+    }
+}
+
+trait DetachedWorkerCompletion<T> {
+    fn complete(self, result: T);
+    fn failed(self);
+}
+
+struct IgnoreDetachedCompletion;
+
+impl DetachedWorkerCompletion<()> for IgnoreDetachedCompletion {
+    fn complete(self, (): ()) {}
+
+    fn failed(self) {}
+}
+
+impl DetachedWorkerCompletion<CallProcedureReturn> for JsProcedureResultCompletion {
+    fn complete(self, result: CallProcedureReturn) {
+        self(result);
+    }
+
+    fn failed(self) {}
+}
+
+impl DetachedWorkerCompletion<CallScheduledFunctionResult> for ScheduledFunctionCompletion {
+    fn complete(self, result: CallScheduledFunctionResult) {
+        ScheduledFunctionCompletion::complete(self, result);
+    }
+
+    fn failed(self) {
+        self.module_gone();
+    }
+}
+
+fn handle_detached_worker_request_with_completion<T>(
+    ctx: &'static str,
+    on_panic: JsFatalHook,
+    f: impl FnOnce() -> (T, bool),
+    completion: impl DetachedWorkerCompletion<T>,
+) -> WorkerRequestOutcome {
+    let mut completion = Some(completion);
+    match panic::catch_unwind(AssertUnwindSafe(|| {
+        let (result, recreate_instance) = f();
+        completion
+            .take()
+            .expect("detached worker completion should only be consumed once")
+            .complete(result);
+        recreate_instance
+    })) {
+        Ok(recreate_instance) => WorkerRequestOutcome::from_recreate_instance(recreate_instance),
+        Err(_) => {
+            log::warn!("detached JS worker request `{ctx}` panicked");
+            if let Some(completion) = completion {
+                completion.failed();
+            }
+            on_panic();
             WorkerRequestOutcome::Fatal
         }
     }
@@ -957,70 +1023,23 @@ fn handle_detached_worker_request(
     on_panic: JsFatalHook,
     f: impl FnOnce() -> bool,
 ) -> WorkerRequestOutcome {
-    match panic::catch_unwind(AssertUnwindSafe(f)) {
-        Ok(recreate_instance) => {
-            if recreate_instance {
-                WorkerRequestOutcome::RecreateInstance
-            } else {
-                WorkerRequestOutcome::Continue
-            }
-        }
-        Err(_) => {
-            log::warn!("detached JS worker request `{ctx}` panicked");
-            on_panic();
-            WorkerRequestOutcome::Fatal
-        }
-    }
+    handle_detached_worker_request_with_completion(ctx, on_panic, || ((), f()), IgnoreDetachedCompletion)
 }
 
-fn handle_detached_procedure_worker_request(
-    ctx: &'static str,
-    on_panic: JsFatalHook,
-    completion: JsProcedureResultCompletion,
-    f: impl FnOnce() -> (CallProcedureReturn, bool),
-) -> WorkerRequestOutcome {
-    match panic::catch_unwind(AssertUnwindSafe(|| {
-        let (result, recreate_instance) = f();
-        completion(result);
-        recreate_instance
-    })) {
-        Ok(recreate_instance) => {
-            if recreate_instance {
-                WorkerRequestOutcome::RecreateInstance
-            } else {
-                WorkerRequestOutcome::Continue
-            }
+macro_rules! handle_detached_procedure_request {
+    (
+        ctx: $ctx:literal,
+        on_panic: $on_panic:expr,
+        completion: $completion:expr,
+        return_instance: $return_instance:expr,
+        call: $body:block $(,)?
+    ) => {{
+        let outcome = handle_detached_worker_request_with_completion($ctx, $on_panic, || $body, $completion);
+        if outcome.should_return_instance() {
+            $return_instance();
         }
-        Err(_) => {
-            log::warn!("detached JS worker request `{ctx}` panicked");
-            on_panic();
-            WorkerRequestOutcome::Fatal
-        }
-    }
-}
-
-fn handle_detached_scheduled_worker_request(
-    ctx: &'static str,
-    completion: ScheduledFunctionCompletion,
-    on_panic: JsFatalHook,
-    f: impl FnOnce() -> (CallScheduledFunctionResult, bool),
-) -> WorkerRequestOutcome {
-    match panic::catch_unwind(AssertUnwindSafe(f)) {
-        Ok((result, recreate_instance)) => {
-            completion.complete(result);
-            if recreate_instance {
-                WorkerRequestOutcome::RecreateInstance
-            } else {
-                WorkerRequestOutcome::Continue
-            }
-        }
-        Err(_) => {
-            log::warn!("detached JS worker request `{ctx}` panicked");
-            completion.module_gone();
-            on_panic();
-            WorkerRequestOutcome::Fatal
-        }
-    }
+        outcome
+    }};
 }
 
 struct V8HeapMetrics {
@@ -1441,9 +1460,12 @@ fn handle_main_worker_request(
             params,
             completion,
             on_panic,
-        } => handle_detached_scheduled_worker_request("scheduled_reducer", completion, on_panic, || {
-            instance_common.call_scheduled_reducer(params, inst)
-        }),
+        } => handle_detached_worker_request_with_completion(
+            "scheduled_reducer",
+            on_panic,
+            || instance_common.call_scheduled_reducer(params, inst),
+            completion,
+        ),
         JsMainWorkerRequest::CallView { reply_tx, cmd } => handle_worker_request("call_view", reply_tx, || {
             let (res, trapped) = instance_common.handle_cmd(cmd, inst);
             (res, trapped)
@@ -1540,41 +1562,35 @@ fn handle_procedure_worker_request(
             on_panic,
             completion,
             return_instance,
-        } => {
-            let outcome = handle_detached_procedure_worker_request("call_procedure", on_panic, completion, || {
+        } => handle_detached_procedure_request! {
+            ctx: "call_procedure",
+            on_panic: on_panic,
+            completion: completion,
+            return_instance: return_instance,
+            call: {
                 instance_common
                     .call_procedure(params, inst)
                     .now_or_never()
                     .expect("our call_procedure implementation is not actually async")
-            });
-            if matches!(
-                outcome,
-                WorkerRequestOutcome::Continue | WorkerRequestOutcome::RecreateInstance
-            ) {
-                return_instance();
-            }
-            outcome
-        }
+            },
+        },
         JsProcedureWorkerRequest::ScheduledProcedureDetached {
             params,
             completion,
             on_panic,
             return_instance,
-        } => {
-            let outcome = handle_detached_scheduled_worker_request("scheduled_procedure", completion, on_panic, || {
+        } => handle_detached_procedure_request! {
+            ctx: "scheduled_procedure",
+            on_panic: on_panic,
+            completion: completion,
+            return_instance: return_instance,
+            call: {
                 instance_common
                     .call_scheduled_procedure(params, inst)
                     .now_or_never()
                     .expect("our call_scheduled_procedure implementation is not actually async")
-            });
-            if matches!(
-                outcome,
-                WorkerRequestOutcome::Continue | WorkerRequestOutcome::RecreateInstance
-            ) {
-                return_instance();
-            }
-            outcome
-        }
+            },
+        },
     }
 }
 
