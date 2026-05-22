@@ -23,5 +23,6 @@ export type { Uuid } from '../lib/uuid';
 export type { Random } from './rng';
 export type { ViewExport, ViewCtx, AnonymousViewCtx } from './views';
 export { Range, type Bound } from './range';
+export { ScheduleAt } from '../lib/schedule_at';
 
 import './polyfills'; // Ensure polyfills are loaded

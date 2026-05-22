@@ -107,7 +107,7 @@ export class SyncResponse {
     if (this.#body == null) {
       return new Uint8Array();
     } else if (typeof this.#body === 'string') {
-      return textEncoder.encode(this.#body);
+      return textEncoder.encode(this.#body) as Uint8Array<ArrayBuffer>;
     } else {
       return new Uint8Array(this.#body);
     }

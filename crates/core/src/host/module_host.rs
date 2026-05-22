@@ -539,9 +539,47 @@ pub fn create_table_from_def(
     module_def: &ModuleDef,
     table_def: &TableDef,
 ) -> anyhow::Result<()> {
-    let schema = TableSchema::from_module_def(module_def, table_def, (), TableId::SENTINEL);
+    create_table_from_def_with_prefix(stdb, tx, module_def, table_def, "")
+}
+
+/// Creates a mounted submodule table in `stdb`, applying the namespace to its canonical name.
+/// `name_prefix` is the dot-terminated namespace string (e.g. `"alias."`).
+pub fn create_table_from_def_with_prefix(
+    stdb: &RelationalDB,
+    tx: &mut MutTxId,
+    owning_def: &ModuleDef,
+    table_def: &TableDef,
+    name_prefix: &str,
+) -> anyhow::Result<()> {
+    let mut schema = TableSchema::from_module_def(owning_def, table_def, (), TableId::SENTINEL);
+    if !name_prefix.is_empty() {
+        // Use accessor_name so the canonical DB name matches what TypeScript looks up
+        // as `namespace + table.sourceName`. '.' is not a valid XID char so namespaced
+        // table names can never collide with user-defined tables.
+        let prefixed_name = format!("{}{}", name_prefix, &*table_def.accessor_name);
+        schema.table_name = TableName::new_raw(RawIdentifier::from(prefixed_name));
+
+        // No alias needed: the namespaced canonical name is already the unique lookup key.
+        schema.alias = None;
+
+        // Apply the namespace to the scheduled reducer name so the scheduler resolves the
+        // mounted reducer correctly (e.g. "reducerName" → "alias.reducerName"). The '.' is
+        // accepted by new_assume_valid and round-trips through st_scheduled safely.
+        if let Some(schedule) = &mut schema.schedule {
+            let prefixed_fn = format!("{}{}", name_prefix, &*schedule.function_name);
+            schedule.function_name = Identifier::new_assume_valid(RawIdentifier::from(prefixed_fn));
+        }
+
+        // Apply the namespace to index canonical names and aliases for global uniqueness.
+        for index in &mut schema.indexes {
+            index.index_name = RawIdentifier::from(format!("{}{}", name_prefix, index.index_name));
+            if let Some(alias) = &index.alias {
+                index.alias = Some(RawIdentifier::from(format!("{}{}", name_prefix, alias)));
+            }
+        }
+    }
     stdb.create_table(tx, schema)
-        .with_context(|| format!("failed to create table {}", &table_def.name))?;
+        .with_context(|| format!("failed to create table {}{}", name_prefix, &*table_def.accessor_name))?;
     Ok(())
 }
 
@@ -591,13 +629,18 @@ fn init_database_inner(
     let auth_ctx = AuthCtx::for_current(owner_identity);
     let (tx, ()) = stdb
         .with_auto_rollback(tx, |tx| {
-            // Create all in-memory tables defined by the module,
-            // with IDs ordered lexicographically by the table names.
-            let mut table_defs: Vec<_> = module_def.tables().collect();
-            table_defs.sort_by_key(|x| &x.name);
-            for def in table_defs {
-                logger.info(&format!("Creating table `{}`", &def.name));
-                create_table_from_def(stdb, tx, module_def, def)?;
+            // Create all in-memory tables defined by the module (including mounted submodules),
+            // with IDs ordered lexicographically by their full namespaced names.
+            let mut table_defs = module_def.all_tables_with_prefix();
+            table_defs.sort_by(|(p1, _, d1), (p2, _, d2)| {
+                let n1 = format!("{}{}", p1, d1.name);
+                let n2 = format!("{}{}", p2, d2.name);
+                n1.cmp(&n2)
+            });
+            for (prefix, owning_def, def) in table_defs {
+                let display_name = format!("{}{}", prefix, def.name);
+                logger.info(&format!("Creating table `{}`", display_name));
+                create_table_from_def_with_prefix(stdb, tx, owning_def, def, &prefix)?;
             }
 
             // Create all in-memory views defined by the module.

@@ -200,6 +200,26 @@ impl ModuleDef {
         self.tables().filter_map(|table| table.schedule.as_ref())
     }
 
+    /// All tables across this module and all mounted submodules, in depth-first order.
+    ///
+    /// Each item is `(namespace, owning_def, table_def)` where `namespace` is the dot-terminated
+    /// namespace string (e.g., `"alias."`) to be prepended to the table's name for database storage.
+    /// The consumer module's own tables yield namespace `""`.
+    pub fn all_tables_with_prefix(&self) -> Vec<(String, &ModuleDef, &TableDef)> {
+        let mut out = Vec::new();
+        self.collect_tables_with_prefix("", &mut out);
+        out
+    }
+
+    fn collect_tables_with_prefix<'a>(&'a self, prefix: &str, out: &mut Vec<(String, &'a ModuleDef, &'a TableDef)>) {
+        for table in self.tables.values() {
+            out.push((prefix.to_string(), self, table));
+        }
+        for (ns, mount) in &self.mounts {
+            mount.collect_tables_with_prefix(&format!("{prefix}{ns}."), out);
+        }
+    }
+
     /// The reducers of the module definition.
     pub fn reducers(&self) -> impl Iterator<Item = &ReducerDef> {
         self.reducers.values()

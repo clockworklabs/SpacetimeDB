@@ -292,21 +292,26 @@ type FlatMountDispatch = {
   tables: Array<{ accessorName: string; tableDef: RawTableDefV10 }>;
   typespace: Typespace;
   dbView_: DbView<any> | undefined;
+  /** e.g. "alias." for a mount with namespace alias "alias" */
+  namePrefix: string;
 };
 
 function flattenMountDispatches(
-  dispatches: MountedDispatchInfo[]
+  dispatches: MountedDispatchInfo[],
+  parentPrefix = ''
 ): FlatMountDispatch[] {
   const result: FlatMountDispatch[] = [];
   for (const d of dispatches) {
+    const namePrefix = parentPrefix + d.namespace + '.';
     result.push({
       reducerFns: d.reducerFns,
       reducerDefs: d.reducerDefs,
       tables: d.tables,
       typespace: d.typespace,
       dbView_: undefined,
+      namePrefix,
     });
-    result.push(...flattenMountDispatches(d.subDispatches));
+    result.push(...flattenMountDispatches(d.subDispatches, namePrefix));
   }
   return result;
 }
@@ -348,7 +353,7 @@ class ModuleHooksImpl implements ModuleHooks {
     );
     const mountNs = this.#schema.mountedDispatchInfos.map(dispatch => [
       dispatch.namespace,
-      buildDbViewForDispatch(dispatch),
+      buildDbViewForDispatch(dispatch, dispatch.namespace + '.'),
     ]);
     this.#dbView_ = freeze(Object.fromEntries([...rootTables, ...mountNs])) as DbView<any>;
     return this.#dbView_;
@@ -360,7 +365,7 @@ class ModuleHooksImpl implements ModuleHooks {
       Object.fromEntries(
         m.tables.map(({ accessorName, tableDef }) => [
           accessorName,
-          makeTableView(m.typespace, tableDef),
+          makeTableView(m.typespace, tableDef, m.namePrefix),
         ])
       ) as DbView<any>
     ));
@@ -378,7 +383,8 @@ class ModuleHooksImpl implements ModuleHooks {
   get #consumerAs() {
     return (this.#consumerAs_ ??= buildAliasCtxMap(
       this.#reducerCtx,
-      this.#schema.mountedDispatchInfos
+      this.#schema.mountedDispatchInfos,
+      ''
     ));
   }
 
@@ -523,24 +529,25 @@ class ModuleHooksImpl implements ModuleHooks {
 const BINARY_WRITER = new BinaryWriter(0);
 const BINARY_READER = new BinaryReader(new Uint8Array());
 
-function buildDbViewForDispatch(dispatch: MountedDispatchInfo): object {
+function buildDbViewForDispatch(dispatch: MountedDispatchInfo, namePrefix: string): object {
   const tableEntries = dispatch.tables.map(({ accessorName, tableDef }) => [
     accessorName,
-    makeTableView(dispatch.typespace, tableDef),
+    makeTableView(dispatch.typespace, tableDef, namePrefix),
   ]);
   const subNsEntries = dispatch.subDispatches.map(sub => [
     sub.namespace,
-    buildDbViewForDispatch(sub),
+    buildDbViewForDispatch(sub, namePrefix + sub.namespace + '.'),
   ]);
   return freeze(Object.fromEntries([...tableEntries, ...subNsEntries]));
 }
 
 function buildAliasCtx(
   parent: InstanceType<typeof ReducerCtxImpl>,
-  dispatch: MountedDispatchInfo
+  dispatch: MountedDispatchInfo,
+  namePrefix: string
 ): object {
-  const nsDb = buildDbViewForDispatch(dispatch);
-  const subAs = buildAliasCtxMap(parent, dispatch.subDispatches);
+  const nsDb = buildDbViewForDispatch(dispatch, namePrefix);
+  const subAs = buildAliasCtxMap(parent, dispatch.subDispatches, namePrefix);
   return {
     get sender() { return parent.sender; },
     get databaseIdentity() { return parent.databaseIdentity; },
@@ -558,18 +565,23 @@ function buildAliasCtx(
 
 function buildAliasCtxMap(
   parent: InstanceType<typeof ReducerCtxImpl>,
-  dispatches: MountedDispatchInfo[]
+  dispatches: MountedDispatchInfo[],
+  parentPrefix: string
 ): object {
   return freeze(
-    Object.fromEntries(dispatches.map(d => [d.namespace, buildAliasCtx(parent, d)]))
+    Object.fromEntries(dispatches.map(d => [
+      d.namespace,
+      buildAliasCtx(parent, d, parentPrefix + d.namespace + '.'),
+    ]))
   );
 }
 
 function makeTableView(
   typespace: Typespace,
-  table: RawTableDefV10
+  table: RawTableDefV10,
+  namePrefix = ''
 ): Table<any> {
-  const table_id = sys.table_id_from_name(table.sourceName);
+  const table_id = sys.table_id_from_name(namePrefix + table.sourceName);
   const rowType = typespace.types[table.productTypeRef];
   if (rowType.tag !== 'Product') {
     throw 'impossible';
@@ -665,7 +677,7 @@ function makeTableView(
 
   for (const indexDef of table.indexes) {
     const accessorName = indexDef.accessorName!;
-    const index_id = sys.index_id_from_name(indexDef.sourceName!);
+    const index_id = sys.index_id_from_name(namePrefix + indexDef.sourceName!);
 
     let column_ids: number[];
     let isHashIndex = false;
