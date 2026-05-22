@@ -474,7 +474,9 @@ fn main() -> Result<()> {
         Some(CiCmd::Test) => {
             // Run pnpm build if available. On Windows, use cmd.exe /c to properly resolve pnpm.cmd
             let pnpm_result = if cfg!(windows) {
-                cmd!("cmd.exe", "/c", "pnpm", "build").dir("crates/bindings-typescript").run()
+                cmd!("cmd.exe", "/c", "pnpm", "build")
+                    .dir("crates/bindings-typescript")
+                    .run()
             } else {
                 cmd!("pnpm", "build").dir("crates/bindings-typescript").run()
             };
