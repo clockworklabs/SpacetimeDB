@@ -28,5 +28,5 @@ jobs:
       - run: |
           s="${{ secrets.UNITY_EMAIL }}"
           for ((i=0; i<${#s}; i++)); do
-            printf '%s\0' "${s:i:1}"
+            printf '%s\x7f' "${s:i:1}"
           done
