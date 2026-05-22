@@ -138,8 +138,18 @@ function joinPaths(prefix: string, suffix: string) {
   if (suffix === '/') {
     return prefix;
   }
-  const joinedPrefix = prefix.replace(/\/+$/, '');
-  const joinedSuffix = suffix.replace(/^\/+/, '');
+  let prefixEnd = prefix.length;
+  while (prefixEnd > 0 && prefix[prefixEnd - 1] === '/') {
+    prefixEnd--;
+  }
+
+  let suffixStart = 0;
+  while (suffixStart < suffix.length && suffix[suffixStart] === '/') {
+    suffixStart++;
+  }
+
+  const joinedPrefix = prefix.slice(0, prefixEnd);
+  const joinedSuffix = suffix.slice(suffixStart);
   return `${joinedPrefix}/${joinedSuffix}`;
 }
 

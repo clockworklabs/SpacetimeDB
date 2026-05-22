@@ -199,6 +199,14 @@ describe('http router', async () => {
     expect(nested.map(route => route.path)).toEqual(['/api/users', '/api']);
   });
 
+  it('nests paths by collapsing repeated joining slashes', () => {
+    const nested = new Router()
+      .nest('/api///', new Router().get('///users', handler()))
+      .intoRoutes();
+
+    expect(nested.map(route => route.path)).toEqual(['/api/users']);
+  });
+
   it('rejects nesting when an existing route overlaps the nested prefix', () => {
     expect(() =>
       new Router().get('/api/users', handler()).nest('/api', new Router())
