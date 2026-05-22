@@ -19,8 +19,6 @@ namespace SpacetimeDB.Internal
         System.Collections.Generic.List<RawLifeCycleReducerDefV10> LifeCycleReducers,
         System.Collections.Generic.List<RawRowLevelSecurityDefV9> RowLevelSecurity,
         SpacetimeDB.CaseConversionPolicy CaseConversionPolicy,
-        ExplicitNames ExplicitNames,
-        System.Collections.Generic.List<RawModuleMountV10> Mounts,
         System.Collections.Generic.List<RawHttpHandlerDefV10> HttpHandlers,
         System.Collections.Generic.List<RawHttpRouteDefV10> HttpRoutes
     )>;

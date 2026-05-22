@@ -32,10 +32,9 @@ use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors,
 use spacetimedb_data_structures::map::{Equivalent, HashMap};
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v10::{
-    ExplicitNames, MethodOrAny, RawConstraintDefV10, RawHttpHandlerDefV10, RawHttpRouteDefV10, RawIndexDefV10,
-    RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section, RawModuleMountV10, RawProcedureDefV10,
-    RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10, RawScopedTypeNameV10, RawSequenceDefV10,
-    RawTableDefV10, RawTypeDefV10, RawViewDefV10,
+    ExplicitNames, RawConstraintDefV10, RawHttpHandlerDefV10, RawHttpRouteDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawModuleDefV10,
+    RawModuleDefV10Section, RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10,
+    RawScopedTypeNameV10, RawSequenceDefV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10,
 };
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIndexAlgorithm, RawIndexDefV9,
@@ -163,9 +162,6 @@ pub struct ModuleDef {
     /// was authored under.
     #[allow(unused)]
     raw_module_def_version: RawModuleDefVersion,
-
-    /// Mounted submodules, keyed by the namespace they are mounted under.
-    mounts: Vec<(String, ModuleDef)>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -180,11 +176,6 @@ impl ModuleDef {
     /// The raw module definition version this module was authored under.
     pub fn raw_module_def_version(&self) -> RawModuleDefVersion {
         self.raw_module_def_version
-    }
-
-    /// The mounted submodules of the module definition.
-    pub fn mounts(&self) -> &[(String, ModuleDef)] {
-        &self.mounts
     }
 
     /// The tables of the module definition.
@@ -514,7 +505,6 @@ impl From<ModuleDef> for RawModuleDefV9 {
             http_handlers: _,
             http_routes: _,
             raw_module_def_version: _,
-            mounts: _,
         } = val;
 
         // Extract column defaults from tables before consuming tables
@@ -573,7 +563,6 @@ impl From<ModuleDef> for RawModuleDefV10 {
             http_handlers,
             http_routes,
             raw_module_def_version: _,
-            mounts,
         } = val;
 
         let mut sections = Vec::new();
@@ -707,17 +696,6 @@ impl From<ModuleDef> for RawModuleDefV10 {
 
         // Always emit ExplicitNames so canonical names survive the round-trip.
         sections.push(RawModuleDefV10Section::ExplicitNames(explicit_names));
-
-        let mounts: Vec<_> = mounts
-            .into_iter()
-            .map(|(namespace, module)| RawModuleMountV10 {
-                namespace,
-                module: module.into(),
-            })
-            .collect();
-        if !mounts.is_empty() {
-            sections.push(RawModuleDefV10Section::Mounts(mounts));
-        }
 
         RawModuleDefV10 { sections }
     }

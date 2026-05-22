@@ -131,6 +131,10 @@ fn is_npm_package_json(package_json: &Value) -> bool {
     .any(|key| package_json.get(key).is_some())
 }
 
+fn is_template_path(path: &Path) -> bool {
+    path.starts_with("templates")
+}
+
 fn minimum_release_age(path: &Path) -> Result<u64> {
     let workspace = fs::read_to_string(path)?;
     workspace
@@ -221,6 +225,12 @@ fn check_pnpm_release_age_policy() -> Result<()> {
     }
 
     for npmrc_path in git_tracked_files(":(glob)**/.npmrc")? {
+        // Template package roots are copied into projects created by `spacetime init`.
+        // They must not embed this repo's package-age policy; smoketests enforce it
+        // at the pnpm process boundary instead.
+        if is_template_path(&npmrc_path) {
+            continue;
+        }
         let found_minimum_release_age = npmrc_minimum_release_age(&npmrc_path, root_minimum_release_age)?;
         if found_minimum_release_age != root_minimum_release_age {
             bail!(
@@ -233,6 +243,12 @@ fn check_pnpm_release_age_policy() -> Result<()> {
     }
 
     for package_json_path in git_tracked_files(":(glob)**/package.json")? {
+        // Template package roots are copied into projects created by `spacetime init`.
+        // They must not require adjacent .npmrc files for this repo's package-age
+        // policy; smoketests enforce it at the pnpm process boundary instead.
+        if is_template_path(&package_json_path) {
+            continue;
+        }
         let package_json = read_package_json(&package_json_path)?;
         if !is_npm_package_json(&package_json) {
             continue;
