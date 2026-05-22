@@ -476,22 +476,41 @@ fn main() -> Result<()> {
 
             // TODO: This doesn't work on at least user Linux machines, because something here apparently uses `sudo`?
 
-            // Exclude smoketests from `cargo test --all` since they require pre-built binaries.
-            // Smoketests have their own dedicated command: `cargo ci smoketests`
-            cmd!(
-                "cargo",
-                "test",
-                "--all",
-                "--exclude",
-                "spacetimedb-smoketests",
-                "--exclude",
-                "spacetimedb-sdk",
-                "--",
-                "--test-threads=2",
-                "--skip",
-                "unreal"
-            )
-            .run()?;
+            // Run tests crate-by-crate to prevent memory accumulation and OOM in CI.
+            // This replaces `cargo test --all` which accumulates 10GB+ memory.
+            // Each crate runs in a separate process, ensuring memory is freed between crates.
+            let crates_to_test = [
+                "spacetimedb-sats",
+                "spacetimedb-data-structures",
+                "spacetimedb-metrics",
+                "spacetimedb-primitives",
+                "spacetimedb-schema",
+                "spacetimedb-table",
+                "spacetimedb-sql-parser",
+                "spacetimedb-expr",
+                "spacetimedb-lib",
+                "spacetimedb-standalone",
+                "spacetimedb-testing",
+                "spacetimedb-cli",
+                "spacetimedb-client-api",
+                "spacetimedb-core",
+                "spacetimedb",
+            ];
+
+            for crate_name in crates_to_test {
+                println!("Running tests for crate: {}", crate_name);
+                cmd!(
+                    "cargo",
+                    "test",
+                    "-p",
+                    crate_name,
+                    "--",
+                    "--test-threads=1",
+                    "--skip",
+                    "unreal"
+                )
+                .run()?;
+            }
             // SDK procedure tests intentionally make localhost HTTP requests.
             cmd!(
                 "cargo",
