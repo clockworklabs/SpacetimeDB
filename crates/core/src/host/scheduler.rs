@@ -402,7 +402,7 @@ enum ScheduledFunctionKind {
 }
 
 impl ScheduledFunctionParams {
-    fn function_name(&self) -> &str {
+    pub(crate) fn function_name(&self) -> &str {
         match &self.0 {
             QueueItem::Id { function_name, .. } => function_name,
             QueueItem::VolatileNonatomicImmediate { function_name, .. } => function_name,

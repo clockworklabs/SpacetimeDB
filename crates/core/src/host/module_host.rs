@@ -373,6 +373,26 @@ impl Drop for CallTimerGuard {
     }
 }
 
+struct OperationHooks {
+    ctx: OperationContext,
+    timer_guard: CallTimerGuard,
+    on_panic: JsFatalHook,
+}
+
+impl OperationHooks {
+    fn new(ctx: OperationContext, timer_guard: CallTimerGuard, on_panic: JsFatalHook) -> Self {
+        Self {
+            ctx,
+            timer_guard,
+            on_panic,
+        }
+    }
+
+    fn split(self) -> (OperationContext, CallTimerGuard, JsFatalHook) {
+        (self.ctx, self.timer_guard, self.on_panic)
+    }
+}
+
 type WasmtimeProcedureInstanceManager = ModuleInstanceManager<Arc<super::wasmtime::ProcedureModule>>;
 
 struct WasmtimeModuleState {
@@ -424,23 +444,22 @@ struct WasmtimeModuleHost {
 }
 
 impl WasmtimeModuleHost {
-    fn enqueue_with_main_instance<A>(
+    fn enqueue_with_main_instance<Args>(
         &self,
-        label: &str,
-        on_panic: Arc<dyn Fn() + Send + Sync>,
-        timer_guard: CallTimerGuard,
-        arg: A,
-        wasm: impl FnOnce(A, &mut ModuleInstance) + Send + 'static,
+        hooks: OperationHooks,
+        arg: Args,
+        wasm: impl FnOnce(Args, &mut ModuleInstance) + Send + 'static,
     ) where
-        A: Send + 'static,
+        Args: Send + 'static,
     {
-        let label = label.to_owned();
+        let (ctx, timer_guard, on_panic) = hooks.split();
+        let label = ctx.name().to_owned();
+        let panic_label = ctx.panic_label();
         self.main_executor.enqueue_job(move |state| {
             scopeguard::defer_on_unwind!({
-                log::warn!("wasm main operation {label} panicked");
+                log::warn!("{panic_label} {label} panicked");
                 on_panic();
             });
-
             state.with_instance(move |inst| {
                 drop(timer_guard);
                 wasm(arg, inst);
@@ -448,41 +467,37 @@ impl WasmtimeModuleHost {
         });
     }
 
-    async fn enqueue_with_procedure_instance<A>(
+    async fn enqueue_with_procedure_instance<Args>(
         &self,
-        label: &str,
-        on_panic: Arc<dyn Fn() + Send + Sync>,
-        timer_guard: CallTimerGuard,
-        arg: A,
-        wasm: impl AsyncFnOnce(A, &mut ModuleInstance) + Send + 'static,
+        hooks: OperationHooks,
+        arg: Args,
+        wasm: impl AsyncFnOnce(Args, &mut ModuleInstance) + Send + 'static,
     ) where
-        A: Send + 'static,
+        Args: Send + 'static,
     {
         let instance_manager = self.procedure_instances.clone();
-        let ModuleInstanceLease { instance, slot } = instance_manager.get_instance().await;
-        let label = label.to_owned();
+        let ModuleInstanceLease { mut instance, slot } = instance_manager.get_instance().await;
+        let (ctx, timer_guard, on_panic) = hooks.split();
+        let label = ctx.name().to_owned();
+        let panic_label = ctx.panic_label();
         self.procedure_executor.enqueue_job(async move || {
             scopeguard::defer_on_unwind!({
-                log::warn!("wasm procedure {label} panicked");
+                log::warn!("{panic_label} {label} panicked");
                 on_panic();
             });
-
-            let mut inst = instance;
             drop(timer_guard);
-            wasm(arg, &mut inst).await;
-            instance_manager.return_instance(ModuleInstanceLease { instance: inst, slot });
+            wasm(arg, &mut instance).await;
+            instance_manager.return_instance(ModuleInstanceLease { instance, slot });
         });
     }
 
     async fn enqueue_procedure_call(
         &self,
-        label: &str,
-        on_panic: Arc<dyn Fn() + Send + Sync>,
-        timer_guard: CallTimerGuard,
+        hooks: OperationHooks,
         params: CallProcedureParams,
         on_result: impl FnOnce(CallProcedureReturn) + Send + 'static,
     ) {
-        self.enqueue_with_procedure_instance(label, on_panic, timer_guard, params, async move |params, inst| {
+        self.enqueue_with_procedure_instance(hooks, params, async move |params, inst| {
             on_result(inst.call_procedure(params).await)
         })
         .await;
@@ -490,21 +505,13 @@ impl WasmtimeModuleHost {
 
     async fn enqueue_scheduled_procedure_call(
         &self,
-        on_panic: Arc<dyn Fn() + Send + Sync>,
-        timer_guard: CallTimerGuard,
+        hooks: OperationHooks,
         params: ScheduledFunctionParams,
         completion: ScheduledFunctionCompletion,
     ) {
-        self.enqueue_with_procedure_instance(
-            "scheduled procedure",
-            on_panic,
-            timer_guard,
-            (params, completion),
-            async move |(params, completion), inst| {
-                let result = inst.call_scheduled_procedure(params).await;
-                completion.complete(result);
-            },
-        )
+        self.enqueue_with_procedure_instance(hooks, (params, completion), async move |(params, completion), inst| {
+            completion.complete(inst.call_scheduled_procedure(params).await);
+        })
         .await;
     }
 }
@@ -549,8 +556,8 @@ impl V8ModuleHost {
     async fn enqueue_scheduled_procedure(
         &self,
         params: ScheduledFunctionParams,
-        completion: ScheduledFunctionCompletion,
         on_panic: JsFatalHook,
+        completion: ScheduledFunctionCompletion,
     ) {
         self.enqueue_with_procedure_instance(|instance, return_instance| async move {
             instance
@@ -869,13 +876,82 @@ impl CallReducerParams {
     }
 }
 
+struct OperationContext {
+    name: Box<str>,
+    kind: OperationKind,
+}
+
+#[derive(Clone, Copy)]
+enum OperationKind {
+    WebsocketReducer,
+    WebsocketView,
+    WebsocketProcedure,
+    WebsocketOneOffQuery,
+    ScheduledReducer,
+    ScheduledProcedure,
+}
+
+impl OperationContext {
+    fn websocket_reducer(name: impl Into<Box<str>>) -> Self {
+        Self::new(OperationKind::WebsocketReducer, name)
+    }
+
+    fn websocket_view(name: impl Into<Box<str>>) -> Self {
+        Self::new(OperationKind::WebsocketView, name)
+    }
+
+    fn websocket_procedure(name: impl Into<Box<str>>) -> Self {
+        Self::new(OperationKind::WebsocketProcedure, name)
+    }
+
+    fn websocket_one_off_query(name: impl Into<Box<str>>) -> Self {
+        Self::new(OperationKind::WebsocketOneOffQuery, name)
+    }
+
+    fn scheduled_reducer(name: impl Into<Box<str>>) -> Self {
+        Self::new(OperationKind::ScheduledReducer, name)
+    }
+
+    fn scheduled_procedure(name: impl Into<Box<str>>) -> Self {
+        Self::new(OperationKind::ScheduledProcedure, name)
+    }
+
+    fn new(kind: OperationKind, name: impl Into<Box<str>>) -> Self {
+        Self {
+            name: name.into(),
+            kind,
+        }
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn panic_label(&self) -> &'static str {
+        self.kind.panic_label()
+    }
+}
+
+impl OperationKind {
+    fn panic_label(self) -> &'static str {
+        match self {
+            Self::WebsocketReducer => "websocket reducer operation",
+            Self::WebsocketView => "websocket view operation",
+            Self::WebsocketProcedure => "websocket procedure operation",
+            Self::WebsocketOneOffQuery => "websocket one-off query operation",
+            Self::ScheduledReducer => "scheduled reducer operation",
+            Self::ScheduledProcedure => "scheduled procedure operation",
+        }
+    }
+}
+
 struct PreparedReducerCall {
-    name: ReducerName,
+    ctx: OperationContext,
     params: CallReducerParams,
 }
 
 struct PreparedProcedureCall {
-    name: String,
+    ctx: OperationContext,
     params: CallProcedureParams,
 }
 
@@ -1847,8 +1923,7 @@ impl ModuleHost {
 
         Ok(match &*self.inner {
             ModuleHostInner::Wasm(host) => {
-                let executor = host.main_executor.clone();
-                executor
+                host.main_executor
                     .run_job(move |state| {
                         state.with_instance(move |inst| {
                             drop(timer_guard);
@@ -1891,11 +1966,9 @@ impl ModuleHost {
 
         Ok(match &*self.inner {
             ModuleHostInner::Wasm(host) => {
-                let executor = host.procedure_executor.clone();
-                let instance_manager = host.procedure_instances.clone();
-                instance_manager
+                host.procedure_instances
                     .with_instance(async move |mut inst| {
-                        executor
+                        host.procedure_executor
                             .run_job(async move || {
                                 drop(timer_guard);
                                 let res = wasm(arg, &mut inst).await;
@@ -1919,19 +1992,19 @@ impl ModuleHost {
 
     async fn enqueue_main_operation<A, JsFut>(
         &self,
-        panic_kind: &'static str,
-        label: &str,
+        ctx: OperationContext,
         arg: A,
         js: impl FnOnce(A, JsMainInstance, JsFatalHook) -> JsFut,
-        wasm: impl FnOnce(A, &WasmtimeModuleHost, JsFatalHook, CallTimerGuard) -> Result<(), NoSuchModule>,
+        wasm: impl FnOnce(A, &WasmtimeModuleHost, OperationHooks) -> Result<(), NoSuchModule>,
     ) -> Result<(), NoSuchModule>
     where
         A: Send + 'static,
         JsFut: Future<Output = ()> + Send + 'static,
     {
-        let panic_label = label.to_owned();
+        let operation_name = ctx.name().to_owned();
+        let panic_label = ctx.panic_label();
         scopeguard::defer_on_unwind!({
-            log::warn!("{panic_kind} {panic_label} panicked");
+            log::warn!("{panic_label} {operation_name} panicked");
             (self.on_panic)();
         });
 
@@ -1947,18 +2020,17 @@ impl ModuleHost {
             }
             ModuleHostInner::Wasm(wasm_host) => {
                 self.guard_closed()?;
-                let timer_guard = self.start_call_timer(label);
+                let timer_guard = self.start_call_timer(ctx.name());
                 let on_panic = self.on_panic.clone();
-                wasm(arg, wasm_host, on_panic, timer_guard)
+                let guard = OperationHooks::new(ctx, timer_guard, on_panic);
+                wasm(arg, wasm_host, guard)
             }
         }
     }
 
     async fn enqueue_main_instance_operation<A, JsFut>(
         &self,
-        panic_kind: &'static str,
-        label: &str,
-        wasm_label: &str,
+        ctx: OperationContext,
         arg: A,
         js: impl FnOnce(A, JsMainInstance, JsFatalHook) -> JsFut,
         wasm: impl FnOnce(A, &mut ModuleInstance) + Send + 'static,
@@ -1967,16 +2039,10 @@ impl ModuleHost {
         A: Send + 'static,
         JsFut: Future<Output = ()> + Send + 'static,
     {
-        self.enqueue_main_operation(
-            panic_kind,
-            label,
-            arg,
-            js,
-            move |arg, wasm_host, on_panic, timer_guard| {
-                wasm_host.enqueue_with_main_instance(wasm_label, on_panic, timer_guard, arg, wasm);
-                Ok(())
-            },
-        )
+        self.enqueue_main_operation(ctx, arg, js, move |arg, wasm_host, guard| {
+            wasm_host.enqueue_with_main_instance(guard, arg, wasm);
+            Ok(())
+        })
         .await
     }
 
@@ -1989,9 +2055,7 @@ impl ModuleHost {
         let info = self.info.clone();
 
         self.enqueue_main_instance_operation(
-            "websocket view operation",
-            label,
-            label,
+            OperationContext::websocket_view(label),
             (cmd, metric),
             |(cmd, metric), inst, on_panic| async move { inst.enqueue_call_view(cmd, metric, on_panic).await },
             move |(cmd, metric), inst| {
@@ -2306,15 +2370,25 @@ impl ModuleHost {
         ))
     }
 
-    async fn call_reducer_with_params(
-        &self,
-        reducer_name: &ReducerName,
-        params: CallReducerParams,
-    ) -> Result<ReducerCallResult, ReducerCallError> {
-        call_instance!(self, reducer_name, params, |p, inst| inst.call_reducer(p), |p, inst| {
+    async fn call_reducer_prepared(&self, call: PreparedReducerCall) -> Result<ReducerCallResult, ReducerCallError> {
+        let PreparedReducerCall { ctx, params } = call;
+        call_instance!(self, ctx.name(), params, |p, inst| inst.call_reducer(p), |p, inst| {
             inst.call_reducer(p).await
         },)
         .map_err(Into::into)
+    }
+
+    async fn enqueue_reducer_prepared(&self, call: PreparedReducerCall) -> Result<(), NoSuchModule> {
+        let PreparedReducerCall { ctx, params } = call;
+        self.enqueue_main_instance_operation(
+            ctx,
+            params,
+            |params, inst, on_panic| async move { inst.enqueue_reducer(params, on_panic).await },
+            move |params, inst| {
+                let _ = inst.call_reducer(params);
+            },
+        )
+        .await
     }
 
     fn log_reducer_submit_error(&self, reducer_name: &str, err: &ReducerCallError) {
@@ -2351,7 +2425,7 @@ impl ModuleHost {
                 args,
             )?;
             f(PreparedReducerCall {
-                name: reducer_def.name.clone(),
+                ctx: OperationContext::websocket_reducer(reducer_def.name.to_string()),
                 params,
             })
             .await
@@ -2383,7 +2457,7 @@ impl ModuleHost {
             timer,
             reducer_name,
             args,
-            async |call| self.call_reducer_with_params(&call.name, call.params).await,
+            async |call| self.call_reducer_prepared(call).await,
         )
         .await
     }
@@ -2406,21 +2480,7 @@ impl ModuleHost {
             timer,
             reducer_name,
             args,
-            async |call| {
-                let reducer_label = call.name;
-                self.enqueue_main_instance_operation(
-                    "websocket reducer operation",
-                    reducer_name,
-                    &reducer_label,
-                    call.params,
-                    |params, inst, on_panic| async move { inst.enqueue_reducer(params, on_panic).await },
-                    move |params, inst| {
-                        let _ = inst.call_reducer(params);
-                    },
-                )
-                .await
-                .map_err(Into::into)
-            },
+            async |call| self.enqueue_reducer_prepared(call).await.map_err(Into::into),
         )
         .await
     }
@@ -2562,9 +2622,7 @@ impl ModuleHost {
         let res = async {
             let call =
                 self.prepare_procedure_call(caller_identity, caller_connection_id, timer, procedure_name, args)?;
-            self.call_procedure_with_params(&call.name, call.params)
-                .await
-                .map_err(Into::into)
+            self.call_procedure_prepared(call).await.map_err(Into::into)
         }
         .await;
 
@@ -2584,18 +2642,29 @@ impl ModuleHost {
         args: FunctionArgs,
         target: ProcedureResultTarget,
     ) -> Result<(), BroadcastError> {
-        let PreparedProcedureCall { name, params } =
-            match self.prepare_procedure_call(caller_identity, caller_connection_id, timer, procedure_name, args) {
-                Ok(value) => value,
-                Err(err) => {
-                    return self.send_procedure_error(procedure_name, timer, target, err);
-                }
-            };
-        let procedure_name = name;
+        let call = match self.prepare_procedure_call(caller_identity, caller_connection_id, timer, procedure_name, args)
+        {
+            Ok(value) => value,
+            Err(err) => {
+                return self.send_procedure_error(procedure_name, timer, target, err);
+            }
+        };
 
-        let guard_procedure_name = procedure_name.clone();
+        self.enqueue_procedure_prepared(call, timer, target).await
+    }
+
+    async fn enqueue_procedure_prepared(
+        &self,
+        call: PreparedProcedureCall,
+        timer: Option<Instant>,
+        target: ProcedureResultTarget,
+    ) -> Result<(), BroadcastError> {
+        let PreparedProcedureCall { ctx, params } = call;
+        let procedure_name = ctx.name().to_owned();
+        let panic_label = ctx.panic_label();
+
         scopeguard::defer_on_unwind!({
-            log::warn!("websocket procedure operation {guard_procedure_name} panicked");
+            log::warn!("{panic_label} {procedure_name} panicked");
             (self.on_panic)();
         });
 
@@ -2624,8 +2693,9 @@ impl ModuleHost {
                 let target_for_job = target.clone();
                 let timer_guard = self.start_call_timer(&procedure_name);
                 let on_panic = self.on_panic.clone();
+                let guard = OperationHooks::new(ctx, timer_guard, on_panic);
                 wasm_host
-                    .enqueue_procedure_call(&procedure_name, on_panic, timer_guard, params, move |ret| {
+                    .enqueue_procedure_call(guard, params, move |ret| {
                         if let Err(err) =
                             module.log_and_send_procedure_result(&procedure_name_for_job, timer, target_for_job, ret)
                         {
@@ -2745,7 +2815,7 @@ impl ModuleHost {
         let (procedure_def, params) =
             self.procedure_call_params(caller_identity, caller_connection_id, timer, procedure_name, args)?;
         Ok(PreparedProcedureCall {
-            name: procedure_def.name.to_string(),
+            ctx: OperationContext::websocket_procedure(procedure_def.name.to_string()),
             params,
         })
     }
@@ -2791,14 +2861,11 @@ impl ModuleHost {
         self.info.owner_identity == caller_identity
     }
 
-    pub async fn call_procedure_with_params(
-        &self,
-        name: &str,
-        params: CallProcedureParams,
-    ) -> Result<CallProcedureReturn, NoSuchModule> {
+    async fn call_procedure_prepared(&self, call: PreparedProcedureCall) -> Result<CallProcedureReturn, NoSuchModule> {
+        let PreparedProcedureCall { ctx, params } = call;
         call_pooled_instance!(
             self,
-            name,
+            ctx.name(),
             params,
             |params, inst| inst.call_procedure(params).await,
             |params, inst| inst.call_procedure(params).await,
@@ -2810,11 +2877,14 @@ impl ModuleHost {
         params: ScheduledFunctionParams,
         completion: ScheduledFunctionCompletion,
     ) -> Result<(), CallScheduledFunctionError> {
+        let ctx = OperationContext::scheduled_reducer(params.function_name().to_owned());
         self.guard_closed()?;
-        let timer_guard = self.start_call_timer("scheduled reducer");
+        let timer_guard = self.start_call_timer(ctx.name());
+        let panic_label = ctx.panic_label();
+        let operation_name = ctx.name().to_owned();
 
         scopeguard::defer_on_unwind!({
-            log::warn!("scheduled reducer operation panicked");
+            log::warn!("{panic_label} {operation_name} panicked");
             (self.on_panic)();
         });
 
@@ -2825,16 +2895,11 @@ impl ModuleHost {
         match &*self.inner {
             ModuleHostInner::Wasm(wasm_host) => {
                 let on_panic = self.on_panic.clone();
-                wasm_host.enqueue_with_main_instance(
-                    "scheduled reducer",
-                    on_panic,
-                    timer_guard,
-                    (params, completion),
-                    move |(params, completion), inst| {
-                        let result = inst.call_scheduled_reducer(params);
-                        completion.complete(result);
-                    },
-                );
+                let guard = OperationHooks::new(ctx, timer_guard, on_panic);
+                wasm_host.enqueue_with_main_instance(guard, (params, completion), move |(params, completion), inst| {
+                    let result = inst.call_scheduled_reducer(params);
+                    completion.complete(result);
+                });
             }
             ModuleHostInner::Js(js_host) => {
                 drop(timer_guard);
@@ -2854,11 +2919,14 @@ impl ModuleHost {
         params: ScheduledFunctionParams,
         completion: ScheduledFunctionCompletion,
     ) -> Result<(), CallScheduledFunctionError> {
+        let ctx = OperationContext::scheduled_procedure(params.function_name().to_owned());
         self.guard_closed()?;
-        let timer_guard = self.start_call_timer("scheduled procedure");
+        let timer_guard = self.start_call_timer(ctx.name());
+        let panic_label = ctx.panic_label();
+        let operation_name = ctx.name().to_owned();
 
         scopeguard::defer_on_unwind!({
-            log::warn!("scheduled procedure operation panicked");
+            log::warn!("{panic_label} {operation_name} panicked");
             (self.on_panic)();
         });
 
@@ -2867,14 +2935,15 @@ impl ModuleHost {
         match &*self.inner {
             ModuleHostInner::Wasm(wasm_host) => {
                 let on_panic = self.on_panic.clone();
+                let guard = OperationHooks::new(ctx, timer_guard, on_panic);
                 wasm_host
-                    .enqueue_scheduled_procedure_call(on_panic, timer_guard, params, completion)
+                    .enqueue_scheduled_procedure_call(guard, params, completion)
                     .await;
             }
             ModuleHostInner::Js(js_host) => {
                 drop(timer_guard);
                 let on_panic = self.on_panic.clone();
-                js_host.enqueue_scheduled_procedure(params, completion, on_panic).await;
+                js_host.enqueue_scheduled_procedure(params, on_panic, completion).await;
             }
         }
 
@@ -3193,19 +3262,20 @@ impl ModuleHost {
     }
 
     async fn one_off_query_with_params(&self, request: OneOffQueryRequest) -> Result<(), anyhow::Error> {
-        let label = request.label();
+        let ctx = OperationContext::websocket_one_off_query(request.label());
         self.enqueue_main_operation(
-            "websocket one-off query operation",
-            label,
+            ctx,
             request,
             |request, inst, on_panic| async move { inst.enqueue_one_off_query(request, on_panic).await },
-            move |request, wasm_host, on_panic, timer_guard| {
+            move |request, wasm_host, guard| {
                 let executor = wasm_host.main_executor.clone();
                 let info = wasm_host.module.info();
-                let label = label.to_owned();
+                let (ctx, timer_guard, on_panic) = guard.split();
+                let label = ctx.name().to_owned();
+                let panic_label = ctx.panic_label();
                 executor.enqueue_job(move |_| {
                     scopeguard::defer_on_unwind!({
-                        log::warn!("websocket one-off query operation {label} panicked");
+                        log::warn!("{panic_label} {label} panicked");
                         on_panic();
                     });
 
