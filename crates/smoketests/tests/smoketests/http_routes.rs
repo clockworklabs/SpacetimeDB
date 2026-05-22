@@ -1040,6 +1040,7 @@ fn typescript_http_routes_end_to_end() {
     assert_http_routes_end_to_end(&test.server_url, &identity);
 }
 
+#[test]
 fn csharp_http_routes_end_to_end() {
     require_dotnet!();
     let (test, identity) = csharp_http_test("http-routes-csharp-basic", CS_MODULE_CODE);
@@ -1052,6 +1053,7 @@ fn typescript_http_routes_pr_example_round_trip() {
     assert_http_routes_pr_example_round_trip(&test.server_url, &identity);
 }
 
+#[test]
 fn csharp_http_routes_pr_example_round_trip() {
     require_dotnet!();
     let (test, identity) = csharp_http_test("http-routes-csharp-example", CS_EXAMPLE_MODULE_CODE);
@@ -1067,6 +1069,7 @@ fn typescript_http_routes_are_strict_for_non_root_paths() {
     assert_http_routes_are_strict_for_non_root_paths(&test.server_url, &identity);
 }
 
+#[test]
 fn csharp_http_routes_are_strict_for_non_root_paths() {
     require_dotnet!();
     let (test, identity) = csharp_http_test(
@@ -1083,6 +1086,7 @@ fn typescript_http_routes_are_strict_for_root_paths() {
     assert_http_routes_are_strict_for_root_paths(&test.server_url, &identity);
 }
 
+#[test]
 fn csharp_http_routes_are_strict_for_root_paths() {
     require_dotnet!();
     let (test, identity) = csharp_http_test("http-routes-csharp-strict-root", CS_STRICT_ROOT_ROUTING_MODULE_CODE);
@@ -1095,6 +1099,7 @@ fn typescript_http_handler_observes_full_external_uri() {
     assert_http_handler_observes_full_external_uri(&test.server_url, &identity);
 }
 
+#[test]
 fn csharp_http_handler_observes_full_external_uri() {
     require_dotnet!();
     let (test, identity) = csharp_http_test("http-routes-csharp-full-uri", CS_FULL_URI_MODULE_CODE);
@@ -1110,6 +1115,7 @@ fn typescript_handle_request_body() {
     assert_handle_request_body(&test.server_url, &identity);
 }
 
+#[test]
 fn csharp_handle_request_body() {
     require_dotnet!();
     let (test, identity) = csharp_http_test("http-routes-csharp-request-body", CS_HANDLE_REQUEST_BODY_MODULE_CODE);
