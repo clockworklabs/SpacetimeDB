@@ -708,17 +708,27 @@ impl JsProcedureInstance {
         .await
     }
 
-    pub(in crate::host) async fn enqueue_procedure(&self, params: CallProcedureParams) -> JsProcedureCall {
-        let (reply_tx, reply_rx) = oneshot::channel();
-        if self
-            .tx
-            .send(JsProcedureWorkerRequest::CallProcedure { reply_tx, params })
-            .await
-            .is_err()
-        {
+    pub(in crate::host) async fn enqueue_procedure(
+        self,
+        params: CallProcedureParams,
+        on_panic: JsFatalHook,
+        completion: impl FnOnce(CallProcedureReturn) + Send + 'static,
+        return_instance: impl FnOnce(Self) + Send + 'static,
+    ) {
+        let tx = self.tx.clone();
+        let request = JsProcedureWorkerRequest::CallProcedureDetached {
+            params,
+            on_panic,
+            completion: Box::new(completion),
+            return_instance: Box::new(move || return_instance(self)),
+        };
+        if let Err(err) = tx.send(request).await {
+            let JsProcedureWorkerRequest::CallProcedureDetached { return_instance, .. } = err.0 else {
+                return;
+            };
+            return_instance();
             panic!("JS worker exited before accepting `call_procedure`");
         }
-        JsProcedureCall { reply_rx }
     }
 
     pub(in crate::host) async fn enqueue_scheduled_procedure(
@@ -746,7 +756,7 @@ impl JsProcedureInstance {
                 return;
             };
             completion.module_gone();
-            drop(return_instance);
+            return_instance();
         }
     }
 }
@@ -790,27 +800,8 @@ type JsPanicPayload = Box<dyn std::any::Any + Send + 'static>;
 type JsReply<T> = Result<T, JsPanicPayload>;
 type JsReplyTx<T> = oneshot::Sender<JsReply<T>>;
 pub(in crate::host) type JsFatalHook = Arc<dyn Fn() + Send + Sync + 'static>;
+type JsProcedureResultCompletion = Box<dyn FnOnce(CallProcedureReturn) + Send + 'static>;
 type JsProcedureInstanceReturn = Box<dyn FnOnce() + Send + 'static>;
-
-pub(in crate::host) struct JsProcedureCall {
-    reply_rx: oneshot::Receiver<JsReply<CallProcedureReturn>>,
-}
-
-pub(in crate::host) enum JsProcedureCallCompletion {
-    Completed(CallProcedureReturn),
-    Panicked,
-    WorkerExited,
-}
-
-impl JsProcedureCall {
-    pub(in crate::host) async fn receive(self) -> JsProcedureCallCompletion {
-        match self.reply_rx.await {
-            Ok(Ok(ret)) => JsProcedureCallCompletion::Completed(ret),
-            Ok(Err(_panic)) => JsProcedureCallCompletion::Panicked,
-            Err(_) => JsProcedureCallCompletion::WorkerExited,
-        }
-    }
-}
 
 /// Requests sent to the main JS worker thread.
 ///
@@ -895,6 +886,13 @@ enum JsProcedureWorkerRequest {
         reply_tx: JsReplyTx<CallProcedureReturn>,
         params: CallProcedureParams,
     },
+    /// See [`JsProcedureInstance::enqueue_procedure`].
+    CallProcedureDetached {
+        params: CallProcedureParams,
+        on_panic: JsFatalHook,
+        completion: JsProcedureResultCompletion,
+        return_instance: JsProcedureInstanceReturn,
+    },
     /// See [`JsProcedureInstance::enqueue_scheduled_procedure`].
     ScheduledProcedureDetached {
         params: ScheduledFunctionParams,
@@ -960,6 +958,32 @@ fn handle_detached_worker_request(
     f: impl FnOnce() -> bool,
 ) -> WorkerRequestOutcome {
     match panic::catch_unwind(AssertUnwindSafe(f)) {
+        Ok(recreate_instance) => {
+            if recreate_instance {
+                WorkerRequestOutcome::RecreateInstance
+            } else {
+                WorkerRequestOutcome::Continue
+            }
+        }
+        Err(_) => {
+            log::warn!("detached JS worker request `{ctx}` panicked");
+            on_panic();
+            WorkerRequestOutcome::Fatal
+        }
+    }
+}
+
+fn handle_detached_procedure_worker_request(
+    ctx: &'static str,
+    on_panic: JsFatalHook,
+    completion: JsProcedureResultCompletion,
+    f: impl FnOnce() -> (CallProcedureReturn, bool),
+) -> WorkerRequestOutcome {
+    match panic::catch_unwind(AssertUnwindSafe(|| {
+        let (result, recreate_instance) = f();
+        completion(result);
+        recreate_instance
+    })) {
         Ok(recreate_instance) => {
             if recreate_instance {
                 WorkerRequestOutcome::RecreateInstance
@@ -1510,6 +1534,26 @@ fn handle_procedure_worker_request(
                     .expect("our call_procedure implementation is not actually async");
                 (res, trapped)
             })
+        }
+        JsProcedureWorkerRequest::CallProcedureDetached {
+            params,
+            on_panic,
+            completion,
+            return_instance,
+        } => {
+            let outcome = handle_detached_procedure_worker_request("call_procedure", on_panic, completion, || {
+                instance_common
+                    .call_procedure(params, inst)
+                    .now_or_never()
+                    .expect("our call_procedure implementation is not actually async")
+            });
+            if matches!(
+                outcome,
+                WorkerRequestOutcome::Continue | WorkerRequestOutcome::RecreateInstance
+            ) {
+                return_instance();
+            }
+            outcome
         }
         JsProcedureWorkerRequest::ScheduledProcedureDetached {
             params,

@@ -12,7 +12,7 @@ use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::hash::Hash;
 use crate::host::host_controller::{CallProcedureReturn, ProcedureCallResult};
 use crate::host::scheduler::{CallScheduledFunctionError, ScheduledFunctionCompletion, ScheduledFunctionParams};
-use crate::host::v8::{JsFatalHook, JsMainInstance, JsProcedureCallCompletion, JsProcedureInstance};
+use crate::host::v8::{JsFatalHook, JsMainInstance, JsProcedureInstance};
 pub use crate::host::wasm_common::module_host_actor::{InstanceCommon, WasmInstance};
 use crate::host::wasmtime::ModuleInstance;
 use crate::host::{InvalidFunctionArguments, InvalidViewArguments};
@@ -34,9 +34,9 @@ use crate::worker_metrics::WORKER_METRICS;
 use anyhow::Context;
 use bytes::Bytes;
 use derive_more::From;
-use futures::lock::Mutex as AsyncMutex;
 use indexmap::IndexSet;
 use itertools::Itertools;
+use parking_lot::Mutex;
 use prometheus::{Histogram, HistogramTimer, IntGauge};
 use scopeguard::ScopeGuard;
 use smallvec::SmallVec;
@@ -470,9 +470,7 @@ impl WasmtimeModuleHost {
             let mut inst = instance;
             drop(timer_guard);
             wasm(arg, &mut inst).await;
-            instance_manager
-                .return_instance(ModuleInstanceLease { instance: inst, slot })
-                .await;
+            instance_manager.return_instance(ModuleInstanceLease { instance: inst, slot });
         });
     }
 }
@@ -1128,7 +1126,7 @@ impl CallProcedureParams {
 /// sandboxed instance and multiple procedures can run concurrently with up to
 /// one reducer.
 struct ModuleInstanceManager<M: GenericModule> {
-    instances: AsyncMutex<VecDeque<M::Instance>>,
+    instances: Mutex<VecDeque<M::Instance>>,
     module: M,
     metrics: InstanceManagerMetrics,
     instance_slots: Option<Arc<Semaphore>>,
@@ -1302,7 +1300,7 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
         }
 
         Self {
-            instances: AsyncMutex::new(instances),
+            instances: Mutex::new(instances),
             module,
             metrics,
             instance_slots: max_instances.map(|max_instances| Arc::new(Semaphore::new(max_instances.get()))),
@@ -1312,7 +1310,7 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
     async fn with_instance<R>(&self, f: impl AsyncFnOnce(M::Instance) -> (R, M::Instance)) -> R {
         let ModuleInstanceLease { instance, slot } = self.get_instance().await;
         let (res, instance) = f(instance).await;
-        self.return_instance(ModuleInstanceLease { instance, slot }).await;
+        self.return_instance(ModuleInstanceLease { instance, slot });
         res
     }
 
@@ -1329,7 +1327,7 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             None
         };
 
-        let instance = self.instances.lock().await.pop_back();
+        let instance = self.instances.lock().pop_back();
         let instance = if let Some(instance) = instance {
             instance
         } else {
@@ -1343,7 +1341,7 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
         ModuleInstanceLease { instance, slot }
     }
 
-    async fn return_instance(&self, lease: ModuleInstanceLease<M::Instance>) {
+    fn return_instance(&self, lease: ModuleInstanceLease<M::Instance>) {
         let ModuleInstanceLease { instance, slot } = lease;
         if instance.needs_replacement() {
             // Don't return unusable instances; they may have left internal data
@@ -1353,27 +1351,7 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             return;
         }
 
-        self.instances.lock().await.push_front(instance);
-        drop(slot);
-    }
-
-    /// Return an instance from a non-async worker thread.
-    ///
-    /// This is used by JS procedure workers for scheduled procedure completion:
-    /// the worker thread owns the moment of completion and sends the scheduler
-    /// callback directly, so there is no Tokio task waiting around just to return
-    /// the checked-out procedure instance.
-    fn return_instance_blocking(&self, lease: ModuleInstanceLease<M::Instance>) {
-        let ModuleInstanceLease { instance, slot } = lease;
-        if instance.needs_replacement() {
-            // Don't return unusable instances; they may have left internal data
-            // structures in the guest `Instance` in a bad state, or the backing
-            // worker may have already exited.
-            self.metrics.track_instance_removed();
-            return;
-        }
-
-        futures::executor::block_on(self.instances.lock()).push_front(instance);
+        self.instances.lock().push_front(instance);
         drop(slot);
     }
 }
@@ -2537,24 +2515,27 @@ impl ModuleHost {
 
         match &*self.inner {
             ModuleHostInner::Js(host) => {
-                let lease = host.procedure_instances.get_instance().await;
-                let call = lease.instance.enqueue_procedure(params).await;
+                let ModuleInstanceLease { instance, slot } = host.procedure_instances.get_instance().await;
+                let instance_manager = host.procedure_instances.clone();
                 let module = self.clone();
-                tokio::spawn(async move {
-                    match call.receive().await {
-                        JsProcedureCallCompletion::Completed(ret) => {
-                            if let Err(err) = module.log_and_send_procedure_result(&procedure_name, timer, target, ret)
+                let procedure_name_for_completion = procedure_name.clone();
+                let on_panic = self.on_panic.clone();
+                instance
+                    .enqueue_procedure(
+                        params,
+                        on_panic,
+                        move |ret| {
+                            if let Err(err) =
+                                module.log_and_send_procedure_result(&procedure_name_for_completion, timer, target, ret)
                             {
                                 log::warn!("failed to send procedure result: {err:#}");
                             }
-                        }
-                        JsProcedureCallCompletion::Panicked | JsProcedureCallCompletion::WorkerExited => {
-                            log::warn!("detached JS procedure worker failed before returning a result");
-                            (module.on_panic)();
-                        }
-                    }
-                    module.return_js_procedure_instance(lease).await;
-                });
+                        },
+                        move |instance| {
+                            instance_manager.return_instance(ModuleInstanceLease { instance, slot });
+                        },
+                    )
+                    .await;
                 Ok(())
             }
             ModuleHostInner::Wasm(wasm_host) => {
@@ -2585,13 +2566,6 @@ impl ModuleHost {
                 Ok(())
             }
         }
-    }
-
-    async fn return_js_procedure_instance(&self, lease: ModuleInstanceLease<JsProcedureInstance>) {
-        let ModuleHostInner::Js(host) = &*self.inner else {
-            return;
-        };
-        host.procedure_instances.return_instance(lease).await;
     }
 
     fn procedure_error_return(err: ProcedureCallError) -> CallProcedureReturn {
@@ -2844,7 +2818,7 @@ impl ModuleHost {
                 let instance_manager = instance_manager.clone();
                 instance
                     .enqueue_scheduled_procedure(params, completion, on_panic, move |instance| {
-                        instance_manager.return_instance_blocking(ModuleInstanceLease { instance, slot });
+                        instance_manager.return_instance(ModuleInstanceLease { instance, slot });
                     })
                     .await;
             }
