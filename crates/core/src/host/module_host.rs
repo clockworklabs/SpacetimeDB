@@ -11,7 +11,7 @@ use crate::error::DBError;
 use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::hash::Hash;
 use crate::host::host_controller::{CallProcedureReturn, ProcedureCallResult};
-use crate::host::scheduler::{CallScheduledFunctionError, CallScheduledFunctionResult, ScheduledFunctionParams};
+use crate::host::scheduler::{CallScheduledFunctionError, ScheduledFunctionCompletion, ScheduledFunctionParams};
 use crate::host::v8::{JsFatalHook, JsMainInstance, JsProcedureCallCompletion, JsProcedureInstance};
 pub use crate::host::wasm_common::module_host_actor::{InstanceCommon, WasmInstance};
 use crate::host::wasmtime::ModuleInstance;
@@ -480,7 +480,7 @@ impl WasmtimeModuleHost {
 struct V8ModuleHost {
     module: super::v8::JsModule,
     main_instance: SharedJsMainInstanceManager,
-    procedure_instances: ModuleInstanceManager<super::v8::JsModule>,
+    procedure_instances: Arc<ModuleInstanceManager<super::v8::JsModule>>,
 }
 
 /// A module; used as a bound on `InstanceManager`.
@@ -1356,6 +1356,26 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
         self.instances.lock().await.push_front(instance);
         drop(slot);
     }
+
+    /// Return an instance from a non-async worker thread.
+    ///
+    /// This is used by JS procedure workers for scheduled procedure completion:
+    /// the worker thread owns the moment of completion and sends the scheduler
+    /// callback directly, so there is no Tokio task waiting around just to return
+    /// the checked-out procedure instance.
+    fn return_instance_blocking(&self, lease: ModuleInstanceLease<M::Instance>) {
+        let ModuleInstanceLease { instance, slot } = lease;
+        if instance.needs_replacement() {
+            // Don't return unusable instances; they may have left internal data
+            // structures in the guest `Instance` in a bad state, or the backing
+            // worker may have already exited.
+            self.metrics.track_instance_removed();
+            return;
+        }
+
+        futures::executor::block_on(self.instances.lock()).push_front(instance);
+        drop(slot);
+    }
 }
 
 impl SharedJsMainInstanceManager {
@@ -1670,12 +1690,12 @@ impl ModuleHost {
                 let procedure_instance_pool_size = module.procedure_instance_pool_size();
                 let host_module = module.clone();
                 let main_instance = SharedJsMainInstanceManager::new(init_inst, metrics.clone());
-                let procedure_instances = ModuleInstanceManager::new_bounded_with_metrics(
+                let procedure_instances = Arc::new(ModuleInstanceManager::new_bounded_with_metrics(
                     module,
                     None,
                     metrics,
                     procedure_instance_pool_size,
-                );
+                ));
                 Arc::new(ModuleHostInner::Js(Box::new(V8ModuleHost {
                     module: host_module,
                     main_instance,
@@ -2741,32 +2761,96 @@ impl ModuleHost {
         )
     }
 
-    pub(super) async fn call_scheduled_reducer(
+    pub(super) async fn enqueue_scheduled_reducer(
         &self,
         params: ScheduledFunctionParams,
-    ) -> Result<CallScheduledFunctionResult, CallScheduledFunctionError> {
-        call_instance!(
-            self,
-            "scheduled reducer",
-            params,
-            |params, inst| inst.call_scheduled_reducer(params),
-            |params, inst| inst.call_scheduled_reducer(params).await,
-        )
-        .map_err(Into::into)
+        completion: ScheduledFunctionCompletion,
+    ) -> Result<(), CallScheduledFunctionError> {
+        self.guard_closed()?;
+        let timer_guard = self.start_call_timer("scheduled reducer");
+
+        scopeguard::defer_on_unwind!({
+            log::warn!("scheduled reducer operation panicked");
+            (self.on_panic)();
+        });
+
+        // Scheduled functions are completion-driven: the scheduler actor keeps
+        // polling timers after submission, and the module worker sends the
+        // completion message directly after execution. Do not insert a Tokio
+        // task here just to wait for the scheduled call result.
+        match &*self.inner {
+            ModuleHostInner::Wasm(wasm_host) => {
+                let on_panic = self.on_panic.clone();
+                wasm_host.enqueue_with_main_instance(
+                    "scheduled reducer",
+                    on_panic,
+                    timer_guard,
+                    (params, completion),
+                    move |(params, completion), inst| {
+                        let result = inst.call_scheduled_reducer(params);
+                        completion.complete(result);
+                    },
+                );
+            }
+            ModuleHostInner::Js(js_host) => {
+                drop(timer_guard);
+                let on_panic = self.on_panic.clone();
+                js_host
+                    .main_instance
+                    .with_instance(async move |inst| inst.enqueue_scheduled_reducer(params, completion, on_panic).await)
+                    .await;
+            }
+        }
+
+        Ok(())
     }
 
-    pub(super) async fn call_scheduled_procedure(
+    pub(super) async fn enqueue_scheduled_procedure(
         &self,
         params: ScheduledFunctionParams,
-    ) -> Result<CallScheduledFunctionResult, CallScheduledFunctionError> {
-        call_pooled_instance!(
-            self,
-            "scheduled procedure",
-            params,
-            |params, inst| inst.call_scheduled_procedure(params).await,
-            |params, inst| inst.call_scheduled_procedure(params).await,
-        )
-        .map_err(Into::into)
+        completion: ScheduledFunctionCompletion,
+    ) -> Result<(), CallScheduledFunctionError> {
+        self.guard_closed()?;
+        let timer_guard = self.start_call_timer("scheduled procedure");
+
+        scopeguard::defer_on_unwind!({
+            log::warn!("scheduled procedure operation panicked");
+            (self.on_panic)();
+        });
+
+        // See `enqueue_scheduled_reducer`: the worker sends completion directly
+        // so the scheduler actor does not wait inline for execution.
+        match &*self.inner {
+            ModuleHostInner::Wasm(wasm_host) => {
+                let on_panic = self.on_panic.clone();
+                wasm_host
+                    .enqueue_with_procedure_instance(
+                        "scheduled procedure",
+                        on_panic,
+                        timer_guard,
+                        (params, completion),
+                        async move |(params, completion), inst| {
+                            let result = inst.call_scheduled_procedure(params).await;
+                            completion.complete(result);
+                        },
+                    )
+                    .await;
+            }
+            ModuleHostInner::Js(js_host) => {
+                drop(timer_guard);
+                let on_panic = self.on_panic.clone();
+                let instance_manager = &js_host.procedure_instances;
+                let ModuleInstanceLease { instance, slot } = instance_manager.get_instance().await;
+                let instance_manager = instance_manager.clone();
+                instance
+                    .enqueue_scheduled_procedure(params, completion, on_panic, move |instance| {
+                        instance_manager.return_instance_blocking(ModuleInstanceLease { instance, slot });
+                    })
+                    .await;
+            }
+        }
+
+        Ok(())
     }
 
     /// Materializes the views return by the `view_collector`, if not already materialized,

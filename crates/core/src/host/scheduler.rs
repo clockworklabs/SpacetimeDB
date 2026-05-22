@@ -63,6 +63,10 @@ enum SchedulerMessage {
         function_name: String,
         args: FunctionArgs,
     },
+    ScheduledFunctionCompleted {
+        item: QueueItem,
+        result: Result<CallScheduledFunctionResult, CallScheduledFunctionError>,
+    },
 }
 
 #[derive(Clone)]
@@ -71,6 +75,7 @@ pub struct Scheduler {
 }
 
 pub struct SchedulerStarter {
+    tx: mpsc::UnboundedSender<MsgOrExit<SchedulerMessage>>,
     rx: mpsc::UnboundedReceiver<MsgOrExit<SchedulerMessage>>,
     db: Arc<RelationalDB>,
 }
@@ -78,7 +83,7 @@ pub struct SchedulerStarter {
 impl Scheduler {
     pub fn open(db: Arc<RelationalDB>) -> (Self, SchedulerStarter) {
         let (tx, rx) = mpsc::unbounded_channel();
-        (Scheduler { tx }, SchedulerStarter { rx, db })
+        (Scheduler { tx: tx.clone() }, SchedulerStarter { tx, rx, db })
     }
 }
 
@@ -148,9 +153,11 @@ impl SchedulerStarter {
 
         tokio::spawn(
             SchedulerActor {
+                tx: self.tx,
                 rx: self.rx,
                 queue,
                 key_map,
+                in_flight: FxHashMap::default(),
                 module_host: module_host.downgrade(),
             }
             .run(),
@@ -269,11 +276,80 @@ impl Scheduler {
     }
 }
 
+/// Owns scheduled-function timing state.
+///
+/// Scheduled functions are submitted to `ModuleHost` and report completion back
+/// to this actor through `SchedulerMessage::ScheduledFunctionCompleted`. The
+/// actor does not wait for execution to finish before polling more timer events.
+///
+/// The extra `in_flight` map preserves the important behavior from the old
+/// await-in-place implementation: a single scheduled row does not overlap with
+/// itself, and an update that arrives while the old invocation is running wins
+/// over the old invocation's interval reschedule.
+///
+/// ```text
+///                 Schedule/update(id)
+///                        |
+///                        v
+///              +-------------------+
+///              | queued in         |
+///              | DelayQueue/key_map|
+///              +---------+---------+
+///                        |
+///                    timer fires
+///                        |
+///                        v
+///              +-------------------+
+///              | in_flight[id] =   |
+///              | None              |
+///              +---------+---------+
+///                        |
+///           submit to ModuleHost with completion
+///                        |
+///                        v
+///              +-------------------+
+///              | worker executes   |
+///              | reducer/procedure |
+///              +---------+---------+
+///                        |
+///                 completion message
+///                        |
+///                        v
+///        +-----------------------------------+
+///        | if in_flight[id] == Some(update) |
+///        |   queue pending update           |
+///        | else if interval reschedule      |
+///        |   queue next interval            |
+///        | else                             |
+///        |   done                           |
+///        +-----------------------------------+
+///
+/// Schedule/update(id) while in flight:
+///
+///        +-------------------+       +----------------------------+
+///        | in_flight[id] =   | ----> | in_flight[id] =            |
+///        | None              |       | Some(new schedule/update)  |
+///        +-------------------+       +----------------------------+
+/// ```
 struct SchedulerActor {
+    tx: mpsc::UnboundedSender<MsgOrExit<SchedulerMessage>>,
     rx: mpsc::UnboundedReceiver<MsgOrExit<SchedulerMessage>>,
     queue: DelayQueue<QueueItem>,
     key_map: FxHashMap<ScheduledFunctionId, delay_queue::Key>,
+    in_flight: FxHashMap<ScheduledFunctionId, Option<PendingSchedule>>,
     module_host: WeakModuleHost,
+}
+
+/// Newer schedule data for a row whose previous invocation is still running.
+///
+/// We keep this outside `DelayQueue` while the row is in flight so the same
+/// scheduled row cannot overlap with itself. When the in-flight invocation
+/// completes, the pending schedule wins over the old invocation's interval
+/// reschedule.
+struct PendingSchedule {
+    function_name: Arc<str>,
+    at: Timestamp,
+    real_at: Instant,
 }
 
 #[derive(Clone)]
@@ -291,6 +367,34 @@ enum QueueItem {
 
 #[derive(Clone)]
 pub(crate) struct ScheduledFunctionParams(QueueItem);
+
+pub(crate) struct ScheduledFunctionCompletion {
+    tx: mpsc::UnboundedSender<MsgOrExit<SchedulerMessage>>,
+    item: QueueItem,
+}
+
+impl ScheduledFunctionCompletion {
+    fn new(tx: mpsc::UnboundedSender<MsgOrExit<SchedulerMessage>>, item: QueueItem) -> Self {
+        Self { tx, item }
+    }
+
+    pub(crate) fn complete(self, result: CallScheduledFunctionResult) {
+        self.send(Ok(result));
+    }
+
+    pub(crate) fn module_gone(self) {
+        self.send(Err(NoSuchModule.into()));
+    }
+
+    fn send(self, result: Result<CallScheduledFunctionResult, CallScheduledFunctionError>) {
+        let _ = self
+            .tx
+            .send(MsgOrExit::Msg(SchedulerMessage::ScheduledFunctionCompleted {
+                item: self.item,
+                result,
+            }));
+    }
+}
 
 enum ScheduledFunctionKind {
     Reducer,
@@ -348,25 +452,27 @@ impl SchedulerActor {
                 effective_at,
                 real_at,
             } => {
-                // Incase of row update, remove the existing entry from queue first
-                if let Some(key) = self.key_map.get(&id) {
-                    self.queue.remove(key);
-                }
-                let key = self.queue.insert_at(
-                    QueueItem::Id {
-                        id,
-                        function_name,
-                        at: effective_at,
-                    },
+                let pending = PendingSchedule {
+                    function_name,
+                    at: effective_at,
                     real_at,
-                );
-                self.key_map.insert(id, key);
+                };
+
+                if let Some(in_flight) = self.in_flight.get_mut(&id) {
+                    *in_flight = Some(pending);
+                    return;
+                }
+
+                self.insert_pending_schedule(id, pending);
             }
             SchedulerMessage::ScheduleImmediate { function_name, args } => {
                 self.queue.insert(
                     QueueItem::VolatileNonatomicImmediate { function_name, args },
                     Duration::ZERO,
                 );
+            }
+            SchedulerMessage::ScheduledFunctionCompleted { item, result } => {
+                self.handle_completion(item, result);
             }
         }
     }
@@ -386,35 +492,73 @@ impl SchedulerActor {
         };
 
         let params = ScheduledFunctionParams(item.clone());
+        let completion_item = item.clone();
+        let completion = ScheduledFunctionCompletion::new(self.tx.clone(), item);
+        if let Some(id) = id {
+            self.in_flight.insert(id, None);
+        }
+
         let result = match params.kind(module_host.info()) {
-            ScheduledFunctionKind::Procedure => module_host.call_scheduled_procedure(params).await,
-            ScheduledFunctionKind::Reducer => module_host.call_scheduled_reducer(params).await,
+            ScheduledFunctionKind::Procedure => module_host.enqueue_scheduled_procedure(params, completion).await,
+            ScheduledFunctionKind::Reducer => module_host.enqueue_scheduled_reducer(params, completion).await,
         };
+
+        match result {
+            Ok(()) => {}
+            Err(err) => self.handle_completion(completion_item, Err(err)),
+        }
+    }
+
+    fn handle_completion(
+        &mut self,
+        item: QueueItem,
+        result: Result<CallScheduledFunctionResult, CallScheduledFunctionError>,
+    ) {
+        let QueueItem::Id { id, function_name, .. } = item else {
+            return;
+        };
+
+        let Some(pending) = self.in_flight.remove(&id) else {
+            return;
+        };
+
+        if let Some(pending) = pending {
+            self.insert_pending_schedule(id, pending);
+            return;
+        }
 
         match result {
             // If the module already exited, leave the `ScheduledFunction` in
             // the database for when the module restarts.
-            Err(CallScheduledFunctionError::NoSuchModule(_)) => {}
-            Ok(CallScheduledFunctionResult { reschedule: None }) => {
-                // nothing to do
+            Err(CallScheduledFunctionError::NoSuchModule(_)) | Ok(CallScheduledFunctionResult { reschedule: None }) => {
             }
             Ok(CallScheduledFunctionResult {
                 reschedule: Some(Reschedule { at_ts, at_real }),
-            }) => {
-                if let QueueItem::Id { id, function_name, .. } = item {
-                    // If this was repeated, we need to add it back to the queue.
-                    let key = self.queue.insert_at(
-                        QueueItem::Id {
-                            id,
-                            function_name,
-                            at: at_ts,
-                        },
-                        at_real,
-                    );
-                    self.key_map.insert(id, key);
-                }
-            }
+            }) => self.insert_pending_schedule(
+                id,
+                PendingSchedule {
+                    function_name,
+                    at: at_ts,
+                    real_at: at_real,
+                },
+            ),
         }
+    }
+
+    fn insert_pending_schedule(&mut self, id: ScheduledFunctionId, pending: PendingSchedule) {
+        // In case of row update, remove the existing entry from queue first.
+        if let Some(key) = self.key_map.remove(&id) {
+            self.queue.remove(&key);
+        }
+        let key = self.queue.insert_at(
+            QueueItem::Id {
+                id,
+                function_name: pending.function_name,
+                at: pending.at,
+            },
+            pending.real_at,
+        );
+        self.key_map.insert(id, key);
     }
 }
 

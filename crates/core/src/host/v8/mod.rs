@@ -77,7 +77,7 @@ use crate::host::module_host::{
     call_identity_connected, init_database, ClientConnectedError, OneOffQueryRequest, SqlCommand, SqlCommandResult,
     ViewCommand, ViewCommandMetric, ViewCommandResult,
 };
-use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
+use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionCompletion, ScheduledFunctionParams};
 use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
     AnonymousViewOp, DescribeError, ExecutionError, ExecutionResult, ExecutionStats, ExecutionTimings, InstanceCommon,
@@ -492,11 +492,23 @@ impl JsMainInstance {
         self.request(CallReducerRequest { params }).await
     }
 
-    pub(in crate::host) async fn call_scheduled_reducer(
+    pub(in crate::host) async fn enqueue_scheduled_reducer(
         &self,
         params: ScheduledFunctionParams,
-    ) -> CallScheduledFunctionResult {
-        self.request(ScheduledReducerRequest { params }).await
+        completion: ScheduledFunctionCompletion,
+        on_panic: JsFatalHook,
+    ) {
+        let result = self.tx.send(JsMainWorkerRequest::ScheduledReducerDetached {
+            params,
+            completion,
+            on_panic,
+        });
+        if let Err(err) = result {
+            let JsMainWorkerRequest::ScheduledReducerDetached { completion, .. } = err.0 else {
+                return;
+            };
+            completion.module_gone();
+        }
     }
 
     pub(in crate::host) async fn enqueue_reducer(&self, params: CallReducerParams, on_panic: JsFatalHook) {
@@ -634,12 +646,6 @@ js_main_request! {
 }
 
 js_main_request! {
-    ScheduledReducerRequest {
-        params: ScheduledFunctionParams,
-    } => "scheduled_reducer", CallScheduledFunctionResult, ScheduledReducer
-}
-
-js_main_request! {
     ClearAllClientsRequest => "clear_all_clients", anyhow::Result<()>, ClearAllClients
 }
 
@@ -715,14 +721,33 @@ impl JsProcedureInstance {
         JsProcedureCall { reply_rx }
     }
 
-    pub(in crate::host) async fn call_scheduled_procedure(
-        &self,
+    pub(in crate::host) async fn enqueue_scheduled_procedure(
+        self,
         params: ScheduledFunctionParams,
-    ) -> CallScheduledFunctionResult {
-        self.send_request("scheduled_procedure", |reply_tx| {
-            JsProcedureWorkerRequest::ScheduledProcedure { reply_tx, params }
-        })
-        .await
+        completion: ScheduledFunctionCompletion,
+        on_panic: JsFatalHook,
+        return_instance: impl FnOnce(Self) + Send + 'static,
+    ) {
+        let tx = self.tx.clone();
+        let return_instance = Box::new(move || return_instance(self));
+        let request = JsProcedureWorkerRequest::ScheduledProcedureDetached {
+            params,
+            completion,
+            on_panic,
+            return_instance,
+        };
+        if let Err(err) = tx.send(request).await {
+            let JsProcedureWorkerRequest::ScheduledProcedureDetached {
+                completion,
+                return_instance,
+                ..
+            } = err.0
+            else {
+                return;
+            };
+            completion.module_gone();
+            drop(return_instance);
+        }
     }
 }
 
@@ -765,6 +790,7 @@ type JsPanicPayload = Box<dyn std::any::Any + Send + 'static>;
 type JsReply<T> = Result<T, JsPanicPayload>;
 type JsReplyTx<T> = oneshot::Sender<JsReply<T>>;
 pub(in crate::host) type JsFatalHook = Arc<dyn Fn() + Send + Sync + 'static>;
+type JsProcedureInstanceReturn = Box<dyn FnOnce() + Send + 'static>;
 
 pub(in crate::host) struct JsProcedureCall {
     reply_rx: oneshot::Receiver<JsReply<CallProcedureReturn>>,
@@ -809,10 +835,11 @@ enum JsMainWorkerRequest {
         params: CallReducerParams,
         on_panic: JsFatalHook,
     },
-    /// See [`JsMainInstance::call_scheduled_reducer`].
-    ScheduledReducer {
-        reply_tx: JsReplyTx<CallScheduledFunctionResult>,
+    /// See [`JsMainInstance::enqueue_scheduled_reducer`].
+    ScheduledReducerDetached {
         params: ScheduledFunctionParams,
+        completion: ScheduledFunctionCompletion,
+        on_panic: JsFatalHook,
     },
     /// See [`JsMainInstance::call_view`].
     CallView {
@@ -868,10 +895,12 @@ enum JsProcedureWorkerRequest {
         reply_tx: JsReplyTx<CallProcedureReturn>,
         params: CallProcedureParams,
     },
-    /// See [`JsProcedureInstance::call_scheduled_procedure`].
-    ScheduledProcedure {
-        reply_tx: JsReplyTx<CallScheduledFunctionResult>,
+    /// See [`JsProcedureInstance::enqueue_scheduled_procedure`].
+    ScheduledProcedureDetached {
         params: ScheduledFunctionParams,
+        completion: ScheduledFunctionCompletion,
+        on_panic: JsFatalHook,
+        return_instance: JsProcedureInstanceReturn,
     },
 }
 
@@ -940,6 +969,30 @@ fn handle_detached_worker_request(
         }
         Err(_) => {
             log::warn!("detached JS worker request `{ctx}` panicked");
+            on_panic();
+            WorkerRequestOutcome::Fatal
+        }
+    }
+}
+
+fn handle_detached_scheduled_worker_request(
+    ctx: &'static str,
+    completion: ScheduledFunctionCompletion,
+    on_panic: JsFatalHook,
+    f: impl FnOnce() -> (CallScheduledFunctionResult, bool),
+) -> WorkerRequestOutcome {
+    match panic::catch_unwind(AssertUnwindSafe(f)) {
+        Ok((result, recreate_instance)) => {
+            completion.complete(result);
+            if recreate_instance {
+                WorkerRequestOutcome::RecreateInstance
+            } else {
+                WorkerRequestOutcome::Continue
+            }
+        }
+        Err(_) => {
+            log::warn!("detached JS worker request `{ctx}` panicked");
+            completion.module_gone();
             on_panic();
             WorkerRequestOutcome::Fatal
         }
@@ -1360,12 +1413,13 @@ fn handle_main_worker_request(
                 trapped
             })
         }
-        JsMainWorkerRequest::ScheduledReducer { reply_tx, params } => {
-            handle_worker_request("scheduled_reducer", reply_tx, || {
-                let (res, trapped) = instance_common.call_scheduled_reducer(params, inst);
-                (res, trapped)
-            })
-        }
+        JsMainWorkerRequest::ScheduledReducerDetached {
+            params,
+            completion,
+            on_panic,
+        } => handle_detached_scheduled_worker_request("scheduled_reducer", completion, on_panic, || {
+            instance_common.call_scheduled_reducer(params, inst)
+        }),
         JsMainWorkerRequest::CallView { reply_tx, cmd } => handle_worker_request("call_view", reply_tx, || {
             let (res, trapped) = instance_common.handle_cmd(cmd, inst);
             (res, trapped)
@@ -1457,14 +1511,25 @@ fn handle_procedure_worker_request(
                 (res, trapped)
             })
         }
-        JsProcedureWorkerRequest::ScheduledProcedure { reply_tx, params } => {
-            handle_worker_request("scheduled_procedure", reply_tx, || {
-                let (res, trapped) = instance_common
+        JsProcedureWorkerRequest::ScheduledProcedureDetached {
+            params,
+            completion,
+            on_panic,
+            return_instance,
+        } => {
+            let outcome = handle_detached_scheduled_worker_request("scheduled_procedure", completion, on_panic, || {
+                instance_common
                     .call_scheduled_procedure(params, inst)
                     .now_or_never()
-                    .expect("our call_scheduled_procedure implementation is not actually async");
-                (res, trapped)
-            })
+                    .expect("our call_scheduled_procedure implementation is not actually async")
+            });
+            if matches!(
+                outcome,
+                WorkerRequestOutcome::Continue | WorkerRequestOutcome::RecreateInstance
+            ) {
+                return_instance();
+            }
+            outcome
         }
     }
 }
