@@ -14,14 +14,10 @@ This means that you can write your entire application in a single language and d
   <img
     src="/docs/images/basic-architecture-diagram.png"
     alt="SpacetimeDB Architecture"
-    style={{ width: '100%' }}
   />
-  <figcaption style={{ marginTop: '10px', textAlign: 'center' }} align="center">
-    <b align="center">SpacetimeDB application architecture</b>
-    <span style={{ fontSize: '14px' }}>
-      {' '}
-      (elements in white are provided by SpacetimeDB)
-    </span>
+  <figcaption>
+    <b>SpacetimeDB application architecture</b>
+    <span> Elements in white are provided by SpacetimeDB</span>
   </figcaption>
 </figure>
 
@@ -37,10 +33,9 @@ Speed and latency is achieved by holding all of your application state in memory
   <img
     src="/docs/images/workflow-preview-diagram.png"
     alt="SpacetimeDB Application Workflow Preview"
-    style={{ width: '100%' }}
   />
-  <figcaption style={{ marginTop: '10px', textAlign: 'center' }} align="center">
-    <b align="center">SpacetimeDB Application Workflow Preview</b>
+  <figcaption>
+    <b>SpacetimeDB Application Workflow Preview</b>
   </figcaption>
 </figure>
 

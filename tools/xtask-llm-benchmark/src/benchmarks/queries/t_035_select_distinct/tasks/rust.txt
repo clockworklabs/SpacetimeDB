@@ -1,0 +1,20 @@
+Write a SpacetimeDB backend module in Rust that defines an order table and a result table, with a reducer that collects all distinct category values from orders into the result table.
+
+TABLES
+- order
+  - Struct: Order
+  - Fields:
+    - id: u64 (primary key, auto_inc)
+    - category: String
+    - amount: u32
+
+- distinct_category
+  - Struct: DistinctCategory
+  - Fields:
+    - category: String (primary key)
+
+REDUCERS
+- collect_distinct_categories(ctx)
+  - Iterate all orders
+  - Collect unique category values (use a HashSet or BTreeSet)
+  - Insert each unique category into distinct_category

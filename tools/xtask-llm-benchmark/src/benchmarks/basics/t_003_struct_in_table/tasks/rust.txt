@@ -1,4 +1,4 @@
-﻿Write a SpacetimeDB backend module in Rust that defines a struct type and uses it in a table.
+Write a SpacetimeDB backend module in Rust that defines a struct type and uses it in a table.
 
 TYPES
 - Struct: Position
