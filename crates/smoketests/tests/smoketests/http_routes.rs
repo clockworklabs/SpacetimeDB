@@ -1,5 +1,5 @@
 use regex::Regex;
-use spacetimedb_smoketests::{require_dotnet, workspace_root, Smoketest};
+use spacetimedb_smoketests::{require_dotnet, require_pnpm, workspace_root, Smoketest};
 use std::{fs, path::Path};
 
 const MODULE_CODE: &str = r#"
@@ -228,6 +228,198 @@ fn router() -> Router {
         .post("/reverse-bytes", reverse_bytes)
         .post("/reverse-words", reverse_words)
 }
+"#;
+
+const TS_MODULE_CODE: &str = r#"import { Router, SyncResponse, schema, table, t } from "spacetimedb/server";
+
+const entry = table(
+  { name: "entry", public: true },
+  {
+    id: t.u64().primaryKey(),
+    value: t.string(),
+  }
+);
+
+const spacetimedb = schema({ entry });
+export default spacetimedb;
+
+export const get_simple = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("ok")
+);
+
+export const post_insert = spacetimedb.httpHandler((ctx, _req) => {
+  ctx.withTx(tx => {
+    const id = BigInt(tx.db.entry.count());
+    tx.db.entry.insert({ id, value: "posted" });
+  });
+  return new SyncResponse("inserted");
+});
+
+export const get_count = spacetimedb.httpHandler((ctx, _req) => {
+  const count = ctx.withTx(tx => tx.db.entry.count());
+  return new SyncResponse(String(count));
+});
+
+export const any_handler = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("any")
+);
+
+export const header_echo = spacetimedb.httpHandler((_ctx, req) =>
+  new SyncResponse(req.headers.get("x-echo") ?? "")
+);
+
+export const set_response_header = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("header-set", { headers: { "x-response": "set" } })
+);
+
+export const body_handler = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("non-empty")
+);
+
+export const teapot = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("teapot", { status: 418 })
+);
+
+export const router = spacetimedb.httpRouter(
+  new Router()
+    .get("/get", get_simple)
+    .post("/post", post_insert)
+    .get("/count", get_count)
+    .any("/any", any_handler)
+    .get("/header", header_echo)
+    .get("/set-header", set_response_header)
+    .get("/body", body_handler)
+    .get("/teapot", teapot)
+);
+"#;
+
+const TS_EXAMPLE_MODULE_CODE: &str = r#"import { Router, SyncResponse, schema, table, t } from "spacetimedb/server";
+
+const data = table(
+  { name: "data" },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    body: t.array(t.u8()),
+  }
+);
+
+const spacetimedb = schema({ data });
+export default spacetimedb;
+
+export const insert = spacetimedb.httpHandler((ctx, req) => {
+  const body = Array.from(req.bytes());
+  const id = ctx.withTx(tx => tx.db.data.insert({ id: 0n, body }).id);
+  return new SyncResponse(String(id));
+});
+
+export const retrieve = spacetimedb.httpHandler((ctx, req) => {
+  const query = req.uri.split("?", 2)[1] ?? "";
+  const idText = query.startsWith("id=") ? query.slice(3) : "";
+  const id = BigInt(idText);
+  const body = ctx.withTx(tx => tx.db.data.id.find(id)?.body);
+  if (body != null) {
+    return new SyncResponse(new Uint8Array(body));
+  }
+  return new SyncResponse(null, { status: 404 });
+});
+
+export const router = spacetimedb.httpRouter(
+  new Router().post("/insert", insert).get("/retrieve", retrieve)
+);
+"#;
+
+const TS_STRICT_ROOT_ROUTING_MODULE_CODE: &str = r#"import { Router, SyncResponse, schema } from "spacetimedb/server";
+
+const spacetimedb = schema({});
+export default spacetimedb;
+
+export const empty_root = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("empty")
+);
+
+export const slash_root = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("slash")
+);
+
+export const foo = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("foo")
+);
+
+export const foo_slash = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("foo-slash")
+);
+
+export const router = spacetimedb.httpRouter(
+  new Router()
+    .get("", empty_root)
+    .get("/", slash_root)
+    .get("/foo", foo)
+    .get("/foo/", foo_slash)
+);
+"#;
+
+const TS_STRICT_NON_ROOT_ROUTING_MODULE_CODE: &str = r#"import { Router, SyncResponse, schema } from "spacetimedb/server";
+
+const spacetimedb = schema({});
+export default spacetimedb;
+
+export const foo = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("foo")
+);
+
+export const foo_slash = spacetimedb.httpHandler((_ctx, _req) =>
+  new SyncResponse("foo-slash")
+);
+
+export const router = spacetimedb.httpRouter(
+  new Router()
+    .get("/foo", foo)
+    .get("/foo/", foo_slash)
+);
+"#;
+
+const TS_FULL_URI_MODULE_CODE: &str = r#"import { Router, SyncResponse, schema } from "spacetimedb/server";
+
+const spacetimedb = schema({});
+export default spacetimedb;
+
+export const echo_uri = spacetimedb.httpHandler((_ctx, req) =>
+  new SyncResponse(req.uri)
+);
+
+export const router = spacetimedb.httpRouter(
+  new Router().get("/echo-uri", echo_uri)
+);
+"#;
+
+const TS_HANDLE_REQUEST_BODY_MODULE_CODE: &str = r#"import { Router, SyncResponse, schema } from "spacetimedb/server";
+
+const spacetimedb = schema({});
+export default spacetimedb;
+
+export const reverse_bytes = spacetimedb.httpHandler((_ctx, req) => {
+  const reversed = req.bytes();
+  reversed.reverse();
+  return new SyncResponse(reversed);
+});
+
+export const reverse_words = spacetimedb.httpHandler((_ctx, req) => {
+  let body;
+  try {
+    body = new TextDecoder("utf-8", { fatal: true }).decode(req.bytes());
+  } catch {
+    return new SyncResponse("request body must be valid UTF-8", { status: 400 });
+  }
+
+  const reversed = body.split(" ").reverse().join(" ");
+  return new SyncResponse(reversed);
+});
+
+export const router = spacetimedb.httpRouter(
+  new Router()
+    .post("/reverse-bytes", reverse_bytes)
+    .post("/reverse-words", reverse_words)
+);
 "#;
 
 const CS_MODULE_CODE: &str = r#"
@@ -571,6 +763,13 @@ fn rust_http_test(module_code: &str) -> (Smoketest, String) {
     (test, identity)
 }
 
+fn typescript_http_test(name: &str, module_code: &str) -> (Smoketest, String) {
+    require_pnpm!();
+    let mut test = Smoketest::builder().autopublish(false).build();
+    let identity = test.publish_typescript_module_source(name, name, module_code).unwrap();
+    (test, identity)
+}
+
 fn csharp_http_test(name: &str, module_code: &str) -> (Smoketest, String) {
     let mut test = Smoketest::builder().autopublish(false).build();
     let identity = test.publish_csharp_module_source(name, name, module_code).unwrap();
@@ -836,6 +1035,12 @@ fn handle_request_body() {
 }
 
 #[test]
+fn typescript_http_routes_end_to_end() {
+    let (test, identity) = typescript_http_test("http-routes-typescript-basic", TS_MODULE_CODE);
+    assert_http_routes_end_to_end(&test.server_url, &identity);
+}
+
+#[test]
 fn csharp_http_routes_end_to_end() {
     require_dotnet!();
     let (test, identity) = csharp_http_test("http-routes-csharp-basic", CS_MODULE_CODE);
@@ -843,10 +1048,25 @@ fn csharp_http_routes_end_to_end() {
 }
 
 #[test]
+fn typescript_http_routes_pr_example_round_trip() {
+    let (test, identity) = typescript_http_test("http-routes-typescript-example", TS_EXAMPLE_MODULE_CODE);
+    assert_http_routes_pr_example_round_trip(&test.server_url, &identity);
+}
+
+#[test]
 fn csharp_http_routes_pr_example_round_trip() {
     require_dotnet!();
     let (test, identity) = csharp_http_test("http-routes-csharp-example", CS_EXAMPLE_MODULE_CODE);
     assert_http_routes_pr_example_round_trip(&test.server_url, &identity);
+}
+
+#[test]
+fn typescript_http_routes_are_strict_for_non_root_paths() {
+    let (test, identity) = typescript_http_test(
+        "http-routes-typescript-strict-non-root",
+        TS_STRICT_NON_ROOT_ROUTING_MODULE_CODE,
+    );
+    assert_http_routes_are_strict_for_non_root_paths(&test.server_url, &identity);
 }
 
 #[test]
@@ -860,6 +1080,13 @@ fn csharp_http_routes_are_strict_for_non_root_paths() {
 }
 
 #[test]
+fn typescript_http_routes_are_strict_for_root_paths() {
+    let (test, identity) =
+        typescript_http_test("http-routes-typescript-strict-root", TS_STRICT_ROOT_ROUTING_MODULE_CODE);
+    assert_http_routes_are_strict_for_root_paths(&test.server_url, &identity);
+}
+
+#[test]
 fn csharp_http_routes_are_strict_for_root_paths() {
     require_dotnet!();
     let (test, identity) = csharp_http_test("http-routes-csharp-strict-root", CS_STRICT_ROOT_ROUTING_MODULE_CODE);
@@ -867,10 +1094,25 @@ fn csharp_http_routes_are_strict_for_root_paths() {
 }
 
 #[test]
+fn typescript_http_handler_observes_full_external_uri() {
+    let (test, identity) = typescript_http_test("http-routes-typescript-full-uri", TS_FULL_URI_MODULE_CODE);
+    assert_http_handler_observes_full_external_uri(&test.server_url, &identity);
+}
+
+#[test]
 fn csharp_http_handler_observes_full_external_uri() {
     require_dotnet!();
     let (test, identity) = csharp_http_test("http-routes-csharp-full-uri", CS_FULL_URI_MODULE_CODE);
     assert_http_handler_observes_full_external_uri(&test.server_url, &identity);
+}
+
+#[test]
+fn typescript_handle_request_body() {
+    let (test, identity) = typescript_http_test(
+        "http-routes-typescript-request-body",
+        TS_HANDLE_REQUEST_BODY_MODULE_CODE,
+    );
+    assert_handle_request_body(&test.server_url, &identity);
 }
 
 #[test]
@@ -892,6 +1134,33 @@ fn http_handlers_tutorial_say_hello_route_works() {
     let identity = test.database_identity.as_ref().expect("database identity missing");
 
     let url = format!("{}/v1/database/{}/route/say-hello", test.server_url, identity);
+    let client = reqwest::blocking::Client::new();
+
+    let resp = client.get(&url).send().expect("say-hello failed");
+    assert!(resp.status().is_success());
+    assert_eq!(resp.text().expect("say-hello body"), "Hello!");
+}
+
+/// Validates the TypeScript example from `docs/docs/00200-core-concepts/00200-functions/00600-HTTP-handlers.md`.
+#[test]
+fn typescript_http_handlers_tutorial_say_hello_route_works() {
+    require_pnpm!();
+
+    let module_code = extract_code_blocks(
+        &workspace_root().join("docs/docs/00200-core-concepts/00200-functions/00600-HTTP-handlers.md"),
+        r"```(?:ts|typescript)\n([\s\S]*?)\n```",
+        "typescript",
+    );
+    let mut test = Smoketest::builder().autopublish(false).build();
+    let identity = test
+        .publish_typescript_module_source(
+            "http-handlers-docs-typescript",
+            "http-handlers-docs-typescript",
+            &module_code,
+        )
+        .unwrap();
+
+    let url = format!("{}/v1/database/{identity}/route/say-hello", test.server_url);
     let client = reqwest::blocking::Client::new();
 
     let resp = client.get(&url).send().expect("say-hello failed");
