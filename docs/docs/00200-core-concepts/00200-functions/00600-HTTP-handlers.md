@@ -67,6 +67,40 @@ fn say_hello(_ctx: &mut HandlerContext, _req: Request) -> Response {
 ```
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+HTTP handlers in C# are currently unstable. To use them, add `#pragma warning disable STDB_UNSTABLE` at the top of your file.
+
+Define an HTTP handler by annotating a method with `[SpacetimeDB.HttpHandler]`.
+
+The method must accept exactly two arguments:
+
+1. A `SpacetimeDB.HandlerContext`.
+2. A `SpacetimeDB.HttpRequest`.
+
+The method must return a `SpacetimeDB.HttpResponse`.
+
+```csharp
+using System.Collections.Generic;
+using SpacetimeDB;
+
+#pragma warning disable STDB_UNSTABLE
+public static partial class Module
+{
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse SayHello(HandlerContext ctx, HttpRequest request)
+    {
+        return new HttpResponse(
+            200,
+            HttpVersion.Http11,
+            new List<HttpHeader>(),
+            HttpBody.FromString("Hello!")
+        );
+    }
+}
+```
+
+</TabItem>
 </Tabs>
 
 ## Registering Handlers to Routes
@@ -113,6 +147,27 @@ Add routes within a router with the `get`, `head`, `options`, `put`, `delete`, `
 Nest routers with `router.nest(prefix, sub_router)`, which causes `sub_router` to handle routing for all paths that start with `prefix`.
 
 Combine routers with `router.merge(other_router)`, which combines both routers.
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+All routes exposed by your module are declared in a `SpacetimeDB.Router`. Register the `Router` for your database by returning it from a method annotated with `[SpacetimeDB.HttpRouter]`.
+
+```csharp
+public static partial class Module
+{
+    [SpacetimeDB.HttpRouter]
+    public static Router Router() =>
+        SpacetimeDB.Router.New()
+            .Get("/say-hello", Handlers.SayHello);
+}
+```
+
+Add routes within a router with the `Get`, `Head`, `Options`, `Put`, `Delete`, `Post`, `Patch` and `Any` methods, which register an HTTP handler for that HTTP method at a given path.
+
+Nest routers with `router.Nest(prefix, subRouter)`, which causes `subRouter` to handle routing for all paths that start with `prefix`.
+
+Combine routers with `router.Merge(otherRouter)`, which combines both routers.
 
 </TabItem>
 </Tabs>
