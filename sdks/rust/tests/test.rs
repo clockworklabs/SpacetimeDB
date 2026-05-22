@@ -768,3 +768,42 @@ macro_rules! view_pk_tests {
 
 view_pk_tests!(rust_view_pk, "");
 view_pk_tests!(csharp_view_pk, "-cs");
+view_pk_tests!(typescript_view_pk, "-ts");
+
+macro_rules! procedural_view_pk_tests {
+    ($mod_name:ident, $module:literal) => {
+        mod $mod_name {
+            use spacetimedb_testing::sdk::Test;
+
+            const MODULE: &str = $module;
+            const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/procedural-view-pk-client");
+
+            fn make_test(subcommand: &str) -> Test {
+                super::platform_test_builder(CLIENT, Some(subcommand))
+                    .with_name(subcommand)
+                    .with_module(MODULE)
+                    .with_language("rust")
+                    .with_bindings_dir("src/module_bindings")
+                    .build()
+            }
+
+            #[test]
+            fn sender_scoped_procedural_pk_view() {
+                make_test("sender-scoped-pk-view").run()
+            }
+
+            #[test]
+            fn procedural_view_pk_left_semijoin() {
+                make_test("view-pk-left-semijoin").run()
+            }
+
+            #[test]
+            fn procedural_view_pk_right_semijoin() {
+                make_test("view-pk-right-semijoin").run()
+            }
+        }
+    };
+}
+
+procedural_view_pk_tests!(rust_procedural_view_pk, "sdk-test-procedural-view-pk");
+procedural_view_pk_tests!(typescript_procedural_view_pk, "sdk-test-procedural-view-pk-ts");
