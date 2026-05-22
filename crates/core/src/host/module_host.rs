@@ -473,12 +473,92 @@ impl WasmtimeModuleHost {
             instance_manager.return_instance(ModuleInstanceLease { instance: inst, slot });
         });
     }
+
+    async fn enqueue_procedure_call(
+        &self,
+        label: &str,
+        on_panic: Arc<dyn Fn() + Send + Sync>,
+        timer_guard: CallTimerGuard,
+        params: CallProcedureParams,
+        on_result: impl FnOnce(CallProcedureReturn) + Send + 'static,
+    ) {
+        self.enqueue_with_procedure_instance(label, on_panic, timer_guard, params, async move |params, inst| {
+            on_result(inst.call_procedure(params).await)
+        })
+        .await;
+    }
+
+    async fn enqueue_scheduled_procedure_call(
+        &self,
+        on_panic: Arc<dyn Fn() + Send + Sync>,
+        timer_guard: CallTimerGuard,
+        params: ScheduledFunctionParams,
+        completion: ScheduledFunctionCompletion,
+    ) {
+        self.enqueue_with_procedure_instance(
+            "scheduled procedure",
+            on_panic,
+            timer_guard,
+            (params, completion),
+            async move |(params, completion), inst| {
+                let result = inst.call_scheduled_procedure(params).await;
+                completion.complete(result);
+            },
+        )
+        .await;
+    }
 }
 
 struct V8ModuleHost {
     module: super::v8::JsModule,
     main_instance: SharedJsMainInstanceManager,
     procedure_instances: Arc<ModuleInstanceManager<super::v8::JsModule>>,
+}
+
+type ReturnJsProcedureInstance = Box<dyn FnOnce(JsProcedureInstance) + Send + 'static>;
+
+impl V8ModuleHost {
+    async fn enqueue_with_procedure_instance<Fut>(
+        &self,
+        f: impl FnOnce(JsProcedureInstance, ReturnJsProcedureInstance) -> Fut,
+    ) where
+        Fut: Future<Output = ()>,
+    {
+        let instance_manager = self.procedure_instances.clone();
+        let ModuleInstanceLease { instance, slot } = instance_manager.get_instance().await;
+        let return_instance = Box::new(move |instance| {
+            instance_manager.return_instance(ModuleInstanceLease { instance, slot });
+        });
+        f(instance, return_instance).await;
+    }
+
+    async fn enqueue_procedure(
+        &self,
+        params: CallProcedureParams,
+        on_panic: JsFatalHook,
+        completion: impl FnOnce(CallProcedureReturn) + Send + 'static,
+    ) {
+        self.enqueue_with_procedure_instance(|instance, return_instance| async move {
+            instance
+                .enqueue_procedure(params, on_panic, completion, return_instance)
+                .await;
+        })
+        .await;
+    }
+
+    async fn enqueue_scheduled_procedure(
+        &self,
+        params: ScheduledFunctionParams,
+        completion: ScheduledFunctionCompletion,
+        on_panic: JsFatalHook,
+    ) {
+        self.enqueue_with_procedure_instance(|instance, return_instance| async move {
+            instance
+                .enqueue_scheduled_procedure(params, completion, on_panic, return_instance)
+                .await;
+        })
+        .await;
+    }
 }
 
 /// A module; used as a bound on `InstanceManager`.
@@ -1874,34 +1954,52 @@ impl ModuleHost {
         }
     }
 
+    async fn enqueue_main_instance_operation<A, JsFut>(
+        &self,
+        panic_kind: &'static str,
+        label: &str,
+        wasm_label: &str,
+        arg: A,
+        js: impl FnOnce(A, JsMainInstance, JsFatalHook) -> JsFut,
+        wasm: impl FnOnce(A, &mut ModuleInstance) + Send + 'static,
+    ) -> Result<(), NoSuchModule>
+    where
+        A: Send + 'static,
+        JsFut: Future<Output = ()> + Send + 'static,
+    {
+        self.enqueue_main_operation(
+            panic_kind,
+            label,
+            arg,
+            js,
+            move |arg, wasm_host, on_panic, timer_guard| {
+                wasm_host.enqueue_with_main_instance(wasm_label, on_panic, timer_guard, arg, wasm);
+                Ok(())
+            },
+        )
+        .await
+    }
+
     async fn call_view_command_for_websocket(
         &self,
         label: &'static str,
         cmd: ViewCommand,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let metric = cmd.metric();
+        let info = self.info.clone();
 
-        self.enqueue_main_operation(
+        self.enqueue_main_instance_operation(
             "websocket view operation",
+            label,
             label,
             (cmd, metric),
             |(cmd, metric), inst, on_panic| async move { inst.enqueue_call_view(cmd, metric, on_panic).await },
-            move |(cmd, metric), wasm_host, on_panic, timer_guard| {
-                let info = wasm_host.module.info();
-                wasm_host.enqueue_with_main_instance(
-                    label,
-                    on_panic,
-                    timer_guard,
-                    (cmd, metric),
-                    move |(cmd, metric), inst| {
-                        let result = inst.call_view(cmd);
-                        ModuleHost::record_view_command_round_trip(&info, metric);
-                        if let Err(err) = result {
-                            log::warn!("websocket view operation failed: {err:#}");
-                        }
-                    },
-                );
-                Ok(())
+            move |(cmd, metric), inst| {
+                let result = inst.call_view(cmd);
+                ModuleHost::record_view_command_round_trip(&info, metric);
+                if let Err(err) = result {
+                    log::warn!("websocket view operation failed: {err:#}");
+                }
             },
         )
         .await
@@ -2310,22 +2408,14 @@ impl ModuleHost {
             args,
             async |call| {
                 let reducer_label = call.name;
-                self.enqueue_main_operation(
+                self.enqueue_main_instance_operation(
                     "websocket reducer operation",
                     reducer_name,
+                    &reducer_label,
                     call.params,
                     |params, inst, on_panic| async move { inst.enqueue_reducer(params, on_panic).await },
-                    move |params, wasm_host, on_panic, timer_guard| {
-                        wasm_host.enqueue_with_main_instance(
-                            &reducer_label,
-                            on_panic,
-                            timer_guard,
-                            params,
-                            move |params, inst| {
-                                let _ = inst.call_reducer(params);
-                            },
-                        );
-                        Ok(())
+                    move |params, inst| {
+                        let _ = inst.call_reducer(params);
                     },
                 )
                 .await
@@ -2515,27 +2605,17 @@ impl ModuleHost {
 
         match &*self.inner {
             ModuleHostInner::Js(host) => {
-                let ModuleInstanceLease { instance, slot } = host.procedure_instances.get_instance().await;
-                let instance_manager = host.procedure_instances.clone();
                 let module = self.clone();
                 let procedure_name_for_completion = procedure_name.clone();
                 let on_panic = self.on_panic.clone();
-                instance
-                    .enqueue_procedure(
-                        params,
-                        on_panic,
-                        move |ret| {
-                            if let Err(err) =
-                                module.log_and_send_procedure_result(&procedure_name_for_completion, timer, target, ret)
-                            {
-                                log::warn!("failed to send procedure result: {err:#}");
-                            }
-                        },
-                        move |instance| {
-                            instance_manager.return_instance(ModuleInstanceLease { instance, slot });
-                        },
-                    )
-                    .await;
+                host.enqueue_procedure(params, on_panic, move |ret| {
+                    if let Err(err) =
+                        module.log_and_send_procedure_result(&procedure_name_for_completion, timer, target, ret)
+                    {
+                        log::warn!("failed to send procedure result: {err:#}");
+                    }
+                })
+                .await;
                 Ok(())
             }
             ModuleHostInner::Wasm(wasm_host) => {
@@ -2545,23 +2625,13 @@ impl ModuleHost {
                 let timer_guard = self.start_call_timer(&procedure_name);
                 let on_panic = self.on_panic.clone();
                 wasm_host
-                    .enqueue_with_procedure_instance(
-                        &procedure_name,
-                        on_panic,
-                        timer_guard,
-                        params,
-                        async move |params, inst| {
-                            let ret = inst.call_procedure(params).await;
-                            if let Err(err) = module.log_and_send_procedure_result(
-                                &procedure_name_for_job,
-                                timer,
-                                target_for_job,
-                                ret,
-                            ) {
-                                log::warn!("Procedure call failed: {err:#}");
-                            }
-                        },
-                    )
+                    .enqueue_procedure_call(&procedure_name, on_panic, timer_guard, params, move |ret| {
+                        if let Err(err) =
+                            module.log_and_send_procedure_result(&procedure_name_for_job, timer, target_for_job, ret)
+                        {
+                            log::warn!("Procedure call failed: {err:#}");
+                        }
+                    })
                     .await;
                 Ok(())
             }
@@ -2798,29 +2868,13 @@ impl ModuleHost {
             ModuleHostInner::Wasm(wasm_host) => {
                 let on_panic = self.on_panic.clone();
                 wasm_host
-                    .enqueue_with_procedure_instance(
-                        "scheduled procedure",
-                        on_panic,
-                        timer_guard,
-                        (params, completion),
-                        async move |(params, completion), inst| {
-                            let result = inst.call_scheduled_procedure(params).await;
-                            completion.complete(result);
-                        },
-                    )
+                    .enqueue_scheduled_procedure_call(on_panic, timer_guard, params, completion)
                     .await;
             }
             ModuleHostInner::Js(js_host) => {
                 drop(timer_guard);
                 let on_panic = self.on_panic.clone();
-                let instance_manager = &js_host.procedure_instances;
-                let ModuleInstanceLease { instance, slot } = instance_manager.get_instance().await;
-                let instance_manager = instance_manager.clone();
-                instance
-                    .enqueue_scheduled_procedure(params, completion, on_panic, move |instance| {
-                        instance_manager.return_instance(ModuleInstanceLease { instance, slot });
-                    })
-                    .await;
+                js_host.enqueue_scheduled_procedure(params, completion, on_panic).await;
             }
         }
 
