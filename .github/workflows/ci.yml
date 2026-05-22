@@ -739,7 +739,7 @@ jobs:
 
       - name: Restore .NET solution
         working-directory: sdks/csharp
-        run: dotnet restore --configfile NuGet.Config SpacetimeDB.ClientSDK.Godot.sln
+        run: dotnet restore --configfile NuGet.Config SpacetimeDB.ClientSDK.sln
 
       # Now, setup the Godot tests.
       - name: Patch spacetimedb dependency in Cargo.toml
