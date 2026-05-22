@@ -280,6 +280,21 @@ pub fn pnpm_path() -> Option<PathBuf> {
     PNPM_PATH.get_or_init(|| which("pnpm").ok()).clone()
 }
 
+fn pnpm_minimum_release_age() -> Result<String> {
+    let workspace = fs::read_to_string(workspace_root().join("pnpm-workspace.yaml"))?;
+    workspace
+        .lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix("minimumReleaseAge:")?
+                .trim()
+                .parse::<u64>()
+                .ok()
+        })
+        .map(|age| age.to_string())
+        .context("pnpm-workspace.yaml is missing minimumReleaseAge")
+}
+
 /// Runs a command and returns stdout as a string.
 pub fn run_cmd(args: &[&str], cwd: &Path) -> Result<String> {
     run_cmd_inner(args, cwd, None)
@@ -332,10 +347,28 @@ fn run_cmd_inner(args: &[&str], cwd: &Path, stdin_input: Option<&str>) -> Result
 /// Runs a `pnpm` command and returns stdout as a string.
 pub fn pnpm(args: &[&str], cwd: &Path) -> Result<String> {
     let pnpm_path = pnpm_path().context("Could not locate pnpm")?;
-    let pnpm_path = pnpm_path.to_str().context("pnpm path is not valid UTF-8")?;
-    let mut full_args = vec![pnpm_path];
-    full_args.extend(args);
-    run_cmd(&full_args, cwd)
+    let minimum_release_age = pnpm_minimum_release_age()?;
+
+    // Smoketests often install inside temp projects created by `spacetime init`.
+    // Those projects intentionally do not carry the repo's .npmrc, so pass the
+    // repo policy through pnpm's environment variable instead.
+    let output = Command::new(&pnpm_path)
+        .args(args)
+        .current_dir(cwd)
+        .env("npm_config_minimum_release_age", minimum_release_age)
+        .output()
+        .with_context(|| format!("Failed to spawn pnpm {}", args.join(" ")))?;
+
+    if !output.status.success() {
+        bail!(
+            "pnpm {} (in {:?}) failed:\nstdout: {}\nstderr: {}",
+            args.join(" "),
+            cwd,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 /// Builds the local TypeScript bindings package.

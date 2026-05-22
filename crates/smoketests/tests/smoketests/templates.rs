@@ -12,7 +12,7 @@
 use anyhow::{bail, Context, Result};
 use regex::Regex;
 use serde_json::Value;
-use spacetimedb_smoketests::{pnpm_path, random_string, workspace_root, Smoketest};
+use spacetimedb_smoketests::{pnpm, random_string, workspace_root, Smoketest};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -174,21 +174,7 @@ fn update_package_json_dependency(package_json_path: &Path, package_name: &str, 
 
 /// Runs pnpm with the given arguments in the given working directory.
 fn run_pnpm(args: &[&str], cwd: &Path) -> Result<()> {
-    let pnpm = pnpm_path().context("pnpm not found")?;
-    let output = Command::new(&pnpm)
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .with_context(|| format!("Failed to spawn pnpm {}", args.join(" ")))?;
-    if !output.status.success() {
-        bail!(
-            "pnpm {} (in {:?}) failed:\nstdout: {}\nstderr: {}",
-            args.join(" "),
-            cwd,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
+    pnpm(args, cwd)?;
     Ok(())
 }
 
