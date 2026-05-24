@@ -73,7 +73,7 @@ Each SpacetimeDB client depends on some bindings specific to your module. Create
 
 ```bash
 mkdir -p module_bindings
-spacetime generate --lang cs --out-dir module_bindings --module-path PATH-TO-MODULE-DIRECTORY
+spacetime generate --lang csharp --out-dir module_bindings --module-path PATH-TO-MODULE-DIRECTORY
 ```
 
 Replace `PATH-TO-MODULE-DIRECTORY` with the path to your SpacetimeDB module.
