@@ -1,0 +1,14 @@
+Write a SpacetimeDB backend module in TypeScript that schedules a one-shot reducer to fire at a specific future time.
+
+TABLE
+- reminder
+  - Fields:
+    - scheduledId: u64 (primary key, auto-increment)
+    - scheduledAt: scheduleAt
+    - message: string
+  - Scheduling: scheduled to call the send_reminder reducer
+
+REDUCERS
+- send_reminder: scheduled reducer triggered by reminder (receives a reminder row argument, does nothing)
+- init: inserts one row into reminder scheduling send_reminder to fire 60 seconds in the future using ScheduleAt.time
+  - Use ctx.timestamp + 60_000_000n microseconds to compute the fire time as a BigInt

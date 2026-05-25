@@ -60,6 +60,8 @@ fn list_tests(cwd: &Path, filter: Option<String>) -> Result<()> {
 }
 
 fn run_tests(cwd: &Path, report: &Path, filter: Option<String>, passthrough: Vec<String>) -> Result<()> {
+    let _ = fs::remove_file(report);
+
     let build_args = ["build".to_string()];
     let command_line = shell_line("pnpm", &build_args);
     let status = Command::new("pnpm")
@@ -71,10 +73,9 @@ fn run_tests(cwd: &Path, report: &Path, filter: Option<String>, passthrough: Vec
 
     let mut test_args = vec![
         "test".to_string(),
-        "--".to_string(),
         "--reporter=default".to_string(),
         "--reporter=junit".to_string(),
-        format!("--outputFile={}", report.display()),
+        format!("--outputFile.junit={}", report.display()),
     ];
     if let Some(filter) = filter {
         test_args.push("-t".to_string());

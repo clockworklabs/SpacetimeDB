@@ -1,11 +1,42 @@
+use crate::api::ApiClient;
 use crate::eval::{Lang, ScoreDetails};
 use crate::llm::types::Vendor;
 use crate::llm::{LlmProvider, ModelRoute};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use spacetimedb_data_structures::map::{HashMap, HashSet};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
+
+// -- Upload payload types (used by api::client to build POST /api/llm-benchmark-upload) --
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Results {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generated_at: Option<String>,
+    pub languages: Vec<LangEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LangEntry {
+    pub lang: String,
+    pub modes: Vec<ModeEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModeEntry {
+    pub mode: String,
+    pub hash: Option<String>,
+    pub models: Vec<ModelEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelEntry {
+    pub name: String,
+    pub route_api_model: Option<String>,
+    pub tasks: BTreeMap<String, RunOutcome>,
+}
 
 /// Parameters for publishing a module (golden or LLM-generated).
 pub struct PublishParams<'a> {
@@ -46,17 +77,23 @@ pub struct RunOutcome {
     pub vendor: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generation_duration_ms: Option<u64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub started_at: Option<DateTime<Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub finished_at: Option<DateTime<Utc>>,
 }
 
 impl RunOutcome {
-    /// Strip volatile fields that change every run (timestamps, ports, paths)
+    /// Strip volatile fields that change every run (ports, paths)
     /// to reduce git diff noise when committing results.
+    /// Timestamps (started_at, finished_at) are preserved for score history tracking.
     pub fn sanitize_for_commit(&mut self) {
-        self.started_at = None;
-        self.finished_at = None;
         self.work_dir_golden = None;
         self.work_dir_llm = None;
         self.golden_db = None;
@@ -104,6 +141,7 @@ pub enum RunOneError {
 pub struct RunContext<'a> {
     pub lang_name: &'a str,
     pub lang: Lang,
+    pub mode: &'a str,
     pub route: &'a ModelRoute,
     pub context: &'a str,
     pub hash: &'a str,
@@ -112,9 +150,11 @@ pub struct RunContext<'a> {
 }
 
 impl<'a> RunContext<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         lang_name: &'a str,
         lang: Lang,
+        mode: &'a str,
         route: &'a ModelRoute,
         context: &'a str,
         hash: &'a str,
@@ -124,6 +164,7 @@ impl<'a> RunContext<'a> {
         Self {
             lang_name,
             lang,
+            mode,
             route,
             context,
             hash,
@@ -143,7 +184,10 @@ pub struct BenchRunContext<'a> {
     pub lang: Lang,
     pub selectors: Option<&'a [String]>,
     pub host: Option<String>,
-    pub details_path: PathBuf,
+    pub api_client: Option<ApiClient>,
+    pub dry_run: bool,
+    pub local_analysis: bool,
+    pub dry_run_id: Option<String>,
 }
 
 pub struct RunConfig {
@@ -157,6 +201,12 @@ pub struct RunConfig {
     pub categories: Option<HashSet<String>>,
     pub model_filter: Option<HashMap<Vendor, HashSet<String>>>,
     pub host: Option<String>,
-    /// Path to the details.json file where results will be merged
-    pub details_path: PathBuf,
+    /// API client for uploading results to the remote database
+    pub api_client: Option<ApiClient>,
+    /// When true, run benchmarks but don't upload results
+    pub dry_run: bool,
+    /// When true, generate analysis markdown locally during dry runs
+    pub local_analysis: bool,
+    /// Shared identifier used to group dry-run artifacts
+    pub dry_run_id: Option<String>,
 }

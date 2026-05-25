@@ -22,10 +22,10 @@ pub fn spec() -> BenchmarkSpec {
                 reducer: reducer_name.into(),
                 args: vec![],
                 sql_count_query: format!(
-                    "SELECT COUNT(*) AS n FROM {membership_table} WHERE {user_id}=1 AND {group_id}=10"
+                    "SELECT COUNT(*) AS n FROM {membership_table} WHERE {user_id}=1 AND {group_id}=1"
                 ),
                 expected_count: 1,
-                id_str: "m2m_has_1_10",
+                id_str: "m2m_has_1_1",
                 timeout: Duration::from_secs(10),
             },
         ));
@@ -34,9 +34,9 @@ pub fn spec() -> BenchmarkSpec {
             host_url,
             file!(),
             route_tag,
-            &format!("SELECT COUNT(*) AS n FROM {membership_table} WHERE {user_id}=1 AND {group_id}=20"),
+            &format!("SELECT COUNT(*) AS n FROM {membership_table} WHERE {user_id}=1 AND {group_id}=2"),
             1,
-            "m2m_has_1_20",
+            "m2m_has_1_2",
             Duration::from_secs(10),
         ));
 
@@ -44,9 +44,9 @@ pub fn spec() -> BenchmarkSpec {
             host_url,
             file!(),
             route_tag,
-            &format!("SELECT COUNT(*) AS n FROM {membership_table} WHERE {user_id}=2 AND {group_id}=20"),
+            &format!("SELECT COUNT(*) AS n FROM {membership_table} WHERE {user_id}=2 AND {group_id}=2"),
             1,
-            "m2m_has_2_20",
+            "m2m_has_2_2",
             Duration::from_secs(10),
         ));
 
