@@ -32,17 +32,41 @@ mod imp {
     use core::sync::atomic::AtomicBool;
     use core::sync::atomic::Ordering;
 
-    const SECCOMP_SET_MODE_FILTER: libc::c_uint = 1;
-    const PR_SET_NO_NEW_PRIVS: libc::c_int = 38;
-    const AUDIT_ARCH_X86_64: u32 = 0xC000003E;
-    const __NR_FUTEX: u32 = 202;
-    const SECCOMP_RET_TRAP: u32 = 0x00030000;
-    const SECCOMP_RET_ALLOW: u32 = 0x7FFF0000;
+    // ── constants from kernel headers ──────────────────────────────────
+    // Most come from `libc` directly; a few are defined here because
+    // `libc` does not export them (e.g. `AUDIT_ARCH_X86_64`).
+    const AUDIT_ARCH_X86_64: u32 = 0xC000003E;          // <linux/audit.h> — EM_X86_64 | __AUDIT_ARCH_64BIT
+
+    // ── BPF instruction builders ───────────────────────────────────────
+    // Classic BPF instruction format used by seccomp.
+    // Each instruction is a `sock_filter { code, jt, jf, k }`:
+    //   code  — opcode (class | size | mode)
+    //   jt    — jump offset if true
+    //   jf    — jump offset if false
+    //   k     — generic operand / immediate / offset
+    //
+    // Available opcode components from <linux/bpf_common.h>:
+    //   class:  BPF_LD (0x00), BPF_LDX (0x01), BPF_ALU (0x04), BPF_JMP (0x05), BPF_RET (0x06)
+    //   size:   BPF_W  (0x00), BPF_H  (0x08), BPF_B  (0x10)
+    //   mode:   BPF_ABS(0x20), BPF_IND(0x40), BPF_MEM(0x60), BPF_LEN(0x80)
+    //   jmp-op: BPF_JA (0x00), BPF_JEQ(0x10), BPF_JGT(0x20), BPF_JGE(0x30), BPF_JSET(0x40)
+    //   alu-op: BPF_ADD(0x00), BPF_SUB(0x10), BPF_MUL(0x20), BPF_AND(0x50)
+    //   src:    BPF_K  (0x00 — use k field), BPF_X  (0x08 — use X register)
+
+    /// One BPF statement (no jump): reads data or returns a value.
+    fn bpf_stmt(op: u32, k: u32) -> libc::sock_filter {
+        libc::sock_filter { code: op as u16, jt: 0, jf: 0, k }
+    }
+
+    /// One BPF jump: compares A against `k` and branches.
+    fn bpf_jmp(op: u32, jt: u8, jf: u8, k: u32) -> libc::sock_filter {
+        libc::sock_filter { code: op as u16, jt, jf, k }
+    }
 
     /// Install a seccomp BPF filter that traps `futex(FUTEX_WAIT)`.
     ///
     /// Everything (prctl + sigaction + BPF) is done once per process via
-    /// a `OnceLock`.  The first thread to enter simulation performs the
+    /// an `AtomicBool`.  The first thread to enter simulation performs the
     /// syscalls; subsequent threads inherit the filter at creation time.
     pub fn install() {
         static INSTALLED: AtomicBool = AtomicBool::new(false);
@@ -50,15 +74,16 @@ mod imp {
             return;
         }
         unsafe {
-            // `PR_SET_NO_NEW_PRIVS` lets unprivileged threads install a filter.
-            let ret = libc::prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
+            // ── step 1: PR_SET_NO_NEW_PRIVS ─────────────────────────────
+            // Lets unprivileged threads install a seccomp filter.
+            let ret = libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
             assert_eq!(ret, 0, "parking_detect: PR_SET_NO_NEW_PRIVS failed");
 
-            // Install the SIGSYS handler.
+            // ── step 2: register SIGSYS handler ─────────────────────────
             // SA_NODEFER: allow re‑entering the handler if an abort‑time
             //             syscall also hits the filter.
             let mut sa: libc::sigaction = core::mem::zeroed();
-            sa.sa_flags = 0x0004 | 0x40000000; // SA_SIGINFO | SA_NODEFER
+            sa.sa_flags = libc::SA_SIGINFO | libc::SA_NODEFER;
             let ptr = sigsys_handler as extern "C" fn(i32, *mut libc::siginfo_t, *mut libc::c_void);
             // The sa_handler / sa_sigaction field is a union; write via raw
             // bytes to avoid fighting the libc type definitions.
@@ -67,7 +92,7 @@ mod imp {
             let ret = libc::sigaction(libc::SIGSYS, &sa, core::ptr::null_mut());
             assert_eq!(ret, 0, "parking_detect: sigaction(SIGSYS) failed");
 
-            // ── BPF filter ──────────────────────────────────────────────────
+            // ── step 3: install the BPF filter ──────────────────────────
             // Every syscall is checked by this 11-instruction seccomp
             // program.  The kernel provides `struct seccomp_data`:
             //
@@ -76,43 +101,113 @@ mod imp {
             //        4     4  arch      (AUDIT_ARCH_*)
             //       24     8  args[1]   (futex op | flags)
             //
-            // We check: arch, then nr, then args[1] masked to strip the
-            // private flag.  See each line for its instruction.
+            // We verify the architecture, then the syscall number,
+            // then the futex operation (after masking the PRIVATE flag).
             let bpf: [libc::sock_filter; 11] = [
-                // ld [4] — load arch field into accumulator
-                libc::sock_filter { code: 0x20, jt: 0, jf: 0, k: 4 },
-                // jeq AUDIT_ARCH_X86_64 — x86_64? continue (jt:0), else jump to insn 10 (jf:8 → ret KILL)
-                // x86 compat syscalls have a different data layout; they must be rejected.
-                libc::sock_filter { code: 0x15, jt: 0, jf: 8, k: AUDIT_ARCH_X86_64 },
-                // ld [0] — load syscall number
-                libc::sock_filter { code: 0x20, jt: 0, jf: 0, k: 0 },
-                // jeq __NR_FUTEX (202) — is it futex? continue (jt:0), else jump to insn 9 (jf:5 → ret ALLOW)
-                libc::sock_filter { code: 0x15, jt: 0, jf: 5, k: __NR_FUTEX },
-                // ld [24] — load args[1], the futex operation word (op | flags)
-                // e.g. FUTEX_WAIT (0), FUTEX_WAIT_BITSET (9), FUTEX_PRIVATE_FLAG (0x80)
-                libc::sock_filter { code: 0x20, jt: 0, jf: 0, k: 24 },
-                // and 0x7F — strip bit 7 (FUTEX_PRIVATE_FLAG = 0x80)
-                // After this: FUTEX_WAIT (0) and FUTEX_WAIT|PRIVATE (128) → 0
-                //             FUTEX_WAIT_BITSET (9) and FUTEX_WAIT_BITSET|PRIVATE (137) → 9
-                libc::sock_filter { code: 0x54, jt: 0, jf: 0, k: 0x7F },
-                // jeq 0 (FUTEX_WAIT) — if masked op == 0, jump to insn 8 (jt:1 → ret TRAP)
-                libc::sock_filter { code: 0x15, jt: 1, jf: 0, k: 0 },
-                // jeq 9 (FUTEX_WAIT_BITSET) — if masked op == 9, fall through to insn 8 (jf:1 → ret ALLOW)
-                libc::sock_filter { code: 0x15, jt: 0, jf: 1, k: 9 },
-                // ret SECCOMP_RET_TRAP — deliver SIGSYS, our handler inspects in_simulation()
-                libc::sock_filter { code: 0x06, jt: 0, jf: 0, k: SECCOMP_RET_TRAP },
-                // ret SECCOMP_RET_ALLOW — not a futex wait, let it through
-                libc::sock_filter { code: 0x06, jt: 0, jf: 0, k: SECCOMP_RET_ALLOW },
-                // ret SECCOMP_RET_KILL — arch mismatch, kill the process
-                libc::sock_filter { code: 0x06, jt: 0, jf: 0, k: 0 },
+                // ── insn 0: ld [4] ─────────────────────────────────
+                // Load the `arch` field of `seccomp_data` into A.
+                bpf_stmt(
+                    libc::BPF_LD | libc::BPF_W | libc::BPF_ABS,
+                    4,
+                ),
+
+                // ── insn 1: jeq AUDIT_ARCH_X86_64, 0, 8 ──────────
+                // If arch == x86_64 → continue (jt:0 → insn 2).
+                // Otherwise → jump forward 8 (jf:8 → insn 10, KILL).
+                // x86 compat syscalls have a different data layout
+                // and must be rejected outright.
+                bpf_jmp(
+                    libc::BPF_JMP | libc::BPF_JEQ | libc::BPF_K,
+                    0, 8,
+                    AUDIT_ARCH_X86_64,
+                ),
+
+                // ── insn 2: ld [0] ─────────────────────────────────
+                // Load the `nr` (syscall number) into A.
+                bpf_stmt(
+                    libc::BPF_LD | libc::BPF_W | libc::BPF_ABS,
+                    0,
+                ),
+
+                // ── insn 3: jeq __NR_FUTEX, 0, 5 ─────────────────
+                // If nr == FUTEX (202) → continue (jt:0 → insn 4).
+                // Otherwise → jump forward 5 (jf:5 → insn 9, ALLOW).
+                bpf_jmp(
+                    libc::BPF_JMP | libc::BPF_JEQ | libc::BPF_K,
+                    0, 5,
+                    libc::SYS_futex as u32,
+                ),
+
+                // ── insn 4: ld [24] ────────────────────────────────
+                // Load `args[1]` — the futex operation word (op | flags).
+                //   e.g. FUTEX_WAIT (0), FUTEX_WAIT_BITSET (9),
+                //        FUTEX_PRIVATE_FLAG (0x80)
+                bpf_stmt(
+                    libc::BPF_LD | libc::BPF_W | libc::BPF_ABS,
+                    24,
+                ),
+
+                // ── insn 5: and 0x7F ──────────────────────────────
+                // Strip the PRIVATE flag bit (0x80).
+                // After masking:
+                //   FUTEX_WAIT (0), FUTEX_WAIT|PRIVATE (0x80) → 0
+                //   FUTEX_WAIT_BITSET (9), FUTEX_WAIT_BITSET|PRIVATE (0x89) → 9
+                bpf_stmt(
+                    libc::BPF_ALU | libc::BPF_AND | libc::BPF_K,
+                    0x7F,
+                ),
+
+                // ── insn 6: jeq 0, 1, 0 ──────────────────────────
+                // If masked op == FUTEX_WAIT (0) → jump forward 1
+                // (jt:1 → insn 8, TRAP).
+                // Otherwise → fall through (jf:0 → insn 7).
+                bpf_jmp(
+                    libc::BPF_JMP | libc::BPF_JEQ | libc::BPF_K,
+                    1, 0,
+                    0, // FUTEX_WAIT
+                ),
+
+                // ── insn 7: jeq 9, 0, 1 ──────────────────────────
+                // If masked op == FUTEX_WAIT_BITSET (9) → fall
+                // through (jt:0 → insn 8, TRAP).
+                // Otherwise → jump forward 1 (jf:1 → insn 9, ALLOW).
+                bpf_jmp(
+                    libc::BPF_JMP | libc::BPF_JEQ | libc::BPF_K,
+                    0, 1,
+                    9, // FUTEX_WAIT_BITSET
+                ),
+
+                // ── insn 8: ret SECCOMP_RET_TRAP ────────────────
+                // Deliver SIGSYS.  Our handler checks
+                // `sim_std::in_simulation()` and aborts if inside a
+                // simulation, or skips the instruction otherwise.
+                bpf_stmt(
+                    libc::BPF_RET | libc::BPF_K,
+                    libc::SECCOMP_RET_TRAP,
+                ),
+
+                // ── insn 9: ret SECCOMP_RET_ALLOW ──────────────
+                // Not a futex wait — let the syscall through.
+                bpf_stmt(
+                    libc::BPF_RET | libc::BPF_K,
+                    libc::SECCOMP_RET_ALLOW,
+                ),
+
+                // ── insn 10: ret SECCOMP_RET_KILL ─────────────
+                // Architecture mismatch — kill the process.
+                bpf_stmt(
+                    libc::BPF_RET | libc::BPF_K,
+                    libc::SECCOMP_RET_KILL,
+                ),
             ];
+
             let prog = libc::sock_fprog {
                 len: bpf.len() as u16,
                 filter: &bpf as *const libc::sock_filter as *mut libc::sock_filter,
             };
             let ret = libc::syscall(
                 libc::SYS_seccomp,
-                SECCOMP_SET_MODE_FILTER,
+                libc::SECCOMP_SET_MODE_FILTER,
                 0,
                 &prog,
             );
