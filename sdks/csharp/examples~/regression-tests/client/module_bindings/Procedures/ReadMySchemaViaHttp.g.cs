@@ -12,10 +12,10 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteProcedures : RemoteBase
     {
-        public void ReadMySchemaViaHttp(ProcedureCallback<string> callback)
+        public void ReadMySchemaViaHttp(string serverUrl, ProcedureCallback<string> callback)
         {
             // Convert the clean callback to the wrapper callback
-            InternalReadMySchemaViaHttp((ctx, result) =>
+            InternalReadMySchemaViaHttp(serverUrl, (ctx, result) =>
             {
                 if (result.IsSuccess && result.Value != null)
                 {
@@ -28,9 +28,9 @@ namespace SpacetimeDB.Types
             });
         }
 
-        private void InternalReadMySchemaViaHttp(ProcedureCallback<Procedure.ReadMySchemaViaHttp> callback)
+        private void InternalReadMySchemaViaHttp(string serverUrl, ProcedureCallback<Procedure.ReadMySchemaViaHttp> callback)
         {
-            conn.InternalCallProcedure(new Procedure.ReadMySchemaViaHttpArgs(), callback);
+            conn.InternalCallProcedure(new Procedure.ReadMySchemaViaHttpArgs(serverUrl), callback);
         }
 
     }
@@ -58,6 +58,19 @@ namespace SpacetimeDB.Types
         [DataContract]
         public sealed partial class ReadMySchemaViaHttpArgs : Procedure, IProcedureArgs
         {
+            [DataMember(Name = "server_url")]
+            public string ServerUrl;
+
+            public ReadMySchemaViaHttpArgs(string ServerUrl)
+            {
+                this.ServerUrl = ServerUrl;
+            }
+
+            public ReadMySchemaViaHttpArgs()
+            {
+                this.ServerUrl = "";
+            }
+
             string IProcedureArgs.ProcedureName => "read_my_schema_via_http";
         }
 

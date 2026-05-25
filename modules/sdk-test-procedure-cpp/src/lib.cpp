@@ -140,7 +140,7 @@ SPACETIMEDB_PROCEDURE(Unit, insert_with_tx_rollback, ProcedureContext ctx) {
 #ifdef SPACETIMEDB_UNSTABLE_FEATURES
 
 // Test HTTP GET request to the module's own schema endpoint
-SPACETIMEDB_PROCEDURE(std::string, read_my_schema, ProcedureContext ctx) {
+SPACETIMEDB_PROCEDURE(std::string, read_my_schema, ProcedureContext ctx, std::string server_url) {
     // Get the module identity (database address)
     Identity module_identity = ctx.database_identity();
     std::string identity_hex = module_identity.to_hex_string();
@@ -148,7 +148,7 @@ SPACETIMEDB_PROCEDURE(std::string, read_my_schema, ProcedureContext ctx) {
     LOG_INFO("read_my_schema using identity: " + identity_hex);
     
     // Make HTTP GET request to the schema endpoint (matches Rust)
-    std::string url = "http://localhost:3000/v1/database/" + identity_hex + "/schema?version=9";
+    std::string url = server_url + "/v1/database/" + identity_hex + "/schema?version=9";
     auto result = ctx.http.get(url);
     
     if (!result.is_ok()) {

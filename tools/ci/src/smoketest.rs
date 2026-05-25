@@ -38,7 +38,7 @@ pub struct SmoketestsArgs {
 enum SmoketestCmd {
     /// Only build binaries without running tests
     ///
-    /// Use this before running `cargo test --all` to ensure binaries are built.
+    /// Use this before running broad workspace tests to ensure binaries are built.
     Prepare,
     CheckModList,
 }

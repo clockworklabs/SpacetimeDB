@@ -6,6 +6,11 @@ use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Table};
 use test_counter::TestCounter;
 
 const LOCALHOST: &str = "http://localhost:3000";
+const SERVER_URL_ENV_VAR: &str = "SPACETIME_SDK_TEST_SERVER_URL";
+
+fn server_url() -> String {
+    std::env::var(SERVER_URL_ENV_VAR).unwrap_or_else(|_| LOCALHOST.to_owned())
+}
 
 pub async fn dispatch(test: &str, db_name: &str) {
     match test {
@@ -69,7 +74,7 @@ async fn connect_with_then(
     let name = db_name.to_owned();
     let builder = DbConnection::builder()
         .with_database_name(name)
-        .with_uri(LOCALHOST)
+        .with_uri(server_url())
         .on_connect(|ctx, _, _| {
             callback(ctx);
             connected_result(Ok(()));
@@ -257,7 +262,7 @@ async fn exec_procedure_http_ok(db_name: &str) {
         let test_counter = test_counter.clone();
         move |ctx| {
             let result = test_counter.add_test("invoke_http");
-            ctx.procedures.read_my_schema_then(move |_ctx, res| {
+            ctx.procedures.read_my_schema_then(server_url(), move |_ctx, res| {
                 result(
                     // It's a try block!
                     #[allow(clippy::redundant_closure_call)]
