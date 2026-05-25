@@ -73,7 +73,6 @@ fn run_tests(cwd: &Path, report: &Path, filter: Option<String>, passthrough: Vec
 
     let mut test_args = vec![
         "test".to_string(),
-        "--".to_string(),
         "--reporter=default".to_string(),
         "--reporter=junit".to_string(),
         format!("--outputFile.junit={}", report.display()),
