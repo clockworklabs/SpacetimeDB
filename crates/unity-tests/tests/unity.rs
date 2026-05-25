@@ -67,9 +67,10 @@ fn run() -> Result<()> {
 
     run_command(
         &workspace,
-        "bash",
+        "cargo",
         &[
-            "tools/check-diff.sh".into(),
+            "ci".into(),
+            "check-diff".into(),
             "demo/Blackholio/client-unity/Assets/Scripts/autogen".into(),
         ],
         None,
