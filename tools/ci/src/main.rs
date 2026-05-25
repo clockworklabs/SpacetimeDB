@@ -274,6 +274,11 @@ fn check_pnpm_release_age_policy() -> Result<()> {
     Ok(())
 }
 
+fn install_pnpm_workspace_dependencies() -> Result<()> {
+    cmd!("pnpm", "install", "--frozen-lockfile").run()?;
+    Ok(())
+}
+
 #[derive(Subcommand)]
 enum CiCmd {
     /// Runs tests
@@ -413,6 +418,7 @@ fn run_publish_checks() -> Result<()> {
 }
 
 fn run_typescript_tests() -> Result<()> {
+    install_pnpm_workspace_dependencies()?;
     cmd!(
         "cargo",
         "test",
