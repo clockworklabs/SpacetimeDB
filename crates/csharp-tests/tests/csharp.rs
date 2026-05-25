@@ -36,15 +36,19 @@ fn run() -> Result<()> {
     fs::create_dir_all(&out_dir).with_context(|| format!("failed to create {}", out_dir.display()))?;
 
     prepare_csharp_sdk_solution(&workspace)?;
+    // Run the SDK unit test project directly. `SpacetimeDB.ClientSDK.csproj` is
+    // only a library and may produce no TRX, while solution-wide `dotnet test`
+    // can pull in Godot and other projects that are not part of this suite.
+    const CSHARP_SDK_TEST_PROJECT: &str = "tests~/tests.csproj";
     if args.list {
-        list_dotnet_tests(&workspace.join("sdks/csharp"), "SpacetimeDB.ClientSDK.csproj")?;
+        list_dotnet_tests(&workspace.join("sdks/csharp"), CSHARP_SDK_TEST_PROJECT)?;
         return Ok(());
     }
 
     run_dotnet_test(
         "csharp sdk",
         &workspace.join("sdks/csharp"),
-        "SpacetimeDB.ClientSDK.csproj",
+        CSHARP_SDK_TEST_PROJECT,
         &out_dir,
         "sdk.trx",
         args.filter.as_deref(),
