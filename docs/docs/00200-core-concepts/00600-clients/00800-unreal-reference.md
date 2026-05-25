@@ -58,7 +58,7 @@ A connection to a remote database is represented by the `UDbConnection` class. T
 | Name                                                                   | Description                                                                   |
 | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | [Connect to a database](#connect-to-a-database)                        | Construct a UDbConnection instance.                                           |
-| [Advance the connection](#advance-the-connection-and-process-messages) | Process queued messages with `FrameTick` or automatic ticking.               |
+| [Advance the connection](#advance-the-connection-and-process-messages) | Process queued WebSocket messages and dispatch callbacks.                     |
 | [Access tables and reducers](#access-tables-and-reducers)              | Access the client cache, request reducer invocations, and register callbacks. |
 
 ### Connect to a database
@@ -186,7 +186,7 @@ Finalize configuration and open the connection. This creates a WebSocket connect
 
 ### Advance the connection and process messages
 
-The Unreal SDK queues network messages and applies them to the generated client cache on tick. If you do not arrange for the connection to tick, table callbacks, reducer callbacks, and subscription callbacks will not be dispatched.
+The Unreal SDK receives WebSocket messages asynchronously, then queues them for processing on the game thread. You must either call `FrameTick()` regularly, typically from an Actor's `Tick()`, or enable automatic ticking once with `SetAutoTicking(true)`. Without one of these, queued messages are not processed and table callbacks, reducer callbacks, and subscription callbacks will not fire.
 
 You can either call `FrameTick()` yourself from an Actor or component tick, or enable the SDK's automatic ticker once after building the connection:
 
