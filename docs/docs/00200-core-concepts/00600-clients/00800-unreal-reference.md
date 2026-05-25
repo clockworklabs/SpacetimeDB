@@ -58,7 +58,7 @@ A connection to a remote database is represented by the `UDbConnection` class. T
 | Name                                                                   | Description                                                                   |
 | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | [Connect to a database](#connect-to-a-database)                        | Construct a UDbConnection instance.                                           |
-| [Advance the connection](#advance-the-connection-and-process-messages) | The connection processes messages automatically via WebSocket callbacks.      |
+| [Advance the connection](#advance-the-connection-and-process-messages) | Process queued WebSocket messages and dispatch callbacks.                     |
 | [Access tables and reducers](#access-tables-and-reducers)              | Access the client cache, request reducer invocations, and register callbacks. |
 
 ### Connect to a database
@@ -186,7 +186,42 @@ Finalize configuration and open the connection. This creates a WebSocket connect
 
 ### Advance the connection and process messages
 
-The Unreal SDK processes messages automatically via WebSocket callbacks and with UDbConnection which ultimately inherits from FTickableGameObject. No manual polling or advancement is required. Events are dispatched through the registered delegates.
+The Unreal SDK receives WebSocket messages asynchronously, then queues them for processing on the game thread. You must either call `FrameTick()` regularly, typically from an Actor's `Tick()`, or enable automatic ticking once with `SetAutoTicking(true)`. Without one of these, queued messages are not processed and delegates do not fire.
+
+```cpp
+class UDbConnection
+{
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
+    void FrameTick();
+
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
+    void SetAutoTicking(bool bAutoTick);
+
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
+    void Disconnect();
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB")
+    bool IsActive() const;
+};
+```
+
+Use one of these patterns:
+
+```cpp
+void AMyActor::Tick(float DeltaTime)
+{
+    if (Conn && Conn->IsActive())
+    {
+        Conn->FrameTick();
+    }
+}
+```
+
+or:
+
+```cpp
+Conn->SetAutoTicking(true);
+```
 
 ### Access tables and reducers
 
