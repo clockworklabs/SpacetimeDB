@@ -584,6 +584,13 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
+      # Now, setup the Unity tests.
+      - name: Patch spacetimedb dependency in Cargo.toml
+        working-directory: demo/Blackholio/server-rust
+        run: |
+          sed -i "s|spacetimedb *=.*|spacetimedb = \{ path = \"../../../crates/bindings\" \}|" Cargo.toml
+          cat Cargo.toml
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
