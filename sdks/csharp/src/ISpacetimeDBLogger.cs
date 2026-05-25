@@ -19,6 +19,8 @@ namespace SpacetimeDB
 
 #if UNITY_5_3_OR_NEWER
             new UnityDebugLogger();
+#elif GODOT
+            new GodotDebugLogger();
 #else
             new ConsoleLogger();
 #endif

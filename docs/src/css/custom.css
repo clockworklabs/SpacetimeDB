@@ -481,7 +481,6 @@ li.tabs__item--active,
 }
 
 .navbar__logo img {
-  display: block;
   width: 152px;
   height: 32px;
 }

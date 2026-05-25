@@ -164,7 +164,7 @@ arrayvec = "0.7.2"
 async-channel = "2.5"
 async-stream = "0.3.6"
 async-trait = "0.1.68"
-axum = { version = "0.7", features = ["tracing"] }
+axum = { version = "0.7", features = ["tracing", "http2"] }
 axum-extra = { version = "0.9", features = ["typed-header"] }
 backtrace = "0.3.66"
 base64 = "0.21.2"
@@ -283,7 +283,7 @@ second-stack = "0.3"
 self-replace = "1.5"
 semver = "1"
 serde = { version = "1.0.136", features = ["derive"] }
-serde_json = { version = "1.0.128", features = ["raw_value", "arbitrary_precision"] }
+serde_json = { version = "1.0.128", features = ["raw_value"] }
 serde_path_to_error = "0.1.9"
 serde_with = { version = "3.3.0", features = ["base64", "hex"] }
 serial_test = "2.0.0"

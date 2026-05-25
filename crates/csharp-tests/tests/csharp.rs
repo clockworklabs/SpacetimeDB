@@ -37,13 +37,14 @@ fn run() -> Result<()> {
 
     prepare_csharp_sdk_solution(&workspace)?;
     if args.list {
-        list_dotnet_tests(&workspace.join("sdks/csharp"))?;
+        list_dotnet_tests(&workspace.join("sdks/csharp"), "SpacetimeDB.ClientSDK.csproj")?;
         return Ok(());
     }
 
     run_dotnet_test(
         "csharp sdk",
         &workspace.join("sdks/csharp"),
+        "SpacetimeDB.ClientSDK.csproj",
         &out_dir,
         "sdk.trx",
         args.filter.as_deref(),
@@ -54,9 +55,10 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-fn list_dotnet_tests(cwd: &Path) -> Result<()> {
+fn list_dotnet_tests(cwd: &Path, project: &str) -> Result<()> {
     let list_args = [
         "test".to_string(),
+        project.to_string(),
         "--list-tests".to_string(),
         "-warnaserror".to_string(),
         "--no-restore".to_string(),
@@ -73,6 +75,7 @@ fn list_dotnet_tests(cwd: &Path) -> Result<()> {
 fn run_dotnet_test(
     suite: &str,
     cwd: &Path,
+    project: &str,
     out_dir: &Path,
     report_name: &str,
     filter: Option<&str>,
@@ -82,6 +85,7 @@ fn run_dotnet_test(
 
     let mut test_args = vec![
         "test".to_string(),
+        project.to_string(),
         "-warnaserror".to_string(),
         "--results-directory".to_string(),
         out_dir.display().to_string(),
