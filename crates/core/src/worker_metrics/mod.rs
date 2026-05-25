@@ -204,8 +204,8 @@ metrics_group!(
         pub tokio_mean_polls_per_park: GaugeVec,
 
         #[name = spacetime_websocket_sent_msg_size_bytes]
-        #[help = "The size of messages sent to connected sessions"]
-        #[labels(db: Identity, workload: WorkloadType)]
+        #[help = "The size of websocket payloads sent to connected sessions"]
+        #[labels(db: Identity)]
         // Prometheus histograms have default buckets,
         // which broadly speaking,
         // are tailored to measure the response time of a network service.
@@ -219,8 +219,8 @@ metrics_group!(
         pub websocket_sent_msg_size: HistogramVec,
 
         #[name = spacetime_websocket_sent_num_rows]
-        #[help = "The number of rows sent to connected sessions"]
-        #[labels(db: Identity, workload: WorkloadType)]
+        #[help = "The number of rows sent in websocket payloads"]
+        #[labels(db: Identity)]
         // Prometheus histograms have default buckets,
         // which broadly speaking,
         // are tailored to measure the response time of a network service.

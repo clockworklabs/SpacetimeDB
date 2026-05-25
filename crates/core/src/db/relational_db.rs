@@ -1673,6 +1673,21 @@ pub async fn local_durability(
     runtime: Handle,
     snapshot_worker: Option<&SnapshotWorker>,
 ) -> Result<(LocalDurability, DiskSizeFn), DBError> {
+    local_durability_with_options(replica_dir, runtime, snapshot_worker, <_>::default()).await
+}
+
+/// Initialize local durability with explicit parameters.
+///
+/// Also returned is a [`DiskSizeFn`] as required by [`RelationalDB::open`].
+///
+/// Note that this operation can be expensive, as it needs to traverse a suffix
+/// of the commitlog.
+pub async fn local_durability_with_options(
+    replica_dir: ReplicaDir,
+    runtime: Handle,
+    snapshot_worker: Option<&SnapshotWorker>,
+    opts: durability::local::Options,
+) -> Result<(LocalDurability, DiskSizeFn), DBError> {
     let on_new_segment = snapshot_worker.map(|snapshot_worker| {
         let snapshot_worker = snapshot_worker.clone();
         Arc::new(move || {
@@ -1685,7 +1700,7 @@ pub async fn local_durability(
         durability::Local::open(
             replica_dir.clone(),
             runtime,
-            <_>::default(),
+            opts,
             // Give the durability a handle to request a new snapshot run,
             // which it will send down whenever we rotate commitlog segments.
             on_new_segment,
