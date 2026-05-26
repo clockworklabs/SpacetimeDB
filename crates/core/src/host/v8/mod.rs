@@ -186,12 +186,6 @@ impl AsRef<str> for JsWorkerKind {
     }
 }
 
-impl JsWorkerKind {
-    const fn checks_heap(self) -> bool {
-        matches!(self, Self::Main)
-    }
-}
-
 /// The actual V8 runtime, with initialization of V8.
 struct V8RuntimeInner {
     _priv: (),
@@ -983,33 +977,6 @@ struct V8HeapMetrics {
     detached_contexts: IntGauge,
 }
 
-#[derive(Clone, Copy, Default)]
-struct V8HeapSnapshot {
-    total_heap_size_bytes: i64,
-    total_physical_size_bytes: i64,
-    used_global_handles_size_bytes: i64,
-    used_heap_size_bytes: i64,
-    heap_size_limit_bytes: i64,
-    external_memory_bytes: i64,
-    native_contexts: i64,
-    detached_contexts: i64,
-}
-
-impl V8HeapSnapshot {
-    fn from_stats(stats: &v8::HeapStatistics) -> Self {
-        Self {
-            total_heap_size_bytes: stats.total_heap_size() as i64,
-            total_physical_size_bytes: stats.total_physical_size() as i64,
-            used_global_handles_size_bytes: stats.used_global_handles_size() as i64,
-            used_heap_size_bytes: stats.used_heap_size() as i64,
-            heap_size_limit_bytes: stats.heap_size_limit() as i64,
-            external_memory_bytes: stats.external_memory() as i64,
-            native_contexts: stats.number_of_native_contexts() as i64,
-            detached_contexts: stats.number_of_detached_contexts() as i64,
-        }
-    }
-}
-
 impl V8HeapMetrics {
     fn new(database_identity: &Identity, worker_kind: JsWorkerKind, instance_id: u64) -> Self {
         Self {
@@ -1074,49 +1041,41 @@ impl V8HeapMetrics {
 
 impl Drop for V8HeapMetrics {
     fn drop(&mut self) {
-        WORKER_METRICS.v8_total_heap_size_bytes.remove_label_values(
+        let _ = WORKER_METRICS.v8_total_heap_size_bytes.remove_label_values(
             &self.database_identity,
             &self.worker_kind,
             &self.instance_id,
         );
-        WORKER_METRICS.v8_total_physical_size_bytes.remove_label_values(
+        let _ = WORKER_METRICS.v8_total_physical_size_bytes.remove_label_values(
             &self.database_identity,
             &self.worker_kind,
             &self.instance_id,
         );
-        WORKER_METRICS.v8_used_global_handles_size_bytes.remove_label_values(
+        let _ = WORKER_METRICS.v8_used_global_handles_size_bytes.remove_label_values(
             &self.database_identity,
             &self.worker_kind,
             &self.instance_id,
         );
-        WORKER_METRICS.v8_heap_size_limit_bytes.remove_label_values(
+        let _ = WORKER_METRICS.v8_heap_size_limit_bytes.remove_label_values(
             &self.database_identity,
             &self.worker_kind,
             &self.instance_id,
         );
-        WORKER_METRICS.v8_external_memory_bytes.remove_label_values(
+        let _ = WORKER_METRICS.v8_external_memory_bytes.remove_label_values(
             &self.database_identity,
             &self.worker_kind,
             &self.instance_id,
         );
-        WORKER_METRICS.v8_native_contexts.remove_label_values(
+        let _ = WORKER_METRICS.v8_native_contexts.remove_label_values(
             &self.database_identity,
             &self.worker_kind,
             &self.instance_id,
         );
-        WORKER_METRICS.v8_detached_contexts.remove_label_values(
+        let _ = WORKER_METRICS.v8_detached_contexts.remove_label_values(
             &self.database_identity,
             &self.worker_kind,
             &self.instance_id,
         );
-    }
-}
-
-fn adjust_gauge(gauge: &IntGauge, delta: i64) {
-    if delta > 0 {
-        gauge.add(delta);
-    } else if delta < 0 {
-        gauge.sub(-delta);
     }
 }
 
