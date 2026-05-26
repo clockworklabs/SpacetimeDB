@@ -136,6 +136,110 @@ impl<'opts> Cpp<'opts> {
     }
 
     // Generate minimal product type (struct with fields only)
+    /// Rename C++ keyword field names by appending `_`.
+    /// BSATN serialization is positional, so the rename is wire-compatible.
+    fn cpp_safe_field_name(name: &str) -> String {
+        const CPP_KEYWORDS: &[&str] = &[
+            "alignas",
+            "alignof",
+            "and",
+            "and_eq",
+            "asm",
+            "auto",
+            "bitand",
+            "bitor",
+            "bool",
+            "break",
+            "case",
+            "catch",
+            "char",
+            "char8_t",
+            "char16_t",
+            "char32_t",
+            "class",
+            "compl",
+            "concept",
+            "const",
+            "consteval",
+            "constexpr",
+            "constinit",
+            "const_cast",
+            "continue",
+            "co_await",
+            "co_return",
+            "co_yield",
+            "decltype",
+            "default",
+            "delete",
+            "do",
+            "double",
+            "dynamic_cast",
+            "else",
+            "enum",
+            "explicit",
+            "export",
+            "extern",
+            "false",
+            "float",
+            "for",
+            "friend",
+            "goto",
+            "if",
+            "inline",
+            "int",
+            "long",
+            "mutable",
+            "namespace",
+            "new",
+            "noexcept",
+            "not",
+            "not_eq",
+            "nullptr",
+            "operator",
+            "or",
+            "or_eq",
+            "private",
+            "protected",
+            "public",
+            "register",
+            "reinterpret_cast",
+            "requires",
+            "return",
+            "short",
+            "signed",
+            "sizeof",
+            "static",
+            "static_assert",
+            "static_cast",
+            "struct",
+            "switch",
+            "template",
+            "this",
+            "thread_local",
+            "throw",
+            "true",
+            "try",
+            "typedef",
+            "typeid",
+            "typename",
+            "union",
+            "unsigned",
+            "using",
+            "virtual",
+            "void",
+            "volatile",
+            "wchar_t",
+            "while",
+            "xor",
+            "xor_eq",
+        ];
+        if CPP_KEYWORDS.contains(&name) {
+            format!("{name}_")
+        } else {
+            name.to_string()
+        }
+    }
+
     fn write_product_type(&self, output: &mut String, module: &ModuleDef, type_name: &str, product: &ProductTypeDef) {
         // Use INTERNAL macro for Internal namespace
         let macro_name = if self.namespace == "SpacetimeDB::Internal" {
@@ -147,9 +251,10 @@ impl<'opts> Cpp<'opts> {
 
         // Write fields only
         for (field_name, field_type) in &product.elements {
+            let safe_name = Self::cpp_safe_field_name(field_name);
             write!(output, "    ").unwrap();
             self.write_algebraic_type(output, module, field_type).unwrap();
-            writeln!(output, " {};", field_name).unwrap();
+            writeln!(output, " {};", safe_name).unwrap();
         }
 
         writeln!(output).unwrap();
@@ -161,10 +266,11 @@ impl<'opts> Cpp<'opts> {
         )
         .unwrap();
         for (field_name, _) in &product.elements {
+            let safe_name = Self::cpp_safe_field_name(field_name);
             writeln!(
                 output,
                 "        ::SpacetimeDB::bsatn::serialize(writer, {});",
-                field_name
+                safe_name
             )
             .unwrap();
         }
@@ -174,15 +280,63 @@ impl<'opts> Cpp<'opts> {
         if !product.elements.is_empty() {
             write!(output, "    SPACETIMEDB_PRODUCT_TYPE_EQUALITY(").unwrap();
             for (i, (field_name, _)) in product.elements.iter().enumerate() {
+                let safe_name = Self::cpp_safe_field_name(field_name);
                 if i > 0 {
                     write!(output, ", ").unwrap();
                 }
-                write!(output, "{}", field_name).unwrap();
+                write!(output, "{}", safe_name).unwrap();
             }
             writeln!(output, ")").unwrap();
         }
 
         writeln!(output, "}};").unwrap();
+    }
+
+    fn generate_raw_module_mount_v10_special(&self) -> String {
+        // RawModuleMountV10 is special for two reasons:
+        // 1. Its `namespace` field is a C++ keyword, renamed to `namespace_`.
+        // 2. It contains `RawModuleDefV10` which creates a circular include chain:
+        //    RawModuleMountV10 → RawModuleDefV10 → RawModuleDefV10Section → RawModuleMountV10
+        //    We break this with a forward declaration and shared_ptr (which only needs a declaration).
+        r#"// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
+// WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
+
+// This was generated using spacetimedb codegen.
+
+#pragma once
+
+#include <cstdint>
+#include <string>
+#include <vector>
+#include <optional>
+#include <memory>
+#include "../autogen_base.h"
+#include "spacetimedb/bsatn/bsatn.h"
+
+// Forward declaration breaks the circular include chain:
+// RawModuleMountV10 -> RawModuleDefV10 -> RawModuleDefV10Section -> RawModuleMountV10
+namespace SpacetimeDB::Internal { struct RawModuleDefV10; }
+
+namespace SpacetimeDB::Internal {
+
+SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawModuleMountV10) {
+    std::string namespace_;                                          // renamed: 'namespace' is a C++ keyword
+    std::shared_ptr<SpacetimeDB::Internal::RawModuleDefV10> module; // shared_ptr breaks infinite-size recursion
+
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
+        ::SpacetimeDB::bsatn::serialize(writer, namespace_);
+        if (module) ::SpacetimeDB::bsatn::serialize(writer, *module);
+    }
+    bool operator==(const RawModuleMountV10& o) const noexcept {
+        if (namespace_ != o.namespace_) return false;
+        if (module && o.module) return *module == *o.module;
+        return !module && !o.module;
+    }
+    bool operator!=(const RawModuleMountV10& o) const noexcept { return !(*this == o); }
+};
+} // namespace SpacetimeDB::Internal
+"#
+        .to_string()
     }
 
     // Generate minimal sum type (TaggedEnum only)
@@ -480,6 +634,17 @@ impl Lang for Cpp<'_> {
             return vec![OutputFile {
                 filename: format!("{name}.g.h"),
                 code: self.generate_algebraic_type_special(),
+            }];
+        }
+
+        // Special handling for RawModuleMountV10:
+        // (1) its `namespace` field is a C++ keyword; (2) its `module` field creates a
+        // circular include chain through RawModuleDefV10 → RawModuleDefV10Section.
+        // We break both with a forward declaration and shared_ptr.
+        if name.to_string() == "RawModuleMountV10" {
+            return vec![OutputFile {
+                filename: format!("{name}.g.h"),
+                code: self.generate_raw_module_mount_v10_special(),
             }];
         }
 
