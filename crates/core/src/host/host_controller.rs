@@ -1,5 +1,6 @@
 use super::module_host::{EventStatus, ModuleHost, ModuleInfo, NoSuchModule};
 use super::scheduler::SchedulerStarter;
+use super::v8::V8HeapMetrics;
 use super::wasmtime::WasmtimeRuntime;
 use super::{Scheduler, UpdateDatabaseResult};
 use crate::client::{ClientActorId, ClientName};
@@ -1412,7 +1413,7 @@ where
         .remove_label_values(db);
     let _ = WORKER_METRICS.wasm_memory_bytes.remove_label_values(db);
 
-    // N.b.: the V8 heap metrics that are handled by `V8HeapMetrics` will be cleaned up by that type's `drop` method.
+    V8HeapMetrics::remove_all_metric_label_values_for_database(db);
 
     let _ = WORKER_METRICS.v8_request_queue_length.remove_label_values(db);
 }
