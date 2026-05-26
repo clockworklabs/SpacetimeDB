@@ -1,0 +1,230 @@
+.loading,
+.welcome {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  gap: 0.75rem;
+  padding: 1.5rem;
+}
+
+.loading {
+  align-content: center;
+}
+
+.welcome-card {
+  width: min(100%, 470px);
+  display: grid;
+  gap: 1.2rem;
+  padding: 2.5rem;
+  border: 1px solid #dce4d6;
+  border-radius: 1.35rem;
+  background: #fff;
+  box-shadow: 0 18px 50px rgb(21 37 24 / 7%);
+}
+
+.eyebrow {
+  color: #4d7158;
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.app {
+  width: min(1100px, calc(100% - 2.5rem));
+  margin: 0 auto;
+  padding: 2rem 0 3rem;
+  display: grid;
+  gap: 1.4rem;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+header h1 {
+  margin-top: 0.25rem;
+  font-size: clamp(1.8rem, 4vw, 2.4rem);
+}
+
+.profile {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  color: #344439;
+  font-weight: 650;
+}
+
+.name-form {
+  display: grid;
+  gap: 0.55rem;
+  text-align: left;
+}
+
+.name-form label,
+.send-card label {
+  color: #526056;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.name-form div {
+  display: flex;
+  gap: 0.55rem;
+}
+
+.name-form input {
+  min-width: 210px;
+}
+
+.error {
+  border-radius: 0.7rem;
+  background: #fff1f0;
+  color: #9f2721;
+  padding: 0.75rem 0.9rem;
+}
+
+.banner {
+  max-width: 100%;
+}
+
+.dashboard {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.95fr) minmax(300px, 1.2fr);
+  gap: 1.25rem;
+}
+
+.balance-card,
+.send-card,
+.activity {
+  border: 1px solid #dce4d6;
+  border-radius: 1.15rem;
+  background: #fff;
+  padding: 1.45rem;
+}
+
+.balance-card {
+  color: #516157;
+  display: grid;
+  align-content: center;
+  gap: 0.9rem;
+  background: #1c643e;
+  border-color: #1c643e;
+  color: #ddeddf;
+}
+
+.balance-card strong {
+  color: #fff;
+  font-size: clamp(2.3rem, 5vw, 3rem);
+  letter-spacing: -0.05em;
+}
+
+.balance-card small {
+  line-height: 1.45;
+}
+
+.send-card {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.send-card h2 {
+  margin-bottom: 0.35rem;
+}
+
+.amount {
+  position: relative;
+}
+
+.amount span {
+  position: absolute;
+  left: 0.85rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #59675f;
+}
+
+.amount input {
+  padding-left: 1.7rem;
+}
+
+.send-card button {
+  margin-top: 0.55rem;
+}
+
+.activity {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.activity h2 {
+  margin-top: 0.3rem;
+}
+
+.empty {
+  color: #66766a;
+  padding: 1rem 0;
+}
+
+.activity-list {
+  display: grid;
+  gap: 0.2rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.activity-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  border-top: 1px solid #edf1ea;
+  padding: 0.9rem 0;
+}
+
+.activity-list li div {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.activity-list time {
+  color: #65756a;
+  font-size: 0.85rem;
+}
+
+.activity-list span {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.outgoing {
+  color: #333c36;
+}
+
+.incoming {
+  color: #16733e;
+}
+
+@media (max-width: 700px) {
+  .app {
+    width: min(100% - 1.5rem, 500px);
+    padding-top: 1.25rem;
+  }
+
+  header {
+    display: grid;
+  }
+
+  .dashboard {
+    grid-template-columns: 1fr;
+  }
+
+  .welcome-card {
+    padding: 1.5rem;
+  }
+}
