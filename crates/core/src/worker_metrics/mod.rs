@@ -1,6 +1,6 @@
-use crate::hash::Hash;
 use crate::messages::control_db::HostType;
 use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
+use crate::{hash::Hash, host::v8::JsWorkerKind};
 use once_cell::sync::Lazy;
 use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_datastore::execution_context::WorkloadType;
@@ -288,28 +288,28 @@ metrics_group!(
         pub wasm_memory_bytes: IntGaugeVec,
 
         #[name = spacetime_worker_v8_total_heap_size_bytes]
-        #[help = "The total size of the V8 heap for a database's tracked JS worker kind (currently main only)"]
-        #[labels(database_identity: Identity, worker_kind: str)]
+        #[help = "The total size of the V8 heap for a database's tracked JS worker kind"]
+        #[labels(database_identity: Identity, worker_kind: JsWorkerKind, instance_id: u64)]
         pub v8_total_heap_size_bytes: IntGaugeVec,
 
         #[name = spacetime_worker_v8_total_physical_size_bytes]
-        #[help = "The total committed physical V8 heap memory for a database's tracked JS worker kind (currently main only)"]
-        #[labels(database_identity: Identity, worker_kind: str)]
+        #[help = "The total committed physical V8 heap memory for a database's tracked JS worker kind"]
+        #[labels(database_identity: Identity, worker_kind: JsWorkerKind, instance_id: u64)]
         pub v8_total_physical_size_bytes: IntGaugeVec,
 
         #[name = spacetime_worker_v8_used_global_handles_size_bytes]
-        #[help = "The used size of V8 global handles for a database's tracked JS worker kind (currently main only)"]
-        #[labels(database_identity: Identity, worker_kind: str)]
+        #[help = "The used size of V8 global handles for a database's tracked JS worker kind"]
+        #[labels(database_identity: Identity, worker_kind: JsWorkerKind, instance_id: u64)]
         pub v8_used_global_handles_size_bytes: IntGaugeVec,
 
         #[name = spacetime_worker_v8_used_heap_size_bytes]
-        #[help = "The live V8 heap size for a database's tracked JS worker kind (currently main only)"]
-        #[labels(database_identity: Identity, worker_kind: str)]
+        #[help = "The live V8 heap size for a database's tracked JS worker kind"]
+        #[labels(database_identity: Identity, worker_kind: JsWorkerKind, instance_id: u64)]
         pub v8_used_heap_size_bytes: IntGaugeVec,
 
         #[name = spacetime_worker_v8_heap_size_limit_bytes]
-        #[help = "The V8 heap size limit for a database's tracked JS worker kind (currently main only)"]
-        #[labels(database_identity: Identity, worker_kind: str)]
+        #[help = "The V8 heap size limit for a database's tracked JS worker kind"]
+        #[labels(database_identity: Identity, worker_kind: JsWorkerKind, instance_id: u64)]
         pub v8_heap_size_limit_bytes: IntGaugeVec,
 
         #[name = spacetime_worker_v8_heap_limit_hit]
@@ -318,18 +318,18 @@ metrics_group!(
         pub v8_heap_limit_hit: IntCounterVec,
 
         #[name = spacetime_worker_v8_external_memory_bytes]
-        #[help = "The external memory tracked by V8 for a database's tracked JS worker kind (currently main only)"]
-        #[labels(database_identity: Identity, worker_kind: str)]
+        #[help = "The external memory tracked by V8 for a database's tracked JS worker kind"]
+        #[labels(database_identity: Identity, worker_kind: JsWorkerKind, instance_id: u64)]
         pub v8_external_memory_bytes: IntGaugeVec,
 
         #[name = spacetime_worker_v8_native_contexts]
-        #[help = "The number of native V8 contexts for a database's tracked JS worker kind (currently main only)"]
-        #[labels(database_identity: Identity, worker_kind: str)]
+        #[help = "The number of native V8 contexts for a database's tracked JS worker kind"]
+        #[labels(database_identity: Identity, worker_kind: JsWorkerKind, instance_id: u64)]
         pub v8_native_contexts: IntGaugeVec,
 
         #[name = spacetime_worker_v8_detached_contexts]
-        #[help = "The number of detached V8 contexts for a database's tracked JS worker kind (currently main only)"]
-        #[labels(database_identity: Identity, worker_kind: str)]
+        #[help = "The number of detached V8 contexts for a database's tracked JS worker kind"]
+        #[labels(database_identity: Identity, worker_kind: JsWorkerKind, instance_id: u64)]
         pub v8_detached_contexts: IntGaugeVec,
 
         #[name = spacetime_worker_v8_request_queue_length]

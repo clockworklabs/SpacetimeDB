@@ -109,6 +109,7 @@ use std::cell::Cell;
 use std::num::NonZeroUsize;
 use std::os::raw::c_void;
 use std::panic::{self, AssertUnwindSafe};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 use tokio::sync::{mpsc, oneshot};
@@ -169,12 +170,20 @@ impl V8Runtime {
 static V8_RUNTIME_GLOBAL: LazyLock<V8RuntimeInner> = LazyLock::new(V8RuntimeInner::init);
 const REDUCER_ARGS_BUFFER_SIZE: usize = 4_096;
 const JS_PROCEDURE_INSTANCE_QUEUE_CAPACITY: usize = 1;
-pub(crate) const V8_WORKER_KIND_MAIN: &str = "main";
 
 #[derive(Copy, Clone)]
-enum JsWorkerKind {
+pub(crate) enum JsWorkerKind {
     Main,
     Procedure,
+}
+
+impl AsRef<str> for JsWorkerKind {
+    fn as_ref(&self) -> &str {
+        match self {
+            Self::Main => "main",
+            Self::Procedure => "procedure",
+        }
+    }
 }
 
 impl JsWorkerKind {
@@ -258,6 +267,7 @@ impl V8RuntimeInner {
             procedure_instance_pool_size: config.procedure_instance_pool_size,
             heap_policy: config.heap_policy,
             metrics,
+            instance_id_source: Arc::new(AtomicU64::new(FIRST_PROCEDURE_WORKER_INSTANCE_ID)),
         };
 
         Ok(ModuleWithInstance::Js { module, init_inst })
@@ -273,6 +283,11 @@ pub struct JsModule {
     procedure_instance_pool_size: NonZeroUsize,
     heap_policy: V8HeapPolicyConfig,
     metrics: InstanceManagerMetrics,
+
+    /// Source for instance IDs, which are used as metrics labels.
+    ///
+    /// When creating a new instance, [`AtomicU64::fetch_add`] from this with [`Ordering::Relaxed`].
+    instance_id_source: Arc<AtomicU64>,
 }
 
 impl JsModule {
@@ -304,6 +319,9 @@ impl JsModule {
         let heap_policy = self.heap_policy;
         let metrics = self.metrics.clone();
 
+        // Relaxed ordering fine: this is a source of unique IDs, not a synch primitive.
+        let instance_id = self.instance_id_source.fetch_add(1, Ordering::Relaxed);
+
         // This has to be done in a blocking context because of `blocking_recv`.
         let (_, instance) = spawn_procedure_instance_worker(
             program,
@@ -312,6 +330,7 @@ impl JsModule {
             core_pinner,
             heap_policy,
             metrics,
+            instance_id,
         )
         .await
         .expect("`spawn_procedure_instance_worker` should succeed when passed `ModuleCommon`");
@@ -947,6 +966,13 @@ fn handle_detached_worker_request(
 }
 
 struct V8HeapMetrics {
+    /// So we can `remove_label_values` during `drop`.
+    database_identity: Identity,
+    /// So we can `remove_label_values` during `drop`.
+    worker_kind: JsWorkerKind,
+    /// So we can `remove_label_values` during `drop`.
+    instance_id: u64,
+
     total_heap_size_bytes: IntGauge,
     total_physical_size_bytes: IntGauge,
     used_global_handles_size_bytes: IntGauge,
@@ -955,7 +981,6 @@ struct V8HeapMetrics {
     external_memory_bytes: IntGauge,
     native_contexts: IntGauge,
     detached_contexts: IntGauge,
-    last_observed: V8HeapSnapshot,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -986,79 +1011,104 @@ impl V8HeapSnapshot {
 }
 
 impl V8HeapMetrics {
-    fn new(database_identity: &Identity) -> Self {
+    fn new(database_identity: &Identity, worker_kind: JsWorkerKind, instance_id: u64) -> Self {
         Self {
-            total_heap_size_bytes: WORKER_METRICS
-                .v8_total_heap_size_bytes
-                .with_label_values(database_identity, V8_WORKER_KIND_MAIN),
-            total_physical_size_bytes: WORKER_METRICS
-                .v8_total_physical_size_bytes
-                .with_label_values(database_identity, V8_WORKER_KIND_MAIN),
-            used_global_handles_size_bytes: WORKER_METRICS
-                .v8_used_global_handles_size_bytes
-                .with_label_values(database_identity, V8_WORKER_KIND_MAIN),
-            used_heap_size_bytes: WORKER_METRICS
-                .v8_used_heap_size_bytes
-                .with_label_values(database_identity, V8_WORKER_KIND_MAIN),
-            heap_size_limit_bytes: WORKER_METRICS
-                .v8_heap_size_limit_bytes
-                .with_label_values(database_identity, V8_WORKER_KIND_MAIN),
-            external_memory_bytes: WORKER_METRICS
-                .v8_external_memory_bytes
-                .with_label_values(database_identity, V8_WORKER_KIND_MAIN),
-            native_contexts: WORKER_METRICS
-                .v8_native_contexts
-                .with_label_values(database_identity, V8_WORKER_KIND_MAIN),
-            detached_contexts: WORKER_METRICS
-                .v8_detached_contexts
-                .with_label_values(database_identity, V8_WORKER_KIND_MAIN),
-            last_observed: V8HeapSnapshot::default(),
+            database_identity: *database_identity,
+            worker_kind,
+            instance_id,
+            total_heap_size_bytes: WORKER_METRICS.v8_total_heap_size_bytes.with_label_values(
+                database_identity,
+                &worker_kind,
+                &instance_id,
+            ),
+            total_physical_size_bytes: WORKER_METRICS.v8_total_physical_size_bytes.with_label_values(
+                database_identity,
+                &worker_kind,
+                &instance_id,
+            ),
+            used_global_handles_size_bytes: WORKER_METRICS.v8_used_global_handles_size_bytes.with_label_values(
+                database_identity,
+                &worker_kind,
+                &instance_id,
+            ),
+            used_heap_size_bytes: WORKER_METRICS.v8_used_heap_size_bytes.with_label_values(
+                database_identity,
+                &worker_kind,
+                &instance_id,
+            ),
+            heap_size_limit_bytes: WORKER_METRICS.v8_heap_size_limit_bytes.with_label_values(
+                database_identity,
+                &worker_kind,
+                &instance_id,
+            ),
+            external_memory_bytes: WORKER_METRICS.v8_external_memory_bytes.with_label_values(
+                database_identity,
+                &worker_kind,
+                &instance_id,
+            ),
+            native_contexts: WORKER_METRICS.v8_native_contexts.with_label_values(
+                database_identity,
+                &worker_kind,
+                &instance_id,
+            ),
+            detached_contexts: WORKER_METRICS.v8_detached_contexts.with_label_values(
+                database_identity,
+                &worker_kind,
+                &instance_id,
+            ),
         }
     }
 
-    fn adjust_by(&self, delta: V8HeapSnapshot) {
-        adjust_gauge(&self.total_heap_size_bytes, delta.total_heap_size_bytes);
-        adjust_gauge(&self.total_physical_size_bytes, delta.total_physical_size_bytes);
-        adjust_gauge(
-            &self.used_global_handles_size_bytes,
-            delta.used_global_handles_size_bytes,
-        );
-        adjust_gauge(&self.used_heap_size_bytes, delta.used_heap_size_bytes);
-        adjust_gauge(&self.heap_size_limit_bytes, delta.heap_size_limit_bytes);
-        adjust_gauge(&self.external_memory_bytes, delta.external_memory_bytes);
-        adjust_gauge(&self.native_contexts, delta.native_contexts);
-        adjust_gauge(&self.detached_contexts, delta.detached_contexts);
-    }
-
     fn observe(&mut self, stats: &v8::HeapStatistics) {
-        let next = V8HeapSnapshot::from_stats(stats);
-        self.adjust_by(V8HeapSnapshot {
-            total_heap_size_bytes: next.total_heap_size_bytes - self.last_observed.total_heap_size_bytes,
-            total_physical_size_bytes: next.total_physical_size_bytes - self.last_observed.total_physical_size_bytes,
-            used_global_handles_size_bytes: next.used_global_handles_size_bytes
-                - self.last_observed.used_global_handles_size_bytes,
-            used_heap_size_bytes: next.used_heap_size_bytes - self.last_observed.used_heap_size_bytes,
-            heap_size_limit_bytes: next.heap_size_limit_bytes - self.last_observed.heap_size_limit_bytes,
-            external_memory_bytes: next.external_memory_bytes - self.last_observed.external_memory_bytes,
-            native_contexts: next.native_contexts - self.last_observed.native_contexts,
-            detached_contexts: next.detached_contexts - self.last_observed.detached_contexts,
-        });
-        self.last_observed = next;
+        self.total_heap_size_bytes.set(stats.total_heap_size() as i64);
+        self.total_physical_size_bytes.set(stats.total_physical_size() as i64);
+        self.used_global_handles_size_bytes
+            .set(stats.used_global_handles_size() as i64);
+        self.used_heap_size_bytes.set(stats.used_heap_size() as i64);
+        self.heap_size_limit_bytes.set(stats.heap_size_limit() as i64);
+        self.external_memory_bytes.set(stats.external_memory() as i64);
+        self.native_contexts.set(stats.number_of_native_contexts() as i64);
+        self.detached_contexts.set(stats.number_of_detached_contexts() as i64);
     }
 }
 
 impl Drop for V8HeapMetrics {
     fn drop(&mut self) {
-        self.adjust_by(V8HeapSnapshot {
-            total_heap_size_bytes: -self.last_observed.total_heap_size_bytes,
-            total_physical_size_bytes: -self.last_observed.total_physical_size_bytes,
-            used_global_handles_size_bytes: -self.last_observed.used_global_handles_size_bytes,
-            used_heap_size_bytes: -self.last_observed.used_heap_size_bytes,
-            heap_size_limit_bytes: -self.last_observed.heap_size_limit_bytes,
-            external_memory_bytes: -self.last_observed.external_memory_bytes,
-            native_contexts: -self.last_observed.native_contexts,
-            detached_contexts: -self.last_observed.detached_contexts,
-        });
+        WORKER_METRICS.v8_total_heap_size_bytes.remove_label_values(
+            &self.database_identity,
+            &self.worker_kind,
+            &self.instance_id,
+        );
+        WORKER_METRICS.v8_total_physical_size_bytes.remove_label_values(
+            &self.database_identity,
+            &self.worker_kind,
+            &self.instance_id,
+        );
+        WORKER_METRICS.v8_used_global_handles_size_bytes.remove_label_values(
+            &self.database_identity,
+            &self.worker_kind,
+            &self.instance_id,
+        );
+        WORKER_METRICS.v8_heap_size_limit_bytes.remove_label_values(
+            &self.database_identity,
+            &self.worker_kind,
+            &self.instance_id,
+        );
+        WORKER_METRICS.v8_external_memory_bytes.remove_label_values(
+            &self.database_identity,
+            &self.worker_kind,
+            &self.instance_id,
+        );
+        WORKER_METRICS.v8_native_contexts.remove_label_values(
+            &self.database_identity,
+            &self.worker_kind,
+            &self.instance_id,
+        );
+        WORKER_METRICS.v8_detached_contexts.remove_label_values(
+            &self.database_identity,
+            &self.worker_kind,
+            &self.instance_id,
+        );
     }
 }
 
@@ -1193,6 +1243,9 @@ where
     f(&mut guard)
 }
 
+const MAIN_WORKER_INSTANCE_ID: u64 = 0;
+const FIRST_PROCEDURE_WORKER_INSTANCE_ID: u64 = MAIN_WORKER_INSTANCE_ID + 1;
+
 async fn spawn_main_instance_worker(
     program: Arc<str>,
     module_or_mcc: Either<ModuleCommon, ModuleCreationContext>,
@@ -1208,6 +1261,7 @@ async fn spawn_main_instance_worker(
         core_pinner,
         heap_policy,
         metrics,
+        MAIN_WORKER_INSTANCE_ID,
     )
     .await
 }
@@ -1219,6 +1273,7 @@ async fn spawn_procedure_instance_worker(
     core_pinner: CorePinner,
     heap_policy: V8HeapPolicyConfig,
     metrics: InstanceManagerMetrics,
+    instance_id: u64,
 ) -> anyhow::Result<(ModuleCommon, JsProcedureInstance)> {
     spawn_instance_worker::<ProcedureJsWorker>(
         program,
@@ -1227,6 +1282,7 @@ async fn spawn_procedure_instance_worker(
         core_pinner,
         heap_policy,
         metrics,
+        instance_id,
     )
     .await
 }
@@ -1506,6 +1562,9 @@ fn spawn_v8_worker_thread(worker_kind: JsWorkerKind, database_identity: Identity
 ///
 /// `load_balance_guard` and `core_pinner` should both be from the same
 /// [`AllocatedJobCore`], and are used to manage the core pinning of this thread.
+///
+/// `instance_kind` should be either [`V8_WORKER_KIND_MAIN`] or [`V8_WORKER_KIND_PROCEDURE`].
+/// `instance_id` should be a unique integer sourced
 async fn spawn_instance_worker<W>(
     program: Arc<str>,
     module_or_mcc: Either<ModuleCommon, ModuleCreationContext>,
@@ -1513,6 +1572,7 @@ async fn spawn_instance_worker<W>(
     mut core_pinner: CorePinner,
     heap_policy: V8HeapPolicyConfig,
     instance_metrics: InstanceManagerMetrics,
+    instance_id: u64,
 ) -> anyhow::Result<(ModuleCommon, W::Instance)>
 where
     W: JsWorkerSpec + 'static,
@@ -1625,9 +1685,7 @@ where
                 let info = &module_common.info();
                 let mut instance_common = InstanceCommon::new(&module_common);
                 let replica_ctx: &Arc<ReplicaContext> = module_common.replica_ctx();
-                let mut heap_metrics = worker_kind
-                    .checks_heap()
-                    .then(|| V8HeapMetrics::new(&info.database_identity));
+                let mut heap_metrics = V8HeapMetrics::new(&info.database_identity, worker_kind, instance_id);
 
                 let mut inst = V8Instance {
                     scope,
@@ -1639,9 +1697,7 @@ where
                         .with_label_values(&info.database_identity),
                     initial_heap_limit: heap_policy.heap_limit_bytes,
                 };
-                if let Some(heap_metrics) = heap_metrics.as_mut() {
-                    let _initial_heap_stats = sample_heap_stats(inst.scope, heap_metrics);
-                }
+                let _initial_heap_stats = sample_heap_stats(inst.scope, &mut heap_metrics);
 
                 // Process requests to the worker.
                 //
@@ -1655,9 +1711,7 @@ where
                     let mut outcome =
                         W::handle_request(request, &mut instance_common, &mut inst, &module_common, replica_ctx);
 
-                    if let WorkerRequestOutcome::Continue = outcome
-                        && let Some(heap_metrics) = heap_metrics.as_mut()
-                    {
+                    if let WorkerRequestOutcome::Continue = outcome {
                         let request_check_due = heap_policy.heap_check_request_interval.is_some_and(|interval| {
                             requests_since_heap_check += 1;
                             requests_since_heap_check >= interval
@@ -1669,7 +1723,7 @@ where
                             requests_since_heap_check = 0;
                             last_heap_check_at = Instant::now();
                             if let Some((used, limit)) =
-                                should_retire_worker_for_heap(inst.scope, heap_metrics, heap_policy)
+                                should_retire_worker_for_heap(inst.scope, &mut heap_metrics, heap_policy)
                             {
                                 outcome = outcome.recreate_instance();
                                 log::warn!(
