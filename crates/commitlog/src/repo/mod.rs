@@ -384,7 +384,15 @@ pub fn resume_segment_writer<R: Repo>(
             max_commit: _,
         } = meta;
         let mut writer = repo.open_segment_writer(offset)?;
+        // Ensure that the segment's size is exactly what we determined.
+        //
+        // When `Metadata` encounters EOF, it could be that there actually are
+        // trailing bytes in the segment, but less than the commit header
+        // length. This is difficult to detect due to the use of `read_exact`,
+        // so ensure we remove any trailing bytes.
+        writer.ftruncate(tx_range.end, size_in_bytes)?;
         // Ensure we have enough space for this segment.
+        //
         // The segment could have been created without the `fallocate` feature
         // enabled, so we call this here again to ensure writes can't fail due
         // to ENOSPC.
