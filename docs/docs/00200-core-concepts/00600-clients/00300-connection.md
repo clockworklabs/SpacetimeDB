@@ -38,7 +38,7 @@ const conn = new DbConnection.builder()
 using SpacetimeDB;
 
 var conn = DbConnection.Builder()
-    .WithUri(new Uri("https://maincloud.spacetimedb.com"))
+    .WithUri("https://maincloud.spacetimedb.com")
     .WithDatabaseName("my_database")
     .Build();
 ```
@@ -90,7 +90,7 @@ const conn = new DbConnection.builder()
 
 ```csharp
 var conn = DbConnection.Builder()
-    .WithUri(new Uri("https://maincloud.spacetimedb.com"))
+    .WithUri("https://maincloud.spacetimedb.com")
     .WithDatabaseName("my_database")
     .Build();
 ```
@@ -137,7 +137,7 @@ const conn = new DbConnection.builder()
 
 ```csharp
 var conn = DbConnection.Builder()
-    .WithUri(new Uri("https://maincloud.spacetimedb.com"))
+    .WithUri("https://maincloud.spacetimedb.com")
     .WithDatabaseName("my_database")
     .WithToken("your_auth_token_here")
     .Build();
@@ -260,7 +260,7 @@ const conn = DbConnection.builder()
 
 ```csharp
 var conn = DbConnection.Builder()
-    .WithUri(new Uri("https://maincloud.spacetimedb.com"))
+    .WithUri("https://maincloud.spacetimedb.com")
     .WithDatabaseName("my_database")
     .OnConnect((conn, identity, token) =>
     {

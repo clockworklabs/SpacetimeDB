@@ -39,7 +39,7 @@ Before diving into the reference, you may want to review:
 | [`EventContext` type](#type-eventcontext)                         | Implements [`IDbContext`](#interface-idbcontext) for [row callbacks](#callback-oninsert).               |
 | [`ReducerEventContext` type](#type-reducereventcontext)           | Implements [`IDbContext`](#interface-idbcontext) for [reducer callbacks](#observe-and-invoke-reducers). |
 | [`SubscriptionEventContext` type](#type-subscriptioneventcontext) | Implements [`IDbContext`](#interface-idbcontext) for [subscription callbacks](#subscribe-to-queries).   |
-| [`ErrorContext` type](#type-errorcontext)                         | Implements [`IDbContext`](#interface-idbcontext) for error-related callbacks.                           |
+| [`ErrorContext` type](#type-errorcontext)                         | Implements [`IDbContext`](#interface-idbcontext) for subscription error callbacks.                      |
 | [Query Builder API](#query-builder-api)                           | Type-safe query builder for typed subscription queries.                                                  |
 | [Access the client cache](#access-the-client-cache)               | Access to your local view of the database.                                                              |
 | [Observe and invoke reducers](#observe-and-invoke-reducers)       | Send requests to the database to run reducers, and register callbacks to run when notified of reducers. |
@@ -115,7 +115,7 @@ Construct a `DbConnection` by calling `DbConnection.Builder()`, chaining configu
 ```csharp
 class DbConnectionBuilder<DbConnection>
 {
-    public DbConnectionBuilder<DbConnection> WithUri(Uri uri);
+    public DbConnectionBuilder<DbConnection> WithUri(string uri);
 }
 ```
 
@@ -163,20 +163,18 @@ Chain a call to `.OnConnect(callback)` to your builder to register a callback to
 ```csharp
 class DbConnectionBuilder<DbConnection>
 {
-    public DbConnectionBuilder<DbConnection> OnConnectError(Action<ErrorContext, SpacetimeDbException> callback);
+    public DbConnectionBuilder<DbConnection> OnConnectError(Action<Exception> callback);
 }
 ```
 
 Chain a call to `.OnConnectError(callback)` to your builder to register a callback to run when your connection fails.
-
-A known bug in the SpacetimeDB Rust client SDK currently causes this callback never to be invoked. [`OnDisconnect`](#callback-ondisconnect) callbacks are invoked instead.
 
 #### Callback `OnDisconnect`
 
 ```csharp
 class DbConnectionBuilder<DbConnection>
 {
-    public DbConnectionBuilder<DbConnection> OnDisconnect(Action<ErrorContext, SpacetimeDbException> callback);
+    public DbConnectionBuilder<DbConnection> OnDisconnect(Action<DbConnection, Exception?> callback);
 }
 ```
 
@@ -187,11 +185,11 @@ Chain a call to `.OnDisconnect(callback)` to your builder to register a callback
 ```csharp
 class DbConnectionBuilder<DbConnection>
 {
-    public DbConnectionBuilder<DbConnection> WithToken(string token = null);
+    public DbConnectionBuilder<DbConnection> WithToken(string? token);
 }
 ```
 
-Chain a call to `.WithToken(token)` to your builder to provide an OpenID Connect compliant JSON Web Token to authenticate with, or to explicitly select an anonymous connection. If this method is not called or `None` is passed, SpacetimeDB will generate a new `Identity` and sign a new private access token for the connection.
+Chain a call to `.WithToken(token)` to your builder to provide an OpenID Connect compliant JSON Web Token to authenticate with, or to explicitly select an anonymous connection. If this method is not called or `null` is passed, SpacetimeDB will generate a new `Identity` and sign a new private access token for the connection.
 
 #### Method `Build`
 
@@ -894,7 +892,7 @@ The `Reducers` property of the context provides access to reducers exposed by th
 
 ## Type `ErrorContext`
 
-An `ErrorContext` is an [`IDbContext`](#interface-idbcontext) augmented with an `Event` property. `ErrorContext`s are to connections' [`OnDisconnect`](#callback-ondisconnect) and [`OnConnectError`](#callback-onconnecterror) callbacks, and to subscriptions' [`OnError`](#callback-onerror) callbacks.
+An `ErrorContext` is an [`IDbContext`](#interface-idbcontext) augmented with an `Event` property. `ErrorContext`s are passed to subscriptions' [`OnError`](#callback-onerror) callbacks.
 
 | Name                                      | Description                                            |
 | ----------------------------------------- | ------------------------------------------------------ |
