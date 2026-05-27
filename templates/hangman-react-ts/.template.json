@@ -3,6 +3,9 @@
   "client_framework": "React",
   "client_lang": "typescript",
   "server_lang": "typescript",
+  "tags": [
+    "Launchpad"
+  ],
   "builtWith": [
     "react",
     "react-dom",

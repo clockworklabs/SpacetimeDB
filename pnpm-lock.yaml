@@ -503,16 +503,6 @@ importers:
         specifier: ^7.1.5
         version: 7.1.5(@types/node@24.3.0)(jiti@2.6.1)(sass@1.97.1)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2)
 
-  templates/hangman-react-ts/spacetimedb:
-    dependencies:
-      spacetimedb:
-        specifier: workspace:*
-        version: link:../../../crates/bindings-typescript
-    devDependencies:
-      typescript:
-        specifier: ~5.6.2
-        version: 5.6.3
-
   templates/keynote-2:
     dependencies:
       '@convex-dev/sharded-counter':
