@@ -8,7 +8,7 @@ use spacetimedb_fs_utils::compression::Zstd;
 pub use spacetimedb_fs_utils::compression::{CompressOnce, CompressionStats};
 
 use crate::{
-    commit::Commit,
+    commit::{self, Commit},
     error,
     index::{IndexFile, IndexFileMut},
     segment::{self, FileLike, Header, Metadata, OffsetIndexWriter, Reader, Writer},
@@ -375,14 +375,6 @@ pub fn resume_segment_writer<R: Repo>(
     if reader.sealed() {
         Ok(ResumedSegment::Sealed(meta))
     } else {
-        let Metadata {
-            header: _,
-            tx_range,
-            size_in_bytes,
-            max_epoch,
-            max_commit_offset: _,
-            max_commit: _,
-        } = meta;
         let mut writer = repo.open_segment_writer(offset)?;
         // Ensure that the segment's size is exactly what we determined.
         //
@@ -390,7 +382,15 @@ pub fn resume_segment_writer<R: Repo>(
         // trailing bytes in the segment, but less than the commit header
         // length. This is difficult to detect due to the use of `read_exact`,
         // so ensure we remove any trailing bytes.
-        writer.ftruncate(tx_range.end, size_in_bytes)?;
+        //
+        // To be extra cautious, check that no more than the header length
+        // bytes are left over before truncating the segment. This is an assert
+        // because it would be a bug in `Metadata::extract`.
+        assert!(
+            writer.segment_len()? < meta.size_in_bytes + commit::Header::LEN as u64,
+            "{repo}: trailing bytes exceed commit header length in segment {offset}"
+        );
+        writer.ftruncate(meta.tx_range.end, meta.size_in_bytes)?;
         // Ensure we have enough space for this segment.
         //
         // The segment could have been created without the `fallocate` feature
@@ -402,15 +402,15 @@ pub fn resume_segment_writer<R: Repo>(
 
         Ok(ResumedSegment::Resumed(Writer {
             commit: Commit {
-                min_tx_offset: tx_range.end,
+                min_tx_offset: meta.tx_range.end,
                 n: 0,
                 records: Vec::new(),
-                epoch: max_epoch,
+                epoch: meta.max_epoch,
             },
             inner: io::BufWriter::new(writer),
 
-            min_tx_offset: tx_range.start,
-            bytes_written: size_in_bytes,
+            min_tx_offset: meta.tx_range.start,
+            bytes_written: meta.size_in_bytes,
 
             offset_index_head: create_offset_index_writer(repo, offset, opts),
         }))
