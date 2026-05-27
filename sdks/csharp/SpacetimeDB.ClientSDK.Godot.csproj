@@ -22,6 +22,7 @@
     <RestorePackagesPath>packages</RestorePackagesPath>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
     <DefineConstants>$(DefineConstants);GODOT</DefineConstants>
+    <DisableImplicitGodotSharpReferences>true</DisableImplicitGodotSharpReferences>
     <!-- Godot.NET.Sdk defaults to .godot/mono/temp; build this package like the regular C# SDK. -->
     <BaseOutputPath>bin~/</BaseOutputPath>
     <OutputPath>bin~/$(Configuration)/$(TargetFramework)/</OutputPath>
@@ -31,6 +32,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="GodotSharp" Version="$(PackageVersion_GodotSharp)" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseLocalBsatnRuntime)' != 'true'">
     <PackageReference Include="SpacetimeDB.BSATN.Runtime" Version="2.3.*" />
   </ItemGroup>
 
