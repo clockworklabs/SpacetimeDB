@@ -1,12 +1,15 @@
 #![allow(clippy::disallowed_macros)]
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use duct::cmd;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 const BSATN_PACKAGE_ID: &str = "spacetimedb.bsatn.runtime";
+const GODOTSHARP_ASSET_ID: &str = "GodotSharp";
+const GODOTSHARP_DLL_FILE_NAME: &str = "GodotSharp.dll";
+const GODOTSHARP_PACKAGE_ID: &str = "godotsharp";
 const RUNTIME_PACKAGE_ID: &str = "spacetimedb.runtime";
 
 fn workspace_dir() -> PathBuf {
@@ -116,6 +119,78 @@ fn clear_restored_package_dirs(pkg_id: &str) -> Result<()> {
     Ok(())
 }
 
+fn clear_godot_intermediate_outputs() -> Result<()> {
+    let godot_obj_dir = sdk_dir().join("obj~/godot");
+    if godot_obj_dir.exists() {
+        fs::remove_dir_all(&godot_obj_dir)?;
+    }
+    Ok(())
+}
+
+fn restored_package_version<'a>(assets: &'a str, package_id: &str) -> Option<&'a str> {
+    let needle = format!("\"{package_id}/");
+    let start = assets.find(&needle)? + needle.len();
+    let rest = &assets[start..];
+    let end = rest.find('"')?;
+    Some(&rest[..end])
+}
+
+fn restored_lib_package_file<'a>(assets: &'a str, file_name: &str) -> Option<&'a str> {
+    let suffix = format!("/{file_name}\"");
+    let mut search_start = 0;
+
+    while let Some(suffix_start) = assets[search_start..].find(&suffix) {
+        let path_end = search_start + suffix_start + suffix.len() - 1;
+        let path_start = assets[..path_end].rfind('"')? + 1;
+        let path = &assets[path_start..path_end];
+        if path.starts_with("lib/") {
+            return Some(path);
+        }
+        search_start = path_end + 1;
+    }
+
+    None
+}
+
+fn verify_godotsharp_restore() -> Result<()> {
+    let sdk = sdk_dir();
+    let assets_path = sdk.join("obj~/godot/project.assets.json");
+    let assets =
+        fs::read_to_string(&assets_path).with_context(|| format!("Failed to read {}", assets_path.display()))?;
+
+    let Some(godotsharp_version) = restored_package_version(&assets, GODOTSHARP_ASSET_ID) else {
+        bail!(
+            "Godot restore output {} does not contain {}; refusing to pack with --no-restore",
+            assets_path.display(),
+            GODOTSHARP_ASSET_ID
+        );
+    };
+
+    let Some(godotsharp_dll_relative_path) = restored_lib_package_file(&assets, GODOTSHARP_DLL_FILE_NAME) else {
+        bail!(
+            "Godot restore output {} does not reference a lib package file named {}; refusing to pack with --no-restore",
+            assets_path.display(),
+            GODOTSHARP_DLL_FILE_NAME
+        );
+    };
+
+    let godotsharp_dll = sdk
+        .join("packages")
+        .join(GODOTSHARP_PACKAGE_ID)
+        .join(godotsharp_version)
+        .join(godotsharp_dll_relative_path);
+
+    if !godotsharp_dll.exists() {
+        bail!(
+            "Godot restore referenced {}, but the package DLL is missing at {}; refusing to pack with --no-restore",
+            GODOTSHARP_ASSET_ID,
+            godotsharp_dll.display()
+        );
+    }
+
+    Ok(())
+}
+
 fn find_only_subdir(dir: &Path) -> Result<PathBuf> {
     let mut subdirs = vec![];
 
@@ -208,6 +283,7 @@ pub fn regen_dlls() -> Result<()> {
 
     clear_restored_package_dirs(BSATN_PACKAGE_ID)?;
     clear_restored_package_dirs(RUNTIME_PACKAGE_ID)?;
+    clear_godot_intermediate_outputs()?;
 
     cmd!(
         "dotnet",
@@ -232,6 +308,7 @@ pub fn regen_dlls() -> Result<()> {
     )
     .dir(&sdk)
     .run()?;
+    verify_godotsharp_restore()?;
 
     overlay_unity_meta_skeleton(BSATN_PACKAGE_ID)?;
     overlay_unity_meta_skeleton(RUNTIME_PACKAGE_ID)?;
