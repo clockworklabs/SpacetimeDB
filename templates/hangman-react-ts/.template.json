@@ -6,13 +6,10 @@
   "builtWith": [
     "react",
     "react-dom",
-    "testing-library",
     "vitejs",
-    "jsdom",
     "prettier",
     "typescript",
     "vite",
-    "vitest",
     "spacetimedb"
   ]
 }
