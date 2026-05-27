@@ -6234,7 +6234,6 @@ dependencies = [
  "anyhow",
  "clap 4.5.50",
  "duct",
- "serde_json",
  "tempfile",
 ]
 
