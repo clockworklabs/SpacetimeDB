@@ -8,7 +8,7 @@ import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNot
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-Quick reference for SpacetimeDB module syntax across Rust, C#, and TypeScript.
+Quick reference for SpacetimeDB module syntax across Rust, C#, TypeScript, and C++.
 
 ## Project Setup
 
