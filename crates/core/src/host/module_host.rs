@@ -1643,7 +1643,13 @@ impl ModuleHost {
                 let procedure_module = Arc::new(procedure_module);
                 let metrics = InstanceManagerMetrics::new(module.host_type(), database_identity);
                 let main_state = WasmtimeModuleState::new(module.clone(), init_inst, metrics.clone());
+
+                // The wasm main and procedure executors run on separate OS threads,
+                // but they intentionally share one database core allocation.
+                // When core pinning is enabled, both threads pin to the same core
+                // and rebalance together because they use clones of the same `CorePinner`.
                 let (load_balance_guard, core_pinner) = core.into_shared();
+
                 let main_executor = AllocatedJobCore::spawn_executor(
                     load_balance_guard.clone(),
                     core_pinner.clone(),
