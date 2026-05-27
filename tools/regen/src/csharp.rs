@@ -2,6 +2,7 @@
 
 use anyhow::{bail, Context, Result};
 use duct::cmd;
+use serde_json::Value;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -127,29 +128,21 @@ fn clear_godot_intermediate_outputs() -> Result<()> {
     Ok(())
 }
 
-fn restored_package_version<'a>(assets: &'a str, package_id: &str) -> Option<&'a str> {
-    let needle = format!("\"{package_id}/");
-    let start = assets.find(&needle)? + needle.len();
-    let rest = &assets[start..];
-    let end = rest.find('"')?;
-    Some(&rest[..end])
+fn restored_package<'a>(assets: &'a Value, package_id: &str) -> Option<(&'a str, &'a Value)> {
+    let libraries = assets.get("libraries")?.as_object()?;
+
+    libraries.iter().find_map(|(key, package)| {
+        let (id, version) = key.split_once('/')?;
+        id.eq_ignore_ascii_case(package_id).then_some((version, package))
+    })
 }
 
-fn restored_lib_package_file<'a>(assets: &'a str, file_name: &str) -> Option<&'a str> {
-    let suffix = format!("/{file_name}\"");
-    let mut search_start = 0;
-
-    while let Some(suffix_start) = assets[search_start..].find(&suffix) {
-        let path_end = search_start + suffix_start + suffix.len() - 1;
-        let path_start = assets[..path_end].rfind('"')? + 1;
-        let path = &assets[path_start..path_end];
-        if path.starts_with("lib/") {
-            return Some(path);
-        }
-        search_start = path_end + 1;
-    }
-
-    None
+fn restored_lib_package_file<'a>(package: &'a Value, file_name: &str) -> Option<&'a str> {
+    package.get("files")?.as_array()?.iter().find_map(|file| {
+        let path = file.as_str()?;
+        let actual_file_name = path.rsplit('/').next()?;
+        (path.starts_with("lib/") && actual_file_name == file_name).then_some(path)
+    })
 }
 
 fn verify_godotsharp_restore() -> Result<()> {
@@ -157,8 +150,10 @@ fn verify_godotsharp_restore() -> Result<()> {
     let assets_path = sdk.join("obj~/godot/project.assets.json");
     let assets =
         fs::read_to_string(&assets_path).with_context(|| format!("Failed to read {}", assets_path.display()))?;
+    let assets: Value =
+        serde_json::from_str(&assets).with_context(|| format!("Failed to parse {}", assets_path.display()))?;
 
-    let Some(godotsharp_version) = restored_package_version(&assets, GODOTSHARP_ASSET_ID) else {
+    let Some((godotsharp_version, godotsharp_package)) = restored_package(&assets, GODOTSHARP_ASSET_ID) else {
         bail!(
             "Godot restore output {} does not contain {}; refusing to pack with --no-restore",
             assets_path.display(),
@@ -166,7 +161,8 @@ fn verify_godotsharp_restore() -> Result<()> {
         );
     };
 
-    let Some(godotsharp_dll_relative_path) = restored_lib_package_file(&assets, GODOTSHARP_DLL_FILE_NAME) else {
+    let Some(godotsharp_dll_relative_path) = restored_lib_package_file(godotsharp_package, GODOTSHARP_DLL_FILE_NAME)
+    else {
         bail!(
             "Godot restore output {} does not reference a lib package file named {}; refusing to pack with --no-restore",
             assets_path.display(),
@@ -282,6 +278,7 @@ pub fn regen_dlls() -> Result<()> {
     )?;
 
     clear_restored_package_dirs(BSATN_PACKAGE_ID)?;
+    clear_restored_package_dirs(GODOTSHARP_PACKAGE_ID)?;
     clear_restored_package_dirs(RUNTIME_PACKAGE_ID)?;
     clear_godot_intermediate_outputs()?;
 
