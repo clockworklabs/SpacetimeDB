@@ -233,6 +233,16 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
         set_store_fuel(&mut store, FunctionBudget::DEFAULT_BUDGET.into());
         store.set_epoch_deadline(EPOCH_TICKS_PER_SECOND);
 
+        // NativeAOT-LLVM modules are WASI reactors that export `_initialize`
+        // to set up the native runtime. This must be called before any other exports.
+        // Traditional .NET 8 WASI modules export `_start` instead (which is not called here).
+        if let Ok(init) = instance.get_typed_func::<(), ()>(&mut store, "_initialize") {
+            call_sync_typed_func(&init, &mut store, ()).map_err(|err| InitializationError::RuntimeError {
+                err,
+                func: "_initialize".to_owned(),
+            })?;
+        }
+
         for preinit in &func_names.preinits {
             let func = instance.get_typed_func::<(), ()>(&mut store, preinit).unwrap();
             call_sync_typed_func(&func, &mut store, ()).map_err(|err| InitializationError::RuntimeError {
