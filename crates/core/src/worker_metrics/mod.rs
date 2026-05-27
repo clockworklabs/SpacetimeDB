@@ -283,7 +283,7 @@ metrics_group!(
         pub sender_errors: IntCounterVec,
 
         #[name = spacetime_worker_wasm_memory_bytes]
-        #[help = "The number of bytes of linear memory allocated by the database's WASM module instance"]
+        #[help = "The total number of bytes of linear memory allocated by all of the database's WASM module instances"]
         #[labels(database_identity: Identity)]
         pub wasm_memory_bytes: IntGaugeVec,
 

@@ -584,7 +584,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let Some(call_procedure) = self.call_procedure.as_ref() else {
             let res = module_host_actor::ProcedureExecuteResult {
-                stats: zero_execution_stats(store),
+                stats: ExecutionStats::default(),
                 call_result: Err(anyhow::anyhow!(
                     "Module defines procedure {} but does not export `{}`",
                     op.name,
@@ -696,20 +696,15 @@ fn finish_opcall(store: &mut Store<WasmInstanceEnv>, initial_budget: FunctionBud
         remaining,
     };
 
-    let stats = ExecutionStats {
-        energy,
-        timings,
-        memory_allocation: get_memory_size(store),
-    };
+    record_memory_size(store);
+
+    let stats = ExecutionStats { energy, timings };
     (stats, ret_bytes)
 }
 
-fn zero_execution_stats(store: &Store<WasmInstanceEnv>) -> ExecutionStats {
-    ExecutionStats {
-        energy: module_host_actor::EnergyStats::ZERO,
-        timings: module_host_actor::ExecutionTimings::zero(),
-        memory_allocation: get_memory_size(store),
-    }
+fn record_memory_size(store: &mut Store<WasmInstanceEnv>) {
+    let memory_usage = get_memory_size(store);
+    store.data_mut().record_memory_size(memory_usage);
 }
 
 fn get_memory_size(store: &Store<WasmInstanceEnv>) -> usize {

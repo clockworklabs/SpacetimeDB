@@ -10,6 +10,7 @@ use anyhow::Context;
 use spacetimedb_paths::server::ServerDataDir;
 use std::borrow::Cow;
 use std::time::Duration;
+pub(in crate::host) use wasm_instance_env::WasmMemoryBytesMetric;
 use wasmtime::{self, Engine, Linker, StoreContext, StoreContextMut};
 pub use wasmtime_module::{WasmtimeInstance, WasmtimeModule};
 
