@@ -20,7 +20,7 @@
       let
         pkgs = import nixpkgs {
           inherit system;
-          overlays = [(import rust-overlay)];
+          overlays = [ (import rust-overlay) ];
         };
 
         inherit (pkgs) lib;
@@ -30,20 +30,11 @@
         # Note that `self.rev` is not set for builds with a dirty worktree, in which case we instead use `self.dirtyRev`.
         gitCommit = if (self ? rev) then self.rev else self.dirtyRev;
 
-        librusty_v8 = if pkgs.stdenv.isDarwin then
-          # Building on MacOS, we've seen errors building rusty_v8 with a local RUSTY_V8_ARCHIVE:
-          # https://github.com/clockworklabs/SpacetimeDB/pull/3422#issuecomment-3416972711 .
-          # For now, error on MacOS (darwin) targets.
-          builtins.abort ''
-          This flake doesn't work on MacOS due to some quirk of compiling rusty-v8 against a precompiled V8 archive.
-          If you can get a build working on MacOS under Nix, please submit a PR to https://github.com/clockworklabs/SpacetimeDB/pulls.
-          See https://github.com/clockworklabs/SpacetimeDB/pull/3422 for more details.
-          ''
-            # We fetch a precompiled v8 binary.
-            # The rusty_v8 build.rs normally tries to download v8 artifacts during compilation,
-            # but the Nix build sandbox doesn't give it network access.
-            # Instead, download the archive in a Nix-friendly way with a recorded sha.
-                      else (pkgs.callPackage ./librusty_v8.nix {});
+        # We fetch a precompiled v8 binary.
+        # The rusty_v8 build.rs normally tries to download v8 artifacts during compilation,
+        # but the Nix build sandbox doesn't give it network access.
+        # Instead, download the archive in a Nix-friendly way with a recorded sha.
+        librusty_v8 = pkgs.callPackage ./librusty_v8.nix { };
 
         # The Rust toolchain that we actually build with.
         rustStable = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
@@ -85,6 +76,34 @@
           # Include our precompiled V8.
           RUSTY_V8_ARCHIVE = librusty_v8;
           SPACETIMEDB_NIX_BUILD_GIT_COMMIT = gitCommit;
+
+          # Workaround for https://github.com/clockworklabs/SpacetimeDB/issues/3882
+          # (fixed for CI in https://github.com/clockworklabs/SpacetimeDB/pull/3921).
+          # The v8 crate's build.rs writes `librusty_v8.a` to
+          # `$CARGO_TARGET_DIR/<profile>/gn_out/obj/`, which is outside the
+          # directories cargo and crane treat as authoritative artifacts.
+          # Mixed cargo invocations on the same target dir — including crane's
+          # buildDepsOnly -> buildPackage handoff — can leave that file missing
+          # while cargo still believes v8 is up to date, producing
+          # "could not find native static library `rusty_v8`" at link time.
+          # If the v8 build directory exists (so v8 has been built before) but
+          # the static lib is gone, clean and rebuild just the v8 crate.
+          preBuild = ''
+            for profile in release debug; do
+              target_dir="''${CARGO_TARGET_DIR:-target}"
+              lib="$target_dir/$profile/gn_out/obj/librusty_v8.a"
+              if compgen -G "$target_dir/$profile/build/v8-*" > /dev/null \
+                 && [ ! -f "$lib" ]; then
+                echo "librusty_v8.a missing at $lib; cleaning and rebuilding v8."
+                cargo clean -p v8 || true
+                if [ "$profile" = release ]; then
+                  cargo build --release -p v8
+                else
+                  cargo build -p v8
+                fi
+              fi
+            done
+          '';
         };
 
         # Build a separate derivation containing our dependencies,
@@ -112,65 +131,65 @@
         # It would be nice to use `symlinkJoin` here, but our re-exec machinery to have -cli call into -standalone
         # misbehaves when the two binaries are neighboring symlinks to real files in different directories.
         # So we just copy them.
-        spacetime = pkgs.runCommand "spacetime-${version}" {} ''
+        spacetime = pkgs.runCommand "spacetime-${version}" { } ''
           mkdir -p $out/bin
 
           cp ${spacetimedb-cli}/bin/spacetimedb-cli $out/bin/spacetime
           cp ${spacetimedb-standalone}/bin/spacetimedb-standalone $out/bin/spacetimedb-standalone
         '';
       in
-        {
-          checks = {
-            inherit spacetimedb-cli spacetimedb-standalone;
+      {
+        checks = {
+          inherit spacetimedb-cli spacetimedb-standalone;
 
-            workspace-clippy = craneLib.cargoClippy (commonArgs // {
-              inherit cargoArtifacts;
-              cargoClippyExtraArgs = "--all-targets -- --deny warnings";
-            });
+          workspace-clippy = craneLib.cargoClippy (commonArgs // {
+            inherit cargoArtifacts;
+            cargoClippyExtraArgs = "--all-targets -- --deny warnings";
+          });
 
-            workspace-fmt = craneLib.cargoFmt {
-              inherit src;
-            };
-
-            workspace-test = craneLib.cargoTest (commonArgs // {
-              inherit cargoArtifacts;
-              partitions = 1;
-              partitionType = "count";
-              # I (pgoldman 2025-10-17) have not figured out a sensible packaging of Unreal or of the .NET WASI SDK.
-              # The SDK reauth tests attempt to create files in the home directory, which the nix sandbox disallows.
-              cargoTestExtraArgs = "--workspace -- --skip unreal --skip csharp --skip reauth";
-            });
-
-            # TODO: Also run smoketests.
+          workspace-fmt = craneLib.cargoFmt {
+            inherit src;
           };
 
-          packages = {
-            inherit spacetimedb-cli spacetimedb-standalone spacetime;
-            default = spacetime;
-          };
+          workspace-test = craneLib.cargoTest (commonArgs // {
+            inherit cargoArtifacts;
+            partitions = 1;
+            partitionType = "count";
+            # I (pgoldman 2025-10-17) have not figured out a sensible packaging of Unreal or of the .NET WASI SDK.
+            # The SDK reauth tests attempt to create files in the home directory, which the nix sandbox disallows.
+            cargoTestExtraArgs = "--workspace -- --skip unreal --skip csharp --skip reauth";
+          });
 
-          devShells.default = craneLib.devShell {
-            checks = self.checks.${system};
+          # TODO: Also run smoketests.
+        };
 
-            inputsFrom = [ spacetimedb-standalone spacetimedb-cli ];
+        packages = {
+          inherit spacetimedb-cli spacetimedb-standalone spacetime;
+          default = spacetime;
+        };
 
-            # Required to make jemalloc_tikv_sys build in local development, otherwise you get:
-            #   /nix/store/0zv32kh0zb4s1v4ld6mc99vmzydj9nm9-glibc-2.40-66-dev/include/features.h:422:4: warning: #warning _FORTIFY_SOURCE requires compiling with optimization (-O) [-Wcpp]
-            #    422 | #  warning _FORTIFY_SOURCE requires compiling with optimization (-O)
-            #        |    ^~~~~~~
-            #  In file included from /nix/store/0zv32kh0zb4s1v4ld6mc99vmzydj9nm9-glibc-2.40-66-dev/include/bits/libc-header-start.h:33,
-            #                   from /nix/store/0zv32kh0zb4s1v4ld6mc99vmzydj9nm9-glibc-2.40-66-dev/include/math.h:27,
-            #                   from include/jemalloc/internal/jemalloc_internal_decls.h:4,
-            #                   from include/jemalloc/internal/jemalloc_preamble.h:5,
-            #                   from src/pac.c:1:
-            CFLAGS = "-O";
+        devShells.default = craneLib.devShell {
+          checks = self.checks.${system};
 
-            packages = [
-              rustStable
-              rustNightly
-              pkgs.cargo-insta
-            ];
-          };
-        }
+          inputsFrom = [ spacetimedb-standalone spacetimedb-cli ];
+
+          # Required to make jemalloc_tikv_sys build in local development, otherwise you get:
+          #   /nix/store/0zv32kh0zb4s1v4ld6mc99vmzydj9nm9-glibc-2.40-66-dev/include/features.h:422:4: warning: #warning _FORTIFY_SOURCE requires compiling with optimization (-O) [-Wcpp]
+          #    422 | #  warning _FORTIFY_SOURCE requires compiling with optimization (-O)
+          #        |    ^~~~~~~
+          #  In file included from /nix/store/0zv32kh0zb4s1v4ld6mc99vmzydj9nm9-glibc-2.40-66-dev/include/bits/libc-header-start.h:33,
+          #                   from /nix/store/0zv32kh0zb4s1v4ld6mc99vmzydj9nm9-glibc-2.40-66-dev/include/math.h:27,
+          #                   from include/jemalloc/internal/jemalloc_internal_decls.h:4,
+          #                   from include/jemalloc/internal/jemalloc_preamble.h:5,
+          #                   from src/pac.c:1:
+          CFLAGS = "-O";
+
+          packages = [
+            rustStable
+            rustNightly
+            pkgs.cargo-insta
+          ];
+        };
+      }
     );
 }
