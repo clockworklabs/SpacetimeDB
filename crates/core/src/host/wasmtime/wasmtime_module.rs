@@ -67,6 +67,12 @@ impl WasmtimeModule {
             }
         }
         abi_funcs!(link_functions, link_async_functions);
+
+        // WASI Preview 1 stubs for languages (e.g. Go) that compile to `wasip1`.
+        // These modules import WASI functions from `wasi_snapshot_preview1`.
+        // We provide no-op / minimal stubs so the module can be instantiated.
+        super::wasi_stubs::link_wasi_stubs(linker)?;
+
         Ok(())
     }
 }
@@ -232,6 +238,19 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
         // Note: this budget is just for initializers
         set_store_fuel(&mut store, FunctionBudget::DEFAULT_BUDGET.into());
         store.set_epoch_deadline(EPOCH_TICKS_PER_SECOND);
+
+        // WASI modules export `_initialize` (reactors) or `_start` (commands)
+        // which must be called before any other exports to set up the language runtime.
+        // Go compiles to a WASI reactor with `_initialize` via `-buildmode=c-shared`.
+        for wasi_init in ["_initialize", "_start"] {
+            if let Ok(init) = instance.get_typed_func::<(), ()>(&mut store, wasi_init) {
+                call_sync_typed_func(&init, &mut store, ()).map_err(|err| InitializationError::RuntimeError {
+                    err,
+                    func: wasi_init.to_owned(),
+                })?;
+                break;
+            }
+        }
 
         for preinit in &func_names.preinits {
             let func = instance.get_typed_func::<(), ()>(&mut store, preinit).unwrap();
