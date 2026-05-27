@@ -133,6 +133,9 @@ pub(super) struct WasmInstanceEnv {
     /// A pool of unused allocated chunks that can be reused.
     // TODO(Centril): consider using this pool for `console_timer_start` and `bytes_sink_write`.
     chunk_pool: ChunkPool,
+
+    /// Whether the current epoch can yield, used to prevent yielding in reducers.
+    epoch_can_yield: bool,
 }
 
 const STANDARD_BYTES_SINK: u32 = 1;
@@ -158,6 +161,7 @@ impl WasmInstanceEnv {
             timing_spans: Default::default(),
             call_times: CallTimes::new(),
             chunk_pool: <_>::default(),
+            epoch_can_yield: false,
         }
     }
 
@@ -242,6 +246,16 @@ impl WasmInstanceEnv {
     /// and prevent further writes to it.
     pub fn take_standard_bytes_sink(&mut self) -> Vec<u8> {
         self.standard_bytes_sink.take().unwrap_or_default()
+    }
+
+    /// Return whether the current epoch can yield. This should be `true` for procedures and `false` for reducers.
+    pub fn epoch_can_yield(&self) -> bool {
+        self.epoch_can_yield
+    }
+
+    /// Set whether the current epoch can yield. This should be `true` for procedures and `false` for reducers.
+    pub fn set_epoch_can_yield(&mut self, can_yield: bool) {
+        self.epoch_can_yield = can_yield;
     }
 
     /// Signal to this `WasmInstanceEnv` that a reducer or procedure call is beginning.
