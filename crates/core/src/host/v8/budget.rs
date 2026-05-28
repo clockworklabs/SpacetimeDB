@@ -13,7 +13,7 @@ use core::ptr;
 use core::sync::atomic::Ordering;
 use core::time::Duration;
 use core::{ffi::c_void, sync::atomic::AtomicBool};
-use spacetimedb_client_api_messages::energy::{EnergyQuanta, FunctionBudget};
+use spacetimedb_client_api_messages::energy::FunctionBudget;
 use std::sync::Arc;
 use v8::{Isolate, IsolateHandle};
 
@@ -118,12 +118,7 @@ fn budget_to_duration(_budget: FunctionBudget) -> Duration {
 /// Returns [`EnergyStats`] for a reducer given its `budget`
 /// and the `duration` it took to execute.
 pub(super) fn energy_from_elapsed(budget: FunctionBudget, duration: Duration) -> EnergyStats {
-    let used = duration.as_nanos() * EnergyQuanta::PER_EXECUTION_NANOSEC.get();
-    // in order for duration_nanos * ev_per_ns >= u64::MAX:
-    //              duration_nanos >= u64::MAX / ev_per_ns
-    //              duration_nanos >= (9223372036854775 ns = 106.75 days)
-    // so it's unlikely we'll have to worry about it
-    let used = FunctionBudget::new(u64::try_from(used).unwrap_or(u64::MAX));
+    let used = duration_to_budget(duration);
     let remaining = budget - used;
     EnergyStats { budget, remaining }
 }
