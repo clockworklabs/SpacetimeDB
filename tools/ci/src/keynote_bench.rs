@@ -12,7 +12,6 @@ use std::{
 const DATABASE_NAME: &str = "test-1";
 const KEYNOTE_DIR: &str = "templates/keynote-2";
 const KEYNOTE_BINDINGS_DIR: &str = "templates/keynote-2/module_bindings";
-const MIN_TPS: f64 = 275_000.0;
 const BENCH_SECONDS: &str = "60";
 const BENCH_CONCURRENCY: &str = "64";
 const MAX_INFLIGHT_PER_WORKER: &str = "96";
@@ -22,16 +21,19 @@ const SEED_INITIAL_BALANCE: &str = "1000000000000";
 struct BenchmarkModule {
     label: &'static str,
     module_dir: &'static str,
+    min_tps: f64,
 }
 
 const BENCHMARK_MODULES: &[BenchmarkModule] = &[
     BenchmarkModule {
         label: "TypeScript",
         module_dir: "templates/keynote-2/spacetimedb",
+        min_tps: 275_000.0,
     },
     BenchmarkModule {
         label: "Rust",
         module_dir: "templates/keynote-2/rust_module",
+        min_tps: 300_000.0,
     },
 ];
 
@@ -68,10 +70,10 @@ fn run_module_benchmark(module: &BenchmarkModule, cli_path: &Path, config_path: 
         .with_context(|| format!("failed to read benchmark result {}", result_path.display()))?;
     let tps = result_tps(&result_json)?;
 
-    if tps < MIN_TPS {
+    if tps < module.min_tps {
         eprintln!(
-            "Keynote perf regression for {} module: throughput {tps:.0} TPS < {MIN_TPS:.0} TPS\n\nResult JSON:\n{}",
-            module.label, result_json
+            "Keynote perf regression for {} module: throughput {tps:.0} TPS < {:.0} TPS\n\nResult JSON:\n{}",
+            module.label, module.min_tps, result_json
         );
         bail!(
             "keynote benchmark throughput for {} module is below threshold",
@@ -80,8 +82,9 @@ fn run_module_benchmark(module: &BenchmarkModule, cli_path: &Path, config_path: 
     }
 
     println!(
-        "Keynote perf check passed for {} module: throughput {tps:.0} TPS >= {MIN_TPS:.0} TPS ({})",
+        "Keynote perf check passed for {} module: throughput {tps:.0} TPS >= {:.0} TPS ({})",
         module.label,
+        module.min_tps,
         result_path.display()
     );
     Ok(())
