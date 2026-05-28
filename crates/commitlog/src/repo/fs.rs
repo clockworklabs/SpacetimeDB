@@ -292,6 +292,8 @@ impl Repo for Fs {
     }
 
     fn open_segment_writer(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
+        // For Windows, we need `write(true)` to allow for truncation.
+        // We also need `append(true)`, as other parts of the code rely on it.
         #[allow(clippy::ineffective_open_options)]
         File::options()
             .read(true)
