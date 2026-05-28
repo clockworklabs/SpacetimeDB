@@ -21,7 +21,7 @@ The principles below apply with full force inside the deep core. They may be rel
 
 We are designing SpacetimeDB's core from first principles. We need to own, control, and understand it. That means anything where we strongly rely on performance and correctness.
 
-The seven principles below are what we adopt for that core. Several are written as "work towards," because we do not yet meet them everywhere. They are aspirational in scope, not in authority. When we make design decisions for the deep core, these are the principles we measure them against.
+The eight principles below are what we adopt for that core. Several are written as "work towards," because we do not yet meet them everywhere. They are aspirational in scope, not in authority. When we make design decisions for the deep core, these are the principles we measure them against.
 
 ## 1. Work towards zero dependencies
 
@@ -101,13 +101,28 @@ This sharpens our error handling. Every message can be lost, delayed, reordered,
 
 This is also a natural fit with principle 6, since messages to other processes are inherently pipelined.
 
+## 8. Think in terms of assertions
+
+Type systems prove a class of properties at compile time. Assertions extend that proof system to properties the compiler cannot express: pre- and post-conditions, invariants, the relationships between variables that should hold but no type can encode. Combined with principle 2, assertions are how we cover the rest. The simulator explores the state space; the assertions catch the violations.
+
+Assertion failures are not operating conditions. They signal a programmer error: a place where the code drifted from the model in our head. The only correct response is to crash. A crash downgrades a silent correctness bug into a loud liveness bug, which is far easier to diagnose, reproduce, and fix than data that has silently drifted.
+
+For a contributor working in the deep core, this means:
+
+- Use `assert!`, not `debug_assert!`. An assertion exists to catch a bug the compiler could not catch. Stripping the check in release reduces the assertion to a comment that runs sometimes, which defeats the point. A failing assertion in production tells us our model was wrong, and production is exactly where we want to know.
+- Build a precise mental model of the code first. Encode that understanding as assertions so a reviewer (and future-you) can see what you believed was true. Write the code to satisfy the assertions. Then let DST exercise the assumptions you did not realize you were making.
+
+There is one caveat that follows from "assertions are always on" plus our multi-tenant design: an assertion failure must crash only the smallest unit of correctness it bounds, not the entire process. An assertion in code that handles one database's transaction takes down that database's worker, not every database hosted on the same process. Without isolation, "panic on assertion failure" becomes "one bad tenant kills the cluster," and that is strictly worse than not asserting. With isolation, the panic is the tenant-scoped response we want. The principle is "isolate before you assert," not "do not assert." Practical realizations: per-tenant worker thread plus `catch_unwind`; OS process per tenant; whatever the architecture supports.
+
+The mechanics (preconditions and postconditions, paired checks, positive and negative space, splitting compound assertions, compile-time assertions) are listed under the Style section. The principle is the framing: encode your understanding, isolate the blast radius, leave the checks armed, and let DST do the rest.
+
 ## Style
 
-The seven principles describe how we design the deep core. The notes below describe how we write code inside it. They are inspired by TIGER STYLE, narrowed and adapted for Rust and for the principles above.
+The eight principles describe how we design the deep core. The notes below describe how we write code inside it. They are inspired by TIGER STYLE, narrowed and adapted for Rust and for the principles above.
 
 ### Assertions
 
-Assertions detect programmer errors. They close the gap between the model in our heads and the model the code actually implements.
+The mechanics that put principle 8 into practice. Assertions detect programmer errors and close the gap between the model in our heads and the model the code actually implements.
 
 - Assert preconditions, postconditions, and invariants. We aim for at least two assertions per function on average.
 - Pair assertions across boundaries. If a property must hold, check it on at least two distinct code paths (for example, before writing to disk and again after reading back).
@@ -142,6 +157,20 @@ Prefer simple, explicit control flow. Avoid macros where a function will do: mac
 - An exception is summarizing genuinely complex logic, where a short *what*-paragraph at the top of a section lets a reader skip the body when it is not relevant to their task. Use these sparingly and keep them at a level of abstraction that is unlikely to need updating when the implementation changes.
 - Run `rustfmt` and `clippy`. 100-column line limit.
 - Always brace `if` bodies, even single-line, as defense in depth.
+
+### Use explicit integer sizes; never `usize`
+
+`usize` and `isize` are pointer-width: 64-bit on most native targets, 32-bit on `wasm32`. Any value whose meaning is "a number" (a count, an offset, an index, a length, a tick) that is typed as `usize` has a target-dependent representation. The same code path with the same inputs can wrap differently, cast differently, or produce different intermediate values depending on whether it was built for `x86_64`, `aarch64`, or `wasm32`. That breaks principle 2: a WASM build, a native `cargo test`, and any future bundled binary all run the simulation, and they must produce the same trace from the same seed.
+
+The rule: use explicit-width integer types everywhere. `u8`, `u16`, `u32`, `u64`, `i32`, `i64` carry their own width on every target. A counter is `u64`. A row index is `u32`. A byte offset inside a 64 KiB page is `u16`. The size you choose now becomes the size everyone sees, on every platform, forever.
+
+The same goes for casts. `as usize` is target-dependent both in width and in wrap behavior; `as u64` and `as u32` are not. Cast to an explicit width, decide deliberately whether truncation is acceptable, and write the code to make that choice visible.
+
+For a contributor working in the deep core, this means:
+
+- Type every field, every parameter, every local with an explicit width. No `let i: usize = ...`. No `count: usize`. No `len: usize`.
+- Cast through explicit widths. `x as usize` is a smell; `x as u64` (or `u32`, with intent) is the answer.
+- Where stdlib forces a `usize` (for example, `Vec::len()`, `&[T]` indexing), confine the conversion to the call site. Convert in and convert out; do not carry `usize` deeper.
 
 ---
 
