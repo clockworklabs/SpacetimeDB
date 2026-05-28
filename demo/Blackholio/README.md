@@ -69,6 +69,7 @@ Blackholio/
 ├── client-ts/         # Browser client using Phaser and TypeScript
 ├── server-csharp/     # SpacetimeDB server module (C# implementation)
 ├── server-rust/       # SpacetimeDB server module (Rust implementation)
+├── server-ts/         # SpacetimeDB server module (TypeScript implementation)
 ├── DEVELOP.md         # Development guidelines
 └── README.md          # This file
 ```
