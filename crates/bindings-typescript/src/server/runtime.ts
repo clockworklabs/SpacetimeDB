@@ -221,8 +221,12 @@ export const ReducerCtxImpl = class ReducerCtx<
     me.#senderAuth = undefined;
   }
 
-  get identity() {
+  get databaseIdentity() {
     return (this.#identity ??= new Identity(sys.identity()));
+  }
+
+  get identity() {
+    return this.databaseIdentity;
   }
 
   get senderAuth() {

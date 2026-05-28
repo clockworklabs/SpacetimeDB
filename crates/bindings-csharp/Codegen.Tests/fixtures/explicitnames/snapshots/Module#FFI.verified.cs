@@ -57,9 +57,13 @@ namespace SpacetimeDB
 
         // **Note:** must be 0..=u32::MAX
         internal int CounterUuid;
+        public Identity DatabaseIdentity => Internal.IReducerContext.GetDatabaseIdentity();
 
-        // We need this property to be non-static for parity with client SDK.
-        public Identity Identity => Internal.IReducerContext.GetIdentity();
+        // We keep this property for compatibility with existing module code.
+        [global::System.Obsolete(
+            "ReducerContext.Identity is deprecated. Use DatabaseIdentity instead."
+        )]
+        public Identity Identity => DatabaseIdentity;
 
         internal ReducerContext(
             Identity identity,

@@ -1,6 +1,7 @@
 use self::wasm_instance_env::WasmInstanceEnv;
 use super::wasm_common::module_host_actor::{InitializationError, WasmModuleHostActor, WasmModuleInstance};
 use super::wasm_common::{abi, ModuleCreationError};
+use crate::config::WasmConfig;
 use crate::energy::{EnergyQuanta, FunctionBudget};
 use crate::error::NodesError;
 use crate::module_host_context::ModuleCreationContext;
@@ -20,6 +21,7 @@ mod wasmtime_module;
 pub struct WasmtimeRuntime {
     engine: Engine,
     linker: Box<Linker<WasmInstanceEnv>>,
+    config: WasmConfig,
 }
 
 const EPOCH_TICK_LENGTH: Duration = Duration::from_millis(10);
@@ -43,7 +45,7 @@ pub(crate) fn epoch_ticker(mut on_tick: impl 'static + Send + FnMut() -> Option<
 }
 
 impl WasmtimeRuntime {
-    pub fn new(data_dir: Option<&ServerDataDir>) -> Self {
+    pub fn new(data_dir: Option<&ServerDataDir>, runtime_config: WasmConfig) -> Self {
         let mut config = wasmtime::Config::new();
         config
             .cranelift_opt_level(wasmtime::OptLevel::Speed)
@@ -99,12 +101,22 @@ impl WasmtimeRuntime {
         let mut linker = Box::new(Linker::new(&engine));
         WasmtimeModule::link_imports(&mut linker).unwrap();
 
-        WasmtimeRuntime { engine, linker }
+        let config = runtime_config;
+        WasmtimeRuntime { engine, linker, config }
     }
 }
 
 pub type Module = WasmModuleHostActor<WasmtimeModule>;
 pub type ModuleInstance = WasmModuleInstance<WasmtimeInstance>;
+
+const THREAD_NAME_DATABASE_ID_SUFFIX_LEN: usize = 8;
+
+fn wasm_executor_thread_name(database_identity: &spacetimedb_lib::Identity) -> String {
+    let hex = database_identity.to_hex();
+    // We use the tail of the identity to avoid the common structured prefix.
+    let suffix = &hex.as_str()[hex.as_str().len() - THREAD_NAME_DATABASE_ID_SUFFIX_LEN..];
+    format!("wasm-{suffix}")
+}
 
 impl WasmtimeRuntime {
     pub fn make_actor(
@@ -129,12 +141,14 @@ impl WasmtimeRuntime {
             .map_err(InitializationError::Instantiation)?;
 
         let module = WasmtimeModule::new(module);
+        let executor_thread_name = wasm_executor_thread_name(&mcc.replica_ctx.database_identity);
 
         let (module, init_inst) = WasmModuleHostActor::new(mcc, module)?;
         Ok(super::module_host::ModuleWithInstance::Wasm {
             module,
-            executor: core.spawn_async_executor(),
+            executor: core.spawn_named_async_executor(executor_thread_name),
             init_inst: Box::new(init_inst),
+            procedure_instance_pool_size: self.config.procedure_instance_pool_size,
         })
     }
 }
