@@ -46,7 +46,12 @@ impl Header {
 
     pub fn decode<R: io::Read>(mut read: R) -> io::Result<Self> {
         let mut buf = [0; Self::LEN];
-        read.read_exact(&mut buf)?;
+        read.read_exact(&mut buf).map_err(|e| {
+            io::Error::new(
+                e.kind(),
+                format!("failed to read {} bytes of segment header: {}", Self::LEN, e),
+            )
+        })?;
 
         if !buf.starts_with(&MAGIC) {
             return Err(io::Error::new(

@@ -240,8 +240,14 @@ impl V8RuntimeInner {
         // Validate/create the module and spawn the first instance.
         let metrics = InstanceManagerMetrics::new(HostType::Js, mcc.replica_ctx.database_identity);
         let mcc = Either::Right(mcc);
+
+        // The JS main worker and procedure workers run on separate OS threads,
+        // but they intentionally share one database core allocation.
+        // When core pinning is enabled, all worker threads pin to the same core
+        // and rebalance together because they use clones of the same `CorePinner`.
         let load_balance_guard = Arc::new(core.guard);
         let core_pinner = core.pinner;
+
         let heap_policy = config.heap_policy;
         let (common, init_inst) = spawn_main_instance_worker(
             program.clone(),
@@ -1405,10 +1411,7 @@ fn handle_main_worker_request(
         }
         JsMainWorkerRequest::ScheduledReducer { reply_tx, params } => {
             handle_worker_request("scheduled_reducer", reply_tx, || {
-                let (res, trapped) = instance_common
-                    .call_scheduled_function(params, inst)
-                    .now_or_never()
-                    .expect("our call_scheduled_function implementation is not actually async");
+                let (res, trapped) = instance_common.call_scheduled_reducer(params, inst);
                 (res, trapped)
             })
         }
@@ -1506,9 +1509,9 @@ fn handle_procedure_worker_request(
         JsProcedureWorkerRequest::ScheduledProcedure { reply_tx, params } => {
             handle_worker_request("scheduled_procedure", reply_tx, || {
                 let (res, trapped) = instance_common
-                    .call_scheduled_function(params, inst)
+                    .call_scheduled_procedure(params, inst)
                     .now_or_never()
-                    .expect("our call_scheduled_function implementation is not actually async");
+                    .expect("our call_scheduled_procedure implementation is not actually async");
                 (res, trapped)
             })
         }
