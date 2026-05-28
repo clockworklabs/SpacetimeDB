@@ -72,9 +72,9 @@ Usage: wasm-bindings
 
 ### `dlls`
 
-Builds and packs C# DLLs and NuGet packages for local Unity workflows
+Deprecated; use `cargo regen csharp dlls`.
 
-Packs the in-repo C# NuGet packages and restores the C# SDK to populate `sdks/csharp/packages/**`. Then overlays Unity `.meta` skeleton files from `sdks/csharp/unity-meta-skeleton~/**` onto the restored versioned package directory, so Unity can associate stable meta files with the most recently built package.
+Builds and packs C# DLLs and NuGet packages for local Unity workflows.
 
 **Usage:**
 ```bash
@@ -142,6 +142,21 @@ Usage: help [COMMAND]...
 **Options:**
 
 - `subcommand`: Print help for the subcommand(s)
+
+### `keynote-bench`
+
+Runs the keynote benchmark as a CI performance regression gate.
+
+Assumes release SpacetimeDB binaries and the TypeScript SDK are already built, runs the keynote SpacetimeDB benchmark for 60 seconds against the TypeScript and Rust modules, and fails if throughput is below 275K TPS for TypeScript or 300K TPS for Rust.
+
+**Usage:**
+```bash
+Usage: keynote-bench
+```
+
+**Options:**
+
+- `--help`: Print help (see a summary with '-h')
 
 ### `update-flow`
 

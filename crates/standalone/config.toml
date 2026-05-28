@@ -18,6 +18,11 @@ directives = [
     "axum::rejection=trace",
 ]
 
+[wasm]
+# Maximum number of WASM procedure instances per database. Omit to use the
+# number of cores reported by the OS.
+# procedure-instance-pool-size = 8
+
 [v8]
 # Maximum number of JS procedure isolates per database. Omit to use the number
 # of cores reported by the OS.
@@ -38,5 +43,25 @@ directives = [
 
 # Apply a V8 heap limit in MiB. Set to 0 to use V8's default limit.
 # heap-limit-mb = 0
+
+[commitlog]
+# The maximum supported commitlog format version, also used for writing.
+# log-format-version = 1
+
+# Maximum size in bytes for each commitlog segment.
+# max-segment-size = 1073741824
+
+# Number of bytes written to the commitlog after which an entry is added to the offset index.
+# offset-index-interval-bytes = 4096
+
+# Require that the commitlog segment is synced before adding an offset index entry.
+# offset-index-require-segment-fsync = true
+
+# Preallocate disk space for commitlog segments up to max-segment-size.
+# Has no effect unless commitlog fallocate support is enabled.
+# preallocate-segments = false
+
+# Size in bytes of the memory buffer holding commit data before flushing to storage.
+# write-buffer-size = 131072
 
 # vim: set nowritebackup: << otherwise triggers cargo-watch

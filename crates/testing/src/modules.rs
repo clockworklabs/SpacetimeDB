@@ -91,8 +91,18 @@ impl ModuleHandle {
         self.client.handle_message(message, timer).await.map_err(Into::into)
     }
 
+    pub async fn send_reducer_and_recv_update(
+        &mut self,
+        message: impl Into<DataMessage>,
+        request_id: RequestId,
+    ) -> anyhow::Result<()> {
+        self.send(message).await?;
+        self.recv_reducer_update(request_id).await
+    }
+
     pub async fn recv_message(&mut self) -> Option<OutboundMessage> {
-        self.receiver.recv().await
+        let mut buf = Vec::with_capacity(1);
+        (self.receiver.recv_many(&mut buf, 1).await != 0).then(|| buf.remove(0))
     }
 
     pub async fn recv_reducer_update(&mut self, request_id: RequestId) -> anyhow::Result<()> {
@@ -235,7 +245,9 @@ impl CompiledModule {
         let env = spacetimedb_standalone::StandaloneEnv::init(
             spacetimedb_standalone::StandaloneOptions {
                 db_config: config,
+                durability: Default::default(),
                 websocket: WebSocketOptions::default(),
+                wasm: Default::default(),
                 v8: Default::default(),
             },
             &certs,

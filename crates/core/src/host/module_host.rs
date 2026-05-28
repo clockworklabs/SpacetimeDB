@@ -5,7 +5,7 @@ use super::{
 use crate::client::messages::{OneOffQueryResponseMessage, ProcedureResultMessage, SerializableMessage};
 use crate::client::{ClientActorId, ClientConnectionSender, WsVersion};
 use crate::database_logger::{DatabaseLogger, LogLevel, Record};
-use crate::db::relational_db::RelationalDB;
+use crate::db::relational_db::{RelationalDB, Tx};
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::{check_row_limit, estimate_rows_scanned};
@@ -29,15 +29,15 @@ use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRo
 use crate::subscription::tx::DeltaTx;
 use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
 use crate::subscription::{execute_plan, execute_plan_for_view};
-use crate::util::jobs::SingleCoreExecutor;
+use crate::util::jobs::{AllocatedJobCore, SingleCoreExecutor, SingleThreadedExecutor};
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::Context;
 use bytes::Bytes;
 use derive_more::From;
-use futures::lock::Mutex;
 use indexmap::IndexSet;
 use itertools::Itertools;
-use prometheus::{Histogram, IntGauge};
+use parking_lot::Mutex;
+use prometheus::{Histogram, HistogramTimer, IntGauge};
 use scopeguard::ScopeGuard;
 use smallvec::SmallVec;
 use spacetimedb_auth::identity::ConnectionAuthCtx;
@@ -341,8 +341,12 @@ impl ReducersMap {
 pub enum ModuleWithInstance {
     Wasm {
         module: super::wasmtime::Module,
-        executor: SingleCoreExecutor,
+        procedure_module: super::wasmtime::ProcedureModule,
+        main_thread_name: String,
+        procedure_thread_name: String,
+        core: AllocatedJobCore,
         init_inst: Box<super::wasmtime::ModuleInstance>,
+        procedure_instance_pool_size: NonZeroUsize,
     },
     Js {
         module: super::v8::JsModule,
@@ -355,9 +359,120 @@ enum ModuleHostInner {
     Js(Box<V8ModuleHost>),
 }
 
+struct CallTimerGuard {
+    queue_timer: Option<HistogramTimer>,
+    queue_length_gauge: IntGauge,
+}
+
+impl Drop for CallTimerGuard {
+    fn drop(&mut self) {
+        self.queue_length_gauge.dec();
+        if let Some(queue_timer) = self.queue_timer.take() {
+            queue_timer.stop_and_record();
+        }
+    }
+}
+
+type WasmtimeProcedureInstanceManager = ModuleInstanceManager<Arc<super::wasmtime::ProcedureModule>>;
+
+struct WasmtimeModuleState {
+    instance: Box<super::wasmtime::ModuleInstance>,
+    module: Arc<super::wasmtime::Module>,
+    metrics: InstanceManagerMetrics,
+}
+
+impl WasmtimeModuleState {
+    fn new(
+        module: Arc<super::wasmtime::Module>,
+        init_inst: Box<super::wasmtime::ModuleInstance>,
+        metrics: InstanceManagerMetrics,
+    ) -> Self {
+        metrics.track_initial_instance();
+        Self {
+            instance: init_inst,
+            module,
+            metrics,
+        }
+    }
+
+    fn with_instance<R>(&mut self, f: impl FnOnce(&mut ModuleInstance) -> R) -> R {
+        let res = f(self.instance.as_mut());
+        if self.instance.needs_replacement() {
+            self.metrics.track_instance_removed();
+            let start_time = Instant::now();
+            *self.instance = self.module.as_ref().create_instance();
+            self.metrics.observe_instance_created(start_time.elapsed());
+        }
+        res
+    }
+}
+
+/// Wasm uses a single-core executor backed by a Tokio single threaded runtime
+/// for async procedures. It uses an executor backed by a single OS-thread for
+/// everything else.
+///
+/// Note, procedures acquire a module instance from the async procedure pool
+/// before being enqueued by the executor.
+///
+/// Reducers are not executed concurrently, and so there is no pool from which
+/// to acquire.
 struct WasmtimeModuleHost {
-    executor: SingleCoreExecutor,
-    instance_manager: ModuleInstanceManager<super::wasmtime::Module>,
+    module: Arc<super::wasmtime::Module>,
+    main_executor: SingleThreadedExecutor<WasmtimeModuleState>,
+    procedure_executor: SingleCoreExecutor,
+    procedure_instances: Arc<WasmtimeProcedureInstanceManager>,
+}
+
+impl WasmtimeModuleHost {
+    fn enqueue_with_main_instance<A>(
+        &self,
+        label: &str,
+        on_panic: Arc<dyn Fn() + Send + Sync>,
+        timer_guard: CallTimerGuard,
+        arg: A,
+        wasm: impl FnOnce(A, &mut ModuleInstance) + Send + 'static,
+    ) where
+        A: Send + 'static,
+    {
+        let label = label.to_owned();
+        self.main_executor.enqueue_job(move |state| {
+            scopeguard::defer_on_unwind!({
+                log::warn!("wasm main operation {label} panicked");
+                on_panic();
+            });
+
+            state.with_instance(move |inst| {
+                drop(timer_guard);
+                wasm(arg, inst);
+            });
+        });
+    }
+
+    async fn enqueue_with_procedure_instance<A>(
+        &self,
+        label: &str,
+        on_panic: Arc<dyn Fn() + Send + Sync>,
+        timer_guard: CallTimerGuard,
+        arg: A,
+        wasm: impl AsyncFnOnce(A, &mut ModuleInstance) + Send + 'static,
+    ) where
+        A: Send + 'static,
+    {
+        let instance_manager = self.procedure_instances.clone();
+        let ModuleInstanceLease { instance, slot } = instance_manager.get_instance().await;
+        let label = label.to_owned();
+        self.procedure_executor.enqueue_job(async move || {
+            scopeguard::defer_on_unwind!({
+                log::warn!("wasm procedure {label} panicked");
+                on_panic();
+            });
+
+            let mut inst = instance;
+            drop(timer_guard);
+            wasm(arg, &mut inst).await;
+            instance_manager.return_instance(ModuleInstanceLease { instance: inst, slot });
+        });
+    }
 }
 
 struct V8ModuleHost {
@@ -397,10 +512,20 @@ impl<T: GenericModuleInstance + ?Sized> GenericModuleInstance for Box<T> {
     }
 }
 
-impl GenericModule for super::wasmtime::Module {
+impl GenericModule for Arc<super::wasmtime::Module> {
     type Instance = Box<super::wasmtime::ModuleInstance>;
     async fn create_instance(&self) -> Self::Instance {
-        Box::new(self.create_instance())
+        Box::new((**self).create_instance())
+    }
+    fn host_type(&self) -> HostType {
+        HostType::Wasm
+    }
+}
+
+impl GenericModule for Arc<super::wasmtime::ProcedureModule> {
+    type Instance = Box<super::wasmtime::ModuleInstance>;
+    async fn create_instance(&self) -> Self::Instance {
+        Box::new((**self).create_instance())
     }
     fn host_type(&self) -> HostType {
         HostType::Wasm
@@ -664,6 +789,16 @@ impl CallReducerParams {
     }
 }
 
+struct PreparedReducerCall {
+    name: ReducerName,
+    params: CallReducerParams,
+}
+
+struct PreparedProcedureCall {
+    name: String,
+    params: CallProcedureParams,
+}
+
 pub enum ViewCommand {
     AddSingleSubscription {
         sender: Arc<ClientConnectionSender>,
@@ -717,6 +852,20 @@ pub(in crate::host) struct ViewCommandMetric {
     timer: Instant,
 }
 
+pub(in crate::host) enum ViewCommandErrorTarget {
+    V1 {
+        sender: Arc<ClientConnectionSender>,
+        request_id: Option<RequestId>,
+        query_id: Option<ws_v1::QueryId>,
+        timer: Option<Instant>,
+    },
+    V2 {
+        sender: Arc<ClientConnectionSender>,
+        request_id: Option<RequestId>,
+        query_set_id: ws_v2::QuerySetId,
+    },
+}
+
 impl ViewCommand {
     pub(in crate::host) fn metric(&self) -> ViewCommandMetric {
         match self {
@@ -733,6 +882,102 @@ impl ViewCommand {
                 workload: WorkloadType::Unsubscribe,
                 timer: *timer,
             },
+        }
+    }
+
+    pub(in crate::host) fn error_target(&self) -> ViewCommandErrorTarget {
+        match self {
+            Self::AddSingleSubscription {
+                sender,
+                request,
+                _timer,
+                ..
+            } => ViewCommandErrorTarget::V1 {
+                sender: sender.clone(),
+                request_id: Some(request.request_id),
+                query_id: Some(request.query_id),
+                timer: Some(*_timer),
+            },
+            Self::AddMultiSubscription {
+                sender,
+                request,
+                _timer,
+                ..
+            } => ViewCommandErrorTarget::V1 {
+                sender: sender.clone(),
+                request_id: Some(request.request_id),
+                query_id: Some(request.query_id),
+                timer: Some(*_timer),
+            },
+            Self::AddLegacySubscription {
+                sender,
+                subscribe,
+                _timer,
+                ..
+            } => ViewCommandErrorTarget::V1 {
+                sender: sender.clone(),
+                request_id: Some(subscribe.request_id),
+                query_id: None,
+                timer: Some(*_timer),
+            },
+            Self::RemoveSingleSubscription {
+                sender, request, timer, ..
+            } => ViewCommandErrorTarget::V1 {
+                sender: sender.clone(),
+                request_id: Some(request.request_id),
+                query_id: Some(request.query_id),
+                timer: Some(*timer),
+            },
+            Self::RemoveMultiSubscription {
+                sender, request, timer, ..
+            } => ViewCommandErrorTarget::V1 {
+                sender: sender.clone(),
+                request_id: Some(request.request_id),
+                query_id: Some(request.query_id),
+                timer: Some(*timer),
+            },
+            Self::AddSubscriptionV2 { sender, request, .. } => ViewCommandErrorTarget::V2 {
+                sender: sender.clone(),
+                request_id: Some(request.request_id),
+                query_set_id: request.query_set_id,
+            },
+            Self::RemoveSubscriptionV2 { sender, request, .. } => ViewCommandErrorTarget::V2 {
+                sender: sender.clone(),
+                request_id: Some(request.request_id),
+                query_set_id: request.query_set_id,
+            },
+        }
+    }
+}
+
+impl ViewCommandErrorTarget {
+    pub(in crate::host) fn send(&self, subscriptions: &ModuleSubscriptions, err: &DBError) {
+        let res = match self {
+            Self::V1 {
+                sender,
+                request_id,
+                query_id,
+                timer,
+            } => subscriptions.send_subscription_error_v1(
+                sender.clone(),
+                *request_id,
+                *query_id,
+                *timer,
+                err.to_string().into(),
+            ),
+            Self::V2 {
+                sender,
+                request_id,
+                query_set_id,
+            } => subscriptions.send_subscription_error_v2(
+                sender.clone(),
+                *request_id,
+                *query_set_id,
+                err.to_string().into(),
+            ),
+        };
+        if let Err(send_err) = res {
+            log::warn!("failed to send subscription error: {send_err:#}");
         }
     }
 }
@@ -761,12 +1006,6 @@ pub(in crate::host) struct OneOffQueryJsonParams {
     timer: Instant,
 }
 
-impl OneOffQueryJsonParams {
-    pub(in crate::host) fn timer(&self) -> Instant {
-        self.timer
-    }
-}
-
 pub(in crate::host) struct OneOffQueryBsatnParams {
     db: Arc<RelationalDB>,
     subscriptions: ModuleSubscriptions,
@@ -776,12 +1015,6 @@ pub(in crate::host) struct OneOffQueryBsatnParams {
     message_id: Vec<u8>,
     timer: Instant,
     rlb_pool: BsatnRowListBuilderPool,
-}
-
-impl OneOffQueryBsatnParams {
-    pub(in crate::host) fn timer(&self) -> Instant {
-        self.timer
-    }
 }
 
 pub(in crate::host) struct OneOffQueryV2Params {
@@ -795,12 +1028,39 @@ pub(in crate::host) struct OneOffQueryV2Params {
     rlb_pool: BsatnRowListBuilderPool,
 }
 
-impl OneOffQueryV2Params {
+pub(in crate::host) enum OneOffQueryRequest {
+    Json(OneOffQueryJsonParams),
+    Bsatn(OneOffQueryBsatnParams),
+    V2(OneOffQueryV2Params),
+}
+
+impl OneOffQueryRequest {
+    pub(in crate::host) fn label(&self) -> &'static str {
+        match self {
+            Self::Json(_) => "one_off_query_json",
+            Self::Bsatn(_) => "one_off_query_bsatn",
+            Self::V2(_) => "one_off_query_v2",
+        }
+    }
+
     pub(in crate::host) fn timer(&self) -> Instant {
-        self.timer
+        match self {
+            Self::Json(params) => params.timer,
+            Self::Bsatn(params) => params.timer,
+            Self::V2(params) => params.timer,
+        }
+    }
+
+    pub(in crate::host) fn run(self) -> OneOffQueryResult {
+        match self {
+            Self::Json(params) => ModuleHost::one_off_query_json_inner(params),
+            Self::Bsatn(params) => ModuleHost::one_off_query_bsatn_inner(params),
+            Self::V2(params) => ModuleHost::one_off_query_v2_inner(params),
+        }
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct ProcedureResultTarget {
     sender: Arc<ClientConnectionSender>,
     request_id: RequestId,
@@ -1011,15 +1271,6 @@ impl CreateInstanceTimeMetric {
 }
 
 impl<M: GenericModule> ModuleInstanceManager<M> {
-    fn new(module: M, init_inst: Option<M::Instance>, database_identity: Identity) -> Self {
-        let metrics = InstanceManagerMetrics::new(module.host_type(), database_identity);
-        Self::new_with_metrics(module, init_inst, metrics)
-    }
-
-    fn new_with_metrics(module: M, init_inst: Option<M::Instance>, metrics: InstanceManagerMetrics) -> Self {
-        Self::new_inner(module, init_inst, metrics, None)
-    }
-
     fn new_bounded_with_metrics(
         module: M,
         init_inst: Option<M::Instance>,
@@ -1059,7 +1310,7 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
     async fn with_instance<R>(&self, f: impl AsyncFnOnce(M::Instance) -> (R, M::Instance)) -> R {
         let ModuleInstanceLease { instance, slot } = self.get_instance().await;
         let (res, instance) = f(instance).await;
-        self.return_instance(ModuleInstanceLease { instance, slot }).await;
+        self.return_instance(ModuleInstanceLease { instance, slot });
         res
     }
 
@@ -1076,7 +1327,10 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             None
         };
 
-        let instance = self.instances.lock().await.pop_back();
+        let instance = {
+            let mut instances = self.instances.lock();
+            instances.pop_back()
+        };
         let instance = if let Some(instance) = instance {
             instance
         } else {
@@ -1090,7 +1344,7 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
         ModuleInstanceLease { instance, slot }
     }
 
-    async fn return_instance(&self, lease: ModuleInstanceLease<M::Instance>) {
+    fn return_instance(&self, lease: ModuleInstanceLease<M::Instance>) {
         let ModuleInstanceLease { instance, slot } = lease;
         if instance.needs_replacement() {
             // Don't return unusable instances; they may have left internal data
@@ -1100,7 +1354,7 @@ impl<M: GenericModule> ModuleInstanceManager<M> {
             return;
         }
 
-        self.instances.lock().await.push_front(instance);
+        self.instances.lock().push_front(instance);
         drop(slot);
     }
 }
@@ -1114,8 +1368,8 @@ impl SharedJsMainInstanceManager {
         }
     }
 
-    async fn with_instance<R>(&self, f: impl AsyncFnOnce(JsMainInstance) -> R) -> R {
-        f(self.active.clone()).await
+    fn with_instance<R>(&self, f: impl FnOnce(JsMainInstance) -> R) -> R {
+        f(self.active.clone())
     }
 }
 
@@ -1307,6 +1561,66 @@ pub struct RefInstance<'a, I: WasmInstance> {
     pub instance: &'a mut I,
 }
 
+macro_rules! call_view_command_method {
+    (
+        $(#[$meta:meta])*
+        pub async fn $method:ident(
+            &self,
+            $($arg:ident: $arg_ty:ty),* $(,)?
+        ) -> $label:literal => $variant:ident $body:tt
+    ) => {
+        $(#[$meta])*
+        pub async fn $method(
+            &self,
+            $($arg: $arg_ty),*
+        ) -> Result<Option<ExecutionMetrics>, DBError> {
+            self.call_view_command_for_websocket(
+                $label,
+                ViewCommand::$variant $body,
+            )
+            .await
+        }
+    };
+}
+
+macro_rules! call_instance {
+    (
+        $self:expr,
+        $label:expr,
+        $arg:expr,
+        |$wasm_arg:pat_param, $wasm_inst:ident| $wasm:expr,
+        |$js_arg:pat_param, $js_inst:ident| $js:expr $(,)?
+    ) => {
+        $self
+            .call(
+                $label,
+                $arg,
+                |$wasm_arg, $wasm_inst| $wasm,
+                async |$js_arg, $js_inst| $js,
+            )
+            .await
+    };
+}
+
+macro_rules! call_pooled_instance {
+    (
+        $self:expr,
+        $label:expr,
+        $arg:expr,
+        |$wasm_arg:pat_param, $wasm_inst:ident| $wasm:expr,
+        |$js_arg:pat_param, $js_inst:ident| $js:expr $(,)?
+    ) => {
+        $self
+            .call_pooled(
+                $label,
+                $arg,
+                async |$wasm_arg, $wasm_inst| $wasm,
+                async |$js_arg, $js_inst| $js,
+            )
+            .await
+    };
+}
+
 impl ModuleHost {
     pub(super) fn new(
         module: ModuleWithInstance,
@@ -1317,14 +1631,44 @@ impl ModuleHost {
         let inner = match module {
             ModuleWithInstance::Wasm {
                 module,
-                executor,
+                procedure_module,
+                main_thread_name,
+                procedure_thread_name,
+                core,
                 init_inst,
+                procedure_instance_pool_size,
             } => {
                 info = module.info();
-                let instance_manager = ModuleInstanceManager::new(module, Some(init_inst), database_identity);
+                let module = Arc::new(module);
+                let procedure_module = Arc::new(procedure_module);
+                let metrics = InstanceManagerMetrics::new(module.host_type(), database_identity);
+                let main_state = WasmtimeModuleState::new(module.clone(), init_inst, metrics.clone());
+
+                // The wasm main and procedure executors run on separate OS threads,
+                // but they intentionally share one database core allocation.
+                // When core pinning is enabled, both threads pin to the same core
+                // and rebalance together because they use clones of the same `CorePinner`.
+                let (load_balance_guard, core_pinner) = core.into_shared();
+
+                let main_executor = AllocatedJobCore::spawn_executor(
+                    load_balance_guard.clone(),
+                    core_pinner.clone(),
+                    main_state,
+                    main_thread_name,
+                );
+                let procedure_executor =
+                    AllocatedJobCore::spawn_async_executor(load_balance_guard, core_pinner, procedure_thread_name);
+                let procedure_instances = Arc::new(ModuleInstanceManager::new_bounded_with_metrics(
+                    procedure_module,
+                    None,
+                    metrics,
+                    procedure_instance_pool_size,
+                ));
                 Arc::new(ModuleHostInner::Wasm(Box::new(WasmtimeModuleHost {
-                    executor,
-                    instance_manager,
+                    module,
+                    main_executor,
+                    procedure_executor,
+                    procedure_instances,
                 })))
             }
             ModuleWithInstance::Js { module, init_inst } => {
@@ -1385,7 +1729,7 @@ impl ModuleHost {
         }
     }
 
-    fn start_call_timer(&self, label: &str) -> ScopeGuard<(), impl FnOnce(()) + use<>> {
+    fn start_call_timer(&self, label: &str) -> CallTimerGuard {
         // Record the time until our function starts running.
         let queue_timer = WORKER_METRICS
             .reducer_wait_time
@@ -1402,101 +1746,59 @@ impl ModuleHost {
                 .with_label_values(&self.info.database_identity)
                 .observe(queue_length as f64);
         }
-        // Ensure that we always decrement the gauge.
-        scopeguard::guard((), move |_| {
-            // Decrement the queue length gauge when we're done.
-            // This is done in a defer so that it happens even if the reducer call panics.
-            queue_length_gauge.dec();
-            queue_timer.stop_and_record();
-        })
-    }
-
-    /// Run a function for this module which has access to the module instance.
-    async fn with_instance<Guard, A, R>(
-        &self,
-        label: &str,
-        arg: A,
-        timer: impl FnOnce(&str) -> Guard,
-        work_wasm: impl AsyncFnOnce(Guard, &SingleCoreExecutor, Box<ModuleInstance>, A) -> (R, Box<ModuleInstance>),
-        work_js: impl AsyncFnOnce(Guard, &JsMainInstance, A) -> R,
-    ) -> Result<R, NoSuchModule> {
-        self.guard_closed()?;
-        let timer_guard = timer(label);
-
-        // Operations on module instances (e.g. calling reducers) is blocking,
-        // partially because the computation can potentially take a long time
-        // and partially because interacting with the database requires taking
-        // a blocking lock. So, we run `f` on a dedicated thread with `self.executor`.
-        // This will bubble up any panic that may occur.
-
-        // If a function call panics, we **must** ensure to call `self.on_panic`
-        // so that the module is discarded by the host controller.
-        scopeguard::defer_on_unwind!({
-            log::warn!("module operation {label} panicked");
-            (self.on_panic)();
-        });
-
-        Ok(match &*self.inner {
-            ModuleHostInner::Wasm(wasm) => {
-                let executor = &wasm.executor;
-                let instance_manager = &wasm.instance_manager;
-                instance_manager
-                    .with_instance(async |inst| work_wasm(timer_guard, executor, inst, arg).await)
-                    .await
-            }
-            ModuleHostInner::Js(js) => {
-                js.main_instance
-                    .with_instance(async |inst| work_js(timer_guard, &inst, arg).await)
-                    .await
-            }
-        })
+        CallTimerGuard {
+            queue_timer: Some(queue_timer),
+            queue_length_gauge,
+        }
     }
 
     /// Run a function for this module which has access to the module instance.
     ///
-    /// For WASM, the function is run on the module's JobThread.
-    /// For V8/JS, the function is run in the current task.
+    /// The function is run on the module's worker thread for both WASM and V8.
     async fn call<A, R>(
         &self,
         label: &str,
         arg: A,
-        wasm: impl AsyncFnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
+        wasm: impl FnOnce(A, &mut ModuleInstance) -> R + Send + 'static,
         js: impl AsyncFnOnce(A, &JsMainInstance) -> R,
     ) -> Result<R, NoSuchModule>
     where
         R: Send + 'static,
         A: Send + 'static,
     {
-        self.with_instance(
-            label,
-            arg,
-            |l| self.start_call_timer(l),
-            // Operations on module instances (e.g. calling reducers) is blocking,
-            // partially because the computation can potentially take a long time
-            // and partially because interacting with the database requires taking a blocking lock.
-            // So, we run `work` on a dedicated thread with `self.executor`.
-            // This will bubble up any panic that may occur.
-            async move |timer_guard, executor, mut inst, arg| {
+        self.guard_closed()?;
+        let timer_guard = self.start_call_timer(label);
+
+        scopeguard::defer_on_unwind!({
+            log::warn!("module operation {label} panicked");
+            (self.on_panic)();
+        });
+
+        Ok(match &*self.inner {
+            ModuleHostInner::Wasm(host) => {
+                let executor = host.main_executor.clone();
                 executor
-                    .run_job(async move || {
-                        drop(timer_guard);
-                        (wasm(arg, &mut inst).await, inst)
+                    .run_job(move |state| {
+                        state.with_instance(move |inst| {
+                            drop(timer_guard);
+                            wasm(arg, inst)
+                        })
                     })
                     .await
-            },
-            async move |timer_guard, inst, arg| {
+            }
+            ModuleHostInner::Js(host) => {
                 drop(timer_guard);
-                js(arg, inst).await
-            },
-        )
-        .await
+                host.main_instance
+                    .with_instance(|inst| async move { js(arg, &inst).await })
+                    .await
+            }
+        })
     }
 
     /// Run a function for this module using pooled instances.
     ///
-    /// For WASM, this is identical to [`Self::call`].
-    /// For V8/JS, this uses the pooled procedure instances instead of the
-    /// shared main instance.
+    /// For both WASM and V8/JS, this uses the pooled procedure instances
+    /// instead of the shared main instance.
     async fn call_pooled<A, R>(
         &self,
         label: &str,
@@ -1518,12 +1820,15 @@ impl ModuleHost {
 
         Ok(match &*self.inner {
             ModuleHostInner::Wasm(host) => {
-                host.instance_manager
-                    .with_instance(async |mut inst| {
-                        host.executor
+                let executor = host.procedure_executor.clone();
+                let instance_manager = host.procedure_instances.clone();
+                instance_manager
+                    .with_instance(async move |mut inst| {
+                        executor
                             .run_job(async move || {
                                 drop(timer_guard);
-                                (wasm(arg, &mut inst).await, inst)
+                                let res = wasm(arg, &mut inst).await;
+                                (res, inst)
                             })
                             .await
                     })
@@ -1541,15 +1846,41 @@ impl ModuleHost {
         })
     }
 
-    async fn call_view_command(&self, label: &str, cmd: ViewCommand) -> Result<ViewCommandResult, ViewCallError> {
-        self.call(
-            label,
-            cmd,
-            async |cmd, inst| inst.call_view(cmd),
-            async |cmd, inst| inst.call_view(cmd).await,
-        )
-        .await
-        .map_err(Into::into)
+    async fn enqueue_main_operation<A, JsFut>(
+        &self,
+        panic_kind: &'static str,
+        label: &str,
+        arg: A,
+        js: impl FnOnce(A, JsMainInstance, JsFatalHook) -> JsFut,
+        wasm: impl FnOnce(A, &WasmtimeModuleHost, JsFatalHook, CallTimerGuard) -> Result<(), NoSuchModule>,
+    ) -> Result<(), NoSuchModule>
+    where
+        A: Send + 'static,
+        JsFut: Future<Output = ()> + Send + 'static,
+    {
+        let panic_label = label.to_owned();
+        scopeguard::defer_on_unwind!({
+            log::warn!("{panic_kind} {panic_label} panicked");
+            (self.on_panic)();
+        });
+
+        match &*self.inner {
+            ModuleHostInner::Js(js_host) => {
+                self.guard_closed()?;
+                let on_panic = self.on_panic.clone();
+                js_host
+                    .main_instance
+                    .with_instance(|inst| js(arg, inst, on_panic))
+                    .await;
+                Ok(())
+            }
+            ModuleHostInner::Wasm(wasm_host) => {
+                self.guard_closed()?;
+                let timer_guard = self.start_call_timer(label);
+                let on_panic = self.on_panic.clone();
+                wasm(arg, wasm_host, on_panic, timer_guard)
+            }
+        }
     }
 
     async fn call_view_command_for_websocket(
@@ -1559,30 +1890,32 @@ impl ModuleHost {
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let metric = cmd.metric();
 
-        scopeguard::defer_on_unwind!({
-            log::warn!("websocket view operation {label} panicked");
-            (self.on_panic)();
-        });
-
-        match &*self.inner {
-            ModuleHostInner::Js(js) => {
-                self.guard_closed()
-                    .map_err(|err| DBError::Other(anyhow::anyhow!(err)))?;
-                let on_panic = self.on_panic.clone();
-                js.main_instance
-                    .with_instance(async |inst| inst.enqueue_call_view(cmd, metric, on_panic).await)
-                    .await;
-                Ok(None)
-            }
-            ModuleHostInner::Wasm(_) => {
-                let result = self
-                    .call_view_command(label, cmd)
-                    .await
-                    .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
-                Self::record_view_command_round_trip(&self.info, metric);
-                result
-            }
-        }
+        self.enqueue_main_operation(
+            "websocket view operation",
+            label,
+            (cmd, metric),
+            |(cmd, metric), inst, on_panic| async move { inst.enqueue_call_view(cmd, metric, on_panic).await },
+            move |(cmd, metric), wasm_host, on_panic, timer_guard| {
+                let info = wasm_host.module.info();
+                wasm_host.enqueue_with_main_instance(
+                    label,
+                    on_panic,
+                    timer_guard,
+                    (cmd, metric),
+                    move |(cmd, metric), inst| {
+                        let result = inst.call_view(cmd);
+                        ModuleHost::record_view_command_round_trip(&info, metric);
+                        if let Err(err) = result {
+                            log::warn!("websocket view operation failed: {err:#}");
+                        }
+                    },
+                );
+                Ok(())
+            },
+        )
+        .await
+        .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
+        Ok(None)
     }
 
     pub(in crate::host) fn record_view_command_round_trip(info: &ModuleInfo, metric: ViewCommandMetric) {
@@ -1600,27 +1933,21 @@ impl ModuleHost {
     }
 
     async fn call_sql_command(&self, cmd: SqlCommand) -> Result<SqlCommandResult, DBError> {
-        self.call(
-            "call_sql",
-            cmd,
-            async |cmd, inst| inst.call_sql(cmd),
-            async |cmd, inst| inst.call_sql(cmd).await,
-        )
-        .await
+        call_instance!(self, "call_sql", cmd, |cmd, inst| inst.call_sql(cmd), |cmd, inst| inst
+            .call_sql(cmd)
+            .await,)
         .map_err(|_| DBError::Other(anyhow::anyhow!("no such module")))
     }
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
         log::trace!("disconnecting client {client_id}");
-        if let Err(e) = self
-            .call(
-                "disconnect_client",
-                client_id,
-                async |client_id, inst| inst.disconnect_client(client_id),
-                async |client_id, inst| inst.disconnect_client(client_id).await,
-            )
-            .await
-        {
+        if let Err(e) = call_instance!(
+            self,
+            "disconnect_client",
+            client_id,
+            |client_id, inst| inst.disconnect_client(client_id),
+            |client_id, inst| inst.disconnect_client(client_id).await,
+        ) {
             log::error!("Error from client_disconnected transaction: {e}");
         }
     }
@@ -1661,13 +1988,13 @@ impl ModuleHost {
         caller_auth: ConnectionAuthCtx,
         caller_connection_id: ConnectionId,
     ) -> Result<(), ClientConnectedError> {
-        self.call(
+        call_instance!(
+            self,
             "call_identity_connected",
             (caller_auth, caller_connection_id),
-            async |(a, b), inst| inst.call_identity_connected(a, b),
-            async |(a, b), inst| inst.call_identity_connected(a, b).await,
+            |(a, b), inst| inst.call_identity_connected(a, b),
+            |(a, b), inst| inst.call_identity_connected(a, b).await,
         )
-        .await
         .map_err(ReducerCallError::from)?
     }
 
@@ -1804,24 +2131,24 @@ impl ModuleHost {
         caller_identity: Identity,
         caller_connection_id: ConnectionId,
     ) -> Result<(), ReducerCallError> {
-        self.call(
+        call_instance!(
+            self,
             "call_identity_disconnected",
             (caller_identity, caller_connection_id),
-            async |(a, b), inst| inst.call_identity_disconnected(a, b),
-            async |(a, b), inst| inst.call_identity_disconnected(a, b).await,
-        )
-        .await?
+            |(a, b), inst| inst.call_identity_disconnected(a, b),
+            |(a, b), inst| inst.call_identity_disconnected(a, b).await,
+        )?
     }
 
     /// Empty the system tables tracking clients without running any lifecycle reducers.
     pub async fn clear_all_clients(&self) -> anyhow::Result<()> {
-        self.call(
+        call_instance!(
+            self,
             "clear_all_clients",
             (),
-            async |_, inst| inst.clear_all_clients(),
-            async |_, inst| inst.clear_all_clients().await,
-        )
-        .await?
+            |_, inst| inst.clear_all_clients(),
+            |_, inst| inst.clear_all_clients().await,
+        )?
     }
 
     fn call_reducer_params(
@@ -1892,16 +2219,12 @@ impl ModuleHost {
 
     async fn call_reducer_with_params(
         &self,
-        reducer_def: &ReducerDef,
+        reducer_name: &ReducerName,
         params: CallReducerParams,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        self.call(
-            &reducer_def.name,
-            params,
-            async |p, inst| inst.call_reducer(p),
-            async |p, inst| inst.call_reducer(p).await,
-        )
-        .await
+        call_instance!(self, reducer_name, params, |p, inst| inst.call_reducer(p), |p, inst| {
+            inst.call_reducer(p).await
+        },)
         .map_err(Into::into)
     }
 
@@ -1917,7 +2240,7 @@ impl ModuleHost {
         }
     }
 
-    pub async fn call_reducer(
+    async fn with_reducer_call<R>(
         &self,
         caller_identity: Identity,
         caller_connection_id: Option<ConnectionId>,
@@ -1926,7 +2249,8 @@ impl ModuleHost {
         timer: Option<Instant>,
         reducer_name: &str,
         args: FunctionArgs,
-    ) -> Result<ReducerCallResult, ReducerCallError> {
+        f: impl AsyncFnOnce(PreparedReducerCall) -> Result<R, ReducerCallError>,
+    ) -> Result<R, ReducerCallError> {
         let res = async {
             let (reducer_def, params) = self.reducer_call_params(
                 caller_identity,
@@ -1937,7 +2261,11 @@ impl ModuleHost {
                 reducer_name,
                 args,
             )?;
-            self.call_reducer_with_params(reducer_def, params).await
+            f(PreparedReducerCall {
+                name: reducer_def.name.clone(),
+                params,
+            })
+            .await
         }
         .await;
 
@@ -1946,6 +2274,29 @@ impl ModuleHost {
         }
 
         res
+    }
+
+    pub async fn call_reducer(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        client: Option<Arc<ClientConnectionSender>>,
+        request_id: Option<RequestId>,
+        timer: Option<Instant>,
+        reducer_name: &str,
+        args: FunctionArgs,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
+        self.with_reducer_call(
+            caller_identity,
+            caller_connection_id,
+            client,
+            request_id,
+            timer,
+            reducer_name,
+            args,
+            async |call| self.call_reducer_with_params(&call.name, call.params).await,
+        )
+        .await
     }
 
     pub async fn enqueue_reducer(
@@ -1958,167 +2309,144 @@ impl ModuleHost {
         reducer_name: &str,
         args: FunctionArgs,
     ) -> Result<(), ReducerCallError> {
-        let res = async {
-            let (reducer_def, params) = self.reducer_call_params(
-                caller_identity,
-                caller_connection_id,
-                client,
-                request_id,
-                timer,
-                reducer_name,
-                args,
-            )?;
+        self.with_reducer_call(
+            caller_identity,
+            caller_connection_id,
+            client,
+            request_id,
+            timer,
+            reducer_name,
+            args,
+            async |call| {
+                let reducer_label = call.name;
+                self.enqueue_main_operation(
+                    "websocket reducer operation",
+                    reducer_name,
+                    call.params,
+                    |params, inst, on_panic| async move { inst.enqueue_reducer(params, on_panic).await },
+                    move |params, wasm_host, on_panic, timer_guard| {
+                        wasm_host.enqueue_with_main_instance(
+                            &reducer_label,
+                            on_panic,
+                            timer_guard,
+                            params,
+                            move |params, inst| {
+                                let _ = inst.call_reducer(params);
+                            },
+                        );
+                        Ok(())
+                    },
+                )
+                .await
+                .map_err(Into::into)
+            },
+        )
+        .await
+    }
 
-            scopeguard::defer_on_unwind!({
-                log::warn!("websocket reducer operation {reducer_name} panicked");
-                (self.on_panic)();
-            });
-
-            match &*self.inner {
-                ModuleHostInner::Js(js) => {
-                    self.guard_closed()?;
-                    let on_panic = self.on_panic.clone();
-                    js.main_instance
-                        .with_instance(async |inst| inst.enqueue_reducer(params, on_panic).await)
-                        .await;
-                    Ok(())
-                }
-                ModuleHostInner::Wasm(_) => self.call_reducer_with_params(reducer_def, params).await.map(drop),
-            }
+    call_view_command_method! {
+        pub async fn call_view_add_single_subscription(
+            &self,
+            sender: Arc<ClientConnectionSender>,
+            auth: AuthCtx,
+            request: ws_v1::SubscribeSingle,
+            timer: Instant,
+        ) -> "call_view_add_single_subscription" => AddSingleSubscription {
+            sender,
+            auth,
+            request,
+            _timer: timer,
         }
-        .await;
+    }
 
-        if let Err(err) = &res {
-            self.log_reducer_submit_error(reducer_name, err);
+    call_view_command_method! {
+        pub async fn call_view_add_v2_subscription(
+            &self,
+            sender: Arc<ClientConnectionSender>,
+            auth: AuthCtx,
+            request: ws_v2::Subscribe,
+            timer: Instant,
+        ) -> "call_view_add_multi_subscription" => AddSubscriptionV2 {
+            sender,
+            auth,
+            request,
+            _timer: timer,
         }
-
-        res
     }
 
-    pub async fn call_view_add_single_subscription(
-        &self,
-        sender: Arc<ClientConnectionSender>,
-        auth: AuthCtx,
-        request: ws_v1::SubscribeSingle,
-        timer: Instant,
-    ) -> Result<Option<ExecutionMetrics>, DBError> {
-        let cmd = ViewCommand::AddSingleSubscription {
-            sender,
-            auth,
-            request,
-            _timer: timer,
-        };
-
-        self.call_view_command_for_websocket("call_view_add_single_subscription", cmd)
-            .await
-    }
-
-    pub async fn call_view_add_v2_subscription(
-        &self,
-        sender: Arc<ClientConnectionSender>,
-        auth: AuthCtx,
-        request: ws_v2::Subscribe,
-        timer: Instant,
-    ) -> Result<Option<ExecutionMetrics>, DBError> {
-        let cmd = ViewCommand::AddSubscriptionV2 {
-            sender,
-            auth,
-            request,
-            _timer: timer,
-        };
-
-        self.call_view_command_for_websocket("call_view_add_multi_subscription", cmd)
-            .await
-    }
-
-    pub async fn call_view_remove_single_subscription(
-        &self,
-        sender: Arc<ClientConnectionSender>,
-        auth: AuthCtx,
-        request: ws_v1::Unsubscribe,
-        timer: Instant,
-    ) -> Result<Option<ExecutionMetrics>, DBError> {
-        let cmd = ViewCommand::RemoveSingleSubscription {
+    call_view_command_method! {
+        pub async fn call_view_remove_single_subscription(
+            &self,
+            sender: Arc<ClientConnectionSender>,
+            auth: AuthCtx,
+            request: ws_v1::Unsubscribe,
+            timer: Instant,
+        ) -> "call_view_remove_single_subscription" => RemoveSingleSubscription {
             sender,
             auth,
             request,
             timer,
-        };
-
-        self.call_view_command_for_websocket("call_view_remove_single_subscription", cmd)
-            .await
+        }
     }
 
-    pub async fn call_view_remove_v2_subscription(
-        &self,
-        sender: Arc<ClientConnectionSender>,
-        auth: AuthCtx,
-        request: ws_v2::Unsubscribe,
-        timer: Instant,
-    ) -> Result<Option<ExecutionMetrics>, DBError> {
-        let cmd = ViewCommand::RemoveSubscriptionV2 {
+    call_view_command_method! {
+        pub async fn call_view_remove_v2_subscription(
+            &self,
+            sender: Arc<ClientConnectionSender>,
+            auth: AuthCtx,
+            request: ws_v2::Unsubscribe,
+            timer: Instant,
+        ) -> "call_view_remove_v2_subscription" => RemoveSubscriptionV2 {
             sender,
             auth,
             request,
             timer,
-        };
-
-        self.call_view_command_for_websocket("call_view_remove_v2_subscription", cmd)
-            .await
+        }
     }
 
-    pub async fn call_view_remove_multi_subscription(
-        &self,
-        sender: Arc<ClientConnectionSender>,
-        auth: AuthCtx,
-        request: ws_v1::UnsubscribeMulti,
-        timer: Instant,
-    ) -> Result<Option<ExecutionMetrics>, DBError> {
-        let cmd = ViewCommand::RemoveMultiSubscription {
+    call_view_command_method! {
+        pub async fn call_view_remove_multi_subscription(
+            &self,
+            sender: Arc<ClientConnectionSender>,
+            auth: AuthCtx,
+            request: ws_v1::UnsubscribeMulti,
+            timer: Instant,
+        ) -> "call_view_remove_multi_subscription" => RemoveMultiSubscription {
             sender,
             auth,
             request,
             timer,
-        };
-
-        self.call_view_command_for_websocket("call_view_remove_multi_subscription", cmd)
-            .await
+        }
     }
 
-    pub async fn call_view_add_multi_subscription(
-        &self,
-        sender: Arc<ClientConnectionSender>,
-        auth: AuthCtx,
-        request: ws_v1::SubscribeMulti,
-        timer: Instant,
-    ) -> Result<Option<ExecutionMetrics>, DBError> {
-        let cmd = ViewCommand::AddMultiSubscription {
+    call_view_command_method! {
+        pub async fn call_view_add_multi_subscription(
+            &self,
+            sender: Arc<ClientConnectionSender>,
+            auth: AuthCtx,
+            request: ws_v1::SubscribeMulti,
+            timer: Instant,
+        ) -> "call_view_add_multi_subscription" => AddMultiSubscription {
             sender,
             auth,
             request,
             _timer: timer,
-        };
-
-        self.call_view_command_for_websocket("call_view_add_multi_subscription", cmd)
-            .await
+        }
     }
 
-    pub async fn call_view_add_legacy_subscription(
-        &self,
-        sender: Arc<ClientConnectionSender>,
-        auth: AuthCtx,
-        subscribe: ws_v1::Subscribe,
-        timer: Instant,
-    ) -> Result<Option<ExecutionMetrics>, DBError> {
-        let cmd = ViewCommand::AddLegacySubscription {
+    call_view_command_method! {
+        pub async fn call_view_add_legacy_subscription(
+            &self,
+            sender: Arc<ClientConnectionSender>,
+            auth: AuthCtx,
+            subscribe: ws_v1::Subscribe,
+            timer: Instant,
+        ) -> "call_view_add_legacy_subscription" => AddLegacySubscription {
             sender,
             auth,
             subscribe,
             _timer: timer,
-        };
-
-        self.call_view_command_for_websocket("call_view_add_legacy_subscription", cmd)
-            .await
+        }
     }
 
     pub async fn call_sql(
@@ -2151,21 +2479,15 @@ impl ModuleHost {
         args: FunctionArgs,
     ) -> CallProcedureReturn {
         let res = async {
-            let (procedure_def, params) =
-                self.procedure_call_params(caller_identity, caller_connection_id, timer, procedure_name, args)?;
-            self.call_procedure_with_params(&procedure_def.name, params)
+            let call =
+                self.prepare_procedure_call(caller_identity, caller_connection_id, timer, procedure_name, args)?;
+            self.call_procedure_with_params(&call.name, call.params)
                 .await
                 .map_err(Into::into)
         }
         .await;
 
-        let ret = match res {
-            Ok(ret) => ret,
-            Err(err) => CallProcedureReturn {
-                result: Err(err),
-                tx_offset: None,
-            },
-        };
+        let ret = res.unwrap_or_else(Self::procedure_error_return);
 
         self.log_procedure_validation_result(procedure_name, &ret);
 
@@ -2181,24 +2503,14 @@ impl ModuleHost {
         args: FunctionArgs,
         target: ProcedureResultTarget,
     ) -> Result<(), BroadcastError> {
-        let res = async {
-            let (procedure_def, params) =
-                self.procedure_call_params(caller_identity, caller_connection_id, timer, procedure_name, args)?;
-            Ok((procedure_def.name.to_string(), params))
-        }
-        .await;
-
-        let (procedure_name, params) = match res {
-            Ok(value) => value,
-            Err(err) => {
-                let ret = CallProcedureReturn {
-                    result: Err(err),
-                    tx_offset: None,
-                };
-                self.log_procedure_validation_result(procedure_name, &ret);
-                return self.send_procedure_result(procedure_name, timer, target, ret);
-            }
-        };
+        let PreparedProcedureCall { name, params } =
+            match self.prepare_procedure_call(caller_identity, caller_connection_id, timer, procedure_name, args) {
+                Ok(value) => value,
+                Err(err) => {
+                    return self.send_procedure_error(procedure_name, timer, target, err);
+                }
+            };
+        let procedure_name = name;
 
         let guard_procedure_name = procedure_name.clone();
         scopeguard::defer_on_unwind!({
@@ -2207,12 +2519,7 @@ impl ModuleHost {
         });
 
         if let Err(err) = self.guard_closed() {
-            let ret = CallProcedureReturn {
-                result: Err(err.into()),
-                tx_offset: None,
-            };
-            self.log_procedure_validation_result(&procedure_name, &ret);
-            return self.send_procedure_result(&procedure_name, timer, target, ret);
+            return self.send_procedure_error(&procedure_name, timer, target, err.into());
         }
 
         match &*self.inner {
@@ -2223,8 +2530,8 @@ impl ModuleHost {
                 tokio::spawn(async move {
                     match call.receive().await {
                         JsProcedureCallCompletion::Completed(ret) => {
-                            module.log_procedure_validation_result(&procedure_name, &ret);
-                            if let Err(err) = module.send_procedure_result(&procedure_name, timer, target, ret) {
+                            if let Err(err) = module.log_and_send_procedure_result(&procedure_name, timer, target, ret)
+                            {
                                 log::warn!("failed to send procedure result: {err:#}");
                             }
                         }
@@ -2233,29 +2540,73 @@ impl ModuleHost {
                             (module.on_panic)();
                         }
                     }
-                    module.return_js_procedure_instance(lease).await;
+                    module.return_js_procedure_instance(lease);
                 });
                 Ok(())
             }
-            ModuleHostInner::Wasm(_) => {
-                let ret = match self.call_procedure_with_params(&procedure_name, params).await {
-                    Ok(ret) => ret,
-                    Err(err) => CallProcedureReturn {
-                        result: Err(err.into()),
-                        tx_offset: None,
-                    },
-                };
-                self.log_procedure_validation_result(&procedure_name, &ret);
-                self.send_procedure_result(&procedure_name, timer, target, ret)
+            ModuleHostInner::Wasm(wasm_host) => {
+                let module = self.clone();
+                let procedure_name_for_job = procedure_name.clone();
+                let target_for_job = target.clone();
+                let timer_guard = self.start_call_timer(&procedure_name);
+                let on_panic = self.on_panic.clone();
+                wasm_host
+                    .enqueue_with_procedure_instance(
+                        &procedure_name,
+                        on_panic,
+                        timer_guard,
+                        params,
+                        async move |params, inst| {
+                            let ret = inst.call_procedure(params).await;
+                            if let Err(err) = module.log_and_send_procedure_result(
+                                &procedure_name_for_job,
+                                timer,
+                                target_for_job,
+                                ret,
+                            ) {
+                                log::warn!("Procedure call failed: {err:#}");
+                            }
+                        },
+                    )
+                    .await;
+                Ok(())
             }
         }
     }
 
-    async fn return_js_procedure_instance(&self, lease: ModuleInstanceLease<JsProcedureInstance>) {
+    fn return_js_procedure_instance(&self, lease: ModuleInstanceLease<JsProcedureInstance>) {
         let ModuleHostInner::Js(host) = &*self.inner else {
             return;
         };
-        host.procedure_instances.return_instance(lease).await;
+        host.procedure_instances.return_instance(lease);
+    }
+
+    fn procedure_error_return(err: ProcedureCallError) -> CallProcedureReturn {
+        CallProcedureReturn {
+            result: Err(err),
+            tx_offset: None,
+        }
+    }
+
+    fn send_procedure_error(
+        &self,
+        procedure_name: &str,
+        timer: Option<Instant>,
+        target: ProcedureResultTarget,
+        err: ProcedureCallError,
+    ) -> Result<(), BroadcastError> {
+        self.log_and_send_procedure_result(procedure_name, timer, target, Self::procedure_error_return(err))
+    }
+
+    fn log_and_send_procedure_result(
+        &self,
+        procedure_name: &str,
+        timer: Option<Instant>,
+        target: ProcedureResultTarget,
+        ret: CallProcedureReturn,
+    ) -> Result<(), BroadcastError> {
+        self.log_procedure_validation_result(procedure_name, &ret);
+        self.send_procedure_result(procedure_name, timer, target, ret)
     }
 
     fn log_procedure_validation_result(&self, procedure_name: &str, ret: &CallProcedureReturn) {
@@ -2326,6 +2677,22 @@ impl ModuleHost {
         }
     }
 
+    fn prepare_procedure_call(
+        &self,
+        caller_identity: Identity,
+        caller_connection_id: Option<ConnectionId>,
+        timer: Option<Instant>,
+        procedure_name: &str,
+        args: FunctionArgs,
+    ) -> Result<PreparedProcedureCall, ProcedureCallError> {
+        let (procedure_def, params) =
+            self.procedure_call_params(caller_identity, caller_connection_id, timer, procedure_name, args)?;
+        Ok(PreparedProcedureCall {
+            name: procedure_def.name.to_string(),
+            params,
+        })
+    }
+
     fn procedure_call_params<'a>(
         &'a self,
         caller_identity: Identity,
@@ -2372,26 +2739,26 @@ impl ModuleHost {
         name: &str,
         params: CallProcedureParams,
     ) -> Result<CallProcedureReturn, NoSuchModule> {
-        self.call_pooled(
+        call_pooled_instance!(
+            self,
             name,
             params,
-            async move |params, inst| inst.call_procedure(params).await,
-            async move |params, inst| inst.call_procedure(params).await,
+            |params, inst| inst.call_procedure(params).await,
+            |params, inst| inst.call_procedure(params).await,
         )
-        .await
     }
 
     pub(super) async fn call_scheduled_reducer(
         &self,
         params: ScheduledFunctionParams,
     ) -> Result<CallScheduledFunctionResult, CallScheduledFunctionError> {
-        self.call(
+        call_instance!(
+            self,
             "scheduled reducer",
             params,
-            async move |params, inst| inst.call_scheduled_function(params).await,
-            async move |params, inst| inst.call_scheduled_reducer(params).await,
+            |params, inst| inst.call_scheduled_reducer(params),
+            |params, inst| inst.call_scheduled_reducer(params).await,
         )
-        .await
         .map_err(Into::into)
     }
 
@@ -2399,13 +2766,13 @@ impl ModuleHost {
         &self,
         params: ScheduledFunctionParams,
     ) -> Result<CallScheduledFunctionResult, CallScheduledFunctionError> {
-        self.call_pooled(
+        call_pooled_instance!(
+            self,
             "scheduled procedure",
             params,
-            async move |params, inst| inst.call_scheduled_function(params).await,
-            async move |params, inst| inst.call_scheduled_procedure(params).await,
+            |params, inst| inst.call_scheduled_procedure(params).await,
+            |params, inst| inst.call_scheduled_procedure(params).await,
         )
-        .await
         .map_err(Into::into)
     }
 
@@ -2621,13 +2988,13 @@ impl ModuleHost {
     }
 
     pub async fn init_database(&self, program: Program) -> Result<Option<ReducerCallResult>, InitDatabaseError> {
-        self.call(
+        call_instance!(
+            self,
             "<init_database>",
             program,
-            async |p, inst| inst.init_database(p),
-            async |p, inst| inst.init_database(p).await,
-        )
-        .await?
+            |p, inst| inst.init_database(p),
+            |p, inst| inst.init_database(p).await,
+        )?
         .map_err(InitDatabaseError::Other)
     }
 
@@ -2637,13 +3004,13 @@ impl ModuleHost {
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
-        self.call(
+        call_instance!(
+            self,
             "<update_database>",
             (program, old_module_info, policy),
-            async |(a, b, c), inst| inst.update_database(a, b, c),
-            async |(a, b, c), inst| inst.update_database(a, b, c).await,
-        )
-        .await?
+            |(a, b, c), inst| inst.update_database(a, b, c),
+            |(a, b, c), inst| inst.update_database(a, b, c).await,
+        )?
     }
 
     pub async fn exit(&self) {
@@ -2690,7 +3057,7 @@ impl ModuleHost {
             timer,
         };
         log::debug!("One-off query: {}", params.query);
-        self.one_off_query_json_with_params(params).await
+        self.one_off_query_with_params(OneOffQueryRequest::Json(params)).await
     }
 
     /// Execute a BSATN one-off query and send the results to the given client.
@@ -2717,72 +3084,39 @@ impl ModuleHost {
             rlb_pool,
         };
         log::debug!("One-off query: {}", params.query);
-        self.one_off_query_bsatn_with_params(params).await
+        self.one_off_query_with_params(OneOffQueryRequest::Bsatn(params)).await
     }
 
-    async fn one_off_query_for_websocket<P, Fut>(
-        &self,
-        label: &'static str,
-        params: P,
-        timer: Instant,
-        run_inner: impl FnOnce(P) -> OneOffQueryResult + Send + 'static,
-        enqueue_js: impl FnOnce(P, JsMainInstance, JsFatalHook) -> Fut + Send + 'static,
-    ) -> Result<(), anyhow::Error>
-    where
-        P: Send + 'static,
-        Fut: Future<Output = ()> + Send + 'static,
-    {
-        scopeguard::defer_on_unwind!({
-            log::warn!("websocket one-off query operation {label} panicked");
-            (self.on_panic)();
-        });
+    async fn one_off_query_with_params(&self, request: OneOffQueryRequest) -> Result<(), anyhow::Error> {
+        let label = request.label();
+        self.enqueue_main_operation(
+            "websocket one-off query operation",
+            label,
+            request,
+            |request, inst, on_panic| async move { inst.enqueue_one_off_query(request, on_panic).await },
+            move |request, wasm_host, on_panic, timer_guard| {
+                let executor = wasm_host.main_executor.clone();
+                let info = wasm_host.module.info();
+                let label = label.to_owned();
+                executor.enqueue_job(move |_| {
+                    scopeguard::defer_on_unwind!({
+                        log::warn!("websocket one-off query operation {label} panicked");
+                        on_panic();
+                    });
 
-        match &*self.inner {
-            ModuleHostInner::Js(js) => {
-                self.guard_closed()?;
-                let on_panic = self.on_panic.clone();
-                js.main_instance
-                    .with_instance(async |inst| enqueue_js(params, inst, on_panic).await)
-                    .await;
+                    drop(timer_guard);
+                    let timer = request.timer();
+                    let res = request.run();
+                    if let Err(err) = &res {
+                        log::warn!("detached one-off query failed: {err:#}");
+                    }
+                    ModuleHost::record_one_off_query_round_trip(&info, timer);
+                });
                 Ok(())
-            }
-            ModuleHostInner::Wasm(_) => {
-                let result = self
-                    .call(
-                        label,
-                        params,
-                        async move |params, _inst| run_inner(params),
-                        async |_, _| unreachable!("one-off query JS path is handled before Self::call"),
-                    )
-                    .await?;
-                Self::record_one_off_query_round_trip(&self.info, timer);
-                result.map(|_| ())
-            }
-        }
-    }
-
-    async fn one_off_query_json_with_params(&self, params: OneOffQueryJsonParams) -> Result<(), anyhow::Error> {
-        let timer = params.timer;
-        self.one_off_query_for_websocket(
-            "one_off_query_json",
-            params,
-            timer,
-            Self::one_off_query_json_inner,
-            |params, inst, on_panic| async move { inst.enqueue_one_off_query_json(params, on_panic).await },
+            },
         )
-        .await
-    }
-
-    async fn one_off_query_bsatn_with_params(&self, params: OneOffQueryBsatnParams) -> Result<(), anyhow::Error> {
-        let timer = params.timer;
-        self.one_off_query_for_websocket(
-            "one_off_query_bsatn",
-            params,
-            timer,
-            Self::one_off_query_bsatn_inner,
-            |params, inst, on_panic| async move { inst.enqueue_one_off_query_bsatn(params, on_panic).await },
-        )
-        .await
+        .await?;
+        Ok(())
     }
 
     pub(in crate::host) fn one_off_query_json_inner(params: OneOffQueryJsonParams) -> OneOffQueryResult {
@@ -2832,6 +3166,71 @@ impl ModuleHost {
         )
     }
 
+    fn execute_one_off_query<F: BuildableWebsocketFormat, R>(
+        db: &RelationalDB,
+        tx: &Tx,
+        auth: &AuthCtx,
+        query: &str,
+        rlb_pool: &impl RowListBuilderSource<F>,
+        into_rows: impl FnOnce(RawIdentifier, F::List) -> R,
+    ) -> Result<(R, ExecutionMetrics), anyhow::Error> {
+        let schema_tx = SchemaViewer::new(tx, auth);
+
+        let (
+            // A query may compile down to several plans.
+            // This happens when there are multiple RLS rules per table.
+            // The original query is the union of these plans.
+            plans,
+            _,
+            table_name,
+            _,
+        ) = compile_subscription(query, &schema_tx, auth)?;
+
+        // Optimize each fragment.
+        let optimized = plans
+            .into_iter()
+            .map(|plan| plan.optimize(auth))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        check_row_limit(
+            &optimized,
+            db,
+            tx,
+            // Estimate the number of rows this query will scan.
+            |plan, tx| estimate_rows_scanned(tx, plan),
+            auth,
+        )?;
+
+        let return_table = || optimized.first().and_then(|plan| plan.return_table());
+
+        let returns_view_table = optimized.first().is_some_and(|plan| plan.returns_view_table());
+        let num_cols = return_table().map(|schema| schema.num_cols()).unwrap_or_default();
+        let num_private_cols = return_table()
+            .map(|schema| schema.num_private_cols())
+            .unwrap_or_default();
+
+        let optimized = optimized
+            .into_iter()
+            // Convert into something we can execute.
+            .map(PipelinedProject::from)
+            .collect::<Vec<_>>();
+
+        let table_name = table_name.into();
+        let delta_tx = DeltaTx::from(tx);
+        let (rows, _, metrics) = if returns_view_table && num_private_cols > 0 {
+            let optimized = optimized
+                .into_iter()
+                .map(|plan| ViewProject::new(plan, num_cols, num_private_cols))
+                .collect::<Vec<_>>();
+            execute_plan_for_view::<F>(&optimized, &delta_tx, rlb_pool)
+        } else {
+            execute_plan::<F>(&optimized, &delta_tx, rlb_pool)
+        }
+        .context("One-off queries are not allowed to modify the database")?;
+
+        Ok((into_rows(table_name, rows), metrics))
+    }
+
     fn one_off_query_v1_inner<F: BuildableWebsocketFormat>(
         db: Arc<RelationalDB>,
         subscriptions: ModuleSubscriptions,
@@ -2851,68 +3250,9 @@ impl ModuleHost {
             db.report_read_tx_metrics(reducer, tx_metrics);
         });
 
-        // We wrap the actual query in a closure so we can use ? to handle errors without making
-        // the entire transaction abort with an error.
-        let result: Result<(ws_v1::OneOffTable<F>, ExecutionMetrics), anyhow::Error> = (|| {
-            let tx = SchemaViewer::new(&*tx, &auth);
-
-            let (
-                // A query may compile down to several plans.
-                // This happens when there are multiple RLS rules per table.
-                // The original query is the union of these plans.
-                plans,
-                _,
-                table_name,
-                _,
-            ) = compile_subscription(&query, &tx, &auth)?;
-
-            // Optimize each fragment
-            let optimized = plans
-                .into_iter()
-                .map(|plan| plan.optimize(&auth))
-                .collect::<Result<Vec<_>, _>>()?;
-
-            check_row_limit(
-                &optimized,
-                &db,
-                &tx,
-                // Estimate the number of rows this query will scan
-                |plan, tx| estimate_rows_scanned(tx, plan),
-                &auth,
-            )?;
-
-            let return_table = || optimized.first().and_then(|plan| plan.return_table());
-
-            let returns_view_table = optimized.first().is_some_and(|plan| plan.returns_view_table());
-            let num_cols = return_table().map(|schema| schema.num_cols()).unwrap_or_default();
-            let num_private_cols = return_table()
-                .map(|schema| schema.num_private_cols())
-                .unwrap_or_default();
-
-            let optimized = optimized
-                .into_iter()
-                // Convert into something we can execute
-                .map(PipelinedProject::from)
-                .collect::<Vec<_>>();
-
-            let table_name = table_name.into();
-
-            if returns_view_table && num_private_cols > 0 {
-                let optimized = optimized
-                    .into_iter()
-                    .map(|plan| ViewProject::new(plan, num_cols, num_private_cols))
-                    .collect::<Vec<_>>();
-                // Execute the union and return the results
-                return execute_plan_for_view::<F>(&optimized, &DeltaTx::from(&*tx), &rlb_pool)
-                    .map(|(rows, _, metrics)| (ws_v1::OneOffTable { table_name, rows }, metrics))
-                    .context("One-off queries are not allowed to modify the database");
-            }
-
-            // Execute the union and return the results
-            execute_plan::<F>(&optimized, &DeltaTx::from(&*tx), &rlb_pool)
-                .map(|(rows, _, metrics)| (ws_v1::OneOffTable { table_name, rows }, metrics))
-                .context("One-off queries are not allowed to modify the database")
-        })();
+        let result = Self::execute_one_off_query(&db, &tx, &auth, &query, &rlb_pool, |table_name, rows| {
+            ws_v1::OneOffTable { table_name, rows }
+        });
 
         let total_host_execution_duration = timer.elapsed().into();
         let (message, metrics): (SerializableMessage, Option<ExecutionMetrics>) = match result {
@@ -2968,15 +3308,7 @@ impl ModuleHost {
             rlb_pool,
         };
         log::debug!("One-off query: {}", params.query);
-        let timer = params.timer;
-        self.one_off_query_for_websocket(
-            "one_off_query_v2",
-            params,
-            timer,
-            Self::one_off_query_v2_inner,
-            |params, inst, on_panic| async move { inst.enqueue_one_off_query_v2(params, on_panic).await },
-        )
-        .await
+        self.one_off_query_with_params(OneOffQueryRequest::V2(params)).await
     }
 
     pub(in crate::host) fn one_off_query_v2_inner(params: OneOffQueryV2Params) -> OneOffQueryResult {
@@ -2997,60 +3329,10 @@ impl ModuleHost {
             db.report_read_tx_metrics(reducer, tx_metrics);
         });
 
-        let result: Result<(ws_v2::SingleTableRows, ExecutionMetrics), anyhow::Error> = (|| {
-            let tx = SchemaViewer::new(&*tx, &auth);
-
-            let (plans, _, table_name, _) = compile_subscription(&query, &tx, &auth)?;
-
-            let optimized = plans
-                .into_iter()
-                .map(|plan| plan.optimize(&auth))
-                .collect::<Result<Vec<_>, _>>()?;
-
-            check_row_limit(&optimized, &db, &tx, |plan, tx| estimate_rows_scanned(tx, plan), &auth)?;
-
-            let return_table = || optimized.first().and_then(|plan| plan.return_table());
-
-            let returns_view_table = optimized.first().is_some_and(|plan| plan.returns_view_table());
-            let num_cols = return_table().map(|schema| schema.num_cols()).unwrap_or_default();
-            let num_private_cols = return_table()
-                .map(|schema| schema.num_private_cols())
-                .unwrap_or_default();
-
-            let optimized = optimized.into_iter().map(PipelinedProject::from).collect::<Vec<_>>();
-
-            let table_name = table_name.into();
-
-            if returns_view_table && num_private_cols > 0 {
-                let optimized = optimized
-                    .into_iter()
-                    .map(|plan| ViewProject::new(plan, num_cols, num_private_cols))
-                    .collect::<Vec<_>>();
-                return execute_plan_for_view::<ws_v1::BsatnFormat>(&optimized, &DeltaTx::from(&*tx), &rlb_pool)
-                    .map(|(rows, _, metrics)| {
-                        (
-                            ws_v2::SingleTableRows {
-                                table: table_name,
-                                rows,
-                            },
-                            metrics,
-                        )
-                    })
-                    .context("One-off queries are not allowed to modify the database");
-            }
-
-            execute_plan::<ws_v1::BsatnFormat>(&optimized, &DeltaTx::from(&*tx), &rlb_pool)
-                .map(|(rows, _, metrics)| {
-                    (
-                        ws_v2::SingleTableRows {
-                            table: table_name,
-                            rows,
-                        },
-                        metrics,
-                    )
-                })
-                .context("One-off queries are not allowed to modify the database")
-        })();
+        let result =
+            Self::execute_one_off_query::<ws_v1::BsatnFormat, _>(&db, &tx, &auth, &query, &rlb_pool, |table, rows| {
+                ws_v2::SingleTableRows { table, rows }
+            });
 
         let (message, metrics) = match result {
             Ok((rows, metrics)) => {
@@ -3131,14 +3413,14 @@ impl ModuleHost {
 
     pub(crate) fn replica_ctx(&self) -> &ReplicaContext {
         match &*self.inner {
-            ModuleHostInner::Wasm(wasm) => wasm.instance_manager.module.replica_ctx(),
+            ModuleHostInner::Wasm(wasm) => wasm.module.replica_ctx(),
             ModuleHostInner::Js(js) => js.module.replica_ctx(),
         }
     }
 
     fn scheduler(&self) -> &Scheduler {
         match &*self.inner {
-            ModuleHostInner::Wasm(wasm) => wasm.instance_manager.module.scheduler(),
+            ModuleHostInner::Wasm(wasm) => wasm.module.scheduler(),
             ModuleHostInner::Js(js) => js.module.scheduler(),
         }
     }

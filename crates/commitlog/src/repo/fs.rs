@@ -1,17 +1,17 @@
 use std::fmt;
 use std::fs::{self, File};
-use std::io;
+use std::io::{self, Seek};
 use std::sync::Arc;
 
 use log::{debug, warn};
-use spacetimedb_fs_utils::compression::{compress_with_zstd, CompressReader};
+use spacetimedb_fs_utils::compression::{CompressReader, CompressionStats};
 use spacetimedb_fs_utils::lockfile;
 use spacetimedb_paths::server::{CommitLogDir, SegmentFile};
 use tempfile::NamedTempFile;
 
-use crate::segment::{self, FileLike};
-
 use super::{Repo, SegmentLen, SegmentReader, TxOffset, TxOffsetIndex, TxOffsetIndexMut};
+use crate::repo::CompressOnce;
+use crate::segment::{self, FileLike};
 
 const SEGMENT_FILE_EXT: &str = ".stdb.log";
 
@@ -277,7 +277,7 @@ impl Repo for Fs {
         // The segment file either does not exist, or is of length zero.
         // Write the header to a temporary file and atomically move it into place.
         let mut tmp = tempfile::Builder::new().make_in(&self.root.0, |tmp_path| {
-            File::options().read(true).append(true).create_new(true).open(tmp_path)
+            File::options().read(true).write(true).create_new(true).open(tmp_path)
         })?;
         header.write(&mut tmp)?;
         tmp.as_file_mut().sync_all()?;
@@ -292,7 +292,11 @@ impl Repo for Fs {
     }
 
     fn open_segment_writer(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
-        File::options().read(true).append(true).open(self.segment_path(offset))
+        // NOTE: We previously used `O_APPEND`, but Windows demands `write(true)`
+        // so that we can truncate trailing garbage in [super::resume_segment_writer].
+        let mut file = File::options().read(true).write(true).open(self.segment_path(offset))?;
+        file.seek(io::SeekFrom::End(0))?;
+        Ok(file)
     }
 
     fn segment_file_path(&self, offset: u64) -> Option<String> {
@@ -317,21 +321,18 @@ impl Repo for Fs {
         fs::remove_file(self.segment_path(offset))
     }
 
-    fn compress_segment(&self, offset: u64) -> io::Result<()> {
+    fn compress_segment_with(&self, offset: u64, f: impl CompressOnce) -> io::Result<CompressionStats> {
         let src = self.open_segment_reader(offset)?;
         // if it's already compressed, leave it be
         let CompressReader::None(mut src) = src.inner else {
-            return Ok(());
+            return Ok(<_>::default());
         };
 
         let mut dst = NamedTempFile::new_in(&self.root)?;
-        // bytes per frame. in the future, it might be worth looking into putting
-        // every commit into its own frame, to make seeking more efficient.
-        let max_frame_size = 0x1000;
-        compress_with_zstd(&mut src, &mut dst, Some(max_frame_size))?;
+        let stats = f.compress(&mut src, &mut dst)?;
         dst.persist(self.segment_path(offset))?;
 
-        Ok(())
+        Ok(stats)
     }
 
     fn existing_offsets(&self) -> io::Result<Vec<u64>> {

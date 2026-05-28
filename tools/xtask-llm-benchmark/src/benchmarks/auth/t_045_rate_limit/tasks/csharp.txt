@@ -1,0 +1,25 @@
+Write a SpacetimeDB backend module in C# that enforces per-identity rate limiting.
+
+TABLES
+- RateLimit
+  - Struct: RateLimit
+  - private table
+  - Fields:
+    - Identity: Identity (primary key)
+    - LastCallUs: ulong  (microsecond timestamp of the last allowed call)
+
+- ActionLog
+  - Struct: ActionLog
+  - public table
+  - Fields:
+    - Id: ulong (primary key, AutoInc)
+    - Identity: Identity
+    - Payload: string
+
+REDUCERS
+- LimitedAction(ctx, string payload)
+  - Get the current time in microseconds: ctx.Timestamp.ToUnixTimeMilliseconds() * 1000
+  - Look up the RateLimit row for ctx.Sender
+  - If a row exists and (now - LastCallUs) < 1_000_000, throw exception with "rate limited"
+  - Insert or update the RateLimit row with LastCallUs = now
+  - Insert an ActionLog row with Identity = ctx.Sender and the given Payload, Id = 0 for AutoInc

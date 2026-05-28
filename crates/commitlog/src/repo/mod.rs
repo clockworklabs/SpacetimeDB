@@ -4,9 +4,11 @@ use std::{
 };
 
 use log::{debug, warn};
+use spacetimedb_fs_utils::compression::Zstd;
+pub use spacetimedb_fs_utils::compression::{CompressOnce, CompressionStats};
 
 use crate::{
-    commit::Commit,
+    commit::{self, Commit},
     error,
     index::{IndexFile, IndexFileMut},
     segment::{self, FileLike, Header, Metadata, OffsetIndexWriter, Reader, Writer},
@@ -121,7 +123,13 @@ pub trait Repo: Clone + fmt::Display {
     fn remove_segment(&self, offset: u64) -> io::Result<()>;
 
     /// Compress a segment in storage, marking it as immutable.
-    fn compress_segment(&self, offset: u64) -> io::Result<()>;
+    fn compress_segment(&self, offset: u64) -> io::Result<CompressionStats> {
+        self.compress_segment_with(offset, segment_compressor())
+    }
+
+    /// Compress a segment using a supplied [CompressOnce], marking it as
+    /// immutable.
+    fn compress_segment_with(&self, offset: u64, f: impl CompressOnce) -> io::Result<CompressionStats>;
 
     /// Traverse all segments in this repository and return list of their
     /// offsets, sorted in ascending order.
@@ -144,6 +152,18 @@ pub trait Repo: Clone + fmt::Display {
     }
 }
 
+/// Marker for repos that do not require an external lock file.
+///
+/// Durability implementations can use this to expose repo-backed opening
+/// only for storage backends where skipping the filesystem `db.lock` cannot
+/// violate single-writer safety.
+pub trait RepoWithoutLockFile: Repo {}
+
+impl<T: RepoWithoutLockFile> RepoWithoutLockFile for &T {}
+
+#[cfg(any(test, feature = "test"))]
+impl RepoWithoutLockFile for Memory {}
+
 impl<T: Repo> Repo for &T {
     type SegmentWriter = T::SegmentWriter;
     type SegmentReader = T::SegmentReader;
@@ -164,8 +184,8 @@ impl<T: Repo> Repo for &T {
         T::remove_segment(self, offset)
     }
 
-    fn compress_segment(&self, offset: u64) -> io::Result<()> {
-        T::compress_segment(self, offset)
+    fn compress_segment_with(&self, offset: u64, f: impl CompressOnce) -> io::Result<CompressionStats> {
+        T::compress_segment_with(self, offset, f)
     }
 
     fn existing_offsets(&self) -> io::Result<Vec<u64>> {
@@ -355,16 +375,24 @@ pub fn resume_segment_writer<R: Repo>(
     if reader.sealed() {
         Ok(ResumedSegment::Sealed(meta))
     } else {
-        let Metadata {
-            header: _,
-            tx_range,
-            size_in_bytes,
-            max_epoch,
-            max_commit_offset: _,
-            max_commit: _,
-        } = meta;
         let mut writer = repo.open_segment_writer(offset)?;
+        // Ensure that the segment's size is exactly what we determined.
+        //
+        // When `Metadata` encounters EOF, it could be that there actually are
+        // trailing bytes in the segment, but less than the commit header
+        // length. This is difficult to detect due to the use of `read_exact`,
+        // so ensure we remove any trailing bytes.
+        //
+        // To be extra cautious, check that no more than the header length
+        // bytes are left over before truncating the segment. This is an assert
+        // because it would be a bug in `Metadata::extract`.
+        assert!(
+            writer.segment_len()? < meta.size_in_bytes + commit::Header::LEN as u64,
+            "{repo}: trailing bytes exceed commit header length in segment {offset}"
+        );
+        writer.ftruncate(meta.tx_range.end, meta.size_in_bytes)?;
         // Ensure we have enough space for this segment.
+        //
         // The segment could have been created without the `fallocate` feature
         // enabled, so we call this here again to ensure writes can't fail due
         // to ENOSPC.
@@ -374,15 +402,15 @@ pub fn resume_segment_writer<R: Repo>(
 
         Ok(ResumedSegment::Resumed(Writer {
             commit: Commit {
-                min_tx_offset: tx_range.end,
+                min_tx_offset: meta.tx_range.end,
                 n: 0,
                 records: Vec::new(),
-                epoch: max_epoch,
+                epoch: meta.max_epoch,
             },
             inner: io::BufWriter::new(writer),
 
-            min_tx_offset: tx_range.start,
-            bytes_written: size_in_bytes,
+            min_tx_offset: meta.tx_range.start,
+            bytes_written: meta.size_in_bytes,
 
             offset_index_head: create_offset_index_writer(repo, offset, opts),
         }))
@@ -406,6 +434,17 @@ pub fn open_segment_reader<R: Repo>(
         .map_err(|source| with_segment_context("opening segment for read", repo, offset, source))?;
     Reader::new(max_log_format_version, offset, storage)
         .map_err(|source| with_segment_context("reading segment header", repo, offset, source))
+}
+
+/// Obtain the canonical [CompressOnce] compressor for segments.
+///
+/// The compressor will create seekable [Zstd] archives with a max frame size
+/// of 4KiB. That is, seeking to an arbitrary byte offset (of the uncompressed
+/// segment) within the archive will decompress 4KiB of data on average.
+pub fn segment_compressor() -> Zstd {
+    Zstd {
+        max_frame_size: Some(0x1000),
+    }
 }
 
 fn segment_label<R: Repo>(repo: &R, offset: u64) -> String {

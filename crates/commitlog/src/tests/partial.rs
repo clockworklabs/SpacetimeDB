@@ -8,6 +8,7 @@ use std::{
 
 use log::{debug, info};
 use pretty_assertions::assert_matches;
+use spacetimedb_fs_utils::compression::CompressionStats;
 
 use crate::{
     commitlog, payload,
@@ -295,8 +296,8 @@ impl Repo for ShortMem {
         self.inner.remove_segment(offset)
     }
 
-    fn compress_segment(&self, offset: u64) -> io::Result<()> {
-        self.inner.compress_segment(offset)
+    fn compress_segment_with(&self, offset: u64, f: impl repo::CompressOnce) -> io::Result<CompressionStats> {
+        self.inner.compress_segment_with(offset, f)
     }
 
     fn existing_offsets(&self) -> io::Result<Vec<u64>> {

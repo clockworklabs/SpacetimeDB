@@ -50,29 +50,25 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
             let json =
                 r#"{"CallReducer": {"reducer": "add", "args": "[\"Tyrion\", 24]", "request_id": 0, "flags": 0 }}"#
                     .to_string();
-            module.send(json).await.unwrap();
+            module.send_reducer_and_recv_update(json, 0).await.unwrap();
 
             let json =
                 r#"{"CallReducer": {"reducer": "add", "args": "[\"Cersei\", 31]", "request_id": 1, "flags": 0 }}"#
                     .to_string();
-            module.send(json).await.unwrap();
+            module.send_reducer_and_recv_update(json, 1).await.unwrap();
 
             let json =
                 r#"{"CallReducer": {"reducer": "say_hello", "args": "[]", "request_id": 2, "flags": 0 }}"#.to_string();
-            module.send(json).await.unwrap();
+            module.send_reducer_and_recv_update(json, 2).await.unwrap();
 
             let json = r#"{"CallReducer": {"reducer": "list_over_age", "args": "[30]", "request_id": 3, "flags": 0 }}"#
                 .to_string();
-            module.send(json).await.unwrap();
+            module.send_reducer_and_recv_update(json, 3).await.unwrap();
 
             let json =
                 r#"{"CallReducer": {"reducer": "log_module_identity", "args": "[]", "request_id": 4, "flags": 0 }}"#
                     .to_string();
-            module.send(json).await.unwrap();
-
-            for request_id in 0..=4 {
-                module.recv_reducer_update(request_id).await.unwrap();
-            }
+            module.send_reducer_and_recv_update(json, 4).await.unwrap();
 
             assert_eq!(
                 read_logs(&module).await,
@@ -325,7 +321,7 @@ fn test_call_query_macro_with_caller<F: Future<Output = ModuleHandle>>(caller: i
 #[serial]
 fn test_call_query_macro() {
     // Hand-written JSON. This will fail if the JSON encoding of `ClientMessage` changes.
-    test_call_query_macro_with_caller(|module| async move {
+    test_call_query_macro_with_caller(|mut module| async move {
         // Note that JSON doesn't allow multiline strings, so the encoded args string must be on one line!
         let json = r#"
 { "CallReducer": {
@@ -336,7 +332,7 @@ fn test_call_query_macro() {
   "flags": 0
 	} }"#
             .to_string();
-        module.send(json).await.unwrap();
+        module.send_reducer_and_recv_update(json, 0).await.unwrap();
         module
     });
 
