@@ -1497,7 +1497,15 @@ impl FileOrDirPath<'_> {
             return Ok(());
         }
         let (Self::File(path) | Self::Dir(path)) = self;
-        File::open(path)
+        File::options()
+            .read(true)
+            // Windows needs the file to be writable for `sync_all` to work.
+            // Set all the open options explicitly, just for visibility.
+            .write(true)
+            .truncate(false)
+            .create(false)
+            .append(false)
+            .open(path)
             .and_then(|fd| fd.sync_all())
             .map_err(|e| io::Error::new(e.kind(), format!("failed to fsync {}: {}", path.display(), e)))
     }
