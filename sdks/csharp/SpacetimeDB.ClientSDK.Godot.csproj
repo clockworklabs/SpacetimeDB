@@ -16,10 +16,10 @@
     <PackageIcon>logo.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk</RepositoryUrl>
-    <AssemblyVersion>2.2.0</AssemblyVersion>
-    <Version>2.2.0</Version>
+    <AssemblyVersion>2.3.0</AssemblyVersion>
+    <Version>2.3.0</Version>
     <DefaultItemExcludes>$(DefaultItemExcludes);*~/**</DefaultItemExcludes>
-    <RestorePackagesPath>packages</RestorePackagesPath>
+    <RestorePackagesPath>obj~/godot/packages</RestorePackagesPath>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
     <DefineConstants>$(DefineConstants);GODOT</DefineConstants>
     <!-- Godot.NET.Sdk defaults to .godot/mono/temp; build this package like the regular C# SDK. -->
@@ -31,7 +31,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SpacetimeDB.BSATN.Runtime" Version="2.2.*" />
+    <PackageReference Include="SpacetimeDB.BSATN.Runtime" Version="2.3.*" />
   </ItemGroup>
 
   <ItemGroup>

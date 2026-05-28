@@ -116,6 +116,14 @@ fn clear_restored_package_dirs(pkg_id: &str) -> Result<()> {
     Ok(())
 }
 
+fn clear_godot_regen_dir() -> Result<()> {
+    let godot_obj_dir = sdk_dir().join("obj~/godot");
+    if godot_obj_dir.exists() {
+        fs::remove_dir_all(&godot_obj_dir)?;
+    }
+    Ok(())
+}
+
 fn find_only_subdir(dir: &Path) -> Result<PathBuf> {
     let mut subdirs = vec![];
 
@@ -209,6 +217,13 @@ pub fn regen_dlls() -> Result<()> {
     clear_restored_package_dirs(BSATN_PACKAGE_ID)?;
     clear_restored_package_dirs(RUNTIME_PACKAGE_ID)?;
 
+    // Some Unity runners have had partially restored GodotSharp package state in the past.
+    // Godot restores packages under obj~/godot/packages, so clearing obj~/godot removes
+    // both intermediates and Godot-only packages without touching Unity-visible packages.
+    // This prevents NuGet from reusing assets missing GodotSharp.dll.
+    // See https://github.com/clockworklabs/SpacetimeDB/pull/5133 for more details.
+    clear_godot_regen_dir()?;
+
     cmd!(
         "dotnet",
         "restore",
@@ -229,6 +244,7 @@ pub fn regen_dlls() -> Result<()> {
         "-p:BaseOutputPath=bin~/",
         "-p:BaseIntermediateOutputPath=obj~/godot/",
         "-p:MSBuildProjectExtensionsPath=obj~/godot/",
+        "-p:RestorePackagesPath=obj~/godot/packages",
     )
     .dir(&sdk)
     .run()?;
@@ -257,7 +273,8 @@ pub fn regen_dlls() -> Result<()> {
         "-p:BaseOutputPath=bin~/",
         // TODO: It should be possible to put this in Directory.Build.props, but it caused CI failures when we did.
         "-p:BaseIntermediateOutputPath=obj~/godot/",
-        "-p:MSBuildProjectExtensionsPath=obj~/godot/"
+        "-p:MSBuildProjectExtensionsPath=obj~/godot/",
+        "-p:RestorePackagesPath=obj~/godot/packages",
     )
     .dir(&sdk)
     .run()?;
