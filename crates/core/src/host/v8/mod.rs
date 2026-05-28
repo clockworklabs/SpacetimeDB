@@ -1100,9 +1100,7 @@ fn adjust_gauge(gauge: &IntGauge, delta: i64) {
     }
 }
 
-fn sample_heap_stats(scope: &mut PinScope<'_, '_>, metrics: &mut V8HeapMetrics) -> v8::HeapStatistics {
-    // Whenever we sample heap statistics, we cache them on the isolate so that
-    // the per-call execution stats can avoid querying them on each invocation.
+fn record_heap_stats(scope: &mut PinScope<'_, '_>, metrics: &mut V8HeapMetrics) -> v8::HeapStatistics {
     let stats = scope.get_heap_statistics();
     metrics.observe(&stats);
     stats
@@ -1127,14 +1125,14 @@ fn should_retire_worker_for_heap(
     metrics: &mut V8HeapMetrics,
     config: V8HeapPolicyConfig,
 ) -> Option<(usize, usize)> {
-    let stats = sample_heap_stats(scope, metrics);
+    let stats = record_heap_stats(scope, metrics);
     let (used, limit) = heap_usage(&stats);
     if !heap_fraction_at_or_above(used, limit, config.heap_gc_trigger_fraction) {
         return None;
     }
 
     scope.low_memory_notification();
-    let stats = sample_heap_stats(scope, metrics);
+    let stats = record_heap_stats(scope, metrics);
     let (used, limit) = heap_usage(&stats);
     if heap_fraction_at_or_above(used, limit, config.heap_retire_fraction) {
         Some((used, limit))
@@ -1666,7 +1664,7 @@ where
                         .with_label_values(&info.database_identity),
                     initial_heap_limit: heap_policy.heap_limit_bytes,
                 };
-                let _initial_heap_stats = sample_heap_stats(inst.scope, &mut heap_metrics);
+                let _initial_heap_stats = record_heap_stats(inst.scope, &mut heap_metrics);
 
                 // Process requests to the worker.
                 //

@@ -163,13 +163,17 @@ impl WasmMemoryBytesMetric {
     }
 
     fn observe(&mut self, memory_usage: usize) {
-        let delta = memory_usage as i64 - self.last_observed;
+        let memory_usage = memory_usage as i64;
+
+        let delta = memory_usage - self.last_observed;
 
         if delta > 0 {
             self.wasm_memory_bytes.add(delta);
         } else {
             self.wasm_memory_bytes.sub(-delta);
         }
+
+        self.last_observed = memory_usage;
     }
 
     pub(in crate::host) fn remove_all_metric_label_values_for_database(database_identity: &Identity) {
