@@ -302,6 +302,9 @@ jobs:
           save-if: false
           prefix-key: v1
 
+      - name: Build keynote benchmark binaries
+        run: cargo build --release -p spacetimedb-cli -p spacetimedb-standalone
+
       # Node 24 is the current Active LTS line.
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -311,6 +314,10 @@ jobs:
       - uses: ./.github/actions/setup-pnpm
         with:
           run_install: true
+
+      - name: Build TypeScript SDK
+        run: pnpm build
+        working-directory: crates/bindings-typescript
 
       - name: Run keynote-2 benchmark regression check
         run: cargo ci keynote-bench

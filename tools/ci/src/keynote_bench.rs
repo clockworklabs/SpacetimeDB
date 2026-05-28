@@ -4,7 +4,7 @@ use anyhow::{bail, ensure, Context, Result};
 use serde_json::Value;
 use spacetimedb_guard::{ensure_binaries_built, SpacetimeDbGuard};
 use std::{
-    env, fs,
+    fs,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -38,9 +38,6 @@ const BENCHMARK_MODULES: &[BenchmarkModule] = &[
 ];
 
 pub fn run() -> Result<()> {
-    build_typescript_sdk()?;
-    build_release_binaries()?;
-
     let cli_path = ensure_binaries_built();
     let server = SpacetimeDbGuard::spawn_in_temp_data_dir();
     let cli_config_dir = tempfile::tempdir().context("failed to create temporary CLI config directory")?;
@@ -88,40 +85,6 @@ fn run_module_benchmark(module: &BenchmarkModule, cli_path: &Path, config_path: 
         result_path.display()
     );
     Ok(())
-}
-
-fn build_typescript_sdk() -> Result<()> {
-    let mut cmd = Command::new("pnpm");
-    cmd.arg("build").current_dir("crates/bindings-typescript");
-    run_command(&mut cmd, "pnpm build in crates/bindings-typescript")
-}
-
-fn build_release_binaries() -> Result<()> {
-    eprintln!("Building spacetimedb-cli and spacetimedb-standalone (release)...");
-    let mut cmd = Command::new("cargo");
-    cmd.args([
-        "build",
-        "--release",
-        "-p",
-        "spacetimedb-cli",
-        "-p",
-        "spacetimedb-standalone",
-        "--features",
-        "spacetimedb-standalone/allow_loopback_http_for_tests",
-    ]);
-    remove_cargo_env_vars(&mut cmd);
-    run_command(&mut cmd, "cargo build --release spacetimedb-cli spacetimedb-standalone")
-}
-
-fn remove_cargo_env_vars(cmd: &mut Command) {
-    for (key, _) in env::vars() {
-        let should_remove = (key.starts_with("CARGO") && key != "CARGO_HOME" && key != "CARGO_TARGET_DIR")
-            || key.starts_with("RUST")
-            || key == "__CARGO_FIX_YOLO";
-        if should_remove {
-            cmd.env_remove(key);
-        }
-    }
 }
 
 fn publish_module(module: &BenchmarkModule, cli_path: &Path, config_path: &Path, server_url: &str) -> Result<()> {
