@@ -1,6 +1,6 @@
 use std::fmt;
 use std::fs::{self, File};
-use std::io;
+use std::io::{self, Seek};
 use std::sync::Arc;
 
 use log::{debug, warn};
@@ -292,14 +292,11 @@ impl Repo for Fs {
     }
 
     fn open_segment_writer(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
-        // For Windows, we need `write(true)` to allow for truncation.
-        // We also need `append(true)`, as other parts of the code rely on it.
-        #[allow(clippy::ineffective_open_options)]
-        File::options()
-            .read(true)
-            .write(true)
-            .append(true)
-            .open(self.segment_path(offset))
+        // NOTE: We previously used `O_APPEND`, but Windows demands `write(true)`
+        // so that we can truncate trailing garbage in [super::resume_segment_writer].
+        let mut file = File::options().read(true).write(true).open(self.segment_path(offset))?;
+        file.seek(io::SeekFrom::End(0))?;
+        Ok(file)
     }
 
     fn segment_file_path(&self, offset: u64) -> Option<String> {
