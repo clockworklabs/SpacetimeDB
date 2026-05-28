@@ -51,6 +51,7 @@ export default tseslint.config(
           './crates/bindings-typescript/test-app/tsconfig.json',
           './templates/react-ts/tsconfig.json',
           './templates/chat-react-ts/tsconfig.json',
+          './templates/hangman-react-ts/tsconfig.json',
           './templates/basic-ts/tsconfig.json',
           './templates/angular-ts/tsconfig.app.json',
           './docs/tsconfig.json',

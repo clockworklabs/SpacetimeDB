@@ -484,6 +484,9 @@ importers:
         specifier: workspace:*
         version: link:../../crates/bindings-typescript
     devDependencies:
+      '@eslint/js':
+        specifier: ^9.17.0
+        version: 9.33.0
       '@types/react':
         specifier: ^18.3.18
         version: 18.3.23
@@ -493,12 +496,27 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^5.0.2
         version: 5.0.2(vite@7.1.5(@types/node@24.3.0)(jiti@2.6.1)(sass@1.97.1)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2))
+      eslint:
+        specifier: ^9.17.0
+        version: 9.33.0(jiti@2.6.1)
+      eslint-plugin-react-hooks:
+        specifier: ^5.0.0
+        version: 5.2.0(eslint@9.33.0(jiti@2.6.1))
+      eslint-plugin-react-refresh:
+        specifier: ^0.4.16
+        version: 0.4.20(eslint@9.33.0(jiti@2.6.1))
+      globals:
+        specifier: ^15.14.0
+        version: 15.15.0
       prettier:
         specifier: ^3.3.3
         version: 3.6.2
       typescript:
         specifier: ~5.6.2
         version: 5.6.3
+      typescript-eslint:
+        specifier: ^8.18.2
+        version: 8.40.0(eslint@9.33.0(jiti@2.6.1))(typescript@5.6.3)
       vite:
         specifier: ^7.1.5
         version: 7.1.5(@types/node@24.3.0)(jiti@2.6.1)(sass@1.97.1)(terser@5.43.1)(tsx@4.21.0)(yaml@2.8.2)

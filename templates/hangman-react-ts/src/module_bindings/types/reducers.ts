@@ -3,12 +3,11 @@
 
 /* eslint-disable */
 /* tslint:disable */
-import { type Infer as __Infer } from "spacetimedb";
+import { type Infer as __Infer } from 'spacetimedb';
 
 // Import all reducer arg schemas
-import GuessLetterReducer from "../guess_letter_reducer";
-import SetNameReducer from "../set_name_reducer";
+import GuessLetterReducer from '../guess_letter_reducer';
+import SetNameReducer from '../set_name_reducer';
 
 export type GuessLetterParams = __Infer<typeof GuessLetterReducer>;
 export type SetNameParams = __Infer<typeof SetNameReducer>;
-

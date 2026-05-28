@@ -8,9 +8,9 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from "spacetimedb";
+} from 'spacetimedb';
 
-export const CurrentRound = __t.object("CurrentRound", {
+export const CurrentRound = __t.object('CurrentRound', {
   id: __t.u8(),
   roundNumber: __t.u64(),
   get phase() {
@@ -24,16 +24,16 @@ export const CurrentRound = __t.object("CurrentRound", {
 });
 export type CurrentRound = __Infer<typeof CurrentRound>;
 
-export const MyProgress = __t.object("MyProgress", {});
+export const MyProgress = __t.object('MyProgress', {});
 export type MyProgress = __Infer<typeof MyProgress>;
 
-export const Player = __t.object("Player", {
+export const Player = __t.object('Player', {
   identity: __t.identity(),
   name: __t.string(),
 });
 export type Player = __Infer<typeof Player>;
 
-export const PlayerBoard = __t.object("PlayerBoard", {
+export const PlayerBoard = __t.object('PlayerBoard', {
   roundNumber: __t.u64(),
   maskedWord: __t.string(),
   guessedLetters: __t.string(),
@@ -43,7 +43,7 @@ export const PlayerBoard = __t.object("PlayerBoard", {
 });
 export type PlayerBoard = __Infer<typeof PlayerBoard>;
 
-export const PlayerProgress = __t.object("PlayerProgress", {
+export const PlayerProgress = __t.object('PlayerProgress', {
   identity: __t.identity(),
   roundNumber: __t.u64(),
   guessedLetters: __t.string(),
@@ -55,13 +55,13 @@ export const PlayerProgress = __t.object("PlayerProgress", {
 export type PlayerProgress = __Infer<typeof PlayerProgress>;
 
 // The tagged union or sum type for the algebraic type `RoundPhase`.
-export const RoundPhase = __t.enum("RoundPhase", {
+export const RoundPhase = __t.enum('RoundPhase', {
   Active: __t.unit(),
   Results: __t.unit(),
 });
 export type RoundPhase = __Infer<typeof RoundPhase>;
 
-export const RoundResult = __t.object("RoundResult", {
+export const RoundResult = __t.object('RoundResult', {
   identity: __t.identity(),
   name: __t.string(),
   rank: __t.u32(),
@@ -72,7 +72,7 @@ export const RoundResult = __t.object("RoundResult", {
 });
 export type RoundResult = __Infer<typeof RoundResult>;
 
-export const RoundSecret = __t.object("RoundSecret", {
+export const RoundSecret = __t.object('RoundSecret', {
   id: __t.u8(),
   roundNumber: __t.u64(),
   answer: __t.string(),
@@ -80,13 +80,13 @@ export const RoundSecret = __t.object("RoundSecret", {
 export type RoundSecret = __Infer<typeof RoundSecret>;
 
 // The tagged union or sum type for the algebraic type `TransitionKind`.
-export const TransitionKind = __t.enum("TransitionKind", {
+export const TransitionKind = __t.enum('TransitionKind', {
   Close: __t.unit(),
   Start: __t.unit(),
 });
 export type TransitionKind = __Infer<typeof TransitionKind>;
 
-export const TransitionTimer = __t.object("TransitionTimer", {
+export const TransitionTimer = __t.object('TransitionTimer', {
   scheduledId: __t.u64(),
   scheduledAt: __t.scheduleAt(),
   roundNumber: __t.u64(),
@@ -95,4 +95,3 @@ export const TransitionTimer = __t.object("TransitionTimer", {
   },
 });
 export type TransitionTimer = __Infer<typeof TransitionTimer>;
-

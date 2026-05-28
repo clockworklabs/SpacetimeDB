@@ -8,14 +8,14 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from "spacetimedb";
+} from 'spacetimedb';
 
 export default __t.row({
   identity: __t.identity().primaryKey(),
   name: __t.string(),
   rank: __t.u32(),
   solved: __t.bool(),
-  solveTimeMicros: __t.option(__t.u64()).name("solve_time_micros"),
-  incorrectGuesses: __t.u8().name("incorrect_guesses"),
-  revealedLetters: __t.u32().name("revealed_letters"),
+  solveTimeMicros: __t.option(__t.u64()).name('solve_time_micros'),
+  incorrectGuesses: __t.u8().name('incorrect_guesses'),
+  revealedLetters: __t.u32().name('revealed_letters'),
 });

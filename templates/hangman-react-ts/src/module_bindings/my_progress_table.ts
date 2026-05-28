@@ -8,13 +8,13 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from "spacetimedb";
+} from 'spacetimedb';
 
 export default __t.row({
-  roundNumber: __t.u64().name("round_number"),
-  maskedWord: __t.string().name("masked_word"),
-  guessedLetters: __t.string().name("guessed_letters"),
-  incorrectGuesses: __t.u8().name("incorrect_guesses"),
+  roundNumber: __t.u64().name('round_number'),
+  maskedWord: __t.string().name('masked_word'),
+  guessedLetters: __t.string().name('guessed_letters'),
+  incorrectGuesses: __t.u8().name('incorrect_guesses'),
   solved: __t.bool(),
   failed: __t.bool(),
 });

@@ -3,15 +3,18 @@
   "client_framework": "React",
   "client_lang": "typescript",
   "server_lang": "typescript",
-  "tags": [
-    "Launchpad"
-  ],
+  "tags": ["Launchpad"],
   "builtWith": [
     "react",
     "react-dom",
+    "eslint",
     "vitejs",
+    "eslint-plugin-react-hooks",
+    "eslint-plugin-react-refresh",
+    "globals",
     "prettier",
     "typescript",
+    "typescript-eslint",
     "vite",
     "spacetimedb"
   ]

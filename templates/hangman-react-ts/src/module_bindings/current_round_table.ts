@@ -8,21 +8,18 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from "spacetimedb";
-import {
-  RoundPhase,
-} from "./types";
-
+} from 'spacetimedb';
+import { RoundPhase } from './types';
 
 export default __t.row({
   id: __t.u8().primaryKey(),
-  roundNumber: __t.u64().name("round_number"),
+  roundNumber: __t.u64().name('round_number'),
   get phase() {
     return RoundPhase;
   },
   difficulty: __t.string(),
-  wordLength: __t.u32().name("word_length"),
-  startedAt: __t.timestamp().name("started_at"),
-  phaseEndsAt: __t.timestamp().name("phase_ends_at"),
+  wordLength: __t.u32().name('word_length'),
+  startedAt: __t.timestamp().name('started_at'),
+  phaseEndsAt: __t.timestamp().name('phase_ends_at'),
   answer: __t.option(__t.string()),
 });
