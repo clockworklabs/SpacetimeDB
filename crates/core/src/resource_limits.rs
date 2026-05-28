@@ -1,4 +1,56 @@
+use crate::messages::control_db::Database;
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DatabaseResourceLimits {
+    pub memory_limit_bytes: Option<usize>,
+}
+
+impl DatabaseResourceLimits {
+    pub const UNLIMITED: Self = Self {
+        memory_limit_bytes: None,
+    };
+
+    pub fn with_memory_limit(memory_limit_bytes: Option<usize>) -> Self {
+        Self { memory_limit_bytes }
+    }
+}
+
+/// Supplies resource limits for a database at host initialization time.
+///
+/// The current cloud configuration uses a fixed global limit for every database.
+/// Keeping this as a provider lets cloud switch to per-database limits later
+/// without changing `RelationalDB` or the module runtime accounting paths.
+pub trait DatabaseResourceLimitsProvider: Send + Sync + 'static {
+    fn limits_for_database(&self, database: &Database) -> DatabaseResourceLimits;
+}
+
+#[derive(Clone, Debug)]
+pub struct FixedDatabaseResourceLimits {
+    limits: DatabaseResourceLimits,
+}
+
+impl FixedDatabaseResourceLimits {
+    pub fn new(limits: DatabaseResourceLimits) -> Self {
+        Self { limits }
+    }
+
+    pub fn with_memory_limit(memory_limit_bytes: Option<usize>) -> Self {
+        Self::new(DatabaseResourceLimits::with_memory_limit(memory_limit_bytes))
+    }
+}
+
+impl Default for FixedDatabaseResourceLimits {
+    fn default() -> Self {
+        Self::new(DatabaseResourceLimits::UNLIMITED)
+    }
+}
+
+impl DatabaseResourceLimitsProvider for FixedDatabaseResourceLimits {
+    fn limits_for_database(&self, _database: &Database) -> DatabaseResourceLimits {
+        self.limits
+    }
+}
 
 /// Tracks the memory charged against a database.
 ///
