@@ -659,7 +659,7 @@ impl InstanceCommon {
                                energy_quanta_used: EnergyQuanta,
                                host_execution_duration: Duration,
                                tx: MutTxId|
-                 -> TransactionOffset {
+                 -> anyhow::Result<TransactionOffset> {
                     let event = ModuleEvent {
                         timestamp: Timestamp::now(),
                         caller_identity: info.owner_identity,
@@ -673,15 +673,15 @@ impl InstanceCommon {
                         timer: None,
                     };
                     let CommitAndBroadcastEventSuccess { tx_offset, .. } =
-                        commit_and_broadcast_event(&info.subscriptions, None, event, tx);
+                        commit_and_broadcast_event(&info.subscriptions, None, event, tx)?;
 
-                    tx_offset
+                    Ok(tx_offset)
                 };
                 let durable_offset = stdb.durable_tx_offset();
 
                 let res: UpdateDatabaseResult = match res {
                     crate::db::update::UpdateResult::Success => {
-                        let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO.into(), Duration::ZERO, tx);
+                        let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO.into(), Duration::ZERO, tx)?;
                         UpdateDatabaseResult::UpdatePerformed {
                             tx_offset,
                             durable_offset,
@@ -703,7 +703,7 @@ impl InstanceCommon {
                             stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
                             UpdateDatabaseResult::ErrorExecutingMigration(anyhow::anyhow!(msg))
                         } else {
-                            let tx_offset = succeed(self.info.clone(), out.energy_used.into(), out.total_duration, tx);
+                            let tx_offset = succeed(self.info.clone(), out.energy_used.into(), out.total_duration, tx)?;
                             UpdateDatabaseResult::UpdatePerformed {
                                 tx_offset,
                                 durable_offset,
@@ -711,7 +711,7 @@ impl InstanceCommon {
                         }
                     }
                     crate::db::update::UpdateResult::RequiresClientDisconnect => {
-                        let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO.into(), Duration::ZERO, tx);
+                        let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO.into(), Duration::ZERO, tx)?;
                         UpdateDatabaseResult::UpdatePerformedWithClientDisconnect {
                             tx_offset,
                             durable_offset,
@@ -990,10 +990,16 @@ impl InstanceCommon {
             request_id,
             timer,
         };
-        let event = commit_and_broadcast_event(&info.subscriptions, client, event, out.tx).event;
+        let outcome = match commit_and_broadcast_event(&info.subscriptions, client, event, out.tx) {
+            Ok(success) => ReducerOutcome::from(&success.event.status),
+            Err(err) => {
+                log::error!("failed to commit and broadcast reducer event: {err:#}");
+                ReducerOutcome::Failed(Box::new(err.to_string().into_boxed_str()))
+            }
+        };
 
         let res = ReducerCallResult {
-            outcome: ReducerOutcome::from(&event.status),
+            outcome,
             energy_used: energy_quanta_used,
             execution_duration: total_duration,
         };

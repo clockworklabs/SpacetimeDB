@@ -797,7 +797,7 @@ impl InstanceEnv {
             host_execution_duration: Duration::from_millis(0),
         };
         // Commit the tx and broadcast it.
-        let event = commit_and_broadcast_event(&subs, None, event, tx);
+        let event = commit_and_broadcast_event(&subs, None, event, tx)?;
         self.procedure_last_tx_offset = Some(event.tx_offset);
 
         Ok(())

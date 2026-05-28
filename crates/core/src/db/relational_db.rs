@@ -831,8 +831,11 @@ impl RelationalDB {
         Ok(Some((tx_offset, tx_data, tx_metrics, reducer)))
     }
 
+    /// Commits `tx`, applies its writes, and downgrades it to a read-only transaction.
+    ///
+    /// If this returns `Err`, `tx` has been consumed and cleaned up.
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn commit_tx_downgrade(&self, tx: MutTx, workload: Workload) -> (Arc<TxData>, TxMetrics, Tx) {
+    pub fn commit_tx_downgrade(&self, tx: MutTx, workload: Workload) -> Result<(Arc<TxData>, TxMetrics, Tx), DBError> {
         log::trace!("COMMIT MUT TX");
 
         let reducer_context = tx.ctx.reducer_context().cloned();
@@ -842,7 +845,7 @@ impl RelationalDB {
 
         self.maybe_do_snapshot(&tx_data);
 
-        (tx_data, tx_metrics, tx)
+        Ok((tx_data, tx_metrics, tx))
     }
 
     /// Get the [`DurableOffset`] of this database, or `None` if this is an
