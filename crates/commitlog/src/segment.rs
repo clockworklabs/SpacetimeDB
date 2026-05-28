@@ -46,7 +46,12 @@ impl Header {
 
     pub fn decode<R: io::Read>(mut read: R) -> io::Result<Self> {
         let mut buf = [0; Self::LEN];
-        read.read_exact(&mut buf)?;
+        read.read_exact(&mut buf).map_err(|e| {
+            io::Error::new(
+                e.kind(),
+                format!("failed to read segment header ({} bytes): {}", Self::LEN, e),
+            )
+        })?;
 
         if !buf.starts_with(&MAGIC) {
             return Err(io::Error::new(
@@ -356,9 +361,10 @@ impl OffsetIndexWriter {
             return Ok(());
         }
 
-        self.head
+        let entry_offset = self
+            .head
             .append(self.candidate_min_tx_offset, self.candidate_byte_offset)?;
-        self.head.async_flush()?;
+        self.head.async_flush_entry(entry_offset)?;
         self.reset();
 
         Ok(())
@@ -371,10 +377,6 @@ impl FileLike for OffsetIndexWriter {
         let _ = self.append_internal().map_err(|e| {
             warn!("failed to append to offset index: {e:?}");
         });
-        let _ = self
-            .head
-            .async_flush()
-            .map_err(|e| warn!("failed to flush offset index: {e:?}"));
         Ok(())
     }
 
@@ -615,6 +617,7 @@ impl Metadata {
         mut reader: R,
         offset_index: Option<&TxOffsetIndex>,
     ) -> Result<Self, error::SegmentMetadata> {
+        reader.seek(io::SeekFrom::Start(0))?;
         let header = Header::decode(&mut reader)?;
         Self::with_header(min_tx_offset, header, reader, offset_index)
     }

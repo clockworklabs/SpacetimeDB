@@ -1,5 +1,6 @@
 use super::module_host::{EventStatus, ModuleHost, ModuleInfo, NoSuchModule};
 use super::scheduler::SchedulerStarter;
+use super::v8::V8HeapMetrics;
 use super::wasmtime::WasmtimeRuntime;
 use super::{Scheduler, UpdateDatabaseResult};
 use crate::client::{ClientActorId, ClientName};
@@ -1411,26 +1412,8 @@ where
         .data_size_blob_store_bytes_used_by_blobs
         .remove_label_values(db);
     let _ = WORKER_METRICS.wasm_memory_bytes.remove_label_values(db);
-    let worker_kind = crate::host::v8::V8_WORKER_KIND_MAIN;
-    let _ = WORKER_METRICS
-        .v8_total_heap_size_bytes
-        .remove_label_values(db, worker_kind);
-    let _ = WORKER_METRICS
-        .v8_total_physical_size_bytes
-        .remove_label_values(db, worker_kind);
-    let _ = WORKER_METRICS
-        .v8_used_global_handles_size_bytes
-        .remove_label_values(db, worker_kind);
-    let _ = WORKER_METRICS
-        .v8_used_heap_size_bytes
-        .remove_label_values(db, worker_kind);
-    let _ = WORKER_METRICS
-        .v8_heap_size_limit_bytes
-        .remove_label_values(db, worker_kind);
-    let _ = WORKER_METRICS
-        .v8_external_memory_bytes
-        .remove_label_values(db, worker_kind);
-    let _ = WORKER_METRICS.v8_native_contexts.remove_label_values(db, worker_kind);
-    let _ = WORKER_METRICS.v8_detached_contexts.remove_label_values(db, worker_kind);
+
+    V8HeapMetrics::remove_all_metric_label_values_for_database(db);
+
     let _ = WORKER_METRICS.v8_request_queue_length.remove_label_values(db);
 }
