@@ -46,7 +46,12 @@ impl Header {
 
     pub fn decode<R: io::Read>(mut read: R) -> io::Result<Self> {
         let mut buf = [0; Self::LEN];
-        read.read_exact(&mut buf)?;
+        read.read_exact(&mut buf).map_err(|e| {
+            io::Error::new(
+                e.kind(),
+                format!("failed to read segment header ({} bytes): {}", Self::LEN, e),
+            )
+        })?;
 
         if !buf.starts_with(&MAGIC) {
             return Err(io::Error::new(
@@ -612,6 +617,7 @@ impl Metadata {
         mut reader: R,
         offset_index: Option<&TxOffsetIndex>,
     ) -> Result<Self, error::SegmentMetadata> {
+        reader.seek(io::SeekFrom::Start(0))?;
         let header = Header::decode(&mut reader)?;
         Self::with_header(min_tx_offset, header, reader, offset_index)
     }
