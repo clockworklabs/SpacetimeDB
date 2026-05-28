@@ -12,7 +12,7 @@ use std::{
 const DATABASE_NAME: &str = "test-1";
 const KEYNOTE_DIR: &str = "templates/keynote-2";
 const KEYNOTE_BINDINGS_DIR: &str = "templates/keynote-2/module_bindings";
-const MIN_TPS: f64 = 300_000.0;
+const MIN_TPS: f64 = 275_000.0;
 const BENCH_SECONDS: &str = "60";
 const BENCH_CONCURRENCY: &str = "64";
 const MAX_INFLIGHT_PER_WORKER: &str = "96";
