@@ -7,6 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const BSATN_PACKAGE_ID: &str = "spacetimedb.bsatn.runtime";
+const GODOTSHARP_PACKAGE_ID: &str = "godotsharp";
 const RUNTIME_PACKAGE_ID: &str = "spacetimedb.runtime";
 
 fn workspace_dir() -> PathBuf {
@@ -116,6 +117,14 @@ fn clear_restored_package_dirs(pkg_id: &str) -> Result<()> {
     Ok(())
 }
 
+fn clear_godot_intermediate_outputs() -> Result<()> {
+    let godot_obj_dir = sdk_dir().join("obj~/godot");
+    if godot_obj_dir.exists() {
+        fs::remove_dir_all(&godot_obj_dir)?;
+    }
+    Ok(())
+}
+
 fn find_only_subdir(dir: &Path) -> Result<PathBuf> {
     let mut subdirs = vec![];
 
@@ -209,12 +218,32 @@ pub fn regen_dlls() -> Result<()> {
     clear_restored_package_dirs(BSATN_PACKAGE_ID)?;
     clear_restored_package_dirs(RUNTIME_PACKAGE_ID)?;
 
+    // Some Unity runners have had partially restored GodotSharp package state in the past.
+    // Clear the package and restore outputs so NuGet cannot reuse assets missing GodotSharp.dll.
+    // See https://github.com/clockworklabs/SpacetimeDB/pull/5133 for more details.
+    clear_restored_package_dirs(GODOTSHARP_PACKAGE_ID)?;
+    clear_godot_intermediate_outputs()?;
+
     cmd!(
         "dotnet",
         "restore",
         "SpacetimeDB.ClientSDK.csproj",
         "--configfile",
         path_arg(&nuget_config_path),
+    )
+    .dir(&sdk)
+    .run()?;
+
+    cmd!(
+        "dotnet",
+        "restore",
+        "SpacetimeDB.ClientSDK.Godot.csproj",
+        "--configfile",
+        path_arg(&nuget_config_path),
+        // TODO: It should be possible to put this in Directory.Build.props, but it caused CI failures when we did.
+        "-p:BaseOutputPath=bin~/",
+        "-p:BaseIntermediateOutputPath=obj~/godot/",
+        "-p:MSBuildProjectExtensionsPath=obj~/godot/",
     )
     .dir(&sdk)
     .run()?;
@@ -229,6 +258,21 @@ pub fn regen_dlls() -> Result<()> {
         "-c",
         "Release",
         "--no-restore"
+    )
+    .dir(&sdk)
+    .run()?;
+
+    cmd!(
+        "dotnet",
+        "pack",
+        "SpacetimeDB.ClientSDK.Godot.csproj",
+        "-c",
+        "Release",
+        "--no-restore",
+        "-p:BaseOutputPath=bin~/",
+        // TODO: It should be possible to put this in Directory.Build.props, but it caused CI failures when we did.
+        "-p:BaseIntermediateOutputPath=obj~/godot/",
+        "-p:MSBuildProjectExtensionsPath=obj~/godot/"
     )
     .dir(&sdk)
     .run()?;

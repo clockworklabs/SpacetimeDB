@@ -1796,6 +1796,7 @@ impl WasmInstanceEnv {
                 view_call.sender,
                 args_source.0,
                 result_sink,
+                true,
             )?;
 
             Ok(code)
