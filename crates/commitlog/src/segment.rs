@@ -617,6 +617,7 @@ impl Metadata {
         mut reader: R,
         offset_index: Option<&TxOffsetIndex>,
     ) -> Result<Self, error::SegmentMetadata> {
+        reader.seek(io::SeekFrom::Start(0))?;
         let header = Header::decode(&mut reader)?;
         Self::with_header(min_tx_offset, header, reader, offset_index)
     }

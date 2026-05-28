@@ -109,7 +109,6 @@ where
 
         let mut segment = repo.open_segment_writer(last)?;
         fallocate(&mut segment, &commitlog_options)?;
-        segment.seek(io::SeekFrom::Start(0))?;
 
         let mut offset_index = repo
             .get_offset_index(last)
