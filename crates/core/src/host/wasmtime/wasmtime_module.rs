@@ -370,9 +370,11 @@ fn instantiate_wasmtime_instance(
     // to set up the native runtime. This must be called before any other exports.
     // Traditional .NET 8 WASI modules export `_start` instead (which is not called here).
     if let Ok(init) = instance.get_typed_func::<(), ()>(&mut store, "_initialize") {
-        call_sync_typed_func(&init, &mut store, ()).map_err(|err| InitializationError::RuntimeError {
-            err,
-            func: "_initialize".to_owned(),
+        call_sync_typed_func(&init, &mut store, (), supports_async).map_err(|err| {
+            InitializationError::RuntimeError {
+                err,
+                func: "_initialize".to_owned(),
+            }
         })?;
     }
 
