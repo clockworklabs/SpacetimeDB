@@ -238,6 +238,16 @@ fn main() -> anyhow::Result<()> {
             .run()
             .expect("pnpm generate failed!");
 
+        // Regenerate case conversion test bindings to update embedded CLI version
+        println!("$> cargo run -p gen-bindings -- --out-dir crates/bindings-typescript/case-conversion-test-client/src/module_bindings --module-path modules/sdk-test-case-conversion");
+        cmd!("cargo", "run", "-p", "gen-bindings", "--", "--out-dir", "crates/bindings-typescript/case-conversion-test-client/src/module_bindings", "--module-path", "modules/sdk-test-case-conversion")
+            .run()
+            .expect("gen-bindings for case-conversion-test-client failed!");
+        println!("$> pnpm --dir crates/bindings-typescript/case-conversion-test-client exec prettier --write src/module_bindings");
+        cmd!(pnpm_cmd(), "--dir", "crates/bindings-typescript/case-conversion-test-client", "exec", "prettier", "--write", "src/module_bindings")
+            .run()
+            .expect("prettier for case-conversion-test-client failed!");
+
         if matches.get_flag("accept-snapshots") {
             // Generate and auto-accept snapshots
             println!("$> INSTA_UPDATE=always cargo test -p spacetimedb-codegen --test codegen");
@@ -332,6 +342,14 @@ fn main() -> anyhow::Result<()> {
         rewrite_xml_tag_value(client_sdk, "AssemblyVersion", &numeric_version)?;
         // Update SpacetimeDB.BSATN.Runtime dependency to major.minor.*
         rewrite_csproj_package_ref_version(client_sdk, "SpacetimeDB.BSATN.Runtime", &wildcard_patch)?;
+        
+        // Also update the Godot client SDK csproj
+        let godot_client_sdk = "sdks/csharp/SpacetimeDB.ClientSDK.Godot.csproj";
+        rewrite_xml_tag_value(godot_client_sdk, "Version", &full_version)?;
+        // <AssemblyVersion> doesn't support prerelease or metadata version suffixes like <Version> does.
+        rewrite_xml_tag_value(godot_client_sdk, "AssemblyVersion", &numeric_version)?;
+        // Update SpacetimeDB.BSATN.Runtime dependency to major.minor.*
+        rewrite_csproj_package_ref_version(godot_client_sdk, "SpacetimeDB.BSATN.Runtime", &wildcard_patch)?;
 
         // Also bump the C# SDK package.json version (preserve formatting)
         rewrite_json_version_inplace("sdks/csharp/package.json", &full_version)?;
@@ -341,6 +359,8 @@ fn main() -> anyhow::Result<()> {
             "demo/Blackholio/server-csharp/StdbModule.csproj",
             "templates/chat-console-cs/spacetimedb/StdbModule.csproj",
             "sdks/csharp/examples~/regression-tests/server/StdbModule.csproj",
+            "sdks/csharp/examples~/regression-tests/republishing/server-initial/StdbModule.csproj",
+            "sdks/csharp/examples~/regression-tests/republishing/server-republish/StdbModule.csproj",
         ];
         for path in stdb_modules {
             rewrite_csproj_package_ref_version(path, "SpacetimeDB.Runtime", &wildcard_patch)?;
