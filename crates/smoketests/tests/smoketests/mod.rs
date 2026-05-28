@@ -38,4 +38,5 @@ mod sql;
 mod sql_connect_hook;
 mod templates;
 mod timestamp_route;
+mod typescript_index_source_name;
 mod views;
