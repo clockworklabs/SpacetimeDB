@@ -5,7 +5,7 @@ import { CONNECTORS } from './connectors';
 import { runOne } from './core/runner';
 import type { TestCaseModule } from './tests/types';
 import { fileURLToPath } from 'node:url';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { RunResult } from './core/types.ts';
 import { parseBenchOptions } from './opts.ts';
 
@@ -153,12 +153,21 @@ function runPrep(): Promise<void> {
 
 const testDirUrl = new URL(`./tests/${testName}/`, import.meta.url);
 const testDirPath = fileURLToPath(testDirUrl);
-const runsDir = fileURLToPath(new URL('../runs/', import.meta.url));
+const runsDir = process.env.BENCH_RUNS_DIR
+  ? resolve(process.env.BENCH_RUNS_DIR)
+  : fileURLToPath(new URL('../runs/', import.meta.url));
 
-async function writeRunJson(payload: object, connectorName: string, alpha: number) {
+async function writeRunJson(
+  payload: object,
+  connectorName: string,
+  alpha: number,
+) {
   await mkdir(runsDir, { recursive: true });
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
-  const outFile = join(runsDir, `${testName}-${connectorName}-a${alpha}-${ts}.json`);
+  const outFile = join(
+    runsDir,
+    `${testName}-${connectorName}-a${alpha}-${ts}.json`,
+  );
   await writeFile(outFile, JSON.stringify(payload, null, 2));
   console.log(`Wrote results to ${outFile}`);
   return outFile;

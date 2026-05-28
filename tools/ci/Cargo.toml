@@ -13,3 +13,4 @@ serde_json.workspace = true
 duct.workspace = true
 tempfile.workspace = true
 env_logger.workspace = true
+spacetimedb-guard.workspace = true
