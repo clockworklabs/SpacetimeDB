@@ -268,7 +268,7 @@ jobs:
   keynote_bench:
     needs: [lints]
     name: Keynote Bench
-    runs-on: spacetimedb-keynote-bench
+    runs-on: spacetimedb-benchmark-runner
     timeout-minutes: 60
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
