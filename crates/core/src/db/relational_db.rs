@@ -1,6 +1,7 @@
 use crate::db::durability::{request_durability, spawn_close as spawn_durability_close};
 use crate::db::MetricsRecorderQueue;
 use crate::error::{DBError, RestoreSnapshotError};
+use crate::resource_limits::DatabaseMemoryBudget;
 use crate::subscription::ExecutionCounters;
 use crate::util::asyncify;
 use crate::worker_metrics::WORKER_METRICS;
@@ -111,6 +112,9 @@ pub struct RelationalDB {
 
     /// An async queue for recording transaction metrics off the main thread
     metrics_recorder_queue: Option<MetricsRecorderQueue>,
+
+    /// Memory budget shared by commit-time checks and module runtime accounting.
+    memory_budget: Arc<DatabaseMemoryBudget>,
 }
 
 /// Perform a snapshot every `SNAPSHOT_FREQUENCY` transactions.
@@ -166,6 +170,7 @@ impl RelationalDB {
 
             workload_type_to_exec_counters,
             metrics_recorder_queue,
+            memory_budget: Arc::new(DatabaseMemoryBudget::unlimited()),
         }
     }
 
@@ -675,6 +680,23 @@ impl RelationalDB {
         self.inner.heap_usage()
     }
 
+    /// Set the database memory limit used by commit-time and runtime checks.
+    pub fn with_memory_limit(mut self, limit_bytes: Option<usize>) -> Self {
+        let memory_budget = Arc::new(DatabaseMemoryBudget::new(limit_bytes));
+        memory_budget.set_relational_bytes(self.size_in_memory());
+        self.memory_budget = memory_budget;
+        self
+    }
+
+    /// The memory budget shared by the relational database and module runtimes.
+    pub fn memory_budget(&self) -> Arc<DatabaseMemoryBudget> {
+        self.memory_budget.clone()
+    }
+
+    pub(crate) fn check_memory_limit_before_commit(&self, tx: &MutTx) -> Result<(), DBError> {
+        Ok(self.memory_budget.check(tx.size_in_memory_with_pending())?)
+    }
+
     /// Update data size metrics.
     pub fn update_data_size_metrics(&self) {
         let cs = self.inner.committed_state.read();
@@ -817,6 +839,12 @@ impl RelationalDB {
     ) -> Result<Option<(TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>)>, DBError> {
         log::trace!("COMMIT MUT TX");
 
+        if let Err(err) = self.check_memory_limit_before_commit(&tx) {
+            let (_, tx_metrics, reducer) = self.rollback_mut_tx(tx);
+            self.report_mut_tx_metrics(reducer, tx_metrics, None);
+            return Err(err);
+        }
+
         let reducer_context = tx.ctx.reducer_context().cloned();
         // TODO: Never returns `None` -- should it?
         let Some((tx_offset, tx_data, tx_metrics, reducer)) = self.inner.commit_mut_tx_and_then(tx, |tx_data| {
@@ -827,6 +855,7 @@ impl RelationalDB {
         };
 
         self.maybe_do_snapshot(&tx_data);
+        self.memory_budget.set_relational_bytes(self.size_in_memory());
 
         Ok(Some((tx_offset, tx_data, tx_metrics, reducer)))
     }
@@ -838,12 +867,19 @@ impl RelationalDB {
     pub fn commit_tx_downgrade(&self, tx: MutTx, workload: Workload) -> Result<(Arc<TxData>, TxMetrics, Tx), DBError> {
         log::trace!("COMMIT MUT TX");
 
+        if let Err(err) = self.check_memory_limit_before_commit(&tx) {
+            let (_, tx_metrics, reducer) = self.rollback_mut_tx(tx);
+            self.report_mut_tx_metrics(reducer, tx_metrics, None);
+            return Err(err);
+        }
+
         let reducer_context = tx.ctx.reducer_context().cloned();
         let (tx_data, tx_metrics, tx) = self.inner.commit_mut_tx_downgrade_and_then(tx, workload, |tx_data| {
             self.request_durability(reducer_context, tx_data);
         });
 
         self.maybe_do_snapshot(&tx_data);
+        self.memory_budget.set_relational_bytes(self.size_in_memory());
 
         Ok((tx_data, tx_metrics, tx))
     }

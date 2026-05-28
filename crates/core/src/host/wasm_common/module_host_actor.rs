@@ -866,7 +866,7 @@ impl InstanceCommon {
         let caller_connection_id_opt = (caller_connection_id != ConnectionId::ZERO).then_some(caller_connection_id);
 
         let replica_ctx = inst.replica_ctx();
-        let stdb = replica_ctx.relational_db();
+        let stdb = replica_ctx.relational_db().clone();
         let info = self.info.clone();
         let reducer_def = info.module_def.reducer_by_id(reducer_id);
         let reducer_name = &reducer_def.name;
@@ -962,11 +962,16 @@ impl InstanceCommon {
         vm_metrics.report_total_duration(out.total_duration);
         vm_metrics.report_abi_duration(out.abi_duration);
 
-        let status = match out.outcome {
+        let mut status = match out.outcome {
             ViewOutcome::BudgetExceeded => EventStatus::OutOfEnergy,
             ViewOutcome::Failed(err) => EventStatus::FailedInternal(err),
             ViewOutcome::Success => status,
         };
+        if matches!(status, EventStatus::Committed(_)) {
+            if let Err(err) = stdb.check_memory_limit_before_commit(&out.tx) {
+                status = EventStatus::FailedInternal(err.to_string());
+            }
+        }
         if !matches!(status, EventStatus::Committed(_)) {
             reducer_return_value = None;
         }

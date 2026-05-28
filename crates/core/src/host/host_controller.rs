@@ -118,6 +118,8 @@ pub struct HostController {
     db_cores: JobCores,
     /// The pool of buffers used to build `BsatnRowList`s in subscriptions.
     pub bsatn_rlb_pool: BsatnRowListBuilderPool,
+    /// Optional memory limit applied to each hosted database.
+    database_memory_limit: Option<usize>,
 }
 
 pub(crate) struct HostRuntimes {
@@ -241,7 +243,16 @@ impl HostController {
             page_pool: PagePool::new(default_config.page_pool_max_size),
             bsatn_rlb_pool: BsatnRowListBuilderPool::new(),
             db_cores,
+            database_memory_limit: None,
         }
+    }
+
+    /// Configure the memory limit applied to hosted databases.
+    ///
+    /// `None` leaves databases unlimited, which is the standalone/default behavior.
+    pub fn with_database_memory_limit(mut self, limit_bytes: Option<usize>) -> Self {
+        self.database_memory_limit = limit_bytes;
+        self
     }
 
     /// Replace the [`ProgramStorage`] used by this controller.
@@ -886,6 +897,7 @@ impl Host {
             persistence,
             page_pool,
             bsatn_rlb_pool,
+            database_memory_limit,
             ..
         } = host_controller;
         let replica_dir = data_dir.replica(replica_id);
@@ -936,6 +948,7 @@ impl Host {
                 (db, clients)
             }
         };
+        let db = db.with_memory_limit(*database_memory_limit);
         let (mut program, program_needs_init) = match db.program()? {
             // Launch module with program from existing database.
             Some(program) => {

@@ -35,6 +35,7 @@ macro_rules! errnos {
                 "ABI call can only be made while within a read-only transaction"
             ),
             HTTP_ERROR(21, "The HTTP request failed"),
+            DATABASE_MEMORY_LIMIT_EXCEEDED(22, "The database memory limit was exceeded"),
         );
     };
 }

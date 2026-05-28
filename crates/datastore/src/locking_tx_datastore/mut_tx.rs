@@ -258,6 +258,17 @@ pub struct MutTxId {
 static_assert_size!(MutTxId, 432);
 
 impl MutTxId {
+    /// Returns the heap usage of committed state plus this transaction's pending
+    /// writes. This intentionally overestimates transactions that delete data;
+    /// callers use it to enforce conservative commit-time memory budgets.
+    pub fn size_in_memory_with_pending(&self) -> usize {
+        self.committed_state_write_lock
+            .heap_usage()
+            .saturating_add(self.sequence_state_lock.heap_usage())
+            .saturating_add(self.tx_state.heap_usage())
+            .saturating_add(self.read_sets.heap_usage())
+    }
+
     /// Record that a view performs a table scan in this transaction's read set
     pub fn record_table_scan(&mut self, op: &FuncCallType, table_id: TableId) {
         if let FuncCallType::View(view) = op {

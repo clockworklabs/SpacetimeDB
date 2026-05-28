@@ -133,6 +133,12 @@ pub(super) struct WasmInstanceEnv {
     /// A pool of unused allocated chunks that can be reused.
     // TODO(Centril): consider using this pool for `console_timer_start` and `bytes_sink_write`.
     chunk_pool: ChunkPool,
+
+    /// Wasm linear memory bytes reserved against the database memory budget.
+    wasm_memory_bytes: usize,
+
+    /// Bytes reserved for the current `memory.grow` attempt.
+    pending_wasm_growth_bytes: usize,
 }
 
 const STANDARD_BYTES_SINK: u32 = 1;
@@ -158,6 +164,8 @@ impl WasmInstanceEnv {
             timing_spans: Default::default(),
             call_times: CallTimes::new(),
             chunk_pool: <_>::default(),
+            wasm_memory_bytes: 0,
+            pending_wasm_growth_bytes: 0,
         }
     }
 
@@ -205,6 +213,25 @@ impl WasmInstanceEnv {
     pub fn instantiate(&mut self, mem: Mem) {
         assert!(self.mem.is_none());
         self.mem = Some(mem);
+    }
+
+    pub fn reconcile_wasm_memory_bytes(&mut self, actual_bytes: usize) -> RtResult<()> {
+        if actual_bytes > self.wasm_memory_bytes {
+            let delta = actual_bytes - self.wasm_memory_bytes;
+            self.instance_env
+                .relational_db()
+                .memory_budget()
+                .try_reserve_wasm_bytes(delta)?;
+        } else if actual_bytes < self.wasm_memory_bytes {
+            let delta = self.wasm_memory_bytes - actual_bytes;
+            self.instance_env
+                .relational_db()
+                .memory_budget()
+                .release_wasm_bytes(delta);
+        }
+        self.wasm_memory_bytes = actual_bytes;
+        self.pending_wasm_growth_bytes = 0;
+        Ok(())
     }
 
     pub fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
@@ -1966,6 +1993,53 @@ impl WasmInstanceEnv {
                 res.or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureHttpRequest, err)),
             )
         })
+    }
+}
+
+impl wasmtime::ResourceLimiter for WasmInstanceEnv {
+    fn memory_growing(&mut self, current: usize, desired: usize, _maximum: Option<usize>) -> RtResult<bool> {
+        self.pending_wasm_growth_bytes = 0;
+
+        let delta = desired.saturating_sub(current);
+        if let Err(err) = self
+            .instance_env
+            .relational_db()
+            .memory_budget()
+            .try_reserve_wasm_bytes(delta)
+        {
+            log::warn!("{err}");
+            return Ok(false);
+        }
+
+        self.wasm_memory_bytes = self.wasm_memory_bytes.saturating_add(delta);
+        self.pending_wasm_growth_bytes = delta;
+        Ok(true)
+    }
+
+    fn memory_grow_failed(&mut self, error: anyhow::Error) -> RtResult<()> {
+        log::debug!("wasm memory growth failed after budget reservation: {error:?}");
+        let delta = std::mem::take(&mut self.pending_wasm_growth_bytes);
+        if delta > 0 {
+            self.wasm_memory_bytes = self.wasm_memory_bytes.saturating_sub(delta);
+            self.instance_env
+                .relational_db()
+                .memory_budget()
+                .release_wasm_bytes(delta);
+        }
+        Ok(())
+    }
+
+    fn table_growing(&mut self, _current: usize, _desired: usize, _maximum: Option<usize>) -> RtResult<bool> {
+        Ok(true)
+    }
+}
+
+impl Drop for WasmInstanceEnv {
+    fn drop(&mut self) {
+        self.instance_env
+            .relational_db()
+            .memory_budget()
+            .release_wasm_bytes(self.wasm_memory_bytes);
     }
 }
 

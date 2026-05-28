@@ -345,10 +345,16 @@ fn instantiate_wasmtime_instance(
 ) -> Result<WasmtimeInstance, InitializationError> {
     let env = WasmInstanceEnv::new(env);
     let mut store = Store::new(module.module().engine(), env);
+    store.limiter(|env| env);
 
     let instance = instantiate(module, &mut store)?;
 
     let mem = Mem::extract(&instance, &mut store).unwrap();
+    let wasm_memory_bytes = mem.memory.data_size(&store);
+    store
+        .data_mut()
+        .reconcile_wasm_memory_bytes(wasm_memory_bytes)
+        .map_err(InitializationError::Instantiation)?;
     store.data_mut().instantiate(mem);
 
     store.epoch_deadline_callback(|store| {

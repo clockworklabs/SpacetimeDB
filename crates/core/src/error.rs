@@ -19,6 +19,7 @@ use crate::client::ClientActorId;
 use crate::host::module_host::ViewCallError;
 use crate::host::scheduler::ScheduleError;
 use crate::host::AbiCall;
+use crate::resource_limits::DatabaseMemoryLimitExceeded;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::hash::Hash;
@@ -149,6 +150,8 @@ pub enum DBError {
     DurabilityGone(#[from] DurabilityExited),
     #[error(transparent)]
     View(#[from] ViewCallError),
+    #[error(transparent)]
+    DatabaseMemoryLimitExceeded(#[from] DatabaseMemoryLimitExceeded),
 }
 
 impl From<InvalidFieldError> for DBError {
@@ -277,6 +280,8 @@ pub enum NodesError {
     ScheduleError(#[source] ScheduleError),
     #[error("HTTP request failed: {0}")]
     HttpError(String),
+    #[error(transparent)]
+    DatabaseMemoryLimitExceeded(#[from] DatabaseMemoryLimitExceeded),
 }
 
 impl From<DBError> for NodesError {
@@ -290,6 +295,7 @@ impl From<DBError> for NodesError {
             DBError::Datastore(DatastoreError::Index(IndexError::Decode(e))) => Self::DecodeRow(e),
             DBError::Datastore(DatastoreError::Index(IndexError::NotUnique(_))) => Self::IndexNotUnique,
             DBError::Datastore(DatastoreError::Index(IndexError::KeyNotFound(..))) => Self::IndexRowNotFound,
+            DBError::DatabaseMemoryLimitExceeded(e) => Self::DatabaseMemoryLimitExceeded(e),
             _ => Self::Internal(Box::new(e)),
         }
     }

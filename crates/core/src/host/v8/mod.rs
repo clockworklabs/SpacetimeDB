@@ -89,6 +89,7 @@ use crate::host::{ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
+use crate::resource_limits::DatabaseMemoryBudget;
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::jobs::{AllocatedJobCore, CorePinner, LoadBalanceOnDropGuard};
 use crate::worker_metrics::WORKER_METRICS;
@@ -974,6 +975,8 @@ pub(in crate::host) struct V8HeapMetrics {
     /// and during a module update, as there is a period when the new version has already been created
     /// but the old version has not yet shut down.
     last_observed: V8HeapSnapshot,
+
+    memory_budget: Arc<DatabaseMemoryBudget>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -1000,6 +1003,10 @@ impl V8HeapSnapshot {
             native_contexts: stats.number_of_native_contexts() as i64,
             detached_contexts: stats.number_of_detached_contexts() as i64,
         }
+    }
+
+    fn budgeted_bytes(self) -> i64 {
+        self.used_heap_size_bytes.saturating_add(self.external_memory_bytes)
     }
 }
 
@@ -1033,7 +1040,7 @@ impl V8HeapMetrics {
         }
     }
 
-    fn new(database_identity: &Identity, worker_kind: JsWorkerKind) -> Self {
+    fn new(database_identity: &Identity, worker_kind: JsWorkerKind, memory_budget: Arc<DatabaseMemoryBudget>) -> Self {
         Self {
             total_heap_size_bytes: WORKER_METRICS
                 .v8_total_heap_size_bytes
@@ -1060,6 +1067,7 @@ impl V8HeapMetrics {
                 .v8_detached_contexts
                 .with_label_values(database_identity, &worker_kind),
             last_observed: V8HeapSnapshot::default(),
+            memory_budget,
         }
     }
 
@@ -1075,6 +1083,7 @@ impl V8HeapMetrics {
         adjust_gauge(&self.external_memory_bytes, delta.external_memory_bytes);
         adjust_gauge(&self.native_contexts, delta.native_contexts);
         adjust_gauge(&self.detached_contexts, delta.detached_contexts);
+        self.memory_budget.adjust_v8_bytes(delta.budgeted_bytes());
     }
 
     fn observe(&mut self, stats: &v8::HeapStatistics) {
@@ -1671,7 +1680,11 @@ where
                 let info = &module_common.info();
                 let mut instance_common = InstanceCommon::new(&module_common);
                 let replica_ctx: &Arc<ReplicaContext> = module_common.replica_ctx();
-                let mut heap_metrics = V8HeapMetrics::new(&info.database_identity, worker_kind);
+                let mut heap_metrics = V8HeapMetrics::new(
+                    &info.database_identity,
+                    worker_kind,
+                    replica_ctx.relational_db().memory_budget(),
+                );
 
                 let mut inst = V8Instance {
                     scope,
