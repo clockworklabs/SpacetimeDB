@@ -49,7 +49,7 @@ impl Header {
         read.read_exact(&mut buf).map_err(|e| {
             io::Error::new(
                 e.kind(),
-                format!("failed to read {} bytes of segment header: {}", Self::LEN, e),
+                format!("failed to read segment header ({} bytes): {}", Self::LEN, e),
             )
         })?;
 
