@@ -526,7 +526,12 @@ fn main() -> Result<()> {
             )
             .run()?;
             // SDK procedure tests intentionally make localhost HTTP requests.
+            // IMPORTANT: csharp:: must run first because all SDK tests write bindings
+            // to the same test-client directory. csharp uses sdk-test-cs module which
+            // doesn't have DeleteAll* reducers, so it generates the correct bindings
+            // that match the committed state. Subsequent test runs use memoized bindings.
             let sdk_test_batches = [
+                ("csharp::", "csharp tests (run first to generate correct bindings)"),
                 ("rust::delete", "rust delete tests"),
                 ("rust::insert", "rust insert tests"),
                 ("rust::update", "rust update tests"),
