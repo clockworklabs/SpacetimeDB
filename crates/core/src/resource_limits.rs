@@ -73,7 +73,7 @@ pub struct DatabaseMemoryLimitExceeded {
 }
 
 impl DatabaseMemoryBudget {
-    pub fn new(limit_bytes: Option<usize>) -> Self {
+    pub(crate) fn new(limit_bytes: Option<usize>) -> Self {
         Self {
             limit_bytes,
             relational_bytes: AtomicUsize::new(0),
@@ -82,35 +82,31 @@ impl DatabaseMemoryBudget {
         }
     }
 
-    pub fn unlimited() -> Self {
+    pub(crate) fn unlimited() -> Self {
         Self::new(None)
     }
 
-    pub fn limit_bytes(&self) -> Option<usize> {
-        self.limit_bytes
-    }
-
-    pub fn runtime_bytes(&self) -> usize {
+    fn runtime_bytes(&self) -> usize {
         self.wasm_runtime_bytes().saturating_add(self.v8_runtime_bytes())
     }
 
-    pub fn relational_bytes(&self) -> usize {
+    fn relational_bytes(&self) -> usize {
         self.relational_bytes.load(Ordering::Relaxed)
     }
 
-    pub fn set_relational_bytes(&self, bytes: usize) {
+    pub(crate) fn set_relational_bytes(&self, bytes: usize) {
         self.relational_bytes.store(bytes, Ordering::Relaxed);
     }
 
-    pub fn wasm_runtime_bytes(&self) -> usize {
+    fn wasm_runtime_bytes(&self) -> usize {
         self.wasm_runtime_bytes.load(Ordering::Relaxed)
     }
 
-    pub fn v8_runtime_bytes(&self) -> usize {
+    fn v8_runtime_bytes(&self) -> usize {
         self.v8_runtime_bytes.load(Ordering::Relaxed)
     }
 
-    pub fn check(&self, relational_bytes: usize) -> Result<(), DatabaseMemoryLimitExceeded> {
+    pub(crate) fn check(&self, relational_bytes: usize) -> Result<(), DatabaseMemoryLimitExceeded> {
         self.check_used(relational_bytes.saturating_add(self.runtime_bytes()))
     }
 
@@ -121,7 +117,7 @@ impl DatabaseMemoryBudget {
     /// growth can happen while a mutable tx is open, and reading the datastore's
     /// committed memory from there can deadlock. The aggregate relational +
     /// runtime budget is enforced at commit time.
-    pub fn try_reserve_wasm_bytes(&self, bytes: usize) -> Result<(), DatabaseMemoryLimitExceeded> {
+    pub(crate) fn try_reserve_wasm_bytes(&self, bytes: usize) -> Result<(), DatabaseMemoryLimitExceeded> {
         if bytes == 0 {
             return Ok(());
         }
@@ -141,11 +137,11 @@ impl DatabaseMemoryBudget {
         }
     }
 
-    pub fn release_wasm_bytes(&self, bytes: usize) {
+    pub(crate) fn release_wasm_bytes(&self, bytes: usize) {
         saturating_sub(&self.wasm_runtime_bytes, bytes);
     }
 
-    pub fn adjust_v8_bytes(&self, delta: i64) {
+    pub(crate) fn adjust_v8_bytes(&self, delta: i64) {
         adjust_counter(&self.v8_runtime_bytes, delta);
     }
 
