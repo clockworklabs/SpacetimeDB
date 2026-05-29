@@ -398,7 +398,7 @@ pub async fn exec_with_options(
         // First, try to load config from current directory
         owned_loaded = find_and_load_with_env(env)?;
 
-        // If no config found and --module-path is specified, try loading from module path.
+        // If no config found and --module-path is specified, try loading from module path
         if owned_loaded.is_none()
             && args.contains_id("module_path")
             && let Some(module_path) = args.get_one::<PathBuf>("module_path")

@@ -1,4 +1,4 @@
-﻿namespace SpacetimeDB;
+namespace SpacetimeDB;
 
 using System.Runtime.CompilerServices;
 
@@ -9,7 +9,9 @@ using System.Runtime.CompilerServices;
 )]
 public sealed class TypeAttribute : Attribute { }
 
-// This could be an interface, but using `record` forces C# to check that it can
-// only be applied on types that are records themselves.
-public abstract record TaggedEnum<Variants>
+// Non-generic base record for sum types to avoid NativeAOT-LLVM vtable computation issues.
+public abstract record TaggedEnum { }
+
+// Generic version for backward compatibility; extends non-generic base to avoid vtable issues.
+public abstract record TaggedEnum<Variants> : TaggedEnum
     where Variants : struct, ITuple { }
