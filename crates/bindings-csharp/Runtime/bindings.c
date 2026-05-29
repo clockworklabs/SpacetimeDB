@@ -197,6 +197,11 @@ EXPORT(int16_t, __call_procedure__,
        &conn_id_0, &conn_id_1,
        &timestamp, &args, &result_sink);
 
+EXPORT(int16_t, __call_http_handler__,
+       (uint32_t id, uint64_t timestamp, BytesSource request, BytesSource request_body,
+        BytesSink response_sink, BytesSink response_body_sink),
+       &id, &timestamp, &request, &request_body, &response_sink, &response_body_sink);
+
 EXPORT(int16_t, __call_view__,
        (uint32_t id,
         uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
