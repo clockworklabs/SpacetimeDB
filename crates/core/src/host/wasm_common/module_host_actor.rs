@@ -1371,17 +1371,7 @@ impl InstanceCommon {
                         ViewResult::Rows(bytes) => deserialize_view_rows(row_type, bytes, typespace)
                             .context("Error deserializing rows returned by view".to_string())?,
                         ViewResult::RawSql(query) => self
-                            .run_query_for_view(
-                                &mut tx,
-                                &query,
-                                &row_product_type,
-                                &ViewCallInfo {
-                                    view_id,
-                                    table_id,
-                                    fn_ptr,
-                                    sender,
-                                },
-                            )
+                            .run_query_for_view(&mut tx, &query, &row_product_type, &ViewCallInfo { view_id, sender })
                             .context("Error executing raw SQL returned by view".to_string())?,
                     };
 
@@ -1798,8 +1788,6 @@ impl InstanceOp for ViewOp<'_> {
     fn call_type(&self) -> FuncCallType {
         FuncCallType::View(ViewCallInfo {
             view_id: self.view_id,
-            table_id: self.table_id,
-            fn_ptr: self.fn_ptr,
             sender: Some(*self.sender),
         })
     }
@@ -1828,8 +1816,6 @@ impl InstanceOp for AnonymousViewOp<'_> {
     fn call_type(&self) -> FuncCallType {
         FuncCallType::View(ViewCallInfo {
             view_id: self.view_id,
-            table_id: self.table_id,
-            fn_ptr: self.fn_ptr,
             sender: None,
         })
     }

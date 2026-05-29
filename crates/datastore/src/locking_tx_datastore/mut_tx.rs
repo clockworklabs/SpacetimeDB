@@ -47,7 +47,7 @@ use spacetimedb_lib::{
     ConnectionId, Identity, Timestamp,
 };
 use spacetimedb_primitives::{
-    col_list, ArgId, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewFnPtr, ViewId,
+    col_list, ArgId, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
 };
 use spacetimedb_sats::{
     bsatn::to_writer, memory_usage::MemoryUsage, raw_identifier::RawIdentifier, ser::Serialize, AlgebraicValue,
@@ -79,8 +79,6 @@ use std::{
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ViewCallInfo {
     pub view_id: ViewId,
-    pub table_id: TableId,
-    pub fn_ptr: ViewFnPtr,
     pub sender: Option<Identity>,
 }
 

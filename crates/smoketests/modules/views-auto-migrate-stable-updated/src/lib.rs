@@ -36,7 +36,7 @@ pub fn bump_counter(ctx: &ReducerContext) {
 }
 
 // This view is intentionally prefixed with `a_` to change the index of
-// `target_counter` in the module's internal view list.
+// `z_counter` in the module's internal view list.
 #[view(accessor = a_wrong_shape, public)]
 pub fn a_wrong_shape(ctx: &ViewContext) -> Option<Marker> {
     ctx.db.marker().id().find(&0)
