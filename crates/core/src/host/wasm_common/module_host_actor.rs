@@ -401,6 +401,15 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
         Ok((module, initial_instance))
     }
+
+    pub fn with_runtime_module<U: WasmModule>(&self, module: U) -> Result<WasmModuleHostActor<U>, InitializationError> {
+        let module = module.instantiate_pre()?;
+        Ok(WasmModuleHostActor {
+            module,
+            common: self.common.clone(),
+            func_names: self.func_names.clone(),
+        })
+    }
 }
 
 impl<T: WasmModule> WasmModuleHostActor<T> {
@@ -535,11 +544,20 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
-    pub(in crate::host) async fn call_scheduled_function(
+    pub(in crate::host) async fn call_scheduled_procedure(
         &mut self,
         params: ScheduledFunctionParams,
     ) -> CallScheduledFunctionResult {
-        let (res, trapped) = self.common.call_scheduled_function(params, &mut self.instance).await;
+        let (res, trapped) = self.common.call_scheduled_procedure(params, &mut self.instance).await;
+        self.trapped = trapped;
+        res
+    }
+
+    pub(in crate::host) fn call_scheduled_reducer(
+        &mut self,
+        params: ScheduledFunctionParams,
+    ) -> CallScheduledFunctionResult {
+        let (res, trapped) = self.common.call_scheduled_reducer(params, &mut self.instance);
         self.trapped = trapped;
         res
     }
@@ -1351,12 +1369,20 @@ impl InstanceCommon {
         self.info.relational_db().clear_all_clients().map_err(Into::into)
     }
 
-    pub(crate) async fn call_scheduled_function<I: WasmInstance>(
+    pub(crate) async fn call_scheduled_procedure<I: WasmInstance>(
         &mut self,
         params: ScheduledFunctionParams,
         inst: &mut I,
     ) -> (CallScheduledFunctionResult, bool) {
-        crate::host::scheduler::call_scheduled_function(&self.info.clone(), params, self, inst).await
+        crate::host::scheduler::call_scheduled_procedure(&self.info.clone(), params, self, inst).await
+    }
+
+    pub(crate) fn call_scheduled_reducer<I: WasmInstance>(
+        &mut self,
+        params: ScheduledFunctionParams,
+        inst: &mut I,
+    ) -> (CallScheduledFunctionResult, bool) {
+        crate::host::scheduler::call_scheduled_reducer(&self.info.clone(), params, self, inst)
     }
 }
 
