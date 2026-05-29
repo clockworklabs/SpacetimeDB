@@ -964,19 +964,25 @@ pub(in crate::host) struct V8HeapMetrics {
     external_memory_bytes: IntGauge,
     native_contexts: IntGauge,
     detached_contexts: IntGauge,
+}
 
+struct V8HeapMemoryAccounting {
+    memory_budget: Arc<DatabaseMemoryBudget>,
+}
+
+struct V8HeapObserver {
+    metrics: V8HeapMetrics,
+    memory_accounting: V8HeapMemoryAccounting,
     /// Previous values observed by this instance.
     ///
     /// In [`Self::observe`], we use this to compute deltas against the new instance's values,
-    /// then increment/decrement the metric values by those deltas.
-    /// We do this rather than `set`ting the metric values as multiple instances may coexist
-    /// and share the same metric label values.
+    /// then increment/decrement metrics and memory accounting by those deltas.
+    /// Metrics use deltas rather than `set`ting values as multiple instances may
+    /// coexist and share the same metric label values.
     /// This happens when a database has multiple procedure workers running,
     /// and during a module update, as there is a period when the new version has already been created
     /// but the old version has not yet shut down.
     last_observed: V8HeapSnapshot,
-
-    memory_budget: Arc<DatabaseMemoryBudget>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -1007,6 +1013,33 @@ impl V8HeapSnapshot {
 
     fn budgeted_bytes(self) -> i64 {
         self.used_heap_size_bytes.saturating_add(self.external_memory_bytes)
+    }
+
+    fn delta_since(self, previous: Self) -> Self {
+        Self {
+            total_heap_size_bytes: self.total_heap_size_bytes - previous.total_heap_size_bytes,
+            total_physical_size_bytes: self.total_physical_size_bytes - previous.total_physical_size_bytes,
+            used_global_handles_size_bytes: self.used_global_handles_size_bytes
+                - previous.used_global_handles_size_bytes,
+            used_heap_size_bytes: self.used_heap_size_bytes - previous.used_heap_size_bytes,
+            heap_size_limit_bytes: self.heap_size_limit_bytes - previous.heap_size_limit_bytes,
+            external_memory_bytes: self.external_memory_bytes - previous.external_memory_bytes,
+            native_contexts: self.native_contexts - previous.native_contexts,
+            detached_contexts: self.detached_contexts - previous.detached_contexts,
+        }
+    }
+
+    fn negated(self) -> Self {
+        Self {
+            total_heap_size_bytes: -self.total_heap_size_bytes,
+            total_physical_size_bytes: -self.total_physical_size_bytes,
+            used_global_handles_size_bytes: -self.used_global_handles_size_bytes,
+            used_heap_size_bytes: -self.used_heap_size_bytes,
+            heap_size_limit_bytes: -self.heap_size_limit_bytes,
+            external_memory_bytes: -self.external_memory_bytes,
+            native_contexts: -self.native_contexts,
+            detached_contexts: -self.detached_contexts,
+        }
     }
 }
 
@@ -1040,7 +1073,7 @@ impl V8HeapMetrics {
         }
     }
 
-    fn new(database_identity: &Identity, worker_kind: JsWorkerKind, memory_budget: Arc<DatabaseMemoryBudget>) -> Self {
+    fn new(database_identity: &Identity, worker_kind: JsWorkerKind) -> Self {
         Self {
             total_heap_size_bytes: WORKER_METRICS
                 .v8_total_heap_size_bytes
@@ -1066,8 +1099,6 @@ impl V8HeapMetrics {
             detached_contexts: WORKER_METRICS
                 .v8_detached_contexts
                 .with_label_values(database_identity, &worker_kind),
-            last_observed: V8HeapSnapshot::default(),
-            memory_budget,
         }
     }
 
@@ -1083,40 +1114,44 @@ impl V8HeapMetrics {
         adjust_gauge(&self.external_memory_bytes, delta.external_memory_bytes);
         adjust_gauge(&self.native_contexts, delta.native_contexts);
         adjust_gauge(&self.detached_contexts, delta.detached_contexts);
+    }
+}
+
+impl V8HeapMemoryAccounting {
+    fn new(memory_budget: Arc<DatabaseMemoryBudget>) -> Self {
+        Self { memory_budget }
+    }
+
+    fn adjust_by(&self, delta: V8HeapSnapshot) {
         self.memory_budget.adjust_v8_bytes(delta.budgeted_bytes());
+    }
+}
+
+impl V8HeapObserver {
+    fn new(metrics: V8HeapMetrics, memory_accounting: V8HeapMemoryAccounting) -> Self {
+        Self {
+            metrics,
+            memory_accounting,
+            last_observed: V8HeapSnapshot::default(),
+        }
     }
 
     fn observe(&mut self, stats: &v8::HeapStatistics) {
-        // See doc comment on `Self::last_observed` for why we compute a delta and apply it to the metrics value
-        // rather than directly calling `set`.
+        // See doc comment on `Self::last_observed` for why we compute a delta
+        // and apply it rather than directly calling `set`.
         let next = V8HeapSnapshot::from_stats(stats);
-        self.adjust_by(V8HeapSnapshot {
-            total_heap_size_bytes: next.total_heap_size_bytes - self.last_observed.total_heap_size_bytes,
-            total_physical_size_bytes: next.total_physical_size_bytes - self.last_observed.total_physical_size_bytes,
-            used_global_handles_size_bytes: next.used_global_handles_size_bytes
-                - self.last_observed.used_global_handles_size_bytes,
-            used_heap_size_bytes: next.used_heap_size_bytes - self.last_observed.used_heap_size_bytes,
-            heap_size_limit_bytes: next.heap_size_limit_bytes - self.last_observed.heap_size_limit_bytes,
-            external_memory_bytes: next.external_memory_bytes - self.last_observed.external_memory_bytes,
-            native_contexts: next.native_contexts - self.last_observed.native_contexts,
-            detached_contexts: next.detached_contexts - self.last_observed.detached_contexts,
-        });
+        let delta = next.delta_since(self.last_observed);
+        self.metrics.adjust_by(delta);
+        self.memory_accounting.adjust_by(delta);
         self.last_observed = next;
     }
 }
 
-impl Drop for V8HeapMetrics {
+impl Drop for V8HeapObserver {
     fn drop(&mut self) {
-        self.adjust_by(V8HeapSnapshot {
-            total_heap_size_bytes: -self.last_observed.total_heap_size_bytes,
-            total_physical_size_bytes: -self.last_observed.total_physical_size_bytes,
-            used_global_handles_size_bytes: -self.last_observed.used_global_handles_size_bytes,
-            used_heap_size_bytes: -self.last_observed.used_heap_size_bytes,
-            heap_size_limit_bytes: -self.last_observed.heap_size_limit_bytes,
-            external_memory_bytes: -self.last_observed.external_memory_bytes,
-            native_contexts: -self.last_observed.native_contexts,
-            detached_contexts: -self.last_observed.detached_contexts,
-        });
+        let delta = self.last_observed.negated();
+        self.metrics.adjust_by(delta);
+        self.memory_accounting.adjust_by(delta);
     }
 }
 
@@ -1128,12 +1163,12 @@ fn adjust_gauge(gauge: &IntGauge, delta: i64) {
     }
 }
 
-fn sample_heap_stats(scope: &mut PinScope<'_, '_>, metrics: &mut V8HeapMetrics) -> v8::HeapStatistics {
+fn sample_heap_stats(scope: &mut PinScope<'_, '_>, observer: &mut V8HeapObserver) -> v8::HeapStatistics {
     // Whenever we sample heap statistics, we cache them on the isolate so that
     // the per-call execution stats can avoid querying them on each invocation.
     let stats = scope.get_heap_statistics();
     env_on_isolate_unwrap(scope).set_cached_used_heap_size(stats.used_heap_size());
-    metrics.observe(&stats);
+    observer.observe(&stats);
     stats
 }
 
@@ -1153,17 +1188,17 @@ fn heap_fraction_at_or_above(used: usize, limit: usize, fraction: f64) -> bool {
 /// we'll instantiate a new isolate to reclaim memory and avoid OOMing the current one.
 fn should_retire_worker_for_heap(
     scope: &mut PinScope<'_, '_>,
-    metrics: &mut V8HeapMetrics,
+    heap_observer: &mut V8HeapObserver,
     config: V8HeapPolicyConfig,
 ) -> Option<(usize, usize)> {
-    let stats = sample_heap_stats(scope, metrics);
+    let stats = sample_heap_stats(scope, heap_observer);
     let (used, limit) = heap_usage(&stats);
     if !heap_fraction_at_or_above(used, limit, config.heap_gc_trigger_fraction) {
         return None;
     }
 
     scope.low_memory_notification();
-    let stats = sample_heap_stats(scope, metrics);
+    let stats = sample_heap_stats(scope, heap_observer);
     let (used, limit) = heap_usage(&stats);
     if heap_fraction_at_or_above(used, limit, config.heap_retire_fraction) {
         Some((used, limit))
@@ -1680,10 +1715,9 @@ where
                 let info = &module_common.info();
                 let mut instance_common = InstanceCommon::new(&module_common);
                 let replica_ctx: &Arc<ReplicaContext> = module_common.replica_ctx();
-                let mut heap_metrics = V8HeapMetrics::new(
-                    &info.database_identity,
-                    worker_kind,
-                    replica_ctx.relational_db().memory_budget(),
+                let mut heap_observer = V8HeapObserver::new(
+                    V8HeapMetrics::new(&info.database_identity, worker_kind),
+                    V8HeapMemoryAccounting::new(replica_ctx.relational_db().memory_budget()),
                 );
 
                 let mut inst = V8Instance {
@@ -1696,7 +1730,7 @@ where
                         .with_label_values(&info.database_identity),
                     initial_heap_limit: heap_policy.heap_limit_bytes,
                 };
-                let _initial_heap_stats = sample_heap_stats(inst.scope, &mut heap_metrics);
+                let _initial_heap_stats = sample_heap_stats(inst.scope, &mut heap_observer);
 
                 // Process requests to the worker.
                 //
@@ -1722,7 +1756,7 @@ where
                             requests_since_heap_check = 0;
                             last_heap_check_at = Instant::now();
                             if let Some((used, limit)) =
-                                should_retire_worker_for_heap(inst.scope, &mut heap_metrics, heap_policy)
+                                should_retire_worker_for_heap(inst.scope, &mut heap_observer, heap_policy)
                             {
                                 outcome = outcome.recreate_instance();
                                 log::warn!(
