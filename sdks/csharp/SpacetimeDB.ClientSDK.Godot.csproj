@@ -19,7 +19,7 @@
     <AssemblyVersion>2.3.0</AssemblyVersion>
     <Version>2.3.0</Version>
     <DefaultItemExcludes>$(DefaultItemExcludes);*~/**</DefaultItemExcludes>
-    <RestorePackagesPath>packages</RestorePackagesPath>
+    <RestorePackagesPath>obj~/godot/packages</RestorePackagesPath>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
     <DefineConstants>$(DefineConstants);GODOT</DefineConstants>
     <!-- Godot.NET.Sdk defaults to .godot/mono/temp; build this package like the regular C# SDK. -->
