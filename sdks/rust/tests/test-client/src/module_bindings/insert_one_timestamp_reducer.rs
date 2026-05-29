@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -12,8 +18,10 @@ pub(super) struct InsertOneTimestampArgs {
 
 impl From<InsertOneTimestampArgs> for super::Reducer {
     fn from(args: InsertOneTimestampArgs) -> Self {
-        Self::InsertOneTimestamp { t: args.t }
-    }
+        Self::InsertOneTimestamp {
+            t: args.t,
+}
+}
 }
 
 impl __sdk::InModule for InsertOneTimestampArgs {
@@ -31,8 +39,9 @@ pub trait insert_one_timestamp {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_one_timestamp:insert_one_timestamp_then`] to run a callback after the reducer completes.
-    fn insert_one_timestamp(&self, t: __sdk::Timestamp) -> __sdk::Result<()> {
-        self.insert_one_timestamp_then(t, |_, _| {})
+    fn insert_one_timestamp(&self, t: __sdk::Timestamp,
+) -> __sdk::Result<()> {
+        self.insert_one_timestamp_then(t,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_one_timestamp` to run as soon as possible,
@@ -60,7 +69,7 @@ impl insert_one_timestamp for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(InsertOneTimestampArgs { t }, callback)
+        self.imp.invoke_reducer_with_callback(InsertOneTimestampArgs { t,  }, callback)
     }
 }
+

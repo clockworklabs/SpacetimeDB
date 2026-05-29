@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -10,9 +16,11 @@ pub struct OneF64 {
     pub f: f64,
 }
 
+
 impl __sdk::InModule for OneF64 {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `OneF64`.
 ///
@@ -26,6 +34,7 @@ impl __sdk::__query_builder::HasCols for OneF64 {
     fn cols(table_name: &'static str) -> Self::Cols {
         OneF64Cols {
             f: __sdk::__query_builder::Col::new(table_name, "f"),
+
         }
     }
 }
@@ -33,13 +42,17 @@ impl __sdk::__query_builder::HasCols for OneF64 {
 /// Indexed column accessor struct for the table `OneF64`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct OneF64IxCols {}
+pub struct OneF64IxCols {
+}
 
 impl __sdk::__query_builder::HasIxCols for OneF64 {
     type IxCols = OneF64IxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        OneF64IxCols {}
+        OneF64IxCols {
+
+        }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for OneF64 {}
+

@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,8 +22,8 @@ impl From<InsertUniqueIdentityArgs> for super::Reducer {
         Self::InsertUniqueIdentity {
             i: args.i,
             data: args.data,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for InsertUniqueIdentityArgs {
@@ -35,8 +41,10 @@ pub trait insert_unique_identity {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_unique_identity:insert_unique_identity_then`] to run a callback after the reducer completes.
-    fn insert_unique_identity(&self, i: __sdk::Identity, data: i32) -> __sdk::Result<()> {
-        self.insert_unique_identity_then(i, data, |_, _| {})
+    fn insert_unique_identity(&self, i: __sdk::Identity,
+data: i32,
+) -> __sdk::Result<()> {
+        self.insert_unique_identity_then(i, data,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_unique_identity` to run as soon as possible,
@@ -48,7 +56,7 @@ pub trait insert_unique_identity {
     fn insert_unique_identity_then(
         &self,
         i: __sdk::Identity,
-        data: i32,
+data: i32,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -60,13 +68,13 @@ impl insert_unique_identity for super::RemoteReducers {
     fn insert_unique_identity_then(
         &self,
         i: __sdk::Identity,
-        data: i32,
+data: i32,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(InsertUniqueIdentityArgs { i, data }, callback)
+        self.imp.invoke_reducer_with_callback(InsertUniqueIdentityArgs { i, data,  }, callback)
     }
 }
+

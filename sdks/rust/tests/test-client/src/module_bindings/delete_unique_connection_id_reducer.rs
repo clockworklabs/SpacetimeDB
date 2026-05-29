@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -12,8 +18,10 @@ pub(super) struct DeleteUniqueConnectionIdArgs {
 
 impl From<DeleteUniqueConnectionIdArgs> for super::Reducer {
     fn from(args: DeleteUniqueConnectionIdArgs) -> Self {
-        Self::DeleteUniqueConnectionId { a: args.a }
-    }
+        Self::DeleteUniqueConnectionId {
+            a: args.a,
+}
+}
 }
 
 impl __sdk::InModule for DeleteUniqueConnectionIdArgs {
@@ -31,8 +39,9 @@ pub trait delete_unique_connection_id {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`delete_unique_connection_id:delete_unique_connection_id_then`] to run a callback after the reducer completes.
-    fn delete_unique_connection_id(&self, a: __sdk::ConnectionId) -> __sdk::Result<()> {
-        self.delete_unique_connection_id_then(a, |_, _| {})
+    fn delete_unique_connection_id(&self, a: __sdk::ConnectionId,
+) -> __sdk::Result<()> {
+        self.delete_unique_connection_id_then(a,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `delete_unique_connection_id` to run as soon as possible,
@@ -60,7 +69,7 @@ impl delete_unique_connection_id for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(DeleteUniqueConnectionIdArgs { a }, callback)
+        self.imp.invoke_reducer_with_callback(DeleteUniqueConnectionIdArgs { a,  }, callback)
     }
 }
+

@@ -2,7 +2,12 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 
 use super::byte_struct_type::ByteStruct;
 
@@ -14,8 +19,10 @@ pub(super) struct InsertOneByteStructArgs {
 
 impl From<InsertOneByteStructArgs> for super::Reducer {
     fn from(args: InsertOneByteStructArgs) -> Self {
-        Self::InsertOneByteStruct { s: args.s }
-    }
+        Self::InsertOneByteStruct {
+            s: args.s,
+}
+}
 }
 
 impl __sdk::InModule for InsertOneByteStructArgs {
@@ -33,8 +40,9 @@ pub trait insert_one_byte_struct {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_one_byte_struct:insert_one_byte_struct_then`] to run a callback after the reducer completes.
-    fn insert_one_byte_struct(&self, s: ByteStruct) -> __sdk::Result<()> {
-        self.insert_one_byte_struct_then(s, |_, _| {})
+    fn insert_one_byte_struct(&self, s: ByteStruct,
+) -> __sdk::Result<()> {
+        self.insert_one_byte_struct_then(s,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_one_byte_struct` to run as soon as possible,
@@ -62,7 +70,7 @@ impl insert_one_byte_struct for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(InsertOneByteStructArgs { s }, callback)
+        self.imp.invoke_reducer_with_callback(InsertOneByteStructArgs { s,  }, callback)
     }
 }
+

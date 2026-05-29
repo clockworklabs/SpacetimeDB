@@ -2,9 +2,14 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::one_unit_struct_type::OneUnitStruct;
 use super::unit_struct_type::UnitStruct;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `one_unit_struct`.
 ///
@@ -45,12 +50,8 @@ impl<'ctx> __sdk::Table for OneUnitStructTableHandle<'ctx> {
     type Row = OneUnitStruct;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = OneUnitStruct> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = OneUnitStruct> + '_ { self.imp.iter() }
 
     type InsertCallbackId = OneUnitStructInsertCallbackId;
 
@@ -81,7 +82,8 @@ impl<'ctx> __sdk::Table for OneUnitStructTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<OneUnitStruct>("one_unit_struct");
+
+        let _table = client_cache.get_or_make_table::<OneUnitStruct>("one_unit_struct");
 }
 
 #[doc(hidden)]
@@ -89,24 +91,26 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<OneUnitStruct>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<OneUnitStruct>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<OneUnitStruct>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `OneUnitStruct`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait one_unit_structQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `OneUnitStruct`.
-    fn one_unit_struct(&self) -> __sdk::__query_builder::Table<OneUnitStruct>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `OneUnitStruct`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait one_unit_structQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `OneUnitStruct`.
+            fn one_unit_struct(&self) -> __sdk::__query_builder::Table<OneUnitStruct>;
+        }
 
-impl one_unit_structQueryTableAccess for __sdk::QueryTableAccessor {
-    fn one_unit_struct(&self) -> __sdk::__query_builder::Table<OneUnitStruct> {
-        __sdk::__query_builder::Table::new("one_unit_struct")
-    }
-}
+        impl one_unit_structQueryTableAccess for __sdk::QueryTableAccessor {
+            fn one_unit_struct(&self) -> __sdk::__query_builder::Table<OneUnitStruct> {
+                __sdk::__query_builder::Table::new("one_unit_struct")
+            }
+        }
+

@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -11,9 +17,11 @@ pub struct IndexedTable2 {
     pub player_snazz: f32,
 }
 
+
 impl __sdk::InModule for IndexedTable2 {
     type Module = super::RemoteModule;
 }
+
 
 /// Column accessor struct for the table `IndexedTable2`.
 ///
@@ -29,6 +37,7 @@ impl __sdk::__query_builder::HasCols for IndexedTable2 {
         IndexedTable2Cols {
             player_id: __sdk::__query_builder::Col::new(table_name, "player_id"),
             player_snazz: __sdk::__query_builder::Col::new(table_name, "player_snazz"),
+
         }
     }
 }
@@ -36,13 +45,17 @@ impl __sdk::__query_builder::HasCols for IndexedTable2 {
 /// Indexed column accessor struct for the table `IndexedTable2`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct IndexedTable2IxCols {}
+pub struct IndexedTable2IxCols {
+}
 
 impl __sdk::__query_builder::HasIxCols for IndexedTable2 {
     type IxCols = IndexedTable2IxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        IndexedTable2IxCols {}
+        IndexedTable2IxCols {
+
+        }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for IndexedTable2 {}
+

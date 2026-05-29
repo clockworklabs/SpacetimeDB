@@ -2,7 +2,13 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -16,8 +22,8 @@ impl From<UpdatePkConnectionIdArgs> for super::Reducer {
         Self::UpdatePkConnectionId {
             a: args.a,
             data: args.data,
-        }
-    }
+}
+}
 }
 
 impl __sdk::InModule for UpdatePkConnectionIdArgs {
@@ -35,8 +41,10 @@ pub trait update_pk_connection_id {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`update_pk_connection_id:update_pk_connection_id_then`] to run a callback after the reducer completes.
-    fn update_pk_connection_id(&self, a: __sdk::ConnectionId, data: i32) -> __sdk::Result<()> {
-        self.update_pk_connection_id_then(a, data, |_, _| {})
+    fn update_pk_connection_id(&self, a: __sdk::ConnectionId,
+data: i32,
+) -> __sdk::Result<()> {
+        self.update_pk_connection_id_then(a, data,  |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `update_pk_connection_id` to run as soon as possible,
@@ -48,7 +56,7 @@ pub trait update_pk_connection_id {
     fn update_pk_connection_id_then(
         &self,
         a: __sdk::ConnectionId,
-        data: i32,
+data: i32,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -60,13 +68,13 @@ impl update_pk_connection_id for super::RemoteReducers {
     fn update_pk_connection_id_then(
         &self,
         a: __sdk::ConnectionId,
-        data: i32,
+data: i32,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(UpdatePkConnectionIdArgs { a, data }, callback)
+        self.imp.invoke_reducer_with_callback(UpdatePkConnectionIdArgs { a, data,  }, callback)
     }
 }
+

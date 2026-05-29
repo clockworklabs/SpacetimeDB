@@ -2,9 +2,14 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
 use super::option_simple_enum_type::OptionSimpleEnum;
 use super::simple_enum_type::SimpleEnum;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `option_simple_enum`.
 ///
@@ -45,12 +50,8 @@ impl<'ctx> __sdk::Table for OptionSimpleEnumTableHandle<'ctx> {
     type Row = OptionSimpleEnum;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 {
-        self.imp.count()
-    }
-    fn iter(&self) -> impl Iterator<Item = OptionSimpleEnum> + '_ {
-        self.imp.iter()
-    }
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = OptionSimpleEnum> + '_ { self.imp.iter() }
 
     type InsertCallbackId = OptionSimpleEnumInsertCallbackId;
 
@@ -81,7 +82,8 @@ impl<'ctx> __sdk::Table for OptionSimpleEnumTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<OptionSimpleEnum>("option_simple_enum");
+
+        let _table = client_cache.get_or_make_table::<OptionSimpleEnum>("option_simple_enum");
 }
 
 #[doc(hidden)]
@@ -89,24 +91,26 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<OptionSimpleEnum>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<OptionSimpleEnum>", "TableUpdate")
-            .with_cause(e)
-            .into()
+        __sdk::InternalError::failed_parse(
+            "TableUpdate<OptionSimpleEnum>",
+            "TableUpdate",
+        ).with_cause(e).into()
     })
 }
 
-#[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `OptionSimpleEnum`.
-///
-/// Implemented for [`__sdk::QueryTableAccessor`].
-pub trait option_simple_enumQueryTableAccess {
-    #[allow(non_snake_case)]
-    /// Get a query builder for the table `OptionSimpleEnum`.
-    fn option_simple_enum(&self) -> __sdk::__query_builder::Table<OptionSimpleEnum>;
-}
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `OptionSimpleEnum`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait option_simple_enumQueryTableAccess {
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `OptionSimpleEnum`.
+            fn option_simple_enum(&self) -> __sdk::__query_builder::Table<OptionSimpleEnum>;
+        }
 
-impl option_simple_enumQueryTableAccess for __sdk::QueryTableAccessor {
-    fn option_simple_enum(&self) -> __sdk::__query_builder::Table<OptionSimpleEnum> {
-        __sdk::__query_builder::Table::new("option_simple_enum")
-    }
-}
+        impl option_simple_enumQueryTableAccess for __sdk::QueryTableAccessor {
+            fn option_simple_enum(&self) -> __sdk::__query_builder::Table<OptionSimpleEnum> {
+                __sdk::__query_builder::Table::new("option_simple_enum")
+            }
+        }
+
