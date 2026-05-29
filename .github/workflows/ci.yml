@@ -274,6 +274,7 @@ jobs:
     timeout-minutes: 60
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
     steps:
       - name: Find Git ref
         env:
@@ -329,6 +330,7 @@ jobs:
     runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
@@ -368,6 +370,7 @@ jobs:
     runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
     steps:
       - uses: actions/checkout@v3
 
@@ -392,6 +395,8 @@ jobs:
     name: Check that packages are publishable
     runs-on: spacetimedb-new-runner-2
     permissions: read-all
+    env:
+      RUST_BACKTRACE: full
     steps:
       - uses: actions/checkout@v3
       - uses: dsherret/rust-toolchain-file@v1
@@ -411,6 +416,8 @@ jobs:
           - { target: aarch64-apple-darwin, runner: macos-latest }
           - { target: x86_64-pc-windows-msvc, runner: windows-latest }
     runs-on: ${{ matrix.runner }}
+    env:
+      RUST_BACKTRACE: full
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -455,6 +462,8 @@ jobs:
       # Run as root because otherwise we get permission denied for various directories inside the container. I tried doing dances to allow it to run
       # without this (reassigning env vars and stuff), but was unable to get it to work and it felt like an uphill battle.
       options: --user 0:0
+    env:
+      RUST_BACKTRACE: full
     steps:
       # Uncomment this before merging so that it will run properly if run manually through the GH actions flow. It was playing weird with rolled back
       # commits though.
@@ -527,6 +536,8 @@ jobs:
   ci_command_docs:
     name: Check CI command docs
     runs-on: spacetimedb-new-runner-2
+    env:
+      RUST_BACKTRACE: full
     steps:
       - name: Find Git ref
         env:
@@ -559,6 +570,7 @@ jobs:
     runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
     steps:
       - name: Find Git ref
         env:
@@ -629,6 +641,7 @@ jobs:
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
     steps:
       - name: Checkout repository
         id: checkout-stdb
@@ -768,6 +781,7 @@ jobs:
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
     steps:
       - name: Checkout repository
         id: checkout-stdb
@@ -891,6 +905,7 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     env:
+      RUST_BACKTRACE: full
       TARGET_OWNER: clockworklabs
       TARGET_REPO: SpacetimeDBPrivate
     steps:
@@ -1016,6 +1031,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      RUST_BACKTRACE: full
     steps:
       - name: Find Git ref
         env:
@@ -1055,6 +1072,7 @@ jobs:
       contents: read
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
     steps:
       - name: Find Git ref
         env:
@@ -1107,6 +1125,8 @@ jobs:
   docs-build:
     name: Docs build
     runs-on: spacetimedb-new-runner-2
+    env:
+      RUST_BACKTRACE: full
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -1144,6 +1164,8 @@ jobs:
   typescript-test:
     name: TypeScript - Tests
     runs-on: spacetimedb-new-runner-2
+    env:
+      RUST_BACKTRACE: full
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -1254,6 +1276,8 @@ jobs:
 
   version_upgrade_check:
     runs-on: spacetimedb-new-runner-2
+    env:
+      RUST_BACKTRACE: full
     steps:
       - name: Checkout
         uses: actions/checkout@v3
