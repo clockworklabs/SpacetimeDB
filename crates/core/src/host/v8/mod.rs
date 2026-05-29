@@ -171,7 +171,7 @@ const REDUCER_ARGS_BUFFER_SIZE: usize = 4_096;
 const JS_PROCEDURE_INSTANCE_QUEUE_CAPACITY: usize = 1;
 
 #[derive(Copy, Clone)]
-pub(crate) enum JsWorkerKind {
+pub enum JsWorkerKind {
     Main,
     Procedure,
 }

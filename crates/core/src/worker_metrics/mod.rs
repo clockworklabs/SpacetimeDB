@@ -1,6 +1,6 @@
+use crate::hash::Hash;
 use crate::messages::control_db::HostType;
 use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
-use crate::{hash::Hash, host::v8::JsWorkerKind};
 use once_cell::sync::Lazy;
 use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_datastore::execution_context::WorkloadType;
@@ -10,6 +10,9 @@ use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_table::page_pool::PagePool;
 use std::{sync::Once, time::Duration};
 use tokio::{spawn, time::sleep};
+
+// Used as a metrics label value, so private billing code needs access to it.
+pub use crate::host::v8::JsWorkerKind;
 
 metrics_group!(
     pub struct WorkerMetrics {
