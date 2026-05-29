@@ -18,7 +18,7 @@ spacetime logout
 spacetime login
 ```
 
-:::note
+:::danger
 `spacetime logout` will discard your previous server-issued token, resulting in you no longer being able to manage any databases you previously published owned by that identity. If you still need access to the server-issued token, view it with `spacetime login show --token` and save it. You can then log back in with that token using `spacetime login --token`.
 :::
 
