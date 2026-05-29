@@ -12,9 +12,9 @@
 #include <memory>
 #include "../autogen_base.h"
 #include "spacetimedb/bsatn/bsatn.h"
-#include "ReducerDef.g.h"
-#include "MiscModuleExport.g.h"
 #include "Typespace.g.h"
+#include "MiscModuleExport.g.h"
+#include "ReducerDef.g.h"
 #include "TableDesc.g.h"
 
 namespace SpacetimeDB::Internal {
