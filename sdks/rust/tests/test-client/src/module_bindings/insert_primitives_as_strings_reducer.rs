@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::every_primitive_struct_type::EveryPrimitiveStruct;
 
@@ -19,10 +14,8 @@ pub(super) struct InsertPrimitivesAsStringsArgs {
 
 impl From<InsertPrimitivesAsStringsArgs> for super::Reducer {
     fn from(args: InsertPrimitivesAsStringsArgs) -> Self {
-        Self::InsertPrimitivesAsStrings {
-            s: args.s,
-}
-}
+        Self::InsertPrimitivesAsStrings { s: args.s }
+    }
 }
 
 impl __sdk::InModule for InsertPrimitivesAsStringsArgs {
@@ -40,9 +33,8 @@ pub trait insert_primitives_as_strings {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_primitives_as_strings:insert_primitives_as_strings_then`] to run a callback after the reducer completes.
-    fn insert_primitives_as_strings(&self, s: EveryPrimitiveStruct,
-) -> __sdk::Result<()> {
-        self.insert_primitives_as_strings_then(s,  |_, _| {})
+    fn insert_primitives_as_strings(&self, s: EveryPrimitiveStruct) -> __sdk::Result<()> {
+        self.insert_primitives_as_strings_then(s, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_primitives_as_strings` to run as soon as possible,
@@ -70,7 +62,7 @@ impl insert_primitives_as_strings for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertPrimitivesAsStringsArgs { s,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(InsertPrimitivesAsStringsArgs { s }, callback)
     }
 }
-

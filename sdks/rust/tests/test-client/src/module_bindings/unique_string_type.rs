@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -17,11 +11,9 @@ pub struct UniqueString {
     pub data: i32,
 }
 
-
 impl __sdk::InModule for UniqueString {
     type Module = super::RemoteModule;
 }
-
 
 /// Column accessor struct for the table `UniqueString`.
 ///
@@ -37,7 +29,6 @@ impl __sdk::__query_builder::HasCols for UniqueString {
         UniqueStringCols {
             s: __sdk::__query_builder::Col::new(table_name, "s"),
             data: __sdk::__query_builder::Col::new(table_name, "data"),
-
         }
     }
 }
@@ -54,10 +45,8 @@ impl __sdk::__query_builder::HasIxCols for UniqueString {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         UniqueStringIxCols {
             s: __sdk::__query_builder::IxCol::new(table_name, "s"),
-
         }
     }
 }
 
 impl __sdk::__query_builder::CanBeLookupTable for UniqueString {}
-

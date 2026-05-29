@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::simple_enum_type::SimpleEnum;
 
@@ -20,11 +15,8 @@ pub(super) struct UpdateIndexedSimpleEnumArgs {
 
 impl From<UpdateIndexedSimpleEnumArgs> for super::Reducer {
     fn from(args: UpdateIndexedSimpleEnumArgs) -> Self {
-        Self::UpdateIndexedSimpleEnum {
-            a: args.a,
-            b: args.b,
-}
-}
+        Self::UpdateIndexedSimpleEnum { a: args.a, b: args.b }
+    }
 }
 
 impl __sdk::InModule for UpdateIndexedSimpleEnumArgs {
@@ -42,10 +34,8 @@ pub trait update_indexed_simple_enum {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`update_indexed_simple_enum:update_indexed_simple_enum_then`] to run a callback after the reducer completes.
-    fn update_indexed_simple_enum(&self, a: SimpleEnum,
-b: SimpleEnum,
-) -> __sdk::Result<()> {
-        self.update_indexed_simple_enum_then(a, b,  |_, _| {})
+    fn update_indexed_simple_enum(&self, a: SimpleEnum, b: SimpleEnum) -> __sdk::Result<()> {
+        self.update_indexed_simple_enum_then(a, b, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `update_indexed_simple_enum` to run as soon as possible,
@@ -57,7 +47,7 @@ b: SimpleEnum,
     fn update_indexed_simple_enum_then(
         &self,
         a: SimpleEnum,
-b: SimpleEnum,
+        b: SimpleEnum,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -69,13 +59,13 @@ impl update_indexed_simple_enum for super::RemoteReducers {
     fn update_indexed_simple_enum_then(
         &self,
         a: SimpleEnum,
-b: SimpleEnum,
+        b: SimpleEnum,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(UpdateIndexedSimpleEnumArgs { a, b,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(UpdateIndexedSimpleEnumArgs { a, b }, callback)
     }
 }
-

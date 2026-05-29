@@ -2,14 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::indexed_simple_enum_type::IndexedSimpleEnum;
 use super::simple_enum_type::SimpleEnum;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `indexed_simple_enum`.
 ///
@@ -50,8 +45,12 @@ impl<'ctx> __sdk::Table for IndexedSimpleEnumTableHandle<'ctx> {
     type Row = IndexedSimpleEnum;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = IndexedSimpleEnum> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = IndexedSimpleEnum> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = IndexedSimpleEnumInsertCallbackId;
 
@@ -82,8 +81,7 @@ impl<'ctx> __sdk::Table for IndexedSimpleEnumTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<IndexedSimpleEnum>("indexed_simple_enum");
+    let _table = client_cache.get_or_make_table::<IndexedSimpleEnum>("indexed_simple_enum");
 }
 
 #[doc(hidden)]
@@ -91,26 +89,24 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<IndexedSimpleEnum>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<IndexedSimpleEnum>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<IndexedSimpleEnum>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `IndexedSimpleEnum`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait indexed_simple_enumQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `IndexedSimpleEnum`.
-            fn indexed_simple_enum(&self) -> __sdk::__query_builder::Table<IndexedSimpleEnum>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `IndexedSimpleEnum`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait indexed_simple_enumQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `IndexedSimpleEnum`.
+    fn indexed_simple_enum(&self) -> __sdk::__query_builder::Table<IndexedSimpleEnum>;
+}
 
-        impl indexed_simple_enumQueryTableAccess for __sdk::QueryTableAccessor {
-            fn indexed_simple_enum(&self) -> __sdk::__query_builder::Table<IndexedSimpleEnum> {
-                __sdk::__query_builder::Table::new("indexed_simple_enum")
-            }
-        }
-
+impl indexed_simple_enumQueryTableAccess for __sdk::QueryTableAccessor {
+    fn indexed_simple_enum(&self) -> __sdk::__query_builder::Table<IndexedSimpleEnum> {
+        __sdk::__query_builder::Table::new("indexed_simple_enum")
+    }
+}

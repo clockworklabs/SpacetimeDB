@@ -2,27 +2,20 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::enum_with_payload_type::EnumWithPayload;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct DeleteAllVecEnumWithPayloadArgs {
-    pub e: Vec::<EnumWithPayload>,
+    pub e: Vec<EnumWithPayload>,
 }
 
 impl From<DeleteAllVecEnumWithPayloadArgs> for super::Reducer {
     fn from(args: DeleteAllVecEnumWithPayloadArgs) -> Self {
-        Self::DeleteAllVecEnumWithPayload {
-            e: args.e,
-}
-}
+        Self::DeleteAllVecEnumWithPayload { e: args.e }
+    }
 }
 
 impl __sdk::InModule for DeleteAllVecEnumWithPayloadArgs {
@@ -40,9 +33,8 @@ pub trait delete_all_vec_enum_with_payload {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`delete_all_vec_enum_with_payload:delete_all_vec_enum_with_payload_then`] to run a callback after the reducer completes.
-    fn delete_all_vec_enum_with_payload(&self, e: Vec::<EnumWithPayload>,
-) -> __sdk::Result<()> {
-        self.delete_all_vec_enum_with_payload_then(e,  |_, _| {})
+    fn delete_all_vec_enum_with_payload(&self, e: Vec<EnumWithPayload>) -> __sdk::Result<()> {
+        self.delete_all_vec_enum_with_payload_then(e, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `delete_all_vec_enum_with_payload` to run as soon as possible,
@@ -53,7 +45,7 @@ pub trait delete_all_vec_enum_with_payload {
     ///  and its status can be observed with the `callback`.
     fn delete_all_vec_enum_with_payload_then(
         &self,
-        e: Vec::<EnumWithPayload>,
+        e: Vec<EnumWithPayload>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -64,13 +56,13 @@ pub trait delete_all_vec_enum_with_payload {
 impl delete_all_vec_enum_with_payload for super::RemoteReducers {
     fn delete_all_vec_enum_with_payload_then(
         &self,
-        e: Vec::<EnumWithPayload>,
+        e: Vec<EnumWithPayload>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(DeleteAllVecEnumWithPayloadArgs { e,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(DeleteAllVecEnumWithPayloadArgs { e }, callback)
     }
 }
-

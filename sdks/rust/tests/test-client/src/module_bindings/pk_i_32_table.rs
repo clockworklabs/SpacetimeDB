@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::pk_i_32_type::PkI32;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `pk_i_32`.
 ///
@@ -49,8 +44,12 @@ impl<'ctx> __sdk::Table for PkI32TableHandle<'ctx> {
     type Row = PkI32;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = PkI32> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = PkI32> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = PkI32InsertCallbackId;
 
@@ -96,68 +95,63 @@ impl<'ctx> __sdk::TableWithPrimaryKey for PkI32TableHandle<'ctx> {
     }
 }
 
-        /// Access to the `n` unique index on the table `pk_i_32`,
-        /// which allows point queries on the field of the same name
-        /// via the [`PkI32NUnique::find`] method.
-        ///
-        /// Users are encouraged not to explicitly reference this type,
-        /// but to directly chain method calls,
-        /// like `ctx.db.pk_i_32().n().find(...)`.
-        pub struct PkI32NUnique<'ctx> {
-            imp: __sdk::UniqueConstraintHandle<PkI32, i32>,
-            phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-        }
+/// Access to the `n` unique index on the table `pk_i_32`,
+/// which allows point queries on the field of the same name
+/// via the [`PkI32NUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.pk_i_32().n().find(...)`.
+pub struct PkI32NUnique<'ctx> {
+    imp: __sdk::UniqueConstraintHandle<PkI32, i32>,
+    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
 
-        impl<'ctx> PkI32TableHandle<'ctx> {
-            /// Get a handle on the `n` unique index on the table `pk_i_32`.
-            pub fn n(&self) -> PkI32NUnique<'ctx> {
-                PkI32NUnique {
-                    imp: self.imp.get_unique_constraint::<i32>("n"),
-                    phantom: std::marker::PhantomData,
-                }
-            }
+impl<'ctx> PkI32TableHandle<'ctx> {
+    /// Get a handle on the `n` unique index on the table `pk_i_32`.
+    pub fn n(&self) -> PkI32NUnique<'ctx> {
+        PkI32NUnique {
+            imp: self.imp.get_unique_constraint::<i32>("n"),
+            phantom: std::marker::PhantomData,
         }
+    }
+}
 
-        impl<'ctx> PkI32NUnique<'ctx> {
-            /// Find the subscribed row whose `n` column value is equal to `col_val`,
-            /// if such a row is present in the client cache.
-            pub fn find(&self, col_val: &i32) -> Option<PkI32> {
-                self.imp.find(col_val)
-            }
-        }
-        
+impl<'ctx> PkI32NUnique<'ctx> {
+    /// Find the subscribed row whose `n` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
+    pub fn find(&self, col_val: &i32) -> Option<PkI32> {
+        self.imp.find(col_val)
+    }
+}
+
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
     let _table = client_cache.get_or_make_table::<PkI32>("pk_i_32");
     _table.add_unique_constraint::<i32>("n", |row| &row.n);
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::v2::TableUpdate,
-) -> __sdk::Result<__sdk::TableUpdate<PkI32>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<PkI32>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<PkI32>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<PkI32>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `PkI32`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait pk_i_32QueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `PkI32`.
-            fn pk_i_32(&self) -> __sdk::__query_builder::Table<PkI32>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PkI32`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait pk_i_32QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PkI32`.
+    fn pk_i_32(&self) -> __sdk::__query_builder::Table<PkI32>;
+}
 
-        impl pk_i_32QueryTableAccess for __sdk::QueryTableAccessor {
-            fn pk_i_32(&self) -> __sdk::__query_builder::Table<PkI32> {
-                __sdk::__query_builder::Table::new("pk_i_32")
-            }
-        }
-
+impl pk_i_32QueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_i_32(&self) -> __sdk::__query_builder::Table<PkI32> {
+        __sdk::__query_builder::Table::new("pk_i_32")
+    }
+}

@@ -2,26 +2,18 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct DeleteAllVecIdentityArgs {
-    pub i: Vec::<__sdk::Identity>,
+    pub i: Vec<__sdk::Identity>,
 }
 
 impl From<DeleteAllVecIdentityArgs> for super::Reducer {
     fn from(args: DeleteAllVecIdentityArgs) -> Self {
-        Self::DeleteAllVecIdentity {
-            i: args.i,
-}
-}
+        Self::DeleteAllVecIdentity { i: args.i }
+    }
 }
 
 impl __sdk::InModule for DeleteAllVecIdentityArgs {
@@ -39,9 +31,8 @@ pub trait delete_all_vec_identity {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`delete_all_vec_identity:delete_all_vec_identity_then`] to run a callback after the reducer completes.
-    fn delete_all_vec_identity(&self, i: Vec::<__sdk::Identity>,
-) -> __sdk::Result<()> {
-        self.delete_all_vec_identity_then(i,  |_, _| {})
+    fn delete_all_vec_identity(&self, i: Vec<__sdk::Identity>) -> __sdk::Result<()> {
+        self.delete_all_vec_identity_then(i, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `delete_all_vec_identity` to run as soon as possible,
@@ -52,7 +43,7 @@ pub trait delete_all_vec_identity {
     ///  and its status can be observed with the `callback`.
     fn delete_all_vec_identity_then(
         &self,
-        i: Vec::<__sdk::Identity>,
+        i: Vec<__sdk::Identity>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -63,13 +54,13 @@ pub trait delete_all_vec_identity {
 impl delete_all_vec_identity for super::RemoteReducers {
     fn delete_all_vec_identity_then(
         &self,
-        i: Vec::<__sdk::Identity>,
+        i: Vec<__sdk::Identity>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(DeleteAllVecIdentityArgs { i,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(DeleteAllVecIdentityArgs { i }, callback)
     }
 }
-

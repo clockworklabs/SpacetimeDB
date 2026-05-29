@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,10 +12,8 @@ pub(super) struct DeleteUniqueUuidArgs {
 
 impl From<DeleteUniqueUuidArgs> for super::Reducer {
     fn from(args: DeleteUniqueUuidArgs) -> Self {
-        Self::DeleteUniqueUuid {
-            u: args.u,
-}
-}
+        Self::DeleteUniqueUuid { u: args.u }
+    }
 }
 
 impl __sdk::InModule for DeleteUniqueUuidArgs {
@@ -39,9 +31,8 @@ pub trait delete_unique_uuid {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`delete_unique_uuid:delete_unique_uuid_then`] to run a callback after the reducer completes.
-    fn delete_unique_uuid(&self, u: __sdk::Uuid,
-) -> __sdk::Result<()> {
-        self.delete_unique_uuid_then(u,  |_, _| {})
+    fn delete_unique_uuid(&self, u: __sdk::Uuid) -> __sdk::Result<()> {
+        self.delete_unique_uuid_then(u, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `delete_unique_uuid` to run as soon as possible,
@@ -69,7 +60,7 @@ impl delete_unique_uuid for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(DeleteUniqueUuidArgs { u,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(DeleteUniqueUuidArgs { u }, callback)
     }
 }
-

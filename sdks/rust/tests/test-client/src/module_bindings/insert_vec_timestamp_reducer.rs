@@ -2,26 +2,18 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct InsertVecTimestampArgs {
-    pub t: Vec::<__sdk::Timestamp>,
+    pub t: Vec<__sdk::Timestamp>,
 }
 
 impl From<InsertVecTimestampArgs> for super::Reducer {
     fn from(args: InsertVecTimestampArgs) -> Self {
-        Self::InsertVecTimestamp {
-            t: args.t,
-}
-}
+        Self::InsertVecTimestamp { t: args.t }
+    }
 }
 
 impl __sdk::InModule for InsertVecTimestampArgs {
@@ -39,9 +31,8 @@ pub trait insert_vec_timestamp {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_vec_timestamp:insert_vec_timestamp_then`] to run a callback after the reducer completes.
-    fn insert_vec_timestamp(&self, t: Vec::<__sdk::Timestamp>,
-) -> __sdk::Result<()> {
-        self.insert_vec_timestamp_then(t,  |_, _| {})
+    fn insert_vec_timestamp(&self, t: Vec<__sdk::Timestamp>) -> __sdk::Result<()> {
+        self.insert_vec_timestamp_then(t, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_vec_timestamp` to run as soon as possible,
@@ -52,7 +43,7 @@ pub trait insert_vec_timestamp {
     ///  and its status can be observed with the `callback`.
     fn insert_vec_timestamp_then(
         &self,
-        t: Vec::<__sdk::Timestamp>,
+        t: Vec<__sdk::Timestamp>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -63,13 +54,13 @@ pub trait insert_vec_timestamp {
 impl insert_vec_timestamp for super::RemoteReducers {
     fn insert_vec_timestamp_then(
         &self,
-        t: Vec::<__sdk::Timestamp>,
+        t: Vec<__sdk::Timestamp>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertVecTimestampArgs { t,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(InsertVecTimestampArgs { t }, callback)
     }
 }
-

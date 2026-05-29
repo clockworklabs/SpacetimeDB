@@ -2,26 +2,18 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct DeleteAllOptionVecOptionI32Args {
-    pub v: Option::<Vec::<Option::<i32>>>,
+    pub v: Option<Vec<Option<i32>>>,
 }
 
 impl From<DeleteAllOptionVecOptionI32Args> for super::Reducer {
     fn from(args: DeleteAllOptionVecOptionI32Args) -> Self {
-        Self::DeleteAllOptionVecOptionI32 {
-            v: args.v,
-}
-}
+        Self::DeleteAllOptionVecOptionI32 { v: args.v }
+    }
 }
 
 impl __sdk::InModule for DeleteAllOptionVecOptionI32Args {
@@ -39,9 +31,8 @@ pub trait delete_all_option_vec_option_i_32 {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`delete_all_option_vec_option_i_32:delete_all_option_vec_option_i_32_then`] to run a callback after the reducer completes.
-    fn delete_all_option_vec_option_i_32(&self, v: Option::<Vec::<Option::<i32>>>,
-) -> __sdk::Result<()> {
-        self.delete_all_option_vec_option_i_32_then(v,  |_, _| {})
+    fn delete_all_option_vec_option_i_32(&self, v: Option<Vec<Option<i32>>>) -> __sdk::Result<()> {
+        self.delete_all_option_vec_option_i_32_then(v, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `delete_all_option_vec_option_i_32` to run as soon as possible,
@@ -52,7 +43,7 @@ pub trait delete_all_option_vec_option_i_32 {
     ///  and its status can be observed with the `callback`.
     fn delete_all_option_vec_option_i_32_then(
         &self,
-        v: Option::<Vec::<Option::<i32>>>,
+        v: Option<Vec<Option<i32>>>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -63,13 +54,13 @@ pub trait delete_all_option_vec_option_i_32 {
 impl delete_all_option_vec_option_i_32 for super::RemoteReducers {
     fn delete_all_option_vec_option_i_32_then(
         &self,
-        v: Option::<Vec::<Option::<i32>>>,
+        v: Option<Vec<Option<i32>>>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(DeleteAllOptionVecOptionI32Args { v,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(DeleteAllOptionVecOptionI32Args { v }, callback)
     }
 }
-

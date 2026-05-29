@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::one_u_8_type::OneU8;
 use super::vec_u_8_type::VecU8;
@@ -21,11 +16,8 @@ pub(super) struct InsertTableHoldsTableArgs {
 
 impl From<InsertTableHoldsTableArgs> for super::Reducer {
     fn from(args: InsertTableHoldsTableArgs) -> Self {
-        Self::InsertTableHoldsTable {
-            a: args.a,
-            b: args.b,
-}
-}
+        Self::InsertTableHoldsTable { a: args.a, b: args.b }
+    }
 }
 
 impl __sdk::InModule for InsertTableHoldsTableArgs {
@@ -43,10 +35,8 @@ pub trait insert_table_holds_table {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_table_holds_table:insert_table_holds_table_then`] to run a callback after the reducer completes.
-    fn insert_table_holds_table(&self, a: OneU8,
-b: VecU8,
-) -> __sdk::Result<()> {
-        self.insert_table_holds_table_then(a, b,  |_, _| {})
+    fn insert_table_holds_table(&self, a: OneU8, b: VecU8) -> __sdk::Result<()> {
+        self.insert_table_holds_table_then(a, b, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_table_holds_table` to run as soon as possible,
@@ -58,7 +48,7 @@ b: VecU8,
     fn insert_table_holds_table_then(
         &self,
         a: OneU8,
-b: VecU8,
+        b: VecU8,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -70,13 +60,13 @@ impl insert_table_holds_table for super::RemoteReducers {
     fn insert_table_holds_table_then(
         &self,
         a: OneU8,
-b: VecU8,
+        b: VecU8,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertTableHoldsTableArgs { a, b,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(InsertTableHoldsTableArgs { a, b }, callback)
     }
 }
-

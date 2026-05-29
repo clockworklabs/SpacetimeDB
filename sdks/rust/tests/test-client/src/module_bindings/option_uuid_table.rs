@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::option_uuid_type::OptionUuid;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `option_uuid`.
 ///
@@ -49,8 +44,12 @@ impl<'ctx> __sdk::Table for OptionUuidTableHandle<'ctx> {
     type Row = OptionUuid;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = OptionUuid> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = OptionUuid> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = OptionUuidInsertCallbackId;
 
@@ -81,35 +80,30 @@ impl<'ctx> __sdk::Table for OptionUuidTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<OptionUuid>("option_uuid");
+    let _table = client_cache.get_or_make_table::<OptionUuid>("option_uuid");
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(
-    raw_updates: __ws::v2::TableUpdate,
-) -> __sdk::Result<__sdk::TableUpdate<OptionUuid>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<OptionUuid>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<OptionUuid>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<OptionUuid>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `OptionUuid`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait option_uuidQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `OptionUuid`.
-            fn option_uuid(&self) -> __sdk::__query_builder::Table<OptionUuid>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OptionUuid`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait option_uuidQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OptionUuid`.
+    fn option_uuid(&self) -> __sdk::__query_builder::Table<OptionUuid>;
+}
 
-        impl option_uuidQueryTableAccess for __sdk::QueryTableAccessor {
-            fn option_uuid(&self) -> __sdk::__query_builder::Table<OptionUuid> {
-                __sdk::__query_builder::Table::new("option_uuid")
-            }
-        }
-
+impl option_uuidQueryTableAccess for __sdk::QueryTableAccessor {
+    fn option_uuid(&self) -> __sdk::__query_builder::Table<OptionUuid> {
+        __sdk::__query_builder::Table::new("option_uuid")
+    }
+}

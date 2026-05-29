@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,10 +12,8 @@ pub(super) struct DeleteAllOneBoolArgs {
 
 impl From<DeleteAllOneBoolArgs> for super::Reducer {
     fn from(args: DeleteAllOneBoolArgs) -> Self {
-        Self::DeleteAllOneBool {
-            b: args.b,
-}
-}
+        Self::DeleteAllOneBool { b: args.b }
+    }
 }
 
 impl __sdk::InModule for DeleteAllOneBoolArgs {
@@ -39,9 +31,8 @@ pub trait delete_all_one_bool {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`delete_all_one_bool:delete_all_one_bool_then`] to run a callback after the reducer completes.
-    fn delete_all_one_bool(&self, b: bool,
-) -> __sdk::Result<()> {
-        self.delete_all_one_bool_then(b,  |_, _| {})
+    fn delete_all_one_bool(&self, b: bool) -> __sdk::Result<()> {
+        self.delete_all_one_bool_then(b, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `delete_all_one_bool` to run as soon as possible,
@@ -69,7 +60,7 @@ impl delete_all_one_bool for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(DeleteAllOneBoolArgs { b,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(DeleteAllOneBoolArgs { b }, callback)
     }
 }
-

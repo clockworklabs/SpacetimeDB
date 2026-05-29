@@ -2,13 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
 use super::option_identity_type::OptionIdentity;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `option_identity`.
 ///
@@ -49,8 +44,12 @@ impl<'ctx> __sdk::Table for OptionIdentityTableHandle<'ctx> {
     type Row = OptionIdentity;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = OptionIdentity> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = OptionIdentity> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = OptionIdentityInsertCallbackId;
 
@@ -81,8 +80,7 @@ impl<'ctx> __sdk::Table for OptionIdentityTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<OptionIdentity>("option_identity");
+    let _table = client_cache.get_or_make_table::<OptionIdentity>("option_identity");
 }
 
 #[doc(hidden)]
@@ -90,26 +88,24 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<OptionIdentity>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<OptionIdentity>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<OptionIdentity>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `OptionIdentity`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait option_identityQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `OptionIdentity`.
-            fn option_identity(&self) -> __sdk::__query_builder::Table<OptionIdentity>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OptionIdentity`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait option_identityQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OptionIdentity`.
+    fn option_identity(&self) -> __sdk::__query_builder::Table<OptionIdentity>;
+}
 
-        impl option_identityQueryTableAccess for __sdk::QueryTableAccessor {
-            fn option_identity(&self) -> __sdk::__query_builder::Table<OptionIdentity> {
-                __sdk::__query_builder::Table::new("option_identity")
-            }
-        }
-
+impl option_identityQueryTableAccess for __sdk::QueryTableAccessor {
+    fn option_identity(&self) -> __sdk::__query_builder::Table<OptionIdentity> {
+        __sdk::__query_builder::Table::new("option_identity")
+    }
+}

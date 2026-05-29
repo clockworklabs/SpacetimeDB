@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::byte_struct_type::ByteStruct;
 
@@ -19,10 +14,8 @@ pub(super) struct DeleteAllOneByteStructArgs {
 
 impl From<DeleteAllOneByteStructArgs> for super::Reducer {
     fn from(args: DeleteAllOneByteStructArgs) -> Self {
-        Self::DeleteAllOneByteStruct {
-            s: args.s,
-}
-}
+        Self::DeleteAllOneByteStruct { s: args.s }
+    }
 }
 
 impl __sdk::InModule for DeleteAllOneByteStructArgs {
@@ -40,9 +33,8 @@ pub trait delete_all_one_byte_struct {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`delete_all_one_byte_struct:delete_all_one_byte_struct_then`] to run a callback after the reducer completes.
-    fn delete_all_one_byte_struct(&self, s: ByteStruct,
-) -> __sdk::Result<()> {
-        self.delete_all_one_byte_struct_then(s,  |_, _| {})
+    fn delete_all_one_byte_struct(&self, s: ByteStruct) -> __sdk::Result<()> {
+        self.delete_all_one_byte_struct_then(s, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `delete_all_one_byte_struct` to run as soon as possible,
@@ -70,7 +62,7 @@ impl delete_all_one_byte_struct for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(DeleteAllOneByteStructArgs { s,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(DeleteAllOneByteStructArgs { s }, callback)
     }
 }
-

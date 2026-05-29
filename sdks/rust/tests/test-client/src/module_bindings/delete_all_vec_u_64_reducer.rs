@@ -2,26 +2,18 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct DeleteAllVecU64Args {
-    pub n: Vec::<u64>,
+    pub n: Vec<u64>,
 }
 
 impl From<DeleteAllVecU64Args> for super::Reducer {
     fn from(args: DeleteAllVecU64Args) -> Self {
-        Self::DeleteAllVecU64 {
-            n: args.n,
-}
-}
+        Self::DeleteAllVecU64 { n: args.n }
+    }
 }
 
 impl __sdk::InModule for DeleteAllVecU64Args {
@@ -39,9 +31,8 @@ pub trait delete_all_vec_u_64 {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`delete_all_vec_u_64:delete_all_vec_u_64_then`] to run a callback after the reducer completes.
-    fn delete_all_vec_u_64(&self, n: Vec::<u64>,
-) -> __sdk::Result<()> {
-        self.delete_all_vec_u_64_then(n,  |_, _| {})
+    fn delete_all_vec_u_64(&self, n: Vec<u64>) -> __sdk::Result<()> {
+        self.delete_all_vec_u_64_then(n, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `delete_all_vec_u_64` to run as soon as possible,
@@ -52,7 +43,7 @@ pub trait delete_all_vec_u_64 {
     ///  and its status can be observed with the `callback`.
     fn delete_all_vec_u_64_then(
         &self,
-        n: Vec::<u64>,
+        n: Vec<u64>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -63,13 +54,13 @@ pub trait delete_all_vec_u_64 {
 impl delete_all_vec_u_64 for super::RemoteReducers {
     fn delete_all_vec_u_64_then(
         &self,
-        n: Vec::<u64>,
+        n: Vec<u64>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(DeleteAllVecU64Args { n,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(DeleteAllVecU64Args { n }, callback)
     }
 }
-

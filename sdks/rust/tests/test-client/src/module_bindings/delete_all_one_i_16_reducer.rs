@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,10 +12,8 @@ pub(super) struct DeleteAllOneI16Args {
 
 impl From<DeleteAllOneI16Args> for super::Reducer {
     fn from(args: DeleteAllOneI16Args) -> Self {
-        Self::DeleteAllOneI16 {
-            n: args.n,
-}
-}
+        Self::DeleteAllOneI16 { n: args.n }
+    }
 }
 
 impl __sdk::InModule for DeleteAllOneI16Args {
@@ -39,9 +31,8 @@ pub trait delete_all_one_i_16 {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`delete_all_one_i_16:delete_all_one_i_16_then`] to run a callback after the reducer completes.
-    fn delete_all_one_i_16(&self, n: i16,
-) -> __sdk::Result<()> {
-        self.delete_all_one_i_16_then(n,  |_, _| {})
+    fn delete_all_one_i_16(&self, n: i16) -> __sdk::Result<()> {
+        self.delete_all_one_i_16_then(n, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `delete_all_one_i_16` to run as soon as possible,
@@ -69,7 +60,7 @@ impl delete_all_one_i_16 for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(DeleteAllOneI16Args { n,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(DeleteAllOneI16Args { n }, callback)
     }
 }
-

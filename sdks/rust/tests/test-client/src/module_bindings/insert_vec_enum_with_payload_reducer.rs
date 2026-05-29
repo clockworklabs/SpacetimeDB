@@ -2,27 +2,20 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::enum_with_payload_type::EnumWithPayload;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct InsertVecEnumWithPayloadArgs {
-    pub e: Vec::<EnumWithPayload>,
+    pub e: Vec<EnumWithPayload>,
 }
 
 impl From<InsertVecEnumWithPayloadArgs> for super::Reducer {
     fn from(args: InsertVecEnumWithPayloadArgs) -> Self {
-        Self::InsertVecEnumWithPayload {
-            e: args.e,
-}
-}
+        Self::InsertVecEnumWithPayload { e: args.e }
+    }
 }
 
 impl __sdk::InModule for InsertVecEnumWithPayloadArgs {
@@ -40,9 +33,8 @@ pub trait insert_vec_enum_with_payload {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_vec_enum_with_payload:insert_vec_enum_with_payload_then`] to run a callback after the reducer completes.
-    fn insert_vec_enum_with_payload(&self, e: Vec::<EnumWithPayload>,
-) -> __sdk::Result<()> {
-        self.insert_vec_enum_with_payload_then(e,  |_, _| {})
+    fn insert_vec_enum_with_payload(&self, e: Vec<EnumWithPayload>) -> __sdk::Result<()> {
+        self.insert_vec_enum_with_payload_then(e, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_vec_enum_with_payload` to run as soon as possible,
@@ -53,7 +45,7 @@ pub trait insert_vec_enum_with_payload {
     ///  and its status can be observed with the `callback`.
     fn insert_vec_enum_with_payload_then(
         &self,
-        e: Vec::<EnumWithPayload>,
+        e: Vec<EnumWithPayload>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -64,13 +56,13 @@ pub trait insert_vec_enum_with_payload {
 impl insert_vec_enum_with_payload for super::RemoteReducers {
     fn insert_vec_enum_with_payload_then(
         &self,
-        e: Vec::<EnumWithPayload>,
+        e: Vec<EnumWithPayload>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertVecEnumWithPayloadArgs { e,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(InsertVecEnumWithPayloadArgs { e }, callback)
     }
 }
-

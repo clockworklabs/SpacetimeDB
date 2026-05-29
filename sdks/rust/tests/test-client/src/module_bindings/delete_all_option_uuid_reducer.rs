@@ -2,26 +2,18 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct DeleteAllOptionUuidArgs {
-    pub u: Option::<__sdk::Uuid>,
+    pub u: Option<__sdk::Uuid>,
 }
 
 impl From<DeleteAllOptionUuidArgs> for super::Reducer {
     fn from(args: DeleteAllOptionUuidArgs) -> Self {
-        Self::DeleteAllOptionUuid {
-            u: args.u,
-}
-}
+        Self::DeleteAllOptionUuid { u: args.u }
+    }
 }
 
 impl __sdk::InModule for DeleteAllOptionUuidArgs {
@@ -39,9 +31,8 @@ pub trait delete_all_option_uuid {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`delete_all_option_uuid:delete_all_option_uuid_then`] to run a callback after the reducer completes.
-    fn delete_all_option_uuid(&self, u: Option::<__sdk::Uuid>,
-) -> __sdk::Result<()> {
-        self.delete_all_option_uuid_then(u,  |_, _| {})
+    fn delete_all_option_uuid(&self, u: Option<__sdk::Uuid>) -> __sdk::Result<()> {
+        self.delete_all_option_uuid_then(u, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `delete_all_option_uuid` to run as soon as possible,
@@ -52,7 +43,7 @@ pub trait delete_all_option_uuid {
     ///  and its status can be observed with the `callback`.
     fn delete_all_option_uuid_then(
         &self,
-        u: Option::<__sdk::Uuid>,
+        u: Option<__sdk::Uuid>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -63,13 +54,13 @@ pub trait delete_all_option_uuid {
 impl delete_all_option_uuid for super::RemoteReducers {
     fn delete_all_option_uuid_then(
         &self,
-        u: Option::<__sdk::Uuid>,
+        u: Option<__sdk::Uuid>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(DeleteAllOptionUuidArgs { u,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(DeleteAllOptionUuidArgs { u }, callback)
     }
 }
-

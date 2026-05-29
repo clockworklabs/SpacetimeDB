@@ -2,26 +2,18 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct InsertVecUuidArgs {
-    pub u: Vec::<__sdk::Uuid>,
+    pub u: Vec<__sdk::Uuid>,
 }
 
 impl From<InsertVecUuidArgs> for super::Reducer {
     fn from(args: InsertVecUuidArgs) -> Self {
-        Self::InsertVecUuid {
-            u: args.u,
-}
-}
+        Self::InsertVecUuid { u: args.u }
+    }
 }
 
 impl __sdk::InModule for InsertVecUuidArgs {
@@ -39,9 +31,8 @@ pub trait insert_vec_uuid {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_vec_uuid:insert_vec_uuid_then`] to run a callback after the reducer completes.
-    fn insert_vec_uuid(&self, u: Vec::<__sdk::Uuid>,
-) -> __sdk::Result<()> {
-        self.insert_vec_uuid_then(u,  |_, _| {})
+    fn insert_vec_uuid(&self, u: Vec<__sdk::Uuid>) -> __sdk::Result<()> {
+        self.insert_vec_uuid_then(u, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_vec_uuid` to run as soon as possible,
@@ -52,7 +43,7 @@ pub trait insert_vec_uuid {
     ///  and its status can be observed with the `callback`.
     fn insert_vec_uuid_then(
         &self,
-        u: Vec::<__sdk::Uuid>,
+        u: Vec<__sdk::Uuid>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -63,13 +54,12 @@ pub trait insert_vec_uuid {
 impl insert_vec_uuid for super::RemoteReducers {
     fn insert_vec_uuid_then(
         &self,
-        u: Vec::<__sdk::Uuid>,
+        u: Vec<__sdk::Uuid>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertVecUuidArgs { u,  }, callback)
+        self.imp.invoke_reducer_with_callback(InsertVecUuidArgs { u }, callback)
     }
 }
-

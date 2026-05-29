@@ -2,27 +2,20 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::simple_enum_type::SimpleEnum;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct InsertVecSimpleEnumArgs {
-    pub e: Vec::<SimpleEnum>,
+    pub e: Vec<SimpleEnum>,
 }
 
 impl From<InsertVecSimpleEnumArgs> for super::Reducer {
     fn from(args: InsertVecSimpleEnumArgs) -> Self {
-        Self::InsertVecSimpleEnum {
-            e: args.e,
-}
-}
+        Self::InsertVecSimpleEnum { e: args.e }
+    }
 }
 
 impl __sdk::InModule for InsertVecSimpleEnumArgs {
@@ -40,9 +33,8 @@ pub trait insert_vec_simple_enum {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_vec_simple_enum:insert_vec_simple_enum_then`] to run a callback after the reducer completes.
-    fn insert_vec_simple_enum(&self, e: Vec::<SimpleEnum>,
-) -> __sdk::Result<()> {
-        self.insert_vec_simple_enum_then(e,  |_, _| {})
+    fn insert_vec_simple_enum(&self, e: Vec<SimpleEnum>) -> __sdk::Result<()> {
+        self.insert_vec_simple_enum_then(e, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_vec_simple_enum` to run as soon as possible,
@@ -53,7 +45,7 @@ pub trait insert_vec_simple_enum {
     ///  and its status can be observed with the `callback`.
     fn insert_vec_simple_enum_then(
         &self,
-        e: Vec::<SimpleEnum>,
+        e: Vec<SimpleEnum>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -64,13 +56,13 @@ pub trait insert_vec_simple_enum {
 impl insert_vec_simple_enum for super::RemoteReducers {
     fn insert_vec_simple_enum_then(
         &self,
-        e: Vec::<SimpleEnum>,
+        e: Vec<SimpleEnum>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertVecSimpleEnumArgs { e,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(InsertVecSimpleEnumArgs { e }, callback)
     }
 }
-

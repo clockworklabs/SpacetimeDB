@@ -2,26 +2,18 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct DeleteAllOptionStringArgs {
-    pub s: Option::<String>,
+    pub s: Option<String>,
 }
 
 impl From<DeleteAllOptionStringArgs> for super::Reducer {
     fn from(args: DeleteAllOptionStringArgs) -> Self {
-        Self::DeleteAllOptionString {
-            s: args.s,
-}
-}
+        Self::DeleteAllOptionString { s: args.s }
+    }
 }
 
 impl __sdk::InModule for DeleteAllOptionStringArgs {
@@ -39,9 +31,8 @@ pub trait delete_all_option_string {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`delete_all_option_string:delete_all_option_string_then`] to run a callback after the reducer completes.
-    fn delete_all_option_string(&self, s: Option::<String>,
-) -> __sdk::Result<()> {
-        self.delete_all_option_string_then(s,  |_, _| {})
+    fn delete_all_option_string(&self, s: Option<String>) -> __sdk::Result<()> {
+        self.delete_all_option_string_then(s, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `delete_all_option_string` to run as soon as possible,
@@ -52,7 +43,7 @@ pub trait delete_all_option_string {
     ///  and its status can be observed with the `callback`.
     fn delete_all_option_string_then(
         &self,
-        s: Option::<String>,
+        s: Option<String>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -63,13 +54,13 @@ pub trait delete_all_option_string {
 impl delete_all_option_string for super::RemoteReducers {
     fn delete_all_option_string_then(
         &self,
-        s: Option::<String>,
+        s: Option<String>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(DeleteAllOptionStringArgs { s,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(DeleteAllOptionStringArgs { s }, callback)
     }
 }
-

@@ -2,14 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-use super::vec_unit_struct_type::VecUnitStruct;
 use super::unit_struct_type::UnitStruct;
+use super::vec_unit_struct_type::VecUnitStruct;
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `vec_unit_struct`.
 ///
@@ -50,8 +45,12 @@ impl<'ctx> __sdk::Table for VecUnitStructTableHandle<'ctx> {
     type Row = VecUnitStruct;
     type EventContext = super::EventContext;
 
-    fn count(&self) -> u64 { self.imp.count() }
-    fn iter(&self) -> impl Iterator<Item = VecUnitStruct> + '_ { self.imp.iter() }
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = VecUnitStruct> + '_ {
+        self.imp.iter()
+    }
 
     type InsertCallbackId = VecUnitStructInsertCallbackId;
 
@@ -82,8 +81,7 @@ impl<'ctx> __sdk::Table for VecUnitStructTableHandle<'ctx> {
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-
-        let _table = client_cache.get_or_make_table::<VecUnitStruct>("vec_unit_struct");
+    let _table = client_cache.get_or_make_table::<VecUnitStruct>("vec_unit_struct");
 }
 
 #[doc(hidden)]
@@ -91,26 +89,24 @@ pub(super) fn parse_table_update(
     raw_updates: __ws::v2::TableUpdate,
 ) -> __sdk::Result<__sdk::TableUpdate<VecUnitStruct>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse(
-            "TableUpdate<VecUnitStruct>",
-            "TableUpdate",
-        ).with_cause(e).into()
+        __sdk::InternalError::failed_parse("TableUpdate<VecUnitStruct>", "TableUpdate")
+            .with_cause(e)
+            .into()
     })
 }
 
-        #[allow(non_camel_case_types)]
-        /// Extension trait for query builder access to the table `VecUnitStruct`.
-        ///
-        /// Implemented for [`__sdk::QueryTableAccessor`].
-        pub trait vec_unit_structQueryTableAccess {
-            #[allow(non_snake_case)]
-            /// Get a query builder for the table `VecUnitStruct`.
-            fn vec_unit_struct(&self) -> __sdk::__query_builder::Table<VecUnitStruct>;
-        }
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `VecUnitStruct`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait vec_unit_structQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `VecUnitStruct`.
+    fn vec_unit_struct(&self) -> __sdk::__query_builder::Table<VecUnitStruct>;
+}
 
-        impl vec_unit_structQueryTableAccess for __sdk::QueryTableAccessor {
-            fn vec_unit_struct(&self) -> __sdk::__query_builder::Table<VecUnitStruct> {
-                __sdk::__query_builder::Table::new("vec_unit_struct")
-            }
-        }
-
+impl vec_unit_structQueryTableAccess for __sdk::QueryTableAccessor {
+    fn vec_unit_struct(&self) -> __sdk::__query_builder::Table<VecUnitStruct> {
+        __sdk::__query_builder::Table::new("vec_unit_struct")
+    }
+}

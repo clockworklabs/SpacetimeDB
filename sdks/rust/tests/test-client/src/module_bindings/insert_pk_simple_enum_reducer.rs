@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::simple_enum_type::SimpleEnum;
 
@@ -23,8 +18,8 @@ impl From<InsertPkSimpleEnumArgs> for super::Reducer {
         Self::InsertPkSimpleEnum {
             a: args.a,
             data: args.data,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for InsertPkSimpleEnumArgs {
@@ -42,10 +37,8 @@ pub trait insert_pk_simple_enum {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`insert_pk_simple_enum:insert_pk_simple_enum_then`] to run a callback after the reducer completes.
-    fn insert_pk_simple_enum(&self, a: SimpleEnum,
-data: i32,
-) -> __sdk::Result<()> {
-        self.insert_pk_simple_enum_then(a, data,  |_, _| {})
+    fn insert_pk_simple_enum(&self, a: SimpleEnum, data: i32) -> __sdk::Result<()> {
+        self.insert_pk_simple_enum_then(a, data, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `insert_pk_simple_enum` to run as soon as possible,
@@ -57,7 +50,7 @@ data: i32,
     fn insert_pk_simple_enum_then(
         &self,
         a: SimpleEnum,
-data: i32,
+        data: i32,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -69,13 +62,13 @@ impl insert_pk_simple_enum for super::RemoteReducers {
     fn insert_pk_simple_enum_then(
         &self,
         a: SimpleEnum,
-data: i32,
+        data: i32,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(InsertPkSimpleEnumArgs { a, data,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(InsertPkSimpleEnumArgs { a, data }, callback)
     }
 }
-

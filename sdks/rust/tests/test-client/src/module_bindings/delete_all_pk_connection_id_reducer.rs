@@ -2,13 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
-
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -22,8 +16,8 @@ impl From<DeleteAllPkConnectionIdArgs> for super::Reducer {
         Self::DeleteAllPkConnectionId {
             a: args.a,
             data: args.data,
-}
-}
+        }
+    }
 }
 
 impl __sdk::InModule for DeleteAllPkConnectionIdArgs {
@@ -41,10 +35,8 @@ pub trait delete_all_pk_connection_id {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`delete_all_pk_connection_id:delete_all_pk_connection_id_then`] to run a callback after the reducer completes.
-    fn delete_all_pk_connection_id(&self, a: __sdk::ConnectionId,
-data: i32,
-) -> __sdk::Result<()> {
-        self.delete_all_pk_connection_id_then(a, data,  |_, _| {})
+    fn delete_all_pk_connection_id(&self, a: __sdk::ConnectionId, data: i32) -> __sdk::Result<()> {
+        self.delete_all_pk_connection_id_then(a, data, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `delete_all_pk_connection_id` to run as soon as possible,
@@ -56,7 +48,7 @@ data: i32,
     fn delete_all_pk_connection_id_then(
         &self,
         a: __sdk::ConnectionId,
-data: i32,
+        data: i32,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -68,13 +60,13 @@ impl delete_all_pk_connection_id for super::RemoteReducers {
     fn delete_all_pk_connection_id_then(
         &self,
         a: __sdk::ConnectionId,
-data: i32,
+        data: i32,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(DeleteAllPkConnectionIdArgs { a, data,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(DeleteAllPkConnectionIdArgs { a, data }, callback)
     }
 }
-

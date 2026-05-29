@@ -2,12 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{
-	self as __sdk,
-	__lib,
-	__sats,
-	__ws,
-};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::enum_with_payload_type::EnumWithPayload;
 
@@ -19,10 +14,8 @@ pub(super) struct DeleteAllOneEnumWithPayloadArgs {
 
 impl From<DeleteAllOneEnumWithPayloadArgs> for super::Reducer {
     fn from(args: DeleteAllOneEnumWithPayloadArgs) -> Self {
-        Self::DeleteAllOneEnumWithPayload {
-            e: args.e,
-}
-}
+        Self::DeleteAllOneEnumWithPayload { e: args.e }
+    }
 }
 
 impl __sdk::InModule for DeleteAllOneEnumWithPayloadArgs {
@@ -40,9 +33,8 @@ pub trait delete_all_one_enum_with_payload {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`delete_all_one_enum_with_payload:delete_all_one_enum_with_payload_then`] to run a callback after the reducer completes.
-    fn delete_all_one_enum_with_payload(&self, e: EnumWithPayload,
-) -> __sdk::Result<()> {
-        self.delete_all_one_enum_with_payload_then(e,  |_, _| {})
+    fn delete_all_one_enum_with_payload(&self, e: EnumWithPayload) -> __sdk::Result<()> {
+        self.delete_all_one_enum_with_payload_then(e, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `delete_all_one_enum_with_payload` to run as soon as possible,
@@ -70,7 +62,7 @@ impl delete_all_one_enum_with_payload for super::RemoteReducers {
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp.invoke_reducer_with_callback(DeleteAllOneEnumWithPayloadArgs { e,  }, callback)
+        self.imp
+            .invoke_reducer_with_callback(DeleteAllOneEnumWithPayloadArgs { e }, callback)
     }
 }
-
