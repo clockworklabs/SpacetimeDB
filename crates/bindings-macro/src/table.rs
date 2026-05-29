@@ -1167,18 +1167,22 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         }
     };
 
-    let trait_def_view = quote_spanned! {table_ident.span()=>
-        #[allow(non_camel_case_types, dead_code)]
-        #vis trait #view_trait_ident {
+    let trait_def_view = if args.event.is_none() {
+        quote_spanned! {table_ident.span()=>
             #[allow(non_camel_case_types, dead_code)]
-            fn #table_ident(&self) -> &#viewhandle_ident;
-        }
-        impl #view_trait_ident for spacetimedb::LocalReadOnly {
-            #[inline]
-            fn #table_ident(&self) -> &#viewhandle_ident {
-                &#viewhandle_ident {}
+            #vis trait #view_trait_ident {
+                #[allow(non_camel_case_types, dead_code)]
+                fn #table_ident(&self) -> &#viewhandle_ident;
+            }
+            impl #view_trait_ident for spacetimedb::LocalReadOnly {
+                #[inline]
+                fn #table_ident(&self) -> &#viewhandle_ident {
+                    &#viewhandle_ident {}
+                }
             }
         }
+    } else {
+        quote! {}
     };
 
     let cols_struct_fields = fields.iter().map(|col| {
@@ -1250,14 +1254,18 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
     };
 
-    let table_query_handle_def = quote! {
-           #[allow(non_camel_case_types, dead_code)]
-           #vis trait #query_trait_ident {
-               fn #table_ident(&self) -> spacetimedb::query_builder::Table<#original_struct_ident> {
-                   spacetimedb::query_builder::Table::new(stringify!(#table_ident))
+    let table_query_handle_def = if args.event.is_none() {
+        quote! {
+               #[allow(non_camel_case_types, dead_code)]
+               #vis trait #query_trait_ident {
+                   fn #table_ident(&self) -> spacetimedb::query_builder::Table<#original_struct_ident> {
+                       spacetimedb::query_builder::Table::new(stringify!(#table_ident))
+                   }
                }
-           }
-           impl #query_trait_ident for spacetimedb::QueryBuilder {}
+               impl #query_trait_ident for spacetimedb::QueryBuilder {}
+        }
+    } else {
+        quote! {}
     };
 
     let tablehandle_def = quote! {

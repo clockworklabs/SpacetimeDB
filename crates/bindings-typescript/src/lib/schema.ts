@@ -66,6 +66,7 @@ export interface TableToSchema<
   // Resolved runtime index metadata used by runtime consumers (e.g. TableCache).
   resolvedIndexes: readonly UntypedIndex<keyof T['rowType']['row'] & string>[];
   constraints: T['constraints'];
+  isEvent: T['isEvent'];
 }
 
 export function tablesToSchema<
@@ -164,7 +165,7 @@ export function tableToSchema<
     // reinterpret `indexes` with unsafe casts.
     resolvedIndexes,
     tableDef,
-    ...(tableDef.isEvent ? { isEvent: true } : {}),
+    isEvent: schema.isEvent,
   };
 }
 
