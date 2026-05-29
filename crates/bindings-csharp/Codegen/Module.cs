@@ -1750,6 +1750,147 @@ record ProcedureDeclaration
     }
 }
 
+record HttpHandlerDeclaration
+{
+    public readonly string Name;
+    public readonly string FullName;
+    private readonly bool HasWrongSignature;
+
+    public string Identifier => EscapeIdentifier(Name);
+
+    public HttpHandlerDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
+    {
+        var methodSyntax = (MethodDeclarationSyntax)context.TargetNode;
+        var method = (IMethodSymbol)context.TargetSymbol;
+        var compilation = context.SemanticModel.Compilation;
+
+        if (method.Arity != 0 || method.Parameters.Length != 2)
+        {
+            diag.Report(ErrorDescriptor.HttpHandlerSignature, methodSyntax);
+            HasWrongSignature = true;
+        }
+
+        if (
+            method.Parameters.FirstOrDefault()?.Type
+                is not INamedTypeSymbol
+                {
+                    Name: "HandlerContext",
+                    Arity: 0,
+                    ContainingType: null,
+                    ContainingNamespace:
+                    { Name: "SpacetimeDB", ContainingNamespace: { IsGlobalNamespace: true } }
+                }
+            && methodSyntax.ParameterList.Parameters.FirstOrDefault()?.Type
+                is not IdentifierNameSyntax { Identifier.ValueText: "HandlerContext" }
+            && methodSyntax.ParameterList.Parameters.FirstOrDefault()?.Type
+                is not QualifiedNameSyntax
+                {
+                    Left: IdentifierNameSyntax { Identifier.ValueText: "SpacetimeDB" },
+                    Right: IdentifierNameSyntax { Identifier.ValueText: "HandlerContext" }
+                }
+            && methodSyntax.ParameterList.Parameters.FirstOrDefault()?.Type
+                is not QualifiedNameSyntax
+                {
+                    Left: AliasQualifiedNameSyntax
+                    {
+                        Alias.Identifier.ValueText: "global",
+                        Name: IdentifierNameSyntax { Identifier.ValueText: "SpacetimeDB" }
+                    },
+                    Right: IdentifierNameSyntax { Identifier.ValueText: "HandlerContext" }
+                }
+        )
+        {
+            diag.Report(ErrorDescriptor.HttpHandlerContextParam, methodSyntax);
+            HasWrongSignature = true;
+        }
+
+        if (
+            method.Parameters.ElementAtOrDefault(1)?.Type is not { } requestType
+            || compilation.GetTypeByMetadataName("SpacetimeDB.HttpRequest")
+                is not { } expectedRequestType
+            || !SymbolEqualityComparer.Default.Equals(requestType, expectedRequestType)
+        )
+        {
+            diag.Report(ErrorDescriptor.HttpHandlerRequestParam, methodSyntax);
+            HasWrongSignature = true;
+        }
+
+        if (
+            compilation.GetTypeByMetadataName("SpacetimeDB.HttpResponse")
+                is not { } expectedResponseType
+            || !SymbolEqualityComparer.Default.Equals(method.ReturnType, expectedResponseType)
+        )
+        {
+            diag.Report(ErrorDescriptor.HttpHandlerReturnType, methodSyntax);
+            HasWrongSignature = true;
+        }
+
+        Name = method.Name;
+        if (Name.Length >= 2)
+        {
+            var prefix = Name[..2];
+            if (prefix is "__" or "on" or "On")
+            {
+                diag.Report(ErrorDescriptor.HttpHandlerReservedPrefix, (methodSyntax, prefix));
+            }
+        }
+
+        FullName = SymbolToName(method);
+    }
+
+    public string GenerateClass()
+    {
+        var body = HasWrongSignature
+            ? "throw new System.InvalidOperationException(\"Invalid HTTP handler signature.\");"
+            : $"return {FullName}((SpacetimeDB.HandlerContext)ctx, request);";
+
+        return $$"""
+            class {{Identifier}} : SpacetimeDB.Internal.IHttpHandler {
+                public SpacetimeDB.Internal.RawHttpHandlerDefV10 MakeHandlerDef() => new(
+                    SourceName: nameof({{Identifier}})
+                );
+
+                public SpacetimeDB.HttpResponse Invoke(
+                    SpacetimeDB.HandlerContextBase ctx,
+                    SpacetimeDB.HttpRequest request
+                ) {
+                    {{body}}
+                }
+            }
+            """;
+    }
+}
+
+record HttpRouterDeclaration
+{
+    public readonly string FullName;
+    public readonly bool IsValid;
+
+    public HttpRouterDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
+    {
+        var methodSyntax = (MethodDeclarationSyntax)context.TargetNode;
+        var method = (IMethodSymbol)context.TargetSymbol;
+        var compilation = context.SemanticModel.Compilation;
+
+        if (
+            !method.IsStatic
+            || method.Arity != 0
+            || method.Parameters.Length != 0
+            || compilation.GetTypeByMetadataName("SpacetimeDB.Router") is not { } expectedRouterType
+            || !SymbolEqualityComparer.Default.Equals(method.ReturnType, expectedRouterType)
+        )
+        {
+            diag.Report(ErrorDescriptor.HttpRouterSignature, methodSyntax);
+        }
+        else
+        {
+            IsValid = true;
+        }
+
+        FullName = SymbolToName(method);
+    }
+}
+
 record ClientVisibilityFilterDeclaration
 {
     public readonly string FullName;
@@ -1857,6 +1998,93 @@ public class Module : IIncrementalGenerator
         return results
             .Select((result, ct) => result.Parsed)
             .WithTrackingName($"SpacetimeDB.{kind}.Collect");
+    }
+
+    private static (
+        TTableAccessors tableAccessors,
+        TSettings settings,
+        TTableDecls tableDecls,
+        TReducers addReducers,
+        TProcedures addProcedures,
+        THttpHandlers addHttpHandlers,
+        TReadOnlyAccessors readOnlyAccessors,
+        THttpRouters httpRouters,
+        TViews views,
+        TRlsFilters rlsFilters,
+        TColumnDefaultValues columnDefaultValues
+    ) FlattenModuleOutputInputs<
+        TTableAccessors,
+        TSettings,
+        TTableDecls,
+        TReducers,
+        TProcedures,
+        THttpHandlers,
+        TReadOnlyAccessors,
+        THttpRouters,
+        TViews,
+        TRlsFilters,
+        TColumnDefaultValues
+    >(
+        (
+            (
+                (
+                    (
+                        (
+                            (
+                                (
+                                    (((TTableAccessors, TSettings), TTableDecls), TReducers),
+                                    TProcedures
+                                ),
+                                THttpHandlers
+                            ),
+                            TReadOnlyAccessors
+                        ),
+                        THttpRouters
+                    ),
+                    TViews
+                ),
+                TRlsFilters
+            ),
+            TColumnDefaultValues
+        ) tuple
+    )
+    {
+        var (
+            (
+                (
+                    (
+                        (
+                            (
+                                (
+                                    (((tableAccessors, settings), tableDecls), addReducers),
+                                    addProcedures
+                                ),
+                                addHttpHandlers
+                            ),
+                            readOnlyAccessors
+                        ),
+                        httpRouters
+                    ),
+                    views
+                ),
+                rlsFilters
+            ),
+            columnDefaultValues
+        ) = tuple;
+
+        return (
+            tableAccessors,
+            settings,
+            tableDecls,
+            addReducers,
+            addProcedures,
+            addHttpHandlers,
+            readOnlyAccessors,
+            httpRouters,
+            views,
+            rlsFilters,
+            columnDefaultValues
+        );
     }
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -1987,6 +2215,38 @@ public class Module : IIncrementalGenerator
             p => p.FullName
         );
 
+        var httpHandlers = context
+            .SyntaxProvider.ForAttributeWithMetadataName(
+                fullyQualifiedMetadataName: typeof(HttpHandlerAttribute).FullName,
+                predicate: (node, ct) => true,
+                transform: (context, ct) =>
+                    context.ParseWithDiags(diag => new HttpHandlerDeclaration(context, diag))
+            )
+            .ReportDiagnostics(context)
+            .WithTrackingName("SpacetimeDB.HttpHandler.Parse");
+
+        var addHttpHandlers = CollectDistinct(
+            "HttpHandler",
+            context,
+            httpHandlers
+                .Select((h, ct) => (h.Name, h.FullName, Class: h.GenerateClass()))
+                .WithTrackingName("SpacetimeDB.HttpHandler.GenerateClass"),
+            h => h.Name,
+            h => h.FullName
+        );
+
+        var httpRouters = context
+            .SyntaxProvider.ForAttributeWithMetadataName(
+                fullyQualifiedMetadataName: typeof(HttpRouterAttribute).FullName,
+                predicate: (node, ct) => true,
+                transform: (context, ct) =>
+                    context.ParseWithDiags(diag => new HttpRouterDeclaration(context, diag))
+            )
+            .ReportDiagnostics(context)
+            .Collect()
+            .Select((routers, ct) => new EquatableArray<HttpRouterDeclaration>(routers))
+            .WithTrackingName("SpacetimeDB.HttpRouter.Collect");
+
         var tableAccessors = CollectDistinct(
             "Table",
             context,
@@ -2040,42 +2300,53 @@ public class Module : IIncrementalGenerator
             v => v.tableName + "_" + v.columnId
         );
 
+        var moduleOutputInputs = tableAccessors
+            .Combine(settingsArray)
+            .Combine(tableDecls)
+            .Combine(addReducers)
+            .Combine(addProcedures)
+            .Combine(addHttpHandlers)
+            .Combine(readOnlyAccessors)
+            .Combine(httpRouters)
+            .Combine(views)
+            .Combine(rlsFiltersArray)
+            .Combine(columnDefaultValues)
+            .Select((tuple, ct) => FlattenModuleOutputInputs(tuple));
+
         // Register the generated source code with the compilation context as part of module publishing
         // Once the compilation is complete, the generated code will be used to create tables and reducers in the database
         context.RegisterSourceOutput(
-            tableAccessors
-                .Combine(settingsArray)
-                .Combine(tableDecls)
-                .Combine(addReducers)
-                .Combine(addProcedures)
-                .Combine(readOnlyAccessors)
-                .Combine(views)
-                .Combine(rlsFiltersArray)
-                .Combine(columnDefaultValues),
-            (context, tuple) =>
+            moduleOutputInputs,
+            (context, inputs) =>
             {
                 var (
-                    (
-                        (
-                            (
-                                (
-                                    (((tableAccessors, settings), tableDecls), addReducers),
-                                    addProcedures
-                                ),
-                                readOnlyAccessors
-                            ),
-                            views
-                        ),
-                        rlsFilters
-                    ),
+                    tableAccessors,
+                    settings,
+                    tableDecls,
+                    addReducers,
+                    addProcedures,
+                    addHttpHandlers,
+                    readOnlyAccessors,
+                    httpRouters,
+                    views,
+                    rlsFilters,
                     columnDefaultValues
-                ) = tuple;
+                ) = inputs;
 
                 if (settings.Array.Length > 1)
                 {
                     context.ReportDiagnostic(
                         ErrorDescriptor.DuplicateSettings.ToDiag(
                             settings.Array.Select(s => s.FullName)
+                        )
+                    );
+                }
+
+                if (httpRouters.Array.Length > 1)
+                {
+                    context.ReportDiagnostic(
+                        ErrorDescriptor.DuplicateHttpRouters.ToDiag(
+                            httpRouters.Array.Select(r => r.FullName)
                         )
                     );
                 }
@@ -2153,11 +2424,16 @@ public class Module : IIncrementalGenerator
                     "\n",
                     tableDecls.Array.SelectMany(t => t.GenerateQueryBuilderMembers())
                 );
+                if (string.IsNullOrWhiteSpace(queryBuilderMembers))
+                {
+                    queryBuilderMembers = "public readonly partial struct QueryBuilder { }";
+                }
                 // Don't generate the FFI boilerplate if there are no tables or reducers.
                 if (
                     tableAccessors.Array.IsEmpty
                     && addReducers.Array.IsEmpty
                     && addProcedures.Array.IsEmpty
+                    && addHttpHandlers.Array.IsEmpty
                 )
                 {
                     return;
@@ -2181,6 +2457,11 @@ public class Module : IIncrementalGenerator
 
                     namespace SpacetimeDB {
                         {{queryBuilderMembers}}
+                        public static class Handlers {
+                            {{string.Join("\n", addHttpHandlers.Select(r =>
+                                $"public static readonly global::SpacetimeDB.Handler {EscapeIdentifier(r.Name)} = new(nameof({r.FullName}));"
+                            ))}}
+                        }
                         public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext {
                             public readonly Identity Sender;
                             public readonly ConnectionId? ConnectionId;
@@ -2325,9 +2606,53 @@ public class Module : IIncrementalGenerator
                             }
                         }
 
+                        public sealed partial class HandlerContext : global::SpacetimeDB.HandlerContextBase {
+                            private readonly Local _db = new();
+
+                            internal HandlerContext(Random random, Timestamp time)
+                                : base(random, time) {}
+
+                            protected override global::SpacetimeDB.LocalBase CreateLocal() => _db;
+                            protected override global::SpacetimeDB.HandlerTxContextBase CreateTxContext(Internal.TxContext inner) =>
+                                _cached ??= new HandlerTxContext(inner);
+
+                            private HandlerTxContext? _cached;
+
+                            [Experimental("STDB_UNSTABLE")]
+                            public TResult WithTx<TResult>(Func<HandlerTxContext, TResult> body) =>
+                                base.WithTx(tx => body((HandlerTxContext)tx));
+
+                            [Experimental("STDB_UNSTABLE")]
+                            public TxOutcome<TResult> TryWithTx<TResult, TError>(
+                                Func<HandlerTxContext, Result<TResult, TError>> body)
+                                where TError : Exception =>
+                                base.TryWithTx(tx => body((HandlerTxContext)tx));
+
+                            public Uuid NewUuidV4()
+                            {
+                                var bytes = new byte[16];
+                                Rng.NextBytes(bytes);
+                                return Uuid.FromRandomBytesV4(bytes);
+                            }
+
+                            public Uuid NewUuidV7()
+                            {
+                                var bytes = new byte[4];
+                                Rng.NextBytes(bytes);
+                                return Uuid.FromCounterV7(ref CounterUuid, Timestamp, bytes);
+                            }
+                        }
+
                         [Experimental("STDB_UNSTABLE")]
                         public sealed class ProcedureTxContext : global::SpacetimeDB.ProcedureTxContextBase {
                             internal ProcedureTxContext(Internal.TxContext inner) : base(inner) {}
+
+                            public new Local Db => (Local)base.Db;
+                        }
+
+                        [Experimental("STDB_UNSTABLE")]
+                        public sealed class HandlerTxContext : global::SpacetimeDB.HandlerTxContextBase {
+                            internal HandlerTxContext(Internal.TxContext inner) : base(inner) {}
 
                             public new Local Db => (Local)base.Db;
                         }
@@ -2386,6 +2711,8 @@ public class Module : IIncrementalGenerator
                         
                         {{string.Join("\n", addProcedures.Select(r => r.Class))}}
 
+                        {{string.Join("\n", addHttpHandlers.Select(r => r.Class))}}
+
                         public static List<T> ToListOrEmpty<T>(T? value) where T : struct
                                 => value is null ? new List<T>() : new List<T> { value.Value };
 
@@ -2405,6 +2732,7 @@ public class Module : IIncrementalGenerator
                           SpacetimeDB.Internal.Module.SetViewContextConstructor(identity => new SpacetimeDB.ViewContext(identity, new SpacetimeDB.Internal.LocalReadOnly()));
                           SpacetimeDB.Internal.Module.SetAnonymousViewContextConstructor(() => new SpacetimeDB.AnonymousViewContext(new SpacetimeDB.Internal.LocalReadOnly()));
                           SpacetimeDB.Internal.Module.SetProcedureContextConstructor((identity, connectionId, random, time) => new SpacetimeDB.ProcedureContext(identity, connectionId, random, time));{{preRegistrations}}
+                          SpacetimeDB.Internal.Module.SetHandlerContextConstructor((random, time) => new SpacetimeDB.HandlerContext(random, time));
                           var __memoryStream = new MemoryStream();
                           var __writer = new BinaryWriter(__memoryStream);
 
@@ -2418,6 +2746,12 @@ public class Module : IIncrementalGenerator
                                 "\n",
                                 addProcedures.Select(r =>
                                     $"SpacetimeDB.Internal.Module.RegisterProcedure<{EscapeIdentifier(r.Name)}>();"
+                                )
+                            )}}
+                            {{string.Join(
+                                "\n",
+                                addHttpHandlers.Select(r =>
+                                    $"SpacetimeDB.Internal.Module.RegisterHttpHandler<{EscapeIdentifier(r.Name)}>();"
                                 )
                             )}}
 
@@ -2436,6 +2770,11 @@ public class Module : IIncrementalGenerator
                             {{string.Join(
                                 "\n",
                                 tableAccessors.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t.tableName}, SpacetimeDB.Internal.TableHandles.{EscapeIdentifier(t.tableAccessorName)}>();")
+                            )}}
+                            {{(
+                                httpRouters.Array.FirstOrDefault(r => r.IsValid) is { } router
+                                    ? $"SpacetimeDB.Internal.Module.RegisterHttpRouter({router.FullName}());"
+                                    : string.Empty
                             )}}
                             {{string.Join(
                                 "\n",
@@ -2508,6 +2847,23 @@ public class Module : IIncrementalGenerator
                             timestamp,
                             args,
                             result_sink
+                        );
+
+                        [UnmanagedCallersOnly(EntryPoint = "__call_http_handler__")]
+                        public static SpacetimeDB.Internal.Errno __call_http_handler__(
+                            uint id,
+                            SpacetimeDB.Timestamp timestamp,
+                            SpacetimeDB.Internal.BytesSource request,
+                            SpacetimeDB.Internal.BytesSource request_body,
+                            SpacetimeDB.Internal.BytesSink response_sink,
+                            SpacetimeDB.Internal.BytesSink response_body_sink
+                        ) => SpacetimeDB.Internal.Module.__call_http_handler__(
+                            id,
+                            timestamp,
+                            request,
+                            request_body,
+                            response_sink,
+                            response_body_sink
                         );
                         
                         [UnmanagedCallersOnly(EntryPoint = "__call_view__")]
