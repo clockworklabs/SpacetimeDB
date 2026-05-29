@@ -708,7 +708,6 @@ jobs:
     permissions:
       contents: read
     runs-on: spacetimedb-new-runner-2
-    timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       UseLocalBsatnRuntime: true
@@ -716,8 +715,6 @@ jobs:
       - name: Checkout repository
         id: checkout-stdb
         uses: actions/checkout@v4
-
-      # Run cheap .NET setup first. If that fails, no need to run expensive Godot tests.
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@v3
@@ -814,10 +811,6 @@ jobs:
         working-directory: demo/Blackholio/client-godot
         run: dotnet restore --configfile ../../../NuGet.Config blackholio.csproj
 
-      - name: Build Godot .NET project
-        working-directory: demo/Blackholio/client-godot
-        run: dotnet build --no-restore -v normal blackholio.csproj
-
       - name: Build Godot project
         run: godot --headless --verbose --path demo/Blackholio/client-godot --build-solutions --quit
 
@@ -829,7 +822,7 @@ jobs:
       - name: Publish godot-tests module to SpacetimeDB
         working-directory: demo/Blackholio/server-rust
         run: |
-          spacetime logout && spacetime login --server-issued-login local
+          spacetime login --server-issued-login local
           bash ./publish.sh
 
       - name: Run Godot tests
@@ -845,8 +838,6 @@ jobs:
       - name: Checkout repository
         id: checkout-stdb
         uses: actions/checkout@v4
-
-      # Run cheap .NET tests first. If those fail, no need to run expensive Unity tests.
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@v3
