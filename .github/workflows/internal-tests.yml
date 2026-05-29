@@ -21,8 +21,10 @@ permissions:
 jobs:
   internal-tests:
     name: Internal Tests
+    # Skip if not a PR or a push to master
     # Skip if this is an external contribution. GitHub secrets will be empty, so the step would fail anyway.
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
+    if: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/master'))
+      && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
     runs-on: ubuntu-latest
     env:
       TARGET_OWNER: clockworklabs
