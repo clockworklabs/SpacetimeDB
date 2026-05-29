@@ -139,6 +139,12 @@ system_id! {
 }
 
 system_id! {
+    /// The index of an HTTP handler as defined in a module's HTTP handler list.
+    // This is never stored in a system table, but is useful to have defined here.
+    pub struct HttpHandlerId(pub u32);
+}
+
+system_id! {
     /// The index of a view as defined in a module's view lists.
     ///
     /// Unlike reducers and procedures, the module maintains two lists for views.
