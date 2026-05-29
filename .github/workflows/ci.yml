@@ -36,6 +36,7 @@ jobs:
     timeout-minutes: 120
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
       SPACETIMEDB_CPP_DIR: ${{ github.workspace }}/crates/bindings-cpp
     steps:
       - name: Find Git ref
@@ -182,6 +183,7 @@ jobs:
 
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
     steps:
       - name: Find Git ref
         env:
