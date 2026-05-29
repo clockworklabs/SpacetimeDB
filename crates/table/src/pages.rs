@@ -193,7 +193,7 @@ impl Pages {
     /// containing `num_var_len_granules` granules of var-len data.
     ///
     /// Retrieving a page in this way will remove it from the non-full set.
-    /// After performing an insertion, the caller should use [`Pages::record_page_available_granules`]
+    /// After performing an insertion, the caller should use [`Pages::record_page_non_full`]
     /// to restore the page to the non-full set.
     fn find_page_with_space_for_row(
         &mut self,
