@@ -766,7 +766,7 @@ fn refresh_views(
 
             let current_tx = tx.take().expect("procedure tx missing during view refresh");
             let (next_tx, call_result) = tx_slot.set(current_tx, || {
-                call_view(scope, hooks, &view_call, &view_name, table_id, fn_ptr)
+                call_view(scope, hooks, &view_call, view_name, table_id, fn_ptr)
             });
             tx = Some(next_tx);
             let return_data = call_result?;

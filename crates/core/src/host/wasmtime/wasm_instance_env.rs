@@ -1710,7 +1710,7 @@ impl WasmInstanceEnv {
 
                 let current_tx = tx.take().expect("procedure tx missing during view refresh");
                 let (next_tx, call_result) =
-                    tx_slot.set(current_tx, || Self::call_view(caller, &view_call, &view_name, fn_ptr));
+                    tx_slot.set(current_tx, || Self::call_view(caller, &view_call, view_name, fn_ptr));
                 tx = Some(next_tx);
                 let return_data = call_result?;
 
