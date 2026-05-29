@@ -165,6 +165,8 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         row_level_security_raw,
         lifecycle_reducers,
         procedures,
+        http_handlers: IndexMap::new(),
+        http_routes: Vec::new(),
         raw_module_def_version: RawModuleDefVersion::V9OrEarlier,
     })
 }
