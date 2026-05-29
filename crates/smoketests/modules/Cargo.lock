@@ -939,6 +939,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-views-auto-migrate-read-set"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-views-auto-migrate-read-set-updated"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-views-recovered"
 version = "0.1.0"
 dependencies = [
