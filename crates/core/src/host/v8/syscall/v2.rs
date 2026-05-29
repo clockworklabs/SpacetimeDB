@@ -402,6 +402,19 @@ pub fn get_hooks_from_default_export<'scope>(
     let call_view = get_hook_function(scope, hooks, str_from_ident!(__call_view__))?;
     let call_view_anon = get_hook_function(scope, hooks, str_from_ident!(__call_view_anon__))?;
     let call_procedure = get_hook_function(scope, hooks, str_from_ident!(__call_procedure__))?;
+    // `call_http_handler` is optional, unlike the other hooks.
+    // This is because HTTP handler support was added after the initial release of TypeScript modules,
+    // and so we need to continue supporting precompiled TypeScript and JS modules
+    // which used an earlier version of the bindings package,
+    // prior to the inclusion of `__call_http_handler__`.
+    let call_http_handler = {
+        let key = str_from_ident!(__call_http_handler__).string(scope);
+        let value = hooks.get(scope, key.into()).ok_or_else(exception_already_thrown)?;
+        (!value.is_null_or_undefined())
+            .then(|| cast!(scope, value, Function, "module function hook `__call_http_handler__`"))
+            .transpose()
+            .map_err(|e| e.throw(scope))?
+    };
 
     // Cache hooks in context slots so syscall-time code can reconstruct them.
     let hooks = HookFunctions {
@@ -414,6 +427,7 @@ pub fn get_hooks_from_default_export<'scope>(
         call_view: Some(call_view),
         call_view_anon: Some(call_view_anon),
         call_procedure: Some(call_procedure),
+        call_http_handler,
     };
     set_registered_hooks(scope, &hooks)?;
     Ok(Some(hooks))
