@@ -265,6 +265,63 @@ jobs:
           source ~/emsdk/emsdk_env.sh
           cargo ci test
 
+  keynote_bench:
+    needs: [lints]
+    name: Keynote Bench
+    runs-on: spacetimedb-benchmark-runner
+    timeout-minutes: 60
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          save-if: false
+          prefix-key: v1
+
+      - name: Build keynote benchmark binaries
+        run: cargo build --release -p spacetimedb-cli -p spacetimedb-standalone
+
+      # Node 24 is the current Active LTS line.
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          run_install: true
+
+      - name: Build TypeScript SDK
+        run: pnpm build
+        working-directory: crates/bindings-typescript
+
+      - name: Run keynote-2 benchmark regression check
+        run: cargo ci keynote-bench
+
   lints:
     name: Lints
     runs-on: spacetimedb-new-runner-2
@@ -830,13 +887,26 @@ jobs:
       && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
     permissions:
       contents: read
+      pull-requests: read
     runs-on: ubuntu-latest
     env:
       TARGET_OWNER: clockworklabs
       TARGET_REPO: SpacetimeDBPrivate
     steps:
+      # Skip the private dispatch entirely when only `docs/` is touched. The job
+      # itself still completes successfully so required-status-check gating is
+      # satisfied without spending private-runner time on a docs-only change.
+      - name: Detect non-docs changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            non_docs:
+              - '!docs/**'
+
       - id: dispatch
         name: Trigger tests
+        if: steps.filter.outputs.non_docs == 'true'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
@@ -900,6 +970,7 @@ jobs:
             core.setOutput('run_url', runUrl);
   
       - name: Wait for Internal Tests to complete
+        if: steps.filter.outputs.non_docs == 'true'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
@@ -937,7 +1008,7 @@ jobs:
             }
   
       - name: Cancel invoked run if workflow cancelled
-        if: ${{ cancelled() }}
+        if: ${{ cancelled() && steps.dispatch.outputs.run_id }}
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
