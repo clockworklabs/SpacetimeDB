@@ -1844,6 +1844,19 @@ impl SubscriptionHandle {
     }
 }
 
+impl Drop for SubscriptionHandle {
+    fn drop(&mut self) {
+        match self.child.try_wait() {
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                let _ = self.child.kill();
+                let _ = self.child.wait();
+            }
+            Err(_) => {}
+        }
+    }
+}
+
 /// Normalizes whitespace by trimming trailing whitespace from each line.
 fn normalize_whitespace(s: &str) -> String {
     s.lines().map(|line| line.trim_end()).collect::<Vec<_>>().join("\n")

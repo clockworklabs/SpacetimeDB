@@ -881,6 +881,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-views-auto-migrate-stable"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-views-auto-migrate-stable-updated"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-views-auto-migrate-updated"
 version = "0.1.0"
 dependencies = [
