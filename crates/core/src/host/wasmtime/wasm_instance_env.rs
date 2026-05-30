@@ -1734,21 +1734,13 @@ impl WasmInstanceEnv {
                 };
 
                 let stdb = caller.data().instance_env.relational_db().clone();
-                match view_call.sender {
-                    Some(sender) => stdb.materialize_view(
-                        tx.as_mut()
-                            .expect("procedure tx missing while materializing authenticated view"),
-                        table_id,
-                        sender,
-                        rows,
-                    )?,
-                    None => stdb.materialize_anonymous_view(
-                        tx.as_mut()
-                            .expect("procedure tx missing while materializing anonymous view"),
-                        table_id,
-                        rows,
-                    )?,
-                }
+                stdb.materialize_view_call(
+                    tx.as_mut()
+                        .expect("procedure tx missing while materializing refreshed view"),
+                    table_id,
+                    view_call.clone(),
+                    rows,
+                )?;
 
                 Ok(())
             })();

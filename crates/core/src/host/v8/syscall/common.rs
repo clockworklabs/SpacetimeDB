@@ -817,25 +817,14 @@ fn refresh_views(
                 })?,
             };
 
-            match view_call.sender {
-                Some(sender) => stdb
-                    .materialize_view(
-                        tx.as_mut()
-                            .expect("procedure tx missing while materializing authenticated view"),
-                        table_id,
-                        sender,
-                        rows,
-                    )
-                    .map_err(NodesError::from)?,
-                None => stdb
-                    .materialize_anonymous_view(
-                        tx.as_mut()
-                            .expect("procedure tx missing while materializing anonymous view"),
-                        table_id,
-                        rows,
-                    )
-                    .map_err(NodesError::from)?,
-            }
+            stdb.materialize_view_call(
+                tx.as_mut()
+                    .expect("procedure tx missing while materializing refreshed view"),
+                table_id,
+                view_call.clone(),
+                rows,
+            )
+            .map_err(NodesError::from)?;
 
             Ok(())
         })();
