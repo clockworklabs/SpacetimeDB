@@ -65,7 +65,7 @@ main() {
     # Define the latest SpacetimeDB download url
     local _asset_name="spacetimedb-update-$_host$_ext"
     local _url="$SPACETIME_DOWNLOAD_ROOT/$_asset_name"
-    local _mirror_base="https://spacetimedb-client-binaries.nyc3.digitaloceanspaces.com"
+    local _mirror_base="https://spacetimedb-client-binaries.s3.amazonaws.com"
     echo "Downloading installer..."
     local _ok=false
     if [ "$_downloader" = curl ]; then

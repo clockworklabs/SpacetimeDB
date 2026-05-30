@@ -7,6 +7,7 @@ use clap::{Arg, ArgMatches};
 use spacetimedb_paths::SpacetimePaths;
 
 use crate::util::resolve_sibling_binary;
+use crate::Config;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("start")
@@ -14,6 +15,11 @@ pub fn cli() -> clap::Command {
         .long_about(
             "\
 Start a local SpacetimeDB instance
+
+Set a persistent default listen address in cli.toml with:
+    listen_addr = \"0.0.0.0:4000\"
+
+When present, `listen_addr` is used unless `--listen-addr` is passed explicitly.
 
 Run `spacetime start --help` to see all options.",
         )
@@ -40,9 +46,9 @@ enum Edition {
     Cloud,
 }
 
-pub async fn exec(paths: &SpacetimePaths, args: &ArgMatches) -> anyhow::Result<ExitCode> {
+pub async fn exec(config: Config, paths: &SpacetimePaths, args: &ArgMatches) -> anyhow::Result<ExitCode> {
     let edition = args.get_one::<Edition>("edition").unwrap();
-    let args = args.get_many::<OsString>("args").unwrap_or_default();
+    let forwarded_args: Vec<OsString> = args.get_many::<OsString>("args").unwrap_or_default().cloned().collect();
     let bin_name = match edition {
         Edition::Standalone => "spacetimedb-standalone",
         Edition::Cloud => "spacetimedb-cloud",
@@ -53,8 +59,15 @@ pub async fn exec(paths: &SpacetimePaths, args: &ArgMatches) -> anyhow::Result<E
         .arg("--data-dir")
         .arg(&paths.data_dir)
         .arg("--jwt-key-dir")
-        .arg(&paths.cli_config_dir)
-        .args(args);
+        .arg(&paths.cli_config_dir);
+
+    if let Some(config_addr) = config.start_listen_addr() {
+        // Prepend the config default; standalone takes the last --listen-addr value,
+        // so an explicit flag in forwarded_args wins.
+        cmd.arg("--listen-addr").arg(config_addr);
+    }
+
+    cmd.args(&forwarded_args);
 
     exec_replace(&mut cmd).with_context(|| format!("exec failed for {}", bin_path.display()))
 }

@@ -7,19 +7,7 @@
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5432:5432"
-    #    command: >
-    #      -c fsync=on
-    #      -c synchronous_commit=on
-    #      -c shared_buffers=2GB
-    #      -c work_mem=64MB
-    #      -c max_connections=1000
-    command: > # faster setup
-      -c fsync=on
-      -c synchronous_commit=off
-      -c shared_buffers=8GB
-      -c work_mem=64MB
-      -c max_connections=10000
-      -c default_transaction_isolation=serializable
+    command: -c default_transaction_isolation=serializable
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 2s
@@ -31,7 +19,7 @@
 
   crdb:
     image: cockroachdb/cockroach:latest
-    command: start-single-node --insecure --max-sql-memory=.25 --cache=.5
+    command: start-single-node --insecure
     ports:
       - "26257:26257"
       - "8082:8080"
@@ -257,7 +245,6 @@
       STDB_URL: ${STDB_URL}
       STDB_MODULE: ${STDB_MODULE}
       STDB_MODULE_PATH: ${STDB_MODULE_PATH}
-      STDB_METRICS_URL: ${STDB_METRICS_URL}
       STDB_CONFIRMED_READS: ${STDB_CONFIRMED_READS}
       BUN_URL: ${BUN_URL}
       SQLITE_FILE: ${SQLITE_FILE}
@@ -271,7 +258,6 @@
       PLANETSCALE_RPC_URL: ${PLANETSCALE_RPC_URL}
       SEED_ACCOUNTS: ${SEED_ACCOUNTS}
       SEED_INITIAL_BALANCE: ${SEED_INITIAL_BALANCE}
-      USE_SPACETIME_METRICS_ENDPOINT: ${USE_SPACETIME_METRICS_ENDPOINT}
       CONVEX_USE_SHARDED_COUNTER: ${CONVEX_USE_SHARDED_COUNTER}
       VERIFY: ${VERIFY}
     volumes:

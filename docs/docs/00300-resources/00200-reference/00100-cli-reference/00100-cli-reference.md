@@ -97,7 +97,7 @@ Run `spacetime help publish` for more detailed information.
 * `-p`, `--module-path <MODULE_PATH>` — The system path (absolute or relative) to the module project. Defaults to spacetimedb/ subdirectory, then current directory.
 * `-b`, `--bin-path <WASM_FILE>` — The system path (absolute or relative) to the compiled wasm binary we should publish, instead of building the project.
 * `-j`, `--js-path <JS_FILE>` — UNSTABLE: The system path (absolute or relative) to the javascript file we should publish, instead of building the project.
-* `--break-clients` — Allow breaking changes when publishing to an existing database identity. This will force publish even if it will break existing clients, but will NOT force publish if it would cause deletion of any data in the database. See --yes and --delete-data for details.
+* `--break-clients` — Allow breaking changes when publishing to an existing database identity. Equivalent to --yes=break-clients: skips the "this will BREAK existing clients" prompt, but will NOT force publish if it would cause deletion of any data in the database. See --yes and --delete-data for details.
 * `--anonymous` — Perform this action with an anonymous identity
 * `--parent <PARENT>` — A valid domain or identity of an existing database that should be the parent of this database.
 
@@ -108,7 +108,22 @@ Run `spacetime help publish` for more detailed information.
    If an organization is given, the organization member's permissions apply to the new database.
    An organization can only be set when a database is created, not when it is updated.
 * `-s`, `--server <SERVER>` — The nickname, domain name or URL of the server to host the database.
-* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `-y`, `--yes <YES>` — Skip confirmation prompts. With no value, defaults to 'all' (equivalent to --yes=all). To skip specific prompts, pass one or more of: all, remote, migrate, break-clients, skip-login, delete-data. Multiple values can be comma-separated (--yes=migrate,break-clients) or given via repeated flags (--yes=migrate --yes=break-clients). The value must be attached with '=' (so `--yes my-db` treats `my-db` as the database name).
+
+  Possible values:
+  - `all`:
+    Equivalent to passing every other option. This is the default when `--yes` is given without a value
+  - `remote`:
+    Skip the "publish to a non-local server?" confirmation
+  - `migrate`:
+    Skip migration confirmations (e.g. major version upgrade)
+  - `break-clients`:
+    Skip the "this will BREAK existing clients" confirmation
+  - `skip-login`:
+    Don't prompt the user to log in; act non-interactively for auth
+  - `delete-data`:
+    Skip the destructive "this will DESTROY ... ALL corresponding data" confirmation
+
 * `--no-config` — Ignore spacetime.json configuration
 * `--env <ENV>` — Environment name for config file layering (e.g., dev, staging)
 * `--native-aot` — Use NativeAOT-LLVM compilation for C# modules (experimental, Windows only)
@@ -599,6 +614,11 @@ Subscribe to SQL queries on the database. WARNING: This command is UNSTABLE and 
 ## `spacetime start`
 
 Start a local SpacetimeDB instance
+
+Set a persistent default listen address in cli.toml with:
+    listen_addr = "0.0.0.0:4000"
+
+When present, `listen_addr` is used unless `--listen-addr` is passed explicitly.
 
 Run `spacetime start --help` to see all options.
 

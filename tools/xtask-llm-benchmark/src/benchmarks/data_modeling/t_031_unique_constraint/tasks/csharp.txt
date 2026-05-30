@@ -1,0 +1,14 @@
+Write a SpacetimeDB backend module in C# that defines a table with a unique constraint on a non-primary-key column and a reducer that inserts rows.
+
+TABLES
+- Account
+  - Struct: Account
+  - Fields:
+    - Id: ulong (primary key, AutoInc)
+    - Email: string (Unique)
+    - DisplayName: string
+
+REDUCERS
+- CreateAccount(ctx, string email, string displayName)
+  - Insert an Account row with the given email and displayName
+  - Use Id: 0 for AutoInc

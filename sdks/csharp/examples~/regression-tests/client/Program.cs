@@ -12,7 +12,7 @@ using RegressionTests.Shared;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 
-const string HOST = "http://localhost:3000";
+string HOST = Environment.GetEnvironmentVariable("SPACETIMEDB_SERVER_URL") ?? "http://localhost:3000";
 const string DBNAME = "btree-repro";
 const string THROW_ERROR_MESSAGE = "this is an error";
 const uint UPDATED_WHERE_TEST_VALUE = 42;
@@ -23,6 +23,8 @@ const ulong EXPECTED_TEST_EVENT_VALUE = 42;
 DbConnection db = null!;
 uint waiting = 0;
 var runComplete = false;
+var mainPhaseScheduled = false;
+var mainUnsubscribeStarted = false;
 SubscriptionHandle? mainHandle = null;
 uint testEventInsertCount = 0;
 long viewPkIdCounter = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 10;
@@ -1621,10 +1623,28 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         }
     );
 
+    // The unsubscribe phase clears the subscribed cache.
+    // Start it only after the reducer and procedure callbacks above
+    // have finished validating rows in that cache.
+    mainPhaseScheduled = true;
+}
+
+void StartMainUnsubscribe()
+{
+    if (mainUnsubscribeStarted)
+    {
+        return;
+    }
+    mainUnsubscribeStarted = true;
+
+    var handle =
+        mainHandle
+        ?? throw new InvalidOperationException("Main subscription handle was not initialised.");
+
     // Now unsubscribe and check that the unsubscribing is actually applied.
     Log.Debug("Calling Unsubscribe");
     waiting++;
-    mainHandle?.UnsubscribeThen(
+    handle.UnsubscribeThen(
         (ctx) =>
         {
             Log.Debug("Received Unsubscribe");
@@ -1638,6 +1658,18 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
 RegressionTestHarness.RegisterUnhandledExceptionExitHandler();
 db = RegressionTestHarness.ConnectToDatabase(HOST, DBNAME, OnConnected);
 const int TIMEOUT = 20; // seconds;
-RegressionTestHarness.FrameTickUntilComplete(db, () => runComplete && waiting == 0, TIMEOUT);
+RegressionTestHarness.FrameTickUntilComplete(
+    db,
+    () =>
+    {
+        if (mainPhaseScheduled && !mainUnsubscribeStarted && waiting == 0)
+        {
+            StartMainUnsubscribe();
+        }
+
+        return runComplete && waiting == 0;
+    },
+    TIMEOUT
+);
 Log.Info("Success");
 Environment.Exit(0);

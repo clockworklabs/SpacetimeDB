@@ -174,7 +174,7 @@ describe('DbConnection', () => {
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withDatabaseName('db')
-      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .withWSFn(wsAdapter.openWebSocket)
       .onConnect(() => {
         called = true;
         onConnectPromise.resolve();
@@ -201,7 +201,7 @@ describe('DbConnection', () => {
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withDatabaseName('db')
-      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .withWSFn(wsAdapter.openWebSocket)
       .build();
 
     await client['wsPromise'];
@@ -231,7 +231,7 @@ describe('DbConnection', () => {
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withDatabaseName('db')
-      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .withWSFn(wsAdapter.openWebSocket)
       .build();
 
     await client['wsPromise'];
@@ -259,7 +259,7 @@ describe('DbConnection', () => {
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withDatabaseName('db')
-      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .withWSFn(wsAdapter.openWebSocket)
       .onDisconnect(() => {
         onDisconnectPromise.resolve();
       })
@@ -285,7 +285,7 @@ describe('DbConnection', () => {
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withDatabaseName('db')
-      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .withWSFn(wsAdapter.openWebSocket)
       .build();
 
     await client['wsPromise'];
@@ -327,7 +327,7 @@ describe('DbConnection', () => {
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withDatabaseName('db')
-      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .withWSFn(wsAdapter.openWebSocket)
       .onConnect(() => {
         onConnectPromise.resolve();
       })
@@ -393,7 +393,7 @@ describe('DbConnection', () => {
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withDatabaseName('db')
-      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .withWSFn(wsAdapter.openWebSocket)
       .onConnect(() => {
         onConnectPromise.resolve();
       })
@@ -438,7 +438,7 @@ describe('DbConnection', () => {
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withDatabaseName('db')
-      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .withWSFn(wsAdapter.openWebSocket)
       .onConnect(() => {
         onConnectPromise.resolve();
       })
@@ -715,7 +715,7 @@ describe('DbConnection', () => {
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withDatabaseName('db')
-      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .withWSFn(wsAdapter.openWebSocket)
       .onConnect(() => {})
       .build();
 
@@ -806,7 +806,7 @@ describe('DbConnection', () => {
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withDatabaseName('db')
-      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .withWSFn(wsAdapter.openWebSocket)
       .build();
     await client['wsPromise'];
     wsAdapter.acceptConnection();

@@ -280,6 +280,21 @@ pub fn pnpm_path() -> Option<PathBuf> {
     PNPM_PATH.get_or_init(|| which("pnpm").ok()).clone()
 }
 
+fn pnpm_minimum_release_age() -> Result<String> {
+    let workspace = fs::read_to_string(workspace_root().join("pnpm-workspace.yaml"))?;
+    workspace
+        .lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix("minimumReleaseAge:")?
+                .trim()
+                .parse::<u64>()
+                .ok()
+        })
+        .map(|age| age.to_string())
+        .context("pnpm-workspace.yaml is missing minimumReleaseAge")
+}
+
 /// Runs a command and returns stdout as a string.
 pub fn run_cmd(args: &[&str], cwd: &Path) -> Result<String> {
     run_cmd_inner(args, cwd, None)
@@ -332,10 +347,28 @@ fn run_cmd_inner(args: &[&str], cwd: &Path, stdin_input: Option<&str>) -> Result
 /// Runs a `pnpm` command and returns stdout as a string.
 pub fn pnpm(args: &[&str], cwd: &Path) -> Result<String> {
     let pnpm_path = pnpm_path().context("Could not locate pnpm")?;
-    let pnpm_path = pnpm_path.to_str().context("pnpm path is not valid UTF-8")?;
-    let mut full_args = vec![pnpm_path];
-    full_args.extend(args);
-    run_cmd(&full_args, cwd)
+    let minimum_release_age = pnpm_minimum_release_age()?;
+
+    // Smoketests often install inside temp projects created by `spacetime init`.
+    // Those projects intentionally do not carry the repo's .npmrc, so pass the
+    // repo policy through pnpm's environment variable instead.
+    let output = Command::new(&pnpm_path)
+        .args(args)
+        .current_dir(cwd)
+        .env("npm_config_minimum_release_age", minimum_release_age)
+        .output()
+        .with_context(|| format!("Failed to spawn pnpm {}", args.join(" ")))?;
+
+    if !output.status.success() {
+        bail!(
+            "pnpm {} (in {:?}) failed:\nstdout: {}\nstderr: {}",
+            args.join(" "),
+            cwd,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 /// Builds the local TypeScript bindings package.
@@ -351,6 +384,63 @@ pub fn build_typescript_sdk() -> Result<()> {
 pub fn have_emscripten() -> bool {
     static HAVE_EMSCRIPTEN: OnceLock<bool> = OnceLock::new();
     *HAVE_EMSCRIPTEN.get_or_init(|| which("emcc").is_ok() || which("emcc.bat").is_ok())
+}
+
+const CPP_SMOKETEST_CMAKELISTS: &str = r#"cmake_minimum_required(VERSION 3.16)
+project(smoketest_cpp_module)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+set(SPACETIMEDB_CPP_LIBRARY_PATH "@SPACETIMEDB_CPP_LIBRARY_PATH@")
+
+add_executable(lib src/lib.cpp)
+
+target_include_directories(lib PRIVATE
+    ${SPACETIMEDB_CPP_LIBRARY_PATH}/include
+)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    target_compile_options(lib PRIVATE -fno-exceptions -O2 -g0)
+    target_compile_definitions(lib PRIVATE SPACETIMEDB_UNSTABLE_FEATURES)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DSPACETIMEDB_UNSTABLE_FEATURES")
+endif()
+
+add_subdirectory(${SPACETIMEDB_CPP_LIBRARY_PATH} ${CMAKE_CURRENT_BINARY_DIR}/spacetimedb_cpp_library)
+target_link_libraries(lib PRIVATE spacetimedb_cpp_library)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    set(EXPORTED_FUNCS
+        "['_malloc','_free','___describe_module__','___call_reducer__','___call_procedure__','___call_http_handler__']"
+    )
+
+    target_link_options(lib PRIVATE
+        "SHELL:-sSTANDALONE_WASM=1"
+        "SHELL:-sWASM=1"
+        "SHELL:--no-entry"
+        "SHELL:-sEXPORTED_FUNCTIONS=${EXPORTED_FUNCS}"
+        "SHELL:-sERROR_ON_UNDEFINED_SYMBOLS=1"
+        "SHELL:-sFILESYSTEM=0"
+        "SHELL:-sDISABLE_EXCEPTION_CATCHING=1"
+        "SHELL:-sALLOW_MEMORY_GROWTH=0"
+        "SHELL:-sINITIAL_MEMORY=16MB"
+        "SHELL:-sSUPPORT_LONGJMP=0"
+        "SHELL:-sSUPPORT_ERRNO=0"
+        "SHELL:-std=c++20"
+        "SHELL:-O2"
+        "SHELL:-g0"
+    )
+
+    set_target_properties(lib PROPERTIES OUTPUT_NAME "lib" SUFFIX ".wasm")
+endif()
+"#;
+
+fn parse_identity_from_publish_output(publish_output: &str) -> Result<String> {
+    let re = Regex::new(r"identity: ([0-9a-fA-F]+)").unwrap();
+    re.captures(publish_output)
+        .and_then(|caps| caps.get(1))
+        .map(|m| m.as_str().to_string())
+        .context("Failed to parse database identity from publish output")
 }
 
 /// A smoketest instance that manages a SpacetimeDB server and module project.
@@ -929,12 +1019,49 @@ impl Smoketest {
         ])?;
         csharp::verify_csharp_module_restore(&module_path)?;
 
-        let re = Regex::new(r"identity: ([0-9a-fA-F]+)").unwrap();
-        let identity = re
-            .captures(&publish_output)
-            .and_then(|caps| caps.get(1))
-            .map(|m| m.as_str().to_string())
-            .context("Failed to parse database identity from publish output")?;
+        let identity = parse_identity_from_publish_output(&publish_output)?;
+        self.database_identity = Some(identity.clone());
+
+        Ok(identity)
+    }
+
+    /// Writes and publishes a C++ module from source.
+    ///
+    /// The module is created at `<test_project_dir>/<project_dir_name>`.
+    /// On success this updates `self.database_identity`.
+    pub fn publish_cpp_module_source(
+        &mut self,
+        project_dir_name: &str,
+        module_name: &str,
+        module_source: &str,
+    ) -> Result<String> {
+        let module_path = self.project_dir.path().join(project_dir_name);
+        let src_dir = module_path.join("src");
+        fs::create_dir_all(&src_dir).context("Failed to create C++ source directory")?;
+
+        let bindings_cpp_path = workspace_root()
+            .join("crates/bindings-cpp")
+            .display()
+            .to_string()
+            .replace('\\', "/");
+        let cmakelists = CPP_SMOKETEST_CMAKELISTS.replace("@SPACETIMEDB_CPP_LIBRARY_PATH@", &bindings_cpp_path);
+
+        fs::write(module_path.join("CMakeLists.txt"), cmakelists).context("Failed to write C++ CMakeLists.txt")?;
+        fs::write(src_dir.join("lib.cpp"), module_source).context("Failed to write C++ module code")?;
+
+        let module_path_str = module_path.to_str().context("Invalid C++ module path")?;
+        let publish_output = self.spacetime(&[
+            "publish",
+            "--server",
+            &self.server_url,
+            "--module-path",
+            module_path_str,
+            "--yes",
+            "--clear-database",
+            module_name,
+        ])?;
+
+        let identity = parse_identity_from_publish_output(&publish_output)?;
         self.database_identity = Some(identity.clone());
 
         Ok(identity)

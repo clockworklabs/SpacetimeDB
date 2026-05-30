@@ -104,8 +104,25 @@ macro_rules! path_type {
             }
 
             pub fn write(&self, contents: impl AsRef<[u8]>) -> std::io::Result<()> {
-                self.create_parent()?;
-                std::fs::write(self, contents)
+                use std::io::Write as _;
+
+                let path = &self.0;
+                let parent = path.parent().ok_or_else(||
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("cannot replace {} without enclosing directory", path.display()))
+                )?;
+                std::fs::create_dir_all(&parent)?;
+
+                let mut tmp = $crate::__tempfile::NamedTempFile::new_in(parent)?;
+                tmp.write_all(contents.as_ref())?;
+                tmp.as_file().sync_all()?;
+                tmp.persist(&path)?;
+                // On Windows, syncing the directory is not necessary and doesn't even work.
+                #[cfg(not(target_os = "windows"))]
+                std::fs::File::open(parent)?.sync_all()?;
+
+                Ok(())
             }
 
             /// Opens a file at this path with the given options, ensuring its parent directory exists.

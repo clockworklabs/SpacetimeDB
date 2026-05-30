@@ -1,10 +1,14 @@
-use std::{io, sync::Arc};
+use std::{
+    io,
+    num::{NonZeroU64, NonZeroUsize},
+    sync::Arc,
+};
 
 use async_trait::async_trait;
 use spacetimedb_commitlog::SizeOnDisk;
 use spacetimedb_durability::{DurabilityExited, TxOffset};
 use spacetimedb_paths::server::ServerDataDir;
-use spacetimedb_snapshot::SnapshotRepository;
+use spacetimedb_snapshot::DynSnapshotRepo;
 
 use crate::{messages::control_db::Database, util::asyncify};
 
@@ -12,6 +16,59 @@ use super::{
     relational_db::{self, Txdata},
     snapshot::{self, SnapshotDatabaseState, SnapshotWorker},
 };
+
+/// Local durability configuration exposed through server config.
+#[derive(Clone, Copy, Debug, Default, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub struct DurabilityConfig {
+    #[serde(default)]
+    pub commitlog: CommitlogConfig,
+}
+
+/// Commitlog configuration exposed through server config.
+#[derive(Clone, Copy, Debug, Default, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub struct CommitlogConfig {
+    pub log_format_version: Option<u8>,
+    pub max_segment_size: Option<NonZeroU64>,
+    #[serde(alias = "offset-interval-bytes")]
+    pub offset_index_interval_bytes: Option<NonZeroU64>,
+    #[serde(alias = "offset-index-require-fsync")]
+    pub offset_index_require_segment_fsync: Option<bool>,
+    pub preallocate_segments: Option<bool>,
+    pub write_buffer_size: Option<NonZeroUsize>,
+}
+
+impl DurabilityConfig {
+    fn into_options(self) -> spacetimedb_durability::local::Options {
+        let mut opts = spacetimedb_durability::local::Options::default();
+        self.commitlog.apply_to(&mut opts.commitlog);
+        opts
+    }
+}
+
+impl CommitlogConfig {
+    fn apply_to(self, opts: &mut spacetimedb_commitlog::Options) {
+        if let Some(log_format_version) = self.log_format_version {
+            opts.log_format_version = log_format_version;
+        }
+        if let Some(max_segment_size) = self.max_segment_size {
+            opts.max_segment_size = max_segment_size.get();
+        }
+        if let Some(offset_index_interval_bytes) = self.offset_index_interval_bytes {
+            opts.offset_index_interval_bytes = offset_index_interval_bytes;
+        }
+        if let Some(offset_index_require_segment_fsync) = self.offset_index_require_segment_fsync {
+            opts.offset_index_require_segment_fsync = offset_index_require_segment_fsync;
+        }
+        if let Some(preallocate_segments) = self.preallocate_segments {
+            opts.preallocate_segments = preallocate_segments;
+        }
+        if let Some(write_buffer_size) = self.write_buffer_size {
+            opts.write_buffer_size = write_buffer_size.get();
+        }
+    }
+}
 
 /// [spacetimedb_durability::Durability] impls with a [`Txdata`] transaction
 /// payload, suitable for use in the [`relational_db::RelationalDB`].
@@ -61,9 +118,9 @@ impl Persistence {
         }
     }
 
-    /// If snapshots are enabled, get the [SnapshotRepository] they are stored in.
-    pub fn snapshot_repo(&self) -> Option<&SnapshotRepository> {
-        self.snapshots.as_ref().map(|worker| worker.repo())
+    /// If snapshots are enabled, get the [SnapshotRepo] they are stored in.
+    pub fn snapshot_repo(&self) -> Option<Arc<DynSnapshotRepo>> {
+        self.snapshots.as_ref().map(|worker| worker.snapshot_repo())
     }
 
     /// Get the [TxOffset] reported as durable by the [Durability] impl.
@@ -128,13 +185,20 @@ pub trait PersistenceProvider: Send + Sync {
 /// [compresses]: relational_db::snapshot_watching_commitlog_compressor
 pub struct LocalPersistenceProvider {
     data_dir: Arc<ServerDataDir>,
+    durability: DurabilityConfig,
 }
 
 impl LocalPersistenceProvider {
     pub fn new(data_dir: impl Into<Arc<ServerDataDir>>) -> Self {
         Self {
             data_dir: data_dir.into(),
+            durability: DurabilityConfig::default(),
         }
+    }
+
+    pub fn with_durability_config(mut self, durability: DurabilityConfig) -> Self {
+        self.durability = durability;
+        self
     }
 }
 
@@ -149,7 +213,12 @@ impl PersistenceProvider for LocalPersistenceProvider {
             asyncify(move || relational_db::open_snapshot_repo(snapshot_dir, database_identity, replica_id))
                 .await
                 .map(|repo| SnapshotWorker::new(repo, snapshot::Compression::Enabled))?;
-        let (durability, disk_size) = relational_db::local_durability(replica_dir, Some(&snapshot_worker)).await?;
+        let (durability, disk_size) = relational_db::local_durability_with_options(
+            replica_dir,
+            Some(&snapshot_worker),
+            self.durability.into_options(),
+        )
+        .await?;
 
         tokio::spawn(relational_db::snapshot_watching_commitlog_compressor(
             snapshot_worker.subscribe(),
