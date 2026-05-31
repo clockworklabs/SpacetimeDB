@@ -619,9 +619,7 @@ fn main() -> Result<()> {
             cmd!("cargo", "test", "--doc", "--target", "wasm32-unknown-unknown")
                 .dir("crates/bindings")
                 .run()?;
-            cmd!("cargo", "test", "--doc")
-                .dir("crates/bindings")
-                .run()?;
+            cmd!("cargo", "test", "--doc").dir("crates/bindings").run()?;
             // `bindings` is the only crate we care strongly about documenting,
             // since we link to its docs.rs from our website.
             // We won't pass `--no-deps`, though,
