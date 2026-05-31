@@ -2,4 +2,6 @@
 
 set -euo pipefail
 
-spacetime publish -s local blackholio --delete-data -y
+SPACETIMEDB_SERVER_URL="${SPACETIMEDB_SERVER_URL:-local}"
+
+spacetime publish -s "$SPACETIMEDB_SERVER_URL" blackholio --delete-data -y

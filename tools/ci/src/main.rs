@@ -363,6 +363,18 @@ enum CiCmd {
     TypescriptTest,
     /// Runs C# tests through the Cargo language-test harness.
     CsharpTests,
+    /// Runs Unity playmode tests through the Cargo language-test harness.
+    UnityTests {
+        /// Skip hydrating Unity SDK DLLs before running the Unity harness.
+        #[arg(long)]
+        skip_dlls: bool,
+        /// Unity Editor version to use for playmode tests.
+        #[arg(long, value_name = "VERSION")]
+        unity_version: String,
+        /// Run Unity through the versioned unityci/editor Docker image.
+        #[arg(long)]
+        use_docker: bool,
+    },
     /// Verifies that the repository version upgrade tool still works.
     VersionUpgradeCheck,
     /// Checks for uncommitted diffs, ignoring generated SpacetimeDB CLI version comments.
@@ -509,6 +521,39 @@ fn run_csharp_tests() -> Result<()> {
     Ok(())
 }
 
+fn run_unity_tests(skip_dlls: bool, unity_version: &str, use_docker: bool) -> Result<()> {
+    cmd!(
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "spacetimedb-cli",
+        "-p",
+        "spacetimedb-standalone",
+        "--features",
+        "spacetimedb-standalone/allow_loopback_http_for_tests"
+    )
+    .run()?;
+    if !skip_dlls {
+        cmd!("cargo", "regen", "csharp", "dlls").run()?;
+    }
+    let mut args = vec![
+        "test".to_string(),
+        "-p".to_string(),
+        "spacetimedb-unity-tests".to_string(),
+        "--test".to_string(),
+        "unity".to_string(),
+        "--".to_string(),
+        "--unity-version".to_string(),
+        unity_version.to_string(),
+    ];
+    if use_docker {
+        args.push("--use-docker".to_string());
+    }
+    cmd("cargo", args).run()?;
+    Ok(())
+}
+
 fn run_docs_build() -> Result<()> {
     cmd!("pnpm", "install").dir("docs").run()?;
     cmd!("pnpm", "build").dir("docs").run()?;
@@ -555,6 +600,8 @@ fn main() -> Result<()> {
                 "spacetimedb-typescript-tests",
                 "--exclude",
                 "spacetimedb-csharp-tests",
+                "--exclude",
+                "spacetimedb-unity-tests",
                 "--",
                 "--test-threads=2",
                 "--skip",
@@ -793,6 +840,14 @@ fn main() -> Result<()> {
 
         Some(CiCmd::CsharpTests) => {
             run_csharp_tests()?;
+        }
+
+        Some(CiCmd::UnityTests {
+            skip_dlls,
+            unity_version,
+            use_docker,
+        }) => {
+            run_unity_tests(skip_dlls, &unity_version, use_docker)?;
         }
 
         Some(CiCmd::VersionUpgradeCheck) => {

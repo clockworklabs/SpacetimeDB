@@ -228,6 +228,20 @@ Usage: csharp-tests
 
 - `--help`: Print help
 
+### `unity-tests`
+
+**Usage:**
+```bash
+Usage: unity-tests [OPTIONS] --unity-version <VERSION>
+```
+
+**Options:**
+
+- `--skip-dlls`: Skip hydrating Unity SDK DLLs before running the Unity harness
+- `--unity-version`: Unity Editor version to use for playmode tests
+- `--use-docker`: Run Unity through the versioned unityci/editor Docker image
+- `--help`: Print help
+
 ### `version-upgrade-check`
 
 **Usage:**

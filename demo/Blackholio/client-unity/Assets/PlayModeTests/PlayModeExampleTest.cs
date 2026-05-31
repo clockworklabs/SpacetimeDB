@@ -26,7 +26,7 @@ public class PlayModeExampleTest
         }).OnConnectError((_) =>
         {
             Debug.Assert(false, "Connection failed!");
-        }).WithUri("http://127.0.0.1:3000")
+        }).WithUri(GameManager.ServerUrl)
             .WithDatabaseName("blackholio").Build();
 
         while (!connected)
