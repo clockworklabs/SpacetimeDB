@@ -1,12 +1,3 @@
-# remove
-tools/publish-crates.sh
-demo/Blackholio/server-csharp/write-nuget-config.sh
-demo/Blackholio/server-csharp/logs.sh
-demo/Blackholio/server-csharp/publish.sh
-demo/Blackholio/server-rust/logs.sh
-sdks/csharp/tools~/upgrade-version.py
-run_standalone_temp.sh
-
 # translate
 git-hooks/install-hooks.sh
 tools/update-test-snapshots.sh # this should probably go under cargo gen
