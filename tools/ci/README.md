@@ -238,15 +238,9 @@ Usage: unity-tests [OPTIONS] --unity-version <VERSION>
 **Options:**
 
 - `--skip-dlls`: Skip hydrating Unity SDK DLLs before running the Unity harness
-- `--unity-version <VERSION>`: Unity Editor version to use for playmode tests
+- `--unity-version`: Unity Editor version to use for playmode tests
 - `--use-docker`: Run Unity through the versioned unityci/editor Docker image
 - `--help`: Print help
-
-**Examples:**
-```bash
-cargo ci unity-tests --skip-dlls --unity-version 2022.3.62f3
-cargo ci unity-tests --skip-dlls --unity-version 2022.3.32f1 --use-docker
-```
 
 ### `version-upgrade-check`
 
