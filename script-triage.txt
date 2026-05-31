@@ -1,6 +1,5 @@
 # translate
 git-hooks/install-hooks.sh
-crates/bindings/bindings-doctests.sh # run as part of CI
 sdks/csharp/tools~/update-against-stdb.sh # port to `cargo csharp`
 
 # ask for input
