@@ -1,15 +1,14 @@
 # translate
 git-hooks/install-hooks.sh
-tools/update-test-snapshots.sh # this should probably go under cargo gen
+crates/bindings/bindings-doctests.sh # run as part of CI
+sdks/csharp/tools~/update-against-stdb.sh # port to `cargo csharp`
 
 # ask for input
-tools/perf.sh
 
 crates/sqltest/build_standard.py
 crates/sqltest/override_with_output.sh
 crates/sqltest/reformat.sh
 crates/sqltest/run_all_sequential.sh
 
-crates/bindings/bindings-doctests.sh # should this be run in CI?
-
-sdks/csharp/tools~/update-against-stdb.sh # what do people use this for?
+# exception
+tools/perf.sh # this one only works on linux regardless so /shrug
