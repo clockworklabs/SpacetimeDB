@@ -11,3 +11,41 @@ crates/sqltest/run_all_sequential.sh
 
 # exception
 tools/perf.sh # this one only works on linux regardless so /shrug
+
+
+# untriaged
+crates/bench/callgrind-docker.sh
+crates/bench/flamegraph.sh
+crates/bench/hyper_cmp.py
+crates/bench/instruments.sh
+crates/bindings-cpp/tests/client-comparison/check_tables.py
+crates/bindings-cpp/tests/client-comparison/run_client_comparison.sh
+crates/bindings-cpp/tests/client-comparison/scripts/compare_clients.sh
+crates/bindings-cpp/tests/client-comparison/scripts/compare_modules.sh
+crates/bindings-cpp/tests/client-comparison/scripts/regenerate_cpp_client.sh
+crates/bindings-cpp/tests/client-comparison/scripts/regenerate_rust_client.sh
+crates/bindings-cpp/tests/type-isolation-test/run_type_isolation_test.sh
+crates/bindings-cpp/tests/type-isolation-test/update_table_from_log.sh
+crates/bindings/bindings-doctests.sh
+crates/sqltest/build_standard.py
+crates/sqltest/override_with_output.sh
+crates/sqltest/reformat.sh
+crates/sqltest/run_all_sequential.sh
+crates/update/spacetime-install.sh
+demo/Blackholio/server-csharp/generate.sh
+demo/Blackholio/server-rust/generate.sh
+demo/Blackholio/server-rust/publish.sh
+docs/scripts/get-old-docs.sh
+modules/module-test-cpp/compare_module_schemas.py
+sdks/csharp/tools~/gen-client-api.sh
+sdks/csharp/tools~/run-regression-tests.sh
+templates/keynote-2/scripts/bench-stats.py
+templates/keynote-2/scripts/check-bench.sh
+templates/keynote-2/scripts/plot-bench.py
+templates/keynote-2/scripts/start-bench.sh
+templates/keynote-2/scripts/stop-bench.sh
+tools/clippy.sh
+tools/crate-publish-checks.py
+tools/find-publish-list.py
+tools/merge-docker-images.sh
+tools/update-test-snapshots.sh
