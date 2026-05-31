@@ -17,14 +17,17 @@ use spacetimedb_language_test_support::{
 };
 use tempfile::TempDir;
 
-const UNITY_VERSION: &str = "2022.3.32f1";
 const SDK_PACKAGE: &str = "com.clockworklabs.spacetimedbsdk";
 const SDK_PACKAGE_PATH: &str = "file:../../../../sdks/csharp";
 
 #[derive(Parser)]
 struct Args {
+    /// Unity Editor version to use for playmode tests.
+    #[arg(long, value_name = "VERSION", required_unless_present = "list")]
+    unity_version: Option<String>,
+    /// Run Unity through the versioned unityci/editor Docker image.
     #[arg(long)]
-    unity_path: Option<PathBuf>,
+    use_docker: bool,
     #[arg(long)]
     filter: Option<String>,
     #[arg(long, alias = "list-tests")]
@@ -51,7 +54,11 @@ fn run() -> Result<()> {
         return Ok(());
     }
 
-    let unity = find_unity(args.unity_path.as_deref())?;
+    let unity_version = args
+        .unity_version
+        .as_deref()
+        .expect("--unity-version is required unless --list is specified");
+    let unity = find_unity(unity_version, args.use_docker)?;
     let spacetime_bin = SpacetimeBin::prepare()?;
     let _server_cargo_restore = patch_blackholio_server_manifest(&server_dir.join("Cargo.toml"))?;
     let _unity_manifest_restore = patch_unity_package_manifest(&unity_project_dir.join("Packages/manifest.json"))?;
@@ -265,39 +272,38 @@ fn redact_unity_args(args: &[String]) -> Vec<String> {
     redacted
 }
 
-fn find_unity(explicit_path: Option<&Path>) -> Result<UnityRunner> {
-    let version = env::var("UNITY_VERSION").unwrap_or_else(|_| UNITY_VERSION.to_string());
-
-    if let Some(path) = explicit_path {
-        if path.exists() {
-            return Ok(UnityRunner::Native(path.to_path_buf()));
-        }
-        bail!("Unity executable does not exist: {}", path.display());
-    }
-
-    for var in ["UNITY_PATH", "UNITY_EXECUTABLE"] {
-        if let Some(path) = env::var_os(var).map(PathBuf::from).filter(|path| path.exists()) {
-            return Ok(UnityRunner::Native(path));
-        }
-    }
-
-    for name in ["unity", "Unity", "unity-editor"] {
-        if let Some(path) = find_on_path(name) {
-            return Ok(UnityRunner::Native(path));
-        }
+fn find_unity(version: &str, use_docker: bool) -> Result<UnityRunner> {
+    if use_docker {
+        return Ok(UnityRunner::Docker {
+            image: format!("unityci/editor:ubuntu-{version}-base-3"),
+        });
     }
 
     let mut candidates = vec![
         PathBuf::from(format!("/opt/unity/editors/{version}/Editor/Unity")),
+        PathBuf::from(format!("/opt/unity/Hub/Editor/{version}/Editor/Unity")),
         PathBuf::from(format!("/opt/Unity/Hub/Editor/{version}/Editor/Unity")),
-        PathBuf::from("/opt/unity/Editor/Unity"),
-        PathBuf::from("/opt/Unity/Editor/Unity"),
         PathBuf::from(format!(
             "/Applications/Unity/Hub/Editor/{version}/Unity.app/Contents/MacOS/Unity"
         )),
+        PathBuf::from(format!(r"C:\Program Files\Unity\Hub\Editor\{version}\Editor\Unity.exe")),
+        PathBuf::from(format!(
+            r"C:\Program Files (x86)\Unity\Hub\Editor\{version}\Editor\Unity.exe"
+        )),
     ];
     if let Some(home) = env::var_os("HOME") {
-        candidates.push(PathBuf::from(home).join(format!("Unity/Hub/Editor/{version}/Editor/Unity")));
+        let home = PathBuf::from(home);
+        candidates.extend([
+            home.join(format!("Unity/Hub/Editor/{version}/Editor/Unity")),
+            home.join(format!("Unity/Hub/Editors/{version}/Editor/Unity")),
+            home.join(format!(".local/share/unity3d/Hub/Editor/{version}/Editor/Unity")),
+            home.join(format!(
+                ".var/app/com.unity.UnityHub/data/unity3d/Hub/Editor/{version}/Editor/Unity"
+            )),
+        ]);
+    }
+    if let Some(xdg_data_home) = env::var_os("XDG_DATA_HOME") {
+        candidates.push(PathBuf::from(xdg_data_home).join(format!("unity3d/Hub/Editor/{version}/Editor/Unity")));
     }
 
     for path in candidates {
@@ -306,32 +312,9 @@ fn find_unity(explicit_path: Option<&Path>) -> Result<UnityRunner> {
         }
     }
 
-    if let Some(image) = unity_docker_image(&version) {
-        return Ok(UnityRunner::Docker { image });
-    }
-
     bail!(
-        "could not find Unity. Pass --unity-path, set UNITY_PATH or UNITY_EXECUTABLE, install Unity {version} in a standard GitHub runner path, or set UNITY_USE_DOCKER=1"
+        "could not find Unity {version}. Install that version in a standard Unity Hub location, or pass --use-docker to run unityci/editor:ubuntu-{version}-base-3"
     )
-}
-
-fn unity_docker_image(version: &str) -> Option<String> {
-    if let Ok(image) = env::var("UNITY_DOCKER_IMAGE")
-        && !image.is_empty()
-    {
-        return Some(image);
-    }
-    if env::var_os("UNITY_USE_DOCKER").as_deref() == Some(std::ffi::OsStr::new("1")) {
-        return Some(format!("unityci/editor:ubuntu-{version}-base-3"));
-    }
-    None
-}
-
-fn find_on_path(name: &str) -> Option<PathBuf> {
-    let path = env::var_os("PATH")?;
-    env::split_paths(&path)
-        .map(|dir| dir.join(name))
-        .find(|candidate| candidate.exists())
 }
 
 struct SpacetimeBin {

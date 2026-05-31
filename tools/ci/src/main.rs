@@ -368,6 +368,12 @@ enum CiCmd {
         /// Skip hydrating Unity SDK DLLs before running the Unity harness.
         #[arg(long)]
         skip_dlls: bool,
+        /// Unity Editor version to use for playmode tests.
+        #[arg(long, value_name = "VERSION")]
+        unity_version: String,
+        /// Run Unity through the versioned unityci/editor Docker image.
+        #[arg(long)]
+        use_docker: bool,
     },
     /// Verifies that the repository version upgrade tool still works.
     VersionUpgradeCheck,
@@ -515,7 +521,7 @@ fn run_csharp_tests() -> Result<()> {
     Ok(())
 }
 
-fn run_unity_tests(skip_dlls: bool) -> Result<()> {
+fn run_unity_tests(skip_dlls: bool, unity_version: &str, use_docker: bool) -> Result<()> {
     cmd!(
         "cargo",
         "build",
@@ -531,7 +537,20 @@ fn run_unity_tests(skip_dlls: bool) -> Result<()> {
     if !skip_dlls {
         cmd!("cargo", "regen", "csharp", "dlls").run()?;
     }
-    cmd!("cargo", "test", "-p", "spacetimedb-unity-tests", "--test", "unity").run()?;
+    let mut args = vec![
+        "test".to_string(),
+        "-p".to_string(),
+        "spacetimedb-unity-tests".to_string(),
+        "--test".to_string(),
+        "unity".to_string(),
+        "--".to_string(),
+        "--unity-version".to_string(),
+        unity_version.to_string(),
+    ];
+    if use_docker {
+        args.push("--use-docker".to_string());
+    }
+    cmd("cargo", args).run()?;
     Ok(())
 }
 
@@ -823,8 +842,12 @@ fn main() -> Result<()> {
             run_csharp_tests()?;
         }
 
-        Some(CiCmd::UnityTests { skip_dlls }) => {
-            run_unity_tests(skip_dlls)?;
+        Some(CiCmd::UnityTests {
+            skip_dlls,
+            unity_version,
+            use_docker,
+        }) => {
+            run_unity_tests(skip_dlls, &unity_version, use_docker)?;
         }
 
         Some(CiCmd::VersionUpgradeCheck) => {
