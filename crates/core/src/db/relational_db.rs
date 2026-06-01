@@ -1148,6 +1148,16 @@ impl RelationalDB {
         Ok(tx.create_view(module_def, view_def)?)
     }
 
+    pub fn create_view_with_prefix(
+        &self,
+        tx: &mut MutTx,
+        owning_def: &ModuleDef,
+        view_def: &ViewDef,
+        name_prefix: &str,
+    ) -> Result<(ViewId, TableId), DBError> {
+        Ok(tx.create_view_with_prefix(owning_def, view_def, name_prefix)?)
+    }
+
     pub fn drop_view(&self, tx: &mut MutTx, view_id: ViewId) -> Result<(), DBError> {
         Ok(tx.drop_view(view_id)?)
     }

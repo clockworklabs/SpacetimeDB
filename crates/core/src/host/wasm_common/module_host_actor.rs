@@ -1306,6 +1306,7 @@ impl InstanceCommon {
             args,
             row_type,
             timestamp,
+            view_typespace,
         } = params;
 
         let _outer_span = start_call_function_span(&view_name, &caller, None);
@@ -1360,15 +1361,14 @@ impl InstanceCommon {
                 // This is wrapped in a closure to simplify error handling.
                 let outcome: Result<ViewOutcome, anyhow::Error> = (|| {
                     let result = ViewResult::from_return_data(raw).context("Error parsing view result")?;
-                    let typespace = self.info.module_def.typespace();
-                    let row_product_type = typespace
+                    let row_product_type = view_typespace
                         .resolve(row_type)
                         .resolve_refs()?
                         .into_product()
                         .map_err(|_| anyhow!("Error resolving row type for view"))?;
 
                     let rows = match result {
-                        ViewResult::Rows(bytes) => deserialize_view_rows(row_type, bytes, typespace)
+                        ViewResult::Rows(bytes) => deserialize_view_rows(row_type, bytes, &view_typespace)
                             .context("Error deserializing rows returned by view".to_string())?,
                         ViewResult::RawSql(query) => self
                             .run_query_for_view(
@@ -1505,24 +1505,36 @@ fn collect_subscribed_view_calls(
 ) -> Result<Vec<CallViewParams>, anyhow::Error> {
     let mut view_calls = Vec::new();
 
-    for view in module_def.views() {
+    for (prefix, owning_def, view) in module_def.all_views_with_prefix() {
         let ViewDef {
-            name: view_name,
+            accessor_name,
+            name: local_name,
             is_anonymous,
-            fn_ptr,
             product_type_ref,
             ..
         } = view;
 
+        let display_name = if prefix.is_empty() {
+            local_name.to_string()
+        } else {
+            format!("{}{}", prefix, accessor_name)
+        };
+
+        let (global_fn_ptr, _, _) = module_def
+            .view_by_name_with_global_fn_ptr(&display_name)
+            .ok_or_else(|| anyhow::anyhow!("view {} not found in module_def", display_name))?;
+
         let st_view = tx
-            .view_from_name(view_name)?
-            .ok_or_else(|| anyhow::anyhow!("view {} not found in database", &view_name))?;
+            .view_from_name(&display_name)?
+            .ok_or_else(|| anyhow::anyhow!("view {} not found in database", display_name))?;
 
         let view_id = st_view.view_id;
         let table_id = st_view
             .table_id
-            .ok_or_else(|| anyhow::anyhow!("view {} does not have a backing table in database", &view_name))?;
+            .ok_or_else(|| anyhow::anyhow!("view {} does not have a backing table in database", display_name))?;
         let subs = tx.lookup_st_view_subs(view_id)?;
+        let view_name = Identifier::new_assume_valid(display_name.into());
+        let view_typespace = owning_def.typespace().clone();
 
         if *is_anonymous {
             if subs.is_empty() {
@@ -1532,12 +1544,13 @@ fn collect_subscribed_view_calls(
                 view_name: view_name.clone(),
                 view_id,
                 table_id,
-                fn_ptr: *fn_ptr,
+                fn_ptr: global_fn_ptr,
                 caller: owner_identity,
                 sender: None,
                 args: ArgsTuple::nullary(),
                 row_type: *product_type_ref,
                 timestamp: Timestamp::now(),
+                view_typespace: view_typespace.clone(),
             });
             continue;
         }
@@ -1547,12 +1560,13 @@ fn collect_subscribed_view_calls(
                 view_name: view_name.clone(),
                 view_id,
                 table_id,
-                fn_ptr: *fn_ptr,
+                fn_ptr: global_fn_ptr,
                 caller: owner_identity,
                 sender: Some(sub.identity.into()),
                 args: ArgsTuple::nullary(),
                 row_type: *product_type_ref,
                 timestamp: Timestamp::now(),
+                view_typespace: view_typespace.clone(),
             });
         }
     }
