@@ -62,7 +62,7 @@ use spacetimedb_lib::{bsatn, ConnectionId, TimeDuration, Timestamp};
 use spacetimedb_primitives::{ArgId, HttpHandlerId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
-use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue};
+use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue, Typespace};
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, ViewDef};
 use spacetimedb_schema::identifier::Identifier;
@@ -556,9 +556,50 @@ pub fn create_table_from_def(
     module_def: &ModuleDef,
     table_def: &TableDef,
 ) -> anyhow::Result<()> {
-    let schema = TableSchema::from_module_def(module_def, table_def, (), TableId::SENTINEL);
+    create_table_from_def_with_prefix(stdb, tx, module_def, table_def, "")
+}
+
+/// Creates a mounted submodule table in `stdb`, applying the namespace to its canonical name.
+/// `name_prefix` is the dot-terminated namespace string (e.g. `"alias."`).
+pub fn create_table_from_def_with_prefix(
+    stdb: &RelationalDB,
+    tx: &mut MutTxId,
+    owning_def: &ModuleDef,
+    table_def: &TableDef,
+    name_prefix: &str,
+) -> anyhow::Result<()> {
+    let mut schema = TableSchema::from_module_def(owning_def, table_def, (), TableId::SENTINEL);
+    if !name_prefix.is_empty() {
+        // Use accessor_name so the canonical DB name matches what TypeScript looks up
+        // as `namespace + table.sourceName`. '.' is not a valid XID char so namespaced
+        // table names can never collide with user-defined tables.
+        let prefixed_name = format!("{}{}", name_prefix, &*table_def.accessor_name);
+        schema.table_name = TableName::new_raw(RawIdentifier::from(prefixed_name));
+
+        // No alias needed: the namespaced canonical name is already the unique lookup key.
+        schema.alias = None;
+
+        // Apply the namespace to the scheduled reducer/procedure name so the scheduler can
+        // resolve it via reducer_by_name / procedure_by_name, both of which use '/' as the
+        // namespace separator (e.g. "lib." prefix → "lib/reducerName").
+        // name_prefix is always of the form "ns." or "ns1.ns2." with no internal dots in
+        // individual segments, so replacing '.' with '/' is unambiguous.
+        if let Some(schedule) = &mut schema.schedule {
+            let fn_prefix = name_prefix.replace('.', "/");
+            let prefixed_fn = format!("{}{}", fn_prefix, &*schedule.function_name);
+            schedule.function_name = Identifier::new_assume_valid(RawIdentifier::from(prefixed_fn));
+        }
+
+        // Apply the namespace to index canonical names and aliases for global uniqueness.
+        for index in &mut schema.indexes {
+            index.index_name = RawIdentifier::from(format!("{}{}", name_prefix, index.index_name));
+            if let Some(alias) = &index.alias {
+                index.alias = Some(RawIdentifier::from(format!("{}{}", name_prefix, alias)));
+            }
+        }
+    }
     stdb.create_table(tx, schema)
-        .with_context(|| format!("failed to create table {}", &table_def.name))?;
+        .with_context(|| format!("failed to create table {}{}", name_prefix, &*table_def.accessor_name))?;
     Ok(())
 }
 
@@ -571,6 +612,20 @@ pub fn create_table_from_view_def(
 ) -> anyhow::Result<()> {
     stdb.create_view(tx, module_def, view_def)
         .with_context(|| format!("failed to create table for view {}", &view_def.name))?;
+    Ok(())
+}
+
+/// Creates the table for a mounted `view_def` in `stdb`, applying the namespace prefix.
+/// `name_prefix` is the dot-terminated namespace string (e.g. `"lib."`).
+pub fn create_table_from_view_def_with_prefix(
+    stdb: &RelationalDB,
+    tx: &mut MutTxId,
+    owning_def: &ModuleDef,
+    view_def: &ViewDef,
+    name_prefix: &str,
+) -> anyhow::Result<()> {
+    stdb.create_view_with_prefix(tx, owning_def, view_def, name_prefix)
+        .with_context(|| format!("failed to create table for view {}{}", name_prefix, &view_def.name))?;
     Ok(())
 }
 
@@ -608,21 +663,35 @@ fn init_database_inner(
     let auth_ctx = AuthCtx::for_current(owner_identity);
     let (tx, ()) = stdb
         .with_auto_rollback(tx, |tx| {
-            // Create all in-memory tables defined by the module,
-            // with IDs ordered lexicographically by the table names.
-            let mut table_defs: Vec<_> = module_def.tables().collect();
-            table_defs.sort_by_key(|x| &x.name);
-            for def in table_defs {
-                logger.info(&format!("Creating table `{}`", &def.name));
-                create_table_from_def(stdb, tx, module_def, def)?;
+            // Create all in-memory tables defined by the module (including mounted submodules),
+            // with IDs ordered lexicographically by their full namespaced names.
+            let mut table_defs = module_def.all_tables_with_prefix();
+            table_defs.sort_by(|(p1, _, d1), (p2, _, d2)| {
+                let n1 = format!("{}{}", p1, d1.name);
+                let n2 = format!("{}{}", p2, d2.name);
+                n1.cmp(&n2)
+            });
+            for (prefix, owning_def, def) in table_defs {
+                let display_name = format!("{}{}", prefix, def.name);
+                logger.info(&format!("Creating table `{}`", display_name));
+                create_table_from_def_with_prefix(stdb, tx, owning_def, def, &prefix)?;
             }
 
-            // Create all in-memory views defined by the module.
-            let mut view_defs: Vec<_> = module_def.views().collect();
-            view_defs.sort_by_key(|x| &x.name);
-            for def in view_defs {
-                logger.info(&format!("Creating table for view `{}`", &def.name));
-                create_table_from_view_def(stdb, tx, module_def, def)?;
+            // Create all in-memory views defined by the module (root + mounted).
+            let mut view_defs: Vec<(String, &ModuleDef, &ViewDef)> = module_def.all_views_with_prefix();
+            view_defs.sort_by(|(p1, _, d1), (p2, _, d2)| {
+                let n1 = format!("{}{}", p1, d1.name);
+                let n2 = format!("{}{}", p2, d2.name);
+                n1.cmp(&n2)
+            });
+            for (prefix, owning_def, def) in view_defs {
+                let display_name = format!("{}{}", prefix, def.name);
+                logger.info(&format!("Creating table for view `{}`", display_name));
+                if prefix.is_empty() {
+                    create_table_from_view_def(stdb, tx, owning_def, def)?;
+                } else {
+                    create_table_from_view_def_with_prefix(stdb, tx, owning_def, def, &prefix)?;
+                }
             }
 
             // Insert the late-bound row-level security expressions.
@@ -702,7 +771,7 @@ pub fn call_identity_connected(
         // abort the connection: we can't really recover.
         let tx = Some(ScopeGuard::into_inner(mut_tx));
         let params = ModuleHost::call_reducer_params(
-            module,
+            &module.module_def,
             caller_auth.claims.identity,
             Some(caller_connection_id),
             None,
@@ -1083,6 +1152,10 @@ pub struct CallViewParams {
     pub args: ArgsTuple,
     pub row_type: AlgebraicTypeRef,
     pub timestamp: Timestamp,
+    /// The typespace of the module that owns this view.
+    /// For root views this equals the top-level typespace;
+    /// for mounted views this is the mount's own typespace.
+    pub view_typespace: Typespace,
 }
 
 pub(crate) struct ResolvedViewForRefresh<'a> {
@@ -2124,7 +2197,7 @@ impl ModuleHost {
             // that `st_client` is updated appropriately.
             let tx = Some(mut_tx);
             let result = Self::call_reducer_params(
-                info,
+                &info.module_def,
                 caller_identity,
                 Some(caller_connection_id),
                 None,
@@ -2211,7 +2284,7 @@ impl ModuleHost {
     }
 
     fn call_reducer_params(
-        module: &ModuleInfo,
+        owning_def: &ModuleDef,
         caller_identity: Identity,
         caller_connection_id: Option<ConnectionId>,
         client: Option<Arc<ClientConnectionSender>>,
@@ -2222,7 +2295,7 @@ impl ModuleHost {
         args: FunctionArgs,
     ) -> Result<CallReducerParams, InvalidReducerArguments> {
         let args = args
-            .into_tuple_for_def(&module.module_def, reducer_def)
+            .into_tuple_for_def(owning_def, reducer_def)
             .map_err(InvalidReducerArguments)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
         Ok(CallReducerParams {
@@ -2247,10 +2320,10 @@ impl ModuleHost {
         reducer_name: &str,
         args: FunctionArgs,
     ) -> Result<(&'a ReducerDef, CallReducerParams), ReducerCallError> {
-        let (reducer_id, reducer_def) = self
+        let (reducer_id, reducer_def, owning_def) = self
             .info
             .module_def
-            .reducer_full(reducer_name)
+            .reducer_by_name_with_module(reducer_name)
             .ok_or(ReducerCallError::NoSuchReducer)?;
         if let Some(lifecycle) = reducer_def.lifecycle {
             return Err(ReducerCallError::LifecycleReducer(lifecycle));
@@ -2263,7 +2336,7 @@ impl ModuleHost {
         Ok((
             reducer_def,
             Self::call_reducer_params(
-                &self.info,
+                owning_def,
                 caller_identity,
                 caller_connection_id,
                 client,
@@ -2289,7 +2362,17 @@ impl ModuleHost {
 
     fn log_reducer_submit_error(&self, reducer_name: &str, err: &ReducerCallError) {
         let log_message = match err {
-            ReducerCallError::NoSuchReducer => Some(no_such_function_log_message("reducer", reducer_name)),
+            // Only log NoSuchReducer when the name is also not a known procedure.
+            // The HTTP /call/:reducer endpoint falls back to procedure on NoSuchReducer,
+            // so a valid procedure name would otherwise incorrectly produce an error log.
+            ReducerCallError::NoSuchReducer => {
+                let module_def = &self.info().module_def;
+                if module_def.procedure_by_name(reducer_name).is_none() {
+                    Some(no_such_function_log_message("reducer", reducer_name))
+                } else {
+                    None
+                }
+            }
             ReducerCallError::Args(_) => Some(args_error_log_message("reducer", reducer_name)),
             _ => None,
         };
@@ -2760,10 +2843,10 @@ impl ModuleHost {
         procedure_name: &str,
         args: FunctionArgs,
     ) -> Result<(&'a ProcedureDef, CallProcedureParams), ProcedureCallError> {
-        let (procedure_id, procedure_def) = self
+        let (procedure_id, procedure_def, owning_def) = self
             .info
             .module_def
-            .procedure_full(procedure_name)
+            .procedure_by_name_with_module(procedure_name)
             .ok_or(ProcedureCallError::NoSuchProcedure)?;
 
         if procedure_def.visibility.is_private() && !self.is_database_owner(caller_identity) {
@@ -2771,7 +2854,7 @@ impl ModuleHost {
         }
 
         let args = args
-            .into_tuple_for_def(&self.info.module_def, procedure_def)
+            .into_tuple_for_def(owning_def, procedure_def)
             .map_err(InvalidProcedureArguments)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
 
@@ -2879,7 +2962,7 @@ impl ModuleHost {
         view_collector.collect_views(&mut view_ids);
         for view_id in view_ids {
             let st_view_row = tx.lookup_st_view(view_id)?;
-            let view_name = st_view_row.view_name.into();
+            let view_name = Identifier::new_assume_valid(st_view_row.view_name.into());
             let view_id = st_view_row.view_id;
             let table_id = st_view_row.table_id.ok_or(ViewCallError::TableDoesNotExist(view_id))?;
             let is_anonymous = st_view_row.is_anonymous;
@@ -2940,20 +3023,53 @@ impl ModuleHost {
         let mut trapped = false;
         for view_call in tx.views_for_refresh().cloned().collect::<Vec<_>>() {
             let sender = view_call.sender;
-            let resolved = match resolve_view_for_refresh(&tx, module_def, &view_call) {
-                Ok(resolved) => resolved,
+            let st_view = match tx
+                .lookup_st_view(view_call.view_id)
+                .with_context(|| format!("failed to look up view {}", view_call.view_id))
+            {
+                Ok(v) => v,
                 Err(err) => {
                     outcome = ViewOutcome::Failed(format!("failed to resolve view: {err}"));
                     break;
                 }
             };
-            let ResolvedViewForRefresh {
-                view_id,
-                table_id,
-                view_def,
-            } = resolved;
+            let view_id = st_view.view_id;
+            let table_id = match st_view.table_id {
+                Some(t) => t,
+                None => {
+                    outcome = ViewOutcome::Failed(format!(
+                        "view {:?} does not have a backing table",
+                        view_id
+                    ));
+                    break;
+                }
+            };
+            let is_anonymous = sender.is_none();
+            if st_view.is_anonymous != is_anonymous {
+                outcome = ViewOutcome::Failed(format!(
+                    "found is_anonymous={} in st_view, but {} in readset when updating view `{}`",
+                    st_view.is_anonymous, is_anonymous, st_view.view_name
+                ));
+                break;
+            }
+            let Some((fn_ptr, view_def, owning_def)) =
+                module_def.view_by_name_with_global_fn_ptr(st_view.view_name.as_ref())
+            else {
+                outcome = ViewOutcome::Failed(format!(
+                    "view `{}` for view id `{}` not found in module",
+                    st_view.view_name, view_id
+                ));
+                break;
+            };
+            if st_view.is_anonymous != view_def.is_anonymous {
+                outcome = ViewOutcome::Failed(format!(
+                    "found is_anonymous={} in st_view, but {} in module when updating view `{}`",
+                    st_view.is_anonymous, view_def.is_anonymous, st_view.view_name
+                ));
+                break;
+            }
             let view_name = &view_def.name;
-            let args = match FunctionArgs::Nullary.into_tuple_for_def(module_def, view_def) {
+            let args = match FunctionArgs::Nullary.into_tuple_for_def(owning_def, view_def) {
                 Ok(args) => args,
                 Err(err) => {
                     outcome = ViewOutcome::Failed(format!("failed to build view args: {err}"));
@@ -2967,12 +3083,13 @@ impl ModuleHost {
                 view_name,
                 view_id,
                 table_id,
-                view_def.fn_ptr,
+                fn_ptr,
                 caller,
                 sender,
                 args,
                 view_def.product_type_ref,
                 timestamp,
+                owning_def.typespace().clone(),
             );
 
             // Increment execution stats
@@ -3035,15 +3152,17 @@ impl ModuleHost {
         timestamp: Timestamp,
     ) -> Result<(ViewCallResult, bool), ViewCallError> {
         let module_def = &instance.common.info().module_def;
-        let view_def = module_def.view(view_name).ok_or(ViewCallError::NoSuchView)?;
-        let fn_ptr = view_def.fn_ptr;
+        let (global_fn_ptr, view_def, owning_def) = module_def
+            .view_by_name_with_global_fn_ptr(view_name.as_ref())
+            .ok_or(ViewCallError::NoSuchView)?;
         let row_type = view_def.product_type_ref;
         let args = args
-            .into_tuple_for_def(module_def, view_def)
+            .into_tuple_for_def(owning_def, view_def)
             .map_err(InvalidViewArguments)?;
 
         Ok(Self::call_view_inner(
-            instance, tx, view_name, view_id, table_id, fn_ptr, caller, sender, args, row_type, timestamp,
+            instance, tx, view_name, view_id, table_id, global_fn_ptr, caller, sender, args, row_type, timestamp,
+            owning_def.typespace().clone(),
         ))
     }
 
@@ -3059,6 +3178,7 @@ impl ModuleHost {
         args: ArgsTuple,
         row_type: AlgebraicTypeRef,
         timestamp: Timestamp,
+        view_typespace: Typespace,
     ) -> (ViewCallResult, bool) {
         let view_name = name.clone();
         let params = CallViewParams {
@@ -3071,6 +3191,7 @@ impl ModuleHost {
             sender,
             args,
             row_type,
+            view_typespace,
         };
 
         instance.common.call_view_with_tx(tx, params, instance.instance)
