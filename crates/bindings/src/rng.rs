@@ -1,5 +1,6 @@
+use crate::ProcedureContext;
 #[cfg(feature = "unstable")]
-use crate::{http::HandlerContext, ProcedureContext};
+use crate::http::HandlerContext;
 use crate::{rand, ReducerContext};
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
@@ -51,14 +52,12 @@ impl ReducerContext {
     }
 }
 
-#[cfg(feature = "unstable")]
 impl ProcedureContext {
     /// Generates a random value.
     ///
     /// Similar to [`rand::random()`], but using [`StdbRng`] instead.
     ///
     /// See also [`ProcedureContext::rng()`].
-    #[cfg(feature = "unstable")]
     pub fn random<T>(&self) -> T
     where
         Standard: Distribution<T>,
@@ -90,7 +89,6 @@ impl ProcedureContext {
     /// ```
     ///
     /// For more information, see [`StdbRng`] and [`rand::Rng`].
-    #[cfg(feature = "unstable")]
     pub fn rng(&self) -> &StdbRng {
         self.rng.get_or_init(|| StdbRng::seed_from_ts(self.timestamp))
     }
