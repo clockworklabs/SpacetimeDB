@@ -1,6 +1,6 @@
-use crate::ProcedureContext;
 #[cfg(feature = "unstable")]
 use crate::http::HandlerContext;
+use crate::ProcedureContext;
 use crate::{rand, ReducerContext};
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;

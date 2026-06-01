@@ -8,10 +8,10 @@
 use crate::rt::{read_bytes_source_as, read_bytes_source_into};
 use crate::IterBuf;
 // Imports used only by the (still-unstable) HTTP handler machinery.
-#[cfg(feature = "unstable")]
-use crate::{try_with_tx, with_tx, Timestamp, TxContext};
 #[cfg(all(feature = "unstable", feature = "rand08"))]
 use crate::StdbRng;
+#[cfg(feature = "unstable")]
+use crate::{try_with_tx, with_tx, Timestamp, TxContext};
 use bytes::Bytes;
 #[cfg(all(feature = "rand", feature = "unstable"))]
 use rand08::RngCore;
@@ -20,11 +20,11 @@ use spacetimedb_lib::db::raw_def::v10::MethodOrAny;
 use spacetimedb_lib::http as st_http;
 #[cfg(feature = "unstable")]
 use spacetimedb_lib::http::{character_is_acceptable_for_route_path, ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION};
-use spacetimedb_lib::{bsatn, TimeDuration};
 #[cfg(feature = "unstable")]
 use spacetimedb_lib::Identity;
 #[cfg(all(feature = "unstable", feature = "rand"))]
 use spacetimedb_lib::Uuid;
+use spacetimedb_lib::{bsatn, TimeDuration};
 #[cfg(all(feature = "unstable", feature = "rand"))]
 use std::cell::Cell;
 #[cfg(all(feature = "unstable", feature = "rand08"))]
@@ -432,7 +432,7 @@ impl HttpClient {
     ///
     /// For simple `GET` requests with no headers, use [`HttpClient::get`] instead.
     ///
-    /// Include a [`Timeout`] in the [`Request::extensions`] via [`http::request::RequestBuilder::extension`]
+    /// Include a [`Timeout`] in the [`Request::extensions`] via [`http::request::Builder::extension`]
     /// to impose a timeout on the request.
     /// All HTTP requests in SpacetimeDB are subject to a maximum timeout of 500 milliseconds.
     /// All other extensions in `request` are ignored.
@@ -810,7 +810,7 @@ impl From<http::Error> for Error {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "unstable"))]
 mod tests {
     use super::*;
 

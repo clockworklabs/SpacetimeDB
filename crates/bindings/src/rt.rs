@@ -21,9 +21,9 @@ use std::marker::PhantomData;
 use std::sync::{Mutex, OnceLock};
 pub use sys::raw::{BytesSink, BytesSource};
 
-use crate::{ProcedureContext, ProcedureResult};
 #[cfg(feature = "unstable")]
 use crate::http::{self, HandlerContext};
+use crate::{ProcedureContext, ProcedureResult};
 
 pub trait IntoVec<T> {
     fn into_vec(self) -> Vec<T>;
