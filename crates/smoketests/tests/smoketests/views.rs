@@ -495,6 +495,83 @@ fn test_views_auto_migration() {
 }
 
 #[test]
+fn test_views_auto_migration_stable() {
+    let mut test = Smoketest::builder()
+        .precompiled_module("views-auto-migrate-stable")
+        .build();
+
+    // Seed the initial row in the `counter` table
+    test.call("seed", &[]).unwrap();
+
+    // Subscribe to that row through the `z_counter` view
+    let sub = test.subscribe_background(&["SELECT * FROM z_counter"], 1).unwrap();
+
+    // Update the module by adding another view
+    test.use_precompiled_module("views-auto-migrate-stable-updated");
+    test.publish_module_clear(false).unwrap();
+
+    // Bump the counter and observe a subscription update.
+    let output = test.call_output("bump_counter", &[]);
+
+    assert!(
+        output.status.success(),
+        "bump_counter failed after module update\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+
+    let events = sub.collect().unwrap();
+    let projection = project_fields(events, "z_counter", &["id", "value"]);
+    assert_eq!(
+        serde_json::json!(projection),
+        json!([
+            {
+                "z_counter": {
+                    "deletes": [{ "id": 0, "value": 0 }],
+                    "inserts": [{ "id": 0, "value": 1 }]
+                }
+            }
+        ])
+    );
+}
+
+#[test]
+fn test_views_auto_migration_read_set() {
+    const SWITCHED_LOG: &str = "Calling or updating view `switched`";
+
+    let mut test = Smoketest::builder()
+        .precompiled_module("views-auto-migrate-read-set")
+        .build();
+
+    test.call("seed", &[]).unwrap();
+
+    let _sub = test.subscribe_background(&["SELECT * FROM switched"], 2).unwrap();
+
+    test.use_precompiled_module("views-auto-migrate-read-set-updated");
+    test.publish_module_clear(false).unwrap();
+
+    let logs_after_publish = test.logs(100).unwrap();
+    let logs_after_publish_for_view = logs_after_publish
+        .iter()
+        .filter(|msg| msg.contains(SWITCHED_LOG))
+        .count();
+    assert!(
+        logs_after_publish_for_view > 0,
+        "expected the updated view to be evaluated during publish",
+    );
+
+    // This touches the view's old read set, so it should not be refreshed
+    test.call("touch_old", &[]).unwrap();
+
+    let logs_after_touch = test.logs(100).unwrap();
+    let logs_after_touch_for_view = logs_after_touch.iter().filter(|msg| msg.contains(SWITCHED_LOG)).count();
+    assert_eq!(
+        logs_after_touch_for_view, logs_after_publish_for_view,
+        "`switched` should not be evaluated when only the old source table is updated",
+    );
+}
+
+#[test]
 fn test_auto_migration_drop_view() {
     let mut test = Smoketest::builder().precompiled_module("views-auto-migrate").build();
     test.use_precompiled_module("views-drop-view");

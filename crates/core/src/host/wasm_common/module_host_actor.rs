@@ -1359,6 +1359,7 @@ impl InstanceCommon {
             (Ok(raw), sender) => {
                 // This is wrapped in a closure to simplify error handling.
                 let outcome: Result<ViewOutcome, anyhow::Error> = (|| {
+                    let view_call = ViewCallInfo { view_id, sender };
                     let result = ViewResult::from_return_data(raw).context("Error parsing view result")?;
                     let typespace = self.info.module_def.typespace();
                     let row_product_type = typespace
@@ -1371,28 +1372,14 @@ impl InstanceCommon {
                         ViewResult::Rows(bytes) => deserialize_view_rows(row_type, bytes, typespace)
                             .context("Error deserializing rows returned by view".to_string())?,
                         ViewResult::RawSql(query) => self
-                            .run_query_for_view(
-                                &mut tx,
-                                &query,
-                                &row_product_type,
-                                &ViewCallInfo {
-                                    view_id,
-                                    table_id,
-                                    fn_ptr,
-                                    sender,
-                                },
-                            )
+                            .run_query_for_view(&mut tx, &query, &row_product_type, &view_call)
                             .context("Error executing raw SQL returned by view".to_string())?,
                     };
 
                     let replica_ctx = inst.replica_ctx();
                     let stdb = replica_ctx.relational_db();
-                    let res = match sender {
-                        Some(sender) => stdb.materialize_view(&mut tx, table_id, sender, rows),
-                        None => stdb.materialize_anonymous_view(&mut tx, table_id, rows),
-                    };
-
-                    res.context("Error materializing view")?;
+                    stdb.materialize_view_call(&mut tx, table_id, view_call, rows)
+                        .context("Error materializing view")?;
 
                     Ok(ViewOutcome::Success)
                 })();
@@ -1798,8 +1785,6 @@ impl InstanceOp for ViewOp<'_> {
     fn call_type(&self) -> FuncCallType {
         FuncCallType::View(ViewCallInfo {
             view_id: self.view_id,
-            table_id: self.table_id,
-            fn_ptr: self.fn_ptr,
             sender: Some(*self.sender),
         })
     }
@@ -1828,8 +1813,6 @@ impl InstanceOp for AnonymousViewOp<'_> {
     fn call_type(&self) -> FuncCallType {
         FuncCallType::View(ViewCallInfo {
             view_id: self.view_id,
-            table_id: self.table_id,
-            fn_ptr: self.fn_ptr,
             sender: None,
         })
     }

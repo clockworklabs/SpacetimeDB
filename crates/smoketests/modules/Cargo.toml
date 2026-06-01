@@ -26,6 +26,10 @@ members = [
     "views-query",
     "views-callable",
     "views-count",
+    "views-auto-migrate-stable",
+    "views-auto-migrate-stable-updated",
+    "views-auto-migrate-read-set",
+    "views-auto-migrate-read-set-updated",
 
     # Security and permissions
     "rls",
