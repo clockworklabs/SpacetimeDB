@@ -475,6 +475,75 @@ fn generate_procedures_file(module: &ModuleDef, options: &CodegenOptions) -> Out
     }
 }
 
+/// Collect all `AlgebraicTypeRef`s directly referenced by a type def.
+fn direct_refs_of_def(def: &AlgebraicTypeDef) -> Vec<AlgebraicTypeRef> {
+    fn refs_of_use(ty: &AlgebraicTypeUse, out: &mut Vec<AlgebraicTypeRef>) {
+        match ty {
+            AlgebraicTypeUse::Ref(r) => out.push(*r),
+            AlgebraicTypeUse::Array(e) | AlgebraicTypeUse::Option(e) => refs_of_use(e, out),
+            AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+                refs_of_use(ok_ty, out);
+                refs_of_use(err_ty, out);
+            }
+            _ => {}
+        }
+    }
+    let mut refs = Vec::new();
+    match def {
+        AlgebraicTypeDef::Product(p) => {
+            for (_, ty) in &p.elements {
+                refs_of_use(ty, &mut refs);
+            }
+        }
+        AlgebraicTypeDef::Sum(s) => {
+            for (_, ty) in &s.variants {
+                refs_of_use(ty, &mut refs);
+            }
+        }
+        AlgebraicTypeDef::PlainEnum(_) => {}
+    }
+    refs
+}
+
+/// BFS to find all type refs reachable from `start` in the type-dependency graph.
+fn reachable_from(
+    typespace: &spacetimedb_schema::type_for_generate::TypespaceForGenerate,
+    start: AlgebraicTypeRef,
+) -> BTreeSet<AlgebraicTypeRef> {
+    let mut visited = BTreeSet::new();
+    let mut stack = vec![start];
+    while let Some(r) = stack.pop() {
+        if !visited.insert(r) {
+            continue;
+        }
+        if let Some(def) = typespace.get(r) {
+            for neighbor in direct_refs_of_def(def) {
+                stack.push(neighbor);
+            }
+        }
+    }
+    visited
+}
+
+/// Get all strongly connected components within the provided ModuleDef types.
+/// Used to compute circular dependencies within the provided ModuleDef.
+fn algebraic_type_scc(module: &ModuleDef) -> BTreeSet<AlgebraicTypeRef> {
+    let Some(at_ref) = iter_types(module)
+        .find(|ty| type_ref_name(module, ty.ty) == "AlgebraicType")
+        .map(|ty| ty.ty)
+    else {
+        return BTreeSet::new();
+    };
+
+    let typespace = module.typespace_for_generate();
+    let from_at = reachable_from(typespace, at_ref);
+    from_at
+        .iter()
+        .filter(|&&r| reachable_from(typespace, r).contains(&at_ref))
+        .copied()
+        .collect()
+}
+
 fn generate_types_file(module: &ModuleDef) -> OutputFile {
     let mut output = CodeIndenter::new(String::new(), INDENT);
     let out = &mut output;
@@ -486,6 +555,7 @@ fn generate_types_file(module: &ModuleDef) -> OutputFile {
         .reducers()
         .map(|reducer| reducer.accessor_name.deref().to_case(Case::Pascal))
         .collect::<BTreeSet<_>>();
+    let algebraic_scc = algebraic_type_scc(module);
 
     for ty in iter_types(module) {
         let type_name = collect_case(Case::Pascal, ty.accessor_name.name_segments());
@@ -493,9 +563,13 @@ fn generate_types_file(module: &ModuleDef) -> OutputFile {
             continue;
         }
 
-        match &module.typespace_for_generate()[ty.ty] {
-            AlgebraicTypeDef::Product(product) => define_body_for_product(module, out, &type_name, &product.elements),
-            AlgebraicTypeDef::Sum(sum) => define_body_for_sum(module, out, &type_name, &sum.variants),
+        let type_def = &module.typespace_for_generate()[ty.ty];
+        let is_recursive = type_def.is_recursive() && !algebraic_scc.contains(&ty.ty);
+        match type_def {
+            AlgebraicTypeDef::Product(product) => {
+                define_body_for_product(module, out, &type_name, &product.elements, is_recursive)
+            }
+            AlgebraicTypeDef::Sum(sum) => define_body_for_sum(module, out, &type_name, &sum.variants, is_recursive),
             AlgebraicTypeDef::PlainEnum(plain_enum) => {
                 let variants = plain_enum
                     .variants
@@ -503,7 +577,7 @@ fn generate_types_file(module: &ModuleDef) -> OutputFile {
                     .cloned()
                     .map(|var| (var, AlgebraicTypeUse::Unit))
                     .collect::<Vec<_>>();
-                define_body_for_sum(module, out, &type_name, &variants)
+                define_body_for_sum(module, out, &type_name, &variants, false)
             }
         }
     }
@@ -512,6 +586,105 @@ fn generate_types_file(module: &ModuleDef) -> OutputFile {
         filename: "types.ts".to_string(),
         code: output.into_inner(),
     }
+}
+
+/// Converts an `AlgebraicTypeUse` to a TypeScript type expression for use in explicit type aliases.
+/// Used when generating `export type Foo = { ... }` for recursive types.
+fn ts_type_use(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
+    match ty {
+        AlgebraicTypeUse::String => "string".to_string(),
+        AlgebraicTypeUse::Primitive(PrimitiveType::Bool) => "boolean".to_string(),
+        AlgebraicTypeUse::Primitive(
+            PrimitiveType::I8
+            | PrimitiveType::U8
+            | PrimitiveType::I16
+            | PrimitiveType::U16
+            | PrimitiveType::I32
+            | PrimitiveType::U32
+            | PrimitiveType::F32
+            | PrimitiveType::F64,
+        ) => "number".to_string(),
+        AlgebraicTypeUse::Primitive(_) => "bigint".to_string(),
+        AlgebraicTypeUse::Array(elem) if matches!(&**elem, AlgebraicTypeUse::Primitive(PrimitiveType::U8)) => {
+            "Uint8Array".to_string()
+        }
+        AlgebraicTypeUse::Array(elem) => format!("{}[]", ts_type_use(module, elem)),
+        AlgebraicTypeUse::Option(inner) => format!("{} | undefined", ts_type_use(module, inner)),
+        AlgebraicTypeUse::Ref(r) => type_ref_name(module, *r),
+        AlgebraicTypeUse::Unit => "Record<string, never>".to_string(),
+        AlgebraicTypeUse::Never => "never".to_string(),
+        AlgebraicTypeUse::Identity => "__Identity".to_string(),
+        AlgebraicTypeUse::ConnectionId => "__ConnectionId".to_string(),
+        AlgebraicTypeUse::Timestamp => "__Timestamp".to_string(),
+        AlgebraicTypeUse::TimeDuration => "__TimeDuration".to_string(),
+        AlgebraicTypeUse::ScheduleAt => "__ScheduleAt".to_string(),
+        AlgebraicTypeUse::Uuid => "__Uuid".to_string(),
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            format!(
+                "{{ ok: {} }} | {{ err: {} }}",
+                ts_type_use(module, ok_ty),
+                ts_type_use(module, err_ty)
+            )
+        }
+    }
+}
+
+/// Emits an explicit TypeScript type alias for a product type, used for recursive types.
+/// e.g. `export type Foo = { bar: Bar; };`
+fn write_ts_type_alias_for_product(
+    module: &ModuleDef,
+    out: &mut Indenter,
+    name: &str,
+    elements: &[(Identifier, AlgebraicTypeUse)],
+) {
+    writeln!(out, "export type {name} = {{");
+    out.indent(1);
+    for (ident, ty) in elements {
+        let field_name = ident.deref().to_case(Case::Camel);
+        writeln!(out, "{field_name}: {};", ts_type_use(module, ty));
+    }
+    out.dedent(1);
+    writeln!(out, "}};");
+    out.newline();
+}
+
+/// Emits an explicit TypeScript type alias for a sum type, used for recursive types.
+/// e.g. `export type Foo = | { tag: 'Bar'; value: Bar } | { tag: 'Baz'; value: Baz };`
+fn write_ts_type_alias_for_sum(
+    module: &ModuleDef,
+    out: &mut Indenter,
+    name: &str,
+    variants: &[(Identifier, AlgebraicTypeUse)],
+) {
+    writeln!(out, "export type {name} =");
+    out.indent(1);
+    for (i, (ident, ty)) in variants.iter().enumerate() {
+        let variant_name = ident.deref().to_case(Case::Pascal);
+        let is_last = i == variants.len() - 1;
+        let semicolon = if is_last { ";" } else { "" };
+        writeln!(
+            out,
+            "| {{ tag: '{variant_name}'; value: {} }}{semicolon}",
+            ts_type_use(module, ty)
+        );
+    }
+    out.dedent(1);
+    out.newline();
+}
+
+/// Emits a getter field with an explicit `: any` return-type annotation.
+///
+/// Required for getters inside `const X: any = __t.object/enum(…)` declarations of
+/// recursive types: without the annotation TypeScript emits TS7023 ("implicitly has
+/// return type 'any' because it is referenced in its own return expressions").
+fn write_any_getter_field(module: &ModuleDef, out: &mut Indenter, name: &str, ty: &AlgebraicTypeUse) {
+    writeln!(out, "get {name}(): any {{");
+    out.indent(1);
+    write!(out, "return ");
+    write_type_builder(module, out, ty).unwrap();
+    writeln!(out, ";");
+    out.dedent(1);
+    writeln!(out, "}},");
 }
 
 fn print_index_imports(out: &mut Indenter) {
@@ -624,16 +797,38 @@ fn define_body_for_product(
     out: &mut Indenter,
     name: &str,
     elements: &[(Identifier, AlgebraicTypeUse)],
+    is_recursive: bool,
 ) {
-    write!(out, "export const {name} = __t.object(\"{name}\", {{");
-    if elements.is_empty() {
+    if is_recursive {
+        // Emit an explicit TS type alias to break the circular type-inference chain
+        write_ts_type_alias_for_product(module, out, name, elements);
+        writeln!(out, "export const {name}: any = __t.object(\"{name}\", {{");
+        if !elements.is_empty() {
+            out.with_indent(|out| {
+                for (ident, ty) in elements {
+                    let field_name = ident.deref().to_case(Case::Camel);
+                    if type_contains_ref(ty) {
+                        write_any_getter_field(module, out, &field_name, ty);
+                    } else {
+                        write!(out, "{field_name}: ");
+                        write_type_builder(module, out, ty).unwrap();
+                        writeln!(out, ",");
+                    }
+                }
+            });
+        }
         writeln!(out, "}});");
     } else {
-        writeln!(out);
-        out.with_indent(|out| write_object_type_builder_fields(module, out, elements, None, true, false).unwrap());
-        writeln!(out, "}});");
+        write!(out, "export const {name} = __t.object(\"{name}\", {{");
+        if elements.is_empty() {
+            writeln!(out, "}});");
+        } else {
+            writeln!(out);
+            out.with_indent(|out| write_object_type_builder_fields(module, out, elements, None, true, false).unwrap());
+            writeln!(out, "}});");
+        }
+        writeln!(out, "export type {name} = __Infer<typeof {name}>;");
     }
-    writeln!(out, "export type {name} = __Infer<typeof {name}>;");
     out.newline();
 }
 
@@ -858,13 +1053,8 @@ fn define_body_for_sum(
     out: &mut Indenter,
     name: &str,
     variants: &[(Identifier, AlgebraicTypeUse)],
+    is_recursive: bool,
 ) {
-    writeln!(out, "// The tagged union or sum type for the algebraic type `{name}`.");
-    write!(out, "export const {name}");
-    if name == "AlgebraicType" {
-        write!(out, ": __TypeBuilder<__AlgebraicTypeType, __AlgebraicTypeType>");
-    }
-    writeln!(out, " = __t.enum(\"{name}\", {{");
     // Convert variant names to PascalCase
     let pascal_variants: Vec<(Identifier, AlgebraicTypeUse)> = variants
         .iter()
@@ -873,9 +1063,35 @@ fn define_body_for_sum(
             (Identifier::for_test(pascal), ty.clone())
         })
         .collect();
-    out.with_indent(|out| write_object_type_builder_fields(module, out, &pascal_variants, None, false, false).unwrap());
-    writeln!(out, "}});");
-    writeln!(out, "export type {name} = __Infer<typeof {name}>;");
+
+    writeln!(out, "// The tagged union or sum type for the algebraic type `{name}`.");
+    if is_recursive {
+        write_ts_type_alias_for_sum(module, out, name, variants);
+        writeln!(out, "export const {name}: any = __t.enum(\"{name}\", {{");
+        out.with_indent(|out| {
+            for (ident, ty) in &pascal_variants {
+                if type_contains_ref(ty) {
+                    write_any_getter_field(module, out, ident.deref(), ty);
+                } else {
+                    write!(out, "{}: ", ident.deref());
+                    write_type_builder(module, out, ty).unwrap();
+                    writeln!(out, ",");
+                }
+            }
+        });
+        writeln!(out, "}});");
+    } else {
+        write!(out, "export const {name}");
+        if name == "AlgebraicType" {
+            write!(out, ": __TypeBuilder<__AlgebraicTypeType, __AlgebraicTypeType>");
+        }
+        writeln!(out, " = __t.enum(\"{name}\", {{");
+        out.with_indent(|out| {
+            write_object_type_builder_fields(module, out, &pascal_variants, None, false, false).unwrap()
+        });
+        writeln!(out, "}});");
+        writeln!(out, "export type {name} = __Infer<typeof {name}>;");
+    }
     out.newline();
 }
 

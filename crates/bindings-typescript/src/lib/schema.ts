@@ -7,10 +7,22 @@ import {
 } from './algebraic_type';
 import type {
   CaseConversionPolicy,
+  ExplicitNames,
+  RawHttpHandlerDefV10,
+  RawHttpRouteDefV10,
+  RawLifeCycleReducerDefV10,
+  RawModuleMountV10,
   RawModuleDefV10,
   RawModuleDefV10Section,
+  RawProcedureDefV10,
+  RawReducerDefV10,
+  RawRowLevelSecurityDefV9,
+  RawScheduleDefV10,
   RawScopedTypeNameV10,
   RawTableDefV10,
+  RawTypeDefV10,
+  RawViewDefV10,
+  Typespace,
 } from './autogen/types';
 import type { UntypedIndex } from './indexes';
 import type { UntypedTableDef } from './table';
@@ -42,6 +54,7 @@ export type TableNamesOf<S extends UntypedSchemaDef> = Values<
  */
 export type UntypedSchemaDef = {
   tables: Record<string, UntypedTableDef>;
+  namespaces?: Record<string, UntypedSchemaDef>;
 };
 
 /**
@@ -174,7 +187,20 @@ type CompoundTypeCache = Map<
 >;
 
 export type ModuleDef = {
-  [S in RawModuleDefV10Section as Uncapitalize<S['tag']>]: S['value'];
+  typespace: Typespace;
+  types: RawTypeDefV10[];
+  tables: RawTableDefV10[];
+  reducers: RawReducerDefV10[];
+  procedures: RawProcedureDefV10[];
+  views: RawViewDefV10[];
+  schedules: RawScheduleDefV10[];
+  lifeCycleReducers: RawLifeCycleReducerDefV10[];
+  httpHandlers: RawHttpHandlerDefV10[];
+  httpRoutes: RawHttpRouteDefV10[];
+  rowLevelSecurity: RawRowLevelSecurityDefV9[];
+  caseConversionPolicy: CaseConversionPolicy;
+  explicitNames: ExplicitNames;
+  mounts: RawModuleMountV10[];
 };
 
 type Section = RawModuleDefV10Section;
@@ -201,6 +227,7 @@ export class ModuleContext {
     explicitNames: {
       entries: [],
     },
+    mounts: [],
   };
 
   get moduleDef(): ModuleDef {
@@ -259,7 +286,17 @@ export class ModuleContext {
         value: module.caseConversionPolicy,
       }
     );
+    push(
+      module.mounts && {
+        tag: 'Mounts',
+        value: module.mounts,
+      }
+    );
     return { sections };
+  }
+
+  addMount(mount: RawModuleMountV10) {
+    this.#moduleDef.mounts.push(mount);
   }
 
   /**

@@ -339,56 +339,77 @@ export const RawModuleDef = __t.enum('RawModuleDef', {
 });
 export type RawModuleDef = __Infer<typeof RawModuleDef>;
 
-export const RawModuleDefV10 = __t.object('RawModuleDefV10', {
-  get sections() {
+export type RawModuleDefV10 = {
+  sections: RawModuleDefV10Section[];
+};
+
+export const RawModuleDefV10: any = __t.object('RawModuleDefV10', {
+  get sections(): any {
     return __t.array(RawModuleDefV10Section);
   },
 });
-export type RawModuleDefV10 = __Infer<typeof RawModuleDefV10>;
 
 // The tagged union or sum type for the algebraic type `RawModuleDefV10Section`.
-export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
-  get Typespace() {
+export type RawModuleDefV10Section =
+  | { tag: 'Typespace'; value: Typespace }
+  | { tag: 'Types'; value: RawTypeDefV10[] }
+  | { tag: 'Tables'; value: RawTableDefV10[] }
+  | { tag: 'Reducers'; value: RawReducerDefV10[] }
+  | { tag: 'Procedures'; value: RawProcedureDefV10[] }
+  | { tag: 'Views'; value: RawViewDefV10[] }
+  | { tag: 'Schedules'; value: RawScheduleDefV10[] }
+  | { tag: 'LifeCycleReducers'; value: RawLifeCycleReducerDefV10[] }
+  | { tag: 'RowLevelSecurity'; value: RawRowLevelSecurityDefV9[] }
+  | { tag: 'CaseConversionPolicy'; value: CaseConversionPolicy }
+  | { tag: 'ExplicitNames'; value: ExplicitNames }
+  | { tag: 'HttpHandlers'; value: RawHttpHandlerDefV10[] }
+  | { tag: 'HttpRoutes'; value: RawHttpRouteDefV10[] }
+  | { tag: 'Mounts'; value: RawModuleMountV10[] };
+
+export const RawModuleDefV10Section: any = __t.enum('RawModuleDefV10Section', {
+  get Typespace(): any {
     return Typespace;
   },
-  get Types() {
+  get Types(): any {
     return __t.array(RawTypeDefV10);
   },
-  get Tables() {
+  get Tables(): any {
     return __t.array(RawTableDefV10);
   },
-  get Reducers() {
+  get Reducers(): any {
     return __t.array(RawReducerDefV10);
   },
-  get Procedures() {
+  get Procedures(): any {
     return __t.array(RawProcedureDefV10);
   },
-  get Views() {
+  get Views(): any {
     return __t.array(RawViewDefV10);
   },
-  get Schedules() {
+  get Schedules(): any {
     return __t.array(RawScheduleDefV10);
   },
-  get LifeCycleReducers() {
+  get LifeCycleReducers(): any {
     return __t.array(RawLifeCycleReducerDefV10);
   },
-  get RowLevelSecurity() {
+  get RowLevelSecurity(): any {
     return __t.array(RawRowLevelSecurityDefV9);
   },
-  get CaseConversionPolicy() {
+  get CaseConversionPolicy(): any {
     return CaseConversionPolicy;
   },
-  get ExplicitNames() {
+  get ExplicitNames(): any {
     return ExplicitNames;
   },
-  get HttpHandlers() {
+  get HttpHandlers(): any {
     return __t.array(RawHttpHandlerDefV10);
   },
-  get HttpRoutes() {
+  get HttpRoutes(): any {
     return __t.array(RawHttpRouteDefV10);
   },
+  get Mounts(): any {
+    return __t.array(RawModuleMountV10);
+  },
 });
-export type RawModuleDefV10Section = __Infer<typeof RawModuleDefV10Section>;
 
 export const RawModuleDefV8 = __t.object('RawModuleDefV8', {
   get typespace() {
@@ -427,6 +448,18 @@ export const RawModuleDefV9 = __t.object('RawModuleDefV9', {
   },
 });
 export type RawModuleDefV9 = __Infer<typeof RawModuleDefV9>;
+
+export type RawModuleMountV10 = {
+  namespace: string;
+  module: RawModuleDefV10;
+};
+
+export const RawModuleMountV10: any = __t.object('RawModuleMountV10', {
+  namespace: __t.string(),
+  get module(): any {
+    return RawModuleDefV10;
+  },
+});
 
 export const RawProcedureDefV10 = __t.object('RawProcedureDefV10', {
   sourceName: __t.string(),

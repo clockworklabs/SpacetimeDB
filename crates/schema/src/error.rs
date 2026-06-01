@@ -165,6 +165,19 @@ pub enum ValidationError {
         ok_type: PrettyAlgebraicType,
         err_type: PrettyAlgebraicType,
     },
+    #[error(
+        "lifecycle event {lifecycle:?} is claimed by used `{first}` and `{second}`; \
+         only one module in the dependency tree may declare each lifecycle"
+    )]
+    ConflictingMountLifecycle {
+        lifecycle: Lifecycle,
+        /// Namespace path of the first claimant
+        first: String,
+        /// Namespace path of the second claimant
+        second: String,
+    },
+    #[error("mount namespace `{namespace}` is {len} characters, which exceeds the 63-character limit")]
+    NamespaceTooLong { namespace: RawIdentifier, len: usize },
 }
 
 /// A wrapper around an `AlgebraicType` that implements `fmt::Display`.
