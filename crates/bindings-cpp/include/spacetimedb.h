@@ -126,11 +126,6 @@
 
 // Procedure context and macros
 #include "spacetimedb/procedure_macros.h"
-#ifdef SPACETIMEDB_UNSTABLE_FEATURES
-#include "spacetimedb/handler_context.h"
-#include "spacetimedb/router.h"
-#include "spacetimedb/http_handler_macros.h"
-#endif
 
 // =============================================================================
 // VIEW SYSTEM

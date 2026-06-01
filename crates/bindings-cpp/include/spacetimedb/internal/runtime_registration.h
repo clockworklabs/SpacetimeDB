@@ -14,13 +14,8 @@ struct ReducerContext;
 struct ViewContext;
 struct AnonymousViewContext;
 struct ProcedureContext;
-struct HandlerContext;
-struct HttpRequest;
-struct HttpResponse;
 
 namespace Internal {
-
-using HttpHandlerSymbol = HttpResponse (*)(HandlerContext, HttpRequest);
 
 void RegisterReducerHandler(const std::string& name,
                            std::function<void(ReducerContext&, BytesSource)> handler,
@@ -31,14 +26,9 @@ void RegisterAnonymousViewHandler(const std::string& name,
                                  std::function<std::vector<uint8_t>(AnonymousViewContext&, BytesSource)> handler);
 void RegisterProcedureHandler(const std::string& name,
                              std::function<std::vector<uint8_t>(ProcedureContext&, BytesSource)> handler);
-void RegisterHttpHandlerHandler(const std::string& name,
-                               HttpHandlerSymbol handler_symbol,
-                               std::function<HttpResponse(HandlerContext&, HttpRequest)> handler);
-std::string LookupHttpHandlerName(HttpHandlerSymbol handler_symbol);
 size_t GetViewHandlerCount();
 size_t GetAnonymousViewHandlerCount();
 size_t GetProcedureHandlerCount();
-size_t GetHttpHandlerCount();
 std::vector<uint8_t> ConsumeBytes(BytesSource source);
 void SetMultiplePrimaryKeyError(const std::string& table_name);
 void SetConstraintRegistrationError(const std::string& code, const std::string& details);

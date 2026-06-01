@@ -22,7 +22,7 @@ import { Uuid } from '../lib/uuid';
 import { httpClient, type HttpClient } from './http_internal';
 import type { DbView } from './db_view';
 import { makeRandom, type Random } from './rng';
-import { callUserFunction, ReducerCtxImpl, runWithTx, sys } from './runtime';
+import { callUserFunction, ReducerCtxImpl, sys } from './runtime';
 import {
   exportContext,
   registerExport,
@@ -214,16 +214,38 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   }
 
   withTx<T>(body: (ctx: TransactionCtx<S>) => T): T {
-    return runWithTx(
-      timestamp =>
-        new TransactionCtxImpl(
+    const run = () => {
+      const timestamp = sys.procedure_start_mut_tx();
+
+      try {
+        const ctx: TransactionCtx<S> = new TransactionCtxImpl(
           this.sender,
-          timestamp,
+          new Timestamp(timestamp),
           this.connectionId,
           this.#dbView()
-        ) as TransactionCtx<S>,
-      body
-    );
+        );
+        return body(ctx);
+      } catch (e) {
+        sys.procedure_abort_mut_tx();
+        throw e;
+      }
+    };
+
+    let res = run();
+    try {
+      sys.procedure_commit_mut_tx();
+      return res;
+    } catch {
+      // ignore the commit error
+    }
+    console.warn('committing anonymous transaction failed');
+    res = run();
+    try {
+      sys.procedure_commit_mut_tx();
+      return res;
+    } catch (e) {
+      throw new Error('transaction retry failed again', { cause: e });
+    }
   }
 
   newUuidV4(): Uuid {

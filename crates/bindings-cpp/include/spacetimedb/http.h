@@ -3,10 +3,6 @@
 
 #pragma once
 
-#ifndef SPACETIMEDB_UNSTABLE_FEATURES
-#error "spacetimedb/http.h requires SPACETIMEDB_UNSTABLE_FEATURES to be enabled"
-#endif
-
 #include <string>
 #include <vector>
 #include <optional>
@@ -316,10 +312,8 @@ private:
 
 } // namespace SpacetimeDB
 
-// Include implementation dependencies after class definition to avoid circular dependencies
-#if defined(SPACETIMEDB_UNSTABLE_FEATURES) && !defined(SPACETIMEDB_HTTP_CONVERT_H)
-#include "spacetimedb/logger.h"
-#include "spacetimedb/http_convert.h"
+// Include implementation after class definition to avoid circular dependencies
+#ifdef SPACETIMEDB_UNSTABLE_FEATURES
 #include "spacetimedb/http_client_impl.h"
 #endif
 

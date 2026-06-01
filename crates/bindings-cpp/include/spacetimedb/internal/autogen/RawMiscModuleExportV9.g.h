@@ -12,9 +12,9 @@
 #include <memory>
 #include "../autogen_base.h"
 #include "spacetimedb/bsatn/bsatn.h"
+#include "RawViewDefV9.g.h"
 #include "RawColumnDefaultValueV9.g.h"
 #include "RawProcedureDefV9.g.h"
-#include "RawViewDefV9.g.h"
 
 namespace SpacetimeDB::Internal {
 

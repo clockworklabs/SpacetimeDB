@@ -1030,7 +1030,6 @@ dependencies = [
  "anyhow",
  "bitflags",
  "blake3",
- "bytes",
  "chrono",
  "derive_more",
  "enum-as-inner",

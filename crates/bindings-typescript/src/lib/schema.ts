@@ -195,8 +195,6 @@ export class ModuleContext {
     procedures: [],
     views: [],
     lifeCycleReducers: [],
-    httpHandlers: [],
-    httpRoutes: [],
     caseConversionPolicy: { tag: 'SnakeCase' },
     explicitNames: {
       entries: [],
@@ -227,18 +225,6 @@ export class ModuleContext {
       module.lifeCycleReducers && {
         tag: 'LifeCycleReducers',
         value: module.lifeCycleReducers,
-      }
-    );
-    push(
-      module.httpHandlers && {
-        tag: 'HttpHandlers',
-        value: module.httpHandlers,
-      }
-    );
-    push(
-      module.httpRoutes && {
-        tag: 'HttpRoutes',
-        value: module.httpRoutes,
       }
     );
     push(
