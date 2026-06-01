@@ -128,6 +128,78 @@ impl From<Identifier> for RawIdentifier {
     }
 }
 
+/// An identifier that allows dot or slash separators between otherwise-normal identifier segments.
+///
+/// Used for fully-qualified names of mounted module items, e.g.:
+/// - `"lib.library_table"` (table name)
+/// - `"lib.library_table_id_idx_btree"` (index name)
+/// - `"lib/library_reducer"` (reducer name)
+///
+/// Root-level items use their plain name with no separator (e.g., `"user"`).
+/// Construction from known-valid components should use `new_assume_valid`.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NamespacedIdentifier(Box<str>);
+
+impl NamespacedIdentifier {
+    /// Construct without validation. Use when building from known-valid `Identifier` segments
+    /// (e.g., `format!("{}{}", prefix, &*identifier)`).
+    pub fn new_assume_valid(s: impl Into<Box<str>>) -> Self {
+        Self(s.into())
+    }
+
+    /// Validated construction: each segment (split on `.` and `/`) must satisfy XID rules.
+    pub fn new(s: impl Into<Box<str>>) -> Result<Self, IdentifierError> {
+        let s = s.into();
+        for segment in s.split(['.', '/']) {
+            Identifier::new(RawIdentifier::new(segment))?;
+        }
+        Ok(Self(s))
+    }
+}
+
+impl std::fmt::Debug for NamespacedIdentifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", &*self.0)
+    }
+}
+
+impl std::fmt::Display for NamespacedIdentifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::ops::Deref for NamespacedIdentifier {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl AsRef<str> for NamespacedIdentifier {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<NamespacedIdentifier> for Box<str> {
+    fn from(id: NamespacedIdentifier) -> Self {
+        id.0
+    }
+}
+
+impl From<&str> for NamespacedIdentifier {
+    fn from(s: &str) -> Self {
+        Self::new_assume_valid(s)
+    }
+}
+
+impl From<String> for NamespacedIdentifier {
+    fn from(s: String) -> Self {
+        Self::new_assume_valid(s)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
