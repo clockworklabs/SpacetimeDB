@@ -76,7 +76,7 @@ If rows from a table or view never appear and row callbacks are never invoked, y
 
 #### Add a subscription
 
-In order for rows to be visible to a client, you must subscribe to a table or view. See [Subscriptions](../00200-core-concepts/00400-subscriptions.md).
+In order for rows to be visible to a client, you must subscribe to a table or view. See [Subscriptions](../../00200-core-concepts/00400-subscriptions.md).
 
 #### Check for subscription errors
 
@@ -112,7 +112,7 @@ If functions that aren't scheduled aren't showing up, or views aren't visible, i
 
 ### Tables not visible to client
 
-If a table isn't visible in client codegen, and you've already run `spacetime generate` or are using `spacetime dev`, the table may be private. Only tables marked public will be visible to clients and are available for subscriptions. See [Defining Tables](../00200-core-concepts/00300-tables.md#defining-tables) for how to mark a table public.
+If a table isn't visible in client codegen, and you've already run `spacetime generate` or are using `spacetime dev`, the table may be private. Only tables marked public will be visible to clients and are available for subscriptions. See [Defining Tables](../../00200-core-concepts/00300-tables.md#defining-tables) for how to mark a table public.
 
 ### Compilation or type errors in generated `module_bindings`
 
