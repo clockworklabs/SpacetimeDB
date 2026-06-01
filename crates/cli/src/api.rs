@@ -73,9 +73,10 @@ impl ClientApi {
     }
 
     pub async fn call(&self, reducer_name: &str, arg_json: String) -> anyhow::Result<reqwest::Response> {
+        let encoded = reducer_name.replace('/', "%2F");
         Ok(self
             .client
-            .post(self.con.db_uri("call") + "/" + reducer_name)
+            .post(self.con.db_uri("call") + "/" + &encoded)
             .header(http::header::CONTENT_TYPE, "application/json")
             .body(arg_json)
             .send()

@@ -5,6 +5,8 @@ use sqlparser::ast::{
     WildcardAdditionalOptions,
 };
 
+use spacetimedb_lib::sats::raw_identifier::RawIdentifier;
+
 use crate::ast::{
     BinOp, LogOp, Parameter, Project, ProjectElem, ProjectExpr, SqlExpr, SqlFrom, SqlIdent, SqlJoin, SqlLiteral,
 };
@@ -348,5 +350,8 @@ pub(crate) fn parse_parts(mut parts: Vec<Ident>) -> SqlParseResult<SqlIdent> {
     if parts.len() == 1 {
         return Ok(parts.swap_remove(0).into());
     }
-    Err(SqlUnsupported::MultiPartName(ObjectName(parts)).into())
+    // Join multi-part names (e.g. `lib.library_table`) with dots to match
+    // namespace-prefixed table names stored in the catalog.
+    let joined = parts.iter().map(|p| p.value.as_str()).collect::<Vec<_>>().join(".");
+    Ok(SqlIdent(RawIdentifier::new(joined)))
 }
