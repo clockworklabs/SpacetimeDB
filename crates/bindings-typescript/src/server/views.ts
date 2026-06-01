@@ -187,7 +187,7 @@ export function registerView<
   }
 
   (anon ? ctx.anonViews : ctx.views).push({
-    fn,
+    fn: fn as unknown as ViewFn<any, any, any>,
     deserializeParams: ProductType.makeDeserializer(paramType, typespace),
     serializeReturn: AlgebraicType.makeSerializer(returnType, typespace),
     returnTypeBaseSize: bsatnBaseSize(typespace, returnType),
