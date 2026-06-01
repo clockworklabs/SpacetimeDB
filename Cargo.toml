@@ -60,7 +60,6 @@ members = [
   "sdks/rust/tests/view-pk-client",
   "sdks/rust/tests/event-table-client",
   "tools/ci",
-  "tools/upgrade-version",
   "tools/license-check",
   "tools/replace-spacetimedb",
   "tools/generate-client-api",
