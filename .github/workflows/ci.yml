@@ -273,8 +273,11 @@ jobs:
     runs-on: spacetimedb-benchmark-runner
     timeout-minutes: 60
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
+      KEYNOTE_PROFILE_DIR: ${{ github.workspace }}/keynote-profile
+      STDB_V8_FLAGS: "--perf-basic-prof --perf-basic-prof-only-functions --interpreted-frames-native-stack"
     steps:
       - name: Find Git ref
         env:
@@ -306,7 +309,14 @@ jobs:
           prefix-key: v1
 
       - name: Build keynote benchmark binaries
-        run: cargo build --release -p spacetimedb-cli -p spacetimedb-standalone
+        run: >
+          cargo
+          --config 'build.rustflags = ["-C", "force-frame-pointers=yes"]'
+          build
+          --release
+          -p spacetimedb-cli
+          -p spacetimedb-standalone
+          --features spacetimedb-standalone/perfmap
 
       # Node 24 is the current Active LTS line.
       - name: Set up Node.js
@@ -323,7 +333,44 @@ jobs:
         working-directory: crates/bindings-typescript
 
       - name: Run keynote-2 benchmark regression check
-        run: cargo ci keynote-bench
+        id: keynote_bench
+        run: |
+          mkdir -p "$KEYNOTE_PROFILE_DIR"
+          set +e
+          samply record \
+            --save-only \
+            --unstable-presymbolicate \
+            --profile-name keynote-bench \
+            -o "$KEYNOTE_PROFILE_DIR/profile.json.gz" \
+            -- cargo ci keynote-bench
+          status=$?
+          ls -lh "$KEYNOTE_PROFILE_DIR" || true
+          exit "$status"
+
+      - name: Upload keynote benchmark profile
+        if: failure() && steps.keynote_bench.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: keynote-bench-profile
+          path: ${{ env.KEYNOTE_PROFILE_DIR }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Report keynote benchmark profile instructions
+        if: failure() && steps.keynote_bench.outcome == 'failure'
+        run: |
+          {
+            echo "## Keynote benchmark profile"
+            echo
+            echo "The keynote benchmark failed after recording a Samply/Firefox profile."
+            echo
+            echo "1. Open this run's Summary page: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "2. Download the artifact named \`keynote-bench-profile\`."
+            echo "3. Open <https://profiler.firefox.com/> and load \`profile.json.gz\`."
+            echo "4. Compare hot frames against a recent nightly \`keynote-bench-nightly-profile\` artifact."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "::error title=Keynote benchmark profile uploaded::Download the keynote-bench-profile artifact from this run and open profile.json.gz in https://profiler.firefox.com/."
 
   lints:
     name: Lints
