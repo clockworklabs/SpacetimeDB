@@ -13,6 +13,7 @@ use std::{env, fs};
 const README_PATH: &str = "tools/ci/README.md";
 
 mod ci_docs;
+mod keynote_bench;
 mod smoketest;
 mod util;
 
@@ -315,6 +316,12 @@ enum CiCmd {
     ///
     /// Executes the smoketests suite with some default exclusions.
     Smoketests(smoketest::SmoketestsArgs),
+    /// Runs the keynote benchmark as a CI performance regression gate.
+    ///
+    /// Assumes release SpacetimeDB binaries and the TypeScript SDK are already built, runs the
+    /// keynote SpacetimeDB benchmark for 60 seconds against the TypeScript and Rust modules, and
+    /// fails if throughput is below 275K TPS for TypeScript or 300K TPS for Rust.
+    KeynoteBench,
     /// Tests the update flow
     ///
     /// Tests the self-update flow by building the spacetimedb-update binary for the specified
@@ -483,10 +490,26 @@ fn main() -> Result<()> {
                 "spacetimedb-smoketests",
                 "--exclude",
                 "spacetimedb-sdk",
+                "--exclude",
+                "spacetimedb",
                 "--",
                 "--test-threads=2",
                 "--skip",
                 "unreal"
+            )
+            .run()?;
+            // Bindings snapshot tests rely on the unstable feature,
+            // as they compile and test APIs which are gated behind that feature,
+            // e.g. procedures, HTTP handlers.
+            cmd!(
+                "cargo",
+                "test",
+                "-p",
+                "spacetimedb",
+                "--features",
+                "unstable",
+                "--",
+                "--test-threads=2",
             )
             .run()?;
             // SDK procedure tests intentionally make localhost HTTP requests.
@@ -633,6 +656,11 @@ fn main() -> Result<()> {
         Some(CiCmd::Smoketests(args)) => {
             ensure_repo_root()?;
             smoketest::run(args)?;
+        }
+
+        Some(CiCmd::KeynoteBench) => {
+            ensure_repo_root()?;
+            keynote_bench::run()?;
         }
 
         Some(CiCmd::UpdateFlow {

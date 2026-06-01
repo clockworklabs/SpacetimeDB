@@ -237,6 +237,12 @@ inline HttpRequest from_wire(const wire::HttpRequest& request) {
     return result;
 }
 
+inline HttpRequest from_wire(const wire::HttpRequest& request, std::vector<uint8_t> body) {
+    HttpRequest result = from_wire(request);
+    result.body.bytes = std::move(body);
+    return result;
+}
+
 // ==================== HttpResponse Conversions ====================
 
 /**
@@ -268,7 +274,16 @@ inline HttpResponse from_wire(const wire::HttpResponse& response) {
     return result;
 }
 
+inline std::pair<wire::HttpResponse, std::vector<uint8_t>> to_wire_split(const HttpResponse& response) {
+    return {to_wire(response), response.body.bytes};
+}
+
 } // namespace convert
 } // namespace SpacetimeDB
+
+#ifdef SPACETIMEDB_UNSTABLE_FEATURES
+#include "spacetimedb/logger.h"
+#include "spacetimedb/http_client_impl.h"
+#endif
 
 #endif // SPACETIMEDB_HTTP_CONVERT_H
