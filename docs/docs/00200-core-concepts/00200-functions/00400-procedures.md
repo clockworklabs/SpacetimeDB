@@ -72,7 +72,7 @@ Because procedures are unstable, Rust modules that define them must opt in to th
 
 ```toml
 [dependencies]
-spacetimedb = { version = "1.*", features = ["unstable"] }
+spacetimedb = { version = "2.*", features = ["unstable"] }
 ```
 
 Define a procedure by annotating a function with `#[spacetimedb::procedure]`.
