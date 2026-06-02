@@ -1163,6 +1163,46 @@ impl MutTxId {
         Ok(())
     }
 
+    /// Change the runtime source-name alias of the index identified by `index_id`.
+    pub(crate) fn alter_index_source_name(
+        &mut self,
+        index_id: IndexId,
+        source_name: spacetimedb_sats::raw_identifier::RawIdentifier,
+    ) -> Result<()> {
+        let st_index_ref = self
+            .iter_by_col_eq(ST_INDEX_ID, StIndexFields::IndexId, &index_id.into())?
+            .next()
+            .ok_or_else(|| TableError::IdNotFound(SystemTable::st_index, index_id.into()))?;
+        let st_index_row = StIndexRow::try_from(st_index_ref)?;
+        let table_id = st_index_row.table_id;
+
+        let old_alias = self
+            .find_st_index_accessor_row_by_index_name(st_index_row.index_name.as_ref())?
+            .map(|row| row.accessor_name);
+
+        if old_alias.as_ref() == Some(&source_name) {
+            return Ok(());
+        }
+
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+        let mut index_schema = tx_table
+            .get_schema()
+            .indexes
+            .iter()
+            .find(|index| index.index_id == index_id)
+            .cloned()
+            .ok_or_else(|| TableError::IdNotFound(SystemTable::st_index, index_id.into()))?;
+        index_schema.alias = Some(source_name.clone());
+        tx_table.with_mut_schema_and_clone(commit_table, |s| s.update_index(index_schema));
+
+        self.drop_st_index_accessor(&st_index_row.index_name)?;
+        self.insert_st_index_accessor(&st_index_row.index_name, Some(&source_name))?;
+
+        self.push_schema_change(PendingSchemaChange::IndexAlterSourceName(table_id, index_id, old_alias));
+
+        Ok(())
+    }
+
     /// Change the row type of the table identified by `table_id`.
     ///
     /// In practice, this should not error,
