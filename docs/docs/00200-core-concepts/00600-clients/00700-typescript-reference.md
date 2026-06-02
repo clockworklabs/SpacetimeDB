@@ -1020,6 +1020,8 @@ The SpacetimeDB TypeScript SDK includes React bindings under the `spacetimedb/re
 
 The React integration is fully compatible with React StrictMode and correctly handles the double-mount behavior (only one WebSocket connection is created).
 
+While a `SpacetimeDBProvider` is mounted, the React connection manager also replaces the managed `DbConnection` if the underlying WebSocket closes or reports a connection error. Hooks such as `useTable` observe the provider state, receive the fresh connection, and establish their subscriptions again. This provider-level recovery does not change the lower-level `DbConnection` contract: applications that create a `DbConnection` directly are still responsible for creating a new connection if they need reconnection behavior.
+
 | Name                                                        | Description                                               |
 | ----------------------------------------------------------- | --------------------------------------------------------- |
 | [`SpacetimeDBProvider` component](#component-spacetimedbprovider) | Context provider that manages the database connection.    |
