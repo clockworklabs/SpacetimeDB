@@ -28,6 +28,7 @@ fn test_call_errors() {
     // Non-existent reducer
     let output = test.call_output("non_existent_reducer", &[]);
     assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
     let expected = format!(
         "WARNING: This command is UNSTABLE and subject to breaking changes.
 
@@ -39,10 +40,8 @@ Here are some existing reducers:
 Here are some existing procedures:
 - return_person"
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stderr = stderr.trim_end();
     assert!(
-        stderr.starts_with(&expected),
+        stderr.trim_end().starts_with(&expected),
         "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
         expected,
         stderr
@@ -51,6 +50,7 @@ Here are some existing procedures:
     // Non-existent procedure
     let output = test.call_output("non_existent_procedure", &[]);
     assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
     let expected = format!(
         "WARNING: This command is UNSTABLE and subject to breaking changes.
 
@@ -62,10 +62,8 @@ Here are some existing reducers:
 Here are some existing procedures:
 - return_person"
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stderr = stderr.trim_end();
     assert!(
-        stderr.starts_with(&expected),
+        stderr.trim_end().starts_with(&expected),
         "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
         expected,
         stderr
@@ -74,6 +72,7 @@ Here are some existing procedures:
     // Similar name to reducer - should suggest similar
     let output = test.call_output("say_hell", &[]);
     assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
     let expected = format!(
         "WARNING: This command is UNSTABLE and subject to breaking changes.
 
@@ -81,10 +80,8 @@ Error: No such reducer OR procedure `say_hell` for database `{identity}` resolvi
 
 A reducer with a similar name exists: `say_hello`"
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stderr = stderr.trim_end();
     assert!(
-        stderr.starts_with(&expected),
+        stderr.trim_end().starts_with(&expected),
         "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
         expected,
         stderr
@@ -93,6 +90,7 @@ A reducer with a similar name exists: `say_hello`"
     // Similar name to procedure - should suggest similar
     let output = test.call_output("return_perso", &[]);
     assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
     let expected = format!(
         "WARNING: This command is UNSTABLE and subject to breaking changes.
 
@@ -100,10 +98,8 @@ Error: No such reducer OR procedure `return_perso` for database `{identity}` res
 
 A procedure with a similar name exists: `return_person`"
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stderr = stderr.trim_end();
     assert!(
-        stderr.starts_with(&expected),
+        stderr.trim_end().starts_with(&expected),
         "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
         expected,
         stderr
@@ -119,6 +115,7 @@ fn test_call_empty_errors() {
 
     let output = test.call_output("non_existent", &[]);
     assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
     let expected = format!(
         "WARNING: This command is UNSTABLE and subject to breaking changes.
 
@@ -128,10 +125,8 @@ The database has no reducers.
 
 The database has no procedures."
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stderr = stderr.trim_end();
     assert!(
-        stderr.starts_with(&expected),
+        stderr.trim_end().starts_with(&expected),
         "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
         expected,
         stderr
@@ -175,6 +170,7 @@ fn test_call_many_errors() {
 
     let output = test.call_output("non_existent", &[]);
     assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
 
     let expected = format!(
         "WARNING: This command is UNSTABLE and subject to breaking changes.
@@ -207,10 +203,8 @@ Here are some existing procedures:
 - say_procedure_9
 ... (1 procedure not shown)"
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stderr = stderr.trim_end();
     assert!(
-        stderr.starts_with(&expected),
+        stderr.trim_end().starts_with(&expected),
         "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
         expected,
         stderr
