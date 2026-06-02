@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 using Godot;
@@ -16,7 +17,7 @@ public partial class GameManager : Node
 	private string DatabaseName { get; set; } = "blackholio";
 
 	[Export]
-	private Color BackgroundColor { get; set; } = Colors.MidnightBlue;
+	private Color BackgroundColor { get; set; } = new(0.006f, 0.009f, 0.024f);
 
 	[Export]
 	private float BorderThickness { get; set; } = 5.0f;
@@ -30,6 +31,8 @@ public partial class GameManager : Node
 	private static GameManager Instance { get; set; }
 	public static Identity LocalIdentity { get; private set; }
 	public static DbConnection Conn { get; private set; }
+
+	private HudController Hud { get; set; }
 
 	public GameManager()
 	{
@@ -46,12 +49,15 @@ public partial class GameManager : Node
 		}
 
 		Conn = builder.Build();
+		Conn.OnUnhandledReducerError += HandleUnhandledReducerError;
 		STDBUpdateManager.Add(Conn);
 	}
 
 	public override void _EnterTree()
 	{
 		Instance = this;
+		Hud = new HudController(DefaultPlayerName);
+		AddChild(Hud);
 	}
 
 	public override void _ExitTree()
@@ -68,6 +74,12 @@ public partial class GameManager : Node
 
 	private void Disconnect()
 	{
+		if (Conn != null)
+		{
+			Conn.OnUnhandledReducerError -= HandleUnhandledReducerError;
+			Conn.Db.Player.OnUpdate -= HideUsernameChooserAfterNameUpdate;
+		}
+
 		STDBUpdateManager.Remove(Conn, true);
 		Conn = null;
 	}
@@ -112,37 +124,56 @@ public partial class GameManager : Node
 		// Get the world size from the config table and set up the arena
 		var worldSize = Conn.Db.Config.Id.Find(0).WorldSize;
 		SetupArena(worldSize);
-		
-		ctx.Reducers.EnterGame(DefaultPlayerName);
+
+		var player = ctx.Db.Player.Identity.Find(LocalIdentity);
+		if (player == null || string.IsNullOrEmpty(player.Name))
+		{
+			HudController.Instance?.ShowUsernameChooser(true);
+			Conn.Db.Player.OnUpdate += HideUsernameChooserAfterNameUpdate;
+			return;
+		}
+
+		HudController.Instance?.ShowUsernameChooser(false);
+		if (!ctx.Db.Circle.PlayerId.Filter(player.PlayerId).Any())
+		{
+			ctx.Reducers.EnterGame(player.Name);
+		}
+	}
+
+	private static void HideUsernameChooserAfterNameUpdate(EventContext context, Player oldPlayer, Player newPlayer)
+	{
+		if (newPlayer.Identity != LocalIdentity || string.IsNullOrEmpty(newPlayer.Name)) return;
+
+		HudController.Instance?.ShowUsernameChooser(false);
+		Conn.Db.Player.OnUpdate -= HideUsernameChooserAfterNameUpdate;
+	}
+
+	private static void HandleUnhandledReducerError(ReducerEventContext context, Exception ex)
+	{
+		GD.PrintErr($"Reducer error: {ex.Message}");
 	}
 	
 	private void SetupArena(float worldSize)
 	{
-		var polygon = new[]
+		AddChild(new StarfieldBackground(worldSize, BackgroundColor), @internal: InternalMode.Back);
+
+		var border = new Polygon2D
 		{
-			new Vector2(0, 0),
-			new Vector2(worldSize, 0),
-			new Vector2(worldSize, worldSize),
-			new Vector2(0, worldSize),
-		};
-		var background = new Polygon2D
-		{
-			Name = "Background",
-			Color = BackgroundColor,
-			Position = Vector2.Zero,
-			Polygon = polygon,
-			ZIndex = -1000
-		};
-		background.AddChild(new Polygon2D
-		{
-			Name = "Border",
+			Name = "Arena Border",
 			Color = BorderColor,
 			Position = Vector2.Zero,
 			InvertEnabled = true,
 			InvertBorder = BorderThickness,
-			Polygon = polygon
-		});
-		AddChild(background);
+			Polygon = new[]
+			{
+				new Vector2(0, 0),
+				new Vector2(worldSize, 0),
+				new Vector2(worldSize, worldSize),
+				new Vector2(0, worldSize),
+			},
+			ZIndex = -500
+		};
+		AddChild(border);
 
 		AddChild(new CameraController(worldSize));
 	}
