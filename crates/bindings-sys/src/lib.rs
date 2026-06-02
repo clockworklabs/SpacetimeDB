@@ -1562,7 +1562,7 @@ pub mod procedure {
     ///
     /// Once complete, returns `Ok(timestamp)` on success,
     /// enabling further calls that require a pending transaction,
-    /// or [`Errno`] otherwise.
+    /// or [`crate::Errno`] otherwise.
     ///
     /// # Errors
     ///
@@ -1578,7 +1578,7 @@ pub mod procedure {
     /// blocking until the transaction has been committed
     /// and subscription queries have been run and broadcast.
     ///
-    /// Once complete, returns `Ok(())` on success, or an [`Errno`] otherwise.
+    /// Once complete, returns `Ok(())` on success, or an [`crate::Errno`] otherwise.
     ///
     /// # Errors
     ///
@@ -1600,7 +1600,7 @@ pub mod procedure {
     /// Aborts a mutable transaction,
     /// blocking until the transaction has been rolled back.
     ///
-    /// Once complete, returns `Ok(())` on success, or an [`Errno`] otherwise.
+    /// Once complete, returns `Ok(())` on success, or an [`crate::Errno`] otherwise.
     ///
     /// # Errors
     ///
