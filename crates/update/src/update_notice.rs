@@ -29,9 +29,6 @@ struct Cache {
     /// Unix timestamp of the last printed update notice.
     #[serde(default)]
     last_notice_secs: u64,
-    /// The current version from the last printed update notice.
-    #[serde(default)]
-    notice_current_version: String,
     /// The latest version from the last printed update notice.
     #[serde(default)]
     notice_latest_version: String,
@@ -53,15 +50,13 @@ impl Cache {
         config_dir.join(CACHE_FILENAME)
     }
 
-    fn should_print_notice(&self, current: &semver::Version, latest: &semver::Version, now: u64) -> bool {
-        self.notice_current_version != current.to_string()
-            || self.notice_latest_version != latest.to_string()
+    fn should_print_notice(&self, latest: &semver::Version, now: u64) -> bool {
+        self.notice_latest_version != latest.to_string()
             || now.saturating_sub(self.last_notice_secs) >= NOTICE_INTERVAL.as_secs()
     }
 
-    fn mark_notice_printed(&mut self, current: &semver::Version, latest: &semver::Version, now: u64) {
+    fn mark_notice_printed(&mut self, latest: &semver::Version, now: u64) {
         self.last_notice_secs = now;
-        self.notice_current_version = current.to_string();
         self.notice_latest_version = latest.to_string();
     }
 }
@@ -141,7 +136,7 @@ pub(crate) fn maybe_print_update_notice(config_dir: &Path) {
     if latest > current {
         let now = now_secs();
         let mut cache = Cache::read(config_dir).unwrap_or_default();
-        if !cache.should_print_notice(&current, &latest, now) {
+        if !cache.should_print_notice(&latest, now) {
             return;
         }
 
@@ -152,7 +147,7 @@ pub(crate) fn maybe_print_update_notice(config_dir: &Path) {
         eprintln!("Run `spacetime version upgrade` to update.");
         eprintln!();
 
-        cache.mark_notice_printed(&current, &latest, now);
+        cache.mark_notice_printed(&latest, now);
         if cache.latest_version.is_empty() {
             cache.latest_version = latest.to_string();
         }
@@ -175,36 +170,33 @@ mod tests {
             ..Default::default()
         };
 
-        assert!(cache.should_print_notice(&version("1.0.0"), &version("2.0.0"), 100));
+        assert!(cache.should_print_notice(&version("2.0.0"), 100));
     }
 
     #[test]
     fn update_notice_is_suppressed_within_interval_for_same_versions() {
         let mut cache = Cache::default();
-        let current = version("1.0.0");
         let latest = version("2.0.0");
-        cache.mark_notice_printed(&current, &latest, 100);
+        cache.mark_notice_printed(&latest, 100);
 
-        assert!(!cache.should_print_notice(&current, &latest, 100 + NOTICE_INTERVAL.as_secs() - 1));
+        assert!(!cache.should_print_notice(&latest, 100 + NOTICE_INTERVAL.as_secs() - 1));
     }
 
     #[test]
     fn update_notice_reprints_after_interval_for_same_versions() {
         let mut cache = Cache::default();
-        let current = version("1.0.0");
         let latest = version("2.0.0");
-        cache.mark_notice_printed(&current, &latest, 100);
+        cache.mark_notice_printed(&latest, 100);
 
-        assert!(cache.should_print_notice(&current, &latest, 100 + NOTICE_INTERVAL.as_secs()));
+        assert!(cache.should_print_notice(&latest, 100 + NOTICE_INTERVAL.as_secs()));
     }
 
     #[test]
     fn update_notice_reprints_when_latest_version_changes() {
         let mut cache = Cache::default();
-        let current = version("1.0.0");
-        cache.mark_notice_printed(&current, &version("2.0.0"), 100);
+        cache.mark_notice_printed(&version("2.0.0"), 100);
 
-        assert!(cache.should_print_notice(&current, &version("2.1.0"), 101));
+        assert!(cache.should_print_notice(&version("2.1.0"), 101));
     }
 
     #[test]
@@ -220,7 +212,6 @@ mod tests {
         assert_eq!(cache.last_check_secs, 123);
         assert_eq!(cache.latest_version, "2.0.0");
         assert_eq!(cache.last_notice_secs, 0);
-        assert!(cache.notice_current_version.is_empty());
         assert!(cache.notice_latest_version.is_empty());
     }
 }
