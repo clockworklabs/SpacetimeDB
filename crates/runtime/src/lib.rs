@@ -252,15 +252,12 @@ impl Handle {
                     Err(e) => panic!("Unexpected JoinError: {e}"),
                 }),
             // This is only a facade placeholder for simulation today. It
-            // delegates to a normal simulated task, so the closure still runs
-            // on the single executor thread and can block overall runtime
-            // progress. Callers should not expect blocking-pool semantics on
-            // the simulation backend.
+            // schedules the closure onto a stackful simulated worker. The
+            // deterministic scheduler still grants a permit to only one worker
+            // at a time, but the worker's stack can be parked by simulation
+            // blocking APIs such as `sim::yield_sync`.
             #[cfg(feature = "simulation")]
-            Self::Simulation(handle) => handle
-                .spawn_on(sim::NodeId::MAIN, async move { f() })
-                .await
-                .expect("simulation spawn_blocking task should not be cancelled"),
+            Self::Simulation(handle) => handle.spawn_blocking(f).await,
             #[cfg(not(any(feature = "tokio", feature = "simulation")))]
             _ => unreachable!("runtime dispatch has no enabled backend"),
         }

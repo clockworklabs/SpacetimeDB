@@ -77,19 +77,33 @@ thread_local! {
     // Marks the current OS thread as simulation-owned so thread creation hooks
     // can reject accidental escapes to the host scheduler.
     static IN_SIMULATION: Cell<bool> = const { Cell::new(false) };
+    static ALLOW_SIM_THREAD_SPAWN: Cell<bool> = const { Cell::new(false) };
 }
 
-struct SimulationThreadGuard {
+pub(crate) struct SimulationThreadGuard {
     previous: bool,
 }
 
-fn enter_simulation_thread() -> SimulationThreadGuard {
+pub(crate) fn enter_simulation_thread() -> SimulationThreadGuard {
     let previous = IN_SIMULATION.with(|state| state.replace(true));
     SimulationThreadGuard { previous }
 }
 
 fn in_simulation() -> bool {
     IN_SIMULATION.with(Cell::get)
+}
+
+pub(crate) fn allow_sim_thread_spawn<T>(f: impl FnOnce() -> T) -> T {
+    ALLOW_SIM_THREAD_SPAWN.with(|state| {
+        let previous = state.replace(true);
+        let output = f();
+        state.set(previous);
+        output
+    })
+}
+
+fn sim_thread_spawn_allowed() -> bool {
+    ALLOW_SIM_THREAD_SPAWN.with(Cell::get)
 }
 
 impl Drop for SimulationThreadGuard {
@@ -114,7 +128,7 @@ impl Drop for SimulationThreadGuard {
 unsafe extern "C" fn pthread_attr_init(attr: *mut libc::pthread_attr_t) -> libc::c_int {
     // std::thread enters libc through pthread_attr_init on Unix. Refusing that
     // call while in simulation keeps hidden OS scheduling out of DST.
-    if in_simulation() {
+    if in_simulation() && !sim_thread_spawn_allowed() {
         eprintln!("attempt to spawn a system thread in simulation.");
         eprintln!("note: use simulator tasks instead.");
         return -1;
@@ -161,7 +175,11 @@ fn real_getrandom() -> unsafe extern "C" fn(*mut u8, usize, u32) -> isize {
 
 #[cfg(not(target_os = "linux"))]
 fn real_getrandom() -> unsafe extern "C" fn(*mut u8, usize, u32) -> isize {
-    compile_error!("unsupported OS for DST getrandom override");
+    unsafe extern "C" fn fallback(buf: *mut u8, buflen: usize, _flags: u32) -> isize {
+        unsafe { libc::arc4random_buf(buf.cast(), buflen) };
+        buflen as isize
+    }
+    fallback
 }
 
 // Hook `getentropy` and route it through the same deterministic path as
