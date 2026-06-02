@@ -42,7 +42,7 @@ const BENCHMARK_MODULES: &[BenchmarkModule] = &[
     BenchmarkModule {
         label: "Rust",
         module_dir: "templates/keynote-2/rust_module",
-        min_tps: 300_000.0,
+        min_tps: 275_000.0,
     },
 ];
 

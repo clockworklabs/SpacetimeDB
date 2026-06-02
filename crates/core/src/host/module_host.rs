@@ -1088,6 +1088,66 @@ pub struct CallViewParams {
     pub timestamp: Timestamp,
 }
 
+pub(crate) struct ResolvedViewForRefresh<'a> {
+    pub view_id: ViewId,
+    pub table_id: TableId,
+    pub view_def: &'a ViewDef,
+}
+
+/// Lookup a module's [`ViewDef`] and check for consistency among
+/// its readset, `st_view`, and the [`ModuleDef`].
+pub(crate) fn resolve_view_for_refresh<'a>(
+    tx: &MutTxId,
+    module_def: &'a ModuleDef,
+    view_call: &ViewCallInfo,
+) -> anyhow::Result<ResolvedViewForRefresh<'a>> {
+    let st_view = tx
+        .lookup_st_view(view_call.view_id)
+        .with_context(|| format!("failed to look up view {}", view_call.view_id))?;
+
+    let view_id = st_view.view_id;
+    let table_id = st_view
+        .table_id
+        .ok_or_else(|| anyhow::anyhow!("view {:?} does not have a backing table", view_id))?;
+
+    let view_name: Identifier = st_view.view_name.into();
+    let view_def = module_def.view(&view_name).ok_or_else(|| {
+        anyhow::anyhow!(
+            "view `{}` for view id `{}` not found in current module",
+            view_name,
+            view_id
+        )
+    })?;
+
+    let is_anonymous = view_call.sender.is_none();
+
+    if st_view.is_anonymous != is_anonymous {
+        return Err(anyhow::anyhow!(
+            "found is_anonymous={} in st_view, but {} in readset when updating view `{}`",
+            st_view.is_anonymous,
+            is_anonymous,
+            view_name,
+        ));
+    }
+
+    let is_anonymous = view_def.is_anonymous;
+
+    if st_view.is_anonymous != is_anonymous {
+        return Err(anyhow::anyhow!(
+            "found is_anonymous={} in st_view, but {} in module when updating view `{}`",
+            st_view.is_anonymous,
+            is_anonymous,
+            view_name,
+        ));
+    }
+
+    Ok(ResolvedViewForRefresh {
+        view_id,
+        table_id,
+        view_def,
+    })
+}
+
 pub struct CallProcedureParams {
     pub timestamp: Timestamp,
     pub caller_identity: Identity,
@@ -2896,17 +2956,21 @@ impl ModuleHost {
         let mut total_duration = Duration::ZERO;
         let mut abi_duration = Duration::ZERO;
         let mut trapped = false;
-        for ViewCallInfo {
-            view_id,
-            table_id,
-            fn_ptr,
-            sender,
-        } in tx.views_for_refresh().cloned().collect::<Vec<_>>()
-        {
-            let Some(view_def) = module_def.get_view_by_id(fn_ptr, sender.is_none()) else {
-                outcome = ViewOutcome::Failed(format!("view with fn_ptr `{fn_ptr}` not found"));
-                break;
+        for view_call in tx.views_for_refresh().cloned().collect::<Vec<_>>() {
+            let sender = view_call.sender;
+            let resolved = match resolve_view_for_refresh(&tx, module_def, &view_call) {
+                Ok(resolved) => resolved,
+                Err(err) => {
+                    outcome = ViewOutcome::Failed(format!("failed to resolve view: {err}"));
+                    break;
+                }
             };
+            let ResolvedViewForRefresh {
+                view_id,
+                table_id,
+                view_def,
+            } = resolved;
+            let view_name = &view_def.name;
             let args = match FunctionArgs::Nullary.into_tuple_for_def(module_def, view_def) {
                 Ok(args) => args,
                 Err(err) => {
@@ -2918,7 +2982,7 @@ impl ModuleHost {
             let (result, trap) = Self::call_view_inner(
                 instance,
                 tx,
-                &view_def.name,
+                view_name,
                 view_id,
                 table_id,
                 view_def.fn_ptr,
