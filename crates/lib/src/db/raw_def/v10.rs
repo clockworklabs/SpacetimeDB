@@ -89,6 +89,36 @@ pub enum RawModuleDefV10Section {
 
     /// Names provided explicitly by the user that do not follow from the case conversion policy.
     ExplicitNames(ExplicitNames),
+
+    /// HTTP handler function definitions.
+    HttpHandlers(Vec<RawHttpHandlerDefV10>),
+
+    /// HTTP route definitions.
+    HttpRoutes(Vec<RawHttpRouteDefV10>),
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawHttpHandlerDefV10 {
+    pub source_name: RawIdentifier,
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawHttpRouteDefV10 {
+    pub handler_function: RawIdentifier,
+    pub method: MethodOrAny,
+    pub path: RawIdentifier,
+}
+
+#[derive(Debug, Clone, SpacetimeType, PartialEq, Eq, PartialOrd, Ord)]
+#[sats(crate = crate)]
+#[non_exhaustive]
+pub enum MethodOrAny {
+    Any,
+    Method(crate::http::Method),
 }
 
 #[derive(Debug, Clone, Copy, Default, SpacetimeType)]
@@ -608,6 +638,20 @@ impl RawModuleDefV10 {
             _ => None,
         })
     }
+
+    pub fn http_handlers(&self) -> Option<&Vec<RawHttpHandlerDefV10>> {
+        self.sections.iter().find_map(|s| match s {
+            RawModuleDefV10Section::HttpHandlers(handlers) => Some(handlers),
+            _ => None,
+        })
+    }
+
+    pub fn http_routes(&self) -> Option<&Vec<RawHttpRouteDefV10>> {
+        self.sections.iter().find_map(|s| match s {
+            RawModuleDefV10Section::HttpRoutes(routes) => Some(routes),
+            _ => None,
+        })
+    }
 }
 
 /// A builder for a [`RawModuleDefV10`].
@@ -802,6 +846,46 @@ impl RawModuleDefV10Builder {
         match &mut self.module.sections[idx] {
             RawModuleDefV10Section::ExplicitNames(names) => names,
             _ => unreachable!("Just ensured ExplicitNames section exists"),
+        }
+    }
+
+    /// Get mutable access to the HTTP handlers section, creating it if missing.
+    fn http_handlers_mut(&mut self) -> &mut Vec<RawHttpHandlerDefV10> {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::HttpHandlers(_)))
+            .unwrap_or_else(|| {
+                self.module
+                    .sections
+                    .push(RawModuleDefV10Section::HttpHandlers(Vec::new()));
+                self.module.sections.len() - 1
+            });
+
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::HttpHandlers(handlers) => handlers,
+            _ => unreachable!("Just ensured HttpHandlers section exists"),
+        }
+    }
+
+    /// Get mutable access to the HTTP routes section, creating it if missing.
+    fn http_routes_mut(&mut self) -> &mut Vec<RawHttpRouteDefV10> {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::HttpRoutes(_)))
+            .unwrap_or_else(|| {
+                self.module
+                    .sections
+                    .push(RawModuleDefV10Section::HttpRoutes(Vec::new()));
+                self.module.sections.len() - 1
+            });
+
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::HttpRoutes(routes) => routes,
+            _ => unreachable!("Just ensured HttpRoutes section exists"),
         }
     }
 
@@ -1048,6 +1132,27 @@ impl RawModuleDefV10Builder {
     pub fn add_row_level_security(&mut self, sql: &str) {
         self.row_level_security_mut()
             .push(RawRowLevelSecurityDefV10 { sql: sql.into() });
+    }
+
+    /// Add an HTTP handler to the module.
+    pub fn add_http_handler(&mut self, source_name: impl Into<RawIdentifier>) {
+        self.http_handlers_mut().push(RawHttpHandlerDefV10 {
+            source_name: source_name.into(),
+        });
+    }
+
+    /// Add an HTTP route to the module.
+    pub fn add_http_route(
+        &mut self,
+        handler_function: impl Into<RawIdentifier>,
+        method: MethodOrAny,
+        path: impl Into<RawIdentifier>,
+    ) {
+        self.http_routes_mut().push(RawHttpRouteDefV10 {
+            handler_function: handler_function.into(),
+            method,
+            path: path.into(),
+        });
     }
 
     pub fn add_explicit_names(&mut self, names: ExplicitNames) {

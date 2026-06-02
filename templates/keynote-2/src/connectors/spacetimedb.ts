@@ -78,7 +78,6 @@ export function spacetimedb(config: SpacetimeConnectorConfig): ReducerConnector 
 
   return {
     name: 'spacetimedb',
-    maxInflightPerWorker: 128,
 
     async open() {
       try {

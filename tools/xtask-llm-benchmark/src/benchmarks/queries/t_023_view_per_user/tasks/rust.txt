@@ -1,0 +1,18 @@
+Write a SpacetimeDB backend module in Rust that defines a table of user profiles and a per-user view that returns only the calling user's profile.
+
+TABLES
+- profile
+  - Struct: Profile
+  - public table
+  - Fields:
+    - id: u64 (primary key, auto_inc)
+    - identity: Identity (unique)
+    - name: String
+    - bio: String
+
+VIEWS
+- my_profile
+  - per-user view (uses ViewContext, not AnonymousViewContext)
+  - public
+  - Returns: Option<Profile> (the single profile row matching ctx.sender(), or None)
+  - Logic: look up the profile by the identity column matching ctx.sender()

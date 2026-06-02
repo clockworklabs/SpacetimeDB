@@ -61,12 +61,13 @@ use self::error::{
 use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
 use self::syscall::{
-    call_call_procedure, call_call_reducer, call_call_view, call_call_view_anon, call_describe_module, get_hooks,
-    process_thrown_exception, resolve_sys_module, FnRet, HookFunctions,
+    call_call_http_handler, call_call_procedure, call_call_reducer, call_call_view, call_call_view_anon,
+    call_describe_module, get_hooks, process_thrown_exception, resolve_sys_module, FnRet, HookFunctions,
 };
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{
-    CallProcedureParams, CallReducerParams, InstanceManagerMetrics, ModuleInfo, ModuleWithInstance,
+    CallHttpHandlerParams, CallProcedureParams, CallReducerParams, InstanceManagerMetrics, ModuleInfo,
+    ModuleWithInstance,
 };
 use super::UpdateDatabaseResult;
 use crate::client::{ClientActorId, MeteredUnboundedReceiver, MeteredUnboundedSender};
@@ -74,15 +75,15 @@ use crate::config::{V8Config, V8HeapPolicyConfig};
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
 use crate::host::module_host::{
-    call_identity_connected, init_database, ClientConnectedError, OneOffQueryRequest, SqlCommand, SqlCommandResult,
-    ViewCommand, ViewCommandMetric, ViewCommandResult,
+    call_identity_connected, init_database, ClientConnectedError, HttpHandlerCallError, OneOffQueryRequest, SqlCommand,
+    SqlCommandResult, ViewCommand, ViewCommandMetric, ViewCommandResult,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
-    AnonymousViewOp, DescribeError, ExecutionError, ExecutionResult, ExecutionStats, ExecutionTimings, InstanceCommon,
-    InstanceOp, ProcedureExecuteResult, ProcedureOp, ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp,
-    WasmInstance,
+    AnonymousViewOp, DescribeError, ExecutionError, ExecutionResult, ExecutionStats, ExecutionTimings,
+    HttpHandlerExecuteResult, HttpHandlerOp, InstanceCommon, InstanceOp, ProcedureExecuteResult, ProcedureOp,
+    ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp, WasmInstance,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
 use crate::host::{ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
@@ -169,17 +170,19 @@ impl V8Runtime {
 static V8_RUNTIME_GLOBAL: LazyLock<V8RuntimeInner> = LazyLock::new(V8RuntimeInner::init);
 const REDUCER_ARGS_BUFFER_SIZE: usize = 4_096;
 const JS_PROCEDURE_INSTANCE_QUEUE_CAPACITY: usize = 1;
-pub(crate) const V8_WORKER_KIND_MAIN: &str = "main";
 
 #[derive(Copy, Clone)]
-enum JsWorkerKind {
+pub(crate) enum JsWorkerKind {
     Main,
     Procedure,
 }
 
-impl JsWorkerKind {
-    const fn checks_heap(self) -> bool {
-        matches!(self, Self::Main)
+impl AsRef<str> for JsWorkerKind {
+    fn as_ref(&self) -> &str {
+        match self {
+            Self::Main => "main",
+            Self::Procedure => "procedure",
+        }
     }
 }
 
@@ -238,8 +241,14 @@ impl V8RuntimeInner {
         // Validate/create the module and spawn the first instance.
         let metrics = InstanceManagerMetrics::new(HostType::Js, mcc.replica_ctx.database_identity);
         let mcc = Either::Right(mcc);
+
+        // The JS main worker and procedure workers run on separate OS threads,
+        // but they intentionally share one database core allocation.
+        // When core pinning is enabled, all worker threads pin to the same core
+        // and rebalance together because they use clones of the same `CorePinner`.
         let load_balance_guard = Arc::new(core.guard);
         let core_pinner = core.pinner;
+
         let heap_policy = config.heap_policy;
         let (common, init_inst) = spawn_main_instance_worker(
             program.clone(),
@@ -702,6 +711,16 @@ impl JsProcedureInstance {
         .await
     }
 
+    pub async fn call_http_handler(
+        &self,
+        params: CallHttpHandlerParams,
+    ) -> Result<(spacetimedb_lib::http::Response, bytes::Bytes), HttpHandlerCallError> {
+        self.send_request("call_http_handler", |reply_tx| {
+            JsProcedureWorkerRequest::CallHttpHandler { reply_tx, params }
+        })
+        .await
+    }
+
     pub(in crate::host) async fn enqueue_procedure(&self, params: CallProcedureParams) -> JsProcedureCall {
         let (reply_tx, reply_rx) = oneshot::channel();
         if self
@@ -835,7 +854,7 @@ enum JsMainWorkerRequest {
         request: OneOffQueryRequest,
         on_panic: JsFatalHook,
     },
-    /// See [`JsMainInstance::clear_all_clients`].
+    /// See [`JsInstance::clear_all_clients`].
     ClearAllClients(JsReplyTx<anyhow::Result<()>>),
     /// See [`JsMainInstance::call_identity_connected`].
     CallIdentityConnected {
@@ -872,6 +891,11 @@ enum JsProcedureWorkerRequest {
     ScheduledProcedure {
         reply_tx: JsReplyTx<CallScheduledFunctionResult>,
         params: ScheduledFunctionParams,
+    },
+    /// See [`JsInstance::call_http_handler`].
+    CallHttpHandler {
+        reply_tx: JsReplyTx<Result<(spacetimedb_lib::http::Response, bytes::Bytes), HttpHandlerCallError>>,
+        params: CallHttpHandlerParams,
     },
 }
 
@@ -946,7 +970,7 @@ fn handle_detached_worker_request(
     }
 }
 
-struct V8HeapMetrics {
+pub(in crate::host) struct V8HeapMetrics {
     total_heap_size_bytes: IntGauge,
     total_physical_size_bytes: IntGauge,
     used_global_handles_size_bytes: IntGauge,
@@ -955,6 +979,16 @@ struct V8HeapMetrics {
     external_memory_bytes: IntGauge,
     native_contexts: IntGauge,
     detached_contexts: IntGauge,
+
+    /// Previous values observed by this instance.
+    ///
+    /// In [`Self::observe`], we use this to compute deltas against the new instance's values,
+    /// then increment/decrement the metric values by those deltas.
+    /// We do this rather than `set`ting the metric values as multiple instances may coexist
+    /// and share the same metric label values.
+    /// This happens when a database has multiple procedure workers running,
+    /// and during a module update, as there is a period when the new version has already been created
+    /// but the old version has not yet shut down.
     last_observed: V8HeapSnapshot,
 }
 
@@ -986,32 +1020,61 @@ impl V8HeapSnapshot {
 }
 
 impl V8HeapMetrics {
-    fn new(database_identity: &Identity) -> Self {
+    pub(in crate::host) fn remove_all_metric_label_values_for_database(database_identity: &Identity) {
+        for worker_kind in [JsWorkerKind::Main, JsWorkerKind::Procedure] {
+            let _ = WORKER_METRICS
+                .v8_total_heap_size_bytes
+                .remove_label_values(database_identity, &worker_kind);
+            let _ = WORKER_METRICS
+                .v8_total_physical_size_bytes
+                .remove_label_values(database_identity, &worker_kind);
+            let _ = WORKER_METRICS
+                .v8_used_global_handles_size_bytes
+                .remove_label_values(database_identity, &worker_kind);
+            let _ = WORKER_METRICS
+                .v8_used_heap_size_bytes
+                .remove_label_values(database_identity, &worker_kind);
+            let _ = WORKER_METRICS
+                .v8_heap_size_limit_bytes
+                .remove_label_values(database_identity, &worker_kind);
+            let _ = WORKER_METRICS
+                .v8_external_memory_bytes
+                .remove_label_values(database_identity, &worker_kind);
+            let _ = WORKER_METRICS
+                .v8_native_contexts
+                .remove_label_values(database_identity, &worker_kind);
+            let _ = WORKER_METRICS
+                .v8_detached_contexts
+                .remove_label_values(database_identity, &worker_kind);
+        }
+    }
+
+    fn new(database_identity: &Identity, worker_kind: JsWorkerKind) -> Self {
         Self {
             total_heap_size_bytes: WORKER_METRICS
                 .v8_total_heap_size_bytes
-                .with_label_values(database_identity, V8_WORKER_KIND_MAIN),
+                .with_label_values(database_identity, &worker_kind),
             total_physical_size_bytes: WORKER_METRICS
                 .v8_total_physical_size_bytes
-                .with_label_values(database_identity, V8_WORKER_KIND_MAIN),
+                .with_label_values(database_identity, &worker_kind),
             used_global_handles_size_bytes: WORKER_METRICS
                 .v8_used_global_handles_size_bytes
-                .with_label_values(database_identity, V8_WORKER_KIND_MAIN),
+                .with_label_values(database_identity, &worker_kind),
             used_heap_size_bytes: WORKER_METRICS
                 .v8_used_heap_size_bytes
-                .with_label_values(database_identity, V8_WORKER_KIND_MAIN),
+                .with_label_values(database_identity, &worker_kind),
             heap_size_limit_bytes: WORKER_METRICS
                 .v8_heap_size_limit_bytes
-                .with_label_values(database_identity, V8_WORKER_KIND_MAIN),
+                .with_label_values(database_identity, &worker_kind),
             external_memory_bytes: WORKER_METRICS
                 .v8_external_memory_bytes
-                .with_label_values(database_identity, V8_WORKER_KIND_MAIN),
+                .with_label_values(database_identity, &worker_kind),
             native_contexts: WORKER_METRICS
                 .v8_native_contexts
-                .with_label_values(database_identity, V8_WORKER_KIND_MAIN),
+                .with_label_values(database_identity, &worker_kind),
             detached_contexts: WORKER_METRICS
                 .v8_detached_contexts
-                .with_label_values(database_identity, V8_WORKER_KIND_MAIN),
+                .with_label_values(database_identity, &worker_kind),
             last_observed: V8HeapSnapshot::default(),
         }
     }
@@ -1031,6 +1094,8 @@ impl V8HeapMetrics {
     }
 
     fn observe(&mut self, stats: &v8::HeapStatistics) {
+        // See doc comment on `Self::last_observed` for why we compute a delta and apply it to the metrics value
+        // rather than directly calling `set`.
         let next = V8HeapSnapshot::from_stats(stats);
         self.adjust_by(V8HeapSnapshot {
             total_heap_size_bytes: next.total_heap_size_bytes - self.last_observed.total_heap_size_bytes,
@@ -1362,10 +1427,7 @@ fn handle_main_worker_request(
         }
         JsMainWorkerRequest::ScheduledReducer { reply_tx, params } => {
             handle_worker_request("scheduled_reducer", reply_tx, || {
-                let (res, trapped) = instance_common
-                    .call_scheduled_function(params, inst)
-                    .now_or_never()
-                    .expect("our call_scheduled_function implementation is not actually async");
+                let (res, trapped) = instance_common.call_scheduled_reducer(params, inst);
                 (res, trapped)
             })
         }
@@ -1460,12 +1522,21 @@ fn handle_procedure_worker_request(
                 (res, trapped)
             })
         }
+        JsProcedureWorkerRequest::CallHttpHandler { reply_tx, params } => {
+            handle_worker_request("call_http_handler", reply_tx, || {
+                let (res, trapped) = instance_common
+                    .call_http_handler(params, inst)
+                    .now_or_never()
+                    .expect("our call_http_handler implementation is not actually async");
+                (res, trapped)
+            })
+        }
         JsProcedureWorkerRequest::ScheduledProcedure { reply_tx, params } => {
             handle_worker_request("scheduled_procedure", reply_tx, || {
                 let (res, trapped) = instance_common
-                    .call_scheduled_function(params, inst)
+                    .call_scheduled_procedure(params, inst)
                     .now_or_never()
-                    .expect("our call_scheduled_function implementation is not actually async");
+                    .expect("our call_scheduled_procedure implementation is not actually async");
                 (res, trapped)
             })
         }
@@ -1625,9 +1696,7 @@ where
                 let info = &module_common.info();
                 let mut instance_common = InstanceCommon::new(&module_common);
                 let replica_ctx: &Arc<ReplicaContext> = module_common.replica_ctx();
-                let mut heap_metrics = worker_kind
-                    .checks_heap()
-                    .then(|| V8HeapMetrics::new(&info.database_identity));
+                let mut heap_metrics = V8HeapMetrics::new(&info.database_identity, worker_kind);
 
                 let mut inst = V8Instance {
                     scope,
@@ -1639,9 +1708,7 @@ where
                         .with_label_values(&info.database_identity),
                     initial_heap_limit: heap_policy.heap_limit_bytes,
                 };
-                if let Some(heap_metrics) = heap_metrics.as_mut() {
-                    let _initial_heap_stats = sample_heap_stats(inst.scope, heap_metrics);
-                }
+                let _initial_heap_stats = sample_heap_stats(inst.scope, &mut heap_metrics);
 
                 // Process requests to the worker.
                 //
@@ -1655,9 +1722,7 @@ where
                     let mut outcome =
                         W::handle_request(request, &mut instance_common, &mut inst, &module_common, replica_ctx);
 
-                    if let WorkerRequestOutcome::Continue = outcome
-                        && let Some(heap_metrics) = heap_metrics.as_mut()
-                    {
+                    if let WorkerRequestOutcome::Continue = outcome {
                         let request_check_due = heap_policy.heap_check_request_interval.is_some_and(|interval| {
                             requests_since_heap_check += 1;
                             requests_since_heap_check >= interval
@@ -1669,7 +1734,7 @@ where
                             requests_since_heap_check = 0;
                             last_heap_check_at = Instant::now();
                             if let Some((used, limit)) =
-                                should_retire_worker_for_heap(inst.scope, heap_metrics, heap_policy)
+                                should_retire_worker_for_heap(inst.scope, &mut heap_metrics, heap_policy)
                             {
                                 outcome = outcome.recreate_instance();
                                 log::warn!(
@@ -1848,6 +1913,23 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
             .instance_env
             .take_procedure_tx_offset();
         (result, tx_offset)
+    }
+
+    async fn call_http_handler(
+        &mut self,
+        op: HttpHandlerOp,
+        budget: FunctionBudget,
+    ) -> (HttpHandlerExecuteResult, Option<TransactionOffset>) {
+        let result = common_call(self, budget, op, |scope, hooks, op| {
+            call_call_http_handler(scope, hooks, op)
+        })
+        .map_result(|call_result| {
+            call_result.map_err(|e| match e {
+                ExecutionError::User(e) => anyhow::Error::msg(e),
+                ExecutionError::Recoverable(e) | ExecutionError::Trap(e) => e,
+            })
+        });
+        (result, None)
     }
 }
 

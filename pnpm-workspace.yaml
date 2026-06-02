@@ -3,8 +3,11 @@ packages:
   - 'crates/bindings-typescript/test-app'
   - 'crates/bindings-typescript/case-conversion-test-client'
   - 'templates/chat-react-ts'
+  - 'templates/money-exchange-react-ts'
+  - 'templates/hangman-react-ts'
   - 'templates/react-ts'
   - 'templates/basic-ts'
+  - 'templates/llm-chat-ts'
   - 'templates/vue-ts'
   - 'templates/tanstack-ts'
   - 'templates/browser-ts'
@@ -22,3 +25,4 @@ packages:
   - 'modules/sdk-test-ts'
   - 'modules/sdk-test-case-conversion-ts'
   - 'docs'
+minimumReleaseAge: 1440

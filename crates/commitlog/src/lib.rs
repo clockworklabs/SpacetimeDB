@@ -70,7 +70,7 @@ pub struct Options {
     /// If `true`, require that the segment must be synced to disk before an
     /// index entry is added.
     ///
-    /// Setting this to `false` (the default) will update the index every
+    /// Setting this to `false` will update the index every
     /// `offset_index_interval_bytes`, even if the commitlog wasn't synced.
     /// This means that the index could contain non-existent entries in the
     /// event of a crash.
@@ -80,7 +80,7 @@ pub struct Options {
     /// This means that the index could contain fewer index entries than
     /// strictly every `offset_index_interval_bytes`.
     ///
-    /// Default: false
+    /// Default: true
     #[cfg_attr(
         feature = "serde",
         serde(default = "Options::default_offset_index_require_segment_fsync")
@@ -95,7 +95,7 @@ pub struct Options {
     /// Size in bytes of the memory buffer holding commit data before flushing
     /// to storage.
     ///
-    /// Default: 8KiB
+    /// Default: 128KiB
     #[cfg_attr(feature = "serde", serde(default = "Options::default_write_buffer_size"))]
     pub write_buffer_size: usize,
 }
@@ -109,9 +109,9 @@ impl Default for Options {
 impl Options {
     pub const DEFAULT_MAX_SEGMENT_SIZE: u64 = 1024 * 1024 * 1024;
     pub const DEFAULT_OFFSET_INDEX_INTERVAL_BYTES: NonZeroU64 = NonZeroU64::new(4096).expect("4096 > 0, qed");
-    pub const DEFAULT_OFFSET_INDEX_REQUIRE_SEGMENT_FSYNC: bool = false;
+    pub const DEFAULT_OFFSET_INDEX_REQUIRE_SEGMENT_FSYNC: bool = true;
     pub const DEFAULT_PREALLOCATE_SEGMENTS: bool = false;
-    pub const DEFAULT_WRITE_BUFFER_SIZE: usize = 8 * 1024;
+    pub const DEFAULT_WRITE_BUFFER_SIZE: usize = 128 * 1024;
 
     pub const DEFAULT: Self = Self {
         log_format_version: DEFAULT_LOG_FORMAT_VERSION,
@@ -153,15 +153,22 @@ impl Options {
     }
 }
 
-/// The canonical commitlog, backed by on-disk log files.
+/// The canonical commitlog API over a repository backend `R`.
+///
+/// The default backend is the on-disk filesystem repository
+/// [`repo::Fs`], but tests may supply another [`Repo`]
+/// implementation.
 ///
 /// Records in the log are of type `T`, which canonically is instantiated to
 /// [`payload::Txdata`].
-pub struct Commitlog<T> {
-    inner: RwLock<commitlog::Generic<repo::Fs, T>>,
+pub struct Commitlog<T, R = repo::Fs>
+where
+    R: Repo,
+{
+    inner: RwLock<commitlog::Generic<R, T>>,
 }
 
-impl<T> Commitlog<T> {
+impl<T> Commitlog<T, repo::Fs> {
     /// Open the log at root directory `root` with [`Options`].
     ///
     /// The root directory must already exist.
@@ -180,7 +187,26 @@ impl<T> Commitlog<T> {
                 root.display()
             );
         }
-        let inner = commitlog::Generic::open(repo::Fs::new(root, on_new_segment)?, opts)?;
+        Self::open_with_repo(repo::Fs::new(root, on_new_segment)?, opts)
+    }
+
+    /// Determine the size on disk of this commitlog.
+    pub fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
+        let inner = self.inner.read().unwrap();
+        inner.repo.size_on_disk()
+    }
+}
+
+impl<T, R> Commitlog<T, R>
+where
+    R: Repo,
+{
+    /// Open the log in `repo` with [`Options`].
+    ///
+    /// This is useful for tests which provide a repository
+    /// implementation other than [`repo::Fs`].
+    pub fn open_with_repo(repo: R, opts: Options) -> io::Result<Self> {
+        let inner = commitlog::Generic::open(repo, opts)?;
 
         Ok(Self {
             inner: RwLock::new(inner),
@@ -309,7 +335,7 @@ impl<T> Commitlog<T> {
     /// This means that, when this iterator yields an `Err` value, the consumer
     /// may want to check if the iterator is exhausted (by calling `next()`)
     /// before treating the `Err` value as an application error.
-    pub fn commits(&self) -> impl Iterator<Item = Result<StoredCommit, error::Traversal>> + use<T> {
+    pub fn commits(&self) -> impl Iterator<Item = Result<StoredCommit, error::Traversal>> + use<T, R> {
         self.commits_from(0)
     }
 
@@ -322,7 +348,10 @@ impl<T> Commitlog<T> {
     /// Note that the first [`StoredCommit`] yielded is the first commit
     /// containing the given transaction offset, i.e. its `min_tx_offset` may be
     /// smaller than `offset`.
-    pub fn commits_from(&self, offset: u64) -> impl Iterator<Item = Result<StoredCommit, error::Traversal>> + use<T> {
+    pub fn commits_from(
+        &self,
+        offset: u64,
+    ) -> impl Iterator<Item = Result<StoredCommit, error::Traversal>> + use<T, R> {
         self.inner.read().unwrap().commits_from(offset)
     }
 
@@ -401,15 +430,13 @@ impl<T> Commitlog<T> {
             inner: RwLock::new(inner),
         })
     }
-
-    /// Determine the size on disk of this commitlog.
-    pub fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
-        let inner = self.inner.read().unwrap();
-        inner.repo.size_on_disk()
-    }
 }
 
-impl<T: Encode> Commitlog<T> {
+impl<T, R> Commitlog<T, R>
+where
+    T: Encode,
+    R: Repo,
+{
     /// Write `transactions` to the log.
     ///
     /// This will store all `transactions` as a single [Commit]
@@ -479,10 +506,11 @@ impl<T: Encode> Commitlog<T> {
     pub fn transactions<'a, D>(
         &self,
         de: &'a D,
-    ) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a + use<'a, D, T>
+    ) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a + use<'a, D, T, R>
     where
         D: Decoder<Record = T>,
         D::Error: From<error::Traversal>,
+        R: 'a,
         T: 'a,
     {
         self.transactions_from(0, de)
@@ -498,10 +526,11 @@ impl<T: Encode> Commitlog<T> {
         &self,
         offset: u64,
         de: &'a D,
-    ) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a + use<'a, D, T>
+    ) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a + use<'a, D, T, R>
     where
         D: Decoder<Record = T>,
         D::Error: From<error::Traversal>,
+        R: 'a,
         T: 'a,
     {
         self.inner.read().unwrap().transactions_from(offset, de)
