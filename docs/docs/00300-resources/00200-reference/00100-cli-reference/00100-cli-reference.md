@@ -318,7 +318,7 @@ Run `spacetime rename --help` for more detailed information.
 
 Generate client files for a spacetime module.
 
-**Usage:** `spacetime generate [DATABASE] --lang <LANG> --out-dir <DIR> [--module-path <DIR> | --bin-path <PATH> | --unreal-module-name <MODULE_NAME> | --uproject-dir <DIR> | --include-private]`
+**Usage:** `spacetime generate [DATABASE] --lang <LANG> [--out-dir <DIR> | --uproject-dir <DIR>] [--module-path <DIR> | --bin-path <PATH> | --js-path <PATH>] [OPTIONS]`
 
 Run `spacetime help generate` for more detailed information.
 
@@ -659,4 +659,3 @@ Run `spacetime version --help` to see all options.
     This document was generated automatically by
     <a href="https://crates.io/crates/clap-markdown"><code>clap-markdown</code></a>.
 </i></small>
-
