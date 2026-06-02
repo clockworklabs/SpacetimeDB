@@ -17,11 +17,20 @@ const BENCH_CONCURRENCY: &str = "64";
 const MAX_INFLIGHT_PER_WORKER: &str = "96";
 const SEED_ACCOUNTS: &str = "100000";
 const SEED_INITIAL_BALANCE: &str = "1000000000000";
+const TRANSFER_REDUCER: &str = "transfer";
+const REDUCER_FUEL_METRIC: &str = "reducer_wasmtime_fuel_used";
+const REDUCER_FUEL_METRIC_TOTAL: &str = "reducer_wasmtime_fuel_used_total";
+const MAX_FUEL_RATIO: f64 = 2.0;
 
 struct BenchmarkModule {
     label: &'static str,
     module_dir: &'static str,
     min_tps: f64,
+}
+
+struct BenchmarkResult {
+    label: &'static str,
+    transfer_fuel_total: f64,
 }
 
 const BENCHMARK_MODULES: &[BenchmarkModule] = &[
@@ -43,14 +52,26 @@ pub fn run() -> Result<()> {
     let cli_config_dir = tempfile::tempdir().context("failed to create temporary CLI config directory")?;
     let cli_config_path = cli_config_dir.path().join("config.toml");
 
+    let mut results = Vec::with_capacity(BENCHMARK_MODULES.len());
     for module in BENCHMARK_MODULES {
-        run_module_benchmark(module, &cli_path, &cli_config_path, &server.host_url)?;
+        results.push(run_module_benchmark(
+            module,
+            &cli_path,
+            &cli_config_path,
+            &server.host_url,
+        )?);
     }
+    check_transfer_fuel_ratio(&results)?;
 
     Ok(())
 }
 
-fn run_module_benchmark(module: &BenchmarkModule, cli_path: &Path, config_path: &Path, server_url: &str) -> Result<()> {
+fn run_module_benchmark(
+    module: &BenchmarkModule,
+    cli_path: &Path,
+    config_path: &Path,
+    server_url: &str,
+) -> Result<BenchmarkResult> {
     eprintln!(
         "Running keynote benchmark against {} module ({})...",
         module.label, module.module_dir
@@ -60,7 +81,15 @@ fn run_module_benchmark(module: &BenchmarkModule, cli_path: &Path, config_path: 
     generate_module_bindings(module, cli_path, config_path)?;
     seed_accounts(cli_path, config_path, server_url)?;
     let runs_dir = tempfile::tempdir().context("failed to create temporary benchmark runs directory")?;
+    let transfer_fuel_before = transfer_fuel_total(server_url)?;
     run_benchmark(module, server_url, runs_dir.path())?;
+    let transfer_fuel_after = transfer_fuel_total(server_url)?;
+    let transfer_fuel_total = transfer_fuel_after - transfer_fuel_before;
+    ensure!(
+        transfer_fuel_total > 0.0,
+        "{} keynote benchmark did not record any fuel for the {TRANSFER_REDUCER} reducer",
+        module.label
+    );
 
     let result_path = find_result_json(runs_dir.path())?;
     let result_json = fs::read_to_string(&result_path)
@@ -79,12 +108,16 @@ fn run_module_benchmark(module: &BenchmarkModule, cli_path: &Path, config_path: 
     }
 
     println!(
-        "Keynote perf check passed for {} module: throughput {tps:.0} TPS >= {:.0} TPS ({})",
+        "Keynote perf check passed for {} module: throughput {tps:.0} TPS >= {:.0} TPS; \
+         {TRANSFER_REDUCER} fuel total {transfer_fuel_total:.0} ({})",
         module.label,
         module.min_tps,
         result_path.display()
     );
-    Ok(())
+    Ok(BenchmarkResult {
+        label: module.label,
+        transfer_fuel_total,
+    })
 }
 
 fn publish_module(module: &BenchmarkModule, cli_path: &Path, config_path: &Path, server_url: &str) -> Result<()> {
@@ -213,4 +246,73 @@ fn result_tps(result_json: &str) -> Result<f64> {
         .pointer("/results/0/res/tps")
         .and_then(Value::as_f64)
         .context("benchmark result JSON is missing results[0].res.tps")
+}
+
+fn transfer_fuel_total(server_url: &str) -> Result<f64> {
+    let metrics_url = format!("{}/v1/metrics", server_url.trim_end_matches('/'));
+    let metrics = reqwest::blocking::get(&metrics_url)
+        .with_context(|| format!("failed to fetch metrics from {metrics_url}"))?
+        .error_for_status()
+        .with_context(|| format!("metrics request to {metrics_url} failed"))?
+        .text()
+        .context("failed to read metrics response body")?;
+
+    let transfer_label = format!(r#"reducer="{TRANSFER_REDUCER}""#);
+    let mut total = 0.0;
+    for line in metrics.lines() {
+        if !is_reducer_fuel_metric_line(line) || !line.contains(&transfer_label) {
+            continue;
+        }
+        let value = line
+            .split_whitespace()
+            .nth(1)
+            .with_context(|| format!("malformed {REDUCER_FUEL_METRIC} metric line: {line}"))?
+            .parse::<f64>()
+            .with_context(|| format!("invalid {REDUCER_FUEL_METRIC} metric value in line: {line}"))?;
+        total += value;
+    }
+    Ok(total)
+}
+
+fn is_reducer_fuel_metric_line(line: &str) -> bool {
+    line.starts_with(REDUCER_FUEL_METRIC) || line.starts_with(REDUCER_FUEL_METRIC_TOTAL)
+}
+
+fn check_transfer_fuel_ratio(results: &[BenchmarkResult]) -> Result<()> {
+    ensure!(
+        results.len() == 2,
+        "expected exactly two keynote benchmark results to compare fuel usage, got {}",
+        results.len()
+    );
+    let [first, second] = results else {
+        unreachable!("length was checked above")
+    };
+
+    let higher = first.transfer_fuel_total.max(second.transfer_fuel_total);
+    let lower = first.transfer_fuel_total.min(second.transfer_fuel_total);
+    ensure!(
+        lower > 0.0,
+        "keynote benchmark fuel totals must be nonzero: {}={:.0}, {}={:.0}",
+        first.label,
+        first.transfer_fuel_total,
+        second.label,
+        second.transfer_fuel_total
+    );
+
+    let ratio = higher / lower;
+    println!(
+        "Keynote transfer fuel comparison: {}={:.0}, {}={:.0}, relative difference {ratio:.2}x",
+        first.label, first.transfer_fuel_total, second.label, second.transfer_fuel_total
+    );
+    ensure!(
+        ratio < MAX_FUEL_RATIO,
+        "keynote benchmark transfer fuel totals differ by {ratio:.2}x, expected strictly less than {MAX_FUEL_RATIO}x: \
+         {}={:.0}, {}={:.0}",
+        first.label,
+        first.transfer_fuel_total,
+        second.label,
+        second.transfer_fuel_total
+    );
+
+    Ok(())
 }
