@@ -52,6 +52,7 @@ export default tseslint.config(
           './templates/react-ts/tsconfig.json',
           './templates/chat-react-ts/tsconfig.json',
           './templates/money-exchange-react-ts/tsconfig.json',
+          './templates/hangman-react-ts/tsconfig.json',
           './templates/basic-ts/tsconfig.json',
           './templates/angular-ts/tsconfig.app.json',
           './docs/tsconfig.json',
