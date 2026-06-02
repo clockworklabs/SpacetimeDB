@@ -3,6 +3,7 @@ packages:
   - 'crates/bindings-typescript/test-app'
   - 'crates/bindings-typescript/case-conversion-test-client'
   - 'templates/chat-react-ts'
+  - 'templates/hangman-react-ts'
   - 'templates/react-ts'
   - 'templates/basic-ts'
   - 'templates/llm-chat-ts'
