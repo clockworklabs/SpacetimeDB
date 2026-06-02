@@ -19,9 +19,8 @@ const SEED_ACCOUNTS: &str = "100000";
 const SEED_INITIAL_BALANCE: &str = "1000000000000";
 const TRANSFER_REDUCER: &str = "transfer";
 const REDUCER_FUEL_METRIC: &str = "reducer_wasmtime_fuel_used";
-const REDUCER_FUEL_METRIC_PREFIX: &str = "reducer_wasmtime_fuel_used{";
-const REDUCER_FUEL_METRIC_TOTAL_PREFIX: &str = "reducer_wasmtime_fuel_used_total{";
-const MAX_FUEL_RATIO: f64 = 10.0;
+const REDUCER_FUEL_METRIC_TOTAL: &str = "reducer_wasmtime_fuel_used_total";
+const MAX_FUEL_RATIO: f64 = 2.0;
 
 struct BenchmarkModule {
     label: &'static str,
@@ -276,7 +275,7 @@ fn transfer_fuel_total(server_url: &str) -> Result<f64> {
 }
 
 fn is_reducer_fuel_metric_line(line: &str) -> bool {
-    line.starts_with(REDUCER_FUEL_METRIC_PREFIX) || line.starts_with(REDUCER_FUEL_METRIC_TOTAL_PREFIX)
+    line.starts_with(REDUCER_FUEL_METRIC) || line.starts_with(REDUCER_FUEL_METRIC_TOTAL)
 }
 
 fn check_transfer_fuel_ratio(results: &[BenchmarkResult]) -> Result<()> {
