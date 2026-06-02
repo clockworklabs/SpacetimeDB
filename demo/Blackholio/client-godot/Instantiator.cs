@@ -15,6 +15,7 @@ public partial class Instantiator : Node
             if (_conn != null)
             {
                 _conn.Db.Circle.OnInsert -= CircleOnInsert;
+                _conn.Db.ConsumeEntityEvent.OnInsert -= ConsumeEntityEventOnInsert;
                 _conn.Db.Entity.OnUpdate -= EntityOnUpdate;
                 _conn.Db.Entity.OnDelete -= EntityOnDelete;
                 _conn.Db.Food.OnInsert -= FoodOnInsert;
@@ -27,6 +28,7 @@ public partial class Instantiator : Node
             if (value != null)
             {
                 value.Db.Circle.OnInsert += CircleOnInsert;
+                value.Db.ConsumeEntityEvent.OnInsert += ConsumeEntityEventOnInsert;
                 value.Db.Entity.OnUpdate += EntityOnUpdate;
                 value.Db.Entity.OnDelete += EntityOnDelete;
                 value.Db.Food.OnInsert += FoodOnInsert;
@@ -38,15 +40,19 @@ public partial class Instantiator : Node
     
     private static Dictionary<int, EntityController> Entities { get; } = new();
     private static Dictionary<int, PlayerController> Players { get; } = new();
+    private static HashSet<int> PendingConsumeAnimations { get; } = new();
+    public static IReadOnlyDictionary<int, PlayerController> PlayerControllers => Players;
     
     public Instantiator(DbConnection conn)
     {
+        Entities.Clear();
+        Players.Clear();
+        PendingConsumeAnimations.Clear();
         Conn = conn;
     }
 
     public override void _ExitTree()
     {
-        GD.Print("Instantiator Exit Tree");
         Conn = null;
     }
 
@@ -69,8 +75,26 @@ public partial class Instantiator : Node
     {
         if (Entities.Remove(oldEntity.EntityId, out var entityController))
         {
+            if (PendingConsumeAnimations.Remove(oldEntity.EntityId))
+            {
+                entityController.OnConsumed();
+                return;
+            }
+
             entityController.OnDelete();
         }
+    }
+
+    private void ConsumeEntityEventOnInsert(EventContext context, ConsumeEntityEvent evt)
+    {
+        if (!Entities.TryGetValue(evt.ConsumedEntityId, out var consumedEntity) ||
+            !Entities.TryGetValue(evt.ConsumerEntityId, out var consumerEntity))
+        {
+            return;
+        }
+
+        PendingConsumeAnimations.Add(evt.ConsumedEntityId);
+        consumedEntity.StartDespawn(consumerEntity);
     }
 
     private void FoodOnInsert(EventContext context, Food insertedValue)

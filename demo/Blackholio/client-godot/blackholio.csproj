@@ -7,4 +7,7 @@
   <ItemGroup>
     <PackageReference Include="SpacetimeDB.ClientSDK.Godot" Version="2.1.0" />
   </ItemGroup>
+  <ItemGroup Condition="'$(UseLocalBsatnRuntime)' == 'true'">
+    <ProjectReference Include="../../../crates/bindings-csharp/BSATN.Codegen/BSATN.Codegen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
 </Project>
