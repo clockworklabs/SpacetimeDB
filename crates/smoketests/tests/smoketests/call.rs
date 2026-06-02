@@ -41,7 +41,7 @@ Here are some existing procedures:
 - return_person"
     );
     assert!(
-        stderr.trim_end().starts_with(&expected),
+        stderr.starts_with(&expected),
         "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
         expected,
         stderr
@@ -63,7 +63,7 @@ Here are some existing procedures:
 - return_person"
     );
     assert!(
-        stderr.trim_end().starts_with(&expected),
+        stderr.starts_with(&expected),
         "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
         expected,
         stderr
@@ -81,7 +81,7 @@ Error: No such reducer OR procedure `say_hell` for database `{identity}` resolvi
 A reducer with a similar name exists: `say_hello`"
     );
     assert!(
-        stderr.trim_end().starts_with(&expected),
+        stderr.starts_with(&expected),
         "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
         expected,
         stderr
@@ -99,7 +99,7 @@ Error: No such reducer OR procedure `return_perso` for database `{identity}` res
 A procedure with a similar name exists: `return_person`"
     );
     assert!(
-        stderr.trim_end().starts_with(&expected),
+        stderr.starts_with(&expected),
         "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
         expected,
         stderr
@@ -126,7 +126,7 @@ The database has no reducers.
 The database has no procedures."
     );
     assert!(
-        stderr.trim_end().starts_with(&expected),
+        stderr.starts_with(&expected),
         "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
         expected,
         stderr
@@ -204,7 +204,7 @@ Here are some existing procedures:
 ... (1 procedure not shown)"
     );
     assert!(
-        stderr.trim_end().starts_with(&expected),
+        stderr.starts_with(&expected),
         "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
         expected,
         stderr
