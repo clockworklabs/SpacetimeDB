@@ -1,16 +1,5 @@
 use spacetimedb_smoketests::Smoketest;
 
-fn assert_stderr_starts_with(stderr: &[u8], expected: &str) {
-    let stderr = String::from_utf8_lossy(stderr);
-    let stderr = stderr.trim_end();
-    assert!(
-        stderr.starts_with(expected),
-        "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
-        expected,
-        stderr
-    );
-}
-
 /// Check calling a reducer (no return) and procedure (return)
 #[test]
 fn test_call_reducer_procedure() {
@@ -50,7 +39,14 @@ Here are some existing reducers:
 Here are some existing procedures:
 - return_person"
     );
-    assert_stderr_starts_with(&output.stderr, &expected);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr = stderr.trim_end();
+    assert!(
+        stderr.starts_with(&expected),
+        "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
+        expected,
+        stderr
+    );
 
     // Non-existent procedure
     let output = test.call_output("non_existent_procedure", &[]);
@@ -66,7 +62,14 @@ Here are some existing reducers:
 Here are some existing procedures:
 - return_person"
     );
-    assert_stderr_starts_with(&output.stderr, &expected);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr = stderr.trim_end();
+    assert!(
+        stderr.starts_with(&expected),
+        "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
+        expected,
+        stderr
+    );
 
     // Similar name to reducer - should suggest similar
     let output = test.call_output("say_hell", &[]);
@@ -78,7 +81,14 @@ Error: No such reducer OR procedure `say_hell` for database `{identity}` resolvi
 
 A reducer with a similar name exists: `say_hello`"
     );
-    assert_stderr_starts_with(&output.stderr, &expected);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr = stderr.trim_end();
+    assert!(
+        stderr.starts_with(&expected),
+        "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
+        expected,
+        stderr
+    );
 
     // Similar name to procedure - should suggest similar
     let output = test.call_output("return_perso", &[]);
@@ -90,7 +100,14 @@ Error: No such reducer OR procedure `return_perso` for database `{identity}` res
 
 A procedure with a similar name exists: `return_person`"
     );
-    assert_stderr_starts_with(&output.stderr, &expected);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr = stderr.trim_end();
+    assert!(
+        stderr.starts_with(&expected),
+        "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
+        expected,
+        stderr
+    );
 }
 
 /// Check calling into a database with no reducers/procedures raises error
@@ -111,7 +128,14 @@ The database has no reducers.
 
 The database has no procedures."
     );
-    assert_stderr_starts_with(&output.stderr, &expected);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr = stderr.trim_end();
+    assert!(
+        stderr.starts_with(&expected),
+        "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
+        expected,
+        stderr
+    );
 }
 
 /// Generate module code with many reducers and procedures
@@ -183,5 +207,12 @@ Here are some existing procedures:
 - say_procedure_9
 ... (1 procedure not shown)"
     );
-    assert_stderr_starts_with(&output.stderr, &expected);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stderr = stderr.trim_end();
+    assert!(
+        stderr.starts_with(&expected),
+        "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
+        expected,
+        stderr
+    );
 }
