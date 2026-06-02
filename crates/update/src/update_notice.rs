@@ -13,6 +13,8 @@ use crate::cli::install::fetch_latest_release_version;
 
 /// How long to cache the update check result.
 const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+/// How often to show the user the same update notice.
+const NOTICE_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 const UPDATE_CHECK_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Cache file name.
@@ -24,6 +26,15 @@ struct Cache {
     last_check_secs: u64,
     /// The latest version string (without "v" prefix).
     latest_version: String,
+    /// Unix timestamp of the last printed update notice.
+    #[serde(default)]
+    last_notice_secs: u64,
+    /// The current version from the last printed update notice.
+    #[serde(default)]
+    notice_current_version: String,
+    /// The latest version from the last printed update notice.
+    #[serde(default)]
+    notice_latest_version: String,
 }
 
 impl Cache {
@@ -40,6 +51,18 @@ impl Cache {
 
     fn path(config_dir: &Path) -> PathBuf {
         config_dir.join(CACHE_FILENAME)
+    }
+
+    fn should_print_notice(&self, current: &semver::Version, latest: &semver::Version, now: u64) -> bool {
+        self.notice_current_version != current.to_string()
+            || self.notice_latest_version != latest.to_string()
+            || now.saturating_sub(self.last_notice_secs) >= NOTICE_INTERVAL.as_secs()
+    }
+
+    fn mark_notice_printed(&mut self, current: &semver::Version, latest: &semver::Version, now: u64) {
+        self.last_notice_secs = now;
+        self.notice_current_version = current.to_string();
+        self.notice_latest_version = latest.to_string();
     }
 }
 
@@ -78,6 +101,7 @@ fn latest_version_or_cached(config_dir: &Path) -> Option<semver::Version> {
             Cache {
                 last_check_secs: now,
                 latest_version: version.to_string(),
+                ..Default::default()
             }
             .write(config_dir);
             Some(version)
@@ -115,11 +139,88 @@ pub(crate) fn maybe_print_update_notice(config_dir: &Path) {
     };
 
     if latest > current {
+        let now = now_secs();
+        let mut cache = Cache::read(config_dir).unwrap_or_default();
+        if !cache.should_print_notice(&current, &latest, now) {
+            return;
+        }
+
         eprintln!(
             "{}",
             format!("A new version of SpacetimeDB is available: v{latest} (current: v{current})").yellow()
         );
         eprintln!("Run `spacetime version upgrade` to update.");
         eprintln!();
+
+        cache.mark_notice_printed(&current, &latest, now);
+        if cache.latest_version.is_empty() {
+            cache.latest_version = latest.to_string();
+        }
+        cache.write(config_dir);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn version(version: &str) -> semver::Version {
+        semver::Version::parse(version).unwrap()
+    }
+
+    #[test]
+    fn update_notice_prints_when_never_shown() {
+        let cache = Cache {
+            latest_version: "2.0.0".to_string(),
+            ..Default::default()
+        };
+
+        assert!(cache.should_print_notice(&version("1.0.0"), &version("2.0.0"), 100));
+    }
+
+    #[test]
+    fn update_notice_is_suppressed_within_interval_for_same_versions() {
+        let mut cache = Cache::default();
+        let current = version("1.0.0");
+        let latest = version("2.0.0");
+        cache.mark_notice_printed(&current, &latest, 100);
+
+        assert!(!cache.should_print_notice(&current, &latest, 100 + NOTICE_INTERVAL.as_secs() - 1));
+    }
+
+    #[test]
+    fn update_notice_reprints_after_interval_for_same_versions() {
+        let mut cache = Cache::default();
+        let current = version("1.0.0");
+        let latest = version("2.0.0");
+        cache.mark_notice_printed(&current, &latest, 100);
+
+        assert!(cache.should_print_notice(&current, &latest, 100 + NOTICE_INTERVAL.as_secs()));
+    }
+
+    #[test]
+    fn update_notice_reprints_when_latest_version_changes() {
+        let mut cache = Cache::default();
+        let current = version("1.0.0");
+        cache.mark_notice_printed(&current, &version("2.0.0"), 100);
+
+        assert!(cache.should_print_notice(&current, &version("2.1.0"), 101));
+    }
+
+    #[test]
+    fn update_notice_cache_reads_old_format() {
+        let tempdir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            Cache::path(tempdir.path()),
+            r#"{"last_check_secs":123,"latest_version":"2.0.0"}"#,
+        )
+        .unwrap();
+
+        let cache = Cache::read(tempdir.path()).unwrap();
+        assert_eq!(cache.last_check_secs, 123);
+        assert_eq!(cache.latest_version, "2.0.0");
+        assert_eq!(cache.last_notice_secs, 0);
+        assert!(cache.notice_current_version.is_empty());
+        assert!(cache.notice_latest_version.is_empty());
     }
 }
