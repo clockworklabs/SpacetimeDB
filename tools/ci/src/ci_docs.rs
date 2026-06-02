@@ -41,11 +41,16 @@ fn generate_markdown(cmd: &mut Command, heading_level: usize) -> String {
 
     let mut options = String::new();
     for arg in cmd.get_arguments() {
-        let names = arg
+        let mut names = arg
             .get_long()
             .map(|l| format!("--{}", l))
             .or_else(|| arg.get_short().map(|s| format!("-{}", s)))
             .unwrap_or_else(|| arg.get_id().to_string());
+        if let Some(value_names) = arg.get_value_names().filter(|_| arg.get_action().takes_values()) {
+            for value_name in value_names {
+                names.push_str(&format!(" <{value_name}>"));
+            }
+        }
         let help = arg
             .get_long_help()
             .or_else(|| arg.get_help())
@@ -54,12 +59,16 @@ fn generate_markdown(cmd: &mut Command, heading_level: usize) -> String {
                 eprintln!("Warning: argument `{}` is missing help text", arg.get_id());
                 "".to_string()
             });
-        options.push_str(&format!(
-            "- `{}`: {}\n{}",
-            names,
-            help,
-            if help.lines().count() > 1 { "\n" } else { "" }
-        ));
+        if help.is_empty() {
+            options.push_str(&format!("- `{names}`:\n"));
+        } else {
+            options.push_str(&format!(
+                "- `{}`: {}\n{}",
+                names,
+                help,
+                if help.lines().count() > 1 { "\n" } else { "" }
+            ));
+        }
     }
 
     if !options.is_empty() {
