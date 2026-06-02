@@ -1014,6 +1014,15 @@ impl RelationalDB {
         Ok(self.inner.alter_table_primary_key_mut_tx(tx, name, primary_key)?)
     }
 
+    pub(crate) fn alter_index_source_name(
+        &self,
+        tx: &mut MutTx,
+        index_id: IndexId,
+        source_name: spacetimedb_sats::raw_identifier::RawIdentifier,
+    ) -> Result<(), DBError> {
+        Ok(self.inner.alter_index_source_name_mut_tx(tx, index_id, source_name)?)
+    }
+
     pub(crate) fn alter_table_row_type(
         &self,
         tx: &mut MutTx,
