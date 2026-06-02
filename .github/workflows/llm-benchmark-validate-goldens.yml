@@ -15,11 +15,7 @@ concurrency:
 
 jobs:
   validate-goldens:
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    runs-on: spacetimedb-new-runner-2
     timeout-minutes: 60
 
     strategy:
