@@ -56,10 +56,11 @@ use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
 use spacetimedb_execution::RelValue;
 use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
+use spacetimedb_lib::http::{Request as HttpRequest, Response as HttpResponse};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{bsatn, ConnectionId, TimeDuration, Timestamp};
-use spacetimedb_primitives::{ArgId, ProcedureId, TableId, ViewFnPtr, ViewId};
+use spacetimedb_primitives::{ArgId, HttpHandlerId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue};
@@ -1088,6 +1089,66 @@ pub struct CallViewParams {
     pub timestamp: Timestamp,
 }
 
+pub(crate) struct ResolvedViewForRefresh<'a> {
+    pub view_id: ViewId,
+    pub table_id: TableId,
+    pub view_def: &'a ViewDef,
+}
+
+/// Lookup a module's [`ViewDef`] and check for consistency among
+/// its readset, `st_view`, and the [`ModuleDef`].
+pub(crate) fn resolve_view_for_refresh<'a>(
+    tx: &MutTxId,
+    module_def: &'a ModuleDef,
+    view_call: &ViewCallInfo,
+) -> anyhow::Result<ResolvedViewForRefresh<'a>> {
+    let st_view = tx
+        .lookup_st_view(view_call.view_id)
+        .with_context(|| format!("failed to look up view {}", view_call.view_id))?;
+
+    let view_id = st_view.view_id;
+    let table_id = st_view
+        .table_id
+        .ok_or_else(|| anyhow::anyhow!("view {:?} does not have a backing table", view_id))?;
+
+    let view_name: Identifier = st_view.view_name.into();
+    let view_def = module_def.view(&view_name).ok_or_else(|| {
+        anyhow::anyhow!(
+            "view `{}` for view id `{}` not found in current module",
+            view_name,
+            view_id
+        )
+    })?;
+
+    let is_anonymous = view_call.sender.is_none();
+
+    if st_view.is_anonymous != is_anonymous {
+        return Err(anyhow::anyhow!(
+            "found is_anonymous={} in st_view, but {} in readset when updating view `{}`",
+            st_view.is_anonymous,
+            is_anonymous,
+            view_name,
+        ));
+    }
+
+    let is_anonymous = view_def.is_anonymous;
+
+    if st_view.is_anonymous != is_anonymous {
+        return Err(anyhow::anyhow!(
+            "found is_anonymous={} in st_view, but {} in module when updating view `{}`",
+            st_view.is_anonymous,
+            is_anonymous,
+            view_name,
+        ));
+    }
+
+    Ok(ResolvedViewForRefresh {
+        view_id,
+        table_id,
+        view_def,
+    })
+}
+
 pub struct CallProcedureParams {
     pub timestamp: Timestamp,
     pub caller_identity: Identity,
@@ -1115,6 +1176,13 @@ impl CallProcedureParams {
             args,
         }
     }
+}
+
+pub struct CallHttpHandlerParams {
+    pub timestamp: Timestamp,
+    pub handler_id: HttpHandlerId,
+    pub request: HttpRequest,
+    pub request_body: Bytes,
 }
 
 /// Holds a [`Module`] and a set of [`Instance`]s from it,
@@ -1530,6 +1598,16 @@ pub enum ProcedureCallError {
     NoSuchProcedure,
     #[error("Procedure terminated due to insufficient budget")]
     OutOfEnergy,
+    #[error("The module instance encountered a fatal error: {0}")]
+    InternalError(String),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum HttpHandlerCallError {
+    #[error(transparent)]
+    NoSuchModule(#[from] NoSuchModule),
+    #[error("no such http handler")]
+    NoSuchHandler,
     #[error("The module instance encountered a fatal error: {0}")]
     InternalError(String),
 }
@@ -2748,6 +2826,32 @@ impl ModuleHost {
         )
     }
 
+    pub async fn call_http_handler(
+        &self,
+        handler_id: HttpHandlerId,
+        request: HttpRequest,
+        request_body: Bytes,
+    ) -> Result<(HttpResponse, Bytes), HttpHandlerCallError> {
+        if self.info.module_def.get_http_handler_by_id(handler_id).is_none() {
+            return Err(HttpHandlerCallError::NoSuchHandler);
+        }
+
+        let params = CallHttpHandlerParams {
+            timestamp: Timestamp::now(),
+            handler_id,
+            request,
+            request_body,
+        };
+
+        call_pooled_instance!(
+            self,
+            "http handler",
+            params,
+            |params, inst| inst.call_http_handler(params).await,
+            |params, inst| inst.call_http_handler(params).await,
+        )?
+    }
+
     pub(super) async fn call_scheduled_reducer(
         &self,
         params: ScheduledFunctionParams,
@@ -2853,17 +2957,21 @@ impl ModuleHost {
         let mut total_duration = Duration::ZERO;
         let mut abi_duration = Duration::ZERO;
         let mut trapped = false;
-        for ViewCallInfo {
-            view_id,
-            table_id,
-            fn_ptr,
-            sender,
-        } in tx.views_for_refresh().cloned().collect::<Vec<_>>()
-        {
-            let Some(view_def) = module_def.get_view_by_id(fn_ptr, sender.is_none()) else {
-                outcome = ViewOutcome::Failed(format!("view with fn_ptr `{fn_ptr}` not found"));
-                break;
+        for view_call in tx.views_for_refresh().cloned().collect::<Vec<_>>() {
+            let sender = view_call.sender;
+            let resolved = match resolve_view_for_refresh(&tx, module_def, &view_call) {
+                Ok(resolved) => resolved,
+                Err(err) => {
+                    outcome = ViewOutcome::Failed(format!("failed to resolve view: {err}"));
+                    break;
+                }
             };
+            let ResolvedViewForRefresh {
+                view_id,
+                table_id,
+                view_def,
+            } = resolved;
+            let view_name = &view_def.name;
             let args = match FunctionArgs::Nullary.into_tuple_for_def(module_def, view_def) {
                 Ok(args) => args,
                 Err(err) => {
@@ -2875,7 +2983,7 @@ impl ModuleHost {
             let (result, trap) = Self::call_view_inner(
                 instance,
                 tx,
-                &view_def.name,
+                view_name,
                 view_id,
                 table_id,
                 view_def.fn_ptr,

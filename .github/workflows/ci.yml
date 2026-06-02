@@ -760,6 +760,131 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
 
+  godot-testsuite:
+    needs: [lints]
+    permissions:
+      contents: read
+    runs-on: spacetimedb-new-runner-2
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      UseLocalBsatnRuntime: true
+    steps:
+      - name: Checkout repository
+        id: checkout-stdb
+        uses: actions/checkout@v4
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@v3
+        with:
+          global-json-file: global.json
+
+      - name: Override NuGet packages
+        run: |
+          dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
+          dotnet pack -c Release crates/bindings-csharp/Runtime
+
+          # Write out the nuget config file to `nuget.config`. This causes the spacetimedb-csharp-sdk repository
+          # to be aware of the local versions of the `bindings-csharp` packages in SpacetimeDB, and use them if
+          # available. Otherwise, `spacetimedb-csharp-sdk` will use the NuGet versions of the packages.
+          # This means that (if version numbers match) we will test the local versions of the C# packages, even
+          # if they're not pushed to NuGet.
+          # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
+          cd sdks/csharp
+          ./tools~/write-nuget-config.sh ../..
+
+      - name: Restore .NET solution
+        working-directory: sdks/csharp
+        run: dotnet restore --configfile NuGet.Config SpacetimeDB.ClientSDK.sln
+
+      # Now, setup the Godot tests.
+      - name: Patch spacetimedb dependency in Cargo.toml
+        working-directory: demo/Blackholio/server-rust
+        run: |
+          sed -i "s|spacetimedb *=.*|spacetimedb = \{ path = \"../../../crates/bindings\" \}|" Cargo.toml
+          cat Cargo.toml
+
+      - name: Install Rust toolchain
+        uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          # Let the main CI job save the cache since it builds the most things
+          save-if: false
+          prefix-key: v1
+
+      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
+      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
+      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
+      # `cargo build --manifest-path` (which apparently build different dependency trees).
+      # However, we've been unable to fix it so... /shrug
+      - name: Check v8 outputs
+        run: |
+          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
+          if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
+            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
+            cargo clean --release -p v8 || true
+            cargo build --release -p v8
+          fi
+
+      - name: Install SpacetimeDB CLI from the local checkout
+        run: |
+          export CARGO_HOME="$HOME/.cargo"
+          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+          cargo install --force --path crates/cli --locked --message-format=short
+          cargo install --force --path crates/standalone --locked --message-format=short
+          # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
+          ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
+
+      - name: Generate client bindings
+        working-directory: demo/Blackholio/server-rust
+        run: bash ./generate.sh -y
+
+      - name: Check for changes
+        run: |
+          tools/check-diff.sh demo/Blackholio/client-godot/module_bindings || {
+              echo 'Error: Godot bindings are dirty. Please run `demo/Blackholio/server-rust/generate.sh`.'
+              exit 1
+          }
+
+      - name: Patch SpacetimeDB Godot SDK dependency
+        working-directory: demo/Blackholio/client-godot
+        run: |
+          dotnet remove package SpacetimeDB.ClientSDK.Godot
+          dotnet add reference ../../../sdks/csharp/SpacetimeDB.ClientSDK.Godot.csproj
+          cat blackholio.csproj
+
+      - name: Setup Godot
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.6.2
+          use-dotnet: true
+
+      - name: Restore Godot project
+        working-directory: demo/Blackholio/client-godot
+        run: dotnet restore --configfile ../../../NuGet.Config blackholio.csproj
+
+      - name: Build Godot project
+        run: godot --headless --verbose --path demo/Blackholio/client-godot --build-solutions --quit
+
+      - name: Start SpacetimeDB
+        run: |
+          spacetime start &
+          disown
+
+      - name: Publish godot-tests module to SpacetimeDB
+        working-directory: demo/Blackholio/server-rust
+        run: |
+          spacetime login --server-issued-login local
+          bash ./publish.sh
+
+      - name: Run Godot tests
+        run: godot --headless --path demo/Blackholio/client-godot --scene res://tests/GodotPlayModeTests.tscn
+
   csharp-testsuite:
     needs: [lints]
     runs-on: spacetimedb-new-runner-2
@@ -770,8 +895,6 @@ jobs:
       - name: Checkout repository
         id: checkout-stdb
         uses: actions/checkout@v4
-
-      # Run cheap .NET tests first. If those fail, no need to run expensive Unity tests.
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@v3
@@ -877,151 +1000,6 @@ jobs:
               echo 'Error: Bindings are dirty. Please run `sdks/csharp/tools~/gen-regression-tests.sh`.'
               exit 1
           }
-
-  internal-tests:
-    name: Internal Tests
-    needs: [lints]
-    # Skip if not a PR or a push to master
-    # Skip if this is an external contribution. GitHub secrets will be empty, so the step would fail anyway.
-    if: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/master'))
-      && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
-    permissions:
-      contents: read
-      pull-requests: read
-    runs-on: ubuntu-latest
-    env:
-      TARGET_OWNER: clockworklabs
-      TARGET_REPO: SpacetimeDBPrivate
-    steps:
-      # Skip the private dispatch entirely when only `docs/` is touched. The job
-      # itself still completes successfully so required-status-check gating is
-      # satisfied without spending private-runner time on a docs-only change.
-      - name: Detect non-docs changes
-        id: filter
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            non_docs:
-              - '!docs/**'
-
-      - id: dispatch
-        name: Trigger tests
-        if: steps.filter.outputs.non_docs == 'true'
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
-          script: |
-            const workflowId = 'ci.yml';
-            const targetRef = 'master';
-            const targetOwner = process.env.TARGET_OWNER;
-            const targetRepo = process.env.TARGET_REPO;
-            // Use the ref for pull requests because the head sha is brittle (github does some extra dance where it merges in master).
-            const publicRef = (context.eventName === 'pull_request') ? context.payload.pull_request.head.ref : context.sha;
-            const publicPrNumber = context.payload.pull_request?.number ?? context.payload.inputs?.pr_number;
-            const preDispatch = new Date().toISOString();
-            const inputs = { public_ref: publicRef };
-            if (publicPrNumber) {
-              inputs.public_pr_number = String(publicPrNumber);
-            }
-
-            // Dispatch the workflow in the target repository
-            await github.rest.actions.createWorkflowDispatch({
-              owner: targetOwner,
-              repo: targetRepo,
-              workflow_id: workflowId,
-              ref: targetRef,
-              inputs,
-            });
-  
-            const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  
-            // Find the dispatched run by name
-            let runId = null;
-            for (let attempt = 0; attempt < 20 && !runId; attempt++) { // up to ~10 minutes to locate the run
-              await sleep(5000);
-              const runsResp = await github.rest.actions.listWorkflowRuns({
-                owner: targetOwner,
-                repo: targetRepo,
-                workflow_id: workflowId,
-                event: 'workflow_dispatch',
-                branch: targetRef,
-                per_page: 50,
-              });
-  
-              const expectedName = `CI [public_ref=${publicRef}]`;
-              const candidates = runsResp.data.workflow_runs
-                .filter(r => r.name === expectedName && new Date(r.created_at) >= new Date(preDispatch))
-                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  
-              if (candidates.length > 0) {
-                runId = candidates[0].id;
-                break;
-              }
-            }
-  
-            if (!runId) {
-              core.setFailed('Failed to locate dispatched run in the private repository.');
-              return;
-            }
-  
-            const runUrl = `https://github.com/${targetOwner}/${targetRepo}/actions/runs/${runId}`;
-            core.info(`View run: ${runUrl}`);
-            core.setOutput('run_id', String(runId));
-            core.setOutput('run_url', runUrl);
-  
-      - name: Wait for Internal Tests to complete
-        if: steps.filter.outputs.non_docs == 'true'
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
-          script: |
-            const targetOwner = process.env.TARGET_OWNER;
-            const targetRepo = process.env.TARGET_REPO;
-            const runId = Number(`${{ steps.dispatch.outputs.run_id }}`);
-            const runUrl = `${{ steps.dispatch.outputs.run_url }}`;
-            const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  
-            core.info(`Waiting for workflow result... ${runUrl}`);
-  
-            let conclusion = null;
-            for (let attempt = 0; attempt < 240; attempt++) { // up to ~2 hours
-              const runResp = await github.rest.actions.getWorkflowRun({
-                owner: targetOwner,
-                repo: targetRepo,
-                run_id: runId
-              });
-              const { status, conclusion: c } = runResp.data;
-              if (status === 'completed') {
-                conclusion = c || 'success';
-                break;
-              }
-              await sleep(30000);
-            }
-  
-            if (!conclusion) {
-              core.setFailed('Timed out waiting for private workflow to complete.');
-              return;
-            }
-  
-            if (conclusion !== 'success') {
-              core.setFailed(`Private workflow failed with conclusion: ${conclusion}`);
-            }
-  
-      - name: Cancel invoked run if workflow cancelled
-        if: ${{ cancelled() && steps.dispatch.outputs.run_id }}
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
-          script: |
-            const targetOwner = process.env.TARGET_OWNER;
-            const targetRepo = process.env.TARGET_REPO;
-            const runId = Number(`${{ steps.dispatch.outputs.run_id }}`);
-            if (!runId) return;
-            await github.rest.actions.cancelWorkflowRun({
-              owner: targetOwner,
-              repo: targetRepo,
-              run_id: runId,
-            });
 
   global_json_policy:
     name: Verify global.json files are symlinks
