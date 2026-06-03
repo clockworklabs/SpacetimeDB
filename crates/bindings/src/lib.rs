@@ -365,9 +365,9 @@ pub use spacetimedb_bindings_macro::settings;
 ///     // The following line would panic, since we use `insert` rather than `try_insert`.
 ///     // let result = ctx.db.country().insert(Country { code: "CN".into(), national_bird: "Blue Magpie".into() });
 ///
-///     // If we wanted to *update* the row for Australia, we can use the `update` method of `UniqueIndex`.
-///     // The following line will succeed:
-///     ctx.db.country().code().update(Country {
+///     // If we wanted to replace the row for Australia, we can delete it and insert the new row.
+///     assert!(ctx.db.country().code().delete("AU".to_string()));
+///     ctx.db.country().insert(Country {
 ///         code: "AU".into(), national_bird: "Australian Emu".into()
 ///     });
 /// }
@@ -1118,7 +1118,7 @@ impl ReducerContext {
     /// #[reducer]
     /// fn generate_uuid_v4(ctx: &ReducerContext) -> Result<(), Box<dyn std::error::Error>> {
     ///     let uuid = ctx.new_uuid_v4()?;
-    ///     log::info!(uuid);
+    ///     log::info!("{uuid}");
     ///     Ok(())
     /// }
     /// # }
@@ -1140,7 +1140,7 @@ impl ReducerContext {
     /// #[reducer]
     /// fn generate_uuid_v7(ctx: &ReducerContext) -> Result<(), Box<dyn std::error::Error>> {
     ///     let uuid = ctx.new_uuid_v7()?;
-    ///     log::info!(uuid);
+    ///     log::info!("{uuid}");
     ///     Ok(())
     /// }
     /// # }
