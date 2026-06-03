@@ -109,11 +109,7 @@ fn test_typescript_add_optional_columns() {
     let module_name = format!("typescript-add-optional-columns-{}", random_string());
 
     let database_identity = test
-        .publish_typescript_module_source(
-            "typescript-add-optional-columns-v1",
-            &module_name,
-            TYPESCRIPT_MODULE_V1,
-        )
+        .publish_typescript_module_source("typescript-add-optional-columns-v1", &module_name, TYPESCRIPT_MODULE_V1)
         .unwrap();
 
     test.call("insert_user", &["Alice", "alice@example.com"]).unwrap();
@@ -141,11 +137,7 @@ fn test_typescript_change_index_source_name() {
     let module_name = format!("typescript-change-source-name-{}", random_string());
 
     let database_identity = test
-        .publish_typescript_module_source(
-            "typescript-change-source-name-v1",
-            &module_name,
-            TYPESCRIPT_MODULE_V1,
-        )
+        .publish_typescript_module_source("typescript-change-source-name-v1", &module_name, TYPESCRIPT_MODULE_V1)
         .unwrap();
 
     test.call("insert_user", &["Alice", "alice@example.com"]).unwrap();
