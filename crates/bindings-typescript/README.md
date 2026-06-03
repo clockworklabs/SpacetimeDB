@@ -141,17 +141,25 @@ const connectionBuilder = DbConnection.builder()
   })
   .withToken('TOKEN');
 
-render(() => (
-  <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
-    <App />
-  </SpacetimeDBProvider>
-), document.getElementById('root')!);
+render(
+  () => (
+    <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
+      <App />
+    </SpacetimeDBProvider>
+  ),
+  document.getElementById('root')!
+);
 ```
 
 Once you add a `SpacetimeDBProvider` to your hierarchy, you can use the SpacetimeDB SolidJS primitives in your components:
 
 ```tsx
-import { useSpacetimeDB, useTable, useReducer, useProcedure } from 'spacetimedb/solid';
+import {
+  useSpacetimeDB,
+  useTable,
+  useReducer,
+  useProcedure,
+} from 'spacetimedb/solid';
 
 function App() {
   // Access the connection state (identity, token, connection error, etc.)
@@ -164,8 +172,8 @@ function App() {
   const [onlineUsers, onlineReady] = useTable(
     () => tables.user.where(r => r.online.eq(true)),
     {
-      onInsert: (row) => console.log('User came online:', row),
-      onDelete: (row) => console.log('User went offline:', row),
+      onInsert: row => console.log('User came online:', row),
+      onDelete: row => console.log('User went offline:', row),
     }
   );
 
@@ -179,9 +187,7 @@ function App() {
     <div>
       <Show when={isReady()} fallback={<p>Loading...</p>}>
         <p>{rows.length} messages</p>
-        <For each={rows}>
-          {(row) => <div>{row.text}</div>}
-        </For>
+        <For each={rows}>{row => <div>{row.text}</div>}</For>
       </Show>
       <button onClick={() => sendMessage('hello')}>Send</button>
     </div>

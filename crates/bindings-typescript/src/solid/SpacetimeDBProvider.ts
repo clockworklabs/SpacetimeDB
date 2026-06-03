@@ -2,7 +2,7 @@ import {
   DbConnectionBuilder,
   type DbConnectionImpl,
 } from '../sdk/db_connection_impl';
-import { createEffect, onCleanup, createMemo, createComputed } from 'solid-js';
+import { onCleanup, createMemo, createComputed } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { SpacetimeDBContext } from './useSpacetimeDB';
 import type { ConnectionState } from './connection_state';
