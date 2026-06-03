@@ -220,11 +220,7 @@ pub struct AllocatedJobCore {
 
 impl AllocatedJobCore {
     /// Spawn a [`SingleThreadedExecutor`] for this allocated core.
-    pub fn spawn_executor<S: Send + 'static>(
-        self,
-        state: S,
-        name: impl Into<String>,
-    ) -> SingleThreadedExecutor<S> {
+    pub fn spawn_executor<S: Send + 'static>(self, state: S, name: impl Into<String>) -> SingleThreadedExecutor<S> {
         SingleThreadedExecutor::spawn_and_pin(Arc::new(self.guard), self.pinner, state, Some(name.into()))
     }
 }
@@ -357,7 +353,9 @@ impl<S: Send + 'static> SingleThreadedExecutor<S> {
             // dropped and cancelled.
             rt.block_on(local)
         };
-        thread.spawn(worker).expect("failed to spawn SingleThreadedExecutor thread");
+        thread
+            .spawn(worker)
+            .expect("failed to spawn SingleThreadedExecutor thread");
 
         Self { inner }
     }
