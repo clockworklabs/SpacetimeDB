@@ -219,18 +219,13 @@ pub struct AllocatedJobCore {
 }
 
 impl AllocatedJobCore {
-    pub fn into_shared(self) -> (Arc<LoadBalanceOnDropGuard>, CorePinner) {
-        (Arc::new(self.guard), self.pinner)
-    }
-
-    /// Spawn a [`SingleThreadedExecutor`] allocated to this core.
+    /// Spawn a [`SingleThreadedExecutor`] for this allocated core.
     pub fn spawn_executor<S: Send + 'static>(
-        guard: Arc<LoadBalanceOnDropGuard>,
-        pinner: CorePinner,
+        self,
         state: S,
         name: impl Into<String>,
     ) -> SingleThreadedExecutor<S> {
-        SingleThreadedExecutor::spawn_and_pin(guard, pinner, state, Some(name.into()))
+        SingleThreadedExecutor::spawn_and_pin(Arc::new(self.guard), self.pinner, state, Some(name.into()))
     }
 }
 

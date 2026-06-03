@@ -1718,10 +1718,8 @@ impl ModuleHost {
                 let metrics = InstanceManagerMetrics::new(module.host_type(), database_identity);
                 let main_state = WasmtimeModuleState::new(module.clone(), init_inst, metrics.clone());
 
-                let (load_balance_guard, core_pinner) = core.into_shared();
-
                 let executor =
-                    AllocatedJobCore::spawn_executor(load_balance_guard, core_pinner, main_state, thread_name);
+                    core.spawn_executor(main_state, thread_name);
                 let procedure_instances = Arc::new(ModuleInstanceManager::new_bounded_with_metrics(
                     procedure_module,
                     None,
