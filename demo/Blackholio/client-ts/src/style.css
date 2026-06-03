@@ -1,0 +1,136 @@
+:root {
+  color: #f5f7ff;
+  font-family: Inter, system-ui, sans-serif;
+  background: #050817;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+}
+
+#app,
+#game,
+canvas {
+  height: 100vh;
+  width: 100vw;
+}
+
+.hud,
+.leaderboard,
+.controls {
+  position: fixed;
+  z-index: 2;
+  background: rgb(3 7 24 / 72%);
+  border: 1px solid rgb(221 166 62 / 40%);
+  backdrop-filter: blur(4px);
+}
+
+.hud {
+  display: flex;
+  gap: 1.5rem;
+  left: 1rem;
+  top: 1rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 0.5rem;
+}
+
+#status.connected {
+  color: #55e29a;
+}
+
+#status.error {
+  color: #f77777;
+}
+
+.leaderboard {
+  right: 1rem;
+  top: 1rem;
+  min-width: 13rem;
+  padding: 0.8rem 1rem;
+  border-radius: 0.5rem;
+}
+
+.leaderboard h2 {
+  font-size: 1rem;
+  margin: 0 0 0.55rem;
+}
+
+.leaderboard ol {
+  display: grid;
+  gap: 0.28rem;
+  margin: 0;
+  padding-left: 1.4rem;
+}
+
+.leaderboard li.local {
+  color: #ffd76c;
+  font-weight: 700;
+}
+
+.controls {
+  bottom: 1rem;
+  left: 50%;
+  padding: 0.55rem 0.85rem;
+  border-radius: 0.5rem;
+  transform: translateX(-50%);
+}
+
+kbd {
+  background: #18213c;
+  border-radius: 0.25rem;
+  padding: 0.1rem 0.35rem;
+}
+
+.overlay {
+  align-items: center;
+  background: rgb(1 4 14 / 68%);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  position: fixed;
+  z-index: 3;
+}
+
+.panel {
+  background: #0d1430;
+  border: 1px solid #dda63e;
+  border-radius: 0.7rem;
+  display: grid;
+  gap: 0.85rem;
+  min-width: min(23rem, calc(100vw - 2rem));
+  padding: 1.5rem;
+}
+
+.panel h1,
+.panel p {
+  margin: 0;
+}
+
+.panel input,
+.panel button {
+  border-radius: 0.35rem;
+  font: inherit;
+  padding: 0.7rem;
+}
+
+.panel input {
+  background: #f7f8ff;
+  border: 0;
+}
+
+.panel button {
+  background: #dda63e;
+  border: 0;
+  color: #091026;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.hidden {
+  display: none;
+}
