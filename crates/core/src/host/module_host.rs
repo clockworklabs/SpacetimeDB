@@ -29,7 +29,7 @@ use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRo
 use crate::subscription::tx::DeltaTx;
 use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
 use crate::subscription::{execute_plan, execute_plan_for_view};
-use crate::util::jobs::{AllocatedJobCore, SingleCoreExecutor};
+use crate::util::jobs::{AllocatedJobCore, SingleThreadedExecutor};
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::Context;
 use bytes::Bytes;
@@ -417,7 +417,7 @@ impl WasmtimeModuleState {
 /// to acquire.
 struct WasmtimeModuleHost {
     module: Arc<super::wasmtime::Module>,
-    executor: SingleCoreExecutor<WasmtimeModuleState>,
+    executor: SingleThreadedExecutor<WasmtimeModuleState>,
     procedure_instances: Arc<WasmtimeProcedureInstanceManager>,
 }
 
