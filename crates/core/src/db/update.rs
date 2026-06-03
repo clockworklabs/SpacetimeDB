@@ -225,7 +225,9 @@ fn auto_migrate_database(
                     .indexes
                     .iter()
                     .find(|index| index.index_name[..] == index_name[..])
-                    .ok_or_else(|| anyhow::anyhow!("Index `{index_name}` not found in table `{}`", old_table_def.name))?;
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Index `{index_name}` not found in table `{}`", old_table_def.name)
+                    })?;
 
                 log!(
                     logger,
@@ -513,7 +515,8 @@ mod test {
         };
         let index_name = RawIdentifier::new(canonical_index_name.as_str());
         assert!(
-            plan.steps.contains(&AutoMigrateStep::ChangeIndexSourceName(&index_name)),
+            plan.steps
+                .contains(&AutoMigrateStep::ChangeIndexSourceName(&index_name)),
             "plan steps: {:?}",
             plan.steps
         );
