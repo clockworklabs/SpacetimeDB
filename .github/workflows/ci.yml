@@ -348,7 +348,8 @@ jobs:
           exit "$status"
 
       - name: Upload keynote benchmark profile
-        if: failure() && steps.keynote_bench.outcome == 'failure'
+        if: always()
+        # if: failure() && steps.keynote_bench.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
           name: keynote-bench-profile
@@ -357,7 +358,8 @@ jobs:
           retention-days: 14
 
       - name: Report keynote benchmark profile instructions
-        if: failure() && steps.keynote_bench.outcome == 'failure'
+        if: always()
+        # if: failure() && steps.keynote_bench.outcome == 'failure'
         run: |
           {
             echo "## Keynote benchmark profile"
