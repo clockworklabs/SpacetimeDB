@@ -98,6 +98,11 @@ impl SnapshotWorker {
         }
     }
 
+    /// Create a new [SnapshotWorker] on the current Tokio runtime.
+    pub fn new_tokio_current(snapshot_repository: Arc<DynSnapshotRepo>, compression: Compression) -> Self {
+        Self::new(snapshot_repository, compression, Handle::tokio_current())
+    }
+
     /// Finish the initialization of [Self] by passing a [SnapshotDatabaseState],
     /// or replace the current [SnapshotDatabaseState] with a new one.
     ///
