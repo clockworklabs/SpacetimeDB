@@ -53,7 +53,10 @@ fn client_server_buggify_injects_deterministic_faults() {
     let run = run_buggified_client_server(404);
 
     assert_eq!(
-        run.responses.iter().map(|(id, r)| (*id, r.as_ref().map(|r| (r.id, r.value)))).collect::<Vec<_>>(),
+        run.responses
+            .iter()
+            .map(|(id, r)| (*id, r.as_ref().map(|r| (r.id, r.value))))
+            .collect::<Vec<_>>(),
         vec![
             (0, Some((0, 40))),
             (1, None),
@@ -75,11 +78,14 @@ fn client_server_buggify_injects_deterministic_faults() {
     }
 
     assert_eq!(
-        run.server_events.iter().map(|e| match e {
-            ServerEvent::Received { id, .. } => ("Received", *id),
-            ServerEvent::Dropped { id, .. } => ("Dropped", *id),
-            ServerEvent::Replied { id, .. } => ("Replied", *id),
-        }).collect::<Vec<_>>(),
+        run.server_events
+            .iter()
+            .map(|e| match e {
+                ServerEvent::Received { id, .. } => ("Received", *id),
+                ServerEvent::Dropped { id, .. } => ("Dropped", *id),
+                ServerEvent::Replied { id, .. } => ("Replied", *id),
+            })
+            .collect::<Vec<_>>(),
         vec![
             ("Received", 3),
             ("Received", 1),
