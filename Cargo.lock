@@ -10099,7 +10099,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "log",
- "spacetimedb 2.2.0",
+ "spacetimedb 2.4.0",
 ]
 
 [[package]]
