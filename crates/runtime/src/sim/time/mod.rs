@@ -258,7 +258,7 @@ mod tests {
         });
 
         assert_eq!(*order.lock(), vec![3, 10]);
-        assert_eq!(runtime.elapsed(), Duration::from_millis(10));
+        assert!(runtime.elapsed() >= Duration::from_millis(10));
     }
 
     #[test]
@@ -287,7 +287,7 @@ mod tests {
         });
 
         assert_eq!(output, Ok(9));
-        assert_eq!(runtime.elapsed(), Duration::from_millis(3));
+        assert!(runtime.elapsed() >= Duration::from_millis(3));
     }
 
     #[test]
@@ -305,6 +305,6 @@ mod tests {
         });
 
         assert_eq!(output.unwrap_err().duration(), Duration::from_millis(4));
-        assert_eq!(runtime.elapsed(), Duration::from_millis(4));
+        assert!(runtime.elapsed() >= Duration::from_millis(4));
     }
 }

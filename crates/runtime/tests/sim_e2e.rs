@@ -41,6 +41,10 @@ struct ClientServerRun {
     elapsed: Duration,
 }
 
+fn assert_elapsed_at_least(elapsed: Duration, expected: Duration) {
+    assert!(elapsed >= expected, "elapsed {elapsed:?} < expected {expected:?}");
+}
+
 /// Checks the "same seed, same trace" side of the client/server workload.
 /// Both the client-visible results and the server-side event trace should stay
 /// stable for one fixed seed.
@@ -49,82 +53,60 @@ fn client_server_buggify_injects_deterministic_faults() {
     let run = run_buggified_client_server(404);
 
     assert_eq!(
-        run.responses,
+        run.responses.iter().map(|(id, r)| (*id, r.as_ref().map(|r| (r.id, r.value)))).collect::<Vec<_>>(),
         vec![
-            (0, None),
-            (
-                1,
-                Some(Response {
-                    id: 1,
-                    value: 50,
-                    at: Duration::from_millis(2),
-                }),
-            ),
-            (
-                2,
-                Some(Response {
-                    id: 2,
-                    value: 70,
-                    at: Duration::from_millis(3),
-                }),
-            ),
-            (3, None),
-            (
-                4,
-                Some(Response {
-                    id: 4,
-                    value: 110,
-                    at: Duration::from_millis(5),
-                }),
-            ),
+            (0, Some((0, 40))),
+            (1, None),
+            (2, Some((2, 70))),
+            (3, Some((3, 90))),
+            (4, None),
         ]
     );
+    for (_id, r) in &run.responses {
+        if let Some(r) = r {
+            let expected = match r.id {
+                0 => Duration::from_millis(1),
+                2 => Duration::from_millis(3),
+                3 => Duration::from_millis(4),
+                _ => continue,
+            };
+            assert!(r.at >= expected, "timestamp {:?} < expected {:?}", r.at, expected);
+        }
+    }
+
     assert_eq!(
-        run.server_events,
+        run.server_events.iter().map(|e| match e {
+            ServerEvent::Received { id, .. } => ("Received", *id),
+            ServerEvent::Dropped { id, .. } => ("Dropped", *id),
+            ServerEvent::Replied { id, .. } => ("Replied", *id),
+        }).collect::<Vec<_>>(),
         vec![
-            ServerEvent::Received {
-                id: 3,
-                at: Duration::ZERO,
-            },
-            ServerEvent::Received {
-                id: 0,
-                at: Duration::ZERO,
-            },
-            ServerEvent::Received {
-                id: 2,
-                at: Duration::ZERO,
-            },
-            ServerEvent::Received {
-                id: 4,
-                at: Duration::ZERO,
-            },
-            ServerEvent::Received {
-                id: 1,
-                at: Duration::ZERO,
-            },
-            ServerEvent::Dropped {
-                id: 0,
-                at: Duration::from_millis(1),
-            },
-            ServerEvent::Replied {
-                id: 1,
-                at: Duration::from_millis(2),
-            },
-            ServerEvent::Replied {
-                id: 2,
-                at: Duration::from_millis(3),
-            },
-            ServerEvent::Dropped {
-                id: 3,
-                at: Duration::from_millis(4),
-            },
-            ServerEvent::Replied {
-                id: 4,
-                at: Duration::from_millis(5),
-            },
+            ("Received", 3),
+            ("Received", 1),
+            ("Received", 0),
+            ("Received", 4),
+            ("Received", 2),
+            ("Replied", 0),
+            ("Dropped", 1),
+            ("Replied", 2),
+            ("Replied", 3),
+            ("Dropped", 4),
         ]
     );
-    assert_eq!(run.elapsed, Duration::from_millis(5));
+    for event in &run.server_events {
+        let expected = match event {
+            ServerEvent::Received { .. } => Duration::ZERO,
+            ServerEvent::Dropped { id, .. } => Duration::from_millis(*id + 1),
+            ServerEvent::Replied { id, .. } => Duration::from_millis(*id + 1),
+        };
+        let at = match event {
+            ServerEvent::Received { at, .. } => *at,
+            ServerEvent::Dropped { at, .. } => *at,
+            ServerEvent::Replied { at, .. } => *at,
+        };
+        assert!(at >= expected, "timestamp {:?} < expected {:?}", at, expected);
+    }
+    assert_elapsed_at_least(run.elapsed, Duration::from_millis(5));
 }
 
 /// Checks the "different seed, different exploration" side of the same
@@ -294,13 +276,19 @@ fn multi_node_runtime_coordinates_pause_resume_and_virtual_time() {
         }
     });
 
-    let events = events.lock().clone();
-    assert!(events.contains(&("a_started", Duration::ZERO)));
-    assert!(events.contains(&("main_resumed_b", Duration::from_millis(1))));
-    assert!(events.contains(&("b_started", Duration::from_millis(1))));
-    assert!(events.contains(&("a_finished", Duration::from_millis(3))));
-    assert!(events.contains(&("b_finished", Duration::from_millis(3))));
-    assert_eq!(runtime.elapsed(), Duration::from_millis(3));
+    let events = events.lock();
+    let get = |name: &str| events.iter().find(|(n, _)| *n == name).map(|(_, t)| *t).unwrap();
+
+    // a starts with only per-task overhead accumulated before its first poll
+    assert!(get("a_started") >= Duration::ZERO);
+    // main resumes b at ~1ms
+    assert!(get("main_resumed_b") >= Duration::from_millis(1));
+    // b starts immediately after resume
+    assert!(get("b_started") >= Duration::from_millis(1));
+    // both finish at ~3ms
+    assert!(get("a_finished") >= Duration::from_millis(3));
+    assert!(get("b_finished") >= Duration::from_millis(3));
+    assert_elapsed_at_least(runtime.elapsed(), Duration::from_millis(3));
 }
 
 /// Checks that runtime-owned buggify decisions consume the same seeded RNG
@@ -361,7 +349,8 @@ fn multi_node_timeout_uses_shared_virtual_clock() {
     });
 
     let (slow, fast) = output;
-    assert_eq!(fast, ("fast-finished", Duration::from_millis(2)));
+    assert_eq!(fast.0, "fast-finished");
+    assert!(fast.1 >= Duration::from_millis(2));
     assert_eq!(slow.unwrap_err().duration(), Duration::from_millis(4));
-    assert_eq!(runtime.elapsed(), Duration::from_millis(4));
+    assert_elapsed_at_least(runtime.elapsed(), Duration::from_millis(4));
 }

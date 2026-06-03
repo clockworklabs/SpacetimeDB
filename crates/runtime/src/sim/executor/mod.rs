@@ -515,8 +515,11 @@ impl Executor {
                 record.state.paused_queue.lock().push(runnable);
                 continue;
             }
-            // TODO: Do some time advance here too
             runnable.run();
+            // Advance virtual time by 100ns–1μs per task poll to model execution cost.
+            // Using the runtime RNG keeps overhead deterministic by seed.
+            let nanos = 100 + (self.rng.next_u64() % 901);
+            self.time.advance(Duration::from_nanos(nanos));
         }
     }
 
