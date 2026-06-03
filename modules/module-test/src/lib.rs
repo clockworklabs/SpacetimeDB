@@ -295,7 +295,7 @@ pub fn list_over_age(ctx: &ReducerContext, age: u8) {
 
 #[spacetimedb::reducer]
 fn log_module_identity(ctx: &ReducerContext) {
-    log::info!("Module identity: {}", ctx.identity());
+    log::info!("Module identity: {}", ctx.database_identity());
 }
 
 #[spacetimedb::reducer]
@@ -508,7 +508,7 @@ fn test_btree_index_args(ctx: &ReducerContext) {
 #[spacetimedb::reducer]
 fn assert_caller_identity_is_module_identity(ctx: &ReducerContext) {
     let caller = ctx.sender();
-    let owner = ctx.identity();
+    let owner = ctx.database_identity();
     if caller != owner {
         panic!("Caller {caller} is not the owner {owner}");
     } else {

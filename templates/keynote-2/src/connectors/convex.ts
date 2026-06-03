@@ -3,14 +3,6 @@ import type { RpcConnector } from '../core/connectors.ts';
 export default function convex(url: string): RpcConnector {
   if (!url) throw new Error('CONVEX_URL not set');
 
-  function isWriteConflict(msg: unknown): boolean {
-    if (typeof msg !== 'string') return false;
-    return (
-      msg.includes('Documents read from or written to the') &&
-      msg.includes('while this mutation was being run')
-    );
-  }
-
   async function queryConvex(path: string, args: any) {
     const res = await fetch(`${url}/api/query?format=json`, {
       method: 'POST',
@@ -36,53 +28,31 @@ export default function convex(url: string): RpcConnector {
   }
 
   async function mutationConvex(path: string, args: any) {
-    const MAX_RETRIES = 32;
-    const BASE_DELAY_MS = 0.1;
-    const MAX_DELAY_MS = 100;
+    const res = await fetch(`${url}/api/mutation?format=json`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path, args }),
+    });
 
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      const res = await fetch(`${url}/api/mutation?format=json`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ path, args }),
-      });
+    let json: any = {};
+    try {
+      json = await res.json();
+    } catch {}
 
-      let json: any = {};
-      try {
-        json = await res.json();
-      } catch {}
-
-      const ok = res.ok && json.status === 'success';
-      const msgRaw =
-        json?.errorMessage ??
-        json?.message ??
-        `HTTP ${res.status} ${res.statusText}`;
-      const msg = String(msgRaw);
-      const writeConflict = isWriteConflict(msg);
-
-      if (ok) {
-        return json.value;
-      }
-
-      if (writeConflict && attempt < MAX_RETRIES) {
-        const base = BASE_DELAY_MS * 2 ** attempt;
-        const delay =
-          Math.min(MAX_DELAY_MS, base) + Math.floor(Math.random() * 10);
-        await new Promise((r) => setTimeout(r, delay));
-        continue;
-      }
-
-      throw new Error(`convex mutation ${path} failed: ${msg}`);
+    if (res.ok && json.status === 'success') {
+      return json.value;
     }
 
-    throw new Error(
-      `convex mutation ${path} failed after ${MAX_RETRIES} retries due to write conflicts`,
-    );
+    const msg =
+      json?.errorMessage ??
+      json?.message ??
+      `HTTP ${res.status} ${res.statusText}`;
+
+    throw new Error(`convex mutation ${path} failed: ${msg}`);
   }
 
   const root: RpcConnector = {
     name: 'convex',
-    maxInflightPerWorker: 16,
 
     async open() {},
     async close() {},

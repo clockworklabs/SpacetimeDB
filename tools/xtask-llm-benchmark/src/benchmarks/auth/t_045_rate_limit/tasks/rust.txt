@@ -1,0 +1,25 @@
+Write a SpacetimeDB backend module in Rust that enforces per-identity rate limiting.
+
+TABLES
+- rate_limit
+  - Struct: RateLimit
+  - private table
+  - Fields:
+    - identity: Identity (primary key)
+    - last_call_us: i64  (microsecond timestamp of the last allowed call)
+
+- action_log
+  - Struct: ActionLog
+  - public table
+  - Fields:
+    - id: u64 (primary key, auto_inc)
+    - identity: Identity
+    - payload: String
+
+REDUCERS
+- limited_action(ctx, payload: String)
+  - Get the current time in microseconds as i64: ctx.timestamp.to_micros_since_unix_epoch()
+  - Look up the RateLimit row for ctx.sender
+  - If a row exists and (now - last_call_us) < 1_000_000, panic with "rate limited"
+  - Insert or update the RateLimit row with last_call_us = now
+  - Insert an ActionLog row with identity = ctx.sender and the given payload, id = 0 for auto_inc
