@@ -111,13 +111,6 @@ pub enum PendingSchemaChange {
     /// If adding this index caused the pointer map to be removed,
     /// it will be present here.
     IndexAdded(TableId, IndexId, Option<PointerMap>),
-    /// The source-name alias of the index with [`IndexId`] changed.
-    /// The old alias is stored for rollback.
-    IndexAlterSourceName(
-        TableId,
-        IndexId,
-        Option<spacetimedb_sats::raw_identifier::RawIdentifier>,
-    ),
     /// The [`Table`] with [`TableId`] was removed.
     TableRemoved(TableId, Table),
     /// The table with [`TableId`] was added.
@@ -151,9 +144,6 @@ impl MemoryUsage for PendingSchemaChange {
             }
             Self::IndexAdded(table_id, index_id, pointer_map) => {
                 table_id.heap_usage() + index_id.heap_usage() + pointer_map.heap_usage()
-            }
-            Self::IndexAlterSourceName(table_id, index_id, alias) => {
-                table_id.heap_usage() + index_id.heap_usage() + alias.heap_usage()
             }
             Self::TableRemoved(table_id, table) => table_id.heap_usage() + table.heap_usage(),
             Self::TableAdded(table_id) => table_id.heap_usage(),

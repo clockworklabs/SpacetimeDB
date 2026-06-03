@@ -59,10 +59,6 @@ fn format_step<F: MigrationFormatter>(
             let index_info = extract_index_info(*index, plan.old)?;
             f.format_index(&index_info, Action::Removed)
         }
-        AutoMigrateStep::ChangeIndexSourceName(index) => {
-            let index_info = extract_index_info(*index, plan.new)?;
-            f.format_index(&index_info, Action::Changed)
-        }
         AutoMigrateStep::RemoveConstraint(constraint) => {
             let constraint_info = extract_constraint_info(*constraint, plan.old)?;
             f.format_constraint(&constraint_info, Action::Removed)

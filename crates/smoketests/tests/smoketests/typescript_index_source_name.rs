@@ -1,8 +1,8 @@
 use spacetimedb_smoketests::{random_string, require_local_server, require_pnpm, Smoketest};
 
-const TYPESCRIPT_MODULE_V1: &str = r#"import { schema, table, t } from "spacetimedb/server";
+const TYPESCRIPT_MODULE_WITHOUT_NEW_COLUMNS: &str = r#"import { schema, table, t } from "spacetimedb/server";
 
-const appUsers = table(
+const users = table(
   { name: "users", public: false },
   {
     id: t.u64().primaryKey().autoInc(),
@@ -12,7 +12,7 @@ const appUsers = table(
 );
 
 const spacetimedb = schema({
-  appUsers,
+  users,
 });
 export default spacetimedb;
 
@@ -22,7 +22,7 @@ export const insert_user = spacetimedb.reducer(
     emailAddress: t.string(),
   },
   (ctx, { name, emailAddress }) => {
-    ctx.db.appUsers.insert({
+    ctx.db.users.insert({
       id: 0n,
       name,
       emailAddress,
@@ -33,7 +33,7 @@ export const insert_user = spacetimedb.reducer(
 
 const TYPESCRIPT_MODULE_WITH_NEW_COLUMNS: &str = r#"import { schema, table, t } from "spacetimedb/server";
 
-const appUsers = table(
+const users = table(
   { name: "users", public: false },
   {
     id: t.u64().primaryKey().autoInc(),
@@ -45,7 +45,7 @@ const appUsers = table(
 );
 
 const spacetimedb = schema({
-  appUsers,
+  users,
 });
 export default spacetimedb;
 
@@ -53,7 +53,7 @@ export const find_user_by_email = spacetimedb.reducer(
   { emailAddress: t.string() },
   (ctx, { emailAddress }) => {
     let count = 0;
-    for (const _row of ctx.db.appUsers.emailAddress.filter(emailAddress)) {
+    for (const _row of ctx.db.users.emailAddress.filter(emailAddress)) {
       count += 1;
     }
     console.info(`matched ${count}`);
@@ -64,38 +64,10 @@ export const find_users_by_active_status = spacetimedb.reducer(
   { isActive: t.bool() },
   (ctx, { isActive }) => {
     let count = 0;
-    for (const _row of ctx.db.appUsers.isActive.filter(isActive)) {
+    for (const _row of ctx.db.users.isActive.filter(isActive)) {
       count += 1;
     }
     console.info(`matched active users ${count}`);
-  },
-);
-"#;
-
-const TYPESCRIPT_MODULE_V2_RENAMED_ACCESSOR: &str = r#"import { schema, table, t } from "spacetimedb/server";
-
-const renamedUsers = table(
-  { name: "users", public: false },
-  {
-    id: t.u64().primaryKey().autoInc(),
-    name: t.string(),
-    emailAddress: t.string().index("btree"),
-  },
-);
-
-const spacetimedb = schema({
-  renamedUsers,
-});
-export default spacetimedb;
-
-export const find_user_by_email = spacetimedb.reducer(
-  { emailAddress: t.string() },
-  (ctx, { emailAddress }) => {
-    let count = 0;
-    for (const _row of ctx.db.renamedUsers.emailAddress.filter(emailAddress)) {
-      count += 1;
-    }
-    console.info(`matched ${count}`);
   },
 );
 "#;
@@ -109,7 +81,11 @@ fn test_typescript_add_optional_columns() {
     let module_name = format!("typescript-add-optional-columns-{}", random_string());
 
     let database_identity = test
-        .publish_typescript_module_source("typescript-add-optional-columns-v1", &module_name, TYPESCRIPT_MODULE_V1)
+        .publish_typescript_module_source(
+            "typescript-add-optional-columns-v1",
+            &module_name,
+            TYPESCRIPT_MODULE_WITHOUT_NEW_COLUMNS,
+        )
         .unwrap();
 
     test.call("insert_user", &["Alice", "alice@example.com"]).unwrap();
@@ -126,29 +102,4 @@ fn test_typescript_add_optional_columns() {
 
     test.call("find_user_by_email", &["alice@example.com"]).unwrap();
     test.call("find_users_by_active_status", &["false"]).unwrap();
-}
-
-#[test]
-fn test_typescript_change_index_source_name() {
-    require_pnpm!();
-    require_local_server!();
-
-    let mut test = Smoketest::builder().autopublish(false).build();
-    let module_name = format!("typescript-change-source-name-{}", random_string());
-
-    let database_identity = test
-        .publish_typescript_module_source("typescript-change-source-name-v1", &module_name, TYPESCRIPT_MODULE_V1)
-        .unwrap();
-
-    test.call("insert_user", &["Alice", "alice@example.com"]).unwrap();
-
-    test.publish_typescript_module_source_clear(
-        "typescript-change-source-name-v2",
-        &database_identity,
-        TYPESCRIPT_MODULE_V2_RENAMED_ACCESSOR,
-        false,
-    )
-    .unwrap();
-
-    test.call("find_user_by_email", &["alice@example.com"]).unwrap();
 }

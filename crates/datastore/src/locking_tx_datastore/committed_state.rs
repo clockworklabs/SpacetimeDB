@@ -707,18 +707,6 @@ impl CommittedState {
                 table.with_mut_schema(|s| s.remove_index(index_id));
                 self.index_id_map.remove(&index_id);
             }
-            // An index alias/source-name changed. Change it back.
-            IndexAlterSourceName(table_id, index_id, old_alias) => {
-                let table = self.tables.get_mut(&table_id)?;
-                let mut index_schema = table
-                    .get_schema()
-                    .indexes
-                    .iter()
-                    .find(|x| x.index_id == index_id)?
-                    .clone();
-                index_schema.alias = old_alias;
-                table.with_mut_schema(|s| s.update_index(index_schema));
-            }
             // A table was removed. Add it back.
             TableRemoved(table_id, table) => {
                 let is_view_table = table.schema.is_view();

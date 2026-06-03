@@ -209,35 +209,10 @@ fn auto_migrate_database(
                     .indexes
                     .iter()
                     .find(|index| index.index_name[..] == index_name[..])
-                    .ok_or_else(|| anyhow::anyhow!("Index `{index_name}` not found in table `{}`", table_def.name))?;
+                    .unwrap();
 
                 log!(logger, "Dropping index `{}` on table `{}`", index_name, table_def.name);
                 stdb.drop_index(tx, index_schema.index_id)?;
-            }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeIndexSourceName(index_name) => {
-                let old_table_def = plan.old.stored_in_table_def(index_name).unwrap();
-                let new_table_def = plan.new.stored_in_table_def(index_name).unwrap();
-                let new_index_def = new_table_def.indexes.get(index_name).unwrap();
-
-                let table_id = stdb.table_id_from_name_mut(tx, &old_table_def.name)?.unwrap();
-                let table_schema = stdb.schema_for_table_mut(tx, table_id)?;
-                let index_schema = table_schema
-                    .indexes
-                    .iter()
-                    .find(|index| index.index_name[..] == index_name[..])
-                    .ok_or_else(|| {
-                        anyhow::anyhow!("Index `{index_name}` not found in table `{}`", old_table_def.name)
-                    })?;
-
-                log!(
-                    logger,
-                    "Changing index source name for `{}` on table `{}` from `{}` to `{}`",
-                    index_name,
-                    old_table_def.name,
-                    index_schema.alias.as_deref().unwrap_or(""),
-                    new_index_def.source_name,
-                );
-                stdb.alter_index_source_name(tx, index_schema.index_id, new_index_def.source_name.clone())?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveConstraint(constraint_name) => {
                 let table_def = plan.old.stored_in_table_def(constraint_name).unwrap();
@@ -365,13 +340,9 @@ mod test {
         host::module_host::create_table_from_def,
     };
     use spacetimedb_datastore::locking_tx_datastore::PendingSchemaChange;
-    use spacetimedb_lib::db::raw_def::{
-        v10::{ExplicitNames, RawModuleDefV10Builder},
-        v9::{btree, RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess},
-    };
-    use spacetimedb_sats::{product, raw_identifier::RawIdentifier, AlgebraicType, AlgebraicType::U64, ProductType};
-    use spacetimedb_schema::auto_migrate::{ponder_migrate, AutoMigrateStep, MigratePlan};
-    use spacetimedb_schema::def::ModuleDef;
+    use spacetimedb_lib::db::raw_def::v9::{btree, RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess};
+    use spacetimedb_sats::{product, AlgebraicType, AlgebraicType::U64};
+    use spacetimedb_schema::{auto_migrate::ponder_migrate, def::ModuleDef};
 
     struct TestLogger;
     impl UpdateLogger for TestLogger {
@@ -449,110 +420,6 @@ mod test {
             tx.pending_schema_changes(),
             [PendingSchemaChange::IndexAdded(t_id, idx_b_id, None)]
         );
-
-        Ok(())
-    }
-
-    #[test]
-    fn update_db_change_index_source_name_updates_lookup_and_persists() -> anyhow::Result<()> {
-        let auth_ctx = AuthCtx::for_testing();
-        let stdb = TestDB::durable()?;
-
-        fn module_def(table_source_name: &str, index_source_name: &str) -> ModuleDef {
-            let mut builder = RawModuleDefV10Builder::new();
-            builder
-                .build_table_with_new_type(
-                    table_source_name.to_owned(),
-                    ProductType::from([("id", U64), ("emailAddress", AlgebraicType::String)]),
-                    true,
-                )
-                .with_access(TableAccess::Public)
-                .with_index(btree(1), index_source_name.to_owned(), "emailAddress")
-                .finish();
-
-            if table_source_name != "users" {
-                let mut explicit_names = ExplicitNames::default();
-                explicit_names.insert_table(table_source_name.to_owned(), "users");
-                builder.add_explicit_names(explicit_names);
-            }
-
-            builder
-                .finish()
-                .try_into()
-                .expect("builder should create a valid database definition")
-        }
-
-        let old_source_name = "users_emailAddress_idx_btree";
-        let new_source_name = "appUsers_emailAddress_idx_btree";
-        let old = module_def("users", old_source_name);
-        let new = module_def("appUsers", new_source_name);
-
-        let mut tx = begin_mut_tx(&stdb);
-        for def in old.tables() {
-            create_table_from_def(&stdb, &mut tx, &old, def)?;
-        }
-        stdb.commit_tx(tx)?;
-
-        let tx = begin_mut_tx(&stdb);
-        let table_id = stdb
-            .table_id_from_name_mut(&tx, "users")?
-            .expect("there should be a table named users");
-        let table_schema = stdb.schema_for_table_mut(&tx, table_id)?;
-        let index_schema = table_schema
-            .indexes
-            .first()
-            .expect("there should be a single index")
-            .clone();
-        let canonical_index_name = index_schema.index_name.to_string();
-        let index_id = index_schema.index_id;
-        assert_eq!(stdb.index_id_from_name_mut(&tx, old_source_name)?, Some(index_id));
-        assert_eq!(stdb.index_id_from_name_mut(&tx, new_source_name)?, None);
-        assert_eq!(stdb.index_id_from_name_mut(&tx, &canonical_index_name)?, Some(index_id));
-        drop(tx);
-
-        let MigratePlan::Auto(plan) = ponder_migrate(&old, &new)? else {
-            panic!("expected automatic migration");
-        };
-        let index_name = RawIdentifier::new(canonical_index_name.as_str());
-        assert!(
-            plan.steps
-                .contains(&AutoMigrateStep::ChangeIndexSourceName(&index_name)),
-            "plan steps: {:?}",
-            plan.steps
-        );
-        assert!(
-            !plan.steps.contains(&AutoMigrateStep::RemoveIndex(&index_name)),
-            "plan steps: {:?}",
-            plan.steps
-        );
-        assert!(
-            !plan.steps.contains(&AutoMigrateStep::AddIndex(&index_name)),
-            "plan steps: {:?}",
-            plan.steps
-        );
-        let mut tx = begin_mut_tx(&stdb);
-        let res = update_database(&stdb, &mut tx, auth_ctx, MigratePlan::Auto(plan), &TestLogger)?;
-        assert!(matches!(res, UpdateResult::Success));
-
-        assert_eq!(stdb.index_id_from_name_mut(&tx, old_source_name)?, None);
-        assert_eq!(stdb.index_id_from_name_mut(&tx, new_source_name)?, Some(index_id));
-        assert_eq!(stdb.index_id_from_name_mut(&tx, &canonical_index_name)?, Some(index_id));
-        assert!(
-            tx.pending_schema_changes().iter().any(|change| matches!(
-                change,
-                PendingSchemaChange::IndexAlterSourceName(tid, iid, Some(old_alias))
-                    if *tid == table_id && *iid == index_id && old_alias.as_ref() == old_source_name
-            )),
-            "pending schema changes: {:?}",
-            tx.pending_schema_changes()
-        );
-        stdb.commit_tx(tx)?;
-
-        let stdb = stdb.reopen()?;
-        let tx = begin_mut_tx(&stdb);
-        assert_eq!(stdb.index_id_from_name_mut(&tx, old_source_name)?, None);
-        assert_eq!(stdb.index_id_from_name_mut(&tx, new_source_name)?, Some(index_id));
-        assert_eq!(stdb.index_id_from_name_mut(&tx, &canonical_index_name)?, Some(index_id));
 
         Ok(())
     }
