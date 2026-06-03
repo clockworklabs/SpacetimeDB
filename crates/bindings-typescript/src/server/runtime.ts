@@ -365,6 +365,7 @@ type FlatMountDispatch = {
   dbView_: DbView<any> | undefined;
   /** e.g. "alias." for a mount with namespace alias "alias" */
   namePrefix: string;
+  subDispatches: MountedDispatchInfo[];
 };
 
 function flattenMountDispatches(
@@ -385,6 +386,7 @@ function flattenMountDispatches(
       typespace: d.typespace,
       dbView_: undefined,
       namePrefix,
+      subDispatches: d.subDispatches,
     });
     result.push(...flattenMountDispatches(d.subDispatches, namePrefix));
   }
@@ -649,7 +651,8 @@ class ModuleHooksImpl implements ModuleHooks {
         connId,
         ts,
         args,
-        () => this.#dbView as DbView<any>
+        () => this.#dbView as DbView<any>,
+        this.#schema.mountedDispatchInfos
       );
     }
 
@@ -664,7 +667,8 @@ class ModuleHooksImpl implements ModuleHooks {
           connId,
           ts,
           args,
-          () => this.#getMountDbView(i)
+          () => this.#getMountDbView(i),
+          m.subDispatches
         );
       }
       offset += m.procedureFns.length;
@@ -683,7 +687,8 @@ class ModuleHooksImpl implements ModuleHooks {
     const handler = moduleCtx.httpHandlers[id];
     const ctx = new HandlerContextImpl(
       new Timestamp(timestamp),
-      () => this.#dbView
+      () => this.#dbView,
+      this.#schema.mountedDispatchInfos
     );
     const requestMetadata = HttpRequest.deserialize(new BinaryReader(request));
     const response = callUserFunction(
@@ -710,14 +715,18 @@ class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
   #uuidCounter: { value: number } | undefined;
   #random: Random | undefined;
   #dbView: () => DbView<any>;
+  #dispatches: MountedDispatchInfo[];
+  #asViews: object | undefined;
 
   readonly http = httpClient;
 
   constructor(
     readonly timestamp: Timestamp,
-    dbView: () => DbView<any>
+    dbView: () => DbView<any>,
+    dispatches: MountedDispatchInfo[] = []
   ) {
     this.#dbView = dbView;
+    this.#dispatches = dispatches;
   }
 
   get identity() {
@@ -728,10 +737,20 @@ class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
     return (this.#random ??= makeRandom(this.timestamp));
   }
 
+  get as() {
+    return (this.#asViews ??= buildHandlerAliasCtxMap(this, this.#dispatches, '')) as any;
+  }
+
   withTx<T>(body: (ctx: any) => T): T {
+    const dispatches = this.#dispatches;
     return runWithTx(
-      timestamp =>
-        new ReducerCtxImpl(Identity.zero(), timestamp, null, this.#dbView()),
+      timestamp => {
+        const tx = new ReducerCtxImpl(Identity.zero(), timestamp, null, this.#dbView());
+        if (dispatches.length > 0) {
+          tx.as = buildAliasCtxMap(tx, dispatches, '') as any;
+        }
+        return tx;
+      },
       body
     );
   }
@@ -793,6 +812,116 @@ function buildAliasCtxMap(
       buildAliasCtx(parent, d, parentPrefix + d.namespace + '.'),
     ]))
   );
+}
+
+function buildHandlerAliasCtx(
+  parent: HandlerContextImpl,
+  dispatch: MountedDispatchInfo,
+  namePrefix: string
+): object {
+  // nsDb is built lazily inside withTx so that sys.table_id_from_name is called
+  // only after a transaction has been started (sys.procedure_start_mut_tx).
+  let nsDb_: DbView<any> | undefined;
+  const subAs = buildHandlerAliasCtxMap(parent, dispatch.subDispatches, namePrefix);
+  return {
+    get timestamp() { return parent.timestamp; },
+    get http()      { return parent.http; },
+    get identity()  { return parent.identity; },
+    get random()    { return parent.random; },
+    as: subAs,
+    withTx(body: any) {
+      return runWithTx(
+        (ts: Timestamp) => new ReducerCtxImpl(
+          Identity.zero(), ts, null,
+          (nsDb_ ??= buildDbViewForDispatch(dispatch, namePrefix) as DbView<any>)
+        ),
+        body
+      );
+    },
+    newUuidV4() { return parent.newUuidV4(); },
+    newUuidV7() { return parent.newUuidV7(); },
+  };
+}
+
+function buildHandlerAliasCtxMap(
+  parent: HandlerContextImpl,
+  dispatches: MountedDispatchInfo[],
+  parentPrefix: string
+): object {
+  return freeze(
+    Object.fromEntries(dispatches.map(d => [
+      d.namespace,
+      buildHandlerAliasCtx(parent, d, parentPrefix + d.namespace + '.'),
+    ]))
+  );
+}
+
+type ProcCtxRef = {
+  sender: Identity;
+  connectionId: ConnectionId | null;
+  timestamp: Timestamp;
+  get databaseIdentity(): Identity;
+  get identity(): Identity;
+  get http(): typeof httpClient;
+  get random(): Random;
+  newUuidV4(): Uuid;
+  newUuidV7(): Uuid;
+};
+
+function buildProcedureAliasCtx(
+  parent: ProcCtxRef,
+  dispatch: MountedDispatchInfo,
+  namePrefix: string
+): object {
+  // nsDb is built lazily inside withTx so that sys.table_id_from_name is called
+  // only after a transaction has been started (sys.procedure_start_mut_tx).
+  let nsDb_: DbView<any> | undefined;
+  const subAs = buildProcedureAliasCtxMap(parent, dispatch.subDispatches, namePrefix);
+  return {
+    get sender()           { return parent.sender; },
+    get databaseIdentity() { return parent.databaseIdentity; },
+    get identity()         { return parent.identity; },
+    get timestamp()        { return parent.timestamp; },
+    get connectionId()     { return parent.connectionId; },
+    get http()             { return parent.http; },
+    get random()           { return parent.random; },
+    as: subAs,
+    withTx(body: any) {
+      return runWithTx(
+        (ts: Timestamp) => new ReducerCtxImpl(
+          parent.sender, ts, parent.connectionId,
+          (nsDb_ ??= buildDbViewForDispatch(dispatch, namePrefix) as DbView<any>)
+        ),
+        body
+      );
+    },
+    newUuidV4() { return parent.newUuidV4(); },
+    newUuidV7() { return parent.newUuidV7(); },
+  };
+}
+
+export function buildProcedureAliasCtxMap(
+  parent: ProcCtxRef,
+  dispatches: MountedDispatchInfo[],
+  parentPrefix: string
+): object {
+  return freeze(
+    Object.fromEntries(dispatches.map(d => [
+      d.namespace,
+      buildProcedureAliasCtx(parent, d, parentPrefix + d.namespace + '.'),
+    ]))
+  );
+}
+
+/** Builds and assigns reducer-style alias views onto a freshly created TransactionCtx.
+ *  Must be called while inside a transaction (after sys.procedure_start_mut_tx). */
+export function assignTxAliasViews(
+  tx: InstanceType<typeof ReducerCtxImpl>,
+  dispatches: MountedDispatchInfo[]
+): void {
+  if (dispatches.length > 0) {
+    tx.as = buildAliasCtxMap(tx, dispatches, '') as any;
+  }
 }
 
 function makeTableView(

@@ -243,7 +243,7 @@ impl Lang for TypeScript {
                 if !is_reducer_invokable(reducer) {
                     continue;
                 }
-                let ns_path = mounted_fn_ns_path(prefix);
+                let ns_path = mounted_ns_path(prefix);
                 let module_name = reducer_module_name(&reducer.accessor_name);
                 let args_type = mounted_reducer_args_type_name(prefix, &reducer.accessor_name);
                 writeln!(out, "import {args_type} from \"./{ns_path}/{module_name}\";");
@@ -253,7 +253,7 @@ impl Lang for TypeScript {
             writeln!(out);
             writeln!(out, "// Import namespace procedure arg schemas");
             for (prefix, _, procedure) in &ns_procedures {
-                let ns_path = mounted_fn_ns_path(prefix);
+                let ns_path = mounted_ns_path(prefix);
                 let module_name = procedure_module_name(&procedure.accessor_name);
                 let args_type = mounted_procedure_args_type_name(prefix, &procedure.accessor_name);
                 writeln!(out, "import * as {args_type} from \"./{ns_path}/{module_name}\";");
@@ -1093,21 +1093,16 @@ fn procedure_module_name(procedure_name: &Identifier) -> String {
     procedure_name.deref().to_case(Case::Snake) + "_procedure"
 }
 
-/// Converts a dot-terminated table namespace like `"lib."` or `"lib.sublib."` to a path like `"lib"` or `"lib/sublib"`.
+/// Converts a dot-terminated namespace like `"lib."` or `"lib.sublib."` to a path like `"lib"` or `"lib/sublib"`.
 fn mounted_ns_path(namespace: &str) -> String {
     namespace.trim_end_matches('.').replace('.', "/")
 }
 
-/// Converts a slash-terminated reducer/procedure namespace like `"lib/"` or `"lib/sublib/"` to a path like `"lib"` or `"lib/sublib"`.
-fn mounted_fn_ns_path(prefix: &str) -> String {
-    prefix.trim_end_matches('/').to_string()
-}
-
 /// TypeScript import symbol for a mounted namespace reducer/procedure.
 /// Uses `_` separator to avoid colliding with root reducers/procedures sharing the same prefix.
-/// E.g. prefix="lib/", accessor_name="library_reducer" → "Lib_LibraryReducer"
+/// E.g. prefix="lib.", accessor_name="library_reducer" → "Lib_LibraryReducer"
 fn mounted_fn_type_name(prefix: &str, accessor_name: &str) -> String {
-    let ns_part = prefix.trim_end_matches('/').replace('/', "_").to_case(Case::Pascal);
+    let ns_part = prefix.trim_end_matches('.').replace('.', "_").to_case(Case::Pascal);
     format!("{}_{}", ns_part, accessor_name.to_case(Case::Pascal))
 }
 
@@ -1188,10 +1183,10 @@ fn emit_ns_tree(out: &mut Indenter, tree: &BTreeMap<String, NsTree>) {
     }
 }
 
-/// Build namespace tree for mounted reducers (uses `/` path separator).
+/// Build namespace tree for mounted reducers (uses `.` path separator).
 /// `flat_key` matches SDK's `accessorName = toCamelCase(wireName)`.
 /// SDK toCamelCase only splits on `_`/`-`, so `/` is kept verbatim:
-/// `"lib/library_reducer"` → `"lib/libraryReducer"`.  Bracket notation is required.
+/// `"lib.library_reducer"` → `"lib.libraryReducer"`.  Bracket notation is required.
 fn build_reducer_ns_tree<'a>(
     ns_reducers: &[(String, &'a ModuleDef, &'a ReducerDef)],
 ) -> BTreeMap<String, NsTree> {
@@ -1202,7 +1197,7 @@ fn build_reducer_ns_tree<'a>(
         }
         let flat_key = format!("{}{}", prefix, reducer.accessor_name.deref().to_case(Case::Camel));
         let local = reducer.accessor_name.deref().to_case(Case::Camel);
-        let segs: Vec<&str> = prefix.trim_end_matches('/').split('/').collect();
+        let segs: Vec<&str> = prefix.trim_end_matches('.').split('.').collect();
         if let Some((first, rest)) = segs.split_first() {
             tree.entry(first.to_string())
                 .or_insert_with(NsTree::new)
@@ -1212,7 +1207,7 @@ fn build_reducer_ns_tree<'a>(
     tree
 }
 
-/// Build namespace tree for mounted procedures (uses `/` path separator).
+/// Build namespace tree for mounted procedures (uses `.` path separator).
 fn build_procedure_ns_tree<'a>(
     ns_procedures: &[(String, &'a ModuleDef, &'a ProcedureDef)],
 ) -> BTreeMap<String, NsTree> {
@@ -1220,7 +1215,7 @@ fn build_procedure_ns_tree<'a>(
     for (prefix, _, procedure) in ns_procedures {
         let flat_key = format!("{}{}", prefix, procedure.accessor_name.deref().to_case(Case::Camel));
         let local = procedure.accessor_name.deref().to_case(Case::Camel);
-        let segs: Vec<&str> = prefix.trim_end_matches('/').split('/').collect();
+        let segs: Vec<&str> = prefix.trim_end_matches('.').split('.').collect();
         if let Some((first, rest)) = segs.split_first() {
             tree.entry(first.to_string())
                 .or_insert_with(NsTree::new)

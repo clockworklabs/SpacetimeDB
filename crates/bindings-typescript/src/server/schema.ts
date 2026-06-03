@@ -256,6 +256,7 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
     const rawDef = this.buildRawModuleDefV10(exports, {
       ignoreNonModuleExports: true,
     });
+    this.#ctx.resolveHttpRoutes();
     return {
       rawDef,
       dispatch: {

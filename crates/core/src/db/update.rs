@@ -53,7 +53,7 @@ pub fn update_database(
 
     // Build a map from full-name (namespaced) -> (owning_def, table_def) covering root and all 
     // mounted tables. Mounted tables are stored in the DB with prefixed names like
-    // "lib.library_procedure_timer", but `ModuleDef::table()` only has the root level.
+    // "lib.library_procedure_timer", but `ModuleDef::table()` only has the current level.
     // `all_tables_with_prefix()` returns the owning submodule alongside each def, which is also
     // needed so that `check_compatible` resolves column type refs against the correct
     // (sub)module typespace.
