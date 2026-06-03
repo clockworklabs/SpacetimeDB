@@ -68,7 +68,7 @@ Sometimes, you may need to authenticate your servers, APIs or other services tha
 interact with your SpacetimeDB database. OIDC tokens can also be used for this
 purpose, allowing secure communication between your services and SpacetimeDB.
 
-To authenticate your services, you have e few options depending on your OIDC provider:
+To authenticate your services, you have a few options depending on your OIDC provider:
 
 - **Client credentials flow**: Many OIDC providers support the client credentials
   flow, which allows your service to obtain an access token using its own
