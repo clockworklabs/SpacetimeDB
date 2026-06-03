@@ -133,14 +133,32 @@ fn create_nuget_config(sources: &[(String, PathBuf)], mappings: &[(String, Strin
 
 /// Override nuget config to use a local NuGet package on a .NET project.
 fn override_nuget_package(project_dir: &Path, package: &str, source_dir: &Path, build_subdir: &str) -> Result<()> {
+    override_nuget_package_from_project(project_dir, package, source_dir, None, build_subdir)
+}
+
+/// Override nuget config to use a local NuGet package built from a specific .NET project.
+fn override_nuget_package_from_project(
+    project_dir: &Path,
+    package: &str,
+    source_dir: &Path,
+    source_project: Option<&str>,
+    build_subdir: &str,
+) -> Result<()> {
     println!("Override {package}: {project_dir:?} with {source_dir:?}");
 
     // Make sure the local package is built
     let workspace = workspace_root();
     let repo_nuget_config = workspace.join("NuGet.Config");
+    let source_project_path = source_project.map(|project| source_dir.join(project));
     if repo_nuget_config.exists() {
-        let output = Command::new("dotnet")
-            .args(["restore", "--configfile", repo_nuget_config.to_str().unwrap()])
+        let mut command = Command::new("dotnet");
+        command.arg("restore");
+        if let Some(source_project_path) = &source_project_path {
+            command.arg(source_project_path);
+        }
+        let output = command
+            .arg("--configfile")
+            .arg(&repo_nuget_config)
             .current_dir(source_dir)
             .output()
             .context("Failed to run dotnet restore")?;
@@ -152,8 +170,13 @@ fn override_nuget_package(project_dir: &Path, package: &str, source_dir: &Path, 
             );
         }
 
-        let output = Command::new("dotnet")
-            .args(["pack", "-c", "Release", "--no-restore"])
+        let mut command = Command::new("dotnet");
+        command.arg("pack");
+        if let Some(source_project_path) = &source_project_path {
+            command.arg(source_project_path);
+        }
+        let output = command
+            .args(["-c", "Release", "--no-restore"])
             .current_dir(source_dir)
             .output()
             .context("Failed to run dotnet pack")?;
@@ -165,8 +188,13 @@ fn override_nuget_package(project_dir: &Path, package: &str, source_dir: &Path, 
             );
         }
     } else {
-        let output = Command::new("dotnet")
-            .args(["pack", "-c", "Release"])
+        let mut command = Command::new("dotnet");
+        command.arg("pack");
+        if let Some(source_project_path) = &source_project_path {
+            command.arg(source_project_path);
+        }
+        let output = command
+            .args(["-c", "Release"])
             .current_dir(source_dir)
             .output()
             .context("Failed to run dotnet pack")?;
@@ -637,10 +665,11 @@ log = "0.4"
                     &workspace.join("crates/bindings-csharp/BSATN.Runtime"),
                     "bin/Release",
                 )?;
-                override_nuget_package(
+                override_nuget_package_from_project(
                     client_path,
                     "SpacetimeDB.ClientSDK",
                     &workspace.join("sdks/csharp"),
+                    Some("SpacetimeDB.ClientSDK.csproj"),
                     "bin~/Release",
                 )?;
 

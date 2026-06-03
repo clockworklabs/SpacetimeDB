@@ -365,9 +365,9 @@ pub use spacetimedb_bindings_macro::settings;
 ///     // The following line would panic, since we use `insert` rather than `try_insert`.
 ///     // let result = ctx.db.country().insert(Country { code: "CN".into(), national_bird: "Blue Magpie".into() });
 ///
-///     // If we wanted to *update* the row for Australia, we can use the `update` method of `UniqueIndex`.
-///     // The following line will succeed:
-///     ctx.db.country().code().update(Country {
+///     // If we wanted to replace the row for Australia, we can delete it and insert the new row.
+///     assert!(ctx.db.country().code().delete("AU".to_string()));
+///     ctx.db.country().insert(Country {
 ///         code: "AU".into(), national_bird: "Australian Emu".into()
 ///     });
 /// }
@@ -1118,7 +1118,7 @@ impl ReducerContext {
     /// #[reducer]
     /// fn generate_uuid_v4(ctx: &ReducerContext) -> Result<(), Box<dyn std::error::Error>> {
     ///     let uuid = ctx.new_uuid_v4()?;
-    ///     log::info!(uuid);
+    ///     log::info!("{uuid}");
     ///     Ok(())
     /// }
     /// # }
@@ -1140,7 +1140,7 @@ impl ReducerContext {
     /// #[reducer]
     /// fn generate_uuid_v7(ctx: &ReducerContext) -> Result<(), Box<dyn std::error::Error>> {
     ///     let uuid = ctx.new_uuid_v7()?;
-    ///     log::info!(uuid);
+    ///     log::info!("{uuid}");
     ///     Ok(())
     /// }
     /// # }
@@ -1180,6 +1180,61 @@ impl Deref for TxContext {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+#[cfg(feature = "unstable")]
+fn try_with_tx<T, E>(body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
+    let abort = || {
+        crate::sys::procedure::procedure_abort_mut_tx()
+            .expect("should have a pending mutable anon tx as `procedure_start_mut_tx` preceded")
+    };
+
+    let run = || {
+        let timestamp = crate::sys::procedure::procedure_start_mut_tx()
+            .expect("holding `&mut HandlerContext`, so should not be in a tx already; called manually elsewhere?");
+        let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp);
+
+        // Use the internal auth context (no external caller identity).
+        let tx = ReducerContext::new(crate::Local {}, Identity::ZERO, None, timestamp);
+        let tx = TxContext(tx);
+
+        struct DoOnDrop<F: Fn()>(F);
+        impl<F: Fn()> Drop for DoOnDrop<F> {
+            fn drop(&mut self) {
+                (self.0)();
+            }
+        }
+        let abort_guard = DoOnDrop(abort);
+        let res = body(&tx);
+        core::mem::forget(abort_guard);
+        res
+    };
+
+    let mut res = run();
+
+    match res {
+        Ok(_) if crate::sys::procedure::procedure_commit_mut_tx().is_err() => {
+            log::warn!("committing anonymous transaction failed");
+            res = run();
+            match res {
+                Ok(_) => crate::sys::procedure::procedure_commit_mut_tx().expect("transaction retry failed again"),
+                Err(_) => abort(),
+            }
+        }
+        Ok(_) => {}
+        Err(_) => abort(),
+    }
+
+    res
+}
+
+#[cfg(feature = "unstable")]
+fn with_tx<T>(body: impl Fn(&TxContext) -> T) -> T {
+    use core::convert::Infallible;
+    match try_with_tx::<T, Infallible>(|tx| Ok(body(tx))) {
+        Ok(v) => v,
+        Err(e) => match e {},
     }
 }
 
@@ -1313,11 +1368,7 @@ impl ProcedureContext {
     /// This includes interior mutability through types like [`std::cell::Cell`].
     #[cfg(feature = "unstable")]
     pub fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
-        use core::convert::Infallible;
-        match self.try_with_tx::<T, Infallible>(|tx| Ok(body(tx))) {
-            Ok(v) => v,
-            Err(e) => match e {},
-        }
+        with_tx(body)
     }
 
     /// Acquire a mutable transaction
@@ -1351,61 +1402,7 @@ impl ProcedureContext {
     /// This includes interior mutability through types like [`std::cell::Cell`].
     #[cfg(feature = "unstable")]
     pub fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
-        let abort = || {
-            sys::procedure::procedure_abort_mut_tx()
-                .expect("should have a pending mutable anon tx as `procedure_start_mut_tx` preceded")
-        };
-
-        let run = || {
-            // Start the transaction.
-
-            use core::mem;
-            let timestamp = sys::procedure::procedure_start_mut_tx().expect(
-                "holding `&mut ProcedureContext`, so should not be in a tx already; called manually elsewhere?",
-            );
-            let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp);
-
-            // We've resumed, so let's do the work, but first prepare the context.
-            let tx = ReducerContext::new(Local {}, self.sender, self.connection_id, timestamp);
-            let tx = TxContext(tx);
-
-            // Guard the execution of `body` with a scope-guard that `abort`s on panic.
-            // Wasmtime now supports unwinding, so we need to protect against that.
-            // We're not using `scopeguard::guard` here to avoid an extra dependency.
-            struct DoOnDrop<F: Fn()>(F);
-            impl<F: Fn()> Drop for DoOnDrop<F> {
-                fn drop(&mut self) {
-                    (self.0)();
-                }
-            }
-            let abort_guard = DoOnDrop(abort);
-            let res = body(&tx);
-            // Defuse the bomb.
-            mem::forget(abort_guard);
-            res
-        };
-
-        let mut res = run();
-
-        // Commit or roll back?
-        match res {
-            Ok(_) if sys::procedure::procedure_commit_mut_tx().is_err() => {
-                // Tried to commit, but couldn't. Retry once.
-                log::warn!("committing anonymous transaction failed");
-                // NOTE(procedure,centril): there's no actual guarantee that `body`
-                // does the exact same as the time before, as the timestamps differ
-                // and due to interior mutability.
-                res = run();
-                match res {
-                    Ok(_) => sys::procedure::procedure_commit_mut_tx().expect("transaction retry failed again"),
-                    Err(_) => abort(),
-                }
-            }
-            Ok(_) => {}
-            Err(_) => abort(),
-        }
-
-        res
+        try_with_tx(body)
     }
 
     ///  Create a new random [`Uuid`] `v4` using the built-in RNG.
