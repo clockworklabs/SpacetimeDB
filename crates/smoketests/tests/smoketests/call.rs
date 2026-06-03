@@ -41,8 +41,8 @@ Here are some existing procedures:
 - return_person"
     );
     assert!(
-        expected.contains(stderr.trim()),
-        "Expected stderr to be contained in expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
+        stderr.trim().starts_with(&expected),
+        "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
         expected,
         stderr.trim()
     );
@@ -63,8 +63,8 @@ Here are some existing procedures:
 - return_person"
     );
     assert!(
-        expected.contains(stderr.trim()),
-        "Expected stderr to be contained in expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
+        stderr.trim().starts_with(&expected),
+        "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
         expected,
         stderr.trim()
     );
@@ -81,8 +81,8 @@ Error: No such reducer OR procedure `say_hell` for database `{identity}` resolvi
 A reducer with a similar name exists: `say_hello`"
     );
     assert!(
-        expected.contains(stderr.trim()),
-        "Expected stderr to be contained in expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
+        stderr.trim().starts_with(&expected),
+        "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
         expected,
         stderr.trim()
     );
@@ -99,8 +99,8 @@ Error: No such reducer OR procedure `return_perso` for database `{identity}` res
 A procedure with a similar name exists: `return_person`"
     );
     assert!(
-        expected.contains(stderr.trim()),
-        "Expected stderr to be contained in expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
+        stderr.trim().starts_with(&expected),
+        "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
         expected,
         stderr.trim()
     );
@@ -126,8 +126,8 @@ The database has no reducers.
 The database has no procedures."
     );
     assert!(
-        expected.contains(stderr.trim()),
-        "Expected stderr to be contained in expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
+        stderr.trim().starts_with(&expected),
+        "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
         expected,
         stderr.trim()
     );
@@ -204,8 +204,8 @@ Here are some existing procedures:
 ... (1 procedure not shown)"
     );
     assert!(
-        expected.contains(stderr.trim()),
-        "Expected stderr to be contained in expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
+        stderr.trim().starts_with(&expected),
+        "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
         expected,
         stderr.trim()
     );
