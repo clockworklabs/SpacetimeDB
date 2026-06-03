@@ -245,6 +245,7 @@ impl CompiledModule {
         let env = spacetimedb_standalone::StandaloneEnv::init(
             spacetimedb_standalone::StandaloneOptions {
                 db_config: config,
+                durability: Default::default(),
                 websocket: WebSocketOptions::default(),
                 wasm: Default::default(),
                 v8: Default::default(),

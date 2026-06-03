@@ -1,5 +1,5 @@
 #[cfg(feature = "unstable")]
-use crate::ProcedureContext;
+use crate::{http::HandlerContext, ProcedureContext};
 use crate::{rand, ReducerContext};
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
@@ -30,8 +30,7 @@ impl ReducerContext {
     ///
     /// ```no_run
     /// # #[cfg(target_arch = "wasm32")] mod demo {
-    /// use spacetimedb::{reducer, ReducerContext};
-    /// use rand::Rng;
+    /// use spacetimedb::{rand::Rng, reducer, ReducerContext};
     ///
     /// #[spacetimedb::reducer]
     /// fn rng_demo(ctx: &spacetimedb::ReducerContext) {
@@ -40,7 +39,7 @@ impl ReducerContext {
     ///
     ///     // Or, cache locally for reuse:
     ///     let mut rng = ctx.rng();
-    ///     let floats: Vec<f32> = rng.sample_iter(rand::distributions::Standard).collect();
+    ///     let floats: Vec<f32> = rng.sample_iter(spacetimedb::rand::distributions::Standard).collect();
     /// }
     /// # }
     /// ```
@@ -90,6 +89,31 @@ impl ProcedureContext {
     /// ```
     ///
     /// For more information, see [`StdbRng`] and [`rand::Rng`].
+    #[cfg(feature = "unstable")]
+    pub fn rng(&self) -> &StdbRng {
+        self.rng.get_or_init(|| StdbRng::seed_from_ts(self.timestamp))
+    }
+}
+
+#[cfg(feature = "unstable")]
+impl HandlerContext {
+    /// Generates a random value.
+    ///
+    /// Similar to [`rand::random()`], but using [`StdbRng`] instead.
+    ///
+    /// See also [`HandlerContext::rng()`].
+    #[cfg(feature = "unstable")]
+    pub fn random<T>(&self) -> T
+    where
+        Standard: Distribution<T>,
+    {
+        Standard.sample(&mut self.rng())
+    }
+
+    /// Retrieve the random number generator for this handler invocation,
+    /// seeded by the handler timestamp.
+    ///
+    /// If you only need a single random value, you can use [`HandlerContext::random()`].
     #[cfg(feature = "unstable")]
     pub fn rng(&self) -> &StdbRng {
         self.rng.get_or_init(|| StdbRng::seed_from_ts(self.timestamp))

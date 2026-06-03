@@ -216,6 +216,37 @@ int16_t __call_reducer__(
     BytesSource args,
     BytesSink error);
 
+STDB_EXPORT(__call_view__)
+int16_t __call_view__(
+    uint32_t id,
+    uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
+    BytesSource args,
+    BytesSink result);
+
+STDB_EXPORT(__call_view_anon__)
+int16_t __call_view_anon__(
+    uint32_t id,
+    BytesSource args,
+    BytesSink result);
+
+STDB_EXPORT(__call_procedure__)
+int16_t __call_procedure__(
+    uint32_t id,
+    uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
+    uint64_t conn_id_0, uint64_t conn_id_1,
+    uint64_t timestamp_microseconds,
+    BytesSource args_source,
+    BytesSink result_sink);
+
+STDB_EXPORT(__call_http_handler__)
+int16_t __call_http_handler__(
+    uint32_t id,
+    uint64_t timestamp_microseconds,
+    BytesSource request_source,
+    BytesSource request_body_source,
+    BytesSink response_sink,
+    BytesSink response_body_sink);
+
 // ========================================================================
 // WASI SHIMS
 // ========================================================================

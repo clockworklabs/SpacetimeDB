@@ -1,8 +1,10 @@
+use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::bsatn::Deserializer;
 use spacetimedb_lib::db::raw_def::v10::*;
 use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
 use spacetimedb_lib::de::DeserializeSeed as _;
+use spacetimedb_lib::http::character_is_acceptable_for_route_path;
 use spacetimedb_sats::{Typespace, WithTypespace};
 
 use crate::def::validate::v9::{
@@ -13,7 +15,6 @@ use crate::def::*;
 use crate::error::ValidationError;
 use crate::type_for_generate::ProductTypeDef;
 use crate::{def::validate::Result, error::TypeLocation};
-
 // Utitility struct to look up canonical names for tables, functions, and indexes based on the
 // explicit names provided in the `RawModuleDefV10`.
 #[derive(Default)]
@@ -81,12 +82,6 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .cloned()
         .map(ExplicitNamesLookup::new)
         .unwrap_or_default();
-    let mounts = def
-        .mounts()
-        .into_iter()
-        .flat_map(|mounts| mounts.iter().cloned())
-        .map(validate_mount)
-        .collect_all_errors::<Vec<_>>();
 
     // Original `typespace` needs to be preserved to be assign `accesor_name`s to columns.
     let typespace_with_accessor_names = typespace.clone();
@@ -140,6 +135,18 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         })
         // Collect into a `Vec` first to preserve duplicate names.
         // Later on, in `check_function_names_are_unique`, we'll transform this into an `IndexMap`.
+        .collect_all_errors::<Vec<_>>();
+
+    let http_handlers = def
+        .http_handlers()
+        .cloned()
+        .into_iter()
+        .flatten()
+        .map(|handler| {
+            validator
+                .validate_http_handler_def(handler)
+                .map(|handler_def| (handler_def.name.clone(), handler_def))
+        })
         .collect_all_errors::<Vec<_>>();
 
     let views = def
@@ -227,6 +234,19 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 .collect_all_errors::<Vec<_>>()
         })
         .unwrap_or_else(|| Ok(Vec::new()));
+
+    let http_handlers_and_routes = http_handlers.and_then(|handlers| {
+        let handlers = check_http_handler_names_are_unique(handlers)?;
+        let routes = def
+            .http_routes()
+            .cloned()
+            .into_iter()
+            .flatten()
+            .map(|route| validator.validate_http_route_def(route, &handlers))
+            .collect_all_errors::<Vec<_>>()?;
+        validate_http_routes_are_unique(&routes)?;
+        Ok((handlers, routes))
+    });
     // Combine all validation results
     let tables_types_reducers_procedures_views = (
         tables,
@@ -236,10 +256,11 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         views,
         schedules,
         lifecycle_validations,
+        http_handlers_and_routes,
     )
         .combine_errors()
         .and_then(
-            |(mut tables, types, reducers, procedures, views, schedules, lifecycles)| {
+            |(mut tables, types, reducers, procedures, views, schedules, lifecycles, http_handlers_and_routes)| {
                 let (mut reducers, mut procedures, mut views) =
                     check_function_names_are_unique(reducers, procedures, views)?;
                 // Attach lifecycles to their respective reducers
@@ -252,7 +273,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 change_scheduled_functions_and_lifetimes_visibility(&tables, &mut reducers, &mut procedures)?;
                 assign_query_view_primary_keys(&tables, &mut views);
 
-                Ok((tables, types, reducers, procedures, views))
+                Ok((tables, types, reducers, procedures, views, http_handlers_and_routes))
             },
         );
     let CoreValidator {
@@ -269,12 +290,14 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .map(|rls| (rls.sql.clone(), rls.to_owned()))
         .collect();
 
-    let (tables, types, reducers, procedures, views, mounts) = (tables_types_reducers_procedures_views, mounts)
-        .combine_errors()
-        .map(|((tables, types, reducers, procedures, views), mounts)| {
-            (tables, types, reducers, procedures, views, mounts)
-        })
-        .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
+    let (tables, types, reducers, procedures, views, http_handlers, http_routes) =
+        tables_types_reducers_procedures_views
+            .map(
+                |(tables, types, reducers, procedures, views, (http_handlers, http_routes))| {
+                    (tables, types, reducers, procedures, views, http_handlers, http_routes)
+                },
+            )
+            .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
 
     let typespace_for_generate = typespace_for_generate.finish();
 
@@ -290,16 +313,10 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         row_level_security_raw,
         lifecycle_reducers,
         procedures,
+        http_handlers,
+        http_routes,
         raw_module_def_version: RawModuleDefVersion::V10,
-        mounts,
     })
-}
-
-fn validate_mount(mount: RawModuleMountV10) -> Result<(String, ModuleDef)> {
-    Identifier::new(mount.namespace.clone().into())
-        .map_err(|error| ValidationErrors::from(ValidationError::IdentifierError { error }))?;
-
-    Ok((mount.namespace, validate(mount.module)?))
 }
 
 /// Change the visibility of scheduled functions and lifecycle reducers to Internal.
@@ -344,6 +361,53 @@ fn change_scheduled_functions_and_lifetimes_visibility(
     }
 
     Ok(())
+}
+
+fn validate_http_route_path(path: &RawIdentifier) -> Result<()> {
+    let path_str = path.as_ref();
+    if (!path_str.is_empty() && !path_str.starts_with('/'))
+        || !path_str.chars().all(character_is_acceptable_for_route_path)
+    {
+        return Err(ValidationError::InvalidHttpRoutePath { path: path.clone() }.into());
+    }
+    Ok(())
+}
+
+fn routes_overlap(a: &HttpRouteDef, b: &HttpRouteDef) -> bool {
+    if a.path != b.path {
+        return false;
+    }
+    matches!(a.method, MethodOrAny::Any) || matches!(b.method, MethodOrAny::Any) || a.method == b.method
+}
+
+fn validate_http_routes_are_unique(routes: &[HttpRouteDef]) -> Result<()> {
+    let mut errors = Vec::new();
+    for (idx, route) in routes.iter().enumerate() {
+        if routes.iter().take(idx).any(|existing| routes_overlap(existing, route)) {
+            errors.push(ValidationError::DuplicateHttpRoute {
+                path: RawIdentifier::new(route.path.as_ref()),
+                method: route.method.clone(),
+            });
+        }
+    }
+    ErrorStream::add_extra_errors(Ok(()), errors)
+}
+
+fn check_http_handler_names_are_unique(
+    handlers: Vec<(Identifier, HttpHandlerDef)>,
+) -> Result<IndexMap<Identifier, HttpHandlerDef>> {
+    let mut errors = vec![];
+    let mut handlers_map = IndexMap::with_capacity(handlers.len());
+
+    for (name, def) in handlers {
+        if handlers_map.contains_key(&name) {
+            errors.push(ValidationError::DuplicateHttpHandlerName { name });
+        } else {
+            handlers_map.insert(name, def);
+        }
+    }
+
+    ErrorStream::add_extra_errors(Ok(handlers_map), errors)
 }
 
 struct ModuleValidatorV10<'a> {
@@ -692,6 +756,46 @@ impl<'a> ModuleValidatorV10<'a> {
         })
     }
 
+    fn validate_http_handler_def(&mut self, handler_def: RawHttpHandlerDefV10) -> Result<HttpHandlerDef> {
+        let RawHttpHandlerDefV10 { source_name, .. } = handler_def;
+        let accessor_name = identifier(source_name.clone());
+        let name_result = self.core.resolve_function_ident(source_name);
+        let (name_result, accessor_name) = (name_result, accessor_name).combine_errors()?;
+        Ok(HttpHandlerDef {
+            name: name_result,
+            accessor_name,
+        })
+    }
+
+    fn validate_http_route_def(
+        &mut self,
+        route_def: RawHttpRouteDefV10,
+        handlers: &IndexMap<Identifier, HttpHandlerDef>,
+    ) -> Result<HttpRouteDef> {
+        let RawHttpRouteDefV10 {
+            handler_function,
+            method,
+            path,
+            ..
+        } = route_def;
+
+        validate_http_route_path(&path)?;
+
+        let handler_name = self.core.resolve_function_ident(handler_function.clone())?;
+        if !handlers.contains_key(&handler_name) {
+            return Err(ValidationError::MissingHttpHandler {
+                handler: handler_function,
+            }
+            .into());
+        }
+
+        Ok(HttpRouteDef {
+            handler_name,
+            method,
+            path: path.as_ref().into(),
+        })
+    }
+
     fn validate_view_def(&mut self, view_def: RawViewDefV10, typespace_with_accessor: &Typespace) -> Result<ViewDef> {
         let RawViewDefV10 {
             source_name: accessor_name,
@@ -900,11 +1004,10 @@ mod tests {
 
     use itertools::Itertools;
     use spacetimedb_data_structures::expect_error_matching;
-    use spacetimedb_lib::db::raw_def::v10::{
-        CaseConversionPolicy, RawModuleDefV10, RawModuleDefV10Builder, RawModuleDefV10Section, RawModuleMountV10,
-    };
+    use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, MethodOrAny, RawModuleDefV10Builder};
     use spacetimedb_lib::db::raw_def::v9::{btree, direct, hash};
     use spacetimedb_lib::db::raw_def::*;
+    use spacetimedb_lib::http::Method as HttpMethod;
     use spacetimedb_lib::ScheduleAt;
     use spacetimedb_primitives::{ColId, ColList, ColSet};
     use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, SumValue};
@@ -1278,44 +1381,6 @@ mod tests {
             &table[..] == "Bananas" &&
             &def[..] == "bananas_b_col_55_idx_btree" &&
             column == &55.into()
-        });
-    }
-
-    #[test]
-    fn validates_mounted_submodules_recursively() {
-        let mut mounted_builder = RawModuleDefV10Builder::new();
-        mounted_builder
-            .build_table_with_new_type("Sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
-            .finish();
-
-        let raw = RawModuleDefV10 {
-            sections: vec![RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
-                namespace: "authlib".to_string(),
-                module: mounted_builder.finish(),
-            }])],
-        };
-
-        let def: ModuleDef = raw.try_into().expect("mounted module should validate");
-        let mounts = def.mounts();
-
-        assert_eq!(mounts.len(), 1);
-        assert_eq!(mounts[0].0, "authlib");
-        assert!(mounts[0].1.table(&expect_identifier("sessions")).is_some());
-    }
-
-    #[test]
-    fn invalid_mount_namespace() {
-        let raw = RawModuleDefV10 {
-            sections: vec![RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
-                namespace: "".to_string(),
-                module: RawModuleDefV10::default(),
-            }])],
-        };
-
-        let result: Result<ModuleDef> = raw.try_into();
-
-        expect_error_matching!(result, ValidationError::IdentifierError { error } => {
-            error == &IdentifierError::Empty {}
         });
     }
 
@@ -1706,6 +1771,155 @@ mod tests {
         expect_error_matching!(result, ValidationError::DuplicateFunctionName { name } => {
             &name[..] == "foo"
         });
+    }
+
+    #[test]
+    fn duplicate_http_handler_names() {
+        let mut builder = RawModuleDefV10Builder::new();
+
+        builder.add_http_handler("handle");
+        builder.add_http_handler("handle");
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateHttpHandlerName { name } => {
+            name == &expect_identifier("handle")
+        });
+    }
+
+    #[test]
+    fn http_routes_same_path_and_method() {
+        let mut builder = RawModuleDefV10Builder::new();
+
+        builder.add_http_handler("handle");
+        builder.add_http_route("handle", MethodOrAny::Method(HttpMethod::Get), "/hook");
+        builder.add_http_route("handle", MethodOrAny::Method(HttpMethod::Get), "/hook");
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateHttpRoute { path, method } => {
+            path.as_ref() == "/hook" && *method == MethodOrAny::Method(HttpMethod::Get)
+        });
+    }
+
+    #[test]
+    fn http_routes_overlap_with_any() {
+        let mut builder = RawModuleDefV10Builder::new();
+
+        builder.add_http_handler("handle");
+        builder.add_http_route("handle", MethodOrAny::Any, "/hook");
+        builder.add_http_route("handle", MethodOrAny::Method(HttpMethod::Get), "/hook");
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateHttpRoute { path, method } => {
+            path.as_ref() == "/hook" && *method == MethodOrAny::Method(HttpMethod::Get)
+        });
+    }
+
+    #[test]
+    fn http_routes_invalid_paths() {
+        let mut builder = RawModuleDefV10Builder::new();
+
+        builder.add_http_handler("handle");
+        builder.add_http_route("handle", MethodOrAny::Any, "no-slash");
+        for path in [
+            "/Uppercase",
+            "/caf\u{e9}",
+            "/ampersand&",
+            "/dollar$",
+            "/plus+",
+            "/comma,",
+            "/colon:",
+            "/semicolon;",
+            "/equals=",
+            "/question?",
+            "/at@",
+            "/hash#",
+            "/space here",
+            "/less<",
+            "/greater>",
+            "/left[",
+            "/right]",
+            "/left-brace{",
+            "/right-brace}",
+            "/pipe|",
+            "/backslash\\",
+            "/caret^",
+            "/percent%",
+        ] {
+            builder.add_http_route("handle", MethodOrAny::Any, path);
+        }
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        if let Err(errs) = result {
+            let mut paths = errs
+                .iter()
+                .filter_map(|err| match err {
+                    ValidationError::InvalidHttpRoutePath { path } => Some(path.as_ref()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            paths.sort_unstable();
+
+            let mut expected = vec![
+                "no-slash",
+                "/Uppercase",
+                "/caf\u{e9}",
+                "/ampersand&",
+                "/dollar$",
+                "/plus+",
+                "/comma,",
+                "/colon:",
+                "/semicolon;",
+                "/equals=",
+                "/question?",
+                "/at@",
+                "/hash#",
+                "/space here",
+                "/less<",
+                "/greater>",
+                "/left[",
+                "/right]",
+                "/left-brace{",
+                "/right-brace}",
+                "/pipe|",
+                "/backslash\\",
+                "/caret^",
+                "/percent%",
+            ];
+            expected.sort_unstable();
+
+            assert_eq!(paths, expected);
+        } else {
+            panic!("expected invalid HTTP route path errors");
+        }
+    }
+
+    #[test]
+    fn http_routes_missing_handler() {
+        let mut builder = RawModuleDefV10Builder::new();
+
+        builder.add_http_route("missing", MethodOrAny::Any, "/hook");
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::MissingHttpHandler { handler } => {
+            handler.as_ref() == "missing"
+        });
+    }
+
+    #[test]
+    fn reducer_and_http_handler_can_share_name() {
+        let mut builder = RawModuleDefV10Builder::new();
+
+        builder.add_reducer("handle", ProductType::unit());
+        builder.add_http_handler("handle");
+
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        assert!(result.is_ok());
     }
 
     fn make_case_conversion_builder() -> (RawModuleDefV10Builder, AlgebraicTypeRef) {
