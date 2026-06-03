@@ -6,7 +6,6 @@ use crate::util::asyncify;
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, Context};
 use enum_map::EnumMap;
-use log::info;
 use spacetimedb_commitlog::repo::OnNewSegmentFn;
 use spacetimedb_commitlog::{self as commitlog, Commitlog, SizeOnDisk};
 use spacetimedb_data_structures::map::HashSet;
@@ -17,7 +16,9 @@ use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, StateView,
 };
-use spacetimedb_datastore::locking_tx_datastore::{ApplyHistoryCounters, IndexScanPointOrRange, MutTxId, TxId};
+use spacetimedb_datastore::locking_tx_datastore::{
+    ApplyHistoryCounters, IndexScanPointOrRange, MutTxId, TxId, ViewCallInfo,
+};
 use spacetimedb_datastore::system_tables::{
     system_tables, StModuleRow, ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_SUB_ID,
 };
@@ -1111,7 +1112,6 @@ pub fn spawn_view_cleanup_loop(db: Arc<RelationalDB>) -> tokio::task::AbortHandl
             // in milliseconds, which may be too long for async tasks.
             let db = db.clone();
             let db_identity = db.database_identity();
-            info!("running view cleanup for database {db_identity}");
             tokio::task::spawn_blocking(move || run_view_cleanup(&db))
                 .await
                 .inspect_err(|e| {
@@ -1119,7 +1119,6 @@ pub fn spawn_view_cleanup_loop(db: Arc<RelationalDB>) -> tokio::task::AbortHandl
                 })
                 .ok();
 
-            info!("pausing view cleanup for database {db_identity}");
             tokio::time::sleep(VIEWS_EXPIRATION).await;
         }
     })
@@ -1601,6 +1600,26 @@ impl RelationalDB {
         self.clear_table(tx, table_id)?;
 
         self.write_view_rows(tx, table_id, rows, None)?;
+
+        Ok(())
+    }
+
+    /// Materialize a view call and replace its committed read set on transaction commit.
+    ///
+    /// The read set is only marked for replacement after materialization succeeds. If the
+    /// transaction rolls back, the replacement marker rolls back with it.
+    pub fn materialize_view_call(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        view_call: ViewCallInfo,
+        rows: Vec<ProductValue>,
+    ) -> Result<(), DBError> {
+        match view_call.sender {
+            Some(sender) => self.materialize_view(tx, table_id, sender, rows)?,
+            None => self.materialize_anonymous_view(tx, table_id, rows)?,
+        }
+        tx.replace_view_read_set(view_call);
 
         Ok(())
     }

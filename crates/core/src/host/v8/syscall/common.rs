@@ -17,14 +17,15 @@ use crate::database_logger::{LogLevel, Record};
 use crate::error::NodesError;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::wasm_common::module_host_actor::{
-    deserialize_view_rows, run_query_for_view, AnonymousViewOp, ProcedureOp, ViewOp, ViewResult, ViewReturnData,
+    deserialize_view_rows, run_query_for_view, AnonymousViewOp, HttpHandlerOp, ProcedureOp, ViewOp, ViewResult,
+    ViewReturnData,
 };
 use crate::host::wasm_common::{RowIterIdx, TimingSpan, TimingSpanIdx};
 use anyhow::Context;
 use bytes::Bytes;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
-use spacetimedb_primitives::{ColId, IndexId, ProcedureId, TableId};
+use spacetimedb_primitives::{ColId, IndexId, ProcedureId, TableId, ViewFnPtr};
 use spacetimedb_sats::bsatn;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::identifier::Identifier;
@@ -63,6 +64,63 @@ pub fn call_call_procedure(
     let bytes = ret.get_contents(&mut []);
 
     Ok(Bytes::copy_from_slice(bytes))
+}
+
+/// Calls the `__call_http_handler__` function `fun`.
+pub fn call_call_http_handler(
+    scope: &mut PinScope<'_, '_>,
+    hooks: &HookFunctions<'_>,
+    op: HttpHandlerOp,
+) -> Result<(Bytes, Bytes), ErrorOrException<ExceptionThrown>> {
+    let fun = hooks
+        .call_http_handler
+        .context("`__call_http_handler__` was never defined")?;
+
+    let HttpHandlerOp {
+        id,
+        name: _,
+        timestamp,
+        request_bytes,
+        request_body_bytes,
+    } = op;
+
+    let handler_id = serialize_to_js(scope, &id.0)?;
+    let timestamp = serialize_to_js(scope, &timestamp.to_micros_since_unix_epoch())?;
+    let request = serialize_to_js(scope, &request_bytes)?;
+    let request_body = serialize_to_js(scope, &request_body_bytes)?;
+    let args = &[handler_id, timestamp, request, request_body];
+
+    let ret = call_recv_fun(scope, fun, hooks.recv, args)?;
+    let ret = cast!(scope, ret, v8::Array, "tuple return from `__call_http_handler__`").map_err(|e| e.throw(scope))?;
+
+    if ret.length() != 2 {
+        return Err(TypeError("`__call_http_handler__` must return a two-element array")
+            .throw(scope)
+            .into());
+    }
+
+    let response = ret.get_index(scope, 0).ok_or_else(exception_already_thrown)?;
+    let response = cast!(
+        scope,
+        response,
+        v8::Uint8Array,
+        "response bytes return from `__call_http_handler__`"
+    )
+    .map_err(|e| e.throw(scope))?;
+
+    let body = ret.get_index(scope, 1).ok_or_else(exception_already_thrown)?;
+    let body = cast!(
+        scope,
+        body,
+        v8::Uint8Array,
+        "response body bytes return from `__call_http_handler__`"
+    )
+    .map_err(|e| e.throw(scope))?;
+
+    Ok((
+        Bytes::copy_from_slice(response.get_contents(&mut [])),
+        Bytes::copy_from_slice(body.get_contents(&mut [])),
+    ))
 }
 
 /// Calls the registered `__describe_module__` function hook.
@@ -694,19 +752,22 @@ fn refresh_views(
 
     for view_call in views_for_refresh {
         let res: SysCallResult<()> = (|| {
-            let view_def = module_def
-                .get_view_by_id(view_call.fn_ptr, view_call.sender.is_none())
-                .ok_or_else(|| {
-                    TypeError(format!(
-                        "view with fn_ptr `{}` not found while refreshing procedure transaction",
-                        view_call.fn_ptr
-                    ))
-                    .throw(scope)
-                })?;
+            let resolved = crate::host::module_host::resolve_view_for_refresh(
+                tx.as_ref().expect("procedure tx missing during view refresh"),
+                module_def,
+                &view_call,
+            )
+            .map_err(|err| TypeError(format!("view refresh failed after procedure call: {err}")).throw(scope))?;
+
+            let table_id = resolved.table_id;
+            let view_def = resolved.view_def;
+            let view_name = &view_def.name;
+            let fn_ptr = view_def.fn_ptr;
 
             let current_tx = tx.take().expect("procedure tx missing during view refresh");
-            let (next_tx, call_result) =
-                tx_slot.set(current_tx, || call_view(scope, hooks, &view_call, &view_def.name));
+            let (next_tx, call_result) = tx_slot.set(current_tx, || {
+                call_view(scope, hooks, &view_call, view_name, table_id, fn_ptr)
+            });
             tx = Some(next_tx);
             let return_data = call_result?;
 
@@ -756,25 +817,14 @@ fn refresh_views(
                 })?,
             };
 
-            match view_call.sender {
-                Some(sender) => stdb
-                    .materialize_view(
-                        tx.as_mut()
-                            .expect("procedure tx missing while materializing authenticated view"),
-                        view_call.table_id,
-                        sender,
-                        rows,
-                    )
-                    .map_err(NodesError::from)?,
-                None => stdb
-                    .materialize_anonymous_view(
-                        tx.as_mut()
-                            .expect("procedure tx missing while materializing anonymous view"),
-                        view_call.table_id,
-                        rows,
-                    )
-                    .map_err(NodesError::from)?,
-            }
+            stdb.materialize_view_call(
+                tx.as_mut()
+                    .expect("procedure tx missing while materializing refreshed view"),
+                table_id,
+                view_call.clone(),
+                rows,
+            )
+            .map_err(NodesError::from)?;
 
             Ok(())
         })();
@@ -799,6 +849,8 @@ fn call_view(
     hooks: &HookFunctions<'_>,
     view_call: &ViewCallInfo,
     view_name: &Identifier,
+    table_id: TableId,
+    fn_ptr: ViewFnPtr,
 ) -> SysCallResult<ViewReturnData> {
     let prev_func_type = get_env(scope)?
         .instance_env
@@ -813,8 +865,8 @@ fn call_view(
                 ViewOp {
                     name: view_name,
                     view_id: view_call.view_id,
-                    table_id: view_call.table_id,
-                    fn_ptr: view_call.fn_ptr,
+                    table_id,
+                    fn_ptr,
                     args: &args,
                     sender: &sender,
                     timestamp: Timestamp::now(),
@@ -826,8 +878,8 @@ fn call_view(
                 AnonymousViewOp {
                     name: view_name,
                     view_id: view_call.view_id,
-                    table_id: view_call.table_id,
-                    fn_ptr: view_call.fn_ptr,
+                    table_id,
+                    fn_ptr,
                     args: &args,
                     timestamp: Timestamp::now(),
                 },
