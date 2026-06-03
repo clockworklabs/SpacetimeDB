@@ -391,6 +391,26 @@ impl ModuleDef {
         &self.http_routes
     }
 
+    /// Returns warnings about this module's definition that will not prevent publishing.
+    ///
+    /// - Warns when a mounted sub-module registers HTTP routes via a top-level router export
+    ///   because those routes are ignored by the host.
+    pub fn collect_warnings(&self) -> Vec<String> {
+        let mut warnings = Vec::new();
+        for (namespace, mounted_def) in self.mounts() {
+            if !mounted_def.http_routes().is_empty() {
+                warnings.push(format!(
+                    "The component mounted under namespace '{namespace}' registers HTTP routes via a router. \
+                     Route registrations in mounted components are ignored. Only the root module's routes \
+                     are served. Define routes in the root module and call the component's HTTP handler \
+                     functions via `ctx.as.{namespace}`."
+                ));
+            }
+            warnings.extend(mounted_def.collect_warnings());
+        }
+        warnings
+    }
+
     /// Returns an iterator over all HTTP handler ids and definitions.
     pub fn http_handler_ids_and_defs(&self) -> impl ExactSizeIterator<Item = (HttpHandlerId, &HttpHandlerDef)> {
         self.http_handlers
