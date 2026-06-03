@@ -2,7 +2,7 @@ use spacetimedb_smoketests::{random_string, require_local_server, require_pnpm, 
 
 const TYPESCRIPT_MODULE_WITHOUT_NEW_COLUMNS: &str = r#"import { schema, table, t } from "spacetimedb/server";
 
-const users = table(
+const AppUsers = table(
   { name: "users", public: false },
   {
     id: t.u64().primaryKey().autoInc(),
@@ -12,7 +12,7 @@ const users = table(
 );
 
 const spacetimedb = schema({
-  users,
+  AppUsers,
 });
 export default spacetimedb;
 
@@ -22,7 +22,7 @@ export const insert_user = spacetimedb.reducer(
     emailAddress: t.string(),
   },
   (ctx, { name, emailAddress }) => {
-    ctx.db.users.insert({
+    ctx.db.AppUsers.insert({
       id: 0n,
       name,
       emailAddress,
@@ -33,7 +33,7 @@ export const insert_user = spacetimedb.reducer(
 
 const TYPESCRIPT_MODULE_WITH_NEW_COLUMNS: &str = r#"import { schema, table, t } from "spacetimedb/server";
 
-const users = table(
+const AppUsers = table(
   { name: "users", public: false },
   {
     id: t.u64().primaryKey().autoInc(),
@@ -45,7 +45,7 @@ const users = table(
 );
 
 const spacetimedb = schema({
-  users,
+  AppUsers,
 });
 export default spacetimedb;
 
@@ -53,7 +53,7 @@ export const find_user_by_email = spacetimedb.reducer(
   { emailAddress: t.string() },
   (ctx, { emailAddress }) => {
     let count = 0;
-    for (const _row of ctx.db.users.emailAddress.filter(emailAddress)) {
+    for (const _row of ctx.db.AppUsers.emailAddress.filter(emailAddress)) {
       count += 1;
     }
     console.info(`matched ${count}`);
@@ -64,7 +64,7 @@ export const find_users_by_active_status = spacetimedb.reducer(
   { isActive: t.bool() },
   (ctx, { isActive }) => {
     let count = 0;
-    for (const _row of ctx.db.users.isActive.filter(isActive)) {
+    for (const _row of ctx.db.AppUsers.isActive.filter(isActive)) {
       count += 1;
     }
     console.info(`matched active users ${count}`);
