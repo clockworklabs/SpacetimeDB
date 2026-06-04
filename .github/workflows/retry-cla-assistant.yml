@@ -13,12 +13,6 @@ on:
     types: [opened, reopened, synchronize, ready_for_review]
   schedule:
     - cron: "7,22,37,52 * * * *"
-  workflow_dispatch:
-    inputs:
-      pr_number:
-        description: "Pull request number to check"
-        required: true
-        type: number
 
 permissions:
   actions: read
