@@ -1400,9 +1400,9 @@ impl ProcedureContext {
     /// use spacetimedb::{procedure, ProcedureContext, Uuid};
     ///
     /// #[procedure]
-    /// fn generate_uuid_v4(ctx: &ProcedureContext) -> Uuid {
-    ///     let uuid = ctx.new_uuid_v4();
-    ///     log::info!(uuid);
+    /// fn generate_uuid_v4(ctx: &mut ProcedureContext) -> Uuid {
+    ///     let uuid = ctx.new_uuid_v4().expect("failed to generate uuid");
+    ///     log::info!("{uuid}");
     ///     uuid
     /// }
     /// # }
@@ -1422,10 +1422,10 @@ impl ProcedureContext {
     /// use spacetimedb::{procedure, ProcedureContext, Uuid};
     ///
     /// #[procedure]
-    /// fn generate_uuid_v7(ctx: &ProcedureContext) -> Result<Uuid, Box<dyn std::error::Error>> {
-    ///     let uuid = ctx.new_uuid_v7()?;
-    ///     log::info!(uuid);
-    ///     Ok(uuid)
+    /// fn generate_uuid_v7(ctx: &mut ProcedureContext) -> Uuid {
+    ///     let uuid = ctx.new_uuid_v7().expect("failed to generate uuid");
+    ///     log::info!("{uuid}");
+    ///     uuid
     /// }
     /// # }
     /// ```

@@ -72,17 +72,16 @@ impl ProcedureContext {
     /// # Examples
     /// ```no_run
     /// # #[cfg(target_arch = "wasm32")] mod demo {
-    /// use spacetimedb::{procedure, ProcedureContext};
-    /// use rand::Rng;
+    /// use spacetimedb::{rand::Rng, procedure, ProcedureContext};
     ///
     /// #[spacetimedb::procedure]
-    /// fn rng_demo(ctx: &spacetimedb::ProcedureContext) {
+    /// fn rng_demo(ctx: &mut spacetimedb::ProcedureContext) {
     ///     // Can be used in method chaining style:
     ///     let digit = ctx.rng().gen_range(0..=9);
     ///
     ///     // Or, cache locally for reuse:
     ///     let mut rng = ctx.rng();
-    ///    let floats: Vec<f32> = rng.sample_iter(rand::distributions::Standard).collect();
+    ///     let floats: Vec<f32> = rng.sample_iter(spacetimedb::rand::distributions::Standard).collect();
     /// }
     /// # }
     /// ```
