@@ -14,7 +14,8 @@ jobs:
         uses: docker/login-action@v2
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+          # Docker Hub access tokens are passed to docker/login-action via the password input.
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
  
       - name: Retag the image 
         run: |

@@ -1,6 +1,6 @@
-use crate::hash::Hash;
 use crate::messages::control_db::HostType;
 use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
+use crate::{hash::Hash, host::v8::JsWorkerKind};
 use once_cell::sync::Lazy;
 use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_datastore::execution_context::WorkloadType;
@@ -204,8 +204,8 @@ metrics_group!(
         pub tokio_mean_polls_per_park: GaugeVec,
 
         #[name = spacetime_websocket_sent_msg_size_bytes]
-        #[help = "The size of messages sent to connected sessions"]
-        #[labels(db: Identity, workload: WorkloadType)]
+        #[help = "The size of websocket payloads sent to connected sessions"]
+        #[labels(db: Identity)]
         // Prometheus histograms have default buckets,
         // which broadly speaking,
         // are tailored to measure the response time of a network service.
@@ -219,8 +219,8 @@ metrics_group!(
         pub websocket_sent_msg_size: HistogramVec,
 
         #[name = spacetime_websocket_sent_num_rows]
-        #[help = "The number of rows sent to connected sessions"]
-        #[labels(db: Identity, workload: WorkloadType)]
+        #[help = "The number of rows sent in websocket payloads"]
+        #[labels(db: Identity)]
         // Prometheus histograms have default buckets,
         // which broadly speaking,
         // are tailored to measure the response time of a network service.
@@ -288,28 +288,28 @@ metrics_group!(
         pub wasm_memory_bytes: IntGaugeVec,
 
         #[name = spacetime_worker_v8_total_heap_size_bytes]
-        #[help = "The total size of the V8 heap for a database's tracked JS worker kind (currently instance_lane only)"]
-        #[labels(database_identity: Identity, worker_kind: str)]
+        #[help = "The total size of the V8 heap for a database's JS workers"]
+        #[labels(database_identity: Identity, worker_kind: JsWorkerKind)]
         pub v8_total_heap_size_bytes: IntGaugeVec,
 
         #[name = spacetime_worker_v8_total_physical_size_bytes]
-        #[help = "The total committed physical V8 heap memory for a database's tracked JS worker kind (currently instance_lane only)"]
-        #[labels(database_identity: Identity, worker_kind: str)]
+        #[help = "The total committed physical V8 heap memory for a database's JS workers"]
+        #[labels(database_identity: Identity, worker_kind: JsWorkerKind)]
         pub v8_total_physical_size_bytes: IntGaugeVec,
 
         #[name = spacetime_worker_v8_used_global_handles_size_bytes]
-        #[help = "The used size of V8 global handles for a database's tracked JS worker kind (currently instance_lane only)"]
-        #[labels(database_identity: Identity, worker_kind: str)]
+        #[help = "The used size of V8 global handles for a database's JS workers"]
+        #[labels(database_identity: Identity, worker_kind: JsWorkerKind)]
         pub v8_used_global_handles_size_bytes: IntGaugeVec,
 
         #[name = spacetime_worker_v8_used_heap_size_bytes]
-        #[help = "The live V8 heap size for a database's tracked JS worker kind (currently instance_lane only)"]
-        #[labels(database_identity: Identity, worker_kind: str)]
+        #[help = "The live V8 heap size for a database's JS workers"]
+        #[labels(database_identity: Identity, worker_kind: JsWorkerKind)]
         pub v8_used_heap_size_bytes: IntGaugeVec,
 
         #[name = spacetime_worker_v8_heap_size_limit_bytes]
-        #[help = "The V8 heap size limit for a database's tracked JS worker kind (currently instance_lane only)"]
-        #[labels(database_identity: Identity, worker_kind: str)]
+        #[help = "The V8 heap size limit for a database's JS workers"]
+        #[labels(database_identity: Identity, worker_kind: JsWorkerKind)]
         pub v8_heap_size_limit_bytes: IntGaugeVec,
 
         #[name = spacetime_worker_v8_heap_limit_hit]
@@ -317,25 +317,25 @@ metrics_group!(
         #[labels(database_identity: Identity)]
         pub v8_heap_limit_hit: IntCounterVec,
 
-        #[name = spacetime_worker_v8_instance_lane_queue_length]
-        #[help = "The number of queued requests waiting for a database's JS instance lane worker"]
-        #[labels(database_identity: Identity)]
-        pub v8_instance_lane_queue_length: IntGaugeVec,
-
         #[name = spacetime_worker_v8_external_memory_bytes]
-        #[help = "The external memory tracked by V8 for a database's tracked JS worker kind (currently instance_lane only)"]
-        #[labels(database_identity: Identity, worker_kind: str)]
+        #[help = "The external memory tracked by V8 for a database's JS workers"]
+        #[labels(database_identity: Identity, worker_kind: JsWorkerKind)]
         pub v8_external_memory_bytes: IntGaugeVec,
 
         #[name = spacetime_worker_v8_native_contexts]
-        #[help = "The number of native V8 contexts for a database's tracked JS worker kind (currently instance_lane only)"]
-        #[labels(database_identity: Identity, worker_kind: str)]
+        #[help = "The number of native V8 contexts for a database's JS workers"]
+        #[labels(database_identity: Identity, worker_kind: JsWorkerKind)]
         pub v8_native_contexts: IntGaugeVec,
 
         #[name = spacetime_worker_v8_detached_contexts]
-        #[help = "The number of detached V8 contexts for a database's tracked JS worker kind (currently instance_lane only)"]
-        #[labels(database_identity: Identity, worker_kind: str)]
+        #[help = "The number of detached V8 contexts for a database's JS workers"]
+        #[labels(database_identity: Identity, worker_kind: JsWorkerKind)]
         pub v8_detached_contexts: IntGaugeVec,
+
+        #[name = spacetime_worker_v8_request_queue_length]
+        #[help = "The number of requests waiting in a database's tracked JS worker request queue"]
+        #[labels(database_identity: Identity)]
+        pub v8_request_queue_length: IntGaugeVec,
 
         #[name = spacetime_active_queries]
         #[help = "The number of active subscription queries"]
@@ -433,6 +433,12 @@ metrics_group!(
         #[labels(db: Identity)]
         #[buckets(0.0005, 0.001, 0.005, 0.01, 0.1, 1.0, 5.0, 10.0)]
         pub snapshot_creation_time_inner: HistogramVec,
+
+        #[name = spacetime_snapshot_creation_time_fsync_sec]
+        #[help = "The time (in seconds) it took to fsync a database snapshot, excluding scheduling overhead"]
+        #[labels(db: Identity)]
+        #[buckets(0.0005, 0.001, 0.005, 0.01, 0.1, 1.0, 5.0, 10.0)]
+        pub snapshot_creation_time_fsync: HistogramVec,
 
         #[name = spacetime_snapshot_compression_time_total_sec]
         #[help = "The time (in seconds) it took to do a compression pass on the snapshot repository, including scheduling overhead"]

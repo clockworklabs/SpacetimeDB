@@ -11,6 +11,7 @@ use axum::extract::DefaultBodyLimit;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
 use spacetimedb::config::{parse_config, CertificateAuthority};
+use spacetimedb::db::persistence::{CommitlogConfig, DurabilityConfig};
 use spacetimedb::db::{self, Storage};
 use spacetimedb::startup::{self, TracingOptions};
 use spacetimedb::util::jobs::JobCores;
@@ -34,7 +35,7 @@ pub fn cli() -> clap::Command {
                 .default_value("0.0.0.0:3000")
                 .help(
                     "The address and port where SpacetimeDB should listen for connections. \
-                     This defaults to to listen on all IP addresses on port 80.",
+                     This defaults to listening on all IP addresses on port 3000.",
                 ),
         )
         .arg(
@@ -98,6 +99,8 @@ pub fn cli() -> clap::Command {
 struct ConfigFile {
     #[serde(flatten)]
     common: spacetimedb::config::ConfigFile,
+    #[serde(default)]
+    commitlog: CommitlogConfig,
     #[serde(default)]
     websocket: WebSocketOptions,
 }
@@ -181,8 +184,12 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     let ctx = StandaloneEnv::init(
         StandaloneOptions {
             db_config,
+            durability: DurabilityConfig {
+                commitlog: config.commitlog,
+            },
             websocket: config.websocket,
-            v8_heap_policy: config.common.v8_heap_policy,
+            wasm: config.common.wasm,
+            v8: config.common.v8,
         },
         &certs,
         data_dir,
@@ -512,12 +519,26 @@ mod tests {
             idle-timeout = "1min"
             close-handshake-timeout = "500ms"
 
+            [wasm]
+            procedure-instance-pool-size = 4
+
+            [v8]
+            procedure-instance-pool-size = 3
+
             [v8-heap-policy]
             heap-check-request-interval = 0
             heap-check-time-interval = "45s"
             heap-gc-trigger-fraction = 0.6
             heap-retire-fraction = 0.8
             heap-limit-mb = 128
+
+            [commitlog]
+            log-format-version = 1
+            max-segment-size = 1048576
+            offset-index-interval-bytes = 8192
+            offset-index-require-segment-fsync = false
+            preallocate-segments = true
+            write-buffer-size = 131072
 "#;
 
         let config: ConfigFile = toml::from_str(toml).unwrap();
@@ -526,14 +547,31 @@ mod tests {
         // so check `common` in a pedestrian way.
         assert_eq!(&config.common.logs.directives, &["banana_shake=strawberry"]);
         assert!(config.common.certificate_authority.is_none());
-        assert_eq!(config.common.v8_heap_policy.heap_check_request_interval, None);
+        assert_eq!(config.common.wasm.procedure_instance_pool_size.get(), 4);
+        assert_eq!(config.common.v8.procedure_instance_pool_size.get(), 3);
+        assert_eq!(config.common.v8.heap_policy.heap_check_request_interval, None);
         assert_eq!(
-            config.common.v8_heap_policy.heap_check_time_interval,
+            config.common.v8.heap_policy.heap_check_time_interval,
             Some(Duration::from_secs(45))
         );
-        assert_eq!(config.common.v8_heap_policy.heap_gc_trigger_fraction, 0.6);
-        assert_eq!(config.common.v8_heap_policy.heap_retire_fraction, 0.8);
-        assert_eq!(config.common.v8_heap_policy.heap_limit_bytes, 128 * 1024 * 1024);
+        assert_eq!(config.common.v8.heap_policy.heap_gc_trigger_fraction, 0.6);
+        assert_eq!(config.common.v8.heap_policy.heap_retire_fraction, 0.8);
+        assert_eq!(config.common.v8.heap_policy.heap_limit_bytes, 128 * 1024 * 1024);
+        assert_eq!(config.commitlog.log_format_version, Some(1));
+        assert_eq!(
+            config.commitlog.max_segment_size.map(|val| val.get()),
+            Some(1024 * 1024)
+        );
+        assert_eq!(
+            config.commitlog.offset_index_interval_bytes.map(|val| val.get()),
+            Some(8192)
+        );
+        assert_eq!(config.commitlog.offset_index_require_segment_fsync, Some(false));
+        assert_eq!(config.commitlog.preallocate_segments, Some(true));
+        assert_eq!(
+            config.commitlog.write_buffer_size.map(|val| val.get()),
+            Some(128 * 1024)
+        );
 
         assert_eq!(
             config.websocket,
@@ -543,5 +581,21 @@ mod tests {
                 ..<_>::default()
             }
         );
+    }
+
+    #[test]
+    fn commitlog_options_accept_aliases() {
+        let toml = r#"
+            [commitlog]
+            offset-interval-bytes = 16384
+            offset-index-require-fsync = true
+"#;
+
+        let config: ConfigFile = toml::from_str(toml).unwrap();
+        assert_eq!(
+            config.commitlog.offset_index_interval_bytes.map(|val| val.get()),
+            Some(16 * 1024)
+        );
+        assert_eq!(config.commitlog.offset_index_require_segment_fsync, Some(true));
     }
 }

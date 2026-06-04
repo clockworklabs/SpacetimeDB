@@ -11,6 +11,7 @@
     "clear": "docusaurus clear",
     "serve": "docusaurus serve",
     "generate-cli-docs": "node scripts/generate-cli-docs.mjs",
+    "generate-llms": "docusaurus build && node scripts/generate-llms.mjs",
     "rewrite-links": "node scripts/rewrite-doc-links.mjs",
     "rewrite-links:write": "node scripts/rewrite-doc-links.mjs --write",
     "write-translations": "docusaurus write-translations",
@@ -41,6 +42,7 @@
     "@docusaurus/module-type-aliases": "3.9.2",
     "@docusaurus/tsconfig": "3.9.2",
     "@docusaurus/types": "3.9.2",
+    "@signalwire/docusaurus-plugin-llms-txt": "^1.2.2",
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.3.0",
     "typescript": "~5.6.2"

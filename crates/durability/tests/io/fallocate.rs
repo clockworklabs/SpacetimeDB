@@ -33,7 +33,6 @@ use scopeguard::ScopeGuard;
 use spacetimedb_commitlog::{
     payload::txdata::{Mutations, Ops},
     repo::{self, OnNewSegmentFn, Repo},
-    segment,
     tests::helpers::enable_logging,
 };
 use spacetimedb_durability::{local::OpenError, Durability, Transaction, Txdata};
@@ -135,9 +134,7 @@ async fn local_durability_crashes_on_resume_with_insuffient_space() -> anyhow::R
         // Write a segment with only a header and no `fallocate` reservation.
         {
             let repo = repo::Fs::new(replica_dir.commit_log(), None)?;
-            let mut segment = repo.create_segment(0)?;
-            segment::Header::default().write(&mut segment)?;
-            segment.sync_data()?;
+            repo.create_segment(0, <_>::default())?;
         }
 
         // Try to open local durability with a 1GiB segment size,
@@ -164,7 +161,7 @@ async fn local_durability(
 ) -> Result<spacetimedb_durability::Local<[u8; 1024 * 1024]>, spacetimedb_durability::local::OpenError> {
     spacetimedb_durability::Local::open(
         dir,
-        tokio::runtime::Handle::current(),
+        spacetimedb_runtime::Handle::tokio_current(),
         spacetimedb_durability::local::Options {
             commitlog: spacetimedb_commitlog::Options {
                 max_segment_size,

@@ -133,14 +133,32 @@ fn create_nuget_config(sources: &[(String, PathBuf)], mappings: &[(String, Strin
 
 /// Override nuget config to use a local NuGet package on a .NET project.
 fn override_nuget_package(project_dir: &Path, package: &str, source_dir: &Path, build_subdir: &str) -> Result<()> {
+    override_nuget_package_from_project(project_dir, package, source_dir, None, build_subdir)
+}
+
+/// Override nuget config to use a local NuGet package built from a specific .NET project.
+fn override_nuget_package_from_project(
+    project_dir: &Path,
+    package: &str,
+    source_dir: &Path,
+    source_project: Option<&str>,
+    build_subdir: &str,
+) -> Result<()> {
     println!("Override {package}: {project_dir:?} with {source_dir:?}");
 
     // Make sure the local package is built
     let workspace = workspace_root();
     let repo_nuget_config = workspace.join("NuGet.Config");
+    let source_project_path = source_project.map(|project| source_dir.join(project));
     if repo_nuget_config.exists() {
-        let output = Command::new("dotnet")
-            .args(["restore", "--configfile", repo_nuget_config.to_str().unwrap()])
+        let mut command = Command::new("dotnet");
+        command.arg("restore");
+        if let Some(source_project_path) = &source_project_path {
+            command.arg(source_project_path);
+        }
+        let output = command
+            .arg("--configfile")
+            .arg(&repo_nuget_config)
             .current_dir(source_dir)
             .output()
             .context("Failed to run dotnet restore")?;
@@ -152,8 +170,13 @@ fn override_nuget_package(project_dir: &Path, package: &str, source_dir: &Path, 
             );
         }
 
-        let output = Command::new("dotnet")
-            .args(["pack", "-c", "Release", "--no-restore"])
+        let mut command = Command::new("dotnet");
+        command.arg("pack");
+        if let Some(source_project_path) = &source_project_path {
+            command.arg(source_project_path);
+        }
+        let output = command
+            .args(["-c", "Release", "--no-restore"])
             .current_dir(source_dir)
             .output()
             .context("Failed to run dotnet pack")?;
@@ -165,8 +188,13 @@ fn override_nuget_package(project_dir: &Path, package: &str, source_dir: &Path, 
             );
         }
     } else {
-        let output = Command::new("dotnet")
-            .args(["pack", "-c", "Release"])
+        let mut command = Command::new("dotnet");
+        command.arg("pack");
+        if let Some(source_project_path) = &source_project_path {
+            command.arg(source_project_path);
+        }
+        let output = command
+            .args(["-c", "Release"])
             .current_dir(source_dir)
             .output()
             .context("Failed to run dotnet pack")?;
@@ -543,6 +571,31 @@ log = "0.4"
                 let ts_bindings = workspace.join("crates/bindings-typescript");
                 pnpm(&["install", ts_bindings.to_str().unwrap()], server_path)?;
             }
+            "cpp" => {
+                // Use the workspace bindings directly so release CI doesn't depend
+                // on a Git tag that may not exist yet for the version under test.
+                let cmake_lists = server_path.join("CMakeLists.txt");
+                let bindings_path = workspace.join("crates/bindings-cpp");
+                let bindings_path_str = bindings_path.display().to_string().replace('\\', "/");
+
+                let content = fs::read_to_string(&cmake_lists)?;
+                let updated = content.replace(
+                    "set(SPACETIMEDB_CPP_DIR \"\" CACHE PATH \"Path to a local clone of SpacetimeDB C++ bindings (overrides FetchContent)\")",
+                    &format!(
+                        "set(SPACETIMEDB_CPP_DIR \"{}\" CACHE PATH \"Path to a local clone of SpacetimeDB C++ bindings (overrides FetchContent)\")",
+                        bindings_path_str
+                    ),
+                );
+
+                if content == updated {
+                    bail!(
+                        "Failed to configure C++ quickstart smoketest: could not find SPACETIMEDB_CPP_DIR in {}",
+                        cmake_lists.display()
+                    );
+                }
+
+                fs::write(cmake_lists, updated)?;
+            }
             _ => {}
         }
 
@@ -612,10 +665,11 @@ log = "0.4"
                     &workspace.join("crates/bindings-csharp/BSATN.Runtime"),
                     "bin/Release",
                 )?;
-                override_nuget_package(
+                override_nuget_package_from_project(
                     client_path,
                     "SpacetimeDB.ClientSDK",
                     &workspace.join("sdks/csharp"),
+                    Some("SpacetimeDB.ClientSDK.csproj"),
                     "bin~/Release",
                 )?;
 
