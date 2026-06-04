@@ -44,10 +44,6 @@ jobs:
 
       - uses: dsherret/rust-toolchain-file@v1
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-all-crates: true
-
       - name: Recheck CLA Assistant
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
