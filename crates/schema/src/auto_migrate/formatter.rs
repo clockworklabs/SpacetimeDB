@@ -63,6 +63,13 @@ fn format_step<F: MigrationFormatter>(
             let index_info = extract_index_info(*index, plan.new)?;
             f.format_index(&index_info, Action::Changed)
         }
+        AutoMigrateStep::ChangeTableAccessorName(table) => {
+            let table_info = extract_table_info(*table, plan)?;
+            f.format_change_table_accessor_name(table_info.name.as_ref())
+        }
+        AutoMigrateStep::ChangeColumnAccessorName(table, col) => {
+            f.format_change_column_accessor_name(table, col)
+        }
         AutoMigrateStep::RemoveConstraint(constraint) => {
             let constraint_info = extract_constraint_info(*constraint, plan.old)?;
             f.format_constraint(&constraint_info, Action::Removed)
@@ -112,7 +119,6 @@ fn format_step<F: MigrationFormatter>(
             let new_columns = extract_new_columns(*table, plan)?;
             f.format_add_columns(&new_columns)
         }
-        AutoMigrateStep::ChangeTableAccessorName(_) | AutoMigrateStep::ChangeColumnAccessorName(_, _) => Ok(()),
         AutoMigrateStep::DisconnectAllUsers => f.format_disconnect_warning(),
     }?;
 
@@ -171,6 +177,8 @@ pub trait MigrationFormatter {
     fn format_rls(&mut self, rls_info: &RlsInfo, action: Action) -> io::Result<()>;
     fn format_change_columns(&mut self, column_changes: &ColumnChanges) -> io::Result<()>;
     fn format_add_columns(&mut self, new_columns: &NewColumns) -> io::Result<()>;
+    fn format_change_table_accessor_name(&mut self, table_name: &str) -> io::Result<()>;
+    fn format_change_column_accessor_name(&mut self, table_name: &str, col_name: &str) -> io::Result<()>;
     fn format_disconnect_warning(&mut self) -> io::Result<()>;
 }
 

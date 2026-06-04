@@ -1,8 +1,9 @@
 use super::{delete_table::DeleteTable, sequence::Sequence};
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::db::auth::StAccess;
-use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
+use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::memory_usage::MemoryUsage;
+use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
@@ -118,6 +119,19 @@ pub enum PendingSchemaChange {
         IndexId,
         Option<spacetimedb_sats::raw_identifier::RawIdentifier>,
     ),
+    /// The accessor name alias of the table with [`TableId`] changed.
+    /// The old alias is stored for rollback.
+    TableAlterAccessorName(
+        TableId,
+        Option<Identifier>,
+    ),
+    /// The accessor name alias of the column with [`ColId`] in the table with [`TableId`] changed.
+    /// The old alias is stored for rollback.
+    ColumnAlterAccessorName(
+        TableId,
+        ColId,
+        Option<Identifier>,
+    ),
     /// The [`Table`] with [`TableId`] was removed.
     TableRemoved(TableId, Table),
     /// The table with [`TableId`] was added.
@@ -168,6 +182,14 @@ impl MemoryUsage for PendingSchemaChange {
                 table_id.heap_usage() + sequence.heap_usage() + sequence_schema.heap_usage()
             }
             Self::SequenceAdded(table_id, sequence_id) => table_id.heap_usage() + sequence_id.heap_usage(),
+            Self::TableAlterAccessorName(table_id, alias) => {
+                table_id.heap_usage() + alias.as_ref().map(|a| a.as_raw().heap_usage()).unwrap_or(0)
+            }
+            Self::ColumnAlterAccessorName(table_id, col_id, alias) => {
+                table_id.heap_usage()
+                    + col_id.heap_usage()
+                    + alias.as_ref().map(|a| a.as_raw().heap_usage()).unwrap_or(0)
+            }
         }
     }
 }

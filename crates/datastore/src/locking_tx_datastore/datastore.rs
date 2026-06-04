@@ -303,6 +303,25 @@ impl Locking {
         tx.alter_index_source_name(index_id, source_name)
     }
 
+    pub fn alter_table_accessor_name_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        new_alias: spacetimedb_schema::identifier::Identifier,
+    ) -> Result<()> {
+        tx.alter_table_accessor_name(table_id, new_alias)
+    }
+
+    pub fn alter_column_accessor_name_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        col_id: ColId,
+        new_alias: spacetimedb_schema::identifier::Identifier,
+    ) -> Result<()> {
+        tx.alter_column_accessor_name(table_id, col_id, new_alias)
+    }
+
     pub fn alter_table_row_type_mut_tx(
         &self,
         tx: &mut MutTxId,
@@ -543,6 +562,25 @@ impl MutTxDatastore for Locking {
         source_name: spacetimedb_sats::raw_identifier::RawIdentifier,
     ) -> Result<()> {
         tx.alter_index_source_name(index_id, source_name)
+    }
+
+    fn alter_table_accessor_name_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        table_id: TableId,
+        new_alias: spacetimedb_schema::identifier::Identifier,
+    ) -> Result<()> {
+        tx.alter_table_accessor_name(table_id, new_alias)
+    }
+
+    fn alter_column_accessor_name_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        table_id: TableId,
+        col_id: ColId,
+        new_alias: spacetimedb_schema::identifier::Identifier,
+    ) -> Result<()> {
+        tx.alter_column_accessor_name(table_id, col_id, new_alias)
     }
 
     fn index_id_from_name_mut_tx(&self, tx: &Self::MutTx, index_name: &str) -> Result<Option<IndexId>> {

@@ -1023,6 +1023,25 @@ impl RelationalDB {
         Ok(self.inner.alter_index_source_name_mut_tx(tx, index_id, source_name)?)
     }
 
+    pub(crate) fn alter_table_accessor_name(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+        new_alias: spacetimedb_schema::identifier::Identifier,
+    ) -> Result<(), DBError> {
+        Ok(self.inner.alter_table_accessor_name_mut_tx(tx, table_id, new_alias)?)
+    }
+
+    pub(crate) fn alter_column_accessor_name(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+        col_id: ColId,
+        new_alias: spacetimedb_schema::identifier::Identifier,
+    ) -> Result<(), DBError> {
+        Ok(self.inner.alter_column_accessor_name_mut_tx(tx, table_id, col_id, new_alias)?)
+    }
+
     pub(crate) fn alter_table_row_type(
         &self,
         tx: &mut MutTx,

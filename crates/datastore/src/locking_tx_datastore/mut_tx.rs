@@ -1203,6 +1203,86 @@ impl MutTxId {
         Ok(())
     }
 
+    /// Change the runtime accessor name alias of the table identified by `table_id`.
+    pub(crate) fn alter_table_accessor_name(
+        &mut self,
+        table_id: TableId,
+        new_alias: Identifier,
+    ) -> Result<()> {
+        let table_name = self.find_st_table_row(table_id)?.table_name;
+
+        let old_alias = self
+            .iter_by_col_eq(ST_TABLE_ACCESSOR_ID, StTableAccessorFields::TableName, &table_name.as_ref().into())?
+            .next()
+            .map(|row| StTableAccessorRow::try_from(row).ok())
+            .flatten()
+            .map(|row| row.accessor_name);
+
+        if old_alias.as_ref() == Some(&new_alias) {
+            return Ok(());
+        }
+
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+        tx_table.with_mut_schema_and_clone(commit_table, |s| s.alias = Some(new_alias.clone()));
+
+        self.drop_st_table_accessor(&table_name)?;
+        self.insert_st_table_accessor(&table_name, Some(&new_alias))?;
+
+        self.push_schema_change(PendingSchemaChange::TableAlterAccessorName(table_id, old_alias));
+
+        Ok(())
+    }
+
+    /// Change the runtime accessor name alias of the column identified by `table_id` and `col_id`.
+    pub(crate) fn alter_column_accessor_name(
+        &mut self,
+        table_id: TableId,
+        col_id: ColId,
+        new_alias: Identifier,
+    ) -> Result<()> {
+        let table_name = self.find_st_table_row(table_id)?.table_name;
+
+        // Read old column info from the current schema
+        let col_info: Vec<(Identifier, Option<Identifier>, ColId)> = self
+            .schema_for_table(table_id)?
+            .columns
+            .iter()
+            .map(|c| (c.col_name.clone(), c.alias.clone(), c.col_pos))
+            .collect();
+
+        let old_alias = col_info
+            .iter()
+            .find(|(_, _, pos)| *pos == col_id)
+            .and_then(|(_, alias, _)| alias.clone());
+
+        if old_alias.as_ref() == Some(&new_alias) {
+            return Ok(());
+        }
+
+        // Update system tables: drop and re-insert all column accessor rows for this table
+        self.drop_st_column_accessor(&table_name)?;
+        for (col_name, alias, pos) in &col_info {
+            let name = if *pos == col_id {
+                &new_alias
+            } else {
+                alias.as_ref().unwrap_or(col_name)
+            };
+            self.insert_st_column_accessor(&table_name, col_name, Some(name))?;
+        }
+
+        // Update in-memory schema
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+        tx_table.with_mut_schema_and_clone(commit_table, |s| {
+            if let Some(col) = s.columns.iter_mut().find(|c| c.col_pos == col_id) {
+                col.alias = Some(new_alias);
+            }
+        });
+
+        self.push_schema_change(PendingSchemaChange::ColumnAlterAccessorName(table_id, col_id, old_alias));
+
+        Ok(())
+    }
+
     /// Change the row type of the table identified by `table_id`.
     ///
     /// In practice, this should not error,

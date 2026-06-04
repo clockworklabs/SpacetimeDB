@@ -719,6 +719,20 @@ impl CommittedState {
                 index_schema.alias = old_alias;
                 table.with_mut_schema(|s| s.update_index(index_schema));
             }
+            // A table accessor name alias changed. Change it back.
+            TableAlterAccessorName(table_id, old_alias) => {
+                let table = self.tables.get_mut(&table_id)?;
+                table.with_mut_schema(|s| s.alias = old_alias);
+            }
+            // A column accessor name alias changed. Change it back.
+            ColumnAlterAccessorName(table_id, col_id, old_alias) => {
+                let table = self.tables.get_mut(&table_id)?;
+                table.with_mut_schema(|s| {
+                    if let Some(col) = s.columns.iter_mut().find(|x| x.col_pos == col_id) {
+                        col.alias = old_alias;
+                    }
+                });
+            }
             // A table was removed. Add it back.
             TableRemoved(table_id, table) => {
                 let is_view_table = table.schema.is_view();

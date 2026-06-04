@@ -699,6 +699,9 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
     if old.primary_key != new.primary_key {
         plan.steps.push(AutoMigrateStep::ChangePrimaryKey(key));
     }
+    if old.accessor_name != new.accessor_name {
+        plan.steps.push(AutoMigrateStep::ChangeTableAccessorName(key));
+    }
     if old.schedule != new.schedule {
         // Note: this handles the case where there's an altered ScheduleDef for some reason.
         if let Some(old_schedule) = old.schedule.as_ref() {
@@ -761,6 +764,11 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
                     }
                     .into())
                 };
+
+                if old.accessor_name != new.accessor_name {
+                    plan.steps
+                        .push(AutoMigrateStep::ChangeColumnAccessorName(key, &old.name));
+                }
 
                 (types_ok, positions_ok)
                     .combine_errors()

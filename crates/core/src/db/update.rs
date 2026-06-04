@@ -214,9 +214,43 @@ fn auto_migrate_database(
                 log!(logger, "Dropping index `{}` on table `{}`", index_name, table_def.name);
                 stdb.drop_index(tx, index_schema.index_id)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeTableAccessorName(_)
-            | spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeColumnAccessorName(_, _) => {
-                unreachable!("accessor name changes are not handled in test-only mode")
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeTableAccessorName(table_name) => {
+                let new_table_def: &spacetimedb_schema::def::TableDef = plan.new.expect_lookup(table_name);
+
+                let table_id = stdb.table_id_from_name_mut(tx, table_name)?.unwrap();
+
+                log!(
+                    logger,
+                    "Changing table accessor name for `{}` to `{}`",
+                    table_name,
+                    new_table_def.accessor_name,
+                );
+                stdb.alter_table_accessor_name(tx, table_id, new_table_def.accessor_name.clone())?;
+            }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeColumnAccessorName(table_name, col_name) => {
+                let new_table_def: &spacetimedb_schema::def::TableDef = plan.new.expect_lookup(table_name);
+                let new_col_def = new_table_def
+                    .columns
+                    .iter()
+                    .find(|col| &col.name == col_name)
+                    .ok_or_else(|| anyhow::anyhow!("Column `{col_name}` not found in table `{table_name}`"))?;
+
+                let table_id = stdb.table_id_from_name_mut(tx, table_name)?.unwrap();
+                let table_schema = stdb.schema_for_table_mut(tx, table_id)?;
+                let col_schema = table_schema
+                    .columns
+                    .iter()
+                    .find(|col| &col.col_name == col_name)
+                    .ok_or_else(|| anyhow::anyhow!("Column `{col_name}` not found in table `{table_name}`"))?;
+
+                log!(
+                    logger,
+                    "Changing column accessor name for `{}`.`{}` to `{}`",
+                    table_name,
+                    col_name,
+                    new_col_def.accessor_name,
+                );
+                stdb.alter_column_accessor_name(tx, table_id, col_schema.col_pos, new_col_def.accessor_name.clone())?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeIndexSourceName(index_name) => {
                 let old_table_def = plan.old.stored_in_table_def(index_name).unwrap();
