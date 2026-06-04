@@ -1,6 +1,5 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::env;
-use std::fs;
 use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -10,7 +9,6 @@ use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
-use serde_json::Value;
 
 const CLA_CONTEXT: &str = "license/cla";
 const MIN_HEAD_AGE: Duration = Duration::from_secs(10 * 60);
@@ -19,9 +17,9 @@ const POLL_DELAY: Duration = Duration::from_secs(30);
 
 #[derive(Args)]
 pub(crate) struct RetryClaAssistantArgs {
-    /// Pull request number. If omitted, GitHub Actions event payloads are used.
+    /// Pull request number to check.
     #[arg(long)]
-    pub(crate) pr_number: Option<u64>,
+    pub(crate) pr_number: u64,
 
     /// Repository in `owner/name` form. Defaults to GITHUB_REPOSITORY.
     #[arg(long)]
@@ -39,71 +37,7 @@ pub(crate) fn run(args: RetryClaAssistantArgs) -> Result<()> {
     let token = env::var("GITHUB_TOKEN").context("GITHUB_TOKEN is required")?;
     let client = GithubClient::new(token)?;
 
-    let pr_numbers = candidate_pull_requests(&client, owner, repo_name, args.pr_number)?;
-    if pr_numbers.is_empty() {
-        println!("No pull request associated with this event; skipping.");
-        return Ok(());
-    }
-
-    for pr_number in pr_numbers {
-        retry_for_pr(&client, owner, repo_name, pr_number)?;
-    }
-
-    Ok(())
-}
-
-fn candidate_pull_requests(client: &GithubClient, owner: &str, repo: &str, pr_number: Option<u64>) -> Result<Vec<u64>> {
-    if let Some(pr_number) = pr_number {
-        return Ok(vec![pr_number]);
-    }
-
-    if let Ok(input_pr_number) = env::var("INPUT_PR_NUMBER") {
-        if !input_pr_number.trim().is_empty() {
-            return Ok(vec![input_pr_number.parse().with_context(|| {
-                format!("INPUT_PR_NUMBER must be numeric, got {input_pr_number:?}")
-            })?]);
-        }
-    }
-
-    let event_name = env::var("GITHUB_EVENT_NAME").unwrap_or_default();
-    if event_name == "schedule" {
-        return client.list_open_pull_requests(owner, repo);
-    }
-
-    let event_path = match env::var("GITHUB_EVENT_PATH") {
-        Ok(path) => path,
-        Err(_) => return Ok(Vec::new()),
-    };
-    let event: Value = serde_json::from_str(
-        &fs::read_to_string(&event_path)
-            .with_context(|| format!("failed to read GitHub event payload {event_path}"))?,
-    )?;
-
-    let mut pr_numbers = BTreeSet::new();
-    match event_name.as_str() {
-        "pull_request" | "pull_request_target" => {
-            if let Some(number) = event.pointer("/pull_request/number").and_then(Value::as_u64) {
-                pr_numbers.insert(number);
-            }
-        }
-        "workflow_run" => {
-            if event.pointer("/workflow_run/name").and_then(Value::as_str) == Some("Retry CLA Assistant") {
-                println!("Ignoring completion of this workflow.");
-                return Ok(Vec::new());
-            }
-            if let Some(prs) = event.pointer("/workflow_run/pull_requests").and_then(Value::as_array) {
-                for pr in prs {
-                    if let Some(number) = pr.get("number").and_then(Value::as_u64) {
-                        pr_numbers.insert(number);
-                    }
-                }
-            }
-        }
-        "workflow_dispatch" => {}
-        other => println!("Unsupported event {other}; skipping."),
-    }
-
-    Ok(pr_numbers.into_iter().collect())
+    retry_for_pr(&client, owner, repo_name, args.pr_number)
 }
 
 fn retry_for_pr(client: &GithubClient, owner: &str, repo: &str, pr_number: u64) -> Result<()> {
@@ -274,24 +208,6 @@ impl GithubClient {
         Ok(response.statuses)
     }
 
-    fn list_open_pull_requests(&self, owner: &str, repo: &str) -> Result<Vec<u64>> {
-        let mut page = 1;
-        let mut pr_numbers = Vec::new();
-
-        loop {
-            let path = format!("/repos/{owner}/{repo}/pulls?state=open&base=master&per_page=100&page={page}");
-            let prs: Vec<PullRequestSummary> = self.github_get(&path)?;
-            let is_last_page = prs.len() < 100;
-            pr_numbers.extend(prs.into_iter().map(|pr| pr.number));
-            if is_last_page {
-                break;
-            }
-            page += 1;
-        }
-
-        Ok(pr_numbers)
-    }
-
     fn recheck_cla(&self, owner: &str, repo: &str, pr_number: u64) -> Result<()> {
         let url = format!("https://cla-assistant.io/check/{owner}/{repo}?pullRequest={pr_number}");
         let response = self
@@ -313,11 +229,6 @@ struct PullRequest {
     draft: bool,
     head: PullRequestRef,
     base: PullRequestRef,
-}
-
-#[derive(Deserialize)]
-struct PullRequestSummary {
-    number: u64,
 }
 
 #[derive(Deserialize)]

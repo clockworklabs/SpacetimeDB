@@ -43,8 +43,45 @@ jobs:
 
       - uses: dsherret/rust-toolchain-file@v1
 
+      - name: Collect pull requests to check
+        id: prs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pr_numbers="${RUNNER_TEMP}/cla-pr-numbers"
+
+          case "${GITHUB_EVENT_NAME}" in
+            pull_request_target)
+              jq -r '.pull_request.number' "${GITHUB_EVENT_PATH}" > "${pr_numbers}"
+              ;;
+            workflow_run)
+              if jq -e '.workflow_run.name == "Retry CLA Assistant"' "${GITHUB_EVENT_PATH}" > /dev/null; then
+                : > "${pr_numbers}"
+              else
+                jq -r '.workflow_run.pull_requests[].number' "${GITHUB_EVENT_PATH}" > "${pr_numbers}"
+              fi
+              ;;
+            schedule)
+              gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls?state=open&base=master&per_page=100" --jq '.[].number' > "${pr_numbers}"
+              ;;
+            workflow_dispatch)
+              jq -r '.inputs.pr_number' "${GITHUB_EVENT_PATH}" > "${pr_numbers}"
+              ;;
+            *)
+              echo "unsupported event ${GITHUB_EVENT_NAME}" >&2
+              exit 1
+              ;;
+          esac
+
+          sort -n -u "${pr_numbers}" -o "${pr_numbers}"
+          echo "path=${pr_numbers}" >> "${GITHUB_OUTPUT}"
+
       - name: Recheck CLA Assistant
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          INPUT_PR_NUMBER: ${{ inputs.pr_number }}
-        run: cargo ci retry-cla-assistant
+        run: |
+          while read -r pr_number; do
+            if [ -n "${pr_number}" ]; then
+              cargo ci retry-cla-assistant --pr-number "${pr_number}"
+            fi
+          done < "${{ steps.prs.outputs.path }}"
