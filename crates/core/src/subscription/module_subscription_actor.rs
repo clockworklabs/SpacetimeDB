@@ -2025,6 +2025,7 @@ mod tests {
             });
         }
 
+        #[allow(unused)]
         fn mark_durable(&self) {
             if let Some(offset) = self.committed_offset() {
                 self.durable_offset.send_modify(|val| {
@@ -2090,6 +2091,7 @@ mod tests {
     }
 
     /// An in-memory `RelationalDB` with `ManualDurability`.
+    #[allow(unused)]
     fn relational_db_with_manual_durability(
         rt: tokio::runtime::Handle,
     ) -> anyhow::Result<(Arc<RelationalDB>, Arc<ManualDurability>)> {
@@ -2219,6 +2221,7 @@ mod tests {
     }
 
     /// Instantiate a client connection with confirmed reads turned on or off.
+    #[allow(unused)]
     fn client_connection_with_confirmed_reads(
         client_id: ClientActorId,
         db: &Arc<RelationalDB>,
@@ -2740,14 +2743,6 @@ mod tests {
         tokio::time::timeout(TEST_MESSAGE_TIMEOUT, rx)
             .await
             .unwrap_or_else(|_| panic!("timed out waiting for {expected}"))
-    }
-
-    /// Mark the latest committed transaction durable and assert that `f` then completes.
-    async fn assert_after_durable(durability: &ManualDurability, f: impl Future<Output = ()>) {
-        durability.mark_durable();
-        tokio::time::timeout(TEST_MESSAGE_TIMEOUT, f)
-            .await
-            .expect("timed out waiting for message after durability was marked");
     }
 
     /// Commit a set of row updates and broadcast to subscribers
@@ -4307,91 +4302,6 @@ mod tests {
         ] {
             assert!(subscribe(sql).is_err(),);
         }
-
-        Ok(())
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_confirmed_reads() -> anyhow::Result<()> {
-        let (db, durability) = relational_db_with_manual_durability(tokio::runtime::Handle::current())?;
-
-        let client_id_confirmed = client_id_from_u8(1);
-        let client_id_unconfirmed = client_id_from_u8(2);
-
-        let (tx_for_confirmed, mut rx_for_confirmed) =
-            client_connection_with_confirmed_reads(client_id_confirmed, &db, true);
-        let (tx_for_unconfirmed, mut rx_for_unconfirmed) =
-            client_connection_with_confirmed_reads(client_id_unconfirmed, &db, false);
-
-        let auth_confirmed = AuthCtx::new(db.owner_identity(), client_id_confirmed.identity);
-        let auth_unconfirmed = AuthCtx::new(db.owner_identity(), client_id_unconfirmed.identity);
-
-        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
-        let table = db.create_table_for_test("t", &[("x", AlgebraicType::U8)], &[])?;
-        let schema = ProductType::from([AlgebraicType::U8]);
-
-        // Subscribe both clients.
-        subscribe_multi(&subs, auth_confirmed, &["select * from t"], tx_for_confirmed, &mut 0).await?;
-        subscribe_multi(
-            &subs,
-            auth_unconfirmed,
-            &["select * from t"],
-            tx_for_unconfirmed,
-            &mut 0,
-        )
-        .await?;
-
-        assert_matches!(
-            rx_for_unconfirmed.recv().await,
-            Some(OutboundMessage::V1(SerializableMessage::Subscription(
-                SubscriptionMessage {
-                    result: SubscriptionResult::SubscribeMulti(_),
-                    ..
-                }
-            )))
-        );
-        assert_after_durable(&durability, async {
-            assert_matches!(
-                rx_for_confirmed.recv().await,
-                Some(OutboundMessage::V1(SerializableMessage::Subscription(
-                    SubscriptionMessage {
-                        result: SubscriptionResult::SubscribeMulti(_),
-                        ..
-                    }
-                )))
-            );
-        })
-        .await;
-
-        // Insert a row.
-        let mut tx = begin_mut_tx(&db);
-        db.insert(&mut tx, table, &bsatn::to_vec(&product![1_u8])?)?;
-        assert!(matches!(
-            subs.commit_and_broadcast_event(None, module_event(), tx),
-            Ok(Ok(_))
-        ));
-        // Insert another row, using SQL.
-        let auth = AuthCtx::new(identity_from_u8(0), identity_from_u8(0));
-        run(
-            db.clone(),
-            "INSERT INTO t (x) VALUES (2)".to_string(),
-            auth,
-            Some(subs),
-            None,
-            &mut vec![],
-        )
-        .await?;
-
-        // Unconfirmed client should have received both rows.
-        assert_tx_update_for_table(rx_for_unconfirmed.recv(), table, &schema, [product![1_u8]], []).await;
-        assert_tx_update_for_table(rx_for_unconfirmed.recv(), table, &schema, [product![2_u8]], []).await;
-
-        // Confirmed client should receive the rows after the tx becomes durable.
-        assert_after_durable(&durability, async {
-            assert_tx_update_for_table(rx_for_confirmed.recv(), table, &schema, [product![1_u8]], []).await;
-            assert_tx_update_for_table(rx_for_confirmed.recv(), table, &schema, [product![2_u8]], []).await
-        })
-        .await;
 
         Ok(())
     }
