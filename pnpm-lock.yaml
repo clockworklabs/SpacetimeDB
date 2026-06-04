@@ -304,6 +304,18 @@ importers:
         specifier: workspace:^
         version: link:../../crates/bindings-typescript
 
+  modules/sdk-test-procedural-view-pk-ts:
+    dependencies:
+      spacetimedb:
+        specifier: workspace:^
+        version: link:../../crates/bindings-typescript
+
+  modules/sdk-test-view-pk-ts:
+    dependencies:
+      spacetimedb:
+        specifier: workspace:^
+        version: link:../../crates/bindings-typescript
+
   modules/sdk-test-procedure-ts:
     dependencies:
       spacetimedb:
