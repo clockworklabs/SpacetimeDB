@@ -6,7 +6,8 @@ name: Retry CLA Assistant
 # Assistant only when that status is the sole remaining non-green signal.
 #
 # SECURITY: This workflow uses pull_request_target so it can inspect PR status
-# for forks, but it must never check out, build, or execute code from the PR.
+# for forks. It checks out trusted default-branch code only; it must never check
+# out, build, or execute code from the PR head.
 
 on:
   pull_request_target:
