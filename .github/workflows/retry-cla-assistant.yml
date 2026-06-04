@@ -21,10 +21,6 @@ permissions:
   pull-requests: read
   statuses: read
 
-concurrency:
-  group: retry-cla-assistant-${{ github.event.pull_request.number || github.event.inputs.pr_number || github.run_id }}
-  cancel-in-progress: false
-
 jobs:
   retry-cla:
     name: Retry CLA Assistant if it is the only blocker
