@@ -1,0 +1,31 @@
+{
+  "name": "@clockworklabs/test-solid-router",
+  "private": true,
+  "version": "0.0.1",
+  "description": "SpacetimeDB Solid Router example app",
+  "type": "module",
+  "scripts": {
+    "start": "vite",
+    "dev": "vite",
+    "build": "vite build",
+    "serve": "vite preview",
+    "generate": "cargo run -p gen-bindings -- --replacement ../../../src/index && prettier --write src/module_bindings",
+    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path server",
+    "spacetime:start": "spacetime start",
+    "spacetime:publish:local": "spacetime publish game --module-path server --server local",
+    "spacetime:publish": "spacetime publish game --module-path server --server maincloud"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.13",
+    "postcss": "^8.4.49",
+    "solid-devtools": "^0.34.3",
+    "tailwindcss": "^4.1.13",
+    "vite": "^7.1.4",
+    "vite-plugin-solid": "^2.11.8"
+  },
+  "dependencies": {
+    "@solidjs/router": "^0.15.1",
+    "solid-js": "^1.9.5"
+  }
+}
