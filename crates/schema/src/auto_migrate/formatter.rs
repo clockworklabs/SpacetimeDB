@@ -112,6 +112,7 @@ fn format_step<F: MigrationFormatter>(
             let new_columns = extract_new_columns(*table, plan)?;
             f.format_add_columns(&new_columns)
         }
+        AutoMigrateStep::ChangeTableAccessorName(_) | AutoMigrateStep::ChangeColumnAccessorName(_, _) => Ok(()),
         AutoMigrateStep::DisconnectAllUsers => f.format_disconnect_warning(),
     }?;
 

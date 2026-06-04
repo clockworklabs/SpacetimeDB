@@ -287,6 +287,14 @@ pub enum AutoMigrateStep<'def> {
     /// Change the runtime source-name alias of an existing index.
     ChangeIndexSourceName(<IndexDef as ModuleDefLookup>::Key<'def>),
 
+    /// Change the runtime accessor name alias of an existing table.
+    ChangeTableAccessorName(<TableDef as ModuleDefLookup>::Key<'def>),
+    /// Change the runtime accessor name alias of an existing column.
+    ChangeColumnAccessorName(
+        <TableDef as ModuleDefLookup>::Key<'def>,
+        &'def Identifier,
+    ),
+
     /// Add a table, including all indexes, constraints, and sequences.
     /// There will NOT be separate steps in the plan for adding indexes, constraints, and sequences.
     AddTable(<TableDef as ModuleDefLookup>::Key<'def>),
@@ -2076,6 +2084,82 @@ mod tests {
         );
         assert!(
             !steps.contains(&AutoMigrateStep::AddIndex(&index_name)),
+            "steps: {steps:?}"
+        );
+    }
+
+    #[test]
+    fn migrate_table_with_changed_accessor_name() {
+        let old_def = create_module_def_v10(|builder| {
+            builder
+                .build_table_with_new_type(
+                    "my_table",
+                    ProductType::from([("id", AlgebraicType::U64)]),
+                    true,
+                )
+                .finish();
+        });
+
+        let new_def = create_module_def_v10(|builder| {
+            builder
+                .build_table_with_new_type(
+                    "renamed_table",
+                    ProductType::from([("id", AlgebraicType::U64)]),
+                    true,
+                )
+                .finish();
+            let mut explicit = ExplicitNames::default();
+            explicit.insert_table("renamed_table", "my_table");
+            builder.add_explicit_names(explicit);
+        });
+
+        let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
+        let steps = &plan.steps[..];
+        let table_name = expect_identifier("my_table");
+
+        assert!(
+            steps.contains(&AutoMigrateStep::ChangeTableAccessorName(&table_name)),
+            "steps: {steps:?}"
+        );
+        assert!(
+            !steps.contains(&AutoMigrateStep::RemoveTable(&table_name)),
+            "steps: {steps:?}"
+        );
+        assert!(
+            !steps.contains(&AutoMigrateStep::AddTable(&table_name)),
+            "steps: {steps:?}"
+        );
+    }
+
+    #[test]
+    fn migrate_column_with_changed_accessor_name() {
+        let old_def = create_module_def_v10(|builder| {
+            builder
+                .build_table_with_new_type(
+                    "my_table",
+                    ProductType::from([("my_field", AlgebraicType::U64)]),
+                    true,
+                )
+                .finish();
+        });
+
+        let new_def = create_module_def_v10(|builder| {
+            builder
+                .build_table_with_new_type(
+                    "my_table",
+                    ProductType::from([("myField", AlgebraicType::U64)]),
+                    true,
+                )
+                .finish();
+        });
+
+        let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
+        let steps = &plan.steps[..];
+        let table_name = expect_identifier("my_table");
+        let col_name = expect_identifier("my_field");
+
+        assert!(
+            steps.contains(&AutoMigrateStep::ChangeColumnAccessorName(&table_name, &col_name)),
             "steps: {steps:?}"
         );
     }

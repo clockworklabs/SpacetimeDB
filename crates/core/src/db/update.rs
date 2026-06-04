@@ -214,6 +214,10 @@ fn auto_migrate_database(
                 log!(logger, "Dropping index `{}` on table `{}`", index_name, table_def.name);
                 stdb.drop_index(tx, index_schema.index_id)?;
             }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeTableAccessorName(_)
+            | spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeColumnAccessorName(_, _) => {
+                unreachable!("accessor name changes are not handled in test-only mode")
+            }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeIndexSourceName(index_name) => {
                 let old_table_def = plan.old.stored_in_table_def(index_name).unwrap();
                 let new_table_def = plan.new.stored_in_table_def(index_name).unwrap();
