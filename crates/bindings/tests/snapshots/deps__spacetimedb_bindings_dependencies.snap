@@ -1,5 +1,6 @@
 ---
 source: crates/bindings/tests/deps.rs
+assertion_line: 16
 expression: "cargo tree -p spacetimedb -e no-dev --color never --target wasm32-unknown-unknown -f {lib}"
 ---
 total crates: 73
@@ -77,6 +78,7 @@ spacetimedb
 │   │   └── cc
 │   │       ├── find_msvc_tools
 │   │       └── shlex
+│   ├── bytes
 │   ├── chrono
 │   │   └── num_traits
 │   │       [build-dependencies]

@@ -850,6 +850,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-sql-connect-hook"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-sql-format"
 version = "0.1.0"
 dependencies = [
@@ -867,6 +875,36 @@ dependencies = [
 
 [[package]]
 name = "smoketest-module-views-auto-migrate"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-views-auto-migrate-read-set"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-views-auto-migrate-read-set-updated"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-views-auto-migrate-stable"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-views-auto-migrate-stable-updated"
 version = "0.1.0"
 dependencies = [
  "spacetimedb",
@@ -947,7 +985,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb"
-version = "2.1.0"
+version = "2.4.1"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -968,7 +1006,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-macro"
-version = "2.1.0"
+version = "2.4.1"
 dependencies = [
  "heck 0.4.1",
  "humantime",
@@ -980,18 +1018,19 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-sys"
-version = "2.1.0"
+version = "2.4.1"
 dependencies = [
  "spacetimedb-primitives",
 ]
 
 [[package]]
 name = "spacetimedb-lib"
-version = "2.1.0"
+version = "2.4.1"
 dependencies = [
  "anyhow",
  "bitflags",
  "blake3",
+ "bytes",
  "chrono",
  "derive_more",
  "enum-as-inner",
@@ -1006,7 +1045,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-primitives"
-version = "2.1.0"
+version = "2.4.1"
 dependencies = [
  "bitflags",
  "either",
@@ -1017,14 +1056,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-query-builder"
-version = "2.1.0"
+version = "2.4.1"
 dependencies = [
  "spacetimedb-lib",
 ]
 
 [[package]]
 name = "spacetimedb-sats"
-version = "2.1.0"
+version = "2.4.1"
 dependencies = [
  "anyhow",
  "arrayvec",

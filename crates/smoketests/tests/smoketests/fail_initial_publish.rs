@@ -24,7 +24,7 @@ fn test_fail_initial_publish() {
         .autopublish(false)
         .build();
 
-    let name = format!("test-db-{}", std::process::id());
+    let name = format!("fail-initial-publish-{}", std::process::id());
 
     // First publish should fail due to broken module
     let result = test.publish_module_named(&name, false);

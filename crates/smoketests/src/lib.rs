@@ -58,6 +58,7 @@ use regex::Regex;
 use spacetimedb_guard::{ensure_binaries_built, SpacetimeDbGuard};
 use std::env;
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::OnceLock;
@@ -279,6 +280,21 @@ pub fn pnpm_path() -> Option<PathBuf> {
     PNPM_PATH.get_or_init(|| which("pnpm").ok()).clone()
 }
 
+fn pnpm_minimum_release_age() -> Result<String> {
+    let workspace = fs::read_to_string(workspace_root().join("pnpm-workspace.yaml"))?;
+    workspace
+        .lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix("minimumReleaseAge:")?
+                .trim()
+                .parse::<u64>()
+                .ok()
+        })
+        .map(|age| age.to_string())
+        .context("pnpm-workspace.yaml is missing minimumReleaseAge")
+}
+
 /// Runs a command and returns stdout as a string.
 pub fn run_cmd(args: &[&str], cwd: &Path) -> Result<String> {
     run_cmd_inner(args, cwd, None)
@@ -331,10 +347,28 @@ fn run_cmd_inner(args: &[&str], cwd: &Path, stdin_input: Option<&str>) -> Result
 /// Runs a `pnpm` command and returns stdout as a string.
 pub fn pnpm(args: &[&str], cwd: &Path) -> Result<String> {
     let pnpm_path = pnpm_path().context("Could not locate pnpm")?;
-    let pnpm_path = pnpm_path.to_str().context("pnpm path is not valid UTF-8")?;
-    let mut full_args = vec![pnpm_path];
-    full_args.extend(args);
-    run_cmd(&full_args, cwd)
+    let minimum_release_age = pnpm_minimum_release_age()?;
+
+    // Smoketests often install inside temp projects created by `spacetime init`.
+    // Those projects intentionally do not carry the repo's .npmrc, so pass the
+    // repo policy through pnpm's environment variable instead.
+    let output = Command::new(&pnpm_path)
+        .args(args)
+        .current_dir(cwd)
+        .env("npm_config_minimum_release_age", minimum_release_age)
+        .output()
+        .with_context(|| format!("Failed to spawn pnpm {}", args.join(" ")))?;
+
+    if !output.status.success() {
+        bail!(
+            "pnpm {} (in {:?}) failed:\nstdout: {}\nstderr: {}",
+            args.join(" "),
+            cwd,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 /// Builds the local TypeScript bindings package.
@@ -350,6 +384,63 @@ pub fn build_typescript_sdk() -> Result<()> {
 pub fn have_emscripten() -> bool {
     static HAVE_EMSCRIPTEN: OnceLock<bool> = OnceLock::new();
     *HAVE_EMSCRIPTEN.get_or_init(|| which("emcc").is_ok() || which("emcc.bat").is_ok())
+}
+
+const CPP_SMOKETEST_CMAKELISTS: &str = r#"cmake_minimum_required(VERSION 3.16)
+project(smoketest_cpp_module)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+set(SPACETIMEDB_CPP_LIBRARY_PATH "@SPACETIMEDB_CPP_LIBRARY_PATH@")
+
+add_executable(lib src/lib.cpp)
+
+target_include_directories(lib PRIVATE
+    ${SPACETIMEDB_CPP_LIBRARY_PATH}/include
+)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    target_compile_options(lib PRIVATE -fno-exceptions -O2 -g0)
+    target_compile_definitions(lib PRIVATE SPACETIMEDB_UNSTABLE_FEATURES)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DSPACETIMEDB_UNSTABLE_FEATURES")
+endif()
+
+add_subdirectory(${SPACETIMEDB_CPP_LIBRARY_PATH} ${CMAKE_CURRENT_BINARY_DIR}/spacetimedb_cpp_library)
+target_link_libraries(lib PRIVATE spacetimedb_cpp_library)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    set(EXPORTED_FUNCS
+        "['_malloc','_free','___describe_module__','___call_reducer__','___call_procedure__','___call_http_handler__']"
+    )
+
+    target_link_options(lib PRIVATE
+        "SHELL:-sSTANDALONE_WASM=1"
+        "SHELL:-sWASM=1"
+        "SHELL:--no-entry"
+        "SHELL:-sEXPORTED_FUNCTIONS=${EXPORTED_FUNCS}"
+        "SHELL:-sERROR_ON_UNDEFINED_SYMBOLS=1"
+        "SHELL:-sFILESYSTEM=0"
+        "SHELL:-sDISABLE_EXCEPTION_CATCHING=1"
+        "SHELL:-sALLOW_MEMORY_GROWTH=0"
+        "SHELL:-sINITIAL_MEMORY=16MB"
+        "SHELL:-sSUPPORT_LONGJMP=0"
+        "SHELL:-sSUPPORT_ERRNO=0"
+        "SHELL:-std=c++20"
+        "SHELL:-O2"
+        "SHELL:-g0"
+    )
+
+    set_target_properties(lib PROPERTIES OUTPUT_NAME "lib" SUFFIX ".wasm")
+endif()
+"#;
+
+fn parse_identity_from_publish_output(publish_output: &str) -> Result<String> {
+    let re = Regex::new(r"identity: ([0-9a-fA-F]+)").unwrap();
+    re.captures(publish_output)
+        .and_then(|caps| caps.get(1))
+        .map(|m| m.as_str().to_string())
+        .context("Failed to parse database identity from publish output")
 }
 
 /// A smoketest instance that manages a SpacetimeDB server and module project.
@@ -401,6 +492,29 @@ impl ApiResponse {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct PublishOptions {
+    pub clear: bool,
+    pub break_clients: bool,
+    pub num_replicas: Option<u32>,
+    pub organization: Option<String>,
+    pub force: bool,
+    pub stdin_input: Option<String>,
+}
+
+impl Default for PublishOptions {
+    fn default() -> Self {
+        Self {
+            clear: false,
+            break_clients: false,
+            num_replicas: None,
+            organization: None,
+            force: true,
+            stdin_input: None,
+        }
+    }
+}
+
 /// Builder for creating `Smoketest` instances.
 pub struct SmoketestBuilder {
     module_code: Option<String>,
@@ -409,6 +523,7 @@ pub struct SmoketestBuilder {
     extra_deps: String,
     autopublish: bool,
     pg_port: Option<u16>,
+    server_url_override: Option<String>,
 }
 
 impl Default for SmoketestBuilder {
@@ -427,7 +542,13 @@ impl SmoketestBuilder {
             extra_deps: String::new(),
             autopublish: true,
             pg_port: None,
+            server_url_override: None,
         }
+    }
+
+    pub fn server_url(mut self, url: &str) -> Self {
+        self.server_url_override = Some(url.to_string());
+        self
     }
 
     /// Enables the PostgreSQL wire protocol on the specified port.
@@ -503,7 +624,10 @@ impl SmoketestBuilder {
         let build_start = Instant::now();
 
         // Check if we're running against a remote server
-        let (guard, server_url) = if let Some(remote_url) = remote_server_url() {
+        let (guard, server_url) = if let Some(url) = self.server_url_override {
+            eprintln!("[REMOTE] Using explicit server URL: {}", url);
+            (None, url)
+        } else if let Some(remote_url) = remote_server_url() {
             eprintln!("[REMOTE] Using remote server: {}", remote_url);
             (None, remote_url)
         } else {
@@ -627,6 +751,16 @@ impl Smoketest {
             .and_then(|v| v.as_str())
             .map(String::from)
             .context("No spacetimedb_token found in config")
+    }
+
+    pub fn login_with_token(&self, token: &str) -> Result<()> {
+        let host = self.server_host();
+        let config_str = format!(
+            "default_server = \"localhost\"\n\nspacetimedb_token = \"{}\"\n\n[[server_configs]]\nnickname = \"localhost\"\nhost = \"{}\"\nprotocol = \"http\"\n",
+            token, host
+        );
+        fs::write(&self.config_path, config_str).context("Failed to write config.toml")?;
+        Ok(())
     }
 
     /// Runs psql command against the PostgreSQL wire protocol server.
@@ -885,12 +1019,49 @@ impl Smoketest {
         ])?;
         csharp::verify_csharp_module_restore(&module_path)?;
 
-        let re = Regex::new(r"identity: ([0-9a-fA-F]+)").unwrap();
-        let identity = re
-            .captures(&publish_output)
-            .and_then(|caps| caps.get(1))
-            .map(|m| m.as_str().to_string())
-            .context("Failed to parse database identity from publish output")?;
+        let identity = parse_identity_from_publish_output(&publish_output)?;
+        self.database_identity = Some(identity.clone());
+
+        Ok(identity)
+    }
+
+    /// Writes and publishes a C++ module from source.
+    ///
+    /// The module is created at `<test_project_dir>/<project_dir_name>`.
+    /// On success this updates `self.database_identity`.
+    pub fn publish_cpp_module_source(
+        &mut self,
+        project_dir_name: &str,
+        module_name: &str,
+        module_source: &str,
+    ) -> Result<String> {
+        let module_path = self.project_dir.path().join(project_dir_name);
+        let src_dir = module_path.join("src");
+        fs::create_dir_all(&src_dir).context("Failed to create C++ source directory")?;
+
+        let bindings_cpp_path = workspace_root()
+            .join("crates/bindings-cpp")
+            .display()
+            .to_string()
+            .replace('\\', "/");
+        let cmakelists = CPP_SMOKETEST_CMAKELISTS.replace("@SPACETIMEDB_CPP_LIBRARY_PATH@", &bindings_cpp_path);
+
+        fs::write(module_path.join("CMakeLists.txt"), cmakelists).context("Failed to write C++ CMakeLists.txt")?;
+        fs::write(src_dir.join("lib.cpp"), module_source).context("Failed to write C++ module code")?;
+
+        let module_path_str = module_path.to_str().context("Invalid C++ module path")?;
+        let publish_output = self.spacetime(&[
+            "publish",
+            "--server",
+            &self.server_url,
+            "--module-path",
+            module_path_str,
+            "--yes",
+            "--clear-database",
+            module_name,
+        ])?;
+
+        let identity = parse_identity_from_publish_output(&publish_output)?;
         self.database_identity = Some(identity.clone());
 
         Ok(identity)
@@ -998,7 +1169,7 @@ log = "0.4"
 
     /// Publishes the module and stores the database identity.
     pub fn publish_module(&mut self) -> Result<String> {
-        self.publish_module_opts(None, false)
+        self.publish_module_internal_ext(None, PublishOptions::default())
     }
 
     /// Publishes the module with a specific name and optional clear flag.
@@ -1006,7 +1177,17 @@ log = "0.4"
     /// If `name` is provided, the database will be published with that name.
     /// If `clear` is true, the database will be cleared before publishing.
     pub fn publish_module_named(&mut self, name: &str, clear: bool) -> Result<String> {
-        self.publish_module_opts(Some(name), clear)
+        self.publish_module_internal_ext(
+            Some(name),
+            PublishOptions {
+                clear,
+                ..PublishOptions::default()
+            },
+        )
+    }
+
+    pub fn publish_module_named_ext(&mut self, name: &str, opts: PublishOptions) -> Result<String> {
+        self.publish_module_internal_ext(Some(name), opts)
     }
 
     /// Re-publishes the module to the existing database identity with optional clear.
@@ -1019,12 +1200,25 @@ log = "0.4"
             .as_ref()
             .context("No database published yet")?
             .clone();
-        self.publish_module_opts(Some(&identity), clear)
+        self.publish_module_internal_ext(
+            Some(&identity),
+            PublishOptions {
+                clear,
+                ..PublishOptions::default()
+            },
+        )
     }
 
     /// Publishes the module with name, clear, and break_clients options.
     pub fn publish_module_with_options(&mut self, name: &str, clear: bool, break_clients: bool) -> Result<String> {
-        self.publish_module_internal(Some(name), clear, break_clients, true, None)
+        self.publish_module_internal_ext(
+            Some(name),
+            PublishOptions {
+                clear,
+                break_clients,
+                ..PublishOptions::default()
+            },
+        )
     }
 
     /// Publishes the module and allows supplying stdin input to the CLI.
@@ -1032,28 +1226,32 @@ log = "0.4"
     /// Useful for interactive publish prompts which require typed acknowledgements.
     /// Note: does NOT pass `--yes` so that interactive prompts are not suppressed.
     pub fn publish_module_with_stdin(&mut self, name: &str, stdin_input: &str) -> Result<String> {
-        self.publish_module_internal(Some(name), false, false, false, Some(stdin_input))
+        self.publish_module_internal_ext(
+            Some(name),
+            PublishOptions {
+                force: false,
+                stdin_input: Some(stdin_input.to_string()),
+                ..PublishOptions::default()
+            },
+        )
     }
 
     /// Publishes the module without passing `--yes`, so interactive prompts are not suppressed.
     pub fn publish_module_named_no_force(&mut self, name: &str) -> Result<String> {
-        self.publish_module_internal(Some(name), false, false, false, None)
+        self.publish_module_internal_ext(
+            Some(name),
+            PublishOptions {
+                force: false,
+                ..PublishOptions::default()
+            },
+        )
     }
 
-    /// Internal helper for publishing with options.
-    fn publish_module_opts(&mut self, name: Option<&str>, clear: bool) -> Result<String> {
-        self.publish_module_internal(name, clear, false, true, None)
+    pub fn publish_module_with_options_ext(&mut self, name: &str, opts: PublishOptions) -> Result<String> {
+        self.publish_module_internal_ext(Some(name), opts)
     }
 
-    /// Internal helper for publishing with all options.
-    fn publish_module_internal(
-        &mut self,
-        name: Option<&str>,
-        clear: bool,
-        break_clients: bool,
-        force: bool,
-        stdin_input: Option<&str>,
-    ) -> Result<String> {
+    fn publish_module_internal_ext(&mut self, name: Option<&str>, opts: PublishOptions) -> Result<String> {
         let start = Instant::now();
 
         // Determine the WASM path - either precompiled or build it
@@ -1096,16 +1294,28 @@ log = "0.4"
         let publish_start = Instant::now();
         let mut args = vec!["publish", "--server", &self.server_url, "--bin-path", &wasm_path_str];
 
-        if force {
+        if opts.force {
             args.push("--yes");
         }
 
-        if clear {
+        if opts.clear {
             args.push("--clear-database");
         }
 
-        if break_clients {
+        if opts.break_clients {
             args.push("--break-clients");
+        }
+
+        let num_replicas_owned = opts.num_replicas.map(|n| n.to_string());
+        if let Some(n) = num_replicas_owned.as_ref() {
+            args.push("--num-replicas");
+            args.push(n);
+        }
+
+        let org_owned = opts.organization.clone();
+        if let Some(org) = org_owned.as_ref() {
+            args.push("--organization");
+            args.push(org);
         }
 
         let name_owned;
@@ -1114,7 +1324,7 @@ log = "0.4"
             args.push(&name_owned);
         }
 
-        let output = match stdin_input {
+        let output = match opts.stdin_input.as_deref() {
             Some(stdin_input) => self.spacetime_with_stdin(&args, stdin_input)?,
             None => self.spacetime(&args)?,
         };
@@ -1396,15 +1606,45 @@ log = "0.4"
         self.subscribe_opts(queries, n, None)
     }
 
+    pub fn subscribe_on(&self, database: &str, queries: &[&str], n: usize) -> Result<Vec<serde_json::Value>> {
+        self.subscribe_on_opts(database, queries, n, Some(false))
+    }
+
     /// Starts a subscription with --confirmed flag and waits for N updates.
     pub fn subscribe_confirmed(&self, queries: &[&str], n: usize) -> Result<Vec<serde_json::Value>> {
         self.subscribe_opts(queries, n, Some(true))
+    }
+
+    pub fn subscribe_on_confirmed(&self, database: &str, queries: &[&str], n: usize) -> Result<Vec<serde_json::Value>> {
+        self.subscribe_on_opts(database, queries, n, Some(true))
     }
 
     /// Internal helper for subscribe with options.
     fn subscribe_opts(&self, queries: &[&str], n: usize, confirmed: Option<bool>) -> Result<Vec<serde_json::Value>> {
         let start = Instant::now();
         let identity = self.database_identity.as_ref().context("No database published")?;
+        self.subscribe_on_impl(identity, queries, n, confirmed, start)
+    }
+
+    fn subscribe_on_opts(
+        &self,
+        database: &str,
+        queries: &[&str],
+        n: usize,
+        confirmed: Option<bool>,
+    ) -> Result<Vec<serde_json::Value>> {
+        let start = Instant::now();
+        self.subscribe_on_impl(database, queries, n, confirmed, start)
+    }
+
+    fn subscribe_on_impl(
+        &self,
+        database: &str,
+        queries: &[&str],
+        n: usize,
+        confirmed: Option<bool>,
+        start: Instant,
+    ) -> Result<Vec<serde_json::Value>> {
         let config_path_str = self.config_path.to_str().unwrap();
 
         let cli_path = ensure_binaries_built();
@@ -1415,7 +1655,7 @@ log = "0.4"
             "subscribe".to_string(),
             "--server".to_string(),
             self.server_url.to_string(),
-            identity.to_string(),
+            database.to_string(),
             "-t".to_string(),
             "30".to_string(),
             "-n".to_string(),
@@ -1456,6 +1696,10 @@ log = "0.4"
         self.subscribe_background_opts(queries, n, None)
     }
 
+    pub fn subscribe_background_on(&self, database: &str, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
+        self.subscribe_background_on_opts(database, queries, n, Some(false))
+    }
+
     /// Starts a subscription in the background with --confirmed flag.
     pub fn subscribe_background_confirmed(&self, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
         self.subscribe_background_opts(queries, n, Some(true))
@@ -1466,6 +1710,15 @@ log = "0.4"
         self.subscribe_background_opts(queries, n, Some(false))
     }
 
+    pub fn subscribe_background_on_confirmed(
+        &self,
+        database: &str,
+        queries: &[&str],
+        n: usize,
+    ) -> Result<SubscriptionHandle> {
+        self.subscribe_background_on_opts(database, queries, n, Some(true))
+    }
+
     /// Internal helper for background subscribe with options.
     fn subscribe_background_opts(
         &self,
@@ -1473,14 +1726,32 @@ log = "0.4"
         n: usize,
         confirmed: Option<bool>,
     ) -> Result<SubscriptionHandle> {
-        use std::io::{BufRead, BufReader};
-
         let identity = self
             .database_identity
             .as_ref()
             .context("No database published")?
             .clone();
 
+        self.subscribe_background_on_impl(&identity, queries, n, confirmed)
+    }
+
+    fn subscribe_background_on_opts(
+        &self,
+        database: &str,
+        queries: &[&str],
+        n: usize,
+        confirmed: Option<bool>,
+    ) -> Result<SubscriptionHandle> {
+        self.subscribe_background_on_impl(database, queries, n, confirmed)
+    }
+
+    fn subscribe_background_on_impl(
+        &self,
+        database: &str,
+        queries: &[&str],
+        n: usize,
+        confirmed: Option<bool>,
+    ) -> Result<SubscriptionHandle> {
         let cli_path = ensure_binaries_built();
         let mut cmd = Command::new(&cli_path);
         // Use --print-initial-update so we know when subscription is established
@@ -1491,7 +1762,7 @@ log = "0.4"
             "subscribe".to_string(),
             "--server".to_string(),
             self.server_url.clone(),
-            identity,
+            database.to_string(),
             "-t".to_string(),
             "30".to_string(),
             "-n".to_string(),
@@ -1570,6 +1841,19 @@ impl SubscriptionHandle {
         }
 
         Ok(updates)
+    }
+}
+
+impl Drop for SubscriptionHandle {
+    fn drop(&mut self) {
+        match self.child.try_wait() {
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                let _ = self.child.kill();
+                let _ = self.child.wait();
+            }
+            Err(_) => {}
+        }
     }
 }
 

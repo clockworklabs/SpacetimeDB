@@ -1,12 +1,11 @@
 export async function decompress(
-  buffer: Uint8Array,
-  // Leaving it here to expand to brotli when it lands in the browsers and NodeJS
-  type: 'gzip',
+  buffer: Uint8Array<ArrayBuffer>,
+  type: CompressionFormat,
   chunkSize: number = 128 * 1024 // 128KB
 ): Promise<Uint8Array> {
   // Create a single ReadableStream to handle chunks
   let offset = 0;
-  const readableStream = new ReadableStream({
+  const readableStream = new ReadableStream<BufferSource>({
     pull(controller) {
       if (offset < buffer.length) {
         // Slice a chunk of the buffer and enqueue it

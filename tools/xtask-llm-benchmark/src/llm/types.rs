@@ -1,6 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+/// Output from an LLM generation call, including token usage.
+#[derive(Debug, Clone, Default)]
+pub struct LlmOutput {
+    pub text: String,
+    pub input_tokens: Option<u32>,
+    pub output_tokens: Option<u32>,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Vendor {
     OpenAi,
@@ -8,7 +16,8 @@ pub enum Vendor {
     Google, // Gemini
     Xai,    // Grok
     DeepSeek,
-    Meta, // Llama
+    Meta,       // Llama
+    OpenRouter, // unified proxy — routes to any vendor
 }
 
 impl Vendor {
@@ -21,6 +30,7 @@ impl Vendor {
             Vendor::Xai => "xai",
             Vendor::DeepSeek => "deepseek",
             Vendor::Meta => "meta",
+            Vendor::OpenRouter => "openrouter",
         }
     }
 
@@ -33,6 +43,7 @@ impl Vendor {
             Vendor::Xai => "xAI",
             Vendor::DeepSeek => "DeepSeek",
             Vendor::Meta => "Meta",
+            Vendor::OpenRouter => "OpenRouter",
         }
     }
 
@@ -46,6 +57,7 @@ impl Vendor {
             "xai" | "grok" => Vendor::Xai,
             "deepseek" => Vendor::DeepSeek,
             "meta" | "llama" => Vendor::Meta,
+            "openrouter" | "or" => Vendor::OpenRouter,
             _ => return None,
         })
     }

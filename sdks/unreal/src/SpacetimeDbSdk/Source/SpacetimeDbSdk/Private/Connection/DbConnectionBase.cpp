@@ -2,6 +2,7 @@
 #include "Connection/DbConnectionBuilder.h"
 #include "Connection/Credentials.h"
 #include "Connection/LogCategory.h"
+#include "Containers/Ticker.h"
 #include "ModuleBindings/Types/ClientMessageType.g.h"
 #include "ModuleBindings/Types/SubscriptionErrorType.g.h"
 #include "Misc/Compression.h"
@@ -71,6 +72,41 @@ UDbConnectionBase::UDbConnectionBase(const FObjectInitializer& ObjectInitializer
 	NextRequestId = 1;
 	NextSubscriptionId = 1;
 	ProcedureCallbacks = CreateDefaultSubobject<UProcedureCallbacks>(TEXT("ProcedureCallbacks"));
+}
+
+void UDbConnectionBase::SetAutoTicking(bool bAutoTick)
+{
+	if (bIsAutoTicking == bAutoTick)
+	{
+		return;
+	}
+
+	bIsAutoTicking = bAutoTick;
+
+	if (bIsAutoTicking)
+	{
+		if (!TickerHandle.IsValid())
+		{
+			TickerHandle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateUObject(this, &UDbConnectionBase::OnTickerTick));
+		}
+	}
+	else if (TickerHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(TickerHandle);
+		TickerHandle.Reset();
+	}
+}
+
+void UDbConnectionBase::BeginDestroy()
+{
+	if (TickerHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(TickerHandle);
+		TickerHandle.Reset();
+	}
+	bIsAutoTicking = false;
+
+	Super::BeginDestroy();
 }
 
 void UDbConnectionBase::Disconnect()
@@ -238,28 +274,16 @@ void UDbConnectionBase::FrameTick()
 		ProcessServerMessage(Msg);
 	}
 }
-void UDbConnectionBase::Tick(float DeltaTime)
+
+bool UDbConnectionBase::OnTickerTick(float DeltaTime)
 {
-	if (bIsAutoTicking)
+	if (HasAnyFlags(RF_BeginDestroyed | RF_FinishDestroyed) || !bIsAutoTicking)
 	{
-		FrameTick();
+		return false;
 	}
-}
 
-TStatId UDbConnectionBase::GetStatId() const
-{
-	// This is used by the engine to track tickables, we return a unique stat ID for this class
-	RETURN_QUICK_DECLARE_CYCLE_STAT(UMyTickableObject, STATGROUP_Tickables);
-}
-
-bool UDbConnectionBase::IsTickable() const
-{
-	return bIsAutoTicking; 
-}
-
-bool UDbConnectionBase::IsTickableInEditor() const
-{
-	return bIsAutoTicking;
+	FrameTick();
+	return true;
 }
 
 

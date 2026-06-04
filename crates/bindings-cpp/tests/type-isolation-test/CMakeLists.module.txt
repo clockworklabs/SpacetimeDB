@@ -28,6 +28,7 @@ add_executable(${OUTPUT_NAME} ${MODULE_SOURCE})
 
 # Include directories
 target_include_directories(${OUTPUT_NAME} PRIVATE ${SPACETIMEDB_INCLUDE_DIR})
+target_compile_definitions(${OUTPUT_NAME} PRIVATE SPACETIMEDB_UNSTABLE_FEATURES)
 
 # Link the pre-built library
 target_link_directories(${OUTPUT_NAME} PRIVATE ${SPACETIMEDB_LIBRARY_DIR})

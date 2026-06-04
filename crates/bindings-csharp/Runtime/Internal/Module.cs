@@ -16,6 +16,8 @@ partial class RawModuleDefV10
     private readonly List<RawReducerDefV10> reducerDefs = [];
     private readonly List<RawLifeCycleReducerDefV10> lifecycleReducerDefs = [];
     private readonly List<RawProcedureDefV10> procedureDefs = [];
+    private readonly List<RawHttpHandlerDefV10> httpHandlerDefs = [];
+    private readonly List<RawHttpRouteDefV10> httpRouteDefs = [];
     private readonly List<RawViewDefV10> viewDefs = [];
     private readonly List<RawRowLevelSecurityDefV9> rowLevelSecurityDefs = [];
     private readonly Dictionary<string, List<RawColumnDefaultValueV10>> defaultValuesByTable =
@@ -64,6 +66,10 @@ partial class RawModuleDefV10
     }
 
     internal void RegisterProcedure(RawProcedureDefV10 procedure) => procedureDefs.Add(procedure);
+
+    internal void RegisterHttpHandler(RawHttpHandlerDefV10 handler) => httpHandlerDefs.Add(handler);
+
+    internal void RegisterHttpRoute(RawHttpRouteDefV10 route) => httpRouteDefs.Add(route);
 
     internal void RegisterTable(RawTableDefV10 table, RawScheduleDefV10? schedule)
     {
@@ -169,6 +175,14 @@ partial class RawModuleDefV10
         {
             sections.Add(new RawModuleDefV10Section.Procedures(procedureDefs));
         }
+        if (httpHandlerDefs.Count > 0)
+        {
+            sections.Add(new RawModuleDefV10Section.HttpHandlers(httpHandlerDefs));
+        }
+        if (httpRouteDefs.Count > 0)
+        {
+            sections.Add(new RawModuleDefV10Section.HttpRoutes(httpRouteDefs));
+        }
         if (viewDefs.Count > 0)
         {
             sections.Add(new RawModuleDefV10Section.Views(viewDefs));
@@ -206,10 +220,41 @@ partial class RawModuleDefV10
 
 public static class Module
 {
+    // Workaround for NativeAOT-LLVM IL scanner bug:
+    // The scanner fails to compute vtables for TaggedEnum<T> base types when
+    // concrete subtypes are only encountered indirectly (e.g., through Equals
+    // calls on types containing TaggedEnum fields). This occurs when no user
+    // table has indexes/primary keys, so RawIndexAlgorithm is never directly
+    // constructed in user code.
+    // By referencing concrete TaggedEnum subtypes here, we ensure the IL scanner
+    // always processes their vtables. One variant per TaggedEnum is sufficient.
+    [System.Runtime.CompilerServices.MethodImpl(
+        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
+    )]
+    private static void EnsureNativeAotTypeRoots()
+    {
+        // These constructions are never executed at runtime — they exist solely
+        // to make the IL scanner compute vtables for TaggedEnum subtypes.
+        // The condition is always false but the scanner must assume it could be true.
+        if (Environment.TickCount < 0 && Environment.TickCount > 0)
+        {
+            _ = new RawIndexAlgorithm.BTree(null!);
+            _ = new RawConstraintDataV9.Unique(null!);
+            _ = new RawModuleDef.V10(null!);
+            _ = new RawModuleDefV10Section.Typespace(null!);
+            _ = new ExplicitNameEntry.Table(null!);
+            _ = new MiscModuleExport.TypeAlias(null!);
+            _ = new RawMiscModuleExportV9.ColumnDefaultValue(null!);
+            _ = new SpacetimeDB.Filter.Sql(null!);
+            _ = new ViewResultHeader.RowData(default);
+        }
+    }
+
     private static readonly RawModuleDefV10 moduleDef = new();
 
     private static readonly List<IReducer> reducers = [];
     private static readonly List<IProcedure> procedures = [];
+    private static readonly List<IHttpHandler> httpHandlers = [];
     private static readonly List<IView> viewDispatchers = [];
     private static readonly List<IAnonymousView> anonymousViewDispatchers = [];
 
@@ -222,6 +267,8 @@ public static class Module
     >? newReducerContext = null;
     private static Func<Identity, IViewContext>? newViewContext = null;
     private static Func<IAnonymousViewContext>? newAnonymousViewContext = null;
+    private static Func<Random, Timestamp, SpacetimeDB.HandlerContextBase>? newHandlerContext =
+        null;
 
     private static Func<
         Identity,
@@ -238,6 +285,10 @@ public static class Module
     public static void SetProcedureContextConstructor(
         Func<Identity, ConnectionId?, Random, Timestamp, IProcedureContext> ctor
     ) => newProcedureContext = ctor;
+
+    public static void SetHandlerContextConstructor(
+        Func<Random, Timestamp, SpacetimeDB.HandlerContextBase> ctor
+    ) => newHandlerContext = ctor;
 
     public static void SetViewContextConstructor(Func<Identity, IViewContext> ctor) =>
         newViewContext = ctor;
@@ -290,6 +341,40 @@ public static class Module
         var procedure = new P();
         procedures.Add(procedure);
         moduleDef.RegisterProcedure(procedure.MakeProcedureDef(typeRegistrar));
+    }
+
+    public static void RegisterHttpHandler<H>()
+        where H : IHttpHandler, new()
+    {
+        var handler = new H();
+        httpHandlers.Add(handler);
+        moduleDef.RegisterHttpHandler(handler.MakeHandlerDef());
+    }
+
+    public static void RegisterHttpRouter(SpacetimeDB.Router router)
+    {
+        foreach (var route in router.GetRoutes())
+        {
+            if (
+                !httpHandlers.Any(handler =>
+                    handler.MakeHandlerDef().SourceName == route.HandlerFunction
+                )
+            )
+            {
+                throw new ArgumentException(
+                    $"HTTP router references unknown handler `{route.HandlerFunction}`",
+                    nameof(router)
+                );
+            }
+
+            moduleDef.RegisterHttpRoute(
+                new RawHttpRouteDefV10(
+                    HandlerFunction: route.HandlerFunction,
+                    Method: route.Method,
+                    Path: route.Path
+                )
+            );
+        }
     }
 
     public static void RegisterTable<T, View>()
@@ -419,6 +504,7 @@ public static class Module
 
     public static void __describe_module__(BytesSink description)
     {
+        EnsureNativeAotTypeRoots();
         try
         {
             var module = moduleDef.BuildModuleDefinition();
@@ -520,6 +606,47 @@ public static class Module
             // Returning other errno values here can put the host/runtime in an unexpected state,
             // so we log and rethrow to trap on any exception.
             Log.Error($"Error while invoking procedure: {e}");
+            throw;
+        }
+    }
+
+    public static Errno __call_http_handler__(
+        uint id,
+        Timestamp timestamp,
+        BytesSource request,
+        BytesSource requestBody,
+        BytesSink responseSink,
+        BytesSink responseBodySink
+    )
+    {
+        try
+        {
+            var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
+            var time = timestamp.ToStd();
+            var ctx = newHandlerContext!(random, time);
+
+            var requestBytes = request.Consume();
+            using var stream = new MemoryStream(requestBytes);
+            using var reader = new BinaryReader(stream);
+            var requestWire = new HttpRequestWire.BSATN().Read(reader);
+            if (stream.Position != stream.Length)
+            {
+                throw new Exception("Unrecognised extra bytes in the HTTP handler request");
+            }
+
+            var response = httpHandlers[(int)id]
+                .Invoke(ctx, SpacetimeDB.HttpClient.FromWire(requestWire, requestBody.Consume()));
+            var (responseWire, responseBody) = SpacetimeDB.HttpClient.ToWire(response);
+            responseSink.Write(
+                IStructuralReadWrite.ToBytes(new HttpResponseWire.BSATN(), responseWire)
+            );
+            responseBodySink.Write(responseBody);
+
+            return Errno.OK;
+        }
+        catch (Exception e)
+        {
+            Log.Error($"Error while invoking HTTP handler: {e}");
             throw;
         }
     }

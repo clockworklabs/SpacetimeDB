@@ -26,6 +26,10 @@ members = [
     "views-query",
     "views-callable",
     "views-count",
+    "views-auto-migrate-stable",
+    "views-auto-migrate-stable-updated",
+    "views-auto-migrate-read-set",
+    "views-auto-migrate-read-set-updated",
 
     # Security and permissions
     "rls",
@@ -75,6 +79,7 @@ members = [
     "delete-database",
     "client-connection-reject",
     "client-connection-disconnect-panic",
+    "sql-connect-hook",
 
     # Log filtering tests
     "logs-level-filter",

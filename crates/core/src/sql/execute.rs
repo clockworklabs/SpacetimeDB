@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use super::ast::SchemaViewer;
 use crate::db::relational_db::RelationalDB;
-use crate::energy::EnergyQuanta;
+use crate::energy::FunctionBudget;
 use crate::error::DBError;
 use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::host::module_host::{
@@ -58,7 +58,7 @@ pub async fn run(
     head: &mut Vec<(RawIdentifier, AlgebraicType)>,
 ) -> Result<SqlResult, DBError> {
     match module {
-        Some(module) => module.call_view_sql(db, sql_text, auth, subs, head).await,
+        Some(module) => module.call_sql(db, sql_text, auth, subs, head).await,
         None => run_inner::<crate::host::wasmtime::WasmtimeInstance>(None, db, sql_text, auth, subs, head).map(|x| x.0),
     }
 }
@@ -204,7 +204,7 @@ fn run_inner<I: WasmInstance>(
                 },
                 status: EventStatus::Committed(DatabaseUpdate::default()),
                 reducer_return_value: None,
-                energy_quanta_used: EnergyQuanta::ZERO,
+                execution_budget_used: FunctionBudget::ZERO,
                 host_execution_duration: Duration::ZERO,
                 request_id: None,
                 timer: None,

@@ -6,7 +6,7 @@ use crate::llm::prompt::BuiltPrompt;
 use crate::llm::segmentation::{
     deterministic_trim_prefix, non_context_reserve_tokens_env, xai_ctx_limit_tokens, Segment,
 };
-use crate::llm::types::Vendor;
+use crate::llm::types::{LlmOutput, Vendor};
 
 #[derive(Clone)]
 pub struct XaiGrokClient {
@@ -21,7 +21,7 @@ impl XaiGrokClient {
     }
 
     /// Uses BuiltPrompt (system, static_prefix, segments) and maps to xAI /chat/completions.
-    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<String> {
+    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<LlmOutput> {
         let url = format!("{}/v1/chat/completions", self.base.trim_end_matches('/'));
 
         // Never trim system or dynamic segments
@@ -80,13 +80,22 @@ impl XaiGrokClient {
         let auth = HttpClient::bearer(&self.api_key);
         let body = self.http.post_json(&url, &[auth], &req).await?;
         let resp: GrokChatResp = serde_json::from_str(&body).context("parse grok resp")?;
-        resp.into_first_text().ok_or_else(|| anyhow!("no content from Grok"))
+        let input_tokens = resp.usage.as_ref().and_then(|u| u.prompt_tokens);
+        let output_tokens = resp.usage.as_ref().and_then(|u| u.completion_tokens);
+        let text = resp.into_first_text().ok_or_else(|| anyhow!("no content from Grok"))?;
+        Ok(LlmOutput {
+            text,
+            input_tokens,
+            output_tokens,
+        })
     }
 }
 
 #[derive(Debug, Deserialize)]
 struct GrokChatResp {
     choices: Vec<GrokChoice>,
+    #[serde(default)]
+    usage: Option<GrokUsageInfo>,
 }
 #[derive(Debug, Deserialize)]
 struct GrokChoice {
@@ -95,6 +104,13 @@ struct GrokChoice {
 #[derive(Debug, Deserialize)]
 struct GrokMsgOut {
     content: String,
+}
+#[derive(Debug, Deserialize)]
+struct GrokUsageInfo {
+    #[serde(default)]
+    prompt_tokens: Option<u32>,
+    #[serde(default)]
+    completion_tokens: Option<u32>,
 }
 
 impl GrokChatResp {
