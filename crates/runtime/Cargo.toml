@@ -1,0 +1,24 @@
+[package]
+name = "spacetimedb-runtime"
+version.workspace = true
+edition.workspace = true
+license-file = "LICENSE"
+description = "Runtime and deterministic simulation utilities for SpacetimeDB"
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+tokio = { workspace = true, optional = true }
+async-task = { version = "4.4", default-features = false, optional = true }
+spin = { version = "0.9", default-features = false, features = ["mutex", "spin_mutex"], optional = true }
+libc = { version = "0.2", optional = true }
+
+[dev-dependencies]
+futures.workspace = true
+
+[features]
+default = ["tokio"]
+tokio = ["dep:tokio"]
+simulation = ["dep:async-task", "dep:spin", "dep:libc"]

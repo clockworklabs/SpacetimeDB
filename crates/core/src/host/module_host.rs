@@ -28,7 +28,7 @@ use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRo
 use crate::subscription::tx::DeltaTx;
 use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
 use crate::subscription::{execute_plan, execute_plan_for_view};
-use crate::util::jobs::{AllocatedJobCore, SingleCoreExecutor, SingleThreadedExecutor};
+use crate::util::jobs::{AllocatedJobCore, SingleThreadedExecutor};
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::Context;
 use bytes::Bytes;
@@ -342,8 +342,7 @@ pub enum ModuleWithInstance {
     Wasm {
         module: super::wasmtime::Module,
         procedure_module: super::wasmtime::ProcedureModule,
-        main_thread_name: String,
-        procedure_thread_name: String,
+        thread_name: String,
         core: AllocatedJobCore,
         init_inst: Box<super::wasmtime::ModuleInstance>,
         procedure_instance_pool_size: NonZeroUsize,
@@ -407,9 +406,8 @@ impl WasmtimeModuleState {
     }
 }
 
-/// Wasm uses a single-core executor backed by a Tokio single threaded runtime
-/// for async procedures. It uses an executor backed by a single OS-thread for
-/// everything else.
+/// Wasm uses a single executor backed by a single OS thread with a Tokio LocalSet
+/// for async procedures; synchronous reducers run inline on the same thread.
 ///
 /// Note, procedures acquire a module instance from the async procedure pool
 /// before being enqueued by the executor.
@@ -418,8 +416,7 @@ impl WasmtimeModuleState {
 /// to acquire.
 struct WasmtimeModuleHost {
     module: Arc<super::wasmtime::Module>,
-    main_executor: SingleThreadedExecutor<WasmtimeModuleState>,
-    procedure_executor: SingleCoreExecutor,
+    executor: SingleThreadedExecutor<WasmtimeModuleState>,
     procedure_instances: Arc<WasmtimeProcedureInstanceManager>,
 }
 
@@ -435,7 +432,7 @@ impl WasmtimeModuleHost {
         A: Send + 'static,
     {
         let label = label.to_owned();
-        self.main_executor.enqueue_job(move |state| {
+        self.executor.enqueue_sync_job(move |state| {
             scopeguard::defer_on_unwind!({
                 log::warn!("wasm main operation {label} panicked");
                 on_panic();
@@ -461,7 +458,7 @@ impl WasmtimeModuleHost {
         let instance_manager = self.procedure_instances.clone();
         let ModuleInstanceLease { instance, slot } = instance_manager.get_instance().await;
         let label = label.to_owned();
-        self.procedure_executor.enqueue_job(async move || {
+        self.executor.enqueue_async_job(async move || {
             scopeguard::defer_on_unwind!({
                 log::warn!("wasm procedure {label} panicked");
                 on_panic();
@@ -1709,8 +1706,7 @@ impl ModuleHost {
             ModuleWithInstance::Wasm {
                 module,
                 procedure_module,
-                main_thread_name,
-                procedure_thread_name,
+                thread_name,
                 core,
                 init_inst,
                 procedure_instance_pool_size,
@@ -1721,20 +1717,7 @@ impl ModuleHost {
                 let metrics = InstanceManagerMetrics::new(module.host_type(), database_identity);
                 let main_state = WasmtimeModuleState::new(module.clone(), init_inst, metrics.clone());
 
-                // The wasm main and procedure executors run on separate OS threads,
-                // but they intentionally share one database core allocation.
-                // When core pinning is enabled, both threads pin to the same core
-                // and rebalance together because they use clones of the same `CorePinner`.
-                let (load_balance_guard, core_pinner) = core.into_shared();
-
-                let main_executor = AllocatedJobCore::spawn_executor(
-                    load_balance_guard.clone(),
-                    core_pinner.clone(),
-                    main_state,
-                    main_thread_name,
-                );
-                let procedure_executor =
-                    AllocatedJobCore::spawn_async_executor(load_balance_guard, core_pinner, procedure_thread_name);
+                let executor = core.spawn_executor(main_state, thread_name);
                 let procedure_instances = Arc::new(ModuleInstanceManager::new_bounded_with_metrics(
                     procedure_module,
                     None,
@@ -1743,8 +1726,7 @@ impl ModuleHost {
                 ));
                 Arc::new(ModuleHostInner::Wasm(Box::new(WasmtimeModuleHost {
                     module,
-                    main_executor,
-                    procedure_executor,
+                    executor,
                     procedure_instances,
                 })))
             }
@@ -1853,9 +1835,9 @@ impl ModuleHost {
 
         Ok(match &*self.inner {
             ModuleHostInner::Wasm(host) => {
-                let executor = host.main_executor.clone();
+                let executor = host.executor.clone();
                 executor
-                    .run_job(move |state| {
+                    .run_sync_job(move |state| {
                         state.with_instance(move |inst| {
                             drop(timer_guard);
                             wasm(arg, inst)
@@ -1897,12 +1879,12 @@ impl ModuleHost {
 
         Ok(match &*self.inner {
             ModuleHostInner::Wasm(host) => {
-                let executor = host.procedure_executor.clone();
+                let executor = host.executor.clone();
                 let instance_manager = host.procedure_instances.clone();
                 instance_manager
                     .with_instance(async move |mut inst| {
                         executor
-                            .run_job(async move || {
+                            .run_async_job(async move || {
                                 drop(timer_guard);
                                 let res = wasm(arg, &mut inst).await;
                                 (res, inst)
@@ -3202,10 +3184,10 @@ impl ModuleHost {
             request,
             |request, inst, on_panic| async move { inst.enqueue_one_off_query(request, on_panic).await },
             move |request, wasm_host, on_panic, timer_guard| {
-                let executor = wasm_host.main_executor.clone();
+                let executor = wasm_host.executor.clone();
                 let info = wasm_host.module.info();
                 let label = label.to_owned();
-                executor.enqueue_job(move |_| {
+                executor.enqueue_sync_job(move |_| {
                     scopeguard::defer_on_unwind!({
                         log::warn!("websocket one-off query operation {label} panicked");
                         on_panic();
