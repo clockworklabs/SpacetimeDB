@@ -49,6 +49,8 @@ pub use spacetimedb_lib::ScheduleAt;
 pub use spacetimedb_lib::TimeDuration;
 pub use spacetimedb_lib::Timestamp;
 pub use spacetimedb_lib::Uuid;
+#[doc(hidden)]
+pub use spacetimedb_lib::ViewPrimaryKeyColumn;
 pub use spacetimedb_primitives::TableId;
 pub use sys::Errno;
 pub use table::{

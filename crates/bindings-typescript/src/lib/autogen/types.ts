@@ -387,6 +387,9 @@ export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
   get HttpRoutes() {
     return __t.array(RawHttpRouteDefV10);
   },
+  get ViewPrimaryKeys() {
+    return __t.array(RawViewPrimaryKeyDefV10);
+  },
 });
 export type RawModuleDefV10Section = __Infer<typeof RawModuleDefV10Section>;
 
@@ -670,6 +673,12 @@ export const RawViewDefV9 = __t.object('RawViewDefV9', {
   },
 });
 export type RawViewDefV9 = __Infer<typeof RawViewDefV9>;
+
+export const RawViewPrimaryKeyDefV10 = __t.object('RawViewPrimaryKeyDefV10', {
+  viewSourceName: __t.string(),
+  columns: __t.array(__t.string()),
+});
+export type RawViewPrimaryKeyDefV10 = __Infer<typeof RawViewPrimaryKeyDefV10>;
 
 export const ReducerDef = __t.object('ReducerDef', {
   name: __t.string(),
