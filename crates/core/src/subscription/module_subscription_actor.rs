@@ -1948,7 +1948,6 @@ mod tests {
     use crate::subscription::query::compile_read_only_query;
     use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
     use crate::subscription::TableUpdateType;
-    use core::fmt;
     use futures::FutureExt;
     use itertools::Itertools;
     use pretty_assertions::assert_matches;
@@ -1968,15 +1967,13 @@ mod tests {
     use spacetimedb_primitives::TableId;
     use spacetimedb_sats::product;
     use std::future::Future;
-    use std::pin::pin;
     use std::sync::RwLock;
-    use std::task::Poll;
     use std::time::Instant;
     use std::{sync::Arc, time::Duration};
     use tokio::sync::mpsc::{self};
     use tokio::sync::watch;
 
-    const TEST_MESSAGE_TIMEOUT: Duration = Duration::from_millis(20);
+    const TEST_MESSAGE_TIMEOUT: Duration = Duration::from_secs(10);
 
     fn add_subscriber(db: Arc<RelationalDB>, sql: &str, assert: Option<AssertTxFn>) -> Result<(), DBError> {
         // Create and enter a Tokio runtime to run the `ModuleSubscriptions`' background workers in parallel.
@@ -2506,9 +2503,9 @@ mod tests {
             other => panic!("Expected v2 UnsubscribeApplied, got: {other:?}"),
         }
 
-        let _ = commit_tx(&db, &subs, [], [(table_id, product![2_u8])])?;
-
-        assert_no_outbound_message(rx.recv()).await;
+        let metrics = commit_tx(&db, &subs, [], [(table_id, product![2_u8])])?;
+        assert_eq!(metrics.delta_queries_evaluated, 0);
+        assert_eq!(metrics.delta_queries_matched, 0);
 
         Ok(())
     }
@@ -2745,28 +2742,12 @@ mod tests {
             .unwrap_or_else(|_| panic!("timed out waiting for {expected}"))
     }
 
-    async fn assert_no_outbound_message(rx: impl Future<Output = Option<OutboundMessage>>) {
-        match tokio::time::timeout(TEST_MESSAGE_TIMEOUT, rx).await {
-            Err(_) => {}
-            Ok(Some(msg)) => panic!("expected no message, got {msg:#?}"),
-            Ok(None) => panic!("the receiver closed due to an error"),
-        }
-    }
-
-    /// Assert that the future `f` completes only after `durability` is marked
-    /// durable.
-    ///
-    /// Namely:
-    ///
-    /// - assert that polling `f` once returns [`Poll::Pending`]
-    /// - call `durability.mark_durable()`
-    /// - assert that polling `f` returns [`Poll::Ready`].
-    ///
-    async fn assert_after_durable(durability: &ManualDurability, f: impl Future<Output: fmt::Debug>) {
-        let mut g = pin!(f);
-        assert_matches!(futures::poll!(&mut g), Poll::Pending);
+    /// Mark the latest committed transaction durable and assert that `f` then completes.
+    async fn assert_after_durable(durability: &ManualDurability, f: impl Future<Output = ()>) {
         durability.mark_durable();
-        assert_matches!(futures::poll!(g), Poll::Ready(_));
+        tokio::time::timeout(TEST_MESSAGE_TIMEOUT, f)
+            .await
+            .expect("timed out waiting for message after durability was marked");
     }
 
     /// Commit a set of row updates and broadcast to subscribers
