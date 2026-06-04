@@ -16,7 +16,7 @@ use core::ops::RangeBounds;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::AlgebraicValue;
-use spacetimedb_schema::schema::{ColumnSchema, TableSchema, ViewDefInfo};
+use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, TableSchema, ViewDefInfo};
 use spacetimedb_table::table::IndexScanPointIter;
 use spacetimedb_table::{
     blob_store::HashMapBlobStore,
@@ -120,6 +120,22 @@ pub trait StateView {
         .transpose()
     }
 
+    /// Look up an `st_index_accessor` row by its canonical index name.
+    fn find_st_index_accessor_row_by_index_name(&self, index_name: &str) -> Result<Option<StIndexAccessorRow>> {
+        match self.iter_by_col_eq(
+            ST_INDEX_ACCESSOR_ID,
+            StIndexAccessorFields::IndexName,
+            &index_name.into(),
+        ) {
+            Ok(mut iter) => iter.next().map(StIndexAccessorRow::try_from).transpose(),
+            // `schema_for_table_raw` is called while restoring snapshots,
+            // before `migrate_system_tables` creates newer system tables.
+            // Treat a missing `st_index_accessor` as "no aliases yet" here.
+            Err(DatastoreError::Table(TableError::IdNotFound(..))) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
     /// Look up an `st_column_accessor` row by its canonical table and column names
     fn find_st_column_accessor_row(&self, table_name: &str, col_name: &str) -> Result<Option<StColumnAccessorRow>> {
         match self.iter_by_col_eq(
@@ -187,7 +203,14 @@ pub trait StateView {
         // Look up the indexes for the table in question.
         let indexes = self
             .iter_by_col_eq(ST_INDEX_ID, StIndexFields::TableId, value_eq)?
-            .map(|row| StIndexRow::try_from(row).map(Into::into))
+            .map(|row| {
+                let row = StIndexRow::try_from(row)?;
+                let mut index_schema = IndexSchema::from(row);
+                index_schema.alias = self
+                    .find_st_index_accessor_row_by_index_name(index_schema.index_name.as_ref())?
+                    .map(|row| row.accessor_name);
+                Ok(index_schema)
+            })
             .collect::<Result<Vec<_>>>()?;
 
         let schedule = self
