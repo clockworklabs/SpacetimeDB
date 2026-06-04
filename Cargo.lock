@@ -900,6 +900,7 @@ dependencies = [
  "log",
  "regex",
  "reqwest 0.12.24",
+ "serde",
  "serde_json",
  "spacetimedb-guard",
  "tempfile",
