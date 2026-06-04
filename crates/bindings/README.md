@@ -618,7 +618,7 @@ fn players_for_level(ctx: &AnonymousViewContext) -> Vec<PlayerAndLevel> {
         .player_level()
         .level()
         .filter(2u64)
-        .map(|player| {
+        .filter_map(|player| {
             ctx.db
                 .player()
                 .id()
