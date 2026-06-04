@@ -8204,7 +8204,6 @@ name = "spacetimedb-durability"
 version = "2.4.1"
 dependencies = [
  "anyhow",
- "async-channel",
  "futures",
  "itertools 0.12.1",
  "log",
@@ -8485,9 +8484,11 @@ dependencies = [
 name = "spacetimedb-runtime"
 version = "2.4.1"
 dependencies = [
+ "async-channel",
  "async-task",
  "futures",
  "libc",
+ "parking_lot 0.12.5",
  "spin",
  "tokio",
 ]

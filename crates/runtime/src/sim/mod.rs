@@ -1,6 +1,8 @@
 pub mod buggify;
 mod executor;
+
 mod rng;
+pub mod utils;
 pub mod time;
 
 pub use executor::{

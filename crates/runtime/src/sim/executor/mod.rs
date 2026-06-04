@@ -342,6 +342,14 @@ impl Handle {
     pub fn buggify_with_prob(&self, probability: f64) -> bool {
         self.executor.buggify_with_prob(probability)
     }
+
+    /// Drain the runnable queue, polling all ready tasks.
+    ///
+    /// This can be used by external code (e.g. the bounded queue's
+    /// simulation-aware sender) to make progress when a channel is full.
+    pub fn run_all_ready(&self) {
+        self.executor.run_all_ready();
+    }
 }
 
 /// Core single-threaded scheduler backing a simulation [`Runtime`].
@@ -350,8 +358,8 @@ impl Handle {
 /// RNG, and virtual time. Tasks are selected from the queue using the runtime
 /// RNG so the schedule is reproducible for a given seed.
 struct Executor {
-    queue: Receiver,
-    sender: Sender,
+    queue: super::utils::Receiver<Runnable>,
+    sender: super::utils::Sender<Runnable>,
     nodes: spin::Mutex<BTreeMap<NodeId, Arc<NodeRecord>>>,
     next_node: AtomicU64,
     rng: Rng,
@@ -361,7 +369,7 @@ struct Executor {
 impl Executor {
     /// Construct a fresh executor with one default `MAIN` node.
     fn new(config: RuntimeConfig) -> Self {
-        let queue = Queue::new();
+        let queue = super::utils::Queue::new();
         let mut nodes = BTreeMap::new();
         nodes.insert(NodeId::MAIN, Arc::new(NodeRecord::default()));
         Self {
@@ -507,7 +515,7 @@ impl Executor {
     ///
     /// Paused-node tasks are diverted into that node's paused buffer instead of
     /// being polled immediately.
-    fn run_all_ready(&self) {
+    pub(crate) fn run_all_ready(&self) {
         while let Some(runnable) = self.queue.try_recv_random(&self.rng) {
             let node = *runnable.metadata();
             let record = self.node_record(node);
@@ -575,70 +583,6 @@ impl Future for YieldNow {
             cx.waker().wake_by_ref();
             Poll::Pending
         }
-    }
-}
-
-/// Shared runnable queue used by the simulation executor.
-/// TODO: Make it generic over T
-struct Queue {
-    inner: Arc<QueueInner>,
-}
-
-/// Sending end of the runnable queue.
-#[derive(Clone)]
-struct Sender {
-    inner: Arc<QueueInner>,
-}
-
-/// Receiving end of the runnable queue.
-#[derive(Clone)]
-struct Receiver {
-    inner: Arc<QueueInner>,
-}
-
-/// Queue storage for runnables awaiting scheduling.
-struct QueueInner {
-    queue: Mutex<Vec<Runnable>>,
-}
-
-impl Queue {
-    fn new() -> Self {
-        Self {
-            inner: Arc::new(QueueInner {
-                queue: Mutex::new(Vec::new()),
-            }),
-        }
-    }
-
-    fn sender(&self) -> Sender {
-        Sender {
-            inner: self.inner.clone(),
-        }
-    }
-
-    fn receiver(&self) -> Receiver {
-        Receiver {
-            inner: self.inner.clone(),
-        }
-    }
-}
-
-impl Sender {
-    /// Push a runnable onto the shared queue.
-    fn send(&self, runnable: Runnable) {
-        self.inner.queue.lock().push(runnable);
-    }
-}
-
-impl Receiver {
-    /// Remove one runnable using the runtime RNG to choose among ready tasks.
-    fn try_recv_random(&self, rng: &Rng) -> Option<Runnable> {
-        let mut queue = self.inner.queue.lock();
-        if queue.is_empty() {
-            return None;
-        }
-        let idx = rng.index(queue.len());
-        Some(queue.swap_remove(idx))
     }
 }
 

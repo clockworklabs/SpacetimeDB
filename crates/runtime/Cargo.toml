@@ -12,13 +12,15 @@ workspace = true
 [dependencies]
 tokio = { workspace = true, optional = true }
 async-task = { version = "4.4", default-features = false, optional = true }
-spin = { version = "0.9", default-features = false, features = ["mutex", "spin_mutex"], optional = true }
+spin = { version = "0.9", default-features = false, features = ["mutex", "spin_mutex", "once"], optional = true }
 libc = { version = "0.2", optional = true }
+async-channel.workspace = true
 
 [dev-dependencies]
 futures.workspace = true
+parking_lot = "0.12"
 
 [features]
 default = ["tokio"]
-tokio = ["dep:tokio"]
+tokio = ["dep:tokio", "async-channel/std"]
 simulation = ["dep:async-task", "dep:spin", "dep:libc"]
