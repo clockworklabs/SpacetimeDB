@@ -277,6 +277,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-task"
+version = "4.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b75356056920673b02621b35afd0f7dda9306d03c79a30f5c56c44cf256e3de"
+
+[[package]]
 name = "async-trait"
 version = "0.1.89"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8108,6 +8114,7 @@ dependencies = [
  "spacetimedb-physical-plan",
  "spacetimedb-primitives 2.4.1",
  "spacetimedb-query",
+ "spacetimedb-runtime",
  "spacetimedb-sats 2.4.1",
  "spacetimedb-schema",
  "spacetimedb-snapshot",
@@ -8205,6 +8212,7 @@ dependencies = [
  "spacetimedb-commitlog",
  "spacetimedb-fs-utils",
  "spacetimedb-paths",
+ "spacetimedb-runtime",
  "spacetimedb-sats 2.4.1",
  "tempfile",
  "thiserror 1.0.69",
@@ -8474,6 +8482,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-runtime"
+version = "2.4.1"
+dependencies = [
+ "async-task",
+ "futures",
+ "libc",
+ "spin",
+ "tokio",
+]
+
+[[package]]
 name = "spacetimedb-sats"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8654,6 +8673,7 @@ dependencies = [
  "spacetimedb-lib 2.4.1",
  "spacetimedb-paths",
  "spacetimedb-primitives 2.4.1",
+ "spacetimedb-runtime",
  "spacetimedb-sats 2.4.1",
  "spacetimedb-schema",
  "spacetimedb-table",
