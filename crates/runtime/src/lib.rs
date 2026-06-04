@@ -251,11 +251,6 @@ impl Handle {
                     Ok(panic_payload) => std::panic::resume_unwind(panic_payload),
                     Err(e) => panic!("Unexpected JoinError: {e}"),
                 }),
-            // This is only a facade placeholder for simulation today. It
-            // schedules the closure onto a stackful simulated worker. The
-            // deterministic scheduler still grants a permit to only one worker
-            // at a time, but the worker's stack can be parked by simulation
-            // blocking APIs such as `sim::yield_sync`.
             #[cfg(feature = "simulation")]
             Self::Simulation(handle) => handle.spawn_blocking(f).await,
             #[cfg(not(any(feature = "tokio", feature = "simulation")))]

@@ -1,6 +1,6 @@
 use alloc::{boxed::Box, collections::BTreeMap, format, sync::Arc, vec::Vec};
 use core::{
-    cell::UnsafeCell,
+    cell::{Cell, UnsafeCell},
     fmt,
     future::Future,
     marker::PhantomData,
@@ -34,7 +34,31 @@ type Runnable = async_task::Runnable<NodeId>;
 /// The closure is `Send` because it may run on any simulated worker thread.
 /// The scheduler still grants a run permit to only one worker at a time, so
 /// these jobs are stackful but not actually parallel.
-type BlockingJob = Box<dyn FnOnce() + Send + 'static>;
+struct BlockingJob {
+    run: Box<dyn FnOnce() + Send + 'static>,
+}
+
+impl BlockingJob {
+    fn new<F, R>(f: F, state: Arc<BlockingState<R>>) -> Self
+    where
+        F: FnOnce() -> R + Send + 'static,
+        R: Send + 'static,
+    {
+        Self {
+            run: Box::new(move || {
+                let output = catch_unwind(AssertUnwindSafe(f));
+                *lock_unpoison(&state.output) = Some(output);
+                if let Some(waker) = lock_unpoison(&state.waker).take() {
+                    waker.wake();
+                }
+            }),
+        }
+    }
+
+    fn run(self) {
+        (self.run)();
+    }
+}
 
 /// Identifier for one OS thread owned by the simulator.
 ///
@@ -47,10 +71,10 @@ struct SimWorkerId(u64);
 /// Monotonic identifier for a single driver-granted execution slice.
 ///
 /// A stackful worker can yield or block several times while keeping the same
-/// synchronous stack alive. Correlating every report with the run id prevents a
+/// synchronous stack alive. Correlating every report with the step id prevents a
 /// stale report from satisfying a later permit for the same worker.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct RunId(u64);
+struct StepId(u64);
 
 /// Identifier for a scheduler-visible [`SimMutex`].
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -58,18 +82,18 @@ struct MutexId(u64);
 
 /// A live synchronous stack parked on one worker.
 ///
-/// The `run_id` is part of the identity: a later run on the same worker is not
-/// allowed to satisfy a permit intended for this parked stack.
+/// The `step_id` is part of the identity: a later scheduler step on the same
+/// worker is not allowed to satisfy a permit intended for this parked stack.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ParkedStack {
     worker: SimWorkerId,
-    run_id: RunId,
+    step_id: StepId,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct MutexWaiter {
     worker: SimWorkerId,
-    run_id: RunId,
+    step_id: StepId,
 }
 
 /// Reason a worker parked without becoming immediately runnable.
@@ -108,20 +132,27 @@ enum RunnableEntity {
 #[derive(Debug)]
 enum WorkerState {
     Idle,
-    Running { run_id: RunId },
-    Parked { run_id: RunId, readiness: ParkedReadiness },
-    Panicked { run_id: RunId },
+    Running {
+        step_id: StepId,
+    },
+    Parked {
+        step_id: StepId,
+        readiness: ParkedReadiness,
+    },
+    Panicked {
+        step_id: StepId,
+    },
 }
 
 impl WorkerState {
     fn describe(&self) -> alloc::string::String {
         match self {
             Self::Idle => "Idle".into(),
-            Self::Running { run_id } => format!("Running(run_id={run_id:?})"),
-            Self::Parked { run_id, readiness } => {
-                format!("Parked(run_id={run_id:?}, readiness={readiness:?})")
+            Self::Running { step_id } => format!("Running(step_id={step_id:?})"),
+            Self::Parked { step_id, readiness } => {
+                format!("Parked(step_id={step_id:?}, readiness={readiness:?})")
             }
-            Self::Panicked { run_id } => format!("Panicked(run_id={run_id:?})"),
+            Self::Panicked { step_id } => format!("Panicked(step_id={step_id:?})"),
         }
     }
 }
@@ -133,20 +164,22 @@ impl WorkerState {
 /// reports back or parks inside synchronous code.
 enum WorkerPermit {
     /// Poll this async runnable once by calling `runnable.run()`.
-    RunAsync { run_id: RunId, runnable: Runnable },
+    RunAsync { step_id: StepId, runnable: Runnable },
     /// Execute this simulated blocking closure.
-    RunBlocking { run_id: RunId, job: BlockingJob },
+    RunBlocking { step_id: StepId, job: BlockingJob },
     /// Continue from the last stackful park point.
-    ResumeParked { run_id: RunId },
+    ResumeParked { step_id: StepId },
     /// Ask an idle worker to exit.
     Shutdown,
 }
 
 impl WorkerPermit {
-    fn run_id(&self) -> RunId {
+    fn step_id(&self) -> StepId {
         match self {
-            Self::RunAsync { run_id, .. } | Self::RunBlocking { run_id, .. } | Self::ResumeParked { run_id } => *run_id,
-            Self::Shutdown => panic!("shutdown permits do not have run ids"),
+            Self::RunAsync { step_id, .. } | Self::RunBlocking { step_id, .. } | Self::ResumeParked { step_id } => {
+                *step_id
+            }
+            Self::Shutdown => panic!("shutdown permits do not have step ids"),
         }
     }
 
@@ -183,7 +216,7 @@ enum WorkerReportKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct WorkerReport {
     worker: SimWorkerId,
-    run_id: RunId,
+    step_id: StepId,
     kind: WorkerReportKind,
 }
 
@@ -222,19 +255,19 @@ struct WorkerRecord {
 
 impl WorkerRecord {
     fn grant(&mut self, worker: SimWorkerId, permit: WorkerPermit) {
-        let run_id = permit.run_id();
+        let step_id = permit.step_id();
         match (&self.state, &permit) {
             (WorkerState::Idle, WorkerPermit::RunAsync { .. } | WorkerPermit::RunBlocking { .. }) => {
-                self.state = WorkerState::Running { run_id };
+                self.state = WorkerState::Running { step_id };
             }
             (
                 WorkerState::Parked {
-                    run_id: expected,
+                    step_id: expected,
                     readiness: ParkedReadiness::Ready,
                 },
                 WorkerPermit::ResumeParked { .. },
-            ) if *expected == run_id => {
-                self.state = WorkerState::Running { run_id };
+            ) if *expected == step_id => {
+                self.state = WorkerState::Running { step_id };
             }
             (state, _) => {
                 panic!(
@@ -258,10 +291,10 @@ impl WorkerRecord {
 
     fn process_report(&mut self, report: WorkerReport) -> Option<ParkedStack> {
         match self.state {
-            WorkerState::Running { run_id } if run_id == report.run_id => {}
+            WorkerState::Running { step_id } if step_id == report.step_id => {}
             ref state => panic!(
                 "stale report {:?} for worker {} run {:?} while in state {:?}",
-                report.kind, report.worker.0, report.run_id, state
+                report.kind, report.worker.0, report.step_id, state
             ),
         }
 
@@ -272,26 +305,28 @@ impl WorkerRecord {
             }
             WorkerReportKind::Yielded => {
                 self.state = WorkerState::Parked {
-                    run_id: report.run_id,
+                    step_id: report.step_id,
                     readiness: ParkedReadiness::Ready,
                 };
                 Some(ParkedStack {
                     worker: report.worker,
-                    run_id: report.run_id,
+                    step_id: report.step_id,
                 })
             }
             WorkerReportKind::Blocked(reason) => {
                 self.state = WorkerState::Parked {
-                    run_id: report.run_id,
+                    step_id: report.step_id,
                     readiness: ParkedReadiness::Blocked(reason),
                 };
                 None
             }
             WorkerReportKind::Panicked => {
-                self.state = WorkerState::Panicked { run_id: report.run_id };
+                self.state = WorkerState::Panicked {
+                    step_id: report.step_id,
+                };
                 panic!(
                     "sim worker {} panicked while running scheduled work for run {:?}",
-                    report.worker.0, report.run_id
+                    report.worker.0, report.step_id
                 );
             }
         }
@@ -300,17 +335,17 @@ impl WorkerRecord {
     fn mark_mutex_ready(&mut self, waiter: MutexWaiter, mutex: MutexId) {
         match self.state {
             WorkerState::Parked {
-                run_id,
+                step_id,
                 readiness: ParkedReadiness::Blocked(BlockReason::Mutex(blocked_on)),
-            } if run_id == waiter.run_id && blocked_on == mutex => {
+            } if step_id == waiter.step_id && blocked_on == mutex => {
                 self.state = WorkerState::Parked {
-                    run_id,
+                    step_id,
                     readiness: ParkedReadiness::Ready,
                 };
             }
             ref state => panic!(
                 "mutex {:?} attempted to wake worker {} run {:?} in state {:?}",
-                mutex, waiter.worker.0, waiter.run_id, state
+                mutex, waiter.worker.0, waiter.step_id, state
             ),
         }
     }
@@ -337,19 +372,160 @@ impl WorkerRecord {
     }
 }
 
+struct WorkerCounts {
+    idle: usize,
+    yielded: usize,
+    blocked: usize,
+}
+
+struct WorkerTable {
+    workers: BTreeMap<SimWorkerId, WorkerRecord>,
+}
+
+impl WorkerTable {
+    fn new() -> Self {
+        Self {
+            workers: BTreeMap::new(),
+        }
+    }
+
+    fn insert(&mut self, id: SimWorkerId, record: WorkerRecord) {
+        self.workers.insert(id, record);
+    }
+
+    fn idle_worker(&self) -> Option<SimWorkerId> {
+        self.workers
+            .iter()
+            .find(|(_, record)| matches!(record.state, WorkerState::Idle))
+            .map(|(worker, _)| *worker)
+    }
+
+    fn control(&self, worker: SimWorkerId) -> Arc<WorkerControl> {
+        self.workers
+            .get(&worker)
+            .unwrap_or_else(|| panic!("unknown simulated worker {}", worker.0))
+            .control
+            .clone()
+    }
+
+    fn grant(&mut self, worker: SimWorkerId, permit: WorkerPermit) {
+        self.workers
+            .get_mut(&worker)
+            .unwrap_or_else(|| panic!("unknown simulated worker {}", worker.0))
+            .grant(worker, permit);
+    }
+
+    fn process_report(&mut self, report: WorkerReport) -> Option<ParkedStack> {
+        self.workers
+            .get_mut(&report.worker)
+            .unwrap_or_else(|| panic!("unknown simulated worker {}", report.worker.0))
+            .process_report(report)
+    }
+
+    fn mark_mutex_ready(&mut self, waiter: MutexWaiter, mutex: MutexId) {
+        self.workers
+            .get_mut(&waiter.worker)
+            .unwrap_or_else(|| panic!("mutex attempted to wake unknown worker {}", waiter.worker.0))
+            .mark_mutex_ready(waiter, mutex);
+    }
+
+    fn shutdown_idle_workers(&mut self) -> Vec<ThreadJoinHandle<()>> {
+        self.workers
+            .iter_mut()
+            .filter_map(|(id, record)| record.shutdown_if_idle(*id))
+            .collect()
+    }
+
+    fn counts(&self) -> WorkerCounts {
+        let mut counts = WorkerCounts {
+            idle: 0,
+            yielded: 0,
+            blocked: 0,
+        };
+        for record in self.workers.values() {
+            match record.state {
+                WorkerState::Idle => counts.idle += 1,
+                WorkerState::Parked {
+                    readiness: ParkedReadiness::Ready,
+                    ..
+                } => counts.yielded += 1,
+                WorkerState::Parked {
+                    readiness: ParkedReadiness::Blocked(_),
+                    ..
+                } => counts.blocked += 1,
+                WorkerState::Running { .. } | WorkerState::Panicked { .. } => {}
+            }
+        }
+        counts
+    }
+
+    fn describe_workers(&self) -> alloc::string::String {
+        self.workers
+            .iter()
+            .map(|(id, record)| format!("worker {}: {}", id.0, record.state.describe()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    #[cfg(any(test, debug_assertions))]
+    fn assert_invariants(&self, parked_stacks: Vec<ParkedStack>) {
+        let running = self
+            .workers
+            .values()
+            .filter(|record| matches!(record.state, WorkerState::Running { .. }))
+            .count();
+        assert!(running <= 1, "more than one simulated worker is running: {running}");
+
+        for (worker, record) in self.workers.iter() {
+            let slot = lock_unpoison(&record.control.slot);
+            assert!(
+                !(slot.permit.is_some() && slot.report.is_some()),
+                "sim worker {} has both a pending permit and report",
+                worker.0
+            );
+            if matches!(record.state, WorkerState::Idle) {
+                assert!(
+                    slot.permit.is_none(),
+                    "idle sim worker {} has a pending permit",
+                    worker.0
+                );
+            }
+        }
+
+        for stack in parked_stacks {
+            let record = self
+                .workers
+                .get(&stack.worker)
+                .unwrap_or_else(|| panic!("ready queue contains unknown parked worker {}", stack.worker.0));
+            assert!(
+                matches!(
+                    record.state,
+                    WorkerState::Parked {
+                        step_id,
+                        readiness: ParkedReadiness::Ready,
+                    } if step_id == stack.step_id
+                ),
+                "ready queue contains stale parked stack {:?} for worker state {:?}",
+                stack,
+                record.state
+            );
+        }
+    }
+}
+
 /// Shared transport between the deterministic driver and worker threads.
 ///
 /// This struct deliberately transports only permits and reports. It does not
 /// make scheduling decisions; those remain in [`Executor::run_all_ready`] and
 /// use the seeded runtime RNG.
 struct SchedulerShared {
-    workers: StdMutex<BTreeMap<SimWorkerId, WorkerRecord>>,
+    workers: StdMutex<WorkerTable>,
 }
 
 impl SchedulerShared {
     fn new() -> Self {
         Self {
-            workers: StdMutex::new(BTreeMap::new()),
+            workers: StdMutex::new(WorkerTable::new()),
         }
     }
 }
@@ -361,11 +537,7 @@ fn lock_unpoison<T>(mutex: &StdMutex<T>) -> StdMutexGuard<'_, T> {
 fn send_worker_report(shared: &SchedulerShared, report: WorkerReport) {
     let control = {
         let workers = lock_unpoison(&shared.workers);
-        workers
-            .get(&report.worker)
-            .unwrap_or_else(|| panic!("unknown simulated worker {}", report.worker.0))
-            .control
-            .clone()
+        workers.control(report.worker)
     };
     let mut slot = lock_unpoison(&control.slot);
     assert!(
@@ -387,11 +559,32 @@ struct CurrentWorker {
     shared: Arc<SchedulerShared>,
     control: Arc<WorkerControl>,
     sender: Sender,
-    active_run_id: Arc<StdMutex<Option<RunId>>>,
+}
+
+impl CurrentWorker {
+    fn active_step_id(&self) -> StepId {
+        ACTIVE_STEP_ID.with(|step_id| {
+            step_id
+                .get()
+                .unwrap_or_else(|| panic!("sim worker {} has no active step id", self.id.0))
+        })
+    }
+
+    fn report(&self, step_id: StepId, kind: WorkerReportKind) {
+        send_worker_report(
+            &self.shared,
+            WorkerReport {
+                worker: self.id,
+                step_id,
+                kind,
+            },
+        );
+    }
 }
 
 thread_local! {
     static CURRENT_WORKER: RefCell<Option<CurrentWorker>> = const { RefCell::new(None) };
+    static ACTIVE_STEP_ID: Cell<Option<StepId>> = const { Cell::new(None) };
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -715,7 +908,10 @@ impl Handle {
         F: FnOnce() -> R + Send + 'static,
         R: Send + 'static,
     {
-        self.executor.spawn_blocking(f).await
+        let result = self.executor.spawn_blocking(f).await;
+        // We have to yield immediately after the blocking work to give the scheduler a chance to start the blocking task.
+        yield_now().await;
+        result
     }
 
     pub fn enable_buggify(&self) {
@@ -754,7 +950,8 @@ struct Executor {
     nodes: spin::Mutex<BTreeMap<NodeId, Arc<NodeRecord>>>,
     next_node: AtomicU64,
     next_worker: AtomicU64,
-    next_run: AtomicU64,
+    next_step: AtomicU64,
+    // TODO: have a separate limit for the blocking task pool size.
     max_sim_threads: usize,
     shared: Arc<SchedulerShared>,
     rng: Rng,
@@ -773,7 +970,7 @@ impl Executor {
             nodes: spin::Mutex::new(nodes),
             next_node: AtomicU64::new(1),
             next_worker: AtomicU64::new(0),
-            next_run: AtomicU64::new(0),
+            next_step: AtomicU64::new(0),
             max_sim_threads: config.max_sim_threads,
             shared: Arc::new(SchedulerShared::new()),
             rng: Rng::new(config.seed),
@@ -916,41 +1113,11 @@ impl Executor {
     fn deadlock_diagnostic(&self) -> String {
         let queue_len = self.queue.len();
         let workers = lock_unpoison(&self.shared.workers);
-        let idle_workers = workers
-            .values()
-            .filter(|record| matches!(record.state, WorkerState::Idle))
-            .count();
-        let yielded_workers = workers
-            .values()
-            .filter(|record| {
-                matches!(
-                    record.state,
-                    WorkerState::Parked {
-                        readiness: ParkedReadiness::Ready,
-                        ..
-                    }
-                )
-            })
-            .count();
-        let blocked_workers = workers
-            .values()
-            .filter(|record| {
-                matches!(
-                    record.state,
-                    WorkerState::Parked {
-                        readiness: ParkedReadiness::Blocked(_),
-                        ..
-                    }
-                )
-            })
-            .count();
-        let worker_states = workers
-            .iter()
-            .map(|(id, record)| format!("worker {}: {}", id.0, record.state.describe()))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let counts = workers.counts();
+        let worker_states = workers.describe_workers();
         format!(
-            "no runnable tasks; all simulated tasks are blocked; queue_len={queue_len}, idle_workers={idle_workers}, yielded_workers={yielded_workers}, blocked_workers={blocked_workers}, workers=[{worker_states}]"
+            "no runnable tasks; all simulated tasks are blocked; queue_len={queue_len}, idle_workers={}, yielded_workers={}, blocked_workers={}, workers=[{worker_states}]",
+            counts.idle, counts.yielded, counts.blocked
         )
     }
 
@@ -989,14 +1156,8 @@ impl Executor {
             output: StdMutex::new(None),
             waker: StdMutex::new(None),
         });
-        let state_for_job = state.clone();
-        self.sender.send(RunnableEntity::Blocking(Box::new(move || {
-            let output = catch_unwind(AssertUnwindSafe(f));
-            *lock_unpoison(&state_for_job.output) = Some(output);
-            if let Some(waker) = lock_unpoison(&state_for_job.waker).take() {
-                waker.wake();
-            }
-        })));
+        self.sender
+            .send(RunnableEntity::Blocking(BlockingJob::new(f, state.clone())));
         BlockingJoinHandle { state }
     }
 
@@ -1005,16 +1166,16 @@ impl Executor {
             RunnableEntity::Parked(stack) => {
                 // The worker is already holding a synchronous Rust stack. We
                 // only grant permission for that same stack to continue.
-                self.grant(stack.worker, WorkerPermit::ResumeParked { run_id: stack.run_id });
-                self.process_report(self.wait_for_report(stack.worker, stack.run_id));
+                self.grant(stack.worker, WorkerPermit::ResumeParked { step_id: stack.step_id });
+                self.process_report(self.wait_for_report(stack.worker, stack.step_id));
             }
             RunnableEntity::Async(runnable) => {
                 // A `Send` async runnable does not need a dedicated stack after
                 // it returns `Pending`, so any idle worker can poll it once.
                 let worker = self.acquire_worker();
-                let run_id = self.next_run_id();
-                self.grant(worker, WorkerPermit::RunAsync { run_id, runnable });
-                self.process_report(self.wait_for_report(worker, run_id));
+                let step_id = self.next_step_id();
+                self.grant(worker, WorkerPermit::RunAsync { step_id, runnable });
+                self.process_report(self.wait_for_report(worker, step_id));
             }
             RunnableEntity::LocalAsync(runnable) => {
                 // Non-`Send` futures cannot move to an OS worker. Keep the old
@@ -1026,26 +1187,23 @@ impl Executor {
                 // Blocking jobs are stackful and may park, so they need a sim
                 // worker rather than direct execution on the driver.
                 let worker = self.acquire_worker();
-                let run_id = self.next_run_id();
-                self.grant(worker, WorkerPermit::RunBlocking { run_id, job });
-                self.process_report(self.wait_for_report(worker, run_id));
+                let step_id = self.next_step_id();
+                self.grant(worker, WorkerPermit::RunBlocking { step_id, job });
+                self.process_report(self.wait_for_report(worker, step_id));
             }
         }
         self.assert_invariants();
     }
 
-    fn next_run_id(&self) -> RunId {
-        RunId(self.next_run.fetch_add(1, Ordering::Relaxed))
+    fn next_step_id(&self) -> StepId {
+        StepId(self.next_step.fetch_add(1, Ordering::Relaxed))
     }
 
     fn acquire_worker(&self) -> SimWorkerId {
         {
             let workers = lock_unpoison(&self.shared.workers);
-            if let Some((worker, _)) = workers
-                .iter()
-                .find(|(_, record)| matches!(record.state, WorkerState::Idle))
-            {
-                return *worker;
+            if let Some(worker) = workers.idle_worker() {
+                return worker;
             }
         }
         self.create_worker()
@@ -1058,15 +1216,13 @@ impl Executor {
         }
         let id = SimWorkerId(raw);
         let control = Arc::new(WorkerControl::new());
-        let active_run_id = Arc::new(StdMutex::new(None));
         let shared = self.shared.clone();
         let sender = self.sender.clone();
         let control_for_thread = control.clone();
-        let active_run_for_thread = active_run_id.clone();
         let join = crate::sim_std::allow_sim_thread_spawn(|| {
             thread::Builder::new()
                 .name(format!("spacetimedb-sim-worker-{}", id.0))
-                .spawn(move || worker_main(id, shared, control_for_thread, sender, active_run_for_thread))
+                .spawn(move || worker_main(id, shared, control_for_thread, sender))
                 .expect("failed to spawn simulated worker thread")
         });
         lock_unpoison(&self.shared.workers).insert(
@@ -1082,34 +1238,27 @@ impl Executor {
 
     fn grant(&self, worker: SimWorkerId, permit: WorkerPermit) {
         let mut workers = lock_unpoison(&self.shared.workers);
-        let record = workers
-            .get_mut(&worker)
-            .unwrap_or_else(|| panic!("unknown simulated worker {}", worker.0));
-        record.grant(worker, permit);
+        workers.grant(worker, permit);
     }
 
     /// Wait until `worker` reports back after consuming its current permit.
     ///
     /// This is what enforces the "only one worker executes user code" rule:
     /// the driver does not grant any other permit while it is waiting here.
-    fn wait_for_report(&self, worker: SimWorkerId, run_id: RunId) -> WorkerReport {
+    fn wait_for_report(&self, worker: SimWorkerId, step_id: StepId) -> WorkerReport {
         let control = {
             let workers = lock_unpoison(&self.shared.workers);
-            workers
-                .get(&worker)
-                .unwrap_or_else(|| panic!("unknown simulated worker {}", worker.0))
-                .control
-                .clone()
+            workers.control(worker)
         };
         let mut slot = lock_unpoison(&control.slot);
         loop {
             if let Some(report) = slot.report.take() {
-                if report.worker == worker && report.run_id == run_id {
+                if report.worker == worker && report.step_id == step_id {
                     return report;
                 }
                 panic!(
                     "unexpected sim worker report {:?}; driver was waiting for worker {} run {:?}",
-                    report, worker.0, run_id
+                    report, worker.0, step_id
                 );
             }
             slot = control.cv.wait(slot).unwrap_or_else(|poison| poison.into_inner());
@@ -1118,10 +1267,7 @@ impl Executor {
 
     fn process_report(&self, report: WorkerReport) {
         let mut workers = lock_unpoison(&self.shared.workers);
-        let record = workers
-            .get_mut(&report.worker)
-            .unwrap_or_else(|| panic!("unknown simulated worker {}", report.worker.0));
-        if let Some(stack) = record.process_report(report) {
+        if let Some(stack) = workers.process_report(report) {
             drop(workers);
             self.sender.send(RunnableEntity::Parked(stack));
         }
@@ -1131,45 +1277,7 @@ impl Executor {
         #[cfg(any(test, debug_assertions))]
         {
             let workers = lock_unpoison(&self.shared.workers);
-            let running = workers
-                .values()
-                .filter(|record| matches!(record.state, WorkerState::Running { .. }))
-                .count();
-            assert!(running <= 1, "more than one simulated worker is running: {running}");
-
-            for (worker, record) in workers.iter() {
-                let slot = lock_unpoison(&record.control.slot);
-                assert!(
-                    !(slot.permit.is_some() && slot.report.is_some()),
-                    "sim worker {} has both a pending permit and report",
-                    worker.0
-                );
-                if matches!(record.state, WorkerState::Idle) {
-                    assert!(
-                        slot.permit.is_none(),
-                        "idle sim worker {} has a pending permit",
-                        worker.0
-                    );
-                }
-            }
-
-            for stack in self.queue.parked_stacks() {
-                let record = workers
-                    .get(&stack.worker)
-                    .unwrap_or_else(|| panic!("ready queue contains unknown parked worker {}", stack.worker.0));
-                assert!(
-                    matches!(
-                        record.state,
-                        WorkerState::Parked {
-                            run_id,
-                            readiness: ParkedReadiness::Ready,
-                        } if run_id == stack.run_id
-                    ),
-                    "ready queue contains stale parked stack {:?} for worker state {:?}",
-                    stack,
-                    record.state
-                );
-            }
+            workers.assert_invariants(self.queue.parked_stacks());
         }
     }
 
@@ -1189,15 +1297,10 @@ impl Executor {
 
 impl Drop for Executor {
     fn drop(&mut self) {
-        let mut joins = Vec::new();
-        {
+        let joins = {
             let mut workers = lock_unpoison(&self.shared.workers);
-            for (id, record) in workers.iter_mut() {
-                if let Some(join) = record.shutdown_if_idle(*id) {
-                    joins.push(join);
-                }
-            }
-        }
+            workers.shutdown_idle_workers()
+        };
 
         for join in joins {
             let _ = join.join();
@@ -1263,16 +1366,9 @@ pub async fn yield_now() {
 /// Rust has no stackful suspension point for the simulator to resume.
 pub fn yield_sync() {
     let worker = current_worker_or_panic("sim::yield_sync");
-    let run_id = worker_active_run_id(&worker);
-    send_worker_report(
-        &worker.shared,
-        WorkerReport {
-            worker: worker.id,
-            run_id,
-            kind: WorkerReportKind::Yielded,
-        },
-    );
-    park_current_worker(&worker, run_id);
+    let step_id = worker.active_step_id();
+    worker.report(step_id, WorkerReportKind::Yielded);
+    park_current_worker(&worker, step_id);
 }
 
 /// Blocking mutex whose wait state is visible to the simulation scheduler.
@@ -1362,24 +1458,17 @@ impl<T> SimMutex<T> {
                 if state.owner == Some(worker.id) {
                     panic!("SimMutex::lock called recursively by worker {}", worker.id.0);
                 }
-                let run_id = worker_active_run_id(&worker);
+                let step_id = worker.active_step_id();
                 if !state.waiters.iter().any(|waiter| waiter.worker == worker.id) {
                     state.waiters.push_back(MutexWaiter {
                         worker: worker.id,
-                        run_id,
+                        step_id,
                     });
                 }
                 drop(state);
 
-                send_worker_report(
-                    &worker.shared,
-                    WorkerReport {
-                        worker: worker.id,
-                        run_id,
-                        kind: WorkerReportKind::Blocked(BlockReason::Mutex(self.id)),
-                    },
-                );
-                park_current_worker(&worker, run_id);
+                worker.report(step_id, WorkerReportKind::Blocked(BlockReason::Mutex(self.id)));
+                park_current_worker(&worker, step_id);
 
                 let state = lock_unpoison(&self.state);
                 if state.owner == Some(worker.id) {
@@ -1432,7 +1521,7 @@ impl<T> Drop for SimMutexGuard<'_, T> {
             // waiter can now be scheduled and return from its blocked `lock`.
             worker.sender.send(RunnableEntity::Parked(ParkedStack {
                 worker: next.worker,
-                run_id: next.run_id,
+                step_id: next.step_id,
             }));
         }
     }
@@ -1440,10 +1529,7 @@ impl<T> Drop for SimMutexGuard<'_, T> {
 
 fn wake_worker_blocked_on_mutex(shared: &SchedulerShared, waiter: MutexWaiter, mutex: MutexId) {
     let mut workers = lock_unpoison(&shared.workers);
-    let record = workers
-        .get_mut(&waiter.worker)
-        .unwrap_or_else(|| panic!("mutex attempted to wake unknown worker {}", waiter.worker.0));
-    record.mark_mutex_ready(waiter, mutex);
+    workers.mark_mutex_ready(waiter, mutex);
 }
 
 fn current_worker_or_panic(api: &str) -> CurrentWorker {
@@ -1453,14 +1539,6 @@ fn current_worker_or_panic(api: &str) -> CurrentWorker {
             .clone()
             .unwrap_or_else(|| panic!("{api} called outside a simulated worker"))
     })
-}
-
-fn worker_active_run_id(worker: &CurrentWorker) -> RunId {
-    worker
-        .active_run_id
-        .lock()
-        .unwrap_or_else(|poison| poison.into_inner())
-        .unwrap_or_else(|| panic!("sim worker {} has no active run id", worker.id.0))
 }
 
 /// One-shot future backing [`yield_now`].
@@ -1482,13 +1560,7 @@ impl Future for YieldNow {
     }
 }
 
-fn worker_main(
-    id: SimWorkerId,
-    shared: Arc<SchedulerShared>,
-    control: Arc<WorkerControl>,
-    sender: Sender,
-    active_run_id: Arc<StdMutex<Option<RunId>>>,
-) {
+fn worker_main(id: SimWorkerId, shared: Arc<SchedulerShared>, control: Arc<WorkerControl>, sender: Sender) {
     let _simulation_thread = crate::sim_std::enter_simulation_thread();
     CURRENT_WORKER.with(|worker| {
         worker.replace(Some(CurrentWorker {
@@ -1496,58 +1568,49 @@ fn worker_main(
             shared: shared.clone(),
             control: control.clone(),
             sender,
-            active_run_id: active_run_id.clone(),
         }));
     });
 
     loop {
         let permit = wait_for_permit(&control);
         match permit {
-            WorkerPermit::RunAsync { run_id, runnable } => {
-                *lock_unpoison(&active_run_id) = Some(run_id);
+            WorkerPermit::RunAsync { step_id, runnable } => {
+                ACTIVE_STEP_ID.with(|active| active.set(Some(step_id)));
                 // Poll exactly one async runnable. If it returns `Pending`, its
                 // stack has unwound into the future state machine and this
                 // worker is reusable.
                 let result = catch_unwind(AssertUnwindSafe(|| runnable.run()));
-                *lock_unpoison(&active_run_id) = None;
-                send_worker_report(
-                    &shared,
-                    WorkerReport {
-                        worker: id,
-                        run_id,
-                        kind: if result.is_ok() {
-                            WorkerReportKind::PollReturned
-                        } else {
-                            WorkerReportKind::Panicked
-                        },
+                ACTIVE_STEP_ID.with(|active| active.set(None));
+                current_worker_or_panic("sim worker").report(
+                    step_id,
+                    if result.is_ok() {
+                        WorkerReportKind::PollReturned
+                    } else {
+                        WorkerReportKind::Panicked
                     },
                 );
             }
-            WorkerPermit::RunBlocking { run_id, job } => {
-                *lock_unpoison(&active_run_id) = Some(run_id);
+            WorkerPermit::RunBlocking { step_id, job } => {
+                ACTIVE_STEP_ID.with(|active| active.set(Some(step_id)));
                 // Run a stackful closure. The closure may temporarily park this
                 // worker via `yield_sync` or `SimMutex::lock`; once it returns,
                 // the worker can be reused.
-                let result = catch_unwind(AssertUnwindSafe(|| job()));
-                *lock_unpoison(&active_run_id) = None;
-                send_worker_report(
-                    &shared,
-                    WorkerReport {
-                        worker: id,
-                        run_id,
-                        kind: if result.is_ok() {
-                            WorkerReportKind::FinishedBlocking
-                        } else {
-                            WorkerReportKind::Panicked
-                        },
+                let result = catch_unwind(AssertUnwindSafe(|| job.run()));
+                ACTIVE_STEP_ID.with(|active| active.set(None));
+                current_worker_or_panic("sim worker").report(
+                    step_id,
+                    if result.is_ok() {
+                        WorkerReportKind::FinishedBlocking
+                    } else {
+                        WorkerReportKind::Panicked
                     },
                 );
             }
-            WorkerPermit::ResumeParked { run_id } => {
+            WorkerPermit::ResumeParked { step_id } => {
                 assert_eq!(
-                    *lock_unpoison(&active_run_id),
-                    Some(run_id),
-                    "resume permit run id did not match parked worker"
+                    ACTIVE_STEP_ID.with(Cell::get),
+                    Some(step_id),
+                    "resume permit step id did not match parked worker"
                 );
             }
             WorkerPermit::Shutdown => break,
@@ -1565,14 +1628,14 @@ fn wait_for_permit(control: &WorkerControl) -> WorkerPermit {
     }
 }
 
-fn park_current_worker(worker: &CurrentWorker, run_id: RunId) {
+fn park_current_worker(worker: &CurrentWorker, step_id: StepId) {
     loop {
         match wait_for_permit(&worker.control) {
-            WorkerPermit::ResumeParked { run_id: resumed } if resumed == run_id => return,
-            WorkerPermit::ResumeParked { run_id: resumed } => {
+            WorkerPermit::ResumeParked { step_id: resumed } if resumed == step_id => return,
+            WorkerPermit::ResumeParked { step_id: resumed } => {
                 panic!(
-                    "sim worker {} resumed with wrong run id {:?}, expected {:?}",
-                    worker.id.0, resumed, run_id
+                    "sim worker {} resumed with wrong step id {:?}, expected {:?}",
+                    worker.id.0, resumed, step_id
                 );
             }
             WorkerPermit::Shutdown => panic!("sim worker shut down while parked"),
@@ -1993,15 +2056,15 @@ mod tests {
         let worker = executor.acquire_worker();
         let control = {
             let workers = lock_unpoison(&executor.shared.workers);
-            workers.get(&worker).unwrap().control.clone()
+            workers.control(worker)
         };
         lock_unpoison(&control.slot).report = Some(WorkerReport {
             worker,
-            run_id: RunId(99),
+            step_id: StepId(99),
             kind: WorkerReportKind::PollReturned,
         });
 
-        let _ = executor.wait_for_report(worker, RunId(0));
+        let _ = executor.wait_for_report(worker, StepId(0));
     }
 
     #[test]
@@ -2012,7 +2075,7 @@ mod tests {
 
         executor.run_entity(RunnableEntity::Parked(ParkedStack {
             worker,
-            run_id: RunId(0),
+            step_id: StepId(0),
         }));
     }
 
