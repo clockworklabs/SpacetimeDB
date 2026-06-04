@@ -86,6 +86,19 @@ fn candidate_pull_requests(client: &GithubClient, owner: &str, repo: &str, pr_nu
                 pr_numbers.insert(number);
             }
         }
+        "workflow_run" => {
+            if event.pointer("/workflow_run/name").and_then(Value::as_str) == Some("Retry CLA Assistant") {
+                println!("Ignoring completion of this workflow.");
+                return Ok(Vec::new());
+            }
+            if let Some(prs) = event.pointer("/workflow_run/pull_requests").and_then(Value::as_array) {
+                for pr in prs {
+                    if let Some(number) = pr.get("number").and_then(Value::as_u64) {
+                        pr_numbers.insert(number);
+                    }
+                }
+            }
+        }
         "workflow_dispatch" => {}
         other => println!("Unsupported event {other}; skipping."),
     }

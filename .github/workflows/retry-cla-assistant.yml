@@ -11,6 +11,8 @@ name: Retry CLA Assistant
 on:
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
+  workflow_run:
+    types: [completed]
   schedule:
     - cron: "7,22,37,52 * * * *"
 
