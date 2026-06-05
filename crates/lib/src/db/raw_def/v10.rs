@@ -95,6 +95,9 @@ pub enum RawModuleDefV10Section {
 
     /// HTTP route definitions.
     HttpRoutes(Vec<RawHttpRouteDefV10>),
+
+    /// Primary key metadata for views.
+    ViewPrimaryKeys(Vec<RawViewPrimaryKeyDefV10>),
 }
 
 #[derive(Debug, Clone, SpacetimeType)]
@@ -539,6 +542,21 @@ pub struct RawViewDefV10 {
     pub return_type: AlgebraicType,
 }
 
+/// Primary key metadata for a view.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawViewPrimaryKeyDefV10 {
+    /// The source/accessor name of the view this primary key applies to.
+    pub view_source_name: RawIdentifier,
+
+    /// The source/accessor names of the columns that make up the primary key.
+    ///
+    /// Currently only a single column is supported, but this is a vector to keep
+    /// the raw definition compatible with future composite view primary keys.
+    pub columns: Vec<RawIdentifier>,
+}
+
 impl RawModuleDefV10 {
     /// Get the types section, if present.
     pub fn types(&self) -> Option<&Vec<RawTypeDefV10>> {
@@ -584,6 +602,14 @@ impl RawModuleDefV10 {
     pub fn views(&self) -> Option<&Vec<RawViewDefV10>> {
         self.sections.iter().find_map(|s| match s {
             RawModuleDefV10Section::Views(views) => Some(views),
+            _ => None,
+        })
+    }
+
+    /// Get the view primary keys section, if present.
+    pub fn view_primary_keys(&self) -> Option<&Vec<RawViewPrimaryKeyDefV10>> {
+        self.sections.iter().find_map(|s| match s {
+            RawModuleDefV10Section::ViewPrimaryKeys(primary_keys) => Some(primary_keys),
             _ => None,
         })
     }
@@ -743,6 +769,26 @@ impl RawModuleDefV10Builder {
         match &mut self.module.sections[idx] {
             RawModuleDefV10Section::Views(views) => views,
             _ => unreachable!("Just ensured Views section exists"),
+        }
+    }
+
+    /// Get mutable access to the view primary keys section, creating it if missing.
+    fn view_primary_keys_mut(&mut self) -> &mut Vec<RawViewPrimaryKeyDefV10> {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::ViewPrimaryKeys(_)))
+            .unwrap_or_else(|| {
+                self.module
+                    .sections
+                    .push(RawModuleDefV10Section::ViewPrimaryKeys(Vec::new()));
+                self.module.sections.len() - 1
+            });
+
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::ViewPrimaryKeys(primary_keys) => primary_keys,
+            _ => unreachable!("Just ensured ViewPrimaryKeys section exists"),
         }
     }
 
@@ -1077,6 +1123,18 @@ impl RawModuleDefV10Builder {
             is_anonymous,
             params,
             return_type,
+        });
+    }
+
+    /// Add primary key metadata for a view.
+    pub fn add_view_primary_key<C, I>(&mut self, view_source_name: impl Into<RawIdentifier>, columns: I)
+    where
+        C: Into<RawIdentifier>,
+        I: IntoIterator<Item = C>,
+    {
+        self.view_primary_keys_mut().push(RawViewPrimaryKeyDefV10 {
+            view_source_name: view_source_name.into(),
+            columns: columns.into_iter().map(Into::into).collect(),
         });
     }
 
