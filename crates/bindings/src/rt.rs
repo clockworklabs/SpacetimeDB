@@ -169,6 +169,11 @@ pub trait FnInfo: ExplicitNames {
     /// A description of the parameter names of the function.
     const ARG_NAMES: &'static [Option<&'static str>];
 
+    /// The source/accessor names of this view's primary key columns.
+    ///
+    /// Currently only views use this metadata.
+    const VIEW_PRIMARY_KEY_COLUMNS: &'static [&'static str] = &[];
+
     /// The function to invoke.
     const INVOKE: Self::Invoke;
 
@@ -859,6 +864,11 @@ where
         module
             .inner
             .add_view(I::NAME, module.views.len(), true, false, params, return_type);
+        if !I::VIEW_PRIMARY_KEY_COLUMNS.is_empty() {
+            module
+                .inner
+                .add_view_primary_key(I::NAME, I::VIEW_PRIMARY_KEY_COLUMNS.iter().copied());
+        }
         module.views.push(I::INVOKE);
 
         module.inner.add_explicit_names(I::explicit_names());
@@ -898,6 +908,11 @@ where
         module
             .inner
             .add_view(I::NAME, module.views_anon.len(), true, true, params, return_type);
+        if !I::VIEW_PRIMARY_KEY_COLUMNS.is_empty() {
+            module
+                .inner
+                .add_view_primary_key(I::NAME, I::VIEW_PRIMARY_KEY_COLUMNS.iter().copied());
+        }
         module.views_anon.push(I::INVOKE);
 
         module.inner.add_explicit_names(I::explicit_names());
