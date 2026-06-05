@@ -48,7 +48,7 @@ Clients receive automatic updates when subscribed data changes. The SDKs provide
 Clients can invoke server-side functions to modify data or perform operations:
 
 - **[Reducers](./00200-functions/00300-reducers/00300-reducers.md)** - Transactional functions that modify database state
-- **[Procedures](./00200-functions/00400-procedures.md)** - Functions that can perform external operations like HTTP requests (beta)
+- **[Procedures](./00200-functions/00400-procedures.md)** - Functions that can perform external operations like HTTP requests
 
 ### Type Safety
 

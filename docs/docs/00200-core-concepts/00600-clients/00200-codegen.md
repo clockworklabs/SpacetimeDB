@@ -257,7 +257,7 @@ For each [procedure](../00200-functions/00400-procedures.md) in your module, cod
 - **Return value handling** for procedures that return results
 - **Type-safe parameters** matching the procedure's signature
 
-Procedures are currently in beta. For example, a `fetch_external_data` procedure becomes:
+For example, a `fetch_external_data` procedure becomes:
 
 <Tabs groupId="client-language" queryString>
 <TabItem value="typescript" label="TypeScript">
