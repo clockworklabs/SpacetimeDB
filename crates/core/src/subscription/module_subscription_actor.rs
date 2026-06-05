@@ -1973,8 +1973,6 @@ mod tests {
     use tokio::sync::mpsc::{self};
     use tokio::sync::watch;
 
-    const TEST_MESSAGE_TIMEOUT: Duration = Duration::from_secs(10);
-
     fn add_subscriber(db: Arc<RelationalDB>, sql: &str, assert: Option<AssertTxFn>) -> Result<(), DBError> {
         // Create and enter a Tokio runtime to run the `ModuleSubscriptions`' background workers in parallel.
         let runtime = tokio::runtime::Runtime::new().unwrap();
@@ -2662,7 +2660,7 @@ mod tests {
         inserts: impl IntoIterator<Item = ProductValue>,
         deletes: impl IntoIterator<Item = ProductValue>,
     ) {
-        match recv_outbound_message(rx, "TxUpdate").await {
+        match rx.await {
             Some(OutboundMessage::V1(SerializableMessage::TxUpdate(TransactionUpdateMessage {
                 database_update:
                     SubscriptionUpdateMessage {
@@ -2709,7 +2707,7 @@ mod tests {
         inserts: impl IntoIterator<Item = ProductValue>,
         deletes: impl IntoIterator<Item = ProductValue>,
     ) {
-        match recv_outbound_message(rx, "v2 TransactionUpdate").await {
+        match rx.await {
             Some(OutboundMessage::V2(ws_v2::ServerMessage::TransactionUpdate(update))) => {
                 assert_eq!(update.query_sets.len(), 1);
                 let query_set = &update.query_sets[0];
@@ -2734,15 +2732,6 @@ mod tests {
             Some(msg) => panic!("expected a v2 TransactionUpdate, but got {msg:#?}"),
             None => panic!("The receiver closed due to an error"),
         }
-    }
-
-    async fn recv_outbound_message(
-        rx: impl Future<Output = Option<OutboundMessage>>,
-        expected: &str,
-    ) -> Option<OutboundMessage> {
-        tokio::time::timeout(TEST_MESSAGE_TIMEOUT, rx)
-            .await
-            .unwrap_or_else(|_| panic!("timed out waiting for {expected}"))
     }
 
     /// Commit a set of row updates and broadcast to subscribers
