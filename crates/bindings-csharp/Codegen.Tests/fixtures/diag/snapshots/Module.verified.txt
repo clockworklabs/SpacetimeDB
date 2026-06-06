@@ -387,6 +387,57 @@ public partial struct TestScheduleIssues
       }
     },
     {/*
+        Public = true,
+        PrimaryKey = "MissingIdentity"
+                     ^^^^^^^^^^^^^^^^^
+    )]
+*/
+      Message: View 'ViewPrimaryKeyMissingColumn' declares primary key 'MissingIdentity', but row type 'Player' does not have a field with that source name.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0037,
+        Title: View primary key column not found,
+        MessageFormat: View '{0}' declares primary key '{1}', but row type '{2}' does not have a field with that source name.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+        Public = true,
+        PrimaryKey = "renamed_identity"
+                     ^^^^^^^^^^^^^^^^^^
+    )]
+*/
+      Message: View 'ViewPrimaryKeyUsesWrongSourceName' declares primary key 'renamed_identity', but row type 'ViewPrimaryKeyRenamedRow' does not have a field with that source name.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0037,
+        Title: View primary key column not found,
+        MessageFormat: View '{0}' declares primary key '{1}', but row type '{2}' does not have a field with that source name.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+        Public = true,
+        PrimaryKey = "Identity"
+                     ^^^^^^^^^^
+    )]
+*/
+      Message: View 'ViewPrimaryKeyNonEquatableColumn' declares primary key 'Identity', but its type 'NonEquatableViewPrimaryKey' is not supported for view primary keys.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0038,
+        Title: View primary key column type is not supported,
+        MessageFormat: View '{0}' declares primary key '{1}', but its type '{2}' is not supported for view primary keys.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
     [SpacetimeDB.Reducer]
     public static int TestReducerReturnType(ReducerContext ctx) => 0;
                   ^^^
