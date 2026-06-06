@@ -497,10 +497,10 @@ A view can be written in a TypeScript module like so:
 ```typescript
 export const my_player = spacetimedb.view(
   { name: 'my_player', public: true },
-  t.option(players.row()),
+  t.option(players.rowType),
   (ctx) => {
     const row = ctx.db.players.identity.find(ctx.sender);
-    return row ?? null;
+    return row ?? undefined;
   }
 );
 ```
