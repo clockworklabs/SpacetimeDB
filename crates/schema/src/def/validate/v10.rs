@@ -82,6 +82,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .cloned()
         .map(ExplicitNamesLookup::new)
         .unwrap_or_default();
+    let view_primary_keys = def.view_primary_keys().cloned().unwrap_or_default();
 
     // Original `typespace` needs to be preserved to be assign `accesor_name`s to columns.
     let typespace_with_accessor_names = typespace.clone();
@@ -271,6 +272,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
 
                 check_scheduled_functions_exist(&mut tables, &reducers, &procedures)?;
                 change_scheduled_functions_and_lifetimes_visibility(&tables, &mut reducers, &mut procedures)?;
+                attach_view_primary_keys(&mut views, view_primary_keys)?;
                 assign_query_view_primary_keys(&tables, &mut views);
 
                 Ok((tables, types, reducers, procedures, views, http_handlers_and_routes))
@@ -957,6 +959,92 @@ fn attach_schedules_to_tables(
     Ok(())
 }
 
+/// Attach explicit view primary-key metadata from the raw V10 `ViewPrimaryKeys`
+/// section to validated [`ViewDef`]s.
+///
+/// Entries in the raw section refer to view and column source/accessor names,
+/// not canonical names. This resolves those names against the already validated
+/// views, checks the current single-column restriction, and stores the resolved
+/// [`ColId`] on `ViewDef::primary_key`.
+fn attach_view_primary_keys(
+    views: &mut IndexMap<Identifier, ViewDef>,
+    primary_keys: Vec<RawViewPrimaryKeyDefV10>,
+) -> Result<()> {
+    let mut errors = Vec::new();
+    let mut seen = Vec::new();
+
+    // `ViewPrimaryKeys` is a separate V10 section keyed by view source/accessor
+    // name. Validation happens after all views have been built so that we can
+    // resolve each entry against the validated `ViewDef` and its validated return
+    // columns.
+    for primary_key in primary_keys {
+        let RawViewPrimaryKeyDefV10 {
+            view_source_name,
+            columns,
+        } = primary_key;
+
+        // Keep one primary-key declaration per view. Multiple section entries
+        // for the same view are treated as a schema error rather than merged so
+        // typos or duplicate module def output do not silently change behavior.
+        if seen.contains(&view_source_name) {
+            errors.push(ValidationError::RepeatedViewPrimaryKey {
+                view: view_source_name.clone(),
+            });
+            continue;
+        }
+        seen.push(view_source_name.clone());
+
+        // The raw ABI stores a vector so multi-column keys can be added later
+        // without changing the section shape. The current schema model and
+        // client caches only support a single view primary-key column.
+        if columns.len() > 1 {
+            errors.push(ValidationError::MultipleViewPrimaryKeyColumns {
+                view: view_source_name.clone(),
+                columns,
+            });
+            continue;
+        }
+
+        let Some(column_name) = columns.into_iter().next() else {
+            continue;
+        };
+
+        // Match the view by accessor/source name because this is raw
+        // module-definition metadata produced before validation applies case
+        // conversion and explicit-name resolution. The canonical view name may
+        // differ from the source name.
+        let Some(view) = views
+            .values_mut()
+            .find(|view| view.accessor_name.as_raw() == &view_source_name)
+        else {
+            errors.push(ValidationError::ViewPrimaryKeyViewNotFound { view: view_source_name });
+            continue;
+        };
+
+        // Match return columns by accessor/source name for the same reason. For
+        // raw schemas produced from a validated `ModuleDef`, the accessor name
+        // may already be canonical; in both cases it must agree with the return
+        // type names present in that raw schema.
+        let Some(column) = view
+            .return_columns
+            .iter()
+            .find(|column| column.accessor_name.as_raw() == &column_name)
+        else {
+            errors.push(ValidationError::ViewPrimaryKeyColumnNotFound {
+                view: view_source_name,
+                column: column_name,
+            });
+            continue;
+        };
+
+        // Store the resolved column id on the canonical view definition. Later
+        // schema construction and codegen use this just like a table primary key.
+        view.primary_key = Some(column.col_id);
+    }
+
+    ValidationErrors::add_extra_errors(Ok(()), errors)
+}
+
 fn assign_query_view_primary_keys(tables: &IdentifierMap<TableDef>, views: &mut IndexMap<Identifier, ViewDef>) {
     let primary_key_for_product_type_ref = |product_type_ref: AlgebraicTypeRef| {
         let mut primary_key = None;
@@ -981,9 +1069,11 @@ fn assign_query_view_primary_keys(tables: &IdentifierMap<TableDef>, views: &mut 
 
     for view in views.values_mut() {
         view.primary_key = match extract_view_return_product_type_ref(&view.return_type) {
-            Some((_, ViewKind::Procedural)) => None,
-            Some((product_type_ref, ViewKind::Query)) => primary_key_for_product_type_ref(product_type_ref),
-            None => None,
+            Some((_, ViewKind::Procedural)) => view.primary_key,
+            Some((product_type_ref, ViewKind::Query)) => view
+                .primary_key
+                .or_else(|| primary_key_for_product_type_ref(product_type_ref)),
+            None => view.primary_key,
         };
     }
 }
