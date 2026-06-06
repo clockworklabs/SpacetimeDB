@@ -74,6 +74,32 @@ const config: Config = {
     {
       tagName: 'link',
       attributes: {
+        rel: 'alternate',
+        type: 'text/markdown',
+        title: 'SpacetimeDB docs for agents',
+        href: '/docs/llms.txt',
+      },
+    },
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'alternate',
+        type: 'text/markdown',
+        title: 'Full SpacetimeDB docs for agents',
+        href: '/docs/llms-full.txt',
+      },
+    },
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'sitemap',
+        type: 'application/xml',
+        href: '/docs/sitemap.xml',
+      },
+    },
+    {
+      tagName: 'link',
+      attributes: {
         rel: 'preload',
         as: 'font',
         type: 'font/woff2',
