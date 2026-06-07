@@ -133,7 +133,7 @@ export const init = spacetimedb.init((ctx) => {
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "Config")]
+[SpacetimeDB.Table(Accessor = "Config")]
 public partial struct Config
 {
     [SpacetimeDB.PrimaryKey]
