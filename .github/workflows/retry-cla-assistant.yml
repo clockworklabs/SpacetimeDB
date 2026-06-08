@@ -5,24 +5,15 @@ name: Retry CLA Assistant
 # forever even after every real CI check has passed. This workflow nudges CLA
 # Assistant only when that status is the sole remaining non-green signal.
 #
-# SECURITY: This workflow uses pull_request_target so it can inspect PR status
-# for forks. It checks out trusted default-branch code only; it must never check
-# out, build, or execute code from the PR head.
+# SECURITY: This workflow checks out trusted default-branch code only; it must
+# never check out, build, or execute code from the PR head.
 
 on:
-  pull_request_target:
-    types: [opened, reopened, synchronize, ready_for_review]
   workflow_run:
     workflows: [CI, Internal Tests]
     types: [completed]
   schedule:
-    - cron: "7,22,37,52 * * * *"
-  workflow_dispatch:
-    inputs:
-      pr_number:
-        description: "Pull request number to check"
-        required: true
-        type: number
+    - cron: "7 * * * *"
 
 permissions:
   actions: read
@@ -52,9 +43,6 @@ jobs:
           pr_numbers="${RUNNER_TEMP}/cla-pr-numbers"
 
           case "${GITHUB_EVENT_NAME}" in
-            pull_request_target)
-              jq -r '.pull_request.number' "${GITHUB_EVENT_PATH}" > "${pr_numbers}"
-              ;;
             workflow_run)
               if jq -e '.workflow_run.name == "Retry CLA Assistant"' "${GITHUB_EVENT_PATH}" > /dev/null; then
                 : > "${pr_numbers}"
@@ -64,9 +52,6 @@ jobs:
               ;;
             schedule)
               gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls?state=open&base=master&per_page=100" --jq '.[].number' > "${pr_numbers}"
-              ;;
-            workflow_dispatch)
-              jq -r '.inputs.pr_number' "${GITHUB_EVENT_PATH}" > "${pr_numbers}"
               ;;
             *)
               echo "unsupported event ${GITHUB_EVENT_NAME}" >&2

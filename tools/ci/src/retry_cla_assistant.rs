@@ -39,21 +39,7 @@ fn retry_for_pr(client: &GithubClient, owner: &str, repo: &str, pr_number: u64) 
     println!("Inspecting PR #{pr_number}");
 
     let pr: PullRequest = client.github_get(&format!("/repos/{owner}/{repo}/pulls/{pr_number}"))?;
-    if pr.state != "open" {
-        println!("PR #{pr_number} is {}; skipping.", pr.state);
-        return Ok(());
-    }
-    if pr.draft {
-        println!("PR #{pr_number} is draft; skipping.");
-        return Ok(());
-    }
-    if pr.base.ref_name != "master" {
-        println!("PR #{pr_number} targets {}, not master; skipping.", pr.base.ref_name);
-        return Ok(());
-    }
-
     let sha = pr.head.sha;
-    let check_runs = client.list_check_runs(owner, repo, &sha)?;
     let statuses = client.list_statuses(owner, repo, &sha)?;
 
     let latest_statuses = latest_status_by_context(statuses);
@@ -62,38 +48,6 @@ fn retry_for_pr(client: &GithubClient, owner: &str, repo: &str, pr_number: u64) 
         .is_some_and(|status| status.state == "success")
     {
         println!("PR #{pr_number} already has {CLA_CONTEXT}=success.");
-        return Ok(());
-    }
-
-    if check_runs.is_empty() {
-        println!("PR #{pr_number} has no check runs yet; skipping.");
-        return Ok(());
-    }
-
-    let blocking_check_runs: Vec<_> = check_runs.iter().filter(|run| !check_run_is_green(run)).collect();
-    if !blocking_check_runs.is_empty() {
-        println!("PR #{pr_number} still has non-green check runs:");
-        for run in blocking_check_runs {
-            println!(
-                "- {}: status={}, conclusion={}",
-                run.name,
-                run.status,
-                run.conclusion.as_deref().unwrap_or("none")
-            );
-        }
-        return Ok(());
-    }
-
-    let blocking_statuses: Vec<_> = latest_statuses
-        .values()
-        .filter(|status| status.context != CLA_CONTEXT)
-        .filter(|status| status.state != "success")
-        .collect();
-    if !blocking_statuses.is_empty() {
-        println!("PR #{pr_number} still has non-green commit statuses:");
-        for status in blocking_statuses {
-            println!("- {}: {}", status.context, status.state);
-        }
         return Ok(());
     }
 
@@ -114,10 +68,6 @@ fn retry_for_pr(client: &GithubClient, owner: &str, repo: &str, pr_number: u64) 
     println!("Retrying CLA Assistant for PR #{pr_number}: {reason}");
     client.recheck_cla(owner, repo, pr_number)?;
     Ok(())
-}
-
-fn check_run_is_green(run: &CheckRun) -> bool {
-    run.status == "completed" && matches!(run.conclusion.as_deref(), Some("success" | "skipped" | "neutral"))
 }
 
 fn latest_status_by_context(statuses: Vec<CommitStatus>) -> BTreeMap<String, CommitStatus> {
@@ -156,12 +106,6 @@ impl GithubClient {
         Ok(response.json()?)
     }
 
-    fn list_check_runs(&self, owner: &str, repo: &str, sha: &str) -> Result<Vec<CheckRun>> {
-        let path = format!("/repos/{owner}/{repo}/commits/{sha}/check-runs");
-        let response: CheckRunsResponse = self.github_get(&path)?;
-        Ok(response.check_runs)
-    }
-
     fn list_statuses(&self, owner: &str, repo: &str, sha: &str) -> Result<Vec<CommitStatus>> {
         let path = format!("/repos/{owner}/{repo}/commits/{sha}/status");
         let response: CombinedStatusResponse = self.github_get(&path)?;
@@ -185,29 +129,12 @@ impl GithubClient {
 
 #[derive(Deserialize)]
 struct PullRequest {
-    state: String,
-    draft: bool,
     head: PullRequestRef,
-    base: PullRequestRef,
 }
 
 #[derive(Deserialize)]
 struct PullRequestRef {
     sha: String,
-    #[serde(rename = "ref")]
-    ref_name: String,
-}
-
-#[derive(Deserialize)]
-struct CheckRunsResponse {
-    check_runs: Vec<CheckRun>,
-}
-
-#[derive(Deserialize)]
-struct CheckRun {
-    name: String,
-    status: String,
-    conclusion: Option<String>,
 }
 
 #[derive(Deserialize)]
