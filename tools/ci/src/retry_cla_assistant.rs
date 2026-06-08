@@ -51,16 +51,6 @@ fn retry_for_pr(client: &GithubClient, owner: &str, repo: &str, pr_number: u64) 
         return Ok(());
     }
 
-    if let Some(cla_status) = latest_statuses.get(CLA_CONTEXT)
-        && !matches!(cla_status.state.as_str(), "pending" | "failure" | "error")
-    {
-        println!(
-            "PR #{pr_number} has unexpected {CLA_CONTEXT} state {}; skipping.",
-            cla_status.state
-        );
-        return Ok(());
-    }
-
     let reason = latest_statuses.get(CLA_CONTEXT).map_or_else(
         || format!("{CLA_CONTEXT} is missing"),
         |status| format!("{CLA_CONTEXT} is {}", status.state),
