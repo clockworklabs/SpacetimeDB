@@ -3,10 +3,6 @@
 
 #pragma once
 
-#ifndef SPACETIMEDB_UNSTABLE_FEATURES
-#error "spacetimedb/http.h requires SPACETIMEDB_UNSTABLE_FEATURES to be enabled"
-#endif
-
 #include <string>
 #include <vector>
 #include <optional>
@@ -302,12 +298,8 @@ public:
      * @endcode
      */
     Outcome<HttpResponse> send(const HttpRequest& request) {
-        #ifndef SPACETIMEDB_UNSTABLE_FEATURES
-        return Err<HttpResponse>("HTTP requests require SPACETIMEDB_UNSTABLE_FEATURES to be enabled");
-        #else
         // Implemented in http_client_impl.h to avoid circular dependencies
         return SendImpl(request);
-        #endif
     }
 
 private:
@@ -317,7 +309,7 @@ private:
 } // namespace SpacetimeDB
 
 // Include implementation dependencies after class definition to avoid circular dependencies
-#if defined(SPACETIMEDB_UNSTABLE_FEATURES) && !defined(SPACETIMEDB_HTTP_CONVERT_H)
+#ifndef SPACETIMEDB_HTTP_CONVERT_H
 #include "spacetimedb/logger.h"
 #include "spacetimedb/http_convert.h"
 #include "spacetimedb/http_client_impl.h"
