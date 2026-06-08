@@ -254,6 +254,19 @@ Usage: docs
 
 - `--help`: Print help
 
+### `retry-cla-assistant`
+
+**Usage:**
+```bash
+Usage: retry-cla-assistant [OPTIONS] --pr-number <PR_NUMBER>
+```
+
+**Options:**
+
+- `--pr-number <PR_NUMBER>`: Pull request number to check
+- `--repo <REPO>`: Repository in `owner/name` form. Defaults to GITHUB_REPOSITORY
+- `--help`: Print help
+
 ### `help`
 
 **Usage:**
