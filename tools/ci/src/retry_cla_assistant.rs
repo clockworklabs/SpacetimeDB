@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::env;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use clap::Args;
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
@@ -9,27 +9,36 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 
 const CLA_CONTEXT: &str = "license/cla";
-const OWNER: &str = "clockworklabs";
-const REPO: &str = "SpacetimeDB";
 
 #[derive(Args)]
 pub(crate) struct RetryClaAssistantArgs {
     /// Pull request number to check.
     #[arg(long)]
     pub(crate) pr_number: u64,
+
+    /// Repository in `owner/name` form. Defaults to GITHUB_REPOSITORY.
+    #[arg(long)]
+    pub(crate) repo: Option<String>,
 }
 
 pub(crate) fn run(args: RetryClaAssistantArgs) -> Result<()> {
+    let repo = args
+        .repo
+        .or_else(|| env::var("GITHUB_REPOSITORY").ok())
+        .context("repo is required via --repo or GITHUB_REPOSITORY")?;
+    let (owner, repo_name) = repo
+        .split_once('/')
+        .ok_or_else(|| anyhow!("repo must be in owner/name form, got {repo:?}"))?;
     let token = env::var("GITHUB_TOKEN").context("GITHUB_TOKEN is required")?;
     let client = GithubClient::new(token)?;
 
-    retry_for_pr(&client, args.pr_number)
+    retry_for_pr(&client, owner, repo_name, args.pr_number)
 }
 
-fn retry_for_pr(client: &GithubClient, pr_number: u64) -> Result<()> {
+fn retry_for_pr(client: &GithubClient, owner: &str, repo: &str, pr_number: u64) -> Result<()> {
     println!("Inspecting PR #{pr_number}");
 
-    let pr: PullRequest = client.github_get(&format!("/repos/{OWNER}/{REPO}/pulls/{pr_number}"))?;
+    let pr: PullRequest = client.github_get(&format!("/repos/{owner}/{repo}/pulls/{pr_number}"))?;
     if pr.state != "open" {
         println!("PR #{pr_number} is {}; skipping.", pr.state);
         return Ok(());
@@ -44,8 +53,8 @@ fn retry_for_pr(client: &GithubClient, pr_number: u64) -> Result<()> {
     }
 
     let sha = pr.head.sha;
-    let check_runs = client.list_check_runs(&sha)?;
-    let statuses = client.list_statuses(&sha)?;
+    let check_runs = client.list_check_runs(owner, repo, &sha)?;
+    let statuses = client.list_statuses(owner, repo, &sha)?;
 
     let latest_statuses = latest_status_by_context(statuses);
     if latest_statuses
@@ -103,7 +112,7 @@ fn retry_for_pr(client: &GithubClient, pr_number: u64) -> Result<()> {
         |status| format!("{CLA_CONTEXT} is {}", status.state),
     );
     println!("Retrying CLA Assistant for PR #{pr_number}: {reason}");
-    client.recheck_cla(pr_number)?;
+    client.recheck_cla(owner, repo, pr_number)?;
     Ok(())
 }
 
@@ -147,20 +156,20 @@ impl GithubClient {
         Ok(response.json()?)
     }
 
-    fn list_check_runs(&self, sha: &str) -> Result<Vec<CheckRun>> {
-        let path = format!("/repos/{OWNER}/{REPO}/commits/{sha}/check-runs");
+    fn list_check_runs(&self, owner: &str, repo: &str, sha: &str) -> Result<Vec<CheckRun>> {
+        let path = format!("/repos/{owner}/{repo}/commits/{sha}/check-runs");
         let response: CheckRunsResponse = self.github_get(&path)?;
         Ok(response.check_runs)
     }
 
-    fn list_statuses(&self, sha: &str) -> Result<Vec<CommitStatus>> {
-        let path = format!("/repos/{OWNER}/{REPO}/commits/{sha}/status");
+    fn list_statuses(&self, owner: &str, repo: &str, sha: &str) -> Result<Vec<CommitStatus>> {
+        let path = format!("/repos/{owner}/{repo}/commits/{sha}/status");
         let response: CombinedStatusResponse = self.github_get(&path)?;
         Ok(response.statuses)
     }
 
-    fn recheck_cla(&self, pr_number: u64) -> Result<()> {
-        let url = format!("https://cla-assistant.io/check/{OWNER}/{REPO}?pullRequest={pr_number}");
+    fn recheck_cla(&self, owner: &str, repo: &str, pr_number: u64) -> Result<()> {
+        let url = format!("https://cla-assistant.io/check/{owner}/{repo}?pullRequest={pr_number}");
         let response = self
             .http
             .get(&url)
