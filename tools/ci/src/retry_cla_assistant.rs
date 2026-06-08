@@ -1,9 +1,7 @@
 use std::collections::BTreeMap;
 use std::env;
-use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};
-use chrono::{DateTime, Utc};
 use clap::Args;
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
@@ -11,9 +9,6 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 
 const CLA_CONTEXT: &str = "license/cla";
-const MIN_HEAD_AGE: Duration = Duration::from_secs(10 * 60);
-const POLL_ATTEMPTS: usize = 6;
-const POLL_DELAY: Duration = Duration::from_secs(30);
 
 #[derive(Args)]
 pub(crate) struct RetryClaAssistantArgs {
@@ -58,25 +53,6 @@ fn retry_for_pr(client: &GithubClient, owner: &str, repo: &str, pr_number: u64) 
     }
 
     let sha = pr.head.sha;
-    let commit: CommitResponse = client.github_get(&format!("/repos/{owner}/{repo}/commits/{sha}"))?;
-    let committed_at = commit
-        .commit
-        .committer
-        .date
-        .or(commit.commit.author.date)
-        .context("commit payload did not contain an author or committer date")?;
-    let committed_at = DateTime::parse_from_rfc3339(&committed_at)
-        .context("commit date was not RFC3339")?
-        .with_timezone(&Utc);
-    let head_age = Utc::now()
-        .signed_duration_since(committed_at)
-        .to_std()
-        .unwrap_or_default();
-    if head_age < MIN_HEAD_AGE {
-        println!("PR #{pr_number} head is too new ({}s); skipping.", head_age.as_secs());
-        return Ok(());
-    }
-
     let check_runs = client.list_check_runs(owner, repo, &sha)?;
     let statuses = client.list_statuses(owner, repo, &sha)?;
 
@@ -137,22 +113,6 @@ fn retry_for_pr(client: &GithubClient, owner: &str, repo: &str, pr_number: u64) 
     );
     println!("Retrying CLA Assistant for PR #{pr_number}: {reason}");
     client.recheck_cla(owner, repo, pr_number)?;
-
-    for attempt in 1..=POLL_ATTEMPTS {
-        std::thread::sleep(POLL_DELAY);
-        let statuses = latest_status_by_context(client.list_statuses(owner, repo, &sha)?);
-        let cla_state = statuses
-            .get(CLA_CONTEXT)
-            .map(|status| status.state.as_str())
-            .unwrap_or("missing");
-        println!("Poll {attempt}/{POLL_ATTEMPTS}: {CLA_CONTEXT}={cla_state}");
-        if cla_state == "success" {
-            println!("CLA Assistant posted {CLA_CONTEXT}=success for PR #{pr_number}.");
-            return Ok(());
-        }
-    }
-
-    println!("::warning::CLA Assistant did not post {CLA_CONTEXT}=success for PR #{pr_number} after retry.");
     Ok(())
 }
 
@@ -236,22 +196,6 @@ struct PullRequestRef {
     sha: String,
     #[serde(rename = "ref")]
     ref_name: String,
-}
-
-#[derive(Deserialize)]
-struct CommitResponse {
-    commit: Commit,
-}
-
-#[derive(Deserialize)]
-struct Commit {
-    author: CommitPerson,
-    committer: CommitPerson,
-}
-
-#[derive(Deserialize)]
-struct CommitPerson {
-    date: Option<String>,
 }
 
 #[derive(Deserialize)]
