@@ -226,15 +226,23 @@ fn read_package_json_dependency_version(package_json_path: &Path, package_name: 
 
 fn read_csproj_package_reference_version(csproj_path: &Path, package_name: &str) -> Result<String> {
     let content = fs::read_to_string(csproj_path).with_context(|| format!("Failed to read {:?}", csproj_path))?;
-    let re = Regex::new(&format!(
-        r#"<PackageReference\b[^>]*\bInclude="{}"[^>]*\bVersion="([^"]+)""#,
-        regex::escape(package_name)
-    ))
-    .unwrap();
-    let caps = re
-        .captures(&content)
-        .with_context(|| format!("No PackageReference `{package_name}` found in {:?}", csproj_path))?;
-    Ok(caps.get(1).unwrap().as_str().to_string())
+    let root = xmltree::Element::parse(content.as_bytes())
+        .with_context(|| format!("Failed to parse XML {:?}", csproj_path))?;
+
+    root.children
+        .iter()
+        .filter_map(|node| match node {
+            xmltree::XMLNode::Element(element) if element.name == "ItemGroup" => Some(element),
+            _ => None,
+        })
+        .flat_map(|item_group| item_group.children.iter())
+        .filter_map(|node| match node {
+            xmltree::XMLNode::Element(element) if element.name == "PackageReference" => Some(element),
+            _ => None,
+        })
+        .find(|package_ref| package_ref.attributes.get("Include").map(String::as_str) == Some(package_name))
+        .and_then(|package_ref| package_ref.attributes.get("Version").cloned())
+        .with_context(|| format!("No PackageReference `{package_name}` found in {:?}", csproj_path))
 }
 
 fn find_csproj(dir: &Path) -> Result<PathBuf> {
