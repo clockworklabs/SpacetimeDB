@@ -14,6 +14,12 @@ on:
     types: [completed]
   schedule:
     - cron: "7 * * * *"
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request number to check"
+        required: true
+        type: number
 
 permissions:
   actions: read
@@ -52,6 +58,9 @@ jobs:
               ;;
             schedule)
               gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls?state=open&base=master&per_page=100" --jq '.[].number' > "${pr_numbers}"
+              ;;
+            workflow_dispatch)
+              jq -r '.inputs.pr_number' "${GITHUB_EVENT_PATH}" > "${pr_numbers}"
               ;;
             *)
               echo "unsupported event ${GITHUB_EVENT_NAME}" >&2
