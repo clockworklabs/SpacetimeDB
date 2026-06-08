@@ -1,10 +1,13 @@
+use enum_map::EnumMap;
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::bsatn::Deserializer;
 use spacetimedb_lib::db::raw_def::v10::*;
+use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
 use spacetimedb_lib::de::DeserializeSeed as _;
 use spacetimedb_lib::http::character_is_acceptable_for_route_path;
+use spacetimedb_primitives::ReducerId;
 use spacetimedb_sats::{Typespace, WithTypespace};
 
 use crate::def::validate::v9::{
@@ -71,7 +74,7 @@ impl From<CaseConversionPolicy> for ValidationCase {
         }
     }
 }
-/// Validate a `RawModuleDefV9` and convert it into a `ModuleDef`,
+/// Validate a `RawModuleDefV10` and convert it into a `ModuleDef`,
 /// or return a stream of errors if the definition is invalid.
 pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
     let mut typespace = def.typespace().cloned().unwrap_or_else(|| Typespace::EMPTY.clone());
@@ -83,6 +86,12 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .map(ExplicitNamesLookup::new)
         .unwrap_or_default();
     let view_primary_keys = def.view_primary_keys().cloned().unwrap_or_default();
+    let mounts = def
+        .mounts()
+        .into_iter()
+        .flat_map(|mounts| mounts.iter().cloned())
+        .map(validate_mount)
+        .collect_all_errors::<Vec<_>>();
 
     // Original `typespace` needs to be preserved to be assign `accesor_name`s to columns.
     let typespace_with_accessor_names = typespace.clone();
@@ -292,14 +301,15 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .map(|rls| (rls.sql.clone(), rls.to_owned()))
         .collect();
 
-    let (tables, types, reducers, procedures, views, http_handlers, http_routes) =
-        tables_types_reducers_procedures_views
-            .map(
-                |(tables, types, reducers, procedures, views, (http_handlers, http_routes))| {
-                    (tables, types, reducers, procedures, views, http_handlers, http_routes)
-                },
-            )
-            .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
+    let ((tables, types, reducers, procedures, views, (http_handlers, http_routes)), mounts) = (
+        tables_types_reducers_procedures_views,
+        mounts.and_then(validate_mount_names_are_unique),
+    )
+        .combine_errors()
+        .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
+
+    validate_no_lifecycle_conflicts(&lifecycle_reducers, &mounts)
+        .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
 
     let typespace_for_generate = typespace_for_generate.finish();
 
@@ -318,7 +328,92 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         http_handlers,
         http_routes,
         raw_module_def_version: RawModuleDefVersion::V10,
+        mounts,
     })
+}
+
+/// Validate that the mount's namespace is not longer than 63 characters
+/// and that it's valid "Identifier"
+fn validate_mount(mount: RawModuleMountV10) -> Result<(String, ModuleDef)> {
+    Identifier::new(mount.namespace.clone().into())
+        .map_err(|error| ValidationErrors::from(ValidationError::IdentifierError { error }))?;
+
+    if mount.namespace.len() > 63 {
+        return Err(ValidationErrors::from(ValidationError::NamespaceTooLong {
+            namespace: mount.namespace.clone().into(),
+            len: mount.namespace.len(),
+        }));
+    }
+
+    Ok((mount.namespace, validate(mount.module)?))
+}
+
+fn validate_mount_names_are_unique(mounts: Vec<(String, ModuleDef)>) -> Result<IndexMap<String, ModuleDef>> {
+    let mut errors = vec![];
+    let mut map = IndexMap::with_capacity(mounts.len());
+
+    for (namespace, def) in mounts {
+        if map.contains_key(&namespace) {
+            errors.push(ValidationError::DuplicateName { name: namespace.into() });
+        } else {
+            map.insert(namespace, def);
+        }
+    }
+
+    ValidationErrors::add_extra_errors(Ok(map), errors)
+}
+
+/// Check that no two modules in the mount tree claim the same lifecycle reducer.
+///
+/// The host assigns exactly one reducer per lifecycle slot; if both the consumer
+/// and a mounted submodule (or two sibling mounts) declare `__init__` (etc.), the
+/// module must be rejected at publish time.
+fn validate_no_lifecycle_conflicts(
+    root_lifecycles: &EnumMap<Lifecycle, Option<ReducerId>>,
+    mounts: &IndexMap<String, ModuleDef>,
+) -> Result<()> {
+    let mut claimed_by: EnumMap<Lifecycle, Option<String>> = EnumMap::default();
+    let mut errors: Vec<ValidationError> = vec![];
+
+    for (lifecycle, opt_id) in root_lifecycles {
+        if opt_id.is_some() {
+            claimed_by[lifecycle] = Some("<root>".to_string());
+        }
+    }
+
+    collect_lifecycle_conflicts(mounts, "", &mut claimed_by, &mut errors);
+
+    ValidationErrors::add_extra_errors(Ok(()), errors)
+}
+
+fn collect_lifecycle_conflicts(
+    mounts: &IndexMap<String, ModuleDef>,
+    parent_path: &str,
+    claimed_by: &mut EnumMap<Lifecycle, Option<String>>,
+    errors: &mut Vec<ValidationError>,
+) {
+    for (ns, def) in mounts {
+        let path = if parent_path.is_empty() {
+            ns.clone()
+        } else {
+            format!("{parent_path}::{ns}")
+        };
+
+        for (lifecycle, opt_id) in def.lifecycle_reducers_map() {
+            if opt_id.is_some() {
+                match &claimed_by[lifecycle] {
+                    Some(prior) => errors.push(ValidationError::ConflictingMountLifecycle {
+                        lifecycle,
+                        first: prior.clone(),
+                        second: path.clone(),
+                    }),
+                    None => claimed_by[lifecycle] = Some(path.clone()),
+                }
+            }
+        }
+
+        collect_lifecycle_conflicts(def.mounts(), &path, claimed_by, errors);
+    }
 }
 
 /// Change the visibility of scheduled functions and lifecycle reducers to Internal.
@@ -1094,12 +1189,16 @@ mod tests {
 
     use itertools::Itertools;
     use spacetimedb_data_structures::expect_error_matching;
-    use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, MethodOrAny, RawModuleDefV10Builder};
+    use spacetimedb_lib::db::raw_def::v10::{
+        CaseConversionPolicy, MethodOrAny, RawModuleDefV10, RawModuleDefV10Builder, RawModuleDefV10Section,
+        RawModuleMountV10,
+    };
     use spacetimedb_lib::db::raw_def::v9::{btree, direct, hash};
     use spacetimedb_lib::db::raw_def::*;
     use spacetimedb_lib::http::Method as HttpMethod;
     use spacetimedb_lib::ScheduleAt;
     use spacetimedb_primitives::{ColId, ColList, ColSet};
+    use spacetimedb_sats::raw_identifier::RawIdentifier;
     use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, SumValue};
     use v9::{Lifecycle, TableAccess, TableType};
 
@@ -1471,6 +1570,66 @@ mod tests {
             &table[..] == "Bananas" &&
             &def[..] == "bananas_b_col_55_idx_btree" &&
             column == &55.into()
+        });
+    }
+
+    #[test]
+    fn validates_mounted_submodules_recursively() {
+        let mut mounted_builder = RawModuleDefV10Builder::new();
+        mounted_builder
+            .build_table_with_new_type("Sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
+            .finish();
+
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+                namespace: "authlib".to_string(),
+                module: mounted_builder.finish(),
+            }])],
+        };
+
+        let def: ModuleDef = raw.try_into().expect("mounted module should validate");
+        let mounts = def.mounts();
+
+        assert_eq!(mounts.len(), 1);
+        let mounted = mounts.get("authlib").expect("authlib mount should exist");
+        assert!(mounted.table(&expect_identifier("sessions")).is_some());
+    }
+
+    #[test]
+    fn invalid_mount_namespace() {
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+                namespace: "".to_string(),
+                module: RawModuleDefV10::default(),
+            }])],
+        };
+
+        let result: Result<ModuleDef> = raw.try_into();
+
+        expect_error_matching!(result, ValidationError::IdentifierError { error } => {
+            error == &IdentifierError::Empty {}
+        });
+    }
+
+    #[test]
+    fn duplicate_mount_namespace() {
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Mounts(vec![
+                RawModuleMountV10 {
+                    namespace: "authlib".to_string(),
+                    module: RawModuleDefV10::default(),
+                },
+                RawModuleMountV10 {
+                    namespace: "authlib".to_string(),
+                    module: RawModuleDefV10::default(),
+                },
+            ])],
+        };
+
+        let result: Result<ModuleDef> = raw.try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateName { name } => {
+            name == &RawIdentifier::from("authlib")
         });
     }
 
@@ -2515,5 +2674,119 @@ mod tests {
         assert_eq!(view.accessor_name, id("PersonAtLevel2"));
         assert_eq!(view.return_columns[0].view_name, id("Level2Person"));
         assert_eq!(view.param_columns[0].view_name, id("Level2Person"));
+    }
+
+    #[test]
+    fn namespace_exactly_63_chars_is_ok() {
+        let namespace = "a".repeat(63);
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+                namespace,
+                module: RawModuleDefV10::default(),
+            }])],
+        };
+        let result: Result<ModuleDef> = raw.try_into();
+        assert!(result.is_ok(), "63-char namespace should be valid");
+    }
+
+    #[test]
+    fn namespace_64_chars_is_rejected() {
+        let namespace = "a".repeat(64);
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+                namespace: namespace.clone(),
+                module: RawModuleDefV10::default(),
+            }])],
+        };
+        let expected_ns = RawIdentifier::from(namespace.clone());
+        let result: Result<ModuleDef> = raw.try_into();
+        expect_error_matching!(result, ValidationError::NamespaceTooLong { namespace: ns, len } => {
+            ns == &expected_ns && len == &64usize
+        });
+    }
+
+    fn make_module_with_lifecycle(lifecycle: Lifecycle) -> RawModuleDefV10 {
+        let mut b = RawModuleDefV10Builder::new();
+        b.add_lifecycle_reducer(lifecycle, "lifecycle_fn", ProductType::unit());
+        b.finish()
+    }
+
+    #[test]
+    fn consumer_and_mount_same_lifecycle_is_rejected() {
+        // Build the consumer's sections using the builder, then add a Mounts section.
+        let consumer_raw = make_module_with_lifecycle(Lifecycle::Init);
+        let mut sections = consumer_raw.sections;
+        sections.push(RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+            namespace: "auth".to_string(),
+            module: make_module_with_lifecycle(Lifecycle::Init),
+        }]));
+
+        let result: Result<ModuleDef> = RawModuleDefV10 { sections }.try_into();
+        expect_error_matching!(result, ValidationError::ConflictingMountLifecycle { lifecycle, first, second } => {
+            lifecycle == &Lifecycle::Init && first == "<root>" && second == "auth"
+        });
+    }
+
+    #[test]
+    fn two_sibling_mounts_same_lifecycle_is_rejected() {
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Mounts(vec![
+                RawModuleMountV10 {
+                    namespace: "auth".to_string(),
+                    module: make_module_with_lifecycle(Lifecycle::OnConnect),
+                },
+                RawModuleMountV10 {
+                    namespace: "payments".to_string(),
+                    module: make_module_with_lifecycle(Lifecycle::OnConnect),
+                },
+            ])],
+        };
+
+        let result: Result<ModuleDef> = raw.try_into();
+        expect_error_matching!(result, ValidationError::ConflictingMountLifecycle { lifecycle, first, second } => {
+            lifecycle == &Lifecycle::OnConnect && first == "auth" && second == "payments"
+        });
+    }
+
+    #[test]
+    fn different_lifecycles_across_mounts_is_ok() {
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Mounts(vec![
+                RawModuleMountV10 {
+                    namespace: "auth".to_string(),
+                    module: make_module_with_lifecycle(Lifecycle::Init),
+                },
+                RawModuleMountV10 {
+                    namespace: "payments".to_string(),
+                    module: make_module_with_lifecycle(Lifecycle::OnConnect),
+                },
+            ])],
+        };
+
+        let result: Result<ModuleDef> = raw.try_into();
+        assert!(result.is_ok(), "different lifecycles across mounts should be valid");
+    }
+
+    #[test]
+    fn nested_mount_conflicts_with_root_lifecycle() {
+        // consumer → auth → baz: consumer claims Init, baz also claims Init.
+        let auth = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+                namespace: "baz".to_string(),
+                module: make_module_with_lifecycle(Lifecycle::Init),
+            }])],
+        };
+
+        let consumer_raw = make_module_with_lifecycle(Lifecycle::Init);
+        let mut sections = consumer_raw.sections;
+        sections.push(RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+            namespace: "auth".to_string(),
+            module: auth,
+        }]));
+
+        let result: Result<ModuleDef> = RawModuleDefV10 { sections }.try_into();
+        expect_error_matching!(result, ValidationError::ConflictingMountLifecycle { lifecycle, first, second } => {
+            lifecycle == &Lifecycle::Init && first == "<root>" && second == "auth::baz"
+        });
     }
 }
