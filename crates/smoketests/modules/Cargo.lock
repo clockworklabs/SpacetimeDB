@@ -948,6 +948,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-views-primary-key-auto-migrate"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-views-primary-key-auto-migrate-updated"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-views-query"
 version = "0.1.0"
 dependencies = [

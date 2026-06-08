@@ -21,6 +21,7 @@ namespace SpacetimeDB.Internal
         SpacetimeDB.CaseConversionPolicy CaseConversionPolicy,
         ExplicitNames ExplicitNames,
         System.Collections.Generic.List<RawHttpHandlerDefV10> HttpHandlers,
-        System.Collections.Generic.List<RawHttpRouteDefV10> HttpRoutes
+        System.Collections.Generic.List<RawHttpRouteDefV10> HttpRoutes,
+        System.Collections.Generic.List<RawViewPrimaryKeyDefV10> ViewPrimaryKeys
     )>;
 }
