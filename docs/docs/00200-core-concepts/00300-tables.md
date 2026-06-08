@@ -403,7 +403,7 @@ import { table, t } from 'spacetimedb/server';
 
 // Define the shared column schema
 const playerColumns = {
-  identity: t.Identity.primaryKey(),
+  identity: t.identity().primaryKey(),
   playerId: t.i32().unique().autoInc(),
   name: t.string(),
 };

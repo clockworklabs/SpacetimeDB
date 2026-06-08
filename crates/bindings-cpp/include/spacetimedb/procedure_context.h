@@ -8,9 +8,7 @@
 #include <spacetimedb/abi/FFI.h> // For transaction syscalls
 #include <spacetimedb/internal/tx_execution.h>
 #include <spacetimedb/random.h> // For StdbRng
-#ifdef SPACETIMEDB_UNSTABLE_FEATURES
 #include <spacetimedb/http.h> // For HttpClient
-#endif
 #include <cstdint>
 #include <functional>
 #include <stdexcept>
@@ -66,12 +64,10 @@ public:
     // Used to track which client connection initiated this procedure
     ConnectionId connection_id;
 
-#ifdef SPACETIMEDB_UNSTABLE_FEATURES
     // HTTP client for making external requests
     // IMPORTANT: HTTP calls are NOT allowed inside transactions!
     // Always call HTTP before with_tx() or try_with_tx()
     HttpClient http;
-#endif
 
 private:
     // Lazily initialized RNG for UUID generation
@@ -173,10 +169,9 @@ public:
         return Uuid::from_counter_v7(counter_uuid_, timestamp, random_bytes);
     }
 
-#ifdef SPACETIMEDB_UNSTABLE_FEATURES
     /**
      * @brief Execute a callback within a database transaction
-     * 
+     *
      * Starts a mutable transaction, executes the callback, and commits on success.
      * If the callback panics (via LOG_PANIC), the transaction is automatically rolled back.
      * 
@@ -238,7 +233,6 @@ public:
         };
         return Internal::try_with_tx(make_reducer_ctx, body);
     }
-#endif
 };
 
 } // namespace SpacetimeDB

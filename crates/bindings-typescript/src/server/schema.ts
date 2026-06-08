@@ -50,6 +50,7 @@ import {
   type ViewFn,
   type ViewOpts,
   type ViewReturnTypeBuilder,
+  type ValidateViewPrimaryKey,
   type Views,
 } from './views';
 import type { UntypedTableDef } from '../lib/table';
@@ -395,7 +396,11 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
   view<Ret extends ViewReturnTypeBuilder, F extends ViewFn<S, {}, Ret>>(
     opts: ViewOpts,
     ret: Ret,
-    fn: F
+    fn: F,
+    // Compile-time-only guard: this rest parameter is `[]` for valid return
+    // builders, but becomes a required error tuple when a returned row builder
+    // marks more than one column with `.primaryKey()`.
+    ..._: ValidateViewPrimaryKey<Ret>
   ): ViewExport<F> {
     return makeViewExport<S, {}, Ret, F>(this.#ctx, opts, {}, ret, fn);
   }
@@ -428,7 +433,15 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
   anonymousView<
     Ret extends ViewReturnTypeBuilder,
     F extends AnonymousViewFn<S, {}, Ret>,
-  >(opts: ViewOpts, ret: Ret, fn: F): ViewExport<F> {
+  >(
+    opts: ViewOpts,
+    ret: Ret,
+    fn: F,
+    // Compile-time-only guard: this rest parameter is `[]` for valid return
+    // builders, but becomes a required error tuple when a returned row builder
+    // marks more than one column with `.primaryKey()`.
+    ..._: ValidateViewPrimaryKey<Ret>
+  ): ViewExport<F> {
     return makeAnonViewExport<S, {}, Ret, F>(this.#ctx, opts, {}, ret, fn);
   }
 

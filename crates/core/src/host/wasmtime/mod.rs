@@ -135,21 +135,14 @@ pub type ProcedureModule = WasmModuleHostActor<WasmtimeAsyncModule>;
 pub type ModuleInstance = WasmModuleInstance<WasmtimeInstance>;
 
 // Linux thread names expose at most 15 bytes, so keep the database identity
-// suffix short enough to survive after the `wasm-main-`/`wasm-proc-` prefix.
-const THREAD_NAME_DATABASE_ID_SUFFIX_LEN: usize = 5;
+// suffix short enough to survive after the `wasm-` prefix.
+const THREAD_NAME_DATABASE_ID_SUFFIX_LEN: usize = 10;
 
-fn wasm_main_worker_thread_name(database_identity: &spacetimedb_lib::Identity) -> String {
+fn wasm_worker_thread_name(database_identity: &spacetimedb_lib::Identity) -> String {
     let hex = database_identity.to_hex();
     // We use the tail of the identity to avoid the common structured prefix.
     let suffix = &hex.as_str()[hex.as_str().len() - THREAD_NAME_DATABASE_ID_SUFFIX_LEN..];
-    format!("wasm-main-{suffix}")
-}
-
-fn wasm_procedure_executor_thread_name(database_identity: &spacetimedb_lib::Identity) -> String {
-    let hex = database_identity.to_hex();
-    // We use the tail of the identity to avoid the common structured prefix.
-    let suffix = &hex.as_str()[hex.as_str().len() - THREAD_NAME_DATABASE_ID_SUFFIX_LEN..];
-    format!("wasm-proc-{suffix}")
+    format!("wasm-{suffix}")
 }
 
 impl WasmtimeRuntime {
@@ -182,16 +175,14 @@ impl WasmtimeRuntime {
 
         let module = WasmtimeModule::new(module);
         let procedure_module = WasmtimeAsyncModule::new(procedure_module);
-        let main_thread_name = wasm_main_worker_thread_name(&mcc.replica_ctx.database_identity);
-        let procedure_thread_name = wasm_procedure_executor_thread_name(&mcc.replica_ctx.database_identity);
+        let thread_name = wasm_worker_thread_name(&mcc.replica_ctx.database_identity);
 
         let (module, init_inst) = WasmModuleHostActor::new(mcc, module)?;
         let procedure_module = module.with_runtime_module(procedure_module)?;
         Ok(super::module_host::ModuleWithInstance::Wasm {
             module,
             procedure_module,
-            main_thread_name,
-            procedure_thread_name,
+            thread_name,
             core,
             init_inst: Box::new(init_inst),
             procedure_instance_pool_size: self.config.procedure_instance_pool_size,
