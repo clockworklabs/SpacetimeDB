@@ -1826,6 +1826,10 @@ mod tests {
         async fn lookup_namespace_owner(&self, _name: &str) -> anyhow::Result<Option<Identity>> {
             Ok(None)
         }
+
+        async fn is_database_locked(&self, _database_identity: &Identity) -> anyhow::Result<bool> {
+            Ok(false)
+        }
     }
 
     #[async_trait]
@@ -1851,6 +1855,15 @@ mod tests {
             &self,
             _caller_identity: &Identity,
             _database_identity: &Identity,
+        ) -> anyhow::Result<()> {
+            Err(anyhow::anyhow!("unused"))
+        }
+
+        async fn set_database_lock(
+            &self,
+            _caller_identity: &Identity,
+            _database_identity: &Identity,
+            _locked: bool,
         ) -> anyhow::Result<()> {
             Err(anyhow::anyhow!("unused"))
         }
