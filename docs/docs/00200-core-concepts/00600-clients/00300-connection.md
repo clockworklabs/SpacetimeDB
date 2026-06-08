@@ -38,7 +38,7 @@ const conn = new DbConnection.builder()
 using SpacetimeDB;
 
 var conn = DbConnection.Builder()
-    .WithUri(new Uri("https://maincloud.spacetimedb.com"))
+    .WithUri("https://maincloud.spacetimedb.com")
     .WithDatabaseName("my_database")
     .Build();
 ```
@@ -90,7 +90,7 @@ const conn = new DbConnection.builder()
 
 ```csharp
 var conn = DbConnection.Builder()
-    .WithUri(new Uri("https://maincloud.spacetimedb.com"))
+    .WithUri("https://maincloud.spacetimedb.com")
     .WithDatabaseName("my_database")
     .Build();
 ```
@@ -137,7 +137,7 @@ const conn = new DbConnection.builder()
 
 ```csharp
 var conn = DbConnection.Builder()
-    .WithUri(new Uri("https://maincloud.spacetimedb.com"))
+    .WithUri("https://maincloud.spacetimedb.com")
     .WithDatabaseName("my_database")
     .WithToken("your_auth_token_here")
     .Build();
@@ -174,9 +174,9 @@ The token is sent to the server during connection and validates your identity. S
 
 :::danger[Critical: C#, Unity, and Unreal Users]
 
-In C# (including Unity) and Unreal Engine, you **must** manually advance the connection to process incoming messages. The connection does not process messages automatically!
+In C# (including Unity), you **must** manually advance the connection to process incoming messages. In Unreal Engine, you must either manually advance the connection or enable automatic ticking. If the connection is not advanced, it will not process messages.
 
-Call `DbConnection.FrameTick()` in your game loop or update method:
+Call `FrameTick()` in your game loop or update method:
 
 <Tabs groupId="client-language" queryString>
 <TabItem value="csharp" label="C#">
@@ -200,7 +200,7 @@ while (running)
 <TabItem value="unreal" label="Unreal">
 
 ```cpp
-// In your Actor's Tick() method
+// Option 1: call FrameTick() from your Actor's Tick() method
 void AMyActor::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
@@ -210,6 +210,10 @@ void AMyActor::Tick(float DeltaTime)
         Conn->FrameTick();
     }
 }
+
+// Option 2: enable automatic ticking once after building the connection
+Conn = Builder->Build();
+Conn->SetAutoTicking(true);
 ```
 
 </TabItem>
@@ -256,7 +260,7 @@ const conn = DbConnection.builder()
 
 ```csharp
 var conn = DbConnection.Builder()
-    .WithUri(new Uri("https://maincloud.spacetimedb.com"))
+    .WithUri("https://maincloud.spacetimedb.com")
     .WithDatabaseName("my_database")
     .OnConnect((conn, identity, token) =>
     {

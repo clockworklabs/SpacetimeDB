@@ -22,10 +22,8 @@ use std::sync::{Mutex, OnceLock};
 pub use sys::raw::{BytesSink, BytesSource};
 
 #[cfg(feature = "unstable")]
-use crate::{
-    http::{self, HandlerContext},
-    ProcedureContext, ProcedureResult,
-};
+use crate::http::{self, HandlerContext};
+use crate::{ProcedureContext, ProcedureResult};
 
 pub trait IntoVec<T> {
     fn into_vec(self) -> Vec<T>;
@@ -58,7 +56,6 @@ pub fn invoke_reducer<'a, A: Args<'a>>(
     reducer.invoke(ctx, args)
 }
 
-#[cfg(feature = "unstable")]
 pub fn invoke_procedure<'a, A: Args<'a>, Ret: IntoProcedureResult>(
     procedure: impl Procedure<'a, A, Ret>,
     ctx: &mut ProcedureContext,
@@ -150,11 +147,7 @@ pub trait FnInfo: ExplicitNames {
     /// The type of function to invoke.
     type Invoke;
 
-    #[cfg_attr(
-        feature = "unstable",
-        doc = "One of [`FnKindReducer`], [`FnKindProcedure`] or [`FnKindView`]."
-    )]
-    #[cfg_attr(not(feature = "unstable"), doc = "Either [`FnKindReducer`] or [`FnKindView`].")]
+    /// One of [`FnKindReducer`], [`FnKindProcedure`] or [`FnKindView`].
     ///
     /// Used as a type argument to [`ExportFunctionForScheduledTable`] and [`scheduled_typecheck`].
     /// See <https://willcrichton.net/notes/defeating-coherence-rust/> for details on this technique.
@@ -184,7 +177,6 @@ pub trait FnInfo: ExplicitNames {
     }
 }
 
-#[cfg(feature = "unstable")]
 pub trait Procedure<'de, A: Args<'de>, Ret: IntoProcedureResult> {
     fn invoke(&self, ctx: &mut ProcedureContext, args: A) -> Ret;
 }
@@ -231,7 +223,6 @@ impl<E: fmt::Display> IntoReducerResult for Result<(), E> {
     }
 }
 
-#[cfg(feature = "unstable")]
 #[diagnostic::on_unimplemented(
     message = "The procedure return type `{Self}` does not implement `SpacetimeType`",
     note = "if you own the type, try adding `#[derive(SpacetimeType)]` to its definition"
@@ -242,7 +233,6 @@ pub trait IntoProcedureResult: SpacetimeType + Serialize {
         bsatn::to_vec(&self).expect("Failed to serialize procedure result")
     }
 }
-#[cfg(feature = "unstable")]
 impl<T: SpacetimeType + Serialize> IntoProcedureResult for T {}
 
 #[diagnostic::on_unimplemented(
@@ -268,7 +258,6 @@ pub trait ReducerArg {
 }
 impl<T: SpacetimeType> ReducerArg for T {}
 
-#[cfg(feature = "unstable")]
 #[diagnostic::on_unimplemented(
     message = "the first argument of a procedure must be `&mut ProcedureContext`",
     label = "first argument must be `&mut ProcedureContext`"
@@ -278,11 +267,9 @@ pub trait ProcedureContextArg {
     #[doc(hidden)]
     const _ITEM: () = ();
 }
-#[cfg(feature = "unstable")]
 impl ProcedureContextArg for &mut ProcedureContext {}
 
 /// A trait of types that can be an argument of a procedure.
-#[cfg(feature = "unstable")]
 #[diagnostic::on_unimplemented(
     message = "the procedure argument `{Self}` does not implement `SpacetimeType`",
     note = "if you own the type, try adding `#[derive(SpacetimeType)]` to its definition"
@@ -292,7 +279,6 @@ pub trait ProcedureArg {
     #[doc(hidden)]
     const _ITEM: () = ();
 }
-#[cfg(feature = "unstable")]
 impl<T: SpacetimeType> ProcedureArg for T {}
 
 #[cfg(feature = "unstable")]
@@ -489,7 +475,6 @@ pub struct FnKindReducer {
     _never: Infallible,
 }
 
-#[cfg(feature = "unstable")]
 /// Tacit marker argument to [`ExportFunctionForScheduledTable`] for procedures.
 ///
 /// Holds the procedure's return type in order to avoid an error due to an unconstrained type argument.
@@ -510,14 +495,7 @@ pub struct FnKindView {
 ///
 /// The `FnKind` parameter here is a coherence-defeating marker, which Will Crichton calls a "tacit parameter."
 /// See <https://willcrichton.net/notes/defeating-coherence-rust/> for details on this technique.
-#[cfg_attr(
-    feature = "unstable",
-    doc = "It will be one of [`FnKindReducer`] or [`FnKindProcedure`] in modules that compile successfully."
-)]
-#[cfg_attr(
-    not(feature = "unstable"),
-    doc = "It will be [`FnKindReducer`] in modules that compile successfully."
-)]
+/// It will be one of [`FnKindReducer`] or [`FnKindProcedure`] in modules that compile successfully.
 ///
 /// It may be [`FnKindView`], but that will always fail to typecheck, as views cannot be used as scheduled functions.
 #[diagnostic::on_unimplemented(
@@ -533,7 +511,6 @@ impl<'de, TableRow: SpacetimeType + Serialize + Deserialize<'de>, F: Reducer<'de
 {
 }
 
-#[cfg(feature = "unstable")]
 impl<
         'de,
         TableRow: SpacetimeType + Serialize + Deserialize<'de>,
@@ -669,7 +646,6 @@ macro_rules! impl_reducer_procedure_view {
             }
         }
 
-        #[cfg(feature = "unstable")]
         impl<'de, Func, Ret, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> Procedure<'de, ($($T,)*), Ret> for Func
         where
             Func: Fn(&mut ProcedureContext, $($T),*) -> Ret,
@@ -834,7 +810,6 @@ pub fn register_reducer<'a, A: Args<'a>, I: FnInfo<Invoke = ReducerFn>>(_: impl 
     })
 }
 
-#[cfg(feature = "unstable")]
 pub fn register_procedure<'a, A, Ret, I>(_: impl Procedure<'a, A, Ret>)
 where
     A: Args<'a>,
@@ -950,7 +925,6 @@ pub struct ModuleBuilder {
     /// The reducers of the module.
     reducers: Vec<ReducerFn>,
     /// The procedures of the module.
-    #[cfg(feature = "unstable")]
     procedures: Vec<ProcedureFn>,
     /// The HTTP handlers of the module.
     #[cfg(feature = "unstable")]
@@ -969,9 +943,7 @@ static DESCRIBERS: Mutex<Vec<Box<dyn DescriberFn>>> = Mutex::new(Vec::new());
 pub type ReducerFn = fn(&ReducerContext, &[u8]) -> ReducerResult;
 static REDUCERS: OnceLock<Vec<ReducerFn>> = OnceLock::new();
 
-#[cfg(feature = "unstable")]
 pub type ProcedureFn = fn(&mut ProcedureContext, &[u8]) -> ProcedureResult;
-#[cfg(feature = "unstable")]
 static PROCEDURES: OnceLock<Vec<ProcedureFn>> = OnceLock::new();
 
 #[cfg(feature = "unstable")]
@@ -1017,7 +989,6 @@ extern "C" fn __describe_module__(description: BytesSink) {
 
     // Write the sets of reducers, procedures and views.
     REDUCERS.set(module.reducers).ok().unwrap();
-    #[cfg(feature = "unstable")]
     PROCEDURES.set(module.procedures).ok().unwrap();
     #[cfg(feature = "unstable")]
     HTTP_HANDLERS.set(module.http_handlers).ok().unwrap();
@@ -1156,7 +1127,6 @@ fn convert_err_to_errno(res: Result<(), Box<str>>, out: BytesSink) -> i16 {
 /// the BSATN-serialized bytes of a value of the procedure's return type.
 ///
 /// Procedures always return the error 0. All other return values are reserved.
-#[cfg(feature = "unstable")]
 #[unsafe(no_mangle)]
 extern "C" fn __call_procedure__(
     id: usize,

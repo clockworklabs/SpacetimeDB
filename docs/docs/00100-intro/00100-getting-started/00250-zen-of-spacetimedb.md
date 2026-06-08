@@ -80,7 +80,7 @@ Perfect consistency, always.
 
 ## Everything is Programmable
 
-SpacetimeDB doesn't limit you to declarative rules or configuration files. Your module is real code (Rust, C#, or TypeScript) running inside the database. You have the full power of a procedural, normal programming language at your disposal.
+SpacetimeDB doesn't limit you to declarative rules or configuration files. Your module is real code (Rust, C#, TypeScript, or C++) running inside the database. You have the full power of a procedural, normal programming language at your disposal.
 
 Need custom authorization logic? Write a function. Need to validate complex business rules? Write a function. Need to transform data before storing it? Write a function.
 

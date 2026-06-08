@@ -9,8 +9,6 @@
 
 namespace SpacetimeDB::Internal {
 
-#ifdef SPACETIMEDB_UNSTABLE_FEATURES
-
 template<typename T>
 struct is_outcome : std::false_type {};
 
@@ -142,8 +140,6 @@ auto try_with_tx(MakeReducerContext&& make_reducer_ctx, Func& body) -> decltype(
 
     return result;
 }
-
-#endif
 
 } // namespace SpacetimeDB::Internal
 
