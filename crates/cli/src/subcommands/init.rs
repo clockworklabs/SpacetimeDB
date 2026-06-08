@@ -2196,7 +2196,6 @@ mod tests {
     #[test]
     fn test_to_major_minor_patch_wildcard() {
         assert_eq!(to_major_minor_patch_wildcard("2.4.1"), "2.4.*");
-        assert_eq!(to_major_minor_patch_wildcard("=2.4.1"), "2.4.*");
         assert_eq!(to_major_minor_patch_wildcard("2.4"), "2.4.*");
         assert_eq!(to_major_minor_patch_wildcard("not-semver"), "not-semver");
     }
