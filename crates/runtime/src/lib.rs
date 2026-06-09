@@ -1,6 +1,6 @@
 #[cfg(all(feature = "tokio", feature = "simulation"))]
 compile_error!(
-   "spacetimedb-runtime requires exactly one runtime backend: enable either `tokio` or `simulation`, not both"
+    "spacetimedb-runtime requires exactly one runtime backend: enable either `tokio` or `simulation`, not both"
 );
 
 #[cfg(not(any(feature = "tokio", feature = "simulation")))]
@@ -27,6 +27,14 @@ pub type TokioHandle = tokio::runtime::Handle;
 pub type TokioRuntime = tokio::runtime::Runtime;
 pub type TokioRuntimeBuilder = tokio::runtime::Builder;
 
+// We intentionally re-export `tokio::sync` even when the simulation backend is
+// selected. Async and non-blocking synchronization operations are
+// executor-agnostic, so driving them from the deterministic simulation runtime
+// remains deterministic.
+//
+// Callers must avoid APIs that block or park OS threads on their own, such as
+// `blocking_send`, because those semantics are outside the simulation runtime's
+// deterministic scheduler.
 pub use tokio::sync;
 
 #[derive(Clone)]
