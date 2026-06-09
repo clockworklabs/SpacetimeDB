@@ -2525,6 +2525,57 @@ sealed class view_primary_key_non_equatable_columnViewDispatcher
     }
 }
 
+sealed class view_primary_key_uses_non_bsatn_partial_fieldViewDispatcher
+    : global::SpacetimeDB.Internal.IView
+{
+    public SpacetimeDB.Internal.RawViewDefV10 MakeViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "view_primary_key_uses_non_bsatn_partial_field",
+            Index: 10,
+            IsPublic: true,
+            IsAnonymous: false,
+            Params: [],
+            ReturnType: new SpacetimeDB.BSATN.List<
+                ViewPrimaryKeyPartialRow,
+                ViewPrimaryKeyPartialRow.BSATN
+            >().GetAlgebraicType(registrar)
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.ViewPrimaryKeyUsesNonBsatnPartialField(
+                (SpacetimeDB.ViewContext)ctx
+            );
+            var listSerializer = new SpacetimeDB.BSATN.List<
+                ViewPrimaryKeyPartialRow,
+                ViewPrimaryKeyPartialRow.BSATN
+            >();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
+            listSerializer.Write(writer, listValue);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error(
+                "Error in view 'view_primary_key_uses_non_bsatn_partial_field': " + e
+            );
+            throw;
+        }
+    }
+}
+
 sealed class view_primary_key_uses_wrong_source_nameViewDispatcher
     : global::SpacetimeDB.Internal.IView
 {
@@ -2533,7 +2584,7 @@ sealed class view_primary_key_uses_wrong_source_nameViewDispatcher
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV10(
             SourceName: "view_primary_key_uses_wrong_source_name",
-            Index: 10,
+            Index: 11,
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
@@ -3404,6 +3455,7 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.RegisterView<view_no_insertViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<view_primary_key_missing_columnViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<view_primary_key_non_equatable_columnViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterView<view_primary_key_uses_non_bsatn_partial_fieldViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<view_primary_key_uses_wrong_source_nameViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterAnonymousView<view_def_index_no_mutationViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterAnonymousView<view_def_no_anon_identityViewDispatcher>();
@@ -3417,6 +3469,10 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.RegisterViewPrimaryKey(
             "view_primary_key_non_equatable_column",
             ["Identity"]
+        );
+        SpacetimeDB.Internal.Module.RegisterViewPrimaryKey(
+            "view_primary_key_uses_non_bsatn_partial_field",
+            ["ExtraPartialIdentity"]
         );
         SpacetimeDB.Internal.Module.RegisterViewPrimaryKey(
             "view_primary_key_uses_wrong_source_name",

@@ -1166,10 +1166,7 @@ record ViewDeclaration
         };
 
     private static IFieldSymbol? FindPrimaryKeyField(ITypeSymbol rowType, string primaryKey) =>
-        rowType
-            .GetMembers(primaryKey)
-            .OfType<IFieldSymbol>()
-            .FirstOrDefault(field => !field.IsStatic);
+        SpacetimeDbFieldDiscovery.FindSpacetimeDbField(rowType, primaryKey);
 
     private static SyntaxNode FindAttributeNamedArgumentExpression(
         AttributeData attrData,

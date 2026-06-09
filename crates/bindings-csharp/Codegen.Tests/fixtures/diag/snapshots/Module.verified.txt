@@ -422,6 +422,23 @@ public partial struct TestScheduleIssues
     },
     {/*
         Public = true,
+        PrimaryKey = "ExtraPartialIdentity"
+                     ^^^^^^^^^^^^^^^^^^^^^^
+    )]
+*/
+      Message: View 'ViewPrimaryKeyUsesNonBsatnPartialField' declares primary key 'ExtraPartialIdentity', but row type 'ViewPrimaryKeyPartialRow' does not have a field with that source name.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0037,
+        Title: View primary key column not found,
+        MessageFormat: View '{0}' declares primary key '{1}', but row type '{2}' does not have a field with that source name.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+        Public = true,
         PrimaryKey = "Identity"
                      ^^^^^^^^^^
     )]

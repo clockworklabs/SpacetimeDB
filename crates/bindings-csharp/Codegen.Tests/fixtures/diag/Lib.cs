@@ -505,6 +505,17 @@ public partial struct ViewPrimaryKeyRenamedRow
 }
 
 [SpacetimeDB.Type]
+public partial class ViewPrimaryKeyPartialRow
+{
+    public Identity DeclaredIdentity;
+}
+
+public partial class ViewPrimaryKeyPartialRow
+{
+    public Identity ExtraPartialIdentity;
+}
+
+[SpacetimeDB.Type]
 public partial struct NonEquatableViewPrimaryKey
 {
     public uint Value;
@@ -633,6 +644,19 @@ public partial class Module
     public static List<ViewPrimaryKeyRenamedRow> ViewPrimaryKeyUsesWrongSourceName(ViewContext ctx)
     {
         return new List<ViewPrimaryKeyRenamedRow>();
+    }
+
+    // Invalid: PrimaryKey must refer to a field declared in the SpacetimeDB.Type partial.
+    [SpacetimeDB.View(
+        Accessor = "view_primary_key_uses_non_bsatn_partial_field",
+        Public = true,
+        PrimaryKey = "ExtraPartialIdentity"
+    )]
+    public static List<ViewPrimaryKeyPartialRow> ViewPrimaryKeyUsesNonBsatnPartialField(
+        ViewContext ctx
+    )
+    {
+        return new List<ViewPrimaryKeyPartialRow>();
     }
 
     // Invalid: PrimaryKey column type must match table primary-key validation.
