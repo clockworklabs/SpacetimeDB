@@ -301,12 +301,10 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .map(|rls| (rls.sql.clone(), rls.to_owned()))
         .collect();
 
-    let ((tables, types, reducers, procedures, views, (http_handlers, http_routes)), mounts) = (
-        tables_types_reducers_procedures_views,
-        mounts,
-    )
-        .combine_errors()
-        .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
+    let ((tables, types, reducers, procedures, views, (http_handlers, http_routes)), mounts) =
+        (tables_types_reducers_procedures_views, mounts)
+            .combine_errors()
+            .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
 
     validate_no_lifecycle_conflicts(&lifecycle_reducers, &mounts)
         .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
@@ -352,7 +350,9 @@ fn validate_mounts(mounts: Vec<RawModuleMountV10>) -> Result<IndexMap<String, Mo
         }
 
         if map.contains_key(&mount.namespace) {
-            errors.push(ValidationError::DuplicateName { name: mount.namespace.into() });
+            errors.push(ValidationError::DuplicateName {
+                name: mount.namespace.into(),
+            });
         } else {
             match validate(mount.module) {
                 Ok(def) => {

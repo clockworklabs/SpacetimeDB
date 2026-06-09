@@ -81,7 +81,8 @@ impl Lang for TypeScript {
 
         writeln!(out, "export default __t.row({{");
         out.indent(1);
-        write_object_type_builder_fields(module, out, "", &product_def.elements, table.primary_key, true, true).unwrap();
+        write_object_type_builder_fields(module, out, "", &product_def.elements, table.primary_key, true, true)
+            .unwrap();
         out.dedent(1);
         writeln!(out, "}});");
         OutputFile {
@@ -139,8 +140,16 @@ impl Lang for TypeScript {
 
         writeln!(out, "export const params = {{");
         out.with_indent(|out| {
-            write_object_type_builder_fields(module, out, "", &procedure.params_for_generate.elements, None, true, false)
-                .unwrap()
+            write_object_type_builder_fields(
+                module,
+                out,
+                "",
+                &procedure.params_for_generate.elements,
+                None,
+                true,
+                false,
+            )
+            .unwrap()
         });
         writeln!(out, "}};");
 
@@ -630,7 +639,9 @@ fn define_body_for_product(
         writeln!(out, "}});");
     } else {
         writeln!(out);
-        out.with_indent(|out| write_object_type_builder_fields(module, out, name, elements, None, true, false).unwrap());
+        out.with_indent(|out| {
+            write_object_type_builder_fields(module, out, name, elements, None, true, false).unwrap()
+        });
         writeln!(out, "}});");
     }
     writeln!(out, "export type {name} = __Infer<typeof {name}>;");
@@ -882,7 +893,9 @@ fn define_body_for_sum(
             (Identifier::for_test(pascal), ty.clone())
         })
         .collect();
-    out.with_indent(|out| write_object_type_builder_fields(module, out, name, &pascal_variants, None, false, false).unwrap());
+    out.with_indent(|out| {
+        write_object_type_builder_fields(module, out, name, &pascal_variants, None, false, false).unwrap()
+    });
     writeln!(out, "}});");
     writeln!(out, "export type {name} = __Infer<typeof {name}>;");
     out.newline();

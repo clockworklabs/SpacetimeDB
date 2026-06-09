@@ -49,9 +49,7 @@ use spacetimedb_primitives::{
     ColId, ColList, ColOrCols, ColSet, HttpHandlerId, ProcedureId, ReducerId, TableId, ViewFnPtr,
 };
 use spacetimedb_sats::raw_identifier::RawIdentifier;
-use spacetimedb_sats::{
-    AlgebraicType, AlgebraicTypeRef, AlgebraicValue, Typespace,
-};
+use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, Typespace};
 
 pub mod deserialize;
 pub mod error;
@@ -294,7 +292,10 @@ impl ModuleDef {
     }
 
     /// Look up a constraint by its full namespaced name (e.g., `"lib.library_table_id_unique"`).
-    pub fn find_constraint_by_full_name(&self, full_name: &str) -> Option<(String, &ModuleDef, &TableDef, &ConstraintDef)> {
+    pub fn find_constraint_by_full_name(
+        &self,
+        full_name: &str,
+    ) -> Option<(String, &ModuleDef, &TableDef, &ConstraintDef)> {
         for (prefix, owning, table) in self.all_tables_with_prefix() {
             for constraint in table.constraints.values() {
                 if format!("{}{}", prefix, &*constraint.name) == full_name {
@@ -347,7 +348,11 @@ impl ModuleDef {
         out
     }
 
-    fn collect_reducers_with_prefix<'a>(&'a self, prefix: &str, out: &mut Vec<(String, &'a ModuleDef, &'a ReducerDef)>) {
+    fn collect_reducers_with_prefix<'a>(
+        &'a self,
+        prefix: &str,
+        out: &mut Vec<(String, &'a ModuleDef, &'a ReducerDef)>,
+    ) {
         for reducer in self.reducers.values() {
             out.push((prefix.to_string(), self, reducer));
         }
@@ -367,7 +372,11 @@ impl ModuleDef {
         out
     }
 
-    fn collect_procedures_with_prefix<'a>(&'a self, prefix: &str, out: &mut Vec<(String, &'a ModuleDef, &'a ProcedureDef)>) {
+    fn collect_procedures_with_prefix<'a>(
+        &'a self,
+        prefix: &str,
+        out: &mut Vec<(String, &'a ModuleDef, &'a ProcedureDef)>,
+    ) {
         for procedure in self.procedures.values() {
             out.push((prefix.to_string(), self, procedure));
         }
@@ -537,10 +546,7 @@ impl ModuleDef {
     /// Like `reducer_by_name` but also returns the `ModuleDef` that owns the reducer.
     /// Use the returned `ModuleDef` (not `self`) when calling `arg_seed_for`, so that
     /// type-index references in the `ReducerDef` are resolved against the correct typespace.
-    pub fn reducer_by_name_with_module<'a>(
-        &'a self,
-        name: &str,
-    ) -> Option<(ReducerId, &'a ReducerDef, &'a ModuleDef)> {
+    pub fn reducer_by_name_with_module<'a>(&'a self, name: &str) -> Option<(ReducerId, &'a ReducerDef, &'a ModuleDef)> {
         match name.split_once('.') {
             None => self
                 .reducers
@@ -641,10 +647,7 @@ impl ModuleDef {
     ///
     /// A plain name searches this module's own views. A dot-qualified name routes to
     /// the matching mount and recurses. Returns the `ViewDef` and the owning `ModuleDef`.
-    pub fn view_by_name_with_module<'a>(
-        &'a self,
-        name: &str,
-    ) -> Option<(&'a ViewDef, &'a ModuleDef)> {
+    pub fn view_by_name_with_module<'a>(&'a self, name: &str) -> Option<(&'a ViewDef, &'a ModuleDef)> {
         match name.split_once('.') {
             None => self.views.get(name).map(|def| (def, self)),
             Some((namespace, rest)) => {
@@ -705,14 +708,17 @@ impl ModuleDef {
 
     /// Total anonymous view count including all mounted submodules (depth-first sum).
     pub fn total_anon_view_count(&self) -> usize {
-        self.anon_view_count()
-            + self.mounts.values().map(|m| m.total_anon_view_count()).sum::<usize>()
+        self.anon_view_count() + self.mounts.values().map(|m| m.total_anon_view_count()).sum::<usize>()
     }
 
     /// Total non-anonymous view count including all mounted submodules (depth-first sum).
     pub fn total_non_anon_view_count(&self) -> usize {
         self.non_anon_view_count()
-            + self.mounts.values().map(|m| m.total_non_anon_view_count()).sum::<usize>()
+            + self
+                .mounts
+                .values()
+                .map(|m| m.total_non_anon_view_count())
+                .sum::<usize>()
     }
 
     /// Convenience method to look up a procedure, possibly by a string.
@@ -2579,9 +2585,7 @@ mod tests {
 
     #[test]
     fn mounted_reducer_ids_are_depth_first() {
-        use spacetimedb_lib::db::raw_def::v10::{
-            RawModuleDefV10Builder, RawModuleDefV10Section, RawModuleMountV10,
-        };
+        use spacetimedb_lib::db::raw_def::v10::{RawModuleDefV10Builder, RawModuleDefV10Section, RawModuleMountV10};
 
         // baz library: 1 reducer
         let mut baz_builder = RawModuleDefV10Builder::new();
@@ -2591,20 +2595,24 @@ mod tests {
         let mut auth_builder = RawModuleDefV10Builder::new();
         auth_builder.add_reducer("auth_verify", ProductType::unit());
         let mut auth_raw = auth_builder.finish();
-        auth_raw.sections.push(RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
-            namespace: "baz".to_string(),
-            module: baz_builder.finish(),
-        }]));
+        auth_raw
+            .sections
+            .push(RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+                namespace: "baz".to_string(),
+                module: baz_builder.finish(),
+            }]));
 
         // consumer: 2 own reducers, mounts auth
         let mut consumer_builder = RawModuleDefV10Builder::new();
         consumer_builder.add_reducer("consumer_a", ProductType::unit());
         consumer_builder.add_reducer("consumer_b", ProductType::unit());
         let mut consumer_raw = consumer_builder.finish();
-        consumer_raw.sections.push(RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
-            namespace: "auth".to_string(),
-            module: auth_raw,
-        }]));
+        consumer_raw
+            .sections
+            .push(RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+                namespace: "auth".to_string(),
+                module: auth_raw,
+            }]));
 
         let def: ModuleDef = consumer_raw.try_into().expect("valid module");
 
@@ -2634,7 +2642,9 @@ mod tests {
         assert_eq!(&*rdef.name, "consumer_a");
 
         // reducer_by_name routes qualified names to mounted reducers
-        let (id, rdef) = def.reducer_by_name("auth.auth_verify").expect("qualified name resolves");
+        let (id, rdef) = def
+            .reducer_by_name("auth.auth_verify")
+            .expect("qualified name resolves");
         assert_eq!(id, ReducerId(2));
         assert_eq!(&*rdef.name, "auth_verify");
 
