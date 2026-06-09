@@ -42,6 +42,7 @@ members = [
 
     # Call/procedure tests
     "call-reducer-procedure",
+    "call-reducer-procedure-identity-arg",
     "call-empty",
 
     # SQL format tests

@@ -594,6 +594,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-call-reducer-procedure-identity-arg"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-client-connection-disconnect-panic"
 version = "0.1.0"
 dependencies = [
