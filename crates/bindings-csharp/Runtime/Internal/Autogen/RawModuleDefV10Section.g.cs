@@ -22,6 +22,7 @@ namespace SpacetimeDB.Internal
         ExplicitNames ExplicitNames,
         System.Collections.Generic.List<RawHttpHandlerDefV10> HttpHandlers,
         System.Collections.Generic.List<RawHttpRouteDefV10> HttpRoutes,
-        System.Collections.Generic.List<RawViewPrimaryKeyDefV10> ViewPrimaryKeys
+        System.Collections.Generic.List<RawViewPrimaryKeyDefV10> ViewPrimaryKeys,
+        System.Collections.Generic.List<RawModuleMountV10> Mounts
     )>;
 }
