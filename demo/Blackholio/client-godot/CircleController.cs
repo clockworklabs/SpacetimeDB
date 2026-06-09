@@ -69,8 +69,14 @@ public partial class CircleController : EntityController
 				{
 					Name = $"{Name}_Label",
 					TopLevel = false,
-					MouseFilter = Control.MouseFilterEnum.Ignore
+					MouseFilter = Control.MouseFilterEnum.Ignore,
+					HorizontalAlignment = HorizontalAlignment.Center
 				};
+				_label.AddThemeFontSizeOverride("font_size", 13);
+				_label.AddThemeColorOverride("font_color", Colors.White);
+				_label.AddThemeColorOverride("font_shadow_color", new Color(0, 0, 0, 0.75f));
+				_label.AddThemeConstantOverride("shadow_offset_x", 1);
+				_label.AddThemeConstantOverride("shadow_offset_y", 1);
 				LabelRoot.AddChild(_label);
 			}
 			return _label;
@@ -90,6 +96,7 @@ public partial class CircleController : EntityController
 	public override void _Process(double delta)
 	{
 		base._Process(delta);
+		Label.Text = OwnerPlayer?.Username ?? "";
 		UpdateScreenLabelPosition();
 	}
 
@@ -105,8 +112,20 @@ public partial class CircleController : EntityController
 		OwnerPlayer?.OnCircleDeleted(this);
 	}
 
+	public override void OnConsumed()
+	{
+		if (IsInstanceValid(Label))
+		{
+			Label.QueueFree();
+		}
+
+		OwnerPlayer?.OnCircleDeleted(this);
+	}
+
 	private void UpdateScreenLabelPosition()
 	{
+		if (!IsInstanceValid(Label)) return;
+
 		Label.Size = Label.GetCombinedMinimumSize();
 		var screenPosition = GetGlobalTransformWithCanvas().Origin;
 		var offset = new Vector2(0.0f, Radius + 8.0f);

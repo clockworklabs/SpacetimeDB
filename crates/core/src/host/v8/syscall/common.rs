@@ -25,7 +25,7 @@ use anyhow::Context;
 use bytes::Bytes;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
-use spacetimedb_primitives::{ColId, IndexId, ProcedureId, TableId};
+use spacetimedb_primitives::{ColId, IndexId, ProcedureId, TableId, ViewFnPtr};
 use spacetimedb_sats::bsatn;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::identifier::Identifier;
@@ -752,19 +752,22 @@ fn refresh_views(
 
     for view_call in views_for_refresh {
         let res: SysCallResult<()> = (|| {
-            let view_def = module_def
-                .get_view_by_id(view_call.fn_ptr, view_call.sender.is_none())
-                .ok_or_else(|| {
-                    TypeError(format!(
-                        "view with fn_ptr `{}` not found while refreshing procedure transaction",
-                        view_call.fn_ptr
-                    ))
-                    .throw(scope)
-                })?;
+            let resolved = crate::host::module_host::resolve_view_for_refresh(
+                tx.as_ref().expect("procedure tx missing during view refresh"),
+                module_def,
+                &view_call,
+            )
+            .map_err(|err| TypeError(format!("view refresh failed after procedure call: {err}")).throw(scope))?;
+
+            let table_id = resolved.table_id;
+            let view_def = resolved.view_def;
+            let view_name = &view_def.name;
+            let fn_ptr = view_def.fn_ptr;
 
             let current_tx = tx.take().expect("procedure tx missing during view refresh");
-            let (next_tx, call_result) =
-                tx_slot.set(current_tx, || call_view(scope, hooks, &view_call, &view_def.name));
+            let (next_tx, call_result) = tx_slot.set(current_tx, || {
+                call_view(scope, hooks, &view_call, view_name, table_id, fn_ptr)
+            });
             tx = Some(next_tx);
             let return_data = call_result?;
 
@@ -814,25 +817,14 @@ fn refresh_views(
                 })?,
             };
 
-            match view_call.sender {
-                Some(sender) => stdb
-                    .materialize_view(
-                        tx.as_mut()
-                            .expect("procedure tx missing while materializing authenticated view"),
-                        view_call.table_id,
-                        sender,
-                        rows,
-                    )
-                    .map_err(NodesError::from)?,
-                None => stdb
-                    .materialize_anonymous_view(
-                        tx.as_mut()
-                            .expect("procedure tx missing while materializing anonymous view"),
-                        view_call.table_id,
-                        rows,
-                    )
-                    .map_err(NodesError::from)?,
-            }
+            stdb.materialize_view_call(
+                tx.as_mut()
+                    .expect("procedure tx missing while materializing refreshed view"),
+                table_id,
+                view_call.clone(),
+                rows,
+            )
+            .map_err(NodesError::from)?;
 
             Ok(())
         })();
@@ -857,6 +849,8 @@ fn call_view(
     hooks: &HookFunctions<'_>,
     view_call: &ViewCallInfo,
     view_name: &Identifier,
+    table_id: TableId,
+    fn_ptr: ViewFnPtr,
 ) -> SysCallResult<ViewReturnData> {
     let prev_func_type = get_env(scope)?
         .instance_env
@@ -871,8 +865,8 @@ fn call_view(
                 ViewOp {
                     name: view_name,
                     view_id: view_call.view_id,
-                    table_id: view_call.table_id,
-                    fn_ptr: view_call.fn_ptr,
+                    table_id,
+                    fn_ptr,
                     args: &args,
                     sender: &sender,
                     timestamp: Timestamp::now(),
@@ -884,8 +878,8 @@ fn call_view(
                 AnonymousViewOp {
                     name: view_name,
                     view_id: view_call.view_id,
-                    table_id: view_call.table_id,
-                    fn_ptr: view_call.fn_ptr,
+                    table_id,
+                    fn_ptr,
                     args: &args,
                     timestamp: Timestamp::now(),
                 },

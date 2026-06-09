@@ -1,7 +1,5 @@
 namespace SpacetimeDB;
 
-using System.Diagnostics.CodeAnalysis;
-
 #pragma warning disable STDB_UNSTABLE
 public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
 {
@@ -75,11 +73,9 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
             IsSuccess ? Value! : throw (Error ?? fallbackFactory());
     }
 
-    [Experimental("STDB_UNSTABLE")]
     public TResult WithTx<TResult>(Func<ProcedureTxContextBase, TResult> body) =>
         txState.WithTx(body);
 
-    [Experimental("STDB_UNSTABLE")]
     public TxOutcome<TResult> TryWithTx<TResult, TError>(
         Func<ProcedureTxContextBase, Result<TResult, TError>> body
     )
