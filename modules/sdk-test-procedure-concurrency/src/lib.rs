@@ -25,10 +25,50 @@ fn insert_reducer_row(ctx: &ReducerContext) {
     });
 }
 
+#[derive(Copy, Clone, Debug)]
+struct PollOptions {
+    timeout: Duration,
+    poll_interval: Duration,
+}
+
+impl Default for PollOptions {
+    fn default() -> Self {
+        Self {
+            timeout: Duration::from_secs(10),
+            poll_interval: Duration::from_millis(100),
+        }
+    }
+}
+
+fn poll_until_tx_true(ctx: &mut ProcedureContext, pred: impl Fn(&TxContext) -> bool, options: PollOptions) {
+    let deadline = ctx.timestamp + options.timeout;
+    log::info!("poll_until_tx_true: will give up at {deadline}");
+    while ctx.timestamp < deadline {
+        let try_again = ctx.timestamp + options.poll_interval;
+        log::info!("poll_until_tx_true: sleeping until {try_again}");
+        ctx.sleep_until(try_again);
+        if ctx.with_tx(&pred) {
+            log::info!("poll_until_tx_true: succeeded, returning now");
+            return;
+        }
+        log::info!("poll_until_tx_true: false");
+    }
+    panic!("poll_until_tx_true: exceeded timeout {:?}", options.timeout)
+}
+
 #[procedure]
 fn procedure_sleep_between_inserts(ctx: &mut ProcedureContext) {
     ctx.with_tx(|ctx| insert_procedure_concurrency_row(ctx, "procedure_before"));
-    ctx.sleep_until(ctx.timestamp + Duration::from_secs(10));
+    poll_until_tx_true(
+        ctx,
+        |tx| {
+            tx.db
+                .procedure_concurrency_row()
+                .iter()
+                .any(|row| row.insertion_context != "procedure_before")
+        },
+        Default::default(),
+    );
     ctx.with_tx(|ctx| insert_procedure_concurrency_row(ctx, "procedure_after"));
 }
 
@@ -57,7 +97,16 @@ fn procedure_schedule_reducer_between_inserts(ctx: &mut ProcedureContext) {
             scheduled_at: ctx.timestamp.into(),
         });
     });
-    ctx.sleep_until(ctx.timestamp + Duration::from_secs(10));
+    poll_until_tx_true(
+        ctx,
+        |tx| {
+            tx.db
+                .procedure_concurrency_row()
+                .iter()
+                .any(|row| row.insertion_context != "procedure_before")
+        },
+        Default::default(),
+    );
     ctx.with_tx(|ctx| insert_procedure_concurrency_row(ctx, "procedure_after"));
 }
 
@@ -72,6 +121,9 @@ struct ScheduledProcedureRow {
 #[procedure]
 fn scheduled_procedure_sleep_between_inserts(ctx: &mut ProcedureContext, _schedule: ScheduledProcedureRow) {
     ctx.with_tx(|ctx| insert_procedure_concurrency_row(ctx, "scheduled_procedure_before"));
+    // Unfortunately, we can't poll and wake on event here,
+    // as (until https://github.com/clockworklabs/SpacetimeDB/pull/5224 is fixed)
+    // the scheduled reducer actually won't run until after this procedure fully completes.
     ctx.sleep_until(ctx.timestamp + Duration::from_secs(10));
     ctx.with_tx(|ctx| insert_procedure_concurrency_row(ctx, "scheduled_procedure_after"));
 }
