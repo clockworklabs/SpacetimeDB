@@ -28,6 +28,8 @@
 #include "autogen/RawViewDefV10.g.h"
 #include "autogen/RawScheduleDefV10.g.h"
 #include "autogen/RawLifeCycleReducerDefV10.g.h"
+#include "autogen/RawHttpHandlerDefV10.g.h"
+#include "autogen/RawHttpRouteDefV10.g.h"
 #include "autogen/RawColumnDefaultValueV10.g.h"
 #include "autogen/RawRowLevelSecurityDefV9.g.h"
 #include "autogen/RawTypeDefV10.g.h"
@@ -38,6 +40,8 @@
 #include "module_type_registration.h"
 
 namespace SpacetimeDB {
+
+class Router;
 
 void fail_reducer(std::string message);
 
@@ -584,6 +588,10 @@ public:
         UpsertProcedure(procedure_def);
     }
 
+    void RegisterHttpHandlerDef(const std::string& handler_name);
+    void RegisterHttpRoute(const RawHttpRouteDefV10& route);
+    void RegisterHttpRouter(const ::SpacetimeDB::Router& router);
+
     void RegisterSchedule(const std::string& table_name, uint16_t scheduled_at_column, const std::string& reducer_name) {
         if (g_circular_ref_error) {
             std::fprintf(stderr, "ERROR: Skipping schedule registration for table '%s' because circular reference error is set\n",
@@ -628,6 +636,8 @@ public:
     const std::vector<RawReducerDefV10>& GetReducers() const { return reducers_; }
     const std::optional<CaseConversionPolicy>& GetCaseConversionPolicy() const { return case_conversion_policy_; }
     const std::vector<ExplicitNameEntry>& GetExplicitNames() const { return explicit_names_; }
+    const std::vector<RawHttpHandlerDefV10>& GetHttpHandlers() const { return http_handlers_; }
+    const std::vector<RawHttpRouteDefV10>& GetHttpRoutes() const { return http_routes_; }
 
 private:
     std::vector<RawTableDefV10>::iterator FindTable(const std::string& table_name) {
@@ -638,6 +648,7 @@ private:
     void UpsertReducer(const RawReducerDefV10& reducer);
     void UpsertProcedure(const RawProcedureDefV10& procedure);
     void UpsertView(const RawViewDefV10& view);
+    void UpsertHttpHandler(const RawHttpHandlerDefV10& handler);
     RawIndexDefV10 CreateBTreeIndex(const std::string& table_name,
                                     const std::string& source_name,
                                     const std::vector<uint16_t>& columns,
@@ -656,6 +667,8 @@ private:
     std::vector<RawReducerDefV10> reducers_;
     std::vector<RawProcedureDefV10> procedures_;
     std::vector<RawViewDefV10> views_;
+    std::vector<RawHttpHandlerDefV10> http_handlers_;
+    std::vector<RawHttpRouteDefV10> http_routes_;
     std::vector<RawScheduleDefV10> schedules_;
     std::vector<RawLifeCycleReducerDefV10> lifecycle_reducers_;
     std::vector<RawRowLevelSecurityDefV9> row_level_security_;

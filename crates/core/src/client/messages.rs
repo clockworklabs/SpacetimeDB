@@ -7,6 +7,7 @@ use crate::subscription::websocket_building::{brotli_compress, decide_compressio
 use bytes::{BufMut, Bytes, BytesMut};
 use bytestring::ByteString;
 use derive_more::From;
+use spacetimedb_client_api_messages::energy::EnergyQuanta;
 use spacetimedb_client_api_messages::websocket::common::{self as ws_common, RowListLen as _};
 use spacetimedb_client_api_messages::websocket::v1::{self as ws_v1};
 use spacetimedb_client_api_messages::websocket::v2 as ws_v2;
@@ -197,20 +198,46 @@ pub fn serialize(
 /// conditional compression when configured.
 pub fn serialize_v2(
     bsatn_rlb_pool: &BsatnRowListBuilderPool,
-    mut buffer: SerializeBuffer,
+    buffer: SerializeBuffer,
     msg: ws_v2::ServerMessage,
     compression: ws_v1::Compression,
 ) -> (InUseSerializeBuffer, Bytes) {
+    serialize_v2_messages(bsatn_rlb_pool, buffer, std::iter::once(msg), compression)
+}
+
+/// Serialize one or more [`ws_v2::ServerMessage`]s into a v3 websocket payload.
+///
+/// Protocol v3 keeps the v2 message schema, but allows the uncompressed payload
+/// body to contain consecutive BSATN-encoded server messages.
+pub fn serialize_v3(
+    bsatn_rlb_pool: &BsatnRowListBuilderPool,
+    buffer: SerializeBuffer,
+    msgs: impl IntoIterator<Item = ws_v2::ServerMessage>,
+    compression: ws_v1::Compression,
+) -> (InUseSerializeBuffer, Bytes) {
+    serialize_v2_messages(bsatn_rlb_pool, buffer, msgs, compression)
+}
+
+fn serialize_v2_messages(
+    bsatn_rlb_pool: &BsatnRowListBuilderPool,
+    mut buffer: SerializeBuffer,
+    msgs: impl IntoIterator<Item = ws_v2::ServerMessage>,
+    compression: ws_v1::Compression,
+) -> (InUseSerializeBuffer, Bytes) {
     let srv_msg = buffer.write_with_tag(ws_common::SERVER_MSG_COMPRESSION_TAG_NONE, |w| {
-        bsatn::to_writer(w.into_inner(), &msg).expect("should be able to bsatn encode v2 message");
+        let out = w.into_inner();
+        for msg in msgs {
+            write_v2_server_message(bsatn_rlb_pool, out, msg);
+        }
     });
     let srv_msg_len = srv_msg.len();
-
-    // At this point, we no longer have a use for `msg`,
-    // so try to reclaim its buffers.
-    msg.consume_each_list(&mut |buffer| bsatn_rlb_pool.try_put(buffer));
-
     finalize_binary_serialize_buffer(buffer, srv_msg_len, compression)
+}
+
+fn write_v2_server_message(bsatn_rlb_pool: &BsatnRowListBuilderPool, out: &mut BytesMut, msg: ws_v2::ServerMessage) {
+    bsatn::to_writer(out, &msg).expect("should be able to bsatn encode v2 message");
+    // At this point, we no longer have a use for `msg`, so try to reclaim its buffers.
+    msg.consume_each_list(&mut |buffer| bsatn_rlb_pool.try_put(buffer));
 }
 
 #[derive(Debug, From)]
@@ -409,7 +436,12 @@ impl ToProtocol for TransactionUpdateMessage {
                     args,
                     request_id,
                 },
-                energy_quanta_used: event.energy_quanta_used,
+                // This conversion is lying. We used to tell the client how much eV a transaction
+                // used, but now the database just tracks cpu usage, and it's converted to energy
+                // elsewhere. So, we just pretend that this is `EnergyQuanta` when it's actually
+                // a different unit, and it doesn't really matter to the client anyway.
+                // TODO(noa): maybe we could just have this be zero, unconditionally?
+                energy_quanta_used: EnergyQuanta::new(event.execution_budget_used.get().into()),
                 total_host_execution_duration: event.host_execution_duration.into(),
                 caller_connection_id: event.caller_connection_id.unwrap_or(ConnectionId::ZERO),
             };

@@ -14,10 +14,11 @@ use prometheus::{Histogram, IntGauge};
 use spacetimedb_datastore::locking_tx_datastore::{committed_state::CommittedState, datastore::Locking};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::Identity;
-use spacetimedb_snapshot::{CompressionStats, SnapshotRepository};
+use spacetimedb_snapshot::{CompressionStats, DynSnapshotRepo};
 use tokio::sync::watch;
 
-use crate::{util::asyncify, worker_metrics::WORKER_METRICS};
+use crate::worker_metrics::WORKER_METRICS;
+use spacetimedb_runtime::Handle;
 
 pub type SnapshotDatabaseState = Arc<RwLock<CommittedState>>;
 
@@ -60,7 +61,7 @@ impl Compression {
 pub struct SnapshotWorker {
     snapshot_created: watch::Sender<TxOffset>,
     request_snapshot: mpsc::UnboundedSender<Request>,
-    snapshot_repository: Arc<SnapshotRepository>,
+    snapshot_repository: Arc<DynSnapshotRepo>,
 }
 
 impl SnapshotWorker {
@@ -69,7 +70,7 @@ impl SnapshotWorker {
     /// The handle is only partially initialized, as it is lacking the
     /// [SnapshotDatabaseState]. This allows control code to [Self::subscribe]
     /// to future snapshots before handing off the worker to the database.
-    pub fn new(snapshot_repository: Arc<SnapshotRepository>, compression: Compression) -> Self {
+    pub fn new(snapshot_repository: Arc<DynSnapshotRepo>, compression: Compression, rt: Handle) -> Self {
         let database = snapshot_repository.database_identity();
         let latest_snapshot = snapshot_repository.latest_snapshot().ok().flatten().unwrap_or(0);
         let (snapshot_created, _) = watch::channel(latest_snapshot);
@@ -80,19 +81,26 @@ impl SnapshotWorker {
             snapshot_repo: snapshot_repository.clone(),
             snapshot_created: snapshot_created.clone(),
             metrics: SnapshotMetrics::new(database),
+            rt: rt.clone(),
             compression: compression.is_enabled().then(|| Compressor {
                 snapshot_repo: snapshot_repository.clone(),
                 metrics: CompressionMetrics::new(database),
                 stats: <_>::default(),
+                rt: rt.clone(),
             }),
         };
-        tokio::spawn(actor.run());
+        rt.spawn(actor.run());
 
         Self {
             snapshot_created,
             request_snapshot: request_tx,
             snapshot_repository,
         }
+    }
+
+    /// Create a new [SnapshotWorker] on the current Tokio runtime.
+    pub fn new_tokio_current(snapshot_repository: Arc<DynSnapshotRepo>, compression: Compression) -> Self {
+        Self::new(snapshot_repository, compression, Handle::tokio_current())
     }
 
     /// Finish the initialization of [Self] by passing a [SnapshotDatabaseState],
@@ -105,9 +113,9 @@ impl SnapshotWorker {
             .expect("snapshot worker panicked");
     }
 
-    /// Get the [SnapshotRepository] this worker is operating on.
-    pub fn repo(&self) -> &SnapshotRepository {
-        &self.snapshot_repository
+    /// Get the snapshot repo this worker is operating on.
+    pub fn snapshot_repo(&self) -> Arc<DynSnapshotRepo> {
+        self.snapshot_repository.clone()
     }
 
     /// Request a snapshot to be taken.
@@ -166,9 +174,10 @@ enum Request {
 
 struct SnapshotWorkerActor {
     snapshot_requests: mpsc::UnboundedReceiver<Request>,
-    snapshot_repo: Arc<SnapshotRepository>,
+    snapshot_repo: Arc<DynSnapshotRepo>,
     snapshot_created: watch::Sender<TxOffset>,
     metrics: SnapshotMetrics,
+    rt: Handle,
     compression: Option<Compressor>,
 }
 
@@ -220,21 +229,24 @@ impl SnapshotWorkerActor {
         let inner_timer = self.metrics.snapshot_timing_inner.clone();
 
         let snapshot_repo = self.snapshot_repo.clone();
+        let runtime = self.rt.clone();
 
         let database_identity = self.snapshot_repo.database_identity();
 
-        let maybe_snapshot = asyncify(move || {
-            let _timer = inner_timer.start_timer();
-            Locking::take_snapshot_internal(&state, &snapshot_repo)
-        })
-        .await
-        .with_context(|| format!("error capturing snapshot of database {}", database_identity))?;
-        let (snapshot_offset, unflushed_snapshot) = maybe_snapshot.with_context(|| {
-            format!(
-                "refusing to take snapshot of database {} at TX offset -1",
-                database_identity
-            )
-        })?;
+        let maybe_snapshot = runtime
+            .spawn_blocking(move || {
+                let _timer = inner_timer.start_timer();
+                Locking::take_snapshot_internal(&state, snapshot_repo.as_ref())
+            })
+            .await
+            .with_context(|| format!("error capturing snapshot of database {}", database_identity))?
+            .with_context(|| {
+                format!(
+                    "refusing to take snapshot of database {} at TX offset -1",
+                    database_identity
+                )
+            })?;
+        let (snapshot_offset, unflushed_snapshot) = maybe_snapshot;
         self.metrics
             .snapshot_timing_fsync
             .observe_closure_duration(|| unflushed_snapshot.sync_all())?;
@@ -307,9 +319,10 @@ impl CompressionMetrics {
 }
 
 struct Compressor {
-    snapshot_repo: Arc<SnapshotRepository>,
+    snapshot_repo: Arc<DynSnapshotRepo>,
     metrics: CompressionMetrics,
     stats: Option<CompressionStats>,
+    rt: Handle,
 }
 
 impl Compressor {
@@ -341,15 +354,17 @@ impl Compressor {
         let range = start..latest_snapshot;
         let mut stats = self.stats.take().unwrap_or_default();
 
-        let (mut stats, res) = asyncify({
-            let range = range.clone();
-            move || {
-                let _timer = inner_timer.start_timer();
-                let res = snapshot_repo.compress_snapshots(&mut stats, range);
-                (stats, res)
-            }
-        })
-        .await;
+        let rt = self.rt.clone();
+        let (mut stats, res) = rt
+            .spawn_blocking({
+                let range = range.clone();
+                move || {
+                    let _timer = inner_timer.start_timer();
+                    let res = snapshot_repo.compress_snapshots(&mut stats, range);
+                    (stats, res)
+                }
+            })
+            .await;
         let elapsed = Duration::from_secs_f64(timer.stop_and_record());
         self.metrics.report_and_reset(&mut stats);
         // Store stats for reuse.

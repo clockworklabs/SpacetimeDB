@@ -48,7 +48,7 @@ Clients receive automatic updates when subscribed data changes. The SDKs provide
 Clients can invoke server-side functions to modify data or perform operations:
 
 - **[Reducers](./00200-functions/00300-reducers/00300-reducers.md)** - Transactional functions that modify database state
-- **[Procedures](./00200-functions/00400-procedures.md)** - Functions that can perform external operations like HTTP requests (beta)
+- **[Procedures](./00200-functions/00400-procedures.md)** - Functions that can perform external operations like HTTP requests
 
 ### Type Safety
 
@@ -83,11 +83,11 @@ New to SpacetimeDB client development? Follow this progression:
 1. **[Generate Client Bindings](./00600-clients/00200-codegen.md)** - Create type-safe interfaces from your module
 2. **[Connect to SpacetimeDB](./00600-clients/00300-connection.md)** - Establish a connection and understand the lifecycle
 3. **[Use the SDK API](./00600-clients/00400-sdk-api.md)** - Learn about subscriptions, reducers, and callbacks
-4. **Language Reference** - Dive into language-specific details: [Rust](./00600-clients/00500-rust-reference.md), [C#](./00600-clients/00600-csharp-reference.md), [TypeScript](./00600-clients/00700-typescript-reference.md)
+4. **Language Reference** - Dive into language-specific details: [Rust](./00600-clients/00500-rust-reference.md), [C#](./00600-clients/00600-csharp-reference.md), [TypeScript](./00600-clients/00700-typescript-reference.md), and [Unreal Engine](./00600-clients/00800-unreal-reference.md)
 
 ## Next Steps
 
-- Follow a **Quickstart guide** [Rust](../00100-intro/00200-quickstarts/00500-rust.md), [C#](../00100-intro/00200-quickstarts/00600-c-sharp.md), or [TypeScript](../00100-intro/00200-quickstarts/00400-typescript.md) to build your first client
+- To build your first client, follow a **Quickstart guide** for [Rust](../00100-intro/00200-quickstarts/00500-rust.md), [C#](../00100-intro/00200-quickstarts/00600-c-sharp.md), or [TypeScript](../00100-intro/00200-quickstarts/00400-typescript.md), or use the [Unreal tutorial](../00100-intro/00300-tutorials/00400-unreal-tutorial/index.md)
 - Learn about [Databases](./00100-databases.md) to understand what you're connecting to
 - Explore [Subscriptions](./00400-subscriptions.md) for efficient data synchronization
 - Review [Reducers](./00200-functions/00300-reducers/00300-reducers.md) to understand server-side state changes
