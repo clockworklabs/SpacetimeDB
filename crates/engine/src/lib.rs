@@ -1,8 +1,12 @@
-pub mod db;
+mod ast;
+pub(crate) mod durability;
 pub mod error;
 pub mod metrics;
+pub mod persistence;
+pub mod relational_db;
 pub mod rls;
-mod sql;
+pub mod snapshot;
+pub mod update;
 pub mod util;
 
 pub use spacetimedb_lib::identity;

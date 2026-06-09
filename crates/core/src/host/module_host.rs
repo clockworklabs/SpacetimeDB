@@ -601,7 +601,7 @@ fn init_database_inner(
             table_defs.sort_by_key(|x| &x.name);
             for def in table_defs {
                 logger.info(&format!("Creating table `{}`", &def.name));
-                spacetimedb_engine::db::update::create_table_from_def(stdb, tx, module_def, def)?;
+                spacetimedb_engine::update::create_table_from_def(stdb, tx, module_def, def)?;
             }
 
             // Create all in-memory views defined by the module.

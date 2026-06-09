@@ -674,7 +674,7 @@ impl SystemLogger {
     }
 }
 
-impl spacetimedb_engine::db::update::UpdateLogger for SystemLogger {
+impl spacetimedb_engine::update::UpdateLogger for SystemLogger {
     fn info(&self, msg: &str) {
         self.info(msg);
     }

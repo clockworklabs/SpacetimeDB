@@ -342,7 +342,7 @@ pub fn create_table_from_def(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::db::relational_db::tests_utils::{begin_mut_tx, insert, TestDB};
+    use crate::relational_db::tests_utils::{begin_mut_tx, insert, TestDB};
     use spacetimedb_datastore::locking_tx_datastore::PendingSchemaChange;
     use spacetimedb_lib::db::raw_def::v9::{btree, RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess};
     use spacetimedb_sats::{product, AlgebraicType, AlgebraicType::U64};
