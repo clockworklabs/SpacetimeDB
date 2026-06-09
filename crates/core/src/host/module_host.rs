@@ -20,7 +20,6 @@ use crate::messages::control_db::{Database, HostType};
 use crate::replica_context::ReplicaContext;
 use crate::sql::ast::SchemaViewer;
 use crate::sql::execute::SqlResult;
-use crate::sql::parser::RowLevelExpr;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::module_subscription_manager::BroadcastError;
 pub use crate::subscription::module_subscription_manager::TransactionOffset;
@@ -51,6 +50,7 @@ use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 pub use spacetimedb_durability::{DurabilityExited, DurableOffset};
+use spacetimedb_engine::rls::RowLevelExpr;
 use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
 use spacetimedb_execution::RelValue;
 use spacetimedb_expr::expr::CollectViews;
@@ -64,10 +64,10 @@ use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue};
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
-use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, ViewDef};
+use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, ViewDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::reducer_name::ReducerName;
-use spacetimedb_schema::schema::{Schema, TableSchema};
+
 use spacetimedb_schema::table_name::TableName;
 use std::collections::VecDeque;
 use std::fmt;
@@ -549,19 +549,6 @@ impl GenericModuleInstance for super::v8::JsProcedureInstance {
     }
 }
 
-/// Creates the table for `table_def` in `stdb`.
-pub fn create_table_from_def(
-    stdb: &RelationalDB,
-    tx: &mut MutTxId,
-    module_def: &ModuleDef,
-    table_def: &TableDef,
-) -> anyhow::Result<()> {
-    let schema = TableSchema::from_module_def(module_def, table_def, (), TableId::SENTINEL);
-    stdb.create_table(tx, schema)
-        .with_context(|| format!("failed to create table {}", &table_def.name))?;
-    Ok(())
-}
-
 /// Creates the table for `view_def` in `stdb`.
 pub fn create_table_from_view_def(
     stdb: &RelationalDB,
@@ -614,7 +601,7 @@ fn init_database_inner(
             table_defs.sort_by_key(|x| &x.name);
             for def in table_defs {
                 logger.info(&format!("Creating table `{}`", &def.name));
-                create_table_from_def(stdb, tx, module_def, def)?;
+                spacetimedb_engine::db::update::create_table_from_def(stdb, tx, module_def, def)?;
             }
 
             // Create all in-memory views defined by the module.

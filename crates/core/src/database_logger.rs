@@ -674,6 +674,12 @@ impl SystemLogger {
     }
 }
 
+impl spacetimedb_engine::db::update::UpdateLogger for SystemLogger {
+    fn info(&self, msg: &str) {
+        self.info(msg);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{ops::Range, sync::Arc};

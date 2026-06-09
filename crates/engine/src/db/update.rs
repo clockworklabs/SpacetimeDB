@@ -1,24 +1,18 @@
 use super::relational_db::RelationalDB;
-use crate::database_logger::SystemLogger;
-use crate::sql::parser::RowLevelExpr;
+use crate::rls::RowLevelExpr;
+use anyhow::Context;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColSet, TableId};
 use spacetimedb_schema::auto_migrate::{AutoMigratePlan, ManualMigratePlan, MigratePlan};
-use spacetimedb_schema::def::{TableDef, ViewDef};
+use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
 use spacetimedb_schema::schema::{column_schemas_from_defs, IndexSchema, Schema, SequenceSchema, TableSchema};
 
 /// The logger used for by [`update_database`] and friends.
 pub trait UpdateLogger {
     fn info(&self, msg: &str);
-}
-
-impl UpdateLogger for SystemLogger {
-    fn info(&self, msg: &str) {
-        self.info(msg);
-    }
 }
 
 /// The result of a database update.
@@ -332,13 +326,23 @@ fn auto_migrate_database(
     Ok(res)
 }
 
+/// Creates the table for `table_def` in `stdb`.
+pub fn create_table_from_def(
+    stdb: &RelationalDB,
+    tx: &mut MutTxId,
+    module_def: &ModuleDef,
+    table_def: &TableDef,
+) -> anyhow::Result<()> {
+    let schema = TableSchema::from_module_def(module_def, table_def, (), TableId::SENTINEL);
+    stdb.create_table(tx, schema)
+        .with_context(|| format!("failed to create table {}", &table_def.name))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{
-        db::relational_db::tests_utils::{begin_mut_tx, insert, TestDB},
-        host::module_host::create_table_from_def,
-    };
+    use crate::db::relational_db::tests_utils::{begin_mut_tx, insert, TestDB};
     use spacetimedb_datastore::locking_tx_datastore::PendingSchemaChange;
     use spacetimedb_lib::db::raw_def::v9::{btree, RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess};
     use spacetimedb_sats::{product, AlgebraicType, AlgebraicType::U64};

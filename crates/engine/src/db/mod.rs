@@ -2,10 +2,8 @@ use std::sync::Arc;
 
 use enum_map::EnumMap;
 use spacetimedb_schema::reducer_name::ReducerName;
-use tokio::sync::mpsc;
-use tokio::time::MissedTickBehavior;
 
-use crate::subscription::ExecutionCounters;
+use crate::metrics::ExecutionCounters;
 use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_datastore::{locking_tx_datastore::datastore::TxMetrics, traits::TxData};
 
@@ -56,7 +54,7 @@ pub struct MetricsMessage {
 /// The handle used to send work to the tx metrics recorder.
 #[derive(Clone)]
 pub struct MetricsRecorderQueue {
-    tx: mpsc::UnboundedSender<MetricsMessage>,
+    tx: spacetimedb_runtime::sync::mpsc::UnboundedSender<MetricsMessage>,
 }
 
 impl MetricsRecorderQueue {
@@ -127,19 +125,20 @@ const TX_METRICS_RECORDING_INTERVAL: std::time::Duration = std::time::Duration::
 
 /// Spawns a task for recording transaction metrics.
 /// Returns the handle for pushing metrics to the recorder.
-pub fn spawn_tx_metrics_recorder() -> (MetricsRecorderQueue, tokio::task::AbortHandle) {
-    let (tx, mut rx) = mpsc::unbounded_channel();
-    let abort_handle = tokio::spawn(async move {
-        let mut interval = tokio::time::interval(TX_METRICS_RECORDING_INTERVAL);
-        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-
-        loop {
-            interval.tick().await;
-            while let Ok(metrics) = rx.try_recv() {
-                record_metrics(metrics);
+pub fn spawn_tx_metrics_recorder(
+    handle: &spacetimedb_runtime::Handle,
+) -> (MetricsRecorderQueue, spacetimedb_runtime::AbortHandle) {
+    let handle_clone = handle.clone();
+    let (tx, mut rx) = spacetimedb_runtime::sync::mpsc::unbounded_channel();
+    let abort_handle = handle
+        .spawn(async move {
+            loop {
+                handle_clone.sleep(TX_METRICS_RECORDING_INTERVAL).await;
+                while let Ok(metrics) = rx.try_recv() {
+                    record_metrics(metrics);
+                }
             }
-        }
-    })
-    .abort_handle();
+        })
+        .abort_handle();
     (MetricsRecorderQueue { tx }, abort_handle)
 }

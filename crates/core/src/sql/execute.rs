@@ -7,8 +7,8 @@ use crate::energy::FunctionBudget;
 use crate::error::DBError;
 use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::host::module_host::{
-    DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, RefInstance, ViewCallError, ViewCallResult,
-    ViewOutcome, WasmInstance,
+    DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, RefInstance, ViewCallResult, ViewOutcome,
+    WasmInstance,
 };
 use crate::host::{ArgsTuple, ModuleHost};
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
@@ -163,7 +163,7 @@ fn run_inner<I: WasmInstance>(
             if let ViewOutcome::Failed(err) = result.outcome {
                 let (_, metrics, reducer) = db.rollback_mut_tx(result.tx);
                 db.report_mut_tx_metrics(reducer, metrics, None);
-                return Err(DBError::View(ViewCallError::InternalError(err)));
+                return Err(DBError::View(spacetimedb_engine::error::ViewError::InternalError(err)));
             }
 
             let tx = result.tx;
