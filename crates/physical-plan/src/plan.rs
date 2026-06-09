@@ -381,9 +381,12 @@ impl PhysicalPlan {
     /// Returns whether this plan contains a runtime parameter.
     pub fn requires_param(&self, id: ParamId) -> bool {
         self.any(&|plan| match plan {
-            Self::IxScan(scan, _) => scan.arg.requires_param(id),
+            Self::IxScan(scan, _) => {
+                scan.arg.requires_param(id) || scan.prefix.iter().any(|(_, value)| value.requires_param(id))
+            }
+            Self::IxJoin(join, _) => join.rhs_prefix.iter().any(|value| value.requires_param(id)),
             Self::Filter(_, expr) => expr.requires_param(id),
-            Self::TableScan(..) | Self::IxJoin(..) | Self::HashJoin(..) | Self::NLJoin(..) => false,
+            Self::TableScan(..) | Self::HashJoin(..) | Self::NLJoin(..) => false,
         })
     }
 
@@ -416,6 +419,11 @@ impl PhysicalPlan {
         match self {
             Self::TableScan(..) => self,
             Self::IxScan(mut scan, label) => {
+                scan.prefix = scan
+                    .prefix
+                    .into_iter()
+                    .map(|(col, value)| (col, value.bind_params(bind_env)))
+                    .collect();
                 scan.arg = scan.arg.bind_params(bind_env);
                 Self::IxScan(scan, label)
             }
@@ -438,7 +446,10 @@ impl PhysicalPlan {
                     rhs,
                     rhs_label,
                     rhs_index,
-                    rhs_prefix,
+                    rhs_prefix: rhs_prefix
+                        .into_iter()
+                        .map(|value| value.bind_params(bind_env))
+                        .collect(),
                     rhs_field,
                     unique,
                     lhs_field,
@@ -1317,8 +1328,11 @@ pub struct IxScan {
     pub delta: Option<Delta>,
     /// The index id
     pub index_id: IndexId,
-    /// An equality prefix for multi-column scans
-    pub prefix: Vec<(ColId, AlgebraicValue)>,
+    /// An equality prefix for multi-column scans.
+    ///
+    /// Prefix values may be runtime params while this is still an optimizer/template plan.
+    /// They must be bound before executor construction.
+    pub prefix: Vec<(ColId, SargValue)>,
     /// The index argument
     pub arg: Sarg,
 }
@@ -1426,7 +1440,10 @@ pub struct IxJoin {
     /// The index id
     pub rhs_index: IndexId,
     /// Optional constant prefix values for multi-column index probes.
-    pub rhs_prefix: Vec<AlgebraicValue>,
+    ///
+    /// Prefix values may be runtime params while this is still an optimizer/template plan.
+    /// They must be bound before executor construction.
+    pub rhs_prefix: Vec<SargValue>,
     /// The index field
     pub rhs_field: ColId,
     /// Is the index a unique constraint index?
@@ -1493,6 +1510,15 @@ impl PhysicalExpr {
         match self {
             Self::Value(value) => Some(SargValue::Literal(value)),
             Self::Param(id, ty) => Some(SargValue::Param(id, ty)),
+            _ => None,
+        }
+    }
+
+    /// Converts a literal or runtime parameter expression into an index search value.
+    pub fn as_sarg_value(&self) -> Option<SargValue> {
+        match self {
+            Self::Value(value) => Some(SargValue::Literal(value.clone())),
+            Self::Param(id, ty) => Some(SargValue::Param(*id, ty.clone())),
             _ => None,
         }
     }
@@ -2391,7 +2417,10 @@ mod tests {
                 assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(5).into()));
                 assert_eq!(
                     prefix,
-                    vec![(ColId(1), AlgebraicValue::U8(3)), (ColId(2), AlgebraicValue::U8(4))]
+                    vec![
+                        (ColId(1), AlgebraicValue::U8(3).into()),
+                        (ColId(2), AlgebraicValue::U8(4).into())
+                    ]
                 );
             }
             proj => panic!("unexpected plan: {proj:#?}"),
@@ -2413,7 +2442,10 @@ mod tests {
                 assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(5).into()));
                 assert_eq!(
                     prefix,
-                    vec![(ColId(1), AlgebraicValue::U8(3)), (ColId(2), AlgebraicValue::U8(4))]
+                    vec![
+                        (ColId(1), AlgebraicValue::U8(3).into()),
+                        (ColId(2), AlgebraicValue::U8(4).into())
+                    ]
                 );
             }
             proj => panic!("unexpected plan: {proj:#?}"),
@@ -2503,7 +2535,7 @@ mod tests {
             )) => {
                 assert_eq!(schema.table_id, t_id);
                 assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(2).into()));
-                assert_eq!(prefix, vec![(ColId(2), AlgebraicValue::U8(1))]);
+                assert_eq!(prefix, vec![(ColId(2), AlgebraicValue::U8(1).into())]);
             }
             proj => panic!("unexpected plan: {proj:#?}"),
         };
@@ -2522,7 +2554,7 @@ mod tests {
             )) => {
                 assert_eq!(schema.table_id, t_id);
                 assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(2).into()));
-                assert_eq!(prefix, vec![(ColId(2), AlgebraicValue::U8(1))]);
+                assert_eq!(prefix, vec![(ColId(2), AlgebraicValue::U8(1).into())]);
             }
             proj => panic!("unexpected plan: {proj:#?}"),
         };
@@ -2550,7 +2582,7 @@ mod tests {
             ) => {
                 assert_eq!(schema.table_id, t_id);
                 assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(3).into()));
-                assert_eq!(prefix, vec![(ColId(2), AlgebraicValue::U8(2))]);
+                assert_eq!(prefix, vec![(ColId(2), AlgebraicValue::U8(2).into())]);
             }
             plan => panic!("unexpected plan: {plan:#?}"),
         };

@@ -27,14 +27,13 @@
 //! * [UniqueHashJoinRule]
 //!   Mark hash join as unique
 use anyhow::{bail, Result};
-use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColId, ColSet, IndexId};
 use spacetimedb_schema::schema::{IndexSchema, TableSchema};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 
 use crate::plan::{
-    HashJoin, IxJoin, IxScan, Label, PhysicalExpr, PhysicalPlan, ProjectListPlan, ProjectPlan, Sarg, Semi, TableScan,
-    TupleField,
+    HashJoin, IxJoin, IxScan, Label, PhysicalExpr, PhysicalPlan, ProjectListPlan, ProjectPlan, Sarg, SargValue, Semi,
+    TableScan, TupleField,
 };
 
 /// A rewrite will only fail due to an internal logic bug.
@@ -591,11 +590,13 @@ impl RewriteRule for IxScanEq2Col {
                     continue;
                 };
 
-                let (PhysicalExpr::Field(u), PhysicalExpr::Value(_), PhysicalExpr::Field(v), PhysicalExpr::Value(_)) =
-                    (&**a, &**u, &**b, &**v)
+                let (PhysicalExpr::Field(u), value_u, PhysicalExpr::Field(v), value_v) = (&**a, &**u, &**b, &**v)
                 else {
                     continue;
                 };
+                if !value_u.is_sarg_value() || !value_v.is_sarg_value() {
+                    continue;
+                }
 
                 if let Some(scan) = schema
                     .indexes
@@ -633,7 +634,7 @@ impl RewriteRule for IxScanEq2Col {
                     && let PhysicalPlan::TableScan(TableScan { schema, limit, delta }, label) = *input
                     && let (Some(PhysicalExpr::BinOp(BinOp::Eq, _, u)), Some(PhysicalExpr::BinOp(BinOp::Eq, _, v))) =
                         (exprs.get(*i), exprs.get(*j))
-                    && let (PhysicalExpr::Value(u), PhysicalExpr::Value(v)) = (&**u, &**v)
+                    && let (Some(u), Some(v)) = (u.as_sarg_value(), v.as_sarg_value())
                 {
                     return Ok(match exprs.len() {
                         n @ 0 | n @ 1 => {
@@ -648,7 +649,7 @@ impl RewriteRule for IxScanEq2Col {
                                 delta,
                                 index_id: info.index_id,
                                 prefix: vec![(*a, u.clone())],
-                                arg: Sarg::Eq(*b, v.clone().into()),
+                                arg: Sarg::Eq(*b, v.clone()),
                             },
                             label,
                         ),
@@ -665,7 +666,7 @@ impl RewriteRule for IxScanEq2Col {
                                     delta,
                                     index_id: info.index_id,
                                     prefix: vec![(*a, u.clone())],
-                                    arg: Sarg::Eq(*b, v.clone().into()),
+                                    arg: Sarg::Eq(*b, v.clone()),
                                 },
                                 label,
                             )),
@@ -687,7 +688,7 @@ impl RewriteRule for IxScanEq2Col {
                                     delta,
                                     index_id: info.index_id,
                                     prefix: vec![(*a, u.clone())],
-                                    arg: Sarg::Eq(*b, v.clone().into()),
+                                    arg: Sarg::Eq(*b, v.clone()),
                                 },
                                 label,
                             )),
@@ -757,15 +758,18 @@ impl RewriteRule for IxScanEq3Col {
 
                     let (
                         PhysicalExpr::Field(u),
-                        PhysicalExpr::Value(_),
+                        value_u,
                         PhysicalExpr::Field(v),
-                        PhysicalExpr::Value(_),
+                        value_v,
                         PhysicalExpr::Field(w),
-                        PhysicalExpr::Value(_),
+                        value_w,
                     ) = (&**a, &**u, &**b, &**v, &**c, &**w)
                     else {
                         continue;
                     };
+                    if !value_u.is_sarg_value() || !value_v.is_sarg_value() || !value_w.is_sarg_value() {
+                        continue;
+                    }
 
                     if let Some(scan) = schema
                         .indexes
@@ -811,7 +815,7 @@ impl RewriteRule for IxScanEq3Col {
                         Some(PhysicalExpr::BinOp(BinOp::Eq, _, v)),
                         Some(PhysicalExpr::BinOp(BinOp::Eq, _, w)),
                     ) = (exprs.get(*i), exprs.get(*j), exprs.get(*k))
-                    && let (PhysicalExpr::Value(u), PhysicalExpr::Value(v), PhysicalExpr::Value(w)) = (&**u, &**v, &**w)
+                    && let (Some(u), Some(v), Some(w)) = (u.as_sarg_value(), v.as_sarg_value(), w.as_sarg_value())
                 {
                     return Ok(match exprs.len() {
                         n @ 0 | n @ 1 | n @ 2 => {
@@ -826,7 +830,7 @@ impl RewriteRule for IxScanEq3Col {
                                 delta,
                                 index_id: info.index_id,
                                 prefix: vec![(*a, u.clone()), (*b, v.clone())],
-                                arg: Sarg::Eq(*c, w.clone().into()),
+                                arg: Sarg::Eq(*c, w.clone()),
                             },
                             label,
                         ),
@@ -843,7 +847,7 @@ impl RewriteRule for IxScanEq3Col {
                                     delta,
                                     index_id: info.index_id,
                                     prefix: vec![(*a, u.clone()), (*b, v.clone())],
-                                    arg: Sarg::Eq(*c, w.clone().into()),
+                                    arg: Sarg::Eq(*c, w.clone()),
                                 },
                                 label,
                             )),
@@ -865,7 +869,7 @@ impl RewriteRule for IxScanEq3Col {
                                     delta,
                                     index_id: info.index_id,
                                     prefix: vec![(*a, u.clone()), (*b, v.clone())],
-                                    arg: Sarg::Eq(*c, w.clone().into()),
+                                    arg: Sarg::Eq(*c, w.clone()),
                                 },
                                 label,
                             )),
@@ -1064,8 +1068,8 @@ impl RewriteRule for PullFilterAboveHashJoin {
 /// Always prefer an index join to a hash join
 pub(crate) struct HashToIxJoin;
 
-/// A filter term of the form `rhs_col = constant`.
-type EqConstFilterTerm = (ColId, AlgebraicValue);
+/// A filter term of the form `rhs_col = constant_or_runtime_param`.
+type EqConstFilterTerm = (ColId, SargValue);
 
 /// Planning metadata derived while proving `HashJoin -> IxJoin` is valid.
 #[derive(Clone)]
@@ -1077,27 +1081,26 @@ pub(crate) struct HashToIxJoinInfo {
     rhs_field: ColId,
     /// Constant leading key components for a multi-column index probe.
     /// For an index `(a, b, c)` and join on `c`, this stores `[a_const, b_const]`.
-    rhs_prefix: Vec<AlgebraicValue>,
+    /// Runtime params are allowed here while this is still an optimizer/template plan.
+    rhs_prefix: Vec<SargValue>,
     /// RHS filter terms consumed into `rhs_prefix` and therefore removable
     /// from the residual filter.
     consumed_filter_terms: Vec<EqConstFilterTerm>,
 }
 
-/// Collect RHS predicates of the form `rhs.col = constant`.
+/// Collect RHS predicates of the form `rhs.col = constant_or_runtime_param`.
 ///
 /// This is intentionally narrow: only equality predicates over RHS fields are
 /// useful for building exact prefix probes into multi-column indexes.
 fn rhs_eq_constants(expr: &PhysicalExpr, rhs_label: Label) -> Vec<EqConstFilterTerm> {
     match expr {
         PhysicalExpr::BinOp(BinOp::Eq, lhs, rhs)
-            if matches!(
-                (&**lhs, &**rhs),
-                (PhysicalExpr::Field(TupleField { label, .. }), PhysicalExpr::Value(_)) if *label == rhs_label
-            ) =>
+            if matches!(&**lhs, PhysicalExpr::Field(TupleField { label, .. }) if *label == rhs_label)
+                && rhs.is_sarg_value() =>
         {
-            match (&**lhs, &**rhs) {
-                (PhysicalExpr::Field(TupleField { field_pos, .. }), PhysicalExpr::Value(value)) => {
-                    vec![(ColId(*field_pos as u16), value.clone())]
+            match (&**lhs, rhs.as_sarg_value()) {
+                (PhysicalExpr::Field(TupleField { field_pos, .. }), Some(value)) => {
+                    vec![(ColId(*field_pos as u16), value)]
                 }
                 _ => vec![],
             }
@@ -1166,7 +1169,7 @@ fn ix_join_candidate(
             return None;
         };
 
-        let mut rhs_prefix: Vec<AlgebraicValue> = vec![];
+        let mut rhs_prefix: Vec<SargValue> = vec![];
         let mut consumed_filter_terms: Vec<EqConstFilterTerm> = vec![];
         for col in cols.iter().take(cols.len().saturating_sub(1).into()) {
             let (_, value) = constants.iter().find(|(candidate, _)| *candidate == col)?;
@@ -1197,7 +1200,7 @@ fn rhs_eq_constants_from_ixscan(scan: &IxScan) -> Option<Vec<EqConstFilterTerm>>
     let Sarg::Eq(col, value) = &scan.arg else {
         return None;
     };
-    constants.push((*col, value.as_literal()?.clone()));
+    constants.push((*col, value.clone()));
     Some(constants)
 }
 
@@ -1216,7 +1219,7 @@ fn remove_consumed_filter_terms(
 ) -> Option<PhysicalExpr> {
     // These terms are now represented by `rhs_prefix`; keeping them in a
     // residual filter is redundant work.
-    let is_consumed = |col_id: ColId, value: &AlgebraicValue| {
+    let is_consumed = |col_id: ColId, value: &SargValue| {
         consumed_filter_terms
             .iter()
             .any(|(consumed_col, consumed_val)| consumed_col == &col_id && consumed_val == value)
@@ -1226,8 +1229,11 @@ fn remove_consumed_filter_terms(
         PhysicalExpr::BinOp(BinOp::Eq, lhs, rhs)
             if matches!(
                 (&*lhs, &*rhs),
-                (PhysicalExpr::Field(TupleField { label, field_pos, .. }), PhysicalExpr::Value(value))
-                    if *label == rhs_label && is_consumed(ColId(*field_pos as u16), value)
+                (PhysicalExpr::Field(TupleField { label, field_pos, .. }), value)
+                    if *label == rhs_label
+                        && value
+                            .as_sarg_value()
+                            .is_some_and(|value| is_consumed(ColId(*field_pos as u16), &value))
             ) =>
         {
             None

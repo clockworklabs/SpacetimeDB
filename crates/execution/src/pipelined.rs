@@ -362,7 +362,7 @@ impl From<PhysicalPlan> for PipelinedExecutor {
                 lhs: Box::new(Self::from(*lhs)),
                 rhs_table: rhs.table_id,
                 rhs_index,
-                rhs_prefix,
+                rhs_prefix: rhs_prefix.into_iter().map(expect_bound_sarg_value).collect(),
                 rhs_field,
                 lhs_field,
                 unique,
@@ -385,7 +385,7 @@ impl From<PhysicalPlan> for PipelinedExecutor {
                 lhs: Box::new(Self::from(*lhs)),
                 rhs_table: rhs.table_id,
                 rhs_index,
-                rhs_prefix,
+                rhs_prefix: rhs_prefix.into_iter().map(expect_bound_sarg_value).collect(),
                 rhs_field,
                 rhs_delta,
                 lhs_field,
@@ -593,7 +593,7 @@ impl From<IxScan> for PipelinedIxDeltaScanRange {
                 Self {
                     table_id: schema.table_id,
                     index_id,
-                    prefix: prefix.into_iter().map(|(_, v)| v).collect(),
+                    prefix: prefix.into_iter().map(|(_, v)| expect_bound_sarg_value(v)).collect(),
                     lower: Bound::Included(v.clone()),
                     upper: Bound::Included(v),
                     delta,
@@ -609,7 +609,7 @@ impl From<IxScan> for PipelinedIxDeltaScanRange {
             } => Self {
                 table_id: schema.table_id,
                 index_id,
-                prefix: prefix.into_iter().map(|(_, v)| v).collect(),
+                prefix: prefix.into_iter().map(|(_, v)| expect_bound_sarg_value(v)).collect(),
                 lower,
                 upper,
                 delta,
@@ -791,7 +791,7 @@ impl From<IxScan> for PipelinedIxScanRange {
                     table_id: schema.table_id,
                     index_id,
                     limit,
-                    prefix: prefix.into_iter().map(|(_, v)| v).collect(),
+                    prefix: prefix.into_iter().map(|(_, v)| expect_bound_sarg_value(v)).collect(),
                     lower: Bound::Included(v.clone()),
                     upper: Bound::Included(v),
                 }
@@ -807,7 +807,7 @@ impl From<IxScan> for PipelinedIxScanRange {
                 table_id: schema.table_id,
                 index_id,
                 limit,
-                prefix: prefix.into_iter().map(|(_, v)| v).collect(),
+                prefix: prefix.into_iter().map(|(_, v)| expect_bound_sarg_value(v)).collect(),
                 lower,
                 upper,
             },
@@ -931,12 +931,12 @@ impl From<IxScan> for PipelinedIxScanEq {
     }
 }
 
-fn combine_prefix_and_last(prefix: Vec<(ColId, AlgebraicValue)>, last: AlgebraicValue) -> AlgebraicValue {
+fn combine_prefix_and_last(prefix: Vec<(ColId, SargValue)>, last: AlgebraicValue) -> AlgebraicValue {
     if prefix.is_empty() {
         last
     } else {
         let mut elems = Vec::with_capacity(prefix.len() + 1);
-        elems.extend(prefix.into_iter().map(|(_, v)| v));
+        elems.extend(prefix.into_iter().map(|(_, v)| expect_bound_sarg_value(v)));
         elems.push(last);
         AlgebraicValue::product(elems)
     }
