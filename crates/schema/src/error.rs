@@ -177,16 +177,10 @@ pub enum ValidationError {
         err_type: PrettyAlgebraicType,
     },
     #[error(
-        "lifecycle event {lifecycle:?} is claimed by used `{first}` and `{second}`; \
-         only one module in the dependency tree may declare each lifecycle"
+        "lifecycle event {lifecycle:?} is not permitted in component under namespace `{namespace}`; \
+         lifecycle reducers may only be declared in the root module"
     )]
-    ConflictingMountLifecycle {
-        lifecycle: Lifecycle,
-        /// Namespace path of the first claimant
-        first: String,
-        /// Namespace path of the second claimant
-        second: String,
-    },
+    LifecycleInComponent { lifecycle: Lifecycle, namespace: String },
     #[error("mount namespace `{namespace}` is {len} characters, which exceeds the 63-character limit")]
     NamespaceTooLong { namespace: RawIdentifier, len: usize },
 }

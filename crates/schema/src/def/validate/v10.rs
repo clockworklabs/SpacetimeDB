@@ -1,4 +1,3 @@
-use enum_map::EnumMap;
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::bsatn::Deserializer;
@@ -306,9 +305,6 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
             .combine_errors()
             .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
 
-    validate_no_lifecycle_conflicts(&lifecycle_reducers, &mounts)
-        .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
-
     let typespace_for_generate = typespace_for_generate.finish();
 
     Ok(ModuleDef {
@@ -331,7 +327,8 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
 }
 
 /// Validate that each mount's namespace is a valid identifier of at most 63 characters,
-/// and that no two mounts share the same namespace.
+/// that no two mounts share the same namespace, and that no mount declares lifecycle reducers
+/// (lifecycle reducers are only permitted in the root module).
 /// This function will inspect each sub-mount and recursively collect errors.
 fn validate_mounts(mounts: Vec<RawModuleMountV10>) -> Result<IndexMap<String, ModuleDef>> {
     let mut errors = vec![];
@@ -356,6 +353,14 @@ fn validate_mounts(mounts: Vec<RawModuleMountV10>) -> Result<IndexMap<String, Mo
         } else {
             match validate(mount.module) {
                 Ok(def) => {
+                    for (lifecycle, opt_id) in def.lifecycle_reducers_map() {
+                        if opt_id.is_some() {
+                            errors.push(ValidationError::LifecycleInComponent {
+                                lifecycle,
+                                namespace: mount.namespace.clone(),
+                            });
+                        }
+                    }
                     map.insert(mount.namespace, def);
                 }
                 Err(e) => errors.extend(e.into_iter()),
@@ -364,59 +369,6 @@ fn validate_mounts(mounts: Vec<RawModuleMountV10>) -> Result<IndexMap<String, Mo
     }
 
     ValidationErrors::add_extra_errors(Ok(map), errors)
-}
-
-/// Check that no two modules in the mount tree claim the same lifecycle reducer.
-///
-/// The host assigns exactly one reducer per lifecycle slot; if both the consumer
-/// and a mounted submodule (or two sibling mounts) declare `__init__` (etc.), the
-/// module must be rejected at publish time.
-fn validate_no_lifecycle_conflicts(
-    root_lifecycles: &EnumMap<Lifecycle, Option<ReducerId>>,
-    mounts: &IndexMap<String, ModuleDef>,
-) -> Result<()> {
-    let mut claimed_by: EnumMap<Lifecycle, Option<String>> = EnumMap::default();
-    let mut errors: Vec<ValidationError> = vec![];
-
-    for (lifecycle, opt_id) in root_lifecycles {
-        if opt_id.is_some() {
-            claimed_by[lifecycle] = Some("<root>".to_string());
-        }
-    }
-
-    collect_lifecycle_conflicts(mounts, "", &mut claimed_by, &mut errors);
-
-    ValidationErrors::add_extra_errors(Ok(()), errors)
-}
-
-fn collect_lifecycle_conflicts(
-    mounts: &IndexMap<String, ModuleDef>,
-    parent_path: &str,
-    claimed_by: &mut EnumMap<Lifecycle, Option<String>>,
-    errors: &mut Vec<ValidationError>,
-) {
-    for (ns, def) in mounts {
-        let path = if parent_path.is_empty() {
-            ns.clone()
-        } else {
-            format!("{parent_path}::{ns}")
-        };
-
-        for (lifecycle, opt_id) in def.lifecycle_reducers_map() {
-            if opt_id.is_some() {
-                match &claimed_by[lifecycle] {
-                    Some(prior) => errors.push(ValidationError::ConflictingMountLifecycle {
-                        lifecycle,
-                        first: prior.clone(),
-                        second: path.clone(),
-                    }),
-                    None => claimed_by[lifecycle] = Some(path.clone()),
-                }
-            }
-        }
-
-        collect_lifecycle_conflicts(def.mounts(), &path, claimed_by, errors);
-    }
 }
 
 /// Change the visibility of scheduled functions and lifecycle reducers to Internal.
@@ -2715,64 +2667,40 @@ mod tests {
     }
 
     #[test]
-    fn consumer_and_mount_same_lifecycle_is_rejected() {
-        // Build the consumer's sections using the builder, then add a Mounts section.
+    fn lifecycle_in_mount_is_rejected() {
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+                namespace: "auth".to_string(),
+                module: make_module_with_lifecycle(Lifecycle::Init),
+            }])],
+        };
+
+        let result: Result<ModuleDef> = raw.try_into();
+        expect_error_matching!(result, ValidationError::LifecycleInComponent { lifecycle, namespace } => {
+            lifecycle == &Lifecycle::Init && namespace == "auth"
+        });
+    }
+
+    #[test]
+    fn lifecycle_in_root_with_mount_is_ok() {
+        // Root declares Init; the mount has no lifecycle — this is valid.
         let consumer_raw = make_module_with_lifecycle(Lifecycle::Init);
         let mut sections = consumer_raw.sections;
         sections.push(RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
             namespace: "auth".to_string(),
-            module: make_module_with_lifecycle(Lifecycle::Init),
+            module: RawModuleDefV10::default(),
         }]));
 
         let result: Result<ModuleDef> = RawModuleDefV10 { sections }.try_into();
-        expect_error_matching!(result, ValidationError::ConflictingMountLifecycle { lifecycle, first, second } => {
-            lifecycle == &Lifecycle::Init && first == "<root>" && second == "auth"
-        });
+        assert!(
+            result.is_ok(),
+            "lifecycle in root with a lifecycle-free mount should be valid"
+        );
     }
 
     #[test]
-    fn two_sibling_mounts_same_lifecycle_is_rejected() {
-        let raw = RawModuleDefV10 {
-            sections: vec![RawModuleDefV10Section::Mounts(vec![
-                RawModuleMountV10 {
-                    namespace: "auth".to_string(),
-                    module: make_module_with_lifecycle(Lifecycle::OnConnect),
-                },
-                RawModuleMountV10 {
-                    namespace: "payments".to_string(),
-                    module: make_module_with_lifecycle(Lifecycle::OnConnect),
-                },
-            ])],
-        };
-
-        let result: Result<ModuleDef> = raw.try_into();
-        expect_error_matching!(result, ValidationError::ConflictingMountLifecycle { lifecycle, first, second } => {
-            lifecycle == &Lifecycle::OnConnect && first == "auth" && second == "payments"
-        });
-    }
-
-    #[test]
-    fn different_lifecycles_across_mounts_is_ok() {
-        let raw = RawModuleDefV10 {
-            sections: vec![RawModuleDefV10Section::Mounts(vec![
-                RawModuleMountV10 {
-                    namespace: "auth".to_string(),
-                    module: make_module_with_lifecycle(Lifecycle::Init),
-                },
-                RawModuleMountV10 {
-                    namespace: "payments".to_string(),
-                    module: make_module_with_lifecycle(Lifecycle::OnConnect),
-                },
-            ])],
-        };
-
-        let result: Result<ModuleDef> = raw.try_into();
-        assert!(result.is_ok(), "different lifecycles across mounts should be valid");
-    }
-
-    #[test]
-    fn nested_mount_conflicts_with_root_lifecycle() {
-        // consumer → auth → baz: consumer claims Init, baz also claims Init.
+    fn lifecycle_in_nested_mount_is_rejected() {
+        // Root mounts auth; auth mounts baz; baz declares a lifecycle. Should be rejected.
         let auth = RawModuleDefV10 {
             sections: vec![RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
                 namespace: "baz".to_string(),
@@ -2780,16 +2708,16 @@ mod tests {
             }])],
         };
 
-        let consumer_raw = make_module_with_lifecycle(Lifecycle::Init);
-        let mut sections = consumer_raw.sections;
-        sections.push(RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
-            namespace: "auth".to_string(),
-            module: auth,
-        }]));
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+                namespace: "auth".to_string(),
+                module: auth,
+            }])],
+        };
 
-        let result: Result<ModuleDef> = RawModuleDefV10 { sections }.try_into();
-        expect_error_matching!(result, ValidationError::ConflictingMountLifecycle { lifecycle, first, second } => {
-            lifecycle == &Lifecycle::Init && first == "<root>" && second == "auth::baz"
+        let result: Result<ModuleDef> = raw.try_into();
+        expect_error_matching!(result, ValidationError::LifecycleInComponent { lifecycle, namespace } => {
+            lifecycle == &Lifecycle::Init && namespace == "baz"
         });
     }
 }
