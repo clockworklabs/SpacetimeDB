@@ -253,8 +253,8 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool, native_aot: b
     // - JIT (wasi-experimental): AppBundle/StdbModule.wasm
     // - AOT (NativeAOT-LLVM): publish/StdbModule.wasm
     let (target_framework, subdir) = match &build_path {
-        CsharpBuildPath::Net10Aot => ("net10.0", "publish"),
-        CsharpBuildPath::Net8Aot => ("net8.0", "publish"),
+        CsharpBuildPath::Net10Aot => ("net10.0", "native"),
+        CsharpBuildPath::Net8Aot => ("net8.0", "native"),
         CsharpBuildPath::Net8Jit => ("net8.0", "AppBundle"),
     };
 
@@ -288,10 +288,10 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool, native_aot: b
         )),
         // NativeAOT-LLVM outputs to 'native' subdirectory instead of 'publish'
         project_path.join(format!(
-            "bin/{config_name}/{target_framework}/wasi-wasm/native/StdbModule.wasm"
+            "bin/{config_name}/{target_framework}/wasi-wasm/{subdir}/StdbModule.wasm"
         )),
         project_path.join(format!(
-            "bin~/{config_name}/{target_framework}/wasi-wasm/native/StdbModule.wasm"
+            "bin~/{config_name}/{target_framework}/wasi-wasm/{subdir}/StdbModule.wasm"
         )),
         // Also check for raw wasm output without wasi-wasm RID folder (NativeAOT-LLVM sometimes does this)
         project_path.join(format!("bin/{config_name}/{target_framework}/native/StdbModule.wasm")),

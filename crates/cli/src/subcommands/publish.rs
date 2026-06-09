@@ -553,16 +553,6 @@ async fn execute_publish_configs<'a>(
             println!("(JS) Skipping build. Instead we are publishing {}", path.display());
             (path.clone(), "Js")
         } else {
-            // Set EXPERIMENTAL_WASM_AOT environment variable if native_aot is enabled
-            // This is read by the C# build system (MSBuild) and by csharp.rs to determine output paths
-            if native_aot {
-                println!("Using NativeAOT-LLVM compilation (experimental)");
-                // SAFETY: We are single-threaded at this point and no other code is reading
-                // this environment variable concurrently.
-                unsafe {
-                    env::set_var("EXPERIMENTAL_WASM_AOT", "1");
-                }
-            }
             // Pass explicit dotnet version to C# build system if specified
             if let Ok(Some(version)) = dotnet_version.as_ref() {
                 // SAFETY: We are single-threaded at this point and no other code is reading
