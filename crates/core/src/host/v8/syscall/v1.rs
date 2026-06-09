@@ -532,6 +532,7 @@ pub(super) fn call_call_view(
         sender,
         timestamp: _,
         args: view_args,
+        arg_id: _,
     } = op;
     // Serialize the arguments.
     let view_id = serialize_to_js(scope, &view_id)?;

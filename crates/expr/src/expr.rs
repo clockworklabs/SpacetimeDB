@@ -13,6 +13,8 @@ pub struct ParamId(pub u16);
 impl ParamId {
     /// The only parameter slot currently supported by SQL syntax: `:sender`.
     pub const SENDER: Self = Self(0);
+    /// Internal parameter slot used to bind the `st_view_arg.id` for `:sender`.
+    pub const SENDER_VIEW_ARG: Self = Self(1);
 }
 
 /// Runtime parameter bindings for a parameterized query plan.
@@ -29,6 +31,12 @@ impl BindEnv {
     pub fn sender(sender: Identity) -> Self {
         Self {
             values: vec![sender.into()],
+        }
+    }
+
+    pub fn sender_with_view_arg(sender: Identity, sender_view_arg: impl Into<AlgebraicValue>) -> Self {
+        Self {
+            values: vec![sender.into(), sender_view_arg.into()],
         }
     }
 

@@ -136,6 +136,13 @@ impl ProjectPlan {
             Self::Name(plan, label, pos) => Self::Name(plan.bind_params(bind_env), label, pos),
         }
     }
+
+    /// Returns whether this plan contains a runtime parameter.
+    pub fn requires_param(&self, id: ParamId) -> bool {
+        match self {
+            Self::None(plan) | Self::Name(plan, ..) => plan.requires_param(id),
+        }
+    }
 }
 
 /// Physical plans always terminate with a projection.
@@ -173,6 +180,15 @@ pub enum ProjectListPlan {
 }
 
 impl ProjectListPlan {
+    /// Returns whether this plan contains a runtime parameter.
+    pub fn requires_param(&self, id: ParamId) -> bool {
+        match self {
+            Self::Name(plans) => plans.iter().any(|plan| plan.requires_param(id)),
+            Self::List(plans, _) | Self::Agg(plans, _) => plans.iter().any(|plan| plan.requires_param(id)),
+            Self::Limit(plan, _) => plan.requires_param(id),
+        }
+    }
+
     /// Replace runtime parameters with bound values.
     pub fn bind_params(self, bind_env: &BindEnv) -> Self {
         match self {
@@ -358,6 +374,15 @@ impl PhysicalPlan {
             ok = ok || f(plan);
         });
         ok
+    }
+
+    /// Returns whether this plan contains a runtime parameter.
+    pub fn requires_param(&self, id: ParamId) -> bool {
+        self.any(&|plan| match plan {
+            Self::IxScan(scan, _) => scan.arg.requires_param(id),
+            Self::Filter(_, expr) => expr.requires_param(id),
+            Self::TableScan(..) | Self::IxJoin(..) | Self::HashJoin(..) | Self::NLJoin(..) => false,
+        })
     }
 
     /// Applies `f` recursively to all subplans
@@ -623,8 +648,8 @@ impl PhysicalPlan {
         Ok(optimized)
     }
 
-    /// If a view is not anonymous, its backing table has a `sender` column.
-    /// This column tracks which rows belong to which caller.
+    /// If a view is not anonymous, its backing table has an `arg_id` column.
+    /// This column tracks which rows belong to which argument tuple.
     ///
     /// As a result, queries over such views cannot read the entire backing table.
     /// They must only select the rows corresponding to the caller of the query.
@@ -637,7 +662,7 @@ impl PhysicalPlan {
     ///
     /// becomes
     /// ```sql
-    /// SELECT * FROM my_view WHERE sender = :sender
+    /// SELECT * FROM my_view WHERE arg_id = <arg id for :sender>
     /// ```
     fn expand_views(self) -> Self {
         match self {
@@ -645,7 +670,7 @@ impl PhysicalPlan {
                 Box::new(Self::TableScan(scan, label)),
                 PhysicalExpr::BinOp(
                     BinOp::Eq,
-                    Box::new(PhysicalExpr::Param(ParamId::SENDER)),
+                    Box::new(PhysicalExpr::Param(ParamId::SENDER_VIEW_ARG)),
                     Box::new(PhysicalExpr::Field(TupleField {
                         label,
                         label_pos: None,
@@ -1314,6 +1339,13 @@ pub enum Sarg {
 }
 
 impl Sarg {
+    pub fn requires_param(&self, id: ParamId) -> bool {
+        match self {
+            Self::Eq(_, value) => value.requires_param(id),
+            Self::Range(..) => false,
+        }
+    }
+
     pub fn bind_params(self, bind_env: &BindEnv) -> Self {
         match self {
             Self::Eq(col, value) => Self::Eq(col, SargValue::Literal(value.bind_params(bind_env))),
@@ -1330,6 +1362,10 @@ pub enum SargValue {
 }
 
 impl SargValue {
+    pub fn requires_param(&self, id: ParamId) -> bool {
+        matches!(self, Self::Param(param_id) if *param_id == id)
+    }
+
     pub fn bind_params(self, bind_env: &BindEnv) -> AlgebraicValue {
         match self {
             Self::Literal(value) => value,
@@ -1463,6 +1499,14 @@ impl PhysicalExpr {
             }
             _ => {}
         }
+    }
+
+    pub fn requires_param(&self, id: ParamId) -> bool {
+        let mut found = false;
+        self.visit(&mut |expr| {
+            found = found || matches!(expr, Self::Param(param_id) if *param_id == id);
+        });
+        found
     }
 
     /// Walks the expression tree and calls `f` on every subexpression

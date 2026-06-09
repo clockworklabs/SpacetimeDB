@@ -17,6 +17,7 @@ use crate::subscription::tx::DeltaTx;
 use anyhow::anyhow;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::traits::IsolationLevel;
+use spacetimedb_expr::expr::{BindEnv, CollectViews};
 use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -96,9 +97,22 @@ fn run_inner<I: WasmInstance>(
     match stmt {
         Statement::Select(stmt) => {
             // Materialize views and downgrade to a read-only transaction
-            let (tx, trapped) = match instance {
+            let (mut tx, trapped) = match instance {
                 Some(instance) => ModuleHost::materialize_views(tx, instance, &stmt, auth.caller(), Workload::Sql)?,
                 None => (tx, false),
+            };
+            let mut view_ids = Default::default();
+            stmt.collect_views(&mut view_ids);
+            let requires_sender_view_arg = view_ids
+                .into_iter()
+                .map(|view_id| tx.lookup_st_view(view_id))
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .any(|view| !view.is_anonymous);
+            let bind_env = if requires_sender_view_arg {
+                BindEnv::sender_with_view_arg(auth.caller(), tx.view_arg_for_sender(auth.caller())?)
+            } else {
+                BindEnv::sender(auth.caller())
             };
 
             let (tx_data, tx_metrics_mut, tx) = db.commit_tx_downgrade(tx, Workload::Sql);
@@ -118,7 +132,7 @@ fn run_inner<I: WasmInstance>(
             });
 
             // Evaluate the query
-            let rows = execute_select_stmt(&auth, stmt, &DeltaTx::from(&*tx), &mut metrics, |plan| {
+            let rows = execute_select_stmt(&auth, stmt, &DeltaTx::from(&*tx), &bind_env, &mut metrics, |plan| {
                 check_row_limit(
                     &[&plan],
                     &db,

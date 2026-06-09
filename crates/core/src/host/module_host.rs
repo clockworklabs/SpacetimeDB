@@ -1079,6 +1079,7 @@ pub struct CallViewParams {
     /// However for atomic view update after a reducer call,
     /// this will be the caller of the reducer.
     pub caller: Identity,
+    pub arg_id: ArgId,
     pub sender: Option<Identity>,
     pub args: ArgsTuple,
     pub row_type: AlgebraicTypeRef,
@@ -2883,15 +2884,20 @@ impl ModuleHost {
             let view_id = st_view_row.view_id;
             let table_id = st_view_row.table_id.ok_or(ViewCallError::TableDoesNotExist(view_id))?;
             let is_anonymous = st_view_row.is_anonymous;
-            let sender = if is_anonymous { None } else { Some(caller) };
+            let (arg_id, sender) = if is_anonymous {
+                (ArgId::SENTINEL, None)
+            } else {
+                (tx.view_arg_for_sender(caller)?, Some(caller))
+            };
             let is_materialized = if is_anonymous {
                 tx.is_anonymous_view_materialized(view_id)?
             } else {
-                tx.is_view_materialized(view_id, ArgId::SENTINEL, caller)?
+                tx.is_view_materialized(view_id, arg_id)?
             };
             if !is_materialized {
-                let (res, trapped) =
-                    Self::call_view(instance, tx, &view_name, view_id, table_id, Nullary, caller, sender)?;
+                let (res, trapped) = Self::call_view(
+                    instance, tx, &view_name, view_id, table_id, Nullary, caller, arg_id, sender,
+                )?;
                 tx = res.tx;
                 if trapped {
                     return Ok((tx, true));
@@ -2899,11 +2905,11 @@ impl ModuleHost {
             }
             // If this is a sql call, we only update this view's "last called" timestamp
             if let Workload::Sql = workload {
-                tx.update_view_timestamp(view_id, ArgId::SENTINEL, caller)?;
+                tx.update_view_timestamp(view_id, arg_id, caller)?;
             }
             // If this is a subscribe call, we also increment this view's subscriber count
             if let Workload::Subscribe = workload {
-                tx.subscribe_view(view_id, ArgId::SENTINEL, caller)?;
+                tx.subscribe_view(view_id, arg_id, caller)?;
             }
         }
         Ok((tx, false))
@@ -2939,6 +2945,7 @@ impl ModuleHost {
         let mut abi_duration = Duration::ZERO;
         let mut trapped = false;
         for view_call in tx.views_for_refresh().cloned().collect::<Vec<_>>() {
+            let arg_id = view_call.arg_id;
             let sender = view_call.sender;
             let resolved = match resolve_view_for_refresh(&tx, module_def, &view_call) {
                 Ok(resolved) => resolved,
@@ -2969,6 +2976,7 @@ impl ModuleHost {
                 table_id,
                 view_def.fn_ptr,
                 caller,
+                arg_id,
                 sender,
                 args,
                 view_def.product_type_ref,
@@ -3008,6 +3016,7 @@ impl ModuleHost {
         table_id: TableId,
         args: FunctionArgs,
         caller: Identity,
+        arg_id: ArgId,
         sender: Option<Identity>,
     ) -> Result<(ViewCallResult, bool), ViewCallError> {
         Self::call_view_at(
@@ -3018,6 +3027,7 @@ impl ModuleHost {
             table_id,
             args,
             caller,
+            arg_id,
             sender,
             Timestamp::now(),
         )
@@ -3031,6 +3041,7 @@ impl ModuleHost {
         table_id: TableId,
         args: FunctionArgs,
         caller: Identity,
+        arg_id: ArgId,
         sender: Option<Identity>,
         timestamp: Timestamp,
     ) -> Result<(ViewCallResult, bool), ViewCallError> {
@@ -3043,7 +3054,7 @@ impl ModuleHost {
             .map_err(InvalidViewArguments)?;
 
         Ok(Self::call_view_inner(
-            instance, tx, view_name, view_id, table_id, fn_ptr, caller, sender, args, row_type, timestamp,
+            instance, tx, view_name, view_id, table_id, fn_ptr, caller, arg_id, sender, args, row_type, timestamp,
         ))
     }
 
@@ -3055,6 +3066,7 @@ impl ModuleHost {
         table_id: TableId,
         fn_ptr: ViewFnPtr,
         caller: Identity,
+        arg_id: ArgId,
         sender: Option<Identity>,
         args: ArgsTuple,
         row_type: AlgebraicTypeRef,
@@ -3068,6 +3080,7 @@ impl ModuleHost {
             table_id,
             fn_ptr,
             caller,
+            arg_id,
             sender,
             args,
             row_type,
@@ -3274,7 +3287,19 @@ impl ModuleHost {
             table_name,
             requires_sender_binding,
         ) = compile_subscription(query, &schema_tx, auth)?;
-        let bind_env = BindEnv::for_sender_binding(requires_sender_binding, auth.caller());
+        let requires_sender_view_arg = plans.iter().any(|plan| plan.reads_from_view(false));
+        let bind_env = if requires_sender_binding {
+            if requires_sender_view_arg {
+                let arg_id = db
+                    .lookup_view_arg_for_sender(tx, auth.caller())?
+                    .unwrap_or(ArgId::SENTINEL);
+                BindEnv::sender_with_view_arg(auth.caller(), arg_id)
+            } else {
+                BindEnv::sender(auth.caller())
+            }
+        } else {
+            BindEnv::empty()
+        };
 
         // Optimize each fragment.
         let optimized = plans

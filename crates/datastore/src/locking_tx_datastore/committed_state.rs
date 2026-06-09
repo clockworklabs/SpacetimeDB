@@ -35,7 +35,7 @@ use core::{convert::Infallible, ops::RangeBounds};
 use spacetimedb_data_structures::map::{IntMap, IntSet};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StTableType, Identity};
-use spacetimedb_primitives::{ColList, IndexId, TableId, ViewId};
+use spacetimedb_primitives::{ArgId, ColList, IndexId, TableId, ViewId};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
@@ -304,6 +304,8 @@ impl CommittedState {
         self.create_table(ST_VIEW_COLUMN_ID, schemas[ST_VIEW_COLUMN_IDX].clone());
         self.create_table(ST_VIEW_SUB_ID, schemas[ST_VIEW_SUB_IDX].clone());
         self.create_table(ST_VIEW_ARG_ID, schemas[ST_VIEW_ARG_IDX].clone());
+        self.ephemeral_tables.insert(ST_VIEW_SUB_ID);
+        self.ephemeral_tables.insert(ST_VIEW_ARG_ID);
 
         self.create_table(ST_EVENT_TABLE_ID, schemas[ST_EVENT_TABLE_IDX].clone());
         self.create_table(ST_TABLE_ACCESSOR_ID, schemas[ST_TABLE_ACCESSOR_IDX].clone());
@@ -467,8 +469,8 @@ impl CommittedState {
         tx_data.has_rows_or_connect_disconnect(ctx.reducer_context().map(|rcx| &rcx.name))
     }
 
-    pub(super) fn drop_view_from_read_sets(&mut self, view_id: ViewId, sender: Option<Identity>) {
-        self.read_sets.remove_view(view_id, sender)
+    pub(super) fn drop_view_from_read_sets(&mut self, view_id: ViewId, arg_id: Option<ArgId>) {
+        self.read_sets.remove_view(view_id, arg_id)
     }
 
     pub(super) fn merge(&mut self, tx_state: TxState, read_sets: ViewReadSets, ctx: &ExecutionContext) -> TxData {

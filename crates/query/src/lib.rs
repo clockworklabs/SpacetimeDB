@@ -78,11 +78,11 @@ pub fn execute_select_stmt<Tx: Datastore + DeltaStore>(
     auth: &AuthCtx,
     stmt: ProjectList,
     tx: &Tx,
+    bind_env: &BindEnv,
     metrics: &mut ExecutionMetrics,
     check_row_limit: impl Fn(ProjectListPlan) -> Result<ProjectListPlan>,
 ) -> Result<Vec<ProductValue>> {
-    let bind_env = BindEnv::sender(auth.caller());
-    let plan = compile_select_list(stmt).optimize(auth)?.bind_params(&bind_env);
+    let plan = compile_select_list(stmt).optimize(auth)?.bind_params(bind_env);
     let plan = check_row_limit(plan)?;
     let plan = ProjectListExecutor::from(plan);
     let mut rows = vec![];

@@ -634,7 +634,7 @@ impl ModuleSubscriptions {
         let hash = QueryHash::from_string(&sql, auth.caller(), false);
         let hash_with_param = QueryHash::from_string(&sql, auth.caller(), true);
 
-        let (mut_tx, _) = self.begin_mut_tx(Workload::Subscribe);
+        let (mut mut_tx, _) = self.begin_mut_tx(Workload::Subscribe);
 
         let existing_query = {
             let guard = self.subscriptions.read();
@@ -644,7 +644,7 @@ impl ModuleSubscriptions {
         let query = return_on_err_with_sql_bool!(
             existing_query.map(Ok).unwrap_or_else(|| compile_query_with_hashes(
                 &auth,
-                &*mut_tx,
+                &mut mut_tx,
                 &sql,
                 hash,
                 hash_with_param
@@ -1035,7 +1035,7 @@ impl ModuleSubscriptions {
         }
 
         // We always get the db lock before the subscription lock to avoid deadlocks.
-        let (mut_tx, _tx_offset) = self.begin_mut_tx(Workload::Subscribe);
+        let (mut mut_tx, _tx_offset) = self.begin_mut_tx(Workload::Subscribe);
 
         let compile_timer = metrics.compilation_time.start_timer();
 
@@ -1051,7 +1051,7 @@ impl ModuleSubscriptions {
                 super::subscription::get_all(
                     |relational_db, tx| relational_db.get_all_tables_mut(tx).map(|schemas| schemas.into_iter()),
                     &self.relational_db,
-                    &*mut_tx,
+                    &mut mut_tx,
                     &auth,
                 )?
                 .into_iter()
@@ -1072,12 +1072,12 @@ impl ModuleSubscriptions {
                     }
                     _ => {
                         plans.push(Arc::new(
-                            compile_query_with_hashes(&auth, &*mut_tx, sql, hash, hash_with_param).map_err(|err| {
-                                DBError::WithSql {
+                            compile_query_with_hashes(&auth, &mut mut_tx, sql, hash, hash_with_param).map_err(
+                                |err| DBError::WithSql {
                                     error: Box::new(DBError::Other(err.into())),
                                     sql: sql.into(),
-                                }
-                            })?,
+                                },
+                            )?,
                         ));
                         new_queries += 1;
                     }
@@ -1792,7 +1792,16 @@ impl ModuleSubscriptions {
         let mut view_ids = HashSet::new();
         view_collector.collect_views(&mut view_ids);
         for view_id in view_ids {
-            tx.unsubscribe_view(view_id, ArgId::SENTINEL, sender)?;
+            let st_view = tx.lookup_st_view(view_id)?;
+            let arg_id = if st_view.is_anonymous {
+                ArgId::SENTINEL
+            } else {
+                let Some(arg_id) = tx.lookup_view_arg_for_sender(sender)? else {
+                    continue;
+                };
+                arg_id
+            };
+            tx.unsubscribe_view(view_id, arg_id, sender)?;
         }
         Ok(())
     }
@@ -2449,7 +2458,9 @@ mod tests {
         subs.remove_subscriber(client_id_for_b);
 
         // Delete the backing row and verify the surviving subscriber still receives the view delta.
-        let _ = commit_tx(&db, &subs, [(view_table_id, product![id_for_a, 7_u8])], [])?;
+        let sender_arg_id = with_read_only(&db, |tx| db.lookup_view_arg_for_sender(tx, id_for_a))?
+            .expect("seeded sender view arg should exist");
+        let _ = commit_tx(&db, &subs, [(view_table_id, product![sender_arg_id, 7_u8])], [])?;
 
         let schema = ProductType::from([AlgebraicType::U8]);
         assert_v2_tx_update_for_table(

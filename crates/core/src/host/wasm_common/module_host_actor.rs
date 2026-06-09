@@ -47,7 +47,7 @@ use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{bsatn, http as st_http, ConnectionId, Hash, ProductType, RawModuleDef, Timestamp};
-use spacetimedb_primitives::{HttpHandlerId, ProcedureId, TableId, ViewFnPtr, ViewId};
+use spacetimedb_primitives::{ArgId, HttpHandlerId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, Deserialize, ProductValue, Typespace, WithTypespace};
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
@@ -1309,6 +1309,7 @@ impl InstanceCommon {
             table_id,
             fn_ptr,
             caller,
+            arg_id,
             sender,
             args,
             row_type,
@@ -1326,6 +1327,7 @@ impl InstanceCommon {
                         view_id,
                         table_id,
                         fn_ptr,
+                        arg_id,
                         sender: &sender,
                         args: &args,
                         timestamp,
@@ -1366,7 +1368,11 @@ impl InstanceCommon {
             (Ok(raw), sender) => {
                 // This is wrapped in a closure to simplify error handling.
                 let outcome: Result<ViewOutcome, anyhow::Error> = (|| {
-                    let view_call = ViewCallInfo { view_id, sender };
+                    let view_call = ViewCallInfo {
+                        view_id,
+                        arg_id,
+                        sender,
+                    };
                     let result = ViewResult::from_return_data(raw).context("Error parsing view result")?;
                     let typespace = self.info.module_def.typespace();
                     let row_product_type = typespace
@@ -1528,6 +1534,7 @@ fn collect_subscribed_view_calls(
                 table_id,
                 fn_ptr: *fn_ptr,
                 caller: owner_identity,
+                arg_id: ArgId::SENTINEL,
                 sender: None,
                 args: ArgsTuple::nullary(),
                 row_type: *product_type_ref,
@@ -1543,6 +1550,7 @@ fn collect_subscribed_view_calls(
                 table_id,
                 fn_ptr: *fn_ptr,
                 caller: owner_identity,
+                arg_id: sub.arg_id,
                 sender: Some(sub.identity.into()),
                 args: ArgsTuple::nullary(),
                 row_type: *product_type_ref,
@@ -1776,6 +1784,7 @@ pub struct ViewOp<'a> {
     pub table_id: TableId,
     pub fn_ptr: ViewFnPtr,
     pub args: &'a ArgsTuple,
+    pub arg_id: ArgId,
     pub sender: &'a Identity,
     pub timestamp: Timestamp,
 }
@@ -1792,6 +1801,7 @@ impl InstanceOp for ViewOp<'_> {
     fn call_type(&self) -> FuncCallType {
         FuncCallType::View(ViewCallInfo {
             view_id: self.view_id,
+            arg_id: self.arg_id,
             sender: Some(*self.sender),
         })
     }
@@ -1820,6 +1830,7 @@ impl InstanceOp for AnonymousViewOp<'_> {
     fn call_type(&self) -> FuncCallType {
         FuncCallType::View(ViewCallInfo {
             view_id: self.view_id,
+            arg_id: ArgId::SENTINEL,
             sender: None,
         })
     }

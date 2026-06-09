@@ -5,9 +5,8 @@ use crate::error::{DBError, SubscriptionError};
 use crate::sql::ast::SchemaViewer;
 use once_cell::sync::Lazy;
 use regex::Regex;
-use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
-use spacetimedb_execution::Datastore;
-use spacetimedb_expr::expr::BindEnv;
+use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+use spacetimedb_expr::expr::{BindEnv, ParamId};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_subscription::SubscriptionPlan;
 
@@ -39,9 +38,9 @@ pub fn compile_read_only_query(auth: &AuthCtx, tx: &Tx, input: &str) -> Result<P
 }
 
 /// Compile a string into a single read-only query with externally-computed hashes.
-pub fn compile_query_with_hashes<Tx: Datastore + StateView>(
+pub fn compile_query_with_hashes(
     auth: &AuthCtx,
-    tx: &Tx,
+    tx: &mut MutTxId,
     input: &str,
     hash: QueryHash,
     hash_with_param: QueryHash,
@@ -50,9 +49,18 @@ pub fn compile_query_with_hashes<Tx: Datastore + StateView>(
         return Err(SubscriptionError::Empty.into());
     }
 
-    let tx = SchemaViewer::new(tx, auth);
-    let (plans, requires_sender_binding) = SubscriptionPlan::compile(input, &tx, auth)?;
-    let bind_env = BindEnv::for_sender_binding(requires_sender_binding, auth.caller());
+    let schema_tx = SchemaViewer::new(&*tx, auth);
+    let (plans, requires_sender_binding) = SubscriptionPlan::compile(input, &schema_tx, auth)?;
+    let requires_sender_view_arg = plans.iter().any(|plan| plan.requires_param(ParamId::SENDER_VIEW_ARG));
+    let bind_env = if requires_sender_binding {
+        if requires_sender_view_arg {
+            BindEnv::sender_with_view_arg(auth.caller(), tx.view_arg_for_sender(auth.caller())?)
+        } else {
+            BindEnv::sender(auth.caller())
+        }
+    } else {
+        BindEnv::empty()
+    };
 
     if auth.bypass_rls() || requires_sender_binding {
         return Ok(Plan::new(plans, hash_with_param, input.to_owned(), bind_env));

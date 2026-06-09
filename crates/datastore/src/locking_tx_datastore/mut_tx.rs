@@ -12,8 +12,9 @@ use crate::{
     error::ViewError,
     system_tables::{
         system_tables, ConnectionIdViaU128, IdentityViaU256, StConnectionCredentialsFields, StConnectionCredentialsRow,
-        StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow, StViewSubFields, StViewSubRow,
-        ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID, ST_VIEW_SUB_ID,
+        StViewArgFields, StViewArgRow, StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow,
+        StViewSubFields, StViewSubRow, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_ARG_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID,
+        ST_VIEW_PARAM_ID, ST_VIEW_SUB_ID,
     },
 };
 use crate::{
@@ -50,8 +51,11 @@ use spacetimedb_primitives::{
     col_list, ArgId, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
 };
 use spacetimedb_sats::{
-    bsatn::to_writer, memory_usage::MemoryUsage, raw_identifier::RawIdentifier, ser::Serialize, AlgebraicValue,
-    ProductType, ProductValue,
+    bsatn::{to_writer, ToBsatn},
+    memory_usage::MemoryUsage,
+    raw_identifier::RawIdentifier,
+    ser::Serialize,
+    AlgebraicValue, ProductType, ProductValue,
 };
 use spacetimedb_schema::{
     def::{ModuleDef, ViewColumnDef, ViewDef, ViewParamDef},
@@ -79,6 +83,7 @@ use std::{
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ViewCallInfo {
     pub view_id: ViewId,
+    pub arg_id: ArgId,
     pub sender: Option<Identity>,
 }
 
@@ -122,10 +127,10 @@ impl ViewReadSets {
         self.replacements.insert(call);
     }
 
-    /// Removes keys for `view_id` from the read set
-    pub fn remove_view(&mut self, view_id: ViewId, sender: Option<Identity>) {
+    /// Removes keys for `view_id` from the read set, optionally filtering by `arg_id`.
+    pub fn remove_view(&mut self, view_id: ViewId, arg_id: Option<ArgId>) {
         self.tables.retain(|_, readset| {
-            readset.remove_view(view_id, sender);
+            readset.remove_view(view_id, arg_id);
             !readset.is_empty()
         });
     }
@@ -212,11 +217,10 @@ impl TableReadSet {
         self.table_scans.is_empty() && self.index_reads.is_empty()
     }
 
-    /// Removes keys for `view_id` from the read set, optionally filtering by `sender`
-    fn remove_view(&mut self, view_id: ViewId, sender: Option<Identity>) {
-        let matches_call = |call: &ViewCallInfo| {
-            call.view_id == view_id && sender.as_ref().is_none_or(|s| call.sender.as_ref() == Some(s))
-        };
+    /// Removes keys for `view_id` from the read set, optionally filtering by `arg_id`.
+    fn remove_view(&mut self, view_id: ViewId, arg_id: Option<ArgId>) {
+        let matches_call =
+            |call: &ViewCallInfo| call.view_id == view_id && arg_id.as_ref().is_none_or(|id| call.arg_id == *id);
 
         // Remove from table_scans
         self.table_scans.retain(|call| !matches_call(call));
@@ -440,10 +444,10 @@ impl MutTxId {
         self.committed_state_write_lock.drop_view_from_read_sets(view_id, None)
     }
 
-    /// Removes a specific view call from the committed read set.
-    pub fn drop_view_with_sender_from_committed_read_set(&mut self, view_id: ViewId, sender: Identity) {
+    /// Removes a specific argument materialization for `view_id` from the committed read set.
+    pub fn drop_view_arg_from_committed_read_set(&mut self, view_id: ViewId, arg_id: ArgId) {
         self.committed_state_write_lock
-            .drop_view_from_read_sets(view_id, Some(sender))
+            .drop_view_from_read_sets(view_id, Some(arg_id))
     }
 }
 
@@ -2320,13 +2324,73 @@ impl<'a, I: Iterator<Item = RowRef<'a>>> Iterator for FilterDeleted<'a, I> {
 }
 
 impl MutTxId {
-    /// Does this caller have an entry for `view_id` in `st_view_sub`?
-    pub fn is_view_materialized(&self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<bool> {
-        use StViewSubFields::*;
-        let sender = IdentityViaU256(sender);
-        let cols = col_list![ViewId, ArgId, Identity];
-        let value = AlgebraicValue::product([view_id.into(), arg_id.into(), sender.into()]);
-        Ok(self.iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?.next().is_some())
+    /// Returns the canonical argument bytes for a sender-scoped view call.
+    pub fn view_arg_bytes_for_sender(sender: Identity) -> Result<Box<[u8]>> {
+        ProductValue::from_iter([sender.into()])
+            .to_bsatn_vec()
+            .map(Vec::into_boxed_slice)
+            .map_err(|_| ViewError::SerializeArgs.into())
+    }
+
+    /// Gets or creates the `st_view_arg` row for a sender-scoped view call.
+    pub fn view_arg_for_sender(&mut self, sender: Identity) -> Result<ArgId> {
+        let bytes = Self::view_arg_bytes_for_sender(sender)?;
+        self.view_arg_for_bytes(bytes)
+    }
+
+    /// Lookup the `st_view_arg` row for a sender-scoped view call.
+    pub fn lookup_view_arg_for_sender(&self, sender: Identity) -> Result<Option<ArgId>> {
+        let bytes = Self::view_arg_bytes_for_sender(sender)?;
+        Ok(self.lookup_st_view_arg_by_bytes(&bytes)?.map(|row| ArgId(row.id)))
+    }
+
+    /// Gets or creates the `st_view_arg` row for a serialized argument tuple.
+    pub fn view_arg_for_bytes(&mut self, bytes: Box<[u8]>) -> Result<ArgId> {
+        if let Some(row) = self.lookup_st_view_arg_by_bytes(&bytes)? {
+            return Ok(ArgId(row.id));
+        }
+
+        let arg_id = self.next_view_arg_id()?;
+        self.insert_via_serialize_bsatn(
+            ST_VIEW_ARG_ID,
+            &StViewArgRow {
+                id: arg_id.into(),
+                bytes,
+            },
+        )?;
+        Ok(arg_id)
+    }
+
+    fn next_view_arg_id(&self) -> Result<ArgId> {
+        let max_id = self.iter(ST_VIEW_ARG_ID)?.try_fold(0u64, |max_id, row_ref| {
+            StViewArgRow::try_from(row_ref).map(|row| max_id.max(row.id))
+        })?;
+        max_id
+            .checked_add(1)
+            .map(ArgId)
+            .filter(|id| !id.is_sentinel())
+            .ok_or_else(|| anyhow::anyhow!("unable to allocate st_view_arg id").into())
+    }
+
+    /// Lookup a `st_view_arg` row by its serialized argument tuple.
+    pub fn lookup_st_view_arg_by_bytes(&self, bytes: &[u8]) -> Result<Option<StViewArgRow>> {
+        let value = AlgebraicValue::Bytes(bytes.to_vec().into_boxed_slice());
+        self.iter_by_col_eq(ST_VIEW_ARG_ID, StViewArgFields::Bytes, &value)?
+            .next()
+            .map(StViewArgRow::try_from)
+            .transpose()
+    }
+
+    /// Does any `st_view_sub` row exist for this materialized argument tuple?
+    pub fn is_view_materialized(&self, view_id: ViewId, arg_id: ArgId) -> Result<bool> {
+        let cols = StViewSubFields::ViewId;
+        let value = view_id.into();
+        for row_ref in self.iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)? {
+            if StViewSubRow::try_from(row_ref)?.arg_id == arg_id {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     /// Does any `st_view_sub` row exist for this anonymous view?
@@ -2461,7 +2525,7 @@ impl MutTxId {
         let mut cleaned_count = 0;
 
         // Collect all expired views from st_view_sub
-        let expired_items: Vec<(ViewId, Identity, RowPointer)> = self
+        let expired_items: Vec<(ViewId, ArgId, RowPointer)> = self
             .iter_by_col_eq(
                 ST_VIEW_SUB_ID,
                 StViewSubFields::HasSubscribers,
@@ -2471,7 +2535,7 @@ impl MutTxId {
                 let row = StViewSubRow::try_from(row_ref).expect("Failed to deserialize st_view_sub row");
 
                 if !row.has_subscribers && row.num_subscribers == 0 && row.last_called.0 < expiration_threshold {
-                    Some((row.view_id, row.identity.into(), row_ref.pointer()))
+                    Some((row.view_id, row.arg_id, row_ref.pointer()))
                 } else {
                     None
                 }
@@ -2482,7 +2546,7 @@ impl MutTxId {
 
         // For each expired subscription row, clear the backing table only if that row
         // was the last remaining entry for the shared materialization.
-        for (view_id, sender, sub_row_ptr) in expired_items {
+        for (view_id, arg_id, sub_row_ptr) in expired_items {
             // Check if we've exceeded our time budget
             if start.elapsed() >= max_duration {
                 break;
@@ -2493,22 +2557,23 @@ impl MutTxId {
             } = self.lookup_st_view(view_id)?;
             let table_id = table_id.expect("views have backing table");
 
+            let last_materialization_ref = !self.has_other_st_view_sub_entries_for_arg(view_id, arg_id, sub_row_ptr)?;
+
             if is_anonymous {
-                if !self.has_other_st_view_sub_entries(view_id, sub_row_ptr)? {
+                if last_materialization_ref {
                     self.clear_table(table_id)?;
                     self.drop_view_from_committed_read_set(view_id);
                 }
-            } else {
+            } else if last_materialization_ref {
                 let rows_to_delete = self
-                    .iter_by_col_eq(table_id, 0, &sender.into())?
+                    .iter_by_col_eq(table_id, 0, &arg_id.into())?
                     .map(|res| res.pointer())
                     .collect::<Vec<_>>();
-
                 for row_ptr in rows_to_delete {
                     self.delete(table_id, row_ptr)?;
                 }
 
-                self.drop_view_with_sender_from_committed_read_set(view_id, sender);
+                self.drop_view_arg_from_committed_read_set(view_id, arg_id);
             }
 
             // Finally, delete the subscription row
@@ -2615,14 +2680,21 @@ impl MutTxId {
             .collect::<Result<Vec<_>>>()
     }
 
-    /// Does this `view_id` have other entries in `st_view_sub` besides `current_ptr`?
-    /// Can be true for anonymous views with multiple subscribers.
-    fn has_other_st_view_sub_entries(&self, view_id: ViewId, current_ptr: RowPointer) -> Result<bool> {
+    /// Does this materialized argument tuple have other entries in `st_view_sub` besides `current_ptr`?
+    fn has_other_st_view_sub_entries_for_arg(
+        &self,
+        view_id: ViewId,
+        arg_id: ArgId,
+        current_ptr: RowPointer,
+    ) -> Result<bool> {
         let cols = StViewSubFields::ViewId;
         let value = view_id.into();
-        Ok(self
-            .iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
-            .any(|row_ref| row_ref.pointer() != current_ptr))
+        for row_ref in self.iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)? {
+            if row_ref.pointer() != current_ptr && StViewSubRow::try_from(row_ref)?.arg_id == arg_id {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     /// Lookup a row in `st_view` by its primary key

@@ -868,6 +868,7 @@ fn call_view(
                     table_id,
                     fn_ptr,
                     args: &args,
+                    arg_id: view_call.arg_id,
                     sender: &sender,
                     timestamp: Timestamp::now(),
                 },

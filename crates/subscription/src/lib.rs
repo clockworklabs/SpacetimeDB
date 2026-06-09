@@ -3,7 +3,7 @@ use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
 use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore, Row};
 use spacetimedb_expr::{
     check::SchemaView,
-    expr::{BindEnv, CollectViews},
+    expr::{BindEnv, CollectViews, ParamId},
 };
 use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, query::Delta, AlgebraicValue};
 use spacetimedb_physical_plan::plan::{IxJoin, IxScan, Label, PhysicalPlan, ProjectPlan, Sarg, TableScan, TupleField};
@@ -29,6 +29,13 @@ struct Fragments {
 }
 
 impl Fragments {
+    fn requires_param(&self, id: ParamId) -> bool {
+        self.insert_plans
+            .iter()
+            .chain(&self.delete_plans)
+            .any(|plan| plan.requires_param(id))
+    }
+
     /// Returns the index ids from which this fragment reads.
     fn index_ids(&self) -> impl Iterator<Item = (TableId, IndexId)> + use<> {
         let mut index_ids = HashSet::new();
@@ -384,6 +391,11 @@ impl SubscriptionPlan {
     /// The optimized plan with this subscription instance's runtime bindings applied.
     pub fn bound_optimized_physical_plan(&self, bind_env: &BindEnv) -> ProjectPlan {
         self.optimized_physical_plan().clone().bind_params(bind_env)
+    }
+
+    /// Returns whether this subscription requires a runtime parameter binding.
+    pub fn requires_param(&self, id: ParamId) -> bool {
+        self.plan_opt.requires_param(id) || self.fragments.requires_param(id)
     }
 
     /// From which indexes does this plan read?

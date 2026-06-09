@@ -20,7 +20,8 @@ use spacetimedb_datastore::locking_tx_datastore::{
     ApplyHistoryCounters, IndexScanPointOrRange, MutTxId, TxId, ViewCallInfo,
 };
 use spacetimedb_datastore::system_tables::{
-    system_tables, StModuleRow, ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_SUB_ID,
+    system_tables, StModuleRow, StViewArgFields, StViewArgRow, ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID,
+    ST_VIEW_ARG_ID, ST_VIEW_SUB_ID,
 };
 use spacetimedb_datastore::system_tables::{StFields, StVarFields, StVarName, StVarRow, ST_MODULE_ID, ST_VAR_ID};
 use spacetimedb_datastore::traits::{
@@ -1494,6 +1495,7 @@ impl RelationalDB {
             self.clear_table(mut_tx, ST_CONNECTION_CREDENTIALS_ID)?;
             self.clear_table(mut_tx, ST_CLIENT_ID)?;
             self.clear_table(mut_tx, ST_VIEW_SUB_ID)?;
+            self.clear_table(mut_tx, ST_VIEW_ARG_ID)?;
             Ok(())
         })
     }
@@ -1548,33 +1550,45 @@ impl RelationalDB {
         Ok(None)
     }
 
-    /// Write `rows` into a (sender) view's backing table.
+    /// Lookup the `st_view_arg` row for a sender-scoped view call in a read-only transaction.
+    pub fn lookup_view_arg_for_sender(&self, tx: &Tx, sender: Identity) -> Result<Option<ArgId>, DBError> {
+        let bytes = MutTxId::view_arg_bytes_for_sender(sender)?;
+        let value = AlgebraicValue::Bytes(bytes);
+        Ok(self
+            .iter_by_col_eq(tx, ST_VIEW_ARG_ID, StViewArgFields::Bytes, &value)?
+            .next()
+            .map(StViewArgRow::try_from)
+            .transpose()?
+            .map(|row| ArgId(row.id)))
+    }
+
+    /// Write `rows` into an argument-keyed view's backing table.
     ///
     /// # Process
-    /// 1. Delete all rows for `sender` from the view's backing table
+    /// 1. Delete all rows for `arg_id` from the view's backing table
     /// 2. Insert the new rows into the backing table
     ///
     /// # Arguments
     /// * `tx` - Mutable transaction context
     /// * `table_id` - The id of the view's backing table
-    /// * `sender` - The calling identity of the view being updated
+    /// * `arg_id` - The argument tuple id of the view being updated
     /// * `rows` - Product values to insert
     #[allow(clippy::too_many_arguments)]
     pub fn materialize_view(
         &self,
         tx: &mut MutTxId,
         table_id: TableId,
-        sender: Identity,
+        arg_id: ArgId,
         rows: Vec<ProductValue>,
     ) -> Result<(), DBError> {
-        // Delete rows for `sender` from the backing table
+        // Delete rows for `arg_id` from the backing table
         let rows_to_delete = self
-            .iter_by_col_eq_mut(tx, table_id, ColId(0), &sender.into())?
+            .iter_by_col_eq_mut(tx, table_id, ColId(0), &arg_id.into())?
             .map(|res| res.pointer())
             .collect::<Vec<_>>();
         self.delete(tx, table_id, rows_to_delete);
 
-        self.write_view_rows(tx, table_id, rows, Some(sender))?;
+        self.write_view_rows(tx, table_id, rows, Some(arg_id))?;
 
         Ok(())
     }
@@ -1615,9 +1629,10 @@ impl RelationalDB {
         view_call: ViewCallInfo,
         rows: Vec<ProductValue>,
     ) -> Result<(), DBError> {
-        match view_call.sender {
-            Some(sender) => self.materialize_view(tx, table_id, sender, rows)?,
-            None => self.materialize_anonymous_view(tx, table_id, rows)?,
+        if view_call.arg_id.is_sentinel() {
+            self.materialize_anonymous_view(tx, table_id, rows)?;
+        } else {
+            self.materialize_view(tx, table_id, view_call.arg_id, rows)?;
         }
         tx.replace_view_read_set(view_call);
 
@@ -1629,12 +1644,12 @@ impl RelationalDB {
         tx: &mut MutTxId,
         table_id: TableId,
         rows: Vec<ProductValue>,
-        sender: Option<Identity>,
+        arg_id: Option<ArgId>,
     ) -> Result<(), DBError> {
-        match sender {
-            Some(sender) => {
+        match arg_id {
+            Some(arg_id) => {
                 for product in rows {
-                    let value = ProductValue::from_iter(std::iter::once(sender.into()).chain(product.elements));
+                    let value = ProductValue::from_iter(std::iter::once(arg_id.into()).chain(product.elements));
                     self.insert(
                         tx,
                         table_id,
@@ -2245,7 +2260,7 @@ pub mod tests_utils {
         row: ProductValue,
     ) -> Result<RowRef<'a>, DBError> {
         let meta_cols = match sender {
-            Some(identity) => vec![identity.into()],
+            Some(identity) => vec![tx.view_arg_for_sender(identity)?.into()],
             None => vec![],
         };
         let cols = meta_cols.into_iter().chain(row.elements);
@@ -2492,8 +2507,9 @@ mod tests {
         let row_pv = |v: u8| product![v];
 
         let mut tx = begin_mut_tx(stdb);
-        tx.subscribe_view(view_id, ArgId::SENTINEL, sender)?;
-        stdb.materialize_view(&mut tx, table_id, sender, vec![row_pv(v)])?;
+        let arg_id = tx.view_arg_for_sender(sender)?;
+        tx.subscribe_view(view_id, arg_id, sender)?;
+        stdb.materialize_view(&mut tx, table_id, arg_id, vec![row_pv(v)])?;
         stdb.commit_tx(tx)?;
 
         Ok(())
@@ -2501,8 +2517,11 @@ mod tests {
 
     fn project_views(stdb: &TestDB, table_id: TableId, sender: Identity) -> Vec<ProductValue> {
         let tx = begin_tx(stdb);
+        let Some(arg_id) = stdb.lookup_view_arg_for_sender(&tx, sender).unwrap() else {
+            return vec![];
+        };
 
-        stdb.iter_by_col_eq(&tx, table_id, 0, &sender.into())
+        stdb.iter_by_col_eq(&tx, table_id, 0, &arg_id.into())
             .unwrap()
             .map(|row| {
                 let pv = row.to_product_value();
@@ -2524,7 +2543,8 @@ mod tests {
 
     fn update_last_called(stdb: &TestDB, view_id: ViewId, sender: Identity, last_called: Timestamp) -> ResultTest<()> {
         let mut tx = begin_mut_tx(stdb);
-        tx.update_view_timestamp_at(view_id, ArgId::SENTINEL, sender, last_called)?;
+        let arg_id = tx.view_arg_for_sender(sender)?;
+        tx.update_view_timestamp_at(view_id, arg_id, sender, last_called)?;
         stdb.commit_tx(tx)?;
         Ok(())
     }
@@ -2579,8 +2599,9 @@ mod tests {
         };
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.subscribe_view(view_id, ArgId::SENTINEL, Identity::ONE)?;
-        stdb.materialize_view(&mut tx, table_id, Identity::ONE, vec![product![10u8]])?;
+        let arg_id = tx.view_arg_for_sender(Identity::ONE)?;
+        tx.subscribe_view(view_id, arg_id, Identity::ONE)?;
+        stdb.materialize_view(&mut tx, table_id, arg_id, vec![product![10u8]])?;
         let (tx_offset_2, tx_data, ..) = stdb.commit_tx(tx)?.unwrap();
 
         // `tx_data.tx_offset()` should return `None`,

@@ -837,8 +837,9 @@ impl TableSchema {
     /// |-------------|--------|-----|-----|
     /// | (none = ()) | u64    | u32 | u32 |
     ///
-    /// Note, `sender` and `arg_id` are internal columns not defined by the module,
-    /// where `arg_id` is a foreign key into `st_view_arg`.
+    /// Note, `arg_id` is an internal column not defined by the module.
+    /// It is a foreign key into `st_view_arg` and identifies the argument tuple
+    /// used to materialize the view.
     pub fn from_view_def_for_datastore(module_def: &ModuleDef, view_def: &ViewDef) -> Self {
         module_def.expect_contains(view_def);
 
@@ -853,7 +854,7 @@ impl TableSchema {
             ..
         } = view_def;
 
-        let n = return_columns.len() + 2;
+        let n = return_columns.len() + 1;
         let mut columns = Vec::with_capacity(n);
         let mut meta_cols = 0;
 
@@ -868,11 +869,7 @@ impl TableSchema {
             });
         };
 
-        if !is_anonymous {
-            push_column("sender", AlgebraicType::identity());
-        }
-
-        if !param_columns.is_empty() {
+        if !is_anonymous || !param_columns.is_empty() {
             push_column("arg_id", AlgebraicType::U64);
         }
 
