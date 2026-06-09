@@ -53,7 +53,7 @@ use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 pub use spacetimedb_durability::{DurabilityExited, DurableOffset};
 use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
 use spacetimedb_execution::RelValue;
-use spacetimedb_expr::expr::CollectViews;
+use spacetimedb_expr::expr::{BindEnv, CollectViews};
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::http::{Request as HttpRequest, Response as HttpResponse};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
@@ -3272,13 +3272,14 @@ impl ModuleHost {
             plans,
             _,
             table_name,
-            _,
+            requires_sender_binding,
         ) = compile_subscription(query, &schema_tx, auth)?;
+        let bind_env = BindEnv::for_sender_binding(requires_sender_binding, auth.caller());
 
         // Optimize each fragment.
         let optimized = plans
             .into_iter()
-            .map(|plan| plan.optimize(auth))
+            .map(|plan| plan.optimize(auth).map(|plan| plan.bind_params(&bind_env)))
             .collect::<Result<Vec<_>, _>>()?;
 
         check_row_limit(

@@ -3,10 +3,12 @@ use derive_more::From;
 use either::Either;
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_expr::{
-    expr::{AggType, CollectViews},
+    expr::{AggType, BindEnv, CollectViews, ParamId},
     StatementSource,
 };
-use spacetimedb_lib::{identity::AuthCtx, query::Delta, sats::size_of::SizeOf, AlgebraicValue, ProductValue};
+use spacetimedb_lib::{
+    identity::AuthCtx, query::Delta, sats::size_of::SizeOf, AlgebraicType, AlgebraicValue, ProductValue,
+};
 use spacetimedb_primitives::{ColId, ColSet, IndexId, TableId, ViewId};
 use spacetimedb_schema::schema::{IndexSchema, TableSchema};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
@@ -128,6 +130,21 @@ impl ProjectPlan {
             Self::None(plan) | Self::Name(plan, ..) => plan.reads_from_event_table(),
         }
     }
+
+    /// Replace runtime parameters with bound values.
+    pub fn bind_params(self, bind_env: &BindEnv) -> Self {
+        match self {
+            Self::None(plan) => Self::None(plan.bind_params(bind_env)),
+            Self::Name(plan, label, pos) => Self::Name(plan.bind_params(bind_env), label, pos),
+        }
+    }
+
+    /// Returns whether this plan contains a runtime parameter.
+    pub fn requires_param(&self, id: ParamId) -> bool {
+        match self {
+            Self::None(plan) | Self::Name(plan, ..) => plan.requires_param(id),
+        }
+    }
 }
 
 /// Physical plans always terminate with a projection.
@@ -165,6 +182,28 @@ pub enum ProjectListPlan {
 }
 
 impl ProjectListPlan {
+    /// Replace runtime parameters with bound values.
+    pub fn bind_params(self, bind_env: &BindEnv) -> Self {
+        match self {
+            Self::Name(plans) => Self::Name(plans.into_iter().map(|plan| plan.bind_params(bind_env)).collect()),
+            Self::List(plans, fields) => Self::List(
+                plans.into_iter().map(|plan| plan.bind_params(bind_env)).collect(),
+                fields,
+            ),
+            Self::Limit(plan, n) => Self::Limit(Box::new((*plan).bind_params(bind_env)), n),
+            Self::Agg(plans, agg) => Self::Agg(plans.into_iter().map(|plan| plan.bind_params(bind_env)).collect(), agg),
+        }
+    }
+
+    /// Returns whether this plan contains a runtime parameter.
+    pub fn requires_param(&self, id: ParamId) -> bool {
+        match self {
+            Self::Name(plans) => plans.iter().any(|plan| plan.requires_param(id)),
+            Self::List(plans, _) | Self::Agg(plans, _) => plans.iter().any(|plan| plan.requires_param(id)),
+            Self::Limit(plan, _) => plan.requires_param(id),
+        }
+    }
+
     pub fn optimize(self, auth: &AuthCtx) -> Result<Self> {
         match self {
             Self::Name(plan) => Ok(Self::Name(
@@ -339,6 +378,15 @@ impl PhysicalPlan {
         ok
     }
 
+    /// Returns whether this plan contains a runtime parameter.
+    pub fn requires_param(&self, id: ParamId) -> bool {
+        self.any(&|plan| match plan {
+            Self::IxScan(scan, _) => scan.arg.requires_param(id),
+            Self::Filter(_, expr) => expr.requires_param(id),
+            Self::TableScan(..) | Self::IxJoin(..) | Self::HashJoin(..) | Self::NLJoin(..) => false,
+        })
+    }
+
     /// Applies `f` recursively to all subplans
     pub fn map(self, f: &impl Fn(Self) -> Self) -> Self {
         match f(self) {
@@ -360,6 +408,69 @@ impl PhysicalPlan {
                 semi,
             ),
             plan @ Self::TableScan(..) | plan @ Self::IxScan(..) => plan,
+        }
+    }
+
+    /// Replace runtime parameters with bound values.
+    pub fn bind_params(self, bind_env: &BindEnv) -> Self {
+        match self {
+            Self::TableScan(..) => self,
+            Self::IxScan(mut scan, label) => {
+                scan.arg = scan.arg.bind_params(bind_env);
+                Self::IxScan(scan, label)
+            }
+            Self::IxJoin(
+                IxJoin {
+                    lhs,
+                    rhs,
+                    rhs_label,
+                    rhs_index,
+                    rhs_prefix,
+                    rhs_field,
+                    unique,
+                    lhs_field,
+                    rhs_delta,
+                },
+                semi,
+            ) => Self::IxJoin(
+                IxJoin {
+                    lhs: Box::new(lhs.bind_params(bind_env)),
+                    rhs,
+                    rhs_label,
+                    rhs_index,
+                    rhs_prefix,
+                    rhs_field,
+                    unique,
+                    lhs_field,
+                    rhs_delta,
+                },
+                semi,
+            ),
+            Self::HashJoin(
+                HashJoin {
+                    lhs,
+                    rhs,
+                    lhs_field,
+                    rhs_field,
+                    unique,
+                },
+                semi,
+            ) => Self::HashJoin(
+                HashJoin {
+                    lhs: Box::new(lhs.bind_params(bind_env)),
+                    rhs: Box::new(rhs.bind_params(bind_env)),
+                    lhs_field,
+                    rhs_field,
+                    unique,
+                },
+                semi,
+            ),
+            Self::NLJoin(lhs, rhs) => {
+                Self::NLJoin(Box::new(lhs.bind_params(bind_env)), Box::new(rhs.bind_params(bind_env)))
+            }
+            Self::Filter(input, expr) => {
+                Self::Filter(Box::new(input.bind_params(bind_env)), expr.bind_params(bind_env))
+            }
         }
     }
 
@@ -474,9 +585,9 @@ impl PhysicalPlan {
     /// 3. Turn filters into index scans if possible
     /// 4. Determine index and semijoins
     /// 5. Compute positions for tuple labels
-    pub fn optimize(self, auth: &AuthCtx, reqs: Vec<Label>) -> Result<Self> {
+    pub fn optimize(self, _auth: &AuthCtx, reqs: Vec<Label>) -> Result<Self> {
         let optimized = self
-            .expand_views(auth)
+            .expand_views()
             .map(&Self::canonicalize)
             .apply_rec::<PushConstAnd>()?
             .apply_rec::<PushConstEq>()?
@@ -555,18 +666,18 @@ impl PhysicalPlan {
     /// ```sql
     /// SELECT * FROM my_view WHERE sender = :sender
     /// ```
-    fn expand_views(self, auth: &AuthCtx) -> Self {
+    fn expand_views(self) -> Self {
         match self {
             Self::TableScan(scan, label) if scan.schema.is_view() && !scan.schema.is_anonymous_view() => Self::Filter(
                 Box::new(Self::TableScan(scan, label)),
                 PhysicalExpr::BinOp(
                     BinOp::Eq,
-                    Box::new(PhysicalExpr::Value(auth.caller().into())),
                     Box::new(PhysicalExpr::Field(TupleField {
                         label,
                         label_pos: None,
                         field_pos: 0,
                     })),
+                    Box::new(PhysicalExpr::Param(ParamId::SENDER, AlgebraicType::identity())),
                 ),
             ),
             Self::IxJoin(
@@ -584,7 +695,7 @@ impl PhysicalPlan {
                 semi,
             ) => Self::IxJoin(
                 IxJoin {
-                    lhs: Box::new(lhs.expand_views(auth)),
+                    lhs: Box::new(lhs.expand_views()),
                     rhs,
                     rhs_label,
                     rhs_index,
@@ -607,16 +718,16 @@ impl PhysicalPlan {
                 semi,
             ) => Self::HashJoin(
                 HashJoin {
-                    lhs: Box::new(lhs.expand_views(auth)),
-                    rhs: Box::new(rhs.expand_views(auth)),
+                    lhs: Box::new(lhs.expand_views()),
+                    rhs: Box::new(rhs.expand_views()),
                     lhs_field,
                     rhs_field,
                     unique,
                 },
                 semi,
             ),
-            Self::Filter(input, expr) => Self::Filter(Box::new(input.expand_views(auth)), expr),
-            Self::NLJoin(lhs, rhs) => Self::NLJoin(Box::new(lhs.expand_views(auth)), Box::new(rhs.expand_views(auth))),
+            Self::Filter(input, expr) => Self::Filter(Box::new(input.expand_views()), expr),
+            Self::NLJoin(lhs, rhs) => Self::NLJoin(Box::new(lhs.expand_views()), Box::new(rhs.expand_views())),
             Self::TableScan(..) | Self::IxScan(..) => self,
         }
     }
@@ -686,7 +797,7 @@ impl PhysicalPlan {
             Self::Filter(input, expr) => {
                 let move_value_to_rhs = |expr| match expr {
                     PhysicalExpr::BinOp(op, value, expr)
-                        if matches!(&*value, PhysicalExpr::Value(_)) && matches!(&*expr, PhysicalExpr::Field(..)) =>
+                        if value.is_sarg_value() && matches!(&*expr, PhysicalExpr::Field(..)) =>
                     {
                         match op {
                             BinOp::Eq => PhysicalExpr::BinOp(BinOp::Eq, expr, value),
@@ -957,7 +1068,8 @@ impl PhysicalPlan {
                 let mut cols: Vec<_> = cols.iter().collect();
                 expr.visit(&mut |plan| {
                     if let PhysicalExpr::BinOp(BinOp::Eq, expr, value) = plan
-                        && let (PhysicalExpr::Field(proj), PhysicalExpr::Value(..)) = (&**expr, &**value)
+                        && let PhysicalExpr::Field(proj) = &**expr
+                        && value.is_sarg_value()
                         && proj.label == *label
                     {
                         cols.push(proj.field_pos.into());
@@ -1103,8 +1215,8 @@ impl PhysicalPlan {
                     ..
                 },
                 _,
-            ) if scan.prefix.is_empty() => {
-                args.push((scan.schema.table_id, *col_id, value.clone()));
+            ) if scan.prefix.is_empty() && value.as_literal().is_some() => {
+                args.push((scan.schema.table_id, *col_id, value.as_literal().unwrap().clone()));
             }
             PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, a, b)) => {
                 if let (PhysicalExpr::Field(field), PhysicalExpr::Value(value)) = (&**a, &**b) {
@@ -1214,7 +1326,7 @@ pub struct IxScan {
 /// An index [S]earch [arg]ument
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Sarg {
-    Eq(ColId, AlgebraicValue),
+    Eq(ColId, SargValue),
     /// NOTE(centril): We currently never construct this variant.
     /// We do have non-ranged hash indices.
     /// This means that when we get around to using this variant,
@@ -1227,6 +1339,65 @@ pub enum Sarg {
     /// of equalities provided are fewer than the number of columns in the index.
     /// When we do, we must also account for hash indices in the rewrite rules.
     Range(ColId, Bound<AlgebraicValue>, Bound<AlgebraicValue>),
+}
+
+impl Sarg {
+    pub fn requires_param(&self, id: ParamId) -> bool {
+        match self {
+            Self::Eq(_, value) => value.requires_param(id),
+            Self::Range(..) => false,
+        }
+    }
+
+    pub fn bind_params(self, bind_env: &BindEnv) -> Self {
+        match self {
+            Self::Eq(col, value) => Self::Eq(col, value.bind_params(bind_env)),
+            Self::Range(..) => self,
+        }
+    }
+}
+
+/// A search argument value can be a literal or a runtime parameter.
+///
+/// `Param` is optimizer/template state only; executor construction and concrete
+/// search-arg extraction require it to be bound to a literal first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SargValue {
+    Literal(AlgebraicValue),
+    Param(ParamId, AlgebraicType),
+}
+
+impl SargValue {
+    pub fn requires_param(&self, id: ParamId) -> bool {
+        matches!(self, Self::Param(param_id, _) if *param_id == id)
+    }
+
+    pub fn bind_params(self, bind_env: &BindEnv) -> Self {
+        match self {
+            Self::Literal(value) => Self::Literal(value),
+            Self::Param(id, ty) => Self::Literal(bind_env.expect(id, &ty, "binding index search argument")),
+        }
+    }
+
+    pub fn into_literal(self) -> Option<AlgebraicValue> {
+        match self {
+            Self::Literal(value) => Some(value),
+            Self::Param(..) => None,
+        }
+    }
+
+    pub fn as_literal(&self) -> Option<&AlgebraicValue> {
+        match self {
+            Self::Literal(value) => Some(value),
+            Self::Param(..) => None,
+        }
+    }
+}
+
+impl From<AlgebraicValue> for SargValue {
+    fn from(value: AlgebraicValue) -> Self {
+        Self::Literal(value)
+    }
 }
 
 /// A join of two relations on a single equality condition.
@@ -1286,6 +1457,8 @@ pub enum PhysicalExpr {
     BinOp(BinOp, Box<PhysicalExpr>, Box<PhysicalExpr>),
     /// A constant algebraic value
     Value(AlgebraicValue),
+    /// A runtime parameter.
+    Param(ParamId, AlgebraicType),
     /// A field projection expression
     Field(TupleField),
 }
@@ -1311,6 +1484,48 @@ impl ProjectField for &'_ ProductValue {
 }
 
 impl PhysicalExpr {
+    /// Can this expression be used as the constant side of an index search argument?
+    pub fn is_sarg_value(&self) -> bool {
+        matches!(self, Self::Value(_) | Self::Param(..))
+    }
+
+    pub fn into_sarg_value(self) -> Option<SargValue> {
+        match self {
+            Self::Value(value) => Some(SargValue::Literal(value)),
+            Self::Param(id, ty) => Some(SargValue::Param(id, ty)),
+            _ => None,
+        }
+    }
+
+    pub fn as_literal(&self) -> Option<&AlgebraicValue> {
+        match self {
+            Self::Value(value) => Some(value),
+            Self::Param(..) | Self::Field(..) | Self::BinOp(..) | Self::LogOp(..) => None,
+        }
+    }
+
+    pub fn requires_param(&self, id: ParamId) -> bool {
+        let mut found = false;
+        self.visit(&mut |expr| {
+            found = found || matches!(expr, Self::Param(param_id, _) if *param_id == id);
+        });
+        found
+    }
+
+    /// Replace runtime parameters with bound values.
+    pub fn bind_params(self, bind_env: &BindEnv) -> Self {
+        match self {
+            Self::Param(id, ty) => Self::Value(bind_env.expect(id, &ty, "binding scalar expression")),
+            Self::BinOp(op, a, b) => {
+                Self::BinOp(op, Box::new(a.bind_params(bind_env)), Box::new(b.bind_params(bind_env)))
+            }
+            Self::LogOp(op, exprs) => {
+                Self::LogOp(op, exprs.into_iter().map(|expr| expr.bind_params(bind_env)).collect())
+            }
+            Self::Field(..) | Self::Value(..) => self,
+        }
+    }
+
     /// Walks the expression tree and calls `f` on every subexpression
     pub fn visit(&self, f: &mut impl FnMut(&Self)) {
         f(self);
@@ -1349,6 +1564,7 @@ impl PhysicalExpr {
     pub fn map(self, f: &impl Fn(Self) -> Self) -> Self {
         match f(self) {
             value @ Self::Value(..) => value,
+            param @ Self::Param(..) => param,
             field @ Self::Field(..) => field,
             Self::BinOp(op, a, b) => Self::BinOp(op, Box::new(a.map(f)), Box::new(b.map(f))),
             Self::LogOp(op, exprs) => Self::LogOp(op, exprs.into_iter().map(|expr| expr.map(f)).collect()),
@@ -1410,6 +1626,9 @@ impl PhysicalExpr {
                 Cow::Owned(value)
             }
             Self::Value(v) => Cow::Borrowed(v),
+            Self::Param(id, _) => panic!(
+                "unbound query parameter {id:?} reached scalar evaluation; bind parameters before executing a physical plan"
+            ),
         }
     }
 
@@ -1428,7 +1647,7 @@ impl PhysicalExpr {
                     .collect(),
             ),
             Self::BinOp(op, a, b) => Self::BinOp(op, Box::new(a.flatten()), Box::new(b.flatten())),
-            Self::Field(..) | Self::Value(..) => self,
+            Self::Field(..) | Self::Value(..) | Self::Param(..) => self,
         }
     }
 }
@@ -1447,13 +1666,13 @@ mod tests {
     use pretty_assertions::assert_eq;
     use spacetimedb_expr::{
         check::{SchemaView, TypingResult},
-        expr::ProjectName,
+        expr::{BindEnv, ParamId, ProjectName},
         statement::{parse_and_type_sql, Statement},
     };
     use spacetimedb_lib::{
         db::auth::{StAccess, StTableType},
         identity::AuthCtx,
-        AlgebraicType, AlgebraicValue,
+        AlgebraicType, AlgebraicValue, Identity,
     };
     use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
     use spacetimedb_schema::{
@@ -1625,6 +1844,94 @@ mod tests {
             }
             proj => panic!("unexpected project: {proj:#?}"),
         };
+    }
+
+    #[test]
+    fn sender_param_binds_after_planning() {
+        let t_id = TableId(1);
+        let t = Arc::new(schema(
+            t_id,
+            "t",
+            &[("identity", AlgebraicType::identity())],
+            &[&[0]],
+            &[&[0]],
+            Some(0),
+        ));
+        let db = SchemaViewer { schemas: vec![t] };
+        let auth = AuthCtx::for_testing();
+        let lp = parse_and_type_sub("select * from t where identity = :sender", &db).unwrap();
+        let pp = compile_select(lp).optimize(&auth).unwrap();
+
+        match pp.physical_plan() {
+            PhysicalPlan::IxScan(
+                IxScan {
+                    arg: Sarg::Eq(ColId(0), value),
+                    ..
+                },
+                _,
+            ) => {
+                assert!(matches!(
+                    value,
+                    super::SargValue::Param(ParamId::SENDER, ty) if ty.is_identity()
+                ));
+            }
+            plan => panic!("unexpected plan: {plan:#?}"),
+        }
+
+        let bind_sender = |sender| match pp.clone().bind_params(&BindEnv::sender(sender)) {
+            ProjectPlan::None(PhysicalPlan::IxScan(
+                IxScan {
+                    arg: Sarg::Eq(ColId(0), value),
+                    ..
+                },
+                _,
+            )) => value,
+            plan => panic!("unexpected bound plan: {plan:#?}"),
+        };
+
+        assert_eq!(
+            bind_sender(Identity::ZERO),
+            super::SargValue::Literal(Identity::ZERO.into())
+        );
+        assert_eq!(
+            bind_sender(Identity::ONE),
+            super::SargValue::Literal(Identity::ONE.into())
+        );
+    }
+
+    #[test]
+    fn sender_param_can_bind_as_bytes() {
+        let t_id = TableId(1);
+        let t = Arc::new(schema(
+            t_id,
+            "t",
+            &[("bytes", AlgebraicType::bytes())],
+            &[&[0]],
+            &[&[0]],
+            Some(0),
+        ));
+        let db = SchemaViewer { schemas: vec![t] };
+        let auth = AuthCtx::for_testing();
+        let lp = parse_and_type_sub("select * from t where bytes = :sender", &db).unwrap();
+        let pp = compile_select(lp).optimize(&auth).unwrap();
+
+        let value = match pp.bind_params(&BindEnv::sender(Identity::ONE)) {
+            ProjectPlan::None(PhysicalPlan::IxScan(
+                IxScan {
+                    arg: Sarg::Eq(ColId(0), value),
+                    ..
+                },
+                _,
+            )) => value,
+            plan => panic!("unexpected bound plan: {plan:#?}"),
+        };
+
+        assert_eq!(
+            value,
+            super::SargValue::Literal(AlgebraicValue::Bytes(
+                Identity::ONE.to_be_byte_array().to_vec().into_boxed_slice()
+            ))
+        );
     }
 
     /// Given the following operator notation:
@@ -1800,13 +2107,11 @@ mod tests {
         match plan {
             PhysicalPlan::IxScan(
                 IxScan {
-                    schema,
-                    prefix,
-                    arg: Sarg::Eq(ColId(0), AlgebraicValue::U64(5)),
-                    ..
+                    schema, prefix, arg, ..
                 },
                 _,
             ) => {
+                assert_eq!(arg, Sarg::Eq(ColId(0), AlgebraicValue::U64(5).into()));
                 assert!(prefix.is_empty());
                 assert_eq!(schema.table_id, u_id);
             }
@@ -1973,13 +2278,11 @@ mod tests {
         match rhs {
             PhysicalPlan::IxScan(
                 IxScan {
-                    schema,
-                    prefix,
-                    arg: Sarg::Eq(ColId(0), AlgebraicValue::U64(5)),
-                    ..
+                    schema, prefix, arg, ..
                 },
                 _,
             ) => {
+                assert_eq!(arg, Sarg::Eq(ColId(0), AlgebraicValue::U64(5).into()));
                 assert!(prefix.is_empty());
                 assert_eq!(schema.table_id, w_id);
             }
@@ -2036,13 +2339,11 @@ mod tests {
         match plan {
             PhysicalPlan::IxScan(
                 IxScan {
-                    schema,
-                    prefix,
-                    arg: Sarg::Eq(ColId(0), AlgebraicValue::U64(5)),
-                    ..
+                    schema, prefix, arg, ..
                 },
                 _,
             ) => {
+                assert_eq!(arg, Sarg::Eq(ColId(0), AlgebraicValue::U64(5).into()));
                 assert!(prefix.is_empty());
                 assert_eq!(schema.table_id, m_id);
             }
@@ -2087,7 +2388,7 @@ mod tests {
                 _,
             )) => {
                 assert_eq!(schema.table_id, t_id);
-                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(5)));
+                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(5).into()));
                 assert_eq!(
                     prefix,
                     vec![(ColId(1), AlgebraicValue::U8(3)), (ColId(2), AlgebraicValue::U8(4))]
@@ -2109,7 +2410,7 @@ mod tests {
                 _,
             )) => {
                 assert_eq!(schema.table_id, t_id);
-                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(5)));
+                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(5).into()));
                 assert_eq!(
                     prefix,
                     vec![(ColId(1), AlgebraicValue::U8(3)), (ColId(2), AlgebraicValue::U8(4))]
@@ -2140,7 +2441,7 @@ mod tests {
                 _,
             ) => {
                 assert_eq!(schema.table_id, t_id);
-                assert_eq!(arg, Sarg::Eq(ColId(1), AlgebraicValue::U8(3)));
+                assert_eq!(arg, Sarg::Eq(ColId(1), AlgebraicValue::U8(3).into()));
                 assert!(prefix.is_empty());
             }
             plan => panic!("unexpected plan: {plan:#?}"),
@@ -2168,7 +2469,7 @@ mod tests {
                 _,
             ) => {
                 assert_eq!(schema.table_id, t_id);
-                assert_eq!(arg, Sarg::Eq(ColId(1), AlgebraicValue::U8(4)));
+                assert_eq!(arg, Sarg::Eq(ColId(1), AlgebraicValue::U8(4).into()));
                 assert!(prefix.is_empty());
             }
             plan => panic!("unexpected plan: {plan:#?}"),
@@ -2201,7 +2502,7 @@ mod tests {
                 _,
             )) => {
                 assert_eq!(schema.table_id, t_id);
-                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(2)));
+                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(2).into()));
                 assert_eq!(prefix, vec![(ColId(2), AlgebraicValue::U8(1))]);
             }
             proj => panic!("unexpected plan: {proj:#?}"),
@@ -2220,7 +2521,7 @@ mod tests {
                 _,
             )) => {
                 assert_eq!(schema.table_id, t_id);
-                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(2)));
+                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(2).into()));
                 assert_eq!(prefix, vec![(ColId(2), AlgebraicValue::U8(1))]);
             }
             proj => panic!("unexpected plan: {proj:#?}"),
@@ -2248,7 +2549,7 @@ mod tests {
                 _,
             ) => {
                 assert_eq!(schema.table_id, t_id);
-                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(3)));
+                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(3).into()));
                 assert_eq!(prefix, vec![(ColId(2), AlgebraicValue::U8(2))]);
             }
             plan => panic!("unexpected plan: {plan:#?}"),

@@ -1,10 +1,72 @@
 use spacetimedb_data_structures::map::HashSet;
-use spacetimedb_lib::{query::Delta, AlgebraicType, AlgebraicValue};
+use spacetimedb_lib::{query::Delta, AlgebraicType, AlgebraicValue, Identity};
 use spacetimedb_primitives::{TableId, ViewId};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::{identifier::Identifier, schema::TableOrViewSchema};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 use std::sync::Arc;
+
+/// A formal parameter slot in a typed query plan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ParamId(pub u16);
+
+impl ParamId {
+    /// The only parameter currently supported by SQL syntax: `:sender`.
+    pub const SENDER: Self = Self(0);
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ParamBinding {
+    Sender(Identity),
+}
+
+impl ParamBinding {
+    fn value_for_type(&self, ty: &AlgebraicType) -> Option<AlgebraicValue> {
+        match self {
+            Self::Sender(sender) if ty.is_identity() => Some((*sender).into()),
+            // Preserve existing `:sender` behavior for legacy filters that compare it to bytes.
+            Self::Sender(sender) if ty.is_bytes() => Some(AlgebraicValue::Bytes(
+                sender.to_be_byte_array().to_vec().into_boxed_slice(),
+            )),
+            Self::Sender(_) => None,
+        }
+    }
+}
+
+/// Runtime parameter bindings for a parameterized query plan.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BindEnv {
+    values: Vec<ParamBinding>,
+}
+
+impl BindEnv {
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    pub fn sender(sender: Identity) -> Self {
+        Self {
+            values: vec![ParamBinding::Sender(sender)],
+        }
+    }
+
+    pub fn for_sender_binding(requires_sender_binding: bool, sender: Identity) -> Self {
+        if requires_sender_binding {
+            Self::sender(sender)
+        } else {
+            Self::empty()
+        }
+    }
+
+    pub fn get(&self, id: ParamId, ty: &AlgebraicType) -> Option<AlgebraicValue> {
+        self.values.get(id.0 as usize)?.value_for_type(ty)
+    }
+
+    pub fn expect(&self, id: ParamId, ty: &AlgebraicType, context: &str) -> AlgebraicValue {
+        self.get(id, ty)
+            .unwrap_or_else(|| panic!("missing or mistyped binding for query parameter {id:?} while {context}"))
+    }
+}
 
 pub trait CollectViews {
     fn collect_views(&self, views: &mut HashSet<ViewId>);
@@ -383,6 +445,8 @@ pub enum Expr {
     LogOp(LogOp, Box<Expr>, Box<Expr>),
     /// A typed literal expression
     Value(AlgebraicValue, AlgebraicType),
+    /// A typed runtime parameter.
+    Param(ParamId, AlgebraicType),
     /// A field projection
     Field(FieldProject),
 }
@@ -396,7 +460,7 @@ impl Expr {
                 a.visit(f);
                 b.visit(f);
             }
-            Self::Value(..) | Self::Field(..) => {}
+            Self::Value(..) | Self::Param(..) | Self::Field(..) => {}
         }
     }
 
@@ -408,7 +472,7 @@ impl Expr {
                 a.visit_mut(f);
                 b.visit_mut(f);
             }
-            Self::Value(..) | Self::Field(..) => {}
+            Self::Value(..) | Self::Param(..) | Self::Field(..) => {}
         }
     }
 
@@ -426,7 +490,7 @@ impl Expr {
     pub fn ty(&self) -> &AlgebraicType {
         match self {
             Self::BinOp(..) | Self::LogOp(..) => &AlgebraicType::Bool,
-            Self::Value(_, ty) | Self::Field(FieldProject { ty, .. }) => ty,
+            Self::Value(_, ty) | Self::Param(_, ty) | Self::Field(FieldProject { ty, .. }) => ty,
         }
     }
 }

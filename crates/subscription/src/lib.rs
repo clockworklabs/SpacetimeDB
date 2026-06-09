@@ -1,13 +1,10 @@
 use anyhow::{bail, Result};
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
-use spacetimedb_execution::{
-    pipelined::{
-        PipelinedExecutor, PipelinedIxDeltaJoin, PipelinedIxDeltaScanEq, PipelinedIxDeltaScanRange, PipelinedIxJoin,
-        PipelinedIxScanEq, PipelinedIxScanRange, PipelinedProject,
-    },
-    Datastore, DeltaStore, Row,
+use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore, Row};
+use spacetimedb_expr::{
+    check::SchemaView,
+    expr::{BindEnv, CollectViews, ParamId},
 };
-use spacetimedb_expr::{check::SchemaView, expr::CollectViews};
 use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, query::Delta, AlgebraicValue};
 use spacetimedb_physical_plan::plan::{IxJoin, IxScan, Label, PhysicalPlan, ProjectPlan, Sarg, TableScan, TupleField};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId, ViewId};
@@ -19,39 +16,46 @@ use std::ops::RangeBounds;
 /// How do we incrementally maintain that view?
 /// These are the query fragments that are required.
 /// See [Self::compile_from_plan] for how to generate them.
+///
+/// Fragments stay as physical plans because they can contain runtime params.
+/// Each subscription instance binds them before constructing pipelined executors.
 #[derive(Debug)]
 struct Fragments {
     /// Plan fragments that return rows to insert.
     /// For joins there will be 4 fragments,
     /// but for selects only one.
-    insert_plans: Vec<PipelinedProject>,
+    insert_plans: Vec<ProjectPlan>,
     /// Plan fragments that return rows to delete.
     /// For joins there will be 4 fragments,
     /// but for selects only one.
-    delete_plans: Vec<PipelinedProject>,
+    delete_plans: Vec<ProjectPlan>,
 }
 
 impl Fragments {
+    fn requires_param(&self, id: ParamId) -> bool {
+        self.insert_plans
+            .iter()
+            .chain(&self.delete_plans)
+            .any(|plan| plan.requires_param(id))
+    }
+
     /// Returns the index ids from which this fragment reads.
     fn index_ids(&self) -> impl Iterator<Item = (TableId, IndexId)> + use<> {
         let mut index_ids = HashSet::new();
         for plan in self.insert_plans.iter().chain(self.delete_plans.iter()) {
             plan.visit(&mut |plan| match plan {
-                PipelinedExecutor::IxScanEq(PipelinedIxScanEq { table_id, index_id, .. })
-                | PipelinedExecutor::IxScanRange(PipelinedIxScanRange { table_id, index_id, .. })
-                | PipelinedExecutor::IxDeltaScanEq(PipelinedIxDeltaScanEq { table_id, index_id, .. })
-                | PipelinedExecutor::IxDeltaScanRange(PipelinedIxDeltaScanRange { table_id, index_id, .. })
-                | PipelinedExecutor::IxJoin(PipelinedIxJoin {
-                    rhs_table: table_id,
-                    rhs_index: index_id,
-                    ..
-                })
-                | PipelinedExecutor::IxDeltaJoin(PipelinedIxDeltaJoin {
-                    rhs_table: table_id,
-                    rhs_index: index_id,
-                    ..
-                }) => {
-                    index_ids.insert((*table_id, *index_id));
+                PhysicalPlan::IxScan(IxScan { schema, index_id, .. }, _) => {
+                    index_ids.insert((schema.table_id, *index_id));
+                }
+                PhysicalPlan::IxJoin(
+                    IxJoin {
+                        rhs,
+                        rhs_index: index_id,
+                        ..
+                    },
+                    _,
+                ) => {
+                    index_ids.insert((rhs.table_id, *index_id));
                 }
                 _ => {}
             });
@@ -64,11 +68,16 @@ impl Fragments {
     /// and evaluate a closure over each one.
     fn for_each_insert<'a, Tx: Datastore + DeltaStore>(
         &self,
+        bind_env: &BindEnv,
         tx: &'a Tx,
         metrics: &mut ExecutionMetrics,
         f: &mut dyn FnMut(Row<'a>) -> Result<()>,
     ) -> Result<()> {
         for plan in &self.insert_plans {
+            // TODO: This rebuilds the executor for every delta evaluation. That is the
+            // temporary cost of keeping parameterized fragments as physical-plan templates;
+            // a later pass should bind/cache executable fragments per subscription instance.
+            let plan = PipelinedProject::from(plan.clone().bind_params(bind_env));
             if !plan.is_empty(tx) {
                 plan.execute(tx, metrics, f)?;
             }
@@ -81,11 +90,16 @@ impl Fragments {
     /// and evaluate a closure over each one.
     fn for_each_delete<'a, Tx: Datastore + DeltaStore>(
         &self,
+        bind_env: &BindEnv,
         tx: &'a Tx,
         metrics: &mut ExecutionMetrics,
         f: &mut dyn FnMut(Row<'a>) -> Result<()>,
     ) -> Result<()> {
         for plan in &self.delete_plans {
+            // TODO: This rebuilds the executor for every delta evaluation. That is the
+            // temporary cost of keeping parameterized fragments as physical-plan templates;
+            // a later pass should bind/cache executable fragments per subscription instance.
+            let plan = PipelinedProject::from(plan.clone().bind_params(bind_env));
             if !plan.is_empty(tx) {
                 plan.execute(tx, metrics, f)?;
             }
@@ -181,12 +195,12 @@ impl Fragments {
         }
 
         /// Return a new plan with delta scans for the given tables
-        fn new_plan(plan: &ProjectPlan, tables: &[(Label, Delta)], auth: &AuthCtx) -> Result<PipelinedProject> {
+        fn new_plan(plan: &ProjectPlan, tables: &[(Label, Delta)], auth: &AuthCtx) -> Result<ProjectPlan> {
             let mut plan = plan.clone();
             for (alias, delta) in tables {
                 mut_plan(&mut plan, *alias, *delta);
             }
-            plan.optimize(auth).map(PipelinedProject::from)
+            plan.optimize(auth)
         }
 
         match tables {
@@ -383,6 +397,19 @@ impl SubscriptionPlan {
         &self.plan_opt
     }
 
+    /// The optimized plan with this subscription instance's runtime bindings applied.
+    ///
+    /// TODO: Prefer binding directly into an executable form so callers do not observe an
+    /// intermediate physical plan that happens to have all params replaced with literals.
+    pub fn bound_optimized_physical_plan(&self, bind_env: &BindEnv) -> ProjectPlan {
+        self.optimized_physical_plan().clone().bind_params(bind_env)
+    }
+
+    /// Returns whether this subscription requires a runtime parameter binding.
+    pub fn requires_param(&self, id: ParamId) -> bool {
+        self.plan_opt.requires_param(id) || self.fragments.requires_param(id)
+    }
+
     /// From which indexes does this plan read?
     pub fn index_ids(&self) -> impl Iterator<Item = (TableId, IndexId)> + use<> {
         self.fragments.index_ids()
@@ -393,11 +420,12 @@ impl SubscriptionPlan {
     /// and evaluate a closure over each one.
     pub fn for_each_insert<'a, Tx: Datastore + DeltaStore>(
         &self,
+        bind_env: &BindEnv,
         tx: &'a Tx,
         metrics: &mut ExecutionMetrics,
         f: &mut dyn FnMut(Row<'a>) -> Result<()>,
     ) -> Result<()> {
-        self.fragments.for_each_insert(tx, metrics, f)
+        self.fragments.for_each_insert(bind_env, tx, metrics, f)
     }
 
     /// A subscription is just a view of a particular table.
@@ -405,11 +433,12 @@ impl SubscriptionPlan {
     /// and evaluate a closure over each one.
     pub fn for_each_delete<'a, Tx: Datastore + DeltaStore>(
         &self,
+        bind_env: &BindEnv,
         tx: &'a Tx,
         metrics: &mut ExecutionMetrics,
         f: &mut dyn FnMut(Row<'a>) -> Result<()>,
     ) -> Result<()> {
-        self.fragments.for_each_delete(tx, metrics, f)
+        self.fragments.for_each_delete(bind_env, tx, metrics, f)
     }
 
     /// Returns a join edge for this query if it has one.
@@ -419,11 +448,24 @@ impl SubscriptionPlan {
     /// 2. Single column index lookup on the rhs table
     /// 3. No self joins
     pub fn join_edge(&self) -> Option<(JoinEdge, AlgebraicValue)> {
+        self.join_edge_in_plan(&self.plan_opt)
+    }
+
+    /// Returns a join edge for this query after applying runtime bindings.
+    ///
+    /// Subscription pruning indexes store concrete values, so param RHS values like `:sender`
+    /// must be bound before indexing a query instance.
+    pub fn bound_join_edge(&self, bind_env: &BindEnv) -> Option<(JoinEdge, AlgebraicValue)> {
+        let plan = self.bound_optimized_physical_plan(bind_env);
+        self.join_edge_in_plan(&plan)
+    }
+
+    fn join_edge_in_plan(&self, plan: &ProjectPlan) -> Option<(JoinEdge, AlgebraicValue)> {
         if !self.is_join() {
             return None;
         }
         let mut join_edge = None;
-        self.plan_opt.visit(&mut |op| match op {
+        plan.visit(&mut |op| match op {
             PhysicalPlan::IxJoin(
                 IxJoin {
                     lhs,
@@ -453,7 +495,9 @@ impl SubscriptionPlan {
                     let lhs_table = self.return_id;
                     let rhs_table = schema.table_id;
                     let rhs_col = *rhs_col;
-                    let rhs_val = rhs_val.clone();
+                    let Some(rhs_val) = rhs_val.as_literal().cloned() else {
+                        return;
+                    };
                     let lhs_join_col = *lhs_join_col;
                     let rhs_join_col = (*rhs_join_col).into();
                     let edge = JoinEdge {

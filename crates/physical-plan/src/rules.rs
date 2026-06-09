@@ -274,7 +274,8 @@ impl RewriteRule for PushConstEq {
             !plan.any(&|plan| !matches!(plan, PhysicalPlan::TableScan(..) | PhysicalPlan::Filter(..)))
         };
         if let PhysicalPlan::Filter(input, PhysicalExpr::BinOp(_, expr, value)) = plan
-            && let (PhysicalExpr::Field(TupleField { label, .. }), PhysicalExpr::Value(_)) = (&**expr, &**value)
+            && let PhysicalExpr::Field(TupleField { label, .. }) = &**expr
+            && value.is_sarg_value()
         {
             return (input.has_table_scan(Some(label)) && !is_filter(input)).then_some(*label);
         }
@@ -342,7 +343,8 @@ impl RewriteRule for PushConstAnd {
         if let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, exprs)) = plan {
             return exprs.iter().find_map(|expr| {
                 if let PhysicalExpr::BinOp(_, expr, value) = expr
-                    && let (PhysicalExpr::Field(TupleField { label, .. }), PhysicalExpr::Value(_)) = (&**expr, &**value)
+                    && let PhysicalExpr::Field(TupleField { label, .. }) = &**expr
+                    && value.is_sarg_value()
                 {
                     return (input.has_table_scan(Some(label)) && !is_filter(input)).then_some(*label);
                 }
@@ -359,8 +361,8 @@ impl RewriteRule for PushConstAnd {
                 let mut root_exprs = vec![];
                 for expr in exprs {
                     if let PhysicalExpr::BinOp(_, lhs, value) = &expr
-                        && let (PhysicalExpr::Field(TupleField { label: var, .. }), PhysicalExpr::Value(_)) =
-                            (&**lhs, &**value)
+                        && let PhysicalExpr::Field(TupleField { label: var, .. }) = &**lhs
+                        && value.is_sarg_value()
                         && var == &relvar
                     {
                         leaf_exprs.push(expr);
@@ -428,8 +430,8 @@ impl RewriteRule for IxScanEq {
                 },
                 _,
             ) = &**input
-            && let (PhysicalExpr::Field(TupleField { field_pos: pos, .. }), PhysicalExpr::Value(_)) =
-                (&**expr, &**value)
+            && let PhysicalExpr::Field(TupleField { field_pos: pos, .. }) = &**expr
+            && value.is_sarg_value()
         {
             return schema.indexes.iter().find_map(
                 |IndexSchema {
@@ -453,7 +455,7 @@ impl RewriteRule for IxScanEq {
     fn rewrite(plan: PhysicalPlan, (index_id, col_id): Self::Info) -> Result<PhysicalPlan> {
         if let PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, _, value)) = plan
             && let PhysicalPlan::TableScan(TableScan { schema, limit, delta }, var) = *input
-            && let PhysicalExpr::Value(v) = *value
+            && let Some(v) = (*value).into_sarg_value()
         {
             return Ok(PhysicalPlan::IxScan(
                 IxScan {
@@ -499,8 +501,8 @@ impl RewriteRule for IxScanAnd {
         {
             return exprs.iter().enumerate().find_map(|(i, expr)| {
                 if let PhysicalExpr::BinOp(BinOp::Eq, lhs, value) = expr
-                    && let (PhysicalExpr::Field(TupleField { field_pos: pos, .. }), PhysicalExpr::Value(_)) =
-                        (&**lhs, &**value)
+                    && let PhysicalExpr::Field(TupleField { field_pos: pos, .. }) = &**lhs
+                    && value.is_sarg_value()
                 {
                     return schema.indexes.iter().find_map(
                         |IndexSchema {
@@ -527,7 +529,7 @@ impl RewriteRule for IxScanAnd {
         if let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, mut exprs)) = plan
             && let PhysicalPlan::TableScan(TableScan { schema, limit, delta }, label) = *input
             && let PhysicalExpr::BinOp(BinOp::Eq, _, value) = exprs.swap_remove(i)
-            && let PhysicalExpr::Value(v) = *value
+            && let Some(v) = (*value).into_sarg_value()
         {
             return Ok(PhysicalPlan::Filter(
                 Box::new(PhysicalPlan::IxScan(
@@ -646,7 +648,7 @@ impl RewriteRule for IxScanEq2Col {
                                 delta,
                                 index_id: info.index_id,
                                 prefix: vec![(*a, u.clone())],
-                                arg: Sarg::Eq(*b, v.clone()),
+                                arg: Sarg::Eq(*b, v.clone().into()),
                             },
                             label,
                         ),
@@ -663,7 +665,7 @@ impl RewriteRule for IxScanEq2Col {
                                     delta,
                                     index_id: info.index_id,
                                     prefix: vec![(*a, u.clone())],
-                                    arg: Sarg::Eq(*b, v.clone()),
+                                    arg: Sarg::Eq(*b, v.clone().into()),
                                 },
                                 label,
                             )),
@@ -685,7 +687,7 @@ impl RewriteRule for IxScanEq2Col {
                                     delta,
                                     index_id: info.index_id,
                                     prefix: vec![(*a, u.clone())],
-                                    arg: Sarg::Eq(*b, v.clone()),
+                                    arg: Sarg::Eq(*b, v.clone().into()),
                                 },
                                 label,
                             )),
@@ -824,7 +826,7 @@ impl RewriteRule for IxScanEq3Col {
                                 delta,
                                 index_id: info.index_id,
                                 prefix: vec![(*a, u.clone()), (*b, v.clone())],
-                                arg: Sarg::Eq(*c, w.clone()),
+                                arg: Sarg::Eq(*c, w.clone().into()),
                             },
                             label,
                         ),
@@ -841,7 +843,7 @@ impl RewriteRule for IxScanEq3Col {
                                     delta,
                                     index_id: info.index_id,
                                     prefix: vec![(*a, u.clone()), (*b, v.clone())],
-                                    arg: Sarg::Eq(*c, w.clone()),
+                                    arg: Sarg::Eq(*c, w.clone().into()),
                                 },
                                 label,
                             )),
@@ -863,7 +865,7 @@ impl RewriteRule for IxScanEq3Col {
                                     delta,
                                     index_id: info.index_id,
                                     prefix: vec![(*a, u.clone()), (*b, v.clone())],
-                                    arg: Sarg::Eq(*c, w.clone()),
+                                    arg: Sarg::Eq(*c, w.clone().into()),
                                 },
                                 label,
                             )),
@@ -1195,7 +1197,7 @@ fn rhs_eq_constants_from_ixscan(scan: &IxScan) -> Option<Vec<EqConstFilterTerm>>
     let Sarg::Eq(col, value) = &scan.arg else {
         return None;
     };
-    constants.push((*col, value.clone()));
+    constants.push((*col, value.as_literal()?.clone()));
     Some(constants)
 }
 

@@ -487,7 +487,7 @@ mod tests {
 
     use crate::{
         check::{parse_and_type_sub, test_utils::build_module_def, SchemaView},
-        expr::{Expr, FieldProject, LeftDeepJoin, ProjectName, RelExpr, Relvar},
+        expr::{Expr, FieldProject, LeftDeepJoin, ParamId, ProjectName, RelExpr, Relvar},
     };
 
     use super::resolve_views_for_sub;
@@ -602,7 +602,7 @@ mod tests {
                             field: 0,
                             ty: AlgebraicType::identity(),
                         })),
-                        Box::new(Expr::Value(Identity::ONE.into(), AlgebraicType::identity()))
+                        Box::new(Expr::Param(ParamId::SENDER, AlgebraicType::identity()))
                     )
                 ),
                 "users".into()
@@ -649,7 +649,7 @@ mod tests {
                                         field: 0,
                                         ty: AlgebraicType::identity(),
                                     })),
-                                    Box::new(Expr::Value(Identity::ONE.into(), AlgebraicType::identity())),
+                                    Box::new(Expr::Param(ParamId::SENDER, AlgebraicType::identity())),
                                 ),
                             )),
                             Expr::BinOp(
@@ -700,7 +700,7 @@ mod tests {
                                     field: 0,
                                     ty: AlgebraicType::identity(),
                                 })),
-                                Box::new(Expr::Value(Identity::ONE.into(), AlgebraicType::identity())),
+                                Box::new(Expr::Param(ParamId::SENDER, AlgebraicType::identity())),
                             ),
                         )),
                         Expr::BinOp(

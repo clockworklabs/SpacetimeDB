@@ -6,7 +6,7 @@ use spacetimedb_execution::{
 };
 use spacetimedb_expr::{
     check::{parse_and_type_sub, SchemaView},
-    expr::ProjectList,
+    expr::{BindEnv, ProjectList},
     rls::{resolve_views_for_sql, resolve_views_for_sub},
     statement::{parse_and_type_sql, Statement, DML},
 };
@@ -76,7 +76,8 @@ pub fn execute_select_stmt<Tx: Datastore + DeltaStore>(
     metrics: &mut ExecutionMetrics,
     check_row_limit: impl Fn(ProjectListPlan) -> Result<ProjectListPlan>,
 ) -> Result<Vec<ProductValue>> {
-    let plan = compile_select_list(stmt).optimize(auth)?;
+    let bind_env = BindEnv::sender(auth.caller());
+    let plan = compile_select_list(stmt).optimize(auth)?.bind_params(&bind_env);
     let plan = check_row_limit(plan)?;
     let plan = ProjectListExecutor::from(plan);
     let mut rows = vec![];
@@ -94,7 +95,8 @@ pub fn execute_dml_stmt<Tx: MutDatastore>(
     tx: &mut Tx,
     metrics: &mut ExecutionMetrics,
 ) -> Result<()> {
-    let plan = compile_dml_plan(stmt).optimize(auth)?;
+    let bind_env = BindEnv::sender(auth.caller());
+    let plan = compile_dml_plan(stmt).optimize(auth)?.bind_params(&bind_env);
     let plan = MutExecutor::from(plan);
     plan.execute(tx, metrics)
 }

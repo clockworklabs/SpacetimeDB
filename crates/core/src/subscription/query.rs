@@ -7,6 +7,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_execution::Datastore;
+use spacetimedb_expr::expr::BindEnv;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_subscription::SubscriptionPlan;
 
@@ -31,9 +32,10 @@ pub fn compile_read_only_query(auth: &AuthCtx, tx: &Tx, input: &str) -> Result<P
     }
 
     let tx = SchemaViewer::new(tx, auth);
-    let (plans, has_param) = SubscriptionPlan::compile(input, &tx, auth)?;
-    let hash = QueryHash::from_string(input, auth.caller(), has_param);
-    Ok(Plan::new(plans, hash, input.to_owned()))
+    let (plans, requires_sender_binding) = SubscriptionPlan::compile(input, &tx, auth)?;
+    let hash = QueryHash::from_string(input, auth.caller(), requires_sender_binding);
+    let bind_env = BindEnv::for_sender_binding(requires_sender_binding, auth.caller());
+    Ok(Plan::new(plans, hash, input.to_owned(), bind_env))
 }
 
 /// Compile a string into a single read-only query with externally-computed hashes.
@@ -49,10 +51,11 @@ pub fn compile_query_with_hashes<Tx: Datastore + StateView>(
     }
 
     let tx = SchemaViewer::new(tx, auth);
-    let (plans, has_param) = SubscriptionPlan::compile(input, &tx, auth)?;
+    let (plans, requires_sender_binding) = SubscriptionPlan::compile(input, &tx, auth)?;
+    let bind_env = BindEnv::for_sender_binding(requires_sender_binding, auth.caller());
 
-    if auth.bypass_rls() || has_param {
-        return Ok(Plan::new(plans, hash_with_param, input.to_owned()));
+    if auth.bypass_rls() || requires_sender_binding {
+        return Ok(Plan::new(plans, hash_with_param, input.to_owned(), bind_env));
     }
-    Ok(Plan::new(plans, hash, input.to_owned()))
+    Ok(Plan::new(plans, hash, input.to_owned(), bind_env))
 }

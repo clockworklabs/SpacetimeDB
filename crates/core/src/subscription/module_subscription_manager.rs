@@ -27,7 +27,7 @@ use spacetimedb_data_structures::map::{
 };
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_durability::TxOffset;
-use spacetimedb_expr::expr::CollectViews;
+use spacetimedb_expr::expr::{BindEnv, CollectViews};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, IndexId, TableId, ViewId};
@@ -45,7 +45,7 @@ use tokio::sync::{mpsc, oneshot};
 /// Identity is insufficient because different ConnectionIds can use the same Identity.
 /// TODO: Determine if ConnectionId is sufficient for uniquely identifying a client.
 type ClientId = (Identity, ConnectionId);
-type Query = Arc<Plan>;
+type Query = Arc<PlanInstance>;
 type Client = Arc<ClientConnectionSender>;
 type SwitchedTableUpdate =
     ws_v1::FormatSwitch<ws_v1::TableUpdate<ws_v1::BsatnFormat>, ws_v1::TableUpdate<ws_v1::JsonFormat>>;
@@ -60,14 +60,18 @@ type ClientQueryId = ws_v1::QueryId;
 type SubscriptionId = (ClientId, ClientQueryId);
 type SubscriptionIdV2 = (ClientId, ClientQuerySetId);
 
+/// The unbound, reusable subscription query plan.
+///
+/// Runtime values such as `:sender` are represented as formal parameters inside these plans.
+/// TODO: Intern and share `PlanTemplate`s across bound [`PlanInstance`]s with the same template hash.
+/// Today, [`PlanInstance::new`] still allocates a fresh template for each cached subscription instance.
 #[derive(Debug)]
-pub struct Plan {
-    hash: QueryHash,
+pub struct PlanTemplate {
     sql: String,
     plans: Vec<SubscriptionPlan>,
 }
 
-impl CollectViews for Plan {
+impl CollectViews for PlanTemplate {
     fn collect_views(&self, views: &mut HashSet<ViewId>) {
         for plan in &self.plans {
             plan.collect_views(views);
@@ -75,10 +79,42 @@ impl CollectViews for Plan {
     }
 }
 
-impl Plan {
-    /// Create a new subscription plan to be cached
-    pub fn new(plans: Vec<SubscriptionPlan>, hash: QueryHash, text: String) -> Self {
-        Self { plans, hash, sql: text }
+impl PlanTemplate {
+    pub fn new(plans: Vec<SubscriptionPlan>, text: String) -> Self {
+        Self { sql: text, plans }
+    }
+}
+
+/// A concrete subscription query instance with runtime parameter bindings.
+#[derive(Debug)]
+pub struct PlanInstance {
+    hash: QueryHash,
+    template: Arc<PlanTemplate>,
+    bind_env: BindEnv,
+}
+
+/// A subscription plan tracked by the subscription manager.
+pub type Plan = PlanInstance;
+
+impl CollectViews for PlanInstance {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+        self.template.collect_views(views);
+    }
+}
+
+impl PlanInstance {
+    /// Create a new subscription plan instance to be cached.
+    pub fn new(plans: Vec<SubscriptionPlan>, hash: QueryHash, text: String, bind_env: BindEnv) -> Self {
+        Self::from_template(Arc::new(PlanTemplate::new(plans, text)), hash, bind_env)
+    }
+
+    /// Create a new subscription plan instance from an existing plan template.
+    pub fn from_template(template: Arc<PlanTemplate>, hash: QueryHash, bind_env: BindEnv) -> Self {
+        Self {
+            hash,
+            template,
+            bind_env,
+        }
     }
 
     /// Returns the query hash for this subscription
@@ -89,18 +125,19 @@ impl Plan {
     /// A subscription query return rows from a single table.
     /// This method returns the id of that table.
     pub fn subscribed_table_id(&self) -> TableId {
-        self.plans[0].subscribed_table_id()
+        self.template.plans[0].subscribed_table_id()
     }
 
     /// A subscription query return rows from a single table.
     /// This method returns the name of that table.
     pub fn subscribed_table_name(&self) -> &TableName {
-        self.plans[0].subscribed_table_name()
+        self.template.plans[0].subscribed_table_name()
     }
 
     /// Returns the index ids from which this subscription reads
     pub fn index_ids(&self) -> impl Iterator<Item = (TableId, IndexId)> + use<> {
-        self.plans
+        self.template
+            .plans
             .iter()
             .flat_map(|plan| plan.index_ids())
             .collect::<HashSet<_>>()
@@ -109,7 +146,8 @@ impl Plan {
 
     /// Returns the table ids from which this subscription reads
     pub fn table_ids(&self) -> impl Iterator<Item = TableId> + '_ {
-        self.plans
+        self.template
+            .plans
             .iter()
             .flat_map(|plan| plan.table_ids())
             .collect::<HashSet<_>>()
@@ -120,9 +158,10 @@ impl Plan {
     fn search_args(&self) -> impl Iterator<Item = (TableId, ColId, AlgebraicValue)> + use<> {
         let mut args = HashSet::new();
         for arg in self
+            .template
             .plans
             .iter()
-            .flat_map(|subscription| subscription.optimized_physical_plan().search_args())
+            .flat_map(|subscription| subscription.bound_optimized_physical_plan(&self.bind_env).search_args())
         {
             args.insert(arg);
         }
@@ -132,22 +171,30 @@ impl Plan {
     /// Returns the plan fragments that comprise this subscription.
     /// Will only return one element unless there is a table with multiple RLS rules.
     pub fn plans_fragments(&self) -> impl Iterator<Item = &SubscriptionPlan> + '_ {
-        self.plans.iter()
+        self.template.plans.iter()
     }
 
     /// Returns the join edges for this plan, if any.
     pub fn join_edges(&self) -> impl Iterator<Item = (JoinEdge, AlgebraicValue)> + '_ {
-        self.plans.iter().filter_map(|plan| plan.join_edge())
+        self.template
+            .plans
+            .iter()
+            .filter_map(|plan| plan.bound_join_edge(&self.bind_env))
     }
 
     /// The `SQL` text of this subscription.
     pub fn sql(&self) -> &str {
-        &self.sql
+        &self.template.sql
+    }
+
+    /// Runtime parameter bindings for this subscription instance.
+    pub fn bind_env(&self) -> &BindEnv {
+        &self.bind_env
     }
 
     /// Does this plan return rows from an event table?
     pub fn returns_event_table(&self) -> bool {
-        self.plans.iter().any(|p| p.returns_event_table())
+        self.template.plans.iter().any(|p| p.returns_event_table())
     }
 }
 
@@ -1480,15 +1527,15 @@ impl SubscriptionManager {
             })
             .fold(FoldState::default(), |mut acc, (qstate, plan, _hash)| {
                 let table_name = plan.subscribed_table_name().clone();
-                match eval_delta(tx, &mut acc.metrics, plan) {
+                match eval_delta(tx, &mut acc.metrics, plan, qstate.query.bind_env()) {
                     Err(err) => {
                         tracing::error!(
                             message = "Query errored during tx update",
-                            sql = qstate.query.sql,
+                            sql = qstate.query.sql(),
                             reason = ?err,
                         );
                         let err = DBError::WithSql {
-                            sql: qstate.query.sql.as_str().into(),
+                            sql: qstate.query.sql().into(),
                             error: Box::new(err.into()),
                         }
                         .to_string()
@@ -1637,15 +1684,15 @@ impl SubscriptionManager {
 
                 let clients_for_query = qstate.all_v1_clients();
 
-                match eval_delta(tx, &mut acc.metrics, plan) {
+                match eval_delta(tx, &mut acc.metrics, plan, qstate.query.bind_env()) {
                     Err(err) => {
                         tracing::error!(
                             message = "Query errored during tx update",
-                            sql = qstate.query.sql,
+                            sql = qstate.query.sql(),
                             reason = ?err,
                         );
                         let err = DBError::WithSql {
-                            sql: qstate.query.sql.as_str().into(),
+                            sql: qstate.query.sql().into(),
                             error: Box::new(err.into()),
                         }
                         .to_string()
@@ -2191,6 +2238,7 @@ mod tests {
     use std::{sync::Arc, time::Duration};
 
     use spacetimedb_client_api_messages::websocket::{v1 as ws_v1, v2 as ws_v2};
+    use spacetimedb_expr::expr::BindEnv;
     use spacetimedb_lib::AlgebraicValue;
     use spacetimedb_lib::{error::ResultTest, identity::AuthCtx, AlgebraicType, ConnectionId, Identity, Timestamp};
     use spacetimedb_primitives::{ColId, TableId};
@@ -2231,9 +2279,10 @@ mod tests {
     fn compile_plan_with_auth(db: &RelationalDB, sql: &str, auth: AuthCtx) -> ResultTest<Arc<Plan>> {
         with_read_only(db, |tx| {
             let tx = SchemaViewer::new(&*tx, &auth);
-            let (plans, has_param) = SubscriptionPlan::compile(sql, &tx, &auth).unwrap();
-            let hash = QueryHash::from_string(sql, auth.caller(), has_param);
-            Ok(Arc::new(Plan::new(plans, hash, sql.into())))
+            let (plans, requires_sender_binding) = SubscriptionPlan::compile(sql, &tx, &auth).unwrap();
+            let hash = QueryHash::from_string(sql, auth.caller(), requires_sender_binding);
+            let bind_env = BindEnv::for_sender_binding(requires_sender_binding, auth.caller());
+            Ok(Arc::new(Plan::new(plans, hash, sql.into(), bind_env)))
         })
     }
 
