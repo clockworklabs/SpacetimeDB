@@ -21,7 +21,7 @@ fn test_call_reducer_procedure() {
 #[test]
 fn test_call_reducer_procedure_with_identity_argument() {
     let test = Smoketest::builder()
-        .precompiled_module("call-reducer-procedure")
+        .precompiled_module("call-reducer-procedure-identity-arg")
         .build();
 
     let identity = test.database_identity.as_ref().unwrap();
