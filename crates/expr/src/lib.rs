@@ -9,7 +9,7 @@ use errors::{DuplicateName, InvalidLiteral, InvalidOp, InvalidWildcard, Unexpect
 use ethnum::i256;
 use ethnum::u256;
 use expr::AggType;
-use expr::{Expr, FieldProject, ProjectList, ProjectName, RelExpr};
+use expr::{Expr, FieldProject, ParamId, ProjectList, ProjectName, RelExpr};
 use spacetimedb_data_structures::map::HashCollectionExt as _;
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::ser::Serialize;
@@ -19,7 +19,7 @@ use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
 use spacetimedb_sats::uuid::Uuid;
 use spacetimedb_schema::schema::ColumnSchema;
-use spacetimedb_sql_parser::ast::{self, BinOp, ProjectElem, SqlExpr, SqlIdent, SqlLiteral};
+use spacetimedb_sql_parser::ast::{self, BinOp, Parameter, ProjectElem, SqlExpr, SqlIdent, SqlLiteral};
 use spacetimedb_sql_parser::parser::recursion;
 use std::{ops::Deref, str::FromStr};
 
@@ -99,6 +99,15 @@ fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, d
             parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?,
             ty.clone(),
         )),
+        (SqlExpr::Param(Parameter::Sender), None | Some(AlgebraicType::U256)) => {
+            Ok(Expr::Param(ParamId::SENDER, AlgebraicType::identity()))
+        }
+        (SqlExpr::Param(Parameter::Sender), Some(ty)) if ty.is_identity() => {
+            Ok(Expr::Param(ParamId::SENDER, AlgebraicType::identity()))
+        }
+        (SqlExpr::Param(Parameter::Sender), Some(ty)) => {
+            Err(UnexpectedType::new(&AlgebraicType::identity(), ty).into())
+        }
         (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), expected) => {
             let table_type = vars.deref().get(&*table).ok_or_else(|| Unresolved::var(&table))?;
             let ColumnSchema { col_pos, col_type, .. } = table_type
@@ -140,9 +149,8 @@ fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, d
             Ok(Expr::BinOp(op, Box::new(a), Box::new(b)))
         }
         (SqlExpr::Bin(..) | SqlExpr::Log(..), Some(ty)) => Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into()),
-        // Both unqualified names as well as parameters are syntactic constructs.
-        // Unqualified names are qualified and parameters are resolved before type checking.
-        (SqlExpr::Var(_) | SqlExpr::Param(_), _) => unreachable!(),
+        // Unqualified names are syntactic constructs and are qualified before type checking.
+        (SqlExpr::Var(_), _) => unreachable!(),
     }
 }
 

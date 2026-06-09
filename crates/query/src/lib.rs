@@ -6,7 +6,7 @@ use spacetimedb_execution::{
 };
 use spacetimedb_expr::{
     check::{parse_and_type_sub, SchemaView},
-    expr::ProjectList,
+    expr::{BindEnv, ProjectList},
     rls::{resolve_views_for_sql, resolve_views_for_sub},
     statement::{parse_and_type_sql, Statement, DML},
 };
@@ -32,7 +32,7 @@ pub fn compile_subscription(
         bail!("SQL query exceeds maximum allowed length: \"{sql:.120}...\"")
     }
 
-    let (plan, mut has_param) = parse_and_type_sub(sql, tx, auth)?;
+    let (plan, mut requires_sender_binding) = parse_and_type_sub(sql, tx, auth)?;
 
     let Some(return_id) = plan.return_table_id() else {
         bail!("Failed to determine TableId for query")
@@ -43,7 +43,7 @@ pub fn compile_subscription(
     };
 
     // Resolve any RLS filters
-    let plan_fragments = resolve_views_for_sub(tx, plan, auth, &mut has_param)?
+    let plan_fragments = resolve_views_for_sub(tx, plan, auth, &mut requires_sender_binding)?
         .into_iter()
         .map(compile_select)
         .collect::<Vec<_>>();
@@ -53,7 +53,12 @@ pub fn compile_subscription(
     // We must know this in order to generate the correct query hash.
     let reads_view = plan_fragments.iter().any(|plan| plan.reads_from_view(false));
 
-    Ok((plan_fragments, return_id, return_name, has_param || reads_view))
+    Ok((
+        plan_fragments,
+        return_id,
+        return_name,
+        requires_sender_binding || reads_view,
+    ))
 }
 
 /// A utility for parsing and type checking a sql statement
@@ -76,7 +81,8 @@ pub fn execute_select_stmt<Tx: Datastore + DeltaStore>(
     metrics: &mut ExecutionMetrics,
     check_row_limit: impl Fn(ProjectListPlan) -> Result<ProjectListPlan>,
 ) -> Result<Vec<ProductValue>> {
-    let plan = compile_select_list(stmt).optimize(auth)?;
+    let bind_env = BindEnv::sender(auth.caller());
+    let plan = compile_select_list(stmt).optimize(auth)?.bind_params(&bind_env);
     let plan = check_row_limit(plan)?;
     let plan = ProjectListExecutor::from(plan);
     let mut rows = vec![];
@@ -94,7 +100,8 @@ pub fn execute_dml_stmt<Tx: MutDatastore>(
     tx: &mut Tx,
     metrics: &mut ExecutionMetrics,
 ) -> Result<()> {
-    let plan = compile_dml_plan(stmt).optimize(auth)?;
+    let bind_env = BindEnv::sender(auth.caller());
+    let plan = compile_dml_plan(stmt).optimize(auth)?.bind_params(&bind_env);
     let plan = MutExecutor::from(plan);
     plan.execute(tx, metrics)
 }

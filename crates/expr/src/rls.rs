@@ -16,7 +16,7 @@ pub fn resolve_views_for_sub(
     tx: &impl SchemaView,
     expr: ProjectName,
     auth: &AuthCtx,
-    has_param: &mut bool,
+    requires_sender_binding: &mut bool,
 ) -> anyhow::Result<Vec<ProjectName>> {
     // RLS does not apply to the database owner
     if auth.bypass_rls() {
@@ -39,7 +39,7 @@ pub fn resolve_views_for_sub(
         None,
         // Resolve list is empty as we are not yet resolving any RLS rules
         Rc::new(ResolveList::None),
-        has_param,
+        requires_sender_binding,
         &mut 0,
         auth,
     )
@@ -208,7 +208,7 @@ fn resolve_views_for_expr(
     view: RelExpr,
     return_table_id: Option<TableId>,
     resolving: Rc<ResolveList>,
-    has_param: &mut bool,
+    requires_sender_binding: &mut bool,
     suffix: &mut usize,
     auth: &AuthCtx,
 ) -> anyhow::Result<Vec<RelExpr>> {
@@ -253,7 +253,7 @@ fn resolve_views_for_expr(
             let (expr, is_parameterized) = parse_and_type_sub(&sql, tx, auth)?;
 
             // Are any of the RLS rules parameterized?
-            *has_param = *has_param || is_parameterized;
+            *requires_sender_binding = *requires_sender_binding || is_parameterized;
 
             // We need to know which relvar is being returned for alpha-renaming
             let return_name = return_name(&expr)?;
@@ -264,7 +264,7 @@ fn resolve_views_for_expr(
                 expr.unwrap(),
                 Some(table_id),
                 ResolveList::new(table_id, resolving.clone()),
-                has_param,
+                requires_sender_binding,
                 suffix,
                 auth,
             )?;

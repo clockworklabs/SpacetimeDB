@@ -157,11 +157,10 @@ impl TypeChecker for SubChecker {
 }
 
 /// Parse and type check a subscription query
-pub fn parse_and_type_sub(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> TypingResult<(ProjectName, bool)> {
+pub fn parse_and_type_sub(sql: &str, tx: &impl SchemaView, _auth: &AuthCtx) -> TypingResult<(ProjectName, bool)> {
     let ast = parse_subscription(sql)?;
-    let has_param = ast.has_parameter();
-    let ast = ast.resolve_sender(auth.caller());
-    expect_table_type(SubChecker::type_ast(ast, tx)?).map(|plan| (plan, has_param))
+    let has_sender_param = ast.has_parameter();
+    expect_table_type(SubChecker::type_ast(ast, tx)?).map(|plan| (plan, has_sender_param))
 }
 
 /// Returns an error if the input type is not a table type or relvar

@@ -256,14 +256,27 @@ pub fn execute_plans<F: BuildableWebsocketFormat>(
 ) -> Result<(ws_v1::DatabaseUpdate<F>, ExecutionMetrics, Vec<QueryMetrics>), DBError> {
     plans
         .par_iter()
-        .flat_map_iter(|plan| plan.plans_fragments().map(|fragment| (plan.sql(), fragment)))
-        .filter(|(_, plan)| {
+        .flat_map_iter(|plan| {
+            plan.plans_fragments()
+                .map(|fragment| (plan.sql(), plan.bind_env(), fragment))
+        })
+        .filter(|(_, _, plan)| {
             // Since subscriptions only support selects and inner joins,
             // we filter out any plans that read from an empty table.
             plan.table_ids().all(|table_id| tx.row_count(table_id) > 0)
         })
-        .map(|(sql, plan)| (sql, plan, plan.subscribed_table_id(), plan.subscribed_table_name()))
-        .map(|(sql, plan, table_id, table_name)| (sql, plan.optimized_physical_plan().clone(), table_id, table_name))
+        .map(|(sql, bind_env, plan)| {
+            (
+                sql,
+                bind_env,
+                plan,
+                plan.subscribed_table_id(),
+                plan.subscribed_table_name(),
+            )
+        })
+        .map(|(sql, bind_env, plan, table_id, table_name)| {
+            (sql, plan.bound_optimized_physical_plan(bind_env), table_id, table_name)
+        })
         .map(|(sql, plan, table_id, table_name)| (sql, plan.optimize(auth), table_id, table_name))
         .map(|(sql, plan, table_id, table_name)| {
             plan.and_then(|plan| {

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use spacetimedb_expr::{
-    expr::{ProjectName, RelExpr, Relvar},
+    expr::{BindEnv, ProjectName, RelExpr, Relvar},
     statement::{TableDelete, TableInsert, TableUpdate},
 };
 use spacetimedb_lib::{identity::AuthCtx, AlgebraicValue, ProductValue};
@@ -25,6 +25,15 @@ impl MutationPlan {
             Self::Insert(..) => Ok(self),
             Self::Delete(plan) => Ok(Self::Delete(plan.optimize(auth)?)),
             Self::Update(plan) => Ok(Self::Update(plan.optimize(auth)?)),
+        }
+    }
+
+    /// Replace runtime parameters with bound values.
+    pub fn bind_params(self, bind_env: &BindEnv) -> Self {
+        match self {
+            Self::Insert(..) => self,
+            Self::Delete(plan) => Self::Delete(plan.bind_params(bind_env)),
+            Self::Update(plan) => Self::Update(plan.bind_params(bind_env)),
         }
     }
 }
@@ -55,6 +64,13 @@ impl DeletePlan {
         let Self { table, filter } = self;
         let filter = filter.optimize(auth)?;
         Ok(Self { table, filter })
+    }
+
+    /// Replace runtime parameters with bound values.
+    fn bind_params(self, bind_env: &BindEnv) -> Self {
+        let Self { table, filter } = self;
+        let filter = filter.bind_params(bind_env);
+        Self { table, filter }
     }
 
     /// Logical to physical conversion
@@ -89,6 +105,13 @@ impl UpdatePlan {
         let Self { table, columns, filter } = self;
         let filter = filter.optimize(auth)?;
         Ok(Self { columns, table, filter })
+    }
+
+    /// Replace runtime parameters with bound values.
+    fn bind_params(self, bind_env: &BindEnv) -> Self {
+        let Self { table, columns, filter } = self;
+        let filter = filter.bind_params(bind_env);
+        Self { columns, table, filter }
     }
 
     /// Logical to physical conversion

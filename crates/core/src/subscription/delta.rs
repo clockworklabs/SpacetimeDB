@@ -2,6 +2,7 @@ use crate::host::module_host::UpdatesRelValue;
 use anyhow::Result;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
 use spacetimedb_execution::{Datastore, DeltaStore, RelValue, Row};
+use spacetimedb_expr::expr::BindEnv;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_primitives::ColList;
 use spacetimedb_sats::product_value::InvalidFieldError;
@@ -20,6 +21,7 @@ pub fn eval_delta<'a, Tx: Datastore + DeltaStore>(
     tx: &'a Tx,
     metrics: &mut ExecutionMetrics,
     plan: &SubscriptionPlan,
+    bind_env: &BindEnv,
 ) -> Result<Option<UpdatesRelValue<'a>>> {
     metrics.delta_queries_evaluated += 1;
 
@@ -42,12 +44,12 @@ pub fn eval_delta<'a, Tx: Datastore + DeltaStore>(
     if !plan.is_join() {
         // Single table plans will never return redundant rows,
         // so there's no need to track row counts.
-        plan.for_each_insert(tx, metrics, &mut |row| {
+        plan.for_each_insert(bind_env, tx, metrics, &mut |row| {
             inserts.push(maybe_project(row)?);
             Ok(())
         })?;
 
-        plan.for_each_delete(tx, metrics, &mut |row| {
+        plan.for_each_delete(bind_env, tx, metrics, &mut |row| {
             deletes.push(maybe_project(row)?);
             Ok(())
         })?;
@@ -57,7 +59,7 @@ pub fn eval_delta<'a, Tx: Datastore + DeltaStore>(
         let mut insert_counts = HashMap::new();
         let mut delete_counts = HashMap::new();
 
-        plan.for_each_insert(tx, metrics, &mut |row| {
+        plan.for_each_insert(bind_env, tx, metrics, &mut |row| {
             let row = maybe_project(row)?;
             let n = insert_counts.entry(row).or_default();
             if *n > 0 {
@@ -67,7 +69,7 @@ pub fn eval_delta<'a, Tx: Datastore + DeltaStore>(
             Ok(())
         })?;
 
-        plan.for_each_delete(tx, metrics, &mut |row| {
+        plan.for_each_delete(bind_env, tx, metrics, &mut |row| {
             let row = maybe_project(row)?;
             match insert_counts.get_mut(&row) {
                 // We have not seen an insert for this row.

@@ -27,7 +27,7 @@ use spacetimedb_data_structures::map::{
 };
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_durability::TxOffset;
-use spacetimedb_expr::expr::CollectViews;
+use spacetimedb_expr::expr::{BindEnv, CollectViews};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
 use spacetimedb_primitives::{ColId, IndexId, TableId, ViewId};
@@ -65,6 +65,9 @@ pub struct Plan {
     hash: QueryHash,
     sql: String,
     plans: Vec<SubscriptionPlan>,
+    // TODO(query-params): this is still a concrete subscription instance binding.
+    // The target template cache should store reusable plans separately from per-subscriber parameter values.
+    bind_env: BindEnv,
 }
 
 impl CollectViews for Plan {
@@ -77,8 +80,13 @@ impl CollectViews for Plan {
 
 impl Plan {
     /// Create a new subscription plan to be cached
-    pub fn new(plans: Vec<SubscriptionPlan>, hash: QueryHash, text: String) -> Self {
-        Self { plans, hash, sql: text }
+    pub fn new(plans: Vec<SubscriptionPlan>, hash: QueryHash, text: String, bind_env: BindEnv) -> Self {
+        Self {
+            plans,
+            hash,
+            sql: text,
+            bind_env,
+        }
     }
 
     /// Returns the query hash for this subscription
@@ -122,7 +130,7 @@ impl Plan {
         for arg in self
             .plans
             .iter()
-            .flat_map(|subscription| subscription.optimized_physical_plan().search_args())
+            .flat_map(|subscription| subscription.bound_optimized_physical_plan(&self.bind_env).search_args())
         {
             args.insert(arg);
         }
@@ -143,6 +151,11 @@ impl Plan {
     /// The `SQL` text of this subscription.
     pub fn sql(&self) -> &str {
         &self.sql
+    }
+
+    /// Runtime parameter bindings for this subscription.
+    pub fn bind_env(&self) -> &BindEnv {
+        &self.bind_env
     }
 
     /// Does this plan return rows from an event table?
@@ -1480,7 +1493,7 @@ impl SubscriptionManager {
             })
             .fold(FoldState::default(), |mut acc, (qstate, plan, _hash)| {
                 let table_name = plan.subscribed_table_name().clone();
-                match eval_delta(tx, &mut acc.metrics, plan) {
+                match eval_delta(tx, &mut acc.metrics, plan, qstate.query.bind_env()) {
                     Err(err) => {
                         tracing::error!(
                             message = "Query errored during tx update",
@@ -1637,7 +1650,7 @@ impl SubscriptionManager {
 
                 let clients_for_query = qstate.all_v1_clients();
 
-                match eval_delta(tx, &mut acc.metrics, plan) {
+                match eval_delta(tx, &mut acc.metrics, plan, qstate.query.bind_env()) {
                     Err(err) => {
                         tracing::error!(
                             message = "Query errored during tx update",
@@ -2191,6 +2204,7 @@ mod tests {
     use std::{sync::Arc, time::Duration};
 
     use spacetimedb_client_api_messages::websocket::{v1 as ws_v1, v2 as ws_v2};
+    use spacetimedb_expr::expr::BindEnv;
     use spacetimedb_lib::AlgebraicValue;
     use spacetimedb_lib::{error::ResultTest, identity::AuthCtx, AlgebraicType, ConnectionId, Identity, Timestamp};
     use spacetimedb_primitives::{ColId, TableId};
@@ -2231,9 +2245,10 @@ mod tests {
     fn compile_plan_with_auth(db: &RelationalDB, sql: &str, auth: AuthCtx) -> ResultTest<Arc<Plan>> {
         with_read_only(db, |tx| {
             let tx = SchemaViewer::new(&*tx, &auth);
-            let (plans, has_param) = SubscriptionPlan::compile(sql, &tx, &auth).unwrap();
-            let hash = QueryHash::from_string(sql, auth.caller(), has_param);
-            Ok(Arc::new(Plan::new(plans, hash, sql.into())))
+            let (plans, requires_sender_binding) = SubscriptionPlan::compile(sql, &tx, &auth).unwrap();
+            let hash = QueryHash::from_string(sql, auth.caller(), requires_sender_binding);
+            let bind_env = BindEnv::for_sender_binding(requires_sender_binding, auth.caller());
+            Ok(Arc::new(Plan::new(plans, hash, sql.into(), bind_env)))
         })
     }
 

@@ -30,14 +30,14 @@ impl QueryHash {
     }
 
     /// Generate a hash from a query string.
-    pub fn from_string(sql: &str, identity: Identity, has_param: bool) -> Self {
-        if has_param {
+    pub fn from_string(sql: &str, identity: Identity, requires_sender_binding: bool) -> Self {
+        if requires_sender_binding {
             return Self::from_string_and_identity(sql, identity);
         }
         Self::from_bytes(sql.as_bytes())
     }
 
-    /// Parameterized queries must include the caller identity in their hash.
+    /// Queries whose result depends on the caller identity must include it in their hash.
     pub fn from_string_and_identity(sql: &str, identity: Identity) -> Self {
         let mut hasher = blake3::Hasher::new();
         hasher.update(sql.as_bytes());

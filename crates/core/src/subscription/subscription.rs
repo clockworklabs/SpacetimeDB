@@ -4,6 +4,7 @@ use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use crate::sql::ast::SchemaViewer;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
+use spacetimedb_expr::expr::BindEnv;
 use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_schema::schema::TableSchema;
@@ -27,11 +28,13 @@ where
         .map(|schema| {
             let sql = format!("SELECT * FROM {}", schema.table_name);
             let tx = SchemaViewer::new(tx, auth);
-            SubscriptionPlan::compile(&sql, &tx, auth).map(|(plans, has_param)| {
+            SubscriptionPlan::compile(&sql, &tx, auth).map(|(plans, requires_sender_binding)| {
+                let bind_env = BindEnv::for_sender_binding(requires_sender_binding, auth.caller());
                 Plan::new(
                     plans,
-                    QueryHash::from_string(&sql, auth.caller(), auth.bypass_rls() || has_param),
+                    QueryHash::from_string(&sql, auth.caller(), auth.bypass_rls() || requires_sender_binding),
                     sql,
+                    bind_env,
                 )
             })
         })

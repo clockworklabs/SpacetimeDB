@@ -28,7 +28,7 @@ use crate::subscription::module_subscription_actor::{commit_and_broadcast_event,
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::prometheus_handle::{HistogramExt, TimerGuard};
 use crate::worker_metrics::WORKER_METRICS;
-use anyhow::{anyhow, bail, ensure, Context};
+use anyhow::{anyhow, bail, Context};
 use bytes::{Buf, Bytes};
 use core::future::Future;
 use core::time::Duration;
@@ -40,6 +40,7 @@ use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, Program};
 use spacetimedb_execution::pipelined::PipelinedProject;
+use spacetimedb_expr::expr::BindEnv;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::db::raw_def::v9::{Lifecycle, ViewResultHeader};
 use spacetimedb_lib::de::DeserializeSeed;
@@ -174,11 +175,12 @@ pub(crate) fn run_query_for_view(
     let schema_view = SchemaViewer::new(&*tx, &auth);
 
     // Compile to subscription plans.
-    let (plans, has_params) = SubscriptionPlan::compile(the_query, &schema_view, &auth)?;
-    ensure!(
-        !has_params,
-        "parameterized SQL is not supported for view materialization yet"
-    );
+    let (plans, requires_sender_binding) = SubscriptionPlan::compile(the_query, &schema_view, &auth)?;
+    let bind_env = match (requires_sender_binding, call_info.sender) {
+        (true, Some(sender)) => BindEnv::for_sender_binding(true, sender),
+        (true, None) => bail!("parameterized SQL view materialization requires a sender"),
+        (false, _) => BindEnv::empty(),
+    };
 
     // Validate shape and disallow views-on-views.
     for plan in &plans {
@@ -209,7 +211,7 @@ pub(crate) fn run_query_for_view(
             tx.record_table_scan(&op, table_id);
         }
 
-        let pipelined = PipelinedProject::from(plan.optimized_physical_plan().clone());
+        let pipelined = PipelinedProject::from(plan.bound_optimized_physical_plan(&bind_env));
         pipelined.execute(&*tx, &mut metrics, &mut |row| {
             rows.push(row.to_product_value());
             Ok(())

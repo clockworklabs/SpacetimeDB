@@ -8,13 +8,23 @@ use itertools::Either;
 use spacetimedb_expr::expr::AggType;
 use spacetimedb_lib::{metrics::ExecutionMetrics, query::Delta, sats::size_of::SizeOf, AlgebraicValue, ProductValue};
 use spacetimedb_physical_plan::plan::{
-    HashJoin, IxJoin, IxScan, PhysicalExpr, PhysicalPlan, ProjectField, ProjectListPlan, ProjectPlan, Sarg, Semi,
-    TableScan, TupleField,
+    HashJoin, IxJoin, IxScan, PhysicalExpr, PhysicalPlan, ProjectField, ProjectListPlan, ProjectPlan, Sarg, SargValue,
+    Semi, TableScan, TupleField,
 };
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::product;
 
 use crate::{Datastore, DeltaStore, Row, Tuple};
+
+fn expect_bound_sarg_value(value: SargValue) -> AlgebraicValue {
+    match value {
+        SargValue::Literal(value) => value,
+        SargValue::Param(id) => panic!(
+            "unbound query parameter {:?} reached pipelined index scan; bind parameters before constructing a PipelinedProject",
+            id
+        ),
+    }
+}
 
 /// An executor for explicit column projections.
 /// Note, this plan can only be constructed from the http api,
@@ -579,14 +589,17 @@ impl From<IxScan> for PipelinedIxDeltaScanRange {
                 arg: Sarg::Eq(_, v),
                 delta: Some(delta),
                 ..
-            } => Self {
-                table_id: schema.table_id,
-                index_id,
-                prefix: prefix.into_iter().map(|(_, v)| v).collect(),
-                lower: Bound::Included(v.clone()),
-                upper: Bound::Included(v),
-                delta,
-            },
+            } => {
+                let v = expect_bound_sarg_value(v);
+                Self {
+                    table_id: schema.table_id,
+                    index_id,
+                    prefix: prefix.into_iter().map(|(_, v)| v).collect(),
+                    lower: Bound::Included(v.clone()),
+                    upper: Bound::Included(v),
+                    delta,
+                }
+            }
             IxScan {
                 schema,
                 index_id,
@@ -706,7 +719,7 @@ impl From<IxScan> for PipelinedIxDeltaScanEq {
             } => Self {
                 table_id: schema.table_id,
                 index_id,
-                point: combine_prefix_and_last(prefix, last),
+                point: combine_prefix_and_last(prefix, expect_bound_sarg_value(last)),
                 delta,
             },
             IxScan { .. } => unreachable!(),
@@ -773,14 +786,17 @@ impl From<IxScan> for PipelinedIxScanRange {
                 index_id,
                 prefix,
                 arg: Sarg::Eq(_, v),
-            } => Self {
-                table_id: schema.table_id,
-                index_id,
-                limit,
-                prefix: prefix.into_iter().map(|(_, v)| v).collect(),
-                lower: Bound::Included(v.clone()),
-                upper: Bound::Included(v),
-            },
+            } => {
+                let v = expect_bound_sarg_value(v);
+                Self {
+                    table_id: schema.table_id,
+                    index_id,
+                    limit,
+                    prefix: prefix.into_iter().map(|(_, v)| v).collect(),
+                    lower: Bound::Included(v.clone()),
+                    upper: Bound::Included(v),
+                }
+            }
             IxScan {
                 schema,
                 limit,
@@ -909,7 +925,7 @@ impl From<IxScan> for PipelinedIxScanEq {
                 table_id: schema.table_id,
                 index_id,
                 limit,
-                point: combine_prefix_and_last(prefix, last),
+                point: combine_prefix_and_last(prefix, expect_bound_sarg_value(last)),
             },
             IxScan { .. } => unreachable!(),
         }
