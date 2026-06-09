@@ -26,18 +26,16 @@ public static class GeneratorSnapshotTests
 
     record struct StepOutput(string Key, IncrementalStepRunReason Reason, object Value);
 
-    class Fixture
+    private class Fixture
     {
         private readonly string projectDir;
-        private readonly CSharpCompilation sampleCompilation;
+        public CSharpCompilation SampleCompilation { get; }
 
         public Fixture(string projectDir, CSharpCompilation sampleCompilation)
         {
             this.projectDir = projectDir;
-            this.sampleCompilation = sampleCompilation;
+            SampleCompilation = sampleCompilation;
         }
-
-        public CSharpCompilation SampleCompilation => sampleCompilation;
 
         public static async Task<Fixture> Compile(string name)
         {
@@ -71,30 +69,30 @@ public static class GeneratorSnapshotTests
             IIncrementalGenerator generator
         )
         {
-            var driver = CreateDriver(generator, sampleCompilation.LanguageVersion);
+            var driver = CreateDriver(generator, SampleCompilation.LanguageVersion);
 
             // Store the new driver instance - it contains the results and the cache.
-            var driverAfterGen = driver.RunGenerators(sampleCompilation);
+            var driverAfterGen = driver.RunGenerators(SampleCompilation);
             var genResult = driverAfterGen.GetRunResult();
 
             // Verify the generated code against the snapshots.
             await Verify(generator.GetType().Name, genResult);
 
-            CheckCacheWorking(sampleCompilation, driverAfterGen);
+            CheckCacheWorking(SampleCompilation, driverAfterGen);
 
             return genResult.GeneratedTrees;
         }
 
         public GeneratorDriverRunResult RunGeneratorAndGetResult(IIncrementalGenerator generator)
         {
-            var driver = CreateDriver(generator, sampleCompilation.LanguageVersion);
-            return driver.RunGenerators(sampleCompilation).GetRunResult();
+            var driver = CreateDriver(generator, SampleCompilation.LanguageVersion);
+            return driver.RunGenerators(SampleCompilation).GetRunResult();
         }
 
         public async Task<CSharpCompilation> RunAndCheckGenerators(
             params IIncrementalGenerator[] generators
         ) =>
-            sampleCompilation.AddSyntaxTrees(
+            SampleCompilation.AddSyntaxTrees(
                 (await Task.WhenAll(generators.Select(RunAndCheckGenerator))).SelectMany(output =>
                     output
                 )
