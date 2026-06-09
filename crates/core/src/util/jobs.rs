@@ -1,5 +1,5 @@
 use std::panic::AssertUnwindSafe;
-use std::sync::{mpsc as std_mpsc, Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex, Weak};
 
 use core_affinity::CoreId;
 use futures::future::LocalBoxFuture;
@@ -15,10 +15,10 @@ use crate::util::thread_scheduling::apply_compute_thread_hint;
 
 /// A handle to a pool of Tokio executors for running database WASM code on.
 ///
-/// Each database has a [`SingleCoreExecutor`],
-/// a handle to a single-threaded Tokio runtime which is pinned to a specific CPU core.
-/// In multi-tenant environments, multiple databases' [`SingleCoreExecutor`]s may be handles on the same runtime/core,
-/// and a [`SingleCoreExecutor`] may occasionally be migrated to a different runtime/core to balance load.
+/// Each database has a [`SingleThreadedExecutor`],
+/// a handle to a single OS thread with a Tokio LocalSet.
+/// In multi-tenant environments, multiple databases' [`SingleThreadedExecutor`]s may be handles on the same runtime/core,
+/// and a [`SingleThreadedExecutor`] may occasionally be migrated to a different runtime/core to balance load.
 ///
 /// Construct a `JobCores` via [`Self::from_pinned_cores`] or [`Self::without_pinned_cores`].
 /// A `JobCores` constructed without core pinning, including `from_pinned_cores` on an empty set,
@@ -39,29 +39,29 @@ enum JobCoresInner {
 }
 
 struct PinnedCoresExecutorManager {
-    /// Channels to request that a [`SingleCoreExecutor`] move to a different core.
+    /// Channels to request that a [`SingleThreadedExecutor`] move to a different core.
     ///
     /// The [`CoreId`] that an executor is pinned to is used as an index into
     /// `self.cores` to make load-balancing decisions when freeing a database
     /// executor in [`Self::deallocate`].
-    database_executor_move: HashMap<SingleCoreExecutorId, watch::Sender<CoreId>>,
+    database_executor_move: HashMap<SingleThreadedExecutorId, watch::Sender<CoreId>>,
     cores: IndexMap<CoreId, CoreInfo>,
     /// An index into `cores` of the next core to put a new job onto.
     ///
     /// This acts as a partition point in `cores`; all cores in `..index` have
     /// one fewer job on them than the cores in `index..`.
     next_core: usize,
-    next_id: SingleCoreExecutorId,
+    next_id: SingleThreadedExecutorId,
 }
 
-/// Remembers the [`SingleCoreExecutorId`]s for all databases sharing that executor.
+/// Remembers the [`SingleThreadedExecutorId`]s for all databases sharing that executor.
 #[derive(Default)]
 struct CoreInfo {
-    jobs: SmallVec<[SingleCoreExecutorId; 4]>,
+    jobs: SmallVec<[SingleThreadedExecutorId; 4]>,
 }
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-struct SingleCoreExecutorId(usize);
+struct SingleThreadedExecutorId(usize);
 
 impl JobCores {
     /// Get an [`AllocatedCore`] for a job thread.
@@ -93,7 +93,7 @@ impl JobCores {
                 database_executor_move: HashMap::default(),
                 cores,
                 next_core: 0,
-                next_id: SingleCoreExecutorId(0),
+                next_id: SingleThreadedExecutorId(0),
             })))
         };
 
@@ -117,7 +117,7 @@ impl PinnedCoresExecutorManager {
     /// and store state in `self` necessary to move that database to a new core
     /// for load-balancing purposes.
     ///
-    /// The returned [`SingleCoreExecutorId`] is an index into internal data structures in `self` (namely, `self.cores`)
+    /// The returned [`SingleThreadedExecutorId`] is an index into internal data structures in `self` (namely, `self.cores`)
     /// which should be passed to [`Self::deallocate`] when the database is no longer using this executor.
     /// This is done automatically by [`LoadBalanceOnDropGuard`].
     ///
@@ -126,7 +126,7 @@ impl PinnedCoresExecutorManager {
     /// replaced to balance databases among available cores, so databases should
     /// either spawn [`CorePinner::run`] as a thread-local async task, or call
     /// [`CorePinner::pin_now`] frequently.
-    fn allocate(&mut self) -> (SingleCoreExecutorId, CorePinner) {
+    fn allocate(&mut self) -> (SingleThreadedExecutorId, CorePinner) {
         // Determine the next job ID.
         let database_executor_id = self.next_id;
         self.next_id.0 += 1;
@@ -156,8 +156,8 @@ impl PinnedCoresExecutorManager {
     /// Mark the executor at `id` as no longer in use, free internal state which tracks it,
     /// and move other executors to different cores as necessary to maintain a balanced distribution.
     ///
-    /// Called by [`LoadBalanceOnDropGuard`] when a [`SingleCoreExecutor`] is no longer in use.
-    fn deallocate(&mut self, id: SingleCoreExecutorId) {
+    /// Called by [`LoadBalanceOnDropGuard`] when a [`SingleThreadedExecutor`] is no longer in use.
+    fn deallocate(&mut self, id: SingleThreadedExecutorId) {
         // Determine the `CoreId` that will now have one less job.
         // The `id`s came from `self.allocate()`,
         // so there must be a `database_executor_move` for it.
@@ -219,27 +219,9 @@ pub struct AllocatedJobCore {
 }
 
 impl AllocatedJobCore {
-    pub fn into_shared(self) -> (Arc<LoadBalanceOnDropGuard>, CorePinner) {
-        (Arc::new(self.guard), self.pinner)
-    }
-
-    /// Spawn a [`SingleCoreExecutor`] allocated to this core.
-    pub fn spawn_async_executor(
-        guard: Arc<LoadBalanceOnDropGuard>,
-        pinner: CorePinner,
-        name: impl Into<String>,
-    ) -> SingleCoreExecutor {
-        SingleCoreExecutor::spawn_and_pin(guard, pinner, Some(name.into()))
-    }
-
-    /// Spawn a [`SingleThreadedExecutor`] allocated to this core.
-    pub fn spawn_executor<S: Send + 'static>(
-        guard: Arc<LoadBalanceOnDropGuard>,
-        pinner: CorePinner,
-        state: S,
-        name: impl Into<String>,
-    ) -> SingleThreadedExecutor<S> {
-        SingleThreadedExecutor::spawn_and_pin(guard, pinner, state, Some(name.into()))
+    /// Spawn a [`SingleThreadedExecutor`] for this allocated core.
+    pub fn spawn_executor<S: Send + 'static>(self, state: S, name: impl Into<String>) -> SingleThreadedExecutor<S> {
+        SingleThreadedExecutor::spawn_and_pin(Arc::new(self.guard), self.pinner, state, Some(name.into()))
     }
 }
 
@@ -291,7 +273,12 @@ impl CorePinner {
     }
 }
 
-/// A handle to a Tokio executor which can be used to run WASM compute for a particular database.
+enum ExecutorJob<S> {
+    Async(Box<dyn FnOnce() -> LocalBoxFuture<'static, ()> + Send>),
+    Sync(Box<dyn FnOnce(&mut S) + Send>),
+}
+
+/// A handle to a single-threaded executor for database work.
 ///
 /// Use [`Self::run_job`] to run futures, and [`Self::run_sync_job`] to run functions.
 ///
@@ -299,27 +286,33 @@ impl CorePinner {
 /// When all handles on this database executor have been dropped,
 /// its use of the core to which it is pinned will be released,
 /// and other databases may be migrated to that core to balance load.
-#[derive(Clone)]
-pub struct SingleCoreExecutor {
-    inner: Arc<SingleCoreExecutorInner>,
+pub struct SingleThreadedExecutor<S> {
+    inner: Arc<SingleThreadedExecutorInner<S>>,
 }
 
-struct SingleCoreExecutorInner {
-    /// The sending end of a channel over which we send jobs.
-    job_tx: mpsc::UnboundedSender<Box<dyn FnOnce() -> LocalBoxFuture<'static, ()> + Send>>,
-}
-
-impl SingleCoreExecutor {
-    /// Spawn a `SingleCoreExecutor` on the given core.
-    fn spawn(core: AllocatedJobCore, name: Option<String>) -> Self {
-        let (guard, pinner) = core.into_shared();
-        Self::spawn_and_pin(guard, pinner, name)
+impl<S> Clone for SingleThreadedExecutor<S> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
     }
+}
 
-    fn spawn_and_pin(guard: Arc<LoadBalanceOnDropGuard>, mut pinner: CorePinner, name: Option<String>) -> Self {
-        let (job_tx, mut job_rx) = mpsc::unbounded_channel();
+struct SingleThreadedExecutorInner<S> {
+    /// The sending end of a channel over which we send jobs.
+    job_tx: mpsc::UnboundedSender<ExecutorJob<S>>,
+}
 
-        let inner = Arc::new(SingleCoreExecutorInner { job_tx });
+impl<S: Send + 'static> SingleThreadedExecutor<S> {
+    fn spawn_and_pin(
+        guard: Arc<LoadBalanceOnDropGuard>,
+        mut pinner: CorePinner,
+        mut state: S,
+        name: Option<String>,
+    ) -> Self {
+        let (job_tx, mut job_rx) = mpsc::unbounded_channel::<ExecutorJob<S>>();
+
+        let inner = Arc::new(SingleThreadedExecutorInner { job_tx });
 
         let rt = runtime::Handle::current();
         let mut thread = std::thread::Builder::new();
@@ -333,9 +326,21 @@ impl SingleCoreExecutor {
             let _entered = rt.enter();
             let local = tokio::task::LocalSet::new();
 
+            // Clone the pinner: one for inline repinning in the sync job handler,
+            // one for the background re-pinning watcher.
+            let mut loop_pinner = pinner.clone();
+
             let job_loop = async {
                 while let Some(job) = job_rx.recv().await {
-                    local.spawn_local(job());
+                    match job {
+                        ExecutorJob::Async(job) => {
+                            local.spawn_local(job());
+                        }
+                        ExecutorJob::Sync(job) => {
+                            loop_pinner.pin_if_changed();
+                            job(&mut state);
+                        }
+                    }
                 }
             };
 
@@ -348,23 +353,15 @@ impl SingleCoreExecutor {
             // dropped and cancelled.
             rt.block_on(local)
         };
-        thread.spawn(worker).expect("failed to spawn SingleCoreExecutor thread");
+        thread
+            .spawn(worker)
+            .expect("failed to spawn SingleThreadedExecutor thread");
 
         Self { inner }
     }
 
-    /// Create a `SingleCoreExecutor` which runs jobs in [`tokio::runtime::Handle::current`].
-    ///
-    /// Callers should most likely instead construct a `SingleCoreExecutor` via [`JobCores::take`],
-    /// which will intelligently pin each database to a particular core.
-    /// This method should only be used for short-lived instances which do not perform intense computation,
-    /// e.g. to extract the schema by calling `describe_module`.
-    pub fn in_current_tokio_runtime() -> Self {
-        Self::spawn(AllocatedJobCore::default(), None)
-    }
-
-    /// Run a job for this database executor.
-    pub async fn run_job<F, R>(&self, f: F) -> R
+    /// Run an async job on this executor and return its result.
+    pub async fn run_async_job<F, R>(&self, f: F) -> R
     where
         F: AsyncFnOnce() -> R + Send + 'static,
         R: Send + 'static,
@@ -374,15 +371,15 @@ impl SingleCoreExecutor {
 
         self.inner
             .job_tx
-            .send(Box::new(move || {
+            .send(ExecutorJob::Async(Box::new(move || {
                 async move {
                     let result = AssertUnwindSafe(f().instrument(span)).catch_unwind().await;
                     if let Err(Err(_panic)) = tx.send(result) {
-                        tracing::warn!("uncaught panic on `SingleCoreExecutor`")
+                        tracing::warn!("uncaught panic on `SingleThreadedExecutor`")
                     }
                 }
                 .boxed_local()
-            }))
+            })))
             .unwrap_or_else(|_| panic!("job thread exited"));
 
         match rx.await.unwrap() {
@@ -392,7 +389,7 @@ impl SingleCoreExecutor {
     }
 
     /// Enqueue a job for this database executor without waiting for its result.
-    pub fn enqueue_job<F>(&self, f: F)
+    pub fn enqueue_async_job<F>(&self, f: F)
     where
         F: AsyncFnOnce() + Send + 'static,
     {
@@ -400,83 +397,19 @@ impl SingleCoreExecutor {
 
         self.inner
             .job_tx
-            .send(Box::new(move || {
+            .send(ExecutorJob::Async(Box::new(move || {
                 async move {
                     if AssertUnwindSafe(f().instrument(span)).catch_unwind().await.is_err() {
-                        tracing::warn!("uncaught panic on `SingleCoreExecutor`")
+                        tracing::warn!("uncaught panic on `SingleThreadedExecutor`")
                     }
                 }
                 .boxed_local()
-            }))
+            })))
             .unwrap_or_else(|_| panic!("job thread exited"));
     }
 
     /// Run `f` on this database executor and return its result.
     pub async fn run_sync_job<F, R>(&self, f: F) -> R
-    where
-        F: FnOnce() -> R + Send + 'static,
-        R: Send + 'static,
-    {
-        self.run_job(async || f()).await
-    }
-}
-
-/// A handle to a plain OS-thread executor for synchronous database work.
-///
-/// Unlike [`SingleCoreExecutor`], it is intended for synchronous runtimes.
-/// This executor never enters Tokio and never polls futures on its worker
-/// thread.
-pub struct SingleThreadedExecutor<S> {
-    inner: Arc<SingleThreadedExecutorInner<S>>,
-}
-
-struct SingleThreadedExecutorInner<S> {
-    job_tx: std_mpsc::Sender<SyncJob<S>>,
-}
-
-type SyncJob<S> = Box<dyn FnOnce(&mut S) + Send>;
-
-impl<S> Clone for SingleThreadedExecutor<S> {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-        }
-    }
-}
-
-impl<S: Send + 'static> SingleThreadedExecutor<S> {
-    fn spawn_and_pin(
-        guard: Arc<LoadBalanceOnDropGuard>,
-        mut pinner: CorePinner,
-        mut state: S,
-        name: Option<String>,
-    ) -> Self {
-        let (job_tx, job_rx) = std_mpsc::channel::<SyncJob<S>>();
-
-        let inner = Arc::new(SingleThreadedExecutorInner { job_tx });
-
-        let mut thread = std::thread::Builder::new();
-        if let Some(name) = name {
-            thread = thread.name(name);
-        }
-        let worker = move || {
-            let _guard = guard;
-            pinner.pin_now();
-
-            while let Ok(job) = job_rx.recv() {
-                pinner.pin_if_changed();
-                job(&mut state);
-            }
-        };
-        thread
-            .spawn(worker)
-            .expect("failed to spawn thread for `SingleThreadedExecutor`");
-
-        Self { inner }
-    }
-
-    /// Run `f` on this database executor and return its result.
-    pub async fn run_job<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&mut S) -> R + Send + 'static,
         R: Send + 'static,
@@ -486,7 +419,7 @@ impl<S: Send + 'static> SingleThreadedExecutor<S> {
 
         self.inner
             .job_tx
-            .send(Box::new(move |state| {
+            .send(ExecutorJob::Sync(Box::new(move |state| {
                 let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
                     let _entered = span.enter();
                     f(state)
@@ -494,7 +427,7 @@ impl<S: Send + 'static> SingleThreadedExecutor<S> {
                 if let Err(Err(_panic)) = tx.send(result) {
                     tracing::warn!("uncaught panic on `SingleThreadedExecutor`")
                 }
-            }))
+            })))
             .unwrap_or_else(|_| panic!("job thread exited"));
 
         match rx.await.unwrap() {
@@ -503,8 +436,8 @@ impl<S: Send + 'static> SingleThreadedExecutor<S> {
         }
     }
 
-    /// Enqueue `f` without waiting for its result.
-    pub fn enqueue_job<F>(&self, f: F)
+    /// Enqueue a job for this database executor without waiting for its result.
+    pub fn enqueue_sync_job<F>(&self, f: F)
     where
         F: FnOnce(&mut S) + Send + 'static,
     {
@@ -512,7 +445,7 @@ impl<S: Send + 'static> SingleThreadedExecutor<S> {
 
         self.inner
             .job_tx
-            .send(Box::new(move |state| {
+            .send(ExecutorJob::Sync(Box::new(move |state| {
                 if std::panic::catch_unwind(AssertUnwindSafe(|| {
                     let _entered = span.enter();
                     f(state);
@@ -521,7 +454,7 @@ impl<S: Send + 'static> SingleThreadedExecutor<S> {
                 {
                     tracing::warn!("uncaught panic on `SingleThreadedExecutor`")
                 }
-            }))
+            })))
             .unwrap_or_else(|_| panic!("job thread exited"));
     }
 }
@@ -530,7 +463,7 @@ impl<S: Send + 'static> SingleThreadedExecutor<S> {
 /// allowing databases from more-contended runtimes/cores to migrate there.
 #[derive(Default)]
 pub struct LoadBalanceOnDropGuard {
-    inner: Option<(Weak<Mutex<PinnedCoresExecutorManager>>, SingleCoreExecutorId)>,
+    inner: Option<(Weak<Mutex<PinnedCoresExecutorManager>>, SingleThreadedExecutorId)>,
 }
 
 impl Drop for LoadBalanceOnDropGuard {

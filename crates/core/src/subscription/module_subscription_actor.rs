@@ -1939,7 +1939,7 @@ mod tests {
         begin_mut_tx, begin_tx, create_view_for_test, insert, insert_into_view, with_auto_commit, with_read_only,
         TestDB,
     };
-    use crate::db::relational_db::{Persistence, RelationalDB, Txdata};
+    use crate::db::relational_db::RelationalDB;
     use crate::error::DBError;
     use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
     use crate::sql::execute::run;
@@ -1948,16 +1948,12 @@ mod tests {
     use crate::subscription::query::compile_read_only_query;
     use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
     use crate::subscription::TableUpdateType;
-    use core::fmt;
-    use futures::FutureExt;
     use itertools::Itertools;
     use pretty_assertions::assert_matches;
-    use spacetimedb_client_api_messages::energy::EnergyQuanta;
+    use spacetimedb_client_api_messages::energy::FunctionBudget;
     use spacetimedb_client_api_messages::websocket::{common::RowListLen as _, v1 as ws_v1, v2 as ws_v2};
-    use spacetimedb_commitlog::{commitlog, repo};
     use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
     use spacetimedb_datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
-    use spacetimedb_durability::{Durability, EmptyHistory, TxOffset};
     use spacetimedb_execution::dml::MutDatastore;
     use spacetimedb_lib::bsatn::ToBsatn;
     use spacetimedb_lib::db::auth::StAccess;
@@ -1968,15 +1964,9 @@ mod tests {
     use spacetimedb_primitives::TableId;
     use spacetimedb_sats::product;
     use std::future::Future;
-    use std::pin::pin;
-    use std::sync::RwLock;
-    use std::task::Poll;
     use std::time::Instant;
     use std::{sync::Arc, time::Duration};
     use tokio::sync::mpsc::{self};
-    use tokio::sync::watch;
-
-    const TEST_MESSAGE_TIMEOUT: Duration = Duration::from_millis(20);
 
     fn add_subscriber(db: Arc<RelationalDB>, sql: &str, assert: Option<AssertTxFn>) -> Result<(), DBError> {
         // Create and enter a Tokio runtime to run the `ModuleSubscriptions`' background workers in parallel.
@@ -2010,106 +2000,10 @@ mod tests {
         Ok(())
     }
 
-    /// A [`Durability`] for which the durable offset is marked manually.
-    struct ManualDurability {
-        commitlog: Arc<RwLock<commitlog::Generic<repo::Memory, Txdata>>>,
-        durable_offset: watch::Sender<Option<TxOffset>>,
-    }
-
-    impl ManualDurability {
-        #[allow(unused)]
-        fn mark_durable_at(&self, offset: TxOffset) {
-            assert!(
-                self.committed_offset().is_some_and(|committed| committed >= offset),
-                "given offset is not in the commitlog"
-            );
-            self.durable_offset.send_modify(|val| {
-                val.replace(offset);
-            });
-        }
-
-        fn mark_durable(&self) {
-            if let Some(offset) = self.committed_offset() {
-                self.durable_offset.send_modify(|val| {
-                    val.replace(offset);
-                });
-            }
-        }
-
-        fn committed_offset(&self) -> Option<TxOffset> {
-            self.commitlog.read().unwrap().max_committed_offset()
-        }
-    }
-
-    impl Durability for ManualDurability {
-        type TxData = Txdata;
-
-        fn append_tx(&self, tx: spacetimedb_durability::PreparedTx<Self::TxData>) {
-            let tx = tx.into_transaction();
-            let mut commitlog = self.commitlog.write().unwrap();
-            commitlog.commit([tx]).expect("commit failed");
-            commitlog.flush().expect("error flushing commitlog");
-        }
-
-        fn durable_tx_offset(&self) -> spacetimedb_durability::DurableOffset {
-            self.durable_offset.subscribe().into()
-        }
-
-        fn close(&self) -> spacetimedb_durability::Close {
-            let mut durable = self.durable_offset.subscribe();
-            let commitlog = self.commitlog.clone();
-            async move {
-                let durable_offset = durable
-                    .wait_for(
-                        |offset| match offset.zip(commitlog.read().unwrap().max_committed_offset()) {
-                            Some((durable_offset, committed_offset)) => durable_offset >= committed_offset,
-                            None => false,
-                        },
-                    )
-                    .await
-                    .unwrap();
-                *durable_offset
-            }
-            .boxed()
-        }
-    }
-
-    impl Default for ManualDurability {
-        fn default() -> Self {
-            let (durable_offset, ..) = watch::channel(None);
-            Self {
-                commitlog: Arc::new(RwLock::new(
-                    commitlog::Generic::open(repo::Memory::unlimited(), <_>::default()).unwrap(),
-                )),
-                durable_offset,
-            }
-        }
-    }
-
     /// An in-memory `RelationalDB` for testing
     fn relational_db() -> anyhow::Result<Arc<RelationalDB>> {
         let TestDB { db, .. } = TestDB::in_memory()?;
         Ok(db)
-    }
-
-    /// An in-memory `RelationalDB` with `ManualDurability`.
-    fn relational_db_with_manual_durability(
-        rt: tokio::runtime::Handle,
-    ) -> anyhow::Result<(Arc<RelationalDB>, Arc<ManualDurability>)> {
-        let durability = Arc::new(ManualDurability::default());
-        let db = TestDB::open_db(
-            EmptyHistory::new(),
-            Some(Persistence {
-                durability: durability.clone(),
-                disk_size: Arc::new(|| Ok(<_>::default())),
-                snapshots: None,
-                runtime: rt,
-            }),
-            None,
-            0,
-        )?;
-
-        Ok((Arc::new(db), durability))
     }
 
     /// A [SubscribeSingle] message for testing
@@ -2158,7 +2052,7 @@ mod tests {
             function_call: ModuleFunctionCall::default(),
             status: EventStatus::Committed(DatabaseUpdate::default()),
             reducer_return_value: None,
-            energy_quanta_used: EnergyQuanta { quanta: 0 },
+            execution_budget_used: FunctionBudget::ZERO,
             host_execution_duration: Duration::from_millis(0),
             request_id: None,
             timer: None,
@@ -2219,25 +2113,6 @@ mod tests {
         db: &Arc<RelationalDB>,
     ) -> (Arc<ClientConnectionSender>, ClientConnectionReceiver) {
         client_connection_with_compression(client_id, db, ws_v1::Compression::None)
-    }
-
-    /// Instantiate a client connection with confirmed reads turned on or off.
-    fn client_connection_with_confirmed_reads(
-        client_id: ClientActorId,
-        db: &Arc<RelationalDB>,
-        confirmed_reads: bool,
-    ) -> (Arc<ClientConnectionSender>, ClientConnectionReceiver) {
-        client_connection_with_config(
-            client_id,
-            db,
-            ClientConfig {
-                protocol: Protocol::Binary,
-                version: WsVersion::V1,
-                compression: ws_v1::Compression::None,
-                tx_update_full: true,
-                confirmed_reads,
-            },
-        )
     }
 
     /// Instantiate a v2 client connection with the default test settings.
@@ -2506,9 +2381,9 @@ mod tests {
             other => panic!("Expected v2 UnsubscribeApplied, got: {other:?}"),
         }
 
-        let _ = commit_tx(&db, &subs, [], [(table_id, product![2_u8])])?;
-
-        assert_no_outbound_message(rx.recv()).await;
+        let metrics = commit_tx(&db, &subs, [], [(table_id, product![2_u8])])?;
+        assert_eq!(metrics.delta_queries_evaluated, 0);
+        assert_eq!(metrics.delta_queries_matched, 0);
 
         Ok(())
     }
@@ -2662,7 +2537,7 @@ mod tests {
         inserts: impl IntoIterator<Item = ProductValue>,
         deletes: impl IntoIterator<Item = ProductValue>,
     ) {
-        match recv_outbound_message(rx, "TxUpdate").await {
+        match rx.await {
             Some(OutboundMessage::V1(SerializableMessage::TxUpdate(TransactionUpdateMessage {
                 database_update:
                     SubscriptionUpdateMessage {
@@ -2709,7 +2584,7 @@ mod tests {
         inserts: impl IntoIterator<Item = ProductValue>,
         deletes: impl IntoIterator<Item = ProductValue>,
     ) {
-        match recv_outbound_message(rx, "v2 TransactionUpdate").await {
+        match rx.await {
             Some(OutboundMessage::V2(ws_v2::ServerMessage::TransactionUpdate(update))) => {
                 assert_eq!(update.query_sets.len(), 1);
                 let query_set = &update.query_sets[0];
@@ -2734,39 +2609,6 @@ mod tests {
             Some(msg) => panic!("expected a v2 TransactionUpdate, but got {msg:#?}"),
             None => panic!("The receiver closed due to an error"),
         }
-    }
-
-    async fn recv_outbound_message(
-        rx: impl Future<Output = Option<OutboundMessage>>,
-        expected: &str,
-    ) -> Option<OutboundMessage> {
-        tokio::time::timeout(TEST_MESSAGE_TIMEOUT, rx)
-            .await
-            .unwrap_or_else(|_| panic!("timed out waiting for {expected}"))
-    }
-
-    async fn assert_no_outbound_message(rx: impl Future<Output = Option<OutboundMessage>>) {
-        match tokio::time::timeout(TEST_MESSAGE_TIMEOUT, rx).await {
-            Err(_) => {}
-            Ok(Some(msg)) => panic!("expected no message, got {msg:#?}"),
-            Ok(None) => panic!("the receiver closed due to an error"),
-        }
-    }
-
-    /// Assert that the future `f` completes only after `durability` is marked
-    /// durable.
-    ///
-    /// Namely:
-    ///
-    /// - assert that polling `f` once returns [`Poll::Pending`]
-    /// - call `durability.mark_durable()`
-    /// - assert that polling `f` returns [`Poll::Ready`].
-    ///
-    async fn assert_after_durable(durability: &ManualDurability, f: impl Future<Output: fmt::Debug>) {
-        let mut g = pin!(f);
-        assert_matches!(futures::poll!(&mut g), Poll::Pending);
-        durability.mark_durable();
-        assert_matches!(futures::poll!(g), Poll::Ready(_));
     }
 
     /// Commit a set of row updates and broadcast to subscribers
@@ -4326,91 +4168,6 @@ mod tests {
         ] {
             assert!(subscribe(sql).is_err(),);
         }
-
-        Ok(())
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_confirmed_reads() -> anyhow::Result<()> {
-        let (db, durability) = relational_db_with_manual_durability(tokio::runtime::Handle::current())?;
-
-        let client_id_confirmed = client_id_from_u8(1);
-        let client_id_unconfirmed = client_id_from_u8(2);
-
-        let (tx_for_confirmed, mut rx_for_confirmed) =
-            client_connection_with_confirmed_reads(client_id_confirmed, &db, true);
-        let (tx_for_unconfirmed, mut rx_for_unconfirmed) =
-            client_connection_with_confirmed_reads(client_id_unconfirmed, &db, false);
-
-        let auth_confirmed = AuthCtx::new(db.owner_identity(), client_id_confirmed.identity);
-        let auth_unconfirmed = AuthCtx::new(db.owner_identity(), client_id_unconfirmed.identity);
-
-        let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
-        let table = db.create_table_for_test("t", &[("x", AlgebraicType::U8)], &[])?;
-        let schema = ProductType::from([AlgebraicType::U8]);
-
-        // Subscribe both clients.
-        subscribe_multi(&subs, auth_confirmed, &["select * from t"], tx_for_confirmed, &mut 0).await?;
-        subscribe_multi(
-            &subs,
-            auth_unconfirmed,
-            &["select * from t"],
-            tx_for_unconfirmed,
-            &mut 0,
-        )
-        .await?;
-
-        assert_matches!(
-            rx_for_unconfirmed.recv().await,
-            Some(OutboundMessage::V1(SerializableMessage::Subscription(
-                SubscriptionMessage {
-                    result: SubscriptionResult::SubscribeMulti(_),
-                    ..
-                }
-            )))
-        );
-        assert_after_durable(&durability, async {
-            assert_matches!(
-                rx_for_confirmed.recv().await,
-                Some(OutboundMessage::V1(SerializableMessage::Subscription(
-                    SubscriptionMessage {
-                        result: SubscriptionResult::SubscribeMulti(_),
-                        ..
-                    }
-                )))
-            );
-        })
-        .await;
-
-        // Insert a row.
-        let mut tx = begin_mut_tx(&db);
-        db.insert(&mut tx, table, &bsatn::to_vec(&product![1_u8])?)?;
-        assert!(matches!(
-            subs.commit_and_broadcast_event(None, module_event(), tx),
-            Ok(Ok(_))
-        ));
-        // Insert another row, using SQL.
-        let auth = AuthCtx::new(identity_from_u8(0), identity_from_u8(0));
-        run(
-            db.clone(),
-            "INSERT INTO t (x) VALUES (2)".to_string(),
-            auth,
-            Some(subs),
-            None,
-            &mut vec![],
-        )
-        .await?;
-
-        // Unconfirmed client should have received both rows.
-        assert_tx_update_for_table(rx_for_unconfirmed.recv(), table, &schema, [product![1_u8]], []).await;
-        assert_tx_update_for_table(rx_for_unconfirmed.recv(), table, &schema, [product![2_u8]], []).await;
-
-        // Confirmed client should receive the rows after the tx becomes durable.
-        assert_after_durable(&durability, async {
-            assert_tx_update_for_table(rx_for_confirmed.recv(), table, &schema, [product![1_u8]], []).await;
-            assert_tx_update_for_table(rx_for_confirmed.recv(), table, &schema, [product![2_u8]], []).await
-        })
-        .await;
 
         Ok(())
     }

@@ -35,7 +35,7 @@ use spacetimedb_lib::db::raw_def::v10::{
     ExplicitNames, MethodOrAny, RawConstraintDefV10, RawHttpHandlerDefV10, RawHttpRouteDefV10, RawIndexDefV10,
     RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section, RawProcedureDefV10, RawReducerDefV10,
     RawRowLevelSecurityDefV10, RawScheduleDefV10, RawScopedTypeNameV10, RawSequenceDefV10, RawTableDefV10,
-    RawTypeDefV10, RawViewDefV10,
+    RawTypeDefV10, RawViewDefV10, RawViewPrimaryKeyDefV10,
 };
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIndexAlgorithm, RawIndexDefV9,
@@ -43,6 +43,7 @@ use spacetimedb_lib::db::raw_def::v9::{
     RawScheduleDefV9, RawScopedTypeNameV9, RawSequenceDefV9, RawSql, RawTableDefV9, RawTypeDefV9,
     RawUniqueConstraintDataV9, RawViewDefV9, TableAccess, TableType,
 };
+use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
 use spacetimedb_lib::{ProductType, RawModuleDef};
 use spacetimedb_primitives::{
     ColId, ColList, ColOrCols, ColSet, HttpHandlerId, ProcedureId, ReducerId, TableId, ViewFnPtr,
@@ -668,6 +669,7 @@ impl From<ModuleDef> for RawModuleDefV10 {
         }
 
         // Collect ExplicitNames for views: accessor_name → source_name, name → canonical_name.
+        let mut raw_view_primary_keys = Vec::new();
         let raw_views: Vec<RawViewDefV10> = views
             .into_values()
             .map(|vd| {
@@ -675,11 +677,34 @@ impl From<ModuleDef> for RawModuleDefV10 {
                     RawIdentifier::from(vd.accessor_name.clone()),
                     RawIdentifier::from(vd.name.clone()),
                 );
+                // Only explicit procedural-view primary keys are serialized into
+                // `ViewPrimaryKeys`. Primary keys for query builder views are
+                // inferred again during validation from the returned table type.
+                if vd.is_procedural()
+                    && let Some(primary_key) = vd.primary_key
+                    && let Some(column) = vd.return_columns.get(primary_key.idx())
+                {
+                    raw_view_primary_keys.push(RawViewPrimaryKeyDefV10 {
+                        view_source_name: RawIdentifier::from(vd.accessor_name.clone()),
+                        // Use the already canonicalized column name, because this raw
+                        // module def is being emitted from an already canonicalized
+                        // `ModuleDef`. The `Typespace` section we emit below contains
+                        // those canonical column names, and V10 has no column-level
+                        // `ExplicitNames` section to translate source column names
+                        // during the next validation pass. Therefore the serialized
+                        // primary-key column must match the canonical name present in
+                        // the emitted return type.
+                        columns: vec![RawIdentifier::from(column.name.clone())],
+                    });
+                }
                 vd.into()
             })
             .collect();
         if !raw_views.is_empty() {
             sections.push(RawModuleDefV10Section::Views(raw_views));
+        }
+        if !raw_view_primary_keys.is_empty() {
+            sections.push(RawModuleDefV10Section::ViewPrimaryKeys(raw_view_primary_keys));
         }
 
         if !schedules.is_empty() {
@@ -1646,6 +1671,12 @@ impl ViewDef {
     /// Get a parameter by the parameter's name.
     pub fn get_param_by_name(&self, name: &Identifier) -> Option<&ViewParamDef> {
         self.param_columns.iter().find(|c| &c.name == name)
+    }
+
+    /// Is this a procedural view or query builder view?
+    pub fn is_procedural(&self) -> bool {
+        use extract_view_return_product_type_ref as extract_kind;
+        matches!(extract_kind(&self.return_type), Some((_, ViewKind::Procedural)))
     }
 }
 

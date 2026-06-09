@@ -174,7 +174,6 @@ STDB_IMPORT_10_2(get_jwt)
 Status get_jwt(const uint8_t* connection_id_ptr, BytesSource* out);
 
 // ===== Procedure Transactions (spacetime_10.3) =====
-#ifdef SPACETIMEDB_UNSTABLE_FEATURES
 STDB_IMPORT_10_3(procedure_start_mut_tx)
 Status procedure_start_mut_tx(int64_t* out);
 
@@ -190,7 +189,6 @@ Status procedure_http_request(
     const uint8_t* request_ptr, size_t request_len,
     const uint8_t* body_ptr, size_t body_len,
     BytesSource out[2]);
-#endif
 
 } // extern "C"
 

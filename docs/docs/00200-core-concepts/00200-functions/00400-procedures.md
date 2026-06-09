@@ -15,10 +15,6 @@ However, procedures don't automatically run in database transactions,
 and must manually open and commit a transaction in order to read from or modify the database state.
 For this reason, prefer defining reducers rather than procedures unless you need to use one of the special procedure operators.
 
-:::warning
-***Procedures are currently in beta, and their API may change in upcoming SpacetimeDB releases.***
-:::
-
 ## Defining Procedures
 
 <Tabs groupId="server-language" queryString>

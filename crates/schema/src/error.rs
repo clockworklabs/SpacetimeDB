@@ -86,6 +86,17 @@ pub enum ValidationError {
         view: RawIdentifier,
         ty: PrettyAlgebraicType,
     },
+    #[error("View {view} referenced by primary key definition not found")]
+    ViewPrimaryKeyViewNotFound { view: RawIdentifier },
+    #[error("View {view} has multiple primary key definitions")]
+    RepeatedViewPrimaryKey { view: RawIdentifier },
+    #[error("View {view} has multiple primary key columns: {columns:?}")]
+    MultipleViewPrimaryKeyColumns {
+        view: RawIdentifier,
+        columns: Vec<RawIdentifier>,
+    },
+    #[error("Primary key column {column} for view {view} not found")]
+    ViewPrimaryKeyColumnNotFound { view: RawIdentifier, column: RawIdentifier },
     #[error("Table {table} has invalid product_type_ref {ref_}")]
     InvalidProductTypeRef {
         table: RawIdentifier,
