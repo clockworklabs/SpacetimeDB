@@ -3,6 +3,7 @@
 use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
+use serde_json::Value;
 use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::path::Path;
@@ -12,6 +13,8 @@ use std::{env, fs};
 const README_PATH: &str = "tools/ci/README.md";
 
 mod ci_docs;
+mod keynote_bench;
+mod retry_cla_assistant;
 mod smoketest;
 mod util;
 
@@ -91,117 +94,198 @@ fn check_global_json_policy() -> Result<()> {
     Ok(())
 }
 
-fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
-    let skeleton_base = Path::new("sdks/csharp/unity-meta-skeleton~");
-    let skeleton_root = skeleton_base.join(pkg_id);
-    if !skeleton_root.exists() {
-        return Ok(());
-    }
-
-    let pkg_root = Path::new("sdks/csharp/packages").join(pkg_id);
-    if !pkg_root.exists() {
-        return Ok(());
-    }
-
-    // Copy spacetimedb.<pkg>.meta
-    let pkg_root_meta = skeleton_base.join(format!("{pkg_id}.meta"));
-    if pkg_root_meta.exists()
-        && let Some(parent) = pkg_root.parent()
-    {
-        let pkg_meta_dst = parent.join(format!("{pkg_id}.meta"));
-        fs::copy(&pkg_root_meta, &pkg_meta_dst)?;
-    }
-
-    let versioned_dir = match find_only_subdir(&pkg_root) {
-        Ok(dir) => dir,
-        Err(err) => {
-            log::info!("Skipping Unity meta overlay for {pkg_id}: could not locate restored version dir: {err}");
-            return Ok(());
-        }
-    };
-
-    // If version.meta exists under the skeleton package, rename it to match the restored version dir.
-    let version_meta_template = skeleton_root.join("version.meta");
-    if version_meta_template.exists()
-        && let Some(parent) = versioned_dir.parent()
-    {
-        let version_name = versioned_dir
-            .file_name()
-            .expect("versioned directory should have a file name");
-        let version_meta_dst = parent.join(format!("{}.meta", version_name.to_string_lossy()));
-        fs::copy(&version_meta_template, &version_meta_dst)?;
-    }
-
-    copy_overlay_dir(&skeleton_root, &versioned_dir)
+fn package_json_pnpm_version(package_manager: &str) -> Option<&str> {
+    package_manager.strip_prefix("pnpm@")
 }
 
-fn clear_restored_package_dirs(pkg_id: &str) -> Result<()> {
-    let pkg_root = Path::new("sdks/csharp/packages").join(pkg_id);
-    if !pkg_root.exists() {
-        return Ok(());
-    }
-
-    fs::remove_dir_all(&pkg_root)?;
-
-    Ok(())
+fn git_tracked_files(pathspec: &str) -> Result<Vec<PathBuf>> {
+    let output = cmd!("git", "ls-files", pathspec).read()?;
+    Ok(output.lines().map(PathBuf::from).collect())
 }
 
-fn find_only_subdir(dir: &Path) -> Result<PathBuf> {
-    let mut subdirs: Vec<PathBuf> = vec![];
-
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        if entry.file_type()?.is_dir() {
-            subdirs.push(entry.path());
-        }
-    }
-
-    match subdirs.as_slice() {
-        [] => Err(anyhow::anyhow!(
-            "Could not find a restored versioned directory under {}",
-            dir.display()
-        )),
-        [only] => Ok(only.clone()),
-        _ => Err(anyhow::anyhow!(
-            "Expected exactly one restored versioned directory under {}, found {}",
-            dir.display(),
-            subdirs.len()
-        )),
-    }
+fn package_json_string_value(package_json: &Value, key: &str) -> Option<String> {
+    package_json.get(key)?.as_str().map(str::to_owned)
 }
 
-fn copy_overlay_dir(src: &Path, dst: &Path) -> Result<()> {
-    if !src.exists() {
-        bail!("Skeleton directory does not exist: {}", src.display());
-    }
-    if !dst.exists() {
-        bail!("Destination directory does not exist: {}", dst.display());
-    }
+fn package_json_engines_pnpm(package_json: &Value) -> Option<String> {
+    package_json.get("engines")?.get("pnpm")?.as_str().map(str::to_owned)
+}
 
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
-            if dst_path.exists() {
-                copy_overlay_dir(&src_path, &dst_path)?;
-            }
+fn read_package_json(path: &Path) -> Result<Value> {
+    let contents = fs::read_to_string(path)?;
+    Ok(serde_json::from_str(&contents)?)
+}
+
+fn is_npm_package_json(package_json: &Value) -> bool {
+    [
+        "bin",
+        "dependencies",
+        "devDependencies",
+        "exports",
+        "main",
+        "optionalDependencies",
+        "packageManager",
+        "peerDependencies",
+        "scripts",
+        "type",
+    ]
+    .iter()
+    .any(|key| package_json.get(key).is_some())
+}
+
+fn is_template_path(path: &Path) -> bool {
+    path.starts_with("templates")
+}
+
+fn minimum_release_age(path: &Path) -> Result<u64> {
+    let workspace = fs::read_to_string(path)?;
+    workspace
+        .lines()
+        .find_map(|line| {
+            let line = line.trim();
+            let value = line.strip_prefix("minimumReleaseAge:")?.trim();
+            value.parse::<u64>().ok()
+        })
+        .ok_or_else(|| anyhow::anyhow!("{} is missing minimumReleaseAge", path.display()))
+}
+
+fn npmrc_minimum_release_age(path: &Path, expected_minimum_release_age: u64) -> Result<u64> {
+    let contents = fs::read_to_string(path).map_err(|err| {
+        if err.kind() == std::io::ErrorKind::NotFound {
+            anyhow::anyhow!(
+                "{} is tracked but missing from the working tree. Restore it with:\nminimum-release-age={}",
+                path.display(),
+                expected_minimum_release_age
+            )
         } else {
-            if src_path.extension() == Some(OsStr::new("meta")) {
-                let asset_path = dst_path
-                    .parent()
-                    .expect("dst_path should have a parent")
-                    .join(dst_path.file_stem().expect(".meta file should have a file stem"));
+            anyhow::anyhow!(
+                "failed to read {} while checking pnpm minimum package age: {err}",
+                path.display()
+            )
+        }
+    })?;
+    contents
+        .lines()
+        .find_map(|line| {
+            let line = line.trim();
+            let value = line.strip_prefix("minimum-release-age=")?.trim();
+            value.parse::<u64>().ok()
+        })
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "{} must contain `minimum-release-age={}` to match root pnpm-workspace.yaml",
+                path.display(),
+                expected_minimum_release_age
+            )
+        })
+}
 
-                if asset_path.exists() {
-                    fs::copy(&src_path, &dst_path)?;
-                } else if dst_path.exists() {
-                    fs::remove_file(&dst_path)?;
-                }
-                continue;
-            }
+fn check_pnpm_release_age_policy() -> Result<()> {
+    ensure_repo_root()?;
 
-            fs::copy(&src_path, &dst_path)?;
+    let root_package_json_path = Path::new("package.json");
+    let root_package_json = read_package_json(root_package_json_path)?;
+    let package_manager = package_json_string_value(&root_package_json, "packageManager")
+        .ok_or_else(|| anyhow::anyhow!("package.json is missing packageManager"))?;
+    let package_manager_version = package_json_pnpm_version(&package_manager)
+        .ok_or_else(|| anyhow::anyhow!("packageManager must be pnpm@<version>, found {package_manager:?}"))?;
+
+    let expected_engine_pnpm = format!(">={package_manager_version}");
+    let engine_pnpm = package_json_engines_pnpm(&root_package_json)
+        .ok_or_else(|| anyhow::anyhow!("package.json engines is missing pnpm"))?;
+    if engine_pnpm != expected_engine_pnpm {
+        bail!("package.json engines.pnpm must be {expected_engine_pnpm:?}, found {engine_pnpm:?}");
+    }
+
+    for package_json_path in git_tracked_files(":(glob)**/package.json")? {
+        let package_json = read_package_json(&package_json_path)?;
+        let Some(found_package_manager) = package_json_string_value(&package_json, "packageManager") else {
+            continue;
+        };
+        if found_package_manager != package_manager {
+            bail!(
+                "{} packageManager must match root package.json: expected {:?}, found {:?}",
+                package_json_path.display(),
+                package_manager,
+                found_package_manager
+            );
+        }
+    }
+
+    let root_workspace_path = Path::new("pnpm-workspace.yaml");
+    let root_minimum_release_age = minimum_release_age(root_workspace_path)?;
+    for workspace_path in git_tracked_files(":(glob)**/pnpm-workspace.yaml")? {
+        let found_minimum_release_age = minimum_release_age(&workspace_path)?;
+        if found_minimum_release_age != root_minimum_release_age {
+            bail!(
+                "{} minimumReleaseAge must match root pnpm-workspace.yaml: expected {}, found {}",
+                workspace_path.display(),
+                root_minimum_release_age,
+                found_minimum_release_age
+            );
+        }
+    }
+
+    for npmrc_path in git_tracked_files(":(glob)**/.npmrc")? {
+        // Template package roots are copied into projects created by `spacetime init`.
+        // They must not embed this repo's package-age policy; smoketests enforce it
+        // at the pnpm process boundary instead.
+        if is_template_path(&npmrc_path) {
+            continue;
+        }
+        let found_minimum_release_age = npmrc_minimum_release_age(&npmrc_path, root_minimum_release_age)?;
+        if found_minimum_release_age != root_minimum_release_age {
+            bail!(
+                "{} minimum-release-age must match root pnpm-workspace.yaml: expected {}, found {}",
+                npmrc_path.display(),
+                root_minimum_release_age,
+                found_minimum_release_age
+            );
+        }
+    }
+
+    for package_json_path in git_tracked_files(":(glob)**/package.json")? {
+        // Template package roots are copied into projects created by `spacetime init`.
+        // They must not require adjacent .npmrc files for this repo's package-age
+        // policy; smoketests enforce it at the pnpm process boundary instead.
+        if is_template_path(&package_json_path) {
+            continue;
+        }
+        let package_json = read_package_json(&package_json_path)?;
+        if !is_npm_package_json(&package_json) {
+            continue;
+        }
+        let package_dir = package_json_path
+            .parent()
+            .expect("git-tracked package.json path should have a parent");
+        let npmrc_path = package_dir.join(".npmrc");
+        if !npmrc_path.is_file() {
+            bail!(
+                "{} is required because {} is an npm/pnpm package manifest.\nAdd {} containing:\nminimum-release-age={}",
+                npmrc_path.display(),
+                package_json_path.display(),
+                npmrc_path.display(),
+                root_minimum_release_age
+            );
+        }
+        let found_minimum_release_age = npmrc_minimum_release_age(&npmrc_path, root_minimum_release_age)?;
+        if found_minimum_release_age != root_minimum_release_age {
+            bail!(
+                "{} minimum-release-age must match root pnpm-workspace.yaml: expected {}, found {}",
+                npmrc_path.display(),
+                root_minimum_release_age,
+                found_minimum_release_age
+            );
+        }
+    }
+
+    for workflow_path in git_tracked_files(".github/workflows/*")? {
+        let contents = fs::read_to_string(&workflow_path)?;
+        if contents.contains("pnpm/action-setup@v4") {
+            bail!(
+                "{} must use ./.github/actions/setup-pnpm instead of pnpm/action-setup@v4",
+                workflow_path.display()
+            );
         }
     }
 
@@ -225,16 +309,20 @@ enum CiCmd {
     ///
     /// Runs tests for the codegen crate and builds a test module with the wasm bindings.
     WasmBindings,
-    /// Builds and packs C# DLLs and NuGet packages for local Unity workflows
+    /// Deprecated; use `cargo regen csharp dlls`.
     ///
-    /// Packs the in-repo C# NuGet packages and restores the C# SDK to populate `sdks/csharp/packages/**`.
-    /// Then overlays Unity `.meta` skeleton files from `sdks/csharp/unity-meta-skeleton~/**` onto the restored
-    /// versioned package directory, so Unity can associate stable meta files with the most recently built package.
+    /// Builds and packs C# DLLs and NuGet packages for local Unity workflows.
     Dlls,
     /// Runs smoketests
     ///
     /// Executes the smoketests suite with some default exclusions.
     Smoketests(smoketest::SmoketestsArgs),
+    /// Runs the keynote benchmark as a CI performance regression gate.
+    ///
+    /// Assumes release SpacetimeDB binaries and the TypeScript SDK are already built, runs the
+    /// keynote SpacetimeDB benchmark for 60 seconds against the TypeScript and Rust modules, and
+    /// fails if throughput is below 275K TPS for TypeScript or 300K TPS for Rust.
+    KeynoteBench,
     /// Tests the update flow
     ///
     /// Tests the self-update flow by building the spacetimedb-update binary for the specified
@@ -276,8 +364,12 @@ enum CiCmd {
     PublishChecks,
     /// Runs TypeScript workspace tests and template build checks.
     TypescriptTest,
+    /// Verifies that the repository version upgrade tool still works.
+    VersionUpgradeCheck,
     /// Builds the docs site.
     Docs,
+    /// Retries CLA Assistant if `license/cla` is the only remaining PR blocker.
+    RetryClaAssistant(retry_cla_assistant::RetryClaAssistantArgs),
 }
 
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
@@ -304,84 +396,6 @@ fn tracked_rs_files_under(path: &str) -> Result<Vec<PathBuf>> {
         .filter(|line| line.ends_with(".rs"))
         .map(PathBuf::from)
         .collect())
-}
-
-fn run_dlls() -> Result<()> {
-    ensure_repo_root()?;
-
-    cmd!(
-        "dotnet",
-        "pack",
-        "crates/bindings-csharp/BSATN.Runtime",
-        "-c",
-        "Release"
-    )
-    .run()?;
-    cmd!("dotnet", "pack", "crates/bindings-csharp/Runtime", "-c", "Release").run()?;
-
-    let repo_root = env::current_dir()?;
-    let bsatn_source = repo_root.join("crates/bindings-csharp/BSATN.Runtime/bin/Release");
-    let runtime_source = repo_root.join("crates/bindings-csharp/Runtime/bin/Release");
-
-    let nuget_config_dir = tempfile::tempdir()?;
-    let nuget_config_path = nuget_config_dir.path().join("nuget.config");
-    let nuget_config_contents = format!(
-        r#"<?xml version="1.0" encoding="utf-8"?>
-            <configuration>
-              <packageSources>
-                <clear />
-                <add key="Local SpacetimeDB.BSATN.Runtime" value="{}" />
-                <add key="Local SpacetimeDB.Runtime" value="{}" />
-                <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
-              </packageSources>
-              <packageSourceMapping>
-                <packageSource key="Local SpacetimeDB.BSATN.Runtime">
-                  <package pattern="SpacetimeDB.BSATN.Runtime" />
-                </packageSource>
-                <packageSource key="Local SpacetimeDB.Runtime">
-                  <package pattern="SpacetimeDB.Runtime" />
-                </packageSource>
-                <packageSource key="nuget.org">
-                  <package pattern="*" />
-                </packageSource>
-              </packageSourceMapping>
-            </configuration>
-            "#,
-        bsatn_source.display(),
-        runtime_source.display(),
-    );
-    fs::write(&nuget_config_path, nuget_config_contents)?;
-
-    let nuget_config_path_str = nuget_config_path.to_string_lossy().to_string();
-
-    clear_restored_package_dirs("spacetimedb.bsatn.runtime")?;
-    clear_restored_package_dirs("spacetimedb.runtime")?;
-
-    cmd!(
-        "dotnet",
-        "restore",
-        "SpacetimeDB.ClientSDK.csproj",
-        "--configfile",
-        &nuget_config_path_str,
-    )
-    .dir("sdks/csharp")
-    .run()?;
-
-    overlay_unity_meta_skeleton("spacetimedb.bsatn.runtime")?;
-    overlay_unity_meta_skeleton("spacetimedb.runtime")?;
-
-    cmd!(
-        "dotnet",
-        "pack",
-        "SpacetimeDB.ClientSDK.csproj",
-        "-c",
-        "Release",
-        "--no-restore"
-    )
-    .dir("sdks/csharp")
-    .run()?;
-
-    Ok(())
 }
 
 fn run_publish_checks() -> Result<()> {
@@ -443,6 +457,21 @@ fn run_docs_build() -> Result<()> {
     Ok(())
 }
 
+fn run_version_upgrade_check() -> Result<()> {
+    cmd!(
+        "cargo",
+        "bump-versions",
+        "123.456.789",
+        "--rust-and-cli",
+        "--csharp",
+        "--typescript",
+        "--cpp",
+        "--accept-snapshots"
+    )
+    .run()?;
+    Ok(())
+}
+
 fn main() -> Result<()> {
     env_logger::init();
 
@@ -464,10 +493,26 @@ fn main() -> Result<()> {
                 "spacetimedb-smoketests",
                 "--exclude",
                 "spacetimedb-sdk",
+                "--exclude",
+                "spacetimedb",
                 "--",
                 "--test-threads=2",
                 "--skip",
                 "unreal"
+            )
+            .run()?;
+            // Bindings snapshot tests rely on the unstable feature,
+            // as they compile and test APIs which are gated behind that feature,
+            // e.g. procedures, HTTP handlers.
+            cmd!(
+                "cargo",
+                "test",
+                "-p",
+                "spacetimedb",
+                "--features",
+                "unstable",
+                "--",
+                "--test-threads=2",
             )
             .run()?;
             // SDK procedure tests intentionally make localhost HTTP requests.
@@ -532,6 +577,7 @@ fn main() -> Result<()> {
 
         Some(CiCmd::Lint) => {
             ensure_repo_root()?;
+            check_pnpm_release_age_policy()?;
             // `cargo fmt --all` only checks files that Cargo discovers through workspace/package targets.
             // However, we also keep Rust sources in a locations that are tracked but not part of our workspace,
             // so this approach properly catches all the files, where `cargo fmt` does not.
@@ -573,6 +619,10 @@ fn main() -> Result<()> {
                 .dir("crates/bindings-csharp")
                 .run()?;
             cmd!("pnpm", "lint").run()?;
+            cmd!("cargo", "test", "--doc", "--target", "wasm32-unknown-unknown")
+                .dir("crates/bindings")
+                .run()?;
+            cmd!("cargo", "test", "--doc").dir("crates/bindings").run()?;
             // `bindings` is the only crate we care strongly about documenting,
             // since we link to its docs.rs from our website.
             // We won't pass `--no-deps`, though,
@@ -606,12 +656,18 @@ fn main() -> Result<()> {
         }
 
         Some(CiCmd::Dlls) => {
-            run_dlls()?;
+            eprintln!("warning: `cargo ci dlls` is deprecated; use `cargo regen csharp dlls` instead");
+            cmd!("cargo", "regen", "csharp", "dlls").run()?;
         }
 
         Some(CiCmd::Smoketests(args)) => {
             ensure_repo_root()?;
             smoketest::run(args)?;
+        }
+
+        Some(CiCmd::KeynoteBench) => {
+            ensure_repo_root()?;
+            keynote_bench::run()?;
         }
 
         Some(CiCmd::UpdateFlow {
@@ -711,8 +767,16 @@ fn main() -> Result<()> {
             run_typescript_tests()?;
         }
 
+        Some(CiCmd::VersionUpgradeCheck) => {
+            run_version_upgrade_check()?;
+        }
+
         Some(CiCmd::Docs) => {
             run_docs_build()?;
+        }
+
+        Some(CiCmd::RetryClaAssistant(args)) => {
+            retry_cla_assistant::run(args)?;
         }
 
         None => run_all_clap_subcommands(&cli.skip)?,

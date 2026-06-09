@@ -1,4 +1,4 @@
-Write a SpacetimeDB backend module in TypeScript that defines three basic tables with primitive columns.
+Write a SpacetimeDB backend module in TypeScript that defines three tables with basic columns.
 
 TABLES
 - user

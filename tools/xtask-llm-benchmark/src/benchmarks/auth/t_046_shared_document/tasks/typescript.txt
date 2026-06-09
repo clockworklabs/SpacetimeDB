@@ -1,0 +1,31 @@
+Write a SpacetimeDB backend module in TypeScript that implements document ownership and explicit sharing.
+
+TABLES
+- document
+  - public table
+  - Fields:
+    - id: number (u64, primary key, autoInc)
+    - owner: Identity (index btree)
+    - title: string
+
+- document_share
+  - public table
+  - Fields:
+    - document_id: number (u64, index btree)
+    - shared_with: Identity (index btree)
+
+REDUCERS
+- create_document(ctx, { title: string })
+  - Insert a document with owner = ctx.sender and the given title, id = 0n for autoInc
+
+- share_document(ctx, { document_id: number (u64), target: Identity })
+  - Load the document by id; if missing, throw "not found"
+  - If document.owner != ctx.sender, throw "not owner"
+  - Insert a document_share { document_id, shared_with: target }
+
+- edit_document(ctx, { document_id: number (u64), new_title: string })
+  - Load the document by id; if missing, throw "not found"
+  - The caller is authorized if they are the owner OR if a document_share row exists
+    with matching document_id and shared_with == ctx.sender
+  - If neither condition is true, throw "unauthorized"
+  - Update the document's title to new_title

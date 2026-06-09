@@ -4,7 +4,7 @@ use crate::llm::segmentation::{
     build_openai_responses_input, deterministic_trim_prefix, estimate_tokens, headroom_tokens_env,
     non_context_reserve_tokens_env, openai_ctx_limit_tokens,
 };
-use crate::llm::types::Vendor;
+use crate::llm::types::{LlmOutput, Vendor};
 use anyhow::{bail, Context, Result};
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
@@ -29,7 +29,7 @@ impl OpenAiClient {
         format!("{}/v1/responses", self.base.trim_end_matches('/'))
     }
 
-    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<String> {
+    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<LlmOutput> {
         let system = prompt.system.clone();
         let segs = prompt.segments.clone();
 
@@ -132,6 +132,13 @@ impl OpenAiClient {
             summary: Option<Vec<ContentItem>>,
         }
         #[derive(Deserialize)]
+        struct OpenAiUsage {
+            #[serde(default)]
+            input_tokens: Option<u32>,
+            #[serde(default)]
+            output_tokens: Option<u32>,
+        }
+        #[derive(Deserialize)]
         struct ResponsesPayload {
             #[serde(default)]
             status: Option<String>,
@@ -141,14 +148,25 @@ impl OpenAiClient {
             output_text: Option<String>,
             #[serde(default)]
             output: Option<Vec<OutputItem>>,
+            #[serde(default)]
+            usage: Option<OpenAiUsage>,
         }
 
         let parsed: ResponsesPayload = serde_json::from_str(&body).context("parse OpenAI response")?;
 
+        let input_tokens = parsed.usage.as_ref().and_then(|u| u.input_tokens);
+        let output_tokens = parsed.usage.as_ref().and_then(|u| u.output_tokens);
+
+        let make_output = |text: String| LlmOutput {
+            text,
+            input_tokens,
+            output_tokens,
+        };
+
         if let Some(t) = parsed.output_text.as_ref()
             && !t.is_empty()
         {
-            return Ok(t.clone());
+            return Ok(make_output(t.clone()));
         }
         if let Some(items) = parsed.output.as_ref() {
             for it in items {
@@ -159,7 +177,7 @@ impl OpenAiClient {
                         if let Some(txt) = &c.text
                             && !txt.is_empty()
                         {
-                            return Ok(txt.clone());
+                            return Ok(make_output(txt.clone()));
                         }
                     }
                 }
@@ -172,7 +190,7 @@ impl OpenAiClient {
                         if let Some(txt) = &c.text
                             && !txt.is_empty()
                         {
-                            return Ok(txt.clone());
+                            return Ok(make_output(txt.clone()));
                         }
                     }
                 }

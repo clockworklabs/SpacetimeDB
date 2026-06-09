@@ -8,6 +8,29 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::LazyLock;
 
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("xtask-llm-benchmark is under public/tools/xtask-llm-benchmark")
+        .to_path_buf()
+}
+
+fn pnpm_minimum_release_age() -> Result<String> {
+    let workspace = fs::read_to_string(workspace_root().join("pnpm-workspace.yaml"))?;
+    workspace
+        .lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix("minimumReleaseAge:")?
+                .trim()
+                .parse::<u64>()
+                .ok()
+        })
+        .map(|age| age.to_string())
+        .ok_or_else(|| anyhow::anyhow!("pnpm-workspace.yaml is missing minimumReleaseAge"))
+}
+
 /// Strip ANSI escape codes (color codes) from a string
 fn strip_ansi_codes(s: &str) -> Cow<'_, str> {
     static ANSI_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -294,7 +317,14 @@ impl Publisher for TypeScriptPublisher {
             Some(p) => Command::new(p),
             None => Command::new("pnpm"),
         };
-        pnpm_cmd.arg("install").arg("--ignore-workspace").current_dir(source);
+        pnpm_cmd
+            .arg("install")
+            .arg("--ignore-workspace")
+            .current_dir(source)
+            .env("CI", "true")
+            // This install runs in a materialized project with workspace config
+            // ignored, so pass the repo's pnpm package-age policy explicitly.
+            .env("npm_config_minimum_release_age", pnpm_minimum_release_age()?);
         // When using NODEJS_DIR, prepend it to PATH so pnpm.cmd can find node.
         if let Some(ref dir) = pnpm_exe
             && let Some(parent) = dir.parent()
