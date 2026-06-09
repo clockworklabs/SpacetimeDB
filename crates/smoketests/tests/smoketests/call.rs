@@ -16,6 +16,36 @@ fn test_call_reducer_procedure() {
     assert_eq!(msg.trim(), r#"["World"]"#);
 }
 
+/// Tests that both reducers and procedures that take a [spacetimedb::Identity]
+/// argument can be called using any of the various encodings for that type.
+#[test]
+fn test_call_reducer_procedure_with_identity_argument() {
+    let test = Smoketest::builder()
+        .precompiled_module("call-reducer-procedure")
+        .build();
+
+    let identity = test.database_identity.as_ref().unwrap();
+    let identity_tuple_encoding = format!("[\"0x{identity}\"]");
+
+    let identity_encodings = [
+        identity,
+        &format!("0x{identity}"),
+        &identity_tuple_encoding,
+        &format!("{{\"__identity__\": \"0x{identity}\"}}"),
+    ];
+
+    for argument in identity_encodings {
+        let msg = test.call("return_my_identity", &[argument]).unwrap();
+        assert_eq!(msg.trim(), &identity_tuple_encoding);
+
+        test.call("say_my_identity", &[argument]).unwrap();
+    }
+
+    let logs = test.logs(100).unwrap();
+    let log_string = format!("Hello, {identity}!");
+    assert_eq!(logs.iter().filter(|l| l.contains(&log_string)).count(), 4);
+}
+
 /// Check calling a non-existent reducer/procedure raises error
 #[test]
 fn test_call_errors() {
