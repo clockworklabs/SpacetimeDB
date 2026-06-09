@@ -534,14 +534,9 @@ mod rust_procedure_concurrency {
         make_test("procedure-reducer-interleaving").run()
     }
 
-    /// Test for the behavior tracked in https://github.com/clockworklabs/SpacetimeDB/issues/4954 .
-    ///
-    /// We're not attached to this behavior, and in fact the ticket is to change it.
-    /// At that time, this test should be altered as described in the doc comment on
-    /// ./procedure_concurrency_client/src/test_handlers.rs#exec_procedure_reducer_same_client_not_interleaved .
     #[test]
     fn procedure_reducer_same_client_not_interleaved() {
-        make_test("procedure-reducer-same-client-not-interleaved").run()
+        make_test("procedure-reducer-same-client-interleaved").run()
     }
 
     #[test]
@@ -549,10 +544,11 @@ mod rust_procedure_concurrency {
         make_test("procedure-concurrent-with-scheduled-reducer").run()
     }
 
-    /// Similar to [`procedure_reducer_same_client_not_interleaved`],
-    /// but with the scheduler subsystem acting as the "client."
+    /// Test that the scheduler has only a single active execution slot,
+    /// which can be occupied by a long-running or suspended procedure.
     ///
-    /// As with the linked test, we're not attached to this behavior.
+    /// We're not attached to this behavior, and in fact it should be changed.
+    /// At that time, this test should be altered to demonstrate that the execution is interleaved.
     #[test]
     fn scheduled_procedure_scheduled_reducer_not_interleaved() {
         make_test("scheduled-procedure-scheduled-reducer-not-interleaved").run()

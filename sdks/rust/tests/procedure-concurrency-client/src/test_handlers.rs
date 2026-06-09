@@ -9,9 +9,7 @@ const LOCALHOST: &str = "http://localhost:3000";
 pub async fn dispatch(test: &str, db_name: &str) {
     match test {
         "procedure-reducer-interleaving" => exec_procedure_reducer_interleaving(db_name).await,
-        "procedure-reducer-same-client-not-interleaved" => {
-            exec_procedure_reducer_same_client_not_interleaved(db_name).await
-        }
+        "procedure-reducer-same-client-interleaved" => exec_procedure_reducer_same_client_interleaved(db_name).await,
         "procedure-concurrent-with-scheduled-reducer" => {
             exec_procedure_concurrent_with_scheduled_reducer(db_name).await
         }
@@ -292,7 +290,7 @@ async fn exec_procedure_reducer_interleaving(db_name: &str) {
     let _keep_connections_alive = (procedure_conn, reducer_conn);
 }
 
-async fn exec_procedure_reducer_same_client_not_interleaved(db_name: &str) {
+async fn exec_procedure_reducer_same_client_interleaved(db_name: &str) {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
     let procedure_callback_result = test_counter.add_test("procedure_sleep_between_inserts_callback");
@@ -371,8 +369,8 @@ async fn exec_procedure_reducer_same_client_not_interleaved(db_name: &str) {
                             #[allow(clippy::redundant_closure_call)]
                             (|| {
                                 anyhow::ensure!(
-                                    before < after && after < reducer,
-                                    "Expected same-client insertion order procedure_before < procedure_after < reducer, got {before} < {after} < {reducer}"
+                                    before < reducer && reducer < after,
+                                    "Expected same-client insertion order procedure_before <  reducer < procedure_after, got {before} < {reducer} < {after}"
                                 );
                                 Ok(())
                             })(),

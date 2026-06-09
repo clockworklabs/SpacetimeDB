@@ -5798,7 +5798,7 @@ dependencies = [
 
 [[package]]
 name = "procedure-concurrency-client"
-version = "2.2.0"
+version = "2.4.1"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
@@ -7204,7 +7204,7 @@ dependencies = [
  "anyhow",
  "log",
  "paste",
- "spacetimedb 2.2.0",
+ "spacetimedb",
 ]
 
 [[package]]
