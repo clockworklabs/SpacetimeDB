@@ -1576,7 +1576,7 @@ mod tests {
 
     use crate::{
         compile::{compile_select, compile_select_list},
-        plan::{HashJoin, IndexProbe, IxScan, PhysicalPlan, ProjectListPlan, Semi, TupleField},
+        plan::{IndexProbe, IxScan, PhysicalPlan, ProjectListPlan, Semi, TupleField},
     };
 
     use super::{PhysicalExpr, ProjectPlan, TableScan};
@@ -2033,35 +2033,46 @@ mod tests {
         };
 
         // Plan:
-        //         rj
-        //        /  \
-        //       rx  ix(w)
+        //         s(v.employee = 5)
+        //          |
+        //          rx
+        //        /    \
+        //       rx     w
         //      /  \
         //     rx   w
         //    /  \
         // ix(m)  m
-        let (rhs, lhs) = match plan {
-            PhysicalPlan::HashJoin(
-                HashJoin {
-                    lhs,
-                    rhs,
-                    lhs_field: TupleField { field_pos: 1, .. },
-                    rhs_field: TupleField { field_pos: 1, .. },
-                    unique: true,
-                },
-                Semi::Rhs,
-            ) => (*rhs, *lhs),
+        let plan = match plan {
+            PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, lhs, rhs)) => {
+                assert!(matches!(
+                    (&*lhs, &*rhs),
+                    (
+                        PhysicalExpr::Field(TupleField { field_pos: 0, .. }),
+                        PhysicalExpr::Value(AlgebraicValue::U64(5))
+                    )
+                ));
+                *input
+            }
             plan => panic!("unexpected plan: {plan:#?}"),
         };
 
-        // Plan: ix(w)
-        match rhs {
-            PhysicalPlan::IxScan(IxScan { schema, probe, .. }, _) => {
-                assert_eq!(probe, IndexProbe::Point(value(AlgebraicValue::U64(5))));
-                assert_eq!(schema.table_id, w_id);
+        // Plan:
+        //         rx
+        //        /  \
+        //       rx   w
+        //      /  \
+        //     rx   w
+        //    /  \
+        // ix(m)  m
+        let plan = match plan {
+            PhysicalPlan::IxJoin(join, Semi::Rhs) => {
+                assert_eq!(join.rhs.table_id, w_id);
+                assert!(!join.unique);
+                assert_join_probe(&join, ColId(1), 1);
+                *join.lhs
             }
             plan => panic!("unexpected plan: {plan:#?}"),
-        }
+        };
 
         // Plan:
         //       rx
@@ -2069,7 +2080,7 @@ mod tests {
         //     rx   w
         //    /  \
         // ix(m)  m
-        let plan = match lhs {
+        let plan = match plan {
             PhysicalPlan::IxJoin(join, Semi::Rhs) => {
                 assert_eq!(join.rhs.table_id, w_id);
                 assert!(!join.unique);
