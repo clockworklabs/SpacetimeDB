@@ -939,6 +939,14 @@ impl TableSchema {
             }
         } else if let Some(pk_col) = view_primary_key {
             let cols = col_list![ColId(0), pk_col];
+            constraints.push(ConstraintSchema {
+                table_id: TableId::SENTINEL,
+                constraint_id: ConstraintId::SENTINEL,
+                constraint_name: make_constraint_name(&cols),
+                data: ConstraintData::Unique(UniqueConstraintData {
+                    columns: ColSet::from(cols.clone()),
+                }),
+            });
             indexes.push(IndexSchema {
                 index_id: IndexId::SENTINEL,
                 table_id: TableId::SENTINEL,

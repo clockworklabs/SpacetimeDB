@@ -1,12 +1,13 @@
 use anyhow::{anyhow, Context, Result};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use super::http::HttpClient;
+use super::oa_compat::OACompatResp;
 use crate::llm::prompt::BuiltPrompt;
 use crate::llm::segmentation::{
-    deterministic_trim_prefix, meta_ctx_limit_tokens, non_context_reserve_tokens_env, Segment,
+    desired_output_tokens, deterministic_trim_prefix, meta_ctx_limit_tokens, non_context_reserve_tokens_env, Segment,
 };
-use crate::llm::types::Vendor;
+use crate::llm::types::{LlmOutput, Vendor};
 
 #[derive(Clone)]
 pub struct MetaLlamaClient {
@@ -21,7 +22,7 @@ impl MetaLlamaClient {
         Self { base, api_key, http }
     }
 
-    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<String> {
+    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<LlmOutput> {
         let url = format!("{}/chat/completions", self.base.trim_end_matches('/'));
 
         // Build input like other clients
@@ -83,8 +84,8 @@ impl MetaLlamaClient {
             model: wire_model,
             messages,
             temperature: 0.0,
-            top_p: Some(0.9), // avoid creative tangents; deterministic code
-            max_tokens: None,
+            top_p: None,
+            max_tokens: Some(desired_output_tokens().max(1) as u32),
         };
 
         // Auth only; optional OpenRouter headers can live in HttpClient if desired
@@ -96,8 +97,16 @@ impl MetaLlamaClient {
             .with_context(|| format!("OpenRouter (Meta) POST {}", url))?;
 
         let resp: OACompatResp = serde_json::from_str(&body).context("parse OpenRouter (Meta) response")?;
-        resp.first_text()
-            .ok_or_else(|| anyhow!("no content from Meta/OpenRouter"))
+        let input_tokens = resp.usage.as_ref().and_then(|u| u.prompt_tokens);
+        let output_tokens = resp.usage.as_ref().and_then(|u| u.completion_tokens);
+        let text = resp
+            .first_text()
+            .ok_or_else(|| anyhow!("no content from Meta/OpenRouter"))?;
+        Ok(LlmOutput {
+            text,
+            input_tokens,
+            output_tokens,
+        })
     }
 }
 
@@ -122,23 +131,5 @@ fn normalize_meta_model(id: &str) -> &str {
         "llama-3.1-8b-instruct" | "llama3.1-8b-instruct" | "llama-3.1-8b" => "meta-llama/llama-3.1-8b-instruct",
 
         other => other,
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct OACompatResp {
-    choices: Vec<Choice>,
-}
-#[derive(Debug, Deserialize)]
-struct Choice {
-    message: MsgOut,
-}
-#[derive(Debug, Deserialize)]
-struct MsgOut {
-    content: String,
-}
-impl OACompatResp {
-    fn first_text(self) -> Option<String> {
-        self.choices.into_iter().next().map(|c| c.message.content)
     }
 }

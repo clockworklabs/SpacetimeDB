@@ -8,7 +8,7 @@ use crate::llm::prompt::BuiltPrompt;
 use crate::llm::segmentation::{
     deterministic_trim_prefix, gemini_ctx_limit_tokens, non_context_reserve_tokens_env, Segment,
 };
-use crate::llm::types::Vendor;
+use crate::llm::types::{LlmOutput, Vendor};
 
 /// Google uses API key in the query string rather than Authorization header.
 #[derive(Clone)]
@@ -23,7 +23,7 @@ impl GoogleGeminiClient {
         Self { base, api_key, http }
     }
 
-    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<String> {
+    pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<LlmOutput> {
         // ---- Never trim system or dynamic segments ----
         let system = prompt.system.clone();
         let segs: Vec<Segment<'_>> = prompt.segments.clone();
@@ -146,6 +146,8 @@ impl GoogleGeminiClient {
         #[derive(Debug, Deserialize)]
         struct GeminiResp {
             candidates: Vec<Candidate>,
+            #[serde(default, rename = "usageMetadata")]
+            usage_metadata: Option<GeminiUsageMetadata>,
         }
 
         #[derive(Debug, Deserialize)]
@@ -164,6 +166,14 @@ impl GoogleGeminiClient {
             text: Option<String>,
         }
 
+        #[derive(Debug, Deserialize)]
+        struct GeminiUsageMetadata {
+            #[serde(default, rename = "promptTokenCount")]
+            prompt_token_count: Option<u32>,
+            #[serde(default, rename = "candidatesTokenCount")]
+            candidates_token_count: Option<u32>,
+        }
+
         impl GeminiResp {
             fn first_text(self) -> Option<String> {
                 self.candidates
@@ -174,8 +184,14 @@ impl GoogleGeminiClient {
         }
 
         let resp: GeminiResp = serde_json::from_str(&body).context("parse gemini response")?;
-        let out = resp.first_text().ok_or_else(|| anyhow!("no text in Gemini response"))?;
-        Ok(out)
+        let input_tokens = resp.usage_metadata.as_ref().and_then(|u| u.prompt_token_count);
+        let output_tokens = resp.usage_metadata.as_ref().and_then(|u| u.candidates_token_count);
+        let text = resp.first_text().ok_or_else(|| anyhow!("no text in Gemini response"))?;
+        Ok(LlmOutput {
+            text,
+            input_tokens,
+            output_tokens,
+        })
     }
 }
 

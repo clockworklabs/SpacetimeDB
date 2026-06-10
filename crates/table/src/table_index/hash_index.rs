@@ -98,6 +98,10 @@ impl<K: KeySize + Eq + Hash> Index for HashIndex<K> {
         self.map.len()
     }
 
+    fn num_key_bytes(&self) -> u64 {
+        self.num_key_bytes
+    }
+
     fn num_rows(&self) -> usize {
         self.num_rows
     }
@@ -114,6 +118,8 @@ impl<K: KeySize + Eq + Hash> Index for HashIndex<K> {
         // `self.insert` always returns `Ok(_)`.
         Ok(())
     }
+
+    const IS_RANGED: bool = false;
 }
 
 impl<K: KeySize + Eq + Hash> HashIndex<K> {

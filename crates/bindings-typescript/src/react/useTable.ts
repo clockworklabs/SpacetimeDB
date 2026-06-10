@@ -24,6 +24,8 @@ export interface UseTableCallbacks<RowType> {
   onInsert?: (row: RowType) => void;
   onDelete?: (row: RowType) => void;
   onUpdate?: (oldRow: RowType, newRow: RowType) => void;
+  /** Whether the subscription is active. Defaults to `true`. */
+  enabled?: boolean;
 }
 
 type MembershipChange = 'enter' | 'leave' | 'stayIn' | 'stayOut';
@@ -67,6 +69,7 @@ export function useTable<TableDef extends UntypedTableDef>(
   callbacks?: UseTableCallbacks<Prettify<RowType<TableDef>>>
 ): [readonly Prettify<RowType<TableDef>>[], boolean] {
   type UseTableRowType = RowType<TableDef>;
+  const enabled = callbacks?.enabled ?? true;
   const accessorName = getQueryAccessorName(query);
   const whereExpr = getQueryWhereClause(query);
 
@@ -93,6 +96,9 @@ export function useTable<TableDef extends UntypedTableDef>(
     readonly Prettify<UseTableRowType>[],
     boolean,
   ] => {
+    if (!enabled) {
+      return [[], true];
+    }
     const connection = connectionState.getConnection();
     if (!connection) {
       return [[], false];
@@ -107,7 +113,7 @@ export function useTable<TableDef extends UntypedTableDef>(
     // TODO: investigating refactoring so that this is no longer necessary, as we have had genuine bugs with missed deps.
     // See https://github.com/clockworklabs/SpacetimeDB/pull/4580.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionState, accessorName, querySql, subscribeApplied]);
+  }, [connectionState, accessorName, querySql, subscribeApplied, enabled]);
 
   // Invalidate the cached snapshot when computeSnapshot changes (e.g. when
   // subscribeApplied flips to true) so getSnapshot() recomputes on the next
@@ -117,6 +123,10 @@ export function useTable<TableDef extends UntypedTableDef>(
   }, [computeSnapshot]);
 
   useEffect(() => {
+    if (!enabled) {
+      setSubscribeApplied(false);
+      return;
+    }
     const connection = connectionState.getConnection()!;
     if (connectionState.isActive && connection) {
       const cancel = connection
@@ -129,10 +139,14 @@ export function useTable<TableDef extends UntypedTableDef>(
         cancel.unsubscribe();
       };
     }
-  }, [querySql, connectionState.isActive, connectionState]);
+  }, [querySql, connectionState.isActive, connectionState, enabled]);
 
   const subscribe = useCallback(
     (onStoreChange: () => void) => {
+      if (!enabled) {
+        return () => {};
+      }
+
       const onInsert = (
         ctx: EventContextInterface<UntypedRemoteModule>,
         row: any
@@ -218,6 +232,7 @@ export function useTable<TableDef extends UntypedTableDef>(
       callbacks?.onDelete,
       callbacks?.onInsert,
       callbacks?.onUpdate,
+      enabled,
     ]
   );
 

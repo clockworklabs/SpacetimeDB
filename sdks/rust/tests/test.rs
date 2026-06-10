@@ -511,6 +511,49 @@ macro_rules! procedure_tests {
 procedure_tests!(rust_procedures, "");
 procedure_tests!(typescript_procedures, "-ts");
 procedure_tests!(cpp_procedures, "-cpp");
+procedure_tests!(csharp_procedures, "-cs");
+
+mod rust_procedure_concurrency {
+    use spacetimedb_testing::sdk::Test;
+
+    const MODULE: &str = "sdk-test-procedure-concurrency";
+    const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/procedure-concurrency-client");
+
+    fn make_test(subcommand: &str) -> Test {
+        super::platform_test_builder(CLIENT, Some(subcommand))
+            .with_name(subcommand)
+            .with_module(MODULE)
+            .with_language("rust")
+            .with_generate_private_items(true)
+            .with_bindings_dir("src/module_bindings")
+            .build()
+    }
+
+    #[test]
+    fn procedure_reducer_interleaving() {
+        make_test("procedure-reducer-interleaving").run()
+    }
+
+    #[test]
+    fn procedure_reducer_same_client_not_interleaved() {
+        make_test("procedure-reducer-same-client-interleaved").run()
+    }
+
+    #[test]
+    fn procedure_concurrent_with_scheduled_reducer() {
+        make_test("procedure-concurrent-with-scheduled-reducer").run()
+    }
+
+    /// Test that the scheduler has only a single active execution slot,
+    /// which can be occupied by a long-running or suspended procedure.
+    ///
+    /// We're not attached to this behavior, and in fact it should be changed.
+    /// At that time, this test should be altered to demonstrate that the execution is interleaved.
+    #[test]
+    fn scheduled_procedure_scheduled_reducer_not_interleaved() {
+        make_test("scheduled-procedure-scheduled-reducer-not-interleaved").run()
+    }
+}
 
 macro_rules! view_tests {
     ($mod_name:ident, $suffix:literal) => {
@@ -574,6 +617,160 @@ macro_rules! view_tests {
 }
 
 view_tests!(rust_view, "");
+//view_tests!(cpp_view, "-cpp");
+
+mod case_conversion_ts {
+    use spacetimedb_testing::sdk::Test;
+
+    const MODULE: &str = "sdk-test-case-conversion-ts";
+    const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/case-conversion-client");
+
+    fn make_test(subcommand: &str) -> Test {
+        Test::builder()
+            .with_name(subcommand)
+            .with_module(MODULE)
+            .with_client(CLIENT)
+            .with_language("rust")
+            .with_bindings_dir("src/module_bindings")
+            .with_compile_command("cargo build")
+            .with_run_command(format!("cargo run -- {}", subcommand))
+            .build()
+    }
+
+    #[test]
+    fn insert_player() {
+        make_test("insert-player").run();
+    }
+
+    #[test]
+    fn insert_person() {
+        make_test("insert-person").run();
+    }
+
+    #[test]
+    fn ban_player() {
+        make_test("ban-player").run();
+    }
+
+    #[test]
+    fn query_builder_filter() {
+        make_test("query-builder-filter").run();
+    }
+
+    #[test]
+    fn query_builder_join() {
+        make_test("query-builder-join").run();
+    }
+
+    #[test]
+    fn query_view() {
+        make_test("view").run();
+    }
+}
+
+mod case_conversion_rust {
+    use spacetimedb_testing::sdk::Test;
+
+    const MODULE: &str = "sdk-test-case-conversion";
+    const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/case-conversion-client");
+
+    fn make_test(subcommand: &str) -> Test {
+        Test::builder()
+            .with_name(subcommand)
+            .with_module(MODULE)
+            .with_client(CLIENT)
+            .with_language("rust")
+            .with_bindings_dir("src/module_bindings")
+            .with_compile_command("cargo build")
+            .with_run_command(format!("cargo run -- {}", subcommand))
+            .build()
+    }
+
+    #[test]
+    fn insert_player() {
+        make_test("insert-player").run();
+    }
+
+    #[test]
+    fn insert_person() {
+        make_test("insert-person").run();
+    }
+
+    #[test]
+    fn ban_player() {
+        make_test("ban-player").run();
+    }
+
+    #[test]
+    fn query_builder_filter() {
+        make_test("query-builder-filter").run();
+    }
+
+    #[test]
+    fn query_builder_join() {
+        make_test("query-builder-join").run();
+    }
+
+    #[test]
+    fn query_view() {
+        make_test("view").run();
+    }
+}
+/// Tests of case conversion using a TypeScript client against the Rust module `sdk-test-case-conversion`.
+///
+/// Uses the TS client at `crates/bindings-typescript/case-conversion-test-client`.
+/// Verifies that the TypeScript SDK correctly handles case-converted names from a Rust module:
+/// - Table accessors, field names with digit boundaries, nested structs, enum variants
+/// - Reducers with explicit names, query builder filters and joins
+mod case_conversion_rust_ts_client {
+    use spacetimedb_testing::sdk::Test;
+
+    const MODULE: &str = "sdk-test-case-conversion";
+    const CLIENT: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../crates/bindings-typescript/case-conversion-test-client"
+    );
+
+    fn make_test(subcommand: &str) -> Test {
+        Test::builder()
+            .with_name(subcommand)
+            .with_module(MODULE)
+            .with_client(CLIENT)
+            .with_language("typescript")
+            .with_bindings_dir("src/module_bindings")
+            .with_compile_command(
+                "sh -c 'pnpm install && pnpm --dir .. run build && pnpm exec prettier --write src/module_bindings && pnpm run build'",
+            )
+            .with_run_command(format!("node dist/index.js {}", subcommand))
+            .build()
+    }
+
+    #[test]
+    fn insert_player() {
+        make_test("insert-player").run();
+    }
+
+    #[test]
+    fn insert_person() {
+        make_test("insert-person").run();
+    }
+
+    #[test]
+    fn ban_player() {
+        make_test("ban-player").run();
+    }
+
+    #[test]
+    fn query_builder_filter() {
+        make_test("query-builder-filter").run();
+    }
+
+    #[test]
+    fn query_builder_join() {
+        make_test("query-builder-join").run();
+    }
+}
+
 view_tests!(cpp_view, "-cpp");
 
 macro_rules! view_pk_tests {
@@ -613,3 +810,43 @@ macro_rules! view_pk_tests {
 
 view_pk_tests!(rust_view_pk, "");
 view_pk_tests!(csharp_view_pk, "-cs");
+view_pk_tests!(typescript_view_pk, "-ts");
+
+macro_rules! procedural_view_pk_tests {
+    ($mod_name:ident, $module:literal) => {
+        mod $mod_name {
+            use spacetimedb_testing::sdk::Test;
+
+            const MODULE: &str = $module;
+            const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/procedural-view-pk-client");
+
+            fn make_test(subcommand: &str) -> Test {
+                super::platform_test_builder(CLIENT, Some(subcommand))
+                    .with_name(subcommand)
+                    .with_module(MODULE)
+                    .with_language("rust")
+                    .with_bindings_dir("src/module_bindings")
+                    .build()
+            }
+
+            #[test]
+            fn sender_scoped_procedural_pk_view() {
+                make_test("sender-scoped-pk-view").run()
+            }
+
+            #[test]
+            fn procedural_view_pk_left_semijoin() {
+                make_test("view-pk-left-semijoin").run()
+            }
+
+            #[test]
+            fn procedural_view_pk_right_semijoin() {
+                make_test("view-pk-right-semijoin").run()
+            }
+        }
+    };
+}
+
+procedural_view_pk_tests!(rust_procedural_view_pk, "sdk-test-procedural-view-pk");
+procedural_view_pk_tests!(csharp_procedural_view_pk, "sdk-test-procedural-view-pk-cs");
+procedural_view_pk_tests!(typescript_procedural_view_pk, "sdk-test-procedural-view-pk-ts");

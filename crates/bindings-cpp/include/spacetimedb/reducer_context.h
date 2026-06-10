@@ -58,10 +58,15 @@ public:
         return *rng_instance;
     }
 
-    Identity identity() const {
+    Identity database_identity() const {
         std::array<uint8_t, 32> buffer;
         ::identity(buffer.data());
         return Identity(buffer);
+    }
+
+    [[deprecated("Use database_identity() instead.")]]
+    Identity identity() const {
+        return database_identity();
     }
     
     /**
@@ -119,6 +124,9 @@ public:
     ReducerContext(Identity s, std::optional<ConnectionId> cid, Timestamp ts)
         : sender_(s), connection_id(cid), timestamp(ts), 
           sender_auth_(AuthCtx::from_connection_id_opt(cid, s)) {}
+
+    ReducerContext(Identity s, std::optional<ConnectionId> cid, Timestamp ts, AuthCtx auth)
+        : sender_(s), connection_id(cid), timestamp(ts), sender_auth_(std::move(auth)) {}
 };
 
 } // namespace SpacetimeDB

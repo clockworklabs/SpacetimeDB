@@ -76,7 +76,8 @@ fn copy_tree_with_templates(src: &Path, dst: &Path) -> Result<()> {
             let p = entry.path();
             let rel = p.strip_prefix(from)?;
             let out_path = to.join(rel);
-            if entry.file_type()?.is_dir() {
+            // Use p.metadata() (follows symlinks) so directory symlinks recurse correctly.
+            if p.metadata().map(|m| m.is_dir()).unwrap_or(false) {
                 recurse(&p, &out_path)?;
             } else if out_path.extension().and_then(|e| e.to_str()) == Some("tmpl") {
                 let rendered_path = out_path.with_extension("");
@@ -130,7 +131,7 @@ fn inject_rust(root: &Path, llm_code: &str) -> anyhow::Result<()> {
     if !sdk_path.is_dir() {
         bail!("local Rust SDK not found at {}", sdk_path.display());
     }
-    let replacement = format!(r#"{{ path = "{}" }}"#, relative);
+    let replacement = format!(r#"spacetimedb = {{ path = "{}" }}"#, relative);
     let cargo_toml = root.join("Cargo.toml");
     let mut toml = fs::read_to_string(&cargo_toml).with_context(|| format!("read {}", cargo_toml.display()))?;
     toml = toml.replace(

@@ -102,7 +102,7 @@ fn test_replace_names() {
         .autopublish(false)
         .build();
 
-    let name = format!("test-db-{}", std::process::id());
+    let name = format!("permissions-replace-names-{}", std::process::id());
     test.publish_module_named(&name, false).unwrap();
 
     // Switch to a new identity

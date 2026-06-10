@@ -1,3 +1,7 @@
+//! When editing generated code in this module, use `__`-prefixed reserved names
+//! for macro-emitted local bindings and helper items to avoid collisions with
+//! user-defined items at the expansion site.
+
 extern crate core;
 extern crate proc_macro;
 
@@ -284,11 +288,13 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>) -> TokenStream {
 
         #[automatically_derived]
         impl #impl_generics #krate::SpacetimeType for #name #ty_generics #where_clause {
+            // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
             fn make_type<S: #krate::sats::typespace::TypespaceBuilder>(__typespace: &mut S) -> #krate::sats::AlgebraicType {
                 #krate::sats::typespace::TypespaceBuilder::add(
                     __typespace,
                     core::any::TypeId::of::<#name #typeid_ty_generics>(),
                     Some(#ty_name),
+                    // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                     |__typespace| #typ,
                 )
             }
@@ -439,6 +445,7 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                         }
                     }
 
+                    // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                     struct __ProductVisitor #impl_generics #where_clause {
                         _marker: std::marker::PhantomData<fn() -> #name #ty_generics>,
                     }
@@ -467,8 +474,10 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                             )*
                             Ok(())
                         }
+                        // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                         fn visit_named_product<A: #spacetimedb_lib::de::NamedProductAccess<'de>>(self, mut __prod: A) -> Result<Self::Output, A::Error> {
                             #(let mut #field_names = None;)*
+                            // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                             while let Some(__field) = #spacetimedb_lib::de::NamedProductAccess::get_field_ident(&mut __prod, Self {
                                 _marker: std::marker::PhantomData,
                             })? {
@@ -486,8 +495,10 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                                     #field_names.ok_or_else(|| #spacetimedb_lib::de::Error::missing_field(#iter_n4, Some(#field_strings), &self))?,)*
                             })
                         }
+                        // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                         fn validate_named_product<A: #spacetimedb_lib::de::NamedProductAccess<'de>>(self, mut __prod: A) -> Result<(), A::Error> {
                             #(let mut #field_names = false;)*
+                            // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                             while let Some(__field) = #spacetimedb_lib::de::NamedProductAccess::get_field_ident(&mut __prod, Self {
                                 _marker: std::marker::PhantomData,
                             })? {
@@ -517,15 +528,18 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                             [#(#field_strings),*].into_iter().map(Some)
                         }
 
-                        fn visit<__E: #spacetimedb_lib::de::Error>(self, name: &str) -> Result<Self::Output, __E> {
-                            match name {
+                        // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
+                        // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
+                        fn visit<__E: #spacetimedb_lib::de::Error>(self, __name: &str) -> Result<Self::Output, __E> {
+                            match __name {
                                 #(#field_strings => Ok(__ProductFieldIdent::#field_names),)*
-                                _ => Err(#spacetimedb_lib::de::Error::unknown_field_name(name, &self)),
+                                _ => Err(#spacetimedb_lib::de::Error::unknown_field_name(__name, &self)),
                             }
                         }
 
-                        fn visit_seq(self, index: usize) -> Self::Output {
-                            match index {
+                        // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
+                        fn visit_seq(self, __index: usize) -> Self::Output {
+                            match __index {
                                 #(#iter_n7 => __ProductFieldIdent::#field_names,)*
                                 _ => core::unreachable!(),
                             }
@@ -533,6 +547,7 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                     }
 
                     #[allow(non_camel_case_types)]
+                    // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                     enum __ProductFieldIdent {
                         #(#field_names,)*
                     }
@@ -587,6 +602,7 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                         }
                     }
 
+                    // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                     struct __SumVisitor #impl_generics #where_clause {
                         _marker: std::marker::PhantomData<fn() -> #name #ty_generics>,
                     }
@@ -598,14 +614,18 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                             Some(#tuple_name)
                         }
 
+                        // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                         fn visit_sum<A: #spacetimedb_lib::de::SumAccess<'de>>(self, __data: A) -> Result<Self::Output, A::Error> {
+                            // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                             let (__variant, __access) = __data.variant(self)?;
                             match __variant {
                                 #(#arms)*
                             }
                         }
 
+                        // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                         fn validate_sum<A: #spacetimedb_lib::de::SumAccess<'de>>(self, __data: A) -> Result<(), A::Error> {
+                            // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                             let (__variant, __access) = __data.variant(self)?;
                             match __variant {
                                 #(#arms_validate)*
@@ -615,6 +635,7 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                     }
 
                     #[allow(non_camel_case_types)]
+                    // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                     enum __Variant {
                         #(#variant_idents,)*
                     }
@@ -626,12 +647,14 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                             [#(#variant_names,)*].into_iter()
                         }
 
+                        // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                         fn visit_tag<E: #spacetimedb_lib::de::Error>(self, __tag: u8) -> Result<Self::Output, E> {
                             match __tag {
                                 #(#tags => Ok(__Variant::#variant_idents),)*
                                 _ => Err(#spacetimedb_lib::de::Error::unknown_variant_tag(__tag, &self)),
                             }
                         }
+                        // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                         fn visit_name<E: #spacetimedb_lib::de::Error>(self, __name: &str) -> Result<Self::Output, E> {
                             match __name {
                                 #(#variant_names => Ok(__Variant::#variant_idents),)*
@@ -696,6 +719,7 @@ pub(crate) fn derive_serialize(ty: &SatsType) -> TokenStream {
             let fieldnamestrings = fields.iter().map(|field| field.name.as_ref().unwrap());
             let nfields = fields.len();
             quote! {
+                // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                 let mut __prod = __serializer.serialize_named_product(#nfields)?;
                 #(#spacetimedb_lib::ser::SerializeNamedProduct::serialize_element::<#tys>(&mut __prod, Some(#fieldnamestrings), &self.#fieldnames)?;)*
                 #spacetimedb_lib::ser::SerializeNamedProduct::end(__prod)
@@ -707,6 +731,7 @@ pub(crate) fn derive_serialize(ty: &SatsType) -> TokenStream {
                 let tag = i as u8;
                 if let (Some(member), Some(ty)) = (&var.member, var.ty) {
                     quote_spanned! {ty.span()=>
+                        // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                         Self::#name { #member: __variant } => __serializer.serialize_variant::<#ty>(#tag, Some(#name_str), __variant),
                     }
                 } else {
@@ -724,6 +749,7 @@ pub(crate) fn derive_serialize(ty: &SatsType) -> TokenStream {
     quote! {
         impl #impl_generics #spacetimedb_lib::ser::Serialize for #name #ty_generics #where_clause {
             #fast_body
+            // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
             fn serialize<S: #spacetimedb_lib::ser::Serializer>(&self, __serializer: S) -> Result<S::Ok, S::Error> {
                 #body
             }

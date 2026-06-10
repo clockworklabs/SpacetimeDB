@@ -120,20 +120,24 @@ public:
 
             TSharedPtr<RowType> NewRow = MakeShared<RowType>(Row);
 
-            // This is a new row or an update to an existing row that was not deleted.
             FRowEntry<RowType>* Entry = Table->Entries.Find(Key);
             if (!Entry)
             {
-                // True insert
+                // True insert — these row-bytes are not cached yet. Either a
+                // genuinely new row, or the insert half of an update (the
+                // paired delete of different bytes is tracked in phase 1/3;
+                // DeriveUpdatesByPrimaryKey reconciles them by PK afterward).
                 Table->Entries.Add(Key, FRowEntry<RowType>{NewRow, 1});
+                Diff.Inserts.Add(Key, *NewRow);
             }
             else
             {
-                // True update
+                // Refcount bump — an overlapping subscription brought an
+                // identical row already in cache. Mirror the delete path
+                // (which only emits Diff.Deletes on refcount == 0) by not
+                // emitting a spurious Diff.Inserts entry here.
                 Table->Entries.Add(Key, FRowEntry<RowType>{NewRow, Entry->RefCount + 1});
             }
-
-            Diff.Inserts.Add(Key, *NewRow);
         }
 
         // Phase 3: Finalize Deletes and Update Indices

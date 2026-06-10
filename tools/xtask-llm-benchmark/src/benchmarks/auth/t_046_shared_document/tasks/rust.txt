@@ -1,0 +1,33 @@
+Write a SpacetimeDB backend module in Rust that implements document ownership and explicit sharing.
+
+TABLES
+- document
+  - Struct: Document
+  - public table
+  - Fields:
+    - id: u64 (primary key, auto_inc)
+    - owner: Identity (index btree)
+    - title: String
+
+- document_share
+  - Struct: DocumentShare
+  - public table
+  - Fields:
+    - document_id: u64 (index btree)
+    - shared_with: Identity (index btree)
+
+REDUCERS
+- create_document(ctx, title: String)
+  - Insert a Document with owner = ctx.sender and the given title, id = 0 for auto_inc
+
+- share_document(ctx, document_id: u64, target: Identity)
+  - Load the Document by id; if missing, panic with "not found"
+  - If document.owner != ctx.sender, panic with "not owner"
+  - Insert a DocumentShare { document_id, shared_with: target }
+
+- edit_document(ctx, document_id: u64, new_title: String)
+  - Load the Document by id; if missing, panic with "not found"
+  - The caller is authorized if they are the owner OR if a DocumentShare row exists
+    with matching document_id and shared_with == ctx.sender
+  - If neither condition is true, panic with "unauthorized"
+  - Update the Document's title to new_title

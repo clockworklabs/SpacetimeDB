@@ -9,7 +9,7 @@ using RegressionTests.Shared;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 
-const string HOST = "http://localhost:3000";
+string HOST = Environment.GetEnvironmentVariable("SPACETIMEDB_SERVER_URL") ?? "http://localhost:3000";
 const string DBNAME = "procedure-tests";
 
 uint waiting = 0;

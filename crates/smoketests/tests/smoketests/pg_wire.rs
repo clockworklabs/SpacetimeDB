@@ -14,11 +14,11 @@ fn test_sql_format() {
         .autopublish(false)
         .build();
 
-    test.publish_module_named("quickstart", true).unwrap();
+    test.publish_module_named("pgwire-sql-format", true).unwrap();
     test.call("test", &[]).unwrap();
 
     test.assert_psql(
-        "quickstart",
+        "pgwire-sql-format",
         "SELECT * FROM t_ints",
         r#"i_8 | i_16  |  i_32  |   i_64   |     i_128     |     i_256
 -----+-------+--------+----------+---------------+---------------
@@ -27,7 +27,7 @@ fn test_sql_format() {
     );
 
     test.assert_psql(
-        "quickstart",
+        "pgwire-sql-format",
         "SELECT * FROM t_ints_tuple",
         r#"tuple
 ---------------------------------------------------------------------------------------------------------------
@@ -36,7 +36,7 @@ fn test_sql_format() {
     );
 
     test.assert_psql(
-        "quickstart",
+        "pgwire-sql-format",
         "SELECT * FROM t_uints",
         r#"u_8 | u_16 | u_32  |   u_64   |     u_128     |     u_256
 -----+------+-------+----------+---------------+---------------
@@ -45,7 +45,7 @@ fn test_sql_format() {
     );
 
     test.assert_psql(
-        "quickstart",
+        "pgwire-sql-format",
         "SELECT * FROM t_uints_tuple",
         r#"tuple
 -------------------------------------------------------------------------------------------------------------
@@ -54,7 +54,7 @@ fn test_sql_format() {
     );
 
     test.assert_psql(
-        "quickstart",
+        "pgwire-sql-format",
         "SELECT * FROM t_simple_enum",
         r#"id |  action
 ----+----------
@@ -64,7 +64,7 @@ fn test_sql_format() {
     );
 
     test.assert_psql(
-        "quickstart",
+        "pgwire-sql-format",
         "SELECT * FROM t_enum",
         r#"id |     color
 ----+---------------
@@ -86,7 +86,7 @@ fn test_sql_conn() {
         .autopublish(false)
         .build();
 
-    test.publish_module_named("quickstart", true).unwrap();
+    test.publish_module_named("pgwire-sql-conn", true).unwrap();
     test.call("test", &[]).unwrap();
 
     let token = test.read_token().unwrap();
@@ -98,7 +98,7 @@ fn test_sql_conn() {
     cfg.port(pg_port);
     cfg.user("postgres");
     cfg.password(token);
-    cfg.dbname("quickstart");
+    cfg.dbname("pgwire-sql-conn");
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async move {
@@ -158,17 +158,17 @@ fn test_failures() {
         .autopublish(false)
         .build();
 
-    test.publish_module_named("quickstart", true).unwrap();
+    test.publish_module_named("pgwire-failure", true).unwrap();
 
     // Empty query returns empty result
-    let output = test.psql("quickstart", "").unwrap();
+    let output = test.psql("pgwire-failure", "").unwrap();
     assert!(
         output.is_empty(),
         "Expected empty output for empty query, got: {}",
         output
     );
 
-    let result = test.psql_with_token("quickstart", "invalid_token", "SELECT * FROM t_uints");
+    let result = test.psql_with_token("pgwire-failure", "invalid_token", "SELECT * FROM t_uints");
     assert!(result.is_err(), "Expected error for invalid token");
     let err = result.unwrap_err().to_string();
     assert!(
@@ -179,7 +179,7 @@ fn test_failures() {
 
     // Returns error for unsupported sql statements
     let result = test.psql(
-        "quickstart",
+        "pgwire-failure",
         "SELECT CASE a WHEN 1 THEN 'one' ELSE 'other' END FROM t_uints",
     );
     assert!(result.is_err(), "Expected error for unsupported SQL");
@@ -191,7 +191,7 @@ fn test_failures() {
     );
 
     // And prepared statements
-    let result = test.psql("quickstart", "SELECT * FROM t_uints where u8 = $1");
+    let result = test.psql("pgwire-failure", "SELECT * FROM t_uints where u8 = $1");
     assert!(result.is_err(), "Expected error for prepared statement");
     let err = result.unwrap_err().to_string();
     assert!(

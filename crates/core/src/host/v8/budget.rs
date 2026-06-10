@@ -7,7 +7,6 @@
 //! so we have to invent one using time and timeouts.
 
 use super::env_on_isolate;
-use crate::host::wasm_common::module_host_actor::EnergyStats;
 use crate::host::wasmtime::{epoch_ticker, ticks_in_duration};
 use core::ptr;
 use core::sync::atomic::Ordering;
@@ -69,6 +68,7 @@ pub(super) extern "C" fn cb_noop(_: v8::UnsafeRawIsolatePtr, _: *mut c_void) {}
 ///
 /// Every `callback_every` ticks, `callback` is called.
 fn run_timeout_and_cb_every(
+    // TODO: use RemoteTerminator here once we actually call this function, and make RemoteTerminator thread-safe.
     handle: IsolateHandle,
     callback_every: u64,
     callback: InterruptCallback,
@@ -112,14 +112,6 @@ fn budget_to_duration(_budget: FunctionBudget) -> Duration {
     // TODO(v8): This is fake logic that allows a maximum timeout.
     // Replace with sensible math.
     Duration::MAX
-}
-
-/// Returns [`EnergyStats`] for a reducer given its `budget`
-/// and the `duration` it took to execute.
-pub(super) fn energy_from_elapsed(budget: FunctionBudget, duration: Duration) -> EnergyStats {
-    let used = duration_to_budget(duration);
-    let remaining = budget - used;
-    EnergyStats { budget, remaining }
 }
 
 /// Converts a [`Duration`] to a [`ReducerBudget`].

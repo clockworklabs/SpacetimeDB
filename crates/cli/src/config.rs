@@ -12,6 +12,7 @@ use toml_edit::ArrayOfTables;
 const DEFAULT_SERVER_KEY: &str = "default_server";
 const WEB_SESSION_TOKEN_KEY: &str = "web_session_token";
 const SPACETIMEDB_TOKEN_KEY: &str = "spacetimedb_token";
+const LISTEN_ADDR_KEY: &str = "listen_addr";
 const SERVER_CONFIGS_KEY: &str = "server_configs";
 const NICKNAME_KEY: &str = "nickname";
 const HOST_KEY: &str = "host";
@@ -124,6 +125,7 @@ pub struct RawConfig {
     // TODO: Move these IDs/tokens out of config so we're no longer storing sensitive tokens in a human-edited file.
     web_session_token: Option<String>,
     spacetimedb_token: Option<String>,
+    listen_addr: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -173,6 +175,7 @@ impl RawConfig {
             server_configs: vec![maincloud, local],
             web_session_token: None,
             spacetimedb_token: None,
+            listen_addr: None,
         }
     }
 
@@ -461,6 +464,7 @@ impl TryFrom<&toml_edit::DocumentMut> for RawConfig {
         let default_server = read_opt_str(value, DEFAULT_SERVER_KEY)?;
         let web_session_token = read_opt_str(value, WEB_SESSION_TOKEN_KEY)?;
         let spacetimedb_token = read_opt_str(value, SPACETIMEDB_TOKEN_KEY)?;
+        let listen_addr = read_opt_str(value, LISTEN_ADDR_KEY)?;
 
         let mut server_configs = Vec::new();
         if let Some(arr) = read_table(value, SERVER_CONFIGS_KEY)? {
@@ -474,6 +478,7 @@ impl TryFrom<&toml_edit::DocumentMut> for RawConfig {
             server_configs,
             web_session_token,
             spacetimedb_token,
+            listen_addr,
         })
     }
 }
@@ -481,6 +486,10 @@ impl TryFrom<&toml_edit::DocumentMut> for RawConfig {
 impl Config {
     pub fn default_server_name(&self) -> Option<&str> {
         self.home.default_server.as_deref()
+    }
+
+    pub fn start_listen_addr(&self) -> Option<&str> {
+        self.home.listen_addr.as_deref()
     }
 
     /// Add a `ServerConfig` to the home configuration.
@@ -654,11 +663,13 @@ impl Config {
             server_configs: old_server_configs,
             web_session_token,
             spacetimedb_token,
+            listen_addr,
         } = &self.home;
 
         set_value(DEFAULT_SERVER_KEY, default_server.as_deref());
         set_value(WEB_SESSION_TOKEN_KEY, web_session_token.as_deref());
         set_value(SPACETIMEDB_TOKEN_KEY, spacetimedb_token.as_deref());
+        set_value(LISTEN_ADDR_KEY, listen_addr.as_deref());
 
         // Short-circuit if there are no servers.
         if old_server_configs.is_empty() {
@@ -930,6 +941,10 @@ protocol = "https"
     const CONFIG_EMPTY: &str = r#"
 # Comment end
 "#;
+    const CONFIG_LISTEN_ADDR: &str = r#"listen_addr = "0.0.0.0:4000"
+
+# Comment end
+"#;
     const CONFIG_INVALID_START: &str = r#"
 this="not a valid key"
 "#;
@@ -992,6 +1007,10 @@ default_server = "local"
     fn test_config_adds() -> ResultTest<()> {
         check_config(CONFIG_FULL, CONFIG_FULL, |_| Ok(()))?;
         check_config(CONFIG_EMPTY, CONFIG_EMPTY, |_| Ok(()))?;
+        check_config(CONFIG_EMPTY, CONFIG_LISTEN_ADDR, |config| {
+            config.home.listen_addr = Some("0.0.0.0:4000".to_string());
+            Ok(())
+        })?;
 
         check_config(CONFIG_EMPTY, CONFIG_FULL_NO_COMMENT, |config| {
             config.home.default_server = Some("local".to_string());
@@ -1053,6 +1072,14 @@ default_server = "local"
             r#"spacetimedb_token =1"#,
             CliError::ConfigType {
                 key: "spacetimedb_token".to_string(),
+                kind: "string",
+                found: Box::new(toml_edit::value(1)),
+            },
+        )?;
+        check_invalid(
+            r#"listen_addr =1"#,
+            CliError::ConfigType {
+                key: "listen_addr".to_string(),
                 kind: "string",
                 found: Box::new(toml_edit::value(1)),
             },
