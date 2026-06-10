@@ -51,7 +51,7 @@ use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 pub use spacetimedb_durability::{DurabilityExited, DurableOffset};
-use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
+use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_execution::RelValue;
 use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
@@ -3307,13 +3307,9 @@ impl ModuleHost {
         let table_name = table_name.into();
         let delta_tx = DeltaTx::from(tx);
         let (rows, _, metrics) = if returns_view_table && num_private_cols > 0 {
-            let optimized = optimized
-                .into_iter()
-                .map(|plan| ViewProject::new(plan, num_cols, num_private_cols))
-                .collect::<Vec<_>>();
-            execute_plan_for_view::<F>(&optimized, &delta_tx, rlb_pool)
+            execute_plan_for_view::<F>(optimized.iter(), num_cols, num_private_cols, &delta_tx, rlb_pool)
         } else {
-            execute_plan::<F>(&optimized, &delta_tx, rlb_pool)
+            execute_plan::<F>(optimized.iter(), &delta_tx, rlb_pool)
         }
         .context("One-off queries are not allowed to modify the database")?;
 
