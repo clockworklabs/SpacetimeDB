@@ -21,6 +21,8 @@ use std::fmt::{self};
 use std::ops::Deref;
 use std::path::Path;
 
+const UE_TVARIANT_SAFE_ALTERNATIVES: usize = 255;
+
 pub struct UnrealCpp<'opts> {
     pub module_name: &'opts str,
     pub uproject_dir: &'opts Path,
@@ -2057,11 +2059,16 @@ fn generate_reducer_bindings(
     module_name: &str,
 ) {
     let reducer_count: usize = iter_reducers(module, visibility).count();
+    let use_large_reducer_storage = reducer_count > UE_TVARIANT_SAFE_ALTERNATIVES;
     // ---------------------------------------------------------------------
     // Per-module typed Reducer tagged union + typed Event
     // ---------------------------------------------------------------------
-    writeln!(output, "UENUM(BlueprintType, Category = \"SpacetimeDB\")");
-    writeln!(output, "enum class E{module_prefix}ReducerTag : uint8");
+    if !use_large_reducer_storage {
+        writeln!(output, "UENUM(BlueprintType, Category = \"SpacetimeDB\")");
+        writeln!(output, "enum class E{module_prefix}ReducerTag : uint8");
+    } else {
+        writeln!(output, "enum class E{module_prefix}ReducerTag : int32");
+    }
     writeln!(output, "{{");
     {
         let mut first = true;
@@ -2083,6 +2090,30 @@ fn generate_reducer_bindings(
     writeln!(output, "}};");
     writeln!(output);
 
+    if use_large_reducer_storage {
+        writeln!(output, "struct F{module_prefix}ReducerArgsStorageBase");
+        writeln!(output, "{{");
+        writeln!(
+            output,
+            "    virtual ~F{module_prefix}ReducerArgsStorageBase() = default;"
+        );
+        writeln!(output, "}};");
+        writeln!(output);
+        writeln!(output, "template<typename T>");
+        writeln!(
+            output,
+            "struct T{module_prefix}ReducerArgsStorage final : F{module_prefix}ReducerArgsStorageBase"
+        );
+        writeln!(output, "{{");
+        writeln!(
+            output,
+            "    explicit T{module_prefix}ReducerArgsStorage(const T& InValue) : Value(InValue) {{}}"
+        );
+        writeln!(output, "    T Value;");
+        writeln!(output, "}};");
+        writeln!(output);
+    }
+
     // F{module_prefix}Reducer: tagged union over reducer args, with optional metadata
     writeln!(output, "USTRUCT(BlueprintType)");
     writeln!(output, "struct {api_macro} F{module_prefix}Reducer");
@@ -2091,28 +2122,36 @@ fn generate_reducer_bindings(
     writeln!(output);
     writeln!(output, "public:");
     writeln!(output, "    UPROPERTY(BlueprintReadOnly, Category = \"SpacetimeDB\")");
-    writeln!(
-        output,
-        "    E{module_prefix}ReducerTag Tag = static_cast<E{module_prefix}ReducerTag>(0);"
-    );
+    if !use_large_reducer_storage {
+        writeln!(
+            output,
+            "    E{module_prefix}ReducerTag Tag = static_cast<E{module_prefix}ReducerTag>(0);"
+        );
+    } else {
+        writeln!(output, "    int32 Tag = 0;");
+    }
     writeln!(output);
-    write!(output, "    TVariant<");
-    {
-        let mut first = true;
-        for reducer in iter_reducers(module, visibility) {
-            let reducer_pascal = format!("{module_prefix}{}", reducer.name.deref().to_case(Case::Pascal));
-            if !first {
-                write!(output, ", ");
-            } else {
-                first = false;
+    if !use_large_reducer_storage {
+        write!(output, "    TVariant<");
+        {
+            let mut first = true;
+            for reducer in iter_reducers(module, visibility) {
+                let reducer_pascal = format!("{module_prefix}{}", reducer.name.deref().to_case(Case::Pascal));
+                if !first {
+                    write!(output, ", ");
+                } else {
+                    first = false;
+                }
+                write!(output, "F{reducer_pascal}Args");
             }
-            write!(output, "F{reducer_pascal}Args");
         }
+        if reducer_count == 0 {
+            write!(output, "FSpacetimeDBUnit");
+        }
+        writeln!(output, "> Data;");
+    } else {
+        writeln!(output, "    TSharedPtr<F{module_prefix}ReducerArgsStorageBase> Data;");
     }
-    if reducer_count == 0 {
-        write!(output, "FSpacetimeDBUnit");
-    }
-    writeln!(output, "> Data;");
     writeln!(output);
     writeln!(output, "    // Optional metadata");
     writeln!(output, "    UPROPERTY(BlueprintReadOnly, Category = \"SpacetimeDB\")");
@@ -2131,16 +2170,34 @@ fn generate_reducer_bindings(
         );
         writeln!(output, "    {{");
         writeln!(output, "        F{module_prefix}Reducer Out;");
-        writeln!(output, "        Out.Tag = E{module_prefix}ReducerTag::{reducer_name};");
-        writeln!(output, "        Out.Data.Set<F{reducer_pascal}Args>(Value);");
+        if !use_large_reducer_storage {
+            writeln!(output, "        Out.Tag = E{module_prefix}ReducerTag::{reducer_name};");
+            writeln!(output, "        Out.Data.Set<F{reducer_pascal}Args>(Value);");
+        } else {
+            writeln!(
+                output,
+                "        Out.Tag = static_cast<int32>(E{module_prefix}ReducerTag::{reducer_name});"
+            );
+            writeln!(
+                output,
+                "        Out.Data = MakeShared<T{module_prefix}ReducerArgsStorage<F{reducer_pascal}Args>>(Value);"
+            );
+        }
         writeln!(output, "        Out.ReducerName = TEXT(\"{}\");", reducer.name.deref());
         writeln!(output, "        return Out;");
         writeln!(output, "    }}");
         writeln!(output);
-        writeln!(
-            output,
-            "    FORCEINLINE bool Is{reducer_name}() const {{ return Tag == E{module_prefix}ReducerTag::{reducer_name}; }}"
-        );
+        if !use_large_reducer_storage {
+            writeln!(
+                output,
+                "    FORCEINLINE bool Is{reducer_name}() const {{ return Tag == E{module_prefix}ReducerTag::{reducer_name}; }}"
+            );
+        } else {
+            writeln!(
+                output,
+                "    FORCEINLINE bool Is{reducer_name}() const {{ return Tag == static_cast<int32>(E{module_prefix}ReducerTag::{reducer_name}); }}"
+            );
+        }
         writeln!(
             output,
             "    FORCEINLINE F{reducer_pascal}Args GetAs{reducer_name}() const"
@@ -2150,7 +2207,16 @@ fn generate_reducer_bindings(
             output,
             "        ensureMsgf(Is{reducer_name}(), TEXT(\"Reducer does not hold {reducer_name}!\"));"
         );
-        writeln!(output, "        return Data.Get<F{reducer_pascal}Args>();");
+        if !use_large_reducer_storage {
+            writeln!(output, "        return Data.Get<F{reducer_pascal}Args>();");
+        } else {
+            writeln!(output, "        const auto* TypedData = static_cast<const T{module_prefix}ReducerArgsStorage<F{reducer_pascal}Args>*>(Data.Get());");
+            writeln!(output, "        ensureMsgf(TypedData != nullptr, TEXT(\"Reducer payload is missing or has the wrong type for {reducer_name}!\"));");
+            writeln!(
+                output,
+                "        return TypedData ? TypedData->Value : F{reducer_pascal}Args();"
+            );
+        }
         writeln!(output, "    }}");
         writeln!(output);
     }
@@ -2164,14 +2230,28 @@ fn generate_reducer_bindings(
     writeln!(output, "        {{");
     for reducer in iter_reducers(module, visibility) {
         let reducer_name = reducer.name.deref().to_case(Case::Pascal);
-        writeln!(output, "        case E{module_prefix}ReducerTag::{reducer_name}:");
+        if !use_large_reducer_storage {
+            writeln!(output, "        case E{module_prefix}ReducerTag::{reducer_name}:");
+        } else {
+            writeln!(
+                output,
+                "        case static_cast<int32>(E{module_prefix}ReducerTag::{reducer_name}):"
+            );
+        }
         writeln!(
             output,
             "            return GetAs{reducer_name}() == Other.GetAs{reducer_name}();"
         );
     }
     if reducer_count == 0 {
-        writeln!(output, "        case E{module_prefix}ReducerTag::None:");
+        if !use_large_reducer_storage {
+            writeln!(output, "        case E{module_prefix}ReducerTag::None:");
+        } else {
+            writeln!(
+                output,
+                "        case static_cast<int32>(E{module_prefix}ReducerTag::None):"
+            );
+        }
         writeln!(output, "            return true;");
     }
 

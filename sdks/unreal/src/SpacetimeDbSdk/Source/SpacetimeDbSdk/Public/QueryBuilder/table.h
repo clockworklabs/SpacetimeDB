@@ -4,11 +4,14 @@
 #define SPACETIMEDB_QUERY_BUILDER_ENABLE_BSATN 0
 #endif
 
+#ifndef SPACETIMEDB_QUERY_BUILDER_ENABLE_INDEXED_WHERE
+#define SPACETIMEDB_QUERY_BUILDER_ENABLE_INDEXED_WHERE 1
+#endif
+
 #if SPACETIMEDB_QUERY_BUILDER_ENABLE_BSATN
 #include "BSATN/Core/traits.h"
 #endif
 #include "QueryBuilder/expr.h"
-
 #include <cstdio>
 #include <concepts>
 #include <string>
@@ -76,6 +79,13 @@ namespace detail {
 template<typename TRow>
 struct row_tag {};
 
+template<typename TFn, typename TCols>
+constexpr void assert_where_predicate_is_column_only() {
+    static_assert(
+        std::is_invocable_v<TFn, const TCols&>,
+        "where() predicates must accept only table columns. Indexed columns are only available in semijoin predicates.");
+}
+
 inline std::false_type lookup_table_allowed(...);
 
 template<typename TRow>
@@ -119,29 +129,16 @@ public:
         return RawQuery<TRow>(std::move(sql));
     }
 
-    [[nodiscard]] std::string into_sql() const {
-        return build().into_sql();
-    }
+    [[nodiscard]] std::string into_sql() const { return build().into_sql(); }
 
-    template<typename TFn>
-    [[nodiscard]] auto where_col(TFn&& predicate) const {
-        auto expr = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(cols_));
-        return FromWhere<TRow, TCols, TIxCols>(*this, std::move(expr));
-    }
-
-    template<typename TFn>
-    [[nodiscard]] auto where_ix(TFn&& predicate) const {
-        auto expr = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(cols_, ix_cols_));
-        return FromWhere<TRow, TCols, TIxCols>(*this, std::move(expr));
-    }
-
-    // `where` is the ergonomic entry point: it dispatches to `where_col` or
-    // `where_ix` based on the predicate signature.
+    // `where` is the ergonomic entry point. Normal C++ predicates receive only
+    // columns; indexed columns are reserved for joins unless explicitly enabled.
     template<typename TFn>
     [[nodiscard]] auto where(TFn&& predicate) const {
-        if constexpr (std::is_invocable_v<TFn, const TCols&, const TIxCols&>) {
+        if constexpr (SPACETIMEDB_QUERY_BUILDER_ENABLE_INDEXED_WHERE && std::is_invocable_v<TFn, const TCols&, const TIxCols&>) {
             return where_ix(std::forward<TFn>(predicate));
         } else {
+            detail::assert_where_predicate_is_column_only<TFn, TCols>();
             return where_col(std::forward<TFn>(predicate));
         }
     }
@@ -163,6 +160,7 @@ public:
 
     template<typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
     [[nodiscard]] auto left_semijoin(const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) const;
+
     template<typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
     [[nodiscard]] auto LeftSemijoin(const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) const {
         return left_semijoin(right, std::forward<TFn>(predicate));
@@ -170,12 +168,25 @@ public:
 
     template<typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
     [[nodiscard]] auto right_semijoin(const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) const;
+
     template<typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
     [[nodiscard]] auto RightSemijoin(const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) const {
         return right_semijoin(right, std::forward<TFn>(predicate));
     }
 
 private:
+    template<typename TFn>
+    [[nodiscard]] auto where_col(TFn&& predicate) const {
+        auto expr = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(cols_));
+        return FromWhere<TRow, TCols, TIxCols>(*this, std::move(expr));
+    }
+
+    template<typename TFn>
+    [[nodiscard]] auto where_ix(TFn&& predicate) const {
+        auto expr = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(cols_, ix_cols_));
+        return FromWhere<TRow, TCols, TIxCols>(*this, std::move(expr));
+    }
+
     const char* table_name_;
     TCols cols_;
     TIxCols ix_cols_;
@@ -192,8 +203,8 @@ public:
         : table_(std::move(table)), expr_(std::move(expr)) {}
 
     [[nodiscard]] constexpr const char* table_name() const { return table_.name(); }
-    [[nodiscard]] const BoolExpr<TRow>& expr() const { return expr_; }
     [[nodiscard]] constexpr const Table<TRow, TCols, TIxCols>& table() const { return table_; }
+    [[nodiscard]] const BoolExpr<TRow>& expr() const { return expr_; }
 
     [[nodiscard]] RawQuery<TRow> build() const {
         std::string predicate = expr_.format();
@@ -206,29 +217,16 @@ public:
         return RawQuery<TRow>(std::move(sql));
     }
 
-    [[nodiscard]] std::string into_sql() const {
-        return build().into_sql();
-    }
+    [[nodiscard]] std::string into_sql() const { return build().into_sql(); }
 
-    template<typename TFn>
-    [[nodiscard]] FromWhere where_col(TFn&& predicate) const {
-        auto extra = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(table_.cols()));
-        return FromWhere(table_, expr_.and_(extra));
-    }
-
-    template<typename TFn>
-    [[nodiscard]] FromWhere where_ix(TFn&& predicate) const {
-        auto extra = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(table_.cols(), table_.ix_cols()));
-        return FromWhere(table_, expr_.and_(extra));
-    }
-
-    // `where` is the ergonomic entry point: it dispatches to `where_col` or
-    // `where_ix` based on the predicate signature.
+    // `where` is the ergonomic entry point. Normal C++ predicates receive only
+    // columns; indexed columns are reserved for joins unless explicitly enabled.
     template<typename TFn>
     [[nodiscard]] FromWhere where(TFn&& predicate) const {
-        if constexpr (std::is_invocable_v<TFn, const TCols&, const TIxCols&>) {
+        if constexpr (SPACETIMEDB_QUERY_BUILDER_ENABLE_INDEXED_WHERE && std::is_invocable_v<TFn, const TCols&, const TIxCols&>) {
             return where_ix(std::forward<TFn>(predicate));
         } else {
+            detail::assert_where_predicate_is_column_only<TFn, TCols>();
             return where_col(std::forward<TFn>(predicate));
         }
     }
@@ -250,6 +248,7 @@ public:
 
     template<typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
     [[nodiscard]] auto left_semijoin(const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) const;
+
     template<typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
     [[nodiscard]] auto LeftSemijoin(const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) const {
         return left_semijoin(right, std::forward<TFn>(predicate));
@@ -257,12 +256,25 @@ public:
 
     template<typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
     [[nodiscard]] auto right_semijoin(const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) const;
+
     template<typename TRightRow, typename TRightCols, typename TRightIxCols, typename TFn>
     [[nodiscard]] auto RightSemijoin(const Table<TRightRow, TRightCols, TRightIxCols>& right, TFn&& predicate) const {
         return right_semijoin(right, std::forward<TFn>(predicate));
     }
 
 private:
+    template<typename TFn>
+    [[nodiscard]] FromWhere where_col(TFn&& predicate) const {
+        auto extra = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(table_.cols()));
+        return FromWhere(table_, expr_.and_(extra));
+    }
+
+    template<typename TFn>
+    [[nodiscard]] FromWhere where_ix(TFn&& predicate) const {
+        auto extra = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(table_.cols(), table_.ix_cols()));
+        return FromWhere(table_, expr_.and_(extra));
+    }
+
     Table<TRow, TCols, TIxCols> table_;
     BoolExpr<TRow> expr_;
 };
@@ -285,7 +297,8 @@ struct query_row_type<FromWhere<TRow, TCols, TIxCols>> {
 } // namespace SpacetimeDB::query_builder
 
 #if SPACETIMEDB_QUERY_BUILDER_ENABLE_BSATN
-namespace SpacetimeDB::bsatn {
+namespace SpacetimeDb::bsatn {
+
 template<typename TRow>
 struct algebraic_type_of<::SpacetimeDB::query_builder::RawQuery<TRow>> {
     static AlgebraicType get() {
@@ -315,5 +328,6 @@ struct bsatn_traits<::SpacetimeDB::query_builder::RawQuery<TRow>> {
         return algebraic_type_of<::SpacetimeDB::query_builder::RawQuery<TRow>>::get();
     }
 };
-} // namespace SpacetimeDB::bsatn
+
+} // namespace SpacetimeDb::bsatn
 #endif
