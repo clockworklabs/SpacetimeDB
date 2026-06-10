@@ -183,7 +183,6 @@ fn main() -> anyhow::Result<()> {
     let semver = Version::parse(unparsed_version_arg).expect("Invalid semver provided to upgrade-version");
     let numeric_version = format!("{}.{}.{}", semver.major, semver.minor, semver.patch);
     let full_version = semver.to_string();
-    let major_minor_version = format!("{}.{}", semver.major, semver.minor);
     let wildcard_patch = format!("{}.{}.*", semver.major, semver.minor);
 
     if let Some(path) = matches.get_one::<PathBuf>("spacetime-path") {
@@ -418,7 +417,7 @@ fn main() -> anyhow::Result<()> {
         #[allow(unreachable_code)]
         {
             rewrite_cmake_version_inplace("crates/bindings-cpp/CMakeLists.txt", &full_version)?;
-            rewrite_cmake_version_inplace("templates/basic-cpp/spacetimedb/CMakeLists.txt", &major_minor_version)?;
+            rewrite_cmake_version_inplace("templates/basic-cpp/spacetimedb/CMakeLists.txt", &full_version)?;
         }
     }
     Ok(())
