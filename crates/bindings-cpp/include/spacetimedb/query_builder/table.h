@@ -12,6 +12,10 @@
 #define SPACETIMEDB_QUERY_BUILDER_ENABLE_BSATN 1
 #endif
 
+#ifndef SPACETIMEDB_QUERY_BUILDER_ENABLE_INDEXED_WHERE
+#define SPACETIMEDB_QUERY_BUILDER_ENABLE_INDEXED_WHERE 0
+#endif
+
 namespace SpacetimeDB::query_builder {
 
 template<typename T>
@@ -73,6 +77,13 @@ namespace detail {
 template<typename TRow>
 struct row_tag {};
 
+template<typename TFn, typename TCols>
+constexpr void assert_where_predicate_is_column_only() {
+    static_assert(
+        std::is_invocable_v<TFn, const TCols&>,
+        "where() predicates must accept only table columns. Indexed columns are only available in semijoin predicates.");
+}
+
 inline std::false_type lookup_table_allowed(...);
 
 template<typename TRow>
@@ -118,13 +129,14 @@ public:
 
     [[nodiscard]] std::string into_sql() const { return build().into_sql(); }
 
-    // `where` is the ergonomic entry point: it dispatches to `where_col` or
-    // `where_ix` based on the predicate signature.
+    // `where` is the ergonomic entry point. Normal C++ predicates receive only
+    // columns; indexed columns are reserved for joins unless explicitly enabled.
     template<typename TFn>
     [[nodiscard]] auto where(TFn&& predicate) const {
-        if constexpr (std::is_invocable_v<TFn, const TCols&, const TIxCols&>) {
+        if constexpr (SPACETIMEDB_QUERY_BUILDER_ENABLE_INDEXED_WHERE && std::is_invocable_v<TFn, const TCols&, const TIxCols&>) {
             return where_ix(std::forward<TFn>(predicate));
         } else {
+            detail::assert_where_predicate_is_column_only<TFn, TCols>();
             return where_col(std::forward<TFn>(predicate));
         }
     }
@@ -205,13 +217,14 @@ public:
 
     [[nodiscard]] std::string into_sql() const { return build().into_sql(); }
 
-    // `where` is the ergonomic entry point: it dispatches to `where_col` or
-    // `where_ix` based on the predicate signature.
+    // `where` is the ergonomic entry point. Normal C++ predicates receive only
+    // columns; indexed columns are reserved for joins unless explicitly enabled.
     template<typename TFn>
     [[nodiscard]] FromWhere where(TFn&& predicate) const {
-        if constexpr (std::is_invocable_v<TFn, const TCols&, const TIxCols&>) {
+        if constexpr (SPACETIMEDB_QUERY_BUILDER_ENABLE_INDEXED_WHERE && std::is_invocable_v<TFn, const TCols&, const TIxCols&>) {
             return where_ix(std::forward<TFn>(predicate));
         } else {
+            detail::assert_where_predicate_is_column_only<TFn, TCols>();
             return where_col(std::forward<TFn>(predicate));
         }
     }

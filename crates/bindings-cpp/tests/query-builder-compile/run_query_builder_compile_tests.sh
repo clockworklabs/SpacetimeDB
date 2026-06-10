@@ -96,6 +96,7 @@ compile_should_fail() {
 
 compile_should_pass "$SCRIPT_DIR/pass_query_integration.cpp"
 compile_should_fail "$SCRIPT_DIR/fail_invalid_join_predicate.cpp" "Semijoin predicate must compare two indexed columns with eq()."
+compile_should_fail "$SCRIPT_DIR/fail_indexed_where_public_api.cpp" "where() predicates must accept only table columns. Indexed columns are only available in semijoin predicates."
 compile_should_fail "$SCRIPT_DIR/fail_incompatible_where_types.cpp" "Column comparison requires both sides to have the same value type."
 compile_should_fail "$SCRIPT_DIR/fail_implicit_numeric_where_types.cpp" "Column comparison requires both sides to have the same value type."
 compile_should_fail "$SCRIPT_DIR/fail_non_index_join.cpp" "no member named 'tenant_id'"

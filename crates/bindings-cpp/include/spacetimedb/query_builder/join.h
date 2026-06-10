@@ -115,13 +115,14 @@ public:
         , right_join_ref_(right_join_ref)
         , where_expr_(std::move(where_expr)) {}
 
-    // `where` is the ergonomic entry point: it dispatches to `where_col` or
-    // `where_ix` based on the predicate signature.
+    // `where` is the ergonomic entry point. Normal C++ predicates receive only
+    // columns; indexed columns are reserved for joins unless explicitly enabled.
     template<typename TFn>
     [[nodiscard]] LeftSemiJoin where(TFn&& predicate) const {
-        if constexpr (std::is_invocable_v<TFn, const TLeftCols&, const TLeftIxCols&>) {
+        if constexpr (SPACETIMEDB_QUERY_BUILDER_ENABLE_INDEXED_WHERE && std::is_invocable_v<TFn, const TLeftCols&, const TLeftIxCols&>) {
             return where_ix(std::forward<TFn>(predicate));
         } else {
+            detail::assert_where_predicate_is_column_only<TFn, TLeftCols>();
             return where_col(std::forward<TFn>(predicate));
         }
     }
@@ -206,13 +207,14 @@ public:
         , left_where_expr_(std::move(left_where_expr))
         , right_where_expr_(std::move(right_where_expr)) {}
 
-    // `where` is the ergonomic entry point: it dispatches to `where_col` or
-    // `where_ix` based on the predicate signature.
+    // `where` is the ergonomic entry point. Normal C++ predicates receive only
+    // columns; indexed columns are reserved for joins unless explicitly enabled.
     template<typename TFn>
     [[nodiscard]] RightSemiJoin where(TFn&& predicate) const {
-        if constexpr (std::is_invocable_v<TFn, const TRightCols&, const TRightIxCols&>) {
+        if constexpr (SPACETIMEDB_QUERY_BUILDER_ENABLE_INDEXED_WHERE && std::is_invocable_v<TFn, const TRightCols&, const TRightIxCols&>) {
             return where_ix(std::forward<TFn>(predicate));
         } else {
+            detail::assert_where_predicate_is_column_only<TFn, TRightCols>();
             return where_col(std::forward<TFn>(predicate));
         }
     }
