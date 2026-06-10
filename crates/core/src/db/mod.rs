@@ -36,6 +36,8 @@ pub struct Config {
 
 pub type MetricsRecorderQueue = spacetimedb_engine::MetricsRecorderQueue;
 
+pub type SchemaViewer<'a, T> = spacetimedb_engine::ast::SchemaViewer<'a, T>;
+
 pub fn spawn_tx_metrics_recorder(
     handle: &spacetimedb_runtime::Handle,
 ) -> (MetricsRecorderQueue, spacetimedb_runtime::AbortHandle) {

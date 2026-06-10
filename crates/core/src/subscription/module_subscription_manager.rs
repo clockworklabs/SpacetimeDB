@@ -2203,6 +2203,7 @@ mod tests {
 
     use super::{Plan, SubscriptionManager};
     use crate::db::relational_db::tests_utils::with_read_only;
+    use crate::db::SchemaViewer;
     use crate::host::module_host::DatabaseTableUpdate;
     use crate::subscription::module_subscription_manager::ClientQueryId;
     use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
@@ -2218,7 +2219,6 @@ mod tests {
         subscription::execution_unit::QueryHash,
     };
     use spacetimedb_datastore::execution_context::Workload;
-    use spacetimedb_engine::ast::SchemaViewer;
 
     fn create_table(db: &RelationalDB, name: &str) -> ResultTest<TableId> {
         Ok(db.create_table_for_test(name, &[("a", AlgebraicType::U8)], &[])?)

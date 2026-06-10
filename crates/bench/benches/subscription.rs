@@ -1,9 +1,9 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use spacetimedb::client::consume_each_list::ConsumeEachBuffer;
 use spacetimedb::db::relational_db::RelationalDB;
+use spacetimedb::db::SchemaViewer;
 use spacetimedb::error::DBError;
 use spacetimedb::identity::AuthCtx;
-use spacetimedb::sql::ast::SchemaViewer;
 use spacetimedb::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use spacetimedb::subscription::tx::DeltaTx;
 use spacetimedb::subscription::{collect_table_update, TableUpdateType};

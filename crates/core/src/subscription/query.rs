@@ -1,11 +1,11 @@
 use super::execution_unit::QueryHash;
 use super::module_subscription_manager::Plan;
 use crate::db::relational_db::Tx;
+use crate::db::SchemaViewer;
 use crate::error::{DBError, SubscriptionError};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
-use spacetimedb_engine::ast::SchemaViewer;
 use spacetimedb_execution::Datastore;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_subscription::SubscriptionPlan;
