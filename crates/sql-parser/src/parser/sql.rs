@@ -403,8 +403,6 @@ mod tests {
         for sql in [
             // FROM is required
             "select 1",
-            // Multi-part table names
-            "select a from s.t",
             // Bit-string literals
             "select * from t where a = B'1010'",
             // Wildcard with non-wildcard projections
@@ -430,6 +428,8 @@ mod tests {
     fn supported() {
         for sql in [
             "select a from t",
+            // Multi-part names are joined with dots for namespace-qualified tables
+            "select a from s.t",
             "select a from t where x = :sender",
             "select count(*) as n from t",
             "select count(*) as n from t join s on t.id = s.id where s.x = 1",
