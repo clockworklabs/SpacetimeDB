@@ -97,6 +97,11 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'ref',
+      label: 'Basic troubleshooting',
+      id: 'resources/how-to/troubleshooting',
+    },
+    {
+      type: 'ref',
       label: 'Migrating from 1.0 to 2.0',
       id: 'resources/how-to/migrating-to-2.0',
     },

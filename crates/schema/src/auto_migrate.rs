@@ -631,7 +631,11 @@ fn auto_migrate_view<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def ViewDef,
     })
     .collect();
 
-    if old.is_anonymous != new.is_anonymous || incompatible_return_type || incompatible_param_types {
+    if old.is_anonymous != new.is_anonymous
+        || old.primary_key != new.primary_key
+        || incompatible_return_type
+        || incompatible_param_types
+    {
         plan.steps.push(AutoMigrateStep::AddView(new.key()));
         plan.steps.push(AutoMigrateStep::RemoveView(old.key()));
 
@@ -1101,11 +1105,21 @@ mod tests {
         AlgebraicType, AlgebraicValue, ProductType, ScheduleAt,
     };
     use spacetimedb_primitives::ColId;
+    use v10::{ExplicitNames, RawModuleDefV10Builder};
     use v9::{RawModuleDefV9Builder, TableAccess};
     use validate::tests::expect_identifier;
 
     fn create_module_def(build_module: impl Fn(&mut RawModuleDefV9Builder)) -> ModuleDef {
         let mut builder = RawModuleDefV9Builder::new();
+        build_module(&mut builder);
+        builder
+            .finish()
+            .try_into()
+            .expect("new_def should be a valid database definition")
+    }
+
+    fn create_module_def_v10(build_module: impl Fn(&mut RawModuleDefV10Builder)) -> ModuleDef {
+        let mut builder = RawModuleDefV10Builder::new();
         build_module(&mut builder);
         builder
             .finish()
@@ -1980,6 +1994,53 @@ mod tests {
                 "{name}, steps: {steps:?}"
             );
         }
+    }
+
+    #[test]
+    fn migrate_view_with_explicit_name() {
+        fn module_def() -> ModuleDef {
+            create_module_def_v10(|builder| {
+                let return_type_ref = builder.add_algebraic_type(
+                    [],
+                    "Person",
+                    AlgebraicType::product([("PersonId", AlgebraicType::U64)]),
+                    true,
+                );
+                builder.add_view(
+                    "PersonAtLevel2",
+                    0,
+                    true,
+                    true,
+                    ProductType::from([("Level", AlgebraicType::U32)]),
+                    AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+                );
+
+                let mut explicit = ExplicitNames::default();
+                explicit.insert_function("PersonAtLevel2", "Level2Person");
+                builder.add_explicit_names(explicit);
+            })
+        }
+
+        let old_def = module_def();
+        let new_def = module_def();
+        let level_2_person = expect_identifier("Level2Person");
+
+        let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
+        let steps = &plan.steps[..];
+
+        assert!(!plan.disconnects_all_users(), "{plan:#?}");
+        assert!(
+            steps.contains(&AutoMigrateStep::UpdateView(&level_2_person)),
+            "steps: {steps:?}"
+        );
+        assert!(
+            !steps.contains(&AutoMigrateStep::AddView(&level_2_person)),
+            "steps: {steps:?}"
+        );
+        assert!(
+            !steps.contains(&AutoMigrateStep::RemoveView(&level_2_person)),
+            "steps: {steps:?}"
+        );
     }
 
     #[test]

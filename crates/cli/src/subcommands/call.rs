@@ -122,6 +122,15 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
     let arguments = call_arguments
         .zip(&call_def.params().elements)
         .map(|(argument, element)| match &element.algebraic_type {
+            // Accept a hex-ish string as an [Identity] parameter.
+            AlgebraicType::Product(p) if p.is_identity() => {
+                let argument = argument.trim_matches('"');
+                match argument.as_bytes() {
+                    [b'0', b'x', ..] => format!("[\"{argument}\"]"),
+                    [b'c', b'2', b'0', b'0', ..] => format!("[\"0x{argument}\"]"),
+                    _ => argument.to_string(),
+                }
+            }
             AlgebraicType::String if !argument.starts_with('\"') || !argument.ends_with('\"') => {
                 format!("\"{argument}\"")
             }

@@ -2,7 +2,7 @@
 
 cmake_minimum_required(VERSION 3.15)
 project(SpacetimeDBCppModuleLibrary 
-    VERSION 2.2.0
+    VERSION 2.5.0
     LANGUAGES CXX)
 
 # Generate version header from template
@@ -30,6 +30,7 @@ target_sources(spacetimedb_cpp_library PRIVATE ${LIBRARY_SOURCES})
 
 # Require C++20 for consumers of this library without forcing global flags
 target_compile_features(spacetimedb_cpp_library PUBLIC cxx_std_20)
+target_compile_definitions(spacetimedb_cpp_library PRIVATE SPACETIMEDB_UNSTABLE_FEATURES)
 
 # Set include directories
 target_include_directories(spacetimedb_cpp_library
@@ -60,55 +61,5 @@ if(PROJECT_IS_TOP_LEVEL)
     set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 endif()
 
-# ---- Tests ----
-# Default: ON only when building this project directly; OFF when used via FetchContent/add_subdirectory
-if(CMAKE_VERSION VERSION_LESS 3.21)
-    # Fallback heuristic for older CMake
-    set(_is_top_level FALSE)
-    if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-        set(_is_top_level TRUE)
-    endif()
-else()
-    set(_is_top_level ${PROJECT_IS_TOP_LEVEL})
-endif()
-
-option(BUILD_TESTS "Build the test suite" ${_is_top_level})
-
-if(BUILD_TESTS AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-    enable_testing()
-
-    # Existing module-library unit-test target
-    add_executable(test_bsatn tests/main.cpp tests/module_library_unit_tests.cpp)
-    target_link_libraries(test_bsatn PRIVATE spacetimedb_cpp_library)
-    target_compile_features(test_bsatn PRIVATE cxx_std_20)
-    add_test(NAME bsatn_tests COMMAND test_bsatn)
-    add_test(NAME bsatn_tests_verbose COMMAND test_bsatn -v)
-    set_tests_properties(bsatn_tests PROPERTIES
-        TIMEOUT 30
-        LABELS "unit"
-    )
-    set_tests_properties(bsatn_tests_verbose PROPERTIES
-        TIMEOUT 30
-        LABELS "unit;verbose"
-    )
-    
-    # Query-builder SQL rendering tests
-    add_executable(query_builder_sql_tests
-        tests/query-builder-sql/main.cpp
-        tests/query-builder-sql/query_builder_sql_tests.cpp)
-    
-    target_include_directories(query_builder_sql_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-    
-    # Set C++20 standard for tests
-    target_compile_features(query_builder_sql_tests PRIVATE cxx_std_20)
-    
-    # Add test to CTest
-    add_test(NAME query_builder_sql_tests COMMAND query_builder_sql_tests)
-    
-    # Set test properties
-    set_tests_properties(query_builder_sql_tests PROPERTIES 
-        TIMEOUT 30
-        LABELS "unit"
-    )
-
-endif()
+# Unit/compile/smoke test harnesses live under `tests/` as standalone runners
+# rather than being built through the top-level library CMake target.

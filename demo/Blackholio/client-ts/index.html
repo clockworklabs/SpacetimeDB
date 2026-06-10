@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Blackholio - Phaser Client</title>
+  </head>
+  <body>
+    <main id="app">
+      <div id="game"></div>
+      <header class="hud">
+        <div class="status">Status: <strong id="status">Connecting</strong></div>
+        <div id="mass" class="mass hidden">Mass: <strong>0</strong></div>
+      </header>
+      <aside id="leaderboard" class="leaderboard hidden">
+        <h2>Leaderboard</h2>
+        <ol></ol>
+      </aside>
+      <section id="join-overlay" class="overlay hidden">
+        <form id="join-form" class="panel">
+          <h1>Blackholio</h1>
+          <p>Consume, grow, and become the largest black hole.</p>
+          <label for="name-input">Player name</label>
+          <input id="name-input" maxlength="24" autocomplete="nickname" />
+          <button type="submit">Enter game</button>
+        </form>
+      </section>
+      <section id="death-overlay" class="overlay hidden">
+        <div class="panel">
+          <h1>You were consumed</h1>
+          <button id="respawn-button" type="button">Respawn</button>
+        </div>
+      </section>
+      <footer class="controls">
+        Move with the pointer. <kbd>Space</kbd> split. <kbd>Q</kbd> lock
+        direction. <kbd>S</kbd> self-destruct.
+      </footer>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

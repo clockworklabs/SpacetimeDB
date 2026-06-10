@@ -178,7 +178,7 @@ export const schedule_periodic_tasks = spacetimedb.reducer((ctx) => {
 <TabItem value="csharp" label="C#">
 
 ```csharp
-public partial class Module
+public static partial class Module
 {
     [SpacetimeDB.Reducer]
     public static void SchedulePeriodicTasks(ReducerContext ctx)
@@ -291,10 +291,11 @@ public static partial class Module
     public static void ScheduleTimedTasks(ReducerContext ctx)
     {
         // Schedule for 10 seconds from now
+        var tenSecondsFromNow = ctx.Timestamp + new TimeDuration(10_000_000);
         ctx.Db.Reminder.Insert(new Reminder
         {
             Message = "Your auction has ended",
-            ScheduledAt = new ScheduleAt.Time(DateTimeOffset.UtcNow.AddSeconds(10))
+            ScheduledAt = new ScheduleAt.Time(tenSecondsFromNow)
         });
 
         // Schedule for a specific time
