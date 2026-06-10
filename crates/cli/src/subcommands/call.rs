@@ -10,9 +10,9 @@ use clap::{Arg, ArgMatches};
 use convert_case::{Case, Casing};
 use core::ops::Deref;
 use itertools::Itertools;
+use spacetimedb_lib::db::raw_def::v9::{RawMiscModuleExportV9, RawModuleDefV9, RawProcedureDefV9, RawReducerDefV9};
 use spacetimedb_lib::sats::{self, AlgebraicType, Typespace};
 use spacetimedb_lib::{Identity, ProductTypeElement};
-use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef};
 use std::fmt::Write;
 
 pub fn cli() -> clap::Command {
@@ -38,21 +38,21 @@ pub fn cli() -> clap::Command {
 }
 
 enum CallDef<'a> {
-    Reducer(&'a ReducerDef),
-    Procedure(&'a ProcedureDef),
+    Reducer(&'a RawReducerDefV9),
+    Procedure(&'a RawProcedureDefV9),
 }
 
 impl<'a> CallDef<'a> {
     fn params(&self) -> &'a sats::ProductType {
         match self {
-            CallDef::Reducer(reducer_def) => &reducer_def.params,
-            CallDef::Procedure(procedure_def) => &procedure_def.params,
+            CallDef::Reducer(r) => &r.params,
+            CallDef::Procedure(p) => &p.params,
         }
     }
     fn name(&self) -> &str {
         match self {
-            CallDef::Reducer(reducer_def) => &reducer_def.name,
-            CallDef::Procedure(procedure_def) => &procedure_def.name,
+            CallDef::Reducer(r) => r.name.as_ref(),
+            CallDef::Procedure(p) => p.name.as_ref(),
         }
     }
     fn kind(&self) -> &str {
@@ -101,21 +101,31 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
     let database_identity = api.con.database_identity;
     let database = &api.con.database;
 
-    let module_def: ModuleDef = api.module_def().await?.try_into()?;
+    let raw = api.module_def().await?;
 
-    let call_def = match module_def.reducer(&**reducer_procedure_name) {
+    let call_def = match raw.reducers.iter().find(|r| r.name.as_ref() == reducer_procedure_name.as_str()) {
         Some(reducer_def) => CallDef::Reducer(reducer_def),
-        None => match module_def.procedure(&**reducer_procedure_name) {
-            Some(procedure_def) => CallDef::Procedure(procedure_def),
-            None => {
-                return Err(anyhow::Error::msg(no_such_reducer_or_procedure(
-                    &database_identity,
-                    database,
-                    reducer_procedure_name,
-                    &module_def,
-                )));
+        None => {
+            let procedure = raw.misc_exports.iter().find_map(|e| match e {
+                RawMiscModuleExportV9::Procedure(p)
+                    if p.name.as_ref() == reducer_procedure_name.as_str() =>
+                {
+                    Some(p)
+                }
+                _ => None,
+            });
+            match procedure {
+                Some(procedure_def) => CallDef::Procedure(procedure_def),
+                None => {
+                    return Err(anyhow::Error::msg(no_such_reducer_or_procedure(
+                        &database_identity,
+                        database,
+                        reducer_procedure_name,
+                        &raw,
+                    )));
+                }
             }
-        },
+        }
     };
 
     // String quote any arguments that should be quoted
@@ -141,9 +151,9 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
 
         let error_msg =
             if response_text.starts_with("no such reducer") || response_text.starts_with("no such procedure") {
-                no_such_reducer_or_procedure(&database_identity, database, reducer_procedure_name, &module_def)
+                no_such_reducer_or_procedure(&database_identity, database, reducer_procedure_name, &raw)
             } else if response_text.starts_with("invalid arguments") {
-                invalid_arguments(&database_identity, database, &response_text, &module_def, call_def)
+                invalid_arguments(&database_identity, database, &response_text, &raw.typespace, call_def)
             } else {
                 return error;
             };
@@ -160,7 +170,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
 }
 
 /// Returns an error message for when `reducer` is called with wrong arguments.
-fn invalid_arguments(identity: &Identity, db: &str, text: &str, module_def: &ModuleDef, call_def: CallDef) -> String {
+fn invalid_arguments(identity: &Identity, db: &str, text: &str, typespace: &Typespace, call_def: CallDef) -> String {
     let mut error = format!(
         "Invalid arguments provided for {} `{}` for database `{}` resolving to identity `{}`.",
         call_def.kind(),
@@ -181,7 +191,7 @@ fn invalid_arguments(identity: &Identity, db: &str, text: &str, module_def: &Mod
         error,
         "\n\nThe {} has the following signature:\n\t{}",
         call_def.kind(),
-        CallSignature(module_def.typespace().with_type(&call_def))
+        CallSignature(typespace.with_type(&call_def))
     )
     .unwrap();
 
@@ -235,12 +245,12 @@ impl std::fmt::Display for CallSignature<'_> {
 }
 
 /// Returns an error message for when `reducer` or `procedure` does not exist in `db`.
-fn no_such_reducer_or_procedure(database_identity: &Identity, db: &str, name: &str, module_def: &ModuleDef) -> String {
+fn no_such_reducer_or_procedure(database_identity: &Identity, db: &str, name: &str, raw: &RawModuleDefV9) -> String {
     let mut error = format!(
         "No such reducer OR procedure `{name}` for database `{db}` resolving to identity `{database_identity}`."
     );
 
-    add_reducer_procedure_ctx_to_err(&mut error, module_def, name);
+    add_reducer_procedure_ctx_to_err(&mut error, raw, name);
 
     error
 }
@@ -249,16 +259,21 @@ const CALL_PRINT_LIMIT: usize = 10;
 
 /// Provided the schema for the database,
 /// decorate `error` with more helpful info about reducers and procedures.
-fn add_reducer_procedure_ctx_to_err(error: &mut String, module_def: &ModuleDef, reducer_name: &str) {
-    let reducers = module_def
-        .reducers()
-        .filter(|reducer| reducer.lifecycle.is_none())
-        .map(|reducer| &*reducer.name)
+fn add_reducer_procedure_ctx_to_err(error: &mut String, raw: &RawModuleDefV9, reducer_name: &str) {
+    let reducers = raw
+        .reducers
+        .iter()
+        .filter(|r| r.lifecycle.is_none())
+        .map(|r| r.name.as_ref())
         .collect::<Vec<_>>();
 
-    let procedures = module_def
-        .procedures()
-        .map(|reducer| &*reducer.name)
+    let procedures = raw
+        .misc_exports
+        .iter()
+        .filter_map(|e| match e {
+            RawMiscModuleExportV9::Procedure(p) => Some(p.name.as_ref()),
+            _ => None,
+        })
         .collect::<Vec<_>>();
 
     if let Some(best) = find_best_match_for_name(&reducers, reducer_name, None) {
