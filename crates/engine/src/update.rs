@@ -1,5 +1,5 @@
 use super::relational_db::RelationalDB;
-use crate::rls::RowLevelExpr;
+use crate::sql::rls::RowLevelExpr;
 use anyhow::Context;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_lib::db::auth::StTableType;

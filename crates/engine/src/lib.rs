@@ -1,10 +1,9 @@
-pub mod ast;
 pub(crate) mod durability;
 pub mod error;
 pub mod metrics;
 pub mod persistence;
 pub mod relational_db;
-pub mod rls;
+pub mod sql;
 pub mod snapshot;
 pub mod update;
 pub mod util;

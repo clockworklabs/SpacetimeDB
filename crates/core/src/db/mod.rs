@@ -6,6 +6,16 @@ pub mod relational_db {
     pub use spacetimedb_engine::relational_db::*;
 }
 
+pub mod sql {
+    pub mod ast {
+        pub use spacetimedb_engine::sql::ast::*;
+    }
+
+    pub mod rls {
+        pub use spacetimedb_engine::sql::rls::*;
+    }
+}
+
 pub mod snapshot {
     pub use spacetimedb_engine::snapshot::*;
 }
@@ -36,7 +46,7 @@ pub struct Config {
 
 pub type MetricsRecorderQueue = spacetimedb_engine::MetricsRecorderQueue;
 
-pub type SchemaViewer<'a, T> = spacetimedb_engine::ast::SchemaViewer<'a, T>;
+pub type SchemaViewer<'a, T> = spacetimedb_engine::sql::ast::SchemaViewer<'a, T>;
 
 pub fn spawn_tx_metrics_recorder(
     handle: &spacetimedb_runtime::Handle,

@@ -50,7 +50,7 @@ use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 pub use spacetimedb_durability::{DurabilityExited, DurableOffset};
-use spacetimedb_engine::rls::RowLevelExpr;
+use spacetimedb_engine::sql::rls::RowLevelExpr;
 use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
 use spacetimedb_execution::RelValue;
 use spacetimedb_expr::expr::CollectViews;
