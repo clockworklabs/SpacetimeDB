@@ -30,7 +30,11 @@ import type {
 } from './message_types.ts';
 import type { ReducerEvent } from './reducer_event.ts';
 import { type UntypedRemoteModule } from './spacetime_module.ts';
-import { makeQueryBuilder } from '../lib/query';
+import {
+  makeFromBuilder,
+  makeQueryBuilder,
+  type SubscriptionFromBuilder,
+} from '../lib/query';
 import {
   type TableCache,
   type Operation,
@@ -52,6 +56,7 @@ import type {
 } from './reducers.ts';
 import type { ClientDbView } from './db_view.ts';
 import type { RowType, UntypedTableDef } from '../lib/table.ts';
+import type { UntypedSchemaDef } from '../lib/schema';
 import type { ProceduresView } from './procedures.ts';
 import type { Values } from '../lib/type_util.ts';
 import type { TransactionUpdate } from './client_api/types.ts';
@@ -457,6 +462,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     return makeQueryBuilder({ tables: this.#remoteModule.tables } as any);
   }
 
+  getFromBuilder<SchemaDef extends UntypedSchemaDef>(): SubscriptionFromBuilder<SchemaDef> {
+    return makeFromBuilder<SchemaDef>(this.#remoteModule.tables as SchemaDef['tables']);
+  }
+
   registerSubscription(
     handle: SubscriptionHandleImpl<RemoteModule>,
     handleEmitter: EventEmitter<
@@ -503,8 +512,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     const rows: Operation[] = [];
 
     const deserializeRow = this.#rowDeserializers[tableName];
-    const { primaryKeyColName, primaryKeyColType } =
-      this.#rowIdMetadata[tableName];
+    if (!deserializeRow) return [];
+    const rowIdInfo = this.#rowIdMetadata[tableName];
+    if (!rowIdInfo) return [];
+    const { primaryKeyColName, primaryKeyColType } = rowIdInfo;
     let previousOffset = 0;
     while (reader.remaining > 0) {
       const row = deserializeRow(reader);
@@ -793,6 +804,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       // Get table information for the table being updated
       const tableName = tableUpdate.tableName;
       const tableDef = this.#sourceNameToTableDef[tableName];
+      if (!tableDef) continue;
       const table = this.clientCache.getOrCreateTable(tableDef);
       const newCallbacks = table.applyOperations(
         tableUpdate.operations as Operation<
