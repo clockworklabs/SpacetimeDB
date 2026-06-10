@@ -16,6 +16,7 @@ class MockConnection {
   token = undefined;
   connectionId = ConnectionId.random();
   disconnected = false;
+  isDisconnectRequested = false;
 
   #onConnectCallbacks = new Set<(conn: MockConnection) => void>();
   #onDisconnectCallbacks = new Set<
@@ -26,6 +27,7 @@ class MockConnection {
   >();
 
   disconnect(): void {
+    this.isDisconnectRequested = true;
     if (this.disconnected) {
       return;
     }
@@ -319,6 +321,42 @@ describe('ConnectionManager retained reconnect behavior', () => {
 
     expect(builder.buildCount).toBe(1);
     expect(ConnectionManager.getConnection(key)).toBeNull();
+  });
+
+  test('manual disconnect does not trigger a reconnect', () => {
+    const key = nextKey();
+    const builder = new MockBuilder();
+
+    const first = retainMock(key, builder);
+    first.simulateConnect();
+
+    first.disconnect();
+
+    expect(ConnectionManager.getSnapshot(key)?.isActive).toBe(false);
+    expect(ConnectionManager.getConnection(key)).toBeNull();
+
+    vi.advanceTimersByTime(CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS);
+    expect(builder.buildCount).toBe(1);
+
+    ConnectionManager.release(key);
+  });
+
+  test('retain after a manual disconnect builds a fresh connection', () => {
+    const key = nextKey();
+    const builder = new MockBuilder();
+
+    const first = retainMock(key, builder);
+    first.simulateConnect();
+    first.disconnect();
+
+    const second = retainMock(key, builder);
+
+    expect(builder.buildCount).toBe(2);
+    expect(second).not.toBe(first);
+    expect(ConnectionManager.getConnection(key)).toBe(second);
+
+    ConnectionManager.release(key);
+    ConnectionManager.release(key);
   });
 
   test('reconnect delay backs off exponentially across consecutive failures', () => {

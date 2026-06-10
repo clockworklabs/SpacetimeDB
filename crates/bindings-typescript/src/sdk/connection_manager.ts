@@ -237,6 +237,13 @@ class ConnectionManagerImpl {
       this.#detachCallbacks(managed, connection);
     }
     managed.connection = undefined;
+
+    // The application asked this connection to close; don't fight it. A
+    // subsequent retain() will still build a fresh connection.
+    if (connection?.isDisconnectRequested) {
+      return;
+    }
+
     const delay = connectionManagerReconnectDelayMs(managed.reconnectAttempt);
     managed.reconnectAttempt += 1;
     managed.reconnectTimer = setTimeout(() => {

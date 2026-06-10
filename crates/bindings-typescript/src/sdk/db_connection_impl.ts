@@ -139,6 +139,14 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   isActive = false;
 
   /**
+   * Whether `disconnect()` has been called on this connection.
+   * Once requested, the connection will not be reused: managed environments
+   * (such as the React `SpacetimeDBProvider`) use this to avoid reconnecting
+   * after an intentional disconnect.
+   */
+  isDisconnectRequested = false;
+
+  /**
    * This connection's public identity.
    */
   identity?: Identity = undefined;
@@ -1292,6 +1300,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    * ```
    */
   disconnect(): void {
+    this.isDisconnectRequested = true;
     this.wsPromise.then(ws => ws?.close());
   }
 

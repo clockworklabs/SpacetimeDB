@@ -200,6 +200,30 @@ describe('DbConnection', () => {
     expect(client.isActive).toBe(false);
   });
 
+  test('marks disconnect as requested when disconnect() is called', async () => {
+    const onDisconnectPromise = new Deferred<void>();
+    const wsAdapter = new WebsocketTestAdapter();
+
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.openWebSocket)
+      .onDisconnect(() => {
+        onDisconnectPromise.resolve();
+      })
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+
+    expect(client.isDisconnectRequested).toBe(false);
+    client.disconnect();
+    expect(client.isDisconnectRequested).toBe(true);
+
+    await onDisconnectPromise.promise;
+    expect(client.isActive).toBe(false);
+  });
+
   test('marks connection inactive before invoking onConnectError callback from websocket error', async () => {
     const onConnectErrorPromise = new Deferred<void>();
     const wsAdapter = new WebsocketTestAdapter();
