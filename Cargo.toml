@@ -65,6 +65,7 @@ members = [
   "sdks/rust/tests/procedural-view-pk-client",
   "sdks/rust/tests/event-table-client",
   "tools/ci",
+  "tools/csharp-tools",
   "tools/upgrade-version",
   "tools/license-check",
   "tools/replace-spacetimedb",

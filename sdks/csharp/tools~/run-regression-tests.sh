@@ -10,7 +10,7 @@ STDB_PATH="$SDK_PATH/../.."
 SPACETIMEDB_SERVER_URL="${SPACETIMEDB_SERVER_URL:-local}"
 
 # Regenerate Bindings
-"$SDK_PATH/tools~/gen-regression-tests.sh"
+cargo regen csharp regression-tests
 
 # Build and run SpacetimeDB server
 cargo build --manifest-path "$STDB_PATH/crates/standalone/Cargo.toml"

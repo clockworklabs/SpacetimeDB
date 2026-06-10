@@ -12,7 +12,7 @@ When developing against a local clone of SpacetimeDB, you'll need to ensure that
 To develop against a local clone of SpacetimeDB at `../SpacetimeDB`, run the following command:
 
 ```sh
-dotnet pack ../SpacetimeDB/crates/bindings-csharp/BSATN.Runtime && ./tools~/write-nuget-config.sh ../SpacetimeDB
+dotnet pack ../SpacetimeDB/crates/bindings-csharp/BSATN.Runtime && cargo csharp write-nuget-config . --stdb-path ../SpacetimeDB
 ```
 
 This will create a (`.gitignore`d) `nuget.config` file that uses the local build of the package, instead of the package on NuGet.
@@ -99,4 +99,3 @@ We could deduplicate multiply-subscribed rows server-side, but this represents a
 There is also a class `MultiDictionaryDelta`. This represents a pre-processed batch of changes to a `MultiDictionary`. We prepare `MultiDictionaryDelta`s on a background thread and `Apply` them on the main thread. This allows us to do at least some work without blocking the main thread.
 
 Note that if multiple subscriptions are subscribed to a row, when a server-side transaction updates that row, exactly the right number of updates will be sent over the network, in a single `ServerMessage`. `MultiDictionary` and `MultiDictionaryDelta` rely on this guarantee for correct operation, and will throw exceptions in debug mode if it is not met.
-

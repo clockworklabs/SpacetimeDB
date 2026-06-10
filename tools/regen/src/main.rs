@@ -21,6 +21,10 @@ enum Command {
 
 #[derive(Subcommand)]
 enum CsharpCommand {
+    /// Regenerate C# regression test bindings.
+    RegressionTests,
+    /// Regenerate C# quickstart bindings.
+    Quickstart,
     /// Regenerate C# DLL and NuGet package artifacts for Unity workflows.
     Dlls,
 }
@@ -30,6 +34,8 @@ fn main() -> Result<()> {
 
     match cli.command {
         Command::Csharp { command } => match command {
+            CsharpCommand::RegressionTests => csharp::regen_regression_tests()?,
+            CsharpCommand::Quickstart => csharp::regen_quickstart()?,
             CsharpCommand::Dlls => csharp::regen_dlls()?,
         },
     }
