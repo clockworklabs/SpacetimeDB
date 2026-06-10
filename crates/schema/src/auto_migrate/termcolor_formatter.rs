@@ -432,7 +432,7 @@ impl MigrationFormatter for TermColorFormatter {
         // so for now we're just printing the table name.
 
         self.write_action_prefix(&Action::Changed)?;
-        self.buffer.write_all(format!(" schema of event table ").as_bytes())?;
+        self.buffer.write_all(b" schema of event table ")?;
         self.write_colored(table_name, Some(self.colors.table_name), true)?;
         self.buffer.write_all(b"\n")?;
 
