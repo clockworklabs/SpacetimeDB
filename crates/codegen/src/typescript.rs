@@ -6,7 +6,7 @@ use crate::{CodegenOptions, OutputFile};
 
 use super::util::{collect_case, print_auto_generated_file_comment, type_ref_name};
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Write};
 use std::iter;
 use std::ops::Deref;
@@ -15,7 +15,8 @@ use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_primitives::ColId;
-use spacetimedb_schema::def::{ConstraintDef, IndexDef, ModuleDef, ReducerDef, TableDef, TypeDef};
+use spacetimedb_lib::db::raw_def::v9::TableAccess;
+use spacetimedb_schema::def::{ConstraintDef, IndexDef, ModuleDef, ProcedureDef, ReducerDef, TableDef, TypeDef, ViewDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::TableSchema;
@@ -198,6 +199,67 @@ impl Lang for TypeScript {
             writeln!(out, "import {table_name_pascalcase}Row from \"./{table_module_name}\";");
         }
 
+        // Import row types for mounted namespace tables (public only)
+        let ns_tables: Vec<_> = module
+            .all_tables_with_prefix()
+            .into_iter()
+            .filter(|(prefix, _, table)| !prefix.is_empty() && table.table_access == TableAccess::Public)
+            .collect();
+        let ns_views: Vec<_> = module
+            .all_views_with_prefix()
+            .into_iter()
+            .filter(|(prefix, _, _)| !prefix.is_empty())
+            .collect();
+        let ns_reducers: Vec<_> = module
+            .all_reducers_with_prefix()
+            .into_iter()
+            .filter(|(prefix, _, reducer)| !prefix.is_empty() && !reducer.visibility.is_private())
+            .collect();
+        let ns_procedures: Vec<_> = module
+            .all_procedures_with_prefix()
+            .into_iter()
+            .filter(|(prefix, _, procedure)| !prefix.is_empty() && !procedure.visibility.is_private())
+            .collect();
+        if !ns_tables.is_empty() || !ns_views.is_empty() {
+            writeln!(out);
+            writeln!(out, "// Import namespace table schema definitions");
+            for (prefix, _, table) in &ns_tables {
+                let ns_path = mounted_ns_path(prefix);
+                let file_stem = table_module_name(&table.accessor_name);
+                let row_type = mounted_row_type_name(prefix, table.accessor_name.deref());
+                writeln!(out, "import {row_type}Row from \"./{ns_path}/{file_stem}\";");
+            }
+            for (prefix, _, view) in &ns_views {
+                let ns_path = mounted_ns_path(prefix);
+                let file_stem = table_module_name(&view.accessor_name);
+                let row_type = mounted_row_type_name(prefix, view.accessor_name.deref());
+                writeln!(out, "import {row_type}Row from \"./{ns_path}/{file_stem}\";");
+            }
+        }
+        if !ns_reducers.is_empty() {
+            writeln!(out);
+            writeln!(out, "// Import namespace reducer arg schemas");
+            for (prefix, _, reducer) in &ns_reducers {
+                if !is_reducer_invokable(reducer) {
+                    continue;
+                }
+                let ns_path = mounted_fn_ns_path(prefix);
+                let module_name = reducer_module_name(&reducer.accessor_name);
+                let args_type = mounted_reducer_args_type_name(prefix, &reducer.accessor_name);
+                writeln!(out, "import {args_type} from \"./{ns_path}/{module_name}\";");
+            }
+        }
+        if !ns_procedures.is_empty() {
+            writeln!(out);
+            writeln!(out, "// Import namespace procedure arg schemas");
+            for (prefix, _, procedure) in &ns_procedures {
+                let ns_path = mounted_fn_ns_path(prefix);
+                let module_name = procedure_module_name(&procedure.accessor_name);
+                let args_type = mounted_procedure_args_type_name(prefix, &procedure.accessor_name);
+                writeln!(out, "import * as {args_type} from \"./{ns_path}/{module_name}\";");
+            }
+        }
+
         writeln!(out);
         writeln!(out, "/** Type-only namespace exports for generated type groups. */");
 
@@ -214,7 +276,7 @@ impl Lang for TypeScript {
                 module,
                 out,
                 type_ref,
-                &table.name,
+                table.name.deref(),
                 iter_indexes(table),
                 iter_constraints(table),
                 table.is_event,
@@ -227,9 +289,31 @@ impl Lang for TypeScript {
             let view_name_pascalcase = view.accessor_name.deref().to_case(Case::Pascal);
             writeln!(out, "{}: __table({{", view.accessor_name);
             out.indent(1);
-            write_table_opts(module, out, type_ref, &view.name, iter::empty(), iter::empty(), false);
+            write_table_opts(module, out, type_ref, view.name.deref(), iter::empty(), iter::empty(), false);
             out.dedent(1);
             writeln!(out, "}}, {}Row),", view_name_pascalcase);
+        }
+        // Namespace tables from mounted submodules
+        for (prefix, owning_def, table) in &ns_tables {
+            let source_name = mounted_source_name(prefix, table.accessor_name.deref());
+            let row_type = mounted_row_type_name(prefix, table.accessor_name.deref());
+            let type_ref = table.product_type_ref;
+            writeln!(out, "\"{source_name}\": __table({{");
+            out.indent(1);
+            write_table_opts(owning_def, out, type_ref, &source_name, iter_indexes(table), iter_constraints(table), table.is_event);
+            out.dedent(1);
+            writeln!(out, "}}, {row_type}Row),");
+        }
+        // Namespace views from mounted submodules
+        for (prefix, owning_def, view) in &ns_views {
+            let source_name = mounted_source_name(prefix, view.accessor_name.deref());
+            let row_type = mounted_row_type_name(prefix, view.accessor_name.deref());
+            let type_ref = view.product_type_ref;
+            writeln!(out, "\"{source_name}\": __table({{");
+            out.indent(1);
+            write_table_opts(owning_def, out, type_ref, &source_name, iter::empty(), iter::empty(), false);
+            out.dedent(1);
+            writeln!(out, "}}, {row_type}Row),");
         }
         out.dedent(1);
         writeln!(out, "}});");
@@ -245,6 +329,14 @@ impl Lang for TypeScript {
             }
             let args_type = reducer_args_type_name(&reducer.accessor_name);
             writeln!(out, "__reducerSchema(\"{}\", {}),", reducer.name, args_type);
+        }
+        for (prefix, _, reducer) in &ns_reducers {
+            if !is_reducer_invokable(reducer) {
+                continue;
+            }
+            let wire_name = format!("{}{}", prefix, reducer.name);
+            let args_type = mounted_reducer_args_type_name(prefix, &reducer.accessor_name);
+            writeln!(out, "__reducerSchema(\"{wire_name}\", {args_type}),");
         }
         out.dedent(1);
         writeln!(out, ");");
@@ -263,6 +355,11 @@ impl Lang for TypeScript {
                 "__procedureSchema(\"{}\", {args_type}.params, {args_type}.returnType),",
                 procedure.name,
             );
+        }
+        for (prefix, _, procedure) in &ns_procedures {
+            let wire_name = format!("{}{}", prefix, procedure.name);
+            let args_type = mounted_procedure_args_type_name(prefix, &procedure.accessor_name);
+            writeln!(out, "__procedureSchema(\"{wire_name}\", {args_type}.params, {args_type}.returnType),");
         }
         out.dedent(1);
         writeln!(out, ");");
@@ -294,25 +391,84 @@ impl Lang for TypeScript {
 
         writeln!(out);
         writeln!(out, "/** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */");
-        writeln!(
-            out,
-            "export const tables: __QueryBuilder<typeof tablesSchema.schemaType> = __makeQueryBuilder(tablesSchema.schemaType);"
-        );
+        if ns_tables.is_empty() && ns_views.is_empty() {
+            writeln!(
+                out,
+                "export const tables: __QueryBuilder<typeof tablesSchema.schemaType> = __makeQueryBuilder(tablesSchema.schemaType);"
+            );
+        } else {
+            writeln!(out, "const _qb = __makeQueryBuilder(tablesSchema.schemaType);");
+            writeln!(out, "export const tables = {{");
+            out.indent(1);
+            // Root tables
+            for table in iter_tables(module, options.visibility) {
+                let key = table.accessor_name.deref();
+                writeln!(out, "{key}: _qb.{key},");
+            }
+            // Root views
+            for view in iter_views(module) {
+                let key = view.accessor_name.deref();
+                writeln!(out, "{key}: _qb.{key},");
+            }
+            // Build and emit namespace tree
+            let tree = build_ns_tree(&ns_tables, &ns_views);
+            emit_ns_tree(out, &tree);
+            out.dedent(1);
+            writeln!(out, "}} as const;");
+        }
         writeln!(out);
         writeln!(out, "/** The reducers available in this remote SpacetimeDB module. */");
-        writeln!(
-            out,
-            "export const reducers = __convertToAccessorMap(reducersSchema.reducersType.reducers);"
-        );
+        if ns_reducers.is_empty() {
+            writeln!(
+                out,
+                "export const reducers = __convertToAccessorMap(reducersSchema.reducersType.reducers);"
+            );
+        } else {
+            writeln!(
+                out,
+                "const _reducers = __convertToAccessorMap(reducersSchema.reducersType.reducers);"
+            );
+            writeln!(out, "export const reducers = {{");
+            out.indent(1);
+            for reducer in iter_reducers(module, options.visibility) {
+                if !is_reducer_invokable(reducer) {
+                    continue;
+                }
+                let key = reducer.accessor_name.deref().to_case(Case::Camel);
+                writeln!(out, "{key}: _reducers.{key},");
+            }
+            let tree = build_reducer_ns_tree(&ns_reducers);
+            emit_fn_ns_tree(out, "_reducers", &tree);
+            out.dedent(1);
+            writeln!(out, "}} as const;");
+        }
+
         writeln!(out);
         writeln!(
             out,
             "/** The procedures available in this remote SpacetimeDB module. */"
         );
-        writeln!(
-            out,
-            "export const procedures = __convertToAccessorMap(proceduresSchema.procedures);"
-        );
+        if ns_procedures.is_empty() {
+            writeln!(
+                out,
+                "export const procedures = __convertToAccessorMap(proceduresSchema.procedures);"
+            );
+        } else {
+            writeln!(
+                out,
+                "const _procedures = __convertToAccessorMap(proceduresSchema.procedures);"
+            );
+            writeln!(out, "export const procedures = {{");
+            out.indent(1);
+            for procedure in iter_procedures(module, options.visibility) {
+                let key = procedure.accessor_name.deref().to_case(Case::Camel);
+                writeln!(out, "{key}: _procedures.{key},");
+            }
+            let tree = build_procedure_ns_tree(&ns_procedures);
+            emit_fn_ns_tree(out, "_procedures", &tree);
+            out.dedent(1);
+            writeln!(out, "}} as const;");
+        }
 
         // Write type aliases for EventContext, ReducerEventContext, SubscriptionEventContext, ErrorContext
         writeln!(out);
@@ -652,13 +808,13 @@ fn write_table_opts<'a>(
     module: &ModuleDef,
     out: &mut Indenter,
     type_ref: AlgebraicTypeRef,
-    name: &Identifier,
+    name: &str,
     indexes: impl Iterator<Item = &'a IndexDef>,
     constraints: impl Iterator<Item = &'a ConstraintDef>,
     is_event: bool,
 ) {
     let product_def = module.typespace_for_generate()[type_ref].as_product().unwrap();
-    writeln!(out, "name: '{}',", name.deref());
+    writeln!(out, "name: '{}',", name);
     writeln!(out, "indexes: [");
     out.indent(1);
     for index_def in indexes {
@@ -905,6 +1061,22 @@ fn table_module_name(table_name: &Identifier) -> String {
     table_name.deref().to_case(Case::Snake) + "_table"
 }
 
+/// Combined accessor name for a mounted namespace table/view.
+/// E.g. namespace="alias.", accessor_name="tableName" → "aliasTableName"
+/// Source name (wire name) for a mounted namespace table/view.
+/// E.g. namespace="alias.", accessor_name="tableName" → "alias.tableName"
+fn mounted_source_name(namespace: &str, accessor_name: &str) -> String {
+    format!("{}{}", namespace, accessor_name)
+}
+
+/// TypeScript import symbol for a mounted namespace table/view row type.
+/// Uses `_` separator to avoid colliding with root tables that share the same PascalCase prefix.
+/// E.g. namespace="lib.", accessor_name="library_table" → "Lib_LibraryTable"
+fn mounted_row_type_name(namespace: &str, accessor_name: &str) -> String {
+    let ns_part = namespace.trim_end_matches('.').replace('.', "_").to_case(Case::Pascal);
+    format!("{}_{}", ns_part, accessor_name.to_case(Case::Pascal))
+}
+
 fn reducer_args_type_name(reducer_name: &ReducerName) -> String {
     reducer_name.deref().to_case(Case::Pascal) + "Reducer"
 }
@@ -919,6 +1091,158 @@ fn reducer_module_name(reducer_name: &ReducerName) -> String {
 
 fn procedure_module_name(procedure_name: &Identifier) -> String {
     procedure_name.deref().to_case(Case::Snake) + "_procedure"
+}
+
+/// Converts a dot-terminated table namespace like `"lib."` or `"lib.sublib."` to a path like `"lib"` or `"lib/sublib"`.
+fn mounted_ns_path(namespace: &str) -> String {
+    namespace.trim_end_matches('.').replace('.', "/")
+}
+
+/// Converts a slash-terminated reducer/procedure namespace like `"lib/"` or `"lib/sublib/"` to a path like `"lib"` or `"lib/sublib"`.
+fn mounted_fn_ns_path(prefix: &str) -> String {
+    prefix.trim_end_matches('/').to_string()
+}
+
+/// TypeScript import symbol for a mounted namespace reducer/procedure.
+/// Uses `_` separator to avoid colliding with root reducers/procedures sharing the same prefix.
+/// E.g. prefix="lib/", accessor_name="library_reducer" → "Lib_LibraryReducer"
+fn mounted_fn_type_name(prefix: &str, accessor_name: &str) -> String {
+    let ns_part = prefix.trim_end_matches('/').replace('/', "_").to_case(Case::Pascal);
+    format!("{}_{}", ns_part, accessor_name.to_case(Case::Pascal))
+}
+
+fn mounted_reducer_args_type_name(prefix: &str, accessor_name: &ReducerName) -> String {
+    mounted_fn_type_name(prefix, accessor_name.deref()) + "Reducer"
+}
+
+fn mounted_procedure_args_type_name(prefix: &str, accessor_name: &Identifier) -> String {
+    mounted_fn_type_name(prefix, accessor_name.deref()) + "Procedure"
+}
+
+/// A node in the recursive namespace tree used to emit the nested `tables` export.
+struct NsTree {
+    /// (combined_qb_key, local_ts_key) for table/view entries at this level.
+    entries: Vec<(String, String)>,
+    /// Child namespace nodes keyed by namespace segment.
+    children: BTreeMap<String, NsTree>,
+}
+
+impl NsTree {
+    fn new() -> Self {
+        NsTree { entries: Vec::new(), children: BTreeMap::new() }
+    }
+
+    fn insert(&mut self, path_segs: &[&str], combined_qb_key: String, local_ts_key: String) {
+        if path_segs.is_empty() {
+            self.entries.push((combined_qb_key, local_ts_key));
+        } else {
+            self.children
+                .entry(path_segs[0].to_string())
+                .or_insert_with(NsTree::new)
+                .insert(&path_segs[1..], combined_qb_key, local_ts_key);
+        }
+    }
+}
+
+/// Build the namespace tree from all mounted tables and views.
+fn build_ns_tree<'a>(
+    ns_tables: &[(String, &'a ModuleDef, &'a TableDef)],
+    ns_views: &[(String, &'a ModuleDef, &'a ViewDef)],
+) -> BTreeMap<String, NsTree> {
+    let mut tree: BTreeMap<String, NsTree> = BTreeMap::new();
+    for (prefix, _, table) in ns_tables {
+        let source_name = mounted_source_name(prefix, table.accessor_name.deref());
+        let local = table.accessor_name.deref().to_case(Case::Camel);
+        // prefix like "lib." → segments ["lib"], or "lib.sublib." → ["lib", "sublib"]
+        let segs: Vec<&str> = prefix.trim_end_matches('.').split('.').collect();
+        if let Some((first, rest)) = segs.split_first() {
+            tree.entry(first.to_string())
+                .or_insert_with(NsTree::new)
+                .insert(rest, source_name, local);
+        }
+    }
+    for (prefix, _, view) in ns_views {
+        let source_name = mounted_source_name(prefix, view.accessor_name.deref());
+        let local = view.accessor_name.deref().to_case(Case::Camel);
+        let segs: Vec<&str> = prefix.trim_end_matches('.').split('.').collect();
+        if let Some((first, rest)) = segs.split_first() {
+            tree.entry(first.to_string())
+                .or_insert_with(NsTree::new)
+                .insert(rest, source_name, local);
+        }
+    }
+    tree
+}
+
+/// Recursively emit the namespace tree as nested TypeScript object blocks.
+fn emit_ns_tree(out: &mut Indenter, tree: &BTreeMap<String, NsTree>) {
+    for (ns, node) in tree {
+        writeln!(out, "{ns}: {{");
+        out.indent(1);
+        for (qb_key, local_key) in &node.entries {
+            writeln!(out, "{local_key}: _qb[\"{qb_key}\"],");
+        }
+        emit_ns_tree(out, &node.children);
+        out.dedent(1);
+        writeln!(out, "}},");
+    }
+}
+
+/// Build namespace tree for mounted reducers (uses `/` path separator).
+/// `flat_key` matches SDK's `accessorName = toCamelCase(wireName)`.
+/// SDK toCamelCase only splits on `_`/`-`, so `/` is kept verbatim:
+/// `"lib/library_reducer"` → `"lib/libraryReducer"`.  Bracket notation is required.
+fn build_reducer_ns_tree<'a>(
+    ns_reducers: &[(String, &'a ModuleDef, &'a ReducerDef)],
+) -> BTreeMap<String, NsTree> {
+    let mut tree: BTreeMap<String, NsTree> = BTreeMap::new();
+    for (prefix, _, reducer) in ns_reducers {
+        if !is_reducer_invokable(reducer) {
+            continue;
+        }
+        let flat_key = format!("{}{}", prefix, reducer.accessor_name.deref().to_case(Case::Camel));
+        let local = reducer.accessor_name.deref().to_case(Case::Camel);
+        let segs: Vec<&str> = prefix.trim_end_matches('/').split('/').collect();
+        if let Some((first, rest)) = segs.split_first() {
+            tree.entry(first.to_string())
+                .or_insert_with(NsTree::new)
+                .insert(rest, flat_key, local);
+        }
+    }
+    tree
+}
+
+/// Build namespace tree for mounted procedures (uses `/` path separator).
+fn build_procedure_ns_tree<'a>(
+    ns_procedures: &[(String, &'a ModuleDef, &'a ProcedureDef)],
+) -> BTreeMap<String, NsTree> {
+    let mut tree: BTreeMap<String, NsTree> = BTreeMap::new();
+    for (prefix, _, procedure) in ns_procedures {
+        let flat_key = format!("{}{}", prefix, procedure.accessor_name.deref().to_case(Case::Camel));
+        let local = procedure.accessor_name.deref().to_case(Case::Camel);
+        let segs: Vec<&str> = prefix.trim_end_matches('/').split('/').collect();
+        if let Some((first, rest)) = segs.split_first() {
+            tree.entry(first.to_string())
+                .or_insert_with(NsTree::new)
+                .insert(rest, flat_key, local);
+        }
+    }
+    tree
+}
+
+/// Emit a namespace tree for reducers/procedures using bracket notation.
+/// Flat keys contain `/` (e.g. `"lib/libraryReducer"`) so dot notation is invalid JS.
+fn emit_fn_ns_tree(out: &mut Indenter, map_var: &str, tree: &BTreeMap<String, NsTree>) {
+    for (ns, node) in tree {
+        writeln!(out, "{ns}: {{");
+        out.indent(1);
+        for (flat_key, local_key) in &node.entries {
+            writeln!(out, "{local_key}: {map_var}[\"{flat_key}\"],");
+        }
+        emit_fn_ns_tree(out, map_var, &node.children);
+        out.dedent(1);
+        writeln!(out, "}},");
+    }
 }
 
 pub fn type_name(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
