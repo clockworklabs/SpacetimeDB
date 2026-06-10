@@ -59,7 +59,7 @@ A connection to a remote database is represented by the `UDbConnection` class. T
 | Name                                                                   | Description                                                                   |
 | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | [Connect to a database](#connect-to-a-database)                        | Construct a UDbConnection instance.                                           |
-| [Advance the connection](#advance-the-connection-and-process-messages) | The connection processes messages automatically via WebSocket callbacks.      |
+| [Advance the connection](#advance-the-connection-and-process-messages) | Process queued WebSocket messages and dispatch callbacks.                     |
 | [Access tables and reducers](#access-tables-and-reducers)              | Access the client cache, request reducer invocations, and register callbacks. |
 
 ### Connect to a database
@@ -187,7 +187,50 @@ Finalize configuration and open the connection. This creates a WebSocket connect
 
 ### Advance the connection and process messages
 
-The Unreal SDK processes messages automatically via WebSocket callbacks and with UDbConnection which ultimately inherits from FTickableGameObject. No manual polling or advancement is required. Events are dispatched through the registered delegates.
+The Unreal SDK receives WebSocket messages asynchronously, then queues them for processing on the game thread. You must either call `FrameTick()` regularly, typically from an Actor's `Tick()`, or enable automatic ticking once with `SetAutoTicking(true)`. Without one of these, queued messages are not processed and table callbacks, reducer callbacks, and subscription callbacks will not fire.
+
+You can either call `FrameTick()` yourself from an Actor or component tick, or enable the SDK's automatic ticker once after building the connection:
+
+```cpp
+void AGameManager::Tick(float DeltaTime)
+{
+    Super::Tick(DeltaTime);
+
+    if (Conn && Conn->IsActive())
+    {
+        Conn->FrameTick();
+    }
+}
+```
+
+```cpp
+Conn = Builder->Build();
+Conn->SetAutoTicking(true);
+```
+
+#### Method `FrameTick`
+
+```cpp
+class UDbConnection
+{
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
+    void FrameTick();
+};
+```
+
+Process any queued server messages and dispatch the corresponding callbacks. Call this regularly from game-thread code if you manage ticking yourself.
+
+#### Method `SetAutoTicking`
+
+```cpp
+class UDbConnection
+{
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB")
+    void SetAutoTicking(bool bAutoTick);
+};
+```
+
+Enable or disable the SDK's automatic ticker. When enabled, the connection registers with Unreal's core ticker and calls `FrameTick()` for you.
 
 ### Access tables and reducers
 

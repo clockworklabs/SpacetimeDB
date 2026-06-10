@@ -2,8 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
-BUILD_DIR="${REPO_ROOT}/crates/bindings-cpp/build"
+BUILD_DIR="${SCRIPT_DIR}/build"
 CMAKE_EXE="${CMAKE_EXE:-}"
 
 if [[ -z "${CMAKE_EXE}" ]]; then
@@ -27,7 +26,7 @@ if [[ -z "${CMAKE_EXE}" ]]; then
   exit 1
 fi
 
-"${CMAKE_EXE}" -S "${REPO_ROOT}/crates/bindings-cpp" -B "${BUILD_DIR}" -DBUILD_TESTS=ON
+"${CMAKE_EXE}" -S "${SCRIPT_DIR}" -B "${BUILD_DIR}"
 "${CMAKE_EXE}" --build "${BUILD_DIR}" --target query_builder_sql_tests
 
 if [[ -x "${BUILD_DIR}/Debug/query_builder_sql_tests.exe" ]]; then
