@@ -179,6 +179,8 @@ pub fn cli() -> clap::Command {
                 .short('t')
                 .long("template")
                 .value_name("TEMPLATE")
+                .num_args(0..=1)
+                .default_missing_value("")
                 .help("Template ID or GitHub repository (owner/repo or URL)"),
         )
         .arg(
@@ -206,6 +208,19 @@ pub async fn fetch_templates_list() -> anyhow::Result<Vec<TemplateDefinition>> {
     let templates_list: TemplatesList = serde_json::from_str(content).context("Failed to parse templates list JSON")?;
 
     Ok(templates_list.templates)
+}
+
+async fn print_templates_list() -> anyhow::Result<()> {
+    let templates = fetch_templates_list().await?;
+
+    println!("{}", "Available templates:".bold());
+    for template in &templates {
+        println!("  {} - {}", template.id, template.description);
+    }
+    println!("\nCreate a project: spacetime init --template <id>");
+    println!("Browse all templates: {}", "https://spacetimedb.com/templates".cyan());
+
+    Ok(())
 }
 
 pub async fn check_and_prompt_login(config: &mut Config) -> anyhow::Result<bool> {
@@ -1669,6 +1684,13 @@ fn check_for_git() -> bool {
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathBuf> {
     let options = InitOptions::from_args(args);
+
+    // --template without arg prints templates list and link to website
+    if options.template.as_deref() == Some("") {
+        print_templates_list().await?;
+        return Ok(PathBuf::new());
+    }
+
     let is_interactive = !options.non_interactive;
     let template = options.template.as_ref();
     let server_lang = options.lang.as_ref();
