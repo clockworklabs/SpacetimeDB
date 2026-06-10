@@ -170,6 +170,7 @@ static class ColumnTypeValidation
                 SpecialType.None => type.ToString()
                     is "SpacetimeDB.ConnectionId"
                         or "SpacetimeDB.Identity"
+                        or "SpacetimeDB.Timestamp"
                         or "SpacetimeDB.Uuid",
                 _ => false,
             }
