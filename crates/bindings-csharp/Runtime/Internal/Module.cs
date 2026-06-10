@@ -19,6 +19,7 @@ partial class RawModuleDefV10
     private readonly List<RawHttpHandlerDefV10> httpHandlerDefs = [];
     private readonly List<RawHttpRouteDefV10> httpRouteDefs = [];
     private readonly List<RawViewDefV10> viewDefs = [];
+    private readonly List<RawViewPrimaryKeyDefV10> viewPrimaryKeyDefs = [];
     private readonly List<RawRowLevelSecurityDefV9> rowLevelSecurityDefs = [];
     private readonly Dictionary<string, List<RawColumnDefaultValueV10>> defaultValuesByTable =
         new(StringComparer.Ordinal);
@@ -81,6 +82,9 @@ partial class RawModuleDefV10
     }
 
     internal void RegisterView(RawViewDefV10 view) => viewDefs.Add(view);
+
+    internal void RegisterViewPrimaryKey(string viewSourceName, IEnumerable<string> columns) =>
+        viewPrimaryKeyDefs.Add(new RawViewPrimaryKeyDefV10(viewSourceName, columns.ToList()));
 
     internal void RegisterRowLevelSecurity(RawRowLevelSecurityDefV9 rls) =>
         rowLevelSecurityDefs.Add(rls);
@@ -187,6 +191,10 @@ partial class RawModuleDefV10
         {
             sections.Add(new RawModuleDefV10Section.Views(viewDefs));
         }
+        if (viewPrimaryKeyDefs.Count > 0)
+        {
+            sections.Add(new RawModuleDefV10Section.ViewPrimaryKeys(viewPrimaryKeyDefs));
+        }
         if (scheduleDefs.Count > 0)
         {
             sections.Add(new RawModuleDefV10Section.Schedules(scheduleDefs));
@@ -242,6 +250,7 @@ public static class Module
             _ = new RawConstraintDataV9.Unique(null!);
             _ = new RawModuleDef.V10(null!);
             _ = new RawModuleDefV10Section.Typespace(null!);
+            _ = new RawModuleDefV10Section.ViewPrimaryKeys(null!);
             _ = new ExplicitNameEntry.Table(null!);
             _ = new MiscModuleExport.TypeAlias(null!);
             _ = new RawMiscModuleExportV9.ColumnDefaultValue(null!);
@@ -401,6 +410,9 @@ public static class Module
         anonymousViewDispatchers.Add(dispatcher);
         moduleDef.RegisterView(def);
     }
+
+    public static void RegisterViewPrimaryKey(string viewSourceName, string[] columns) =>
+        moduleDef.RegisterViewPrimaryKey(viewSourceName, columns);
 
     public static void RegisterClientVisibilityFilter(Filter rlsFilter)
     {

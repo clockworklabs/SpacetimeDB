@@ -13,27 +13,27 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteTables
     {
-        public sealed class AllViewPkPlayersHandle : RemoteTableHandle<EventContext, ViewPkPlayer>
+        public sealed class ProceduralViewPkPlayersHandle : RemoteTableHandle<EventContext, ViewPkPlayer>
         {
-            protected override string RemoteTableName => "all_view_pk_players";
+            protected override string RemoteTableName => "procedural_view_pk_players";
 
-            internal AllViewPkPlayersHandle(DbConnection conn) : base(conn)
+            internal ProceduralViewPkPlayersHandle(DbConnection conn) : base(conn)
             {
             }
 
             protected override object GetPrimaryKey(ViewPkPlayer row) => row.Id;
         }
 
-        public readonly AllViewPkPlayersHandle AllViewPkPlayers;
+        public readonly ProceduralViewPkPlayersHandle ProceduralViewPkPlayers;
     }
 
-    public sealed class AllViewPkPlayersCols
+    public sealed class ProceduralViewPkPlayersCols
     {
         public global::SpacetimeDB.Col<ViewPkPlayer, ulong> Id { get; }
         public global::SpacetimeDB.Col<ViewPkPlayer, SpacetimeDB.Identity> Sender { get; }
         public global::SpacetimeDB.Col<ViewPkPlayer, string> Name { get; }
 
-        public AllViewPkPlayersCols(string tableName)
+        public ProceduralViewPkPlayersCols(string tableName)
         {
             Id = new global::SpacetimeDB.Col<ViewPkPlayer, ulong>(tableName, "id");
             Sender = new global::SpacetimeDB.Col<ViewPkPlayer, SpacetimeDB.Identity>(tableName, "sender");
@@ -41,11 +41,11 @@ namespace SpacetimeDB.Types
         }
     }
 
-    public sealed class AllViewPkPlayersIxCols
+    public sealed class ProceduralViewPkPlayersIxCols
     {
         public global::SpacetimeDB.IxCol<ViewPkPlayer, ulong> Id { get; }
 
-        public AllViewPkPlayersIxCols(string tableName)
+        public ProceduralViewPkPlayersIxCols(string tableName)
         {
             Id = new global::SpacetimeDB.IxCol<ViewPkPlayer, ulong>(tableName, "id");
         }

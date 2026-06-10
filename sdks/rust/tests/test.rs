@@ -848,4 +848,5 @@ macro_rules! procedural_view_pk_tests {
 }
 
 procedural_view_pk_tests!(rust_procedural_view_pk, "sdk-test-procedural-view-pk");
+procedural_view_pk_tests!(csharp_procedural_view_pk, "sdk-test-procedural-view-pk-cs");
 procedural_view_pk_tests!(typescript_procedural_view_pk, "sdk-test-procedural-view-pk-ts");
