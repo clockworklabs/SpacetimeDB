@@ -1,4 +1,4 @@
-mod ast;
+pub mod ast;
 pub(crate) mod durability;
 pub mod error;
 pub mod metrics;

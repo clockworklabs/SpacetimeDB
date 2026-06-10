@@ -1,8 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use super::ast::SchemaViewer;
-use crate::db::relational_db::RelationalDB;
 use crate::energy::FunctionBudget;
 use crate::error::DBError;
 use crate::estimation::{check_row_limit, estimate_rows_scanned};
@@ -17,6 +15,8 @@ use crate::subscription::tx::DeltaTx;
 use anyhow::anyhow;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::traits::IsolationLevel;
+use spacetimedb_engine::ast::SchemaViewer;
+use spacetimedb_engine::relational_db::RelationalDB;
 use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;

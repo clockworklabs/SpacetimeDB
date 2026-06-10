@@ -132,7 +132,7 @@ mod tests {
     use crate::db::relational_db::tests_utils::{begin_tx, insert, with_auto_commit};
     use crate::db::relational_db::{tests_utils::TestDB, RelationalDB};
     use crate::error::DBError;
-    use crate::sql::ast::SchemaViewer;
+    use spacetimedb_engine::ast::SchemaViewer;
     use spacetimedb_lib::{identity::AuthCtx, AlgebraicType};
     use spacetimedb_query::compile_subscription;
     use spacetimedb_sats::product;
