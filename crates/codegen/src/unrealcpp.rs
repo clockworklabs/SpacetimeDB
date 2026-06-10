@@ -3288,7 +3288,12 @@ fn generate_query_builder_types(
         *row_struct_counts.entry(source_meta.row_struct.clone()).or_default() += 1;
     }
     for source_meta in &mut source_metas {
-        if row_struct_counts.get(&source_meta.row_struct).copied().unwrap_or_default() == 1 {
+        if row_struct_counts
+            .get(&source_meta.row_struct)
+            .copied()
+            .unwrap_or_default()
+            == 1
+        {
             let row_type_name = source_meta
                 .row_struct
                 .strip_prefix('F')
@@ -3322,16 +3327,12 @@ fn generate_query_builder_types(
         writeln!(output, "{{");
         writeln!(output, "    explicit {cols_struct}(const char* TableName)");
         write!(output, "        : ");
-        for (idx, (field_name_raw, field_name_pascal, _field_type, _field_ty)) in source_meta.fields.iter().enumerate() {
+        for (idx, (field_name_raw, field_name_pascal, _field_type, _field_ty)) in source_meta.fields.iter().enumerate()
+        {
             if idx > 0 {
                 write!(output, ", ");
             }
-            write!(
-                output,
-                "{}(TableName, \"{}\")",
-                field_name_pascal,
-                field_name_raw
-            );
+            write!(output, "{}(TableName, \"{}\")", field_name_pascal, field_name_raw);
         }
         writeln!(output, " {{}}");
         writeln!(output);
@@ -3352,18 +3353,15 @@ fn generate_query_builder_types(
             for (idx, (field_name_raw, field_name_pascal, _field_type, _field_ty)) in source_meta
                 .fields
                 .iter()
-                .filter(|(_field_name_raw, field_name_pascal, _, _)| singleton_indexed_fields.contains(field_name_pascal))
+                .filter(|(_field_name_raw, field_name_pascal, _, _)| {
+                    singleton_indexed_fields.contains(field_name_pascal)
+                })
                 .enumerate()
             {
                 if idx > 0 {
                     write!(output, ", ");
                 }
-                write!(
-                    output,
-                    "{}(TableName, \"{}\")",
-                    field_name_pascal,
-                    field_name_raw
-                );
+                write!(output, "{}(TableName, \"{}\")", field_name_pascal, field_name_raw);
             }
         }
         writeln!(output, " {{}}");
@@ -3419,13 +3417,13 @@ fn generate_query_builder_types(
     writeln!(output, "    static TArray<FString> AllTablesSqlQueries()");
     writeln!(output, "    {{");
     writeln!(output, "        TArray<FString> Sql;");
-        for source_meta in &source_metas {
-            let source_pascal = &source_meta.source_pascal;
-            writeln!(
+    for source_meta in &source_metas {
+        let source_pascal = &source_meta.source_pascal;
+        writeln!(
                 output,
                 "        Sql.Add(FString(UTF8_TO_TCHAR(F{module_prefix}QueryBuilder().From.{source_pascal}().into_sql().c_str())));"
             );
-        }
+    }
     writeln!(output, "        return Sql;");
     writeln!(output, "    }}");
     writeln!(output, "}};");
@@ -3438,10 +3436,16 @@ fn generate_query_builder_types(
     writeln!(output, "{{");
     writeln!(output, "    GENERATED_BODY()");
     writeln!(output);
-    writeln!(output, "    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB|Queries\")");
+    writeln!(
+        output,
+        "    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB|Queries\")"
+    );
     writeln!(output, "    FString Sql;");
     writeln!(output);
-    writeln!(output, "    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB|Queries\")");
+    writeln!(
+        output,
+        "    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB|Queries\")"
+    );
     writeln!(output, "    FString ResultSourceName;");
     writeln!(output, "}};");
     writeln!(output);
@@ -3451,10 +3455,16 @@ fn generate_query_builder_types(
     writeln!(output, "{{");
     writeln!(output, "    GENERATED_BODY()");
     writeln!(output);
-    writeln!(output, "    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB|Queries\")");
+    writeln!(
+        output,
+        "    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB|Queries\")"
+    );
     writeln!(output, "    FString Sql;");
     writeln!(output);
-    writeln!(output, "    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB|Queries\")");
+    writeln!(
+        output,
+        "    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB|Queries\")"
+    );
     writeln!(output, "    FString ResultSourceName;");
     writeln!(output, "}};");
     writeln!(output);
@@ -3467,27 +3477,41 @@ fn generate_query_builder_types(
         writeln!(output, "{{");
         writeln!(output, "    GENERATED_BODY()");
         writeln!(output);
-        writeln!(output, "    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB|Queries\")");
+        writeln!(
+            output,
+            "    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB|Queries\")"
+        );
         writeln!(output, "    FString Sql;");
         writeln!(output);
-        writeln!(output, "    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB|Queries\")");
+        writeln!(
+            output,
+            "    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB|Queries\")"
+        );
         writeln!(output, "    FString ResultSourceName;");
         writeln!(output, "}};");
         writeln!(output);
     }
 
     for kind in blueprint_predicate_kinds() {
-        let column_struct =
-            format!("F{module_prefix}Blueprint{}Column", blueprint_predicate_kind_name(*kind));
+        let column_struct = format!(
+            "F{module_prefix}Blueprint{}Column",
+            blueprint_predicate_kind_name(*kind)
+        );
         writeln!(output, "USTRUCT(BlueprintType)");
         writeln!(output, "struct {api_macro} {column_struct}");
         writeln!(output, "{{");
         writeln!(output, "    GENERATED_BODY()");
         writeln!(output);
-        writeln!(output, "    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB|Queries\")");
+        writeln!(
+            output,
+            "    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB|Queries\")"
+        );
         writeln!(output, "    FString ResultSourceName;");
         writeln!(output);
-        writeln!(output, "    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB|Queries\")");
+        writeln!(
+            output,
+            "    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB|Queries\")"
+        );
         writeln!(output, "    FString ColumnName;");
         writeln!(output, "}};");
         writeln!(output);
@@ -3536,7 +3560,10 @@ fn generate_query_builder_types(
         writeln!(output, "    {{");
         writeln!(output, "        {blueprint_query_struct} GenericQuery;");
         writeln!(output, "        GenericQuery.Sql = Query.Sql;");
-        writeln!(output, "        GenericQuery.ResultSourceName = Query.ResultSourceName;");
+        writeln!(
+            output,
+            "        GenericQuery.ResultSourceName = Query.ResultSourceName;"
+        );
         writeln!(output, "        return GenericQuery;");
         writeln!(output, "    }}");
         writeln!(output);
@@ -3548,13 +3575,15 @@ fn generate_query_builder_types(
             let Some(kind) = blueprint_predicate_kind(field_ty) else {
                 continue;
             };
-            let column_struct =
-                format!("F{module_prefix}Blueprint{}Column", blueprint_predicate_kind_name(kind));
+            let column_struct = format!("F{module_prefix}Blueprint{}Column", blueprint_predicate_kind_name(kind));
             writeln!(
                 output,
                 "    UFUNCTION(BlueprintPure, Category=\"SpacetimeDB|Queries|{source_pascal}|Columns\", meta=(DisplayName=\"{source_pascal} {field_name_pascal}\"))"
             );
-            writeln!(output, "    static {column_struct} {source_pascal}{field_name_pascal}(const {query_struct}& Query)");
+            writeln!(
+                output,
+                "    static {column_struct} {source_pascal}{field_name_pascal}(const {query_struct}& Query)"
+            );
             writeln!(output, "    {{");
             writeln!(output, "        {column_struct} Column;");
             writeln!(
@@ -3576,7 +3605,10 @@ fn generate_query_builder_types(
             "    static {query_struct} {source_pascal}Where({query_struct} Query, const {blueprint_predicate_struct}& Predicate)"
         );
         writeln!(output, "    {{");
-        writeln!(output, "        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())");
+        writeln!(
+            output,
+            "        if (Query.ResultSourceName != Predicate.ResultSourceName || Predicate.Sql.IsEmpty())"
+        );
         writeln!(output, "        {{");
         writeln!(output, "            return Query;");
         writeln!(output, "        }}");
@@ -3619,10 +3651,28 @@ fn generate_query_builder_types(
 
         if supports_ordering {
             for (fn_suffix, display_name, compact_title, sql_op, keywords) in [
-                ("GreaterThan", format!("{kind_display} Greater Than"), ">", ">", "> greater"),
-                ("GreaterEqual", format!("{kind_display} Greater Equal"), ">=", ">=" , ">= greater equal"),
+                (
+                    "GreaterThan",
+                    format!("{kind_display} Greater Than"),
+                    ">",
+                    ">",
+                    "> greater",
+                ),
+                (
+                    "GreaterEqual",
+                    format!("{kind_display} Greater Equal"),
+                    ">=",
+                    ">=",
+                    ">= greater equal",
+                ),
                 ("LessThan", format!("{kind_display} Less Than"), "<", "<", "< less"),
-                ("LessEqual", format!("{kind_display} Less Equal"), "<=", "<=", "<= less equal"),
+                (
+                    "LessEqual",
+                    format!("{kind_display} Less Equal"),
+                    "<=",
+                    "<=",
+                    "<= less equal",
+                ),
             ] {
                 writeln!(
                     output,
@@ -3657,7 +3707,10 @@ fn generate_query_builder_types(
     writeln!(output, "    {{");
     writeln!(output, "        {blueprint_predicate_struct} Predicate;");
     writeln!(output, "        Predicate.ResultSourceName = A.ResultSourceName;");
-    writeln!(output, "        Predicate.Sql = FString::Printf(TEXT(\"(%s) AND (%s)\"), *A.Sql, *B.Sql);");
+    writeln!(
+        output,
+        "        Predicate.Sql = FString::Printf(TEXT(\"(%s) AND (%s)\"), *A.Sql, *B.Sql);"
+    );
     writeln!(output, "        return Predicate;");
     writeln!(output, "    }}");
     writeln!(output);
@@ -3673,7 +3726,10 @@ fn generate_query_builder_types(
     writeln!(output, "    {{");
     writeln!(output, "        {blueprint_predicate_struct} Predicate;");
     writeln!(output, "        Predicate.ResultSourceName = A.ResultSourceName;");
-    writeln!(output, "        Predicate.Sql = FString::Printf(TEXT(\"(%s) OR (%s)\"), *A.Sql, *B.Sql);");
+    writeln!(
+        output,
+        "        Predicate.Sql = FString::Printf(TEXT(\"(%s) OR (%s)\"), *A.Sql, *B.Sql);"
+    );
     writeln!(output, "        return Predicate;");
     writeln!(output, "    }}");
     writeln!(output);
@@ -3689,19 +3745,31 @@ fn generate_query_builder_types(
     writeln!(output, "    {{");
     writeln!(output, "        {blueprint_predicate_struct} Predicate;");
     writeln!(output, "        Predicate.ResultSourceName = A.ResultSourceName;");
-    writeln!(output, "        Predicate.Sql = FString::Printf(TEXT(\"NOT (%s)\"), *A.Sql);");
+    writeln!(
+        output,
+        "        Predicate.Sql = FString::Printf(TEXT(\"NOT (%s)\"), *A.Sql);"
+    );
     writeln!(output, "        return Predicate;");
     writeln!(output, "    }}");
     writeln!(output);
 
     writeln!(output, "private:");
-    writeln!(output, "    static FString AppendPredicate(const FString& Sql, const FString& Predicate)");
+    writeln!(
+        output,
+        "    static FString AppendPredicate(const FString& Sql, const FString& Predicate)"
+    );
     writeln!(output, "    {{");
     writeln!(output, "        if (Sql.Contains(TEXT(\" WHERE \")))");
     writeln!(output, "        {{");
-    writeln!(output, "            return Sql + TEXT(\" AND (\") + Predicate + TEXT(\")\");");
+    writeln!(
+        output,
+        "            return Sql + TEXT(\" AND (\") + Predicate + TEXT(\")\");"
+    );
     writeln!(output, "        }}");
-    writeln!(output, "        return Sql + TEXT(\" WHERE (\") + Predicate + TEXT(\")\");");
+    writeln!(
+        output,
+        "        return Sql + TEXT(\" WHERE (\") + Predicate + TEXT(\")\");"
+    );
     writeln!(output, "    }}");
     writeln!(output, "}};");
     writeln!(output);
@@ -3747,10 +3815,7 @@ fn generate_subscription_builder_class(
     );
     writeln!(output);
     writeln!(output, "    template<typename TFn>");
-    writeln!(
-        output,
-        "    U{module_prefix}SubscriptionBuilder* AddQuery(TFn&& Build)"
-    );
+    writeln!(output, "    U{module_prefix}SubscriptionBuilder* AddQuery(TFn&& Build)");
     writeln!(output, "    {{");
     writeln!(output, "        F{module_prefix}QueryBuilder Q;");
     writeln!(output, "        auto Query = std::forward<TFn>(Build)(Q);");
@@ -4544,7 +4609,10 @@ fn generate_client_implementation(
         "U{module_prefix}SubscriptionHandle* U{module_prefix}SubscriptionBuilder::SubscribeToAllTables()"
     );
     writeln!(output, "{{");
-    writeln!(output, "\treturn Subscribe(F{module_prefix}QueryBuilder::AllTablesSqlQueries());");
+    writeln!(
+        output,
+        "\treturn Subscribe(F{module_prefix}QueryBuilder::AllTablesSqlQueries());"
+    );
     writeln!(output, "}}");
     writeln!(output);
     writeln!(
@@ -6423,10 +6491,7 @@ fn autogen_cpp_sum(
         let pas = variant_name.to_case(Case::Pascal);
 
         writeln!(output, "            case E{name}Tag::{pas}:");
-        writeln!(
-            output,
-            "                return GetAs{pas}() == Other.GetAs{pas}();"
-        );
+        writeln!(output, "                return GetAs{pas}() == Other.GetAs{pas}();");
     }
 
     writeln!(output, "            default:");
