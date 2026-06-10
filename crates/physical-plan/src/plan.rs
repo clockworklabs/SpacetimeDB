@@ -480,9 +480,9 @@ impl PhysicalPlan {
             .apply_rec::<PushConstAnd>()?
             .apply_rec::<PushConstEq>()?
             .apply_rec::<ReorderDeltaJoinRhs>()?
-            .apply_rec::<IxScanFromPredicates>()?
             .apply_rec::<ReorderHashJoin>()?
             .apply_rec::<HashToIxJoin>()?
+            .apply_rec::<IxScanFromPredicates>()?
             .apply_rec::<UniqueIxJoinRule>()?
             .apply_rec::<UniqueHashJoinRule>()?
             .introduce_semijoins(reqs)

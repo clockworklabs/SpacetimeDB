@@ -748,22 +748,6 @@ fn ix_join_candidate(
     })
 }
 
-/// Extract equality constants encoded directly in an `IxScan`.
-///
-/// We only support `Eq` SARGs here because index joins require exact probe
-/// values for all leading index columns.
-fn rhs_eq_constants_from_ixscan(scan: &IxScan) -> Option<Vec<EqConstFilterTerm>> {
-    scan.literal_eq_terms()
-}
-
-/// Ensure we do not drop predicates that were previously represented by an
-/// `IxScan` when rewriting to an `IxJoin`.
-fn all_terms_consumed(required: &[EqConstFilterTerm], consumed: &[EqConstFilterTerm]) -> bool {
-    required
-        .iter()
-        .all(|term| consumed.iter().any(|consumed_term| consumed_term == term))
-}
-
 fn remove_consumed_filter_terms(
     expr: PhysicalExpr,
     rhs_label: Label,
@@ -817,50 +801,23 @@ impl RewriteRule for HashToIxJoin {
                     ..
                 },
                 _,
-            ) => match &**rhs {
-                PhysicalPlan::TableScan(
-                    TableScan {
-                        schema,
-                        limit: None,
-                        delta: _,
-                    },
-                    _,
-                ) => ix_join_candidate(schema, *field_pos, lhs_field, &[]),
-                PhysicalPlan::IxScan(
-                    scan @ IxScan {
-                        schema,
-                        limit: None,
-                        delta: _,
-                        ..
-                    },
-                    _,
-                ) => {
-                    // If earlier rules already lowered an RHS filter to `IxScan(sender = const)`,
-                    // reuse those constants when proving that a multi-column join index can be probed.
-                    let constants = rhs_eq_constants_from_ixscan(scan)?;
-                    let info = ix_join_candidate(schema, *field_pos, lhs_field, &constants)?;
-                    // Guardrail: do not rewrite unless every scan-encoded predicate is
-                    // represented in the chosen point probe.
-                    all_terms_consumed(&constants, &info.consumed_filter_terms).then_some(info)
-                }
-                _ => {
-                    let (base, filters) = peel_filters_ref(rhs);
-                    match base {
-                        PhysicalPlan::TableScan(
-                            TableScan {
-                                schema,
-                                limit: None,
-                                delta: _,
-                            },
-                            rhs_label,
-                        ) => {
-                            let constants = rhs_eq_constants_from_filters(filters, *rhs_label);
-                            ix_join_candidate(schema, *field_pos, lhs_field, &constants)
-                        }
-                        _ => None,
+            ) => {
+                let (base, filters) = peel_filters_ref(rhs);
+                match base {
+                    PhysicalPlan::TableScan(
+                        TableScan {
+                            schema,
+                            limit: None,
+                            delta: _,
+                        },
+                        rhs_label,
+                    ) => {
+                        let constants = rhs_eq_constants_from_filters(filters, *rhs_label);
+                        ix_join_candidate(schema, *field_pos, lhs_field, &constants)
                     }
+                    _ => None,
                 }
-            },
+            }
             _ => None,
         }
     }
@@ -881,15 +838,6 @@ impl RewriteRule for HashToIxJoin {
                             schema: rhs,
                             limit: None,
                             delta: rhs_delta,
-                        },
-                        rhs_label,
-                    ) => (rhs, rhs_label, rhs_delta),
-                    PhysicalPlan::IxScan(
-                        IxScan {
-                            schema: rhs,
-                            limit: None,
-                            delta: rhs_delta,
-                            ..
                         },
                         rhs_label,
                     ) => (rhs, rhs_label, rhs_delta),
