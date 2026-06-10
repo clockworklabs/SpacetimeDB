@@ -84,8 +84,8 @@ pub enum TableError {
     ChangeColumnsError(#[from] Box<table::ChangeColumnsError>),
     #[error(transparent)]
     AddColumnsError(#[from] Box<table::AddColumnsError>),
-    #[error("Table with ID `{0}` is an event table, but was non-empty during auto-migration")]
-    EventTableNonEmptyDuringAutoMigration(TableId),
+    #[error("Event table with ID `{0}` is not empty")]
+    EventTableNotEmpty(TableId),
     #[error(
         "Table with ID `{0}` attempted to reschema using `alter_event_table_row_type`, but it is not an event table"
     )]

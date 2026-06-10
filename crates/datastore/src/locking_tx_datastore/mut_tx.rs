@@ -1221,34 +1221,20 @@ impl MutTxId {
         }
 
         // Write to the table in the tx state.
-        let ((tx_table, tx_blob_store, ..), (commit_table, commit_blob_store, ..)) =
-            self.get_or_create_insert_table_mut(table_id)?;
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
 
         if tx_table.row_count != 0 || commit_table.row_count != 0 {
             // N.b. the delete table must also be empty, 'cause the committed table is empty.
-            return Err(TableError::EventTableNonEmptyDuringAutoMigration(table_id).into());
+            return Err(TableError::EventTableNotEmpty(table_id).into());
         }
 
-        // Make sure there aren't any pages with outdated layouts in either table,
-        // as page layout depends on row size.
-        // It should be redundant to do this for the commit table, which can't have ever had rows resident at any point in the past,
-        // but better safe than sorry.
-        // Safety: There aren't any pages here, so it's impossible for any of them to have the wrong schema.
-        unsafe {
-            tx_table.set_pages(Vec::new(), tx_blob_store);
-            commit_table.set_pages(Vec::new(), commit_blob_store);
-        }
+        let old_column_schemas = tx_table
+            .change_columns_of_empty_table_to(column_schemas.clone())
+            .map_err(|_| TableError::EventTableNotEmpty(table_id))?;
 
-        // Safety: we just checked that the table has zero rows resident, and then wiped all its pages,
-        // so there aren't any rows existing in the table for the new layout to conflict with.
-        let old_column_schemas = unsafe {
-            tx_table
-                .change_columns_to_unchecked(column_schemas.clone(), |_, _, _| Ok::<(), std::convert::Infallible>(()))
-        }
-        .expect("const Ok validation function to result in Ok column change");
-
-        // Safety: No rows resident, no pages resident, no possible conflicts.
-        unsafe { commit_table.set_layout_and_schema_to(tx_table) };
+        commit_table
+            .change_columns_of_empty_table_to(column_schemas.clone())
+            .map_err(|_| TableError::EventTableNotEmpty(table_id))?;
 
         // Update system tables.
         // We'll simply remove all rows in `st_columns` and then add the new ones.

@@ -869,9 +869,16 @@ impl<'cs> ReplayCommittedState<'cs> {
         // because their initial insertion order matches their `col_pos` order.
         columns.sort_by_key(|col: &ColumnSchema| col.col_pos);
 
+        let is_event = self.find_st_event_table_row(table_id).is_ok();
         // Update the columns and layout of the the in-memory table.
         if let Some(table) = self.tables.get_mut(&table_id) {
-            table.change_columns_to(columns).map_err(TableError::from)?;
+            if is_event {
+                table
+                    .change_columns_of_empty_table_to(columns)
+                    .map_err(|_| TableError::EventTableNotEmpty(table_id))?;
+            } else {
+                table.change_columns_to(columns).map_err(TableError::from)?;
+            }
         }
 
         Ok(())
