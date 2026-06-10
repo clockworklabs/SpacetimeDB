@@ -6,7 +6,7 @@ use crate::client::messages::{OneOffQueryResponseMessage, ProcedureResultMessage
 use crate::client::{ClientActorId, ClientConnectionSender, WsVersion};
 use crate::database_logger::{DatabaseLogger, LogLevel, Record};
 use crate::db::relational_db::{RelationalDB, Tx};
-use crate::db::SchemaViewer;
+use crate::db::sql::ast::SchemaViewer;
 use crate::error::DBError;
 use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::hash::Hash;

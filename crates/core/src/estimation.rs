@@ -131,7 +131,7 @@ mod tests {
     use super::{estimate_rows_scanned, row_estimate};
     use crate::db::relational_db::tests_utils::{begin_tx, insert, with_auto_commit};
     use crate::db::relational_db::{tests_utils::TestDB, RelationalDB};
-    use crate::db::SchemaViewer;
+    use crate::db::sql::ast::SchemaViewer;
     use crate::error::DBError;
     use spacetimedb_lib::{identity::AuthCtx, AlgebraicType};
     use spacetimedb_query::compile_subscription;

@@ -2,7 +2,7 @@ use super::instrumentation::CallTimes;
 use super::*;
 use crate::client::ClientActorId;
 use crate::database_logger;
-use crate::db::SchemaViewer;
+use crate::db::sql::ast::SchemaViewer;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
 use crate::error::DBError;
 use crate::host::host_controller::CallProcedureReturn;

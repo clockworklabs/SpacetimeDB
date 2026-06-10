@@ -3,8 +3,8 @@ pub mod error;
 pub mod metrics;
 pub mod persistence;
 pub mod relational_db;
-pub mod sql;
 pub mod snapshot;
+pub mod sql;
 pub mod update;
 pub mod util;
 

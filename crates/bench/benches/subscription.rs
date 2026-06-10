@@ -1,7 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use spacetimedb::client::consume_each_list::ConsumeEachBuffer;
 use spacetimedb::db::relational_db::RelationalDB;
-use spacetimedb::db::SchemaViewer;
+use spacetimedb::db::sql::ast::SchemaViewer;
 use spacetimedb::error::DBError;
 use spacetimedb::identity::AuthCtx;
 use spacetimedb::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
