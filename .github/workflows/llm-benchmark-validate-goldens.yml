@@ -57,6 +57,13 @@ jobs:
       - name: Install pnpm
         if: matrix.lang == 'typescript'
         uses: ./.github/actions/setup-pnpm
+        with:
+          run_install: true
+
+      - name: Build TypeScript SDK
+        if: matrix.lang == 'typescript'
+        run: pnpm build
+        working-directory: crates/bindings-typescript
 
       - name: Build llm-benchmark tool
         run: cargo install --path tools/xtask-llm-benchmark --locked
@@ -72,5 +79,6 @@ jobs:
         env:
           MSBUILDDISABLENODEREUSE: "1"
           DOTNET_CLI_USE_MSBUILD_SERVER: "0"
+          LLM_BENCH_CSHARP_CONCURRENCY: "1"
         run: |
           llm_benchmark run --goldens-only --lang ${{ matrix.lang }}

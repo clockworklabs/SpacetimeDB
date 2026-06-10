@@ -255,11 +255,6 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
         eprintln!("[warn] failed to upload task catalog: {e}");
     }
 
-    let modes = config
-        .modes
-        .clone()
-        .unwrap_or_else(|| ALL_MODES.iter().map(|s| s.to_string()).collect());
-
     let RuntimeInit {
         runtime,
         provider: llm_provider,
@@ -273,7 +268,29 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
     let selectors: Option<Vec<String>> = config.selectors.clone();
     let selectors_ref: Option<&[String]> = selectors.as_deref();
 
+    let modes = config
+        .modes
+        .clone()
+        .unwrap_or_else(|| ALL_MODES.iter().map(|s| s.to_string()).collect());
+
+    if config.goldens_only {
+        let rt = runtime.as_ref().expect("runtime required for --goldens-only");
+        rt.block_on(build_goldens_only_for_lang(
+            config.host.clone(),
+            &bench_root,
+            config.lang,
+            selectors_ref,
+        ))?;
+        println!("[{}] goldens-only build complete", config.lang.as_str());
+        return Ok(());
+    }
+
     if !config.goldens_only && !config.hash_only {
+        let rt = runtime.as_ref().expect("failed to initialize runtime for preflight");
+        let provider = llm_provider.as_ref().expect("llm provider required for preflight");
+        let routes = filter_routes(&config);
+        preflight_llm_routes(rt, provider.as_ref(), &routes, &modes)?;
+
         let rt = runtime.as_ref().expect("failed to initialize runtime for goldens");
         rt.block_on(ensure_goldens_built_once(
             config.host.clone(),
@@ -517,6 +534,51 @@ fn short_hash(s: &str) -> &str {
     &s[..s.len().min(12)]
 }
 
+fn preflight_llm_routes(
+    runtime: &Runtime,
+    llm_provider: &dyn LlmProvider,
+    routes: &[ModelRoute],
+    modes: &[String],
+) -> Result<()> {
+    if routes.is_empty() {
+        return Ok(());
+    }
+
+    let mut search_flags = Vec::new();
+    if modes.iter().any(|mode| mode == "search") {
+        search_flags.push(true);
+    }
+    if modes.iter().any(|mode| mode != "search") {
+        search_flags.push(false);
+    }
+
+    let mut failures = Vec::new();
+    for route in routes {
+        for search_enabled in &search_flags {
+            let mode_label = if *search_enabled {
+                "search/OpenRouter online"
+            } else {
+                "standard"
+            };
+
+            if let Err(err) = runtime.block_on(llm_provider.preflight_route(route, *search_enabled)) {
+                let msg = format!("{} ({mode_label}): {err:#}", route.display_name);
+                eprintln!("[preflight] FAILED {msg}");
+                failures.push(msg);
+            }
+        }
+    }
+
+    if !failures.is_empty() {
+        anyhow::bail!(
+            "LLM provider preflight failed before benchmark run:\n  - {}",
+            failures.join("\n  - ")
+        );
+    }
+
+    Ok(())
+}
+
 /// Run benchmarks for a single mode.
 fn run_mode_benchmarks(
     mode: &str,
@@ -535,15 +597,6 @@ fn run_mode_benchmarks(
     println!("{:<12} [{:<10}] hash: {}", mode, lang_str, short_hash(&hash));
 
     if config.hash_only {
-        return Ok(Vec::new());
-    }
-
-    if config.goldens_only {
-        let rt = runtime.expect("runtime required for --goldens-only");
-        let sels = config.selectors.as_deref();
-
-        rt.block_on(build_goldens_only_for_lang(config.host.clone(), bench_root, lang, sels))?;
-        println!("{:<12} [{:<10}] goldens-only build complete", mode, lang_str);
         return Ok(Vec::new());
     }
 

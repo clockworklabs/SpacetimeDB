@@ -1,5 +1,6 @@
-use anyhow::{anyhow, Context, Result};
-use serde::Serialize;
+use anyhow::{anyhow, bail, Context, Result};
+use serde::{Deserialize, Serialize};
+use std::env;
 
 use super::http::HttpClient;
 use super::oa_compat::OACompatResp;
@@ -33,6 +34,81 @@ impl OpenRouterClient {
 
     pub fn with_base(http: HttpClient, base: String, api_key: String) -> Self {
         Self { base, api_key, http }
+    }
+
+    pub async fn preflight_credits(&self) -> Result<OpenRouterCreditStatus> {
+        let key_info = self.fetch_key_info().await?;
+        let min_credits = min_credits_threshold();
+
+        if let Some(remaining) = key_info.limit_remaining
+            && remaining <= min_credits
+        {
+            bail!(
+                "OpenRouter API key has insufficient remaining credits: {:.4} <= {:.4}",
+                remaining,
+                min_credits
+            );
+        }
+
+        let account = match env::var("OPENROUTER_MANAGEMENT_API_KEY")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+        {
+            Some(key) => Some(self.fetch_account_credits(&key).await?),
+            None => None,
+        };
+
+        if let Some(account) = &account
+            && account.remaining <= min_credits
+        {
+            bail!(
+                "OpenRouter account has insufficient remaining credits: {:.4} <= {:.4}",
+                account.remaining,
+                min_credits
+            );
+        }
+
+        if account.is_none() && key_info.limit_remaining.is_none() {
+            bail!(
+                "OpenRouter API key has no configured credit limit and account credits were not checked. \
+                 Set OPENROUTER_MANAGEMENT_API_KEY for account balance preflight."
+            );
+        }
+
+        Ok(OpenRouterCreditStatus {
+            key_limit: key_info.limit,
+            key_limit_remaining: key_info.limit_remaining,
+            account_remaining: account.map(|a| a.remaining),
+            min_credits,
+        })
+    }
+
+    async fn fetch_key_info(&self) -> Result<OpenRouterKeyInfo> {
+        let url = format!("{}/key", self.base.trim_end_matches('/'));
+        let auth = HttpClient::bearer(&self.api_key);
+        let body = self
+            .http
+            .get_text(&url, &[auth])
+            .await
+            .with_context(|| format!("OpenRouter key preflight GET {}", url))?;
+
+        let resp: OpenRouterKeyResp = serde_json::from_str(&body).context("parse OpenRouter key response")?;
+        Ok(resp.data)
+    }
+
+    async fn fetch_account_credits(&self, management_key: &str) -> Result<OpenRouterAccountCredits> {
+        let url = format!("{}/credits", self.base.trim_end_matches('/'));
+        let auth = HttpClient::bearer(management_key);
+        let body = self
+            .http
+            .get_text(&url, &[auth])
+            .await
+            .with_context(|| format!("OpenRouter account credit preflight GET {}", url))?;
+
+        let resp: OpenRouterCreditsResp = serde_json::from_str(&body).context("parse OpenRouter credits response")?;
+        Ok(OpenRouterAccountCredits {
+            remaining: resp.data.total_credits - resp.data.total_usage,
+        })
     }
 
     pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<LlmOutput> {
@@ -123,6 +199,72 @@ impl OpenRouterClient {
             output_tokens,
         })
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct OpenRouterCreditStatus {
+    pub key_limit: Option<f64>,
+    pub key_limit_remaining: Option<f64>,
+    pub account_remaining: Option<f64>,
+    pub min_credits: f64,
+}
+
+impl OpenRouterCreditStatus {
+    pub fn summary(&self) -> String {
+        let key_remaining = match (self.key_limit, self.key_limit_remaining) {
+            (Some(limit), Some(remaining)) => format!("key remaining {remaining:.4}/{limit:.4}"),
+            (Some(limit), None) => format!("key limit {limit:.4}, remaining unknown"),
+            (None, Some(remaining)) => format!("key remaining {remaining:.4}"),
+            (None, None) => "key has no configured limit".to_string(),
+        };
+
+        match self.account_remaining {
+            Some(remaining) => {
+                format!(
+                    "{key_remaining}; account remaining {remaining:.4}; min {:.4}",
+                    self.min_credits
+                )
+            }
+            None => format!(
+                "{key_remaining}; account balance not checked (set OPENROUTER_MANAGEMENT_API_KEY); min {:.4}",
+                self.min_credits
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenRouterKeyResp {
+    data: OpenRouterKeyInfo,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenRouterKeyInfo {
+    limit: Option<f64>,
+    limit_remaining: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenRouterCreditsResp {
+    data: OpenRouterCreditsData,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenRouterCreditsData {
+    total_credits: f64,
+    total_usage: f64,
+}
+
+#[derive(Debug, Clone)]
+struct OpenRouterAccountCredits {
+    remaining: f64,
+}
+
+fn min_credits_threshold() -> f64 {
+    env::var("LLM_MIN_CREDITS")
+        .ok()
+        .and_then(|v| v.trim().parse::<f64>().ok())
+        .unwrap_or(0.0)
 }
 
 /// Context limits for models accessed via OpenRouter.
