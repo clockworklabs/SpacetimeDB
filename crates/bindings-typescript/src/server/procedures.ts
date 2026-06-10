@@ -154,7 +154,7 @@ export type Procedures = Array<{
 }>;
 
 export function callProcedure(
-  moduleCtx: SchemaInner,
+  procedures: Procedures,
   id: number,
   sender: Identity,
   connectionId: ConnectionId | null,
@@ -163,7 +163,7 @@ export function callProcedure(
   dbView: () => DbView<any>
 ): Uint8Array {
   const { fn, deserializeArgs, serializeReturn, returnTypeBaseSize } =
-    moduleCtx.procedures[id];
+    procedures[id];
   const args = deserializeArgs(new BinaryReader(argsBuf));
 
   const ctx: ProcedureCtx<UntypedSchemaDef> = new ProcedureCtxImpl(
