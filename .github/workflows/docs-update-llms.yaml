@@ -1,0 +1,67 @@
+name: Docs / Update llms files
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches:
+      - docs/release
+    paths:
+      - 'docs/docs/**'
+      - 'skills/**'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  update-llms:
+    runs-on: spacetimedb-new-runner-2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          ref: docs/release
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '22'
+
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          run_install: true
+
+      - name: Get pnpm store directory
+        working-directory: sdks/typescript
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - uses: actions/cache@v4
+        name: Setup pnpm cache
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        working-directory: docs
+        run: pnpm install
+
+      - name: Docusaurus build
+        working-directory: docs
+        run: pnpm build
+
+      - name: Generate llms files
+        working-directory: docs
+        run: node scripts/generate-llms.mjs
+
+      - name: Commit updated llms files
+        working-directory: docs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add static/llms.md
+          git diff --staged --quiet && echo "No changes" && exit 0
+          git commit -m "Update llms files from docs build"
+          git push

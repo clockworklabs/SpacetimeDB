@@ -12,6 +12,10 @@
 #define SPACETIMEDB_QUERY_BUILDER_ENABLE_BSATN 1
 #endif
 
+#ifndef SPACETIMEDB_QUERY_BUILDER_ENABLE_INDEXED_WHERE
+#define SPACETIMEDB_QUERY_BUILDER_ENABLE_INDEXED_WHERE 0
+#endif
+
 namespace SpacetimeDB::query_builder {
 
 template<typename T>
@@ -73,6 +77,13 @@ namespace detail {
 template<typename TRow>
 struct row_tag {};
 
+template<typename TFn, typename TCols>
+constexpr void assert_where_predicate_is_column_only() {
+    static_assert(
+        std::is_invocable_v<TFn, const TCols&>,
+        "where() predicates must accept only table columns. Indexed columns are only available in semijoin predicates.");
+}
+
 inline std::false_type lookup_table_allowed(...);
 
 template<typename TRow>
@@ -118,25 +129,14 @@ public:
 
     [[nodiscard]] std::string into_sql() const { return build().into_sql(); }
 
-    template<typename TFn>
-    [[nodiscard]] auto where_col(TFn&& predicate) const {
-        auto expr = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(cols_));
-        return FromWhere<TRow, TCols, TIxCols>(*this, std::move(expr));
-    }
-
-    template<typename TFn>
-    [[nodiscard]] auto where_ix(TFn&& predicate) const {
-        auto expr = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(cols_, ix_cols_));
-        return FromWhere<TRow, TCols, TIxCols>(*this, std::move(expr));
-    }
-
-    // `where` is the ergonomic entry point: it dispatches to `where_col` or
-    // `where_ix` based on the predicate signature.
+    // `where` is the ergonomic entry point. Normal C++ predicates receive only
+    // columns; indexed columns are reserved for joins unless explicitly enabled.
     template<typename TFn>
     [[nodiscard]] auto where(TFn&& predicate) const {
-        if constexpr (std::is_invocable_v<TFn, const TCols&, const TIxCols&>) {
+        if constexpr (SPACETIMEDB_QUERY_BUILDER_ENABLE_INDEXED_WHERE && std::is_invocable_v<TFn, const TCols&, const TIxCols&>) {
             return where_ix(std::forward<TFn>(predicate));
         } else {
+            detail::assert_where_predicate_is_column_only<TFn, TCols>();
             return where_col(std::forward<TFn>(predicate));
         }
     }
@@ -173,6 +173,18 @@ public:
     }
 
 private:
+    template<typename TFn>
+    [[nodiscard]] auto where_col(TFn&& predicate) const {
+        auto expr = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(cols_));
+        return FromWhere<TRow, TCols, TIxCols>(*this, std::move(expr));
+    }
+
+    template<typename TFn>
+    [[nodiscard]] auto where_ix(TFn&& predicate) const {
+        auto expr = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(cols_, ix_cols_));
+        return FromWhere<TRow, TCols, TIxCols>(*this, std::move(expr));
+    }
+
     const char* table_name_;
     TCols cols_;
     TIxCols ix_cols_;
@@ -205,25 +217,14 @@ public:
 
     [[nodiscard]] std::string into_sql() const { return build().into_sql(); }
 
-    template<typename TFn>
-    [[nodiscard]] FromWhere where_col(TFn&& predicate) const {
-        auto extra = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(table_.cols()));
-        return FromWhere(table_, expr_.and_(extra));
-    }
-
-    template<typename TFn>
-    [[nodiscard]] FromWhere where_ix(TFn&& predicate) const {
-        auto extra = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(table_.cols(), table_.ix_cols()));
-        return FromWhere(table_, expr_.and_(extra));
-    }
-
-    // `where` is the ergonomic entry point: it dispatches to `where_col` or
-    // `where_ix` based on the predicate signature.
+    // `where` is the ergonomic entry point. Normal C++ predicates receive only
+    // columns; indexed columns are reserved for joins unless explicitly enabled.
     template<typename TFn>
     [[nodiscard]] FromWhere where(TFn&& predicate) const {
-        if constexpr (std::is_invocable_v<TFn, const TCols&, const TIxCols&>) {
+        if constexpr (SPACETIMEDB_QUERY_BUILDER_ENABLE_INDEXED_WHERE && std::is_invocable_v<TFn, const TCols&, const TIxCols&>) {
             return where_ix(std::forward<TFn>(predicate));
         } else {
+            detail::assert_where_predicate_is_column_only<TFn, TCols>();
             return where_col(std::forward<TFn>(predicate));
         }
     }
@@ -260,6 +261,18 @@ public:
     }
 
 private:
+    template<typename TFn>
+    [[nodiscard]] FromWhere where_col(TFn&& predicate) const {
+        auto extra = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(table_.cols()));
+        return FromWhere(table_, expr_.and_(extra));
+    }
+
+    template<typename TFn>
+    [[nodiscard]] FromWhere where_ix(TFn&& predicate) const {
+        auto extra = detail::make_bool_expr<TRow>(std::forward<TFn>(predicate)(table_.cols(), table_.ix_cols()));
+        return FromWhere(table_, expr_.and_(extra));
+    }
+
     Table<TRow, TCols, TIxCols> table_;
     BoolExpr<TRow> expr_;
 };

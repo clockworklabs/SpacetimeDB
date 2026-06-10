@@ -1,5 +1,5 @@
 use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
-use crate::database_logger::{BacktraceProvider, LogLevel, Record};
+use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
@@ -298,6 +298,19 @@ impl InstanceEnv {
 
     /// Logs a simple `message` at `level`.
     pub(crate) fn console_log_simple_message(&self, level: LogLevel, function: Option<&str>, message: &str) {
+        /// A backtrace provider that provides nothing.
+        struct Noop;
+        impl BacktraceProvider for Noop {
+            fn capture(&self) -> Box<dyn ModuleBacktrace> {
+                Box::new(Noop)
+            }
+        }
+        impl ModuleBacktrace for Noop {
+            fn frames(&self) -> Vec<BacktraceFrame<'_>> {
+                Vec::new()
+            }
+        }
+
         let record = Record {
             ts: Self::now_for_logging(),
             target: None,
@@ -306,7 +319,7 @@ impl InstanceEnv {
             function,
             message,
         };
-        self.console_log(level, &record, &());
+        self.console_log(level, &record, &Noop);
     }
 
     /// End a console timer by logging the span at INFO level.
@@ -388,6 +401,14 @@ impl InstanceEnv {
         table_id: TableId,
         row_ptr: RowPointer,
     ) -> Result<(), NodesError> {
+        let function_name: Arc<str> = {
+            let table = stdb.schema_for_table_mut(tx, table_id)?;
+            let schedule = table
+                .schedule
+                .as_ref()
+                .expect("schedule_row should only be called for scheduled tables");
+            Arc::from(&schedule.function_name[..])
+        };
         let (id_column, at_column) = stdb
             .table_scheduled_id_and_at(tx, table_id)?
             .expect("schedule_row should only be called when we know its a scheduler table");
@@ -404,6 +425,7 @@ impl InstanceEnv {
                 schedule_at,
                 id_column,
                 at_column,
+                function_name,
                 self.start_time,
             )
             .map_err(NodesError::ScheduleError)?;

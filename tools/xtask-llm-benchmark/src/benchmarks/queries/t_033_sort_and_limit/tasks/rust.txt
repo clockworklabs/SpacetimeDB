@@ -1,0 +1,22 @@
+Write a SpacetimeDB backend module in Rust that defines a player table with scores, a leaderboard result table, and a reducer that finds the top N players by score (descending) and writes them to the result table.
+
+TABLES
+- player
+  - Struct: Player
+  - Fields:
+    - id: u64 (primary key, auto_inc)
+    - name: String
+    - score: u64
+
+- leaderboard
+  - Struct: LeaderboardEntry
+  - Fields:
+    - rank: u32 (primary key)
+    - player_name: String
+    - score: u64
+
+REDUCERS
+- build_leaderboard(ctx, limit: u32)
+  - Collect all players into a Vec, sort by score descending
+  - Take the first `limit` entries
+  - Insert each into leaderboard with rank starting at 1

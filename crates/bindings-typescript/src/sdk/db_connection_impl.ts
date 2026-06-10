@@ -38,10 +38,6 @@ import {
   type TableUpdate as CacheTableUpdate,
 } from './table_cache.ts';
 import {
-  WebsocketDecompressAdapter,
-  type WebsocketAdapter,
-} from './websocket_decompress_adapter.ts';
-import {
   SubscriptionBuilderImpl,
   SubscriptionHandleImpl,
   SubscriptionManager,
@@ -60,6 +56,7 @@ import type { ProceduresView } from './procedures.ts';
 import type { Values } from '../lib/type_util.ts';
 import type { TransactionUpdate } from './client_api/types.ts';
 import { InternalError, SenderError } from '../lib/errors.ts';
+import type { WebSocketAdapter, WebSocketFactory } from './ws.ts';
 import {
   normalizeWsProtocol,
   PREFERRED_WS_PROTOCOLS,
@@ -101,8 +98,8 @@ export type DbConnectionConfig<RemoteModule extends UntypedRemoteModule> = {
   identity?: Identity;
   token?: string;
   emitter: EventEmitter<ConnectionEvent>;
-  createWSFn: typeof WebsocketDecompressAdapter.createWebSocketFn;
-  compression: 'gzip' | 'none';
+  createWSFn: WebSocketFactory;
+  compression: 'gzip' | 'brotli' | 'none';
   lightMode: boolean;
   confirmedReads?: boolean;
   remoteModule: RemoteModule;
@@ -186,7 +183,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #inboundQueue: Uint8Array[] = [];
   #inboundQueueOffset = 0;
   #isDrainingInboundQueue = false;
-  #outboundQueue: Uint8Array[] = [];
+  #outboundQueue: Uint8Array<ArrayBuffer>[] = [];
   #isOutboundFlushScheduled = false;
   #negotiatedWsProtocol: NegotiatedWsProtocol = V2_WS_PROTOCOL;
   #subscriptionManager = new SubscriptionManager<RemoteModule>();
@@ -224,8 +221,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   // private fields.
   // We use them in testing.
   private clientCache: ClientCache<RemoteModule>;
-  private ws?: WebsocketAdapter;
-  private wsPromise: Promise<WebsocketAdapter | undefined>;
+  private ws?: WebSocketAdapter;
+  private wsPromise: Promise<WebSocketAdapter | undefined>;
 
   constructor({
     uri,
@@ -612,7 +609,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     return this.#mergeTableUpdates(updates);
   }
 
-  #flushOutboundQueue(wsResolved: WebsocketAdapter): void {
+  #flushOutboundQueue(wsResolved: WebSocketAdapter): void {
     if (this.#negotiatedWsProtocol === V3_WS_PROTOCOL) {
       this.#flushOutboundQueueV3(wsResolved);
       return;
@@ -620,14 +617,14 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     this.#flushOutboundQueueV2(wsResolved);
   }
 
-  #flushOutboundQueueV2(wsResolved: WebsocketAdapter): void {
+  #flushOutboundQueueV2(wsResolved: WebSocketAdapter): void {
     const pending = this.#outboundQueue.splice(0);
     for (const message of pending) {
       wsResolved.send(message);
     }
   }
 
-  #flushOutboundQueueV3(wsResolved: WebsocketAdapter): void {
+  #flushOutboundQueueV3(wsResolved: WebSocketAdapter): void {
     if (this.#outboundQueue.length === 0) {
       return;
     }
@@ -692,7 +689,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
   #reducerArgsEncoder = new BinaryWriter(1024);
   #clientMessageEncoder = new BinaryWriter(1024);
-  #sendEncodedMessage(encoded: Uint8Array, describe: () => string): void {
+  #sendEncodedMessage(
+    encoded: Uint8Array<ArrayBuffer>,
+    describe: () => string
+  ): void {
     stdbLogger('trace', describe);
     if (this.ws && this.isActive) {
       if (this.#negotiatedWsProtocol === V2_WS_PROTOCOL) {

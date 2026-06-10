@@ -21,6 +21,14 @@ namespace SpacetimeDB::query_builder {
 template<typename TRow, typename TValue>
 class Col;
 
+template<typename T>
+struct is_col : std::false_type {};
+
+template<typename TValue, typename TRhs>
+inline constexpr bool is_rhs_for_value_v =
+    std::is_same_v<TValue, std::remove_cvref_t<TRhs>> ||
+    (std::is_same_v<TValue, std::string> && std::is_convertible_v<TRhs, std::string_view>);
+
 template<typename TRow>
 class ColumnRef {
 public:
@@ -314,29 +322,193 @@ public:
         : column_(table_name, column_name) {}
 
     template<typename TRhs>
+        requires(is_rhs_for_value_v<TValue, TRhs>)
     [[nodiscard]] BoolExpr<TRow> eq(const TRhs& rhs) const { return compare(BoolExpr<TRow>::Kind::Eq, rhs); }
     template<typename TRhs>
+        requires(is_rhs_for_value_v<TValue, TRhs>)
     [[nodiscard]] BoolExpr<TRow> Eq(const TRhs& rhs) const { return eq(rhs); }
     template<typename TRhs>
+        requires(is_rhs_for_value_v<TValue, TRhs>)
     [[nodiscard]] BoolExpr<TRow> ne(const TRhs& rhs) const { return compare(BoolExpr<TRow>::Kind::Ne, rhs); }
     template<typename TRhs>
+        requires(is_rhs_for_value_v<TValue, TRhs>)
     [[nodiscard]] BoolExpr<TRow> Ne(const TRhs& rhs) const { return ne(rhs); }
     template<typename TRhs>
+        requires(is_rhs_for_value_v<TValue, TRhs>)
     [[nodiscard]] BoolExpr<TRow> gt(const TRhs& rhs) const { return compare(BoolExpr<TRow>::Kind::Gt, rhs); }
     template<typename TRhs>
+        requires(is_rhs_for_value_v<TValue, TRhs>)
     [[nodiscard]] BoolExpr<TRow> Gt(const TRhs& rhs) const { return gt(rhs); }
     template<typename TRhs>
+        requires(is_rhs_for_value_v<TValue, TRhs>)
     [[nodiscard]] BoolExpr<TRow> lt(const TRhs& rhs) const { return compare(BoolExpr<TRow>::Kind::Lt, rhs); }
     template<typename TRhs>
+        requires(is_rhs_for_value_v<TValue, TRhs>)
     [[nodiscard]] BoolExpr<TRow> Lt(const TRhs& rhs) const { return lt(rhs); }
     template<typename TRhs>
+        requires(is_rhs_for_value_v<TValue, TRhs>)
     [[nodiscard]] BoolExpr<TRow> gte(const TRhs& rhs) const { return compare(BoolExpr<TRow>::Kind::Gte, rhs); }
     template<typename TRhs>
+        requires(is_rhs_for_value_v<TValue, TRhs>)
     [[nodiscard]] BoolExpr<TRow> Gte(const TRhs& rhs) const { return gte(rhs); }
     template<typename TRhs>
+        requires(is_rhs_for_value_v<TValue, TRhs>)
     [[nodiscard]] BoolExpr<TRow> lte(const TRhs& rhs) const { return compare(BoolExpr<TRow>::Kind::Lte, rhs); }
     template<typename TRhs>
+        requires(is_rhs_for_value_v<TValue, TRhs>)
     [[nodiscard]] BoolExpr<TRow> Lte(const TRhs& rhs) const { return lte(rhs); }
+
+    // Keep incompatible non-column RHS values on a dedicated overload so they
+    // fail with the same diagnostic shape as mismatched column comparisons.
+    template<typename TRhs>
+        requires(!is_rhs_for_value_v<TValue, TRhs> && !is_col<std::remove_cvref_t<TRhs>>::value)
+    [[nodiscard]] auto eq(const TRhs&) const {
+        static_assert(is_rhs_for_value_v<TValue, TRhs>, "Column comparison requires both sides to have the same value type.");
+        return BoolExpr<TRow>::always(false);
+    }
+    template<typename TRhs>
+        requires(!is_rhs_for_value_v<TValue, TRhs> && !is_col<std::remove_cvref_t<TRhs>>::value)
+    [[nodiscard]] auto Eq(const TRhs& rhs) const { return eq(rhs); }
+    template<typename TRhs>
+        requires(!is_rhs_for_value_v<TValue, TRhs> && !is_col<std::remove_cvref_t<TRhs>>::value)
+    [[nodiscard]] auto ne(const TRhs&) const {
+        static_assert(is_rhs_for_value_v<TValue, TRhs>, "Column comparison requires both sides to have the same value type.");
+        return BoolExpr<TRow>::always(false);
+    }
+    template<typename TRhs>
+        requires(!is_rhs_for_value_v<TValue, TRhs> && !is_col<std::remove_cvref_t<TRhs>>::value)
+    [[nodiscard]] auto Ne(const TRhs& rhs) const { return ne(rhs); }
+    template<typename TRhs>
+        requires(!is_rhs_for_value_v<TValue, TRhs> && !is_col<std::remove_cvref_t<TRhs>>::value)
+    [[nodiscard]] auto gt(const TRhs&) const {
+        static_assert(is_rhs_for_value_v<TValue, TRhs>, "Column comparison requires both sides to have the same value type.");
+        return BoolExpr<TRow>::always(false);
+    }
+    template<typename TRhs>
+        requires(!is_rhs_for_value_v<TValue, TRhs> && !is_col<std::remove_cvref_t<TRhs>>::value)
+    [[nodiscard]] auto Gt(const TRhs& rhs) const { return gt(rhs); }
+    template<typename TRhs>
+        requires(!is_rhs_for_value_v<TValue, TRhs> && !is_col<std::remove_cvref_t<TRhs>>::value)
+    [[nodiscard]] auto lt(const TRhs&) const {
+        static_assert(is_rhs_for_value_v<TValue, TRhs>, "Column comparison requires both sides to have the same value type.");
+        return BoolExpr<TRow>::always(false);
+    }
+    template<typename TRhs>
+        requires(!is_rhs_for_value_v<TValue, TRhs> && !is_col<std::remove_cvref_t<TRhs>>::value)
+    [[nodiscard]] auto Lt(const TRhs& rhs) const { return lt(rhs); }
+    template<typename TRhs>
+        requires(!is_rhs_for_value_v<TValue, TRhs> && !is_col<std::remove_cvref_t<TRhs>>::value)
+    [[nodiscard]] auto gte(const TRhs&) const {
+        static_assert(is_rhs_for_value_v<TValue, TRhs>, "Column comparison requires both sides to have the same value type.");
+        return BoolExpr<TRow>::always(false);
+    }
+    template<typename TRhs>
+        requires(!is_rhs_for_value_v<TValue, TRhs> && !is_col<std::remove_cvref_t<TRhs>>::value)
+    [[nodiscard]] auto Gte(const TRhs& rhs) const { return gte(rhs); }
+    template<typename TRhs>
+        requires(!is_rhs_for_value_v<TValue, TRhs> && !is_col<std::remove_cvref_t<TRhs>>::value)
+    [[nodiscard]] auto lte(const TRhs&) const {
+        static_assert(is_rhs_for_value_v<TValue, TRhs>, "Column comparison requires both sides to have the same value type.");
+        return BoolExpr<TRow>::always(false);
+    }
+    template<typename TRhs>
+        requires(!is_rhs_for_value_v<TValue, TRhs> && !is_col<std::remove_cvref_t<TRhs>>::value)
+    [[nodiscard]] auto Lte(const TRhs& rhs) const { return lte(rhs); }
+
+    template<typename TOtherValue>
+        requires(std::is_same_v<TValue, TOtherValue>)
+    [[nodiscard]] BoolExpr<TRow> eq(const Col<TRow, TOtherValue>& rhs) const { return compare(BoolExpr<TRow>::Kind::Eq, rhs); }
+    template<typename TOtherValue>
+        requires(std::is_same_v<TValue, TOtherValue>)
+    [[nodiscard]] BoolExpr<TRow> Eq(const Col<TRow, TOtherValue>& rhs) const { return eq(rhs); }
+    template<typename TOtherValue>
+        requires(std::is_same_v<TValue, TOtherValue>)
+    [[nodiscard]] BoolExpr<TRow> ne(const Col<TRow, TOtherValue>& rhs) const { return compare(BoolExpr<TRow>::Kind::Ne, rhs); }
+    template<typename TOtherValue>
+        requires(std::is_same_v<TValue, TOtherValue>)
+    [[nodiscard]] BoolExpr<TRow> Ne(const Col<TRow, TOtherValue>& rhs) const { return ne(rhs); }
+    template<typename TOtherValue>
+        requires(std::is_same_v<TValue, TOtherValue>)
+    [[nodiscard]] BoolExpr<TRow> gt(const Col<TRow, TOtherValue>& rhs) const { return compare(BoolExpr<TRow>::Kind::Gt, rhs); }
+    template<typename TOtherValue>
+        requires(std::is_same_v<TValue, TOtherValue>)
+    [[nodiscard]] BoolExpr<TRow> Gt(const Col<TRow, TOtherValue>& rhs) const { return gt(rhs); }
+    template<typename TOtherValue>
+        requires(std::is_same_v<TValue, TOtherValue>)
+    [[nodiscard]] BoolExpr<TRow> lt(const Col<TRow, TOtherValue>& rhs) const { return compare(BoolExpr<TRow>::Kind::Lt, rhs); }
+    template<typename TOtherValue>
+        requires(std::is_same_v<TValue, TOtherValue>)
+    [[nodiscard]] BoolExpr<TRow> Lt(const Col<TRow, TOtherValue>& rhs) const { return lt(rhs); }
+    template<typename TOtherValue>
+        requires(std::is_same_v<TValue, TOtherValue>)
+    [[nodiscard]] BoolExpr<TRow> gte(const Col<TRow, TOtherValue>& rhs) const { return compare(BoolExpr<TRow>::Kind::Gte, rhs); }
+    template<typename TOtherValue>
+        requires(std::is_same_v<TValue, TOtherValue>)
+    [[nodiscard]] BoolExpr<TRow> Gte(const Col<TRow, TOtherValue>& rhs) const { return gte(rhs); }
+    template<typename TOtherValue>
+        requires(std::is_same_v<TValue, TOtherValue>)
+    [[nodiscard]] BoolExpr<TRow> lte(const Col<TRow, TOtherValue>& rhs) const { return compare(BoolExpr<TRow>::Kind::Lte, rhs); }
+    template<typename TOtherValue>
+        requires(std::is_same_v<TValue, TOtherValue>)
+    [[nodiscard]] BoolExpr<TRow> Lte(const Col<TRow, TOtherValue>& rhs) const { return lte(rhs); }
+
+    // Keep mismatched column-to-column comparisons on a dedicated overload so
+    // they fail here with a clear diagnostic instead of disappearing into the
+    // generic operand-conversion path.
+    template<typename TOtherValue>
+        requires(!std::is_same_v<TValue, TOtherValue>)
+    [[nodiscard]] auto eq(const Col<TRow, TOtherValue>&) const {
+        static_assert(std::is_same_v<TValue, TOtherValue>, "Column comparison requires both sides to have the same value type.");
+        return BoolExpr<TRow>::always(false);
+    }
+    template<typename TOtherValue>
+        requires(!std::is_same_v<TValue, TOtherValue>)
+    [[nodiscard]] auto Eq(const Col<TRow, TOtherValue>& rhs) const { return eq(rhs); }
+    template<typename TOtherValue>
+        requires(!std::is_same_v<TValue, TOtherValue>)
+    [[nodiscard]] auto ne(const Col<TRow, TOtherValue>&) const {
+        static_assert(std::is_same_v<TValue, TOtherValue>, "Column comparison requires both sides to have the same value type.");
+        return BoolExpr<TRow>::always(false);
+    }
+    template<typename TOtherValue>
+        requires(!std::is_same_v<TValue, TOtherValue>)
+    [[nodiscard]] auto Ne(const Col<TRow, TOtherValue>& rhs) const { return ne(rhs); }
+    template<typename TOtherValue>
+        requires(!std::is_same_v<TValue, TOtherValue>)
+    [[nodiscard]] auto gt(const Col<TRow, TOtherValue>&) const {
+        static_assert(std::is_same_v<TValue, TOtherValue>, "Column comparison requires both sides to have the same value type.");
+        return BoolExpr<TRow>::always(false);
+    }
+    template<typename TOtherValue>
+        requires(!std::is_same_v<TValue, TOtherValue>)
+    [[nodiscard]] auto Gt(const Col<TRow, TOtherValue>& rhs) const { return gt(rhs); }
+    template<typename TOtherValue>
+        requires(!std::is_same_v<TValue, TOtherValue>)
+    [[nodiscard]] auto lt(const Col<TRow, TOtherValue>&) const {
+        static_assert(std::is_same_v<TValue, TOtherValue>, "Column comparison requires both sides to have the same value type.");
+        return BoolExpr<TRow>::always(false);
+    }
+    template<typename TOtherValue>
+        requires(!std::is_same_v<TValue, TOtherValue>)
+    [[nodiscard]] auto Lt(const Col<TRow, TOtherValue>& rhs) const { return lt(rhs); }
+    template<typename TOtherValue>
+        requires(!std::is_same_v<TValue, TOtherValue>)
+    [[nodiscard]] auto gte(const Col<TRow, TOtherValue>&) const {
+        static_assert(std::is_same_v<TValue, TOtherValue>, "Column comparison requires both sides to have the same value type.");
+        return BoolExpr<TRow>::always(false);
+    }
+    template<typename TOtherValue>
+        requires(!std::is_same_v<TValue, TOtherValue>)
+    [[nodiscard]] auto Gte(const Col<TRow, TOtherValue>& rhs) const { return gte(rhs); }
+    template<typename TOtherValue>
+        requires(!std::is_same_v<TValue, TOtherValue>)
+    [[nodiscard]] auto lte(const Col<TRow, TOtherValue>&) const {
+        static_assert(std::is_same_v<TValue, TOtherValue>, "Column comparison requires both sides to have the same value type.");
+        return BoolExpr<TRow>::always(false);
+    }
+    template<typename TOtherValue>
+        requires(!std::is_same_v<TValue, TOtherValue>)
+    [[nodiscard]] auto Lte(const Col<TRow, TOtherValue>& rhs) const { return lte(rhs); }
 
     [[nodiscard]] constexpr const ColumnRef<TRow>& column_ref() const { return column_; }
 
@@ -348,6 +520,9 @@ private:
 
     ColumnRef<TRow> column_;
 };
+
+template<typename TRow, typename TValue>
+struct is_col<Col<TRow, TValue>> : std::true_type {};
 
 namespace detail {
 

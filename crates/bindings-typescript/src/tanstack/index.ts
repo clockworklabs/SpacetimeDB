@@ -13,3 +13,4 @@ export {
 export * from '../react/SpacetimeDBProvider';
 export { useSpacetimeDB } from '../react/useSpacetimeDB';
 export { useReducer } from '../react/useReducer';
+export { useProcedure } from '../react/useProcedure';

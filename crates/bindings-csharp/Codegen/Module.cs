@@ -1389,12 +1389,6 @@ record ViewDeclaration
                 public byte[] Invoke(
                     System.IO.BinaryReader reader,
                     {{{interfaceContext}}} ctx
-                ) => __spacetimedb_begin_short_backtrace(reader, ctx);
-
-                [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-                private static byte[] __spacetimedb_begin_short_backtrace(
-                    System.IO.BinaryReader reader,
-                    {{{interfaceContext}}} ctx
                 ) {
                     try {
                         {{{paramReads}}}
@@ -1497,11 +1491,7 @@ record ReducerDeclaration
             _ => "null"
         }}};
 
-                 public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
-                     __spacetimedb_begin_short_backtrace(reader, ctx);
-
-                 [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-                 private static void __spacetimedb_begin_short_backtrace(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) {
+                 public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) {
                      {{invocation}};
                  }
              }
@@ -1723,11 +1713,7 @@ record ProcedureDeclaration
                     Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable
                 );
 
-                public byte[] Invoke(BinaryReader reader, SpacetimeDB.Internal.IProcedureContext ctx) =>
-                    __spacetimedb_begin_short_backtrace(reader, ctx);
-
-                [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-                private static byte[] __spacetimedb_begin_short_backtrace(BinaryReader reader, SpacetimeDB.Internal.IProcedureContext ctx) {
+                public byte[] Invoke(BinaryReader reader, SpacetimeDB.Internal.IProcedureContext ctx) {
                     {{{paramReads}}}{{{invokeBody}}}
                 }
             }
@@ -2203,8 +2189,10 @@ public class Module : IIncrementalGenerator
                             public readonly AuthCtx SenderAuth;
                             // **Note:** must be 0..=u32::MAX
                             internal int CounterUuid;
-                            // We need this property to be non-static for parity with client SDK.
-                            public Identity Identity => Internal.IReducerContext.GetIdentity();
+                            public Identity DatabaseIdentity => Internal.IReducerContext.GetDatabaseIdentity();
+                            // We keep this property for compatibility with existing module code.
+                            [global::System.Obsolete("ReducerContext.Identity is deprecated. Use DatabaseIdentity instead.")]
+                            public Identity Identity => DatabaseIdentity;
 
                             internal ReducerContext(Identity identity, ConnectionId? connectionId, Random random,
                                             Timestamp time, AuthCtx? senderAuth = null)

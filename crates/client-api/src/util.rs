@@ -21,6 +21,7 @@ use crate::{log_and_500, ControlStateReadAccess};
 
 pub struct ByteStringBody(pub ByteString);
 
+#[async_trait::async_trait]
 impl<S: Send + Sync> FromRequest<S> for ByteStringBody {
     type Rejection = axum::response::Response;
 
@@ -164,7 +165,8 @@ impl fmt::Display for NameOrIdentity {
 
 pub struct EmptyBody;
 
-impl<S: Sync> FromRequest<S> for EmptyBody {
+#[async_trait::async_trait]
+impl<S> FromRequest<S> for EmptyBody {
     type Rejection = axum::response::Response;
     async fn from_request(req: Request, _state: &S) -> Result<Self, Self::Rejection> {
         let body = req.into_body();
