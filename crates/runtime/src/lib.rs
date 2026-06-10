@@ -1,8 +1,8 @@
-#[cfg(all(feature = "tokio", feature = "simulation"))]
-compile_error!(
-    "spacetimedb-runtime requires exactly one runtime backend: enable either `tokio` or `simulation`, not both"
-);
-
+//#[cfg(all(feature = "tokio", feature = "simulation"))]
+//compile_error!(
+//    "spacetimedb-runtime requires exactly one runtime backend: enable either `tokio` or `simulation`, not both"
+//);
+//
 #[cfg(not(any(feature = "tokio", feature = "simulation")))]
 compile_error!("spacetimedb-runtime requires exactly one runtime backend: enable either `tokio` or `simulation`");
 

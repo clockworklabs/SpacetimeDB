@@ -34,10 +34,10 @@ pub struct Config {
     pub page_pool_max_size: Option<usize>,
 }
 
-pub type MetricsRecorderQueue = spacetimedb_engine::relational_db::MetricsRecorderQueue;
+pub type MetricsRecorderQueue = spacetimedb_engine::MetricsRecorderQueue;
 
 pub fn spawn_tx_metrics_recorder(
     handle: &spacetimedb_runtime::Handle,
 ) -> (MetricsRecorderQueue, spacetimedb_runtime::AbortHandle) {
-    spacetimedb_engine::relational_db::spawn_tx_metrics_recorder(handle)
+    spacetimedb_engine::spawn_tx_metrics_recorder(handle)
 }
