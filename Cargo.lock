@@ -8594,6 +8594,7 @@ dependencies = [
  "tokio-postgres",
  "toml 0.8.23",
  "which 8.0.0",
+ "xmltree",
 ]
 
 [[package]]
