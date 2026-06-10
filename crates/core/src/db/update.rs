@@ -589,17 +589,25 @@ mod test {
 
         // Replay commitlog
         let stdb = stdb.reopen()?;
-        let tx = begin_mut_tx(&stdb);
-        let table_id = stdb
-            .table_id_from_name_mut(&tx, "events")?
-            .expect("`events` table should exist on reopen");
-        let schema = stdb.schema_for_table_mut(&tx, table_id)?;
+        let table_id = {
+            let tx = begin_mut_tx(&stdb);
+            let table_id = stdb
+                .table_id_from_name_mut(&tx, "events")?
+                .expect("`events` table should exist on reopen");
+            let schema = stdb.schema_for_table_mut(&tx, table_id)?;
 
-        assert!(schema.is_event);
-        assert_eq!(schema.columns.len(), 1);
-        assert_eq!(&*schema.columns[0].col_name, "payload");
-        assert_eq!(schema.columns[0].col_type, AlgebraicType::String);
-        assert_eq!(stdb.table_row_count_mut(&tx, table_id).unwrap_or(0), 0);
+            assert!(schema.is_event);
+            assert_eq!(schema.columns.len(), 1);
+            assert_eq!(&*schema.columns[0].col_name, "payload");
+            assert_eq!(schema.columns[0].col_type, AlgebraicType::String);
+            assert_eq!(stdb.table_row_count_mut(&tx, table_id).unwrap_or(0), 0);
+            table_id
+        };
+
+        // Insert row with the new schema
+        let mut tx = begin_mut_tx(&stdb);
+        insert(&stdb, &mut tx, table_id, &product!["hello"])?;
+        stdb.commit_tx(tx)?;
 
         Ok(())
     }
