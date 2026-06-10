@@ -1,7 +1,7 @@
 use super::module_host::{EventStatus, ModuleHost, ModuleInfo, NoSuchModule};
 use super::scheduler::SchedulerStarter;
 use super::v8::V8HeapMetrics;
-use super::wasmtime::WasmtimeRuntime;
+use super::wasmtime::{WasmMemoryBytesMetric, WasmtimeRuntime};
 use super::{Scheduler, UpdateDatabaseResult};
 use crate::client::{ClientActorId, ClientName};
 use crate::config::{V8Config, WasmConfig};
@@ -9,7 +9,7 @@ use crate::database_logger::DatabaseLogger;
 use crate::db::persistence::PersistenceProvider;
 use crate::db::relational_db::{self, spawn_view_cleanup_loop, DiskSizeFn, RelationalDB, Txdata};
 use crate::db::{self, spawn_tx_metrics_recorder};
-use crate::energy::{EnergyMonitor, EnergyQuanta, NullEnergyMonitor};
+use crate::energy::{EnergyMonitor, FunctionBudget, NullEnergyMonitor};
 use crate::host::v8::V8Runtime;
 use crate::host::ProcedureCallError;
 use crate::messages::control_db::{Database, HostType};
@@ -148,7 +148,7 @@ impl HostRuntimes {
 #[derive(Clone, Debug)]
 pub struct ReducerCallResult {
     pub outcome: ReducerOutcome,
-    pub energy_used: EnergyQuanta,
+    pub execution_budget_used: FunctionBudget,
     pub execution_duration: Duration,
 }
 
@@ -1411,8 +1411,8 @@ where
     let _ = DATA_SIZE_METRICS
         .data_size_blob_store_bytes_used_by_blobs
         .remove_label_values(db);
-    let _ = WORKER_METRICS.wasm_memory_bytes.remove_label_values(db);
 
+    WasmMemoryBytesMetric::remove_all_metric_label_values_for_database(db);
     V8HeapMetrics::remove_all_metric_label_values_for_database(db);
 
     let _ = WORKER_METRICS.v8_request_queue_length.remove_label_values(db);

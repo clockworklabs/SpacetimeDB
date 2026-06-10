@@ -8,7 +8,7 @@ import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNot
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-Quick reference for SpacetimeDB module syntax across Rust, C#, and TypeScript.
+Quick reference for SpacetimeDB module syntax across Rust, C#, TypeScript, and C++.
 
 ## Project Setup
 
@@ -600,23 +600,23 @@ SPACETIMEDB_PROCEDURE(std::string, fetch_data, ProcedureContext ctx, std::string
 
 ```typescript
 // Return single row
-export const my_player = spacetimedb.view({ name: 'my_player' }, {}, t.option(player.rowType), ctx => {
+export const my_player = spacetimedb.view({ name: 'my_player', public: true }, t.option(player.rowType), ctx => {
   return ctx.db.player.identity.find(ctx.sender);
 });
 
 // Return potentially multiple rows
-export const top_players = spacetimedb.view({ name: 'top_players' }, {}, t.array(player.rowType), ctx => {
+export const top_players = spacetimedb.view({ name: 'top_players', public: true }, t.array(player.rowType), ctx => {
   return ctx.db.player.score.filter(1000);
 });
 
 // Perform a generic filter using the query builder.
 // Equivalent to `SELECT * FROM player WHERE score < 1000`.
-export const bottom_players = spacetimedb.view({ name: 'bottom_players' }, {}, t.array(player.rowType), ctx => {
+export const bottom_players = spacetimedb.view({ name: 'bottom_players', public: true }, t.array(player.rowType), ctx => {
   return ctx.from.player.where(p => p.score.lt(1000))
 });
 
 // Count rows in a table.
-export const player_count = spacetimedb.anonymousView({ name: 'player_count' }, {}, t.array(t.row('PlayerCount', {
+export const player_count = spacetimedb.anonymousView({ name: 'player_count', public: true }, t.array(t.row('PlayerCount', {
   count: t.u64(),
 })), ctx => {
   return [{ count: ctx.db.player.count() }];

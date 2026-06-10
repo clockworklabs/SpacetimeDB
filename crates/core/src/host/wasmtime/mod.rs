@@ -2,7 +2,7 @@ use self::wasm_instance_env::WasmInstanceEnv;
 use super::wasm_common::module_host_actor::{InitializationError, WasmModuleHostActor, WasmModuleInstance};
 use super::wasm_common::{abi, ModuleCreationError};
 use crate::config::WasmConfig;
-use crate::energy::{EnergyQuanta, FunctionBudget};
+use crate::energy::FunctionBudget;
 use crate::error::NodesError;
 use crate::module_host_context::ModuleCreationContext;
 use crate::util::jobs::AllocatedJobCore;
@@ -10,6 +10,7 @@ use anyhow::Context;
 use spacetimedb_paths::server::ServerDataDir;
 use std::borrow::Cow;
 use std::time::Duration;
+pub(in crate::host) use wasm_instance_env::WasmMemoryBytesMetric;
 use wasmtime::{self, Engine, Linker, StoreContext, StoreContextMut};
 pub use wasmtime_module::{WasmtimeAsyncModule, WasmtimeInstance, WasmtimeModule};
 
@@ -135,21 +136,14 @@ pub type ProcedureModule = WasmModuleHostActor<WasmtimeAsyncModule>;
 pub type ModuleInstance = WasmModuleInstance<WasmtimeInstance>;
 
 // Linux thread names expose at most 15 bytes, so keep the database identity
-// suffix short enough to survive after the `wasm-main-`/`wasm-proc-` prefix.
-const THREAD_NAME_DATABASE_ID_SUFFIX_LEN: usize = 5;
+// suffix short enough to survive after the `wasm-` prefix.
+const THREAD_NAME_DATABASE_ID_SUFFIX_LEN: usize = 10;
 
-fn wasm_main_worker_thread_name(database_identity: &spacetimedb_lib::Identity) -> String {
+fn wasm_worker_thread_name(database_identity: &spacetimedb_lib::Identity) -> String {
     let hex = database_identity.to_hex();
     // We use the tail of the identity to avoid the common structured prefix.
     let suffix = &hex.as_str()[hex.as_str().len() - THREAD_NAME_DATABASE_ID_SUFFIX_LEN..];
-    format!("wasm-main-{suffix}")
-}
-
-fn wasm_procedure_executor_thread_name(database_identity: &spacetimedb_lib::Identity) -> String {
-    let hex = database_identity.to_hex();
-    // We use the tail of the identity to avoid the common structured prefix.
-    let suffix = &hex.as_str()[hex.as_str().len() - THREAD_NAME_DATABASE_ID_SUFFIX_LEN..];
-    format!("wasm-proc-{suffix}")
+    format!("wasm-{suffix}")
 }
 
 impl WasmtimeRuntime {
@@ -182,16 +176,14 @@ impl WasmtimeRuntime {
 
         let module = WasmtimeModule::new(module);
         let procedure_module = WasmtimeAsyncModule::new(procedure_module);
-        let main_thread_name = wasm_main_worker_thread_name(&mcc.replica_ctx.database_identity);
-        let procedure_thread_name = wasm_procedure_executor_thread_name(&mcc.replica_ctx.database_identity);
+        let thread_name = wasm_worker_thread_name(&mcc.replica_ctx.database_identity);
 
         let (module, init_inst) = WasmModuleHostActor::new(mcc, module)?;
         let procedure_module = module.with_runtime_module(procedure_module)?;
         Ok(super::module_host::ModuleWithInstance::Wasm {
             module,
             procedure_module,
-            main_thread_name,
-            procedure_thread_name,
+            thread_name,
             core,
             init_inst: Box::new(init_inst),
             procedure_instance_pool_size: self.config.procedure_instance_pool_size,
@@ -213,7 +205,7 @@ impl WasmtimeFuel {}
 
 impl From<FunctionBudget> for WasmtimeFuel {
     fn from(v: FunctionBudget) -> Self {
-        // ReducerBudget being u64 is load-bearing here - if it was u128 and v was ReducerBudget::MAX,
+        // FunctionBudget being u64 is load-bearing here - if it was u128 and v was FunctionBudget::MAX,
         // truncating this result would mean that with set_store_fuel(budget.into()), get_store_fuel()
         // would be wildly different than the original `budget`, and the energy usage for the reducer
         // would be u64::MAX even if it did nothing. ask how I know.
@@ -224,12 +216,6 @@ impl From<FunctionBudget> for WasmtimeFuel {
 impl From<WasmtimeFuel> for FunctionBudget {
     fn from(v: WasmtimeFuel) -> Self {
         FunctionBudget::new(v.0)
-    }
-}
-
-impl From<WasmtimeFuel> for EnergyQuanta {
-    fn from(fuel: WasmtimeFuel) -> Self {
-        EnergyQuanta::new(u128::from(fuel.0))
     }
 }
 

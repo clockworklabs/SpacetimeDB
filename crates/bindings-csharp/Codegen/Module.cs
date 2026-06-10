@@ -120,6 +120,63 @@ record SettingsDeclaration
 /// <param name="Name">The name of the column as defined in the source code</param>
 record ColumnRef(int Index, string Name);
 
+static class ColumnTypeValidation
+{
+    public static bool IsInteger(ITypeSymbol type) =>
+        type.SpecialType switch
+        {
+            SpecialType.System_Byte
+            or SpecialType.System_SByte
+            or SpecialType.System_Int16
+            or SpecialType.System_UInt16
+            or SpecialType.System_Int32
+            or SpecialType.System_UInt32
+            or SpecialType.System_Int64
+            or SpecialType.System_UInt64 => true,
+            SpecialType.None => type.ToString()
+                is "System.Int128"
+                    or "System.UInt128"
+                    or "SpacetimeDB.I128"
+                    or "SpacetimeDB.U128"
+                    or "SpacetimeDB.I256"
+                    or "SpacetimeDB.U256",
+            _ => false,
+        };
+
+    public static bool IsNoPayloadEnum(ITypeSymbol type)
+    {
+        if (type.TypeKind == Microsoft.CodeAnalysis.TypeKind.Enum)
+        {
+            return true;
+        }
+
+        if (type.BaseType?.OriginalDefinition.ToString() != "SpacetimeDB.TaggedEnum<Variants>")
+        {
+            return false;
+        }
+
+        return type.BaseType.TypeArguments.FirstOrDefault()
+                is INamedTypeSymbol { IsTupleType: true, TupleElements: var variants }
+            && variants.All(field => field.Type.ToString() == "SpacetimeDB.Unit");
+    }
+
+    public static bool IsEquatable(ITypeSymbol type) =>
+        (
+            IsInteger(type)
+            || IsNoPayloadEnum(type)
+            || type.SpecialType switch
+            {
+                SpecialType.System_String or SpecialType.System_Boolean => true,
+                SpecialType.None => type.ToString()
+                    is "SpacetimeDB.ConnectionId"
+                        or "SpacetimeDB.Identity"
+                        or "SpacetimeDB.Uuid",
+                _ => false,
+            }
+        )
+        && type.NullableAnnotation != NullableAnnotation.Annotated;
+}
+
 /// <summary>
 /// Represents the declaration of a column in a table.
 /// Contains metadata and attributes for the column, including its type, constraints, and indexes.
@@ -174,70 +231,14 @@ record ColumnDeclaration : MemberDeclaration
 
         var type = field.Type;
 
-        var isInteger = type.SpecialType switch
-        {
-            SpecialType.System_Byte
-            or SpecialType.System_SByte
-            or SpecialType.System_Int16
-            or SpecialType.System_UInt16
-            or SpecialType.System_Int32
-            or SpecialType.System_UInt32
-            or SpecialType.System_Int64
-            or SpecialType.System_UInt64 => true,
-            SpecialType.None => type.ToString()
-                is "System.Int128"
-                    or "System.UInt128"
-                    or "SpacetimeDB.I128"
-                    or "SpacetimeDB.U128"
-                    or "SpacetimeDB.I256"
-                    or "SpacetimeDB.U256",
-            _ => false,
-        };
-
         var attrs = CombineColumnAttrs(Attrs);
 
-        if (attrs.HasFlag(ColumnAttrs.AutoInc) && !isInteger)
+        if (attrs.HasFlag(ColumnAttrs.AutoInc) && !ColumnTypeValidation.IsInteger(type))
         {
             diag.Report(ErrorDescriptor.AutoIncNotInteger, field);
         }
 
-        // Check whether this is a sum type without a payload.
-        var isAllUnitEnum = false;
-        if (type.TypeKind == Microsoft.CodeAnalysis.TypeKind.Enum)
-        {
-            isAllUnitEnum = true;
-        }
-        else if (type.BaseType?.OriginalDefinition.ToString() == "SpacetimeDB.TaggedEnum<Variants>")
-        {
-            if (
-                type.BaseType.TypeArguments.FirstOrDefault() is INamedTypeSymbol
-                {
-                    IsTupleType: true,
-                    TupleElements: var taggedEnumVariants
-                }
-            )
-            {
-                isAllUnitEnum = taggedEnumVariants.All(
-                    (field) => field.Type.ToString() == "SpacetimeDB.Unit"
-                );
-            }
-        }
-
-        IsEquatable =
-            (
-                isInteger
-                || isAllUnitEnum
-                || type.SpecialType switch
-                {
-                    SpecialType.System_String or SpecialType.System_Boolean => true,
-                    SpecialType.None => type.ToString()
-                        is "SpacetimeDB.ConnectionId"
-                            or "SpacetimeDB.Identity"
-                            or "SpacetimeDB.Uuid",
-                    _ => false,
-                }
-            )
-            && type.NullableAnnotation != NullableAnnotation.Annotated;
+        IsEquatable = ColumnTypeValidation.IsEquatable(type);
 
         if (attrs.HasFlag(ColumnAttrs.Unique) && !IsEquatable)
         {
@@ -1140,6 +1141,7 @@ record ViewDeclaration
 {
     public readonly string Name;
     public readonly string? CanonicalName;
+    public readonly string? PrimaryKey;
     public readonly string FullName;
     public readonly bool IsAnonymous;
     public readonly bool IsPublic;
@@ -1150,11 +1152,60 @@ record ViewDeclaration
     public readonly EquatableArray<MemberDeclaration> Parameters;
     public readonly Scope Scope;
 
+    private static ITypeSymbol? NullableElementType(ITypeSymbol type) =>
+        type switch
+        {
+            INamedTypeSymbol
+            {
+                OriginalDefinition.SpecialType: SpecialType.System_Nullable_T
+            } nullable => nullable.TypeArguments[0],
+            _ when IsNullableReferenceType(type) => type.WithNullableAnnotation(
+                NullableAnnotation.None
+            ),
+            _ => null,
+        };
+
+    private static IFieldSymbol? FindPrimaryKeyField(ITypeSymbol rowType, string primaryKey) =>
+        SpacetimeDbFieldDiscovery.FindSpacetimeDbField(rowType, primaryKey);
+
+    private static SyntaxNode FindAttributeNamedArgumentExpression(
+        AttributeData attrData,
+        string argumentName,
+        SyntaxNode fallback
+    )
+    {
+        if (
+            attrData.ApplicationSyntaxReference?.GetSyntax() is AttributeSyntax
+            {
+                ArgumentList: { } argumentList
+            }
+        )
+        {
+            foreach (var argument in argumentList.Arguments)
+            {
+                if (argument.NameEquals?.Name.Identifier.ValueText == argumentName)
+                {
+                    return argument.Expression;
+                }
+            }
+        }
+
+        return fallback;
+    }
+
+    private static string EscapeStringLiteral(string s) =>
+        s.Replace("\\", "\\\\")
+            .Replace("\"", "\\\"")
+            .Replace("\r", "\\r")
+            .Replace("\n", "\\n")
+            .Replace("\t", "\\t");
+
     public ViewDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
     {
         var methodSyntax = (MethodDeclarationSyntax)context.TargetNode;
         var method = (IMethodSymbol)context.TargetSymbol;
-        var attr = context.Attributes.Single().ParseAs<ViewAttribute>();
+        var attrData = context.Attributes.Single();
+        var attr = attrData.ParseAs<ViewAttribute>();
         var hasContextParam = method.Parameters.Length > 0;
         var firstParamType = hasContextParam ? method.Parameters[0].Type : null;
         var isAnonymousContext = firstParamType?.Name == "AnonymousViewContext";
@@ -1176,12 +1227,14 @@ record ViewDeclaration
 
         Name = attr.Accessor ?? method.Name;
         CanonicalName = attr.Name;
+        PrimaryKey = string.IsNullOrEmpty(attr.PrimaryKey) ? null : attr.PrimaryKey;
         FullName = SymbolToName(method);
         IsPublic = attr.Public;
         IsAnonymous = isAnonymousContext;
 
         ReturnsQuery = false;
         ReturnsEnumerable = false;
+        ITypeSymbol? returnRowType = null;
         INamedTypeSymbol? iquery = null;
         if (
             method.ReturnType is INamedTypeSymbol
@@ -1214,6 +1267,7 @@ record ViewDeclaration
             var rowType = TypeUse.Parse(method, queryRowType, diag);
             QueryRowType = rowType;
             ReturnType = rowType;
+            returnRowType = queryRowType;
         }
         else if (
             method.ReturnType
@@ -1232,6 +1286,7 @@ record ViewDeclaration
             var listTypeInfo =
                 $"SpacetimeDB.BSATN.List<{elementTypeName}, {elementType.BSATNName}>";
             ReturnType = new ListUse(listTypeName, listTypeInfo, elementType);
+            returnRowType = enumerableElementType;
         }
         else
         {
@@ -1243,12 +1298,17 @@ record ViewDeclaration
                     is INamedTypeSymbol
                     {
                         OriginalDefinition: var listDefinition,
-                        TypeArguments.Length: 1,
+                        TypeArguments: [var listElementType],
                     }
                 && listDefinition.ToString() == "System.Collections.Generic.List<T>"
             )
             {
                 ReturnsEnumerable = true;
+                returnRowType = listElementType;
+            }
+            else if (NullableElementType(method.ReturnType) is { } optionElementType)
+            {
+                returnRowType = optionElementType;
             }
         }
         Scope = new Scope(methodSyntax.Parent as MemberDeclarationSyntax);
@@ -1275,6 +1335,30 @@ record ViewDeclaration
             diag.Report(ErrorDescriptor.ViewInvalidReturn, methodSyntax);
         }
 
+        if (PrimaryKey is { } primaryKey && returnRowType is { } rowTypeForPrimaryKey)
+        {
+            var primaryKeySyntax = FindAttributeNamedArgumentExpression(
+                attrData,
+                nameof(ViewAttribute.PrimaryKey),
+                methodSyntax
+            );
+
+            if (FindPrimaryKeyField(rowTypeForPrimaryKey, primaryKey) is not { } field)
+            {
+                diag.Report(
+                    ErrorDescriptor.ViewPrimaryKeyColumnNotFound,
+                    (methodSyntax, primaryKeySyntax, primaryKey, SymbolToName(rowTypeForPrimaryKey))
+                );
+            }
+            else if (!ColumnTypeValidation.IsEquatable(field.Type))
+            {
+                diag.Report(
+                    ErrorDescriptor.ViewPrimaryKeyNotFilterable,
+                    (methodSyntax, primaryKeySyntax, primaryKey, SymbolToName(field.Type))
+                );
+            }
+        }
+
         Parameters = new(
             method
                 .Parameters.Skip(1)
@@ -1298,6 +1382,16 @@ record ViewDeclaration
                 ReturnType: {{{returnTypeExpr}}}
             );
             """;
+    }
+
+    public string? GenerateViewPrimaryKeyRegistration()
+    {
+        if (PrimaryKey is null)
+        {
+            return null;
+        }
+
+        return $"SpacetimeDB.Internal.Module.RegisterViewPrimaryKey(\"{EscapeStringLiteral(Name)}\", [\"{EscapeStringLiteral(PrimaryKey)}\"]);";
     }
 
     /// <summary>
@@ -2545,14 +2639,11 @@ public class Module : IIncrementalGenerator
 
                             private ProcedureTxContext? _cached;
 
-                            [Experimental("STDB_UNSTABLE")]
                             public Local Db => _db;
-                            
-                            [Experimental("STDB_UNSTABLE")]
+
                             public TResult WithTx<TResult>(Func<ProcedureTxContext, TResult> body) =>
                                 base.WithTx(tx => body((ProcedureTxContext)tx));
-                            
-                            [Experimental("STDB_UNSTABLE")]
+
                             public TxOutcome<TResult> TryWithTx<TResult, TError>(
                                 Func<ProcedureTxContext, Result<TResult, TError>> body)
                                 where TError : Exception =>
@@ -2643,7 +2734,6 @@ public class Module : IIncrementalGenerator
                             }
                         }
 
-                        [Experimental("STDB_UNSTABLE")]
                         public sealed class ProcedureTxContext : global::SpacetimeDB.ProcedureTxContextBase {
                             internal ProcedureTxContext(Internal.TxContext inner) : base(inner) {}
 
@@ -2765,7 +2855,12 @@ public class Module : IIncrementalGenerator
                                         views.Array.Where(v => v.IsAnonymous)
                                             .Select(v => $"SpacetimeDB.Internal.Module.RegisterAnonymousView<{v.Name}ViewDispatcher>();")
                                     )
-                            )}}                            
+                            )}}
+
+                            {{string.Join("\n",
+                                views.Array.Select(v => v.GenerateViewPrimaryKeyRegistration())
+                                    .OfType<string>()
+                            )}}
 
                             {{string.Join(
                                 "\n",

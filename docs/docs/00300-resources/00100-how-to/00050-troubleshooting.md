@@ -60,15 +60,15 @@ Your client may have failed to connect to the remote server, or may have been di
 
 You may need to advance your connection by calling one of the following methods:
 
-| Client SDK          | Method                       | Description                                                                        |
-|---------------------|------------------------------|------------------------------------------------------------------------------------|
-| Rust (native only)  | `conn.run_threaded()`        | Spawn a thread to continuously advance the connection.                             |
-| Rust (browser only) | `conn.run_background_task()` | Spawn a task to continuously advance the connection.                               |
-| Rust                | `conn.run_async()`           | A `Future` which you can `await` or poll to advance the connection.                |
-| Rust                | `conn.frame_tick()`          | In single-threaded games, call this every frame to advance the connection.         |
-| C#                  | `Conn.FrameTick()`           | Call this every frame to advance the connection, or call it in a loop on a thread. |
-| Unreal              | `Conn.FrameTick()`           | Call this every frame to advance the connection.                                   |
-| TypeScript          | N/a                          | The TypeScript client SDK advances connections automatically.                      |
+| Client SDK          | Method                                            | Description                                                                                                                      |
+|---------------------|---------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------|
+| Rust (native only)  | `conn.run_threaded()`                             | Spawn a thread to continuously advance the connection.                                                                           |
+| Rust (browser only) | `conn.run_background_task()`                      | Spawn a task to continuously advance the connection.                                                                             |
+| Rust                | `conn.run_async()`                                | A `Future` which you can `await` or poll to advance the connection.                                                              |
+| Rust                | `conn.frame_tick()`                               | In single-threaded games, call this every frame to advance the connection.                                                       |
+| C#                  | `Conn.FrameTick()`                                | Call this from your game or application update loop. If you use a separate loop, keep `Conn.Db` access on that same thread or synchronize access. |
+| Unreal              | `Conn->FrameTick()` or `Conn->SetAutoTicking(true)` | Call `FrameTick()` every frame, or enable auto-ticking once after building the connection.                                        |
+| TypeScript          | N/a                                               | The TypeScript client SDK advances connections automatically.                                                                    |
 
 ### Rows never appear
 

@@ -594,6 +594,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-call-reducer-procedure-identity-arg"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-client-connection-disconnect-panic"
 version = "0.1.0"
 dependencies = [
@@ -948,6 +956,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-views-primary-key-auto-migrate"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-views-primary-key-auto-migrate-updated"
+version = "0.1.0"
+dependencies = [
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-views-query"
 version = "0.1.0"
 dependencies = [
@@ -985,7 +1007,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb"
-version = "2.3.0"
+version = "2.5.0"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -1006,7 +1028,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-macro"
-version = "2.3.0"
+version = "2.5.0"
 dependencies = [
  "heck 0.4.1",
  "humantime",
@@ -1018,14 +1040,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-sys"
-version = "2.3.0"
+version = "2.5.0"
 dependencies = [
  "spacetimedb-primitives",
 ]
 
 [[package]]
 name = "spacetimedb-lib"
-version = "2.3.0"
+version = "2.5.0"
 dependencies = [
  "anyhow",
  "bitflags",
@@ -1045,7 +1067,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-primitives"
-version = "2.3.0"
+version = "2.5.0"
 dependencies = [
  "bitflags",
  "either",
@@ -1056,14 +1078,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-query-builder"
-version = "2.3.0"
+version = "2.5.0"
 dependencies = [
  "spacetimedb-lib",
 ]
 
 [[package]]
 name = "spacetimedb-sats"
-version = "2.3.0"
+version = "2.5.0"
 dependencies = [
  "anyhow",
  "arrayvec",
