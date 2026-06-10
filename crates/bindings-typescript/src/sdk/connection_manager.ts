@@ -46,7 +46,20 @@ export type ConnectionState = {
 
 type Listener = () => void;
 
-export const CONNECTION_MANAGER_RECONNECT_DELAY_MS = 1000;
+export const CONNECTION_MANAGER_RECONNECT_BASE_DELAY_MS = 1000;
+export const CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS = 30_000;
+
+/**
+ * Computes the reconnect delay for the given attempt (0-based) using
+ * exponential backoff: the base delay doubles with each consecutive failed
+ * attempt, capped at the maximum delay.
+ */
+export function connectionManagerReconnectDelayMs(attempt: number): number {
+  return Math.min(
+    CONNECTION_MANAGER_RECONNECT_BASE_DELAY_MS * 2 ** attempt,
+    CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS
+  );
+}
 
 type ManagedConnection = {
   connection?: DbConnectionImpl<any>;
@@ -56,6 +69,7 @@ type ManagedConnection = {
   listeners: Set<Listener>;
   pendingRelease: ReturnType<typeof setTimeout> | null;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
+  reconnectAttempt: number;
   onConnect?: (conn: DbConnectionImpl<any>) => void;
   onDisconnect?: (ctx: ErrorContextInterface<any>, error?: Error) => void;
   onConnectError?: (ctx: ErrorContextInterface<any>, error: Error) => void;
@@ -101,6 +115,7 @@ class ConnectionManagerImpl {
       listeners: new Set(),
       pendingRelease: null,
       reconnectTimer: null,
+      reconnectAttempt: 0,
     };
     this.#connections.set(key, managed);
     return managed;
@@ -129,6 +144,7 @@ class ConnectionManagerImpl {
       if (conn !== managed.connection) {
         return;
       }
+      managed.reconnectAttempt = 0;
       this.#updateState(managed, {
         isActive: conn.isActive,
         identity: conn.identity,
@@ -221,6 +237,8 @@ class ConnectionManagerImpl {
       this.#detachCallbacks(managed, connection);
     }
     managed.connection = undefined;
+    const delay = connectionManagerReconnectDelayMs(managed.reconnectAttempt);
+    managed.reconnectAttempt += 1;
     managed.reconnectTimer = setTimeout(() => {
       managed.reconnectTimer = null;
       if (
@@ -233,7 +251,7 @@ class ConnectionManagerImpl {
       }
 
       this.#buildManagedConnection(managed, managed.builder);
-    }, CONNECTION_MANAGER_RECONNECT_DELAY_MS);
+    }, delay);
   }
 
   /**

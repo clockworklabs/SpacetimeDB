@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ConnectionId } from '../src';
 import {
-  CONNECTION_MANAGER_RECONNECT_DELAY_MS,
+  CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS,
+  connectionManagerReconnectDelayMs,
   ConnectionManager,
 } from '../src/sdk/connection_manager.ts';
 
@@ -196,7 +197,7 @@ describe('ConnectionManager retained reconnect behavior', () => {
     expect(ConnectionManager.getSnapshot(key)?.isActive).toBe(false);
     expect(ConnectionManager.getConnection(key)).toBeNull();
 
-    vi.advanceTimersByTime(CONNECTION_MANAGER_RECONNECT_DELAY_MS - 1);
+    vi.advanceTimersByTime(connectionManagerReconnectDelayMs(0) - 1);
     expect(builder.buildCount).toBe(1);
 
     vi.advanceTimersByTime(1);
@@ -223,7 +224,7 @@ describe('ConnectionManager retained reconnect behavior', () => {
     expect(ConnectionManager.getSnapshot(key)?.connectionError).toBe(error);
     expect(ConnectionManager.getConnection(key)).toBeNull();
 
-    vi.advanceTimersByTime(CONNECTION_MANAGER_RECONNECT_DELAY_MS);
+    vi.advanceTimersByTime(connectionManagerReconnectDelayMs(0));
 
     expect(builder.buildCount).toBe(2);
     expect(ConnectionManager.getSnapshot(key)?.connectionError).toBeUndefined();
@@ -245,7 +246,7 @@ describe('ConnectionManager retained reconnect behavior', () => {
     expect(second).not.toBe(first);
     expect(ConnectionManager.getConnection(key)).toBe(second);
 
-    vi.advanceTimersByTime(CONNECTION_MANAGER_RECONNECT_DELAY_MS);
+    vi.advanceTimersByTime(connectionManagerReconnectDelayMs(0));
     expect(builder.buildCount).toBe(2);
 
     ConnectionManager.release(key);
@@ -268,7 +269,7 @@ describe('ConnectionManager retained reconnect behavior', () => {
     expect(secondBuilder.buildCount).toBe(0);
 
     first.simulateDisconnect();
-    vi.advanceTimersByTime(CONNECTION_MANAGER_RECONNECT_DELAY_MS);
+    vi.advanceTimersByTime(connectionManagerReconnectDelayMs(0));
 
     expect(secondBuilder.buildCount).toBe(1);
     const second = secondBuilder.connections[0];
@@ -314,9 +315,68 @@ describe('ConnectionManager retained reconnect behavior', () => {
     first.simulateDisconnect();
 
     ConnectionManager.release(key);
-    vi.advanceTimersByTime(CONNECTION_MANAGER_RECONNECT_DELAY_MS);
+    vi.advanceTimersByTime(connectionManagerReconnectDelayMs(0));
 
     expect(builder.buildCount).toBe(1);
     expect(ConnectionManager.getConnection(key)).toBeNull();
+  });
+
+  test('reconnect delay backs off exponentially across consecutive failures', () => {
+    const key = nextKey();
+    const builder = new MockBuilder();
+
+    const first = retainMock(key, builder);
+    first.simulateDisconnect();
+
+    // First reconnect fires after the base delay.
+    vi.advanceTimersByTime(connectionManagerReconnectDelayMs(0));
+    expect(builder.buildCount).toBe(2);
+
+    // Second failure: the delay doubles.
+    builder.connections[1].simulateConnectError(new Error('still down'));
+    vi.advanceTimersByTime(connectionManagerReconnectDelayMs(1) - 1);
+    expect(builder.buildCount).toBe(2);
+    vi.advanceTimersByTime(1);
+    expect(builder.buildCount).toBe(3);
+
+    // Third failure: the delay doubles again.
+    builder.connections[2].simulateConnectError(new Error('still down'));
+    vi.advanceTimersByTime(connectionManagerReconnectDelayMs(2) - 1);
+    expect(builder.buildCount).toBe(3);
+    vi.advanceTimersByTime(1);
+    expect(builder.buildCount).toBe(4);
+
+    ConnectionManager.release(key);
+  });
+
+  test('successful connect resets the reconnect backoff', () => {
+    const key = nextKey();
+    const builder = new MockBuilder();
+
+    const first = retainMock(key, builder);
+    first.simulateDisconnect();
+    vi.advanceTimersByTime(connectionManagerReconnectDelayMs(0));
+
+    builder.connections[1].simulateConnectError(new Error('still down'));
+    vi.advanceTimersByTime(connectionManagerReconnectDelayMs(1));
+    expect(builder.buildCount).toBe(3);
+
+    // A successful connect resets the backoff to the base delay.
+    builder.connections[2].simulateConnect();
+    builder.connections[2].simulateDisconnect();
+
+    vi.advanceTimersByTime(connectionManagerReconnectDelayMs(0));
+    expect(builder.buildCount).toBe(4);
+
+    ConnectionManager.release(key);
+  });
+
+  test('reconnect delay is capped at the maximum delay', () => {
+    expect(connectionManagerReconnectDelayMs(0)).toBeLessThan(
+      CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS
+    );
+    expect(connectionManagerReconnectDelayMs(100)).toBe(
+      CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS
+    );
   });
 });
