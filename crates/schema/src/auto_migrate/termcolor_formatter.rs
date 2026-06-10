@@ -426,6 +426,18 @@ impl MigrationFormatter for TermColorFormatter {
         )?;
         self.buffer.write_all(b"\n")
     }
+
+    fn format_event_table_reschema(&mut self, table_name: &Identifier) -> io::Result<()> {
+        // TODO(format-event-table-reschema): I (pgoldman 2026-06-10) didn't have time to meaningfully format event table reschemas,
+        // so for now we're just printing the table name.
+
+        self.write_action_prefix(&Action::Changed)?;
+        self.buffer.write_all(format!(" schema of event table ").as_bytes())?;
+        self.write_colored(table_name, Some(self.colors.table_name), true)?;
+        self.buffer.write_all(b"\n")?;
+
+        Ok(())
+    }
 }
 
 trait ActionColorExt {

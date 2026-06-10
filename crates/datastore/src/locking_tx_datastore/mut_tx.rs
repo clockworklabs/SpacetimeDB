@@ -1210,6 +1210,60 @@ impl MutTxId {
         Ok(())
     }
 
+    pub(crate) fn alter_event_table_row_type(
+        &mut self,
+        table_id: TableId,
+        column_schemas: Vec<ColumnSchema>,
+    ) -> Result<()> {
+        // Sanity check: is this actually an event table?
+        if self.find_st_event_table_row(table_id).is_err() {
+            return Err(TableError::ReschemaNotAnEventTable(table_id).into());
+        }
+
+        // Write to the table in the tx state.
+        let ((tx_table, tx_blob_store, ..), (commit_table, commit_blob_store, ..)) =
+            self.get_or_create_insert_table_mut(table_id)?;
+
+        if tx_table.row_count != 0 || commit_table.row_count != 0 {
+            // N.b. the delete table must also be empty, 'cause the committed table is empty.
+            return Err(TableError::EventTableNonEmptyDuringAutoMigration(table_id).into());
+        }
+
+        // Make sure there aren't any pages with outdated layouts in either table,
+        // as page layout depends on row size.
+        // It should be redundant to do this for the commit table, which can't have ever had rows resident at any point in the past,
+        // but better safe than sorry.
+        // Safety: There aren't any pages here, so it's impossible for any of them to have the wrong schema.
+        unsafe {
+            tx_table.set_pages(Vec::new(), tx_blob_store);
+            commit_table.set_pages(Vec::new(), commit_blob_store);
+        }
+
+        // Safety: we just checked that the table has zero rows resident, and then wiped all its pages,
+        // so there aren't any rows existing in the table for the new layout to conflict with.
+        let old_column_schemas = unsafe {
+            tx_table
+                .change_columns_to_unchecked(column_schemas.clone(), |_, _, _| Ok::<(), std::convert::Infallible>(()))
+        }
+        .expect("const Ok validation function to result in Ok column change");
+
+        // Safety: No rows resident, no pages resident, no possible conflicts.
+        unsafe { commit_table.set_layout_and_schema_to(tx_table) };
+
+        // Update system tables.
+        // We'll simply remove all rows in `st_columns` and then add the new ones.
+        // The datastore takes care of not persisting any no-op delete/inserts to the commitlog.
+        let table_name = self.find_st_table_row(table_id)?.table_name;
+        self.drop_st_column(table_id)?;
+        self.drop_st_column_accessor(&table_name)?;
+        self.insert_st_column(&table_name, &column_schemas)?;
+
+        // Remember the pending change so we can undo if necessary.
+        self.push_schema_change(PendingSchemaChange::ReschemaEventTable(table_id, old_column_schemas));
+
+        Ok(())
+    }
+
     /// Change the row type of the table identified by `table_id`.
     ///
     /// This is an incompatible change that requires a new table to be created.

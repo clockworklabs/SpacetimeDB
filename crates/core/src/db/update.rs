@@ -278,6 +278,15 @@ fn auto_migrate_database(
 
                 stdb.alter_table_row_type(tx, table_id, column_schemas)?;
             }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::ReschemaEventTable(table_name) => {
+                let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
+                let table_id = stdb.table_id_from_name_mut(tx, table_name).unwrap().unwrap();
+                let column_schemas = column_schemas_from_defs(plan.new, &table_def.columns, table_id);
+
+                log!(logger, "Changing schema of event table `{}`", table_name);
+
+                stdb.alter_event_table_row_type(tx, table_id, column_schemas)?;
+            }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeAccess(table_name) => {
                 let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
                 stdb.alter_table_access(tx, table_name, table_def.table_access.into())?;
