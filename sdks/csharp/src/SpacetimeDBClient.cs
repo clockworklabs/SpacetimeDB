@@ -281,7 +281,7 @@ namespace SpacetimeDB
 
         private readonly BlockingCollection<ParsedMessage> _applyQueue =
             new(new ConcurrentQueue<ParsedMessage>());
-        
+
         internal bool HasMessageToApply => _applyQueue.Count > 0;
 
         private readonly CancellationTokenSource _parseCancellationTokenSource = new();
