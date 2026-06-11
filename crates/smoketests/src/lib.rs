@@ -517,16 +517,6 @@ struct ModuleSource {
     module_source: String,
 }
 
-struct PublishCommand<'a> {
-    name: Option<&'a str>,
-    clear: bool,
-    break_clients: bool,
-    num_replicas: Option<u32>,
-    organization: Option<&'a str>,
-    force: bool,
-    stdin_input: Option<&'a str>,
-}
-
 impl<'a> PublishBuilder<'a> {
     pub fn name(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
@@ -613,15 +603,93 @@ impl<'a> PublishBuilder<'a> {
             );
         }
 
-        smoketest.publish_module_internal(PublishCommand {
-            name: name.as_deref(),
-            clear,
-            break_clients,
-            num_replicas,
-            organization: organization.as_deref(),
-            force,
-            stdin_input: stdin_input.as_deref(),
-        })
+        let start = Instant::now();
+
+        let wasm_path_str = if let Some(ref precompiled_path) = smoketest.precompiled_wasm_path {
+            eprintln!("[TIMING] spacetime build: skipped (using precompiled)");
+            precompiled_path.to_str().unwrap().to_string()
+        } else {
+            let project_path = smoketest.project_dir.path().to_str().unwrap().to_string();
+            let build_start = Instant::now();
+            let cli_path = ensure_binaries_built();
+            let target_dir = shared_target_dir();
+
+            let mut build_cmd = Command::new(&cli_path);
+            build_cmd
+                .args(["build", "--module-path", &project_path])
+                .current_dir(smoketest.project_dir.path())
+                .env("CARGO_TARGET_DIR", &target_dir);
+
+            let build_output = build_cmd.output().expect("Failed to execute spacetime build");
+            eprintln!("[TIMING] spacetime build: {:?}", build_start.elapsed());
+
+            if !build_output.status.success() {
+                bail!(
+                    "spacetime build failed:\nstdout: {}\nstderr: {}",
+                    String::from_utf8_lossy(&build_output.stdout),
+                    String::from_utf8_lossy(&build_output.stderr)
+                );
+            }
+
+            let wasm_filename = format!("{}.wasm", smoketest.module_name);
+            let wasm_path = target_dir.join("wasm32-unknown-unknown/release").join(&wasm_filename);
+            wasm_path.to_str().unwrap().to_string()
+        };
+
+        let publish_start = Instant::now();
+        let mut args = vec![
+            "publish",
+            "--server",
+            &smoketest.server_url,
+            "--bin-path",
+            &wasm_path_str,
+        ];
+
+        if force {
+            args.push("--yes");
+        }
+
+        if clear {
+            args.push("--clear-database");
+        }
+
+        if break_clients {
+            args.push("--break-clients");
+        }
+
+        let num_replicas_owned = num_replicas.map(|n| n.to_string());
+        if let Some(n) = num_replicas_owned.as_ref() {
+            args.push("--num-replicas");
+            args.push(n);
+        }
+
+        if let Some(org) = organization.as_deref() {
+            args.push("--organization");
+            args.push(org);
+        }
+
+        if let Some(n) = name.as_deref() {
+            args.push(n);
+        }
+
+        let output = match stdin_input.as_deref() {
+            Some(stdin_input) => smoketest.spacetime_with_stdin(&args, stdin_input)?,
+            None => smoketest.spacetime(&args)?,
+        };
+        eprintln!(
+            "[TIMING] spacetime publish (after build): {:?}",
+            publish_start.elapsed()
+        );
+        eprintln!("[TIMING] publish_module total: {:?}", start.elapsed());
+
+        let re = Regex::new(r"identity: ([0-9a-fA-F]+)").unwrap();
+        if let Some(caps) = re.captures(&output) {
+            let identity = caps.get(1).unwrap().as_str().to_string();
+            smoketest.database_identity = Some(identity.clone());
+            Ok(identity)
+        } else {
+            bail!("Failed to parse database identity from publish output: {}", output);
+        }
     }
 }
 
@@ -1350,99 +1418,6 @@ log = "0.4"
             force: true,
             stdin_input: None,
             source: None,
-        }
-    }
-
-    fn publish_module_internal(&mut self, publish: PublishCommand<'_>) -> Result<String> {
-        let start = Instant::now();
-
-        // Determine the WASM path - either precompiled or build it
-        let wasm_path_str = if let Some(ref precompiled_path) = self.precompiled_wasm_path {
-            // Use pre-compiled WASM directly (no build needed)
-            eprintln!("[TIMING] spacetime build: skipped (using precompiled)");
-            precompiled_path.to_str().unwrap().to_string()
-        } else {
-            // Build the WASM module from source
-            let project_path = self.project_dir.path().to_str().unwrap().to_string();
-            let build_start = Instant::now();
-            let cli_path = ensure_binaries_built();
-            let target_dir = shared_target_dir();
-
-            let mut build_cmd = Command::new(&cli_path);
-            build_cmd
-                .args(["build", "--module-path", &project_path])
-                .current_dir(self.project_dir.path())
-                .env("CARGO_TARGET_DIR", &target_dir);
-
-            let build_output = build_cmd.output().expect("Failed to execute spacetime build");
-            let build_elapsed = build_start.elapsed();
-            eprintln!("[TIMING] spacetime build: {:?}", build_elapsed);
-
-            if !build_output.status.success() {
-                bail!(
-                    "spacetime build failed:\nstdout: {}\nstderr: {}",
-                    String::from_utf8_lossy(&build_output.stdout),
-                    String::from_utf8_lossy(&build_output.stderr)
-                );
-            }
-
-            // Construct the wasm path using the unique module name
-            let wasm_filename = format!("{}.wasm", self.module_name);
-            let wasm_path = target_dir.join("wasm32-unknown-unknown/release").join(&wasm_filename);
-            wasm_path.to_str().unwrap().to_string()
-        };
-
-        // Now publish with --bin-path to skip rebuild
-        let publish_start = Instant::now();
-        let mut args = vec!["publish", "--server", &self.server_url, "--bin-path", &wasm_path_str];
-
-        if publish.force {
-            args.push("--yes");
-        }
-
-        if publish.clear {
-            args.push("--clear-database");
-        }
-
-        if publish.break_clients {
-            args.push("--break-clients");
-        }
-
-        let num_replicas_owned = publish.num_replicas.map(|n| n.to_string());
-        if let Some(n) = num_replicas_owned.as_ref() {
-            args.push("--num-replicas");
-            args.push(n);
-        }
-
-        if let Some(org) = publish.organization {
-            args.push("--organization");
-            args.push(org);
-        }
-
-        let name_owned;
-        if let Some(n) = publish.name {
-            name_owned = n.to_string();
-            args.push(&name_owned);
-        }
-
-        let output = match publish.stdin_input {
-            Some(stdin_input) => self.spacetime_with_stdin(&args, stdin_input)?,
-            None => self.spacetime(&args)?,
-        };
-        eprintln!(
-            "[TIMING] spacetime publish (after build): {:?}",
-            publish_start.elapsed()
-        );
-        eprintln!("[TIMING] publish_module total: {:?}", start.elapsed());
-
-        // Parse the identity from output like "identity: abc123..."
-        let re = Regex::new(r"identity: ([0-9a-fA-F]+)").unwrap();
-        if let Some(caps) = re.captures(&output) {
-            let identity = caps.get(1).unwrap().as_str().to_string();
-            self.database_identity = Some(identity.clone());
-            Ok(identity)
-        } else {
-            bail!("Failed to parse database identity from publish output: {}", output);
         }
     }
 
