@@ -123,6 +123,12 @@ pub enum PendingSchemaChange {
     /// Only non-representational row-type changes are allowed here,
     /// so existing rows in the table will be compatible with the new row type.
     TableAlterRowType(TableId, Vec<ColumnSchema>),
+    /// The row type of the event table with [`TableId`] was changed.
+    /// The old column schemas was stored.
+    ///
+    /// As event tables never have rows resident across transactions or during automigrations,
+    /// we're fine to allow representational/layout-incompatible changes here.
+    ReschemaEventTable(TableId, Vec<ColumnSchema>),
     /// The primary key of the table with [`TableId`] was changed.
     /// The old primary key was stored.
     TableAlterPrimaryKey(TableId, Option<ColList>),
@@ -158,6 +164,7 @@ impl MemoryUsage for PendingSchemaChange {
                 table_id.heap_usage() + sequence.heap_usage() + sequence_schema.heap_usage()
             }
             Self::SequenceAdded(table_id, sequence_id) => table_id.heap_usage() + sequence_id.heap_usage(),
+            Self::ReschemaEventTable(table_id, column_schemas) => table_id.heap_usage() + column_schemas.heap_usage(),
         }
     }
 }

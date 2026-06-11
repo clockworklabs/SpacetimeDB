@@ -485,3 +485,58 @@ fn test_remove_primary_key_issue_3934() {
     test.publish_module_with_options(&identity, false, true)
         .expect("Publish after PK removal should succeed (issue #3934)");
 }
+
+const MODULE_CODE_WITH_EVENT_TABLE_BEFORE: &str = r#"
+use spacetimedb::{table, SpacetimeType};
+
+#[derive(SpacetimeType)]
+struct SomeProduct {
+    a: u32,
+    b: u64,
+}
+
+#[table(accessor = some_event, public, event)]
+struct SomeEvent {
+    foo: String,
+    prod: SomeProduct,
+}
+"#;
+
+const MODULE_CODE_WITH_EVENT_TABLE_AFTER: &str = r#"
+use spacetimedb::{table, SpacetimeType};
+
+#[derive(SpacetimeType)]
+struct SomeProduct {
+    a: u32,
+    b: u64,
+    c: u128,
+}
+
+#[table(accessor = some_event, public, event)]
+struct SomeEvent {
+    prod: SomeProduct,
+}
+"#;
+
+#[test]
+fn automigrate_reschema_event_table_arbitrarily() {
+    let mut test = Smoketest::builder()
+        .module_code(MODULE_CODE_WITH_EVENT_TABLE_BEFORE)
+        .build();
+
+    // Step 1: publish with event table.
+    let identity = test
+        .database_identity
+        .clone()
+        .expect("database should be published after build");
+
+    // Step 2: Reschema event table. Should work fine, even though we'd reject this change for a non-event table.
+    test.write_module_code(MODULE_CODE_WITH_EVENT_TABLE_AFTER).unwrap();
+    test.publish_module_with_options(&identity, false, true)
+        .expect("Changing schema of event table should succeed");
+
+    // Step 3: Reschema event table right back. Should still work fine.
+    test.write_module_code(MODULE_CODE_WITH_EVENT_TABLE_BEFORE).unwrap();
+    test.publish_module_with_options(&identity, false, true)
+        .expect("Changing schema of event table should succeed");
+}
