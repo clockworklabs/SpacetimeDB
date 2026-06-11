@@ -76,13 +76,39 @@ fn record_metrics(
     }: MetricsMessage,
 ) {
     if let Some(tx_metrics) = metrics_for_writer {
-        tx_metrics.report(tx_data.as_deref(), reducer.as_ref(), |wl| &counters[wl]);
+        tx_metrics.report(
+            // If row updates are present,
+            // they will always belong to the writer transaction.
+            tx_data.as_deref(),
+            reducer.as_ref(),
+            |wl| &counters[wl],
+        );
     }
     if let Some(tx_metrics) = metrics_for_reader {
-        tx_metrics.report(None, reducer.as_ref(), |wl| &counters[wl]);
+        tx_metrics.report(
+            // If row updates are present,
+            // they will never belong to the reader transaction.
+            // Passing row updates here will most likely panic.
+            None,
+            reducer.as_ref(),
+            |wl| &counters[wl],
+        );
     }
 }
 
+/// The metrics recorder is a side channel that the main database thread forwards metrics to.
+/// While we want to avoid unnecessary compute on the critical path, communicating with other
+/// threads is not free, and for this case in particular waking a parked task is not free.
+///
+/// Previously, each tx would send its metrics to the recorder task. As soon as the recorder
+/// task `recv`d a message, it would update the counters and gauges, and immediately wait for
+/// the next tx's message. This meant that the tx would need to be more expensive than the
+/// recording of its metrics in order for the recorder task not to be parked on `recv` when
+/// the tx would `send` its metrics. This would obviously never be the case, and so each `send`
+/// would incur the overhead of waking the task.
+///
+/// To mitigate this, we now record metrics, for potentially many transactions, periodically
+/// every 5ms.
 const TX_METRICS_RECORDING_INTERVAL: std::time::Duration = std::time::Duration::from_millis(5);
 
 /// Spawns a task for recording transaction metrics.
