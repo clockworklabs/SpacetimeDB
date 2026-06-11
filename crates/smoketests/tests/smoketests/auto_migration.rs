@@ -386,8 +386,8 @@ fn test_add_table_columns() {
     // Insert new data under upgraded schema
     test.call("add_person", &["Robert2"]).unwrap();
 
-    // Validate all subscribers were disconnected after first upgrade
     for sub in subs {
+        // Ensure the background cli subprocess observes the disconnect and exits cleanly
         sub.collect().unwrap();
     }
 

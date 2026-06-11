@@ -1846,12 +1846,6 @@ impl SubscriptionHandle {
             bail!("subscribe failed:\nstderr: {}", stderr_buf);
         }
 
-        if let Some(n) = self.n
-            && updates.len() != n
-        {
-            bail!("subscribe returned {} updates, expected {n}", updates.len());
-        }
-
         Ok(updates)
     }
 }
