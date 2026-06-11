@@ -492,30 +492,37 @@ impl ApiResponse {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct PublishOptions {
-    pub clear: bool,
-    pub break_clients: bool,
-    pub num_replicas: Option<u32>,
-    pub organization: Option<String>,
-    pub force: bool,
-    pub stdin_input: Option<String>,
+pub struct PublishBuilder<'a> {
+    smoketest: &'a mut Smoketest,
+    name: Option<String>,
+    clear: bool,
+    break_clients: bool,
+    num_replicas: Option<u32>,
+    organization: Option<String>,
+    force: bool,
+    stdin_input: Option<String>,
+    source: Option<ModuleSource>,
 }
 
-impl Default for PublishOptions {
-    fn default() -> Self {
-        Self {
-            clear: false,
-            break_clients: false,
-            num_replicas: None,
-            organization: None,
-            force: true,
-            stdin_input: None,
-        }
+#[derive(Clone, Copy, Debug)]
+pub enum ModuleLanguage {
+    TypeScript,
+    CSharp,
+    Cpp,
+}
+
+struct ModuleSource {
+    language: ModuleLanguage,
+    project_dir_name: String,
+    module_source: String,
+}
+
+impl<'a> PublishBuilder<'a> {
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
-}
 
-impl PublishOptions {
     pub fn clear(mut self, clear: bool) -> Self {
         self.clear = clear;
         self
@@ -542,56 +549,8 @@ impl PublishOptions {
     }
 
     pub fn stdin(mut self, stdin_input: impl Into<String>) -> Self {
+        self.force = false;
         self.stdin_input = Some(stdin_input.into());
-        self
-    }
-}
-
-pub struct PublishBuilder<'a> {
-    smoketest: &'a mut Smoketest,
-    name: Option<String>,
-    options: PublishOptions,
-}
-
-impl<'a> PublishBuilder<'a> {
-    pub fn name(mut self, name: impl Into<String>) -> Self {
-        self.name = Some(name.into());
-        self
-    }
-
-    pub fn clear(mut self, clear: bool) -> Self {
-        self.options.clear = clear;
-        self
-    }
-
-    pub fn break_clients(mut self, break_clients: bool) -> Self {
-        self.options.break_clients = break_clients;
-        self
-    }
-
-    pub fn num_replicas(mut self, num_replicas: u32) -> Self {
-        self.options.num_replicas = Some(num_replicas);
-        self
-    }
-
-    pub fn organization(mut self, organization: impl Into<String>) -> Self {
-        self.options.organization = Some(organization.into());
-        self
-    }
-
-    pub fn force(mut self, force: bool) -> Self {
-        self.options.force = force;
-        self
-    }
-
-    pub fn stdin(mut self, stdin_input: impl Into<String>) -> Self {
-        self.options.force = false;
-        self.options.stdin_input = Some(stdin_input.into());
-        self
-    }
-
-    pub fn options(mut self, options: PublishOptions) -> Self {
-        self.options = options;
         self
     }
 
@@ -606,41 +565,52 @@ impl<'a> PublishBuilder<'a> {
         Ok(self)
     }
 
-    pub fn run(self) -> Result<String> {
-        self.smoketest
-            .publish_module_internal(self.name.as_deref(), self.options)
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum ModuleLanguage {
-    TypeScript,
-    CSharp,
-    Cpp,
-}
-
-pub struct ModuleSourcePublishBuilder<'a> {
-    smoketest: &'a mut Smoketest,
-    language: ModuleLanguage,
-    project_dir_name: String,
-    module_name: String,
-    module_source: String,
-    clear: bool,
-}
-
-impl<'a> ModuleSourcePublishBuilder<'a> {
-    pub fn clear(mut self, clear: bool) -> Self {
-        self.clear = clear;
+    pub fn source(
+        mut self,
+        language: ModuleLanguage,
+        project_dir_name: impl Into<String>,
+        module_source: impl Into<String>,
+    ) -> Self {
+        self.source = Some(ModuleSource {
+            language,
+            project_dir_name: project_dir_name.into(),
+            module_source: module_source.into(),
+        });
         self
     }
 
     pub fn run(self) -> Result<String> {
-        self.smoketest.publish_module_source_internal(
-            self.language,
-            &self.project_dir_name,
-            &self.module_name,
-            &self.module_source,
-            self.clear,
+        let PublishBuilder {
+            smoketest,
+            name,
+            clear,
+            break_clients,
+            num_replicas,
+            organization,
+            force,
+            stdin_input,
+            source,
+        } = self;
+
+        if let Some(source) = source {
+            let module_name = name.as_deref().context("No module name provided for source publish")?;
+            return smoketest.publish_module_source_internal(
+                source.language,
+                &source.project_dir_name,
+                module_name,
+                &source.module_source,
+                clear,
+            );
+        }
+
+        smoketest.publish_module_internal(
+            name.as_deref(),
+            clear,
+            break_clients,
+            num_replicas,
+            organization.as_deref(),
+            force,
+            stdin_input.as_deref(),
         )
     }
 }
@@ -1096,23 +1066,6 @@ impl Smoketest {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
-    pub fn publish_source(
-        &mut self,
-        language: ModuleLanguage,
-        project_dir_name: impl Into<String>,
-        module_name: impl Into<String>,
-        module_source: impl Into<String>,
-    ) -> ModuleSourcePublishBuilder<'_> {
-        ModuleSourcePublishBuilder {
-            smoketest: self,
-            language,
-            project_dir_name: project_dir_name.into(),
-            module_name: module_name.into(),
-            module_source: module_source.into(),
-            clear: true,
-        }
-    }
-
     fn publish_module_source_internal(
         &mut self,
         language: ModuleLanguage,
@@ -1380,11 +1333,26 @@ log = "0.4"
         PublishBuilder {
             smoketest: self,
             name: None,
-            options: PublishOptions::default(),
+            clear: false,
+            break_clients: false,
+            num_replicas: None,
+            organization: None,
+            force: true,
+            stdin_input: None,
+            source: None,
         }
     }
 
-    fn publish_module_internal(&mut self, name: Option<&str>, opts: PublishOptions) -> Result<String> {
+    fn publish_module_internal(
+        &mut self,
+        name: Option<&str>,
+        clear: bool,
+        break_clients: bool,
+        num_replicas: Option<u32>,
+        organization: Option<&str>,
+        force: bool,
+        stdin_input: Option<&str>,
+    ) -> Result<String> {
         let start = Instant::now();
 
         // Determine the WASM path - either precompiled or build it
@@ -1427,26 +1395,25 @@ log = "0.4"
         let publish_start = Instant::now();
         let mut args = vec!["publish", "--server", &self.server_url, "--bin-path", &wasm_path_str];
 
-        if opts.force {
+        if force {
             args.push("--yes");
         }
 
-        if opts.clear {
+        if clear {
             args.push("--clear-database");
         }
 
-        if opts.break_clients {
+        if break_clients {
             args.push("--break-clients");
         }
 
-        let num_replicas_owned = opts.num_replicas.map(|n| n.to_string());
+        let num_replicas_owned = num_replicas.map(|n| n.to_string());
         if let Some(n) = num_replicas_owned.as_ref() {
             args.push("--num-replicas");
             args.push(n);
         }
 
-        let org_owned = opts.organization.clone();
-        if let Some(org) = org_owned.as_ref() {
+        if let Some(org) = organization {
             args.push("--organization");
             args.push(org);
         }
@@ -1457,7 +1424,7 @@ log = "0.4"
             args.push(&name_owned);
         }
 
-        let output = match opts.stdin_input.as_deref() {
+        let output = match stdin_input {
             Some(stdin_input) => self.spacetime_with_stdin(&args, stdin_input)?,
             None => self.spacetime(&args)?,
         };
