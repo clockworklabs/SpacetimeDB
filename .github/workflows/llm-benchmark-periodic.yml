@@ -2,11 +2,14 @@ name: Periodic LLM benchmarks
 
 on:
   schedule:
-    # Daily at midnight UTC. Change to '0 */6 * * *' for every 6h,
-    # or '0 */4 * * *' for every 4h.
-    - cron: '0 0 * * *'
+    # Weekly on Monday at midnight UTC.
+    - cron: '0 0 * * 1'
   workflow_dispatch:
     inputs:
+      run_id:
+        description: 'Website-created benchmark run id. When set, run spec is fetched from the website.'
+        required: false
+        default: ''
       models:
         description: 'Models to run (provider:model format, comma-separated, or "all")'
         required: false
@@ -62,6 +65,12 @@ jobs:
 
       - name: Install pnpm
         uses: ./.github/actions/setup-pnpm
+        with:
+          run_install: true
+
+      - name: Build TypeScript SDK
+        run: pnpm build
+        working-directory: crates/bindings-typescript
 
       - name: Build llm-benchmark tool
         run: cargo install --path tools/xtask-llm-benchmark --locked
@@ -82,19 +91,27 @@ jobs:
           LLM_BENCHMARK_UPLOAD_URL: ${{ secrets.LLM_BENCHMARK_UPLOAD_URL }}
           MSBUILDDISABLENODEREUSE: "1"
           DOTNET_CLI_USE_MSBUILD_SERVER: "0"
+          LLM_BENCH_CSHARP_CONCURRENCY: "1"
+          INPUT_RUN_ID: ${{ inputs.run_id || '' }}
           INPUT_LANGUAGES: ${{ inputs.languages || 'rust,csharp,typescript' }}
           INPUT_MODELS: ${{ inputs.models || 'all' }}
           INPUT_MODES: ${{ inputs.modes || 'guidelines,no_context' }}
         run: |
+          RUN_ID="$INPUT_RUN_ID"
           LANGS="$INPUT_LANGUAGES"
           MODELS="$INPUT_MODELS"
           MODES="$INPUT_MODES"
+
+          if [ -n "$RUN_ID" ]; then
+            llm_benchmark run-from-api --run-id "$RUN_ID"
+            exit $?
+          fi
 
           SUCCEEDED=0
           FAILED=0
           for LANG in $(echo "$LANGS" | tr ',' ' '); do
             if [ "$MODELS" = "all" ]; then
-              if llm_benchmark run --lang "$LANG" --modes "$MODES"; then
+              if llm_benchmark run --lang "$LANG" --modes "$MODES" --model-source remote; then
                 SUCCEEDED=$((SUCCEEDED + 1))
               else
                 echo "::warning::Benchmark run failed for lang=$LANG"

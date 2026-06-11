@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_macros, clippy::type_complexity, clippy::enum_variant_names)]
 
 use anyhow::{Context, Result};
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use futures::{StreamExt, TryStreamExt};
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, HashSet};
 use spacetimedb_guard::SpacetimeDbGuard;
@@ -71,10 +71,19 @@ struct Cli {
     command: Commands,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum ModelSource {
+    Static,
+    Remote,
+}
+
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Run benchmarks / build goldens / compute hashes.
     Run(RunArgs),
+
+    /// Run a website-created benchmark spec by id.
+    RunFromApi(RunFromApiArgs),
 
     /// Run AI analysis on existing benchmark failures from the database.
     Analyze(AnalyzeArgs),
@@ -124,6 +133,10 @@ struct RunArgs {
     #[arg(long, num_args = 1..)]
     models: Option<Vec<ModelGroup>>,
 
+    /// Where to resolve models when --models is not provided
+    #[arg(long, value_enum, default_value_t = ModelSource::Static)]
+    model_source: ModelSource,
+
     /// Run benchmarks without uploading results
     #[arg(long)]
     dry_run: bool,
@@ -131,6 +144,19 @@ struct RunArgs {
     /// When used with --dry-run, also generate local markdown analysis files
     #[arg(long, requires = "dry_run")]
     local_analysis: bool,
+
+    #[arg(skip)]
+    route_overrides: Option<Vec<ModelRoute>>,
+
+    #[arg(skip)]
+    run_id: Option<String>,
+}
+
+#[derive(Args, Debug, Clone)]
+struct RunFromApiArgs {
+    /// Website-created llm_benchmark_runs id
+    #[arg(long)]
+    run_id: String,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -202,6 +228,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Run(args) => cmd_run(args),
+        Commands::RunFromApi(args) => cmd_run_from_api(args),
         Commands::Analyze(args) => cmd_analyze(args),
     }
 }
@@ -213,11 +240,63 @@ fn cmd_run(args: RunArgs) -> Result<()> {
     Ok(())
 }
 
+fn cmd_run_from_api(args: RunFromApiArgs) -> Result<()> {
+    let api = ApiClient::from_env()
+        .context("failed to initialize API client")?
+        .context("LLM_BENCHMARK_UPLOAD_URL required for run-from-api")?;
+    if let Err(e) = api.update_run_status(&args.run_id, "running", None) {
+        eprintln!("[warn] failed to mark website benchmark run as running: {e:#}");
+    }
+
+    let result = cmd_run_from_api_inner(&api, &args.run_id);
+    match result {
+        Ok(()) => {
+            if let Err(e) = api.update_run_status(&args.run_id, "succeeded", None) {
+                eprintln!("[warn] failed to mark website benchmark run as succeeded: {e:#}");
+            }
+            Ok(())
+        }
+        Err(e) => {
+            let message = format!("{e:#}");
+            if let Err(status_err) = api.update_run_status(&args.run_id, "failed", Some(&message)) {
+                eprintln!("[warn] failed to mark website benchmark run as failed: {status_err:#}");
+            }
+            Err(e)
+        }
+    }
+}
+
+fn cmd_run_from_api_inner(api: &ApiClient, run_id: &str) -> Result<()> {
+    let spec = api.fetch_run_spec(run_id)?;
+
+    for lang in &spec.languages {
+        run_benchmarks(RunArgs {
+            modes: Some(spec.modes.clone()),
+            lang: *lang,
+            hash_only: false,
+            goldens_only: false,
+            force: false,
+            categories: spec.categories.clone(),
+            tasks: spec.tasks.clone(),
+            providers: None,
+            models: None,
+            model_source: ModelSource::Static,
+            dry_run: false,
+            local_analysis: false,
+            route_overrides: Some(spec.routes.clone()),
+            run_id: Some(spec.run_id.clone()),
+        })?;
+    }
+
+    Ok(())
+}
+
 /// Core benchmark runner used by both `run` and `ci-quickfix`
 fn run_benchmarks(args: RunArgs) -> Result<()> {
     let dry_run = args.dry_run;
     let local_analysis = args.local_analysis;
     let dry_run_id = dry_run.then(|| chrono::Utc::now().format("%Y-%m-%d_%H%M%S").to_string());
+    let should_fetch_remote_routes = should_fetch_remote_routes(&args);
 
     let api_client = if dry_run {
         None
@@ -244,7 +323,16 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
         dry_run,
         local_analysis,
         dry_run_id: dry_run_id.clone(),
+        run_id: args.run_id,
+        route_overrides: args.route_overrides,
     };
+
+    if should_fetch_remote_routes {
+        let api = api_client
+            .as_ref()
+            .context("LLM_BENCHMARK_UPLOAD_URL required when --model-source remote is used")?;
+        config.route_overrides = Some(api.fetch_model_routes()?);
+    }
 
     let bench_root = find_bench_root();
 
@@ -396,10 +484,10 @@ fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
     let provider = make_provider_from_env()?;
 
     let analysis_route = ModelRoute::new(
-        "gpt-4.1-mini",
+        "gpt-5.4-mini",
         xtask_llm_benchmark::llm::types::Vendor::OpenAi,
-        "gpt-4.1-mini",
-        Some("openai/gpt-4.1-mini"),
+        "gpt-5.4-mini",
+        Some("openai/gpt-5.4-mini"),
     );
 
     for ((lang, mode, model), group_failures) in &groups {
@@ -534,6 +622,15 @@ fn short_hash(s: &str) -> &str {
     &s[..s.len().min(12)]
 }
 
+fn should_fetch_remote_routes(args: &RunArgs) -> bool {
+    args.model_source == ModelSource::Remote
+        && args.models.is_none()
+        && args.route_overrides.is_none()
+        && !args.dry_run
+        && !args.hash_only
+        && !args.goldens_only
+}
+
 fn preflight_llm_routes(
     runtime: &Runtime,
     llm_provider: &dyn LlmProvider,
@@ -651,7 +748,12 @@ fn run_mode_benchmarks(
 /// When explicit `openrouter:vendor/model` entries are passed they won't appear in
 /// `default_model_routes`, so we synthesize ad-hoc routes for them here.
 fn filter_routes(config: &RunConfig) -> Vec<ModelRoute> {
-    let mut routes: Vec<ModelRoute> = default_model_routes()
+    let base_routes: Vec<ModelRoute> = config
+        .route_overrides
+        .clone()
+        .unwrap_or_else(|| default_model_routes().to_vec());
+
+    let mut routes: Vec<ModelRoute> = base_routes
         .iter()
         .filter(|r| config.providers_filter.as_ref().is_none_or(|f| f.contains(&r.vendor)))
         .filter(|r| match &config.model_filter {
@@ -710,11 +812,13 @@ async fn run_many_routes_for_mode(
     let dry_run = config.dry_run;
     let local_analysis = config.local_analysis;
     let dry_run_id = config.dry_run_id.clone();
+    let run_id = config.run_id.clone();
 
     futures::stream::iter(routes.iter().map(|route| {
         let host = host.clone();
         let api_client = api_client.clone();
         let dry_run_id = dry_run_id.clone();
+        let run_id = run_id.clone();
 
         async move {
             println!("\u{2192} running {}", route.display_name);
@@ -733,6 +837,7 @@ async fn run_many_routes_for_mode(
                 dry_run,
                 local_analysis,
                 dry_run_id,
+                run_id,
             };
 
             let outcomes = run_selected_or_all_for_model_async_for_lang(&per).await?;
@@ -806,8 +911,8 @@ fn find_bench_root() -> PathBuf {
     start.join("src").join("benchmarks")
 }
 
-fn collect_task_numbers_in_categories(bench_root: &Path, cats: &HashSet<String>) -> Result<HashSet<u32>> {
-    let mut nums = HashSet::new();
+fn collect_task_names_in_categories(bench_root: &Path, cats: &HashSet<String>) -> Result<HashSet<String>> {
+    let mut tasks = HashSet::new();
     for c in cats {
         let dir = bench_root.join(c);
         if !dir.is_dir() {
@@ -818,24 +923,38 @@ fn collect_task_numbers_in_categories(bench_root: &Path, cats: &HashSet<String>)
             if !entry.file_type()?.is_dir() {
                 continue;
             }
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if let Some(rest) = name.strip_prefix("t_")
-                && let Some((num_str, _)) = rest.split_once('_')
-                && num_str.len() == 3
-                && let Ok(n) = num_str.parse::<u32>()
-            {
-                nums.insert(n);
-            }
+            tasks.insert(entry.file_name().to_string_lossy().to_ascii_lowercase());
         }
     }
-    Ok(nums)
+    Ok(tasks)
 }
 
-fn normalize_numeric_selectors(raw: &[String]) -> Vec<u32> {
-    raw.iter()
-        .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()))
-        .filter_map(|s| s.parse::<u32>().ok())
-        .collect()
+fn task_selector_matches_any(selector: &str, allowed_tasks: &HashSet<String>) -> bool {
+    allowed_tasks.iter().any(|task| task.starts_with(selector))
+}
+
+fn normalize_task_filter_selector(raw: &str) -> Result<String> {
+    let s = raw.trim().to_ascii_lowercase();
+    if s.is_empty() {
+        anyhow::bail!("empty task selector");
+    }
+    if let Some(rest) = s.strip_prefix("t_") {
+        if rest.chars().all(|c| c.is_ascii_digit()) {
+            let n: u32 = rest.parse()?;
+            return Ok(format!("t_{:03}", n));
+        }
+        if rest.chars().next().is_some_and(|c| c.is_ascii_digit())
+            && rest.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            return Ok(s);
+        }
+        anyhow::bail!("invalid task selector: {raw}");
+    }
+    if s.chars().all(|c| c.is_ascii_digit()) {
+        let n: u32 = s.parse()?;
+        return Ok(format!("t_{:03}", n));
+    }
+    anyhow::bail!("invalid task selector: {raw}")
 }
 
 fn apply_category_filter(
@@ -849,23 +968,126 @@ fn apply_category_filter(
             Ok(selectors.map(|s| s.to_vec()))
         }
         Some(cats) => {
-            let allowed = collect_task_numbers_in_categories(bench_root, cats)?;
-            let out_nums: Vec<u32> = match selectors {
+            let allowed = collect_task_names_in_categories(bench_root, cats)?;
+            let mut out: Vec<String> = match selectors {
                 Some(user) => {
-                    let nums = normalize_numeric_selectors(user);
-                    nums.into_iter().filter(|n| allowed.contains(n)).collect()
+                    let mut selected = Vec::new();
+                    for selector in user {
+                        let normalized = normalize_task_filter_selector(selector)?;
+                        if task_selector_matches_any(&normalized, &allowed) {
+                            selected.push(normalized);
+                        }
+                    }
+                    selected
                 }
                 None => {
-                    let mut v: Vec<u32> = allowed.into_iter().collect();
+                    let mut v: Vec<String> = allowed.into_iter().collect();
                     v.sort_unstable();
                     v
                 }
             };
-            if out_nums.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(out_nums.into_iter().map(|n| n.to_string()).collect()))
+            out.sort();
+            out.dedup();
+            if out.is_empty() {
+                anyhow::bail!("no tasks matched category/task filters");
             }
+            Ok(Some(out))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn base_run_args() -> RunArgs {
+        RunArgs {
+            modes: None,
+            lang: Lang::Rust,
+            hash_only: false,
+            goldens_only: false,
+            force: false,
+            categories: None,
+            tasks: None,
+            providers: None,
+            models: None,
+            model_source: ModelSource::Static,
+            dry_run: false,
+            local_analysis: false,
+            route_overrides: None,
+            run_id: None,
+        }
+    }
+
+    fn base_config(route_overrides: Option<Vec<ModelRoute>>) -> RunConfig {
+        RunConfig {
+            modes: None,
+            hash_only: false,
+            goldens_only: false,
+            lang: Lang::Rust,
+            providers_filter: None,
+            selectors: None,
+            force: false,
+            categories: None,
+            model_filter: None,
+            host: None,
+            api_client: None,
+            dry_run: false,
+            local_analysis: false,
+            dry_run_id: None,
+            run_id: None,
+            route_overrides,
+        }
+    }
+
+    #[test]
+    fn remote_model_source_fetches_only_for_implicit_models() {
+        let mut args = base_run_args();
+        args.model_source = ModelSource::Remote;
+        assert!(should_fetch_remote_routes(&args));
+
+        args.models = Some(vec![ModelGroup {
+            vendor: Vendor::OpenAi,
+            models: vec!["gpt-test".to_string()],
+        }]);
+        assert!(!should_fetch_remote_routes(&args));
+    }
+
+    #[test]
+    fn filter_routes_uses_remote_route_override() {
+        let remote_route = ModelRoute::new(
+            "Remote Model",
+            Vendor::OpenRouter,
+            "openai/remote-model",
+            Some("openai/remote-model"),
+        );
+        let config = base_config(Some(vec![remote_route]));
+
+        let routes = filter_routes(&config);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].display_name, "Remote Model");
+        assert_eq!(routes[0].api_model, "openai/remote-model");
+    }
+
+    #[test]
+    fn category_filter_accepts_full_task_ids() {
+        let root = std::env::temp_dir().join(format!(
+            "llm-benchmark-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(root.join("basics").join("t_001_basic_tables")).unwrap();
+        fs::create_dir_all(root.join("schema").join("t_012_product_type")).unwrap();
+
+        let mut categories = HashSet::new();
+        categories.insert("basics".to_string());
+        let selectors = vec!["t_001_basic_tables".to_string(), "t_012_product_type".to_string()];
+
+        let filtered = apply_category_filter(&root, Some(&categories), Some(&selectors)).unwrap();
+        fs::remove_dir_all(&root).unwrap();
+
+        assert_eq!(filtered, Some(vec!["t_001_basic_tables".to_string()]));
     }
 }
