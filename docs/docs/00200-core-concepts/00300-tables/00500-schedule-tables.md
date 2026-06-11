@@ -360,26 +360,18 @@ ctx.db[reminder].insert(Reminder{
 
 ## How It Works
 
-1. Insert a row with a `ScheduleAt` value.
-2. SpacetimeDB adds that row to the scheduler's in-memory queue.
-3. When the time arrives, SpacetimeDB calls the scheduled reducer or procedure with the row as a parameter.
-4. For one-shot schedules, SpacetimeDB removes the row automatically. Interval schedules remain in the table and are added back to the queue for their next execution.
+1. **Insert a row** with a `ScheduleAt` value
+2. **SpacetimeDB monitors** the schedule table
+3. **When the time arrives**, the specified reducer/procedure is automatically called with the row as a parameter
+4. **The row is typically deleted** or updated by the reducer after processing
 
 ### Row Lifecycle
 
-The schedule row is always passed to the scheduled reducer or procedure as an argument. Read scheduled row data from that argument, not by querying the schedule table from inside the scheduled function.
+SpacetimeDB passes the schedule row to the scheduled reducer or procedure as an argument. One-shot schedule rows are removed at different times depending on the kind of function being called:
 
-SpacetimeDB removes one-shot schedule rows at different times depending on the kind of function being called:
-
-- Scheduled reducers receive the row as an argument and can still find the row in the schedule table while the reducer runs. After the reducer finishes, SpacetimeDB removes the one-shot row in a separate internal transaction.
-- Scheduled procedures receive the row as an argument, but SpacetimeDB removes the one-shot row before calling the procedure. A scheduled procedure cannot find or update its own one-shot schedule row by querying the schedule table.
-- Interval rows are not removed after execution. SpacetimeDB leaves them in the schedule table and schedules their next execution from the interval value.
-
-This difference prevents SpacetimeDB from retrying a scheduled procedure after it may already have performed side effects. Scheduled reducers use the normal reducer transaction model, while scheduled procedures follow the usual [procedure transaction rules](../00200-functions/00400-procedures.md#accessing-the-database): they do not automatically run in a database transaction, and procedure code must explicitly open a transaction to read or modify database state.
-
-### Canceling Queued Schedules
-
-The scheduler keeps an in-memory queue in addition to the rows stored in the database. Inserting or updating a schedule row adds a queue entry. Deleting a schedule row cancels the schedule from the database, but it may not immediately remove the already queued entry from memory. If that queued entry reaches its scheduled time after the row has been deleted, SpacetimeDB checks the table, sees that the row no longer exists, and exits without calling the scheduled function.
+- Scheduled procedures delete the row before execution, so `schedule_table.find(scheduled_id)` returns `null` and `.update()` fails.
+- Scheduled reducers delete the row after execution, so the row is visible in the schedule table while the reducer runs.
+- Interval schedules are never deleted automatically. Only one-shot schedules are removed after they run.
 
 ## Use Cases
 
