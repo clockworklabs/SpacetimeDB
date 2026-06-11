@@ -394,6 +394,7 @@ impl Error {
 
 fn connection_closed_error(num: Option<u32>, num_received: u32) -> Error {
     match num {
+        // this is necessarily an error, because if we had received all the updates then we would have already closed the connection ourselves and would not have reached this point
         Some(expected) => Error::UpdateLimitNotReached {
             expected,
             received: num_received,
