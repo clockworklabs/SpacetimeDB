@@ -515,6 +515,198 @@ impl Default for PublishOptions {
     }
 }
 
+impl PublishOptions {
+    pub fn clear(mut self, clear: bool) -> Self {
+        self.clear = clear;
+        self
+    }
+
+    pub fn break_clients(mut self, break_clients: bool) -> Self {
+        self.break_clients = break_clients;
+        self
+    }
+
+    pub fn num_replicas(mut self, num_replicas: u32) -> Self {
+        self.num_replicas = Some(num_replicas);
+        self
+    }
+
+    pub fn organization(mut self, organization: impl Into<String>) -> Self {
+        self.organization = Some(organization.into());
+        self
+    }
+
+    pub fn force(mut self, force: bool) -> Self {
+        self.force = force;
+        self
+    }
+
+    pub fn stdin(mut self, stdin_input: impl Into<String>) -> Self {
+        self.stdin_input = Some(stdin_input.into());
+        self
+    }
+}
+
+pub struct PublishBuilder<'a> {
+    smoketest: &'a mut Smoketest,
+    name: Option<String>,
+    options: PublishOptions,
+}
+
+impl<'a> PublishBuilder<'a> {
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    pub fn clear(mut self, clear: bool) -> Self {
+        self.options.clear = clear;
+        self
+    }
+
+    pub fn break_clients(mut self, break_clients: bool) -> Self {
+        self.options.break_clients = break_clients;
+        self
+    }
+
+    pub fn num_replicas(mut self, num_replicas: u32) -> Self {
+        self.options.num_replicas = Some(num_replicas);
+        self
+    }
+
+    pub fn organization(mut self, organization: impl Into<String>) -> Self {
+        self.options.organization = Some(organization.into());
+        self
+    }
+
+    pub fn force(mut self, force: bool) -> Self {
+        self.options.force = force;
+        self
+    }
+
+    pub fn stdin(mut self, stdin_input: impl Into<String>) -> Self {
+        self.options.force = false;
+        self.options.stdin_input = Some(stdin_input.into());
+        self
+    }
+
+    pub fn options(mut self, options: PublishOptions) -> Self {
+        self.options = options;
+        self
+    }
+
+    pub fn current_database(mut self) -> Result<Self> {
+        let identity = self
+            .smoketest
+            .database_identity
+            .as_ref()
+            .context("No database published yet")?
+            .clone();
+        self.name = Some(identity);
+        Ok(self)
+    }
+
+    pub fn run(self) -> Result<String> {
+        self.smoketest
+            .publish_module_internal(self.name.as_deref(), self.options)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum ModuleLanguage {
+    TypeScript,
+    CSharp,
+    Cpp,
+}
+
+pub struct ModuleSourcePublishBuilder<'a> {
+    smoketest: &'a mut Smoketest,
+    language: ModuleLanguage,
+    project_dir_name: String,
+    module_name: String,
+    module_source: String,
+    clear: bool,
+}
+
+impl<'a> ModuleSourcePublishBuilder<'a> {
+    pub fn clear(mut self, clear: bool) -> Self {
+        self.clear = clear;
+        self
+    }
+
+    pub fn run(self) -> Result<String> {
+        self.smoketest.publish_module_source_internal(
+            self.language,
+            &self.project_dir_name,
+            &self.module_name,
+            &self.module_source,
+            self.clear,
+        )
+    }
+}
+
+pub struct SubscribeBuilder<'a> {
+    smoketest: &'a Smoketest,
+    database: Option<String>,
+    queries: Vec<String>,
+    expected_rows: usize,
+    confirmed: Option<bool>,
+}
+
+impl<'a> SubscribeBuilder<'a> {
+    pub fn database(mut self, database: impl Into<String>) -> Self {
+        self.database = Some(database.into());
+        self
+    }
+
+    pub fn expect_rows(mut self, expected_rows: usize) -> Self {
+        self.expected_rows = expected_rows;
+        self
+    }
+
+    pub fn confirmed(mut self, confirmed: bool) -> Self {
+        self.confirmed = Some(confirmed);
+        self
+    }
+
+    pub fn run(self) -> Result<Vec<serde_json::Value>> {
+        let start = Instant::now();
+        let owned_identity;
+        let database = if let Some(database) = self.database.as_deref() {
+            database
+        } else {
+            owned_identity = self
+                .smoketest
+                .database_identity
+                .as_ref()
+                .context("No database published")?
+                .clone();
+            &owned_identity
+        };
+        let queries = self.queries.iter().map(String::as_str).collect::<Vec<_>>();
+        self.smoketest
+            .subscribe_on_impl(database, &queries, self.expected_rows, self.confirmed, start)
+    }
+
+    pub fn background(self) -> Result<SubscriptionHandle> {
+        let owned_identity;
+        let database = if let Some(database) = self.database.as_deref() {
+            database
+        } else {
+            owned_identity = self
+                .smoketest
+                .database_identity
+                .as_ref()
+                .context("No database published")?
+                .clone();
+            &owned_identity
+        };
+        let queries = self.queries.iter().map(String::as_str).collect::<Vec<_>>();
+        self.smoketest
+            .subscribe_background_on_impl(database, &queries, self.expected_rows, self.confirmed)
+    }
+}
+
 /// Builder for creating `Smoketest` instances.
 pub struct SmoketestBuilder {
     module_code: Option<String>,
@@ -690,7 +882,7 @@ pub fn noop(_ctx: &ReducerContext) {}
         }
 
         if self.autopublish {
-            smoketest.publish_module().expect("Failed to publish module");
+            smoketest.publish().run().expect("Failed to publish module");
         }
 
         eprintln!("[TIMING] total build: {:?}", build_start.elapsed());
@@ -904,28 +1096,45 @@ impl Smoketest {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
-    /// Initializes, writes, and publishes a TypeScript module from source.
-    ///
-    /// Will publish with the `--clear-database` flag.
-    ///
-    /// The module is initialized at `<test_project_dir>/<project_dir_name>/spacetimedb`.
-    /// On success this updates `self.database_identity`.
-    pub fn publish_typescript_module_source(
+    pub fn publish_source(
         &mut self,
+        language: ModuleLanguage,
+        project_dir_name: impl Into<String>,
+        module_name: impl Into<String>,
+        module_source: impl Into<String>,
+    ) -> ModuleSourcePublishBuilder<'_> {
+        ModuleSourcePublishBuilder {
+            smoketest: self,
+            language,
+            project_dir_name: project_dir_name.into(),
+            module_name: module_name.into(),
+            module_source: module_source.into(),
+            clear: true,
+        }
+    }
+
+    fn publish_module_source_internal(
+        &mut self,
+        language: ModuleLanguage,
         project_dir_name: &str,
         module_name: &str,
         module_source: &str,
+        clear: bool,
     ) -> Result<String> {
-        self.publish_typescript_module_source_clear(project_dir_name, module_name, module_source, true)
+        match language {
+            ModuleLanguage::TypeScript => {
+                self.publish_typescript_module_source_internal(project_dir_name, module_name, module_source, clear)
+            }
+            ModuleLanguage::CSharp => {
+                self.publish_csharp_module_source_internal(project_dir_name, module_name, module_source, clear)
+            }
+            ModuleLanguage::Cpp => {
+                self.publish_cpp_module_source_internal(project_dir_name, module_name, module_source, clear)
+            }
+        }
     }
 
-    /// Initializes, writes, and publishes a TypeScript module from source.
-    ///
-    /// If `clear` is `true`, this will publish with the `--clear-database` flag.
-    ///
-    /// The module is initialized at `<test_project_dir>/<project_dir_name>/spacetimedb`.
-    /// On success this updates `self.database_identity`.
-    pub fn publish_typescript_module_source_clear(
+    fn publish_typescript_module_source_internal(
         &mut self,
         project_dir_name: &str,
         module_name: &str,
@@ -980,15 +1189,12 @@ impl Smoketest {
         Ok(identity)
     }
 
-    /// Initializes, writes, and publishes a C# module from source.
-    ///
-    /// The module is initialized at `<test_project_dir>/<project_dir_name>/spacetimedb`.
-    /// On success this updates `self.database_identity`.
-    pub fn publish_csharp_module_source(
+    fn publish_csharp_module_source_internal(
         &mut self,
         project_dir_name: &str,
         module_name: &str,
         module_source: &str,
+        clear: bool,
     ) -> Result<String> {
         let module_root = self.project_dir.path().join(project_dir_name);
         let module_root_str = module_root.to_str().context("Invalid C# project path")?;
@@ -1007,16 +1213,19 @@ impl Smoketest {
         csharp::prepare_csharp_module(&module_path)?;
 
         let module_path_str = module_path.to_str().context("Invalid C# module path")?;
-        let publish_output = self.spacetime(&[
+        let mut publish_args = vec![
             "publish",
             "--server",
             &self.server_url,
             "--module-path",
             module_path_str,
             "--yes",
-            "--clear-database",
-            module_name,
-        ])?;
+        ];
+        if clear {
+            publish_args.push("--clear-database");
+        }
+        publish_args.push(module_name);
+        let publish_output = self.spacetime(&publish_args)?;
         csharp::verify_csharp_module_restore(&module_path)?;
 
         let identity = parse_identity_from_publish_output(&publish_output)?;
@@ -1025,15 +1234,12 @@ impl Smoketest {
         Ok(identity)
     }
 
-    /// Writes and publishes a C++ module from source.
-    ///
-    /// The module is created at `<test_project_dir>/<project_dir_name>`.
-    /// On success this updates `self.database_identity`.
-    pub fn publish_cpp_module_source(
+    fn publish_cpp_module_source_internal(
         &mut self,
         project_dir_name: &str,
         module_name: &str,
         module_source: &str,
+        clear: bool,
     ) -> Result<String> {
         let module_path = self.project_dir.path().join(project_dir_name);
         let src_dir = module_path.join("src");
@@ -1050,16 +1256,19 @@ impl Smoketest {
         fs::write(src_dir.join("lib.cpp"), module_source).context("Failed to write C++ module code")?;
 
         let module_path_str = module_path.to_str().context("Invalid C++ module path")?;
-        let publish_output = self.spacetime(&[
+        let mut publish_args = vec![
             "publish",
             "--server",
             &self.server_url,
             "--module-path",
             module_path_str,
             "--yes",
-            "--clear-database",
-            module_name,
-        ])?;
+        ];
+        if clear {
+            publish_args.push("--clear-database");
+        }
+        publish_args.push(module_name);
+        let publish_output = self.spacetime(&publish_args)?;
 
         let identity = parse_identity_from_publish_output(&publish_output)?;
         self.database_identity = Some(identity.clone());
@@ -1167,91 +1376,15 @@ log = "0.4"
         output
     }
 
-    /// Publishes the module and stores the database identity.
-    pub fn publish_module(&mut self) -> Result<String> {
-        self.publish_module_internal_ext(None, PublishOptions::default())
+    pub fn publish(&mut self) -> PublishBuilder<'_> {
+        PublishBuilder {
+            smoketest: self,
+            name: None,
+            options: PublishOptions::default(),
+        }
     }
 
-    /// Publishes the module with a specific name and optional clear flag.
-    ///
-    /// If `name` is provided, the database will be published with that name.
-    /// If `clear` is true, the database will be cleared before publishing.
-    pub fn publish_module_named(&mut self, name: &str, clear: bool) -> Result<String> {
-        self.publish_module_internal_ext(
-            Some(name),
-            PublishOptions {
-                clear,
-                ..PublishOptions::default()
-            },
-        )
-    }
-
-    pub fn publish_module_named_ext(&mut self, name: &str, opts: PublishOptions) -> Result<String> {
-        self.publish_module_internal_ext(Some(name), opts)
-    }
-
-    /// Re-publishes the module to the existing database identity with optional clear.
-    ///
-    /// This is useful for testing auto-migrations where you want to update
-    /// the module without clearing the database.
-    pub fn publish_module_clear(&mut self, clear: bool) -> Result<String> {
-        let identity = self
-            .database_identity
-            .as_ref()
-            .context("No database published yet")?
-            .clone();
-        self.publish_module_internal_ext(
-            Some(&identity),
-            PublishOptions {
-                clear,
-                ..PublishOptions::default()
-            },
-        )
-    }
-
-    /// Publishes the module with name, clear, and break_clients options.
-    pub fn publish_module_with_options(&mut self, name: &str, clear: bool, break_clients: bool) -> Result<String> {
-        self.publish_module_internal_ext(
-            Some(name),
-            PublishOptions {
-                clear,
-                break_clients,
-                ..PublishOptions::default()
-            },
-        )
-    }
-
-    /// Publishes the module and allows supplying stdin input to the CLI.
-    ///
-    /// Useful for interactive publish prompts which require typed acknowledgements.
-    /// Note: does NOT pass `--yes` so that interactive prompts are not suppressed.
-    pub fn publish_module_with_stdin(&mut self, name: &str, stdin_input: &str) -> Result<String> {
-        self.publish_module_internal_ext(
-            Some(name),
-            PublishOptions {
-                force: false,
-                stdin_input: Some(stdin_input.to_string()),
-                ..PublishOptions::default()
-            },
-        )
-    }
-
-    /// Publishes the module without passing `--yes`, so interactive prompts are not suppressed.
-    pub fn publish_module_named_no_force(&mut self, name: &str) -> Result<String> {
-        self.publish_module_internal_ext(
-            Some(name),
-            PublishOptions {
-                force: false,
-                ..PublishOptions::default()
-            },
-        )
-    }
-
-    pub fn publish_module_with_options_ext(&mut self, name: &str, opts: PublishOptions) -> Result<String> {
-        self.publish_module_internal_ext(Some(name), opts)
-    }
-
-    fn publish_module_internal_ext(&mut self, name: Option<&str>, opts: PublishOptions) -> Result<String> {
+    fn publish_module_internal(&mut self, name: Option<&str>, opts: PublishOptions) -> Result<String> {
         let start = Instant::now();
 
         // Determine the WASM path - either precompiled or build it
