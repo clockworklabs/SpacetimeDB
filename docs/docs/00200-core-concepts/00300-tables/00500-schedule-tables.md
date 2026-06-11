@@ -365,6 +365,14 @@ ctx.db[reminder].insert(Reminder{
 3. **When the time arrives**, the specified reducer/procedure is automatically called with the row as a parameter
 4. **The row is typically deleted** or updated by the reducer after processing
 
+### Row Lifecycle
+
+SpacetimeDB passes the schedule row to the scheduled reducer or procedure as an argument. One-shot schedule rows are removed at different times depending on the kind of function being called:
+
+- Scheduled procedures delete the row before execution, so `schedule_table.find(scheduled_id)` returns `null` and `.update()` fails.
+- Scheduled reducers delete the row after execution, so the row is visible in the schedule table while the reducer runs.
+- Interval schedules are never deleted automatically. Only one-shot schedules are removed after they run.
+
 ## Use Cases
 
 - **Reminders and notifications** - Schedule messages to be sent at specific times
