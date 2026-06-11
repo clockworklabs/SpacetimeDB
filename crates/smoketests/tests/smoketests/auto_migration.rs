@@ -343,11 +343,9 @@ fn test_add_table_columns() {
     // Subscribe to person table changes multiple times to simulate active clients
     let mut subs = Vec::with_capacity(NUM_SUBSCRIBERS);
     for _ in 0..NUM_SUBSCRIBERS {
-        // We need unconfirmed reads for the updates to arrive properly.
-        // Otherwise, there's a race between module teardown in publish, vs subscribers
-        // getting the row deletion they expect.
+        // The migration below should disconnect all existing subscribers.
         subs.push(
-            test.subscribe_background_unconfirmed(&["select * from person"], 5)
+            test.subscribe_background_until_closed(&["select * from person"])
                 .unwrap(),
         );
     }
@@ -389,9 +387,8 @@ fn test_add_table_columns() {
     test.call("add_person", &["Robert2"]).unwrap();
 
     // Validate all subscribers were disconnected after first upgrade
-    for (i, sub) in subs.into_iter().enumerate() {
-        let rows = sub.collect().unwrap();
-        assert_eq!(rows.len(), 2, "Subscriber {i} received unexpected rows: {rows:?}");
+    for sub in subs {
+        sub.collect().unwrap();
     }
 
     // Second upgrade
