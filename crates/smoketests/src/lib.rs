@@ -518,42 +518,58 @@ struct ModuleSource {
 }
 
 impl<'a> PublishBuilder<'a> {
+    /// Publishes the module with a specific database name.
     pub fn name(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
         self
     }
 
+    /// If `clear` is true, the database will be cleared before publishing.
     pub fn clear(mut self, clear: bool) -> Self {
         self.clear = clear;
         self
     }
 
+    /// Publishes with the `--break-clients` flag.
     pub fn break_clients(mut self, break_clients: bool) -> Self {
         self.break_clients = break_clients;
         self
     }
 
+    /// Publishes with a specific replica count.
     pub fn num_replicas(mut self, num_replicas: u32) -> Self {
         self.num_replicas = Some(num_replicas);
         self
     }
 
+    /// Publishes into a specific organization.
     pub fn organization(mut self, organization: impl Into<String>) -> Self {
         self.organization = Some(organization.into());
         self
     }
 
+    /// Controls whether publish passes `--yes`.
+    ///
+    /// Set to false when testing interactive publish prompts.
     pub fn force(mut self, force: bool) -> Self {
         self.force = force;
         self
     }
 
+    /// Publishes the module and supplies stdin input to the CLI.
+    ///
+    /// Useful for interactive publish prompts which require typed acknowledgements.
+    /// This does not pass `--yes` so that interactive prompts are not suppressed.
     pub fn stdin(mut self, stdin_input: impl Into<String>) -> Self {
         self.force = false;
         self.stdin_input = Some(stdin_input.into());
         self
     }
 
+    /// Re-publishes the module to the existing database identity.
+    ///
+    /// This is useful for testing auto-migrations where you want to update
+    /// the module without clearing the database.
     pub fn current_database(mut self) -> Result<Self> {
         let identity = self
             .smoketest
@@ -565,6 +581,10 @@ impl<'a> PublishBuilder<'a> {
         Ok(self)
     }
 
+    /// Initializes, writes, and publishes a module from source.
+    ///
+    /// The module is created under `<test_project_dir>/<project_dir_name>`.
+    /// On success this updates `self.database_identity`.
     pub fn source(
         mut self,
         language: ModuleLanguage,
@@ -579,6 +599,7 @@ impl<'a> PublishBuilder<'a> {
         self
     }
 
+    /// Publishes the module and stores the database identity.
     pub fn run(self) -> Result<String> {
         let PublishBuilder {
             smoketest,
@@ -637,21 +658,28 @@ pub struct SubscribeBuilder<'a> {
 }
 
 impl<'a> SubscribeBuilder<'a> {
+    /// Starts the subscription against a specific database.
     pub fn database(mut self, database: impl Into<String>) -> Self {
         self.database = Some(database.into());
         self
     }
 
+    /// Waits for this many updates before returning.
     pub fn expect_rows(mut self, expected_rows: usize) -> Self {
         self.expected_rows = expected_rows;
         self
     }
 
+    /// Sets the `--confirmed` flag for the subscription.
     pub fn confirmed(mut self, confirmed: bool) -> Self {
         self.confirmed = Some(confirmed);
         self
     }
 
+    /// Starts a subscription and waits for the expected number of updates.
+    ///
+    /// Returns the updates as JSON values. For tests that need to perform
+    /// actions while subscribed, use `background` instead.
     pub fn run(self) -> Result<Vec<serde_json::Value>> {
         let start = Instant::now();
         let owned_identity;
@@ -671,6 +699,10 @@ impl<'a> SubscribeBuilder<'a> {
             .subscribe_on_impl(database, &queries, self.expected_rows, self.confirmed, start)
     }
 
+    /// Starts a subscription in the background and returns a handle.
+    ///
+    /// This matches Python's subscribe semantics: start subscription first,
+    /// perform actions, then call the handle to collect results.
     pub fn background(self) -> Result<SubscriptionHandle> {
         let owned_identity;
         let database = if let Some(database) = self.database.as_deref() {
@@ -1321,6 +1353,9 @@ log = "0.4"
         output
     }
 
+    /// Creates a builder for publishing the module.
+    ///
+    /// By default, publish stores the database identity and passes `--yes`.
     pub fn publish(&mut self) -> PublishBuilder<'_> {
         PublishBuilder {
             smoketest: self,
@@ -1677,6 +1712,10 @@ log = "0.4"
         Ok(ApiResponse { status_code, body })
     }
 
+    /// Creates a builder for starting a subscription.
+    ///
+    /// By default, this subscribes to the current database, waits for one update,
+    /// and leaves the CLI `--confirmed` flag unset.
     pub fn subscribe(&self, queries: &[&str]) -> SubscribeBuilder<'_> {
         SubscribeBuilder {
             smoketest: self,
