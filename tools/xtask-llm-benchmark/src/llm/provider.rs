@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use std::collections::HashMap;
 
 use crate::llm::clients::{
     AnthropicClient, DeepSeekClient, GoogleGeminiClient, LlmClient, MetaLlamaClient, OpenAiClient, OpenRouterClient,
@@ -16,15 +17,7 @@ pub trait LlmProvider: Send + Sync {
 }
 
 pub struct RouterProvider {
-    pub openai: Option<OpenAiClient>,
-    pub anthropic: Option<AnthropicClient>,
-    pub google: Option<GoogleGeminiClient>,
-    pub xai: Option<XaiGrokClient>,
-    pub deepseek: Option<DeepSeekClient>,
-    pub meta: Option<MetaLlamaClient>,
-    /// OpenRouter client used as a unified fallback when a direct vendor client
-    /// is not configured. Set via `OPENROUTER_API_KEY`.
-    pub openrouter: Option<OpenRouterClient>,
+    clients: HashMap<Vendor, Box<dyn LlmClient>>,
     pub force: Option<Vendor>,
 }
 
@@ -40,16 +33,31 @@ impl RouterProvider {
         openrouter: Option<OpenRouterClient>,
         force: Option<Vendor>,
     ) -> Self {
-        Self {
-            openai,
-            anthropic,
-            google,
-            xai,
-            deepseek,
-            meta,
-            openrouter,
-            force,
+        let mut clients: HashMap<Vendor, Box<dyn LlmClient>> = HashMap::new();
+
+        if let Some(client) = openai {
+            clients.insert(Vendor::OpenAi, Box::new(client));
         }
+        if let Some(client) = anthropic {
+            clients.insert(Vendor::Anthropic, Box::new(client));
+        }
+        if let Some(client) = google {
+            clients.insert(Vendor::Google, Box::new(client));
+        }
+        if let Some(client) = xai {
+            clients.insert(Vendor::Xai, Box::new(client));
+        }
+        if let Some(client) = deepseek {
+            clients.insert(Vendor::DeepSeek, Box::new(client));
+        }
+        if let Some(client) = meta {
+            clients.insert(Vendor::Meta, Box::new(client));
+        }
+        if let Some(client) = openrouter {
+            clients.insert(Vendor::OpenRouter, Box::new(client));
+        }
+
+        Self { clients, force }
     }
 }
 
@@ -118,27 +126,8 @@ impl RouterProvider {
             return self.resolve_openrouter(model.to_string(), None, false);
         }
 
-        match vendor {
-            Vendor::OpenAi => {
-                self.resolve_direct_or_openrouter(self.openai.as_ref().map(|c| c as &dyn LlmClient), route, vendor)
-            }
-            Vendor::Anthropic => {
-                self.resolve_direct_or_openrouter(self.anthropic.as_ref().map(|c| c as &dyn LlmClient), route, vendor)
-            }
-            Vendor::Google => {
-                self.resolve_direct_or_openrouter(self.google.as_ref().map(|c| c as &dyn LlmClient), route, vendor)
-            }
-            Vendor::Xai => {
-                self.resolve_direct_or_openrouter(self.xai.as_ref().map(|c| c as &dyn LlmClient), route, vendor)
-            }
-            Vendor::DeepSeek => {
-                self.resolve_direct_or_openrouter(self.deepseek.as_ref().map(|c| c as &dyn LlmClient), route, vendor)
-            }
-            Vendor::Meta => {
-                self.resolve_direct_or_openrouter(self.meta.as_ref().map(|c| c as &dyn LlmClient), route, vendor)
-            }
-            Vendor::OpenRouter => unreachable!("handled above"),
-        }
+        let direct = self.clients.get(&vendor).map(|client| client.as_ref());
+        self.resolve_direct_or_openrouter(direct, route, vendor)
     }
 
     fn resolve_direct_or_openrouter<'a>(
@@ -171,8 +160,9 @@ impl RouterProvider {
         search_enabled: bool,
     ) -> Result<ResolvedClient<'a>> {
         let client = self
-            .openrouter
-            .as_ref()
+            .clients
+            .get(&Vendor::OpenRouter)
+            .map(|client| client.as_ref())
             .context("OpenRouter client not configured (set OPENROUTER_API_KEY)")?;
 
         Ok(ResolvedClient {
