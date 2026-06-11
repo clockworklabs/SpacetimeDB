@@ -518,6 +518,20 @@ struct ModuleSource {
 }
 
 impl<'a> PublishBuilder<'a> {
+    fn new(smoketest: &'a mut Smoketest) -> Self {
+        Self {
+            smoketest,
+            name: None,
+            clear: false,
+            break_clients: false,
+            num_replicas: None,
+            organization: None,
+            force: true,
+            stdin_input: None,
+            source: None,
+        }
+    }
+
     pub fn name(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
         self
@@ -637,6 +651,16 @@ pub struct SubscribeBuilder<'a> {
 }
 
 impl<'a> SubscribeBuilder<'a> {
+    fn new(smoketest: &'a Smoketest, queries: &[&str]) -> Self {
+        Self {
+            smoketest,
+            database: None,
+            queries: queries.iter().map(|query| query.to_string()).collect(),
+            expected_rows: 1,
+            confirmed: None,
+        }
+    }
+
     pub fn database(mut self, database: impl Into<String>) -> Self {
         self.database = Some(database.into());
         self
@@ -1322,19 +1346,18 @@ log = "0.4"
     }
 
     pub fn publish(&mut self) -> PublishBuilder<'_> {
-        PublishBuilder {
-            smoketest: self,
-            name: None,
-            clear: false,
-            break_clients: false,
-            num_replicas: None,
-            organization: None,
-            force: true,
-            stdin_input: None,
-            source: None,
-        }
+        PublishBuilder::new(self)
     }
 
+    /// Publishes the module and stores the database identity.
+    ///
+    /// If `name` is provided, the database will be published with that name.
+    /// If `clear` is true, the database will be cleared before publishing.
+    /// If `force` is false, the publish command will not pass `--yes`, so interactive prompts are not suppressed.
+    /// If `stdin_input` is provided, it will be passed to the CLI for interactive prompts.
+    ///
+    /// When `name` is an existing database identity, this re-publishes to that database, which is useful for testing
+    /// auto-migrations where you want to update the module without clearing the database.
     #[allow(clippy::too_many_arguments)]
     fn publish_module_internal(
         &mut self,
@@ -1678,13 +1701,7 @@ log = "0.4"
     }
 
     pub fn subscribe(&self, queries: &[&str]) -> SubscribeBuilder<'_> {
-        SubscribeBuilder {
-            smoketest: self,
-            database: None,
-            queries: queries.iter().map(|query| query.to_string()).collect(),
-            expected_rows: 1,
-            confirmed: None,
-        }
+        SubscribeBuilder::new(self, queries)
     }
 
     fn subscribe_on_impl(
