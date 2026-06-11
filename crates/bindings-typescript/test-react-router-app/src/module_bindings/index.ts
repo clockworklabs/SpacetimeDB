@@ -65,7 +65,7 @@ const tablesSchema = __schema({
     },
     CounterRow
   ),
-  offline_user: __table(
+  offlineUser: __table(
     {
       name: 'offline_user',
       indexes: [

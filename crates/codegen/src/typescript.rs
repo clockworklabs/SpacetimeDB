@@ -198,8 +198,9 @@ impl Lang for TypeScript {
         out.indent(1);
         for table in iter_tables(module, options.visibility) {
             let type_ref = table.product_type_ref;
+            let table_accessor = table.accessor_name.deref().to_case(Case::Camel);
             let table_name_pascalcase = table.accessor_name.deref().to_case(Case::Pascal);
-            writeln!(out, "{}: __table({{", table.accessor_name);
+            writeln!(out, "{table_accessor}: __table({{");
             out.indent(1);
             write_table_opts(
                 module,
@@ -215,8 +216,9 @@ impl Lang for TypeScript {
         }
         for view in iter_views(module) {
             let type_ref = view.product_type_ref;
+            let view_accessor = view.accessor_name.deref().to_case(Case::Camel);
             let view_name_pascalcase = view.accessor_name.deref().to_case(Case::Pascal);
-            writeln!(out, "{}: __table({{", view.accessor_name);
+            writeln!(out, "{view_accessor}: __table({{");
             out.indent(1);
             write_table_opts(module, out, type_ref, &view.name, iter::empty(), iter::empty(), false);
             out.dedent(1);

@@ -79,7 +79,7 @@ const tablesSchema = __schema({
       { name: 'config_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, ConfigRow),
-  consume_entity_event: __table({
+  consumeEntityEvent: __table({
     name: 'consume_entity_event',
     indexes: [
     ],

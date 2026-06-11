@@ -65,7 +65,7 @@ const tablesSchema = __schema({
     },
     PlayerRow
   ),
-  unindexed_player: __table(
+  unindexedPlayer: __table(
     {
       name: 'unindexed_player',
       indexes: [
@@ -107,7 +107,7 @@ const tablesSchema = __schema({
     },
     UserRow
   ),
-  my_user_procedural: __table(
+  myUserProcedural: __table(
     {
       name: 'my_user_procedural',
       indexes: [],

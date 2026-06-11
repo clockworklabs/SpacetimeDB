@@ -80,7 +80,7 @@ const tablesSchema = __schema({
     },
     DirectoryRow
   ),
-  my_account: __table(
+  myAccount: __table(
     {
       name: 'my_account',
       indexes: [],
@@ -88,7 +88,7 @@ const tablesSchema = __schema({
     },
     MyAccountRow
   ),
-  my_account_changes: __table(
+  myAccountChanges: __table(
     {
       name: 'my_account_changes',
       indexes: [],

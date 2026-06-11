@@ -108,7 +108,7 @@ const tablesSchema = __schema({
     },
     RoundResultRow
   ),
-  my_progress: __table(
+  myProgress: __table(
     {
       name: 'my_progress',
       indexes: [],

@@ -187,7 +187,7 @@ import TestFRow from "./test_f_table";
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
-  logged_out_player: __table({
+  loggedOutPlayer: __table({
     name: 'logged_out_player',
     indexes: [
       { accessor: 'identity', name: 'logged_out_player_identity_idx_btree', algorithm: 'btree', columns: [
@@ -239,21 +239,21 @@ const tablesSchema = __schema({
       { name: 'player_player_id_key', constraint: 'unique', columns: ['playerId'] },
     ],
   }, PlayerRow),
-  test_d: __table({
+  testD: __table({
     name: 'test_d',
     indexes: [
     ],
     constraints: [
     ],
   }, TestDRow),
-  test_f: __table({
+  testF: __table({
     name: 'test_f',
     indexes: [
     ],
     constraints: [
     ],
   }, TestFRow),
-  my_player: __table({
+  myPlayer: __table({
     name: 'my_player',
     indexes: [
     ],

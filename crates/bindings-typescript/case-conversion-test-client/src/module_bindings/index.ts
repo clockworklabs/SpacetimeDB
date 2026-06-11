@@ -97,7 +97,7 @@ const tablesSchema = __schema({
     },
     Person2Row
   ),
-  person_at_level_2: __table(
+  personAtLevel2: __table(
     {
       name: 'Level2Person',
       indexes: [],
