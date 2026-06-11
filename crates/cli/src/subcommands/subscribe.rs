@@ -324,6 +324,8 @@ enum Error {
     TransactionFailure { reason: Box<str> },
     #[error("encountered error in initial subscribe: {reason}")]
     SubscribeFailure { reason: Box<str> },
+    #[error("subscription closed after receiving {received}/{expected} updates")]
+    UpdateLimitNotReached { expected: u32, received: u32 },
     #[error("error formatting response: {source:#}")]
     Reformat {
         #[source]
@@ -353,6 +355,21 @@ impl Error {
                 source: WsError::ConnectionClosed
             }
         )
+    }
+}
+
+fn connection_closed_error(num: Option<u32>, num_received: u32) -> Error {
+    match num {
+        Some(expected) => Error::UpdateLimitNotReached {
+            expected,
+            received: num_received,
+        },
+        None => {
+            eprintln!("disconnected by server");
+            Error::Websocket {
+                source: WsError::ConnectionClosed,
+            }
+        }
     }
 }
 
@@ -484,16 +501,13 @@ where
     S: TryStream<Ok = WsMessage, Error = WsError> + Unpin,
 {
     let mut stdout = tokio::io::stdout();
-    let mut num_received = 0;
+    let mut num_received = 0_u32;
     loop {
         if num.is_some_and(|n| num_received >= n) {
             return Ok(());
         }
         let Some(msg) = ws.try_next().await.map_err(|source| Error::Websocket { source })? else {
-            eprintln!("disconnected by server");
-            return Err(Error::Websocket {
-                source: WsError::ConnectionClosed,
-            });
+            return Err(connection_closed_error(num, num_received));
         };
 
         let Some(msg) = parse_msg_json(&msg) else { continue };
@@ -532,16 +546,13 @@ where
     S: TryStream<Ok = WsMessage, Error = WsError> + Unpin,
 {
     let mut stdout = tokio::io::stdout();
-    let mut num_received = 0;
+    let mut num_received = 0_u32;
     loop {
         if num.is_some_and(|n| num_received >= n) {
             return Ok(());
         }
         let Some(msg) = next_server_message(ws, pending).await? else {
-            eprintln!("disconnected by server");
-            return Err(Error::Websocket {
-                source: WsError::ConnectionClosed,
-            });
+            return Err(connection_closed_error(num, num_received));
         };
 
         match msg {
