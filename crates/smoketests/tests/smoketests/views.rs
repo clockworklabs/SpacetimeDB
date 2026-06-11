@@ -1,5 +1,5 @@
 use serde_json::{json, Value};
-use spacetimedb_smoketests::{require_dotnet, require_pnpm, Smoketest};
+use spacetimedb_smoketests::{require_dotnet, require_pnpm, ModuleLanguage, Smoketest};
 
 const TS_VIEWS_SUBSCRIBE_MODULE: &str = r#"import { schema, t, table } from "spacetimedb/server";
 
@@ -220,7 +220,7 @@ fn project_fields(events: Vec<Value>, view_name: &str, projected_fields: &[&str]
 
 fn assert_count_view_refresh_behavior(test: &Smoketest, view_name: &str, id: &str, value: &str, updated_value: &str) {
     let query = format!("select * from {view_name}");
-    let sub = test.subscribe_background(&[&query], 2).unwrap();
+    let sub = test.subscribe(&[&query]).expect_rows(2).background().unwrap();
 
     test.call("insert_item", &[id, value]).unwrap();
     test.call("replace_item", &[id, updated_value]).unwrap();
@@ -272,7 +272,7 @@ fn test_fail_publish_namespace_collision() {
         .autopublish(false)
         .build();
 
-    let result = test.publish_module();
+    let result = test.publish().run();
     assert!(
         result.is_err(),
         "Expected publish to fail when table and view have same name"
@@ -288,7 +288,7 @@ fn test_fail_publish_wrong_return_type() {
         .autopublish(false)
         .build();
 
-    let result = test.publish_module();
+    let result = test.publish().run();
     assert!(
         result.is_err(),
         "Expected publish to fail when view return type is not a product type"
@@ -484,7 +484,7 @@ fn test_views_auto_migration() {
     );
 
     test.use_precompiled_module("views-auto-migrate-updated");
-    test.publish_module_clear(false).unwrap();
+    test.publish().current_database().unwrap().run().unwrap();
 
     test.assert_sql(
         "SELECT * FROM player",
@@ -504,11 +504,15 @@ fn test_views_auto_migration_stable() {
     test.call("seed", &[]).unwrap();
 
     // Subscribe to that row through the `z_counter` view
-    let sub = test.subscribe_background(&["SELECT * FROM z_counter"], 1).unwrap();
+    let sub = test
+        .subscribe(&["SELECT * FROM z_counter"])
+        .expect_rows(1)
+        .background()
+        .unwrap();
 
     // Update the module by adding another view
     test.use_precompiled_module("views-auto-migrate-stable-updated");
-    test.publish_module_clear(false).unwrap();
+    test.publish().current_database().unwrap().run().unwrap();
 
     // Bump the counter and observe a subscription update.
     let output = test.call_output("bump_counter", &[]);
@@ -545,10 +549,14 @@ fn test_views_auto_migration_read_set() {
 
     test.call("seed", &[]).unwrap();
 
-    let _sub = test.subscribe_background(&["SELECT * FROM switched"], 2).unwrap();
+    let _sub = test
+        .subscribe(&["SELECT * FROM switched"])
+        .expect_rows(2)
+        .background()
+        .unwrap();
 
     test.use_precompiled_module("views-auto-migrate-read-set-updated");
-    test.publish_module_clear(false).unwrap();
+    test.publish().current_database().unwrap().run().unwrap();
 
     let logs_after_publish = test.logs(100).unwrap();
     let logs_after_publish_for_view = logs_after_publish
@@ -575,14 +583,14 @@ fn test_views_auto_migration_read_set() {
 fn test_auto_migration_drop_view() {
     let mut test = Smoketest::builder().precompiled_module("views-auto-migrate").build();
     test.use_precompiled_module("views-drop-view");
-    test.publish_module_clear(false).unwrap();
+    test.publish().current_database().unwrap().run().unwrap();
 }
 
 #[test]
 fn test_auto_migration_add_view() {
     let mut test = Smoketest::builder().precompiled_module("views-drop-view").build();
     test.use_precompiled_module("views-auto-migrate");
-    test.publish_module_clear(false).unwrap();
+    test.publish().current_database().unwrap().run().unwrap();
 }
 
 #[test]
@@ -592,12 +600,15 @@ fn test_view_primary_key_auto_migration_disconnects_clients() {
         .build();
 
     let sub = test
-        .subscribe_background_unconfirmed(&["select * from player"], 2)
+        .subscribe(&["select * from player"])
+        .expect_rows(2)
+        .confirmed(false)
+        .background()
         .unwrap();
 
     test.use_precompiled_module("views-primary-key-auto-migrate-updated");
     let identity = test.database_identity.clone().unwrap();
-    test.publish_module_with_options(&identity, false, true).unwrap();
+    test.publish().name(&identity).break_clients(true).run().unwrap();
 
     sub.collect().unwrap();
 
@@ -644,7 +655,7 @@ fn test_recovery_from_trapped_views_auto_migration() {
     );
 
     test.use_precompiled_module("views-trapped");
-    let result = test.publish_module_clear(false);
+    let result = test.publish().current_database().unwrap().run();
     assert!(result.is_err(), "Expected trapped publish to fail");
 
     test.assert_sql(
@@ -655,7 +666,7 @@ fn test_recovery_from_trapped_views_auto_migration() {
     );
 
     test.use_precompiled_module("views-recovered");
-    test.publish_module_clear(false).unwrap();
+    test.publish().current_database().unwrap().run().unwrap();
 
     test.assert_sql(
         "SELECT * FROM player",
@@ -672,7 +683,11 @@ fn test_subscribing_with_different_identities() {
 
     test.new_identity().unwrap();
 
-    let sub = test.subscribe_background(&["select * from my_player"], 2).unwrap();
+    let sub = test
+        .subscribe(&["select * from my_player"])
+        .expect_rows(2)
+        .background()
+        .unwrap();
     test.call("insert_player", &["Bob"]).unwrap();
     let events = sub.collect().unwrap();
 
@@ -751,7 +766,11 @@ fn test_where_expr_view() {
 #[test]
 fn test_procedure_triggers_subscription_updates() {
     let test = Smoketest::builder().precompiled_module("views-subscribe").build();
-    let sub = test.subscribe_background(&["select * from my_player"], 1).unwrap();
+    let sub = test
+        .subscribe(&["select * from my_player"])
+        .expect_rows(1)
+        .background()
+        .unwrap();
     test.call("insert_player_proc", &["Alice"]).unwrap();
     let events = sub.collect().unwrap();
     let projection = project_fields(events, "my_player", &["name"]);
@@ -767,14 +786,21 @@ fn test_procedure_triggers_subscription_updates() {
 fn test_typescript_procedure_triggers_subscription_updates() {
     require_pnpm!();
     let mut test = Smoketest::builder().autopublish(false).build();
-    test.publish_typescript_module_source(
-        "views-subscribe-typescript",
-        "views-subscribe-typescript",
-        TS_VIEWS_SUBSCRIBE_MODULE,
-    )
-    .unwrap();
+    test.publish()
+        .name("views-subscribe-typescript")
+        .source(
+            ModuleLanguage::TypeScript,
+            "views-subscribe-typescript",
+            TS_VIEWS_SUBSCRIBE_MODULE,
+        )
+        .run()
+        .unwrap();
 
-    let sub = test.subscribe_background(&["select * from my_player"], 1).unwrap();
+    let sub = test
+        .subscribe(&["select * from my_player"])
+        .expect_rows(1)
+        .background()
+        .unwrap();
     test.call("insert_player_proc", &["Alice"]).unwrap();
     let events = sub.collect().unwrap();
 
@@ -798,7 +824,10 @@ fn test_csharp_count_view_subscription_refreshes() {
     require_dotnet!();
 
     let mut test = Smoketest::builder().autopublish(false).build();
-    test.publish_csharp_module_source("views-count-csharp", "views-count-csharp", CS_COUNT_VIEW_MODULE)
+    test.publish()
+        .name("views-count-csharp")
+        .source(ModuleLanguage::CSharp, "views-count-csharp", CS_COUNT_VIEW_MODULE)
+        .run()
         .unwrap();
 
     assert_all_count_view_refreshes(&test);
@@ -809,7 +838,14 @@ fn test_typescript_count_view_subscription_refreshes() {
     require_pnpm!();
 
     let mut test = Smoketest::builder().autopublish(false).build();
-    test.publish_typescript_module_source("views-count-typescript", "views-count-typescript", TS_COUNT_VIEW_MODULE)
+    test.publish()
+        .name("views-count-typescript")
+        .source(
+            ModuleLanguage::TypeScript,
+            "views-count-typescript",
+            TS_COUNT_VIEW_MODULE,
+        )
+        .run()
         .unwrap();
 
     assert_all_count_view_refreshes(&test);
@@ -822,8 +858,16 @@ fn test_disconnect_does_not_break_sender_view() {
     test.call("set_player_state", &["42", "1"]).unwrap();
 
     // Two connections subscribe to the same view.
-    let sub_keep = test.subscribe_background(&["SELECT * FROM player"], 2).unwrap();
-    let sub_drop = test.subscribe_background(&["SELECT * FROM player"], 1).unwrap();
+    let sub_keep = test
+        .subscribe(&["SELECT * FROM player"])
+        .expect_rows(2)
+        .background()
+        .unwrap();
+    let sub_drop = test
+        .subscribe(&["SELECT * FROM player"])
+        .expect_rows(1)
+        .background()
+        .unwrap();
 
     // Both connections should receive the first update.
     // After one connection disconnects, the other should still receive updates.
@@ -854,10 +898,14 @@ fn test_disconnect_does_not_break_anonymous_view() {
 
     // Two connections subscribe to the same anonymous view.
     let sub_keep = test
-        .subscribe_background(&["SELECT * FROM player_and_level"], 2)
+        .subscribe(&["SELECT * FROM player_and_level"])
+        .expect_rows(2)
+        .background()
         .unwrap();
     let sub_drop = test
-        .subscribe_background(&["SELECT * FROM player_and_level"], 1)
+        .subscribe(&["SELECT * FROM player_and_level"])
+        .expect_rows(1)
+        .background()
         .unwrap();
 
     // Both connections should receive the first update.
@@ -888,12 +936,15 @@ fn test_disconnect_does_not_break_anonymous_view() {
 fn test_typescript_query_builder_view_query() {
     require_pnpm!();
     let mut test = Smoketest::builder().autopublish(false).build();
-    test.publish_typescript_module_source(
-        "views-query-builder-typescript",
-        "views-query-builder-typescript",
-        TS_VIEWS_SUBSCRIBE_MODULE,
-    )
-    .unwrap();
+    test.publish()
+        .name("views-query-builder-typescript")
+        .source(
+            ModuleLanguage::TypeScript,
+            "views-query-builder-typescript",
+            TS_VIEWS_SUBSCRIBE_MODULE,
+        )
+        .run()
+        .unwrap();
 
     test.call("insert_player_proc", &["Alice"]).unwrap();
 
@@ -909,7 +960,10 @@ fn test_typescript_query_builder_view_query() {
 fn test_csharp_query_builder_view_query() {
     require_dotnet!();
     let mut test = Smoketest::builder().autopublish(false).build();
-    test.publish_csharp_module_source("views-csharp", "views-csharp", CS_VIEWS_QUERY_BUILDER_MODULE)
+    test.publish()
+        .name("views-csharp")
+        .source(ModuleLanguage::CSharp, "views-csharp", CS_VIEWS_QUERY_BUILDER_MODULE)
+        .run()
         .unwrap();
 
     test.call("insert_value", &["0", "false"]).unwrap();
@@ -978,7 +1032,7 @@ fn run_pk_join_subscription_test(query: &str, projected_view_name: &str, mutatio
     // Switch to identity B so each underlying table has rows for 2 identities.
     test.new_identity().unwrap();
 
-    let sub = test.subscribe_background(&[query], 4).unwrap();
+    let sub = test.subscribe(&[query]).expect_rows(4).background().unwrap();
 
     for mutation in mutations {
         apply_pk_join_mutation(&test, mutation);

@@ -53,7 +53,7 @@ fn test_publish_fails_for_rls_on_private_table() {
     let name = format!("rls-rules-{}", std::process::id());
 
     // Publishing should fail because RLS is on a private table
-    let result = test.publish_module_named(&name, false);
+    let result = test.publish().name(&name).run();
     assert!(result.is_err(), "Expected publish to fail for RLS on private table");
 }
 
@@ -68,11 +68,11 @@ fn test_rls_disconnect_if_change() {
     let name = format!("rls-disconnect-{}", std::process::id());
 
     // Initial publish without RLS
-    test.publish_module_named(&name, false).unwrap();
+    test.publish().name(&name).run().unwrap();
 
     // Now re-publish with RLS added (requires --break-clients)
     test.use_precompiled_module("rls-with-filter");
-    test.publish_module_with_options(&name, false, true).unwrap();
+    test.publish().name(&name).break_clients(true).run().unwrap();
 
     // Check the row-level SQL filter is added correctly
     test.assert_sql(
@@ -103,10 +103,10 @@ fn test_rls_no_disconnect() {
     let name = format!("rls-no-disconnect-{}", std::process::id());
 
     // Initial publish with RLS
-    test.publish_module_named(&name, false).unwrap();
+    test.publish().name(&name).run().unwrap();
 
     // Re-publish the same module (no RLS change)
-    test.publish_module_named(&name, false).unwrap();
+    test.publish().name(&name).run().unwrap();
 
     let logs = test.logs(100).unwrap();
 

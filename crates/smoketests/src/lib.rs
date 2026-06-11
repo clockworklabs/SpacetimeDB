@@ -517,6 +517,16 @@ struct ModuleSource {
     module_source: String,
 }
 
+struct PublishCommand<'a> {
+    name: Option<&'a str>,
+    clear: bool,
+    break_clients: bool,
+    num_replicas: Option<u32>,
+    organization: Option<&'a str>,
+    force: bool,
+    stdin_input: Option<&'a str>,
+}
+
 impl<'a> PublishBuilder<'a> {
     pub fn name(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
@@ -603,15 +613,15 @@ impl<'a> PublishBuilder<'a> {
             );
         }
 
-        smoketest.publish_module_internal(
-            name.as_deref(),
+        smoketest.publish_module_internal(PublishCommand {
+            name: name.as_deref(),
             clear,
             break_clients,
             num_replicas,
-            organization.as_deref(),
+            organization: organization.as_deref(),
             force,
-            stdin_input.as_deref(),
-        )
+            stdin_input: stdin_input.as_deref(),
+        })
     }
 }
 
@@ -1343,16 +1353,7 @@ log = "0.4"
         }
     }
 
-    fn publish_module_internal(
-        &mut self,
-        name: Option<&str>,
-        clear: bool,
-        break_clients: bool,
-        num_replicas: Option<u32>,
-        organization: Option<&str>,
-        force: bool,
-        stdin_input: Option<&str>,
-    ) -> Result<String> {
+    fn publish_module_internal(&mut self, publish: PublishCommand<'_>) -> Result<String> {
         let start = Instant::now();
 
         // Determine the WASM path - either precompiled or build it
@@ -1395,36 +1396,36 @@ log = "0.4"
         let publish_start = Instant::now();
         let mut args = vec!["publish", "--server", &self.server_url, "--bin-path", &wasm_path_str];
 
-        if force {
+        if publish.force {
             args.push("--yes");
         }
 
-        if clear {
+        if publish.clear {
             args.push("--clear-database");
         }
 
-        if break_clients {
+        if publish.break_clients {
             args.push("--break-clients");
         }
 
-        let num_replicas_owned = num_replicas.map(|n| n.to_string());
+        let num_replicas_owned = publish.num_replicas.map(|n| n.to_string());
         if let Some(n) = num_replicas_owned.as_ref() {
             args.push("--num-replicas");
             args.push(n);
         }
 
-        if let Some(org) = organization {
+        if let Some(org) = publish.organization {
             args.push("--organization");
             args.push(org);
         }
 
         let name_owned;
-        if let Some(n) = name {
+        if let Some(n) = publish.name {
             name_owned = n.to_string();
             args.push(&name_owned);
         }
 
-        let output = match stdin_input {
+        let output = match publish.stdin_input {
             Some(stdin_input) => self.spacetime_with_stdin(&args, stdin_input)?,
             None => self.spacetime(&args)?,
         };
@@ -1698,43 +1699,14 @@ log = "0.4"
         Ok(ApiResponse { status_code, body })
     }
 
-    /// Starts a subscription and waits for N updates (synchronous).
-    ///
-    /// Returns the updates as JSON values.
-    /// For tests that need to perform actions while subscribed, use `subscribe_background` instead.
-    pub fn subscribe(&self, queries: &[&str], n: usize) -> Result<Vec<serde_json::Value>> {
-        self.subscribe_opts(queries, n, None)
-    }
-
-    pub fn subscribe_on(&self, database: &str, queries: &[&str], n: usize) -> Result<Vec<serde_json::Value>> {
-        self.subscribe_on_opts(database, queries, n, Some(false))
-    }
-
-    /// Starts a subscription with --confirmed flag and waits for N updates.
-    pub fn subscribe_confirmed(&self, queries: &[&str], n: usize) -> Result<Vec<serde_json::Value>> {
-        self.subscribe_opts(queries, n, Some(true))
-    }
-
-    pub fn subscribe_on_confirmed(&self, database: &str, queries: &[&str], n: usize) -> Result<Vec<serde_json::Value>> {
-        self.subscribe_on_opts(database, queries, n, Some(true))
-    }
-
-    /// Internal helper for subscribe with options.
-    fn subscribe_opts(&self, queries: &[&str], n: usize, confirmed: Option<bool>) -> Result<Vec<serde_json::Value>> {
-        let start = Instant::now();
-        let identity = self.database_identity.as_ref().context("No database published")?;
-        self.subscribe_on_impl(identity, queries, n, confirmed, start)
-    }
-
-    fn subscribe_on_opts(
-        &self,
-        database: &str,
-        queries: &[&str],
-        n: usize,
-        confirmed: Option<bool>,
-    ) -> Result<Vec<serde_json::Value>> {
-        let start = Instant::now();
-        self.subscribe_on_impl(database, queries, n, confirmed, start)
+    pub fn subscribe(&self, queries: &[&str]) -> SubscribeBuilder<'_> {
+        SubscribeBuilder {
+            smoketest: self,
+            database: None,
+            queries: queries.iter().map(|query| query.to_string()).collect(),
+            expected_rows: 1,
+            confirmed: None,
+        }
     }
 
     fn subscribe_on_impl(
@@ -1786,63 +1758,6 @@ log = "0.4"
             .filter(|line| !line.trim().is_empty())
             .map(|line| serde_json::from_str(line).context("Failed to parse subscription update"))
             .collect()
-    }
-
-    /// Starts a subscription in the background and returns a handle.
-    ///
-    /// This matches Python's subscribe semantics - start subscription first,
-    /// perform actions, then call the handle to collect results.
-    pub fn subscribe_background(&self, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
-        self.subscribe_background_opts(queries, n, None)
-    }
-
-    pub fn subscribe_background_on(&self, database: &str, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
-        self.subscribe_background_on_opts(database, queries, n, Some(false))
-    }
-
-    /// Starts a subscription in the background with --confirmed flag.
-    pub fn subscribe_background_confirmed(&self, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
-        self.subscribe_background_opts(queries, n, Some(true))
-    }
-
-    /// Starts a subscription in the background with --confirmed flag.
-    pub fn subscribe_background_unconfirmed(&self, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
-        self.subscribe_background_opts(queries, n, Some(false))
-    }
-
-    pub fn subscribe_background_on_confirmed(
-        &self,
-        database: &str,
-        queries: &[&str],
-        n: usize,
-    ) -> Result<SubscriptionHandle> {
-        self.subscribe_background_on_opts(database, queries, n, Some(true))
-    }
-
-    /// Internal helper for background subscribe with options.
-    fn subscribe_background_opts(
-        &self,
-        queries: &[&str],
-        n: usize,
-        confirmed: Option<bool>,
-    ) -> Result<SubscriptionHandle> {
-        let identity = self
-            .database_identity
-            .as_ref()
-            .context("No database published")?
-            .clone();
-
-        self.subscribe_background_on_impl(&identity, queries, n, confirmed)
-    }
-
-    fn subscribe_background_on_opts(
-        &self,
-        database: &str,
-        queries: &[&str],
-        n: usize,
-        confirmed: Option<bool>,
-    ) -> Result<SubscriptionHandle> {
-        self.subscribe_background_on_impl(database, queries, n, confirmed)
     }
 
     fn subscribe_background_on_impl(
