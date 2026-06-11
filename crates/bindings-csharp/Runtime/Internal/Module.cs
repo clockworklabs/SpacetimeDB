@@ -567,7 +567,7 @@ public static class Module
         }
         catch (Exception e)
         {
-            var error_str = e.Message ?? e.GetType().FullName;
+            var error_str = e.Message;
             var error_bytes = System.Text.Encoding.UTF8.GetBytes(error_str);
             error.Write(error_bytes);
             return Errno.HOST_CALL_FAILURE;
