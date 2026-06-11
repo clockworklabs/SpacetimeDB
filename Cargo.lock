@@ -8594,6 +8594,7 @@ dependencies = [
  "tokio-postgres",
  "toml 0.8.23",
  "which 8.0.0",
+ "xmltree",
 ]
 
 [[package]]
@@ -10148,19 +10149,6 @@ name = "untrusted"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
-
-[[package]]
-name = "upgrade-version"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "clap 4.5.50",
- "duct",
- "regex",
- "semver",
- "toml_edit 0.22.27",
-]
 
 [[package]]
 name = "url"

@@ -343,6 +343,10 @@ fn table_row_type_dependents(row_type: ProductType) -> (RowTypeLayout, StaticLay
     (row_layout, static_layout, visitor_prog)
 }
 
+#[derive(Error, Debug)]
+#[error("Table is not empty")]
+pub struct TableNotEmptyError;
+
 // Public API:
 impl Table {
     /// Creates a new empty table with the given `schema` and `squashed_offset`.
@@ -364,6 +368,27 @@ impl Table {
         column_schemas: Vec<ColumnSchema>,
     ) -> Result<Vec<ColumnSchema>, Box<ChangeColumnsError>> {
         unsafe { self.change_columns_to_unchecked(column_schemas, Self::validate_row_type_layout) }
+    }
+
+    /// Like [`Self::change_columns_to`], but doesn't care if the new schema is compatible.
+    ///
+    /// Returns an error if there are any rows in `self`.
+    pub fn change_columns_of_empty_table_to(
+        &mut self,
+        column_schemas: Vec<ColumnSchema>,
+    ) -> Result<Vec<ColumnSchema>, TableNotEmptyError> {
+        if self.row_count > 0 {
+            return Err(TableNotEmptyError);
+        }
+        // Remove and drop any pages, as even though they must be empty,
+        // they may have residual layout-derived data which conflicts with the new schema.
+        // Safety: there aren't any pages here, so they cannot conflict with the schema or row layout.
+        unsafe { self.set_pages(Vec::new(), &NullBlobStore) };
+
+        // Safety: the table has no rows according to its row count,
+        // and no pages 'cause we just did `set_pages` to the empty vec.
+        unsafe { self.change_columns_to_unchecked(column_schemas, |_, _, _| Ok::<(), std::convert::Infallible>(())) }
+            .map_err(|e| match e {})
     }
 
     /// Validate that the old row type layout can be changed to the new.
@@ -477,6 +502,9 @@ impl Table {
     ///
     /// The caller must ensure, using `validate`,
     /// that `new_row_layout` is compatible with the rows existing in `self`.
+    ///
+    /// Or, the table must be entirely empty, containing zero rows and zero pages.
+    /// Zero pages is necessary because empty pages may contain layout-derived metadata.
     pub unsafe fn change_columns_to_unchecked<E>(
         &mut self,
         column_schemas: Vec<ColumnSchema>,
