@@ -188,6 +188,7 @@ pub struct BenchRunContext<'a> {
     pub dry_run: bool,
     pub local_analysis: bool,
     pub dry_run_id: Option<String>,
+    pub run_id: Option<String>,
 }
 
 pub struct RunConfig {
@@ -209,4 +210,8 @@ pub struct RunConfig {
     pub local_analysis: bool,
     /// Shared identifier used to group dry-run artifacts
     pub dry_run_id: Option<String>,
+    /// Website-created run identifier for uploaded results
+    pub run_id: Option<String>,
+    /// Website-provided route list used instead of static default_model_routes()
+    pub route_overrides: Option<Vec<ModelRoute>>,
 }

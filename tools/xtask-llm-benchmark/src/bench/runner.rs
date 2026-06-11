@@ -633,7 +633,7 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
             }
         };
         if let Some(ref api) = cfg.api_client {
-            api.upload_batch(cfg.mode, &outcomes, analysis.as_deref())?;
+            api.upload_batch(cfg.mode, &outcomes, analysis.as_deref(), cfg.run_id.as_deref())?;
         } else {
             eprintln!("[runner] no API client configured; skipping upload");
         }
@@ -832,7 +832,7 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
             }
         };
         if let Some(ref api) = cfg.api_client {
-            api.upload_batch(cfg.mode, &outcomes, analysis.as_deref())?;
+            api.upload_batch(cfg.mode, &outcomes, analysis.as_deref(), cfg.run_id.as_deref())?;
         } else {
             eprintln!("[runner] no API client configured; skipping upload");
         }
@@ -865,6 +865,7 @@ pub async fn run_selected_or_all_for_model_async_for_lang(ctx: &BenchRunContext<
             dry_run: ctx.dry_run,
             local_analysis: ctx.local_analysis,
             dry_run_id: ctx.dry_run_id.clone(),
+            run_id: ctx.run_id.clone(),
         };
         return run_selected_for_model_async_for_lang(&sel_cfg).await;
     }

@@ -73,6 +73,8 @@ fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
         // trying to extract the same tarball simultaneously
         || (combined.contains("wasi-sdk") && combined.contains("tar"))
         || (combined.contains("MSB3073") && combined.contains("exited with code 2"))
+        // dotnet can crash below spacetime while spacetime exits 1.
+        || combined.contains("code <signal")
 }
 
 fn run(cmd: &mut Command, label: &str) -> Result<()> {

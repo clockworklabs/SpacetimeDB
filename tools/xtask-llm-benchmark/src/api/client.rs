@@ -1,14 +1,155 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
+use serde::Deserialize;
 use serde_json::json;
+use std::str::FromStr;
 
 use crate::bench::normalize::{canonical_mode, normalize_model_names};
 use crate::bench::types::{Results, RunOutcome};
+use crate::eval::Lang;
+use crate::llm::types::Vendor;
+use crate::llm::ModelRoute;
+
+#[derive(Debug, Clone)]
+pub struct RemoteRunSpec {
+    pub run_id: String,
+    pub languages: Vec<Lang>,
+    pub modes: Vec<String>,
+    pub routes: Vec<ModelRoute>,
+    pub categories: Option<Vec<String>>,
+    pub tasks: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RemoteModelRouteRow {
+    #[serde(alias = "displayName", alias = "name")]
+    display_name: String,
+    vendor: String,
+    #[serde(alias = "apiModel")]
+    api_model: String,
+    #[serde(default, alias = "openrouterModel")]
+    openrouter_model: Option<String>,
+    #[serde(default)]
+    active: Option<bool>,
+    #[serde(default)]
+    available: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawRunSpec {
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default, alias = "runId")]
+    run_id: Option<String>,
+    languages: Vec<String>,
+    modes: Vec<String>,
+    #[serde(default, alias = "routes")]
+    models: Vec<RemoteModelRouteRow>,
+    #[serde(default)]
+    categories: Option<Vec<String>>,
+    #[serde(default)]
+    tasks: Option<Vec<String>>,
+}
+
+fn parse_model_route_row(row: RemoteModelRouteRow) -> Result<Option<ModelRoute>> {
+    if row.active == Some(false) || row.available == Some(false) {
+        return Ok(None);
+    }
+
+    let vendor = Vendor::parse(&row.vendor).ok_or_else(|| anyhow!("unknown model vendor '{}'", row.vendor))?;
+    let display_name = row.display_name.trim();
+    let api_model = row.api_model.trim();
+
+    if display_name.is_empty() {
+        anyhow::bail!("remote model row is missing display_name");
+    }
+    if api_model.is_empty() {
+        anyhow::bail!("remote model row '{}' is missing api_model", display_name);
+    }
+
+    Ok(Some(ModelRoute::new(
+        display_name,
+        vendor,
+        api_model,
+        row.openrouter_model.as_deref().filter(|s| !s.trim().is_empty()),
+    )))
+}
+
+pub fn parse_model_routes_response(body: &serde_json::Value) -> Result<Vec<ModelRoute>> {
+    let models = body.get("models").unwrap_or(body);
+    let rows: Vec<RemoteModelRouteRow> =
+        serde_json::from_value(models.clone()).context("parse llm benchmark model rows")?;
+
+    let mut routes = Vec::new();
+    for row in rows {
+        if let Some(route) = parse_model_route_row(row)? {
+            routes.push(route);
+        }
+    }
+
+    if routes.is_empty() {
+        anyhow::bail!("no active available LLM benchmark models returned by website");
+    }
+
+    Ok(routes)
+}
+
+pub fn parse_run_spec_response(body: &serde_json::Value, fallback_run_id: &str) -> Result<RemoteRunSpec> {
+    let spec = body.get("spec").or_else(|| body.get("spec_json")).unwrap_or(body);
+    let spec = match spec.as_str() {
+        Some(s) => serde_json::from_str::<serde_json::Value>(s).context("parse run spec_json string")?,
+        None => spec.clone(),
+    };
+
+    let raw: RawRunSpec = serde_json::from_value(spec).context("parse llm benchmark run spec")?;
+    let run_id = raw.run_id.or(raw.id).unwrap_or_else(|| fallback_run_id.to_string());
+
+    let languages = raw
+        .languages
+        .iter()
+        .map(|lang| Lang::from_str(lang).map_err(|e| anyhow!(e)))
+        .collect::<Result<Vec<_>>>()?;
+    if languages.is_empty() {
+        anyhow::bail!("run spec '{}' has no languages", run_id);
+    }
+
+    let modes: Vec<String> = raw
+        .modes
+        .into_iter()
+        .map(|mode| mode.trim().to_string())
+        .filter(|mode| !mode.is_empty())
+        .collect();
+    if modes.is_empty() {
+        anyhow::bail!("run spec '{}' has no modes", run_id);
+    }
+
+    let mut routes = Vec::new();
+    for row in raw.models {
+        if let Some(route) = parse_model_route_row(row)? {
+            routes.push(route);
+        }
+    }
+    if routes.is_empty() {
+        anyhow::bail!("run spec '{}' has no active available models", run_id);
+    }
+
+    Ok(RemoteRunSpec {
+        run_id,
+        languages,
+        modes,
+        routes,
+        categories: raw.categories,
+        tasks: raw.tasks,
+    })
+}
 
 /// HTTP client for the SpacetimeDB LLM benchmark API (spacetime-web Postgres).
 ///
-/// Supports two POST endpoints that already exist in spacetime-web:
-/// - `POST /api/llm-benchmark-upload` — upload benchmark results
-/// - `POST /api/llm-benchmark-tasks` — upload task catalog
+/// Supports endpoints owned by spacetime-web:
+/// - `POST /api/llm-benchmark-upload` - upload benchmark results
+/// - `POST /api/llm-benchmark-tasks` - upload task catalog
+/// - `GET /api/llm-benchmark-models?active=true` - fetch active benchmark models
+/// - `GET /api/llm-benchmark-runs/{run_id}` - fetch admin-triggered run specs
+/// - `PATCH /api/llm-benchmark-runs/{run_id}` - update admin-triggered run status
 #[derive(Clone)]
 pub struct ApiClient {
     client: reqwest::blocking::Client,
@@ -44,7 +185,13 @@ impl ApiClient {
     /// Upload a batch of run outcomes for a single (lang, mode) combination.
     /// Normalizes model names and sanitizes volatile fields before upload.
     /// If `analysis` is provided, it is stored in the `llm_benchmark_analysis` table.
-    pub fn upload_batch(&self, mode: &str, outcomes: &[RunOutcome], analysis: Option<&str>) -> Result<usize> {
+    pub fn upload_batch(
+        &self,
+        mode: &str,
+        outcomes: &[RunOutcome],
+        analysis: Option<&str>,
+        run_id: Option<&str>,
+    ) -> Result<usize> {
         if outcomes.is_empty() {
             return Ok(0);
         }
@@ -85,12 +232,15 @@ impl ApiClient {
                     }
                 }
 
-                let payload = json!({
+                let mut payload = json!({
                     "lang": lang_entry.lang,
                     "mode": mode_entry.mode,
                     "hash": mode_entry.hash,
                     "models": models_json,
                 });
+                if let Some(run_id) = run_id {
+                    payload["run_id"] = json!(run_id);
+                }
 
                 let resp = self
                     .client
@@ -113,7 +263,7 @@ impl ApiClient {
                     let status = resp.status();
                     let body = resp.text().unwrap_or_default();
                     anyhow::bail!(
-                        "upload failed for {}/{}: {} — {}",
+                        "upload failed for {}/{}: {} - {}",
                         lang_entry.lang,
                         mode_entry.mode,
                         status,
@@ -124,6 +274,100 @@ impl ApiClient {
         }
 
         Ok(total_uploaded)
+    }
+
+    /// Fetch active/available benchmark models from the website model registry.
+    pub fn fetch_model_routes(&self) -> Result<Vec<ModelRoute>> {
+        let url = format!("{}/api/llm-benchmark-models?active=true", self.base_url);
+        let resp = self
+            .client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .context("fetch LLM benchmark models failed")?;
+
+        if resp.status().is_success() {
+            let body: serde_json::Value = resp.json().context("parse model registry response")?;
+            parse_model_routes_response(&body)
+        } else {
+            let status = resp.status();
+            let body = resp.text().unwrap_or_default();
+            anyhow::bail!("fetch LLM benchmark models failed: {} - {}", status, body);
+        }
+    }
+
+    /// Fetch an immutable website-created run spec for admin-triggered runs.
+    pub fn fetch_run_spec(&self, run_id: &str) -> Result<RemoteRunSpec> {
+        let run_id_path = urlencoding::encode(run_id);
+        let url = format!("{}/api/llm-benchmark-runs/{}", self.base_url, run_id_path);
+        let resp = self
+            .client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .with_context(|| format!("fetch LLM benchmark run spec failed for {run_id}"))?;
+
+        if resp.status().is_success() {
+            let body: serde_json::Value = resp.json().context("parse run spec response")?;
+            parse_run_spec_response(&body, run_id)
+        } else {
+            let status = resp.status();
+            let body = resp.text().unwrap_or_default();
+            anyhow::bail!(
+                "fetch LLM benchmark run spec failed for {}: {} - {}",
+                run_id,
+                status,
+                body
+            );
+        }
+    }
+
+    /// Update website-created benchmark run status.
+    pub fn update_run_status(&self, run_id: &str, status: &str, error: Option<&str>) -> Result<()> {
+        let run_id_path = urlencoding::encode(run_id);
+        let url = format!("{}/api/llm-benchmark-runs/{}", self.base_url, run_id_path);
+        let mut payload = json!({
+            "status": status,
+        });
+        if let Some(error) = error {
+            payload["error"] = json!(error);
+        }
+        if let Ok(github_run_id) = std::env::var("GITHUB_RUN_ID")
+            && !github_run_id.is_empty()
+        {
+            payload["github_run_id"] = json!(github_run_id);
+            if let (Ok(server_url), Ok(repo)) = (std::env::var("GITHUB_SERVER_URL"), std::env::var("GITHUB_REPOSITORY"))
+            {
+                payload["github_run_url"] = json!(format!(
+                    "{}/{}/actions/runs/{}",
+                    server_url.trim_end_matches('/'),
+                    repo,
+                    payload["github_run_id"].as_str().unwrap_or_default()
+                ));
+            }
+        }
+
+        let resp = self
+            .client
+            .patch(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .with_context(|| format!("update LLM benchmark run status failed for {run_id}"))?;
+
+        if resp.status().is_success() {
+            Ok(())
+        } else {
+            let status_code = resp.status();
+            let body = resp.text().unwrap_or_default();
+            anyhow::bail!(
+                "update LLM benchmark run status failed for {}: {} - {}",
+                run_id,
+                status_code,
+                body
+            );
+        }
     }
 
     /// Upload the task catalog to `POST /api/llm-benchmark-tasks`, derived from
@@ -332,5 +576,74 @@ impl ApiClient {
             let body = resp.text().unwrap_or_default();
             anyhow::bail!("upload analysis failed: {} \u{2014} {}", status, body);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_active_available_model_routes() {
+        let body = json!({
+            "models": [
+                {
+                    "displayName": "GPT Test",
+                    "vendor": "openai",
+                    "apiModel": "gpt-test",
+                    "openrouterModel": "openai/gpt-test",
+                    "active": true,
+                    "available": true
+                },
+                {
+                    "displayName": "Inactive",
+                    "vendor": "openai",
+                    "apiModel": "inactive",
+                    "active": false,
+                    "available": true
+                },
+                {
+                    "displayName": "Unavailable",
+                    "vendor": "openai",
+                    "apiModel": "unavailable",
+                    "active": true,
+                    "available": false
+                }
+            ]
+        });
+
+        let routes = parse_model_routes_response(&body).unwrap();
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].display_name, "GPT Test");
+        assert_eq!(routes[0].vendor, Vendor::OpenAi);
+        assert_eq!(routes[0].api_model, "gpt-test");
+        assert_eq!(routes[0].openrouter_model.as_deref(), Some("openai/gpt-test"));
+    }
+
+    #[test]
+    fn parses_run_spec_response() {
+        let body = json!({
+            "spec_json": {
+                "languages": ["rust", "typescript"],
+                "modes": ["guidelines", "no_context"],
+                "categories": ["basics"],
+                "tasks": ["t_001_basic_tables"],
+                "models": [{
+                    "display_name": "Claude Test",
+                    "vendor": "anthropic",
+                    "api_model": "claude-test",
+                    "openrouter_model": "anthropic/claude-test"
+                }]
+            }
+        });
+
+        let spec = parse_run_spec_response(&body, "run-123").unwrap();
+        assert_eq!(spec.run_id, "run-123");
+        assert_eq!(spec.languages, vec![Lang::Rust, Lang::TypeScript]);
+        assert_eq!(spec.modes, vec!["guidelines", "no_context"]);
+        assert_eq!(spec.categories.as_deref(), Some(&["basics".to_string()][..]));
+        assert_eq!(spec.tasks.as_deref(), Some(&["t_001_basic_tables".to_string()][..]));
+        assert_eq!(spec.routes.len(), 1);
+        assert_eq!(spec.routes[0].vendor, Vendor::Anthropic);
     }
 }

@@ -275,18 +275,33 @@ pub fn openrouter_ctx_limit_tokens(model: &str) -> usize {
 
     // Anthropic
     if m.contains("claude") {
+        if m.contains("4.6")
+            || m.contains("4-6")
+            || m.contains("4.7")
+            || m.contains("4-7")
+            || m.contains("4.8")
+            || m.contains("4-8")
+        {
+            return 1_000_000;
+        }
         return 185_000;
     }
     // OpenAI
+    if m.contains("gpt-5.5") {
+        return 1_050_000;
+    }
     if m.contains("gpt-5") || m.contains("gpt-4.1") {
         return 400_000;
     }
     if m.contains("gpt-4o") || m.contains("gpt-4") {
         return 128_000;
     }
-    // xAI / Grok — leave ~50 k headroom for segments + output on top of trimmed prefix
-    if m.contains("grok-code-fast") {
+    // xAI / Grok
+    if m.contains("grok-build-0.1") || m.contains("grok-code-fast") {
         return 200_000;
+    }
+    if m.contains("grok-4.3") {
+        return 1_000_000;
     }
     if m.contains("grok-4") {
         return 200_000;
@@ -294,7 +309,10 @@ pub fn openrouter_ctx_limit_tokens(model: &str) -> usize {
     if m.contains("grok") {
         return 90_000;
     }
-    // DeepSeek — hard cap is 131 072 on OpenRouter; leave ~25 k headroom for segments + output
+    // DeepSeek
+    if m.contains("deepseek-v4") {
+        return 1_000_000;
+    }
     if m.contains("deepseek") {
         return 106_000;
     }
