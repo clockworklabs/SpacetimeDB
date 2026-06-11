@@ -206,12 +206,11 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     // Close the connection gracefully.
     // This will return an error if the server already closed,
     // or the connection is in a bad state.
-    // The error (if any) relevant to the user is already stored in `res`,
-    // so we can ignore errors here -- graceful close is basically a
-    // courtesy to the server.
+    // The error (if any) relevant to the user is already stored in `res`.
     conn.close().await;
-    // The server closing the connection is not considered an error,
-    // but any other error is.
+    // The server closing the connection is not considered an error
+    // if `-n` is not set, but any other error is. When `-n` is set,
+    // an early close from the update loop is reported as an error.
     res.or_else(|e| {
         if e.is_server_closed_connection() {
             Ok(())
