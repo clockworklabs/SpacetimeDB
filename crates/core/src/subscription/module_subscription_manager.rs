@@ -2203,8 +2203,8 @@ mod tests {
 
     use super::{Plan, SubscriptionManager};
     use crate::db::relational_db::tests_utils::with_read_only;
+    use crate::db::sql::ast::SchemaViewer;
     use crate::host::module_host::DatabaseTableUpdate;
-    use crate::sql::ast::SchemaViewer;
     use crate::subscription::module_subscription_manager::ClientQueryId;
     use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
     use crate::subscription::tx::DeltaTx;
