@@ -233,13 +233,15 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
     let dry_run_id = dry_run.then(|| chrono::Utc::now().format("%Y-%m-%d_%H%M%S").to_string());
     let should_fetch_remote_routes = should_fetch_remote_routes(&args);
 
-    let api_client = if dry_run {
-        None
-    } else {
+    let needs_api_client = should_fetch_remote_routes || !dry_run;
+    let api_client = if needs_api_client {
         ApiClient::from_env().context("failed to initialize API client")?
+    } else {
+        None
     };
+    let upload_client = if dry_run { None } else { api_client.clone() };
 
-    if api_client.is_none() && !dry_run {
+    if upload_client.is_none() && !dry_run {
         eprintln!("[warn] LLM_BENCHMARK_UPLOAD_URL not set; results will not be uploaded");
     }
 
@@ -254,7 +256,7 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
         categories: categories_to_set(args.categories),
         model_filter: model_filter_from_groups(args.models),
         host: None,
-        api_client: api_client.clone(),
+        api_client: upload_client.clone(),
         dry_run,
         local_analysis,
         dry_run_id: dry_run_id.clone(),
@@ -271,7 +273,7 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
     let bench_root = find_bench_root();
 
     // Upload task catalog before running benchmarks
-    if let Some(ref api) = api_client
+    if let Some(ref api) = upload_client
         && let Err(e) = api.upload_task_catalog(&bench_root)
     {
         eprintln!("[warn] failed to upload task catalog: {e}");
@@ -557,11 +559,7 @@ fn short_hash(s: &str) -> &str {
 }
 
 fn should_fetch_remote_routes(args: &RunArgs) -> bool {
-    args.model_source == ModelSource::Remote
-        && args.route_overrides.is_none()
-        && !args.dry_run
-        && !args.hash_only
-        && !args.goldens_only
+    args.model_source == ModelSource::Remote && args.route_overrides.is_none() && !args.hash_only && !args.goldens_only
 }
 
 fn preflight_llm_routes(
@@ -970,7 +968,7 @@ mod tests {
     }
 
     #[test]
-    fn remote_model_source_fetches_even_for_explicit_models() {
+    fn remote_model_source_fetches_for_all_model_selection_paths() {
         let mut args = base_run_args();
         args.model_source = ModelSource::Remote;
         assert!(should_fetch_remote_routes(&args));
@@ -979,6 +977,9 @@ mod tests {
             vendor: Vendor::OpenAi,
             models: vec!["gpt-test".to_string()],
         }]);
+        assert!(should_fetch_remote_routes(&args));
+
+        args.dry_run = true;
         assert!(should_fetch_remote_routes(&args));
     }
 
