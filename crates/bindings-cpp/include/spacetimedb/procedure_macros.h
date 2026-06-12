@@ -105,7 +105,8 @@ struct is_valid_procedure_return_type : std::integral_constant<bool, bsatn::Seri
     } \
     \
     /* The actual procedure function definition */ \
-    return_type procedure_name(ctx_param __VA_OPT__(,) __VA_ARGS__)
+    /* noinline ensures this function appears as a named frame in backtraces */ \
+    __attribute__((noinline)) return_type procedure_name(ctx_param __VA_OPT__(,) __VA_ARGS__)
 
 #define SPACETIMEDB_PROCEDURE_NAMED(return_type, procedure_name, canonical_name, ctx_param, ...) \
     static_assert(::SpacetimeDB::Internal::is_valid_procedure_return_type<return_type>::value, \
@@ -120,4 +121,4 @@ struct is_valid_procedure_return_type : std::integral_constant<bool, bsatn::Seri
             #procedure_name, procedure_name, param_names); \
         SpacetimeDB::Module::RegisterExplicitFunctionName(#procedure_name, canonical_name); \
     } \
-    return_type procedure_name(ctx_param __VA_OPT__(,) __VA_ARGS__)
+    __attribute__((noinline)) return_type procedure_name(ctx_param __VA_OPT__(,) __VA_ARGS__)

@@ -109,7 +109,7 @@ function registerProcedure<
   fn: ProcedureFn<S, Params, Ret>,
   opts?: ProcedureOpts
 ) {
-  ctx.defineFunction(exportName);
+  ctx.defineFunction(exportName, fn);
   const paramsType: ProductType = {
     elements: Object.entries(params).map(([n, c]) => ({
       name: n,

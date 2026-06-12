@@ -10,10 +10,15 @@
 
 mod http;
 mod procedure;
+mod reducer;
+mod sats;
+mod table;
+mod util;
+mod view;
 
 #[proc_macro_attribute]
 pub fn procedure(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
-    cvt_attr::<ItemFn>(args, item, quote!(), |args, original_function| {
+    cvt_attr::<ItemFn>(args, item, quote!(#[inline(never)]), |args, original_function| {
         let args = procedure::ProcedureArgs::parse(args)?;
         procedure::procedure_impl(args, original_function)
     })
@@ -36,17 +41,14 @@ pub fn http_router(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream
         http::router_impl(args.into(), &original_function)
     })
 }
-mod reducer;
 
 #[proc_macro_attribute]
 pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
-    cvt_attr::<ItemFn>(args, item, quote!(), |args, original_function| {
+    cvt_attr::<ItemFn>(args, item, quote!(#[inline(never)]), |args, original_function| {
         let args = reducer::ReducerArgs::parse(args)?;
         reducer::reducer_impl(args, original_function)
     })
 }
-mod sats;
-mod table;
 
 #[proc_macro_attribute]
 pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
@@ -83,8 +85,6 @@ pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
         Ok(TokenStream::from_iter([quote!(#derive_input), generated]))
     })
 }
-mod util;
-mod view;
 
 #[proc_macro_attribute]
 pub fn view(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {

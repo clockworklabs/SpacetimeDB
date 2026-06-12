@@ -1484,6 +1484,12 @@ record ViewDeclaration
                 public byte[] Invoke(
                     System.IO.BinaryReader reader,
                     {{{interfaceContext}}} ctx
+                ) => __spacetimedb_begin_short_backtrace(reader, ctx);
+
+                [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+                private static byte[] __spacetimedb_begin_short_backtrace(
+                    System.IO.BinaryReader reader,
+                    {{{interfaceContext}}} ctx
                 ) {
                     try {
                         {{{paramReads}}}
@@ -1586,7 +1592,11 @@ record ReducerDeclaration
             _ => "null"
         }}};
 
-                 public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) {
+                 public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
+                     __spacetimedb_begin_short_backtrace(reader, ctx);
+
+                 [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+                 private static void __spacetimedb_begin_short_backtrace(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) {
                      {{invocation}};
                  }
              }
@@ -1808,7 +1818,11 @@ record ProcedureDeclaration
                     Visibility: SpacetimeDB.Internal.FunctionVisibility.ClientCallable
                 );
 
-                public byte[] Invoke(BinaryReader reader, SpacetimeDB.Internal.IProcedureContext ctx) {
+                public byte[] Invoke(BinaryReader reader, SpacetimeDB.Internal.IProcedureContext ctx) =>
+                    __spacetimedb_begin_short_backtrace(reader, ctx);
+
+                [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+                private static byte[] __spacetimedb_begin_short_backtrace(BinaryReader reader, SpacetimeDB.Internal.IProcedureContext ctx) {
                     {{{paramReads}}}{{{invokeBody}}}
                 }
             }

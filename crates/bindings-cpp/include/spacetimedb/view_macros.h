@@ -114,7 +114,8 @@ struct is_valid_view_return_type<std::optional<T>>
     \
     /* TODO: When parameters are supported, function definition becomes: */ \
     /* return_type view_name(ctx_param, __VA_ARGS__) */ \
-    return_type view_name(ctx_param)
+    /* noinline ensures this function appears as a named frame in backtraces */ \
+    __attribute__((noinline)) return_type view_name(ctx_param)
 
 #define SPACETIMEDB_VIEW_NAMED(return_type, view_name, canonical_name, access_enum, ctx_param) \
     static_assert(access_enum == SpacetimeDB::Internal::TableAccess::Public, \
@@ -130,4 +131,4 @@ struct is_valid_view_return_type<std::optional<T>>
             #view_name, view_name, is_public, param_names); \
         SpacetimeDB::Module::RegisterExplicitFunctionName(#view_name, canonical_name); \
     } \
-    return_type view_name(ctx_param)
+    __attribute__((noinline)) return_type view_name(ctx_param)

@@ -341,7 +341,9 @@ public:
         std::function<void(ReducerContext&, BytesSource)> handler;
         if constexpr (traits::arity == 1) {
             handler = [func](ReducerContext& ctx, BytesSource) {
-                auto result = func(ctx);
+                auto result = __spacetimedb_begin_short_backtrace([&] {
+                    return func(ctx);
+                });
                 if (result.is_err()) {
                     ::SpacetimeDB::fail_reducer(result.error());
                 }
@@ -353,7 +355,9 @@ public:
                     bsatn::Reader reader(bytes.data(), bytes.size());
                     auto args = std::make_tuple(bsatn::deserialize<typename traits::template arg_t<Js + 1>>(reader)...);
                     std::apply([&ctx_inner, fn](auto&&... unpacked) {
-                        auto result = fn(ctx_inner, std::forward<decltype(unpacked)>(unpacked)...);
+                        auto result = __spacetimedb_begin_short_backtrace([&] {
+                            return fn(ctx_inner, std::forward<decltype(unpacked)>(unpacked)...);
+                        });
                         if (result.is_err()) {
                             ::SpacetimeDB::fail_reducer(result.error());
                         }
@@ -410,7 +414,9 @@ public:
         std::function<void(ReducerContext&, BytesSource)> handler;
         if constexpr (traits::arity == 1) {
             handler = [func](ReducerContext& ctx, BytesSource) {
-                auto result = func(ctx);
+                auto result = __spacetimedb_begin_short_backtrace([&] {
+                    return func(ctx);
+                });
                 if (result.is_err()) {
                     ::SpacetimeDB::fail_reducer(result.error());
                 }
@@ -422,7 +428,9 @@ public:
                     bsatn::Reader reader(bytes.data(), bytes.size());
                     auto args = std::make_tuple(bsatn::deserialize<typename traits::template arg_t<Js + 1>>(reader)...);
                     std::apply([&ctx_inner, fn](auto&&... unpacked) {
-                        auto result = fn(ctx_inner, std::forward<decltype(unpacked)>(unpacked)...);
+                        auto result = __spacetimedb_begin_short_backtrace([&] {
+                            return fn(ctx_inner, std::forward<decltype(unpacked)>(unpacked)...);
+                        });
                         if (result.is_err()) {
                             ::SpacetimeDB::fail_reducer(result.error());
                         }
@@ -465,7 +473,9 @@ public:
             std::function<std::vector<uint8_t>(ViewContext&, BytesSource)> handler =
                 [func](ViewContext& ctx, BytesSource args_source) -> std::vector<uint8_t> {
                     (void)args_source;
-                    auto result = func(ctx);
+                    auto result = __spacetimedb_begin_short_backtrace([&] {
+                        return func(ctx);
+                    });
                     auto result_vec = view_result_to_vec(std::move(result));
                     IterBuf buf = IterBuf::take();
                     {
@@ -479,7 +489,9 @@ public:
             std::function<std::vector<uint8_t>(AnonymousViewContext&, BytesSource)> handler =
                 [func](AnonymousViewContext& ctx, BytesSource args_source) -> std::vector<uint8_t> {
                     (void)args_source;
-                    auto result = func(ctx);
+                    auto result = __spacetimedb_begin_short_backtrace([&] {
+                        return func(ctx);
+                    });
                     auto result_vec = view_result_to_vec(std::move(result));
                     IterBuf buf = IterBuf::take();
                     {
@@ -529,7 +541,9 @@ public:
         std::function<std::vector<uint8_t>(ProcedureContext&, BytesSource)> handler;
         if constexpr (traits::arity == 1) {
             handler = [func](ProcedureContext& ctx, BytesSource) -> std::vector<uint8_t> {
-                auto result = func(ctx);
+                auto result = __spacetimedb_begin_short_backtrace([&] {
+                    return func(ctx);
+                });
                 IterBuf buf = IterBuf::take();
                 {
                     bsatn::Writer writer(buf.get());
@@ -543,9 +557,11 @@ public:
                 return []<std::size_t... Js>(std::index_sequence<Js...>, Func fn, ProcedureContext& ctx_inner, const std::vector<uint8_t>& bytes) -> std::vector<uint8_t> {
                     bsatn::Reader reader(bytes.data(), bytes.size());
                     auto args = std::make_tuple(bsatn::deserialize<typename traits::template arg_t<Js + 1>>(reader)...);
-                    auto result = std::apply([&ctx_inner, fn](auto&&... unpacked) {
-                        return fn(ctx_inner, std::forward<decltype(unpacked)>(unpacked)...);
-                    }, args);
+                    auto result = __spacetimedb_begin_short_backtrace([&] {
+                        return std::apply([&ctx_inner, fn](auto&&... unpacked) {
+                            return fn(ctx_inner, std::forward<decltype(unpacked)>(unpacked)...);
+                        }, args);
+                    });
                     IterBuf buf = IterBuf::take();
                     {
                         bsatn::Writer writer(buf.get());

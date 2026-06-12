@@ -219,7 +219,7 @@ export function registerView<
     ? AnonymousViewFn<S, Params, Ret>
     : ViewFn<S, Params, Ret>
 ) {
-  ctx.defineFunction(exportName);
+  ctx.defineFunction(exportName, fn);
   const paramsBuilder = new RowBuilder(params, toPascalCase(exportName));
 
   // Register return types if they are product types
