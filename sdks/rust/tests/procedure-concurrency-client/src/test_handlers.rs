@@ -13,8 +13,8 @@ pub async fn dispatch(test: &str, db_name: &str) {
         "procedure-concurrent-with-scheduled-reducer" => {
             exec_procedure_concurrent_with_scheduled_reducer(db_name).await
         }
-        "scheduled-procedure-scheduled-reducer-not-interleaved" => {
-            exec_scheduled_procedure_scheduled_reducer_not_interleaved(db_name).await
+        "scheduled-procedure-scheduled-reducer-interleaves" => {
+            exec_scheduled_procedure_scheduled_reducer_interleaves(db_name).await
         }
         _ => panic!("Unknown test: {test}"),
     }
@@ -468,9 +468,15 @@ async fn exec_procedure_concurrent_with_scheduled_reducer(db_name: &str) {
     test_counter.wait_for_all().await;
 }
 
-/// Like [`exec_procedure_reducer_same_client_not_interleaved`], but with the scheduler instead of a client.
-/// Tracks a behavior that we'd like to change.
-async fn exec_scheduled_procedure_scheduled_reducer_not_interleaved(db_name: &str) {
+/// Like [`exec_procedure_concurrent_with_scheduled_reducer`], but the procedure is itself
+/// scheduled rather than called by a client.
+///
+/// A long-running scheduled procedure (which sleeps between two inserts) must NOT starve a
+/// scheduled reducer whose deadline falls during the procedure's sleep: the reducer should
+/// run in between, giving insertion order `scheduled_procedure_before < scheduled_reducer <
+/// scheduled_procedure_after`. (This used to be serialized — the procedure ran to completion
+/// before the reducer — until the scheduler began dispatching procedures concurrently.)
+async fn exec_scheduled_procedure_scheduled_reducer_interleaves(db_name: &str) {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
     let mut reducer_callback_result = Some(test_counter.add_test("schedule_procedure_then_reducer_callback"));
@@ -526,8 +532,8 @@ async fn exec_scheduled_procedure_scheduled_reducer_not_interleaved(db_name: &st
                             #[allow(clippy::redundant_closure_call)]
                             (|| {
                                 anyhow::ensure!(
-                                    before < after && after < scheduled_reducer,
-                                    "Expected scheduled procedure insertion order scheduled_procedure_before < scheduled_procedure_after < scheduled_reducer, got {before} < {after} < {scheduled_reducer}"
+                                    before < scheduled_reducer && scheduled_reducer < after,
+                                    "Expected scheduled procedure/reducer to interleave: scheduled_procedure_before < scheduled_reducer < scheduled_procedure_after, got {before} < {scheduled_reducer} < {after}"
                                 );
                                 Ok(())
                             })(),
