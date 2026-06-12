@@ -1057,7 +1057,7 @@ impl Schema for TableSchema {
     }
 
     fn check_compatible(&self, module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
-        // Mounted tables are stored in the DB with a namespace prefix (e.g. "lib.library_table"),
+        // Submodule tables are stored in the DB with a namespace prefix (e.g. "lib.library_table"),
         // but the def's name is just the local name ("library_table"). Strip any prefix before comparing.
         let self_local_name = self.table_name.rsplit('.').next().unwrap_or(&self.table_name[..]);
         ensure_eq!(self_local_name, &def.name[..], "Table name mismatch");
@@ -1076,7 +1076,7 @@ impl Schema for TableSchema {
         }
         ensure_eq!(self.columns.len(), def.columns.len(), "Column count mismatch");
 
-        // Index names in the DB are prefixed for mounted tables (e.g. "lib.library_table_id_idx_btree"),
+        // Index names in the DB are prefixed for submodule tables (e.g. "lib.library_table_id_idx_btree"),
         // but def.indexes is keyed by the bare name. Derive the namespace prefix length from the
         // difference between the full DB table name and the def's canonical (local) table name.
         let ns_prefix_len = self.table_name.len() - def.name.len();
@@ -1434,7 +1434,7 @@ impl Schema for ScheduleSchema {
 
     fn check_compatible(&self, _module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
         ensure_eq!(&self.schedule_name[..], &def.name[..], "Schedule name mismatch");
-        // For mounted tables, schedule function names in the DB are namespace-prefixed using '.'
+        // For submodule tables, schedule function names in the DB are namespace-prefixed using '.'
         // (e.g. "lib.library_scheduled_procedure") while def.function_name is the bare name.
         let ns_len = self.function_name.len().saturating_sub(def.function_name.len());
         ensure_eq!(
@@ -1506,7 +1506,7 @@ impl Schema for IndexSchema {
     }
 
     fn check_compatible(&self, _module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
-        // For mounted tables, the DB stores index names with a namespace prefix
+        // For submodule tables, the DB stores index names with a namespace prefix
         // (e.g. "lib.library_table_id_idx_btree") while def.name is the bare name.
         // Strip any prefix by comparing only the suffix of length def.name.len().
         let ns_len = self.index_name.len().saturating_sub(def.name.len());

@@ -59,7 +59,7 @@ describe('ctx.as alias proxy', () => {
     expect(capturedCtx.as.myauth.timestamp).toBe(capturedCtx.timestamp);
   });
 
-  it('ctx.as is empty object when there are no mounts', async () => {
+  it('ctx.as is empty object when there are no submodules', async () => {
     const players = table({ name: 'players' }, { id: t.u32().primaryKey() });
     const consumer = schema({ players });
 
@@ -81,7 +81,7 @@ describe('ctx.as alias proxy', () => {
     expect(Object.keys(capturedCtx.as)).toHaveLength(0);
   });
 
-  it('ctx.as.<alias>.as carries nested sub-mount aliases', async () => {
+  it('ctx.as.<alias>.as carries nested submodule aliases', async () => {
     const bazTable = table({ name: 'baz_items' }, { id: t.u32().primaryKey() });
     const bazSchema = schema({ bazTable });
     const bazLib = { default: bazSchema };

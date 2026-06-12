@@ -59,7 +59,7 @@ import type { DbView, ReadonlyDbView } from './db_view';
 import { getErrorConstructor, SenderError } from './errors';
 import { Range, type Bound } from './range';
 import { makeRandom, type Random } from './rng';
-import type { MountedDispatchInfo, SchemaInner } from './schema';
+import type { SubmoduleDispatchInfo, SchemaInner } from './schema';
 import { HttpRequest, HttpResponse } from '../lib/autogen/types';
 
 const { freeze } = Object;
@@ -353,7 +353,7 @@ export function runWithTx<T, Ctx>(
   }
 }
 
-type FlatMountDispatch = {
+type FlatSubmoduleDispatch = {
   reducerFns: Reducers;
   reducerDefs: RawReducerDefV10[];
   procedureFns: Procedures;
@@ -363,16 +363,16 @@ type FlatMountDispatch = {
   tables: Array<{ accessorName: string; tableDef: RawTableDefV10 }>;
   typespace: Typespace;
   dbView_: DbView<any> | undefined;
-  /** e.g. "alias." for a mount with namespace alias "alias" */
+  /** e.g. "alias." for a submodule with namespace alias "alias" */
   namePrefix: string;
-  subDispatches: MountedDispatchInfo[];
+  subDispatches: SubmoduleDispatchInfo[];
 };
 
-function flattenMountDispatches(
-  dispatches: MountedDispatchInfo[],
+function flattenSubmoduleDispatches(
+  dispatches: SubmoduleDispatchInfo[],
   parentPrefix = ''
-): FlatMountDispatch[] {
-  const result: FlatMountDispatch[] = [];
+): FlatSubmoduleDispatch[] {
+  const result: FlatSubmoduleDispatch[] = [];
   for (const d of dispatches) {
     const namePrefix = parentPrefix + d.namespace + '.';
     result.push({
@@ -388,7 +388,7 @@ function flattenMountDispatches(
       namePrefix,
       subDispatches: d.subDispatches,
     });
-    result.push(...flattenMountDispatches(d.subDispatches, namePrefix));
+    result.push(...flattenSubmoduleDispatches(d.subDispatches, namePrefix));
   }
   return result;
 }
@@ -403,7 +403,7 @@ class ModuleHooksImpl implements ModuleHooks {
   #reducerArgsDeserializers;
   #consumerReducerCount: number;
   #consumerProcedureCount: number;
-  #flatMounts: FlatMountDispatch[];
+  #flatSubmodules: FlatSubmoduleDispatch[];
   #consumerAnonViewCount: number;
   #consumerViewCount: number;
   /** Cache the `ReducerCtx` object to avoid allocating anew for every reducer call. */
@@ -415,15 +415,15 @@ class ModuleHooksImpl implements ModuleHooks {
     this.#consumerProcedureCount = schema.procedures.length;
     this.#consumerAnonViewCount = schema.anonViews.length;
     this.#consumerViewCount = schema.views.length;
-    this.#flatMounts = flattenMountDispatches(schema.mountedDispatchInfos);
+    this.#flatSubmodules = flattenSubmoduleDispatches(schema.submoduleDispatchInfos);
 
     const consumerDeserializers = schema.moduleDef.reducers.map(
       ({ params }) => ProductType.makeDeserializer(params, schema.typespace)
     );
-    const mountedDeserializers = this.#flatMounts.flatMap(({ reducerDefs, typespace }) =>
+    const submoduleDeserializers = this.#flatSubmodules.flatMap(({ reducerDefs, typespace }) =>
       reducerDefs.map(({ params }) => ProductType.makeDeserializer(params, typespace))
     );
-    this.#reducerArgsDeserializers = [...consumerDeserializers, ...mountedDeserializers];
+    this.#reducerArgsDeserializers = [...consumerDeserializers, ...submoduleDeserializers];
   }
 
   get #dbView() {
@@ -434,16 +434,16 @@ class ModuleHooksImpl implements ModuleHooks {
         makeTableView(this.#schema.typespace, table.tableDef),
       ]
     );
-    const mountNs = this.#schema.mountedDispatchInfos.map(dispatch => [
+    const submoduleNs = this.#schema.submoduleDispatchInfos.map(dispatch => [
       dispatch.namespace,
       buildDbViewForDispatch(dispatch, dispatch.namespace + '.'),
     ]);
-    this.#dbView_ = freeze(Object.fromEntries([...rootTables, ...mountNs])) as DbView<any>;
+    this.#dbView_ = freeze(Object.fromEntries([...rootTables, ...submoduleNs])) as DbView<any>;
     return this.#dbView_;
   }
 
-  #getMountDbView(mountIdx: number): DbView<any> {
-    const m = this.#flatMounts[mountIdx];
+  #getSubmoduleDbView(submoduleIdx: number): DbView<any> {
+    const m = this.#flatSubmodules[submoduleIdx];
     return (m.dbView_ ??= freeze(
       Object.fromEntries(
         m.tables.map(({ accessorName, tableDef }) => [
@@ -466,7 +466,7 @@ class ModuleHooksImpl implements ModuleHooks {
   get #consumerAs() {
     return (this.#consumerAs_ ??= buildAliasCtxMap(
       this.#reducerCtx,
-      this.#schema.mountedDispatchInfos,
+      this.#schema.submoduleDispatchInfos,
       ''
     ));
   }
@@ -510,11 +510,11 @@ class ModuleHooksImpl implements ModuleHooks {
       asViews = this.#consumerAs;
     } else {
       let offset = this.#consumerReducerCount;
-      for (let i = 0; i < this.#flatMounts.length; i++) {
-        const m = this.#flatMounts[i];
+      for (let i = 0; i < this.#flatSubmodules.length; i++) {
+        const m = this.#flatSubmodules[i];
         if (reducerId < offset + m.reducerFns.length) {
           fn = m.reducerFns[reducerId - offset];
-          dbView = this.#getMountDbView(i);
+          dbView = this.#getSubmoduleDbView(i);
           break;
         }
         offset += m.reducerFns.length;
@@ -554,12 +554,12 @@ class ModuleHooksImpl implements ModuleHooks {
     } else {
       let offset = this.#consumerViewCount;
       let found = false;
-      for (let i = 0; i < this.#flatMounts.length; i++) {
-        const m = this.#flatMounts[i];
+      for (let i = 0; i < this.#flatSubmodules.length; i++) {
+        const m = this.#flatSubmodules[i];
         if (id < offset + m.viewFns.length) {
           viewFns = m.viewFns;
           localId = id - offset;
-          dbView = this.#getMountDbView(i) as ReadonlyDbView<any>;
+          dbView = this.#getSubmoduleDbView(i) as ReadonlyDbView<any>;
           found = true;
           break;
         }
@@ -600,12 +600,12 @@ class ModuleHooksImpl implements ModuleHooks {
     } else {
       let offset = this.#consumerAnonViewCount;
       let found = false;
-      for (let i = 0; i < this.#flatMounts.length; i++) {
-        const m = this.#flatMounts[i];
+      for (let i = 0; i < this.#flatSubmodules.length; i++) {
+        const m = this.#flatSubmodules[i];
         if (id < offset + m.anonViewFns.length) {
           anonViewFns = m.anonViewFns;
           localId = id - offset;
-          dbView = this.#getMountDbView(i) as ReadonlyDbView<any>;
+          dbView = this.#getSubmoduleDbView(i) as ReadonlyDbView<any>;
           found = true;
           break;
         }
@@ -652,13 +652,13 @@ class ModuleHooksImpl implements ModuleHooks {
         ts,
         args,
         () => this.#dbView as DbView<any>,
-        this.#schema.mountedDispatchInfos
+        this.#schema.submoduleDispatchInfos
       );
     }
 
     let offset = this.#consumerProcedureCount;
-    for (let i = 0; i < this.#flatMounts.length; i++) {
-      const m = this.#flatMounts[i];
+    for (let i = 0; i < this.#flatSubmodules.length; i++) {
+      const m = this.#flatSubmodules[i];
       if (id < offset + m.procedureFns.length) {
         return callProcedure(
           m.procedureFns,
@@ -667,7 +667,7 @@ class ModuleHooksImpl implements ModuleHooks {
           connId,
           ts,
           args,
-          () => this.#getMountDbView(i),
+          () => this.#getSubmoduleDbView(i),
           m.subDispatches
         );
       }
@@ -688,7 +688,7 @@ class ModuleHooksImpl implements ModuleHooks {
     const ctx = new HandlerContextImpl(
       new Timestamp(timestamp),
       () => this.#dbView,
-      this.#schema.mountedDispatchInfos
+      this.#schema.submoduleDispatchInfos
     );
     const requestMetadata = HttpRequest.deserialize(new BinaryReader(request));
     const response = callUserFunction(
@@ -715,7 +715,7 @@ class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
   #uuidCounter: { value: number } | undefined;
   #random: Random | undefined;
   #dbView: () => DbView<any>;
-  #dispatches: MountedDispatchInfo[];
+  #dispatches: SubmoduleDispatchInfo[];
   #asViews: object | undefined;
 
   readonly http = httpClient;
@@ -723,7 +723,7 @@ class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
   constructor(
     readonly timestamp: Timestamp,
     dbView: () => DbView<any>,
-    dispatches: MountedDispatchInfo[] = []
+    dispatches: SubmoduleDispatchInfo[] = []
   ) {
     this.#dbView = dbView;
     this.#dispatches = dispatches;
@@ -767,7 +767,7 @@ class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
   }
 }
 
-function buildDbViewForDispatch(dispatch: MountedDispatchInfo, namePrefix: string): object {
+function buildDbViewForDispatch(dispatch: SubmoduleDispatchInfo, namePrefix: string): object {
   const tableEntries = dispatch.tables.map(({ accessorName, tableDef }) => [
     accessorName,
     makeTableView(dispatch.typespace, tableDef, namePrefix),
@@ -781,7 +781,7 @@ function buildDbViewForDispatch(dispatch: MountedDispatchInfo, namePrefix: strin
 
 function buildAliasCtx(
   parent: InstanceType<typeof ReducerCtxImpl>,
-  dispatch: MountedDispatchInfo,
+  dispatch: SubmoduleDispatchInfo,
   namePrefix: string
 ): object {
   const nsDb = buildDbViewForDispatch(dispatch, namePrefix);
@@ -803,7 +803,7 @@ function buildAliasCtx(
 
 function buildAliasCtxMap(
   parent: InstanceType<typeof ReducerCtxImpl>,
-  dispatches: MountedDispatchInfo[],
+  dispatches: SubmoduleDispatchInfo[],
   parentPrefix: string
 ): object {
   return freeze(
@@ -816,7 +816,7 @@ function buildAliasCtxMap(
 
 function buildHandlerAliasCtx(
   parent: HandlerContextImpl,
-  dispatch: MountedDispatchInfo,
+  dispatch: SubmoduleDispatchInfo,
   namePrefix: string
 ): object {
   // nsDb is built lazily inside withTx so that sys.table_id_from_name is called
@@ -845,7 +845,7 @@ function buildHandlerAliasCtx(
 
 function buildHandlerAliasCtxMap(
   parent: HandlerContextImpl,
-  dispatches: MountedDispatchInfo[],
+  dispatches: SubmoduleDispatchInfo[],
   parentPrefix: string
 ): object {
   return freeze(
@@ -870,7 +870,7 @@ type ProcCtxRef = {
 
 function buildProcedureAliasCtx(
   parent: ProcCtxRef,
-  dispatch: MountedDispatchInfo,
+  dispatch: SubmoduleDispatchInfo,
   namePrefix: string
 ): object {
   // nsDb is built lazily inside withTx so that sys.table_id_from_name is called
@@ -902,7 +902,7 @@ function buildProcedureAliasCtx(
 
 export function buildProcedureAliasCtxMap(
   parent: ProcCtxRef,
-  dispatches: MountedDispatchInfo[],
+  dispatches: SubmoduleDispatchInfo[],
   parentPrefix: string
 ): object {
   return freeze(
@@ -917,7 +917,7 @@ export function buildProcedureAliasCtxMap(
  *  Must be called while inside a transaction (after sys.procedure_start_mut_tx). */
 export function assignTxAliasViews(
   tx: InstanceType<typeof ReducerCtxImpl>,
-  dispatches: MountedDispatchInfo[]
+  dispatches: SubmoduleDispatchInfo[]
 ): void {
   if (dispatches.length > 0) {
     tx.as = buildAliasCtxMap(tx, dispatches, '') as any;

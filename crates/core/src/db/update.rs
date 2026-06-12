@@ -52,7 +52,7 @@ pub fn update_database(
     let old_module_def = plan.old_def();
 
     // Build a map from full-name (namespaced) -> (owning_def, table_def) covering root and all 
-    // mounted tables. Mounted tables are stored in the DB with prefixed names like
+    // submodule tables. Submodule tables are stored in the DB with prefixed names like
     // "lib.library_procedure_timer", but `ModuleDef::table()` only has the current level.
     // `all_tables_with_prefix()` returns the owning submodule alongside each def, which is also
     // needed so that `check_compatible` resolves column type refs against the correct

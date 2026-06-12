@@ -33,7 +33,7 @@ use spacetimedb_data_structures::map::{Equivalent, HashMap};
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v10::{
     ExplicitNames, MethodOrAny, RawConstraintDefV10, RawHttpHandlerDefV10, RawHttpRouteDefV10, RawIndexDefV10,
-    RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section, RawModuleMountV10, RawProcedureDefV10,
+    RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section, RawSubmoduleV10, RawProcedureDefV10,
     RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10, RawScopedTypeNameV10, RawSequenceDefV10,
     RawTableDefV10, RawTypeDefV10, RawViewDefV10, RawViewPrimaryKeyDefV10,
 };
@@ -165,8 +165,8 @@ pub struct ModuleDef {
     #[allow(unused)]
     raw_module_def_version: RawModuleDefVersion,
 
-    /// Mounted submodules, keyed by the namespace they are mounted under.
-    mounts: IndexMap<String, ModuleDef>,
+    /// Submodules, keyed by the namespace they are registered under.
+    submodules: IndexMap<String, ModuleDef>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -183,9 +183,9 @@ impl ModuleDef {
         self.raw_module_def_version
     }
 
-    /// The mounted submodules of the module definition.
-    pub fn mounts(&self) -> &IndexMap<String, ModuleDef> {
-        &self.mounts
+    /// The submodules of the module definition.
+    pub fn submodules(&self) -> &IndexMap<String, ModuleDef> {
+        &self.submodules
     }
 
     /// The tables of the module definition.
@@ -213,7 +213,7 @@ impl ModuleDef {
         self.tables().filter_map(|table| table.schedule.as_ref())
     }
 
-    /// All tables across this module and all mounted submodules, in depth-first order.
+    /// All tables across this module and all submodules, in depth-first order.
     ///
     /// Each item is `(namespace, owning_def, table_def)` where `namespace` is the dot-terminated
     /// namespace string (e.g., `"alias."`) to be prepended to the table's name for database storage.
@@ -228,12 +228,12 @@ impl ModuleDef {
         for table in self.tables.values() {
             out.push((prefix.to_string(), self, table));
         }
-        for (ns, mount) in &self.mounts {
-            mount.collect_tables_with_prefix(&format!("{prefix}{ns}."), out);
+        for (ns, submodule) in &self.submodules {
+            submodule.collect_tables_with_prefix(&format!("{prefix}{ns}."), out);
         }
     }
 
-    /// All views across this module and all mounted submodules, in depth-first order.
+    /// All views across this module and all submodules, in depth-first order.
     ///
     /// Each item is `(namespace, owning_def, view_def)` where `namespace` is the dot-terminated
     /// namespace string (e.g., `"alias."`) to be prepended to the view's name.
@@ -248,8 +248,8 @@ impl ModuleDef {
         for view in self.views.values() {
             out.push((prefix.to_string(), self, view));
         }
-        for (ns, mount) in &self.mounts {
-            mount.collect_views_with_prefix(&format!("{prefix}{ns}."), out);
+        for (ns, submodule) in &self.submodules {
+            submodule.collect_views_with_prefix(&format!("{prefix}{ns}."), out);
         }
     }
 
@@ -311,19 +311,19 @@ impl ModuleDef {
         self.reducers.values()
     }
 
-    /// Returns all reducer ids and definitions in depth-first mount order.
+    /// Returns all reducer ids and definitions in depth-first submodule order.
     ///
     /// IDs are assigned as follows: consumer's own reducers first (0..N), then each
-    /// mounted submodule's reducers in the order they appear in `mounts`, recursively.
+    /// submodule's reducers in the order they appear in `submodules`, recursively.
     pub fn reducer_ids_and_defs(&self) -> Vec<(ReducerId, &ReducerDef)> {
         let mut out = Vec::with_capacity(self.reducer_count());
         self.collect_reducers(0, &mut out);
         out
     }
 
-    /// Total reducer count including all mounted submodules (depth-first sum).
+    /// Total reducer count including all submodules (depth-first sum).
     pub fn reducer_count(&self) -> usize {
-        self.reducers.len() + self.mounts.values().map(|m| m.reducer_count()).sum::<usize>()
+        self.reducers.len() + self.submodules.values().map(|m| m.reducer_count()).sum::<usize>()
     }
 
     fn collect_reducers<'a>(&'a self, offset: usize, out: &mut Vec<(ReducerId, &'a ReducerDef)>) {
@@ -331,13 +331,13 @@ impl ModuleDef {
             out.push(((offset + i).into(), def));
         }
         let mut child_offset = offset + self.reducers.len();
-        for mount in self.mounts.values() {
-            mount.collect_reducers(child_offset, out);
-            child_offset += mount.reducer_count();
+        for submodule in self.submodules.values() {
+            submodule.collect_reducers(child_offset, out);
+            child_offset += submodule.reducer_count();
         }
     }
 
-    /// All reducers across this module and all mounted submodules, in depth-first order.
+    /// All reducers across this module and all submodules, in depth-first order.
     ///
     /// Each item is `(prefix, owning_def, reducer_def)` where `prefix` is the dot-terminated
     /// namespace string (e.g., `"lib."`) to be prepended to the reducer's name as its wire name.
@@ -356,12 +356,12 @@ impl ModuleDef {
         for reducer in self.reducers.values() {
             out.push((prefix.to_string(), self, reducer));
         }
-        for (ns, mount) in &self.mounts {
-            mount.collect_reducers_with_prefix(&format!("{prefix}{ns}."), out);
+        for (ns, submodule) in &self.submodules {
+            submodule.collect_reducers_with_prefix(&format!("{prefix}{ns}."), out);
         }
     }
 
-    /// All procedures across this module and all mounted submodules, in depth-first order.
+    /// All procedures across this module and all submodules, in depth-first order.
     ///
     /// Each item is `(prefix, owning_def, procedure_def)` where `prefix` is the dot-terminated
     /// namespace string (e.g., `"lib."`) to be prepended to the procedure's name as its wire name.
@@ -380,8 +380,8 @@ impl ModuleDef {
         for procedure in self.procedures.values() {
             out.push((prefix.to_string(), self, procedure));
         }
-        for (ns, mount) in &self.mounts {
-            mount.collect_procedures_with_prefix(&format!("{prefix}{ns}."), out);
+        for (ns, submodule) in &self.submodules {
+            submodule.collect_procedures_with_prefix(&format!("{prefix}{ns}."), out);
         }
     }
 
@@ -402,20 +402,20 @@ impl ModuleDef {
 
     /// Returns warnings about this module's definition that will not prevent publishing.
     ///
-    /// - Warns when a mounted sub-module registers HTTP routes via a top-level router export
+    /// - Warns when a submodule registers HTTP routes via a top-level router export
     ///   because those routes are ignored by the host.
     pub fn collect_warnings(&self) -> Vec<String> {
         let mut warnings = Vec::new();
-        for (namespace, mounted_def) in self.mounts() {
-            if !mounted_def.http_routes().is_empty() {
+        for (namespace, submodule_def) in self.submodules() {
+            if !submodule_def.http_routes().is_empty() {
                 warnings.push(format!(
-                    "The component mounted under namespace '{namespace}' registers HTTP routes via a router. \
-                     Route registrations in mounted components are ignored. Only the root module's routes \
-                     are served. Define routes in the root module and call the component's HTTP handler \
+                    "The submodule under namespace '{namespace}' registers HTTP routes via a router. \
+                     Route registrations in submodules are ignored. Only the root module's routes \
+                     are served. Define routes in the root module and call the submodule's HTTP handler \
                      functions via `ctx.as.{namespace}`."
                 ));
             }
-            warnings.extend(mounted_def.collect_warnings());
+            warnings.extend(submodule_def.collect_warnings());
         }
         warnings
     }
@@ -557,7 +557,7 @@ impl ModuleDef {
     /// Look up a reducer by its wire name, resolving qualified names like `"myauth.verify_token"`.
     ///
     /// A plain name searches the consumer's own reducers. A dot-qualified name routes to
-    /// the matching mount and recurses. Nesting is supported: `"auth.baz.cleanup"`.
+    /// the matching submodule and recurses. Nesting is supported: `"auth.baz.cleanup"`.
     /// Returns the depth-first `ReducerId` and the `ReducerDef`.
     pub fn reducer_by_name(&self, name: &str) -> Option<(ReducerId, &ReducerDef)> {
         self.reducer_by_name_with_module(name).map(|(id, def, _)| (id, def))
@@ -574,12 +574,12 @@ impl ModuleDef {
                 .map(|(idx, _, def)| (idx.into(), def, self)),
             Some((namespace, rest)) => {
                 let mut offset = self.reducers.len();
-                for (ns, mount) in &self.mounts {
+                for (ns, submodule) in &self.submodules {
                     if ns == namespace {
-                        let (inner_id, def, owning) = mount.reducer_by_name_with_module(rest)?;
+                        let (inner_id, def, owning) = submodule.reducer_by_name_with_module(rest)?;
                         return Some(((offset + inner_id.idx()).into(), def, owning));
                     }
-                    offset += mount.reducer_count();
+                    offset += submodule.reducer_count();
                 }
                 None
             }
@@ -599,10 +599,10 @@ impl ModuleDef {
             return self.reducers.get_index(idx).map(|(_, def)| def);
         }
         let mut offset = self.reducers.len();
-        for mount in self.mounts.values() {
-            let count = mount.reducer_count();
+        for submodule in self.submodules.values() {
+            let count = submodule.reducer_count();
             if idx < offset + count {
-                return mount.get_reducer_by_id(ReducerId::from(idx - offset));
+                return submodule.get_reducer_by_id(ReducerId::from(idx - offset));
             }
             offset += count;
         }
@@ -649,16 +649,16 @@ impl ModuleDef {
         }
         let mut anon_off = anon_offset + self.anon_view_count() as u32;
         let mut non_anon_off = non_anon_offset + self.non_anon_view_count() as u32;
-        for mount in self.mounts.values() {
-            let mount_anon = mount.total_anon_view_count() as u32;
-            let mount_non_anon = mount.total_non_anon_view_count() as u32;
-            let mount_count = if is_anonymous { mount_anon } else { mount_non_anon };
-            let mount_off = if is_anonymous { anon_off } else { non_anon_off };
-            if global_id < mount_off + mount_count {
-                return mount.get_view_by_global_id_inner(global_id, is_anonymous, anon_off, non_anon_off);
+        for submodule in self.submodules.values() {
+            let submodule_anon = submodule.total_anon_view_count() as u32;
+            let submodule_non_anon = submodule.total_non_anon_view_count() as u32;
+            let submodule_count = if is_anonymous { submodule_anon } else { submodule_non_anon };
+            let submodule_off = if is_anonymous { anon_off } else { non_anon_off };
+            if global_id < submodule_off + submodule_count {
+                return submodule.get_view_by_global_id_inner(global_id, is_anonymous, anon_off, non_anon_off);
             }
-            anon_off += mount_anon;
-            non_anon_off += mount_non_anon;
+            anon_off += submodule_anon;
+            non_anon_off += submodule_non_anon;
         }
         None
     }
@@ -666,13 +666,13 @@ impl ModuleDef {
     /// Look up a view by its wire name, resolving dot-qualified names like `"lib.library_view"`.
     ///
     /// A plain name searches this module's own views. A dot-qualified name routes to
-    /// the matching mount and recurses. Returns the `ViewDef` and the owning `ModuleDef`.
+    /// the matching submodule and recurses. Returns the `ViewDef` and the owning `ModuleDef`.
     pub fn view_by_name_with_module<'a>(&'a self, name: &str) -> Option<(&'a ViewDef, &'a ModuleDef)> {
         match name.split_once('.') {
             None => self.views.get(name).map(|def| (def, self)),
             Some((namespace, rest)) => {
-                let mount = self.mounts.get(namespace)?;
-                mount.view_by_name_with_module(rest)
+                let submodule = self.submodules.get(namespace)?;
+                submodule.view_by_name_with_module(rest)
             }
         }
     }
@@ -704,38 +704,38 @@ impl ModuleDef {
             Some((namespace, rest)) => {
                 let mut anon_off = anon_offset + self.anon_view_count() as u32;
                 let mut non_anon_off = non_anon_offset + self.non_anon_view_count() as u32;
-                for (ns, mount) in &self.mounts {
+                for (ns, submodule) in &self.submodules {
                     if ns == namespace {
-                        return mount.view_by_name_with_global_fn_ptr_inner(rest, anon_off, non_anon_off);
+                        return submodule.view_by_name_with_global_fn_ptr_inner(rest, anon_off, non_anon_off);
                     }
-                    anon_off += mount.total_anon_view_count() as u32;
-                    non_anon_off += mount.total_non_anon_view_count() as u32;
+                    anon_off += submodule.total_anon_view_count() as u32;
+                    non_anon_off += submodule.total_non_anon_view_count() as u32;
                 }
                 None
             }
         }
     }
 
-    /// Count of anonymous views in this module (not including mounts).
+    /// Count of anonymous views in this module (not including submodules).
     pub fn anon_view_count(&self) -> usize {
         self.views.values().filter(|v| v.is_anonymous).count()
     }
 
-    /// Count of non-anonymous views in this module (not including mounts).
+    /// Count of non-anonymous views in this module (not including submodules).
     pub fn non_anon_view_count(&self) -> usize {
         self.views.values().filter(|v| !v.is_anonymous).count()
     }
 
-    /// Total anonymous view count including all mounted submodules (depth-first sum).
+    /// Total anonymous view count including all submodules (depth-first sum).
     pub fn total_anon_view_count(&self) -> usize {
-        self.anon_view_count() + self.mounts.values().map(|m| m.total_anon_view_count()).sum::<usize>()
+        self.anon_view_count() + self.submodules.values().map(|m| m.total_anon_view_count()).sum::<usize>()
     }
 
-    /// Total non-anonymous view count including all mounted submodules (depth-first sum).
+    /// Total non-anonymous view count including all submodules (depth-first sum).
     pub fn total_non_anon_view_count(&self) -> usize {
         self.non_anon_view_count()
             + self
-                .mounts
+                .submodules
                 .values()
                 .map(|m| m.total_non_anon_view_count())
                 .sum::<usize>()
@@ -769,25 +769,25 @@ impl ModuleDef {
             return self.procedures.get_index(idx).map(|(_, def)| def);
         }
         let mut offset = self.procedures.len();
-        for mount in self.mounts.values() {
-            let count = mount.procedure_count();
+        for submodule in self.submodules.values() {
+            let count = submodule.procedure_count();
             if idx < offset + count {
-                return mount.get_procedure_by_id(ProcedureId::from(idx - offset));
+                return submodule.get_procedure_by_id(ProcedureId::from(idx - offset));
             }
             offset += count;
         }
         None
     }
 
-    /// Total procedure count including all mounted submodules (depth-first sum).
+    /// Total procedure count including all submodules (depth-first sum).
     pub fn procedure_count(&self) -> usize {
-        self.procedures.len() + self.mounts.values().map(|m| m.procedure_count()).sum::<usize>()
+        self.procedures.len() + self.submodules.values().map(|m| m.procedure_count()).sum::<usize>()
     }
 
     /// Look up a procedure by its wire name, resolving qualified names like `"mylib.proc_name"`.
     ///
     /// A plain name searches the module's own procedures. A dot-qualified name routes to
-    /// the matching mount and recurses. Returns the depth-first `ProcedureId` and the `ProcedureDef`.
+    /// the matching submodule and recurses. Returns the depth-first `ProcedureId` and the `ProcedureDef`.
     pub fn procedure_by_name(&self, name: &str) -> Option<(ProcedureId, &ProcedureDef)> {
         self.procedure_by_name_with_module(name).map(|(id, def, _)| (id, def))
     }
@@ -805,12 +805,12 @@ impl ModuleDef {
                 .map(|(idx, _, def)| (idx.into(), def, self)),
             Some((namespace, rest)) => {
                 let mut offset = self.procedures.len();
-                for (ns, mount) in &self.mounts {
+                for (ns, submodule) in &self.submodules {
                     if ns == namespace {
-                        let (inner_id, def, owning) = mount.procedure_by_name_with_module(rest)?;
+                        let (inner_id, def, owning) = submodule.procedure_by_name_with_module(rest)?;
                         return Some(((offset + inner_id.idx()).into(), def, owning));
                     }
-                    offset += mount.procedure_count();
+                    offset += submodule.procedure_count();
                 }
                 None
             }
@@ -822,7 +822,7 @@ impl ModuleDef {
         self.lifecycle_reducers[lifecycle].map(|i| (i, &self.reducers[i.idx()]))
     }
 
-    /// All lifecycle reducer assignments for this module (does not include mounted submodules).
+    /// All lifecycle reducer assignments for this module (does not include submodules).
     pub fn lifecycle_reducers_map(&self) -> &EnumMap<Lifecycle, Option<ReducerId>> {
         &self.lifecycle_reducers
     }
@@ -922,7 +922,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
             http_handlers: _,
             http_routes: _,
             raw_module_def_version: _,
-            mounts: _,
+            submodules: _,
         } = val;
 
         // Extract column defaults from tables before consuming tables
@@ -981,7 +981,7 @@ impl From<ModuleDef> for RawModuleDefV10 {
             http_handlers,
             http_routes,
             raw_module_def_version: _,
-            mounts,
+            submodules,
         } = val;
 
         let mut sections = Vec::new();
@@ -1140,15 +1140,15 @@ impl From<ModuleDef> for RawModuleDefV10 {
         // Always emit ExplicitNames so canonical names survive the round-trip.
         sections.push(RawModuleDefV10Section::ExplicitNames(explicit_names));
 
-        let mounts: Vec<_> = mounts
+        let submodules: Vec<_> = submodules
             .into_iter()
-            .map(|(namespace, module)| RawModuleMountV10 {
+            .map(|(namespace, module)| RawSubmoduleV10 {
                 namespace,
                 module: module.into(),
             })
             .collect();
-        if !mounts.is_empty() {
-            sections.push(RawModuleDefV10Section::Mounts(mounts));
+        if !submodules.is_empty() {
+            sections.push(RawModuleDefV10Section::Submodules(submodules));
         }
 
         RawModuleDefV10 { sections }
@@ -2604,32 +2604,32 @@ mod tests {
     }
 
     #[test]
-    fn mounted_reducer_ids_are_depth_first() {
-        use spacetimedb_lib::db::raw_def::v10::{RawModuleDefV10Builder, RawModuleDefV10Section, RawModuleMountV10};
+    fn submodule_reducer_ids_are_depth_first() {
+        use spacetimedb_lib::db::raw_def::v10::{RawModuleDefV10Builder, RawModuleDefV10Section, RawSubmoduleV10};
 
         // baz library: 1 reducer
         let mut baz_builder = RawModuleDefV10Builder::new();
         baz_builder.add_reducer("baz_reduce", ProductType::unit());
 
-        // auth library: 1 own reducer, mounts baz
+        // auth library: 1 own reducer, uses baz as a submodule
         let mut auth_builder = RawModuleDefV10Builder::new();
         auth_builder.add_reducer("auth_verify", ProductType::unit());
         let mut auth_raw = auth_builder.finish();
         auth_raw
             .sections
-            .push(RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+            .push(RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
                 namespace: "baz".to_string(),
                 module: baz_builder.finish(),
             }]));
 
-        // consumer: 2 own reducers, mounts auth
+        // consumer: 2 own reducers, uses auth as a submodule
         let mut consumer_builder = RawModuleDefV10Builder::new();
         consumer_builder.add_reducer("consumer_a", ProductType::unit());
         consumer_builder.add_reducer("consumer_b", ProductType::unit());
         let mut consumer_raw = consumer_builder.finish();
         consumer_raw
             .sections
-            .push(RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+            .push(RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
                 namespace: "auth".to_string(),
                 module: auth_raw,
             }]));
@@ -2651,7 +2651,7 @@ mod tests {
         assert_eq!(ids_and_defs[3].0, ReducerId(3));
         assert_eq!(&*ids_and_defs[3].1.name, "baz_reduce");
 
-        // get_reducer_by_id resolves mounted reducer IDs correctly
+        // get_reducer_by_id resolves submodule reducer IDs correctly
         assert_eq!(&*def.reducer_by_id(ReducerId(2)).name, "auth_verify");
         assert_eq!(&*def.reducer_by_id(ReducerId(3)).name, "baz_reduce");
         assert!(def.get_reducer_by_id(ReducerId(4)).is_none());
@@ -2661,7 +2661,7 @@ mod tests {
         assert_eq!(id, ReducerId(0));
         assert_eq!(&*rdef.name, "consumer_a");
 
-        // reducer_by_name routes qualified names to mounted reducers
+        // reducer_by_name routes qualified names to submodule reducers
         let (id, rdef) = def
             .reducer_by_name("auth.auth_verify")
             .expect("qualified name resolves");

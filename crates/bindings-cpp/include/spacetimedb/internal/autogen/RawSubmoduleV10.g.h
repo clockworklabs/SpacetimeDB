@@ -19,7 +19,7 @@ struct RawModuleDefV10;
 
 namespace SpacetimeDB::Internal {
 
-SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawModuleMountV10) {
+SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawSubmoduleV10) {
     std::string namespace_;
     std::shared_ptr<SpacetimeDB::Internal::RawModuleDefV10> module;
 

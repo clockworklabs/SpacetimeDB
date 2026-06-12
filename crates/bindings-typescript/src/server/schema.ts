@@ -61,7 +61,7 @@ import {
 } from './views';
 import type { UntypedTableDef } from '../lib/table';
 
-export type MountedDispatchInfo = {
+export type SubmoduleDispatchInfo = {
   namespace: string;
   reducerFns: Reducers;
   reducerDefs: RawReducerDefV10[];
@@ -71,7 +71,7 @@ export type MountedDispatchInfo = {
   viewFns: Views;
   typespace: Typespace;
   tables: Array<{ accessorName: string; tableDef: RawTableDefV10 }>;
-  subDispatches: MountedDispatchInfo[];
+  subDispatches: SubmoduleDispatchInfo[];
 };
 
 export class SchemaInner<
@@ -100,7 +100,7 @@ export class SchemaInner<
     new Map();
   pendingSchedules: PendingSchedule[] = [];
   pendingHttpRoutes: PendingHttpRoute[] = [];
-  mountedDispatchInfos: MountedDispatchInfo[] = [];
+  submoduleDispatchInfos: SubmoduleDispatchInfo[] = [];
 
   constructor(getSchemaType: (ctx: SchemaInner<S>) => S) {
     super();
@@ -229,8 +229,8 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
     return this.#ctx.typespace;
   }
 
-  get mountedDispatchInfos(): MountedDispatchInfo[] {
-    return this.#ctx.mountedDispatchInfos;
+  get submoduleDispatchInfos(): SubmoduleDispatchInfo[] {
+    return this.#ctx.submoduleDispatchInfos;
   }
 
   /** Internal: register exports and materialize the RawModuleDefV10 for upload. */
@@ -246,13 +246,13 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
   }
 
   /**
-   * @internal – called by schema() when processing a mounted namespace entry.
+   * @internal – called by schema() when processing a submodule namespace entry.
    * Registers the library's exports and returns both the serialized module def
    * and the runtime dispatch info needed by ModuleHooksImpl for __call_reducer__.
    */
-  buildMountForDispatch(
+  buildSubmoduleDispatch(
     exports: object
-  ): { rawDef: RawModuleDefV10; dispatch: MountedDispatchInfo } {
+  ): { rawDef: RawModuleDefV10; dispatch: SubmoduleDispatchInfo } {
     const rawDef = this.buildRawModuleDefV10(exports, {
       ignoreNonModuleExports: true,
     });
@@ -272,7 +272,7 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
           accessorName: t.accessorName,
           tableDef: t.tableDef,
         })),
-        subDispatches: [...this.#ctx.mountedDispatchInfos],
+        subDispatches: [...this.#ctx.submoduleDispatchInfos],
       },
     };
   }
@@ -685,12 +685,12 @@ export interface ModuleSettings {
   CASE_CONVERSION_POLICY?: CaseConversionPolicy;
 }
 
-type MountedModuleNamespace = {
+type SubmoduleNamespace = {
   default: Schema<any>;
   [key: string]: unknown;
 };
 
-type SchemaEntry = UntypedTableSchema | MountedModuleNamespace;
+type SchemaEntry = UntypedTableSchema | SubmoduleNamespace;
 
 type ExtractTableEntries<H extends Record<string, SchemaEntry>> = {
   [K in keyof H as H[K] extends UntypedTableSchema ? K : never]: Extract<
@@ -699,7 +699,7 @@ type ExtractTableEntries<H extends Record<string, SchemaEntry>> = {
   >;
 };
 
-type ExtractMountSchemas<H extends Record<string, SchemaEntry>> = {
+type ExtractSubmoduleSchemas<H extends Record<string, SchemaEntry>> = {
   [K in keyof H as H[K] extends { default: Schema<any> }
     ? K
     : never]: H[K] extends { default: Schema<infer S extends UntypedSchemaDef> }
@@ -709,14 +709,14 @@ type ExtractMountSchemas<H extends Record<string, SchemaEntry>> = {
 
 type SchemaDefForEntries<H extends Record<string, SchemaEntry>> =
   TablesToSchema<ExtractTableEntries<H>> & {
-    namespaces: ExtractMountSchemas<H>;
+    namespaces: ExtractSubmoduleSchemas<H>;
   };
 
 function isUntypedTableSchema(x: unknown): x is UntypedTableSchema {
   return typeof x === 'object' && x !== null && hasOwn(x, 'tableDef');
 }
 
-function isMountedModuleNamespace(x: unknown): x is MountedModuleNamespace {
+function isSubmoduleNamespace(x: unknown): x is SubmoduleNamespace {
   return (
     typeof x === 'object' &&
     x !== null &&
@@ -762,19 +762,19 @@ export function schema<const H extends Record<string, SchemaEntry>>(
     for (const [accName, entry] of Object.entries(entries)) {
       if (entry instanceof Schema) {
         throw new TypeError(
-          `schema entry '${accName}' looks like a default import; use \`import * as ${accName} from '...'\` so the mount can see the library's named reducer exports.`
+          `schema entry '${accName}' looks like a default import; use \`import * as ${accName} from '...'\` so the submodule can see the library's named reducer exports.`
         );
       }
-      if (isMountedModuleNamespace(entry)) {
-        const { rawDef, dispatch } = entry.default.buildMountForDispatch(entry);
+      if (isSubmoduleNamespace(entry)) {
+        const { rawDef, dispatch } = entry.default.buildSubmoduleDispatch(entry);
         dispatch.namespace = accName;
-        ctx.addMount({ namespace: accName, module: rawDef });
-        ctx.mountedDispatchInfos.push(dispatch);
+        ctx.addSubmodule({ namespace: accName, module: rawDef });
+        ctx.submoduleDispatchInfos.push(dispatch);
         continue;
       }
       if (!isUntypedTableSchema(entry)) {
         throw new TypeError(
-          `schema entry '${accName}' must be a table or a mounted module namespace object`
+          `schema entry '${accName}' must be a table or a submodule namespace object`
         );
       }
 

@@ -73,11 +73,11 @@ fn main() -> anyhow::Result<()> {
             let code = regex_replace!(&code, r"TableCache as __TableCache,", r"");
             let code = regex_replace!(&code, r"ClientCache as __ClientCache,", r"");
             // Fix a TypeScript type inference error (TS7022/TS7023) caused by the recursive type
-            // RawModuleDefV10 -> ModuleMountsV10 -> RawModuleDefV10. Annotating the `module` getter
+            // RawModuleDefV10 -> RawSubmoduleV10 -> RawModuleDefV10. Annotating the `module` getter
             // with `: any` breaks the cycle without affecting other generated types.
             let code = regex_replace!(
                 &code,
-                r"(export const RawModuleMountV10 = [\s\S]*?)get module\(\) \{",
+                r"(export const RawSubmoduleV10 = [\s\S]*?)get module\(\) \{",
                 r"${1}get module(): any {"
             );
             fs::write(dir.join(filename), code.as_bytes())

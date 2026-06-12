@@ -631,7 +631,7 @@ impl MutTxId {
     /// Like [`create_view`] but registers the view under `name_prefix + view_def.accessor_name`
     /// (e.g. `"lib.library_view"`), using `owning_def` for type resolution.
     ///
-    /// Used for mounted submodule views whose canonical names are dot-namespaced.
+    /// Used for submodule views whose canonical names are dot-namespaced.
     pub fn create_view_with_prefix(
         &mut self,
         owning_def: &ModuleDef,

@@ -26,7 +26,7 @@ import { assignTxAliasViews, buildProcedureAliasCtxMap, callUserFunction, Reduce
 import {
   exportContext,
   registerExport,
-  type MountedDispatchInfo,
+  type SubmoduleDispatchInfo,
   type ModuleExport,
   type SchemaInner,
 } from './schema';
@@ -168,7 +168,7 @@ export function callProcedure(
   timestamp: Timestamp,
   argsBuf: Uint8Array,
   dbView: () => DbView<any>,
-  dispatches: MountedDispatchInfo[] = []
+  dispatches: SubmoduleDispatchInfo[] = []
 ): Uint8Array {
   const { fn, deserializeArgs, serializeReturn, returnTypeBaseSize } =
     procedures[id];
@@ -196,7 +196,7 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   #uuidCounter: { value: 0 } | undefined;
   #random: Random | undefined;
   #dbView: () => DbView<any>;
-  #dispatches: MountedDispatchInfo[];
+  #dispatches: SubmoduleDispatchInfo[];
   #asViews: object | undefined;
 
   constructor(
@@ -204,7 +204,7 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
     readonly timestamp: Timestamp,
     readonly connectionId: ConnectionId | null,
     dbView: () => DbView<any>,
-    dispatches: MountedDispatchInfo[] = []
+    dispatches: SubmoduleDispatchInfo[] = []
   ) {
     this.#dbView = dbView;
     this.#dispatches = dispatches;

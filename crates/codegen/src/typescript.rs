@@ -198,7 +198,7 @@ impl Lang for TypeScript {
             writeln!(out, "import {table_name_pascalcase}Row from \"./{table_module_name}\";");
         }
 
-        // Import row types for mounted namespace tables (public only)
+        // Import row types for submodule namespace tables (public only)
         let ns_tables: Vec<_> = module
             .all_tables_with_prefix()
             .into_iter()
@@ -223,15 +223,15 @@ impl Lang for TypeScript {
             writeln!(out);
             writeln!(out, "// Import namespace table schema definitions");
             for (prefix, _, table) in &ns_tables {
-                let ns_path = mounted_ns_path(prefix);
+                let ns_path = submodule_ns_path(prefix);
                 let file_stem = table_module_name(&table.accessor_name);
-                let row_type = mounted_row_type_name(prefix, table.accessor_name.deref());
+                let row_type = submodule_row_type_name(prefix, table.accessor_name.deref());
                 writeln!(out, "import {row_type}Row from \"./{ns_path}/{file_stem}\";");
             }
             for (prefix, _, view) in &ns_views {
-                let ns_path = mounted_ns_path(prefix);
+                let ns_path = submodule_ns_path(prefix);
                 let file_stem = table_module_name(&view.accessor_name);
-                let row_type = mounted_row_type_name(prefix, view.accessor_name.deref());
+                let row_type = submodule_row_type_name(prefix, view.accessor_name.deref());
                 writeln!(out, "import {row_type}Row from \"./{ns_path}/{file_stem}\";");
             }
         }
@@ -242,9 +242,9 @@ impl Lang for TypeScript {
                 if !is_reducer_invokable(reducer) {
                     continue;
                 }
-                let ns_path = mounted_ns_path(prefix);
+                let ns_path = submodule_ns_path(prefix);
                 let module_name = reducer_module_name(&reducer.accessor_name);
-                let args_type = mounted_reducer_args_type_name(prefix, &reducer.accessor_name);
+                let args_type = submodule_reducer_args_type_name(prefix, &reducer.accessor_name);
                 writeln!(out, "import {args_type} from \"./{ns_path}/{module_name}\";");
             }
         }
@@ -252,9 +252,9 @@ impl Lang for TypeScript {
             writeln!(out);
             writeln!(out, "// Import namespace procedure arg schemas");
             for (prefix, _, procedure) in &ns_procedures {
-                let ns_path = mounted_ns_path(prefix);
+                let ns_path = submodule_ns_path(prefix);
                 let module_name = procedure_module_name(&procedure.accessor_name);
-                let args_type = mounted_procedure_args_type_name(prefix, &procedure.accessor_name);
+                let args_type = submodule_procedure_args_type_name(prefix, &procedure.accessor_name);
                 writeln!(out, "import * as {args_type} from \"./{ns_path}/{module_name}\";");
             }
         }
@@ -292,10 +292,10 @@ impl Lang for TypeScript {
             out.dedent(1);
             writeln!(out, "}}, {}Row),", view_name_pascalcase);
         }
-        // Namespace tables from mounted submodules
+        // Namespace tables from submodules
         for (prefix, owning_def, table) in &ns_tables {
-            let source_name = mounted_source_name(prefix, table.accessor_name.deref());
-            let row_type = mounted_row_type_name(prefix, table.accessor_name.deref());
+            let source_name = submodule_source_name(prefix, table.accessor_name.deref());
+            let row_type = submodule_row_type_name(prefix, table.accessor_name.deref());
             let type_ref = table.product_type_ref;
             writeln!(out, "\"{source_name}\": __table({{");
             out.indent(1);
@@ -303,10 +303,10 @@ impl Lang for TypeScript {
             out.dedent(1);
             writeln!(out, "}}, {row_type}Row),");
         }
-        // Namespace views from mounted submodules
+        // Namespace views from submodules
         for (prefix, owning_def, view) in &ns_views {
-            let source_name = mounted_source_name(prefix, view.accessor_name.deref());
-            let row_type = mounted_row_type_name(prefix, view.accessor_name.deref());
+            let source_name = submodule_source_name(prefix, view.accessor_name.deref());
+            let row_type = submodule_row_type_name(prefix, view.accessor_name.deref());
             let type_ref = view.product_type_ref;
             writeln!(out, "\"{source_name}\": __table({{");
             out.indent(1);
@@ -334,7 +334,7 @@ impl Lang for TypeScript {
                 continue;
             }
             let wire_name = format!("{}{}", prefix, reducer.name);
-            let args_type = mounted_reducer_args_type_name(prefix, &reducer.accessor_name);
+            let args_type = submodule_reducer_args_type_name(prefix, &reducer.accessor_name);
             writeln!(out, "__reducerSchema(\"{wire_name}\", {args_type}),");
         }
         out.dedent(1);
@@ -357,7 +357,7 @@ impl Lang for TypeScript {
         }
         for (prefix, _, procedure) in &ns_procedures {
             let wire_name = format!("{}{}", prefix, procedure.name);
-            let args_type = mounted_procedure_args_type_name(prefix, &procedure.accessor_name);
+            let args_type = submodule_procedure_args_type_name(prefix, &procedure.accessor_name);
             writeln!(out, "__procedureSchema(\"{wire_name}\", {args_type}.params, {args_type}.returnType),");
         }
         out.dedent(1);
@@ -567,13 +567,13 @@ impl Lang for TypeScript {
 
         let mut files = vec![index_file, reducers_file, procedures_file, types_file];
 
-        // Generate types.ts for each mounted submodule namespace so that the
+        // Generate types.ts for each submodule namespace so that the
         // namespace-scoped reducer/procedure/table files can resolve their
         // `import { … } from "./types"` imports.
-        let mut mounted_namespaces: BTreeMap<String, &ModuleDef> = BTreeMap::new();
-        collect_mounted_namespaces(module, "", &mut mounted_namespaces);
-        for (prefix, owning_def) in &mounted_namespaces {
-            let ns_path = mounted_ns_path(prefix);
+        let mut submodule_namespaces: BTreeMap<String, &ModuleDef> = BTreeMap::new();
+        collect_submodule_namespaces(module, "", &mut submodule_namespaces);
+        for (prefix, owning_def) in &submodule_namespaces {
+            let ns_path = submodule_ns_path(prefix);
             let filename = format!("{ns_path}/types.ts");
             files.push(generate_types_file_with_path(owning_def, filename));
         }
@@ -695,14 +695,14 @@ fn generate_types_file_with_path(module: &ModuleDef, filename: String) -> Output
     }
 }
 
-/// Recursively collect all mounted namespaces in depth-first order.
+/// Recursively collect all submodule namespaces in depth-first order.
 /// Keys are dot-terminated prefix strings (e.g. `"lib."`, `"lib.sublib."`).
 /// Values are references to the `ModuleDef` that owns that namespace.
-fn collect_mounted_namespaces<'a>(module: &'a ModuleDef, prefix: &str, out: &mut BTreeMap<String, &'a ModuleDef>) {
-    for (ns, mounted_def) in module.mounts() {
+fn collect_submodule_namespaces<'a>(module: &'a ModuleDef, prefix: &str, out: &mut BTreeMap<String, &'a ModuleDef>) {
+    for (ns, submodule_def) in module.submodules() {
         let full_prefix = format!("{prefix}{ns}.");
-        out.insert(full_prefix.clone(), mounted_def);
-        collect_mounted_namespaces(mounted_def, &full_prefix, out);
+        out.insert(full_prefix.clone(), submodule_def);
+        collect_submodule_namespaces(submodule_def, &full_prefix, out);
     }
 }
 
@@ -1079,18 +1079,18 @@ fn table_module_name(table_name: &Identifier) -> String {
     table_name.deref().to_case(Case::Snake) + "_table"
 }
 
-/// Combined accessor name for a mounted namespace table/view.
+/// Combined accessor name for a submodule namespace table/view.
 /// E.g. namespace="alias.", accessor_name="tableName" → "aliasTableName"
-/// Source name (wire name) for a mounted namespace table/view.
+/// Source name (wire name) for a submodule namespace table/view.
 /// E.g. namespace="alias.", accessor_name="tableName" → "alias.tableName"
-fn mounted_source_name(namespace: &str, accessor_name: &str) -> String {
+fn submodule_source_name(namespace: &str, accessor_name: &str) -> String {
     format!("{}{}", namespace, accessor_name)
 }
 
-/// TypeScript import symbol for a mounted namespace table/view row type.
+/// TypeScript import symbol for a submodule namespace table/view row type.
 /// Uses `_` separator to avoid colliding with root tables that share the same PascalCase prefix.
 /// E.g. namespace="lib.", accessor_name="library_table" → "Lib_LibraryTable"
-fn mounted_row_type_name(namespace: &str, accessor_name: &str) -> String {
+fn submodule_row_type_name(namespace: &str, accessor_name: &str) -> String {
     let ns_part = namespace.trim_end_matches('.').replace('.', "_").to_case(Case::Pascal);
     format!("{}_{}", ns_part, accessor_name.to_case(Case::Pascal))
 }
@@ -1112,24 +1112,24 @@ fn procedure_module_name(procedure_name: &Identifier) -> String {
 }
 
 /// Converts a dot-terminated namespace like `"lib."` or `"lib.sublib."` to a path like `"lib"` or `"lib/sublib"`.
-fn mounted_ns_path(namespace: &str) -> String {
+fn submodule_ns_path(namespace: &str) -> String {
     namespace.trim_end_matches('.').replace('.', "/")
 }
 
-/// TypeScript import symbol for a mounted namespace reducer/procedure.
+/// TypeScript import symbol for a submodule namespace reducer/procedure.
 /// Uses `_` separator to avoid colliding with root reducers/procedures sharing the same prefix.
 /// E.g. prefix="lib.", accessor_name="library_reducer" → "Lib_LibraryReducer"
-fn mounted_fn_type_name(prefix: &str, accessor_name: &str) -> String {
+fn submodule_fn_type_name(prefix: &str, accessor_name: &str) -> String {
     let ns_part = prefix.trim_end_matches('.').replace('.', "_").to_case(Case::Pascal);
     format!("{}_{}", ns_part, accessor_name.to_case(Case::Pascal))
 }
 
-fn mounted_reducer_args_type_name(prefix: &str, accessor_name: &ReducerName) -> String {
-    mounted_fn_type_name(prefix, accessor_name.deref()) + "Reducer"
+fn submodule_reducer_args_type_name(prefix: &str, accessor_name: &ReducerName) -> String {
+    submodule_fn_type_name(prefix, accessor_name.deref()) + "Reducer"
 }
 
-fn mounted_procedure_args_type_name(prefix: &str, accessor_name: &Identifier) -> String {
-    mounted_fn_type_name(prefix, accessor_name.deref()) + "Procedure"
+fn submodule_procedure_args_type_name(prefix: &str, accessor_name: &Identifier) -> String {
+    submodule_fn_type_name(prefix, accessor_name.deref()) + "Procedure"
 }
 
 /// A node in the recursive namespace tree used to emit the nested `tables` export.
@@ -1157,14 +1157,14 @@ impl NsTree {
     }
 }
 
-/// Build the namespace tree from all mounted tables and views.
+/// Build the namespace tree from all submodule tables and views.
 fn build_ns_tree<'a>(
     ns_tables: &[(String, &'a ModuleDef, &'a TableDef)],
     ns_views: &[(String, &'a ModuleDef, &'a ViewDef)],
 ) -> BTreeMap<String, NsTree> {
     let mut tree: BTreeMap<String, NsTree> = BTreeMap::new();
     for (prefix, _, table) in ns_tables {
-        let source_name = mounted_source_name(prefix, table.accessor_name.deref());
+        let source_name = submodule_source_name(prefix, table.accessor_name.deref());
         let local = table.accessor_name.deref().to_case(Case::Camel);
         // prefix like "lib." → segments ["lib"], or "lib.sublib." → ["lib", "sublib"]
         let segs: Vec<&str> = prefix.trim_end_matches('.').split('.').collect();
@@ -1175,7 +1175,7 @@ fn build_ns_tree<'a>(
         }
     }
     for (prefix, _, view) in ns_views {
-        let source_name = mounted_source_name(prefix, view.accessor_name.deref());
+        let source_name = submodule_source_name(prefix, view.accessor_name.deref());
         let local = view.accessor_name.deref().to_case(Case::Camel);
         let segs: Vec<&str> = prefix.trim_end_matches('.').split('.').collect();
         if let Some((first, rest)) = segs.split_first() {
@@ -1201,7 +1201,7 @@ fn emit_ns_tree(out: &mut Indenter, tree: &BTreeMap<String, NsTree>) {
     }
 }
 
-/// Build namespace tree for mounted reducers (uses `.` path separator).
+/// Build namespace tree for submodule reducers (uses `.` path separator).
 /// `flat_key` matches SDK's `accessorName = toCamelCase(wireName)`.
 /// SDK toCamelCase only splits on `_`/`-`, so `/` is kept verbatim:
 /// `"lib.library_reducer"` → `"lib.libraryReducer"`.  Bracket notation is required.
@@ -1225,7 +1225,7 @@ fn build_reducer_ns_tree<'a>(
     tree
 }
 
-/// Build namespace tree for mounted procedures (uses `.` path separator).
+/// Build namespace tree for submodule procedures (uses `.` path separator).
 fn build_procedure_ns_tree<'a>(
     ns_procedures: &[(String, &'a ModuleDef, &'a ProcedureDef)],
 ) -> BTreeMap<String, NsTree> {

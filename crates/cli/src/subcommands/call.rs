@@ -97,7 +97,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
 
     let module_def: ModuleDef = api.module_def().await?.try_into()?;
 
-    // Dot-qualified names (e.g. `lib.my_reducer`) route to mounted submodules.
+    // Dot-qualified names (e.g. `lib.my_reducer`) route to submodules.
     // Keep the owning module def around: type refs in the params must be
     // resolved against the owning module's typespace, not the consumer's.
     let (call_def, owning_def) = match module_def.reducer_by_name_with_module(reducer_procedure_name) {
@@ -270,7 +270,7 @@ const CALL_PRINT_LIMIT: usize = 10;
 /// Provided the schema for the database,
 /// decorate `error` with more helpful info about reducers and procedures.
 ///
-/// Reducers and procedures from mounted submodules are listed under their
+/// Reducers and procedures from submodules are listed under their
 /// full dot-qualified names (e.g. `lib.my_reducer`).
 fn add_reducer_procedure_ctx_to_err(error: &mut String, module_def: &ModuleDef, reducer_name: &str) {
     let reducer_names = module_def

@@ -559,7 +559,7 @@ pub fn create_table_from_def(
     create_table_from_def_with_prefix(stdb, tx, module_def, table_def, "")
 }
 
-/// Creates a mounted submodule table in `stdb`, applying the namespace to its canonical name.
+/// Creates a submodule table in `stdb`, applying the namespace to its canonical name.
 /// `name_prefix` is the dot-terminated namespace string (e.g. `"alias."`).
 pub fn create_table_from_def_with_prefix(
     stdb: &RelationalDB,
@@ -611,7 +611,7 @@ pub fn create_table_from_view_def(
     Ok(())
 }
 
-/// Creates the table for a mounted `view_def` in `stdb`, applying the namespace prefix.
+/// Creates the table for a submodule `view_def` in `stdb`, applying the namespace prefix.
 /// `name_prefix` is the dot-terminated namespace string (e.g. `"lib."`).
 pub fn create_table_from_view_def_with_prefix(
     stdb: &RelationalDB,
@@ -659,7 +659,7 @@ fn init_database_inner(
     let auth_ctx = AuthCtx::for_current(owner_identity);
     let (tx, ()) = stdb
         .with_auto_rollback(tx, |tx| {
-            // Create all in-memory tables defined by the module (including mounted submodules),
+            // Create all in-memory tables defined by the module (including submodules),
             // with IDs ordered lexicographically by their full namespaced names.
             let mut table_defs = module_def.all_tables_with_prefix();
             table_defs.sort_by(|(p1, _, d1), (p2, _, d2)| {
@@ -673,7 +673,7 @@ fn init_database_inner(
                 create_table_from_def_with_prefix(stdb, tx, owning_def, def, &prefix)?;
             }
 
-            // Create all in-memory views defined by the module (root + mounted).
+            // Create all in-memory views defined by the module (root + submodule).
             let mut view_defs: Vec<(String, &ModuleDef, &ViewDef)> = module_def.all_views_with_prefix();
             view_defs.sort_by(|(p1, _, d1), (p2, _, d2)| {
                 let n1 = format!("{}{}", p1, d1.name);
@@ -1150,7 +1150,7 @@ pub struct CallViewParams {
     pub timestamp: Timestamp,
     /// The typespace of the module that owns this view.
     /// For root views this equals the top-level typespace;
-    /// for mounted views this is the mount's own typespace.
+    /// for submodule views this is the submodule's own typespace.
     pub view_typespace: Typespace,
 }
 

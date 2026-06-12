@@ -107,7 +107,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         }
         let json = match entity {
             // Entity lookups go through the validated `ModuleDef`, which resolves
-            // canonical names and dot-qualified names from mounted submodules
+            // canonical names and dot-qualified names from submodules
             // (e.g. `lib.my_reducer`).
             Some((EntityType::Reducer, reducer_name)) => {
                 let module_def: ModuleDef = raw.try_into()?;

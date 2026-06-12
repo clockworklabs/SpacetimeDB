@@ -86,10 +86,10 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .map(ExplicitNamesLookup::new)
         .unwrap_or_default();
     let view_primary_keys = def.view_primary_keys().cloned().unwrap_or_default();
-    let mounts = validate_mounts(
-        def.mounts()
+    let submodules = validate_submodules(
+        def.submodules()
             .into_iter()
-            .flat_map(|mounts| mounts.iter().cloned())
+            .flat_map(|s| s.iter().cloned())
             .collect(),
     );
 
@@ -301,8 +301,8 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .map(|rls| (rls.sql.clone(), rls.to_owned()))
         .collect();
 
-    let ((tables, types, reducers, procedures, views, (http_handlers, http_routes)), mounts) =
-        (tables_types_reducers_procedures_views, mounts)
+    let ((tables, types, reducers, procedures, views, (http_handlers, http_routes)), submodules) =
+        (tables_types_reducers_procedures_views, submodules)
             .combine_errors()
             .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
 
@@ -323,46 +323,46 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         http_handlers,
         http_routes,
         raw_module_def_version: RawModuleDefVersion::V10,
-        mounts,
+        submodules,
     })
 }
 
-/// Validate that each mount's namespace is a valid identifier of at most 63 characters,
-/// that no two mounts share the same namespace, and that no mount declares lifecycle reducers
-/// (lifecycle reducers are only permitted in the root module).
-/// This function will inspect each sub-mount and recursively collect errors.
-fn validate_mounts(mounts: Vec<RawModuleMountV10>) -> Result<IndexMap<String, ModuleDef>> {
+/// Validate that each submodule's namespace is a valid identifier of at most 63 characters,
+/// that no two submodules share the same namespace, and that no submodule declares lifecycle
+/// reducers (lifecycle reducers are only permitted in the root module).
+/// This function will inspect each sub-submodule and recursively collect errors.
+fn validate_submodules(submodules: Vec<RawSubmoduleV10>) -> Result<IndexMap<String, ModuleDef>> {
     let mut errors = vec![];
-    let mut map = IndexMap::with_capacity(mounts.len());
+    let mut map = IndexMap::with_capacity(submodules.len());
 
-    for mount in mounts {
-        if let Err(e) = validate_identifier(&mount.namespace) {
+    for submodule in submodules {
+        if let Err(e) = validate_identifier(&submodule.namespace) {
             errors.push(ValidationError::IdentifierError { error: e });
         }
 
-        if mount.namespace.len() > 63 {
+        if submodule.namespace.len() > 63 {
             errors.push(ValidationError::NamespaceTooLong {
-                namespace: mount.namespace.clone().into(),
-                len: mount.namespace.len(),
+                namespace: submodule.namespace.clone().into(),
+                len: submodule.namespace.len(),
             });
         }
 
-        if map.contains_key(&mount.namespace) {
+        if map.contains_key(&submodule.namespace) {
             errors.push(ValidationError::DuplicateName {
-                name: mount.namespace.into(),
+                name: submodule.namespace.into(),
             });
         } else {
-            match validate(mount.module) {
+            match validate(submodule.module) {
                 Ok(def) => {
                     for (lifecycle, opt_id) in def.lifecycle_reducers_map() {
                         if opt_id.is_some() {
-                            errors.push(ValidationError::LifecycleInComponent {
+                            errors.push(ValidationError::LifecycleInSubmodule {
                                 lifecycle,
-                                namespace: mount.namespace.clone(),
+                                namespace: submodule.namespace.clone(),
                             });
                         }
                     }
-                    map.insert(mount.namespace, def);
+                    map.insert(submodule.namespace, def);
                 }
                 Err(e) => errors.extend(e.into_iter()),
             }
@@ -1147,7 +1147,7 @@ mod tests {
     use spacetimedb_data_structures::expect_error_matching;
     use spacetimedb_lib::db::raw_def::v10::{
         CaseConversionPolicy, MethodOrAny, RawModuleDefV10, RawModuleDefV10Builder, RawModuleDefV10Section,
-        RawModuleMountV10,
+        RawSubmoduleV10,
     };
     use spacetimedb_lib::db::raw_def::v9::{btree, direct, hash};
     use spacetimedb_lib::db::raw_def::*;
@@ -1530,31 +1530,31 @@ mod tests {
     }
 
     #[test]
-    fn validates_mounted_submodules_recursively() {
-        let mut mounted_builder = RawModuleDefV10Builder::new();
-        mounted_builder
+    fn validates_submodules_recursively() {
+        let mut submodule_builder = RawModuleDefV10Builder::new();
+        submodule_builder
             .build_table_with_new_type("Sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
             .finish();
 
         let raw = RawModuleDefV10 {
-            sections: vec![RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
                 namespace: "authlib".to_string(),
-                module: mounted_builder.finish(),
+                module: submodule_builder.finish(),
             }])],
         };
 
-        let def: ModuleDef = raw.try_into().expect("mounted module should validate");
-        let mounts = def.mounts();
+        let def: ModuleDef = raw.try_into().expect("submodule should validate");
+        let submodules = def.submodules();
 
-        assert_eq!(mounts.len(), 1);
-        let mounted = mounts.get("authlib").expect("authlib mount should exist");
-        assert!(mounted.table(&expect_identifier("sessions")).is_some());
+        assert_eq!(submodules.len(), 1);
+        let submodule = submodules.get("authlib").expect("authlib submodule should exist");
+        assert!(submodule.table(&expect_identifier("sessions")).is_some());
     }
 
     #[test]
-    fn invalid_mount_namespace() {
+    fn invalid_submodule_namespace() {
         let raw = RawModuleDefV10 {
-            sections: vec![RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
                 namespace: "".to_string(),
                 module: RawModuleDefV10::default(),
             }])],
@@ -1568,14 +1568,14 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_mount_namespace() {
+    fn duplicate_submodule_namespace() {
         let raw = RawModuleDefV10 {
-            sections: vec![RawModuleDefV10Section::Mounts(vec![
-                RawModuleMountV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![
+                RawSubmoduleV10 {
                     namespace: "authlib".to_string(),
                     module: RawModuleDefV10::default(),
                 },
-                RawModuleMountV10 {
+                RawSubmoduleV10 {
                     namespace: "authlib".to_string(),
                     module: RawModuleDefV10::default(),
                 },
@@ -2636,7 +2636,7 @@ mod tests {
     fn namespace_exactly_63_chars_is_ok() {
         let namespace = "a".repeat(63);
         let raw = RawModuleDefV10 {
-            sections: vec![RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
                 namespace,
                 module: RawModuleDefV10::default(),
             }])],
@@ -2649,7 +2649,7 @@ mod tests {
     fn namespace_64_chars_is_rejected() {
         let namespace = "a".repeat(64);
         let raw = RawModuleDefV10 {
-            sections: vec![RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
                 namespace: namespace.clone(),
                 module: RawModuleDefV10::default(),
             }])],
@@ -2668,26 +2668,26 @@ mod tests {
     }
 
     #[test]
-    fn lifecycle_in_mount_is_rejected() {
+    fn lifecycle_in_submodule_is_rejected() {
         let raw = RawModuleDefV10 {
-            sections: vec![RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
                 namespace: "auth".to_string(),
                 module: make_module_with_lifecycle(Lifecycle::Init),
             }])],
         };
 
         let result: Result<ModuleDef> = raw.try_into();
-        expect_error_matching!(result, ValidationError::LifecycleInComponent { lifecycle, namespace } => {
+        expect_error_matching!(result, ValidationError::LifecycleInSubmodule { lifecycle, namespace } => {
             lifecycle == &Lifecycle::Init && namespace == "auth"
         });
     }
 
     #[test]
-    fn lifecycle_in_root_with_mount_is_ok() {
-        // Root declares Init; the mount has no lifecycle — this is valid.
+    fn lifecycle_in_root_with_submodule_is_ok() {
+        // Root declares Init; the submodule has no lifecycle — this is valid.
         let consumer_raw = make_module_with_lifecycle(Lifecycle::Init);
         let mut sections = consumer_raw.sections;
-        sections.push(RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+        sections.push(RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
             namespace: "auth".to_string(),
             module: RawModuleDefV10::default(),
         }]));
@@ -2695,29 +2695,29 @@ mod tests {
         let result: Result<ModuleDef> = RawModuleDefV10 { sections }.try_into();
         assert!(
             result.is_ok(),
-            "lifecycle in root with a lifecycle-free mount should be valid"
+            "lifecycle in root with a lifecycle-free submodule should be valid"
         );
     }
 
     #[test]
-    fn lifecycle_in_nested_mount_is_rejected() {
-        // Root mounts auth; auth mounts baz; baz declares a lifecycle. Should be rejected.
+    fn lifecycle_in_nested_submodule_is_rejected() {
+        // Root uses auth as submodule; auth uses baz as submodule; baz declares a lifecycle. Should be rejected.
         let auth = RawModuleDefV10 {
-            sections: vec![RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
                 namespace: "baz".to_string(),
                 module: make_module_with_lifecycle(Lifecycle::Init),
             }])],
         };
 
         let raw = RawModuleDefV10 {
-            sections: vec![RawModuleDefV10Section::Mounts(vec![RawModuleMountV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
                 namespace: "auth".to_string(),
                 module: auth,
             }])],
         };
 
         let result: Result<ModuleDef> = raw.try_into();
-        expect_error_matching!(result, ValidationError::LifecycleInComponent { lifecycle, namespace } => {
+        expect_error_matching!(result, ValidationError::LifecycleInSubmodule { lifecycle, namespace } => {
             lifecycle == &Lifecycle::Init && namespace == "baz"
         });
     }

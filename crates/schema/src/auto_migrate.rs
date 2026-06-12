@@ -234,8 +234,8 @@ pub enum AutoMigratePrecheck {
 
 /// A step in an automatic migration.
 ///
-/// All variant payloads are full namespaced names (e.g., `"lib.library_table"` for a mounted
-/// table, or `"user"` for a root-level table). This allows mounted and root-level items to be
+/// All variant payloads are full namespaced names (e.g., `"lib.library_table"` for a submodule
+/// table, or `"user"` for a root-level table). This allows submodule and root-level items to be
 /// handled uniformly. Row-level security payloads are SQL text (`Box<str>`) rather than
 /// identifiers.
 ///
@@ -460,7 +460,7 @@ pub fn ponder_auto_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> 
     let views_ok = auto_migrate_views(&mut plan);
     let tables_ok = auto_migrate_tables(&mut plan);
 
-    // Compute full-name sets for added/removed tables (across all mounts).
+    // Compute full-name sets for added/removed tables (across all submodules).
     // Sub-objects of added/removed tables are handled by AddTable/RemoveTable, not individually.
     let old_module = plan.old;
     let new_module = plan.new;
@@ -498,7 +498,7 @@ fn auto_migrate_views(plan: &mut AutoMigratePlan<'_>) -> Result<()> {
     let old_module = plan.old;
     let new_module = plan.new;
 
-    // Build full-name maps for views across all mounts.
+    // Build full-name maps for views across all submodules.
     let old_views: HashMap<String, (&ModuleDef, &ViewDef)> = old_module
         .all_views_with_prefix()
         .into_iter()
@@ -1254,7 +1254,7 @@ mod tests {
         AlgebraicType, AlgebraicValue, ProductType, ScheduleAt,
     };
     use spacetimedb_primitives::ColId;
-    use v10::{ExplicitNames, RawModuleDefV10Builder, RawModuleDefV10Section, RawModuleMountV10};
+    use v10::{ExplicitNames, RawModuleDefV10Builder, RawModuleDefV10Section, RawSubmoduleV10};
     use v9::{RawModuleDefV9Builder, TableAccess};
     use validate::tests::expect_identifier;
 
@@ -2751,38 +2751,38 @@ mod tests {
         );
     }
 
-    fn make_mount(namespace: &str, build: impl Fn(&mut RawModuleDefV10Builder)) -> RawModuleMountV10 {
+    fn make_submodule(namespace: &str, build: impl Fn(&mut RawModuleDefV10Builder)) -> RawSubmoduleV10 {
         let mut builder = RawModuleDefV10Builder::new();
         build(&mut builder);
-        RawModuleMountV10 {
+        RawSubmoduleV10 {
             namespace: namespace.to_string(),
             module: builder.finish(),
         }
     }
 
-    fn create_module_def_with_mounts(
+    fn create_module_def_with_submodules(
         build_root: impl Fn(&mut RawModuleDefV10Builder),
-        mounts: Vec<RawModuleMountV10>,
+        submodules: Vec<RawSubmoduleV10>,
     ) -> ModuleDef {
         let mut builder = RawModuleDefV10Builder::new();
         build_root(&mut builder);
         let mut raw = builder.finish();
-        if !mounts.is_empty() {
-            raw.sections.push(RawModuleDefV10Section::Mounts(mounts));
+        if !submodules.is_empty() {
+            raw.sections.push(RawModuleDefV10Section::Submodules(submodules));
         }
         raw.try_into().expect("should be a valid module definition")
     }
 
     #[test]
-    fn mounted_table_unchanged() {
-        let mount = || {
-            make_mount("lib", |b| {
+    fn submodule_table_unchanged() {
+        let submodule = || {
+            make_submodule("lib", |b| {
                 b.build_table_with_new_type("sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
                     .finish();
             })
         };
-        let old = create_module_def_with_mounts(|_| {}, vec![mount()]);
-        let new = create_module_def_with_mounts(|_| {}, vec![mount()]);
+        let old = create_module_def_with_submodules(|_| {}, vec![submodule()]);
+        let new = create_module_def_with_submodules(|_| {}, vec![submodule()]);
 
         let plan = ponder_auto_migrate(&old, &new).expect("no-op migration should succeed");
         let namespaced: Vec<_> = plan
@@ -2790,21 +2790,21 @@ mod tests {
             .iter()
             .filter(|s| format!("{s:?}").contains("lib.sessions"))
             .collect();
-        assert!(namespaced.is_empty(), "unchanged mount should produce no steps for lib.sessions: {plan:#?}");
+        assert!(namespaced.is_empty(), "unchanged submodule should produce no steps for lib.sessions: {plan:#?}");
     }
 
     #[test]
-    fn mounted_add_table() {
-        let old = create_module_def_with_mounts(
+    fn submodule_add_table() {
+        let old = create_module_def_with_submodules(
             |_| {},
-            vec![make_mount("lib", |b| {
+            vec![make_submodule("lib", |b| {
                 b.build_table_with_new_type("sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
                     .finish();
             })],
         );
-        let new = create_module_def_with_mounts(
+        let new = create_module_def_with_submodules(
             |_| {},
-            vec![make_mount("lib", |b| {
+            vec![make_submodule("lib", |b| {
                 b.build_table_with_new_type("sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
                     .finish();
                 b.build_table_with_new_type("tokens", ProductType::from([("id", AlgebraicType::U64)]), true)
@@ -2812,7 +2812,7 @@ mod tests {
             })],
         );
 
-        let plan = ponder_auto_migrate(&old, &new).expect("adding a mounted table should succeed");
+        let plan = ponder_auto_migrate(&old, &new).expect("adding a submodule table should succeed");
         let steps = &plan.steps[..];
 
         assert!(!plan.disconnects_all_users(), "{plan:#?}");
@@ -2823,25 +2823,25 @@ mod tests {
     }
 
     #[test]
-    fn mounted_remove_table() {
-        let old = create_module_def_with_mounts(
+    fn submodule_remove_table() {
+        let old = create_module_def_with_submodules(
             |_| {},
-            vec![make_mount("lib", |b| {
+            vec![make_submodule("lib", |b| {
                 b.build_table_with_new_type("sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
                     .finish();
                 b.build_table_with_new_type("tokens", ProductType::from([("id", AlgebraicType::U64)]), true)
                     .finish();
             })],
         );
-        let new = create_module_def_with_mounts(
+        let new = create_module_def_with_submodules(
             |_| {},
-            vec![make_mount("lib", |b| {
+            vec![make_submodule("lib", |b| {
                 b.build_table_with_new_type("sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
                     .finish();
             })],
         );
 
-        let plan = ponder_auto_migrate(&old, &new).expect("removing a mounted table should succeed");
+        let plan = ponder_auto_migrate(&old, &new).expect("removing a submodule table should succeed");
         let steps = &plan.steps[..];
 
         assert!(plan.disconnects_all_users(), "{plan:#?}");
@@ -2852,25 +2852,25 @@ mod tests {
     }
 
     #[test]
-    fn mounted_add_index() {
+    fn submodule_add_index() {
         let sessions_without_index = || {
-            make_mount("lib", |b| {
+            make_submodule("lib", |b| {
                 b.build_table_with_new_type("sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
                     .finish();
             })
         };
         let sessions_with_index = || {
-            make_mount("lib", |b| {
+            make_submodule("lib", |b| {
                 b.build_table_with_new_type("sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
                     .with_index(btree(0), "sessions_id_idx", "sessions_id_idx")
                     .finish();
             })
         };
 
-        let old = create_module_def_with_mounts(|_| {}, vec![sessions_without_index()]);
-        let new = create_module_def_with_mounts(|_| {}, vec![sessions_with_index()]);
+        let old = create_module_def_with_submodules(|_| {}, vec![sessions_without_index()]);
+        let new = create_module_def_with_submodules(|_| {}, vec![sessions_with_index()]);
 
-        let plan = ponder_auto_migrate(&old, &new).expect("adding a mounted index should succeed");
+        let plan = ponder_auto_migrate(&old, &new).expect("adding a submodule index should succeed");
         let steps = &plan.steps[..];
 
         assert!(
@@ -2882,25 +2882,25 @@ mod tests {
     }
 
     #[test]
-    fn mounted_remove_index() {
+    fn submodule_remove_index() {
         let sessions_without_index = || {
-            make_mount("lib", |b| {
+            make_submodule("lib", |b| {
                 b.build_table_with_new_type("sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
                     .finish();
             })
         };
         let sessions_with_index = || {
-            make_mount("lib", |b| {
+            make_submodule("lib", |b| {
                 b.build_table_with_new_type("sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
                     .with_index(btree(0), "sessions_id_idx", "sessions_id_idx")
                     .finish();
             })
         };
 
-        let old = create_module_def_with_mounts(|_| {}, vec![sessions_with_index()]);
-        let new = create_module_def_with_mounts(|_| {}, vec![sessions_without_index()]);
+        let old = create_module_def_with_submodules(|_| {}, vec![sessions_with_index()]);
+        let new = create_module_def_with_submodules(|_| {}, vec![sessions_without_index()]);
 
-        let plan = ponder_auto_migrate(&old, &new).expect("removing a mounted index should succeed");
+        let plan = ponder_auto_migrate(&old, &new).expect("removing a submodule index should succeed");
         let steps = &plan.steps[..];
 
         assert!(
@@ -2912,25 +2912,25 @@ mod tests {
     }
 
     #[test]
-    fn mounted_add_sequence() {
+    fn submodule_add_sequence() {
         let without_seq = || {
-            make_mount("lib", |b| {
+            make_submodule("lib", |b| {
                 b.build_table_with_new_type("sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
                     .finish();
             })
         };
         let with_seq = || {
-            make_mount("lib", |b| {
+            make_submodule("lib", |b| {
                 b.build_table_with_new_type("sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
                     .with_column_sequence(0)
                     .finish();
             })
         };
 
-        let old = create_module_def_with_mounts(|_| {}, vec![without_seq()]);
-        let new = create_module_def_with_mounts(|_| {}, vec![with_seq()]);
+        let old = create_module_def_with_submodules(|_| {}, vec![without_seq()]);
+        let new = create_module_def_with_submodules(|_| {}, vec![with_seq()]);
 
-        let plan = ponder_auto_migrate(&old, &new).expect("adding a mounted sequence should succeed");
+        let plan = ponder_auto_migrate(&old, &new).expect("adding a submodule sequence should succeed");
         let steps = &plan.steps[..];
 
         assert!(
@@ -2951,10 +2951,10 @@ mod tests {
     }
 
     #[test]
-    fn mounted_add_view() {
-        let without_view = || make_mount("lib", |_| {});
+    fn submodule_add_view() {
+        let without_view = || make_submodule("lib", |_| {});
         let with_view = || {
-            make_mount("lib", |b| {
+            make_submodule("lib", |b| {
                 let ret_ref = b.add_algebraic_type(
                     [],
                     "lib_view_return",
@@ -2972,10 +2972,10 @@ mod tests {
             })
         };
 
-        let old = create_module_def_with_mounts(|_| {}, vec![without_view()]);
-        let new = create_module_def_with_mounts(|_| {}, vec![with_view()]);
+        let old = create_module_def_with_submodules(|_| {}, vec![without_view()]);
+        let new = create_module_def_with_submodules(|_| {}, vec![with_view()]);
 
-        let plan = ponder_auto_migrate(&old, &new).expect("adding a mounted view should succeed");
+        let plan = ponder_auto_migrate(&old, &new).expect("adding a submodule view should succeed");
         let steps = &plan.steps[..];
 
         assert!(!plan.disconnects_all_users(), "{plan:#?}");
@@ -2986,10 +2986,10 @@ mod tests {
     }
 
     #[test]
-    fn mounted_remove_view() {
-        let without_view = || make_mount("lib", |_| {});
+    fn submodule_remove_view() {
+        let without_view = || make_submodule("lib", |_| {});
         let with_view = || {
-            make_mount("lib", |b| {
+            make_submodule("lib", |b| {
                 let ret_ref = b.add_algebraic_type(
                     [],
                     "lib_view_return",
@@ -3007,10 +3007,10 @@ mod tests {
             })
         };
 
-        let old = create_module_def_with_mounts(|_| {}, vec![with_view()]);
-        let new = create_module_def_with_mounts(|_| {}, vec![without_view()]);
+        let old = create_module_def_with_submodules(|_| {}, vec![with_view()]);
+        let new = create_module_def_with_submodules(|_| {}, vec![without_view()]);
 
-        let plan = ponder_auto_migrate(&old, &new).expect("removing a mounted view should succeed");
+        let plan = ponder_auto_migrate(&old, &new).expect("removing a submodule view should succeed");
         let steps = &plan.steps[..];
 
         assert!(plan.disconnects_all_users(), "{plan:#?}");
@@ -3023,11 +3023,11 @@ mod tests {
     }
 
     #[test]
-    fn add_whole_mount() {
-        let old = create_module_def_with_mounts(|_| {}, vec![]);
-        let new = create_module_def_with_mounts(
+    fn add_whole_submodule() {
+        let old = create_module_def_with_submodules(|_| {}, vec![]);
+        let new = create_module_def_with_submodules(
             |_| {},
-            vec![make_mount("lib", |b| {
+            vec![make_submodule("lib", |b| {
                 b.build_table_with_new_type("sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
                     .finish();
                 b.build_table_with_new_type("tokens", ProductType::from([("id", AlgebraicType::U64)]), true)
@@ -3035,7 +3035,7 @@ mod tests {
             })],
         );
 
-        let plan = ponder_auto_migrate(&old, &new).expect("adding a whole mount should succeed");
+        let plan = ponder_auto_migrate(&old, &new).expect("adding a whole submodule should succeed");
         let steps = &plan.steps[..];
 
         assert!(!plan.disconnects_all_users(), "{plan:#?}");
@@ -3050,19 +3050,19 @@ mod tests {
     }
 
     #[test]
-    fn remove_whole_mount() {
-        let old = create_module_def_with_mounts(
+    fn remove_whole_submodule() {
+        let old = create_module_def_with_submodules(
             |_| {},
-            vec![make_mount("lib", |b| {
+            vec![make_submodule("lib", |b| {
                 b.build_table_with_new_type("sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
                     .finish();
                 b.build_table_with_new_type("tokens", ProductType::from([("id", AlgebraicType::U64)]), true)
                     .finish();
             })],
         );
-        let new = create_module_def_with_mounts(|_| {}, vec![]);
+        let new = create_module_def_with_submodules(|_| {}, vec![]);
 
-        let plan = ponder_auto_migrate(&old, &new).expect("removing a whole mount should succeed");
+        let plan = ponder_auto_migrate(&old, &new).expect("removing a whole submodule should succeed");
         let steps = &plan.steps[..];
 
         assert!(plan.disconnects_all_users(), "{plan:#?}");
@@ -3081,9 +3081,9 @@ mod tests {
     }
 
     #[test]
-    fn nested_mounted_add_table() {
+    fn nested_submodule_add_table() {
         let make_nested_def = |add_baz_items: bool| {
-            let baz_mount = make_mount("baz", |b| {
+            let baz_submodule = make_submodule("baz", |b| {
                 b.build_table_with_new_type("sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
                     .finish();
                 if add_baz_items {
@@ -3103,9 +3103,9 @@ mod tests {
             let mut auth_raw = auth_builder.finish();
             auth_raw
                 .sections
-                .push(RawModuleDefV10Section::Mounts(vec![baz_mount]));
+                .push(RawModuleDefV10Section::Submodules(vec![baz_submodule]));
 
-            let auth_mount = RawModuleMountV10 {
+            let auth_submodule = RawSubmoduleV10 {
                 namespace: "auth".to_string(),
                 module: auth_raw,
             };
@@ -3114,7 +3114,7 @@ mod tests {
             let mut root_raw = root_builder.finish();
             root_raw
                 .sections
-                .push(RawModuleDefV10Section::Mounts(vec![auth_mount]));
+                .push(RawModuleDefV10Section::Submodules(vec![auth_submodule]));
             root_raw
                 .try_into()
                 .expect("should be a valid module definition")
@@ -3136,10 +3136,10 @@ mod tests {
     }
 
     #[test]
-    fn mounted_remove_table_no_orphan_sub_objects() {
-        let old = create_module_def_with_mounts(
+    fn submodule_remove_table_no_orphan_sub_objects() {
+        let old = create_module_def_with_submodules(
             |_| {},
-            vec![make_mount("lib", |b| {
+            vec![make_submodule("lib", |b| {
                 b.build_table_with_new_type("sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
                     .with_primary_key(0)
                     .with_unique_constraint(0)
@@ -3147,10 +3147,10 @@ mod tests {
                     .finish();
             })],
         );
-        let new = create_module_def_with_mounts(|_| {}, vec![make_mount("lib", |_| {})]);
+        let new = create_module_def_with_submodules(|_| {}, vec![make_submodule("lib", |_| {})]);
 
         let plan =
-            ponder_auto_migrate(&old, &new).expect("removing a mounted table with sub-objects should succeed");
+            ponder_auto_migrate(&old, &new).expect("removing a submodule table with sub-objects should succeed");
         assert_eq!(
             plan.steps,
             &[

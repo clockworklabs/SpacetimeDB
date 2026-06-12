@@ -7,7 +7,7 @@ import {
 } from './algebraic_type';
 import type {
   CaseConversionPolicy,
-  RawModuleMountV10,
+  RawSubmoduleV10,
   RawModuleDefV10,
   RawModuleDefV10Section,
   RawScopedTypeNameV10,
@@ -204,7 +204,7 @@ export class ModuleContext {
     explicitNames: {
       entries: [],
     },
-    mounts: [],
+    submodules: [],
   };
 
   get moduleDef(): ModuleDef {
@@ -270,16 +270,16 @@ export class ModuleContext {
       }
     );
     push(
-      module.mounts && {
-        tag: 'Mounts',
-        value: module.mounts,
+      module.submodules && {
+        tag: 'Submodules',
+        value: module.submodules,
       }
     );
     return { sections };
   }
 
-  addMount(mount: RawModuleMountV10) {
-    this.#moduleDef.mounts.push(mount);
+  addSubmodule(submodule: RawSubmoduleV10) {
+    this.#moduleDef.submodules.push(submodule);
   }
 
   /**

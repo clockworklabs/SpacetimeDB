@@ -99,8 +99,8 @@ pub enum RawModuleDefV10Section {
     /// Primary key metadata for views.
     ViewPrimaryKeys(Vec<RawViewPrimaryKeyDefV10>),
 
-    /// Mounted submodules, keyed by the namespace they are mounted under.
-    Mounts(Vec<RawModuleMountV10>),
+    /// Submodules, keyed by the namespace they are registered under.
+    Submodules(Vec<RawSubmoduleV10>),
 }
 
 #[derive(Debug, Clone, SpacetimeType)]
@@ -130,7 +130,7 @@ pub enum MethodOrAny {
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
-pub struct RawModuleMountV10 {
+pub struct RawSubmoduleV10 {
     pub namespace: String,
     pub module: RawModuleDefV10,
 }
@@ -569,10 +569,10 @@ pub struct RawViewPrimaryKeyDefV10 {
 }
 
 impl RawModuleDefV10 {
-    /// Get the mounted submodules for this module definition.
-    pub fn mounts(&self) -> Option<&Vec<RawModuleMountV10>> {
+    /// Get the submodules for this module definition.
+    pub fn submodules(&self) -> Option<&Vec<RawSubmoduleV10>> {
         self.sections.iter().find_map(|s| match s {
-            RawModuleDefV10Section::Mounts(mounts) => Some(mounts),
+            RawModuleDefV10Section::Submodules(submodules) => Some(submodules),
             _ => None,
         })
     }

@@ -17,7 +17,7 @@ impl TableName {
         Self(id.into())
     }
 
-    /// Construct from an arbitrary raw string (e.g. mounted tables whose names contain `.`).
+    /// Construct from an arbitrary raw string (e.g. submodule tables whose names contain `.`).
     pub fn new_raw(name: RawIdentifier) -> Self {
         Self(name)
     }

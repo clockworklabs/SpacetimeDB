@@ -11,14 +11,14 @@ namespace SpacetimeDB.Internal
 {
     [SpacetimeDB.Type]
     [DataContract]
-    public sealed partial class RawModuleMountV10
+    public sealed partial class RawSubmoduleV10
     {
         [DataMember(Name = "namespace")]
         public string Namespace;
         [DataMember(Name = "module")]
         public RawModuleDefV10 Module;
 
-        public RawModuleMountV10(
+        public RawSubmoduleV10(
             string Namespace,
             RawModuleDefV10 Module
         )
@@ -27,7 +27,7 @@ namespace SpacetimeDB.Internal
             this.Module = Module;
         }
 
-        public RawModuleMountV10()
+        public RawSubmoduleV10()
         {
             this.Namespace = "";
             this.Module = new();

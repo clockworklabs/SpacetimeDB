@@ -650,7 +650,7 @@ fn format_output_json_from_tables(formatted: &HashMap<&str, SubscriptionTable>) 
 
 /// Resolve the row type for a table or view by its wire name.
 ///
-/// Wire names of tables and views from mounted submodules are dot-qualified
+/// Wire names of tables and views from submodules are dot-qualified
 /// (e.g. `lib.my_table`). The returned type is resolved against the owning
 /// module's typespace, since that is where its type refs point.
 fn type_for_table_like<'a>(module_def: &'a ModuleDef, name: &str) -> Option<WithTypespace<'a, AlgebraicType>> {

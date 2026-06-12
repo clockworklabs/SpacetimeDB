@@ -21,7 +21,7 @@ vi.mock('../src/server/runtime', () => ({
   },
 }));
 
-describe('schema mounts', () => {
+describe('schema submodules', () => {
   let schema: typeof import('../src/server/schema').schema;
   let table: typeof import('../src/lib/table').table;
   let t: typeof import('../src/lib/type_builders').t;
@@ -32,7 +32,7 @@ describe('schema mounts', () => {
     ({ t } = await import('../src/lib/type_builders'));
   });
 
-  it('emits mounted submodule module defs and resolves mounted schedules', () => {
+  it('emits submodule module defs and resolves submodule schedules', () => {
     const players = table({ name: 'players' }, { id: t.u32().primaryKey() });
 
     const sessionCleanupTick = table(
@@ -70,27 +70,27 @@ describe('schema mounts', () => {
     });
 
     const raw = consumer.buildRawModuleDefV10({});
-    const mounts = raw.sections.find(
-      section => section.tag === 'Mounts'
+    const submodules = raw.sections.find(
+      section => section.tag === 'Submodules'
     )?.value;
 
-    expect(mounts).toHaveLength(1);
-    expect(mounts?.[0]?.namespace).toBe('myauth');
+    expect(submodules).toHaveLength(1);
+    expect(submodules?.[0]?.namespace).toBe('myauth');
 
-    const mountedSections = mounts?.[0]?.module.sections ?? [];
-    const mountedReducers = mountedSections.find(
+    const submoduleSections = submodules?.[0]?.module.sections ?? [];
+    const submoduleReducers = submoduleSections.find(
       section => section.tag === 'Reducers'
     )?.value;
-    const mountedSchedules = mountedSections.find(
+    const submoduleSchedules = submoduleSections.find(
       section => section.tag === 'Schedules'
     )?.value;
 
-    expect(mountedReducers).toEqual(
+    expect(submoduleReducers).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ sourceName: 'cleanExpiredSessions' }),
       ])
     );
-    expect(mountedSchedules).toEqual([
+    expect(submoduleSchedules).toEqual([
       expect.objectContaining({
         tableName: 'sessionCleanupTick',
         functionName: 'cleanExpiredSessions',
@@ -98,7 +98,7 @@ describe('schema mounts', () => {
     ]);
   });
 
-  it('rejects default-import style mounts with a clear error', () => {
+  it('rejects default-import style submodules with a clear error', () => {
     const sessions = table(
       { name: 'sessions' },
       {
@@ -115,7 +115,7 @@ describe('schema mounts', () => {
     ).toThrow(/looks like a default import/);
   });
 
-  it('populates mountedDispatchInfos with reducer fns and table metadata', () => {
+  it('populates submoduleDispatchInfos with reducer fns and table metadata', () => {
     const sessions = table(
       { name: 'sessions' },
       { id: t.u64().primaryKey().autoInc() }
@@ -128,7 +128,7 @@ describe('schema mounts', () => {
     const players = table({ name: 'players' }, { id: t.u32().primaryKey() });
     const consumer = schema({ players, myauth: authLib });
 
-    const infos = consumer.mountedDispatchInfos;
+    const infos = consumer.submoduleDispatchInfos;
     expect(infos).toHaveLength(1);
 
     const info = infos[0];
@@ -140,14 +140,14 @@ describe('schema mounts', () => {
     expect(info.subDispatches).toHaveLength(0);
   });
 
-  it('flattens nested mount dispatches depth-first', () => {
+  it('flattens nested submodule dispatches depth-first', () => {
     // baz library: 1 reducer
     const bazTable = table({ name: 'baz_items' }, { id: t.u32().primaryKey() });
     const bazSchema = schema({ bazTable });
     const bazReducer = bazSchema.reducer(() => {});
     const bazLib = { default: bazSchema, bazReducer };
 
-    // auth library: 1 own reducer, mounts baz
+    // auth library: 1 own reducer, uses baz as a submodule
     const sessions = table(
       { name: 'sessions' },
       { id: t.u64().primaryKey().autoInc() }
@@ -156,15 +156,15 @@ describe('schema mounts', () => {
     const authReducer = authSchema.reducer(() => {});
     const authLib = { default: authSchema, authReducer };
 
-    // consumer: 1 own reducer, mounts auth
+    // consumer: 1 own reducer, uses auth as a submodule
     const players = table({ name: 'players' }, { id: t.u32().primaryKey() });
     const consumer = schema({ players, myauth: authLib });
     const consumerReducer = consumer.reducer(() => {});
 
     // Verify depth-first structure:
-    // consumer.mountedDispatchInfos[0] = myauth (authReducer)
-    // consumer.mountedDispatchInfos[0].subDispatches[0] = myauth.baz (bazReducer)
-    const infos = consumer.mountedDispatchInfos;
+    // consumer.submoduleDispatchInfos[0] = myauth (authReducer)
+    // consumer.submoduleDispatchInfos[0].subDispatches[0] = myauth.baz (bazReducer)
+    const infos = consumer.submoduleDispatchInfos;
     expect(infos).toHaveLength(1);
 
     const authInfo = infos[0];
@@ -181,7 +181,7 @@ describe('schema mounts', () => {
     void consumerReducer;
   });
 
-  it('mountedDispatchInfos carry namespace and nested namespace dispatches propagate', () => {
+  it('submoduleDispatchInfos carry namespace and nested namespace dispatches propagate', () => {
     const sessions = table(
       { name: 'sessions' },
       { id: t.u64().primaryKey().autoInc() }
@@ -192,13 +192,13 @@ describe('schema mounts', () => {
     const players = table({ name: 'players' }, { id: t.u32().primaryKey() });
     const consumer = schema({ players, myauth: authLib });
 
-    const infos = consumer.mountedDispatchInfos;
+    const infos = consumer.submoduleDispatchInfos;
     expect(infos).toHaveLength(1);
     expect(infos[0].namespace).toBe('myauth');
     expect(infos[0].tables[0].accessorName).toBe('sessions');
   });
 
-  it('nested mounts carry their own namespace on subDispatches', () => {
+  it('nested submodules carry their own namespace on subDispatches', () => {
     const bazTable = table({ name: 'baz_items' }, { id: t.u32().primaryKey() });
     const bazSchema = schema({ bazTable });
     const bazLib = { default: bazSchema };
@@ -213,7 +213,7 @@ describe('schema mounts', () => {
     const players = table({ name: 'players' }, { id: t.u32().primaryKey() });
     const consumer = schema({ players, myauth: authLib });
 
-    const authInfo = consumer.mountedDispatchInfos[0];
+    const authInfo = consumer.submoduleDispatchInfos[0];
     expect(authInfo.namespace).toBe('myauth');
     expect(authInfo.subDispatches).toHaveLength(1);
     expect(authInfo.subDispatches[0].namespace).toBe('baz');

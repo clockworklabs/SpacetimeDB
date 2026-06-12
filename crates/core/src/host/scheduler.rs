@@ -763,7 +763,7 @@ fn function_to_reducer_call_params(
 
     // Find the reducer and deserialize the arguments.
     // Use the owning module's typespace (not necessarily the root's) so that type-index
-    // references inside the def are resolved correctly for mounted submodules.
+    // references inside the def are resolved correctly for submodules.
     let module = &module.module_def;
     let Some((id, def, owning)) = module.reducer_by_name_with_module(name) else {
         return Err(anyhow!("Reducer `{name}` not found"));

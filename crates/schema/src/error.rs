@@ -177,11 +177,11 @@ pub enum ValidationError {
         err_type: PrettyAlgebraicType,
     },
     #[error(
-        "lifecycle event {lifecycle:?} is not permitted in component under namespace `{namespace}`; \
+        "lifecycle event {lifecycle:?} is not permitted in submodule under namespace `{namespace}`; \
          lifecycle reducers may only be declared in the root module"
     )]
-    LifecycleInComponent { lifecycle: Lifecycle, namespace: String },
-    #[error("mount namespace `{namespace}` is {len} characters, which exceeds the 63-character limit")]
+    LifecycleInSubmodule { lifecycle: Lifecycle, namespace: String },
+    #[error("submodule namespace `{namespace}` is {len} characters, which exceeds the 63-character limit")]
     NamespaceTooLong { namespace: RawIdentifier, len: usize },
 }
 

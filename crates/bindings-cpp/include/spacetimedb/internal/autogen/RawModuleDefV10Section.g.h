@@ -19,7 +19,7 @@
 #include "RawTypeDefV10.g.h"
 #include "RawRowLevelSecurityDefV9.g.h"
 #include "RawHttpRouteDefV10.g.h"
-#include "RawModuleMountV10.g.h"
+#include "RawSubmoduleV10.g.h"
 #include "RawViewDefV10.g.h"
 #include "ExplicitNames.g.h"
 #include "RawProcedureDefV10.g.h"
@@ -30,5 +30,5 @@
 
 namespace SpacetimeDB::Internal {
 
-SPACETIMEDB_INTERNAL_TAGGED_ENUM(RawModuleDefV10Section, SpacetimeDB::Internal::Typespace, std::vector<SpacetimeDB::Internal::RawTypeDefV10>, std::vector<SpacetimeDB::Internal::RawTableDefV10>, std::vector<SpacetimeDB::Internal::RawReducerDefV10>, std::vector<SpacetimeDB::Internal::RawProcedureDefV10>, std::vector<SpacetimeDB::Internal::RawViewDefV10>, std::vector<SpacetimeDB::Internal::RawScheduleDefV10>, std::vector<SpacetimeDB::Internal::RawLifeCycleReducerDefV10>, std::vector<SpacetimeDB::Internal::RawRowLevelSecurityDefV9>, SpacetimeDB::Internal::CaseConversionPolicy, SpacetimeDB::Internal::ExplicitNames, std::vector<SpacetimeDB::Internal::RawHttpHandlerDefV10>, std::vector<SpacetimeDB::Internal::RawHttpRouteDefV10>, std::vector<SpacetimeDB::Internal::RawViewPrimaryKeyDefV10>, std::vector<SpacetimeDB::Internal::RawModuleMountV10>)
+SPACETIMEDB_INTERNAL_TAGGED_ENUM(RawModuleDefV10Section, SpacetimeDB::Internal::Typespace, std::vector<SpacetimeDB::Internal::RawTypeDefV10>, std::vector<SpacetimeDB::Internal::RawTableDefV10>, std::vector<SpacetimeDB::Internal::RawReducerDefV10>, std::vector<SpacetimeDB::Internal::RawProcedureDefV10>, std::vector<SpacetimeDB::Internal::RawViewDefV10>, std::vector<SpacetimeDB::Internal::RawScheduleDefV10>, std::vector<SpacetimeDB::Internal::RawLifeCycleReducerDefV10>, std::vector<SpacetimeDB::Internal::RawRowLevelSecurityDefV9>, SpacetimeDB::Internal::CaseConversionPolicy, SpacetimeDB::Internal::ExplicitNames, std::vector<SpacetimeDB::Internal::RawHttpHandlerDefV10>, std::vector<SpacetimeDB::Internal::RawHttpRouteDefV10>, std::vector<SpacetimeDB::Internal::RawViewPrimaryKeyDefV10>, std::vector<SpacetimeDB::Internal::RawSubmoduleV10>)
 } // namespace SpacetimeDB::Internal
