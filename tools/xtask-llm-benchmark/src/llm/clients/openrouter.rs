@@ -36,9 +36,11 @@ impl OpenRouterClient {
         Self { base, api_key, http }
     }
 
-    pub async fn preflight_credits(&self) -> Result<OpenRouterCreditStatus> {
+    pub async fn preflight_credits(&self, model: &str) -> Result<OpenRouterCreditStatus> {
         let key_info = self.fetch_key_info().await?;
         let min_credits = min_credits_threshold();
+        let mut unchecked_allowed = false;
+        let mut model_probe = None;
 
         if let Some(remaining) = key_info.limit_remaining
             && remaining <= min_credits
@@ -69,10 +71,12 @@ impl OpenRouterClient {
         }
 
         if account.is_none() && key_info.limit_remaining.is_none() {
-            bail!(
-                "OpenRouter API key has no configured credit limit and account credits were not checked. \
-                 Set OPENROUTER_MANAGEMENT_API_KEY for account balance preflight."
-            );
+            if allow_unchecked_credits() {
+                unchecked_allowed = true;
+            } else {
+                self.probe_model(model).await?;
+                model_probe = Some(model.to_string());
+            }
         }
 
         Ok(OpenRouterCreditStatus {
@@ -80,6 +84,8 @@ impl OpenRouterClient {
             key_limit_remaining: key_info.limit_remaining,
             account_remaining: account.map(|a| a.remaining),
             min_credits,
+            model_probe,
+            unchecked_allowed,
         })
     }
 
@@ -109,6 +115,51 @@ impl OpenRouterClient {
         Ok(OpenRouterAccountCredits {
             remaining: resp.data.total_credits - resp.data.total_usage,
         })
+    }
+
+    async fn probe_model(&self, model: &str) -> Result<()> {
+        let url = format!("{}/chat/completions", self.base.trim_end_matches('/'));
+
+        #[derive(Serialize)]
+        struct Req<'a> {
+            model: &'a str,
+            messages: [Msg<'a>; 1],
+            temperature: f32,
+            max_tokens: u32,
+        }
+
+        #[derive(Serialize)]
+        struct Msg<'a> {
+            role: &'a str,
+            content: &'a str,
+        }
+
+        let req = Req {
+            model,
+            messages: [Msg {
+                role: "user",
+                content: "ping",
+            }],
+            temperature: 0.0,
+            max_tokens: 1,
+        };
+        let auth = HttpClient::bearer(&self.api_key);
+        let body = self
+            .http
+            .post_json(&url, &[auth], &req)
+            .await
+            .with_context(|| format!("OpenRouter model probe failed for '{model}'"))?;
+
+        let resp: serde_json::Value = serde_json::from_str(&body).context("parse OpenRouter probe response")?;
+        if let Some(err) = resp.get("error") {
+            let message = err
+                .get("message")
+                .and_then(|message| message.as_str())
+                .unwrap_or("unknown OpenRouter probe error");
+            bail!("OpenRouter model probe failed for '{}': {}", model, message);
+        }
+
+        Ok(())
     }
 
     pub async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<LlmOutput> {
@@ -207,6 +258,8 @@ pub struct OpenRouterCreditStatus {
     pub key_limit_remaining: Option<f64>,
     pub account_remaining: Option<f64>,
     pub min_credits: f64,
+    pub model_probe: Option<String>,
+    pub unchecked_allowed: bool,
 }
 
 impl OpenRouterCreditStatus {
@@ -218,7 +271,7 @@ impl OpenRouterCreditStatus {
             (None, None) => "key has no configured limit".to_string(),
         };
 
-        match self.account_remaining {
+        let credit_status = match self.account_remaining {
             Some(remaining) => {
                 format!(
                     "{key_remaining}; account remaining {remaining:.4}; min {:.4}",
@@ -229,6 +282,14 @@ impl OpenRouterCreditStatus {
                 "{key_remaining}; account balance not checked (set OPENROUTER_MANAGEMENT_API_KEY); min {:.4}",
                 self.min_credits
             ),
+        };
+
+        if let Some(model) = &self.model_probe {
+            format!("{credit_status}; model probe OK for '{model}'")
+        } else if self.unchecked_allowed {
+            format!("{credit_status}; unchecked credits allowed by OPENROUTER_ALLOW_UNCHECKED_CREDITS")
+        } else {
+            credit_status
         }
     }
 }
@@ -261,10 +322,28 @@ struct OpenRouterAccountCredits {
 }
 
 fn min_credits_threshold() -> f64 {
-    env::var("LLM_MIN_CREDITS")
-        .ok()
-        .and_then(|v| v.trim().parse::<f64>().ok())
+    let openrouter = env::var("OPENROUTER_MIN_CREDITS").ok();
+    let global = env::var("LLM_MIN_CREDITS").ok();
+    parse_min_credits_threshold(openrouter.as_deref(), global.as_deref())
+}
+
+fn allow_unchecked_credits() -> bool {
+    let value = env::var("OPENROUTER_ALLOW_UNCHECKED_CREDITS").ok();
+    parse_env_flag(value.as_deref())
+}
+
+fn parse_min_credits_threshold(openrouter: Option<&str>, global: Option<&str>) -> f64 {
+    [openrouter, global]
+        .into_iter()
+        .flatten()
+        .find_map(|v| v.trim().parse::<f64>().ok())
         .unwrap_or(0.0)
+}
+
+fn parse_env_flag(value: Option<&str>) -> bool {
+    value
+        .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "y"))
+        .unwrap_or(false)
 }
 
 /// Context limits for models accessed via OpenRouter.
@@ -332,4 +411,27 @@ pub fn openrouter_ctx_limit_tokens(model: &str) -> usize {
     }
 
     DEFAULT_CTX_LIMIT
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_env_flag, parse_min_credits_threshold};
+
+    #[test]
+    fn openrouter_min_credits_overrides_global_threshold() {
+        assert_eq!(parse_min_credits_threshold(Some("2.5"), Some("1.0")), 2.5);
+        assert_eq!(parse_min_credits_threshold(None, Some("1.0")), 1.0);
+        assert_eq!(parse_min_credits_threshold(Some("not-a-number"), Some("1.0")), 1.0);
+        assert_eq!(parse_min_credits_threshold(None, None), 0.0);
+    }
+
+    #[test]
+    fn unchecked_credit_escape_hatch_accepts_common_true_values() {
+        for value in ["1", "true", "TRUE", " yes ", "y"] {
+            assert!(parse_env_flag(Some(value)));
+        }
+        for value in [None, Some(""), Some("0"), Some("false"), Some("no")] {
+            assert!(!parse_env_flag(value));
+        }
+    }
 }

@@ -82,9 +82,6 @@ enum Commands {
     /// Run benchmarks / build goldens / compute hashes.
     Run(RunArgs),
 
-    /// Run a website-created benchmark spec by id.
-    RunFromApi(RunFromApiArgs),
-
     /// Run AI analysis on existing benchmark failures from the database.
     Analyze(AnalyzeArgs),
 }
@@ -147,16 +144,6 @@ struct RunArgs {
 
     #[arg(skip)]
     route_overrides: Option<Vec<ModelRoute>>,
-
-    #[arg(skip)]
-    run_id: Option<String>,
-}
-
-#[derive(Args, Debug, Clone)]
-struct RunFromApiArgs {
-    /// Website-created llm_benchmark_runs id
-    #[arg(long)]
-    run_id: String,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -228,7 +215,6 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Run(args) => cmd_run(args),
-        Commands::RunFromApi(args) => cmd_run_from_api(args),
         Commands::Analyze(args) => cmd_analyze(args),
     }
 }
@@ -237,57 +223,6 @@ fn main() -> Result<()> {
 
 fn cmd_run(args: RunArgs) -> Result<()> {
     run_benchmarks(args)?;
-    Ok(())
-}
-
-fn cmd_run_from_api(args: RunFromApiArgs) -> Result<()> {
-    let api = ApiClient::from_env()
-        .context("failed to initialize API client")?
-        .context("LLM_BENCHMARK_UPLOAD_URL required for run-from-api")?;
-    if let Err(e) = api.update_run_status(&args.run_id, "running", None) {
-        eprintln!("[warn] failed to mark website benchmark run as running: {e:#}");
-    }
-
-    let result = cmd_run_from_api_inner(&api, &args.run_id);
-    match result {
-        Ok(()) => {
-            if let Err(e) = api.update_run_status(&args.run_id, "succeeded", None) {
-                eprintln!("[warn] failed to mark website benchmark run as succeeded: {e:#}");
-            }
-            Ok(())
-        }
-        Err(e) => {
-            let message = format!("{e:#}");
-            if let Err(status_err) = api.update_run_status(&args.run_id, "failed", Some(&message)) {
-                eprintln!("[warn] failed to mark website benchmark run as failed: {status_err:#}");
-            }
-            Err(e)
-        }
-    }
-}
-
-fn cmd_run_from_api_inner(api: &ApiClient, run_id: &str) -> Result<()> {
-    let spec = api.fetch_run_spec(run_id)?;
-
-    for lang in &spec.languages {
-        run_benchmarks(RunArgs {
-            modes: Some(spec.modes.clone()),
-            lang: *lang,
-            hash_only: false,
-            goldens_only: false,
-            force: false,
-            categories: spec.categories.clone(),
-            tasks: spec.tasks.clone(),
-            providers: None,
-            models: None,
-            model_source: ModelSource::Static,
-            dry_run: false,
-            local_analysis: false,
-            route_overrides: Some(spec.routes.clone()),
-            run_id: Some(spec.run_id.clone()),
-        })?;
-    }
-
     Ok(())
 }
 
@@ -323,7 +258,6 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
         dry_run,
         local_analysis,
         dry_run_id: dry_run_id.clone(),
-        run_id: args.run_id,
         route_overrides: args.route_overrides,
     };
 
@@ -624,7 +558,6 @@ fn short_hash(s: &str) -> &str {
 
 fn should_fetch_remote_routes(args: &RunArgs) -> bool {
     args.model_source == ModelSource::Remote
-        && args.models.is_none()
         && args.route_overrides.is_none()
         && !args.dry_run
         && !args.hash_only
@@ -782,6 +715,7 @@ fn filter_routes(config: &RunConfig) -> Vec<ModelRoute> {
                 let already_matched = routes.iter().any(|r| {
                     r.vendor == *vendor
                         && (r.api_model == model_id.as_str()
+                            || r.display_name.to_ascii_lowercase() == model_id.as_str()
                             || r.openrouter_model.as_deref() == Some(model_id.as_str()))
                 });
                 if !already_matched {
@@ -812,13 +746,11 @@ async fn run_many_routes_for_mode(
     let dry_run = config.dry_run;
     let local_analysis = config.local_analysis;
     let dry_run_id = config.dry_run_id.clone();
-    let run_id = config.run_id.clone();
 
     futures::stream::iter(routes.iter().map(|route| {
         let host = host.clone();
         let api_client = api_client.clone();
         let dry_run_id = dry_run_id.clone();
-        let run_id = run_id.clone();
 
         async move {
             println!("\u{2192} running {}", route.display_name);
@@ -837,7 +769,6 @@ async fn run_many_routes_for_mode(
                 dry_run,
                 local_analysis,
                 dry_run_id,
-                run_id,
             };
 
             let outcomes = run_selected_or_all_for_model_async_for_lang(&per).await?;
@@ -1015,7 +946,6 @@ mod tests {
             dry_run: false,
             local_analysis: false,
             route_overrides: None,
-            run_id: None,
         }
     }
 
@@ -1035,13 +965,12 @@ mod tests {
             dry_run: false,
             local_analysis: false,
             dry_run_id: None,
-            run_id: None,
             route_overrides,
         }
     }
 
     #[test]
-    fn remote_model_source_fetches_only_for_implicit_models() {
+    fn remote_model_source_fetches_even_for_explicit_models() {
         let mut args = base_run_args();
         args.model_source = ModelSource::Remote;
         assert!(should_fetch_remote_routes(&args));
@@ -1050,7 +979,7 @@ mod tests {
             vendor: Vendor::OpenAi,
             models: vec!["gpt-test".to_string()],
         }]);
-        assert!(!should_fetch_remote_routes(&args));
+        assert!(should_fetch_remote_routes(&args));
     }
 
     #[test]
@@ -1067,6 +996,27 @@ mod tests {
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].display_name, "Remote Model");
         assert_eq!(routes[0].api_model, "openai/remote-model");
+    }
+
+    #[test]
+    fn filter_routes_does_not_synthesize_duplicate_for_display_name_match() {
+        let remote_route = ModelRoute::new(
+            "DeepSeek V4 Flash",
+            Vendor::DeepSeek,
+            "deepseek-v4-flash",
+            Some("deepseek/deepseek-v4-flash"),
+        );
+        let mut config = base_config(Some(vec![remote_route]));
+        let mut allowed = HashSet::new();
+        allowed.insert("deepseek v4 flash".to_string());
+        let mut filter = HashMap::new();
+        filter.insert(Vendor::DeepSeek, allowed);
+        config.model_filter = Some(filter);
+
+        let routes = filter_routes(&config);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].display_name, "DeepSeek V4 Flash");
+        assert_eq!(routes[0].api_model, "deepseek-v4-flash");
     }
 
     #[test]

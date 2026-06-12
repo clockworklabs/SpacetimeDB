@@ -82,8 +82,8 @@ impl LlmClient for OpenRouterClient {
         "OpenRouter"
     }
 
-    async fn preflight(&self, _model: &str) -> Result<ClientPreflight> {
-        let status = self.preflight_credits().await?;
+    async fn preflight(&self, model: &str) -> Result<ClientPreflight> {
+        let status = self.preflight_credits(model).await?;
         Ok(ClientPreflight::new(status.summary()))
     }
 
