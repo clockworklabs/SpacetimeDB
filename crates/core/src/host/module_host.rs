@@ -3309,7 +3309,7 @@ impl ModuleHost {
         let delta_tx = DeltaTx::from(tx);
         let params = ExecutionParams::from_auth(auth);
         let plan_fragments = optimized.iter();
-        let (rows, _, metrics) = if returns_view_table && num_private_cols > 0 {
+        let (rows, _, metrics) = if returns_view_table {
             execute_plan_for_view::<F>(plan_fragments, num_cols, num_private_cols, &delta_tx, &params, rlb_pool)
         } else {
             execute_plan::<F>(optimized.iter(), &delta_tx, &params, rlb_pool)
