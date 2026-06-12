@@ -29,19 +29,10 @@ concurrency:
 
 jobs:
   run-benchmarks:
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    runs-on: spacetimedb-new-runner-2
     timeout-minutes: 180
 
     steps:
-      - name: Install spacetime CLI
-        run: |
-          curl -sSf https://install.spacetimedb.com | sh -s -- -y
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-
       - name: Checkout master
         uses: actions/checkout@v4
         with:
@@ -74,6 +65,13 @@ jobs:
 
       - name: Build llm-benchmark tool
         run: cargo install --path tools/xtask-llm-benchmark --locked
+
+      - name: Build SpacetimeDB server for benchmark harness
+        run: |
+          cargo ci smoketests prepare
+          mkdir -p "$HOME/.local/bin"
+          ln -sf "$GITHUB_WORKSPACE/target/release/spacetimedb-cli" "$HOME/.local/bin/spacetime"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Run benchmarks
         env:

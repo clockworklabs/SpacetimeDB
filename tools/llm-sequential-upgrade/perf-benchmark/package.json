@@ -1,0 +1,15 @@
+{
+  "name": "perf-benchmark",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "run": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.7.4",
+    "spacetimedb": "^2.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.4.0"
+  }
+}

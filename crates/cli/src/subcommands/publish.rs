@@ -192,10 +192,7 @@ pub fn get_filtered_publish_configs<'a>(
 pub fn cli() -> clap::Command {
     clap::Command::new("publish")
         .about("Create and update a SpacetimeDB database")
-        .arg(
-            common_args::clear_database()
-                .requires("name|identity")
-        )
+        .arg(common_args::clear_database())
         .arg(
             Arg::new("build_options")
                 .long("build-options")
@@ -1020,6 +1017,26 @@ mod tests {
 
         // Should return all configs (parent + 2 children)
         assert_eq!(filtered.len(), 3);
+    }
+
+    #[test]
+    fn test_delete_data_allows_database_from_config() {
+        let cmd = cli();
+        let schema = build_publish_schema(&cmd).unwrap();
+
+        let mut fields = HashMap::new();
+        fields.insert("database".to_string(), serde_json::json!("space-transactions"));
+        let spacetime_config = make_config(fields);
+
+        let matches = cmd.clone().get_matches_from(vec!["publish", "-c=always"]);
+        let filtered = get_filtered_publish_configs(&spacetime_config, &cmd, &schema, &matches).unwrap();
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(
+            filtered[0].get_one::<String>("database").unwrap(),
+            Some("space-transactions".to_string())
+        );
+        assert_eq!(matches.get_one::<ClearMode>("clear-database"), Some(&ClearMode::Always));
     }
 
     #[test]

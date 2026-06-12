@@ -1693,21 +1693,25 @@ log = "0.4"
     /// This matches Python's subscribe semantics - start subscription first,
     /// perform actions, then call the handle to collect results.
     pub fn subscribe_background(&self, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
-        self.subscribe_background_opts(queries, n, None)
+        self.subscribe_background_opts(queries, Some(n), None)
+    }
+
+    pub fn subscribe_background_until_closed(&self, queries: &[&str]) -> Result<SubscriptionHandle> {
+        self.subscribe_background_opts(queries, None, None)
     }
 
     pub fn subscribe_background_on(&self, database: &str, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
-        self.subscribe_background_on_opts(database, queries, n, Some(false))
+        self.subscribe_background_on_opts(database, queries, Some(n), Some(false))
     }
 
     /// Starts a subscription in the background with --confirmed flag.
     pub fn subscribe_background_confirmed(&self, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
-        self.subscribe_background_opts(queries, n, Some(true))
+        self.subscribe_background_opts(queries, Some(n), Some(true))
     }
 
     /// Starts a subscription in the background with --confirmed flag.
     pub fn subscribe_background_unconfirmed(&self, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
-        self.subscribe_background_opts(queries, n, Some(false))
+        self.subscribe_background_opts(queries, Some(n), Some(false))
     }
 
     pub fn subscribe_background_on_confirmed(
@@ -1716,14 +1720,14 @@ log = "0.4"
         queries: &[&str],
         n: usize,
     ) -> Result<SubscriptionHandle> {
-        self.subscribe_background_on_opts(database, queries, n, Some(true))
+        self.subscribe_background_on_opts(database, queries, Some(n), Some(true))
     }
 
     /// Internal helper for background subscribe with options.
     fn subscribe_background_opts(
         &self,
         queries: &[&str],
-        n: usize,
+        n: Option<usize>,
         confirmed: Option<bool>,
     ) -> Result<SubscriptionHandle> {
         let identity = self
@@ -1739,7 +1743,7 @@ log = "0.4"
         &self,
         database: &str,
         queries: &[&str],
-        n: usize,
+        n: Option<usize>,
         confirmed: Option<bool>,
     ) -> Result<SubscriptionHandle> {
         self.subscribe_background_on_impl(database, queries, n, confirmed)
@@ -1749,7 +1753,7 @@ log = "0.4"
         &self,
         database: &str,
         queries: &[&str],
-        n: usize,
+        n: Option<usize>,
         confirmed: Option<bool>,
     ) -> Result<SubscriptionHandle> {
         let cli_path = ensure_binaries_built();
@@ -1765,10 +1769,12 @@ log = "0.4"
             database.to_string(),
             "-t".to_string(),
             "30".to_string(),
-            "-n".to_string(),
-            n.to_string(),
             "--print-initial-update".to_string(),
         ];
+        if let Some(n) = n {
+            args.push("-n".to_string());
+            args.push(n.to_string());
+        }
         if let Some(confirmed) = confirmed {
             args.push("--confirmed".to_string());
             args.push(confirmed.to_string());
@@ -1806,7 +1812,7 @@ pub struct SubscriptionHandle {
     child: std::process::Child,
     reader: std::io::BufReader<std::process::ChildStdout>,
     stderr: std::process::ChildStderr,
-    n: usize,
+    n: Option<usize>,
     start: Instant,
 }
 
@@ -1830,7 +1836,7 @@ impl SubscriptionHandle {
         let status = self.child.wait().context("Failed to wait for subscribe")?;
         eprintln!(
             "[TIMING] subscribe_background (n={}): {:?}",
-            self.n,
+            self.n.map(|n| n.to_string()).unwrap_or_else(|| "none".to_string()),
             self.start.elapsed()
         );
 
@@ -1841,6 +1847,19 @@ impl SubscriptionHandle {
         }
 
         Ok(updates)
+    }
+}
+
+impl Drop for SubscriptionHandle {
+    fn drop(&mut self) {
+        match self.child.try_wait() {
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                let _ = self.child.kill();
+                let _ = self.child.wait();
+            }
+            Err(_) => {}
+        }
     }
 }
 

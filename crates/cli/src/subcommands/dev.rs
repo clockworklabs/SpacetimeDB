@@ -81,7 +81,7 @@ pub fn cli() -> Command {
             Arg::new("client-lang")
                 .long("client-lang")
                 .value_parser(clap::value_parser!(Language))
-                .help("The programming language for the generated client module bindings (e.g., typescript, csharp, python). If not specified, it will be detected from the project."),
+                .help("The programming language for the generated client module bindings (e.g., typescript, csharp, rust, unrealcpp). If not specified, it will be detected from the project."),
         )
         .arg(common_args::server().help("The nickname, host name or URL of the server to publish to"))
         .arg(common_args::yes())

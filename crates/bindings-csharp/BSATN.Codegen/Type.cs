@@ -455,6 +455,56 @@ public enum TypeKind
     Sum,
 }
 
+public static class SpacetimeDbFieldDiscovery
+{
+    private static readonly string[] SpacetimeDbRowAttributeNames =
+    [
+        "SpacetimeDB.TypeAttribute",
+        "SpacetimeDB.TableAttribute",
+    ];
+
+    public static IEnumerable<IFieldSymbol> GetFieldsDeclaredInAnnotatedPartial(
+        TypeDeclarationSyntax typeSyntax,
+        INamedTypeSymbol type
+    ) =>
+        typeSyntax
+            .Members.OfType<FieldDeclarationSyntax>()
+            .SelectMany(f => f.Declaration.Variables)
+            .Select(v => type.GetMembers(v.Identifier.Text).OfType<IFieldSymbol>().Single())
+            .Where(f => !f.IsStatic);
+
+    public static IFieldSymbol? FindSpacetimeDbField(ITypeSymbol rowType, string fieldName)
+    {
+        if (rowType is not INamedTypeSymbol namedRowType)
+        {
+            return null;
+        }
+
+        foreach (var typeSyntax in GetAnnotatedPartialDeclarations(namedRowType))
+        {
+            var field = GetFieldsDeclaredInAnnotatedPartial(typeSyntax, namedRowType)
+                .FirstOrDefault(field => field.Name == fieldName);
+            if (field is not null)
+            {
+                return field;
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<TypeDeclarationSyntax> GetAnnotatedPartialDeclarations(
+        INamedTypeSymbol type
+    ) =>
+        type.GetAttributes()
+            .Where(attr => SpacetimeDbRowAttributeNames.Contains(attr.AttributeClass?.ToString()))
+            .Select(attr => attr.ApplicationSyntaxReference?.GetSyntax())
+            .OfType<AttributeSyntax>()
+            .Select(attr => attr.FirstAncestorOrSelf<TypeDeclarationSyntax>())
+            .OfType<TypeDeclarationSyntax>()
+            .Distinct();
+}
+
 public abstract record BaseTypeDeclaration<M>
     where M : MemberDeclaration, IEquatable<M>
 {
@@ -498,11 +548,10 @@ public abstract record BaseTypeDeclaration<M>
         //
         // To achieve this, we need to walk over the annotated type syntax node, collect the field names,
         // and look up the resolved field symbols only for those fields.
-        var fields = typeSyntax
-            .Members.OfType<FieldDeclarationSyntax>()
-            .SelectMany(f => f.Declaration.Variables)
-            .Select(v => type.GetMembers(v.Identifier.Text).OfType<IFieldSymbol>().Single())
-            .Where(f => !f.IsStatic);
+        var fields = SpacetimeDbFieldDiscovery.GetFieldsDeclaredInAnnotatedPartial(
+            typeSyntax,
+            type
+        );
 
         // Check if type implements generic `SpacetimeDB.TaggedEnum<Variants>` and, if so, extract the `Variants` type.
         if (type.BaseType?.OriginalDefinition.ToString() == "SpacetimeDB.TaggedEnum<Variants>")

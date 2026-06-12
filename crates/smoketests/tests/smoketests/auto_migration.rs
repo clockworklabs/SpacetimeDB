@@ -343,11 +343,9 @@ fn test_add_table_columns() {
     // Subscribe to person table changes multiple times to simulate active clients
     let mut subs = Vec::with_capacity(NUM_SUBSCRIBERS);
     for _ in 0..NUM_SUBSCRIBERS {
-        // We need unconfirmed reads for the updates to arrive properly.
-        // Otherwise, there's a race between module teardown in publish, vs subscribers
-        // getting the row deletion they expect.
+        // The migration below should disconnect all existing subscribers.
         subs.push(
-            test.subscribe_background_unconfirmed(&["select * from person"], 5)
+            test.subscribe_background_until_closed(&["select * from person"])
                 .unwrap(),
         );
     }
@@ -388,10 +386,9 @@ fn test_add_table_columns() {
     // Insert new data under upgraded schema
     test.call("add_person", &["Robert2"]).unwrap();
 
-    // Validate all subscribers were disconnected after first upgrade
-    for (i, sub) in subs.into_iter().enumerate() {
-        let rows = sub.collect().unwrap();
-        assert_eq!(rows.len(), 2, "Subscriber {i} received unexpected rows: {rows:?}");
+    for sub in subs {
+        // Ensure the background cli subprocess observes the disconnect and exits cleanly
+        sub.collect().unwrap();
     }
 
     // Second upgrade
@@ -487,4 +484,59 @@ fn test_remove_primary_key_issue_3934() {
     test.write_module_code(MODULE_CODE_WITHOUT_PK_V2).unwrap();
     test.publish_module_with_options(&identity, false, true)
         .expect("Publish after PK removal should succeed (issue #3934)");
+}
+
+const MODULE_CODE_WITH_EVENT_TABLE_BEFORE: &str = r#"
+use spacetimedb::{table, SpacetimeType};
+
+#[derive(SpacetimeType)]
+struct SomeProduct {
+    a: u32,
+    b: u64,
+}
+
+#[table(accessor = some_event, public, event)]
+struct SomeEvent {
+    foo: String,
+    prod: SomeProduct,
+}
+"#;
+
+const MODULE_CODE_WITH_EVENT_TABLE_AFTER: &str = r#"
+use spacetimedb::{table, SpacetimeType};
+
+#[derive(SpacetimeType)]
+struct SomeProduct {
+    a: u32,
+    b: u64,
+    c: u128,
+}
+
+#[table(accessor = some_event, public, event)]
+struct SomeEvent {
+    prod: SomeProduct,
+}
+"#;
+
+#[test]
+fn automigrate_reschema_event_table_arbitrarily() {
+    let mut test = Smoketest::builder()
+        .module_code(MODULE_CODE_WITH_EVENT_TABLE_BEFORE)
+        .build();
+
+    // Step 1: publish with event table.
+    let identity = test
+        .database_identity
+        .clone()
+        .expect("database should be published after build");
+
+    // Step 2: Reschema event table. Should work fine, even though we'd reject this change for a non-event table.
+    test.write_module_code(MODULE_CODE_WITH_EVENT_TABLE_AFTER).unwrap();
+    test.publish_module_with_options(&identity, false, true)
+        .expect("Changing schema of event table should succeed");
+
+    // Step 3: Reschema event table right back. Should still work fine.
+    test.write_module_code(MODULE_CODE_WITH_EVENT_TABLE_BEFORE).unwrap();
+    test.publish_module_with_options(&identity, false, true)
+        .expect("Changing schema of event table should succeed");
 }

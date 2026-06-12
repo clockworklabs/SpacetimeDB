@@ -10,7 +10,7 @@ use anyhow::anyhow;
 use core::time::Duration;
 use futures::{FutureExt, StreamExt};
 use rustc_hash::FxHashMap;
-use spacetimedb_client_api_messages::energy::EnergyQuanta;
+use spacetimedb_client_api_messages::energy::FunctionBudget;
 use spacetimedb_datastore::execution_context::{ExecutionContext, ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::system_tables::{StScheduledFields, ST_SCHEDULED_ID};
@@ -387,8 +387,23 @@ impl SchedulerActor {
 
         let params = ScheduledFunctionParams(item.clone());
         let result = match params.kind(module_host.info()) {
-            ScheduledFunctionKind::Procedure => module_host.call_scheduled_procedure(params).await,
-            ScheduledFunctionKind::Reducer => module_host.call_scheduled_reducer(params).await,
+            ScheduledFunctionKind::Procedure => {
+                panic::AssertUnwindSafe(module_host.call_scheduled_procedure(params))
+                    .catch_unwind()
+                    .await
+            }
+            ScheduledFunctionKind::Reducer => {
+                panic::AssertUnwindSafe(module_host.call_scheduled_reducer(params))
+                    .catch_unwind()
+                    .await
+            }
+        };
+        let result = match result {
+            Ok(result) => result,
+            Err(_) => {
+                log::warn!("scheduled function panicked");
+                return;
+            }
         };
 
         match result {
@@ -693,7 +708,7 @@ fn refresh_views_then_commit_and_broadcast(
         status,
         reducer_return_value: None,
         //Keeping them 0 as it is internal transaction, not by reducer
-        energy_quanta_used: EnergyQuanta { quanta: 0 },
+        execution_budget_used: FunctionBudget::ZERO,
         host_execution_duration: Duration::from_millis(0),
         request_id: None,
         timer: None,

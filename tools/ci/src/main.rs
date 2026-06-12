@@ -14,6 +14,7 @@ const README_PATH: &str = "tools/ci/README.md";
 
 mod ci_docs;
 mod keynote_bench;
+mod retry_cla_assistant;
 mod smoketest;
 mod util;
 
@@ -370,6 +371,8 @@ enum CiCmd {
     VersionUpgradeCheck,
     /// Builds the docs site.
     Docs,
+    /// Retries CLA Assistant if `license/cla` is the only remaining PR blocker.
+    RetryClaAssistant(retry_cla_assistant::RetryClaAssistantArgs),
 }
 
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
@@ -619,6 +622,10 @@ fn main() -> Result<()> {
                 .dir("crates/bindings-csharp")
                 .run()?;
             cmd!("pnpm", "lint").run()?;
+            cmd!("cargo", "test", "--doc", "--target", "wasm32-unknown-unknown")
+                .dir("crates/bindings")
+                .run()?;
+            cmd!("cargo", "test", "--doc").dir("crates/bindings").run()?;
             // `bindings` is the only crate we care strongly about documenting,
             // since we link to its docs.rs from our website.
             // We won't pass `--no-deps`, though,
@@ -769,6 +776,10 @@ fn main() -> Result<()> {
 
         Some(CiCmd::Docs) => {
             run_docs_build()?;
+        }
+
+        Some(CiCmd::RetryClaAssistant(args)) => {
+            retry_cla_assistant::run(args)?;
         }
 
         None => run_all_clap_subcommands(&cli.skip)?,

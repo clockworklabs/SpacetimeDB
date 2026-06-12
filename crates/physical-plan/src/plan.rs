@@ -7,7 +7,7 @@ use spacetimedb_expr::{
     StatementSource,
 };
 use spacetimedb_lib::{identity::AuthCtx, query::Delta, sats::size_of::SizeOf, AlgebraicValue, ProductValue};
-use spacetimedb_primitives::{ColId, ColSet, IndexId, TableId, ViewId};
+use spacetimedb_primitives::{ColId, ColOrCols, ColSet, IndexId, TableId, ViewId};
 use spacetimedb_schema::schema::{IndexSchema, TableSchema};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 use spacetimedb_table::table::RowRef;
@@ -18,9 +18,8 @@ use std::{
 };
 
 use crate::rules::{
-    ComputePositions, HashToIxJoin, IxScanAnd, IxScanEq, IxScanEq2Col, IxScanEq3Col, PullFilterAboveHashJoin,
-    PushConstAnd, PushConstEq, PushLimit, ReorderDeltaJoinRhs, ReorderHashJoin, RewriteRule, UniqueHashJoinRule,
-    UniqueIxJoinRule,
+    ComputePositions, HashToIxJoin, IxScanFromPredicates, PushConstAnd, PushConstEq, PushLimit, ReorderDeltaJoinRhs,
+    ReorderHashJoin, RewriteRule, UniqueHashJoinRule, UniqueIxJoinRule,
 };
 
 /// Table aliases are replaced with labels in the physical plan
@@ -481,13 +480,9 @@ impl PhysicalPlan {
             .apply_rec::<PushConstAnd>()?
             .apply_rec::<PushConstEq>()?
             .apply_rec::<ReorderDeltaJoinRhs>()?
-            .apply_rec::<PullFilterAboveHashJoin>()?
-            .apply_rec::<IxScanEq3Col>()?
-            .apply_rec::<IxScanEq2Col>()?
-            .apply_rec::<IxScanEq>()?
-            .apply_rec::<IxScanAnd>()?
             .apply_rec::<ReorderHashJoin>()?
             .apply_rec::<HashToIxJoin>()?
+            .apply_rec::<IxScanFromPredicates>()?
             .apply_rec::<UniqueIxJoinRule>()?
             .apply_rec::<UniqueHashJoinRule>()?
             .introduce_semijoins(reqs)
@@ -505,14 +500,14 @@ impl PhysicalPlan {
                         }
                     });
                 }
-                Self::IxJoin(
-                    IxJoin {
-                        lhs_field: TupleField { label_pos: None, .. },
-                        ..
-                    },
-                    _,
-                )
-                | Self::HashJoin(
+                Self::IxJoin(IxJoin { probe, .. }, _) => {
+                    probe.visit(&mut |expr| {
+                        if let PhysicalExpr::Field(TupleField { label_pos: None, .. }) = expr {
+                            unresolved_name = true;
+                        }
+                    });
+                }
+                Self::HashJoin(
                     HashJoin {
                         lhs_field: TupleField { label_pos: None, .. },
                         ..
@@ -575,10 +570,8 @@ impl PhysicalPlan {
                     rhs,
                     rhs_label,
                     rhs_index,
-                    rhs_prefix,
-                    rhs_field,
                     unique,
-                    lhs_field,
+                    probe,
                     rhs_delta,
                 },
                 semi,
@@ -588,10 +581,8 @@ impl PhysicalPlan {
                     rhs,
                     rhs_label,
                     rhs_index,
-                    rhs_prefix,
-                    rhs_field,
                     unique,
-                    lhs_field,
+                    probe,
                     rhs_delta,
                 },
                 semi,
@@ -768,6 +759,13 @@ impl PhysicalPlan {
                 reqs.push(label);
             }
         };
+        let append_probe_required_labels = |plan: &PhysicalPlan, reqs: &mut Vec<Label>, probe: &PhysicalExpr| {
+            probe.visit(&mut |expr| {
+                if let PhysicalExpr::Field(TupleField { label, .. }) = expr {
+                    append_required_label(plan, reqs, *label);
+                }
+            });
+        };
         match self {
             Self::Filter(input, expr) => {
                 expr.visit(&mut |expr| {
@@ -831,23 +829,21 @@ impl PhysicalPlan {
                 )
             }
             Self::IxJoin(join, Semi::All) if reqs.len() == 1 && join.rhs_label == reqs[0] => {
-                let lhs = join.lhs.introduce_semijoins(vec![join.lhs_field.label]);
+                let mut lhs_reqs = vec![];
+                append_probe_required_labels(&join.lhs, &mut lhs_reqs, &join.probe);
+                let lhs = join.lhs.introduce_semijoins(lhs_reqs);
                 let lhs = Box::new(lhs);
                 Self::IxJoin(IxJoin { lhs, ..join }, Semi::Rhs)
             }
             Self::IxJoin(join, Semi::All) if reqs.iter().all(|var| *var != join.rhs_label) => {
-                if !reqs.contains(&join.lhs_field.label) {
-                    reqs.push(join.lhs_field.label);
-                }
+                append_probe_required_labels(&join.lhs, &mut reqs, &join.probe);
                 let lhs = join.lhs.introduce_semijoins(reqs);
                 let lhs = Box::new(lhs);
                 Self::IxJoin(IxJoin { lhs, ..join }, Semi::Lhs)
             }
             Self::IxJoin(join, Semi::All) => {
                 let mut reqs: Vec<_> = reqs.into_iter().filter(|label| label != &join.rhs_label).collect();
-                if !reqs.contains(&join.lhs_field.label) {
-                    reqs.push(join.lhs_field.label);
-                }
+                append_probe_required_labels(&join.lhs, &mut reqs, &join.probe);
                 let lhs = join.lhs.introduce_semijoins(reqs);
                 let lhs = Box::new(lhs);
                 Self::IxJoin(IxJoin { lhs, ..join }, Semi::All)
@@ -862,21 +858,12 @@ impl PhysicalPlan {
             // Is there a unique constraint for these cols?
             Self::TableScan(TableScan { schema, .. }, var) => var == label && schema.as_ref().is_unique(&**cols),
             // Is there a unique constraint for these cols + the index cols?
-            Self::IxScan(
-                IxScan {
-                    schema,
-                    prefix,
-                    arg: Sarg::Eq(col, _),
-                    ..
-                },
-                var,
-            ) => {
+            Self::IxScan(scan, var) if var == label && matches!(&scan.probe, IndexProbe::Point(_)) => {
                 var == label
-                    && schema.as_ref().is_unique(&*ColSet::from_iter(
-                        cols.iter()
-                            .chain(prefix.iter().map(|(col_id, _)| *col_id))
-                            .chain(vec![*col]),
-                    ))
+                    && scan
+                        .schema
+                        .as_ref()
+                        .is_unique(&*ColSet::from_iter(cols.iter().chain(scan.index_cols().iter())))
             }
             // If the table in question is on the lhs,
             // and if the lhs returns distinct values,
@@ -890,22 +877,11 @@ impl PhysicalPlan {
             // and if the rhs returns distinct values,
             // we must not probe the rhs for the same value more than once.
             // Hence the lhs must be distinct w.r.t the probe field.
-            Self::IxJoin(
-                IxJoin {
-                    lhs,
-                    rhs,
-                    lhs_field:
-                        TupleField {
-                            label: lhs_label,
-                            field_pos: lhs_field_pos,
-                            ..
-                        },
-                    ..
-                },
-                _,
-            ) => {
-                lhs.returns_distinct_values(lhs_label, &ColSet::from(ColId(*lhs_field_pos as u16)))
-                    && rhs.as_ref().is_unique(&**cols)
+            Self::IxJoin(join @ IxJoin { lhs, rhs, .. }, _) => {
+                join.single_probe_field().is_some_and(|(_, lhs_field)| {
+                    lhs.returns_distinct_values(&lhs_field.label, &ColSet::from(ColId(lhs_field.field_pos as u16)))
+                        && rhs.as_ref().is_unique(&**cols)
+                })
             }
             // If the table in question is on the lhs,
             // and if the lhs returns distinct values,
@@ -1097,14 +1073,10 @@ impl PhysicalPlan {
     pub fn search_args(&self) -> Vec<(TableId, ColId, AlgebraicValue)> {
         let mut args = vec![];
         self.visit(&mut |op| match op {
-            PhysicalPlan::IxScan(
-                scan @ IxScan {
-                    arg: Sarg::Eq(col_id, value),
-                    ..
-                },
-                _,
-            ) if scan.prefix.is_empty() => {
-                args.push((scan.schema.table_id, *col_id, value.clone()));
+            PhysicalPlan::IxScan(scan, _) => {
+                if let Some((col_id, value)) = scan.single_col_lit_point() {
+                    args.push((scan.schema.table_id, col_id, value.clone()));
+                }
             }
             PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, a, b)) => {
                 if let (PhysicalExpr::Field(field), PhysicalExpr::Value(value)) = (&**a, &**b) {
@@ -1205,16 +1177,14 @@ pub struct IxScan {
     pub delta: Option<Delta>,
     /// The index id
     pub index_id: IndexId,
-    /// An equality prefix for multi-column scans
-    pub prefix: Vec<(ColId, AlgebraicValue)>,
-    /// The index argument
-    pub arg: Sarg,
+    /// The expression used to probe the index.
+    pub probe: IndexProbe,
 }
 
-/// An index [S]earch [arg]ument
+/// The key expression for an index scan.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Sarg {
-    Eq(ColId, AlgebraicValue),
+pub enum IndexProbe {
+    Point(PhysicalExpr),
     /// NOTE(centril): We currently never construct this variant.
     /// We do have non-ranged hash indices.
     /// This means that when we get around to using this variant,
@@ -1226,7 +1196,7 @@ pub enum Sarg {
     /// We also currently do not emit such `IxScan`s where the number
     /// of equalities provided are fewer than the number of columns in the index.
     /// When we do, we must also account for hash indices in the rewrite rules.
-    Range(ColId, Bound<AlgebraicValue>, Bound<AlgebraicValue>),
+    Range(Bound<PhysicalExpr>, Bound<PhysicalExpr>),
 }
 
 /// A join of two relations on a single equality condition.
@@ -1254,18 +1224,138 @@ pub struct IxJoin {
     pub rhs_label: Label,
     /// The index id
     pub rhs_index: IndexId,
-    /// Optional constant prefix values for multi-column index probes.
-    pub rhs_prefix: Vec<AlgebraicValue>,
-    /// The index field
-    pub rhs_field: ColId,
     /// Is the index a unique constraint index?
     pub unique: bool,
-    /// The expression for computing probe values.
-    /// Values are projected from the lhs,
-    /// and used to probe the index on the rhs.
-    pub lhs_field: TupleField,
+    /// The point expression for computing probe values from the lhs.
+    pub probe: PhysicalExpr,
     // Is the rhs a delta table?
     pub rhs_delta: Option<Delta>,
+}
+
+/// Build a single physical key expression for an index probe.
+///
+/// Single-column keys are represented directly. Composite keys are represented
+/// as products and evaluated at runtime. This intentionally does not fold
+/// all-literal products in the physical plan.
+pub fn index_key_expr(mut parts: Vec<PhysicalExpr>) -> PhysicalExpr {
+    if parts.len() == 1 {
+        parts.pop().unwrap()
+    } else {
+        PhysicalExpr::Product(parts)
+    }
+}
+
+fn schema_index_cols(schema: &TableSchema, index_id: IndexId) -> ColOrCols<'_> {
+    schema
+        .indexes
+        .iter()
+        .find(|index| index.index_id == index_id)
+        .expect("physical plan referenced missing index")
+        .index_algorithm
+        .columns()
+}
+
+fn align_index_key_components<'a>(
+    cols: ColOrCols<'_>,
+    expr: &'a PhysicalExpr,
+) -> Option<Vec<(ColId, &'a PhysicalExpr)>> {
+    let cols = cols.iter().collect::<Vec<_>>();
+    match expr {
+        PhysicalExpr::Product(parts) if parts.len() == cols.len() => Some(cols.into_iter().zip(parts.iter()).collect()),
+        _ if cols.len() == 1 => Some(vec![(cols[0], expr)]),
+        _ => None,
+    }
+}
+
+impl IndexProbe {
+    pub fn visit(&self, f: &mut impl FnMut(&PhysicalExpr)) {
+        match self {
+            Self::Point(expr) => expr.visit(f),
+            Self::Range(lower, upper) => {
+                match lower {
+                    Bound::Included(expr) | Bound::Excluded(expr) => expr.visit(f),
+                    Bound::Unbounded => {}
+                }
+                match upper {
+                    Bound::Included(expr) | Bound::Excluded(expr) => expr.visit(f),
+                    Bound::Unbounded => {}
+                }
+            }
+        }
+    }
+
+    pub fn visit_mut(&mut self, f: &mut impl FnMut(&mut PhysicalExpr)) {
+        match self {
+            Self::Point(expr) => expr.visit_mut(f),
+            Self::Range(lower, upper) => {
+                match lower {
+                    Bound::Included(expr) | Bound::Excluded(expr) => expr.visit_mut(f),
+                    Bound::Unbounded => {}
+                }
+                match upper {
+                    Bound::Included(expr) | Bound::Excluded(expr) => expr.visit_mut(f),
+                    Bound::Unbounded => {}
+                }
+            }
+        }
+    }
+}
+
+impl IxScan {
+    pub fn index_cols(&self) -> ColOrCols<'_> {
+        schema_index_cols(&self.schema, self.index_id)
+    }
+
+    pub fn literal_eq_terms(&self) -> Option<Vec<(ColId, AlgebraicValue)>> {
+        let IndexProbe::Point(expr) = &self.probe else {
+            return None;
+        };
+
+        let mut terms = Vec::new();
+        for (col, expr) in align_index_key_components(self.index_cols(), expr)? {
+            let PhysicalExpr::Value(value) = expr else {
+                return None;
+            };
+            terms.push((col, value.clone()));
+        }
+        Some(terms)
+    }
+
+    pub fn single_col_lit_point(&self) -> Option<(ColId, &AlgebraicValue)> {
+        let IndexProbe::Point(expr) = &self.probe else {
+            return None;
+        };
+        let components = align_index_key_components(self.index_cols(), expr)?;
+        let [(col, PhysicalExpr::Value(value))] = components.as_slice() else {
+            return None;
+        };
+        Some((*col, value))
+    }
+}
+
+impl IxJoin {
+    pub fn index_cols(&self) -> ColOrCols<'_> {
+        schema_index_cols(&self.rhs, self.rhs_index)
+    }
+
+    pub fn probe_field_components(&self) -> Vec<(ColId, &TupleField)> {
+        align_index_key_components(self.index_cols(), &self.probe)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|(col, expr)| match expr {
+                PhysicalExpr::Field(field) => Some((col, field)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    pub fn single_probe_field(&self) -> Option<(ColId, &TupleField)> {
+        let fields = self.probe_field_components();
+        let [(col, field)] = fields.as_slice() else {
+            return None;
+        };
+        Some((*col, *field))
+    }
 }
 
 /// Is this a semijoin?
@@ -1282,6 +1372,8 @@ pub enum Semi {
 pub enum PhysicalExpr {
     /// An n-ary logic expression
     LogOp(LogOp, Vec<PhysicalExpr>),
+    /// A composite value expression, used primarily for multi-column index keys.
+    Product(Vec<PhysicalExpr>),
     /// A binary expression
     BinOp(BinOp, Box<PhysicalExpr>, Box<PhysicalExpr>),
     /// A constant algebraic value
@@ -1324,6 +1416,11 @@ impl PhysicalExpr {
                     expr.visit(f);
                 }
             }
+            Self::Product(exprs) => {
+                for expr in exprs {
+                    expr.visit(f);
+                }
+            }
             _ => {}
         }
     }
@@ -1341,6 +1438,11 @@ impl PhysicalExpr {
                     expr.visit_mut(f);
                 }
             }
+            Self::Product(exprs) => {
+                for expr in exprs {
+                    expr.visit_mut(f);
+                }
+            }
             _ => {}
         }
     }
@@ -1352,6 +1454,7 @@ impl PhysicalExpr {
             field @ Self::Field(..) => field,
             Self::BinOp(op, a, b) => Self::BinOp(op, Box::new(a.map(f)), Box::new(b.map(f))),
             Self::LogOp(op, exprs) => Self::LogOp(op, exprs.into_iter().map(|expr| expr.map(f)).collect()),
+            Self::Product(exprs) => Self::Product(exprs.into_iter().map(|expr| expr.map(f)).collect()),
         }
     }
 
@@ -1374,7 +1477,7 @@ impl PhysicalExpr {
     }
 
     /// Evaluate this expression over `row`
-    fn eval_with_metrics(&self, row: &impl ProjectField, bytes_scanned: &mut usize) -> Cow<'_, AlgebraicValue> {
+    pub fn eval_with_metrics(&self, row: &impl ProjectField, bytes_scanned: &mut usize) -> Cow<'_, AlgebraicValue> {
         fn eval_bin_op(op: BinOp, a: &AlgebraicValue, b: &AlgebraicValue) -> bool {
             match op {
                 BinOp::Eq => a == b,
@@ -1404,6 +1507,12 @@ impl PhysicalExpr {
                     // ANY is equivalent to OR
                     .any(|expr| expr.eval_bool_with_metrics(row, bytes_scanned)),
             ),
+            Self::Product(exprs) => Cow::Owned(AlgebraicValue::product(
+                exprs
+                    .iter()
+                    .map(|expr| expr.eval_with_metrics(row, bytes_scanned).into_owned())
+                    .collect::<ProductValue>(),
+            )),
             Self::Field(field) => {
                 let value = row.project(field);
                 *bytes_scanned += value.size_of();
@@ -1428,6 +1537,7 @@ impl PhysicalExpr {
                     .collect(),
             ),
             Self::BinOp(op, a, b) => Self::BinOp(op, Box::new(a.flatten()), Box::new(b.flatten())),
+            Self::Product(exprs) => Self::Product(exprs.into_iter().map(Self::flatten).collect()),
             Self::Field(..) | Self::Value(..) => self,
         }
     }
@@ -1466,7 +1576,7 @@ mod tests {
 
     use crate::{
         compile::{compile_select, compile_select_list},
-        plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, ProjectListPlan, Sarg, Semi, TupleField},
+        plan::{IndexProbe, IxScan, PhysicalPlan, ProjectListPlan, Semi, TupleField},
     };
 
     use super::{PhysicalExpr, ProjectPlan, TableScan};
@@ -1553,6 +1663,21 @@ mod tests {
     /// A wrapper around [spacetimedb_expr::check::parse_and_type_sub] that takes a dummy [AuthCtx]
     fn parse_and_type_sub(sql: &str, tx: &impl SchemaView) -> TypingResult<ProjectName> {
         spacetimedb_expr::check::parse_and_type_sub(sql, tx, &AuthCtx::for_testing()).map(|(plan, _)| plan)
+    }
+
+    fn assert_join_probe(join: &super::IxJoin, rhs_col: ColId, lhs_field_pos: usize) {
+        assert_eq!(
+            join.single_probe_field().map(|(col, field)| (col, field.field_pos)),
+            Some((rhs_col, lhs_field_pos))
+        );
+    }
+
+    fn value(value: AlgebraicValue) -> PhysicalExpr {
+        PhysicalExpr::Value(value)
+    }
+
+    fn product(values: Vec<AlgebraicValue>) -> PhysicalExpr {
+        PhysicalExpr::Product(values.into_iter().map(value).collect())
     }
 
     /// No rewrites applied to a simple table scan
@@ -1733,19 +1858,11 @@ mod tests {
         //    /  \
         // ix(u)  l
         let plan = match plan {
-            PhysicalPlan::IxJoin(
-                IxJoin {
-                    lhs,
-                    rhs,
-                    rhs_field: ColId(0),
-                    unique: true,
-                    lhs_field: TupleField { field_pos: 0, .. },
-                    ..
-                },
-                Semi::Rhs,
-            ) => {
-                assert_eq!(rhs.table_id, b_id);
-                *lhs
+            PhysicalPlan::IxJoin(join, Semi::Rhs) => {
+                assert_eq!(join.rhs.table_id, b_id);
+                assert!(join.unique);
+                assert_join_probe(&join, ColId(0), 0);
+                *join.lhs
             }
             plan => panic!("unexpected plan: {plan:#?}"),
         };
@@ -1757,19 +1874,11 @@ mod tests {
         //    /  \
         // ix(u)  l
         let plan = match plan {
-            PhysicalPlan::IxJoin(
-                IxJoin {
-                    lhs,
-                    rhs,
-                    rhs_field: ColId(1),
-                    unique: false,
-                    lhs_field: TupleField { field_pos: 1, .. },
-                    ..
-                },
-                Semi::Rhs,
-            ) => {
-                assert_eq!(rhs.table_id, l_id);
-                *lhs
+            PhysicalPlan::IxJoin(join, Semi::Rhs) => {
+                assert_eq!(join.rhs.table_id, l_id);
+                assert!(!join.unique);
+                assert_join_probe(&join, ColId(1), 1);
+                *join.lhs
             }
             plan => panic!("unexpected plan: {plan:#?}"),
         };
@@ -1779,35 +1888,19 @@ mod tests {
         //    /  \
         // ix(u)  l
         let plan = match plan {
-            PhysicalPlan::IxJoin(
-                IxJoin {
-                    lhs,
-                    rhs,
-                    rhs_field: ColId(0),
-                    unique: true,
-                    lhs_field: TupleField { field_pos: 1, .. },
-                    ..
-                },
-                Semi::Rhs,
-            ) => {
-                assert_eq!(rhs.table_id, l_id);
-                *lhs
+            PhysicalPlan::IxJoin(join, Semi::Rhs) => {
+                assert_eq!(join.rhs.table_id, l_id);
+                assert!(join.unique);
+                assert_join_probe(&join, ColId(0), 1);
+                *join.lhs
             }
             plan => panic!("unexpected plan: {plan:#?}"),
         };
 
         // Plan: ix(u)
         match plan {
-            PhysicalPlan::IxScan(
-                IxScan {
-                    schema,
-                    prefix,
-                    arg: Sarg::Eq(ColId(0), AlgebraicValue::U64(5)),
-                    ..
-                },
-                _,
-            ) => {
-                assert!(prefix.is_empty());
+            PhysicalPlan::IxScan(IxScan { schema, probe, .. }, _) => {
+                assert_eq!(probe, IndexProbe::Point(value(AlgebraicValue::U64(5))));
                 assert_eq!(schema.table_id, u_id);
             }
             plan => panic!("unexpected plan: {plan:#?}"),
@@ -1930,61 +2023,56 @@ mod tests {
         //    /  \
         // ix(m)  m
         let plan = match plan {
-            PhysicalPlan::IxJoin(
-                IxJoin {
-                    lhs,
-                    rhs,
-                    rhs_field: ColId(0),
-                    unique: true,
-                    lhs_field: TupleField { field_pos: 1, .. },
-                    ..
-                },
-                Semi::Rhs,
-            ) => {
-                assert_eq!(rhs.table_id, p_id);
-                *lhs
+            PhysicalPlan::IxJoin(join, Semi::Rhs) => {
+                assert_eq!(join.rhs.table_id, p_id);
+                assert!(join.unique);
+                assert_join_probe(&join, ColId(0), 1);
+                *join.lhs
             }
             plan => panic!("unexpected plan: {plan:#?}"),
         };
 
         // Plan:
-        //         rj
-        //        /  \
-        //       rx  ix(w)
+        //         s(v.employee = 5)
+        //          |
+        //          rx
+        //        /    \
+        //       rx     w
         //      /  \
         //     rx   w
         //    /  \
         // ix(m)  m
-        let (rhs, lhs) = match plan {
-            PhysicalPlan::HashJoin(
-                HashJoin {
-                    lhs,
-                    rhs,
-                    lhs_field: TupleField { field_pos: 1, .. },
-                    rhs_field: TupleField { field_pos: 1, .. },
-                    unique: true,
-                },
-                Semi::Rhs,
-            ) => (*rhs, *lhs),
+        let plan = match plan {
+            PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, lhs, rhs)) => {
+                assert!(matches!(
+                    (&*lhs, &*rhs),
+                    (
+                        PhysicalExpr::Field(TupleField { field_pos: 0, .. }),
+                        PhysicalExpr::Value(AlgebraicValue::U64(5))
+                    )
+                ));
+                *input
+            }
             plan => panic!("unexpected plan: {plan:#?}"),
         };
 
-        // Plan: ix(w)
-        match rhs {
-            PhysicalPlan::IxScan(
-                IxScan {
-                    schema,
-                    prefix,
-                    arg: Sarg::Eq(ColId(0), AlgebraicValue::U64(5)),
-                    ..
-                },
-                _,
-            ) => {
-                assert!(prefix.is_empty());
-                assert_eq!(schema.table_id, w_id);
+        // Plan:
+        //         rx
+        //        /  \
+        //       rx   w
+        //      /  \
+        //     rx   w
+        //    /  \
+        // ix(m)  m
+        let plan = match plan {
+            PhysicalPlan::IxJoin(join, Semi::Rhs) => {
+                assert_eq!(join.rhs.table_id, w_id);
+                assert!(!join.unique);
+                assert_join_probe(&join, ColId(1), 1);
+                *join.lhs
             }
             plan => panic!("unexpected plan: {plan:#?}"),
-        }
+        };
 
         // Plan:
         //       rx
@@ -1992,20 +2080,12 @@ mod tests {
         //     rx   w
         //    /  \
         // ix(m)  m
-        let plan = match lhs {
-            PhysicalPlan::IxJoin(
-                IxJoin {
-                    lhs,
-                    rhs,
-                    rhs_field: ColId(0),
-                    unique: false,
-                    lhs_field: TupleField { field_pos: 0, .. },
-                    ..
-                },
-                Semi::Rhs,
-            ) => {
-                assert_eq!(rhs.table_id, w_id);
-                *lhs
+        let plan = match plan {
+            PhysicalPlan::IxJoin(join, Semi::Rhs) => {
+                assert_eq!(join.rhs.table_id, w_id);
+                assert!(!join.unique);
+                assert_join_probe(&join, ColId(0), 0);
+                *join.lhs
             }
             plan => panic!("unexpected plan: {plan:#?}"),
         };
@@ -2015,35 +2095,19 @@ mod tests {
         //    /  \
         // ix(m)  m
         let plan = match plan {
-            PhysicalPlan::IxJoin(
-                IxJoin {
-                    lhs,
-                    rhs,
-                    rhs_field: ColId(1),
-                    unique: false,
-                    lhs_field: TupleField { field_pos: 1, .. },
-                    ..
-                },
-                Semi::Rhs,
-            ) => {
-                assert_eq!(rhs.table_id, m_id);
-                *lhs
+            PhysicalPlan::IxJoin(join, Semi::Rhs) => {
+                assert_eq!(join.rhs.table_id, m_id);
+                assert!(!join.unique);
+                assert_join_probe(&join, ColId(1), 1);
+                *join.lhs
             }
             plan => panic!("unexpected plan: {plan:#?}"),
         };
 
         // Plan: ix(m)
         match plan {
-            PhysicalPlan::IxScan(
-                IxScan {
-                    schema,
-                    prefix,
-                    arg: Sarg::Eq(ColId(0), AlgebraicValue::U64(5)),
-                    ..
-                },
-                _,
-            ) => {
-                assert!(prefix.is_empty());
+            PhysicalPlan::IxScan(IxScan { schema, probe, .. }, _) => {
+                assert_eq!(probe, IndexProbe::Point(value(AlgebraicValue::U64(5))));
                 assert_eq!(schema.table_id, m_id);
             }
             plan => panic!("unexpected plan: {plan:#?}"),
@@ -2080,17 +2144,15 @@ mod tests {
 
         // Select index on (x, y, z)
         match pp {
-            ProjectPlan::None(PhysicalPlan::IxScan(
-                IxScan {
-                    schema, prefix, arg, ..
-                },
-                _,
-            )) => {
+            ProjectPlan::None(PhysicalPlan::IxScan(IxScan { schema, probe, .. }, _)) => {
                 assert_eq!(schema.table_id, t_id);
-                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(5)));
                 assert_eq!(
-                    prefix,
-                    vec![(ColId(1), AlgebraicValue::U8(3)), (ColId(2), AlgebraicValue::U8(4))]
+                    probe,
+                    IndexProbe::Point(product(vec![
+                        AlgebraicValue::U8(3),
+                        AlgebraicValue::U8(4),
+                        AlgebraicValue::U8(5),
+                    ]))
                 );
             }
             proj => panic!("unexpected plan: {proj:#?}"),
@@ -2102,17 +2164,15 @@ mod tests {
         let pp = compile_select(lp).optimize(&auth).unwrap();
 
         match pp {
-            ProjectPlan::None(PhysicalPlan::IxScan(
-                IxScan {
-                    schema, prefix, arg, ..
-                },
-                _,
-            )) => {
+            ProjectPlan::None(PhysicalPlan::IxScan(IxScan { schema, probe, .. }, _)) => {
                 assert_eq!(schema.table_id, t_id);
-                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(5)));
                 assert_eq!(
-                    prefix,
-                    vec![(ColId(1), AlgebraicValue::U8(3)), (ColId(2), AlgebraicValue::U8(4))]
+                    probe,
+                    IndexProbe::Point(product(vec![
+                        AlgebraicValue::U8(3),
+                        AlgebraicValue::U8(4),
+                        AlgebraicValue::U8(5),
+                    ]))
                 );
             }
             proj => panic!("unexpected plan: {proj:#?}"),
@@ -2133,15 +2193,9 @@ mod tests {
         };
 
         match plan {
-            PhysicalPlan::IxScan(
-                IxScan {
-                    schema, prefix, arg, ..
-                },
-                _,
-            ) => {
+            PhysicalPlan::IxScan(IxScan { schema, probe, .. }, _) => {
                 assert_eq!(schema.table_id, t_id);
-                assert_eq!(arg, Sarg::Eq(ColId(1), AlgebraicValue::U8(3)));
-                assert!(prefix.is_empty());
+                assert_eq!(probe, IndexProbe::Point(value(AlgebraicValue::U8(3))));
             }
             plan => panic!("unexpected plan: {plan:#?}"),
         };
@@ -2161,15 +2215,9 @@ mod tests {
         };
 
         match plan {
-            PhysicalPlan::IxScan(
-                IxScan {
-                    schema, prefix, arg, ..
-                },
-                _,
-            ) => {
+            PhysicalPlan::IxScan(IxScan { schema, probe, .. }, _) => {
                 assert_eq!(schema.table_id, t_id);
-                assert_eq!(arg, Sarg::Eq(ColId(1), AlgebraicValue::U8(4)));
-                assert!(prefix.is_empty());
+                assert_eq!(probe, IndexProbe::Point(value(AlgebraicValue::U8(4))));
             }
             plan => panic!("unexpected plan: {plan:#?}"),
         };
@@ -2194,15 +2242,12 @@ mod tests {
         let pp = compile_select(lp).optimize(&auth).unwrap();
 
         match pp {
-            ProjectPlan::None(PhysicalPlan::IxScan(
-                IxScan {
-                    schema, prefix, arg, ..
-                },
-                _,
-            )) => {
+            ProjectPlan::None(PhysicalPlan::IxScan(IxScan { schema, probe, .. }, _)) => {
                 assert_eq!(schema.table_id, t_id);
-                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(2)));
-                assert_eq!(prefix, vec![(ColId(2), AlgebraicValue::U8(1))]);
+                assert_eq!(
+                    probe,
+                    IndexProbe::Point(product(vec![AlgebraicValue::U8(1), AlgebraicValue::U8(2)]))
+                );
             }
             proj => panic!("unexpected plan: {proj:#?}"),
         };
@@ -2213,15 +2258,12 @@ mod tests {
         let pp = compile_select(lp).optimize(&auth).unwrap();
 
         match pp {
-            ProjectPlan::None(PhysicalPlan::IxScan(
-                IxScan {
-                    schema, prefix, arg, ..
-                },
-                _,
-            )) => {
+            ProjectPlan::None(PhysicalPlan::IxScan(IxScan { schema, probe, .. }, _)) => {
                 assert_eq!(schema.table_id, t_id);
-                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(2)));
-                assert_eq!(prefix, vec![(ColId(2), AlgebraicValue::U8(1))]);
+                assert_eq!(
+                    probe,
+                    IndexProbe::Point(product(vec![AlgebraicValue::U8(1), AlgebraicValue::U8(2)]))
+                );
             }
             proj => panic!("unexpected plan: {proj:#?}"),
         };
@@ -2241,15 +2283,12 @@ mod tests {
         };
 
         match plan {
-            PhysicalPlan::IxScan(
-                IxScan {
-                    schema, prefix, arg, ..
-                },
-                _,
-            ) => {
+            PhysicalPlan::IxScan(IxScan { schema, probe, .. }, _) => {
                 assert_eq!(schema.table_id, t_id);
-                assert_eq!(arg, Sarg::Eq(ColId(3), AlgebraicValue::U8(3)));
-                assert_eq!(prefix, vec![(ColId(2), AlgebraicValue::U8(2))]);
+                assert_eq!(
+                    probe,
+                    IndexProbe::Point(product(vec![AlgebraicValue::U8(2), AlgebraicValue::U8(3)]))
+                );
             }
             plan => panic!("unexpected plan: {plan:#?}"),
         };

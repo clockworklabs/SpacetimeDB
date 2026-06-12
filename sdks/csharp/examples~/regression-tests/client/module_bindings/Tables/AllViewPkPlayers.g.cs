@@ -30,11 +30,13 @@ namespace SpacetimeDB.Types
     public sealed class AllViewPkPlayersCols
     {
         public global::SpacetimeDB.Col<ViewPkPlayer, ulong> Id { get; }
+        public global::SpacetimeDB.Col<ViewPkPlayer, SpacetimeDB.Identity> Sender { get; }
         public global::SpacetimeDB.Col<ViewPkPlayer, string> Name { get; }
 
         public AllViewPkPlayersCols(string tableName)
         {
             Id = new global::SpacetimeDB.Col<ViewPkPlayer, ulong>(tableName, "id");
+            Sender = new global::SpacetimeDB.Col<ViewPkPlayer, SpacetimeDB.Identity>(tableName, "sender");
             Name = new global::SpacetimeDB.Col<ViewPkPlayer, string>(tableName, "name");
         }
     }

@@ -6,7 +6,6 @@ use crate::client::messages::{OneOffQueryResponseMessage, ProcedureResultMessage
 use crate::client::{ClientActorId, ClientConnectionSender, WsVersion};
 use crate::database_logger::{DatabaseLogger, LogLevel, Record};
 use crate::db::relational_db::{RelationalDB, Tx};
-use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::hash::Hash;
@@ -29,7 +28,7 @@ use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRo
 use crate::subscription::tx::DeltaTx;
 use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
 use crate::subscription::{execute_plan, execute_plan_for_view};
-use crate::util::jobs::{AllocatedJobCore, SingleCoreExecutor, SingleThreadedExecutor};
+use crate::util::jobs::{AllocatedJobCore, SingleThreadedExecutor};
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::Context;
 use bytes::Bytes;
@@ -212,7 +211,7 @@ pub struct ModuleEvent {
     pub function_call: ModuleFunctionCall,
     pub status: EventStatus,
     pub reducer_return_value: Option<Bytes>,
-    pub energy_quanta_used: EnergyQuanta,
+    pub execution_budget_used: FunctionBudget,
     pub host_execution_duration: Duration,
     pub request_id: Option<RequestId>,
     pub timer: Option<Instant>,
@@ -343,8 +342,7 @@ pub enum ModuleWithInstance {
     Wasm {
         module: super::wasmtime::Module,
         procedure_module: super::wasmtime::ProcedureModule,
-        main_thread_name: String,
-        procedure_thread_name: String,
+        thread_name: String,
         core: AllocatedJobCore,
         init_inst: Box<super::wasmtime::ModuleInstance>,
         procedure_instance_pool_size: NonZeroUsize,
@@ -408,9 +406,8 @@ impl WasmtimeModuleState {
     }
 }
 
-/// Wasm uses a single-core executor backed by a Tokio single threaded runtime
-/// for async procedures. It uses an executor backed by a single OS-thread for
-/// everything else.
+/// Wasm uses a single executor backed by a single OS thread with a Tokio LocalSet
+/// for async procedures; synchronous reducers run inline on the same thread.
 ///
 /// Note, procedures acquire a module instance from the async procedure pool
 /// before being enqueued by the executor.
@@ -419,8 +416,7 @@ impl WasmtimeModuleState {
 /// to acquire.
 struct WasmtimeModuleHost {
     module: Arc<super::wasmtime::Module>,
-    main_executor: SingleThreadedExecutor<WasmtimeModuleState>,
-    procedure_executor: SingleCoreExecutor,
+    executor: SingleThreadedExecutor<WasmtimeModuleState>,
     procedure_instances: Arc<WasmtimeProcedureInstanceManager>,
 }
 
@@ -436,7 +432,7 @@ impl WasmtimeModuleHost {
         A: Send + 'static,
     {
         let label = label.to_owned();
-        self.main_executor.enqueue_job(move |state| {
+        self.executor.enqueue_sync_job(move |state| {
             scopeguard::defer_on_unwind!({
                 log::warn!("wasm main operation {label} panicked");
                 on_panic();
@@ -462,7 +458,7 @@ impl WasmtimeModuleHost {
         let instance_manager = self.procedure_instances.clone();
         let ModuleInstanceLease { instance, slot } = instance_manager.get_instance().await;
         let label = label.to_owned();
-        self.procedure_executor.enqueue_job(async move || {
+        self.executor.enqueue_async_job(async move || {
             scopeguard::defer_on_unwind!({
                 log::warn!("wasm procedure {label} panicked");
                 on_panic();
@@ -1089,6 +1085,66 @@ pub struct CallViewParams {
     pub timestamp: Timestamp,
 }
 
+pub(crate) struct ResolvedViewForRefresh<'a> {
+    pub view_id: ViewId,
+    pub table_id: TableId,
+    pub view_def: &'a ViewDef,
+}
+
+/// Lookup a module's [`ViewDef`] and check for consistency among
+/// its readset, `st_view`, and the [`ModuleDef`].
+pub(crate) fn resolve_view_for_refresh<'a>(
+    tx: &MutTxId,
+    module_def: &'a ModuleDef,
+    view_call: &ViewCallInfo,
+) -> anyhow::Result<ResolvedViewForRefresh<'a>> {
+    let st_view = tx
+        .lookup_st_view(view_call.view_id)
+        .with_context(|| format!("failed to look up view {}", view_call.view_id))?;
+
+    let view_id = st_view.view_id;
+    let table_id = st_view
+        .table_id
+        .ok_or_else(|| anyhow::anyhow!("view {:?} does not have a backing table", view_id))?;
+
+    let view_name: Identifier = st_view.view_name.into();
+    let view_def = module_def.view(&view_name).ok_or_else(|| {
+        anyhow::anyhow!(
+            "view `{}` for view id `{}` not found in current module",
+            view_name,
+            view_id
+        )
+    })?;
+
+    let is_anonymous = view_call.sender.is_none();
+
+    if st_view.is_anonymous != is_anonymous {
+        return Err(anyhow::anyhow!(
+            "found is_anonymous={} in st_view, but {} in readset when updating view `{}`",
+            st_view.is_anonymous,
+            is_anonymous,
+            view_name,
+        ));
+    }
+
+    let is_anonymous = view_def.is_anonymous;
+
+    if st_view.is_anonymous != is_anonymous {
+        return Err(anyhow::anyhow!(
+            "found is_anonymous={} in st_view, but {} in module when updating view `{}`",
+            st_view.is_anonymous,
+            is_anonymous,
+            view_name,
+        ));
+    }
+
+    Ok(ResolvedViewForRefresh {
+        view_id,
+        table_id,
+        view_def,
+    })
+}
+
 pub struct CallProcedureParams {
     pub timestamp: Timestamp,
     pub caller_identity: Identity,
@@ -1482,7 +1538,7 @@ impl From<EventStatus> for ViewOutcome {
 pub struct ViewCallResult {
     pub outcome: ViewOutcome,
     pub tx: MutTxId,
-    pub energy_used: FunctionBudget,
+    pub execution_budget_used: FunctionBudget,
     pub total_duration: Duration,
     pub abi_duration: Duration,
 }
@@ -1491,7 +1547,7 @@ impl fmt::Debug for ViewCallResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ViewCallResult")
             .field("outcome", &self.outcome)
-            .field("energy_used", &self.energy_used)
+            .field("execution_budget_used", &self.execution_budget_used)
             .field("total_duration", &self.total_duration)
             .field("abi_duration", &self.abi_duration)
             .finish()
@@ -1502,7 +1558,7 @@ impl ViewCallResult {
     pub fn default(tx: MutTxId) -> Self {
         Self {
             outcome: ViewOutcome::Success,
-            energy_used: FunctionBudget::ZERO,
+            execution_budget_used: FunctionBudget::ZERO,
             total_duration: Duration::ZERO,
             abi_duration: Duration::ZERO,
             tx,
@@ -1650,8 +1706,7 @@ impl ModuleHost {
             ModuleWithInstance::Wasm {
                 module,
                 procedure_module,
-                main_thread_name,
-                procedure_thread_name,
+                thread_name,
                 core,
                 init_inst,
                 procedure_instance_pool_size,
@@ -1662,20 +1717,7 @@ impl ModuleHost {
                 let metrics = InstanceManagerMetrics::new(module.host_type(), database_identity);
                 let main_state = WasmtimeModuleState::new(module.clone(), init_inst, metrics.clone());
 
-                // The wasm main and procedure executors run on separate OS threads,
-                // but they intentionally share one database core allocation.
-                // When core pinning is enabled, both threads pin to the same core
-                // and rebalance together because they use clones of the same `CorePinner`.
-                let (load_balance_guard, core_pinner) = core.into_shared();
-
-                let main_executor = AllocatedJobCore::spawn_executor(
-                    load_balance_guard.clone(),
-                    core_pinner.clone(),
-                    main_state,
-                    main_thread_name,
-                );
-                let procedure_executor =
-                    AllocatedJobCore::spawn_async_executor(load_balance_guard, core_pinner, procedure_thread_name);
+                let executor = core.spawn_executor(main_state, thread_name);
                 let procedure_instances = Arc::new(ModuleInstanceManager::new_bounded_with_metrics(
                     procedure_module,
                     None,
@@ -1684,8 +1726,7 @@ impl ModuleHost {
                 ));
                 Arc::new(ModuleHostInner::Wasm(Box::new(WasmtimeModuleHost {
                     module,
-                    main_executor,
-                    procedure_executor,
+                    executor,
                     procedure_instances,
                 })))
             }
@@ -1794,9 +1835,9 @@ impl ModuleHost {
 
         Ok(match &*self.inner {
             ModuleHostInner::Wasm(host) => {
-                let executor = host.main_executor.clone();
+                let executor = host.executor.clone();
                 executor
-                    .run_job(move |state| {
+                    .run_sync_job(move |state| {
                         state.with_instance(move |inst| {
                             drop(timer_guard);
                             wasm(arg, inst)
@@ -1838,12 +1879,12 @@ impl ModuleHost {
 
         Ok(match &*self.inner {
             ModuleHostInner::Wasm(host) => {
-                let executor = host.procedure_executor.clone();
+                let executor = host.executor.clone();
                 let instance_manager = host.procedure_instances.clone();
                 instance_manager
                     .with_instance(async move |mut inst| {
                         executor
-                            .run_job(async move || {
+                            .run_async_job(async move || {
                                 drop(timer_guard);
                                 let res = wasm(arg, &mut inst).await;
                                 (res, inst)
@@ -2897,17 +2938,21 @@ impl ModuleHost {
         let mut total_duration = Duration::ZERO;
         let mut abi_duration = Duration::ZERO;
         let mut trapped = false;
-        for ViewCallInfo {
-            view_id,
-            table_id,
-            fn_ptr,
-            sender,
-        } in tx.views_for_refresh().cloned().collect::<Vec<_>>()
-        {
-            let Some(view_def) = module_def.get_view_by_id(fn_ptr, sender.is_none()) else {
-                outcome = ViewOutcome::Failed(format!("view with fn_ptr `{fn_ptr}` not found"));
-                break;
+        for view_call in tx.views_for_refresh().cloned().collect::<Vec<_>>() {
+            let sender = view_call.sender;
+            let resolved = match resolve_view_for_refresh(&tx, module_def, &view_call) {
+                Ok(resolved) => resolved,
+                Err(err) => {
+                    outcome = ViewOutcome::Failed(format!("failed to resolve view: {err}"));
+                    break;
+                }
             };
+            let ResolvedViewForRefresh {
+                view_id,
+                table_id,
+                view_def,
+            } = resolved;
+            let view_name = &view_def.name;
             let args = match FunctionArgs::Nullary.into_tuple_for_def(module_def, view_def) {
                 Ok(args) => args,
                 Err(err) => {
@@ -2919,7 +2964,7 @@ impl ModuleHost {
             let (result, trap) = Self::call_view_inner(
                 instance,
                 tx,
-                &view_def.name,
+                view_name,
                 view_id,
                 table_id,
                 view_def.fn_ptr,
@@ -2933,7 +2978,7 @@ impl ModuleHost {
             // Increment execution stats
             tx = result.tx;
             outcome = result.outcome;
-            energy_used += result.energy_used;
+            energy_used += result.execution_budget_used;
             total_duration += result.total_duration;
             abi_duration += result.abi_duration;
             trapped |= trap;
@@ -2947,7 +2992,7 @@ impl ModuleHost {
             ViewCallResult {
                 outcome,
                 tx,
-                energy_used,
+                execution_budget_used: energy_used,
                 total_duration,
                 abi_duration,
             },
@@ -3139,10 +3184,10 @@ impl ModuleHost {
             request,
             |request, inst, on_panic| async move { inst.enqueue_one_off_query(request, on_panic).await },
             move |request, wasm_host, on_panic, timer_guard| {
-                let executor = wasm_host.main_executor.clone();
+                let executor = wasm_host.executor.clone();
                 let info = wasm_host.module.info();
                 let label = label.to_owned();
-                executor.enqueue_job(move |_| {
+                executor.enqueue_sync_job(move |_| {
                     scopeguard::defer_on_unwind!({
                         log::warn!("websocket one-off query operation {label} panicked");
                         on_panic();
