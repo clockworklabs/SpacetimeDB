@@ -943,7 +943,16 @@ impl<'cs> ReplayCommittedState<'cs> {
             let referenced_table_id = Self::read_table_id(row);
             self.replay_columns_to_ignore.remove(&row_ptr);
 
-            if self.is_event_table_for_replay(referenced_table_id)? {
+            // If the referenced table was dropped earlier in this transaction,
+            // don't try to refresh its layout: its `st_table` row is already gone,
+            // so `st_column_changed` would fail to look up the table's name.
+            // This happens when dropping an event table,
+            // as the `st_table` delete (table id 1) is replayed
+            // before the `st_column` deletes (table id 2),
+            // while the table's `st_event_table` row (table id 17) is still present.
+            if !self.replay_table_dropped.contains(&referenced_table_id)
+                && self.is_event_table_for_replay(referenced_table_id)?
+            {
                 self.st_column_changed(referenced_table_id)?;
             }
         }

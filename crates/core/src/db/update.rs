@@ -622,6 +622,81 @@ mod test {
         replay_event_table_schema_change(TakeSnapshot::BeforeAutomigration)
     }
 
+    /// Regression test for replay of a dropped event table.
+    ///
+    /// Dropping an event table deletes its `st_table`, `st_column` and `st_event_table` rows
+    /// in a single transaction. During replay, deletes are applied in ascending table id order,
+    /// so the `st_table` row is deleted before the `st_column` rows,
+    /// while the `st_event_table` row is still present.
+    /// Replay of the `st_column` deletes therefore saw the table as an event table
+    /// and tried to refresh its layout via `st_column_changed`,
+    /// which failed with `Table with ID ... not found in st_table`,
+    /// permanently preventing the database from reopening.
+    fn replay_event_table_drop(snapshot: TakeSnapshot) -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        let module_v1 = event_table_module(ProductType::from([("payload", AlgebraicType::U64)]));
+        let module_v2 = empty_module();
+
+        // Publish v1 with the event table.
+        {
+            let mut tx = begin_mut_tx(&stdb);
+            for def in module_v1.tables() {
+                create_table_from_def(&stdb, &mut tx, &module_v1, def)?;
+            }
+            stdb.commit_tx(tx)?;
+        }
+
+        // Write an event row, so the commitlog also contains an insert into the table.
+        {
+            let mut tx = begin_mut_tx(&stdb);
+            let table_id = stdb
+                .table_id_from_name_mut(&tx, "events")?
+                .expect("`events` table should exist");
+            insert(&stdb, &mut tx, table_id, &product![42u64])?;
+            stdb.commit_tx(tx)?;
+        }
+
+        if matches!(snapshot, TakeSnapshot::BeforeAutomigration) {
+            take_snapshot(&stdb)?;
+        }
+
+        // Migrate v1 -> v2, dropping the event table.
+        {
+            let mut tx = begin_mut_tx(&stdb);
+            let plan = ponder_migrate(&module_v1, &module_v2)?;
+            let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+            assert!(
+                matches!(res, UpdateResult::RequiresClientDisconnect),
+                "removing a table should disconnect clients"
+            );
+            stdb.commit_tx(tx)?;
+        }
+
+        // Replay the commitlog. Prior to the fix, this failed with
+        // `Table with ID ... not found in st_table`
+        // while replaying the `st_column` deletes of the dropped event table.
+        let stdb = stdb.reopen()?;
+        let tx = begin_mut_tx(&stdb);
+        assert!(
+            stdb.table_id_from_name_mut(&tx, "events")?.is_none(),
+            "`events` table should be gone after replaying the drop"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn replay_event_table_drop_no_snapshot() -> anyhow::Result<()> {
+        replay_event_table_drop(TakeSnapshot::None)
+    }
+
+    #[test]
+    fn replay_event_table_drop_after_snapshot() -> anyhow::Result<()> {
+        replay_event_table_drop(TakeSnapshot::BeforeAutomigration)
+    }
+
     #[test]
     fn remove_empty_table_succeeds() -> anyhow::Result<()> {
         let auth_ctx = AuthCtx::for_testing();
