@@ -559,7 +559,11 @@ fn short_hash(s: &str) -> &str {
 }
 
 fn should_fetch_remote_routes(args: &RunArgs) -> bool {
-    args.model_source == ModelSource::Remote && args.route_overrides.is_none() && !args.hash_only && !args.goldens_only
+    args.model_source == ModelSource::Remote
+        && args.models.is_none()
+        && args.route_overrides.is_none()
+        && !args.hash_only
+        && !args.goldens_only
 }
 
 fn preflight_llm_routes(
@@ -968,7 +972,7 @@ mod tests {
     }
 
     #[test]
-    fn remote_model_source_fetches_for_all_model_selection_paths() {
+    fn explicit_models_bypass_remote_model_source() {
         let mut args = base_run_args();
         args.model_source = ModelSource::Remote;
         assert!(should_fetch_remote_routes(&args));
@@ -977,10 +981,10 @@ mod tests {
             vendor: Vendor::OpenAi,
             models: vec!["gpt-test".to_string()],
         }]);
-        assert!(should_fetch_remote_routes(&args));
+        assert!(!should_fetch_remote_routes(&args));
 
         args.dry_run = true;
-        assert!(should_fetch_remote_routes(&args));
+        assert!(!should_fetch_remote_routes(&args));
     }
 
     #[test]

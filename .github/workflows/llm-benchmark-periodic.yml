@@ -6,10 +6,19 @@ on:
     - cron: '0 0 * * 1'
   workflow_dispatch:
     inputs:
-      models:
-        description: 'Models to run ("all", or space-separated provider:model groups; each group may contain comma-separated models)'
+      model_set:
+        description: 'Model set to run'
         required: false
-        default: 'all'
+        type: choice
+        options:
+          - website_active
+          - local_defaults
+          - explicit
+        default: website_active
+      models:
+        description: 'Space-separated provider:model groups. Required when model_set=explicit.'
+        required: false
+        default: ''
       languages:
         description: 'Languages to benchmark (comma-separated: rust,csharp,typescript)'
         required: false
@@ -100,18 +109,46 @@ jobs:
           DOTNET_CLI_USE_MSBUILD_SERVER: "0"
           LLM_BENCH_CSHARP_CONCURRENCY: "1"
           INPUT_LANGUAGES: ${{ inputs.languages || 'rust,csharp,typescript' }}
-          INPUT_MODELS: ${{ inputs.models || 'all' }}
+          INPUT_MODEL_SET: ${{ inputs.model_set || 'website_active' }}
+          INPUT_MODELS: ${{ inputs.models || '' }}
           INPUT_MODES: ${{ inputs.modes || 'guidelines,no_context' }}
           INPUT_CATEGORIES: ${{ inputs.categories || '' }}
           INPUT_TASKS: ${{ inputs.tasks || '' }}
           INPUT_DRY_RUN: ${{ inputs.dry_run || 'false' }}
         run: |
           LANGS="$INPUT_LANGUAGES"
+          MODEL_SET="$INPUT_MODEL_SET"
           MODELS="$INPUT_MODELS"
           MODES="$INPUT_MODES"
           CATEGORIES="$INPUT_CATEGORIES"
           TASKS="$INPUT_TASKS"
           DRY_RUN="$INPUT_DRY_RUN"
+
+          case "$MODEL_SET" in
+            website_active)
+              if [ -n "$MODELS" ]; then
+                echo "::error::models is only valid when model_set=explicit"
+                exit 1
+              fi
+              ;;
+            local_defaults)
+              if [ -n "$MODELS" ]; then
+                echo "::error::models is only valid when model_set=explicit"
+                exit 1
+              fi
+              ;;
+            explicit)
+              if [ -z "$MODELS" ]; then
+                echo "::error::models is required when model_set=explicit"
+                exit 1
+              fi
+              read -r -a MODEL_ARGS <<< "$MODELS"
+              ;;
+            *)
+              echo "::error::unknown model_set '$MODEL_SET' (expected website_active, local_defaults, or explicit)"
+              exit 1
+              ;;
+          esac
 
           SUCCEEDED=0
           FAILED=0
@@ -127,16 +164,22 @@ jobs:
               EXTRA_ARGS+=(--dry-run)
             fi
 
-            if [ "$MODELS" = "all" ]; then
+            if [ "$MODEL_SET" = "website_active" ]; then
               if llm_benchmark run --lang "$LANG" --modes "$MODES" --model-source remote "${EXTRA_ARGS[@]}"; then
                 SUCCEEDED=$((SUCCEEDED + 1))
               else
                 echo "::warning::Benchmark run failed for lang=$LANG"
                 FAILED=$((FAILED + 1))
               fi
+            elif [ "$MODEL_SET" = "local_defaults" ]; then
+              if llm_benchmark run --lang "$LANG" --modes "$MODES" "${EXTRA_ARGS[@]}"; then
+                SUCCEEDED=$((SUCCEEDED + 1))
+              else
+                echo "::warning::Benchmark run failed for lang=$LANG"
+                FAILED=$((FAILED + 1))
+              fi
             else
-              read -r -a MODEL_ARGS <<< "$MODELS"
-              if llm_benchmark run --lang "$LANG" --modes "$MODES" --model-source remote --models "${MODEL_ARGS[@]}" "${EXTRA_ARGS[@]}"; then
+              if llm_benchmark run --lang "$LANG" --modes "$MODES" --models "${MODEL_ARGS[@]}" "${EXTRA_ARGS[@]}"; then
                 SUCCEEDED=$((SUCCEEDED + 1))
               else
                 echo "::warning::Benchmark run failed for lang=$LANG models=$MODELS"

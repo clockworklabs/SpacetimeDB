@@ -141,7 +141,7 @@ impl OpenRouterClient {
                 content: "ping",
             }],
             temperature: 0.0,
-            max_tokens: 1,
+            max_tokens: 16,
         };
         let auth = HttpClient::bearer(&self.api_key);
         let body = self
