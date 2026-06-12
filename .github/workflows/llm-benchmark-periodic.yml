@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       models:
-        description: 'Models to run (provider:model format, comma-separated, or "all")'
+        description: 'Models to run ("all", or space-separated provider:model groups; each group may contain comma-separated models)'
         required: false
         default: 'all'
       languages:
@@ -26,12 +26,16 @@ on:
         description: 'Optional benchmark task ids/selectors to run (comma-separated)'
         required: false
         default: ''
+      dry_run:
+        description: 'Run benchmarks without uploading results'
+        required: false
+        default: 'false'
 
 permissions:
   contents: read
 
 concurrency:
-  group: llm-benchmark-periodic
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -40,10 +44,9 @@ jobs:
     timeout-minutes: 180
 
     steps:
-      - name: Checkout master
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: master
           fetch-depth: 1
 
       - uses: dtolnay/rust-toolchain@stable
@@ -101,12 +104,14 @@ jobs:
           INPUT_MODES: ${{ inputs.modes || 'guidelines,no_context' }}
           INPUT_CATEGORIES: ${{ inputs.categories || '' }}
           INPUT_TASKS: ${{ inputs.tasks || '' }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run || 'false' }}
         run: |
           LANGS="$INPUT_LANGUAGES"
           MODELS="$INPUT_MODELS"
           MODES="$INPUT_MODES"
           CATEGORIES="$INPUT_CATEGORIES"
           TASKS="$INPUT_TASKS"
+          DRY_RUN="$INPUT_DRY_RUN"
 
           SUCCEEDED=0
           FAILED=0
@@ -117,6 +122,9 @@ jobs:
             fi
             if [ -n "$TASKS" ]; then
               EXTRA_ARGS+=(--tasks "$TASKS")
+            fi
+            if [ "$DRY_RUN" = "true" ]; then
+              EXTRA_ARGS+=(--dry-run)
             fi
 
             if [ "$MODELS" = "all" ]; then
@@ -137,7 +145,7 @@ jobs:
             fi
           done
           echo "Benchmark runs: $SUCCEEDED succeeded, $FAILED failed"
-          if [ "$SUCCEEDED" -eq 0 ] && [ "$FAILED" -gt 0 ]; then
-            echo "::error::All benchmark runs failed"
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::$FAILED benchmark run(s) failed"
             exit 1
           fi
