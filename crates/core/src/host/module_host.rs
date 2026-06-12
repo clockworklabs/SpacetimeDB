@@ -580,13 +580,9 @@ pub fn create_table_from_def_with_prefix(
         schema.alias = None;
 
         // Apply the namespace to the scheduled reducer/procedure name so the scheduler can
-        // resolve it via reducer_by_name / procedure_by_name, both of which use '/' as the
-        // namespace separator (e.g. "lib." prefix → "lib/reducerName").
-        // name_prefix is always of the form "ns." or "ns1.ns2." with no internal dots in
-        // individual segments, so replacing '.' with '/' is unambiguous.
+        // resolve it via the namespaced reducer_by_name / procedure_by_name
         if let Some(schedule) = &mut schema.schedule {
-            let fn_prefix = name_prefix.replace('.', "/");
-            let prefixed_fn = format!("{}{}", fn_prefix, &*schedule.function_name);
+            let prefixed_fn = format!("{}{}", name_prefix, &*schedule.function_name);
             schedule.function_name = Identifier::new_assume_valid(RawIdentifier::from(prefixed_fn));
         }
 

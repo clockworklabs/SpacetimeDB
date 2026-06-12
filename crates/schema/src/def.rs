@@ -339,8 +339,8 @@ impl ModuleDef {
 
     /// All reducers across this module and all mounted submodules, in depth-first order.
     ///
-    /// Each item is `(prefix, owning_def, reducer_def)` where `prefix` is the slash-terminated
-    /// namespace string (e.g., `"lib/"`) to be prepended to the reducer's name as its wire name.
+    /// Each item is `(prefix, owning_def, reducer_def)` where `prefix` is the dot-terminated
+    /// namespace string (e.g., `"lib."`) to be prepended to the reducer's name as its wire name.
     /// The consumer module's own reducers yield prefix `""`.
     pub fn all_reducers_with_prefix(&self) -> Vec<(String, &ModuleDef, &ReducerDef)> {
         let mut out = Vec::new();
@@ -357,14 +357,14 @@ impl ModuleDef {
             out.push((prefix.to_string(), self, reducer));
         }
         for (ns, mount) in &self.mounts {
-            mount.collect_reducers_with_prefix(&format!("{prefix}{ns}/"), out);
+            mount.collect_reducers_with_prefix(&format!("{prefix}{ns}."), out);
         }
     }
 
     /// All procedures across this module and all mounted submodules, in depth-first order.
     ///
-    /// Each item is `(prefix, owning_def, procedure_def)` where `prefix` is the slash-terminated
-    /// namespace string (e.g., `"lib/"`) to be prepended to the procedure's name as its wire name.
+    /// Each item is `(prefix, owning_def, procedure_def)` where `prefix` is the dot-terminated
+    /// namespace string (e.g., `"lib."`) to be prepended to the procedure's name as its wire name.
     /// The consumer module's own procedures yield prefix `""`.
     pub fn all_procedures_with_prefix(&self) -> Vec<(String, &ModuleDef, &ProcedureDef)> {
         let mut out = Vec::new();
@@ -381,7 +381,7 @@ impl ModuleDef {
             out.push((prefix.to_string(), self, procedure));
         }
         for (ns, mount) in &self.mounts {
-            mount.collect_procedures_with_prefix(&format!("{prefix}{ns}/"), out);
+            mount.collect_procedures_with_prefix(&format!("{prefix}{ns}."), out);
         }
     }
 
@@ -554,10 +554,10 @@ impl ModuleDef {
         self.reducers.get_full(name).map(|(idx, _, def)| (idx.into(), def))
     }
 
-    /// Look up a reducer by its wire name, resolving qualified names like `"myauth/verify_token"`.
+    /// Look up a reducer by its wire name, resolving qualified names like `"myauth.verify_token"`.
     ///
-    /// A plain name searches the consumer's own reducers. A slash-qualified name routes to
-    /// the matching mount and recurses. Nesting is supported: `"auth/baz/cleanup"`.
+    /// A plain name searches the consumer's own reducers. A dot-qualified name routes to
+    /// the matching mount and recurses. Nesting is supported: `"auth.baz.cleanup"`.
     /// Returns the depth-first `ReducerId` and the `ReducerDef`.
     pub fn reducer_by_name(&self, name: &str) -> Option<(ReducerId, &ReducerDef)> {
         self.reducer_by_name_with_module(name).map(|(id, def, _)| (id, def))
@@ -784,9 +784,9 @@ impl ModuleDef {
         self.procedures.len() + self.mounts.values().map(|m| m.procedure_count()).sum::<usize>()
     }
 
-    /// Look up a procedure by its wire name, resolving qualified names like `"mylib/proc_name"`.
+    /// Look up a procedure by its wire name, resolving qualified names like `"mylib.proc_name"`.
     ///
-    /// A plain name searches the module's own procedures. A slash-qualified name routes to
+    /// A plain name searches the module's own procedures. A dot-qualified name routes to
     /// the matching mount and recurses. Returns the depth-first `ProcedureId` and the `ProcedureDef`.
     pub fn procedure_by_name(&self, name: &str) -> Option<(ProcedureId, &ProcedureDef)> {
         self.procedure_by_name_with_module(name).map(|(id, def, _)| (id, def))

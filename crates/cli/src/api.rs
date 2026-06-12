@@ -61,11 +61,11 @@ impl ClientApi {
     }
 
     /// Reads the `ModuleDef` from the `schema` endpoint.
-    pub async fn module_def(&self) -> anyhow::Result<RawModuleDefV9> {
+    pub async fn module_def(&self) -> anyhow::Result<RawModuleDefV10> {
         let res = self
             .client
             .get(self.con.db_uri("schema"))
-            .query(&[("version", "9")])
+            .query(&[("version", "10")])
             .send()
             .await?;
         let DeserializeWrapper(module_def) = res.json_or_error().await?;

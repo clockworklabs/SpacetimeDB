@@ -566,7 +566,20 @@ impl Lang for TypeScript {
         let procedures_file = generate_procedures_file(module, options);
         let types_file = generate_types_file(module);
 
-        vec![index_file, reducers_file, procedures_file, types_file]
+        let mut files = vec![index_file, reducers_file, procedures_file, types_file];
+
+        // Generate types.ts for each mounted submodule namespace so that the
+        // namespace-scoped reducer/procedure/table files can resolve their
+        // `import { … } from "./types"` imports.
+        let mut mounted_namespaces: BTreeMap<String, &ModuleDef> = BTreeMap::new();
+        collect_mounted_namespaces(module, "", &mut mounted_namespaces);
+        for (prefix, owning_def) in &mounted_namespaces {
+            let ns_path = mounted_ns_path(prefix);
+            let filename = format!("{ns_path}/types.ts");
+            files.push(generate_types_file_with_path(owning_def, filename));
+        }
+
+        files
     }
 }
 
@@ -641,6 +654,10 @@ fn generate_procedures_file(module: &ModuleDef, options: &CodegenOptions) -> Out
 }
 
 fn generate_types_file(module: &ModuleDef) -> OutputFile {
+    generate_types_file_with_path(module, "types.ts".to_string())
+}
+
+fn generate_types_file_with_path(module: &ModuleDef, filename: String) -> OutputFile {
     let mut output = CodeIndenter::new(String::new(), INDENT);
     let out = &mut output;
 
@@ -674,8 +691,19 @@ fn generate_types_file(module: &ModuleDef) -> OutputFile {
     }
 
     OutputFile {
-        filename: "types.ts".to_string(),
+        filename,
         code: output.into_inner(),
+    }
+}
+
+/// Recursively collect all mounted namespaces in depth-first order.
+/// Keys are dot-terminated prefix strings (e.g. `"lib."`, `"lib.sublib."`).
+/// Values are references to the `ModuleDef` that owns that namespace.
+fn collect_mounted_namespaces<'a>(module: &'a ModuleDef, prefix: &str, out: &mut BTreeMap<String, &'a ModuleDef>) {
+    for (ns, mounted_def) in module.mounts() {
+        let full_prefix = format!("{prefix}{ns}.");
+        out.insert(full_prefix.clone(), mounted_def);
+        collect_mounted_namespaces(mounted_def, &full_prefix, out);
     }
 }
 
