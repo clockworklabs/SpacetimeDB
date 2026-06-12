@@ -1,15 +1,12 @@
 use anyhow::{bail, Result};
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
 use spacetimedb_execution::{
-    pipelined::{
-        PipelinedExecutor, PipelinedIxDeltaJoin, PipelinedIxDeltaScanEq, PipelinedIxDeltaScanRange, PipelinedIxJoin,
-        PipelinedIxScanEq, PipelinedIxScanRange, PipelinedProject,
-    },
+    pipelined::{PipelinedExecutor, PipelinedIxJoin, PipelinedIxScan, PipelinedProject},
     Datastore, DeltaStore, Row,
 };
 use spacetimedb_expr::{check::SchemaView, expr::CollectViews};
 use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, query::Delta, AlgebraicValue};
-use spacetimedb_physical_plan::plan::{IxJoin, IxScan, Label, PhysicalPlan, ProjectPlan, Sarg, TableScan, TupleField};
+use spacetimedb_physical_plan::plan::{IxScan, Label, PhysicalPlan, ProjectPlan, TableScan};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId, ViewId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_schema::table_name::TableName;
@@ -37,16 +34,8 @@ impl Fragments {
         let mut index_ids = HashSet::new();
         for plan in self.insert_plans.iter().chain(self.delete_plans.iter()) {
             plan.visit(&mut |plan| match plan {
-                PipelinedExecutor::IxScanEq(PipelinedIxScanEq { table_id, index_id, .. })
-                | PipelinedExecutor::IxScanRange(PipelinedIxScanRange { table_id, index_id, .. })
-                | PipelinedExecutor::IxDeltaScanEq(PipelinedIxDeltaScanEq { table_id, index_id, .. })
-                | PipelinedExecutor::IxDeltaScanRange(PipelinedIxDeltaScanRange { table_id, index_id, .. })
+                PipelinedExecutor::IxScan(PipelinedIxScan { table_id, index_id, .. })
                 | PipelinedExecutor::IxJoin(PipelinedIxJoin {
-                    rhs_table: table_id,
-                    rhs_index: index_id,
-                    ..
-                })
-                | PipelinedExecutor::IxDeltaJoin(PipelinedIxDeltaJoin {
                     rhs_table: table_id,
                     rhs_index: index_id,
                     ..
@@ -424,49 +413,31 @@ impl SubscriptionPlan {
         }
         let mut join_edge = None;
         self.plan_opt.visit(&mut |op| match op {
-            PhysicalPlan::IxJoin(
-                IxJoin {
-                    lhs,
-                    rhs,
-                    rhs_field: lhs_join_col,
-                    lhs_field:
-                        TupleField {
-                            field_pos: rhs_join_col,
-                            ..
-                        },
-                    ..
-                },
-                _,
-            ) if rhs.table_id == self.return_id => match &**lhs {
-                PhysicalPlan::IxScan(
-                    IxScan {
-                        schema,
-                        prefix,
-                        arg: Sarg::Eq(rhs_col, rhs_val),
-                        ..
-                    },
-                    _,
-                ) if schema.table_id != self.return_id
-                    && prefix.is_empty()
-                    && schema.is_unique(&ColList::new((*rhs_join_col).into())) =>
-                {
-                    let lhs_table = self.return_id;
-                    let rhs_table = schema.table_id;
-                    let rhs_col = *rhs_col;
-                    let rhs_val = rhs_val.clone();
-                    let lhs_join_col = *lhs_join_col;
-                    let rhs_join_col = (*rhs_join_col).into();
-                    let edge = JoinEdge {
-                        lhs_table,
-                        rhs_table,
-                        lhs_join_col,
-                        rhs_join_col,
-                        rhs_col,
-                    };
-                    join_edge = Some((edge, rhs_val));
+            PhysicalPlan::IxJoin(join, _) if join.rhs.table_id == self.return_id => {
+                let Some((lhs_join_col, lhs_field)) = join.single_probe_field() else {
+                    return;
+                };
+                let rhs_join_col = ColId(lhs_field.field_pos as u16);
+                match &*join.lhs {
+                    PhysicalPlan::IxScan(scan, _)
+                        if scan.schema.table_id != self.return_id
+                            && scan.schema.is_unique(&ColList::new(rhs_join_col)) =>
+                    {
+                        let Some((rhs_col, rhs_val)) = scan.single_col_lit_point() else {
+                            return;
+                        };
+                        let edge = JoinEdge {
+                            lhs_table: self.return_id,
+                            rhs_table: scan.schema.table_id,
+                            lhs_join_col,
+                            rhs_join_col,
+                            rhs_col,
+                        };
+                        join_edge = Some((edge, rhs_val.clone()));
+                    }
+                    _ => {}
                 }
-                _ => {}
-            },
+            }
             _ => {}
         });
         join_edge

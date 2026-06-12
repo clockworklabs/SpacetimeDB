@@ -298,6 +298,13 @@ public static class GeneratorSnapshotTests
                 public int Id;
             }
 
+            [SpacetimeDB.Table]
+            public partial struct TimestampPrimaryKeyTable
+            {
+                [SpacetimeDB.PrimaryKey]
+                public Timestamp CreatedAt;
+            }
+
             public static partial class KeywordApis
             {
                 [SpacetimeDB.Reducer]
