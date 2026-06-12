@@ -932,6 +932,17 @@ impl Default for AnonymousViewContext {
         }
     }
 }
+
+impl AnonymousViewContext {
+    #[doc(hidden)]
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    pub fn __test(db: LocalReadOnly) -> Self {
+        Self {
+            db,
+            from: QueryBuilder {},
+        }
+    }
+}
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
 /// The other is [`AnonymousViewContext`].
 /// Use this type if the view depends on the caller's identity.
@@ -953,6 +964,16 @@ impl ViewContext {
     /// The `Identity` of the client that invoked the view.
     pub fn sender(&self) -> Identity {
         self.sender
+    }
+
+    #[doc(hidden)]
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    pub fn __test(sender: Identity, db: LocalReadOnly) -> Self {
+        Self {
+            sender,
+            db,
+            from: QueryBuilder {},
+        }
     }
 
     /// Obtain an [`AnonymousViewContext`] by dropping `sender`.
@@ -1262,7 +1283,7 @@ pub struct ProcedureContext {
     test_hooks: Option<crate::test_utils::ProcedureTestHooks>,
 
     #[cfg(all(feature = "test-utils", feature = "rand08", not(target_arch = "wasm32")))]
-    test_rng_seed: Option<u64>,
+    test_child_seed_rng: Option<RefCell<rand08::rngs::StdRng>>,
 
     /// Methods for performing HTTP requests.
     pub http: crate::http::HttpClient,
@@ -1296,7 +1317,7 @@ impl ProcedureContext {
             #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
             test_hooks: None,
             #[cfg(all(feature = "test-utils", feature = "rand08", not(target_arch = "wasm32")))]
-            test_rng_seed: None,
+            test_child_seed_rng: None,
             http: http::HttpClient::host(),
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
@@ -1329,7 +1350,11 @@ impl ProcedureContext {
             test_context: Some(test_context),
             test_hooks: Some(hooks),
             #[cfg(feature = "rand08")]
-            test_rng_seed: rng_seed,
+            test_child_seed_rng: rng_seed.map(|seed| {
+                RefCell::new(<rand08::rngs::StdRng as rand08::SeedableRng>::seed_from_u64(
+                    seed ^ 0xa53d_5eed_c01d_ca11,
+                ))
+            }),
             http,
             #[cfg(feature = "rand08")]
             rng: StdbRng::seeded_cell(rng_seed),
@@ -1493,6 +1518,12 @@ impl ProcedureContext {
     pub fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
         #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
         if let Some(datastore) = self.test_datastore.clone() {
+            #[cfg(feature = "rand08")]
+            let tx_rng_seed = self
+                .test_child_seed_rng
+                .as_ref()
+                .map(|rng| rand08::RngCore::next_u64(&mut *rng.borrow_mut()));
+
             let run = || {
                 use core::mem;
 
@@ -1505,7 +1536,7 @@ impl ProcedureContext {
                     self.timestamp,
                     self.module_identity,
                     #[cfg(feature = "rand08")]
-                    self.test_rng_seed,
+                    tx_rng_seed,
                 );
                 let tx = TxContext(tx);
 
@@ -1911,6 +1942,14 @@ impl LocalReadOnly {
     pub fn __host() -> Self {
         Self {
             backend: table::LocalBackend::Host,
+        }
+    }
+
+    #[doc(hidden)]
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    fn __test(datastore: std::sync::Arc<spacetimedb_test_datastore::TestDatastore>) -> Self {
+        Self {
+            backend: table::LocalBackend::Test { datastore },
         }
     }
 

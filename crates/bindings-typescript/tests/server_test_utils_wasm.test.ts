@@ -41,9 +41,9 @@ describe('server test-utils real wasm runtime', () => {
     const sender = senderForJwtPayload(basePayload);
 
     expect(sender).toMatch(/^[0-9a-f]{64}$/);
-    expect(
-      senderForJwtPayload({ ...basePayload, hex_identity: sender })
-    ).toBe(sender);
+    expect(senderForJwtPayload({ ...basePayload, hex_identity: sender })).toBe(
+      sender
+    );
   });
 
   it.each([
@@ -51,7 +51,10 @@ describe('server test-utils real wasm runtime', () => {
     ['missing sub', { iss: 'issuer' }],
     ['empty iss', { iss: '', sub: 'subject' }],
     ['empty sub', { iss: 'issuer', sub: '' }],
-    ['non-string hex_identity', { iss: 'issuer', sub: 'subject', hex_identity: 1 }],
+    [
+      'non-string hex_identity',
+      { iss: 'issuer', sub: 'subject', hex_identity: 1 },
+    ],
     [
       'mismatched hex_identity',
       { iss: 'issuer', sub: 'subject', hex_identity: '00'.repeat(32) },
@@ -112,9 +115,7 @@ describe('server test-utils real wasm runtime', () => {
       tx.db.person.insert({ id: 10, name: 'Committed' });
     });
 
-    expect([...test.db.person.iter()]).toEqual([
-      { id: 10, name: 'Committed' },
-    ]);
+    expect([...test.db.person.iter()]).toEqual([{ id: 10, name: 'Committed' }]);
   });
 
   it('aborts procedure transactions when the body throws', () => {
@@ -211,6 +212,54 @@ describe('server test-utils real wasm runtime', () => {
     expect([...second.db.person.iter()]).toEqual([{ id: 21, name: 'Second' }]);
   });
 
+  it('draws distinct deterministic RNG seeds for reducer contexts', () => {
+    const { spacetime, moduleExports } = makeModule();
+    const test = createModuleTestHarness(spacetime, moduleExports, {
+      rngSeed: 123n,
+    });
+
+    let first: number | undefined;
+    let second: number | undefined;
+    test.withReducerTx(TestAuth.internal(), ctx => {
+      first = ctx.random.uint32();
+    });
+    test.withReducerTx(TestAuth.internal(), ctx => {
+      second = ctx.random.uint32();
+    });
+
+    expect(first).not.toBe(second);
+
+    test.rng.setSeed(123n);
+    let replayedFirst: number | undefined;
+    test.withReducerTx(TestAuth.internal(), ctx => {
+      replayedFirst = ctx.random.uint32();
+    });
+
+    expect(replayedFirst).toBe(first);
+  });
+
+  it('draws procedure transaction seeds from a procedure-owned seed source', () => {
+    const { spacetime, moduleExports } = makeModule();
+    const test = createModuleTestHarness(spacetime, moduleExports, {
+      rngSeed: 456n,
+    });
+    const procedure = test.procedureContext(TestAuth.internal());
+
+    // Advance the procedure RNG; transaction seeds should be independent.
+    procedure.random.uint32();
+
+    const first = procedure.withTx(tx => tx.random.uint32());
+    const second = procedure.withTx(tx => tx.random.uint32());
+    expect(first).not.toBe(second);
+
+    test.rng.setSeed(456n);
+    const replayedProcedure = test.procedureContext(TestAuth.internal());
+    replayedProcedure.random.uint32();
+    const replayedFirst = replayedProcedure.withTx(tx => tx.random.uint32());
+
+    expect(replayedFirst).toBe(first);
+  });
+
   it('supports generated columns, index find/filter/update/delete, and range scans', () => {
     const { spacetime, moduleExports } = makeTableHandleModule();
     const test = createModuleTestHarness(spacetime, moduleExports);
@@ -239,10 +288,9 @@ describe('server test-utils real wasm runtime', () => {
     expect(gamma.id).not.toBe(beta.id);
     expect(test.db.item.id.find(alpha.id)).toEqual(alpha);
     expect(test.db.item.name.find('Beta')).toEqual(beta);
-    expect([...test.db.item.group.filter('a')].map(row => row.name).sort()).toEqual([
-      'Alpha',
-      'Gamma',
-    ]);
+    expect(
+      [...test.db.item.group.filter('a')].map(row => row.name).sort()
+    ).toEqual(['Alpha', 'Gamma']);
     expect(
       [
         ...test.db.item.score.filter(
@@ -322,9 +370,9 @@ describe('server test-utils real wasm runtime', () => {
     test.db.person.insert({ id: 1, name: 'Alice' });
     test.db.person.insert({ id: 2, name: 'Bob' });
 
-    expect(test.runQuery(peopleNamedAlice(test.viewContext(TestAuth.internal()), {}))).toEqual([
-      { id: 1, name: 'Alice' },
-    ]);
+    expect(
+      test.runQuery(peopleNamedAlice(test.viewContext(TestAuth.internal()), {}))
+    ).toEqual([{ id: 1, name: 'Alice' }]);
   });
 
   it('runs semijoin queries through the wasm datastore', () => {

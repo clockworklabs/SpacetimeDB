@@ -25,6 +25,7 @@ import {
 import { makeTableView, ReducerCtxImpl } from '../runtime';
 import type { ProcedureCtx } from '../procedures';
 import { ProcedureCtxImpl } from '../procedures';
+import { makeRandomFromSeed } from '../rng';
 import type { Schema } from '../schema';
 import type { AnonymousViewCtx, ViewCtx } from '../views';
 import {
@@ -41,6 +42,7 @@ import {
 } from './runtime';
 
 const freeze = Object.freeze;
+const nextSeed = Symbol('nextSeed');
 const rawModuleDefCache = new WeakMap<
   Schema<any>,
   WeakMap<object, Uint8Array>
@@ -66,7 +68,6 @@ export interface ModuleTestHarness<S extends UntypedSchemaDef> {
       body: Uint8Array
     ) => HttpResponse
   ): void;
-  reset(): void;
 }
 
 export class TestClock {
@@ -91,9 +92,11 @@ export class TestClock {
 
 export class TestRng {
   #seed: number | bigint | Uint8Array | null;
+  #source: ReturnType<typeof makeRandomFromSeed>;
 
   constructor(seed: number | bigint | Uint8Array | null = null) {
     this.#seed = seed;
+    this.#source = makeRandomFromSeed(seedToBigInt(seed));
   }
 
   seed(): number | bigint | Uint8Array | null {
@@ -102,30 +105,47 @@ export class TestRng {
 
   setSeed(seed: number | bigint | Uint8Array): void {
     this.#seed = seed;
+    this.#source = makeRandomFromSeed(seedToBigInt(seed));
   }
 
   clearSeed(): void {
     this.#seed = null;
+    this.#source = makeRandomFromSeed(0n);
   }
+
+  [nextSeed](): bigint {
+    return this.#source.bigintInRange(0n, (1n << 64n) - 1n);
+  }
+}
+
+function seedToBigInt(seed: number | bigint | Uint8Array | null): bigint {
+  if (seed == null) return 0n;
+  if (typeof seed === 'bigint') return seed;
+  if (typeof seed === 'number') return BigInt(seed);
+  let value = 0n;
+  const len = Math.min(seed.byteLength, 8);
+  for (let i = 0; i < len; i++) {
+    value |= BigInt(seed[i]) << BigInt(i * 8);
+  }
+  return value;
 }
 
 class TestAuthImpl {
   private constructor(
     readonly kind: 'internal' | 'authenticated',
-    readonly identity: Identity | null,
     readonly connectionId: ConnectionId | null,
     readonly jwtPayload: string | null
   ) {}
 
-  static internal(identity?: Identity): TestAuthImpl {
-    return new TestAuthImpl('internal', identity ?? null, null, null);
+  static internal(): TestAuthImpl {
+    return new TestAuthImpl('internal', null, null);
   }
 
   static fromJwtPayload(
     jwtPayload: string,
     connectionId: ConnectionId
   ): TestAuthImpl {
-    return new TestAuthImpl('authenticated', null, connectionId, jwtPayload);
+    return new TestAuthImpl('authenticated', connectionId, jwtPayload);
   }
 }
 
@@ -180,7 +200,7 @@ export function createModuleTestHarness<S extends UntypedSchemaDef>(
   opts: {
     moduleIdentity?: Identity;
     clock?: TestClock;
-    rngSeed?: bigint | number | null;
+    rngSeed?: bigint | number | Uint8Array | null;
   } = {}
 ): ModuleTestHarness<S> {
   const rawModuleDef = describeModule(schema, moduleExports);
@@ -276,7 +296,8 @@ class ModuleTestHarnessImpl<S extends UntypedSchemaDef>
         auth.connectionId,
         makeDbView(this.#schema, backend),
         backend,
-        this.#authCtx(auth, sender)
+        this.#authCtx(auth, sender),
+        makeRandomFromSeed(this.rng[nextSeed]())
       );
       const ret = body(ctx as unknown as ReducerCtx<S>);
       this.#runtime.commitTx(tx, 'DropEventTableRows');
@@ -336,10 +357,6 @@ class ModuleTestHarnessImpl<S extends UntypedSchemaDef>
     this.#httpResponder = responder;
   }
 
-  reset(): void {
-    this.#runtime.reset();
-  }
-
   makeProcedureContext(
     auth: TestAuth,
     hooks: ProcedureTestHooks<S>,
@@ -352,6 +369,7 @@ class ModuleTestHarnessImpl<S extends UntypedSchemaDef>
       | undefined
   ): ProcedureCtx<S> {
     const sender = this.#sender(auth);
+    const procedureSeed = this.rng[nextSeed]();
     const backend = new ProcedureTestBackend(
       this,
       this.#runtime,
@@ -373,13 +391,14 @@ class ModuleTestHarnessImpl<S extends UntypedSchemaDef>
       () => makeDbView(this.#schema, backend.currentBackend()),
       backend,
       makeHttpClient(this, responder ?? this.#httpResponder),
-      duration => this.#sleep(duration, hooks)
+      duration => this.#sleep(duration, hooks),
+      makeRandomFromSeed(procedureSeed),
+      makeRandomFromSeed(procedureSeed ^ 0xa53d5eedc01dca11n)
     ) as ProcedureCtx<S>;
   }
 
   #sender(auth: TestAuth): Identity {
-    if (auth.kind === 'internal') return auth.identity ?? this.moduleIdentity;
-    if (auth.identity) return auth.identity;
+    if (auth.kind === 'internal') return this.moduleIdentity;
     if (!auth.jwtPayload || !auth.connectionId) {
       throw new Error(
         'authenticated test auth requires a JWT payload and connection id'

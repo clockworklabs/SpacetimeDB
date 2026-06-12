@@ -213,7 +213,8 @@ export const ReducerCtxImpl = class ReducerCtx<
     connectionId: ConnectionId | null,
     dbView: DbView<any>,
     backend: DatastoreBackend = hostBackend,
-    senderAuth?: AuthCtx
+    senderAuth?: AuthCtx,
+    random?: Random
   ) {
     Object.seal(this);
     this.sender = sender;
@@ -222,6 +223,7 @@ export const ReducerCtxImpl = class ReducerCtx<
     this.db = dbView;
     this.#backend = backend;
     this.#senderAuth = senderAuth;
+    this.#random = random;
   }
 
   /** Reset the `ReducerCtx` to be used for a new transaction */
@@ -231,7 +233,8 @@ export const ReducerCtxImpl = class ReducerCtx<
     timestamp: Timestamp,
     connectionId: ConnectionId | null,
     backend: DatastoreBackend = hostBackend,
-    senderAuth?: AuthCtx
+    senderAuth?: AuthCtx,
+    random?: Random
   ) {
     me.sender = sender;
     me.timestamp = timestamp;
@@ -239,6 +242,7 @@ export const ReducerCtxImpl = class ReducerCtx<
     me.#backend = backend;
     me.#uuidCounter = undefined;
     me.#senderAuth = senderAuth;
+    me.#random = random;
   }
 
   get identity() {

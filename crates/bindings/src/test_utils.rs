@@ -70,31 +70,53 @@ impl Clone for TestClock {
 /// A deterministic RNG seed source for module unit tests.
 #[cfg(all(feature = "rand08", not(target_arch = "wasm32")))]
 pub struct TestRng {
-    seed: std::rc::Rc<std::cell::Cell<Option<u64>>>,
+    state: std::rc::Rc<std::cell::RefCell<TestRngState>>,
+}
+
+#[cfg(all(feature = "rand08", not(target_arch = "wasm32")))]
+struct TestRngState {
+    explicit_seed: Option<u64>,
+    rng: rand08::rngs::StdRng,
 }
 
 #[cfg(all(feature = "rand08", not(target_arch = "wasm32")))]
 impl TestRng {
-    /// Create a test RNG seed source initialized to `seed`.
+    /// Create a deterministic test RNG seed source initialized to `seed`.
     pub fn new(seed: u64) -> Self {
         Self {
-            seed: std::rc::Rc::new(std::cell::Cell::new(Some(seed))),
+            state: std::rc::Rc::new(std::cell::RefCell::new(TestRngState {
+                explicit_seed: Some(seed),
+                rng: <rand08::rngs::StdRng as rand08::SeedableRng>::seed_from_u64(seed),
+            })),
         }
     }
 
-    /// Return the optional seed used to initialize each new reducer context RNG.
+    /// Return the optional root seed used by the test seed source.
     pub fn seed(&self) -> Option<u64> {
-        self.seed.get()
+        self.state.borrow().explicit_seed
     }
 
-    /// Set the seed used to initialize future reducer context RNGs.
+    /// Reset the seed source to `seed`.
+    ///
+    /// Future reducer and procedure contexts will be seeded by drawing from this
+    /// deterministic source. Existing contexts are not affected.
     pub fn set_seed(&self, seed: u64) {
-        self.seed.set(Some(seed));
+        *self.state.borrow_mut() = TestRngState {
+            explicit_seed: Some(seed),
+            rng: <rand08::rngs::StdRng as rand08::SeedableRng>::seed_from_u64(seed),
+        };
     }
 
-    /// Clear the test seed, causing future reducer contexts to seed RNG from timestamp.
+    /// Clear the configured seed and restore root seed `0`.
     pub fn clear_seed(&self) {
-        self.seed.set(None);
+        *self.state.borrow_mut() = TestRngState {
+            explicit_seed: None,
+            rng: <rand08::rngs::StdRng as rand08::SeedableRng>::seed_from_u64(0),
+        };
+    }
+
+    pub(crate) fn next_seed(&self) -> u64 {
+        rand08::RngCore::next_u64(&mut self.state.borrow_mut().rng)
     }
 }
 
@@ -102,7 +124,10 @@ impl TestRng {
 impl Default for TestRng {
     fn default() -> Self {
         Self {
-            seed: std::rc::Rc::new(std::cell::Cell::new(None)),
+            state: std::rc::Rc::new(std::cell::RefCell::new(TestRngState {
+                explicit_seed: None,
+                rng: <rand08::rngs::StdRng as rand08::SeedableRng>::seed_from_u64(0),
+            })),
         }
     }
 }
@@ -111,7 +136,7 @@ impl Default for TestRng {
 impl Clone for TestRng {
     fn clone(&self) -> Self {
         Self {
-            seed: self.seed.clone(),
+            state: self.state.clone(),
         }
     }
 }
@@ -406,6 +431,17 @@ impl TestContext {
             .collect()
     }
 
+    /// Create a [`ViewContext`](crate::ViewContext) backed by this test context's datastore.
+    pub fn view_context(&self, auth: TestAuth) -> crate::ViewContext {
+        let (_, _, sender) = auth.into_parts(self.identity);
+        crate::ViewContext::__test(sender, crate::LocalReadOnly::__test(self.datastore.clone()))
+    }
+
+    /// Create an [`AnonymousViewContext`](crate::AnonymousViewContext) backed by this test context's datastore.
+    pub fn anonymous_view_context(&self) -> crate::AnonymousViewContext {
+        crate::AnonymousViewContext::__test(crate::LocalReadOnly::__test(self.datastore.clone()))
+    }
+
     /// Set the HTTP responder used by future procedure contexts created from this test context.
     #[cfg(feature = "unstable")]
     pub fn set_http_responder(
@@ -437,7 +473,7 @@ impl TestContext {
             self.identity,
             self.clock.now(),
             #[cfg(feature = "rand08")]
-            self.rng.seed(),
+            Some(self.rng.next_seed()),
             auth,
             body,
         )
@@ -473,7 +509,7 @@ impl TestContext {
             self.clone(),
             hooks,
             #[cfg(feature = "rand08")]
-            self.rng.seed(),
+            Some(self.rng.next_seed()),
         )
     }
 }

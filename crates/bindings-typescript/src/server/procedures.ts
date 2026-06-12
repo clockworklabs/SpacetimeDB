@@ -22,7 +22,7 @@ import { bsatnBaseSize } from '../lib/util';
 import { Uuid } from '../lib/uuid';
 import { httpClient, type HttpClient } from './http_internal';
 import type { DbView } from './db_view';
-import { makeRandom, type Random } from './rng';
+import { makeRandom, makeRandomFromSeed, type Random } from './rng';
 import { callUserFunction, ReducerCtxImpl } from './runtime';
 import { hostBackend, type DatastoreBackend } from './backend';
 import {
@@ -187,6 +187,7 @@ export const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   #backend: DatastoreBackend;
   #http: HttpClient;
   #sleep: (duration: TimeDuration) => void;
+  #childSeedRandom: Random | undefined;
 
   constructor(
     readonly sender: Identity,
@@ -197,12 +198,16 @@ export const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
     http: HttpClient = httpClient,
     sleep: (duration: TimeDuration) => void = () => {
       throw new Error('procedure sleep is not available in this runtime');
-    }
+    },
+    random?: Random,
+    childSeedRandom?: Random
   ) {
     this.#dbView = dbView;
     this.#backend = backend;
     this.#http = http;
     this.#sleep = sleep;
+    this.#random = random;
+    this.#childSeedRandom = childSeedRandom;
   }
 
   get identity() {
@@ -222,6 +227,7 @@ export const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   }
 
   withTx<T>(body: (ctx: TransactionCtx<S>) => T): T {
+    const txSeed = this.#childSeedRandom?.bigintInRange(0n, (1n << 64n) - 1n);
     const run = () => {
       const timestamp = this.#backend.procedureStartMutTx();
 
@@ -231,7 +237,9 @@ export const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
           new Timestamp(timestamp),
           this.connectionId,
           this.#dbView(),
-          this.#backend
+          this.#backend,
+          undefined,
+          txSeed == null ? undefined : makeRandomFromSeed(txSeed)
         ) as ITransactionCtx<S>;
         return body(ctx);
       } catch (e) {

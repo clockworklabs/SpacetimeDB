@@ -1,6 +1,6 @@
 use spacetimedb::spacetimedb_lib::RawModuleDef;
 use spacetimedb::test_utils::{TestAuth, TestQueryError};
-use spacetimedb::{reducer, table, Query, ReducerContext, Table, Timestamp};
+use spacetimedb::{reducer, table, AnonymousViewContext, Query, ReducerContext, Table, Timestamp, ViewContext};
 
 #[table(accessor = test_utils_user, public)]
 #[derive(Debug, PartialEq, Eq)]
@@ -28,6 +28,14 @@ fn query_test_utils_users_by_name(from: spacetimedb::QueryBuilder, name: &str) -
     from.test_utils_user()
         .r#where(|user| user.name.eq(name.to_owned()))
         .build()
+}
+
+fn test_utils_user_by_id_view(ctx: &AnonymousViewContext, id: u64) -> Option<TestUtilsUser> {
+    ctx.db.test_utils_user().id().find(id)
+}
+
+fn test_utils_sender_view(ctx: &ViewContext) -> spacetimedb::Identity {
+    ctx.sender()
 }
 
 // You can run these with `cargo test -p spacetimedb --features test-utils --test test_utils`
@@ -194,6 +202,38 @@ fn test_context_run_query_sees_reducer_committed_state() {
 }
 
 #[test]
+fn test_context_anonymous_view_context_uses_test_backed_db() {
+    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+    test.db.test_utils_user().insert(TestUtilsUser {
+        id: 4,
+        name: "View row".to_owned(),
+    });
+
+    let ctx = test.anonymous_view_context();
+    assert_eq!(
+        test_utils_user_by_id_view(&ctx, 4),
+        Some(TestUtilsUser {
+            id: 4,
+            name: "View row".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn test_context_view_context_derives_sender_from_auth() {
+    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+    let payload = r#"{"iss":"view-issuer","sub":"view-subject"}"#;
+    let expected_sender = spacetimedb::Identity::from_claims("view-issuer", "view-subject");
+    let connection_id = spacetimedb::ConnectionId::from_u128(8);
+
+    let ctx = test.view_context(
+        TestAuth::from_jwt_payload(payload, connection_id).expect("JWT payload should be valid for tests"),
+    );
+
+    assert_eq!(test_utils_sender_view(&ctx), expected_sender);
+}
+
+#[test]
 fn with_reducer_tx_uses_test_clock_and_internal_auth() {
     let mut test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
     test.identity = spacetimedb::Identity::from_claims("module-issuer", "module-subject");
@@ -247,7 +287,7 @@ fn test_auth_rejects_invalid_jwt_payload() {
 
 #[cfg(feature = "rand08")]
 #[test]
-fn with_reducer_tx_clones_test_rng_seed() {
+fn with_reducer_tx_draws_distinct_seeds_from_test_rng() {
     let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
     test.rng.set_seed(123);
 
@@ -256,67 +296,65 @@ fn with_reducer_tx_clones_test_rng_seed() {
             Ok((ctx.random::<u64>(), ctx.random::<u64>()))
         })
         .expect("transaction should commit");
-    test.clock.set(Timestamp::from_micros_since_unix_epoch(999));
     let second = test
         .with_reducer_tx::<_, ()>(TestAuth::internal(), |ctx| {
             Ok((ctx.random::<u64>(), ctx.random::<u64>()))
         })
         .expect("transaction should commit");
 
-    assert_eq!(first, second);
+    assert_ne!(first, second);
 
-    test.rng.set_seed(456);
-    let third = test
+    test.rng.set_seed(123);
+    let replayed_first = test
         .with_reducer_tx::<_, ()>(TestAuth::internal(), |ctx| {
             Ok((ctx.random::<u64>(), ctx.random::<u64>()))
         })
         .expect("transaction should commit");
 
-    assert_ne!(first, third);
+    assert_eq!(first, replayed_first);
 }
 
 #[cfg(feature = "rand08")]
 #[test]
-fn with_reducer_tx_rng_defaults_to_timestamp_seed() {
-    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
-    test.clock.set(Timestamp::from_micros_since_unix_epoch(123));
-    let first = test
+fn with_reducer_tx_rng_defaults_to_root_seed_zero() {
+    let first_test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+    let first = first_test
         .with_reducer_tx::<_, ()>(TestAuth::internal(), |ctx| {
             Ok((ctx.random::<u64>(), ctx.random::<u64>()))
         })
         .expect("transaction should commit");
-    let second = test
-        .with_reducer_tx::<_, ()>(TestAuth::internal(), |ctx| {
-            Ok((ctx.random::<u64>(), ctx.random::<u64>()))
-        })
-        .expect("transaction should commit");
-
-    assert_eq!(first, second);
-
-    test.clock.set(Timestamp::from_micros_since_unix_epoch(456));
-    let third = test
+    let second = first_test
         .with_reducer_tx::<_, ()>(TestAuth::internal(), |ctx| {
             Ok((ctx.random::<u64>(), ctx.random::<u64>()))
         })
         .expect("transaction should commit");
 
-    assert_ne!(first, third);
+    assert_ne!(first, second);
 
-    test.rng.set_seed(789);
-    let seeded = test
-        .with_reducer_tx::<_, ()>(TestAuth::internal(), |ctx| {
-            Ok((ctx.random::<u64>(), ctx.random::<u64>()))
-        })
-        .expect("transaction should commit");
-    test.rng.clear_seed();
-    test.clock.set(Timestamp::from_micros_since_unix_epoch(789));
-    let timestamp_seeded = test
+    let second_test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+    let replayed_first = second_test
         .with_reducer_tx::<_, ()>(TestAuth::internal(), |ctx| {
             Ok((ctx.random::<u64>(), ctx.random::<u64>()))
         })
         .expect("transaction should commit");
 
-    assert_eq!(seeded, timestamp_seeded);
+    assert_eq!(first, replayed_first);
+
+    first_test.rng.set_seed(789);
+    let seeded = first_test
+        .with_reducer_tx::<_, ()>(TestAuth::internal(), |ctx| {
+            Ok((ctx.random::<u64>(), ctx.random::<u64>()))
+        })
+        .expect("transaction should commit");
+    first_test.rng.clear_seed();
+    let default_seeded = first_test
+        .with_reducer_tx::<_, ()>(TestAuth::internal(), |ctx| {
+            Ok((ctx.random::<u64>(), ctx.random::<u64>()))
+        })
+        .expect("transaction should commit");
+
+    assert_ne!(seeded, default_seeded);
+    assert_eq!(first, default_seeded);
 }
 
 #[test]
@@ -672,6 +710,31 @@ fn procedure_context_transactions_can_be_interleaved() {
             },
         ]
     );
+}
+
+#[cfg(all(feature = "unstable", feature = "rand08"))]
+#[test]
+fn procedure_context_transactions_draw_distinct_child_rng_seeds() {
+    let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
+    test.rng.set_seed(123);
+    let mut procedure = test.procedure_context(TestAuth::internal());
+
+    let first = procedure
+        .try_with_tx::<_, ()>(|tx| Ok((tx.random::<u64>(), tx.random::<u64>())))
+        .expect("first transaction should commit");
+    let second = procedure
+        .try_with_tx::<_, ()>(|tx| Ok((tx.random::<u64>(), tx.random::<u64>())))
+        .expect("second transaction should commit");
+
+    assert_ne!(first, second);
+
+    test.rng.set_seed(123);
+    let mut replayed_procedure = test.procedure_context(TestAuth::internal());
+    let replayed_first = replayed_procedure
+        .try_with_tx::<_, ()>(|tx| Ok((tx.random::<u64>(), tx.random::<u64>())))
+        .expect("replayed first transaction should commit");
+
+    assert_eq!(first, replayed_first);
 }
 
 #[cfg(feature = "unstable")]
