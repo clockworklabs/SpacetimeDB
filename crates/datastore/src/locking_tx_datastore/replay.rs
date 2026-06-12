@@ -869,9 +869,16 @@ impl<'cs> ReplayCommittedState<'cs> {
         // because their initial insertion order matches their `col_pos` order.
         columns.sort_by_key(|col: &ColumnSchema| col.col_pos);
 
+        let is_event = self.is_event_table_for_replay(table_id)?;
         // Update the columns and layout of the the in-memory table.
         if let Some(table) = self.tables.get_mut(&table_id) {
-            table.change_columns_to(columns).map_err(TableError::from)?;
+            if is_event {
+                table
+                    .change_columns_of_empty_table_to(columns)
+                    .map_err(|_| TableError::EventTableNotEmpty(table_id))?;
+            } else {
+                table.change_columns_to(columns).map_err(TableError::from)?;
+            }
         }
 
         Ok(())
@@ -933,10 +940,32 @@ impl<'cs> ReplayCommittedState<'cs> {
             // and that there wasn't any corresponding insert at all.
             // If that's the case, `row_ptr` won't be in `self.replay_columns_to_ignore`,
             // which is fine.
+            let referenced_table_id = Self::read_table_id(row);
             self.replay_columns_to_ignore.remove(&row_ptr);
+
+            // If the referenced table was dropped earlier in this transaction,
+            // don't try to refresh its layout: its `st_table` row is already gone,
+            // so `st_column_changed` would fail to look up the table's name.
+            // This happens when dropping an event table,
+            // as the `st_table` delete (table id 1) is replayed
+            // before the `st_column` deletes (table id 2),
+            // while the table's `st_event_table` row (table id 17) is still present.
+            if !self.replay_table_dropped.contains(&referenced_table_id)
+                && self.is_event_table_for_replay(referenced_table_id)?
+            {
+                self.st_column_changed(referenced_table_id)?;
+            }
         }
 
         Ok(())
+    }
+
+    fn is_event_table_for_replay(&self, table_id: TableId) -> Result<bool> {
+        match self.find_st_event_table_row(table_id) {
+            Ok(_) => Ok(true),
+            Err(DatastoreError::Table(TableError::IdNotFound(..))) => Ok(false),
+            Err(e) => Err(e),
+        }
     }
 
     /// Assuming that a `TableId` is stored as the first field in `row`, read it.
