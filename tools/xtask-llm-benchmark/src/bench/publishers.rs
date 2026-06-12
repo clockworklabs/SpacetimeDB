@@ -6,7 +6,11 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::LazyLock;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    LazyLock,
+};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -118,6 +122,48 @@ fn resolve_node_exe(nodejs_dir: Option<&Path>) -> Option<PathBuf> {
                 .map(PathBuf::from)
                 .and_then(|dir| node_in_dir(&dir))
         })
+}
+
+struct CliRootDir {
+    path: PathBuf,
+}
+
+impl CliRootDir {
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for CliRootDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
+fn isolated_cli_root() -> Result<CliRootDir> {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    for _ in 0..16 {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let path = env::temp_dir().join(format!("stdb-llm-cli-{}-{nanos}-{id}", std::process::id()));
+        match fs::create_dir(&path) {
+            Ok(()) => return Ok(CliRootDir { path }),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.into()),
+        }
+    }
+
+    bail!("failed to create isolated SpacetimeDB CLI root directory");
+}
+
+fn spacetime_cmd(cli_root: &CliRootDir) -> Command {
+    let mut cmd = Command::new("spacetime");
+    cmd.arg("--root-dir").arg(cli_root.path());
+    cmd
 }
 
 fn pnpm_cjs_for_cmd(pnpm: &Path) -> Option<PathBuf> {
@@ -279,6 +325,36 @@ impl DotnetPublisher {
         }
         Ok(())
     }
+
+    fn configure_dotnet_env(cmd: &mut Command) -> &mut Command {
+        cmd.env("DOTNET_CLI_TELEMETRY_OPTOUT", "1")
+            .env("DOTNET_NOLOGO", "1")
+            // Prevent MSBuild node reuse issues that cause "Pipe is broken" errors
+            // when running multiple dotnet builds in parallel.
+            .env("MSBUILDDISABLENODEREUSE", "1")
+            .env("DOTNET_CLI_USE_MSBUILD_SERVER", "0")
+    }
+
+    fn built_wasm(root: &Path, config_name: &str) -> Result<PathBuf> {
+        let subdir = if env::var_os("EXPERIMENTAL_WASM_AOT").is_some_and(|value| value == "1") {
+            "publish"
+        } else {
+            "AppBundle"
+        };
+        let candidates = [
+            root.join(format!("bin/{config_name}/net8.0/wasi-wasm/{subdir}/StdbModule.wasm")),
+            root.join(format!("bin~/{config_name}/net8.0/wasi-wasm/{subdir}/StdbModule.wasm")),
+        ];
+
+        let mut found = candidates.iter().filter(|path| path.exists());
+        let Some(path) = found.next() else {
+            bail!("dotnet publish succeeded but StdbModule.wasm was not found in bin or bin~");
+        };
+        if found.next().is_some() {
+            bail!("dotnet publish produced both bin and bin~ outputs; cannot choose the C# wasm");
+        }
+        Ok(path.to_path_buf())
+    }
 }
 
 impl Publisher for DotnetPublisher {
@@ -288,30 +364,36 @@ impl Publisher for DotnetPublisher {
         }
         println!("publish csharp module {}", module_name);
 
-        Self::ensure_csproj(source)?;
+        let source = fs::canonicalize(source)?;
+        Self::ensure_csproj(&source)?;
 
         let db = sanitize_db_name(module_name);
+        let cli_root = isolated_cli_root()?;
 
-        let mut cmd = Command::new("spacetime");
-        cmd.arg("build")
-            .current_dir(source)
-            .env("DOTNET_CLI_TELEMETRY_OPTOUT", "1")
-            .env("DOTNET_NOLOGO", "1")
-            // Prevent MSBuild node reuse issues that cause "Pipe is broken" errors
-            // when running multiple dotnet builds in parallel.
-            .env("MSBUILDDISABLENODEREUSE", "1")
-            .env("DOTNET_CLI_USE_MSBUILD_SERVER", "0");
-        run(&mut cmd, "spacetime build (csharp)")?;
+        let config_name = "Release";
+        let mut build_cmd = Command::new("dotnet");
+        build_cmd
+            .arg("publish")
+            .arg("-c")
+            .arg(config_name)
+            .arg("-v")
+            .arg("quiet")
+            .current_dir(&source);
+        Self::configure_dotnet_env(&mut build_cmd);
+        run(&mut build_cmd, "dotnet publish (csharp)")?;
+        let wasm = Self::built_wasm(&source, config_name)?;
 
-        let mut pubcmd = Command::new("spacetime");
+        let mut pubcmd = spacetime_cmd(&cli_root);
         pubcmd
             .arg("publish")
             .arg("-c")
             .arg("-y")
             .arg("--server")
             .arg(host_url)
+            .arg("--bin-path")
+            .arg(wasm)
             .arg(&db)
-            .current_dir(source);
+            .current_dir(&source);
         run(&mut pubcmd, "spacetime publish (csharp)")?;
 
         Ok(())
@@ -345,10 +427,11 @@ impl Publisher for SpacetimeRustPublisher {
 
         // sanitize db + server
         let db = sanitize_db_name(module_name);
+        let cli_root = isolated_cli_root()?;
 
         // 2) Publish
         run(
-            Command::new("spacetime")
+            spacetime_cmd(&cli_root)
                 .arg("publish")
                 .arg("-c")
                 .arg("-y")
@@ -388,6 +471,7 @@ impl Publisher for TypeScriptPublisher {
 
         Self::ensure_package_json(source)?;
         let db = sanitize_db_name(module_name);
+        let cli_root = isolated_cli_root()?;
 
         // Install dependencies (--ignore-workspace to avoid parent workspace interference).
         let nodejs_dir = configured_nodejs_dir();
@@ -428,15 +512,15 @@ impl Publisher for TypeScriptPublisher {
         if let Some(dir) = nodejs_dir {
             prepend_paths.push(dir);
         }
-        if let Some(ref pnpm) = pnpm_exe
-            && let Some(parent) = pnpm.parent()
-        {
-            prepend_paths.push(parent.to_path_buf());
+        if let Some(ref pnpm) = pnpm_exe {
+            if let Some(parent) = pnpm.parent() {
+                prepend_paths.push(parent.to_path_buf());
+            }
         }
-        if let Some(node) = node_exe
-            && let Some(parent) = node.parent()
-        {
-            prepend_paths.push(parent.to_path_buf());
+        if let Some(node) = node_exe {
+            if let Some(parent) = node.parent() {
+                prepend_paths.push(parent.to_path_buf());
+            }
         }
         let child_path = if !prepend_paths.is_empty() {
             let mut paths = path_entries();
@@ -461,7 +545,7 @@ impl Publisher for TypeScriptPublisher {
         run(&mut pnpm_cmd, "pnpm install (typescript)")?;
 
         // Publish (spacetime CLI handles TypeScript compilation internally)
-        let mut publish_cmd = Command::new("spacetime");
+        let mut publish_cmd = spacetime_cmd(&cli_root);
         publish_cmd
             .arg("publish")
             .arg("-c")
