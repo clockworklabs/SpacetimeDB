@@ -621,7 +621,10 @@ fn automigrate_drop_event_table_replays_after_restart() {
 
     // Drop the event table.
     test.write_module_code(MODULE_CODE_DROP_EVENT_TABLE_AFTER).unwrap();
-    test.publish_module_with_options(&identity, false, true)
+    test.publish()
+        .name(&identity)
+        .break_clients(true)
+        .run()
         .expect("Dropping the event table should succeed");
 
     // Wait until data written after the drop is durable,
