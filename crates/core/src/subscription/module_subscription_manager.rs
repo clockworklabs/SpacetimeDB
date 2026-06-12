@@ -119,11 +119,7 @@ impl Plan {
     /// Return the search arguments for this query
     fn search_args(&self) -> impl Iterator<Item = (TableId, ColId, AlgebraicValue)> + use<> {
         let mut args = HashSet::new();
-        for arg in self
-            .plans
-            .iter()
-            .flat_map(|subscription| subscription.optimized_physical_plan().search_args())
-        {
+        for arg in self.plans.iter().flat_map(|subscription| subscription.search_args()) {
             args.insert(arg);
         }
         args.into_iter()
