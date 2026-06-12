@@ -1805,14 +1805,39 @@ impl FileOrDirPath<'_> {
     /// On Windows, only the file needs to be synced, and it's even an error to
     /// sync a directory. Passing in [Self::Dir] is thus a no-op on Windows.
     fn sync_all(&self) -> io::Result<()> {
-        #[cfg(target_os = "windows")]
-        if let Self::Dir(_) = self {
-            return Ok(());
+        match self {
+            #[cfg(target_os = "windows")]
+            Self::Dir(path) => Ok(()),
+            #[cfg(not(target_os = "windows"))]
+            Self::Dir(path) => File::open(path)
+                .map_err(|e| {
+                    io::Error::new(
+                        e.kind(),
+                        format!("failed to open directory {} for fsync: {}", path.display(), e),
+                    )
+                })?
+                .sync_all()
+                .map_err(|e| io::Error::new(e.kind(), format!("failed to fsync directory {}: {}", path.display(), e))),
+            Self::File(path) => {
+                File::options()
+                    .read(true)
+                    // Windows needs the file to be writable for `sync_all` to work.
+                    // Set all the open options explicitly, just for visibility.
+                    .write(true)
+                    .truncate(false)
+                    .create(false)
+                    .append(false)
+                    .open(path)
+                    .map_err(|e| {
+                        io::Error::new(
+                            e.kind(),
+                            format!("failed to open file {} for fsync: {}", path.display(), e),
+                        )
+                    })?
+                    .sync_all()
+                    .map_err(|e| io::Error::new(e.kind(), format!("failed to fsync file {}: {}", path.display(), e)))
+            }
         }
-        let (Self::File(path) | Self::Dir(path)) = self;
-        File::open(path)
-            .and_then(|fd| fd.sync_all())
-            .map_err(|e| io::Error::new(e.kind(), format!("failed to fsync {}: {}", path.display(), e)))
     }
 }
 

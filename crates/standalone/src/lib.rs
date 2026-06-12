@@ -12,11 +12,12 @@ use http::StatusCode;
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile, V8Config, WasmConfig};
 use spacetimedb::db;
-use spacetimedb::db::persistence::LocalPersistenceProvider;
+use spacetimedb::db::persistence::{DurabilityConfig, LocalPersistenceProvider};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta, NullEnergyMonitor};
 use spacetimedb::host::{DiskStorage, HostController, HostRuntimeConfig, MigratePlanResult, UpdateDatabaseResult};
 use spacetimedb::identity::{AuthCtx, Identity};
 use spacetimedb::messages::control_db::{Database, Node, Replica};
+use spacetimedb::metrics::ENGINE_METRICS;
 use spacetimedb::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use spacetimedb::util::jobs::JobCores;
 use spacetimedb::worker_metrics::WORKER_METRICS;
@@ -41,6 +42,7 @@ pub use spacetimedb_client_api::routes::subscribe::{BIN_PROTOCOL, TEXT_PROTOCOL}
 #[derive(Clone, Copy)]
 pub struct StandaloneOptions {
     pub db_config: db::Config,
+    pub durability: DurabilityConfig,
     pub websocket: WebSocketOptions,
     pub wasm: WasmConfig,
     pub v8: V8Config,
@@ -76,7 +78,8 @@ impl StandaloneEnv {
         let energy_monitor = Arc::new(NullEnergyMonitor);
         let program_store = Arc::new(DiskStorage::new(data_dir.program_bytes().0).await?);
 
-        let persistence_provider = Arc::new(LocalPersistenceProvider::new(data_dir.clone()));
+        let persistence_provider =
+            Arc::new(LocalPersistenceProvider::new(data_dir.clone()).with_durability_config(config.durability));
         let host_controller = HostController::new(
             data_dir,
             config.db_config,
@@ -93,6 +96,7 @@ impl StandaloneEnv {
 
         let metrics_registry = prometheus::Registry::new();
         metrics_registry.register(Box::new(&*WORKER_METRICS)).unwrap();
+        metrics_registry.register(Box::new(&*ENGINE_METRICS)).unwrap();
         metrics_registry.register(Box::new(&*DB_METRICS)).unwrap();
         metrics_registry.register(Box::new(&*DATA_SIZE_METRICS)).unwrap();
 
@@ -650,6 +654,7 @@ mod tests {
                 storage: Storage::Memory,
                 page_pool_max_size: None,
             },
+            durability: DurabilityConfig::default(),
             websocket: WebSocketOptions::default(),
             wasm: WasmConfig::default(),
             v8: V8Config::default(),

@@ -23,7 +23,6 @@ use spacetimedb_lib::{
 };
 use spacetimedb_paths::{server::SnapshotsPath, FromPathUnchecked};
 use spacetimedb_primitives::TableId;
-use spacetimedb_runtime::Handle;
 use spacetimedb_sats::{product, raw_identifier::RawIdentifier};
 use spacetimedb_schema::{
     def::ModuleDef,
@@ -236,7 +235,6 @@ async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffs
         let persistence = Persistence {
             durability: Arc::new(NoDurability::default()),
             disk_size: Arc::new(|| Ok(<_>::default())),
-            snapshot_store: Some(snapshot_worker.snapshot_store()),
             snapshots: Some(snapshot_worker),
             runtime: rt,
         };

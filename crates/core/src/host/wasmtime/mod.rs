@@ -2,7 +2,7 @@ use self::wasm_instance_env::WasmInstanceEnv;
 use super::wasm_common::module_host_actor::{InitializationError, WasmModuleHostActor, WasmModuleInstance};
 use super::wasm_common::{abi, ModuleCreationError};
 use crate::config::WasmConfig;
-use crate::energy::{EnergyQuanta, FunctionBudget};
+use crate::energy::FunctionBudget;
 use crate::error::NodesError;
 use crate::module_host_context::ModuleCreationContext;
 use crate::util::jobs::AllocatedJobCore;
@@ -11,7 +11,7 @@ use spacetimedb_paths::server::ServerDataDir;
 use std::borrow::Cow;
 use std::time::Duration;
 use wasmtime::{self, Engine, Linker, StoreContext, StoreContextMut};
-pub use wasmtime_module::{WasmtimeInstance, WasmtimeModule};
+pub use wasmtime_module::{WasmtimeAsyncModule, WasmtimeInstance, WasmtimeModule};
 
 #[cfg(unix)]
 mod pooling_stack_creator;
@@ -19,8 +19,10 @@ mod wasm_instance_env;
 mod wasmtime_module;
 
 pub struct WasmtimeRuntime {
-    engine: Engine,
-    linker: Box<Linker<WasmInstanceEnv>>,
+    sync_engine: Engine,
+    sync_linker: Box<Linker<WasmInstanceEnv>>,
+    async_engine: Engine,
+    async_linker: Box<Linker<WasmInstanceEnv>>,
     config: WasmConfig,
 }
 
@@ -46,72 +48,97 @@ pub(crate) fn epoch_ticker(mut on_tick: impl 'static + Send + FnMut() -> Option<
 
 impl WasmtimeRuntime {
     pub fn new(data_dir: Option<&ServerDataDir>, runtime_config: WasmConfig) -> Self {
-        let mut config = wasmtime::Config::new();
-        config
-            .cranelift_opt_level(wasmtime::OptLevel::Speed)
-            .consume_fuel(true)
-            .epoch_interruption(true)
-            .wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable)
-            // We need async support to enable suspending execution of procedures
-            // when waiting for e.g. HTTP responses or the transaction lock.
-            // We don't enable either fuel-based or epoch-based yielding
-            // (see https://docs.wasmtime.dev/api/wasmtime/struct.Store.html#method.epoch_deadline_async_yield_and_update
-            // and https://docs.wasmtime.dev/api/wasmtime/struct.Store.html#method.fuel_async_yield_interval)
-            // so reducers will always execute to completion during the first `Future::poll` call,
-            // and procedures will only yield when performing an asynchronous operation.
-            // These futures are executed on a separate single-threaded executor not related to the "global" Tokio runtime,
-            // which is responsible only for executing WASM. See `crate::util::jobs` for this infrastructure.
-            .async_support(true);
+        let sync_config = wasmtime_config(data_dir, false);
+        let async_config = wasmtime_config(data_dir, true);
+
+        let sync_engine = Engine::new(&sync_config).unwrap();
+        let async_engine = Engine::new(&async_config).unwrap();
+
+        let weak_sync_engine = sync_engine.weak();
+        let weak_async_engine = async_engine.weak();
+        epoch_ticker(move || {
+            let mut ticked = false;
+            if let Some(engine) = weak_sync_engine.upgrade() {
+                engine.increment_epoch();
+                ticked = true;
+            }
+            if let Some(engine) = weak_async_engine.upgrade() {
+                engine.increment_epoch();
+                ticked = true;
+            }
+            ticked.then_some(())
+        });
+
+        let mut sync_linker = Box::new(Linker::new(&sync_engine));
+        WasmtimeModule::link_imports(&mut sync_linker).unwrap();
+
+        let mut async_linker = Box::new(Linker::new(&async_engine));
+        WasmtimeAsyncModule::link_imports(&mut async_linker).unwrap();
+
+        let config = runtime_config;
+        WasmtimeRuntime {
+            sync_engine,
+            sync_linker,
+            async_engine,
+            async_linker,
+            config,
+        }
+    }
+}
+
+fn wasmtime_config(data_dir: Option<&ServerDataDir>, async_support: bool) -> wasmtime::Config {
+    let mut config = wasmtime::Config::new();
+    config
+        .cranelift_opt_level(wasmtime::OptLevel::Speed)
+        .consume_fuel(true)
+        .epoch_interruption(true)
+        .wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable);
+
+    if async_support {
+        // Procedure instances need async support to suspend execution when waiting for
+        // e.g. HTTP responses or the transaction lock. Main-lane instances use a
+        // separate sync engine so reducers/views do not pay Wasmtime's fiber overhead.
+        config.async_support(true);
 
         #[cfg(unix)]
         config
             .async_stack_size(self::pooling_stack_creator::ASYNC_STACK_SIZE)
             .with_host_stack(self::pooling_stack_creator::PoolingStackCreator::new());
+    }
 
-        // Offer a compile-time flag for enabling perfmap generation,
-        // so `perf` can display JITted symbol names.
-        // Ideally we would be able to configure this at runtime via a flag to `spacetime start`,
-        // but this is good enough for now.
-        #[cfg(feature = "perfmap")]
-        config.profiler(wasmtime::ProfilingStrategy::PerfMap);
+    // Offer a compile-time flag for enabling perfmap generation,
+    // so `perf` can display JITted symbol names.
+    // Ideally we would be able to configure this at runtime via a flag to `spacetime start`,
+    // but this is good enough for now.
+    #[cfg(feature = "perfmap")]
+    config.profiler(wasmtime::ProfilingStrategy::PerfMap);
 
-        if let Some(data_dir) = data_dir {
-            let mut cache_config = wasmtime::CacheConfig::new();
-            cache_config.with_directory(data_dir.wasmtime_cache().0);
-            match wasmtime::Cache::new(cache_config) {
-                Ok(cache) => {
-                    config.cache(Some(cache));
-                }
-                Err(e) => {
-                    // caching is just an optimization, so if it fails, just log and continue
-                    tracing::warn!("failed to set up wasmtime cache: {e:#}")
-                }
+    if let Some(data_dir) = data_dir {
+        let mut cache_config = wasmtime::CacheConfig::new();
+        cache_config.with_directory(data_dir.wasmtime_cache().0);
+        match wasmtime::Cache::new(cache_config) {
+            Ok(cache) => {
+                config.cache(Some(cache));
+            }
+            Err(e) => {
+                // caching is just an optimization, so if it fails, just log and continue
+                tracing::warn!("failed to set up wasmtime cache: {e:#}")
             }
         }
-
-        let engine = Engine::new(&config).unwrap();
-
-        let weak_engine = engine.weak();
-        epoch_ticker(move || {
-            let engine = weak_engine.upgrade()?;
-            engine.increment_epoch();
-            Some(())
-        });
-
-        let mut linker = Box::new(Linker::new(&engine));
-        WasmtimeModule::link_imports(&mut linker).unwrap();
-
-        let config = runtime_config;
-        WasmtimeRuntime { engine, linker, config }
     }
+
+    config
 }
 
 pub type Module = WasmModuleHostActor<WasmtimeModule>;
+pub type ProcedureModule = WasmModuleHostActor<WasmtimeAsyncModule>;
 pub type ModuleInstance = WasmModuleInstance<WasmtimeInstance>;
 
-const THREAD_NAME_DATABASE_ID_SUFFIX_LEN: usize = 8;
+// Linux thread names expose at most 15 bytes, so keep the database identity
+// suffix short enough to survive after the `wasm-` prefix.
+const THREAD_NAME_DATABASE_ID_SUFFIX_LEN: usize = 10;
 
-fn wasm_executor_thread_name(database_identity: &spacetimedb_lib::Identity) -> String {
+fn wasm_worker_thread_name(database_identity: &spacetimedb_lib::Identity) -> String {
     let hex = database_identity.to_hex();
     // We use the tail of the identity to avoid the common structured prefix.
     let suffix = &hex.as_str()[hex.as_str().len() - THREAD_NAME_DATABASE_ID_SUFFIX_LEN..];
@@ -126,7 +153,7 @@ impl WasmtimeRuntime {
         core: AllocatedJobCore,
     ) -> anyhow::Result<super::module_host::ModuleWithInstance> {
         let module =
-            wasmtime::Module::new(&self.engine, program_bytes).map_err(ModuleCreationError::WasmCompileError)?;
+            wasmtime::Module::new(&self.sync_engine, program_bytes).map_err(ModuleCreationError::WasmCompileError)?;
 
         let func_imports = module
             .imports()
@@ -136,17 +163,27 @@ impl WasmtimeRuntime {
         abi::verify_supported(WasmtimeModule::IMPLEMENTED_ABI, abi)?;
 
         let module = self
-            .linker
+            .sync_linker
             .instantiate_pre(&module)
+            .map_err(InitializationError::Instantiation)?;
+        let procedure_module =
+            wasmtime::Module::new(&self.async_engine, program_bytes).map_err(ModuleCreationError::WasmCompileError)?;
+        let procedure_module = self
+            .async_linker
+            .instantiate_pre(&procedure_module)
             .map_err(InitializationError::Instantiation)?;
 
         let module = WasmtimeModule::new(module);
-        let executor_thread_name = wasm_executor_thread_name(&mcc.replica_ctx.database_identity);
+        let procedure_module = WasmtimeAsyncModule::new(procedure_module);
+        let thread_name = wasm_worker_thread_name(&mcc.replica_ctx.database_identity);
 
         let (module, init_inst) = WasmModuleHostActor::new(mcc, module)?;
+        let procedure_module = module.with_runtime_module(procedure_module)?;
         Ok(super::module_host::ModuleWithInstance::Wasm {
             module,
-            executor: core.spawn_named_async_executor(executor_thread_name),
+            procedure_module,
+            thread_name,
+            core,
             init_inst: Box::new(init_inst),
             procedure_instance_pool_size: self.config.procedure_instance_pool_size,
         })
@@ -167,7 +204,7 @@ impl WasmtimeFuel {}
 
 impl From<FunctionBudget> for WasmtimeFuel {
     fn from(v: FunctionBudget) -> Self {
-        // ReducerBudget being u64 is load-bearing here - if it was u128 and v was ReducerBudget::MAX,
+        // FunctionBudget being u64 is load-bearing here - if it was u128 and v was FunctionBudget::MAX,
         // truncating this result would mean that with set_store_fuel(budget.into()), get_store_fuel()
         // would be wildly different than the original `budget`, and the energy usage for the reducer
         // would be u64::MAX even if it did nothing. ask how I know.
@@ -178,12 +215,6 @@ impl From<FunctionBudget> for WasmtimeFuel {
 impl From<WasmtimeFuel> for FunctionBudget {
     fn from(v: WasmtimeFuel) -> Self {
         FunctionBudget::new(v.0)
-    }
-}
-
-impl From<WasmtimeFuel> for EnergyQuanta {
-    fn from(fuel: WasmtimeFuel) -> Self {
-        EnergyQuanta::new(u128::from(fuel.0))
     }
 }
 

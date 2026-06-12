@@ -1,3 +1,11 @@
+#[cfg(all(feature = "tokio", feature = "simulation"))]
+compile_error!(
+    "spacetimedb-runtime requires exactly one runtime backend: enable either `tokio` or `simulation`, not both"
+);
+
+#[cfg(not(any(feature = "tokio", feature = "simulation")))]
+compile_error!("spacetimedb-runtime requires exactly one runtime backend: enable either `tokio` or `simulation`");
+
 #[cfg(feature = "simulation")]
 extern crate alloc;
 
@@ -15,8 +23,19 @@ pub mod sim;
 #[cfg(feature = "simulation")]
 pub mod sim_std;
 
-#[cfg(feature = "tokio")]
 pub type TokioHandle = tokio::runtime::Handle;
+pub type TokioRuntime = tokio::runtime::Runtime;
+pub type TokioRuntimeBuilder = tokio::runtime::Builder;
+
+// We intentionally re-export `tokio::sync` even when the simulation backend is
+// selected. Async and non-blocking synchronization operations are
+// executor-agnostic, so driving them from the deterministic simulation runtime
+// remains deterministic.
+//
+// Callers must avoid APIs that block or park OS threads on their own, such as
+// `blocking_send`, because those semantics are outside the simulation runtime's
+// deterministic scheduler.
+pub use tokio::sync;
 
 #[derive(Clone)]
 pub enum Handle {
@@ -39,6 +58,18 @@ enum JoinHandleInner<T> {
     Tokio(tokio::task::JoinHandle<T>),
     #[cfg(feature = "simulation")]
     Simulation(sim::JoinHandle<T>),
+    // Placeholder variant left behind whenever the real backend handle needs
+    // to be extracted from this enum while keeping the `JoinHandle` alive.
+    //
+    // This happens in two cases:
+    //
+    // 1. After the task output has been yielded — the backend handle no longer
+    //    owns `T`, so we swap it out for a neutral placeholder rather than
+    //    leave a semantically-invalid variant in place.
+    // 2. In `Drop`, so we can call `detach()` on the simulation handle (which
+    //    keeps the task alive) while tokio handles can just be dropped.
+    //
+    // `PhantomData<T>` is here only to keep the enum covariant in `T`.
     Detached(PhantomData<T>),
 }
 
@@ -62,6 +93,15 @@ enum JoinErrorInner {
     Simulation(sim::JoinError),
 }
 
+#[cfg(feature = "tokio")]
+impl From<tokio::task::AbortHandle> for AbortHandle {
+    fn from(handle: tokio::task::AbortHandle) -> Self {
+        Self {
+            inner: AbortHandleInner::Tokio(handle),
+        }
+    }
+}
+
 impl AbortHandle {
     pub fn abort(&self) {
         match &self.inner {
@@ -69,8 +109,6 @@ impl AbortHandle {
             AbortHandleInner::Tokio(handle) => handle.abort(),
             #[cfg(feature = "simulation")]
             AbortHandleInner::Simulation(handle) => handle.abort(),
-            #[cfg(not(any(feature = "tokio", feature = "simulation")))]
-            _ => unreachable!("runtime abort handle has no enabled backend"),
         }
     }
 }
@@ -88,16 +126,10 @@ impl JoinErrorInner {
 
 impl fmt::Display for JoinError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        #[cfg(not(any(feature = "tokio", feature = "simulation")))]
-        let _ = f;
-        #[cfg(any(feature = "tokio", feature = "simulation"))]
-        return self.inner.fmt(f);
-        #[cfg(not(any(feature = "tokio", feature = "simulation")))]
-        unreachable!("runtime join error has no enabled backend")
+        self.inner.fmt(f)
     }
 }
 
-#[cfg(any(feature = "tokio", feature = "simulation"))]
 impl std::error::Error for JoinError {}
 
 impl<T> JoinHandleInner<T> {
@@ -148,8 +180,6 @@ impl<T> Future for JoinHandle<T> {
     type Output = Result<T, JoinError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        #[cfg(not(any(feature = "tokio", feature = "simulation")))]
-        let _ = cx;
         match self.inner.poll_result(cx) {
             Poll::Ready(Ok(output)) => {
                 self.inner = JoinHandleInner::Detached(PhantomData);
@@ -185,17 +215,30 @@ impl fmt::Display for RuntimeTimeout {
     }
 }
 
-#[cfg(any(feature = "tokio", feature = "simulation"))]
 impl std::error::Error for RuntimeTimeout {}
 
-#[cfg(feature = "tokio")]
 impl Handle {
     pub fn tokio(handle: TokioHandle) -> Self {
-        Self::Tokio(handle)
+        #[cfg(feature = "tokio")]
+        {
+            Self::Tokio(handle)
+        }
+        #[cfg(not(feature = "tokio"))]
+        {
+            let _ = handle;
+            panic!("spacetimedb-runtime tokio handle requested without the `tokio` backend enabled")
+        }
     }
 
     pub fn tokio_current() -> Self {
-        Self::tokio(TokioHandle::current())
+        #[cfg(feature = "tokio")]
+        {
+            Self::tokio(TokioHandle::current())
+        }
+        #[cfg(not(feature = "tokio"))]
+        {
+            panic!("spacetimedb-runtime current tokio handle requested without the `tokio` backend enabled")
+        }
     }
 }
 
@@ -208,8 +251,6 @@ impl Handle {
 
 impl Handle {
     pub fn spawn<T: Send + 'static>(&self, future: impl Future<Output = T> + Send + 'static) -> JoinHandle<T> {
-        #[cfg(not(any(feature = "tokio", feature = "simulation")))]
-        let _ = future;
         match self {
             #[cfg(feature = "tokio")]
             Self::Tokio(handle) => JoinHandle {
@@ -219,8 +260,6 @@ impl Handle {
             Self::Simulation(handle) => JoinHandle {
                 inner: JoinHandleInner::Simulation(handle.spawn_on(sim::NodeId::MAIN, future)),
             },
-            #[cfg(not(any(feature = "tokio", feature = "simulation")))]
-            _ => unreachable!("runtime dispatch has no enabled backend"),
         }
     }
 
@@ -229,8 +268,6 @@ impl Handle {
         F: FnOnce() -> R + Send + 'static,
         R: Send + 'static,
     {
-        #[cfg(not(any(feature = "tokio", feature = "simulation")))]
-        let _ = &f;
         match self {
             #[cfg(feature = "tokio")]
             Self::Tokio(_) => tokio::task::spawn_blocking(f)
@@ -249,8 +286,6 @@ impl Handle {
                 .spawn_on(sim::NodeId::MAIN, async move { f() })
                 .await
                 .expect("simulation spawn_blocking task should not be cancelled"),
-            #[cfg(not(any(feature = "tokio", feature = "simulation")))]
-            _ => unreachable!("runtime dispatch has no enabled backend"),
         }
     }
 
@@ -259,8 +294,6 @@ impl Handle {
         timeout_after: Duration,
         future: impl Future<Output = T>,
     ) -> Result<T, RuntimeTimeout> {
-        #[cfg(not(any(feature = "tokio", feature = "simulation")))]
-        let _ = (timeout_after, future);
         match self {
             #[cfg(feature = "tokio")]
             Self::Tokio(_) => tokio::time::timeout(timeout_after, future)
@@ -268,15 +301,24 @@ impl Handle {
                 .map_err(|_| RuntimeTimeout),
             #[cfg(feature = "simulation")]
             Self::Simulation(handle) => handle.timeout(timeout_after, future).await.map_err(|_| RuntimeTimeout),
-            #[cfg(not(any(feature = "tokio", feature = "simulation")))]
-            _ => unreachable!("runtime dispatch has no enabled backend"),
+        }
+    }
+
+    pub async fn sleep(&self, duration: Duration) {
+        match self {
+            #[cfg(feature = "tokio")]
+            Self::Tokio(_) => tokio::time::sleep(duration).await,
+            #[cfg(feature = "simulation")]
+            Self::Simulation(handle) => handle.sleep(duration).await,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #[allow(unused_imports)]
     use super::*;
+    #[allow(unused_imports)]
     use std::sync::{
         atomic::{AtomicBool, Ordering},
         Arc,

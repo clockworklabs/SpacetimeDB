@@ -13,8 +13,8 @@ use spin::Mutex;
 use crate::sim::{time::TimeHandle, Rng};
 
 mod task;
-pub use task::{AbortHandle, JoinError, JoinHandle};
 use task::Abortable;
+pub use task::{AbortHandle, JoinError, JoinHandle};
 
 type Runnable = async_task::Runnable<NodeId>;
 
@@ -489,7 +489,7 @@ impl Executor {
             self.run_all_ready();
             if task.is_finished() {
                 let waker = Waker::noop();
-                return match Pin::new(&mut task).poll(&mut Context::from_waker(&waker)) {
+                return match Pin::new(&mut task).poll(&mut Context::from_waker(waker)) {
                     Poll::Ready(output) => output,
                     Poll::Pending => unreachable!("task.is_finished() was true"),
                 };
@@ -515,8 +515,11 @@ impl Executor {
                 record.state.paused_queue.lock().push(runnable);
                 continue;
             }
-            // TODO: Do some time advance here too
             runnable.run();
+            // Advance virtual time by 100ns–1μs per task poll to model execution cost.
+            // Using the runtime RNG keeps overhead deterministic by seed.
+            let nanos = 100 + (self.rng.next_u64() % 901);
+            self.time.advance(Duration::from_nanos(nanos));
         }
     }
 

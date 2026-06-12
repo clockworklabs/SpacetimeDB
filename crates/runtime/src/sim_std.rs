@@ -5,6 +5,8 @@
 //! running, checks determinism by replaying a seed in fresh OS threads, and
 //! intercepts a few libc calls so std code cannot silently escape determinism.
 
+#![allow(clippy::disallowed_macros)]
+
 use alloc::boxed::Box;
 use core::{cell::Cell, future::Future};
 use std::sync::OnceLock;

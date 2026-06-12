@@ -37,7 +37,9 @@ FIELD_PrimaryKeyAutoInc(entity, id)
 FIELD_Index(entity, name)
 ```
 
-Options: `SPACETIMEDB_TABLE(Type, accessor, Public|Private)`
+Options:
+- `SPACETIMEDB_TABLE(Type, accessor, Public|Private)`: regular table
+- `SPACETIMEDB_TABLE(Type, accessor, Public|Private, true)`: event table
 
 Field constraints:
 - `FIELD_PrimaryKey(accessor, field)`: primary key

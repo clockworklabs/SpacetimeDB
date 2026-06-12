@@ -2203,15 +2203,15 @@ mod tests {
 
     use super::{Plan, SubscriptionManager};
     use crate::db::relational_db::tests_utils::with_read_only;
+    use crate::db::sql::ast::SchemaViewer;
     use crate::host::module_host::DatabaseTableUpdate;
-    use crate::sql::ast::SchemaViewer;
     use crate::subscription::module_subscription_manager::ClientQueryId;
     use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
     use crate::subscription::tx::DeltaTx;
     use crate::{
         client::{ClientActorId, ClientConfig, ClientConnectionSender, ClientName},
         db::relational_db::{tests_utils::TestDB, RelationalDB},
-        energy::EnergyQuanta,
+        energy::FunctionBudget,
         host::{
             module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall},
             ArgsTuple,
@@ -3183,7 +3183,7 @@ mod tests {
             },
             status: EventStatus::Committed(DatabaseUpdate::default()),
             reducer_return_value: None,
-            energy_quanta_used: EnergyQuanta::ZERO,
+            execution_budget_used: FunctionBudget::ZERO,
             host_execution_duration: Duration::default(),
             request_id: None,
             timer: None,

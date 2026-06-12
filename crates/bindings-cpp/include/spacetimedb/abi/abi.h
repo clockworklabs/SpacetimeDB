@@ -174,7 +174,6 @@ STDB_IMPORT_10_2(get_jwt)
 Status get_jwt(const uint8_t* connection_id_ptr, BytesSource* out);
 
 // ===== Procedure Transactions (spacetime_10.3) =====
-#ifdef SPACETIMEDB_UNSTABLE_FEATURES
 STDB_IMPORT_10_3(procedure_start_mut_tx)
 Status procedure_start_mut_tx(int64_t* out);
 
@@ -190,7 +189,6 @@ Status procedure_http_request(
     const uint8_t* request_ptr, size_t request_len,
     const uint8_t* body_ptr, size_t body_len,
     BytesSource out[2]);
-#endif
 
 } // extern "C"
 
@@ -215,6 +213,37 @@ int16_t __call_reducer__(
     uint64_t timestamp,
     BytesSource args,
     BytesSink error);
+
+STDB_EXPORT(__call_view__)
+int16_t __call_view__(
+    uint32_t id,
+    uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
+    BytesSource args,
+    BytesSink result);
+
+STDB_EXPORT(__call_view_anon__)
+int16_t __call_view_anon__(
+    uint32_t id,
+    BytesSource args,
+    BytesSink result);
+
+STDB_EXPORT(__call_procedure__)
+int16_t __call_procedure__(
+    uint32_t id,
+    uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
+    uint64_t conn_id_0, uint64_t conn_id_1,
+    uint64_t timestamp_microseconds,
+    BytesSource args_source,
+    BytesSink result_sink);
+
+STDB_EXPORT(__call_http_handler__)
+int16_t __call_http_handler__(
+    uint32_t id,
+    uint64_t timestamp_microseconds,
+    BytesSource request_source,
+    BytesSource request_body_source,
+    BytesSink response_sink,
+    BytesSink response_body_sink);
 
 // ========================================================================
 // WASI SHIMS
