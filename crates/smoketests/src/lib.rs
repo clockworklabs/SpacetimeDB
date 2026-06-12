@@ -656,7 +656,7 @@ impl<'a> SubscribeBuilder<'a> {
             smoketest,
             database: None,
             queries: queries.iter().map(|query| query.to_string()).collect(),
-            expected_rows: Some(1),
+            expected_rows: None,
             confirmed: None,
         }
     }
