@@ -352,6 +352,7 @@ mod test {
         host::module_host::create_table_from_def,
     };
     use spacetimedb_datastore::locking_tx_datastore::PendingSchemaChange;
+    use spacetimedb_datastore::system_tables::ST_EVENT_TABLE_ID;
     use spacetimedb_lib::{
         db::raw_def::{
             v10::RawModuleDefV10Builder,
@@ -674,6 +675,17 @@ mod test {
             stdb.commit_tx(tx)?;
         }
 
+        // The drop must also remove the table's `st_event_table` row,
+        // rather than leaving it orphaned.
+        {
+            let tx = begin_mut_tx(&stdb);
+            assert_eq!(
+                stdb.table_row_count_mut(&tx, ST_EVENT_TABLE_ID).unwrap_or(0),
+                0,
+                "`st_event_table` should not contain rows for dropped tables"
+            );
+        }
+
         // Replay the commitlog. Prior to the fix, this failed with
         // `Table with ID ... not found in st_table`
         // while replaying the `st_column` deletes of the dropped event table.
@@ -682,6 +694,11 @@ mod test {
         assert!(
             stdb.table_id_from_name_mut(&tx, "events")?.is_none(),
             "`events` table should be gone after replaying the drop"
+        );
+        assert_eq!(
+            stdb.table_row_count_mut(&tx, ST_EVENT_TABLE_ID).unwrap_or(0),
+            0,
+            "`st_event_table` should not contain rows for dropped tables after replay"
         );
 
         Ok(())
