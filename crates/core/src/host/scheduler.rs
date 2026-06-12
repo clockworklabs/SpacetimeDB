@@ -427,7 +427,17 @@ impl SchedulerActor {
             ScheduledFunctionKind::Procedure => {
                 let tx = self.tx.clone();
                 tokio::spawn(async move {
-                    let result = module_host.call_scheduled_procedure(params).await;
+                    // Catch panics so a faulty procedure logs instead of taking down the task.
+                    let result = panic::AssertUnwindSafe(module_host.call_scheduled_procedure(params))
+                        .catch_unwind()
+                        .await;
+                    let result = match result {
+                        Ok(result) => result,
+                        Err(_) => {
+                            log::warn!("scheduled function panicked");
+                            return;
+                        }
+                    };
                     if let Ok(CallScheduledFunctionResult {
                         reschedule: Some(Reschedule { at_ts, at_real }),
                     }) = result
@@ -445,7 +455,16 @@ impl SchedulerActor {
             }
             // Reducers can't yield and run on the main executor, so await inline to keep order.
             ScheduledFunctionKind::Reducer => {
-                let result = module_host.call_scheduled_reducer(params).await;
+                let result = panic::AssertUnwindSafe(module_host.call_scheduled_reducer(params))
+                    .catch_unwind()
+                    .await;
+                let result = match result {
+                    Ok(result) => result,
+                    Err(_) => {
+                        log::warn!("scheduled function panicked");
+                        return;
+                    }
+                };
                 self.handle_result(item, result);
             }
         }

@@ -203,6 +203,8 @@ pub enum SystemTable {
     st_constraint,
     st_row_level_security,
     st_table_accessor,
+
+    st_event_table = ST_EVENT_TABLE_ID.0 as _,
 }
 
 pub fn system_tables() -> [TableSchema; 20] {
