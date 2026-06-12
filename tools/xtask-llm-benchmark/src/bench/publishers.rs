@@ -1,5 +1,5 @@
 use crate::bench::utils::sanitize_db_name;
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use regex::Regex;
 use std::borrow::Cow;
 use std::env;
@@ -334,6 +334,41 @@ impl DotnetPublisher {
             .env("MSBUILDDISABLENODEREUSE", "1")
             .env("DOTNET_CLI_USE_MSBUILD_SERVER", "0")
     }
+
+    fn built_wasm_path(project_path: &Path) -> Result<PathBuf> {
+        let config_name = "Release";
+        let subdir = if env::var_os("EXPERIMENTAL_WASM_AOT").is_some_and(|v| v == "1") {
+            "publish"
+        } else {
+            "AppBundle"
+        };
+        let output_paths = [
+            project_path.join(format!("bin/{config_name}/net8.0/wasi-wasm/{subdir}/StdbModule.wasm")),
+            project_path.join(format!("bin~/{config_name}/net8.0/wasi-wasm/{subdir}/StdbModule.wasm")),
+        ];
+
+        let mut found = output_paths.iter().filter(|path| path.exists()).collect::<Vec<_>>();
+        if found.len() > 1 {
+            bail!(
+                "C# build produced multiple StdbModule.wasm outputs in {}",
+                project_path.display()
+            );
+        }
+
+        let Some(wasm_path) = found.pop() else {
+            bail!(
+                "C# build finished but no StdbModule.wasm was found under {}",
+                project_path.display()
+            );
+        };
+
+        let optimized_path = wasm_path.with_extension("opt.wasm");
+        if optimized_path.exists() {
+            Ok(optimized_path)
+        } else {
+            Ok(wasm_path.to_path_buf())
+        }
+    }
 }
 
 impl Publisher for DotnetPublisher {
@@ -346,12 +381,17 @@ impl Publisher for DotnetPublisher {
         Self::ensure_csproj(source)?;
 
         let db = sanitize_db_name(module_name);
+        let source = source
+            .canonicalize()
+            .with_context(|| format!("failed to resolve C# source path {}", source.display()))?;
         let cli_root = isolated_cli_root()?;
 
         let mut cmd = spacetime_cmd(&cli_root);
-        cmd.arg("build").current_dir(source);
+        cmd.arg("build").arg("--module-path").arg(&source).current_dir(&source);
         Self::configure_dotnet_env(&mut cmd);
         run(&mut cmd, "spacetime build (csharp)")?;
+
+        let wasm_path = Self::built_wasm_path(&source)?;
 
         let mut pubcmd = spacetime_cmd(&cli_root);
         pubcmd
@@ -360,8 +400,10 @@ impl Publisher for DotnetPublisher {
             .arg("-y")
             .arg("--server")
             .arg(host_url)
+            .arg("--bin-path")
+            .arg(&wasm_path)
             .arg(&db)
-            .current_dir(source);
+            .current_dir(&source);
         Self::configure_dotnet_env(&mut pubcmd);
         run(&mut pubcmd, "spacetime publish (csharp)")?;
 

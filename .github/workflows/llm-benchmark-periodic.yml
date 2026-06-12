@@ -64,7 +64,7 @@ jobs:
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "8.0.x"
+          global-json-file: global.json
 
       - name: Install WASI workload
         env:
