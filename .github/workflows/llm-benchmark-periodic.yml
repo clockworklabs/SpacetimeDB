@@ -6,10 +6,6 @@ on:
     - cron: '0 0 * * 1'
   workflow_dispatch:
     inputs:
-      run_id:
-        description: 'Website-created benchmark run id. When set, run spec is fetched from the website.'
-        required: false
-        default: ''
       models:
         description: 'Models to run (provider:model format, comma-separated, or "all")'
         required: false
@@ -22,6 +18,14 @@ on:
         description: 'Modes to run (comma-separated: guidelines,no_context,docs,...)'
         required: false
         default: 'guidelines,no_context'
+      categories:
+        description: 'Optional benchmark categories to run (comma-separated)'
+        required: false
+        default: ''
+      tasks:
+        description: 'Optional benchmark task ids/selectors to run (comma-separated)'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -92,33 +96,39 @@ jobs:
           MSBUILDDISABLENODEREUSE: "1"
           DOTNET_CLI_USE_MSBUILD_SERVER: "0"
           LLM_BENCH_CSHARP_CONCURRENCY: "1"
-          INPUT_RUN_ID: ${{ inputs.run_id || '' }}
           INPUT_LANGUAGES: ${{ inputs.languages || 'rust,csharp,typescript' }}
           INPUT_MODELS: ${{ inputs.models || 'all' }}
           INPUT_MODES: ${{ inputs.modes || 'guidelines,no_context' }}
+          INPUT_CATEGORIES: ${{ inputs.categories || '' }}
+          INPUT_TASKS: ${{ inputs.tasks || '' }}
         run: |
-          RUN_ID="$INPUT_RUN_ID"
           LANGS="$INPUT_LANGUAGES"
           MODELS="$INPUT_MODELS"
           MODES="$INPUT_MODES"
-
-          if [ -n "$RUN_ID" ]; then
-            llm_benchmark run-from-api --run-id "$RUN_ID"
-            exit $?
-          fi
+          CATEGORIES="$INPUT_CATEGORIES"
+          TASKS="$INPUT_TASKS"
 
           SUCCEEDED=0
           FAILED=0
           for LANG in $(echo "$LANGS" | tr ',' ' '); do
+            EXTRA_ARGS=()
+            if [ -n "$CATEGORIES" ]; then
+              EXTRA_ARGS+=(--categories "$CATEGORIES")
+            fi
+            if [ -n "$TASKS" ]; then
+              EXTRA_ARGS+=(--tasks "$TASKS")
+            fi
+
             if [ "$MODELS" = "all" ]; then
-              if llm_benchmark run --lang "$LANG" --modes "$MODES" --model-source remote; then
+              if llm_benchmark run --lang "$LANG" --modes "$MODES" --model-source remote "${EXTRA_ARGS[@]}"; then
                 SUCCEEDED=$((SUCCEEDED + 1))
               else
                 echo "::warning::Benchmark run failed for lang=$LANG"
                 FAILED=$((FAILED + 1))
               fi
             else
-              if llm_benchmark run --lang "$LANG" --modes "$MODES" --models "$MODELS"; then
+              read -r -a MODEL_ARGS <<< "$MODELS"
+              if llm_benchmark run --lang "$LANG" --modes "$MODES" --model-source remote --models "${MODEL_ARGS[@]}" "${EXTRA_ARGS[@]}"; then
                 SUCCEEDED=$((SUCCEEDED + 1))
               else
                 echo "::warning::Benchmark run failed for lang=$LANG models=$MODELS"

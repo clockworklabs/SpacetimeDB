@@ -1,53 +1,45 @@
 use anyhow::{anyhow, Context, Result};
-use serde::Deserialize;
 use serde_json::json;
-use std::str::FromStr;
 
 use crate::bench::normalize::{canonical_mode, normalize_model_names};
 use crate::bench::types::{Results, RunOutcome};
-use crate::eval::Lang;
 use crate::llm::types::Vendor;
 use crate::llm::ModelRoute;
 
-#[derive(Debug, Clone)]
-pub struct RemoteRunSpec {
-    pub run_id: String,
-    pub languages: Vec<Lang>,
-    pub modes: Vec<String>,
-    pub routes: Vec<ModelRoute>,
-    pub categories: Option<Vec<String>>,
-    pub tasks: Option<Vec<String>>,
-}
-
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 struct RemoteModelRouteRow {
-    #[serde(alias = "displayName", alias = "name")]
     display_name: String,
     vendor: String,
-    #[serde(alias = "apiModel")]
     api_model: String,
-    #[serde(default, alias = "openrouterModel")]
     openrouter_model: Option<String>,
-    #[serde(default)]
     active: Option<bool>,
-    #[serde(default)]
     available: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
-struct RawRunSpec {
-    #[serde(default)]
-    id: Option<String>,
-    #[serde(default, alias = "runId")]
-    run_id: Option<String>,
-    languages: Vec<String>,
-    modes: Vec<String>,
-    #[serde(default, alias = "routes")]
-    models: Vec<RemoteModelRouteRow>,
-    #[serde(default)]
-    categories: Option<Vec<String>>,
-    #[serde(default)]
-    tasks: Option<Vec<String>>,
+fn read_string_field(row: &serde_json::Map<String, serde_json::Value>, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| row.get(*key).and_then(|value| value.as_str()))
+        .map(str::to_string)
+}
+
+fn read_bool_field(row: &serde_json::Map<String, serde_json::Value>, keys: &[&str]) -> Option<bool> {
+    keys.iter()
+        .find_map(|key| row.get(*key).and_then(|value| value.as_bool()))
+}
+
+fn parse_model_route_value(value: serde_json::Value) -> Result<RemoteModelRouteRow> {
+    let row = value
+        .as_object()
+        .ok_or_else(|| anyhow!("remote model row must be an object"))?;
+
+    Ok(RemoteModelRouteRow {
+        display_name: read_string_field(row, &["display_name", "displayName", "name"]).unwrap_or_default(),
+        vendor: read_string_field(row, &["vendor"]).unwrap_or_default(),
+        api_model: read_string_field(row, &["api_model", "apiModel"]).unwrap_or_default(),
+        openrouter_model: read_string_field(row, &["openrouter_model", "openrouterModel"]),
+        active: read_bool_field(row, &["active"]),
+        available: read_bool_field(row, &["available"]),
+    })
 }
 
 fn parse_model_route_row(row: RemoteModelRouteRow) -> Result<Option<ModelRoute>> {
@@ -76,11 +68,12 @@ fn parse_model_route_row(row: RemoteModelRouteRow) -> Result<Option<ModelRoute>>
 
 pub fn parse_model_routes_response(body: &serde_json::Value) -> Result<Vec<ModelRoute>> {
     let models = body.get("models").unwrap_or(body);
-    let rows: Vec<RemoteModelRouteRow> =
+    let rows: Vec<serde_json::Value> =
         serde_json::from_value(models.clone()).context("parse llm benchmark model rows")?;
 
     let mut routes = Vec::new();
-    for row in rows {
+    for row in rows.into_iter().map(parse_model_route_value) {
+        let row = row?;
         if let Some(route) = parse_model_route_row(row)? {
             routes.push(route);
         }
@@ -93,81 +86,31 @@ pub fn parse_model_routes_response(body: &serde_json::Value) -> Result<Vec<Model
     Ok(routes)
 }
 
-pub fn parse_run_spec_response(body: &serde_json::Value, fallback_run_id: &str) -> Result<RemoteRunSpec> {
-    let spec = body.get("spec").or_else(|| body.get("spec_json")).unwrap_or(body);
-    let spec = match spec.as_str() {
-        Some(s) => serde_json::from_str::<serde_json::Value>(s).context("parse run spec_json string")?,
-        None => spec.clone(),
-    };
-
-    let raw: RawRunSpec = serde_json::from_value(spec).context("parse llm benchmark run spec")?;
-    let run_id = raw.run_id.or(raw.id).unwrap_or_else(|| fallback_run_id.to_string());
-
-    let languages = raw
-        .languages
-        .iter()
-        .map(|lang| Lang::from_str(lang).map_err(|e| anyhow!(e)))
-        .collect::<Result<Vec<_>>>()?;
-    if languages.is_empty() {
-        anyhow::bail!("run spec '{}' has no languages", run_id);
-    }
-
-    let modes: Vec<String> = raw
-        .modes
-        .into_iter()
-        .map(|mode| mode.trim().to_string())
-        .filter(|mode| !mode.is_empty())
-        .collect();
-    if modes.is_empty() {
-        anyhow::bail!("run spec '{}' has no modes", run_id);
-    }
-
-    let mut routes = Vec::new();
-    for row in raw.models {
-        if let Some(route) = parse_model_route_row(row)? {
-            routes.push(route);
-        }
-    }
-    if routes.is_empty() {
-        anyhow::bail!("run spec '{}' has no active available models", run_id);
-    }
-
-    Ok(RemoteRunSpec {
-        run_id,
-        languages,
-        modes,
-        routes,
-        categories: raw.categories,
-        tasks: raw.tasks,
-    })
-}
-
 /// HTTP client for the SpacetimeDB LLM benchmark API (spacetime-web Postgres).
 ///
 /// Supports endpoints owned by spacetime-web:
 /// - `POST /api/llm-benchmark-upload` - upload benchmark results
 /// - `POST /api/llm-benchmark-tasks` - upload task catalog
 /// - `GET /api/llm-benchmark-models?active=true` - fetch active benchmark models
-/// - `GET /api/llm-benchmark-runs/{run_id}` - fetch admin-triggered run specs
-/// - `PATCH /api/llm-benchmark-runs/{run_id}` - update admin-triggered run status
 #[derive(Clone)]
 pub struct ApiClient {
-    client: reqwest::blocking::Client,
     base_url: String,
     api_key: String,
 }
 
 impl ApiClient {
     pub fn new(base_url: &str, api_key: &str) -> Result<Self> {
-        let client = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(120))
-            .build()
-            .context("failed to build HTTP client")?;
         Ok(Self {
-            client,
             base_url: base_url.trim_end_matches('/').to_string(),
             api_key: api_key.to_string(),
         })
+    }
+
+    fn client(&self) -> Result<reqwest::blocking::Client> {
+        reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(120))
+            .build()
+            .context("failed to build HTTP client")
     }
 
     /// Build from environment variables `LLM_BENCHMARK_UPLOAD_URL` and `LLM_BENCHMARK_API_KEY`.
@@ -185,13 +128,7 @@ impl ApiClient {
     /// Upload a batch of run outcomes for a single (lang, mode) combination.
     /// Normalizes model names and sanitizes volatile fields before upload.
     /// If `analysis` is provided, it is stored in the `llm_benchmark_analysis` table.
-    pub fn upload_batch(
-        &self,
-        mode: &str,
-        outcomes: &[RunOutcome],
-        analysis: Option<&str>,
-        run_id: Option<&str>,
-    ) -> Result<usize> {
+    pub fn upload_batch(&self, mode: &str, outcomes: &[RunOutcome], analysis: Option<&str>) -> Result<usize> {
         if outcomes.is_empty() {
             return Ok(0);
         }
@@ -218,6 +155,7 @@ impl ApiClient {
         normalize_model_names(&mut results);
 
         let url = format!("{}/api/llm-benchmark-upload", self.base_url);
+        let client = self.client()?;
         let mut total_uploaded = 0usize;
 
         for lang_entry in &results.languages {
@@ -232,18 +170,14 @@ impl ApiClient {
                     }
                 }
 
-                let mut payload = json!({
+                let payload = json!({
                     "lang": lang_entry.lang,
                     "mode": mode_entry.mode,
                     "hash": mode_entry.hash,
                     "models": models_json,
                 });
-                if let Some(run_id) = run_id {
-                    payload["run_id"] = json!(run_id);
-                }
 
-                let resp = self
-                    .client
+                let resp = client
                     .post(&url)
                     .header("Authorization", format!("Bearer {}", self.api_key))
                     .header("Content-Type", "application/json")
@@ -280,7 +214,7 @@ impl ApiClient {
     pub fn fetch_model_routes(&self) -> Result<Vec<ModelRoute>> {
         let url = format!("{}/api/llm-benchmark-models?active=true", self.base_url);
         let resp = self
-            .client
+            .client()?
             .get(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .send()
@@ -293,80 +227,6 @@ impl ApiClient {
             let status = resp.status();
             let body = resp.text().unwrap_or_default();
             anyhow::bail!("fetch LLM benchmark models failed: {} - {}", status, body);
-        }
-    }
-
-    /// Fetch an immutable website-created run spec for admin-triggered runs.
-    pub fn fetch_run_spec(&self, run_id: &str) -> Result<RemoteRunSpec> {
-        let run_id_path = urlencoding::encode(run_id);
-        let url = format!("{}/api/llm-benchmark-runs/{}", self.base_url, run_id_path);
-        let resp = self
-            .client
-            .get(&url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .send()
-            .with_context(|| format!("fetch LLM benchmark run spec failed for {run_id}"))?;
-
-        if resp.status().is_success() {
-            let body: serde_json::Value = resp.json().context("parse run spec response")?;
-            parse_run_spec_response(&body, run_id)
-        } else {
-            let status = resp.status();
-            let body = resp.text().unwrap_or_default();
-            anyhow::bail!(
-                "fetch LLM benchmark run spec failed for {}: {} - {}",
-                run_id,
-                status,
-                body
-            );
-        }
-    }
-
-    /// Update website-created benchmark run status.
-    pub fn update_run_status(&self, run_id: &str, status: &str, error: Option<&str>) -> Result<()> {
-        let run_id_path = urlencoding::encode(run_id);
-        let url = format!("{}/api/llm-benchmark-runs/{}", self.base_url, run_id_path);
-        let mut payload = json!({
-            "status": status,
-        });
-        if let Some(error) = error {
-            payload["error"] = json!(error);
-        }
-        if let Ok(github_run_id) = std::env::var("GITHUB_RUN_ID")
-            && !github_run_id.is_empty()
-        {
-            payload["github_run_id"] = json!(github_run_id);
-            if let (Ok(server_url), Ok(repo)) = (std::env::var("GITHUB_SERVER_URL"), std::env::var("GITHUB_REPOSITORY"))
-            {
-                payload["github_run_url"] = json!(format!(
-                    "{}/{}/actions/runs/{}",
-                    server_url.trim_end_matches('/'),
-                    repo,
-                    payload["github_run_id"].as_str().unwrap_or_default()
-                ));
-            }
-        }
-
-        let resp = self
-            .client
-            .patch(&url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .header("Content-Type", "application/json")
-            .json(&payload)
-            .send()
-            .with_context(|| format!("update LLM benchmark run status failed for {run_id}"))?;
-
-        if resp.status().is_success() {
-            Ok(())
-        } else {
-            let status_code = resp.status();
-            let body = resp.text().unwrap_or_default();
-            anyhow::bail!(
-                "update LLM benchmark run status failed for {}: {} - {}",
-                run_id,
-                status_code,
-                body
-            );
         }
     }
 
@@ -451,7 +311,7 @@ impl ApiClient {
         let payload = json!({ "categories": categories });
 
         let resp = self
-            .client
+            .client()?
             .post(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
@@ -483,7 +343,7 @@ impl ApiClient {
         let url = format!("{}/api/llm-benchmark-results?{}", self.base_url, params.join("&"));
 
         let resp = self
-            .client
+            .client()?
             .get(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .send()
@@ -526,7 +386,7 @@ impl ApiClient {
         let url = format!("{}/api/llm-benchmark-results?{}", self.base_url, params.join("&"));
 
         let resp = self
-            .client
+            .client()?
             .get(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .send()
@@ -560,7 +420,7 @@ impl ApiClient {
 
         let url = format!("{}/api/llm-benchmark-upload", self.base_url);
         let resp = self
-            .client
+            .client()?
             .post(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
@@ -621,29 +481,24 @@ mod tests {
     }
 
     #[test]
-    fn parses_run_spec_response() {
+    fn parses_snake_case_model_route_fields() {
         let body = json!({
-            "spec_json": {
-                "languages": ["rust", "typescript"],
-                "modes": ["guidelines", "no_context"],
-                "categories": ["basics"],
-                "tasks": ["t_001_basic_tables"],
-                "models": [{
-                    "display_name": "Claude Test",
-                    "vendor": "anthropic",
-                    "api_model": "claude-test",
-                    "openrouter_model": "anthropic/claude-test"
-                }]
-            }
+            "models": [
+                {
+                    "display_name": "GPT Test",
+                    "vendor": "openai",
+                    "api_model": "gpt-test",
+                    "openrouter_model": "openai/gpt-test",
+                    "active": true,
+                    "available": true
+                }
+            ]
         });
 
-        let spec = parse_run_spec_response(&body, "run-123").unwrap();
-        assert_eq!(spec.run_id, "run-123");
-        assert_eq!(spec.languages, vec![Lang::Rust, Lang::TypeScript]);
-        assert_eq!(spec.modes, vec!["guidelines", "no_context"]);
-        assert_eq!(spec.categories.as_deref(), Some(&["basics".to_string()][..]));
-        assert_eq!(spec.tasks.as_deref(), Some(&["t_001_basic_tables".to_string()][..]));
-        assert_eq!(spec.routes.len(), 1);
-        assert_eq!(spec.routes[0].vendor, Vendor::Anthropic);
+        let routes = parse_model_routes_response(&body).unwrap();
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].display_name, "GPT Test");
+        assert_eq!(routes[0].api_model, "gpt-test");
+        assert_eq!(routes[0].openrouter_model.as_deref(), Some("openai/gpt-test"));
     }
 }
