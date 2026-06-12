@@ -45,13 +45,8 @@ fn test_delete_database_with_confirmation() {
     let name = format!("delete-database-{}", std::process::id());
     test.publish().name(&name).run().unwrap();
 
-    // Start subscription in background to collect updates
-    // We request many updates but will stop early when we delete the db
-    let sub = test
-        .subscribe(&["SELECT * FROM counter"])
-        .expect_rows(1000)
-        .background()
-        .unwrap();
+    // Start subscription in background to collect updates until deleting the database closes it.
+    let sub = test.subscribe(&["SELECT * FROM counter"]).background().unwrap();
 
     // Let the scheduled reducer run for a bit
     thread::sleep(Duration::from_secs(2));

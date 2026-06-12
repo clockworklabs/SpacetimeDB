@@ -646,7 +646,7 @@ pub struct SubscribeBuilder<'a> {
     smoketest: &'a Smoketest,
     database: Option<String>,
     queries: Vec<String>,
-    expected_rows: usize,
+    expected_rows: Option<usize>,
     confirmed: Option<bool>,
 }
 
@@ -1708,7 +1708,7 @@ log = "0.4"
         &self,
         database: &str,
         queries: &[&str],
-        n: usize,
+        n: Option<usize>,
         confirmed: Option<bool>,
         start: Instant,
     ) -> Result<Vec<serde_json::Value>> {
@@ -1727,8 +1727,10 @@ log = "0.4"
             "30".to_string(),
             "-n".to_string(),
         ];
-        let n_str = n.to_string();
-        args.push(n_str);
+        if let Some(n) = n {
+            let n_str = n.to_string();
+            args.push(n_str);
+        }
         args.push("--print-initial-update".to_string());
         if let Some(confirmed) = confirmed {
             args.push("--confirmed".to_string());
@@ -1759,7 +1761,7 @@ log = "0.4"
         &self,
         database: &str,
         queries: &[&str],
-        n: usize,
+        n: Option<usize>,
         confirmed: Option<bool>,
     ) -> Result<SubscriptionHandle> {
         let cli_path = ensure_binaries_built();
@@ -1775,10 +1777,12 @@ log = "0.4"
             database.to_string(),
             "-t".to_string(),
             "30".to_string(),
-            "-n".to_string(),
-            n.to_string(),
             "--print-initial-update".to_string(),
         ];
+        if let Some(n) = n {
+            args.push("-n".to_string());
+            args.push(n.to_string());
+        }
         if let Some(confirmed) = confirmed {
             args.push("--confirmed".to_string());
             args.push(confirmed.to_string());
@@ -1816,7 +1820,7 @@ pub struct SubscriptionHandle {
     child: std::process::Child,
     reader: std::io::BufReader<std::process::ChildStdout>,
     stderr: std::process::ChildStderr,
-    n: usize,
+    n: Option<usize>,
     start: Instant,
 }
 
@@ -1840,7 +1844,7 @@ impl SubscriptionHandle {
         let status = self.child.wait().context("Failed to wait for subscribe")?;
         eprintln!(
             "[TIMING] subscribe_background (n={}): {:?}",
-            self.n,
+            self.n.map(|n| n.to_string()).unwrap_or_else(|| "none".to_string()),
             self.start.elapsed()
         );
 

@@ -64,6 +64,11 @@ fn extract_columns(
                 extract_columns(expr, schema, columns);
             }
         }
+        PhysicalExpr::Product(exprs) => {
+            for expr in exprs {
+                extract_columns(expr, schema, columns);
+            }
+        }
         PhysicalExpr::Value(_) => {}
     }
 }

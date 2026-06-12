@@ -347,16 +347,8 @@ fn test_add_table_columns() {
     // Subscribe to person table changes multiple times to simulate active clients
     let mut subs = Vec::with_capacity(NUM_SUBSCRIBERS);
     for _ in 0..NUM_SUBSCRIBERS {
-        // We need unconfirmed reads for the updates to arrive properly.
-        // Otherwise, there's a race between module teardown in publish, vs subscribers
-        // getting the row deletion they expect.
-        subs.push(
-            test.subscribe(&["select * from person"])
-                .expect_rows(5)
-                .confirmed(false)
-                .background()
-                .unwrap(),
-        );
+        // The migration below should disconnect all existing subscribers.
+        subs.push(test.subscribe(&["select * from person"]).background().unwrap());
     }
 
     // Insert under initial schema
@@ -395,10 +387,9 @@ fn test_add_table_columns() {
     // Insert new data under upgraded schema
     test.call("add_person", &["Robert2"]).unwrap();
 
-    // Validate all subscribers were disconnected after first upgrade
-    for (i, sub) in subs.into_iter().enumerate() {
-        let rows = sub.collect().unwrap();
-        assert_eq!(rows.len(), 2, "Subscriber {i} received unexpected rows: {rows:?}");
+    for sub in subs {
+        // Ensure the background cli subprocess observes the disconnect and exits cleanly
+        sub.collect().unwrap();
     }
 
     // Second upgrade

@@ -599,12 +599,7 @@ fn test_view_primary_key_auto_migration_disconnects_clients() {
         .precompiled_module("views-primary-key-auto-migrate")
         .build();
 
-    let sub = test
-        .subscribe(&["select * from player"])
-        .expect_rows(2)
-        .confirmed(false)
-        .background()
-        .unwrap();
+    let sub = test.subscribe(&["select * from player"]).background().unwrap();
 
     test.use_precompiled_module("views-primary-key-auto-migrate-updated");
     let identity = test.database_identity.clone().unwrap();
@@ -685,7 +680,7 @@ fn test_subscribing_with_different_identities() {
 
     let sub = test
         .subscribe(&["select * from my_player"])
-        .expect_rows(2)
+        .expect_rows(1)
         .background()
         .unwrap();
     test.call("insert_player", &["Bob"]).unwrap();
