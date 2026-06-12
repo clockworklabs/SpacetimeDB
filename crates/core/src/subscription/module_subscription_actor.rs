@@ -35,6 +35,7 @@ use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
 use spacetimedb_datastore::traits::{IsolationLevel, TxData};
 use spacetimedb_durability::TxOffset;
+use spacetimedb_execution::ExecutionParams;
 use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -467,6 +468,7 @@ impl ModuleSubscriptions {
             .unwrap_or_default();
 
         let tx = DeltaTx::from(tx);
+        let params = ExecutionParams::from_sender(sender.id.identity);
 
         // TODO: See the comment on `collect_table_update_for_view`.
         // The following view and non-view branches should be merged together,
@@ -479,6 +481,7 @@ impl ModuleSubscriptions {
                 table_id,
                 table_name.clone(),
                 &tx,
+                &params,
                 update_type,
                 &self.bsatn_rlb_pool,
             )
@@ -488,6 +491,7 @@ impl ModuleSubscriptions {
                 table_id,
                 table_name.clone(),
                 &tx,
+                &params,
                 update_type,
                 &self.bsatn_rlb_pool,
             )
@@ -499,6 +503,7 @@ impl ModuleSubscriptions {
                 table_id,
                 table_name,
                 &tx,
+                &params,
                 update_type,
                 &JsonRowListBuilderFakePool,
             )
@@ -508,6 +513,7 @@ impl ModuleSubscriptions {
                 table_id,
                 table_name,
                 &tx,
+                &params,
                 update_type,
                 &JsonRowListBuilderFakePool,
             )
