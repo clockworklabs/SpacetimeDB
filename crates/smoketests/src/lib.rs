@@ -656,7 +656,7 @@ impl<'a> SubscribeBuilder<'a> {
             smoketest,
             database: None,
             queries: queries.iter().map(|query| query.to_string()).collect(),
-            expected_rows: 1,
+            expected_rows: Some(1),
             confirmed: None,
         }
     }
@@ -667,7 +667,7 @@ impl<'a> SubscribeBuilder<'a> {
     }
 
     pub fn expect_rows(mut self, expected_rows: usize) -> Self {
-        self.expected_rows = expected_rows;
+        self.expected_rows = Some(expected_rows);
         self
     }
 
@@ -1371,10 +1371,13 @@ log = "0.4"
     ) -> Result<String> {
         let start = Instant::now();
 
+        // Determine the WASM path - either precompiled or build it
         let wasm_path_str = if let Some(ref precompiled_path) = self.precompiled_wasm_path {
+            // Use pre-compiled WASM directly (no build needed)
             eprintln!("[TIMING] spacetime build: skipped (using precompiled)");
             precompiled_path.to_str().unwrap().to_string()
         } else {
+            // Build the WASM module from source
             let project_path = self.project_dir.path().to_str().unwrap().to_string();
             let build_start = Instant::now();
             let cli_path = ensure_binaries_built();
@@ -1397,11 +1400,13 @@ log = "0.4"
                 );
             }
 
+            // Construct the wasm path using the unique module name
             let wasm_filename = format!("{}.wasm", self.module_name);
             let wasm_path = target_dir.join("wasm32-unknown-unknown/release").join(&wasm_filename);
             wasm_path.to_str().unwrap().to_string()
         };
 
+        // Now publish with --bin-path to skip rebuild
         let publish_start = Instant::now();
         let mut args = vec!["publish", "--server", &self.server_url, "--bin-path", &wasm_path_str];
 
@@ -1743,7 +1748,7 @@ log = "0.4"
             .stderr(Stdio::piped());
 
         let output = cmd.output().context("Failed to run subscribe command")?;
-        eprintln!("[TIMING] subscribe (n={}): {:?}", n, start.elapsed());
+        eprintln!("[TIMING] subscribe (n={:?}): {:?}", n, start.elapsed());
 
         if !output.status.success() {
             bail!("subscribe failed:\nstderr: {}", String::from_utf8_lossy(&output.stderr));
