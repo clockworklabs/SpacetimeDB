@@ -1,14 +1,15 @@
 use anyhow::Result;
 use core::hash::{Hash, Hasher};
 use core::ops::RangeBounds;
-use spacetimedb_lib::{identity::AuthCtx, query::Delta, AlgebraicType, Identity};
-use spacetimedb_physical_plan::plan::{ParamResolver, ProjectField, TupleField};
+use spacetimedb_lib::{hash_sender_view_args, identity::AuthCtx, query::Delta, AlgebraicType, Identity};
+use spacetimedb_physical_plan::plan::{
+    ParamResolver, ParamSlot, ProjectField, TupleField, PARAM_SENDER, PARAM_VIEW_ARG_HASH,
+};
 use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::bsatn::{BufReservedFill, EncodeError, ToBsatn};
 use spacetimedb_sats::buffer::BufWriter;
 use spacetimedb_sats::product_value::InvalidFieldError;
-use spacetimedb_sats::{impl_serialize, AlgebraicValue, ProductValue};
-use spacetimedb_sql_parser::ast::Parameter;
+use spacetimedb_sats::{impl_serialize, u256, AlgebraicValue, ProductValue};
 use spacetimedb_table::{static_assert_size, table::RowRef};
 
 pub mod dml;
@@ -17,11 +18,15 @@ pub mod pipelined;
 #[derive(Debug, Clone, Copy)]
 pub struct ExecutionParams {
     sender: Identity,
+    view_arg_hash: u256,
 }
 
 impl ExecutionParams {
     pub fn from_sender(sender: Identity) -> Self {
-        Self { sender }
+        Self {
+            sender,
+            view_arg_hash: hash_sender_view_args(sender).to_u256(),
+        }
     }
 
     pub fn from_auth(auth: &AuthCtx) -> Self {
@@ -30,11 +35,14 @@ impl ExecutionParams {
 }
 
 impl ParamResolver for ExecutionParams {
-    fn resolve_param(&self, param: Parameter, ty: &AlgebraicType) -> AlgebraicValue {
+    fn resolve_param(&self, param: ParamSlot, ty: &AlgebraicType) -> AlgebraicValue {
         match param {
-            Parameter::Sender if ty.is_identity() => self.sender.into(),
-            Parameter::Sender if ty.is_bytes() => AlgebraicValue::Bytes(self.sender.to_be_byte_array().into()),
-            Parameter::Sender => panic!("unsupported type for :sender: {ty:?}"),
+            PARAM_SENDER if ty.is_identity() => self.sender.into(),
+            PARAM_SENDER if ty.is_bytes() => AlgebraicValue::Bytes(self.sender.to_be_byte_array().into()),
+            PARAM_SENDER => panic!("unsupported type for :sender: {ty:?}"),
+            PARAM_VIEW_ARG_HASH if matches!(ty, AlgebraicType::U256) => AlgebraicValue::U256(self.view_arg_hash.into()),
+            PARAM_VIEW_ARG_HASH => panic!("unsupported type for view arg hash: {ty:?}"),
+            ParamSlot(slot) => panic!("unknown physical plan parameter slot: {slot}"),
         }
     }
 }

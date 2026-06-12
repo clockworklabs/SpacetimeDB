@@ -2040,6 +2040,7 @@ mod tests {
     use spacetimedb_client_api_messages::energy::FunctionBudget;
     use spacetimedb_client_api_messages::websocket::{common::RowListLen as _, v1 as ws_v1, v2 as ws_v2};
     use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
+    use spacetimedb_datastore::locking_tx_datastore::MutTxId;
     use spacetimedb_datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
     use spacetimedb_execution::dml::MutDatastore;
     use spacetimedb_lib::bsatn::ToBsatn;
@@ -2536,7 +2537,8 @@ mod tests {
         subs.remove_subscriber(client_id_for_b);
 
         // Delete the backing row and verify the surviving subscriber still receives the view delta.
-        let _ = commit_tx(&db, &subs, [(view_table_id, product![id_for_a, 7_u8])], [])?;
+        let arg_hash = MutTxId::view_arg_hash(id_for_a);
+        let _ = commit_tx(&db, &subs, [(view_table_id, product![arg_hash, 7_u8])], [])?;
 
         let schema = ProductType::from([AlgebraicType::U8]);
         assert_v2_tx_update_for_table(

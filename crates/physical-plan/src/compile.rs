@@ -3,10 +3,12 @@
 use crate::dml::{DeletePlan, MutationPlan, UpdatePlan};
 use crate::plan::{
     HashJoin, Label, PhysicalExpr, PhysicalPlan, ProjectListPlan, ProjectPlan, Semi, TableScan, TupleField,
+    PARAM_SENDER,
 };
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_expr::expr::{Expr, FieldProject, LeftDeepJoin, ProjectList, ProjectName, RelExpr, Relvar};
 use spacetimedb_expr::statement::DML;
+use spacetimedb_sql_parser::ast::Parameter;
 
 pub trait VarLabel {
     fn label(&mut self, name: &str) -> Label;
@@ -21,7 +23,7 @@ fn compile_expr(expr: Expr, var: &mut impl VarLabel) -> PhysicalExpr {
             PhysicalExpr::BinOp(op, a, b)
         }
         Expr::Value(v, _) => PhysicalExpr::Value(v),
-        Expr::Param(param, ty) => PhysicalExpr::Param(param, ty),
+        Expr::Param(Parameter::Sender, ty) => PhysicalExpr::Param(PARAM_SENDER, ty),
         Expr::Field(proj) => PhysicalExpr::Field(compile_field_project(var, proj)),
     }
 }
