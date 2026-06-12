@@ -15,6 +15,7 @@ use crate::def::validate::v9::{
 };
 use crate::def::*;
 use crate::error::ValidationError;
+use crate::identifier::validate_identifier;
 use crate::type_for_generate::ProductTypeDef;
 use crate::{def::validate::Result, error::TypeLocation};
 // Utitility struct to look up canonical names for tables, functions, and indexes based on the
@@ -335,7 +336,7 @@ fn validate_mounts(mounts: Vec<RawModuleMountV10>) -> Result<IndexMap<String, Mo
     let mut map = IndexMap::with_capacity(mounts.len());
 
     for mount in mounts {
-        if let Err(e) = Identifier::new(mount.namespace.clone().into()) {
+        if let Err(e) = validate_identifier(&mount.namespace) {
             errors.push(ValidationError::IdentifierError { error: e });
         }
 

@@ -6,7 +6,9 @@ use crate::util::UNSTABLE_WARNING;
 use crate::util::{database_identity, get_auth_header};
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches};
+use spacetimedb_lib::db::raw_def::v10::{RawReducerDefV10, RawTableDefV10};
 use spacetimedb_lib::sats;
+use spacetimedb_schema::def::ModuleDef;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("describe")
@@ -97,30 +99,35 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     };
     let api = ClientApi::new(conn);
 
-    let module_def = api.module_def().await?;
+    let raw = api.module_def().await?;
 
     if json {
         fn sats_to_json<T: sats::Serialize>(v: &T) -> serde_json::Result<String> {
             serde_json::to_string_pretty(sats::serde::SerdeWrapper::from_ref(v))
         }
         let json = match entity {
+            // Entity lookups go through the validated `ModuleDef`, which resolves
+            // canonical names and dot-qualified names from mounted submodules
+            // (e.g. `lib.my_reducer`).
             Some((EntityType::Reducer, reducer_name)) => {
-                let reducer = module_def
-                    .reducers
-                    .iter()
-                    .find(|r| *r.name == *reducer_name)
-                    .context("no such reducer")?;
-                sats_to_json(reducer)?
+                let module_def: ModuleDef = raw.try_into()?;
+                let (_, reducer) = module_def.reducer_by_name(reducer_name).context("no such reducer")?;
+                sats_to_json(&RawReducerDefV10::from(reducer.clone()))?
             }
             Some((EntityType::Table, table_name)) => {
-                let table = module_def
-                    .tables
-                    .iter()
-                    .find(|t| *t.name == *table_name)
+                let module_def: ModuleDef = raw.try_into()?;
+                let (_, _, table) = module_def
+                    .all_tables_with_prefix()
+                    .into_iter()
+                    .find(|(prefix, _, t)| {
+                        table_name
+                            .strip_prefix(prefix.as_str())
+                            .is_some_and(|rest| rest == &*t.name)
+                    })
                     .context("no such table")?;
-                sats_to_json(table)?
+                sats_to_json(&RawTableDefV10::from(table.clone()))?
             }
-            None => sats_to_json(&module_def)?,
+            None => sats_to_json(&raw)?,
         };
 
         // TODO: validate the JSON output

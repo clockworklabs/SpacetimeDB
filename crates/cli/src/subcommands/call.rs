@@ -10,9 +10,9 @@ use clap::{Arg, ArgMatches};
 use convert_case::{Case, Casing};
 use core::ops::Deref;
 use itertools::Itertools;
-use spacetimedb_lib::db::raw_def::v9::{RawMiscModuleExportV9, RawModuleDefV9, RawProcedureDefV9, RawReducerDefV9};
 use spacetimedb_lib::sats::{self, AlgebraicType, Typespace};
 use spacetimedb_lib::{Identity, ProductTypeElement};
+use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef};
 use std::fmt::Write;
 
 pub fn cli() -> clap::Command {
@@ -38,8 +38,8 @@ pub fn cli() -> clap::Command {
 }
 
 enum CallDef<'a> {
-    Reducer(&'a RawReducerDefV9),
-    Procedure(&'a RawProcedureDefV9),
+    Reducer(&'a ReducerDef),
+    Procedure(&'a ProcedureDef),
 }
 
 impl<'a> CallDef<'a> {
@@ -47,12 +47,6 @@ impl<'a> CallDef<'a> {
         match self {
             CallDef::Reducer(r) => &r.params,
             CallDef::Procedure(p) => &p.params,
-        }
-    }
-    fn name(&self) -> &str {
-        match self {
-            CallDef::Reducer(r) => r.name.as_ref(),
-            CallDef::Procedure(p) => p.name.as_ref(),
         }
     }
     fn kind(&self) -> &str {
@@ -101,31 +95,24 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
     let database_identity = api.con.database_identity;
     let database = &api.con.database;
 
-    let raw = api.module_def().await?;
+    let module_def: ModuleDef = api.module_def().await?.try_into()?;
 
-    let call_def = match raw.reducers.iter().find(|r| r.name.as_ref() == reducer_procedure_name.as_str()) {
-        Some(reducer_def) => CallDef::Reducer(reducer_def),
-        None => {
-            let procedure = raw.misc_exports.iter().find_map(|e| match e {
-                RawMiscModuleExportV9::Procedure(p)
-                    if p.name.as_ref() == reducer_procedure_name.as_str() =>
-                {
-                    Some(p)
-                }
-                _ => None,
-            });
-            match procedure {
-                Some(procedure_def) => CallDef::Procedure(procedure_def),
-                None => {
-                    return Err(anyhow::Error::msg(no_such_reducer_or_procedure(
-                        &database_identity,
-                        database,
-                        reducer_procedure_name,
-                        &raw,
-                    )));
-                }
+    // Dot-qualified names (e.g. `lib.my_reducer`) route to mounted submodules.
+    // Keep the owning module def around: type refs in the params must be
+    // resolved against the owning module's typespace, not the consumer's.
+    let (call_def, owning_def) = match module_def.reducer_by_name_with_module(reducer_procedure_name) {
+        Some((_, reducer_def, owning_def)) => (CallDef::Reducer(reducer_def), owning_def),
+        None => match module_def.procedure_by_name_with_module(reducer_procedure_name) {
+            Some((_, procedure_def, owning_def)) => (CallDef::Procedure(procedure_def), owning_def),
+            None => {
+                return Err(anyhow::Error::msg(no_such_reducer_or_procedure(
+                    &database_identity,
+                    database,
+                    reducer_procedure_name,
+                    &module_def,
+                )));
             }
-        }
+        },
     };
 
     // String quote any arguments that should be quoted
@@ -149,14 +136,22 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
 
         let error = Err(e).context(format!("Response text: {response_text}"));
 
-        let error_msg =
-            if response_text.starts_with("no such reducer") || response_text.starts_with("no such procedure") {
-                no_such_reducer_or_procedure(&database_identity, database, reducer_procedure_name, &raw)
-            } else if response_text.starts_with("invalid arguments") {
-                invalid_arguments(&database_identity, database, &response_text, &raw.typespace, call_def)
-            } else {
-                return error;
-            };
+        let error_msg = if response_text.starts_with("no such reducer")
+            || response_text.starts_with("no such procedure")
+        {
+            no_such_reducer_or_procedure(&database_identity, database, reducer_procedure_name, &module_def)
+        } else if response_text.starts_with("invalid arguments") {
+            invalid_arguments(
+                &database_identity,
+                database,
+                &response_text,
+                owning_def.typespace(),
+                reducer_procedure_name,
+                call_def,
+            )
+        } else {
+            return error;
+        };
 
         return error.context(error_msg);
     }
@@ -170,11 +165,20 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
 }
 
 /// Returns an error message for when `reducer` is called with wrong arguments.
-fn invalid_arguments(identity: &Identity, db: &str, text: &str, typespace: &Typespace, call_def: CallDef) -> String {
+///
+/// `full_name` is the (possibly dot-qualified) name the user invoked.
+fn invalid_arguments(
+    identity: &Identity,
+    db: &str,
+    text: &str,
+    typespace: &Typespace,
+    full_name: &str,
+    call_def: CallDef,
+) -> String {
     let mut error = format!(
         "Invalid arguments provided for {} `{}` for database `{}` resolving to identity `{}`.",
         call_def.kind(),
-        call_def.name(),
+        full_name,
         db,
         identity
     );
@@ -191,7 +195,10 @@ fn invalid_arguments(identity: &Identity, db: &str, text: &str, typespace: &Type
         error,
         "\n\nThe {} has the following signature:\n\t{}",
         call_def.kind(),
-        CallSignature(typespace.with_type(&call_def))
+        CallSignature {
+            name: full_name,
+            call: typespace.with_type(&call_def)
+        }
     )
     .unwrap();
 
@@ -219,13 +226,16 @@ fn split_at_first_substring<'t>(text: &'t str, substring: &str) -> Option<(&'t s
 
 /// Provided the `schema_json` for the database,
 /// returns the signature for a reducer OR procedure with `name`.
-struct CallSignature<'a>(sats::WithTypespace<'a, CallDef<'a>>);
+struct CallSignature<'a> {
+    name: &'a str,
+    call: sats::WithTypespace<'a, CallDef<'a>>,
+}
 impl std::fmt::Display for CallSignature<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let call_def = self.0.ty();
-        let typespace = self.0.typespace();
+        let call_def = self.call.ty();
+        let typespace = self.call.typespace();
 
-        write!(f, "{}(", call_def.name())?;
+        write!(f, "{}(", self.name)?;
 
         // Print the arguments to `args`.
         let mut comma = false;
@@ -245,12 +255,12 @@ impl std::fmt::Display for CallSignature<'_> {
 }
 
 /// Returns an error message for when `reducer` or `procedure` does not exist in `db`.
-fn no_such_reducer_or_procedure(database_identity: &Identity, db: &str, name: &str, raw: &RawModuleDefV9) -> String {
+fn no_such_reducer_or_procedure(database_identity: &Identity, db: &str, name: &str, module_def: &ModuleDef) -> String {
     let mut error = format!(
         "No such reducer OR procedure `{name}` for database `{db}` resolving to identity `{database_identity}`."
     );
 
-    add_reducer_procedure_ctx_to_err(&mut error, raw, name);
+    add_reducer_procedure_ctx_to_err(&mut error, module_def, name);
 
     error
 }
@@ -259,22 +269,24 @@ const CALL_PRINT_LIMIT: usize = 10;
 
 /// Provided the schema for the database,
 /// decorate `error` with more helpful info about reducers and procedures.
-fn add_reducer_procedure_ctx_to_err(error: &mut String, raw: &RawModuleDefV9, reducer_name: &str) {
-    let reducers = raw
-        .reducers
-        .iter()
-        .filter(|r| r.lifecycle.is_none())
-        .map(|r| r.name.as_ref())
+///
+/// Reducers and procedures from mounted submodules are listed under their
+/// full dot-qualified names (e.g. `lib.my_reducer`).
+fn add_reducer_procedure_ctx_to_err(error: &mut String, module_def: &ModuleDef, reducer_name: &str) {
+    let reducer_names = module_def
+        .all_reducers_with_prefix()
+        .into_iter()
+        .filter(|(_, _, r)| r.lifecycle.is_none())
+        .map(|(prefix, _, r)| format!("{prefix}{}", &*r.name))
         .collect::<Vec<_>>();
+    let reducers = reducer_names.iter().map(String::as_str).collect::<Vec<_>>();
 
-    let procedures = raw
-        .misc_exports
-        .iter()
-        .filter_map(|e| match e {
-            RawMiscModuleExportV9::Procedure(p) => Some(p.name.as_ref()),
-            _ => None,
-        })
+    let procedure_names = module_def
+        .all_procedures_with_prefix()
+        .into_iter()
+        .map(|(prefix, _, p)| format!("{prefix}{}", &*p.name))
         .collect::<Vec<_>>();
+    let procedures = procedure_names.iter().map(String::as_str).collect::<Vec<_>>();
 
     if let Some(best) = find_best_match_for_name(&reducers, reducer_name, None) {
         write!(error, "\n\nA reducer with a similar name exists: `{best}`").unwrap();

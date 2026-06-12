@@ -4,7 +4,7 @@ use std::ops::Add;
 use reqwest::{header, Client, RequestBuilder};
 use serde::Deserialize;
 
-use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
+use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::Identity;
 

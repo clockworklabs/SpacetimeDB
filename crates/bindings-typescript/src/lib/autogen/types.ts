@@ -8,13 +8,10 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../lib/type_builders';
+} from "../../lib/type_builders";
 
 // The tagged union or sum type for the algebraic type `AlgebraicType`.
-export const AlgebraicType: __TypeBuilder<
-  __AlgebraicTypeType,
-  __AlgebraicTypeType
-> = __t.enum('AlgebraicType', {
+export const AlgebraicType: __TypeBuilder<__AlgebraicTypeType, __AlgebraicTypeType> = __t.enum("AlgebraicType", {
   Ref: __t.u32(),
   get Sum() {
     return SumType;
@@ -45,14 +42,14 @@ export const AlgebraicType: __TypeBuilder<
 export type AlgebraicType = __Infer<typeof AlgebraicType>;
 
 // The tagged union or sum type for the algebraic type `CaseConversionPolicy`.
-export const CaseConversionPolicy = __t.enum('CaseConversionPolicy', {
+export const CaseConversionPolicy = __t.enum("CaseConversionPolicy", {
   None: __t.unit(),
   SnakeCase: __t.unit(),
 });
 export type CaseConversionPolicy = __Infer<typeof CaseConversionPolicy>;
 
 // The tagged union or sum type for the algebraic type `ExplicitNameEntry`.
-export const ExplicitNameEntry = __t.enum('ExplicitNameEntry', {
+export const ExplicitNameEntry = __t.enum("ExplicitNameEntry", {
   get Table() {
     return NameMapping;
   },
@@ -65,7 +62,7 @@ export const ExplicitNameEntry = __t.enum('ExplicitNameEntry', {
 });
 export type ExplicitNameEntry = __Infer<typeof ExplicitNameEntry>;
 
-export const ExplicitNames = __t.object('ExplicitNames', {
+export const ExplicitNames = __t.object("ExplicitNames", {
   get entries() {
     return __t.array(ExplicitNameEntry);
   },
@@ -73,19 +70,19 @@ export const ExplicitNames = __t.object('ExplicitNames', {
 export type ExplicitNames = __Infer<typeof ExplicitNames>;
 
 // The tagged union or sum type for the algebraic type `FunctionVisibility`.
-export const FunctionVisibility = __t.enum('FunctionVisibility', {
+export const FunctionVisibility = __t.enum("FunctionVisibility", {
   Private: __t.unit(),
   ClientCallable: __t.unit(),
 });
 export type FunctionVisibility = __Infer<typeof FunctionVisibility>;
 
-export const HttpHeaderPair = __t.object('HttpHeaderPair', {
+export const HttpHeaderPair = __t.object("HttpHeaderPair", {
   name: __t.string(),
   value: __t.byteArray(),
 });
 export type HttpHeaderPair = __Infer<typeof HttpHeaderPair>;
 
-export const HttpHeaders = __t.object('HttpHeaders', {
+export const HttpHeaders = __t.object("HttpHeaders", {
   get entries() {
     return __t.array(HttpHeaderPair);
   },
@@ -93,7 +90,7 @@ export const HttpHeaders = __t.object('HttpHeaders', {
 export type HttpHeaders = __Infer<typeof HttpHeaders>;
 
 // The tagged union or sum type for the algebraic type `HttpMethod`.
-export const HttpMethod = __t.enum('HttpMethod', {
+export const HttpMethod = __t.enum("HttpMethod", {
   Get: __t.unit(),
   Head: __t.unit(),
   Post: __t.unit(),
@@ -107,7 +104,7 @@ export const HttpMethod = __t.enum('HttpMethod', {
 });
 export type HttpMethod = __Infer<typeof HttpMethod>;
 
-export const HttpRequest = __t.object('HttpRequest', {
+export const HttpRequest = __t.object("HttpRequest", {
   get method() {
     return HttpMethod;
   },
@@ -122,7 +119,7 @@ export const HttpRequest = __t.object('HttpRequest', {
 });
 export type HttpRequest = __Infer<typeof HttpRequest>;
 
-export const HttpResponse = __t.object('HttpResponse', {
+export const HttpResponse = __t.object("HttpResponse", {
   get headers() {
     return HttpHeaders;
   },
@@ -134,7 +131,7 @@ export const HttpResponse = __t.object('HttpResponse', {
 export type HttpResponse = __Infer<typeof HttpResponse>;
 
 // The tagged union or sum type for the algebraic type `HttpVersion`.
-export const HttpVersion = __t.enum('HttpVersion', {
+export const HttpVersion = __t.enum("HttpVersion", {
   Http09: __t.unit(),
   Http10: __t.unit(),
   Http11: __t.unit(),
@@ -144,14 +141,14 @@ export const HttpVersion = __t.enum('HttpVersion', {
 export type HttpVersion = __Infer<typeof HttpVersion>;
 
 // The tagged union or sum type for the algebraic type `IndexType`.
-export const IndexType = __t.enum('IndexType', {
+export const IndexType = __t.enum("IndexType", {
   BTree: __t.unit(),
   Hash: __t.unit(),
 });
 export type IndexType = __Infer<typeof IndexType>;
 
 // The tagged union or sum type for the algebraic type `Lifecycle`.
-export const Lifecycle = __t.enum('Lifecycle', {
+export const Lifecycle = __t.enum("Lifecycle", {
   Init: __t.unit(),
   OnConnect: __t.unit(),
   OnDisconnect: __t.unit(),
@@ -159,7 +156,7 @@ export const Lifecycle = __t.enum('Lifecycle', {
 export type Lifecycle = __Infer<typeof Lifecycle>;
 
 // The tagged union or sum type for the algebraic type `MethodOrAny`.
-export const MethodOrAny = __t.enum('MethodOrAny', {
+export const MethodOrAny = __t.enum("MethodOrAny", {
   Any: __t.unit(),
   get Method() {
     return HttpMethod;
@@ -168,27 +165,27 @@ export const MethodOrAny = __t.enum('MethodOrAny', {
 export type MethodOrAny = __Infer<typeof MethodOrAny>;
 
 // The tagged union or sum type for the algebraic type `MiscModuleExport`.
-export const MiscModuleExport = __t.enum('MiscModuleExport', {
+export const MiscModuleExport = __t.enum("MiscModuleExport", {
   get TypeAlias() {
     return TypeAlias;
   },
 });
 export type MiscModuleExport = __Infer<typeof MiscModuleExport>;
 
-export const NameMapping = __t.object('NameMapping', {
+export const NameMapping = __t.object("NameMapping", {
   sourceName: __t.string(),
   canonicalName: __t.string(),
 });
 export type NameMapping = __Infer<typeof NameMapping>;
 
-export const ProductType = __t.object('ProductType', {
+export const ProductType = __t.object("ProductType", {
   get elements() {
     return __t.array(ProductTypeElement);
   },
 });
 export type ProductType = __Infer<typeof ProductType>;
 
-export const ProductTypeElement = __t.object('ProductTypeElement', {
+export const ProductTypeElement = __t.object("ProductTypeElement", {
   name: __t.option(__t.string()),
   get algebraicType() {
     return AlgebraicType;
@@ -196,7 +193,7 @@ export const ProductTypeElement = __t.object('ProductTypeElement', {
 });
 export type ProductTypeElement = __Infer<typeof ProductTypeElement>;
 
-export const RawColumnDefV8 = __t.object('RawColumnDefV8', {
+export const RawColumnDefV8 = __t.object("RawColumnDefV8", {
   colName: __t.string(),
   get colType() {
     return AlgebraicType;
@@ -204,13 +201,13 @@ export const RawColumnDefV8 = __t.object('RawColumnDefV8', {
 });
 export type RawColumnDefV8 = __Infer<typeof RawColumnDefV8>;
 
-export const RawColumnDefaultValueV10 = __t.object('RawColumnDefaultValueV10', {
+export const RawColumnDefaultValueV10 = __t.object("RawColumnDefaultValueV10", {
   colId: __t.u16(),
   value: __t.byteArray(),
 });
 export type RawColumnDefaultValueV10 = __Infer<typeof RawColumnDefaultValueV10>;
 
-export const RawColumnDefaultValueV9 = __t.object('RawColumnDefaultValueV9', {
+export const RawColumnDefaultValueV9 = __t.object("RawColumnDefaultValueV9", {
   table: __t.string(),
   colId: __t.u16(),
   value: __t.byteArray(),
@@ -218,14 +215,14 @@ export const RawColumnDefaultValueV9 = __t.object('RawColumnDefaultValueV9', {
 export type RawColumnDefaultValueV9 = __Infer<typeof RawColumnDefaultValueV9>;
 
 // The tagged union or sum type for the algebraic type `RawConstraintDataV9`.
-export const RawConstraintDataV9 = __t.enum('RawConstraintDataV9', {
+export const RawConstraintDataV9 = __t.enum("RawConstraintDataV9", {
   get Unique() {
     return RawUniqueConstraintDataV9;
   },
 });
 export type RawConstraintDataV9 = __Infer<typeof RawConstraintDataV9>;
 
-export const RawConstraintDefV10 = __t.object('RawConstraintDefV10', {
+export const RawConstraintDefV10 = __t.object("RawConstraintDefV10", {
   sourceName: __t.option(__t.string()),
   get data() {
     return RawConstraintDataV9;
@@ -233,14 +230,14 @@ export const RawConstraintDefV10 = __t.object('RawConstraintDefV10', {
 });
 export type RawConstraintDefV10 = __Infer<typeof RawConstraintDefV10>;
 
-export const RawConstraintDefV8 = __t.object('RawConstraintDefV8', {
+export const RawConstraintDefV8 = __t.object("RawConstraintDefV8", {
   constraintName: __t.string(),
   constraints: __t.u8(),
   columns: __t.array(__t.u16()),
 });
 export type RawConstraintDefV8 = __Infer<typeof RawConstraintDefV8>;
 
-export const RawConstraintDefV9 = __t.object('RawConstraintDefV9', {
+export const RawConstraintDefV9 = __t.object("RawConstraintDefV9", {
   name: __t.option(__t.string()),
   get data() {
     return RawConstraintDataV9;
@@ -248,12 +245,12 @@ export const RawConstraintDefV9 = __t.object('RawConstraintDefV9', {
 });
 export type RawConstraintDefV9 = __Infer<typeof RawConstraintDefV9>;
 
-export const RawHttpHandlerDefV10 = __t.object('RawHttpHandlerDefV10', {
+export const RawHttpHandlerDefV10 = __t.object("RawHttpHandlerDefV10", {
   sourceName: __t.string(),
 });
 export type RawHttpHandlerDefV10 = __Infer<typeof RawHttpHandlerDefV10>;
 
-export const RawHttpRouteDefV10 = __t.object('RawHttpRouteDefV10', {
+export const RawHttpRouteDefV10 = __t.object("RawHttpRouteDefV10", {
   handlerFunction: __t.string(),
   get method() {
     return MethodOrAny;
@@ -263,14 +260,14 @@ export const RawHttpRouteDefV10 = __t.object('RawHttpRouteDefV10', {
 export type RawHttpRouteDefV10 = __Infer<typeof RawHttpRouteDefV10>;
 
 // The tagged union or sum type for the algebraic type `RawIndexAlgorithm`.
-export const RawIndexAlgorithm = __t.enum('RawIndexAlgorithm', {
+export const RawIndexAlgorithm = __t.enum("RawIndexAlgorithm", {
   BTree: __t.array(__t.u16()),
   Hash: __t.array(__t.u16()),
   Direct: __t.u16(),
 });
 export type RawIndexAlgorithm = __Infer<typeof RawIndexAlgorithm>;
 
-export const RawIndexDefV10 = __t.object('RawIndexDefV10', {
+export const RawIndexDefV10 = __t.object("RawIndexDefV10", {
   sourceName: __t.option(__t.string()),
   accessorName: __t.option(__t.string()),
   get algorithm() {
@@ -279,7 +276,7 @@ export const RawIndexDefV10 = __t.object('RawIndexDefV10', {
 });
 export type RawIndexDefV10 = __Infer<typeof RawIndexDefV10>;
 
-export const RawIndexDefV8 = __t.object('RawIndexDefV8', {
+export const RawIndexDefV8 = __t.object("RawIndexDefV8", {
   indexName: __t.string(),
   isUnique: __t.bool(),
   get indexType() {
@@ -289,7 +286,7 @@ export const RawIndexDefV8 = __t.object('RawIndexDefV8', {
 });
 export type RawIndexDefV8 = __Infer<typeof RawIndexDefV8>;
 
-export const RawIndexDefV9 = __t.object('RawIndexDefV9', {
+export const RawIndexDefV9 = __t.object("RawIndexDefV9", {
   name: __t.option(__t.string()),
   accessorName: __t.option(__t.string()),
   get algorithm() {
@@ -298,21 +295,16 @@ export const RawIndexDefV9 = __t.object('RawIndexDefV9', {
 });
 export type RawIndexDefV9 = __Infer<typeof RawIndexDefV9>;
 
-export const RawLifeCycleReducerDefV10 = __t.object(
-  'RawLifeCycleReducerDefV10',
-  {
-    get lifecycleSpec() {
-      return Lifecycle;
-    },
-    functionName: __t.string(),
-  }
-);
-export type RawLifeCycleReducerDefV10 = __Infer<
-  typeof RawLifeCycleReducerDefV10
->;
+export const RawLifeCycleReducerDefV10 = __t.object("RawLifeCycleReducerDefV10", {
+  get lifecycleSpec() {
+    return Lifecycle;
+  },
+  functionName: __t.string(),
+});
+export type RawLifeCycleReducerDefV10 = __Infer<typeof RawLifeCycleReducerDefV10>;
 
 // The tagged union or sum type for the algebraic type `RawMiscModuleExportV9`.
-export const RawMiscModuleExportV9 = __t.enum('RawMiscModuleExportV9', {
+export const RawMiscModuleExportV9 = __t.enum("RawMiscModuleExportV9", {
   get ColumnDefaultValue() {
     return RawColumnDefaultValueV9;
   },
@@ -326,7 +318,7 @@ export const RawMiscModuleExportV9 = __t.enum('RawMiscModuleExportV9', {
 export type RawMiscModuleExportV9 = __Infer<typeof RawMiscModuleExportV9>;
 
 // The tagged union or sum type for the algebraic type `RawModuleDef`.
-export const RawModuleDef = __t.enum('RawModuleDef', {
+export const RawModuleDef = __t.enum("RawModuleDef", {
   get V8BackCompat() {
     return RawModuleDefV8;
   },
@@ -339,7 +331,7 @@ export const RawModuleDef = __t.enum('RawModuleDef', {
 });
 export type RawModuleDef = __Infer<typeof RawModuleDef>;
 
-export const RawModuleDefV10 = __t.object('RawModuleDefV10', {
+export const RawModuleDefV10 = __t.object("RawModuleDefV10", {
   get sections() {
     return __t.array(RawModuleDefV10Section);
   },
@@ -347,7 +339,7 @@ export const RawModuleDefV10 = __t.object('RawModuleDefV10', {
 export type RawModuleDefV10 = __Infer<typeof RawModuleDefV10>;
 
 // The tagged union or sum type for the algebraic type `RawModuleDefV10Section`.
-export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
+export const RawModuleDefV10Section = __t.enum("RawModuleDefV10Section", {
   get Typespace() {
     return Typespace;
   },
@@ -396,7 +388,7 @@ export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
 });
 export type RawModuleDefV10Section = __Infer<typeof RawModuleDefV10Section>;
 
-export const RawModuleDefV8 = __t.object('RawModuleDefV8', {
+export const RawModuleDefV8 = __t.object("RawModuleDefV8", {
   get typespace() {
     return Typespace;
   },
@@ -412,7 +404,7 @@ export const RawModuleDefV8 = __t.object('RawModuleDefV8', {
 });
 export type RawModuleDefV8 = __Infer<typeof RawModuleDefV8>;
 
-export const RawModuleDefV9 = __t.object('RawModuleDefV9', {
+export const RawModuleDefV9 = __t.object("RawModuleDefV9", {
   get typespace() {
     return Typespace;
   },
@@ -434,7 +426,7 @@ export const RawModuleDefV9 = __t.object('RawModuleDefV9', {
 });
 export type RawModuleDefV9 = __Infer<typeof RawModuleDefV9>;
 
-export const RawModuleMountV10 = __t.object('RawModuleMountV10', {
+export const RawModuleMountV10 = __t.object("RawModuleMountV10", {
   namespace: __t.string(),
   get module(): any {
     return RawModuleDefV10;
@@ -442,7 +434,7 @@ export const RawModuleMountV10 = __t.object('RawModuleMountV10', {
 });
 export type RawModuleMountV10 = __Infer<typeof RawModuleMountV10>;
 
-export const RawProcedureDefV10 = __t.object('RawProcedureDefV10', {
+export const RawProcedureDefV10 = __t.object("RawProcedureDefV10", {
   sourceName: __t.string(),
   get params() {
     return ProductType;
@@ -456,7 +448,7 @@ export const RawProcedureDefV10 = __t.object('RawProcedureDefV10', {
 });
 export type RawProcedureDefV10 = __Infer<typeof RawProcedureDefV10>;
 
-export const RawProcedureDefV9 = __t.object('RawProcedureDefV9', {
+export const RawProcedureDefV9 = __t.object("RawProcedureDefV9", {
   name: __t.string(),
   get params() {
     return ProductType;
@@ -467,7 +459,7 @@ export const RawProcedureDefV9 = __t.object('RawProcedureDefV9', {
 });
 export type RawProcedureDefV9 = __Infer<typeof RawProcedureDefV9>;
 
-export const RawReducerDefV10 = __t.object('RawReducerDefV10', {
+export const RawReducerDefV10 = __t.object("RawReducerDefV10", {
   sourceName: __t.string(),
   get params() {
     return ProductType;
@@ -484,7 +476,7 @@ export const RawReducerDefV10 = __t.object('RawReducerDefV10', {
 });
 export type RawReducerDefV10 = __Infer<typeof RawReducerDefV10>;
 
-export const RawReducerDefV9 = __t.object('RawReducerDefV9', {
+export const RawReducerDefV9 = __t.object("RawReducerDefV9", {
   name: __t.string(),
   get params() {
     return ProductType;
@@ -495,12 +487,12 @@ export const RawReducerDefV9 = __t.object('RawReducerDefV9', {
 });
 export type RawReducerDefV9 = __Infer<typeof RawReducerDefV9>;
 
-export const RawRowLevelSecurityDefV9 = __t.object('RawRowLevelSecurityDefV9', {
+export const RawRowLevelSecurityDefV9 = __t.object("RawRowLevelSecurityDefV9", {
   sql: __t.string(),
 });
 export type RawRowLevelSecurityDefV9 = __Infer<typeof RawRowLevelSecurityDefV9>;
 
-export const RawScheduleDefV10 = __t.object('RawScheduleDefV10', {
+export const RawScheduleDefV10 = __t.object("RawScheduleDefV10", {
   sourceName: __t.option(__t.string()),
   tableName: __t.string(),
   scheduleAtCol: __t.u16(),
@@ -508,26 +500,26 @@ export const RawScheduleDefV10 = __t.object('RawScheduleDefV10', {
 });
 export type RawScheduleDefV10 = __Infer<typeof RawScheduleDefV10>;
 
-export const RawScheduleDefV9 = __t.object('RawScheduleDefV9', {
+export const RawScheduleDefV9 = __t.object("RawScheduleDefV9", {
   name: __t.option(__t.string()),
   reducerName: __t.string(),
   scheduledAtColumn: __t.u16(),
 });
 export type RawScheduleDefV9 = __Infer<typeof RawScheduleDefV9>;
 
-export const RawScopedTypeNameV10 = __t.object('RawScopedTypeNameV10', {
+export const RawScopedTypeNameV10 = __t.object("RawScopedTypeNameV10", {
   scope: __t.array(__t.string()),
   sourceName: __t.string(),
 });
 export type RawScopedTypeNameV10 = __Infer<typeof RawScopedTypeNameV10>;
 
-export const RawScopedTypeNameV9 = __t.object('RawScopedTypeNameV9', {
+export const RawScopedTypeNameV9 = __t.object("RawScopedTypeNameV9", {
   scope: __t.array(__t.string()),
   name: __t.string(),
 });
 export type RawScopedTypeNameV9 = __Infer<typeof RawScopedTypeNameV9>;
 
-export const RawSequenceDefV10 = __t.object('RawSequenceDefV10', {
+export const RawSequenceDefV10 = __t.object("RawSequenceDefV10", {
   sourceName: __t.option(__t.string()),
   column: __t.u16(),
   start: __t.option(__t.i128()),
@@ -537,7 +529,7 @@ export const RawSequenceDefV10 = __t.object('RawSequenceDefV10', {
 });
 export type RawSequenceDefV10 = __Infer<typeof RawSequenceDefV10>;
 
-export const RawSequenceDefV8 = __t.object('RawSequenceDefV8', {
+export const RawSequenceDefV8 = __t.object("RawSequenceDefV8", {
   sequenceName: __t.string(),
   colPos: __t.u16(),
   increment: __t.i128(),
@@ -548,7 +540,7 @@ export const RawSequenceDefV8 = __t.object('RawSequenceDefV8', {
 });
 export type RawSequenceDefV8 = __Infer<typeof RawSequenceDefV8>;
 
-export const RawSequenceDefV9 = __t.object('RawSequenceDefV9', {
+export const RawSequenceDefV9 = __t.object("RawSequenceDefV9", {
   name: __t.option(__t.string()),
   column: __t.u16(),
   start: __t.option(__t.i128()),
@@ -558,7 +550,7 @@ export const RawSequenceDefV9 = __t.object('RawSequenceDefV9', {
 });
 export type RawSequenceDefV9 = __Infer<typeof RawSequenceDefV9>;
 
-export const RawTableDefV10 = __t.object('RawTableDefV10', {
+export const RawTableDefV10 = __t.object("RawTableDefV10", {
   sourceName: __t.string(),
   productTypeRef: __t.u32(),
   primaryKey: __t.array(__t.u16()),
@@ -584,7 +576,7 @@ export const RawTableDefV10 = __t.object('RawTableDefV10', {
 });
 export type RawTableDefV10 = __Infer<typeof RawTableDefV10>;
 
-export const RawTableDefV8 = __t.object('RawTableDefV8', {
+export const RawTableDefV8 = __t.object("RawTableDefV8", {
   tableName: __t.string(),
   get columns() {
     return __t.array(RawColumnDefV8);
@@ -604,7 +596,7 @@ export const RawTableDefV8 = __t.object('RawTableDefV8', {
 });
 export type RawTableDefV8 = __Infer<typeof RawTableDefV8>;
 
-export const RawTableDefV9 = __t.object('RawTableDefV9', {
+export const RawTableDefV9 = __t.object("RawTableDefV9", {
   name: __t.string(),
   productTypeRef: __t.u32(),
   primaryKey: __t.array(__t.u16()),
@@ -629,7 +621,7 @@ export const RawTableDefV9 = __t.object('RawTableDefV9', {
 });
 export type RawTableDefV9 = __Infer<typeof RawTableDefV9>;
 
-export const RawTypeDefV10 = __t.object('RawTypeDefV10', {
+export const RawTypeDefV10 = __t.object("RawTypeDefV10", {
   get sourceName() {
     return RawScopedTypeNameV10;
   },
@@ -638,7 +630,7 @@ export const RawTypeDefV10 = __t.object('RawTypeDefV10', {
 });
 export type RawTypeDefV10 = __Infer<typeof RawTypeDefV10>;
 
-export const RawTypeDefV9 = __t.object('RawTypeDefV9', {
+export const RawTypeDefV9 = __t.object("RawTypeDefV9", {
   get name() {
     return RawScopedTypeNameV9;
   },
@@ -647,17 +639,12 @@ export const RawTypeDefV9 = __t.object('RawTypeDefV9', {
 });
 export type RawTypeDefV9 = __Infer<typeof RawTypeDefV9>;
 
-export const RawUniqueConstraintDataV9 = __t.object(
-  'RawUniqueConstraintDataV9',
-  {
-    columns: __t.array(__t.u16()),
-  }
-);
-export type RawUniqueConstraintDataV9 = __Infer<
-  typeof RawUniqueConstraintDataV9
->;
+export const RawUniqueConstraintDataV9 = __t.object("RawUniqueConstraintDataV9", {
+  columns: __t.array(__t.u16()),
+});
+export type RawUniqueConstraintDataV9 = __Infer<typeof RawUniqueConstraintDataV9>;
 
-export const RawViewDefV10 = __t.object('RawViewDefV10', {
+export const RawViewDefV10 = __t.object("RawViewDefV10", {
   sourceName: __t.string(),
   index: __t.u32(),
   isPublic: __t.bool(),
@@ -671,7 +658,7 @@ export const RawViewDefV10 = __t.object('RawViewDefV10', {
 });
 export type RawViewDefV10 = __Infer<typeof RawViewDefV10>;
 
-export const RawViewDefV9 = __t.object('RawViewDefV9', {
+export const RawViewDefV9 = __t.object("RawViewDefV9", {
   name: __t.string(),
   index: __t.u32(),
   isPublic: __t.bool(),
@@ -685,13 +672,13 @@ export const RawViewDefV9 = __t.object('RawViewDefV9', {
 });
 export type RawViewDefV9 = __Infer<typeof RawViewDefV9>;
 
-export const RawViewPrimaryKeyDefV10 = __t.object('RawViewPrimaryKeyDefV10', {
+export const RawViewPrimaryKeyDefV10 = __t.object("RawViewPrimaryKeyDefV10", {
   viewSourceName: __t.string(),
   columns: __t.array(__t.string()),
 });
 export type RawViewPrimaryKeyDefV10 = __Infer<typeof RawViewPrimaryKeyDefV10>;
 
-export const ReducerDef = __t.object('ReducerDef', {
+export const ReducerDef = __t.object("ReducerDef", {
   name: __t.string(),
   get args() {
     return __t.array(ProductTypeElement);
@@ -699,14 +686,14 @@ export const ReducerDef = __t.object('ReducerDef', {
 });
 export type ReducerDef = __Infer<typeof ReducerDef>;
 
-export const SumType = __t.object('SumType', {
+export const SumType = __t.object("SumType", {
   get variants() {
     return __t.array(SumTypeVariant);
   },
 });
 export type SumType = __Infer<typeof SumType>;
 
-export const SumTypeVariant = __t.object('SumTypeVariant', {
+export const SumTypeVariant = __t.object("SumTypeVariant", {
   name: __t.option(__t.string()),
   get algebraicType() {
     return AlgebraicType;
@@ -715,13 +702,13 @@ export const SumTypeVariant = __t.object('SumTypeVariant', {
 export type SumTypeVariant = __Infer<typeof SumTypeVariant>;
 
 // The tagged union or sum type for the algebraic type `TableAccess`.
-export const TableAccess = __t.enum('TableAccess', {
+export const TableAccess = __t.enum("TableAccess", {
   Public: __t.unit(),
   Private: __t.unit(),
 });
 export type TableAccess = __Infer<typeof TableAccess>;
 
-export const TableDesc = __t.object('TableDesc', {
+export const TableDesc = __t.object("TableDesc", {
   get schema() {
     return RawTableDefV8;
   },
@@ -730,19 +717,19 @@ export const TableDesc = __t.object('TableDesc', {
 export type TableDesc = __Infer<typeof TableDesc>;
 
 // The tagged union or sum type for the algebraic type `TableType`.
-export const TableType = __t.enum('TableType', {
+export const TableType = __t.enum("TableType", {
   System: __t.unit(),
   User: __t.unit(),
 });
 export type TableType = __Infer<typeof TableType>;
 
-export const TypeAlias = __t.object('TypeAlias', {
+export const TypeAlias = __t.object("TypeAlias", {
   name: __t.string(),
   ty: __t.u32(),
 });
 export type TypeAlias = __Infer<typeof TypeAlias>;
 
-export const Typespace = __t.object('Typespace', {
+export const Typespace = __t.object("Typespace", {
   get types() {
     return __t.array(AlgebraicType);
   },
@@ -750,8 +737,9 @@ export const Typespace = __t.object('Typespace', {
 export type Typespace = __Infer<typeof Typespace>;
 
 // The tagged union or sum type for the algebraic type `ViewResultHeader`.
-export const ViewResultHeader = __t.enum('ViewResultHeader', {
+export const ViewResultHeader = __t.enum("ViewResultHeader", {
   RowData: __t.unit(),
   RawSql: __t.string(),
 });
 export type ViewResultHeader = __Infer<typeof ViewResultHeader>;
+

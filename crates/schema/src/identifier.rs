@@ -36,7 +36,7 @@ impl_serialize!([] Identifier, (self, ser) => ser.serialize_str(&self.id));
 impl_deserialize!([] Identifier, de => RawIdentifier::deserialize(de).map(Self::new_assume_valid));
 
 /// Validates that `name` is a valid identifier string
-fn validate_identifier(name: &str) -> Result<(), IdentifierError> {
+pub fn validate_identifier(name: &str) -> Result<(), IdentifierError> {
     if name.is_empty() {
         return Err(IdentifierError::Empty {});
     }

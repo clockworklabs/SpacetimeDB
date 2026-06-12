@@ -82,7 +82,7 @@ impl Lang for TypeScript {
 
         writeln!(out, "export default __t.row({{");
         out.indent(1);
-        write_object_type_builder_fields(module, out, "", &product_def.elements, table.primary_key, true, true)
+        write_object_type_builder_fields(module, out, &product_def.elements, table.primary_key, true, true)
             .unwrap();
         out.dedent(1);
         writeln!(out, "}});");
@@ -144,7 +144,6 @@ impl Lang for TypeScript {
             write_object_type_builder_fields(
                 module,
                 out,
-                "",
                 &procedure.params_for_generate.elements,
                 None,
                 true,
@@ -798,7 +797,7 @@ fn define_body_for_reducer(module: &ModuleDef, out: &mut Indenter, params: &[(Id
         writeln!(out, "}};");
     } else {
         writeln!(out);
-        out.with_indent(|out| write_object_type_builder_fields(module, out, "", params, None, true, false).unwrap());
+        out.with_indent(|out| write_object_type_builder_fields(module, out, params, None, true, false).unwrap());
         writeln!(out, "}};");
     }
 }
@@ -824,7 +823,7 @@ fn define_body_for_product(
     } else {
         writeln!(out);
         out.with_indent(|out| {
-            write_object_type_builder_fields(module, out, name, elements, None, true, false).unwrap()
+            write_object_type_builder_fields(module, out, elements, None, true, false).unwrap()
         });
         writeln!(out, "}});");
     }
@@ -914,7 +913,6 @@ fn write_table_opts<'a>(
 fn write_object_type_builder_fields(
     module: &ModuleDef,
     out: &mut Indenter,
-    type_name: &str,
     elements: &[(Identifier, AlgebraicTypeUse)],
     primary_key: Option<ColId>,
     convert_case: bool,
@@ -932,7 +930,7 @@ fn write_object_type_builder_fields(
             None => false,
         };
         let original_name = (write_original_name && convert_case && *name != **ident).then_some(&**ident);
-        write_type_builder_field(module, out, type_name, &name, original_name, ty, is_primary_key)?;
+        write_type_builder_field(module, out, &name, original_name, ty, is_primary_key)?;
     }
 
     Ok(())
@@ -951,7 +949,6 @@ fn type_contains_ref(ty: &AlgebraicTypeUse) -> bool {
 fn write_type_builder_field(
     module: &ModuleDef,
     out: &mut Indenter,
-    type_name: &str,
     name: &str,
     original_name: Option<&str>,
     ty: &AlgebraicTypeUse,
@@ -961,14 +958,7 @@ fn write_type_builder_field(
     let needs_getter = type_contains_ref(ty);
 
     if needs_getter {
-        if type_name == "RawModuleMountV10" && name == "module" {
-            // HACK: Fixes a type inference error (TS7022/TS7023) for const types in typescript due to the recursive
-            // type: RawModuleDefV10 -> ModuleMountsV10 -> RawModuleDefV10
-            // Annotating this getter with `: any` breaks the cycle without affecting other types.
-            writeln!(out, "get {name}(): any {{");
-        } else {
-            writeln!(out, "get {name}() {{");
-        }
+        writeln!(out, "get {name}() {{");
         out.indent(1);
         write!(out, "return ");
     } else {
@@ -1078,7 +1068,7 @@ fn define_body_for_sum(
         })
         .collect();
     out.with_indent(|out| {
-        write_object_type_builder_fields(module, out, name, &pascal_variants, None, false, false).unwrap()
+        write_object_type_builder_fields(module, out, &pascal_variants, None, false, false).unwrap()
     });
     writeln!(out, "}});");
     writeln!(out, "export type {name} = __Infer<typeof {name}>;");
