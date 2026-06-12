@@ -592,7 +592,7 @@ fn test_view_primary_key_auto_migration_disconnects_clients() {
         .build();
 
     let sub = test
-        .subscribe_background_unconfirmed(&["select * from player"], 2)
+        .subscribe_background_until_closed(&["select * from player"])
         .unwrap();
 
     test.use_precompiled_module("views-primary-key-auto-migrate-updated");
@@ -672,7 +672,7 @@ fn test_subscribing_with_different_identities() {
 
     test.new_identity().unwrap();
 
-    let sub = test.subscribe_background(&["select * from my_player"], 2).unwrap();
+    let sub = test.subscribe_background(&["select * from my_player"], 1).unwrap();
     test.call("insert_player", &["Bob"]).unwrap();
     let events = sub.collect().unwrap();
 
