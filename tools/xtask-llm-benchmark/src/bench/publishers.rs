@@ -334,27 +334,6 @@ impl DotnetPublisher {
             .env("MSBUILDDISABLENODEREUSE", "1")
             .env("DOTNET_CLI_USE_MSBUILD_SERVER", "0")
     }
-
-    fn built_wasm(root: &Path, config_name: &str) -> Result<PathBuf> {
-        let subdir = if env::var_os("EXPERIMENTAL_WASM_AOT").is_some_and(|value| value == "1") {
-            "publish"
-        } else {
-            "AppBundle"
-        };
-        let candidates = [
-            root.join(format!("bin/{config_name}/net8.0/wasi-wasm/{subdir}/StdbModule.wasm")),
-            root.join(format!("bin~/{config_name}/net8.0/wasi-wasm/{subdir}/StdbModule.wasm")),
-        ];
-
-        let mut found = candidates.iter().filter(|path| path.exists());
-        let Some(path) = found.next() else {
-            bail!("dotnet publish succeeded but StdbModule.wasm was not found in bin or bin~");
-        };
-        if found.next().is_some() {
-            bail!("dotnet publish produced both bin and bin~ outputs; cannot choose the C# wasm");
-        }
-        Ok(path.to_path_buf())
-    }
 }
 
 impl Publisher for DotnetPublisher {
@@ -364,24 +343,15 @@ impl Publisher for DotnetPublisher {
         }
         println!("publish csharp module {}", module_name);
 
-        let source = fs::canonicalize(source)?;
-        Self::ensure_csproj(&source)?;
+        Self::ensure_csproj(source)?;
 
         let db = sanitize_db_name(module_name);
         let cli_root = isolated_cli_root()?;
 
-        let config_name = "Release";
-        let mut build_cmd = Command::new("dotnet");
-        build_cmd
-            .arg("publish")
-            .arg("-c")
-            .arg(config_name)
-            .arg("-v")
-            .arg("quiet")
-            .current_dir(&source);
-        Self::configure_dotnet_env(&mut build_cmd);
-        run(&mut build_cmd, "dotnet publish (csharp)")?;
-        let wasm = Self::built_wasm(&source, config_name)?;
+        let mut cmd = spacetime_cmd(&cli_root);
+        cmd.arg("build").current_dir(source);
+        Self::configure_dotnet_env(&mut cmd);
+        run(&mut cmd, "spacetime build (csharp)")?;
 
         let mut pubcmd = spacetime_cmd(&cli_root);
         pubcmd
@@ -390,10 +360,9 @@ impl Publisher for DotnetPublisher {
             .arg("-y")
             .arg("--server")
             .arg(host_url)
-            .arg("--bin-path")
-            .arg(wasm)
             .arg(&db)
-            .current_dir(&source);
+            .current_dir(source);
+        Self::configure_dotnet_env(&mut pubcmd);
         run(&mut pubcmd, "spacetime publish (csharp)")?;
 
         Ok(())
