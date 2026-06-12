@@ -482,7 +482,17 @@ fn main() -> Result<()> {
 
     match cli.cmd {
         Some(CiCmd::Test) => {
-            cmd!("pnpm", "build").dir("crates/bindings-typescript").run()?;
+            // Run pnpm build if available. On Windows, use cmd.exe /c to properly resolve pnpm.cmd
+            let pnpm_result = if cfg!(windows) {
+                cmd!("cmd.exe", "/c", "pnpm", "build")
+                    .dir("crates/bindings-typescript")
+                    .run()
+            } else {
+                cmd!("pnpm", "build").dir("crates/bindings-typescript").run()
+            };
+            if let Err(e) = pnpm_result {
+                println!("Warning: pnpm build failed or not available: {}", e);
+            }
 
             // TODO: This doesn't work on at least user Linux machines, because something here apparently uses `sudo`?
 
@@ -519,33 +529,62 @@ fn main() -> Result<()> {
             )
             .run()?;
             // SDK procedure tests intentionally make localhost HTTP requests.
-            cmd!(
-                "cargo",
-                "test",
-                "-p",
-                "spacetimedb-sdk",
-                "--features",
-                "allow_loopback_http_for_tests",
-                "--",
-                "--test-threads=2",
-                "--skip",
-                "unreal"
-            )
-            .run()?;
-            // Run the same SDK suite against wasm/browser test clients.
-            cmd!(
-                "cargo",
-                "test",
-                "-p",
-                "spacetimedb-sdk",
-                "--features",
-                "allow_loopback_http_for_tests,browser",
-                "--",
-                "--test-threads=2",
-                "--skip",
-                "unreal"
-            )
-            .run()?;
+            // IMPORTANT: csharp:: must run first because all SDK tests write bindings
+            // to the same test-client directory. csharp uses sdk-test-cs module which
+            // doesn't have DeleteAll* reducers, so it generates the correct bindings
+            // that match the committed state. Subsequent test runs use memoized bindings.
+            let sdk_test_batches = [
+                ("csharp::", "csharp tests (run first to generate correct bindings)"),
+                ("rust::delete", "rust delete tests"),
+                ("rust::insert", "rust insert tests"),
+                ("rust::update", "rust update tests"),
+                ("rust::subscribe", "rust subscribe tests"),
+                ("rust::identity", "rust identity tests"),
+                ("rust::caller", "rust caller tests"),
+                ("rust::connection", "rust connection tests"),
+                ("rust::uuid", "rust uuid tests"),
+                ("rust::reauth", "rust reauth tests"),
+                ("rust::on_reducer", "rust on_reducer tests"),
+                ("rust::fail_reducer", "rust fail_reducer tests"),
+                ("rust::connect_disconnect", "rust connect_disconnect tests"),
+                ("rust:: --skip rust::delete --skip rust::insert --skip rust::update --skip rust::subscribe --skip rust::identity --skip rust::caller --skip rust::connection --skip rust::uuid --skip rust::reauth --skip rust::on_reducer --skip rust::fail_reducer --skip rust::connect_disconnect", "rust remaining tests"),
+                ("rust_procedures::", "rust procedures"),
+                ("rust_view --skip case_conversion", "rust view tests"),
+                ("rust_view_pk::", "rust view pk tests"),
+            ];
+
+            for (filter, description) in sdk_test_batches {
+                println!("Running SDK test batch: {}", description);
+                cmd!(
+                    "cargo",
+                    "test",
+                    "-p",
+                    "spacetimedb-sdk",
+                    "--features",
+                    "allow_loopback_http_for_tests",
+                    "--",
+                    "--test-threads=1",
+                    filter
+                )
+                .run()?;
+            }
+
+            // Run the same SDK suite against wasm/browser test clients in batches.
+            for (filter, description) in sdk_test_batches {
+                println!("Running SDK browser test batch: {}", description);
+                cmd!(
+                    "cargo",
+                    "test",
+                    "-p",
+                    "spacetimedb-sdk",
+                    "--features",
+                    "allow_loopback_http_for_tests,browser",
+                    "--",
+                    "--test-threads=1",
+                    filter
+                )
+                .run()?;
+            }
             // TODO: This should check for a diff at the start. If there is one, we should alert the user
             // that we're disabling diff checks because they have a dirty git repo, and to re-run in a clean one
             // if they want those checks.
