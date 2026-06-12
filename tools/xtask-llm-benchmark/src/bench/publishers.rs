@@ -386,10 +386,15 @@ impl Publisher for DotnetPublisher {
             .with_context(|| format!("failed to resolve C# source path {}", source.display()))?;
         let cli_root = isolated_cli_root()?;
 
-        let mut cmd = spacetime_cmd(&cli_root);
-        cmd.arg("build").arg("--module-path").arg(&source).current_dir(&source);
+        let mut cmd = Command::new("dotnet");
+        cmd.arg("publish")
+            .arg("-c")
+            .arg("Release")
+            .arg("-v")
+            .arg("quiet")
+            .current_dir(&source);
         Self::configure_dotnet_env(&mut cmd);
-        run(&mut cmd, "spacetime build (csharp)")?;
+        run(&mut cmd, "dotnet publish (csharp)")?;
 
         let wasm_path = Self::built_wasm_path(&source)?;
 
