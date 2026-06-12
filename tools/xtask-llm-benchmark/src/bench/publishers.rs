@@ -31,6 +31,121 @@ fn pnpm_minimum_release_age() -> Result<String> {
         .ok_or_else(|| anyhow::anyhow!("pnpm-workspace.yaml is missing minimumReleaseAge"))
 }
 
+fn path_entries() -> Vec<PathBuf> {
+    #[cfg(windows)]
+    let path = env::var_os("Path").or_else(|| env::var_os("PATH"));
+    #[cfg(not(windows))]
+    let path = env::var_os("PATH");
+
+    path.map(|path| env::split_paths(&path).collect()).unwrap_or_default()
+}
+
+fn command_path_candidates(name: &str) -> Vec<String> {
+    #[cfg(windows)]
+    {
+        let path = Path::new(name);
+        if path.extension().is_some() {
+            vec![name.to_string()]
+        } else {
+            vec![
+                format!("{name}.cmd"),
+                format!("{name}.exe"),
+                format!("{name}.bat"),
+                name.to_string(),
+            ]
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        vec![name.to_string()]
+    }
+}
+
+fn resolve_command_on_path(name: &str) -> Option<PathBuf> {
+    for dir in path_entries() {
+        for candidate in command_path_candidates(name) {
+            let path = dir.join(candidate);
+            if path.is_file() {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
+fn configured_nodejs_dir() -> Option<PathBuf> {
+    env::var("NODEJS_DIR")
+        .ok()
+        .map(|s| s.trim().trim_matches('"').trim().to_string())
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+}
+
+fn pnpm_in_dir(dir: &Path) -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        for candidate in ["pnpm.cmd", "pnpm.exe", "pnpm.bat"] {
+            let path = dir.join(candidate);
+            if path.is_file() {
+                return Some(path);
+            }
+        }
+        None
+    }
+    #[cfg(not(windows))]
+    {
+        let path = dir.join("pnpm");
+        path.is_file().then_some(path)
+    }
+}
+
+fn node_in_dir(dir: &Path) -> Option<PathBuf> {
+    #[cfg(windows)]
+    let path = dir.join("node.exe");
+    #[cfg(not(windows))]
+    let path = dir.join("node");
+
+    path.is_file().then_some(path)
+}
+
+fn resolve_node_exe(nodejs_dir: Option<&Path>) -> Option<PathBuf> {
+    nodejs_dir
+        .and_then(node_in_dir)
+        .or_else(|| resolve_command_on_path("node"))
+        .or_else(|| {
+            env::var("NVM_SYMLINK")
+                .ok()
+                .map(PathBuf::from)
+                .and_then(|dir| node_in_dir(&dir))
+        })
+}
+
+fn pnpm_cjs_for_cmd(pnpm: &Path) -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        let is_cmd = pnpm
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("cmd"));
+        if !is_cmd {
+            return None;
+        }
+
+        let cjs = pnpm
+            .parent()?
+            .join("node_modules")
+            .join("pnpm")
+            .join("bin")
+            .join("pnpm.cjs");
+        cjs.is_file().then_some(cjs)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = pnpm;
+        None
+    }
+}
+
 /// Strip ANSI escape codes (color codes) from a string
 fn strip_ansi_codes(s: &str) -> Cow<'_, str> {
     static ANSI_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -275,49 +390,31 @@ impl Publisher for TypeScriptPublisher {
         let db = sanitize_db_name(module_name);
 
         // Install dependencies (--ignore-workspace to avoid parent workspace interference).
-        // If NODEJS_DIR is set (e.g. nvm4w on Windows), use full path to pnpm so spawn finds it.
-        let pnpm_exe = env::var("NODEJS_DIR")
-            .ok()
-            .map(|s| s.trim().trim_matches('"').trim().to_string())
-            .filter(|s| !s.is_empty())
-            .map(PathBuf::from)
-            .and_then(|dir| {
-                #[cfg(windows)]
-                {
-                    let pnpm_cmd = dir.join("pnpm.cmd");
-                    let pnpm_exe_path = dir.join("pnpm.exe");
-                    if pnpm_cmd.is_file() {
-                        eprintln!("[pnpm] using NODEJS_DIR: {} (pnpm.cmd)", dir.display());
-                        Some(pnpm_cmd)
-                    } else if pnpm_exe_path.is_file() {
-                        eprintln!("[pnpm] using NODEJS_DIR: {} (pnpm.exe)", dir.display());
-                        Some(pnpm_exe_path)
-                    } else {
-                        eprintln!(
-                            "[pnpm] NODEJS_DIR set to {} but pnpm.cmd/pnpm.exe not found there, using PATH",
-                            dir.display()
-                        );
-                        None
-                    }
-                }
-                #[cfg(not(windows))]
-                {
-                    let pnpm = dir.join("pnpm");
-                    if pnpm.is_file() {
-                        eprintln!("[pnpm] using NODEJS_DIR: {} (pnpm)", dir.display());
-                        Some(pnpm)
-                    } else {
-                        eprintln!(
-                            "[pnpm] NODEJS_DIR set to {} but pnpm not found there, using PATH",
-                            dir.display()
-                        );
-                        None
-                    }
-                }
-            });
-        let mut pnpm_cmd = match &pnpm_exe {
-            Some(p) => Command::new(p),
-            None => Command::new("pnpm"),
+        let nodejs_dir = configured_nodejs_dir();
+        let pnpm_exe = nodejs_dir
+            .as_deref()
+            .and_then(pnpm_in_dir)
+            .or_else(|| resolve_command_on_path("pnpm"));
+        if let Some(ref pnpm) = pnpm_exe {
+            eprintln!("[pnpm] using {}", pnpm.display());
+        } else if let Some(ref dir) = nodejs_dir {
+            eprintln!(
+                "[pnpm] NODEJS_DIR set to {} but pnpm not found there or on PATH",
+                dir.display()
+            );
+        }
+        let node_exe = resolve_node_exe(nodejs_dir.as_deref());
+        let pnpm_cjs = pnpm_exe.as_deref().and_then(pnpm_cjs_for_cmd);
+        let mut pnpm_cmd = if let (Some(node), Some(cjs)) = (&node_exe, pnpm_cjs) {
+            eprintln!("[pnpm] invoking {} {}", node.display(), cjs.display());
+            let mut cmd = Command::new(node);
+            cmd.arg(cjs);
+            cmd
+        } else {
+            match &pnpm_exe {
+                Some(p) => Command::new(p),
+                None => Command::new("pnpm"),
+            }
         };
         pnpm_cmd
             .arg("install")
@@ -327,30 +424,62 @@ impl Publisher for TypeScriptPublisher {
             // This install runs in a materialized project with workspace config
             // ignored, so pass the repo's pnpm package-age policy explicitly.
             .env("npm_config_minimum_release_age", pnpm_minimum_release_age()?);
-        // When using NODEJS_DIR, prepend it to PATH so pnpm.cmd can find node.
-        if let Some(ref dir) = pnpm_exe
-            && let Some(parent) = dir.parent()
+        let mut prepend_paths = Vec::new();
+        if let Some(dir) = nodejs_dir {
+            prepend_paths.push(dir);
+        }
+        if let Some(ref pnpm) = pnpm_exe
+            && let Some(parent) = pnpm.parent()
         {
-            let mut paths: Vec<PathBuf> = env::split_paths(&env::var("PATH").unwrap_or_default()).collect();
-            paths.insert(0, parent.to_path_buf());
-            if let Ok(new_path) = env::join_paths(paths) {
-                pnpm_cmd.env("PATH", new_path);
+            prepend_paths.push(parent.to_path_buf());
+        }
+        if let Some(node) = node_exe
+            && let Some(parent) = node.parent()
+        {
+            prepend_paths.push(parent.to_path_buf());
+        }
+        let child_path = if !prepend_paths.is_empty() {
+            let mut paths = path_entries();
+            for path in prepend_paths.into_iter().rev() {
+                if !paths.iter().any(|existing| existing == &path) {
+                    paths.insert(0, path);
+                }
             }
+            env::join_paths(paths).ok()
+        } else {
+            None
+        };
+        if let Some(ref new_path) = child_path {
+            #[cfg(windows)]
+            {
+                pnpm_cmd.env_remove("PATH");
+                pnpm_cmd.env("Path", new_path);
+            }
+            #[cfg(not(windows))]
+            pnpm_cmd.env("PATH", new_path);
         }
         run(&mut pnpm_cmd, "pnpm install (typescript)")?;
 
         // Publish (spacetime CLI handles TypeScript compilation internally)
-        run(
-            Command::new("spacetime")
-                .arg("publish")
-                .arg("-c")
-                .arg("-y")
-                .arg("--server")
-                .arg(host_url)
-                .arg(&db)
-                .current_dir(source),
-            "spacetime publish (typescript)",
-        )?;
+        let mut publish_cmd = Command::new("spacetime");
+        publish_cmd
+            .arg("publish")
+            .arg("-c")
+            .arg("-y")
+            .arg("--server")
+            .arg(host_url)
+            .arg(&db)
+            .current_dir(source);
+        if let Some(ref new_path) = child_path {
+            #[cfg(windows)]
+            {
+                publish_cmd.env_remove("PATH");
+                publish_cmd.env("Path", new_path);
+            }
+            #[cfg(not(windows))]
+            publish_cmd.env("PATH", new_path);
+        }
+        run(&mut publish_cmd, "spacetime publish (typescript)")?;
 
         Ok(())
     }
