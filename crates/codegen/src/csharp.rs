@@ -1420,12 +1420,14 @@ fn autogen_csharp_plain_enum(enum_type_name: String, enum_type: &PlainEnumTypeDe
     let mut output = CsharpAutogen::new(namespace, &[], false);
 
     writeln!(output, "[SpacetimeDB.Type]");
-    writeln!(output, "public enum {enum_type_name}");
+    writeln!(output, "public enum {enum_type_name} : IEquatable<{enum_type_name}>");
     indented_block(&mut output, |output| {
         for variant in &*enum_type.variants {
             let variant = variant.deref().to_case(Case::Pascal);
             writeln!(output, "{variant},");
         }
+        writeln!(output);
+        writeln!(output, "public bool Equals({enum_type_name} other) => this == other;");
     });
 
     output.into_inner()
