@@ -8,7 +8,7 @@ Utilities used to maintain a client side cache of database tables.  These classe
 - `ClientCache.h` – Owns `FTableCache` objects and applies insert/delete diffs sent over the network.
 - `IUniqueIndex.h` – Interface that unique index implementations conform to.
 - `RowEntry.h` – Wrapper storing a row value with a reference count used by overlapping subscriptions.
-- `TableAppliedDiff.h` – Describes the inserts, deletes and updates detected when applying a diff.
+- `TableAppliedDiff.h` – Describes the inserts, deletes and updates detected when applying a diff. Direct C++ consumers receive `TSharedPtr` row arrays; generated dynamic delegates continue broadcasting value references.
 - `TableCache.h` – In-memory representation of a table and its unique indices.
 - `TableHandle.h` – Lightweight helper exposing read only access to a cached table.
 - `UniqueConstraintHandle.h` – Helper that allows typed lookups against a unique constraint.
@@ -126,4 +126,4 @@ Table.GetValues(AllRows);
 
 - `TArray<uint8>` keys allow serialized identifiers (network-friendly).
 - Adding indices after inserting rows is **not supported** without manual rebuild.
-- B-Tree indices can later be extended for **range queries**.ed to a **single column** per call.
+- B-Tree indices can later be extended for **range queries** and are currently scoped to a **single column** per call.

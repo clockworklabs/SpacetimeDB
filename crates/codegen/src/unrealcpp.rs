@@ -47,6 +47,7 @@ impl Lang for UnrealCpp<'_> {
             &[
                 "Types/Builtins.h",
                 &format!("ModuleBindings/Types/{struct_name}Type.g.h"),
+                "DBCache/ClientCache.h",
                 "Tables/RemoteTable.h",
                 "DBCache/WithBsatn.h",
                 "DBCache/TableHandle.h",
@@ -62,6 +63,35 @@ impl Lang for UnrealCpp<'_> {
 
         // Generate unique index classes first
         let product_type = module.typespace_for_generate()[table.product_type_ref].as_product();
+
+        if let (false, Some(pk)) = (table.is_event, schema.pk()) {
+            let (pk_name, pk_ty) = &product_type.unwrap().elements[pk.col_pos.idx()];
+            let pk_type_str = cpp_ty_fmt_with_module(self.module_prefix, module, pk_ty, self.module_name).to_string();
+            if pk_type_str == "uint64" {
+                let pk_field_name = pk_name.deref().to_case(Case::Pascal);
+                let pk_index_name = pk.col_name.deref();
+                writeln!(output, "namespace UE::SpacetimeDB");
+                writeln!(output, "{{");
+                writeln!(output, "template<>");
+                writeln!(output, "struct TCompactPrimaryKeyTraits<::{row_struct}>");
+                writeln!(output, "{{");
+                writeln!(output, "    static constexpr bool bEnabled = true;");
+                writeln!(output, "    using KeyType = uint64;");
+                writeln!(output);
+                writeln!(output, "    static KeyType GetKey(const ::{row_struct}& Row)");
+                writeln!(output, "    {{");
+                writeln!(output, "        return Row.{pk_field_name};");
+                writeln!(output, "    }}");
+                writeln!(output);
+                writeln!(output, "    static const TCHAR* GetUniqueIndexName()");
+                writeln!(output, "    {{");
+                writeln!(output, "        return TEXT(\"{pk_index_name}\");");
+                writeln!(output, "    }}");
+                writeln!(output, "}};");
+                writeln!(output, "}}");
+                writeln!(output);
+            }
+        }
 
         let mut unique_indexes = Vec::new();
         let mut multi_key_indexes = Vec::new();
@@ -307,6 +337,17 @@ impl Lang for UnrealCpp<'_> {
         }
 
         writeln!(output, "    void PostInitialize();");
+        writeln!(output);
+        writeln!(
+            output,
+            "    void SetCacheApplyMode(UE::SpacetimeDB::ETableCacheApplyMode InApplyMode);"
+        );
+        writeln!(
+            output,
+            "    UE::SpacetimeDB::ETableCacheApplyMode GetCacheApplyMode() const;"
+        );
+        writeln!(output, "    void SetRuntimeBTreeIndexApplyMode(const FString& IndexName, UE::SpacetimeDB::ERuntimeBTreeIndexApplyMode InApplyMode);");
+        writeln!(output, "    void ClearRuntimeBTreeIndexApplyModes();");
         writeln!(output);
 
         writeln!(output, "    /** Update function for {table_name} table*/");
@@ -1205,7 +1246,7 @@ fn generate_table_cpp(
         writeln!(
             output,
             "    {table_pascal}Table->AddUniqueConstraint<{field_type}>(\"{}\", [](const {row_struct}& Row) -> const {field_type}& {{",
-            field_name.to_lowercase()
+            field_name
         );
         writeln!(output, "        return Row.{}; }});", field_name.to_case(Case::Pascal));
     }
@@ -1255,6 +1296,52 @@ fn generate_table_cpp(
     writeln!(output, "}}");
     writeln!(output);
 
+    writeln!(
+        output,
+        "void U{table_pascal}Table::SetCacheApplyMode(UE::SpacetimeDB::ETableCacheApplyMode InApplyMode)"
+    );
+    writeln!(output, "{{");
+    writeln!(
+        output,
+        "    checkf(Data.IsValid(), TEXT(\"{table_pascal} table cache policy set before PostInitialize.\"));"
+    );
+    writeln!(output, "    Data->SetApplyMode(InApplyMode);");
+    writeln!(output, "}}");
+    writeln!(output);
+
+    writeln!(
+        output,
+        "UE::SpacetimeDB::ETableCacheApplyMode U{table_pascal}Table::GetCacheApplyMode() const"
+    );
+    writeln!(output, "{{");
+    writeln!(
+        output,
+        "    checkf(Data.IsValid(), TEXT(\"{table_pascal} table cache policy read before PostInitialize.\"));"
+    );
+    writeln!(output, "    return Data->GetApplyMode();");
+    writeln!(output, "}}");
+    writeln!(output);
+
+    writeln!(output, "void U{table_pascal}Table::SetRuntimeBTreeIndexApplyMode(const FString& IndexName, UE::SpacetimeDB::ERuntimeBTreeIndexApplyMode InApplyMode)");
+    writeln!(output, "{{");
+    writeln!(
+        output,
+        "    checkf(Data.IsValid(), TEXT(\"{table_pascal} runtime B-Tree index policy set before PostInitialize.\"));"
+    );
+    writeln!(
+        output,
+        "    Data->SetRuntimeBTreeIndexApplyMode(IndexName, InApplyMode);"
+    );
+    writeln!(output, "}}");
+    writeln!(output);
+
+    writeln!(output, "void U{table_pascal}Table::ClearRuntimeBTreeIndexApplyModes()");
+    writeln!(output, "{{");
+    writeln!(output, "    checkf(Data.IsValid(), TEXT(\"{table_pascal} runtime B-Tree index policy reset before PostInitialize.\"));");
+    writeln!(output, "    Data->ClearRuntimeBTreeIndexApplyModes();");
+    writeln!(output, "}}");
+    writeln!(output);
+
     // Generate Update implementation
     writeln!(
         output,
@@ -1267,9 +1354,12 @@ fn generate_table_cpp(
             "    // Event tables are callback-only: do not persist rows in the local cache."
         );
         writeln!(output, "    FTableAppliedDiff<{row_struct}> Diff;");
-        writeln!(output, "    for (const FWithBsatn<{row_struct}>& Insert : InsertsRef)");
+        writeln!(output, "    for (FWithBsatn<{row_struct}>& Insert : InsertsRef)");
         writeln!(output, "    {{");
-        writeln!(output, "        Diff.Inserts.Add(Insert.Bsatn, Insert.Row);");
+        writeln!(
+            output,
+            "        Diff.Inserts.Add(MakeShared<{row_struct}>(MoveTemp(Insert.Row)));"
+        );
         writeln!(output, "    }}");
     } else {
         writeln!(
