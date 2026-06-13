@@ -337,6 +337,8 @@ impl DotnetPublisher {
             // The workflow installs the WASI workload before running benchmarks.
             // Avoid `dotnet workload list`, which can segfault on the CI runner.
             .env("SPACETIMEDB_SKIP_CSHARP_WORKLOAD_CHECK", "1")
+            // Keep benchmark C# publishes on the conservative MSBuild path.
+            .env("SPACETIMEDB_CSHARP_STABLE_PUBLISH", "1")
     }
 }
 
