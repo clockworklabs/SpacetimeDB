@@ -4,48 +4,48 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
-use super::scheduled_table_type::ScheduledTable;
+use super::enum_with_payload_type::EnumWithPayload;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub(super) struct SendScheduledMessageArgs {
-    pub arg: ScheduledTable,
+pub(super) struct DeleteAllVecEnumWithPayloadArgs {
+    pub e: Vec<EnumWithPayload>,
 }
 
-impl From<SendScheduledMessageArgs> for super::Reducer {
-    fn from(args: SendScheduledMessageArgs) -> Self {
-        Self::SendScheduledMessage { arg: args.arg }
+impl From<DeleteAllVecEnumWithPayloadArgs> for super::Reducer {
+    fn from(args: DeleteAllVecEnumWithPayloadArgs) -> Self {
+        Self::DeleteAllVecEnumWithPayload { e: args.e }
     }
 }
 
-impl __sdk::InModule for SendScheduledMessageArgs {
+impl __sdk::InModule for DeleteAllVecEnumWithPayloadArgs {
     type Module = super::RemoteModule;
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for access to the reducer `send_scheduled_message`.
+/// Extension trait for access to the reducer `delete_all_vec_enum_with_payload`.
 ///
 /// Implemented for [`super::RemoteReducers`].
-pub trait send_scheduled_message {
-    /// Request that the remote module invoke the reducer `send_scheduled_message` to run as soon as possible.
+pub trait delete_all_vec_enum_with_payload {
+    /// Request that the remote module invoke the reducer `delete_all_vec_enum_with_payload` to run as soon as possible.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
-    /// /// Use [`send_scheduled_message:send_scheduled_message_then`] to run a callback after the reducer completes.
-    fn send_scheduled_message(&self, arg: ScheduledTable) -> __sdk::Result<()> {
-        self.send_scheduled_message_then(arg, |_, _| {})
+    /// /// Use [`delete_all_vec_enum_with_payload:delete_all_vec_enum_with_payload_then`] to run a callback after the reducer completes.
+    fn delete_all_vec_enum_with_payload(&self, e: Vec<EnumWithPayload>) -> __sdk::Result<()> {
+        self.delete_all_vec_enum_with_payload_then(e, |_, _| {})
     }
 
-    /// Request that the remote module invoke the reducer `send_scheduled_message` to run as soon as possible,
+    /// Request that the remote module invoke the reducer `delete_all_vec_enum_with_payload` to run as soon as possible,
     /// registering `callback` to run when we are notified that the reducer completed.
     ///
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed with the `callback`.
-    fn send_scheduled_message_then(
+    fn delete_all_vec_enum_with_payload_then(
         &self,
-        arg: ScheduledTable,
+        e: Vec<EnumWithPayload>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -53,16 +53,16 @@ pub trait send_scheduled_message {
     ) -> __sdk::Result<()>;
 }
 
-impl send_scheduled_message for super::RemoteReducers {
-    fn send_scheduled_message_then(
+impl delete_all_vec_enum_with_payload for super::RemoteReducers {
+    fn delete_all_vec_enum_with_payload_then(
         &self,
-        arg: ScheduledTable,
+        e: Vec<EnumWithPayload>,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
         self.imp
-            .invoke_reducer_with_callback(SendScheduledMessageArgs { arg }, callback)
+            .invoke_reducer_with_callback(DeleteAllVecEnumWithPayloadArgs { e }, callback)
     }
 }
