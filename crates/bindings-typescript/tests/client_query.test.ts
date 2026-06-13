@@ -4,6 +4,15 @@ import { and, not, or, toSql } from '../src/lib/query';
 import { tables } from '../test-app/src/module_bindings';
 
 describe('ClientQuery.toSql', () => {
+  it('keeps deprecated snake_case table aliases working', () => {
+    assertType<typeof tables.unindexedPlayer>(tables.unindexed_player);
+    expect(tables.unindexed_player).toBe(tables.unindexedPlayer);
+
+    const sql = toSql(tables.unindexed_player.build());
+
+    expect(sql).toBe('SELECT * FROM "unindexed_player"');
+  });
+
   it('renders a full-table scan when no filters are applied', () => {
     const sql = toSql(tables.player.build());
 

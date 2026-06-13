@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'vitest';
+import { assertType, beforeEach, describe, expect, test } from 'vitest';
 import {
   BinaryWriter,
   ConnectionId,
@@ -149,6 +149,19 @@ function encodeMyUserProcedural(value: MyUserViewRow): Uint8Array {
 }
 
 describe('DbConnection', () => {
+  test('keeps deprecated snake_case db aliases working', async () => {
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(() => Promise.reject(new Error('expected test failure')))
+      .build();
+
+    assertType<typeof client.db.unindexedPlayer>(client.db.unindexed_player);
+    expect(client.db.unindexed_player).toBe(client.db.unindexedPlayer);
+
+    await client['wsPromise'];
+  });
+
   test('call onConnectError callback after websocket connection failed to be established', async () => {
     const onConnectErrorPromise = new Deferred<void>();
 
