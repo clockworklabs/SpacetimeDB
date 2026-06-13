@@ -6,7 +6,8 @@ use sqlparser::ast::{
 };
 
 use crate::ast::{
-    BinOp, LogOp, Parameter, Project, ProjectElem, ProjectExpr, SqlExpr, SqlFrom, SqlIdent, SqlJoin, SqlLiteral,
+    BinOp, LogOp, Parameter, Project, ProjectElem, ProjectExpr, SqlExpr, SqlFrom, SqlFromSource, SqlFuncCall, SqlIdent,
+    SqlJoin, SqlLiteral,
 };
 
 pub mod errors;
@@ -34,11 +35,15 @@ trait RelParser {
             return Err(SqlUnsupported::ImplicitJoins.into());
         }
         let TableWithJoins { relation, joins } = tables.swap_remove(0);
-        let (name, alias) = Self::parse_relvar(relation)?;
-        if joins.is_empty() {
-            return Ok(SqlFrom::Expr(name, alias));
+        match Self::parse_relvar(relation)? {
+            SqlFromSource::Expr(name, alias) => {
+                if joins.is_empty() {
+                    return Ok(SqlFrom::Expr(name, alias));
+                }
+                Ok(SqlFrom::Join(name, alias, Self::parse_joins(joins)?))
+            }
+            SqlFromSource::FuncCall(func_call, alias) => Ok(SqlFrom::FuncCall(func_call, alias)),
         }
-        Ok(SqlFrom::Join(name, alias, Self::parse_joins(joins)?))
     }
 
     /// Parse a sequence of JOIN clauses
@@ -48,10 +53,11 @@ trait RelParser {
 
     /// Parse a single JOIN clause
     fn parse_join(join: Join) -> SqlParseResult<SqlJoin> {
-        let (var, alias) = Self::parse_relvar(join.relation)?;
+        let from = Self::parse_relvar(join.relation)?;
+
         match join.join_operator {
-            JoinOperator::CrossJoin => Ok(SqlJoin { var, alias, on: None }),
-            JoinOperator::Inner(JoinConstraint::None) => Ok(SqlJoin { var, alias, on: None }),
+            JoinOperator::CrossJoin => Ok(SqlJoin { from, on: None }),
+            JoinOperator::Inner(JoinConstraint::None) => Ok(SqlJoin { from, on: None }),
             JoinOperator::Inner(JoinConstraint::On(Expr::BinaryOp {
                 left,
                 op: BinaryOperator::Eq,
@@ -60,8 +66,7 @@ trait RelParser {
                 && matches!(*right, Expr::Identifier(..) | Expr::CompoundIdentifier(..)) =>
             {
                 Ok(SqlJoin {
-                    var,
-                    alias,
+                    from,
                     on: Some(parse_expr(
                         Expr::BinaryOp {
                             left,
@@ -76,32 +81,63 @@ trait RelParser {
         }
     }
 
+    /// Parse a function call
+    fn parse_func_call(name: SqlIdent, args: Vec<FunctionArg>) -> SqlParseResult<SqlFuncCall> {
+        if args.is_empty() {
+            return Err(SqlUnsupported::TableFunctionNoParams(name.0.into()).into());
+        }
+        let args = args
+            .into_iter()
+            .map(|arg| match arg.clone() {
+                FunctionArg::Unnamed(FunctionArgExpr::Expr(expr)) => match parse_expr(expr, 0) {
+                    Ok(SqlExpr::Lit(lit)) => Ok(lit),
+                    _ => Err(SqlUnsupported::FuncArg(arg).into()),
+                },
+                _ => Err(SqlUnsupported::FuncArg(arg.clone()).into()),
+            })
+            .collect::<SqlParseResult<_>>()?;
+        Ok(SqlFuncCall { name, args })
+    }
+
     /// Parse a table reference in a FROM clause
-    fn parse_relvar(expr: TableFactor) -> SqlParseResult<(SqlIdent, SqlIdent)> {
+    fn parse_relvar(expr: TableFactor) -> SqlParseResult<SqlFromSource> {
         match expr {
             // Relvar no alias
             TableFactor::Table {
                 name,
                 alias: None,
-                args: None,
+                args,
                 with_hints,
                 version: None,
                 partitions,
             } if with_hints.is_empty() && partitions.is_empty() => {
                 let name = parse_ident(name)?;
                 let alias = name.clone();
-                Ok((name, alias))
+
+                if let Some(args) = args {
+                    Ok(SqlFromSource::FuncCall(Self::parse_func_call(name, args)?, alias))
+                } else {
+                    Ok(SqlFromSource::Expr(name, alias))
+                }
             }
             // Relvar with alias
             TableFactor::Table {
                 name,
                 alias: Some(TableAlias { name: alias, columns }),
-                args: None,
+                args,
                 with_hints,
                 version: None,
                 partitions,
             } if with_hints.is_empty() && partitions.is_empty() && columns.is_empty() => {
-                Ok((parse_ident(name)?, alias.into()))
+                let args = args.filter(|v| !v.is_empty());
+                if let Some(args) = args {
+                    Ok(SqlFromSource::FuncCall(
+                        Self::parse_func_call(parse_ident(name)?, args)?,
+                        alias.into(),
+                    ))
+                } else {
+                    Ok(SqlFromSource::Expr(parse_ident(name)?, alias.into()))
+                }
             }
             _ => Err(SqlUnsupported::From(expr).into()),
         }
