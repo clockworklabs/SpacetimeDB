@@ -32,14 +32,13 @@ use anyhow::{anyhow, bail, ensure, Context};
 use bytes::{Buf, Bytes};
 use core::future::Future;
 use core::time::Duration;
-use prometheus::{Histogram, IntCounter, IntGauge};
+use prometheus::{Histogram, IntCounter};
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, ViewError};
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, Program};
-use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::db::raw_def::v9::{Lifecycle, ViewResultHeader};
 use spacetimedb_lib::de::DeserializeSeed;
@@ -109,6 +108,12 @@ pub trait WasmInstance {
 pub struct EnergyStats {
     pub budget: FunctionBudget,
     pub remaining: FunctionBudget,
+}
+
+impl Default for EnergyStats {
+    fn default() -> Self {
+        Self::ZERO
+    }
 }
 
 impl EnergyStats {
@@ -182,11 +187,10 @@ pub(crate) fn run_query_for_view(
 
     // Validate shape and disallow views-on-views.
     for plan in &plans {
-        let phys = plan.optimized_physical_plan();
-        let Some(source_schema) = phys.return_table() else {
+        let Some(source_schema) = plan.return_table() else {
             bail!("query does not return plain table rows");
         };
-        if phys.reads_from_view(true) || phys.reads_from_view(false) {
+        if plan.reads_from_view(true) || plan.reads_from_view(false) {
             bail!("view definition cannot read from other views");
         }
         if source_schema.row_type != *expected_row_type {
@@ -209,8 +213,7 @@ pub(crate) fn run_query_for_view(
             tx.record_table_scan(&op, table_id);
         }
 
-        let pipelined = PipelinedProject::from(plan.optimized_physical_plan().clone());
-        pipelined.execute(&*tx, &mut metrics, &mut |row| {
+        plan.base_plan().execute(&*tx, &mut metrics, &mut |row| {
             rows.push(row.to_product_value());
             Ok(())
         })?;
@@ -219,6 +222,7 @@ pub(crate) fn run_query_for_view(
     Ok(rows)
 }
 
+#[derive(Default)]
 pub struct ExecutionTimings {
     pub total_duration: Duration,
     pub wasm_instance_env_call_times: CallTimes,
@@ -238,10 +242,10 @@ impl ExecutionTimings {
 /// The result that `__call_reducer__` produces during normal non-trap execution.
 pub type ReducerResult = Result<Option<Bytes>, Box<str>>;
 
+#[derive(Default)]
 pub struct ExecutionStats {
     pub energy: EnergyStats,
     pub timings: ExecutionTimings,
-    pub memory_allocation: usize,
 }
 
 impl ExecutionStats {
@@ -603,8 +607,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 pub struct InstanceCommon {
     info: Arc<ModuleInfo>,
     energy_monitor: Arc<dyn EnergyMonitor>,
-    allocated_memory: usize,
-    metric_wasm_memory_bytes: IntGauge,
     vm_metrics: AllVmMetrics,
 }
 
@@ -617,11 +619,6 @@ impl InstanceCommon {
             info: module.info(),
             vm_metrics,
             energy_monitor: module.energy_monitor(),
-            // Will be updated on the first reducer call.
-            allocated_memory: 0,
-            metric_wasm_memory_bytes: WORKER_METRICS
-                .wasm_memory_bytes
-                .with_label_values(module.database_identity()),
         }
     }
 
@@ -804,18 +801,11 @@ impl InstanceCommon {
         let ProcedureExecuteResult {
             stats:
                 ExecutionStats {
-                    memory_allocation,
                     // TODO(procedure-energy): Do something with timing and energy.
                     ..
                 },
             call_result,
         } = result;
-
-        // TODO(shub): deduplicate with reducer and view logic.
-        if self.allocated_memory != memory_allocation {
-            self.metric_wasm_memory_bytes.set(memory_allocation as i64);
-            self.allocated_memory = memory_allocation;
-        }
 
         let trapped = call_result.is_err();
 
@@ -903,17 +893,11 @@ impl InstanceCommon {
         let HttpHandlerExecuteResult {
             stats:
                 ExecutionStats {
-                    memory_allocation,
                     // TODO(http-handler-energy): Do something with timing and energy.
                     ..
                 },
             call_result,
         } = result;
-
-        if self.allocated_memory != memory_allocation {
-            self.metric_wasm_memory_bytes.set(memory_allocation as i64);
-            self.allocated_memory = memory_allocation;
-        }
 
         let trapped = call_result.is_err();
 
@@ -1145,14 +1129,9 @@ impl InstanceCommon {
         let stats: &ExecutionStats = result.as_ref();
         let execution_budget_used = stats.energy.used();
         let timings = &stats.timings;
-        let memory_allocation = stats.memory_allocation;
 
         self.energy_monitor
             .record_reducer(&energy_fingerprint, execution_budget_used, timings.total_duration);
-        if self.allocated_memory != memory_allocation {
-            self.metric_wasm_memory_bytes.set(memory_allocation as i64);
-            self.allocated_memory = memory_allocation;
-        }
 
         maybe_log_long_running_function(function_name, timings.total_duration);
 

@@ -10,7 +10,6 @@ const outputDir = path.join(
   repoRoot,
   'docs/static/.well-known/agent-skills'
 );
-
 function readFrontmatter(markdown, sourcePath) {
   const match = markdown.match(/^---\n([\s\S]*?)\n---\n/);
   if (!match) {
@@ -72,4 +71,3 @@ await writeFile(
     2
   )}\n`
 );
-

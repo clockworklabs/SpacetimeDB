@@ -343,6 +343,10 @@ fn table_row_type_dependents(row_type: ProductType) -> (RowTypeLayout, StaticLay
     (row_layout, static_layout, visitor_prog)
 }
 
+#[derive(Error, Debug)]
+#[error("Table is not empty")]
+pub struct TableNotEmptyError;
+
 // Public API:
 impl Table {
     /// Creates a new empty table with the given `schema` and `squashed_offset`.
@@ -364,6 +368,27 @@ impl Table {
         column_schemas: Vec<ColumnSchema>,
     ) -> Result<Vec<ColumnSchema>, Box<ChangeColumnsError>> {
         unsafe { self.change_columns_to_unchecked(column_schemas, Self::validate_row_type_layout) }
+    }
+
+    /// Like [`Self::change_columns_to`], but doesn't care if the new schema is compatible.
+    ///
+    /// Returns an error if there are any rows in `self`.
+    pub fn change_columns_of_empty_table_to(
+        &mut self,
+        column_schemas: Vec<ColumnSchema>,
+    ) -> Result<Vec<ColumnSchema>, TableNotEmptyError> {
+        if self.row_count > 0 {
+            return Err(TableNotEmptyError);
+        }
+        // Remove and drop any pages, as even though they must be empty,
+        // they may have residual layout-derived data which conflicts with the new schema.
+        // Safety: there aren't any pages here, so they cannot conflict with the schema or row layout.
+        unsafe { self.set_pages(Vec::new(), &NullBlobStore) };
+
+        // Safety: the table has no rows according to its row count,
+        // and no pages 'cause we just did `set_pages` to the empty vec.
+        unsafe { self.change_columns_to_unchecked(column_schemas, |_, _, _| Ok::<(), std::convert::Infallible>(())) }
+            .map_err(|e| match e {})
     }
 
     /// Validate that the old row type layout can be changed to the new.
@@ -477,6 +502,9 @@ impl Table {
     ///
     /// The caller must ensure, using `validate`,
     /// that `new_row_layout` is compatible with the rows existing in `self`.
+    ///
+    /// Or, the table must be entirely empty, containing zero rows and zero pages.
+    /// Zero pages is necessary because empty pages may contain layout-derived metadata.
     pub unsafe fn change_columns_to_unchecked<E>(
         &mut self,
         column_schemas: Vec<ColumnSchema>,
@@ -2746,6 +2774,39 @@ pub(crate) mod test {
             // which is already what the actual implementation does.
         }
 
+        /// Test that the recording of non-full pages and counts of var-len granules available
+        /// by the page manager are correct after insertions and deletes.
+        ///
+        /// Tested here rather than in pages.rs because it's easier to test with typed rows than raw byte buffers.
+        #[test]
+        fn non_full_pages_consistent((ty, vals) in generate_typed_row_vec(0..SIZE, 128, 2048)) {
+            let pool = PagePool::new_for_test();
+            let mut blob_store = HashMapBlobStore::default();
+            let mut table = table(ty);
+            let mut inserted_row_ptrs = Vec::new();
+
+            table.inner.pages.assert_non_full_pages_consistent(table.inner.row_layout.size());
+
+            // Insert 3 rows at a time, then delete the last 1.
+            // This keeps the page usage growing towards fullness, but also includes some deletes.
+            for rows in vals.chunks(3) {
+                for row in rows {
+                    let row_ptr = match table.insert(&pool, &mut blob_store, row) {
+                        Ok((_, row_ref)) => row_ref.pointer(),
+                        Err(InsertError::Duplicate(_)) => continue,
+                        Err(e) => return Err(TestCaseError::fail(format!("unexpected insert error: {e:?}"))),
+                    };
+                    inserted_row_ptrs.push(row_ptr);
+                    table.inner.pages.assert_non_full_pages_consistent(table.inner.row_layout.size());
+                }
+
+                if let Some(row_ptr) = inserted_row_ptrs.pop() {
+                    table.delete(&mut blob_store, row_ptr, |_| ());
+                    table.inner.pages.assert_non_full_pages_consistent(table.inner.row_layout.size());
+                }
+            }
+        }
+
         #[test]
         fn index_size_reporting_matches_slow_implementations_single_column(
             (ty, vals) in generate_typed_row_vec(1..SIZE, 128, 2048),
@@ -2807,6 +2868,55 @@ pub(crate) mod test {
                     .map(move |po| RowPointer::new(false, pi, po, table.squashed_offset))
             });
         assert!(complex.eq(simple));
+    }
+
+    /// Assert that we prefer inserting into lower-`PageIndex` pages when possible,
+    /// and that `non_full_pages` is correctly updated even for pages with no var-len granules available.
+    ///
+    /// A previous incorrect implementation of [`Pages`]
+    /// used only the available number of var-len granules to decide if a page was full,
+    /// not considering that a page with zero var-len granules available could still have space for one or more rows,
+    /// provided those rows were entirely fixed-len.
+    /// This test demonstrates that we will insert an entirely fixed-len row into a non-full page with zero granules available.
+    ///
+    /// This test also demonstrates that, when searching for a page to insert into, we'll prefer the lowest-indexed page,
+    /// assuming no other reason to prefer a different page.
+    #[test]
+    fn prefer_earlier_non_full_page() {
+        let pool = PagePool::new_for_test();
+        let mut blob_store = HashMapBlobStore::default();
+        let mut table = table(ProductType::from([AlgebraicType::I32]));
+
+        let mut inserted_ptrs = Vec::new();
+        let mut next_value = 0i32;
+        while table.num_pages() < 2 {
+            let (_, row_ref) = table.insert(&pool, &mut blob_store, &product![next_value]).unwrap();
+            inserted_ptrs.push(row_ref.pointer());
+            next_value += 1;
+        }
+
+        let first_page = &table.inner.pages[PageIndex(0)];
+        let second_page = &table.inner.pages[PageIndex(1)];
+        assert!(first_page.is_full(table.row_size()));
+        assert_eq!(first_page.available_var_len_granules(), 0);
+        assert!(!second_page.is_full(table.row_size()));
+        assert!(second_page.available_var_len_granules() > 0);
+
+        let first_ptr = inserted_ptrs[0];
+        table.delete(&mut blob_store, first_ptr, |_| ());
+
+        let first_page = &table.inner.pages[PageIndex(0)];
+        assert!(!first_page.is_full(table.row_size()));
+        assert_eq!(first_page.available_var_len_granules(), 0);
+
+        let (_, row_ref) = table.insert(&pool, &mut blob_store, &product![next_value]).unwrap();
+        let new_ptr = row_ref.pointer();
+        assert_eq!(new_ptr.page_index(), first_ptr.page_index());
+        assert_eq!(new_ptr.page_offset(), first_ptr.page_offset());
+
+        let first_page = &table.inner.pages[PageIndex(0)];
+        assert!(first_page.is_full(table.row_size()));
+        assert_eq!(first_page.available_var_len_granules(), 0);
     }
 
     #[test]
