@@ -3,16 +3,7 @@ use anyhow::{bail, Context, Result};
 use std::{
     env, fs, io,
     path::{Path, PathBuf},
-    process::Command,
-    sync::OnceLock,
 };
-
-const CSHARP_PACKAGE_PROJECTS: [(&str, &str); 2] = [
-    ("BSATN.Runtime", "SpacetimeDB.BSATN.Runtime"),
-    ("Runtime", "SpacetimeDB.Runtime"),
-];
-
-static CSHARP_LOCAL_FEED: OnceLock<Result<PathBuf, String>> = OnceLock::new();
 
 pub fn materialize_project(
     lang: &str,
@@ -202,75 +193,31 @@ fn normalize_nuget_path(path: &Path) -> String {
         .to_string()
 }
 
-fn run_dotnet(mut cmd: Command, label: &str) -> Result<()> {
-    let debug = format!("{cmd:?}");
-    let output = cmd
-        .output()
-        .with_context(|| format!("failed to run {label}: {debug}"))?;
-    if output.status.success() {
-        return Ok(());
+fn ensure_csharp_package_source(path: &Path, package_id: &str) -> Result<()> {
+    let has_package = fs::read_dir(path).ok().into_iter().flatten().flatten().any(|entry| {
+        entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| name.starts_with(package_id) && name.ends_with(".nupkg"))
+    });
+    if !has_package {
+        bail!(
+            "local C# package {} not found in {}. Run: dotnet pack -c Release crates/bindings-csharp/{}",
+            package_id,
+            path.display(),
+            package_id.strip_prefix("SpacetimeDB.").unwrap_or(package_id)
+        );
     }
-    bail!(
-        "{label} failed: {debug}\n--- stderr ---\n{}\n--- stdout ---\n{}",
-        String::from_utf8_lossy(&output.stderr),
-        String::from_utf8_lossy(&output.stdout)
-    );
-}
-
-fn csharp_local_feed() -> Result<PathBuf> {
-    match CSHARP_LOCAL_FEED.get_or_init(|| build_csharp_local_feed().map_err(|err| format!("{err:#}"))) {
-        Ok(path) => Ok(path.clone()),
-        Err(err) => bail!("{err}"),
-    }
-}
-
-fn build_csharp_local_feed() -> Result<PathBuf> {
-    let workspace = workspace_root();
-    let bindings = workspace.join("crates/bindings-csharp");
-    let local_feed = workspace.join("target/llm-benchmark-csharp/local-feed");
-
-    if local_feed.exists() {
-        fs::remove_dir_all(&local_feed).with_context(|| format!("remove {}", local_feed.display()))?;
-    }
-    fs::create_dir_all(&local_feed).with_context(|| format!("create {}", local_feed.display()))?;
-
-    for (project_dir, _) in CSHARP_PACKAGE_PROJECTS {
-        let mut cmd = Command::new("dotnet");
-        cmd.arg("pack")
-            .arg("-c")
-            .arg("Release")
-            .arg("-o")
-            .arg(&local_feed)
-            .current_dir(bindings.join(project_dir));
-        run_dotnet(cmd, &format!("dotnet pack {project_dir}"))?;
-    }
-
-    let feed_files = fs::read_dir(&local_feed)
-        .with_context(|| format!("inspect {}", local_feed.display()))?
-        .flatten()
-        .filter_map(|entry| entry.file_name().into_string().ok())
-        .collect::<Vec<_>>();
-
-    for (_, package_id) in CSHARP_PACKAGE_PROJECTS {
-        let package_prefix = format!("{package_id}.");
-        if !feed_files
-            .iter()
-            .any(|name| name.starts_with(&package_prefix) && name.ends_with(".nupkg"))
-        {
-            bail!(
-                "local C# feed at {} is missing package {}. Found files: {:?}",
-                local_feed.display(),
-                package_id,
-                feed_files
-            );
-        }
-    }
-
-    Ok(local_feed)
+    Ok(())
 }
 
 fn write_csharp_nuget_config(root: &Path) -> Result<()> {
-    let local_feed = csharp_local_feed()?;
+    let workspace = workspace_root();
+    let runtime_source = workspace.join("crates/bindings-csharp/Runtime/bin/Release");
+    let bsatn_source = workspace.join("crates/bindings-csharp/BSATN.Runtime/bin/Release");
+
+    ensure_csharp_package_source(&runtime_source, "SpacetimeDB.Runtime")?;
+    ensure_csharp_package_source(&bsatn_source, "SpacetimeDB.BSATN.Runtime")?;
 
     let package_cache = root.join(".nuget/packages");
     if package_cache.exists() {
@@ -286,12 +233,16 @@ fn write_csharp_nuget_config(root: &Path) -> Result<()> {
   </config>
   <packageSources>
     <clear />
-    <add key="spacetimedb-local" value="{}" />
+    <add key="spacetimedb-runtime" value="{}" />
+    <add key="spacetimedb-bsatn-runtime" value="{}" />
     <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
   </packageSources>
   <packageSourceMapping>
-    <packageSource key="spacetimedb-local">
-      <package pattern="SpacetimeDB.*" />
+    <packageSource key="spacetimedb-runtime">
+      <package pattern="SpacetimeDB.Runtime" />
+    </packageSource>
+    <packageSource key="spacetimedb-bsatn-runtime">
+      <package pattern="SpacetimeDB.BSATN.Runtime" />
     </packageSource>
     <packageSource key="nuget.org">
       <package pattern="*" />
@@ -300,7 +251,8 @@ fn write_csharp_nuget_config(root: &Path) -> Result<()> {
 </configuration>
 "#,
         normalize_nuget_path(&package_cache),
-        normalize_nuget_path(&local_feed),
+        normalize_nuget_path(&runtime_source),
+        normalize_nuget_path(&bsatn_source),
     );
 
     fs::write(root.join("nuget.config"), nuget_config)
