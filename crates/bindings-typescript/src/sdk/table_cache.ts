@@ -37,12 +37,28 @@ export type PendingCallback = {
   cb: () => void;
 };
 
-// Strict scalar compare for index term values.
-const scalarCompare = (x: any, y: any): number => {
+const isOptionNone = (value: any): boolean =>
+  value === null || value === undefined;
+
+const compareIndexTerm = (x: any, y: any): number => {
+  if (isOptionNone(x) && isOptionNone(y)) return 0;
+  if (isOptionNone(x)) return -1;
+  if (isOptionNone(y)) return 1;
   if (x === y) return 0;
+  if (typeof x?.compareTo === 'function') return x.compareTo(y);
   // Compare booleans/numbers/bigints/strings with JS ordering.
   return x < y ? -1 : 1;
 };
+
+const indexTermEqual = (x: any, y: any): boolean =>
+  compareIndexTerm(x, y) === 0 || deepEqual(x, y);
+
+const indexKeyEqual = (
+  actual: readonly unknown[],
+  expected: readonly unknown[]
+): boolean =>
+  actual.length === expected.length &&
+  actual.every((value, i) => indexTermEqual(value, expected[i]));
 
 export type TableIndexView<
   RemoteModule extends UntypedRemoteModule,
@@ -142,7 +158,7 @@ export class TableCacheImpl<
       const prefixLen = Math.max(0, arr.length - 1);
       // Check equality over the prefix (all but the last provided element)
       for (let i = 0; i < prefixLen; i++) {
-        if (!deepEqual(key[i], arr[i])) return false;
+        if (!indexTermEqual(key[i], arr[i])) return false;
       }
 
       const lastProvided = arr[arr.length - 1];
@@ -161,14 +177,14 @@ export class TableCacheImpl<
 
         // Lower bound
         if (from.tag !== 'unbounded') {
-          const c = scalarCompare(kLast, from.value);
+          const c = compareIndexTerm(kLast, from.value);
           if (c < 0) return false;
           if (c === 0 && from.tag === 'excluded') return false;
         }
 
         // Upper bound
         if (to.tag !== 'unbounded') {
-          const c = scalarCompare(kLast, to.value);
+          const c = compareIndexTerm(kLast, to.value);
           if (c > 0) return false;
           if (c === 0 && to.tag === 'excluded') return false;
         }
@@ -178,7 +194,7 @@ export class TableCacheImpl<
         return true;
       } else {
         // Equality on the last provided element
-        if (!deepEqual(kLast, lastProvided)) return false;
+        if (!indexTermEqual(kLast, lastProvided)) return false;
         // Any remaining columns are unconstrained (prefix equality only).
         return true;
       }
@@ -200,7 +216,7 @@ export class TableCacheImpl<
           // For unique btree, caller supplies the *full* key (tuple if multi-col).
           const expected = Array.isArray(colVal) ? colVal : [colVal];
           for (const row of self.iter()) {
-            if (deepEqual(getKey(row), expected)) return row;
+            if (indexKeyEqual(getKey(row), expected)) return row;
           }
           return null;
         },
