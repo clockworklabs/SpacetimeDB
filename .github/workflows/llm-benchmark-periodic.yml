@@ -81,16 +81,19 @@ jobs:
           dotnet pack -c Release crates/bindings-csharp/Runtime
 
       - name: Set up Node.js
+        if: ${{ github.event_name != 'workflow_dispatch' || contains(inputs.languages || 'rust,csharp,typescript', 'typescript') }}
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - name: Install pnpm
+        if: ${{ github.event_name != 'workflow_dispatch' || contains(inputs.languages || 'rust,csharp,typescript', 'typescript') }}
         uses: ./.github/actions/setup-pnpm
         with:
           run_install: true
 
       - name: Build TypeScript SDK
+        if: ${{ github.event_name != 'workflow_dispatch' || contains(inputs.languages || 'rust,csharp,typescript', 'typescript') }}
         run: pnpm build
         working-directory: crates/bindings-typescript
 
