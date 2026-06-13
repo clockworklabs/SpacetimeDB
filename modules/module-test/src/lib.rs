@@ -388,6 +388,26 @@ pub fn add_player(ctx: &ReducerContext, name: String) -> Result<(), String> {
 }
 
 #[spacetimedb::reducer]
+pub fn try_update_player_name(ctx: &ReducerContext, old_name: String, new_name: String) -> Result<(), String> {
+    let player = ctx
+        .db
+        .player()
+        .name()
+        .find(&old_name)
+        .ok_or_else(|| format!("No Player row with name {old_name:?}"))?;
+
+    ctx.db
+        .player()
+        .identity()
+        .try_update(Player {
+            name: new_name,
+            ..player
+        })
+        .map(|_| ())
+        .map_err(|err| err.to_string())
+}
+
+#[spacetimedb::reducer]
 pub fn delete_player(ctx: &ReducerContext, id: u64) -> Result<(), String> {
     if ctx.db.test_e().id().delete(id) {
         Ok(())
