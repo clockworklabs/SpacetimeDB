@@ -12,6 +12,7 @@ import type {
 } from './type_builders';
 import type { Values } from './type_util';
 import type { Bool as SatsBool } from './algebraic_type_variants';
+import { Uuid } from './uuid';
 
 /**
  * Helper to get the set of table names.
@@ -623,6 +624,7 @@ type LiteralValue =
   | bigint
   | boolean
   | Identity
+  | Uuid
   | Timestamp
   | ConnectionId;
 
@@ -857,6 +859,9 @@ function literalValueToSql(value: unknown): string {
   }
   if (value instanceof Timestamp) {
     return `'${value.toISOString()}'`;
+  }
+  if (value instanceof Uuid) {
+    return value.toString();
   }
   switch (typeof value) {
     case 'number':
