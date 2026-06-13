@@ -58,6 +58,12 @@ jobs:
         run: |
           dotnet workload install wasi-experimental --skip-manifest-update --disable-parallel
 
+      - name: Pack C# runtime packages
+        if: matrix.lang == 'csharp'
+        run: |
+          dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
+          dotnet pack -c Release crates/bindings-csharp/Runtime
+
       - name: Set up Node.js
         if: matrix.lang == 'typescript'
         uses: actions/setup-node@v4

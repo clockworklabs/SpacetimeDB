@@ -159,20 +159,99 @@ fn inject_csharp(root: &Path, llm_code: &str) -> anyhow::Result<()> {
     }
     fs::write(&prog, contents).with_context(|| format!("write {}", prog.display()))?;
 
-    let base_rel = relative_to_workspace(root, "crates/bindings-csharp")?;
     let runtime_csproj = workspace_root().join("crates/bindings-csharp/Runtime/Runtime.csproj");
     if !runtime_csproj.is_file() {
         bail!("local C# Runtime not found at {}", runtime_csproj.display());
     }
-    let runtime_ref = format!("{}/Runtime/Runtime.csproj", base_rel);
-    let runtime_dir = format!("{}/Runtime", base_rel);
-    let codegen_ref = format!("{}/Codegen/Codegen.csproj", base_rel);
+    let runtime_version = read_csharp_package_version(&runtime_csproj)?;
     let csproj_path = root.join("StdbModule.csproj");
     let mut csproj = fs::read_to_string(&csproj_path).with_context(|| format!("read {}", csproj_path.display()))?;
-    csproj = csproj.replace("{SPACETIME_CSHARP_RUNTIME_DIR}", &runtime_dir);
-    csproj = csproj.replace("{SPACETIME_CSHARP_RUNTIME_REF}", &runtime_ref);
-    csproj = csproj.replace("{SPACETIME_CSHARP_CODEGEN_REF}", &codegen_ref);
+    csproj = csproj.replace("{SPACETIME_CSHARP_RUNTIME_VERSION}", &runtime_version);
     fs::write(&csproj_path, csproj).with_context(|| format!("write {}", csproj_path.display()))?;
+
+    write_csharp_nuget_config(root)?;
+    Ok(())
+}
+
+fn read_csharp_package_version(csproj_path: &Path) -> Result<String> {
+    let contents = fs::read_to_string(csproj_path).with_context(|| format!("read {}", csproj_path.display()))?;
+    let version = contents
+        .split("<Version>")
+        .nth(1)
+        .and_then(|rest| rest.split("</Version>").next())
+        .map(str::trim)
+        .filter(|version| !version.is_empty())
+        .with_context(|| format!("missing <Version> in {}", csproj_path.display()))?;
+    Ok(version.to_owned())
+}
+
+fn normalize_nuget_path(path: &Path) -> String {
+    path.display()
+        .to_string()
+        .replace('\\', "/")
+        .trim_end_matches('/')
+        .to_string()
+}
+
+fn ensure_csharp_package_source(path: &Path, package_id: &str) -> Result<()> {
+    let has_package = fs::read_dir(path).ok().into_iter().flatten().flatten().any(|entry| {
+        entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| name.starts_with(package_id) && name.ends_with(".nupkg"))
+    });
+    if !has_package {
+        bail!(
+            "local C# package {} not found in {}. Run: dotnet pack -c Release crates/bindings-csharp/{}",
+            package_id,
+            path.display(),
+            package_id.strip_prefix("SpacetimeDB.").unwrap_or(package_id)
+        );
+    }
+    Ok(())
+}
+
+fn write_csharp_nuget_config(root: &Path) -> Result<()> {
+    let workspace = workspace_root();
+    let runtime_source = workspace.join("crates/bindings-csharp/Runtime/bin/Release");
+    let bsatn_source = workspace.join("crates/bindings-csharp/BSATN.Runtime/bin/Release");
+
+    ensure_csharp_package_source(&runtime_source, "SpacetimeDB.Runtime")?;
+    ensure_csharp_package_source(&bsatn_source, "SpacetimeDB.BSATN.Runtime")?;
+
+    let package_cache = root.join(".nuget/packages");
+    let nuget_config = format!(
+        r#"<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <config>
+    <add key="globalPackagesFolder" value="{}" />
+  </config>
+  <packageSources>
+    <clear />
+    <add key="spacetimedb-runtime" value="{}" />
+    <add key="spacetimedb-bsatn-runtime" value="{}" />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+  <packageSourceMapping>
+    <packageSource key="spacetimedb-runtime">
+      <package pattern="SpacetimeDB.Runtime" />
+    </packageSource>
+    <packageSource key="spacetimedb-bsatn-runtime">
+      <package pattern="SpacetimeDB.BSATN.Runtime" />
+    </packageSource>
+    <packageSource key="nuget.org">
+      <package pattern="*" />
+    </packageSource>
+  </packageSourceMapping>
+</configuration>
+"#,
+        normalize_nuget_path(&package_cache),
+        normalize_nuget_path(&runtime_source),
+        normalize_nuget_path(&bsatn_source),
+    );
+
+    fs::write(root.join("nuget.config"), nuget_config)
+        .with_context(|| format!("write {}", root.join("nuget.config").display()))?;
     Ok(())
 }
 
