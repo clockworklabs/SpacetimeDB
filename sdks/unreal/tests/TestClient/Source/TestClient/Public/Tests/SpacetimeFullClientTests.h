@@ -132,3 +132,4 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FOverlappingSubscriptionsTest, "SpacetimeDB.Tes
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FInsertCallUuidV4Test, "SpacetimeDB.TestClient.InsertCallUuidV4Test", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FInsertCallUuidV7Test, "SpacetimeDB.TestClient.InsertCallUuidV7Test", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlueprintQueryBuilderBasicFlowTest, "SpacetimeDB.TestClient.BlueprintQueryBuilderBasicFlowTest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

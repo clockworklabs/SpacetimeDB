@@ -102,6 +102,109 @@ static FString NormalizeDuration(const FSpacetimeDBTimeDuration &Dur)
 	const double Seconds = static_cast<double>(Dur.GetMicroseconds()) / 1'000'000.0;
 	return TrimFloat(Seconds);
 }
+
+static void CompileTypedQueryBuilderSmoke(UDbConnection* Conn)
+{
+	Conn->SubscriptionBuilder()
+		->AddQuery([](const FQueryBuilder& Q)
+		{
+			return Q.From.OneU8().Where([](const FOneU8Cols& Cols)
+			{
+				return Cols.N.Eq(static_cast<uint8>(1));
+			});
+		})
+		->AddQuery([](const FQueryBuilder& Q)
+		{
+			return Q.From.OneString().Where([](const FOneStringCols& Cols)
+			{
+				return Cols.S.Eq(TEXT("typed-query-builder"));
+			});
+		})
+		->AddQuery([](const FQueryBuilder& Q)
+		{
+			return Q.From.OneTimestamp().Where([](const FOneTimestampCols& Cols)
+			{
+				return Cols.T.Gte(FSpacetimeDBTimestamp(1));
+			});
+		})
+		->AddQuery([](const FQueryBuilder& Q)
+		{
+			return Q.From.PkU32().LeftSemijoin(Q.From.UniqueU32(), [](const FPkU32IxCols& Left, const FUniqueU32IxCols& Right)
+			{
+				return Left.N.Eq(Right.N);
+			});
+		})
+		->AddQuery([](const FQueryBuilder& Q)
+		{
+			return Q.From.UniqueU32().Where([](const FUniqueU32Cols&, const FUniqueU32IxCols& Ix)
+			{
+				return Ix.N.Eq(static_cast<uint32>(7));
+			});
+		});
+}
+
+bool FBlueprintQueryBuilderBasicFlowTest::RunTest(const FString& Parameters)
+{
+	FOneU8Query Query = UQueryBuilderBlueprintLibrary::FromOneU8();
+	TestEqual(TEXT("blueprint one_u_8 base sql"), Query.Sql, TEXT("SELECT * FROM \"one_u_8\""));
+
+	const FBlueprintPredicate Predicate = UQueryBuilderBlueprintLibrary::UInt8Equal(
+		UQueryBuilderBlueprintLibrary::OneU8N(Query),
+		static_cast<uint8>(1));
+	Query = UQueryBuilderBlueprintLibrary::OneU8Where(Query, Predicate);
+	TestEqual(
+		TEXT("blueprint one_u_8 filtered sql"),
+		Query.Sql,
+		TEXT("SELECT * FROM \"one_u_8\" WHERE (\"one_u_8\".\"n\" = 1)")
+	);
+
+	USubscriptionBuilder* Builder = NewObject<USubscriptionBuilder>();
+	USubscriptionHandle* Handle = Builder->AddOneU8Query(Query)->Subscribe();
+	TestNotNull(TEXT("blueprint one_u_8 handle"), Handle);
+	TestEqual(TEXT("blueprint one_u_8 builder sql count"), Handle->GetQuerySqls().Num(), 1);
+	TestEqual(TEXT("blueprint one_u_8 builder sql"), Handle->GetQuerySqls()[0], Query.Sql);
+
+	const FString TypedDoubleSql = FString(
+		UTF8_TO_TCHAR(
+			FQueryBuilder()
+				.From.OneF64()
+				.Where([](const FOneF64Cols& Cols)
+				{
+					return Cols.F.Eq(0.123456789);
+				})
+				.into_sql()
+				.c_str()));
+	TestEqual(
+		TEXT("typed one_f_64 precise sql"),
+		TypedDoubleSql,
+		TEXT("SELECT * FROM \"one_f_64\" WHERE (\"one_f_64\".\"f\" = 0.123456789)")
+	);
+
+	FOneF64Query DoubleQuery = UQueryBuilderBlueprintLibrary::FromOneF64();
+	DoubleQuery = UQueryBuilderBlueprintLibrary::OneF64Where(
+		DoubleQuery,
+		UQueryBuilderBlueprintLibrary::DoubleEqual(
+			UQueryBuilderBlueprintLibrary::OneF64F(DoubleQuery),
+			0.123456789));
+	TestEqual(
+		TEXT("blueprint one_f_64 precise sql"),
+		DoubleQuery.Sql,
+		TEXT("SELECT * FROM \"one_f_64\" WHERE (\"one_f_64\".\"f\" = 0.123456789)")
+	);
+
+	FOneStringQuery StringQuery = UQueryBuilderBlueprintLibrary::FromOneString();
+	StringQuery = UQueryBuilderBlueprintLibrary::OneStringWhere(
+		StringQuery,
+		UQueryBuilderBlueprintLibrary::StringEqual(
+			UQueryBuilderBlueprintLibrary::OneStringS(StringQuery),
+			TEXT("reuse-check")));
+	USubscriptionHandle* SecondHandle = Builder->AddOneStringQuery(StringQuery)->Subscribe();
+	TestNotNull(TEXT("second subscribe handle"), SecondHandle);
+	TestEqual(TEXT("second subscribe builder sql count"), SecondHandle->GetQuerySqls().Num(), 1);
+	TestEqual(TEXT("second subscribe builder sql"), SecondHandle->GetQuerySqls()[0], StringQuery.Sql);
+
+	return true;
+}
 //
 
 bool FInsertPrimitiveTest::RunTest(const FString &Parameters)
