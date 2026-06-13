@@ -15,6 +15,7 @@ pub fn build(
     lint_dir: Option<&Path>,
     build_debug: bool,
     features: Option<&std::ffi::OsString>,
+    native_aot: bool,
 ) -> anyhow::Result<(PathBuf, &'static str)> {
     let lang = util::detect_module_language(project_path)?;
     if features.is_some() && lang != ModuleLanguage::Rust {
@@ -22,7 +23,7 @@ pub fn build(
     }
     let output_path = match lang {
         ModuleLanguage::Rust => build_rust(project_path, features, lint_dir, build_debug),
-        ModuleLanguage::Csharp => build_csharp(project_path, build_debug),
+        ModuleLanguage::Csharp => build_csharp(project_path, build_debug, native_aot),
         ModuleLanguage::Javascript => build_javascript(project_path, build_debug),
         ModuleLanguage::Cpp => build_cpp(project_path, build_debug),
     }?;

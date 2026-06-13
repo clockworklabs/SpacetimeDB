@@ -10,6 +10,11 @@
     <NoWarn>$(NoWarn);CS0067</NoWarn> 
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
+    <TargetFramework>net10.0</TargetFramework>
+    <DefineConstants>$(DefineConstants);EXPERIMENTAL_WASM_AOT</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="../../../SpacetimeDB.ClientSDK.csproj" />
   </ItemGroup>
