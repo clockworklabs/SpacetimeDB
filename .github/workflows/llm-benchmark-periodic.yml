@@ -74,12 +74,6 @@ jobs:
         run: |
           dotnet workload install wasi-experimental --skip-manifest-update --disable-parallel
 
-      - name: Pack C# runtime packages
-        if: ${{ github.event_name != 'workflow_dispatch' || contains(inputs.languages || 'rust,csharp,typescript', 'csharp') }}
-        run: |
-          dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
-          dotnet pack -c Release crates/bindings-csharp/Runtime
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
