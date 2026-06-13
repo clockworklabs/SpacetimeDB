@@ -12,7 +12,7 @@ The SpacetimeDB client for C# contains all the tools you need to build native cl
 If you are **writing a SpacetimeDB module** (tables and reducers), use these patterns:
 
 - **Module class**: `public static partial class Module`
-- **Tables**: `[SpacetimeDB.Table(Accessor = "table_name", Public = true)]` on `partial struct` (or `partial class`) — `Accessor` controls generated API names, and canonical SQL names are derived unless `Name` is explicitly set
+- **Tables**: `[SpacetimeDB.Table(Accessor = "TableName", Public = true)]` on `partial struct` (or `partial class`) — `Accessor` controls generated API names, and canonical SQL names are derived unless `Name` is explicitly set
 - **Primary key**: Define `[SpacetimeDB.PrimaryKey]` on one column when you need key-based lookups or updates
 - **Reducers**: `[SpacetimeDB.Reducer]` on static methods with `ReducerContext ctx` as first parameter
 - **Required**: `using SpacetimeDB;` and `partial` on all table structs and the Module class
