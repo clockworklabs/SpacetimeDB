@@ -279,11 +279,7 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
         eprintln!("[warn] failed to upload task catalog: {e}");
     }
 
-    let RuntimeInit {
-        runtime,
-        provider: llm_provider,
-        guard,
-    } = initialize_runtime_and_provider(config.hash_only, config.goldens_only)?;
+    let RuntimeInit { runtime, guard } = initialize_runtime(config.hash_only)?;
 
     config.host = guard.as_ref().map(|g| g.host_url.clone());
 
@@ -309,12 +305,7 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
         return Ok(());
     }
 
-    if !config.goldens_only && !config.hash_only {
-        let rt = runtime.as_ref().expect("failed to initialize runtime for preflight");
-        let provider = llm_provider.as_ref().expect("llm provider required for preflight");
-        let routes = filter_routes(&config);
-        preflight_llm_routes(rt, provider.as_ref(), &routes, &modes)?;
-
+    let llm_provider = if !config.goldens_only && !config.hash_only {
         let rt = runtime.as_ref().expect("failed to initialize runtime for goldens");
         rt.block_on(ensure_goldens_built_once(
             config.host.clone(),
@@ -322,7 +313,15 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
             config.lang,
             selectors_ref,
         ))?;
-    }
+
+        let provider = make_provider_from_env()?;
+        let rt = runtime.as_ref().expect("failed to initialize runtime for preflight");
+        let routes = filter_routes(&config);
+        preflight_llm_routes(rt, provider.as_ref(), &routes, &modes)?;
+        Some(provider)
+    } else {
+        None
+    };
 
     let mut all_outcomes: Vec<RunOutcome> = Vec::new();
 
@@ -799,15 +798,13 @@ fn categories_to_set(v: Option<Vec<String>>) -> Option<HashSet<String>> {
 
 pub struct RuntimeInit {
     pub runtime: Option<Runtime>,
-    pub provider: Option<Arc<dyn LlmProvider>>,
     pub guard: Option<SpacetimeDbGuard>,
 }
 
-fn initialize_runtime_and_provider(hash_only: bool, goldens_only: bool) -> Result<RuntimeInit> {
+fn initialize_runtime(hash_only: bool) -> Result<RuntimeInit> {
     if hash_only {
         return Ok(RuntimeInit {
             runtime: None,
-            provider: None,
             guard: None,
         });
     }
@@ -817,18 +814,8 @@ fn initialize_runtime_and_provider(hash_only: bool, goldens_only: bool) -> Resul
 
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
 
-    if goldens_only {
-        return Ok(RuntimeInit {
-            runtime: Some(runtime),
-            provider: None,
-            guard: Some(spacetime),
-        });
-    }
-
-    let llm_provider = make_provider_from_env()?;
     Ok(RuntimeInit {
         runtime: Some(runtime),
-        provider: Some(llm_provider),
         guard: Some(spacetime),
     })
 }
