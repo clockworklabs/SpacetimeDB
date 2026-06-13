@@ -313,12 +313,30 @@ pub fn from_hex_pad<R: hex::FromHex<Error = hex::FromHexError>, T: AsRef<[u8]>>(
     let hex = hex.as_ref();
     let hex = if hex.starts_with(b"0x") {
         &hex[2..]
-    } else if hex.starts_with(b"X'") {
-        &hex[2..hex.len()]
+    } else if hex.starts_with(b"\\x") {
+        &hex[2..]
+    } else if hex.starts_with(b"X'") && hex.ends_with(b"'") {
+        &hex[2..hex.len() - 1]
     } else {
         hex
     };
     hex::FromHex::from_hex(hex)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::from_hex_pad;
+
+    #[test]
+    fn from_hex_pad_accepts_pg_escape_hex() {
+        assert_eq!(from_hex_pad::<Vec<u8>, _>(r"\xAABBCCDD").unwrap(), [0xAA, 0xBB, 0xCC, 0xDD]);
+    }
+
+    #[test]
+    fn from_hex_pad_accepts_prefixed_and_delimited_hex() {
+        assert_eq!(from_hex_pad::<Vec<u8>, _>("0xAABBCCDD").unwrap(), [0xAA, 0xBB, 0xCC, 0xDD]);
+        assert_eq!(from_hex_pad::<Vec<u8>, _>("X'AABBCCDD'").unwrap(), [0xAA, 0xBB, 0xCC, 0xDD]);
+    }
 }
 
 /// Returns a resolved `AlgebraicType` (containing no `AlgebraicTypeRefs`) for a given `SpacetimeType`,
