@@ -334,6 +334,9 @@ impl DotnetPublisher {
             // when running multiple dotnet builds in parallel.
             .env("MSBUILDDISABLENODEREUSE", "1")
             .env("DOTNET_CLI_USE_MSBUILD_SERVER", "0")
+            // The workflow installs the WASI workload before running benchmarks.
+            // Avoid `dotnet workload list`, which can segfault on the CI runner.
+            .env("SPACETIMEDB_SKIP_CSHARP_WORKLOAD_CHECK", "1")
     }
 }
 
