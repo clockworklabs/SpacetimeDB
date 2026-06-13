@@ -9,10 +9,18 @@ fn parse_major_version(version: &str) -> Option<u8> {
     version.split('.').next()?.parse::<u8>().ok()
 }
 
-fn skip_workload_check() -> bool {
-    env::var("SPACETIMEDB_SKIP_CSHARP_WORKLOAD_CHECK")
+fn env_flag(name: &str) -> bool {
+    env::var(name)
         .ok()
         .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+}
+
+fn skip_workload_check() -> bool {
+    env_flag("SPACETIMEDB_SKIP_CSHARP_WORKLOAD_CHECK")
+}
+
+fn stable_dotnet_publish() -> bool {
+    env_flag("SPACETIMEDB_CSHARP_STABLE_PUBLISH")
 }
 
 pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Result<PathBuf> {
@@ -77,8 +85,21 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
         )
     })?;
 
-    // run dotnet publish using cmd macro
-    dotnet!("publish", "-c", config_name, "-v", "quiet").run()?;
+    let mut publish_args = vec!["publish", "-c", config_name, "-v"];
+    if stable_dotnet_publish() {
+        publish_args.extend([
+            "minimal",
+            "--disable-build-servers",
+            "-m:1",
+            "-p:BuildInParallel=false",
+            "-p:RestoreDisableParallel=true",
+            "-p:UseSharedCompilation=false",
+        ]);
+    } else {
+        publish_args.push("quiet");
+    }
+
+    duct::cmd("dotnet", publish_args).dir(project_path).run()?;
 
     // check if file exists
     let subdir = if std::env::var_os("EXPERIMENTAL_WASM_AOT").is_some_and(|v| v == "1") {
