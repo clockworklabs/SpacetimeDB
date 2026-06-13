@@ -38,6 +38,7 @@ pub fn get_subcommands() -> Vec<Command> {
         server::cli(),
         subscribe::cli(),
         start::cli(),
+        auth::cli(),
         subcommands::version::cli(),
     ]
 }
@@ -67,6 +68,7 @@ pub async fn exec_subcommand(
         "start" => return start::exec(config, paths, args).await,
         "login" => login::exec(config, args).await,
         "logout" => logout::exec(config, args).await,
+        "auth" => auth::exec(config, paths, args).await,
         "version" => return subcommands::version::exec(paths, root_dir, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {unknown}")),
     }
