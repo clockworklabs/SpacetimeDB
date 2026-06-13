@@ -92,6 +92,7 @@ pub struct NodeStatus {
     strum::Display,
     strum::EnumString,
 )]
+#[sats(allow_discriminants)]
 #[repr(i32)]
 pub enum HostType {
     #[default]
