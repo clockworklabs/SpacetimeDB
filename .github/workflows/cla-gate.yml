@@ -92,16 +92,15 @@ jobs:
             }
 
             const status = claStatus(claStatusArgs);
-            const state = status.state;
 
-            if (!state) {
+            if (!status.state) {
               core.info(`No CLA Gate status to publish for ${targetSha}`);
               return;
             }
 
             await postStatus({
               sha: targetSha,
-              state,
+              state: status.state,
               description: status.description || undefined,
               targetUrl: status.target_url || undefined,
             });
