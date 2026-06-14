@@ -43,7 +43,7 @@ jobs:
             const { execFileSync } = require("child_process");
 
             function claStatus(args) {
-              const output = execFileSync("cargo", ["ci", "cla", "status", ...args], {
+              const output = execFileSync("cargo", ["ci", "cla-assistant", "status", ...args], {
                 encoding: "utf8",
                 env: process.env,
               });

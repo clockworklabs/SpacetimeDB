@@ -14,10 +14,7 @@ const CLA_CONTEXT: &str = "license/cla";
 pub(crate) enum ClaAssistantCmd {
     /// Retries CLA Assistant if `license/cla` is the only remaining PR blocker.
     Retry(RetryArgs),
-}
 
-#[derive(Subcommand)]
-pub(crate) enum ClaCmd {
     /// Returns the `license/cla` status for a pull request or commit SHA.
     Status(StatusArgs),
 }
@@ -57,12 +54,7 @@ pub(crate) struct StatusArgs {
 pub(crate) fn run(cmd: ClaAssistantCmd) -> Result<()> {
     match cmd {
         ClaAssistantCmd::Retry(args) => retry(args),
-    }
-}
-
-pub(crate) fn run_cla(cmd: ClaCmd) -> Result<()> {
-    match cmd {
-        ClaCmd::Status(args) => status(args),
+        ClaAssistantCmd::Status(args) => status(args),
     }
 }
 

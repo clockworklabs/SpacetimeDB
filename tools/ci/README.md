@@ -278,28 +278,6 @@ Usage: retry [OPTIONS] --pr-number <PR_NUMBER>
 - `--repo <REPO>`: Repository in `owner/name` form. Defaults to GITHUB_REPOSITORY
 - `--help`: Print help
 
-#### `help`
-
-**Usage:**
-```bash
-Usage: help [COMMAND]...
-```
-
-**Options:**
-
-- `subcommand <COMMAND>`: Print help for the subcommand(s)
-
-### `cla`
-
-**Usage:**
-```bash
-Usage: cla <COMMAND>
-```
-
-**Options:**
-
-- `--help`: Print help
-
 #### `status`
 
 **Usage:**
