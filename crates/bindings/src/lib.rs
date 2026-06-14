@@ -1442,7 +1442,7 @@ impl ProcedureContext {
 }
 
 /// A handle on a database with a particular table schema.
-#[deprecated(note = "Use the capability based traits (CtxDbRead, CtxDbWrite, CtxWithSender) instead!")]
+#[deprecated(note = "Use the capability based traits (CtxDbRead, CtxDbWrite) instead!")]
 pub trait DbContext {
     /// A view into the tables of a database.
     ///
