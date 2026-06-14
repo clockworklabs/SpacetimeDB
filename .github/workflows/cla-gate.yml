@@ -65,6 +65,9 @@ jobs:
             let result;
 
             if (context.eventName === "merge_group") {
+              // Merge groups have no pull_request payload. Publish directly on
+              // the synthetic queue SHA instead of waiting for CLA Assistant to
+              // report on it.
               targetSha = process.env.GITHUB_SHA;
               result = {
                 state: "success",
