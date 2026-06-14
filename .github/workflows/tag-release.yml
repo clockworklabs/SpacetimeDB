@@ -31,7 +31,6 @@ jobs:
     if: always()
     steps:
       - name: Send Discord notification
-        env:
         run: |
           set -euo pipefail
 
