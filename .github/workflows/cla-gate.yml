@@ -77,7 +77,9 @@ jobs:
                 description: "Merge group entry; CLA already checked before queue",
               });
               return;
-            } else if (context.eventName === "status") {
+            }
+
+            if (context.eventName === "status") {
               targetSha = context.payload.sha;
               claStatusArgs = ["--sha", targetSha];
             } else if (context.eventName === "pull_request_target") {
