@@ -97,7 +97,7 @@ const tablesSchema = __schema({
     },
     Person2Row
   ),
-  person_at_level_2: __table(
+  personAtLevel2: __table(
     {
       name: 'Level2Person',
       indexes: [],
@@ -117,23 +117,98 @@ const reducersSchema = __reducers(
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
 const proceduresSchema = __procedures();
 
+type __SchemaWithTableAccessorAliases = Omit<
+  typeof tablesSchema.schemaType,
+  'tables'
+> & {
+  tables: typeof tablesSchema.schemaType.tables & {
+    /** @deprecated Use `player1` instead. This alias will be removed in the next major version. */
+    readonly player_1: Omit<
+      (typeof tablesSchema.schemaType.tables)['player1'],
+      'accessorName'
+    > & { readonly accessorName: 'player_1' };
+    /** @deprecated Use `person2` instead. This alias will be removed in the next major version. */
+    readonly person_2: Omit<
+      (typeof tablesSchema.schemaType.tables)['person2'],
+      'accessorName'
+    > & { readonly accessorName: 'person_2' };
+    /** @deprecated Use `personAtLevel2` instead. This alias will be removed in the next major version. */
+    readonly person_at_level_2: Omit<
+      (typeof tablesSchema.schemaType.tables)['personAtLevel2'],
+      'accessorName'
+    > & { readonly accessorName: 'person_at_level_2' };
+  };
+};
+
 /** The remote SpacetimeDB module schema, both runtime and type information. */
 const REMOTE_MODULE = {
   versionInfo: {
     cliVersion: '2.5.0' as const,
   },
-  tables: tablesSchema.schemaType.tables,
+  tables: tablesSchema.schemaType
+    .tables as __SchemaWithTableAccessorAliases['tables'],
   reducers: reducersSchema.reducersType.reducers,
   ...proceduresSchema,
 } satisfies __RemoteModule<
-  typeof tablesSchema.schemaType,
+  __SchemaWithTableAccessorAliases,
   typeof reducersSchema.reducersType,
   typeof proceduresSchema
 >;
 
+const tableAccessorAliases = {
+  player_1: 'player1',
+  person_2: 'person2',
+  person_at_level_2: 'personAtLevel2',
+} as const;
+
+function __withTableAccessorAliases<T extends object>(
+  target: T,
+  freeze = false
+): T {
+  const out = Object.create(Object.getPrototypeOf(target)) as T &
+    Record<string, unknown>;
+  Object.defineProperties(out, Object.getOwnPropertyDescriptors(target));
+  for (const [deprecatedAccessor, targetAccessor] of Object.entries(
+    tableAccessorAliases
+  )) {
+    if (deprecatedAccessor in out) {
+      continue;
+    }
+    Object.defineProperty(out, deprecatedAccessor, {
+      enumerable: true,
+      configurable: false,
+      get: () => out[targetAccessor],
+    });
+  }
+  return freeze ? Object.freeze(out) : out;
+}
+
+type __DbViewBase = __DbConnectionImpl<typeof REMOTE_MODULE>['db'];
+export type DbView = __DbViewBase & {
+  /** @deprecated Use `player1` instead. This alias will be removed in the next major version. */
+  readonly player_1: __DbViewBase['player1'];
+  /** @deprecated Use `person2` instead. This alias will be removed in the next major version. */
+  readonly person_2: __DbViewBase['person2'];
+  /** @deprecated Use `personAtLevel2` instead. This alias will be removed in the next major version. */
+  readonly person_at_level_2: __DbViewBase['personAtLevel2'];
+};
+
+type __TablesBase = __QueryBuilder<typeof tablesSchema.schemaType>;
+export type Tables = __TablesBase & {
+  /** @deprecated Use `player1` instead. This alias will be removed in the next major version. */
+  readonly player_1: __TablesBase['player1'];
+  /** @deprecated Use `person2` instead. This alias will be removed in the next major version. */
+  readonly person_2: __TablesBase['person2'];
+  /** @deprecated Use `personAtLevel2` instead. This alias will be removed in the next major version. */
+  readonly person_at_level_2: __TablesBase['personAtLevel2'];
+};
+
 /** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */
-export const tables: __QueryBuilder<typeof tablesSchema.schemaType> =
-  __makeQueryBuilder(tablesSchema.schemaType);
+const tablesBase: __TablesBase = __makeQueryBuilder(tablesSchema.schemaType);
+export const tables: Tables = __withTableAccessorAliases(
+  tablesBase,
+  true
+) as Tables;
 
 /** The reducers available in this remote SpacetimeDB module. */
 export const reducers = __convertToAccessorMap(
@@ -144,17 +219,25 @@ export const reducers = __convertToAccessorMap(
 export const procedures = __convertToAccessorMap(proceduresSchema.procedures);
 
 /** The context type returned in callbacks for all possible events. */
-export type EventContext = __EventContextInterface<typeof REMOTE_MODULE>;
+export type EventContext = Omit<
+  __EventContextInterface<typeof REMOTE_MODULE>,
+  'db'
+> & { db: DbView };
 /** The context type returned in callbacks for reducer events. */
-export type ReducerEventContext = __ReducerEventContextInterface<
-  typeof REMOTE_MODULE
->;
+export type ReducerEventContext = Omit<
+  __ReducerEventContextInterface<typeof REMOTE_MODULE>,
+  'db'
+> & { db: DbView };
 /** The context type returned in callbacks for subscription events. */
-export type SubscriptionEventContext = __SubscriptionEventContextInterface<
-  typeof REMOTE_MODULE
->;
+export type SubscriptionEventContext = Omit<
+  __SubscriptionEventContextInterface<typeof REMOTE_MODULE>,
+  'db'
+> & { db: DbView };
 /** The context type returned in callbacks for error events. */
-export type ErrorContext = __ErrorContextInterface<typeof REMOTE_MODULE>;
+export type ErrorContext = Omit<
+  __ErrorContextInterface<typeof REMOTE_MODULE>,
+  'db'
+> & { db: DbView };
 /** The subscription handle type to manage active subscriptions created from a {@link SubscriptionBuilder}. */
 export type SubscriptionHandle = __SubscriptionHandleImpl<typeof REMOTE_MODULE>;
 
@@ -168,6 +251,13 @@ export class DbConnectionBuilder extends __DbConnectionBuilder<DbConnection> {}
 
 /** The typed database connection to manage connections to the remote SpacetimeDB instance. This class has type information specific to the generated module. */
 export class DbConnection extends __DbConnectionImpl<typeof REMOTE_MODULE> {
+  declare db: DbView;
+
+  constructor(config: __DbConnectionConfig<typeof REMOTE_MODULE>) {
+    super(config);
+    this.db = __withTableAccessorAliases(this.db) as DbView;
+  }
+
   /** Creates a new {@link DbConnectionBuilder} to configure and connect to the remote SpacetimeDB instance. */
   static builder = (): DbConnectionBuilder => {
     return new DbConnectionBuilder(
