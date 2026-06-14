@@ -1,0 +1,106 @@
+name: CLA Gate
+
+# This workflow publishes a repository-owned commit status named `CLA Gate`.
+# Make `CLA Gate` required instead of requiring CLA Assistant's raw `license/cla`
+# status directly. That lets merge queue entries pass without waiting for CLA
+# Assistant to report on the synthetic merge-group SHA, while pull requests still
+# mirror the real CLA Assistant result.
+#
+# SECURITY: This workflow uses pull_request_target so it can publish commit
+# statuses on external PRs. It must never check out, build, or execute PR code.
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+  status:
+  merge_group:
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+jobs:
+  publish-cla-gate-status:
+    name: CLA status
+    runs-on: ubuntu-latest
+    if: github.event_name != 'status' || github.event.context == 'license/cla'
+
+    steps:
+      - name: Check out trusted base code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - uses: dsherret/rust-toolchain-file@v1
+
+      - name: Publish CLA Gate status
+        uses: actions/github-script@v7
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          script: |
+            const { execFileSync } = require("child_process");
+
+            function claStatus(args) {
+              const output = execFileSync("cargo", ["ci", "cla-assistant", "status", ...args], {
+                encoding: "utf8",
+                env: process.env,
+              });
+              return JSON.parse(output);
+            }
+
+            async function postStatus({ sha, state, description, targetUrl }) {
+              const statusContext = "CLA Gate";
+              core.info(
+                `Publishing ${statusContext}=${state} for ${sha}: ${description}`
+              );
+
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha,
+                state,
+                description,
+                context: statusContext,
+                target_url: targetUrl,
+              });
+            }
+
+            let targetSha;
+            let claStatusArgs;
+
+            if (context.eventName === "merge_group") {
+              await postStatus({
+                sha: process.env.GITHUB_SHA,
+                state: "success",
+                description: "Merge group entry; CLA already checked before queue",
+              });
+              return;
+            }
+
+            if (context.eventName === "status") {
+              targetSha = context.payload.sha;
+              claStatusArgs = ["--sha", targetSha];
+            } else if (context.eventName === "pull_request_target") {
+              const pr = context.payload.pull_request;
+              targetSha = pr.head.sha;
+              claStatusArgs = ["--pr", String(pr.number)];
+            } else {
+              core.setFailed(`Unsupported event type: ${context.eventName}`);
+              return;
+            }
+
+            const status = claStatus(claStatusArgs);
+
+            if (!status.state) {
+              core.info(`No CLA Gate status to publish for ${targetSha}`);
+              return;
+            }
+
+            await postStatus({
+              sha: targetSha,
+              state: status.state,
+              description: status.description || undefined,
+              targetUrl: status.target_url || undefined,
+            });
