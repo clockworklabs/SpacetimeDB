@@ -44,4 +44,4 @@ jobs:
           message="SpacetimeDB GitHub release published: [${title}](<${RELEASE_URL}>)"
 
           data="$(jq --null-input --arg msg "$message" '.content=$msg')"
-          curl -X POST -H 'Content-Type: application/json' -d "$data" "${DISCORD_WEBHOOK_RELEASE_CHANNEL_URL}"
+          curl -X POST -H 'Content-Type: application/json' -d "$data" "${{ secrets.DISCORD_WEBHOOK_RELEASE_CHANNEL_URL }}"
