@@ -32,11 +32,6 @@ jobs:
     steps:
       - name: Send Discord notification
         env:
-          RELEASE_NAME: ${{ github.event.release.name }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-          RELEASE_URL: ${{ github.event.release.html_url }}
-          RELEASE_AUTHOR: ${{ github.event.release.author.login }}
-          RETAG_RESULT: ${{ needs.on-release.result }}
         run: |
           set -euo pipefail
 
