@@ -90,24 +90,7 @@ jobs:
             }
 
             const status = claStatus(claStatusArgs);
-            let state;
-            let description;
-
-            switch (status.state) {
-              case "success":
-                state = "success";
-                description = "CLA Assistant passed";
-                break;
-              case "failure":
-              case "error":
-                state = "failure";
-                description = "CLA Assistant failed";
-                break;
-              case "pending":
-                state = "pending";
-                description = "Waiting for CLA Assistant";
-                break;
-            }
+            const state = status.state;
 
             if (!state) {
               core.info(`No CLA Gate status to publish for ${targetSha}`);
@@ -117,6 +100,6 @@ jobs:
             await postStatus({
               sha: targetSha,
               state,
-              description,
+              description: status.description || undefined,
               targetUrl: status.target_url || undefined,
             });

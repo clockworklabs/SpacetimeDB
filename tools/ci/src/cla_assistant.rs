@@ -92,6 +92,7 @@ fn status(args: StatusArgs) -> Result<()> {
         |status| ClaStatusOutput {
             sha: sha.clone(),
             state: Some(status.state.clone()),
+            description: status.description.clone(),
             target_url: status.target_url.clone(),
         },
     );
@@ -228,6 +229,7 @@ struct CombinedStatusResponse {
 struct CommitStatus {
     context: String,
     state: String,
+    description: Option<String>,
     target_url: Option<String>,
 }
 
@@ -235,6 +237,7 @@ struct CommitStatus {
 struct ClaStatusOutput {
     sha: String,
     state: Option<String>,
+    description: Option<String>,
     target_url: Option<String>,
 }
 
@@ -243,6 +246,7 @@ impl ClaStatusOutput {
         Self {
             sha,
             state: None,
+            description: None,
             target_url: None,
         }
     }
