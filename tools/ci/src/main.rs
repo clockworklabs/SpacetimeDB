@@ -373,6 +373,11 @@ enum CiCmd {
         #[command(subcommand)]
         cmd: cla_assistant::ClaAssistantCmd,
     },
+    /// Checks CLA status.
+    Cla {
+        #[command(subcommand)]
+        cmd: cla_assistant::ClaCmd,
+    },
 }
 
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
@@ -780,6 +785,10 @@ fn main() -> Result<()> {
 
         Some(CiCmd::ClaAssistant { cmd }) => {
             cla_assistant::run(cmd)?;
+        }
+
+        Some(CiCmd::Cla { cmd }) => {
+            cla_assistant::run_cla(cmd)?;
         }
 
         None => run_all_clap_subcommands(&cli.skip)?,

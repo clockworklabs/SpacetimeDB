@@ -27,11 +27,29 @@ jobs:
     if: github.event_name != 'status' || github.event.context == 'license/cla'
 
     steps:
+      - name: Check out trusted base code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - uses: dsherret/rust-toolchain-file@v1
+
       - name: Publish CLA Gate status
         uses: actions/github-script@v7
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         with:
           script: |
+            const { execFileSync } = require("child_process");
             const statusContext = "CLA Gate";
+
+            function claStatus(args) {
+              const output = execFileSync("cargo", ["ci", "cla", "status", ...args], {
+                encoding: "utf8",
+                env: process.env,
+              });
+              return JSON.parse(output);
+            }
 
             function claGateState(claState) {
               switch (claState) {
@@ -66,25 +84,15 @@ jobs:
               };
             } else if (context.eventName === "status") {
               targetSha = context.payload.sha;
-              targetUrl = context.payload.target_url || undefined;
-              result = claGateState(context.payload.state);
+              const status = claStatus(["--sha", targetSha]);
+              targetUrl = status.target_url || undefined;
+              result = claGateState(status.state);
             } else {
               const pr = context.payload.pull_request;
               targetSha = pr.head.sha;
-
-              const { data: combinedStatus } =
-                await github.rest.repos.getCombinedStatusForRef({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  ref: targetSha,
-                });
-
-              const claStatus = combinedStatus.statuses.find(
-                (status) => status.context === "license/cla"
-              );
-
-              targetUrl = claStatus?.target_url || undefined;
-              result = claGateState(claStatus?.state);
+              const status = claStatus(["--pr", String(pr.number)]);
+              targetUrl = status.target_url || undefined;
+              result = claGateState(status.state);
             }
 
             if (!result) {
