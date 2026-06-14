@@ -11,7 +11,7 @@ name: CLA Gate
 
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, reopened]
   status:
   merge_group:
 
@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   publish-cla-gate-status:
-    name: Publish CLA Gate status
+    name: CLA status
     runs-on: ubuntu-latest
     if: github.event_name != 'status' || github.event.context == 'license/cla'
 
@@ -51,11 +51,6 @@ jobs:
                   return {
                     state: "pending",
                     description: "Waiting for CLA Assistant",
-                  };
-                default:
-                  return {
-                    state: "pending",
-                    description: "Waiting for CLA Assistant to report",
                   };
               }
             }
@@ -91,6 +86,11 @@ jobs:
 
               targetUrl = claStatus?.target_url || undefined;
               result = claGateState(claStatus?.state);
+            }
+
+            if (!result) {
+              core.info(`No ${statusContext} status to publish for ${targetSha}`);
+              return;
             }
 
             core.info(
