@@ -1537,35 +1537,35 @@ impl Local {
 /// including views, reducers and even procedures and http handlers through [TxContext].
 /// Useful when trying to encapsulate logic in reusable parts.
 pub trait CtxDbRead {
-    fn db(&self) -> &LocalReadOnly;
+    fn db_read_only(&self) -> &LocalReadOnly;
 }
 
 impl CtxDbRead for TxContext {
-    fn db(&self) -> &LocalReadOnly {
+    fn db_read_only(&self) -> &LocalReadOnly {
         &LocalReadOnly {}
     }
 }
 
 impl CtxDbRead for ReducerContext {
-    fn db(&self) -> &LocalReadOnly {
+    fn db_read_only(&self) -> &LocalReadOnly {
         &LocalReadOnly {}
     }
 }
 
 impl CtxDbRead for ViewContext {
-    fn db(&self) -> &LocalReadOnly {
+    fn db_read_only(&self) -> &LocalReadOnly {
         &LocalReadOnly {}
     }
 }
 
 impl CtxDbRead for AnonymousViewContext {
-    fn db(&self) -> &LocalReadOnly {
+    fn db_read_only(&self) -> &LocalReadOnly {
         &LocalReadOnly {}
     }
 }
 
 /// This trait allows you to be generic over all contexts that allow read/write access to the db.
-pub trait CtxDbWrite {
+pub trait CtxDbWrite: CtxDbRead {
     fn db(&self) -> &Local;
 }
 
