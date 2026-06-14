@@ -21,3 +21,37 @@ jobs:
         run: |
           VERSION=${GITHUB_REF#refs/*/}
           docker buildx imagetools create clockworklabs/spacetimedb:$VERSION --tag clockworklabs/spacetimedb:latest
+
+  announce-release:
+    name: Announce GitHub release
+    runs-on: ubuntu-latest
+    needs: on-release
+    if: always()
+    steps:
+      - name: Send Discord notification
+        env:
+          DISCORD_WEBHOOK_RELEASE_CHANNEL_URL: ${{ secrets.DISCORD_WEBHOOK_RELEASE_CHANNEL_URL }}
+          RELEASE_NAME: ${{ github.event.release.name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+          RELEASE_AUTHOR: ${{ github.event.release.author.login }}
+          RETAG_RESULT: ${{ needs.on-release.result }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DISCORD_WEBHOOK_RELEASE_CHANNEL_URL}" ]; then
+            echo "DISCORD_WEBHOOK_RELEASE_CHANNEL_URL is not configured; skipping Discord announcement."
+            exit 0
+          fi
+
+          title="${RELEASE_NAME:-${RELEASE_TAG}}"
+          message="SpacetimeDB GitHub release published: [${title}](<${RELEASE_URL}>)"
+          message+=$'\n'
+          message+="Tag: \`${RELEASE_TAG}\`"
+          message+=$'\n'
+          message+="Published by: \`${RELEASE_AUTHOR}\`"
+          message+=$'\n'
+          message+="Docker latest retag: \`${RETAG_RESULT}\`"
+
+          data="$(jq --null-input --arg msg "$message" '.content=$msg')"
+          curl -X POST -H 'Content-Type: application/json' -d "$data" "${DISCORD_WEBHOOK_RELEASE_CHANNEL_URL}"
