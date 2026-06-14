@@ -41,12 +41,6 @@ jobs:
 
           title="${RELEASE_NAME:-${RELEASE_TAG}}"
           message="SpacetimeDB GitHub release published: [${title}](<${RELEASE_URL}>)"
-          message+=$'\n'
-          message+="Tag: \`${RELEASE_TAG}\`"
-          message+=$'\n'
-          message+="Published by: \`${RELEASE_AUTHOR}\`"
-          message+=$'\n'
-          message+="Docker latest retag: \`${RETAG_RESULT}\`"
 
           data="$(jq --null-input --arg msg "$message" '.content=$msg')"
           curl -X POST -H 'Content-Type: application/json' -d "$data" "${DISCORD_WEBHOOK_RELEASE_CHANNEL_URL}"
