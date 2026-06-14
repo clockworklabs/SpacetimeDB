@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::env;
 
 use anyhow::{anyhow, bail, Context, Result};
-use clap::Args;
+use clap::{Args, Subcommand};
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
 use serde::de::DeserializeOwned;
@@ -10,8 +10,14 @@ use serde::Deserialize;
 
 const CLA_CONTEXT: &str = "license/cla";
 
+#[derive(Subcommand)]
+pub(crate) enum ClaAssistantCmd {
+    /// Retries CLA Assistant if `license/cla` is the only remaining PR blocker.
+    Retry(RetryArgs),
+}
+
 #[derive(Args)]
-pub(crate) struct RetryClaAssistantArgs {
+pub(crate) struct RetryArgs {
     /// Pull request number to check.
     #[arg(long)]
     pub(crate) pr_number: u64,
@@ -21,7 +27,13 @@ pub(crate) struct RetryClaAssistantArgs {
     pub(crate) repo: Option<String>,
 }
 
-pub(crate) fn run(args: RetryClaAssistantArgs) -> Result<()> {
+pub(crate) fn run(cmd: ClaAssistantCmd) -> Result<()> {
+    match cmd {
+        ClaAssistantCmd::Retry(args) => retry(args),
+    }
+}
+
+fn retry(args: RetryArgs) -> Result<()> {
     let repo = args
         .repo
         .or_else(|| env::var("GITHUB_REPOSITORY").ok())
