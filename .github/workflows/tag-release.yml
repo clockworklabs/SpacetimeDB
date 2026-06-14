@@ -40,7 +40,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          title="${RELEASE_NAME:-${RELEASE_TAG}}"
           message="SpacetimeDB GitHub release published: [${{github.event.release_name}}](<${{github.event.release.html_url}}>)"
 
           data="$(jq --null-input --arg msg "$message" '.content=$msg')"
