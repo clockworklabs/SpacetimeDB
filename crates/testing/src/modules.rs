@@ -25,6 +25,7 @@ use spacetimedb::client::{
 use spacetimedb::db::{Config, Storage};
 use spacetimedb::host::module_host::EventStatus;
 use spacetimedb::host::FunctionArgs;
+use spacetimedb::host::ReducerCallResult;
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
 use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_lib::identity::RequestId;
@@ -61,19 +62,28 @@ pub struct ModuleHandle {
 }
 
 impl ModuleHandle {
-    async fn call_reducer(&self, reducer: &str, args: FunctionArgs) -> anyhow::Result<()> {
+    async fn call_reducer_result(&self, reducer: &str, args: FunctionArgs) -> anyhow::Result<ReducerCallResult> {
         let result = self
             .client
             .call_reducer(reducer, args, 0, Instant::now(), ws_v1::CallReducerFlags::FullUpdate)
             .await;
-        let result = match result {
-            Ok(result) => result.into(),
+        let result: anyhow::Result<ReducerCallResult> = match result {
+            Ok(result) => Ok(result),
             Err(err) => Err(err.into()),
         };
         match result {
-            Ok(()) => Ok(()),
+            Ok(result) if result.is_ok() => Ok(result),
+            Ok(result) => {
+                let err = Result::<(), anyhow::Error>::from(result)
+                    .expect_err("non-committed reducer outcome should produce an error");
+                Err(err.context(format!("Logs:\n{}", self.read_log(None).await)))
+            }
             Err(err) => Err(err.context(format!("Logs:\n{}", self.read_log(None).await))),
         }
+    }
+
+    async fn call_reducer(&self, reducer: &str, args: FunctionArgs) -> anyhow::Result<()> {
+        self.call_reducer_result(reducer, args).await.map(drop)
     }
 
     pub async fn call_reducer_json(&self, reducer: &str, args: &sats::ProductValue) -> anyhow::Result<()> {
@@ -84,6 +94,16 @@ impl ModuleHandle {
     pub async fn call_reducer_binary(&self, reducer: &str, args: &sats::ProductValue) -> anyhow::Result<()> {
         let args = bsatn::to_vec(&args).unwrap();
         self.call_reducer(reducer, FunctionArgs::Bsatn(args.into())).await
+    }
+
+    pub async fn call_reducer_binary_result(
+        &self,
+        reducer: &str,
+        args: &sats::ProductValue,
+    ) -> anyhow::Result<ReducerCallResult> {
+        let args = bsatn::to_vec(&args).unwrap();
+        self.call_reducer_result(reducer, FunctionArgs::Bsatn(args.into()))
+            .await
     }
 
     pub async fn send(&self, message: impl Into<DataMessage>) -> anyhow::Result<()> {
@@ -101,7 +121,8 @@ impl ModuleHandle {
     }
 
     pub async fn recv_message(&mut self) -> Option<OutboundMessage> {
-        self.receiver.recv().await
+        let mut buf = Vec::with_capacity(1);
+        (self.receiver.recv_many(&mut buf, 1).await != 0).then(|| buf.remove(0))
     }
 
     pub async fn recv_reducer_update(&mut self, request_id: RequestId) -> anyhow::Result<()> {
@@ -244,6 +265,7 @@ impl CompiledModule {
         let env = spacetimedb_standalone::StandaloneEnv::init(
             spacetimedb_standalone::StandaloneOptions {
                 db_config: config,
+                durability: Default::default(),
                 websocket: WebSocketOptions::default(),
                 wasm: Default::default(),
                 v8: Default::default(),
@@ -312,10 +334,6 @@ pub static DEFAULT_CONFIG: Config = Config {
 /// For performance tests, do not persist to disk.
 pub static IN_MEMORY_CONFIG: Config = Config {
     storage: Storage::Disk,
-    // For some reason, a large page pool capacity causes `test_index_scans` to slow down,
-    // and makes the perf test for `chunk` go over 1ms.
-    // The threshold for failure on i7-7700K, 64GB RAM seems to be at 1 << 26.
-    // TODO(centril): investigate further why this size affects the benchmark.
     page_pool_max_size: Some(1 << 16),
 };
 

@@ -302,6 +302,15 @@ fn auto_migrate_database(
 
                 stdb.alter_table_row_type(tx, table_id, column_schemas)?;
             }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::ReschemaEventTable(table_name) => {
+                let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
+                let table_id = stdb.table_id_from_name_mut(tx, table_name).unwrap().unwrap();
+                let column_schemas = column_schemas_from_defs(plan.new, &table_def.columns, table_id);
+
+                log!(logger, "Changing schema of event table `{}`", table_name);
+
+                stdb.alter_event_table_row_type(tx, table_id, column_schemas)?;
+            }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeAccess(table_name) => {
                 let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
                 stdb.alter_table_access(tx, table_name, table_def.table_access.into())?;
@@ -341,7 +350,7 @@ fn auto_migrate_database(
                     .iter()
                     .filter_map(|col_def| col_def.default_value.clone())
                     .collect();
-                stdb.add_columns_to_table(tx, table_id, column_schemas, default_values)?;
+                stdb.add_columns_to_table_mut_tx(tx, table_id, column_schemas, default_values)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::DisconnectAllUsers => {
                 log!(logger, "Disconnecting all users");
@@ -360,12 +369,22 @@ fn auto_migrate_database(
 mod test {
     use super::*;
     use crate::{
-        db::relational_db::tests_utils::{begin_mut_tx, insert, TestDB},
+        db::relational_db::{
+            open_snapshot_repo,
+            tests_utils::{begin_mut_tx, insert, TestDB},
+        },
         host::module_host::create_table_from_def,
     };
     use spacetimedb_datastore::locking_tx_datastore::PendingSchemaChange;
-    use spacetimedb_lib::db::raw_def::v9::{btree, RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess};
-    use spacetimedb_sats::{product, AlgebraicType, AlgebraicType::U64};
+    use spacetimedb_datastore::system_tables::ST_EVENT_TABLE_ID;
+    use spacetimedb_lib::{
+        db::raw_def::{
+            v10::RawModuleDefV10Builder,
+            v9::{btree, RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess},
+        },
+        Identity,
+    };
+    use spacetimedb_sats::{product, AlgebraicType, AlgebraicType::U64, ProductType};
     use spacetimedb_schema::{auto_migrate::ponder_migrate, def::ModuleDef};
 
     struct TestLogger;
@@ -536,6 +555,197 @@ mod test {
             .finish()
             .try_into()
             .expect("should be a valid module definition")
+    }
+
+    fn event_table_module(product_type: ProductType) -> ModuleDef {
+        let mut builder = RawModuleDefV10Builder::new();
+        builder
+            .build_table_with_new_type("events", product_type, true)
+            .with_event(true)
+            .with_access(TableAccess::Public)
+            .finish();
+        builder
+            .finish()
+            .try_into()
+            .expect("should be a valid module definition")
+    }
+
+    enum TakeSnapshot {
+        None,
+        BeforeAutomigration,
+    }
+
+    fn take_snapshot(stdb: &TestDB) -> anyhow::Result<()> {
+        let snapshot_repo = open_snapshot_repo(stdb.path().unwrap().snapshots(), Identity::ZERO, 0)?;
+        stdb.take_snapshot(snapshot_repo.as_ref())?
+            .expect("snapshot should succeed");
+        Ok(())
+    }
+
+    fn with_snapshotting(manual: bool) -> anyhow::Result<TestDB> {
+        Ok(if manual {
+            TestDB::durable_without_snapshot_repo()?
+        } else {
+            TestDB::durable()?
+        })
+    }
+
+    fn replay_event_table_schema_change(snapshot: TakeSnapshot) -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let with_snapshot = matches!(snapshot, TakeSnapshot::BeforeAutomigration);
+        let stdb = with_snapshotting(with_snapshot)?;
+
+        let module_v1 = event_table_module(ProductType::from([
+            ("old_payload", AlgebraicType::U64),
+            ("payload", AlgebraicType::U64),
+        ]));
+        let module_v2 = event_table_module(ProductType::from([("payload", AlgebraicType::String)]));
+
+        {
+            let mut tx = begin_mut_tx(&stdb);
+            for def in module_v1.tables() {
+                create_table_from_def(&stdb, &mut tx, &module_v1, def)?;
+            }
+            stdb.commit_tx(tx)?;
+        }
+
+        if with_snapshot {
+            take_snapshot(&stdb)?;
+        }
+
+        {
+            let mut tx = begin_mut_tx(&stdb);
+            let plan = ponder_migrate(&module_v1, &module_v2)?;
+            let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+            assert!(matches!(res, UpdateResult::RequiresClientDisconnect));
+            stdb.commit_tx(tx)?;
+        }
+
+        // Replay commitlog
+        let stdb = stdb.reopen()?;
+        let table_id = {
+            let tx = begin_mut_tx(&stdb);
+            let table_id = stdb
+                .table_id_from_name_mut(&tx, "events")?
+                .expect("`events` table should exist on reopen");
+            let schema = stdb.schema_for_table_mut(&tx, table_id)?;
+
+            assert!(schema.is_event);
+            assert_eq!(schema.columns.len(), 1);
+            assert_eq!(&*schema.columns[0].col_name, "payload");
+            assert_eq!(schema.columns[0].col_type, AlgebraicType::String);
+            assert_eq!(stdb.table_row_count_mut(&tx, table_id).unwrap_or(0), 0);
+            table_id
+        };
+
+        // Insert row with the new schema
+        let mut tx = begin_mut_tx(&stdb);
+        insert(&stdb, &mut tx, table_id, &product!["hello"])?;
+        stdb.commit_tx(tx)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn replay_event_table_schema_change_no_snapshot() -> anyhow::Result<()> {
+        replay_event_table_schema_change(TakeSnapshot::None)
+    }
+
+    #[test]
+    fn replay_event_table_schema_change_after_snapshot() -> anyhow::Result<()> {
+        replay_event_table_schema_change(TakeSnapshot::BeforeAutomigration)
+    }
+
+    /// Regression test for replay of a dropped event table.
+    ///
+    /// Dropping an event table deletes its `st_table`, `st_column` and `st_event_table` rows
+    /// in a single transaction. During replay, deletes are applied in ascending table id order,
+    /// so the `st_table` row is deleted before the `st_column` rows,
+    /// while the `st_event_table` row is still present.
+    /// Replay of the `st_column` deletes therefore saw the table as an event table
+    /// and tried to refresh its layout via `st_column_changed`,
+    /// which failed with `Table with ID ... not found in st_table`,
+    /// permanently preventing the database from reopening.
+    fn replay_event_table_drop(snapshot: TakeSnapshot) -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let with_snapshot = matches!(snapshot, TakeSnapshot::BeforeAutomigration);
+        let stdb = with_snapshotting(with_snapshot)?;
+
+        let module_v1 = event_table_module(ProductType::from([("payload", AlgebraicType::U64)]));
+        let module_v2 = empty_module();
+
+        // Publish v1 with the event table.
+        {
+            let mut tx = begin_mut_tx(&stdb);
+            for def in module_v1.tables() {
+                create_table_from_def(&stdb, &mut tx, &module_v1, def)?;
+            }
+            stdb.commit_tx(tx)?;
+        }
+
+        // Write an event row, so the commitlog also contains an insert into the table.
+        {
+            let mut tx = begin_mut_tx(&stdb);
+            let table_id = stdb
+                .table_id_from_name_mut(&tx, "events")?
+                .expect("`events` table should exist");
+            insert(&stdb, &mut tx, table_id, &product![42u64])?;
+            stdb.commit_tx(tx)?;
+        }
+
+        if with_snapshot {
+            take_snapshot(&stdb)?;
+        }
+
+        // Migrate v1 -> v2, dropping the event table.
+        {
+            let mut tx = begin_mut_tx(&stdb);
+            let plan = ponder_migrate(&module_v1, &module_v2)?;
+            let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+            assert!(
+                matches!(res, UpdateResult::RequiresClientDisconnect),
+                "removing a table should disconnect clients"
+            );
+            stdb.commit_tx(tx)?;
+        }
+
+        // The drop must also remove the table's `st_event_table` row,
+        // rather than leaving it orphaned.
+        {
+            let tx = begin_mut_tx(&stdb);
+            assert_eq!(
+                stdb.table_row_count_mut(&tx, ST_EVENT_TABLE_ID).unwrap_or(0),
+                0,
+                "`st_event_table` should not contain rows for dropped tables"
+            );
+        }
+
+        // Replay the commitlog. Prior to the fix, this failed with
+        // `Table with ID ... not found in st_table`
+        // while replaying the `st_column` deletes of the dropped event table.
+        let stdb = stdb.reopen()?;
+        let tx = begin_mut_tx(&stdb);
+        assert!(
+            stdb.table_id_from_name_mut(&tx, "events")?.is_none(),
+            "`events` table should be gone after replaying the drop"
+        );
+        assert_eq!(
+            stdb.table_row_count_mut(&tx, ST_EVENT_TABLE_ID).unwrap_or(0),
+            0,
+            "`st_event_table` should not contain rows for dropped tables after replay"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn replay_event_table_drop_no_snapshot() -> anyhow::Result<()> {
+        replay_event_table_drop(TakeSnapshot::None)
+    }
+
+    #[test]
+    fn replay_event_table_drop_after_snapshot() -> anyhow::Result<()> {
+        replay_event_table_drop(TakeSnapshot::BeforeAutomigration)
     }
 
     #[test]

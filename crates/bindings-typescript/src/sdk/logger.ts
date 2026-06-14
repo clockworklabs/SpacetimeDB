@@ -73,7 +73,7 @@ const SENSITIVE_KEYS = new Set([
 ]);
 
 export const stringify = (value: unknown): string | undefined =>
-  ssStringify(value, (key, current) => {
+  ssStringify(value, (key: string, current: unknown) => {
     if (SENSITIVE_KEYS.has(key)) {
       return '[REDACTED]';
     }

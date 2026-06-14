@@ -11,7 +11,7 @@ use crate::{
     module_host_context::ModuleCreationContext,
     replica_context::ReplicaContext,
 };
-use spacetimedb_lib::{Identity, RawModuleDef};
+use spacetimedb_lib::RawModuleDef;
 use spacetimedb_schema::{def::ModuleDef, error::ValidationErrors};
 use std::sync::Arc;
 
@@ -68,11 +68,6 @@ impl ModuleCommon {
     /// Returns the module info.
     pub fn info(&self) -> Arc<ModuleInfo> {
         self.info.clone()
-    }
-
-    /// Returns the identity of the database.
-    pub fn database_identity(&self) -> &Identity {
-        &self.info.database_identity
     }
 
     /// Returns the energy monitor.

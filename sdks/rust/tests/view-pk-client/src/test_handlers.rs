@@ -42,7 +42,16 @@ async fn connect_then(
     test_counter: &std::sync::Arc<TestCounter>,
     callback: impl FnOnce(&DbConnection) + Send + 'static,
 ) -> DbConnection {
-    let connected_result = test_counter.add_test("on_connect");
+    connect_then_named(db_name, test_counter, "on_connect", callback).await
+}
+
+async fn connect_then_named(
+    db_name: &str,
+    test_counter: &std::sync::Arc<TestCounter>,
+    connect_test_name: &'static str,
+    callback: impl FnOnce(&DbConnection) + Send + 'static,
+) -> DbConnection {
+    let connected_result = test_counter.add_test(connect_test_name);
     let name = db_name.to_owned();
     let conn = DbConnection::builder()
         .with_database_name(name)

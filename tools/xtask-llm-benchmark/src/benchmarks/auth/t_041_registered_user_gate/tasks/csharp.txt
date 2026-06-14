@@ -1,0 +1,26 @@
+Write a SpacetimeDB backend module in C# that gates actions behind a registration check.
+
+TABLES
+- User
+  - Struct: User
+  - private table
+  - Fields:
+    - Identity: Identity (primary key)
+    - Name: string
+
+- Message
+  - Struct: Message
+  - public table
+  - Fields:
+    - Id: ulong (primary key, AutoInc)
+    - Sender: Identity (index BTree)
+    - Text: string
+
+REDUCERS
+- Register(ctx, string name)
+  - If a User row already exists for ctx.Sender, throw exception with "already registered"
+  - Otherwise insert a new User with Identity = ctx.Sender and the given Name
+
+- PostMessage(ctx, string text)
+  - If no User row exists for ctx.Sender, throw exception with "not registered"
+  - Otherwise insert a Message with Sender = ctx.Sender and the given Text, Id = 0 for AutoInc

@@ -75,6 +75,15 @@ public:
         BytesSource args_source,
         BytesSink result_sink
     );
+
+    static int16_t __call_http_handler__(
+        uint32_t id,
+        uint64_t timestamp_microseconds,
+        BytesSource request_source,
+        BytesSource request_body_source,
+        BytesSink response_sink,
+        BytesSink response_body_sink
+    );
     
     // Internal registration methods (inline to avoid linking issues)
     template<typename T>
@@ -106,6 +115,7 @@ private:
 public:
     // Registration support routed through the V10 module-definition builder.
     static void RegisterClientVisibilityFilter(const char* sql);
+    static void RegisterClientVisibilityFilter(const std::string& sql);
     static void SetCaseConversionPolicy(CaseConversionPolicy policy);
     static void RegisterExplicitTableName(const std::string& source_name, const std::string& canonical_name);
     static void RegisterExplicitFunctionName(const std::string& source_name, const std::string& canonical_name);
@@ -141,6 +151,10 @@ public:
     
     // Client visibility filter (similar to C# / Rust)
     static void RegisterClientVisibilityFilter(const char* sql) {
+        Internal::Module::RegisterClientVisibilityFilter(sql);
+    }
+
+    static void RegisterClientVisibilityFilter(const std::string& sql) {
         Internal::Module::RegisterClientVisibilityFilter(sql);
     }
     
