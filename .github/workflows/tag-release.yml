@@ -2,6 +2,8 @@ on:
   release:
     types: [published]
 
+permissions: {}
+
 jobs:
   on-release:
     name: Re-tag latest
