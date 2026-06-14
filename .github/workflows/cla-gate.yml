@@ -30,7 +30,6 @@ jobs:
       - name: Publish CLA Gate status
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const statusContext = "CLA Gate";
 
