@@ -39,11 +39,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ -z "${DISCORD_WEBHOOK_RELEASE_CHANNEL_URL}" ]; then
-            echo "DISCORD_WEBHOOK_RELEASE_CHANNEL_URL is not configured; skipping Discord announcement."
-            exit 0
-          fi
-
           title="${RELEASE_NAME:-${RELEASE_TAG}}"
           message="SpacetimeDB GitHub release published: [${title}](<${RELEASE_URL}>)"
           message+=$'\n'
