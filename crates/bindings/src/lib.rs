@@ -912,6 +912,8 @@ pub use spacetimedb_bindings_macro::view;
 pub struct QueryBuilder {}
 pub use query_builder::{Query, RawQuery};
 
+use crate::http::{HandlerContext, HttpClient};
+
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
 /// The other is [`ViewContext`].
 /// Use this type if the view does not depend on the caller's identity.
@@ -1532,7 +1534,8 @@ impl Local {
 }
 
 /// This trait allows you to be generic over all contexts that allow you to read from the db.
-/// including views, reducers and event procedures and http handlers through [TxContext].
+/// including views, reducers and even procedures and http handlers through [TxContext].
+/// Useful when trying to encapsulate logic in reusable parts.
 pub trait CtxDbRead {
     fn db(&self) -> &LocalReadOnly;
 }
@@ -1578,7 +1581,7 @@ impl CtxDbWrite for ReducerContext {
     }
 }
 
-/// This trait allows you to be generic over all contexts that allow to retrieve the caller identity.
+/// This trait allows you to be generic over all contexts that allow to retrieve the caller [Identity].
 pub trait CtxWithSender {
     fn sender(&self) -> Identity;
 }
@@ -1598,6 +1601,40 @@ impl CtxWithSender for ReducerContext {
 impl CtxWithSender for TxContext {
     fn sender(&self) -> Identity {
         self.0.sender
+    }
+}
+
+/// This trait allows you to be generic over all contexts that allow to retrieve the [Timestamp] of calling them.
+pub trait CtxWithTimestamp {
+    fn timestamp(&self) -> Timestamp;
+}
+
+impl CtxWithTimestamp for ReducerContext {
+    fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+}
+
+impl CtxWithTimestamp for TxContext {
+    fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+}
+
+/// This trait allows you to be generic over all contexts that allow to use the [HttpClient].
+pub trait CtxWithHttp {
+    fn http(&self) -> &HttpClient;
+}
+
+impl CtxWithHttp for HandlerContext {
+    fn http(&self) -> &HttpClient {
+        &self.http
+    }
+}
+
+impl CtxWithHttp for ProcedureContext {
+    fn http(&self) -> &HttpClient {
+        &self.http
     }
 }
 
