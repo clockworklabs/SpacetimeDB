@@ -41,7 +41,6 @@ jobs:
         with:
           script: |
             const { execFileSync } = require("child_process");
-            const statusContext = "CLA Gate";
 
             function claStatus(args) {
               const output = execFileSync("cargo", ["ci", "cla", "status", ...args], {
@@ -51,65 +50,73 @@ jobs:
               return JSON.parse(output);
             }
 
-            function claGateState(claState) {
-              switch (claState) {
-                case "success":
-                  return {
-                    state: "success",
-                    description: "CLA Assistant passed",
-                  };
-                case "failure":
-                case "error":
-                  return {
-                    state: "failure",
-                    description: "CLA Assistant failed",
-                  };
-                case "pending":
-                  return {
-                    state: "pending",
-                    description: "Waiting for CLA Assistant",
-                  };
-              }
+            async function postStatus({ sha, state, description, targetUrl }) {
+              const statusContext = "CLA Gate";
+              core.info(
+                `Publishing ${statusContext}=${state} for ${sha}: ${description}`
+              );
+
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha,
+                state,
+                description,
+                context: statusContext,
+                target_url: targetUrl,
+              });
             }
 
             let targetSha;
-            let targetUrl;
-            let result;
+            let claStatusArgs;
 
             if (context.eventName === "merge_group") {
-              targetSha = process.env.GITHUB_SHA;
-              result = {
+              await postStatus({
+                sha: process.env.GITHUB_SHA,
                 state: "success",
                 description: "Merge group entry; CLA already checked before queue",
-              };
+              });
+              return;
             } else if (context.eventName === "status") {
               targetSha = context.payload.sha;
-              const status = claStatus(["--sha", targetSha]);
-              targetUrl = status.target_url || undefined;
-              result = claGateState(status.state);
-            } else {
+              claStatusArgs = ["--sha", targetSha];
+            } else if (context.eventName === "pull_request_target") {
               const pr = context.payload.pull_request;
               targetSha = pr.head.sha;
-              const status = claStatus(["--pr", String(pr.number)]);
-              targetUrl = status.target_url || undefined;
-              result = claGateState(status.state);
-            }
-
-            if (!result) {
-              core.info(`No ${statusContext} status to publish for ${targetSha}`);
+              claStatusArgs = ["--pr", String(pr.number)];
+            } else {
+              core.setFailed(`Unsupported event type: ${context.eventName}`);
               return;
             }
 
-            core.info(
-              `Publishing ${statusContext}=${result.state} for ${targetSha}: ${result.description}`
-            );
+            const status = claStatus(claStatusArgs);
+            let state;
+            let description;
 
-            await github.rest.repos.createCommitStatus({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
+            switch (status.state) {
+              case "success":
+                state = "success";
+                description = "CLA Assistant passed";
+                break;
+              case "failure":
+              case "error":
+                state = "failure";
+                description = "CLA Assistant failed";
+                break;
+              case "pending":
+                state = "pending";
+                description = "Waiting for CLA Assistant";
+                break;
+            }
+
+            if (!state) {
+              core.info(`No CLA Gate status to publish for ${targetSha}`);
+              return;
+            }
+
+            await postStatus({
               sha: targetSha,
-              state: result.state,
-              description: result.description,
-              context: statusContext,
-              target_url: targetUrl,
+              state,
+              description,
+              targetUrl: status.target_url || undefined,
             });
