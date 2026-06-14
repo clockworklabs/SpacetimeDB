@@ -286,16 +286,16 @@ impl Lang for TypeScript {
             out.indent(1);
             writeln!(out, "tables: typeof tablesSchema.schemaType.tables & {{");
             out.indent(1);
-            for (deprecated_accessor, canonical_accessor) in &table_accessor_aliases {
+            for (deprecated_accessor, target_accessor) in &table_accessor_aliases {
                 writeln!(
                     out,
-                    "/** @deprecated Use `{canonical_accessor}` instead. This alias will be removed in the next major version. */"
+                    "/** @deprecated Use `{target_accessor}` instead. This alias will be removed in the next major version. */"
                 );
                 writeln!(
                     out,
                     "readonly {}: Omit<typeof tablesSchema.schemaType.tables[{}], \"accessorName\"> & {{ readonly accessorName: {} }};",
                     ts_string_literal(deprecated_accessor),
-                    ts_string_literal(canonical_accessor),
+                    ts_string_literal(target_accessor),
                     ts_string_literal(deprecated_accessor)
                 );
             }
@@ -345,12 +345,12 @@ impl Lang for TypeScript {
             writeln!(out);
             writeln!(out, "const tableAccessorAliases = {{");
             out.indent(1);
-            for (deprecated_accessor, canonical_accessor) in &table_accessor_aliases {
+            for (deprecated_accessor, target_accessor) in &table_accessor_aliases {
                 writeln!(
                     out,
                     "{}: {},",
                     ts_string_literal(deprecated_accessor),
-                    ts_string_literal(canonical_accessor)
+                    ts_string_literal(target_accessor)
                 );
             }
             out.dedent(1);
@@ -372,7 +372,7 @@ impl Lang for TypeScript {
             );
             writeln!(
                 out,
-                "for (const [deprecatedAccessor, canonicalAccessor] of Object.entries(tableAccessorAliases)) {{"
+                "for (const [deprecatedAccessor, targetAccessor] of Object.entries(tableAccessorAliases)) {{"
             );
             out.indent(1);
             writeln!(out, "if (deprecatedAccessor in out) {{");
@@ -384,7 +384,7 @@ impl Lang for TypeScript {
             out.indent(1);
             writeln!(out, "enumerable: true,");
             writeln!(out, "configurable: false,");
-            writeln!(out, "get: () => out[canonicalAccessor],");
+            writeln!(out, "get: () => out[targetAccessor],");
             out.dedent(1);
             writeln!(out, "}});");
             out.dedent(1);
@@ -400,16 +400,16 @@ impl Lang for TypeScript {
             );
             writeln!(out, "export type DbView = __DbViewBase & {{");
             out.indent(1);
-            for (deprecated_accessor, canonical_accessor) in &table_accessor_aliases {
+            for (deprecated_accessor, target_accessor) in &table_accessor_aliases {
                 writeln!(
                     out,
-                    "/** @deprecated Use `{canonical_accessor}` instead. This alias will be removed in the next major version. */"
+                    "/** @deprecated Use `{target_accessor}` instead. This alias will be removed in the next major version. */"
                 );
                 writeln!(
                     out,
                     "readonly {}: __DbViewBase[{}];",
                     ts_string_literal(deprecated_accessor),
-                    ts_string_literal(canonical_accessor)
+                    ts_string_literal(target_accessor)
                 );
             }
             out.dedent(1);
@@ -422,16 +422,16 @@ impl Lang for TypeScript {
             );
             writeln!(out, "export type Tables = __TablesBase & {{");
             out.indent(1);
-            for (deprecated_accessor, canonical_accessor) in &table_accessor_aliases {
+            for (deprecated_accessor, target_accessor) in &table_accessor_aliases {
                 writeln!(
                     out,
-                    "/** @deprecated Use `{canonical_accessor}` instead. This alias will be removed in the next major version. */"
+                    "/** @deprecated Use `{target_accessor}` instead. This alias will be removed in the next major version. */"
                 );
                 writeln!(
                     out,
                     "readonly {}: __TablesBase[{}];",
                     ts_string_literal(deprecated_accessor),
-                    ts_string_literal(canonical_accessor)
+                    ts_string_literal(target_accessor)
                 );
             }
             out.dedent(1);

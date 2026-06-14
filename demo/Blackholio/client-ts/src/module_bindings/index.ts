@@ -167,14 +167,14 @@ const tableAccessorAliases = {
 function __withTableAccessorAliases<T extends object>(target: T, freeze = false): T {
   const out = Object.create(Object.getPrototypeOf(target)) as T & Record<string, unknown>;
   Object.defineProperties(out, Object.getOwnPropertyDescriptors(target));
-  for (const [deprecatedAccessor, canonicalAccessor] of Object.entries(tableAccessorAliases)) {
+  for (const [deprecatedAccessor, targetAccessor] of Object.entries(tableAccessorAliases)) {
     if (deprecatedAccessor in out) {
       continue;
     }
     Object.defineProperty(out, deprecatedAccessor, {
       enumerable: true,
       configurable: false,
-      get: () => out[canonicalAccessor],
+      get: () => out[targetAccessor],
     });
   }
   return freeze ? Object.freeze(out) : out;
