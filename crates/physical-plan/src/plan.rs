@@ -6,10 +6,10 @@ use spacetimedb_expr::{
     expr::{AggType, CollectViews},
     StatementSource,
 };
-use spacetimedb_lib::{identity::AuthCtx, query::Delta, sats::size_of::SizeOf, AlgebraicValue, ProductValue};
+use spacetimedb_lib::{query::Delta, sats::size_of::SizeOf, AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{ColId, ColOrCols, ColSet, IndexId, TableId, ViewId};
 use spacetimedb_schema::schema::{IndexSchema, TableSchema};
-use spacetimedb_sql_parser::ast::{BinOp, LogOp};
+use spacetimedb_sql_parser::ast::{BinOp, LogOp, Parameter};
 use spacetimedb_table::table::RowRef;
 use std::{
     borrow::Cow,
@@ -25,6 +25,15 @@ use crate::rules::{
 /// Table aliases are replaced with labels in the physical plan
 #[derive(Debug, Clone, Copy, PartialEq, Eq, From)]
 pub struct Label(pub usize);
+
+/// Resolves formal parameters during expression evaluation.
+///
+/// Physical plans store parameter slots.
+/// Concrete variable bindings are supplied at runtime
+/// and implement this minimal interface.
+pub trait ParamResolver {
+    fn resolve_param(&self, param: Parameter, ty: &AlgebraicType) -> AlgebraicValue;
+}
 
 /// Physical plans always terminate with a projection.
 /// This type of projection returns row ids.
@@ -79,11 +88,11 @@ impl CollectViews for ProjectPlan {
 }
 
 impl ProjectPlan {
-    pub fn optimize(self, auth: &AuthCtx) -> Result<Self> {
+    pub fn optimize(self) -> Result<Self> {
         match self {
-            Self::None(plan) => Ok(Self::None(plan.optimize(auth, vec![])?)),
+            Self::None(plan) => Ok(Self::None(plan.optimize(vec![])?)),
             Self::Name(plan, label, _) => {
-                let plan = plan.optimize(auth, vec![label])?;
+                let plan = plan.optimize(vec![label])?;
                 let n = plan.nfields();
                 let pos = plan.position(&label);
                 Ok(match n {
@@ -164,15 +173,13 @@ pub enum ProjectListPlan {
 }
 
 impl ProjectListPlan {
-    pub fn optimize(self, auth: &AuthCtx) -> Result<Self> {
+    pub fn optimize(self) -> Result<Self> {
         match self {
             Self::Name(plan) => Ok(Self::Name(
-                plan.into_iter()
-                    .map(|plan| plan.optimize(auth))
-                    .collect::<Result<_>>()?,
+                plan.into_iter().map(|plan| plan.optimize()).collect::<Result<_>>()?,
             )),
             Self::Limit(plan, n) => {
-                let mut limit = Self::Limit(Box::new(plan.optimize(auth)?), n);
+                let mut limit = Self::Limit(Box::new(plan.optimize()?), n);
                 // Merge a limit with a scan if possible
                 if PushLimit::matches(&limit).is_some() {
                     limit = PushLimit::rewrite(limit, ())?;
@@ -181,7 +188,7 @@ impl ProjectListPlan {
             }
             Self::Agg(plan, agg_type) => Ok(Self::Agg(
                 plan.into_iter()
-                    .map(|plan| plan.optimize(auth, vec![]))
+                    .map(|plan| plan.optimize(vec![]))
                     .collect::<Result<_>>()?,
                 agg_type,
             )),
@@ -191,7 +198,7 @@ impl ProjectListPlan {
                     // Collect the names of the relvars
                     let labels = fields.iter().map(|field| field.label).collect();
                     // Optimize each plan
-                    let optimized_plan = plan.optimize(auth, labels)?;
+                    let optimized_plan = plan.optimize(labels)?;
                     // Compute the position of each relvar referenced in the projection
                     for TupleField { label, label_pos, .. } in &mut fields {
                         *label_pos = optimized_plan.position(label);
@@ -473,9 +480,9 @@ impl PhysicalPlan {
     /// 3. Turn filters into index scans if possible
     /// 4. Determine index and semijoins
     /// 5. Compute positions for tuple labels
-    pub fn optimize(self, auth: &AuthCtx, reqs: Vec<Label>) -> Result<Self> {
+    pub fn optimize(self, reqs: Vec<Label>) -> Result<Self> {
         let optimized = self
-            .expand_views(auth)
+            .expand_views()
             .map(&Self::canonicalize)
             .apply_rec::<PushConstAnd>()?
             .apply_rec::<PushConstEq>()?
@@ -550,13 +557,13 @@ impl PhysicalPlan {
     /// ```sql
     /// SELECT * FROM my_view WHERE sender = :sender
     /// ```
-    fn expand_views(self, auth: &AuthCtx) -> Self {
+    fn expand_views(self) -> Self {
         match self {
             Self::TableScan(scan, label) if scan.schema.is_view() && !scan.schema.is_anonymous_view() => Self::Filter(
                 Box::new(Self::TableScan(scan, label)),
                 PhysicalExpr::BinOp(
                     BinOp::Eq,
-                    Box::new(PhysicalExpr::Value(auth.caller().into())),
+                    Box::new(PhysicalExpr::Param(Parameter::Sender, AlgebraicType::identity())),
                     Box::new(PhysicalExpr::Field(TupleField {
                         label,
                         label_pos: None,
@@ -577,7 +584,7 @@ impl PhysicalPlan {
                 semi,
             ) => Self::IxJoin(
                 IxJoin {
-                    lhs: Box::new(lhs.expand_views(auth)),
+                    lhs: Box::new(lhs.expand_views()),
                     rhs,
                     rhs_label,
                     rhs_index,
@@ -598,16 +605,16 @@ impl PhysicalPlan {
                 semi,
             ) => Self::HashJoin(
                 HashJoin {
-                    lhs: Box::new(lhs.expand_views(auth)),
-                    rhs: Box::new(rhs.expand_views(auth)),
+                    lhs: Box::new(lhs.expand_views()),
+                    rhs: Box::new(rhs.expand_views()),
                     lhs_field,
                     rhs_field,
                     unique,
                 },
                 semi,
             ),
-            Self::Filter(input, expr) => Self::Filter(Box::new(input.expand_views(auth)), expr),
-            Self::NLJoin(lhs, rhs) => Self::NLJoin(Box::new(lhs.expand_views(auth)), Box::new(rhs.expand_views(auth))),
+            Self::Filter(input, expr) => Self::Filter(Box::new(input.expand_views()), expr),
+            Self::NLJoin(lhs, rhs) => Self::NLJoin(Box::new(lhs.expand_views()), Box::new(rhs.expand_views())),
             Self::TableScan(..) | Self::IxScan(..) => self,
         }
     }
@@ -677,7 +684,8 @@ impl PhysicalPlan {
             Self::Filter(input, expr) => {
                 let move_value_to_rhs = |expr| match expr {
                     PhysicalExpr::BinOp(op, value, expr)
-                        if matches!(&*value, PhysicalExpr::Value(_)) && matches!(&*expr, PhysicalExpr::Field(..)) =>
+                        if matches!(&*value, PhysicalExpr::Value(_) | PhysicalExpr::Param(..))
+                            && matches!(&*expr, PhysicalExpr::Field(..)) =>
                     {
                         match op {
                             BinOp::Eq => PhysicalExpr::BinOp(BinOp::Eq, expr, value),
@@ -933,7 +941,8 @@ impl PhysicalPlan {
                 let mut cols: Vec<_> = cols.iter().collect();
                 expr.visit(&mut |plan| {
                     if let PhysicalExpr::BinOp(BinOp::Eq, expr, value) = plan
-                        && let (PhysicalExpr::Field(proj), PhysicalExpr::Value(..)) = (&**expr, &**value)
+                        && let (PhysicalExpr::Field(proj), PhysicalExpr::Value(..) | PhysicalExpr::Param(..)) =
+                            (&**expr, &**value)
                         && proj.label == *label
                     {
                         cols.push(proj.field_pos.into());
@@ -1070,16 +1079,16 @@ impl PhysicalPlan {
     /// Note, this excludes compound equality filters such as `x = 0 and y = 1`.
     /// Note, this must be called on an optimized plan.
     /// Hence we must assume index scans have already been generated.
-    pub fn search_args(&self) -> Vec<(TableId, ColId, AlgebraicValue)> {
+    pub fn search_args(&self, params: &impl ParamResolver) -> Vec<(TableId, ColId, AlgebraicValue)> {
         let mut args = vec![];
         self.visit(&mut |op| match op {
             PhysicalPlan::IxScan(scan, _) => {
-                if let Some((col_id, value)) = scan.single_col_lit_point() {
-                    args.push((scan.schema.table_id, col_id, value.clone()));
+                if let Some((col_id, value)) = scan.single_col_point(params) {
+                    args.push((scan.schema.table_id, col_id, value));
                 }
             }
             PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, a, b)) => {
-                if let (PhysicalExpr::Field(field), PhysicalExpr::Value(value)) = (&**a, &**b) {
+                if let (PhysicalExpr::Field(field), Some(value)) = (&**a, b.const_or_param_value(params)) {
                     input.visit(&mut |op| match op {
                         PhysicalPlan::TableScan(scan, name) if *name == field.label => {
                             args.push((scan.schema.table_id, field.field_pos.into(), value.clone()));
@@ -1307,29 +1316,33 @@ impl IxScan {
     }
 
     pub fn literal_eq_terms(&self) -> Option<Vec<(ColId, AlgebraicValue)>> {
+        self.point_terms(|expr| match expr {
+            PhysicalExpr::Value(value) => Some(value.clone()),
+            _ => None,
+        })
+    }
+
+    pub fn single_col_point(&self, params: &impl ParamResolver) -> Option<(ColId, AlgebraicValue)> {
+        let terms = self.point_terms(|expr| expr.const_or_param_value(params))?;
+        let [(col, value)] = terms.as_slice() else {
+            return None;
+        };
+        Some((*col, value.clone()))
+    }
+
+    fn point_terms(
+        &self,
+        mut value_of: impl FnMut(&PhysicalExpr) -> Option<AlgebraicValue>,
+    ) -> Option<Vec<(ColId, AlgebraicValue)>> {
         let IndexProbe::Point(expr) = &self.probe else {
             return None;
         };
 
         let mut terms = Vec::new();
         for (col, expr) in align_index_key_components(self.index_cols(), expr)? {
-            let PhysicalExpr::Value(value) = expr else {
-                return None;
-            };
-            terms.push((col, value.clone()));
+            terms.push((col, value_of(expr)?));
         }
         Some(terms)
-    }
-
-    pub fn single_col_lit_point(&self) -> Option<(ColId, &AlgebraicValue)> {
-        let IndexProbe::Point(expr) = &self.probe else {
-            return None;
-        };
-        let components = align_index_key_components(self.index_cols(), expr)?;
-        let [(col, PhysicalExpr::Value(value))] = components.as_slice() else {
-            return None;
-        };
-        Some((*col, value))
     }
 }
 
@@ -1378,6 +1391,8 @@ pub enum PhysicalExpr {
     BinOp(BinOp, Box<PhysicalExpr>, Box<PhysicalExpr>),
     /// A constant algebraic value
     Value(AlgebraicValue),
+    /// A runtime parameter.
+    Param(Parameter, AlgebraicType),
     /// A field projection expression
     Field(TupleField),
 }
@@ -1403,6 +1418,14 @@ impl ProjectField for &'_ ProductValue {
 }
 
 impl PhysicalExpr {
+    pub fn const_or_param_value(&self, params: &impl ParamResolver) -> Option<AlgebraicValue> {
+        match self {
+            Self::Value(value) => Some(value.clone()),
+            Self::Param(param, ty) => Some(params.resolve_param(*param, ty)),
+            _ => None,
+        }
+    }
+
     /// Walks the expression tree and calls `f` on every subexpression
     pub fn visit(&self, f: &mut impl FnMut(&Self)) {
         f(self);
@@ -1451,6 +1474,7 @@ impl PhysicalExpr {
     pub fn map(self, f: &impl Fn(Self) -> Self) -> Self {
         match f(self) {
             value @ Self::Value(..) => value,
+            param @ Self::Param(..) => param,
             field @ Self::Field(..) => field,
             Self::BinOp(op, a, b) => Self::BinOp(op, Box::new(a.map(f)), Box::new(b.map(f))),
             Self::LogOp(op, exprs) => Self::LogOp(op, exprs.into_iter().map(|expr| expr.map(f)).collect()),
@@ -1458,26 +1482,26 @@ impl PhysicalExpr {
         }
     }
 
-    /// Evaluate this boolean expression over `row`
-    pub fn eval_bool(&self, row: &impl ProjectField) -> bool {
-        self.eval(row).as_bool().copied().unwrap_or(false)
-    }
-
-    /// Evaluate this boolean expression over `row`
-    pub fn eval_bool_with_metrics(&self, row: &impl ProjectField, bytes_scanned: &mut usize) -> bool {
-        self.eval_with_metrics(row, bytes_scanned)
+    /// Evaluate this boolean expression over `row` with runtime parameters.
+    pub fn eval_bool_with_params(
+        &self,
+        row: &impl ProjectField,
+        params: &impl ParamResolver,
+        bytes_scanned: &mut usize,
+    ) -> bool {
+        self.eval_with_params(row, params, bytes_scanned)
             .as_bool()
             .copied()
             .unwrap_or(false)
     }
 
-    /// Evaluate this expression over `row`
-    fn eval(&self, row: &impl ProjectField) -> Cow<'_, AlgebraicValue> {
-        self.eval_with_metrics(row, &mut 0)
-    }
-
-    /// Evaluate this expression over `row`
-    pub fn eval_with_metrics(&self, row: &impl ProjectField, bytes_scanned: &mut usize) -> Cow<'_, AlgebraicValue> {
+    /// Evaluate this expression over `row` with runtime parameters.
+    pub fn eval_with_params<'a>(
+        &'a self,
+        row: &impl ProjectField,
+        params: &impl ParamResolver,
+        bytes_scanned: &mut usize,
+    ) -> Cow<'a, AlgebraicValue> {
         fn eval_bin_op(op: BinOp, a: &AlgebraicValue, b: &AlgebraicValue) -> bool {
             match op {
                 BinOp::Eq => a == b,
@@ -1492,25 +1516,25 @@ impl PhysicalExpr {
         match self {
             Self::BinOp(op, a, b) => into(eval_bin_op(
                 *op,
-                &a.eval_with_metrics(row, bytes_scanned),
-                &b.eval_with_metrics(row, bytes_scanned),
+                &a.eval_with_params(row, params, bytes_scanned),
+                &b.eval_with_params(row, params, bytes_scanned),
             )),
             Self::LogOp(LogOp::And, exprs) => into(
                 exprs
                     .iter()
                     // ALL is equivalent to AND
-                    .all(|expr| expr.eval_bool_with_metrics(row, bytes_scanned)),
+                    .all(|expr| expr.eval_bool_with_params(row, params, bytes_scanned)),
             ),
             Self::LogOp(LogOp::Or, exprs) => into(
                 exprs
                     .iter()
                     // ANY is equivalent to OR
-                    .any(|expr| expr.eval_bool_with_metrics(row, bytes_scanned)),
+                    .any(|expr| expr.eval_bool_with_params(row, params, bytes_scanned)),
             ),
             Self::Product(exprs) => Cow::Owned(AlgebraicValue::product(
                 exprs
                     .iter()
-                    .map(|expr| expr.eval_with_metrics(row, bytes_scanned).into_owned())
+                    .map(|expr| expr.eval_with_params(row, params, bytes_scanned).into_owned())
                     .collect::<ProductValue>(),
             )),
             Self::Field(field) => {
@@ -1518,6 +1542,7 @@ impl PhysicalExpr {
                 *bytes_scanned += value.size_of();
                 Cow::Owned(value)
             }
+            Self::Param(param, ty) => Cow::Owned(params.resolve_param(*param, ty)),
             Self::Value(v) => Cow::Borrowed(v),
         }
     }
@@ -1538,7 +1563,7 @@ impl PhysicalExpr {
             ),
             Self::BinOp(op, a, b) => Self::BinOp(op, Box::new(a.flatten()), Box::new(b.flatten())),
             Self::Product(exprs) => Self::Product(exprs.into_iter().map(Self::flatten).collect()),
-            Self::Field(..) | Self::Value(..) => self,
+            Self::Field(..) | Self::Value(..) | Self::Param(..) => self,
         }
     }
 }
@@ -1700,9 +1725,8 @@ mod tests {
 
         let sql = "select * from t";
 
-        let auth = AuthCtx::for_testing();
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_select(lp).optimize(&auth).unwrap();
+        let pp = compile_select(lp).optimize().unwrap();
 
         match pp {
             ProjectPlan::None(PhysicalPlan::TableScan(TableScan { schema, .. }, _)) => {
@@ -1732,9 +1756,8 @@ mod tests {
 
         let sql = "select * from t where x = 5";
 
-        let auth = AuthCtx::for_testing();
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_select(lp).optimize(&auth).unwrap();
+        let pp = compile_select(lp).optimize().unwrap();
 
         match pp {
             ProjectPlan::None(PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, field, value))) => {
@@ -1832,9 +1855,8 @@ mod tests {
             join b on q.entity_id = b.entity_id
             where u.identity = 5
         ";
-        let auth = AuthCtx::for_testing();
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_select(lp).optimize(&auth).unwrap();
+        let pp = compile_select(lp).optimize().unwrap();
 
         // Plan:
         //         rx
@@ -1993,9 +2015,8 @@ mod tests {
             join p on p.id = v.project
             where 5 = m.employee and 5 = v.employee
         ";
-        let auth = AuthCtx::for_testing();
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_select(lp).optimize(&auth).unwrap();
+        let pp = compile_select(lp).optimize().unwrap();
 
         // Plan:
         //           rx
@@ -2138,9 +2159,8 @@ mod tests {
         };
 
         let sql = "select * from t where x = 3 and y = 4 and z = 5";
-        let auth = AuthCtx::for_testing();
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_select(lp).optimize(&auth).unwrap();
+        let pp = compile_select(lp).optimize().unwrap();
 
         // Select index on (x, y, z)
         match pp {
@@ -2161,7 +2181,7 @@ mod tests {
         // Test permutations of the same query
         let sql = "select * from t where z = 5 and y = 4 and x = 3";
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_select(lp).optimize(&auth).unwrap();
+        let pp = compile_select(lp).optimize().unwrap();
 
         match pp {
             ProjectPlan::None(PhysicalPlan::IxScan(IxScan { schema, probe, .. }, _)) => {
@@ -2180,7 +2200,7 @@ mod tests {
 
         let sql = "select * from t where x = 3 and y = 4";
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_select(lp).optimize(&auth).unwrap();
+        let pp = compile_select(lp).optimize().unwrap();
 
         // Select index on x
         let plan = match pp {
@@ -2202,7 +2222,7 @@ mod tests {
 
         let sql = "select * from t where w = 5 and x = 4";
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_select(lp).optimize(&auth).unwrap();
+        let pp = compile_select(lp).optimize().unwrap();
 
         // Select index on x
         let plan = match pp {
@@ -2224,7 +2244,7 @@ mod tests {
 
         let sql = "select * from t where y = 1";
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_select(lp).optimize(&auth).unwrap();
+        let pp = compile_select(lp).optimize().unwrap();
 
         // Do not select index on (y, z)
         match pp {
@@ -2239,7 +2259,7 @@ mod tests {
         // Select index on [y, z]
         let sql = "select * from t where y = 1 and z = 2";
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_select(lp).optimize(&auth).unwrap();
+        let pp = compile_select(lp).optimize().unwrap();
 
         match pp {
             ProjectPlan::None(PhysicalPlan::IxScan(IxScan { schema, probe, .. }, _)) => {
@@ -2255,7 +2275,7 @@ mod tests {
         // Check permutations of the same query
         let sql = "select * from t where z = 2 and y = 1";
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_select(lp).optimize(&auth).unwrap();
+        let pp = compile_select(lp).optimize().unwrap();
 
         match pp {
             ProjectPlan::None(PhysicalPlan::IxScan(IxScan { schema, probe, .. }, _)) => {
@@ -2271,7 +2291,7 @@ mod tests {
         // Select index on (y, z) and filter on (w)
         let sql = "select * from t where w = 1 and y = 2 and z = 3";
         let lp = parse_and_type_sub(sql, &db).unwrap();
-        let pp = compile_select(lp).optimize(&auth).unwrap();
+        let pp = compile_select(lp).optimize().unwrap();
 
         let plan = match pp {
             ProjectPlan::None(PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, field, value))) => {
@@ -2316,8 +2336,7 @@ mod tests {
             let Statement::Select(select) = stmt else {
                 unreachable!()
             };
-            let auth = AuthCtx::for_testing();
-            compile_select_list(select).optimize(&auth).unwrap()
+            compile_select_list(select).optimize().unwrap()
         };
 
         let plan = compile("select * from t limit 5");
