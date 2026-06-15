@@ -72,7 +72,9 @@ jobs:
           DOTNET_CLI_HOME: ${{ runner.temp }}/dotnet-home
           DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
         run: |
+          dotnet --info
           dotnet workload install wasi-experimental --skip-manifest-update --disable-parallel
+          dotnet workload list
 
       - name: Pack C# runtime packages
         if: ${{ github.event_name != 'workflow_dispatch' || contains(inputs.languages || 'rust,csharp,typescript', 'csharp') }}
@@ -121,6 +123,8 @@ jobs:
           MSBUILDDISABLENODEREUSE: "1"
           DOTNET_CLI_USE_MSBUILD_SERVER: "0"
           LLM_BENCH_CSHARP_CONCURRENCY: "1"
+          LLM_DEBUG: "1"
+          LLM_DEBUG_VERBOSE: "1"
           INPUT_LANGUAGES: ${{ inputs.languages || 'rust,csharp,typescript' }}
           INPUT_MODEL_SET: ${{ inputs.model_set || 'website_active' }}
           INPUT_MODELS: ${{ inputs.models || '' }}
@@ -205,3 +209,13 @@ jobs:
             echo "::error::$FAILED benchmark run(s) failed"
             exit 1
           fi
+
+      - name: Upload LLM benchmark debug artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-benchmark-debug-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            target/llm-runs
+            target/llm-dry-run-analysis
+          if-no-files-found: ignore
