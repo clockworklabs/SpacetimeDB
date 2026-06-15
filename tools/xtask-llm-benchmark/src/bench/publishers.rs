@@ -369,6 +369,7 @@ impl DotnetPublisher {
             // Avoid the CLI's duplicate `dotnet workload list` probe, which can
             // crash in CI before we reach the actual generated module build.
             .env("SPACETIME_SKIP_DOTNET_WORKLOAD_CHECK", "1")
+            .env("SPACETIME_DOTNET_PUBLISH_VERBOSITY", "normal")
     }
 
     fn log_dotnet_probe(args: &[&str], label: &str) {
@@ -473,6 +474,13 @@ impl Publisher for DotnetPublisher {
             .arg(&db)
             .current_dir(&source);
         Self::configure_dotnet_env(&mut pubcmd);
+        pubcmd
+            .env("DOTNET_DbgEnableMiniDump", "1")
+            .env("DOTNET_DbgMiniDumpType", "4")
+            .env(
+                "DOTNET_DbgMiniDumpName",
+                source.join("dotnet-dump-%p").display().to_string(),
+            );
         run(&mut pubcmd, "spacetime publish (csharp)")?;
 
         Ok(())

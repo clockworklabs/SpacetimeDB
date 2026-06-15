@@ -213,6 +213,9 @@ fn ensure_csharp_package_source(path: &Path, package_id: &str) -> Result<()> {
 
 fn write_csharp_nuget_config(root: &Path) -> Result<()> {
     let workspace = workspace_root();
+    let root = root
+        .canonicalize()
+        .with_context(|| format!("canonicalize {}", root.display()))?;
     let runtime_source = workspace.join("crates/bindings-csharp/Runtime/bin/Release");
     let bsatn_source = workspace.join("crates/bindings-csharp/BSATN.Runtime/bin/Release");
 

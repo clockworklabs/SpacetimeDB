@@ -70,8 +70,8 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
         )
     })?;
 
-    // run dotnet publish using cmd macro
-    dotnet!("publish", "-c", config_name, "-v", "quiet").run()?;
+    let publish_verbosity = std::env::var("SPACETIME_DOTNET_PUBLISH_VERBOSITY").unwrap_or_else(|_| "quiet".to_string());
+    dotnet!("publish", "-c", config_name, "-v", publish_verbosity.as_str()).run()?;
 
     // check if file exists
     let subdir = if std::env::var_os("EXPERIMENTAL_WASM_AOT").is_some_and(|v| v == "1") {
