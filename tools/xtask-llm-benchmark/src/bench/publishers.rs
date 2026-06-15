@@ -365,6 +365,10 @@ impl DotnetPublisher {
             // when running multiple dotnet builds in parallel.
             .env("MSBUILDDISABLENODEREUSE", "1")
             .env("DOTNET_CLI_USE_MSBUILD_SERVER", "0")
+            // The workflow has already installed and verified wasi-experimental.
+            // Avoid the CLI's duplicate `dotnet workload list` probe, which can
+            // crash in CI before we reach the actual generated module build.
+            .env("SPACETIME_SKIP_DOTNET_WORKLOAD_CHECK", "1")
     }
 
     fn log_dotnet_probe(args: &[&str], label: &str) {
