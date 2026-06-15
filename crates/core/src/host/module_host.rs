@@ -47,7 +47,7 @@ use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
 use spacetimedb_datastore::error::DatastoreError;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
-use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo};
+use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo, ViewInstanceArgs};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 pub use spacetimedb_durability::{DurabilityExited, DurableOffset};
 use spacetimedb_engine::sql::rls::RowLevelExpr;
@@ -60,7 +60,7 @@ use spacetimedb_lib::http::{Request as HttpRequest, Response as HttpResponse};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{bsatn, ConnectionId, TimeDuration, Timestamp};
-use spacetimedb_primitives::{ArgId, HttpHandlerId, ProcedureId, TableId, ViewFnPtr, ViewId};
+use spacetimedb_primitives::{HttpHandlerId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue};
@@ -1102,17 +1102,6 @@ pub(crate) fn resolve_view_for_refresh<'a>(
             view_id
         )
     })?;
-
-    let is_anonymous = view_call.sender.is_none();
-
-    if st_view.is_anonymous != is_anonymous {
-        return Err(anyhow::anyhow!(
-            "found is_anonymous={} in st_view, but {} in readset when updating view `{}`",
-            st_view.is_anonymous,
-            is_anonymous,
-            view_name,
-        ));
-    }
 
     let is_anonymous = view_def.is_anonymous;
 
@@ -2849,11 +2838,10 @@ impl ModuleHost {
     }
 
     /// Materializes the views return by the `view_collector`, if not already materialized,
-    /// and updates `st_view_sub` accordingly.
+    /// and updates view lifecycle state accordingly.
     ///
-    /// Passing [`Workload::Sql`] will update `st_view_sub.last_called`.
-    /// Passing [`Workload::Subscribe`] will also increment `st_view_sub.num_subscribers`,
-    /// in addition to updating `st_view_sub.last_called`.
+    /// Passing [`Workload::Sql`] will update the instance's last-used timestamp.
+    /// Passing [`Workload::Subscribe`] will also increment the subscriber's refcount.
     pub fn materialize_views<I: WasmInstance>(
         mut tx: MutTxId,
         instance: &mut RefInstance<'_, I>,
@@ -2870,12 +2858,14 @@ impl ModuleHost {
             let view_id = st_view_row.view_id;
             let table_id = st_view_row.table_id.ok_or(ViewCallError::TableDoesNotExist(view_id))?;
             let is_anonymous = st_view_row.is_anonymous;
-            let sender = if is_anonymous { None } else { Some(caller) };
-            let is_materialized = if is_anonymous {
-                tx.is_anonymous_view_materialized(view_id)?
+            let args = if is_anonymous {
+                ViewInstanceArgs::Anonymous
             } else {
-                tx.is_view_materialized(view_id, ArgId::SENTINEL, caller)?
+                ViewInstanceArgs::Sender(caller)
             };
+            let view_call = ViewCallInfo::from_args(view_id, args);
+            let sender = args.sender();
+            let is_materialized = tx.is_view_materialized(&view_call)?;
             if !is_materialized {
                 let (res, trapped) =
                     Self::call_view(instance, tx, &view_name, view_id, table_id, Nullary, caller, sender)?;
@@ -2886,11 +2876,11 @@ impl ModuleHost {
             }
             // If this is a sql call, we only update this view's "last called" timestamp
             if let Workload::Sql = workload {
-                tx.update_view_timestamp(view_id, ArgId::SENTINEL, caller)?;
+                tx.update_view_timestamp(view_call.clone(), args)?;
             }
             // If this is a subscribe call, we also increment this view's subscriber count
             if let Workload::Subscribe = workload {
-                tx.subscribe_view(view_id, ArgId::SENTINEL, caller)?;
+                tx.subscribe_view(view_call, args, caller)?;
             }
         }
         Ok((tx, false))
@@ -2926,11 +2916,20 @@ impl ModuleHost {
         let mut abi_duration = Duration::ZERO;
         let mut trapped = false;
         for view_call in tx.views_for_refresh().cloned().collect::<Vec<_>>() {
-            let sender = view_call.sender;
             let resolved = match resolve_view_for_refresh(&tx, module_def, &view_call) {
                 Ok(resolved) => resolved,
                 Err(err) => {
                     outcome = ViewOutcome::Failed(format!("failed to resolve view: {err}"));
+                    break;
+                }
+            };
+            let sender = match tx.view_instance_args(&view_call) {
+                Some(args) => args.sender(),
+                None => {
+                    outcome = ViewOutcome::Failed(format!(
+                        "failed to look up materialized view args for view {}",
+                        view_call.view_id
+                    ));
                     break;
                 }
             };
