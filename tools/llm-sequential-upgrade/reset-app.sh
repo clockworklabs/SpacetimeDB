@@ -5,7 +5,7 @@
 # Usage:
 #   ./reset-app.sh <app-dir>
 #
-# This gives Playwright a clean slate — no leftover users, rooms, or messages.
+# This gives grading a clean slate — no leftover users, rooms, or messages.
 
 set -euo pipefail
 

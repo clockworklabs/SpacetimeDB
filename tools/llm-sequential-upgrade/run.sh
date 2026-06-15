@@ -56,7 +56,6 @@ LEVEL_EXPLICIT=""
 BACKEND="spacetime"
 VARIANT="sequential-upgrade"
 RULES="guided"
-TEST_MODE=""  # playwright | chrome-mcp | (empty = no automated testing)
 RUN_INDEX=0
 FIX_MODE=""
 FIX_APP_DIR=""
@@ -70,7 +69,6 @@ while [[ $# -gt 0 ]]; do
     --backend) BACKEND="$2"; shift 2 ;;
     --variant) VARIANT="$2"; shift 2 ;;
     --rules) RULES="$2"; shift 2 ;;
-    --test) TEST_MODE="$2"; shift 2 ;;
     --run-index) RUN_INDEX="$2"; shift 2 ;;
     --fix) FIX_MODE=1; FIX_APP_DIR="$2"; shift 2 ;;
     --upgrade) UPGRADE_MODE=1; UPGRADE_APP_DIR="$2"; shift 2 ;;
@@ -282,14 +280,13 @@ else
   exit 1
 fi
 
-# Strip UI contracts from prompt if not using Playwright testing
-if [[ "$TEST_MODE" != "playwright" ]]; then
-  STRIPPED_PROMPT="/tmp/seq-upgrade-prompt-${RUN_INDEX}-$(basename "$PROMPT_FILE")"
-  # Remove **UI contract:** blocks (from the line through the next blank line or next ###)
-  sed '/^\*\*UI contract:\*\*/,/^$/d; /^\*\*Important:\*\* Each feature below includes/d' "$PROMPT_FILE" > "$STRIPPED_PROMPT"
-  PROMPT_FILE="$STRIPPED_PROMPT"
-  echo "[OK] UI contracts stripped (test=$TEST_MODE)"
-fi
+# Strip UI contracts from the prompt. They exist only for deterministic automated
+# UI assertions, which we don't use — grading is manual/in-browser.
+STRIPPED_PROMPT="/tmp/seq-upgrade-prompt-${RUN_INDEX}-$(basename "$PROMPT_FILE")"
+# Remove **UI contract:** blocks (from the line through the next blank line or next ###)
+sed '/^\*\*UI contract:\*\*/,/^$/d; /^\*\*Important:\*\* Each feature below includes/d' "$PROMPT_FILE" > "$STRIPPED_PROMPT"
+PROMPT_FILE="$STRIPPED_PROMPT"
+echo "[OK] UI contracts stripped"
 
 echo ""
 
@@ -435,7 +432,6 @@ cat > "$RUN_DIR/metadata.json" <<EOF
   "phase": "$MODE_LABEL",
   "variant": "$VARIANT",
   "rules": "$RULES",
-  "testMode": "${TEST_MODE:-none}",
   "runIndex": $RUN_INDEX,
   "vitePort": $VITE_PORT,
   "expressPort": $EXPRESS_PORT,
@@ -935,77 +931,5 @@ if node "$SCRIPT_DIR_NATIVE/parse-telemetry.mjs" "$RUN_DIR_NATIVE" "--logs-file=
   fi
 else
   echo "WARNING: Telemetry parsing failed. Raw logs at: $SHARED_TELEMETRY_DIR/logs.jsonl"
-fi
-
-# ─── Auto-grade with Playwright (if installed) ──────────────────────────────
-
-PLAYWRIGHT_DIR="$SCRIPT_DIR/test-plans/playwright"
-if [[ $EXIT_CODE -eq 0 && "$TEST_MODE" == "playwright" && -f "$PLAYWRIGHT_DIR/node_modules/.bin/playwright" ]]; then
-  echo ""
-  echo "=== Auto-grading with Playwright ==="
-  echo "  App URL: http://localhost:$VITE_PORT"
-
-  # Wait for dev server to be ready
-  READY=0
-  for i in $(seq 1 30); do
-    if curl -s -o /dev/null -w "%{http_code}" "http://localhost:$VITE_PORT" 2>/dev/null | grep -q "200"; then
-      READY=1
-      break
-    fi
-    sleep 1
-  done
-
-  if [[ $READY -eq 1 ]]; then
-    # Reset backend state for a clean test (fresh module or DB)
-    echo "Resetting backend state for clean test..."
-    "$SCRIPT_DIR/reset-app.sh" "$APP_DIR" || echo "WARNING: Backend reset failed — tests may use stale state"
-
-    # Wait for the app to reconnect after reset
-    sleep 3
-
-    # Determine which feature specs to run based on prompt level
-    # Level → max feature number mapping:
-    #   1=4, 2=5, 3=6, 4=7, 5=8, 6=9, 7=10, 8=11, 9=12, 10=13, 11=14, 12=15,
-    #   13=16, 14=17, 15=18, 16=19, 17=20, 18=21, 19=22
-    MAX_FEATURE=$((LEVEL + 3))
-    if [[ $MAX_FEATURE -gt 22 ]]; then MAX_FEATURE=22; fi
-
-    PW_SPEC_FILES=""
-    for feat_num in $(seq 1 $MAX_FEATURE); do
-      FEAT_PAD=$(printf '%02d' "$feat_num")
-      SPEC_FILE=$(ls "$PLAYWRIGHT_DIR/specs/feature-${FEAT_PAD}-"*.spec.ts 2>/dev/null | head -1)
-      if [[ -n "$SPEC_FILE" ]]; then
-        PW_SPEC_FILES="$PW_SPEC_FILES $SPEC_FILE"
-      fi
-    done
-    echo "  Testing features 1-$MAX_FEATURE ($LEVEL prompt level)"
-
-    mkdir -p /tmp/pw-results-$RUN_INDEX
-    cd "$PLAYWRIGHT_DIR"
-    APP_URL="http://localhost:$VITE_PORT" npx playwright test $PW_SPEC_FILES --reporter=json \
-      1>/tmp/pw-results-$RUN_INDEX/results.json 2>/dev/null || true
-    cd "$APP_DIR"
-
-    RESULTS_SIZE=$(wc -c < /tmp/pw-results-$RUN_INDEX/results.json 2>/dev/null || echo "0")
-    if [[ "$RESULTS_SIZE" -gt 100 ]]; then
-      PW_RESULTS="/tmp/pw-results-$RUN_INDEX/results.json"
-      if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
-        PW_RESULTS=$(cygpath -w "$PW_RESULTS")
-      fi
-      node "$SCRIPT_DIR_NATIVE/parse-playwright-results.mjs" "$PW_RESULTS" "$APP_DIR_NATIVE" "$BACKEND"
-      # Copy raw results into telemetry dir for archival
-      cp /tmp/pw-results-$RUN_INDEX/results.json "$RUN_DIR/playwright-results.json" 2>/dev/null || true
-    else
-      echo "WARNING: Playwright produced no results (app may not have loaded)"
-    fi
-  else
-    echo "WARNING: Dev server not responding on port $VITE_PORT — skipping Playwright grading"
-  fi
-elif [[ $EXIT_CODE -eq 0 && "$TEST_MODE" == "agents" ]]; then
-  echo ""
-  echo "=== Auto-grading with Playwright Agents ==="
-  "$SCRIPT_DIR/grade-agents.sh" "$APP_DIR" 2>&1 || echo "WARNING: Agent grading failed"
-elif [[ $EXIT_CODE -ne 0 ]]; then
-  echo "Skipping auto-grade — code generation failed (exit $EXIT_CODE)"
 fi
 

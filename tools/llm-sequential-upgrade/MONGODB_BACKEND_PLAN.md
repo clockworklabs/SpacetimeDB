@@ -138,8 +138,10 @@ re-detect mongo via the marker.
 
 ## Phase 4 — Grading harness (manual) ✅ DONE (verified)
 
-Required changes complete. The automated-grading plumbing (`grade-playwright.sh` /
-`grade-agents.sh`) is left for later (optional).
+Required changes complete. Grading is manual (Chrome MCP / human in-browser), so the
+automated Playwright grading was **removed entirely** (`grade-playwright.sh`,
+`grade-agents.sh`, `parse-playwright-results.mjs`, the `--test`/`TEST_MODE` plumbing,
+and the run.sh auto-grade block).
 
 | File | Change | Status |
 |---|---|---|
@@ -147,7 +149,7 @@ Required changes complete. The automated-grading plumbing (`grade-playwright.sh`
 | `templates/BUG_REPORT.template.md`, `templates/ITERATION_LOG.template.md` | Canonical formats matching the published results | ✅ |
 | `grade.sh` | Marker-based detection + port resolved from `metadata.json vitePort` (fallbacks aligned to run.sh: 6173/6273/6373). **Verified** mongo app → backend `mongodb`, port `6373`. | ✅ |
 | `GRADING.md`, `GRADING_WORKFLOW.md` | Added MongoDB URL/port rows; also corrected the stale 5173/5274 ports to the real 6173/6273/6373 scheme. | ✅ |
-| `grade-agents.sh`, `grade-playwright.sh` | `mongodb` arm | Deferred (automated grading only) |
+| Playwright automated grading | **Removed** — `grade-playwright.sh`, `grade-agents.sh`, `parse-playwright-results.mjs` deleted; `--test`/`TEST_MODE` stripped from run.sh/benchmark.sh/run-loop.sh. | ✅ |
 
 ---
 
@@ -214,12 +216,12 @@ New:
 
 Edited:
 - `docker-compose.otel.yaml`
-- `run.sh` (7 sites)
-- `reset-app.sh` (new Mongo reset arm) — required
-- `grade.sh` — required; `grade-agents.sh`, `grade-playwright.sh` — optional (automated grading only)
+- `run.sh` (7 sites + removed Playwright auto-grade block / `--test`)
+- `reset-app.sh` (new Mongo reset arm)
+- `grade.sh` (marker detection + port resolution)
 - `generate-report.mjs` (LOC counter)
-- `benchmark.sh` (backend list)
-- `GRADING.md`, `GRADING_WORKFLOW.md` (docs)
+- `benchmark.sh`, `run-loop.sh` (backend list; removed `--test` plumbing)
+- `GRADING.md`, `GRADING_WORKFLOW.md`, `README.md`, `DEVELOP.md` (docs)
 
-Retrieve & audit (blocker):
-- `test-plans/` (+ `test-plans/playwright/`)
+Removed (manual grading only):
+- `grade-playwright.sh`, `grade-agents.sh`, `parse-playwright-results.mjs`
