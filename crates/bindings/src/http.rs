@@ -127,18 +127,18 @@ impl HandlerContext {
     }
 
     /// Read the current module's [`Identity`].
-    pub fn identity(&self) -> Identity {
+    pub fn database_identity(&self) -> Identity {
         Identity::from_byte_array(spacetimedb_bindings_sys::identity())
     }
 
     /// Acquire a mutable transaction and execute `body` with read-write access.
     pub fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
-        with_tx(body)
+        with_tx(body, Identity::ZERO, None)
     }
 
     /// Acquire a mutable transaction and execute `body` with read-write access.
     pub fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
-        try_with_tx(body)
+        try_with_tx(body, Identity::ZERO, None)
     }
 
     /// Create a new random [`Uuid`] `v4` using the built-in RNG.
