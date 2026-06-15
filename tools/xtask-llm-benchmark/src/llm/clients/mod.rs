@@ -8,7 +8,7 @@ pub mod openai;
 pub mod openrouter;
 pub mod xai;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 
 pub use anthropic::AnthropicClient;
@@ -44,11 +44,11 @@ pub trait LlmClient: Send + Sync {
     fn provider_name(&self) -> &'static str;
 
     async fn preflight(&self, model: &str) -> Result<ClientPreflight> {
-        bail!(
-            "{} credit preflight is not implemented for model '{}'",
+        Ok(ClientPreflight::new(format!(
+            "{} credit preflight not implemented for model '{}'; skipped",
             self.provider_name(),
             model
-        )
+        )))
     }
 
     async fn generate(&self, model: &str, prompt: &BuiltPrompt) -> Result<LlmOutput>;
