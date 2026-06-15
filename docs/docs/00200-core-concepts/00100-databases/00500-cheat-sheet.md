@@ -753,6 +753,7 @@ ctx.sender              // Identity of caller
 ctx.connectionId        // ConnectionId | undefined
 ctx.timestamp           // Timestamp
 ctx.identity            // Module's identity
+ctx.random              // Deterministic random generator
 ```
 
 </TabItem>
@@ -764,7 +765,7 @@ ctx.Sender              // Identity of caller
 ctx.ConnectionId        // ConnectionId?
 ctx.Timestamp           // Timestamp
 ctx.Identity            // Module's identity
-ctx.Rng                 // Random number generator
+ctx.Rng                 // Deterministic random generator
 ```
 
 </TabItem>
@@ -776,7 +777,7 @@ ctx.sender()            // Identity of caller
 ctx.connection_id()     // Option<ConnectionId>
 ctx.timestamp           // Timestamp
 ctx.identity()          // Module's identity
-ctx.rng()               // Random number generator
+ctx.rng()               // Deterministic random generator
 ```
 
 </TabItem>
@@ -788,7 +789,7 @@ ctx.sender()            // Identity of caller (Identity type)
 ctx.connection_id       // std::optional<ConnectionId>
 ctx.timestamp           // Timestamp of current transaction (Timestamp type)
 ctx.identity()          // Module's own identity (Identity type)
-ctx.rng()               // Random number generator (for seeded randomness)
+ctx.rng()               // Deterministic random generator
 ```
 
 </TabItem>
