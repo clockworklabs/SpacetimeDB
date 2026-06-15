@@ -375,6 +375,11 @@ metrics_group!(
         #[labels(db: Identity)]
         pub total_outgoing_queue_length: IntGaugeVec,
 
+        #[name = spacetime_client_outgoing_queue_disconnects_total]
+        #[help = "The number of clients disconnected because their outgoing WebSocket message queue filled up"]
+        #[labels(db: Identity)]
+        pub client_outgoing_queue_disconnects: IntCounterVec,
+
         #[name = spacetime_replay_total_time_seconds]
         #[help = "Total time spent replaying a database upon restart, including snapshot read, snapshot restore and commitlog replay"]
         #[labels(db: Identity)]
