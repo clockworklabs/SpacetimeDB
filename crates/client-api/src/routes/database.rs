@@ -25,7 +25,7 @@ use derive_more::From;
 use futures::TryStreamExt;
 use http::StatusCode;
 use http_body_util::BodyExt;
-use log::{info, warn};
+use log::{debug, info, warn};
 use serde::Deserialize;
 use spacetimedb::auth::identity::ConnectionAuthCtx;
 use spacetimedb::database_logger::DatabaseLogger;
@@ -1232,7 +1232,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
         PrettyPrintStyle::AnsiColor => AutoMigratePrettyPrintStyle::AnsiColor,
     };
 
-    info!("planning migration for database {database_identity}");
+    debug!("planning migration for database {database_identity}");
     let migrate_plan = ctx
         .migrate_plan(
             DatabaseDef {
@@ -1256,7 +1256,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
             plan,
             major_version_upgrade,
         } => {
-            info!(
+            debug!(
                 "planned auto-migration of database {} from {} to {}",
                 database_identity, old_module_hash, new_module_hash
             );

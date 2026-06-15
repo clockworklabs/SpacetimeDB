@@ -2167,7 +2167,7 @@ fn send_to_client_v1(
     message: impl Into<SerializableMessage>,
 ) {
     if let Err(e) = client.send_message(tx_offset, OutboundMessage::V1(message.into())) {
-        tracing::warn!(%client.id, "failed to send update message to client: {e}")
+        tracing::debug!(%client.id, "failed to send update message to client: {e}")
     }
 }
 fn send_to_client(
@@ -2178,7 +2178,7 @@ fn send_to_client(
 ) {
     tracing::trace!(client = %client.id, tx_offset, "send_to_client");
     if let Err(e) = client.send_message(tx_offset, message) {
-        tracing::warn!(%client.id, "failed to send update message to client: {e}")
+        tracing::debug!(%client.id, "failed to send update message to client: {e}")
     }
 }
 

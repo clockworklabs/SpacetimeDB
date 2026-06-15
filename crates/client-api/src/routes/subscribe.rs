@@ -252,7 +252,7 @@ where
                 connected
             }
             Err(e @ (ClientConnectedError::Rejected(_) | ClientConnectedError::OutOfEnergy)) => {
-                log::info!(
+                log::debug!(
                     "websocket: Rejecting connection for {client_log_string} due to error from client_connected reducer: {e}"
                 );
                 return;
@@ -504,7 +504,7 @@ async fn ws_client_actor_inner(
         let _ = unordered_tx.send(msg);
     })
     .await;
-    log::info!("Client connection ended: {client_id}");
+    log::debug!("Client connection ended: {client_id}");
 }
 
 /// The main `select!` loop of the websocket client actor.
@@ -668,7 +668,7 @@ async fn ws_main_loop<HotswapWatcher>(
 
             // Exit if we haven't heard from the client for too long.
             _ = &mut idle_timer => {
-                log::warn!("Client {} timed out", state.client_id);
+                log::debug!("Client {} timed out", state.client_id);
                 break;
             },
 
@@ -923,7 +923,7 @@ fn ws_recv_queue(
         reason: Utf8Bytes::from_static("too many requests"),
     });
     let on_message_after_close = move |client_id| {
-        log::warn!("client {client_id} sent message after close or error");
+        log::debug!("client {client_id} sent message after close or error");
     };
 
     let max_incoming_queue_length = state.config.incoming_queue_length.get();

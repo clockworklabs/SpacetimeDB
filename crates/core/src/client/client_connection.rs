@@ -21,6 +21,7 @@ use derive_more::From;
 use futures::prelude::*;
 use log::warn;
 use prometheus::{Histogram, IntCounter, IntGauge};
+use scopeguard::ScopeGuard;
 use spacetimedb_auth::identity::{ConnectionAuthCtx, SpacetimeIdentityClaims};
 use spacetimedb_client_api_messages::websocket::{common as ws_common, v1 as ws_v1, v2 as ws_v2};
 use spacetimedb_durability::{DurableOffset, TxOffset};
@@ -863,13 +864,16 @@ impl ClientConnection {
 
             let _gauge_guard = module_info.metrics.connected_clients.inc_scope();
             module_info.metrics.ws_clients_spawned.inc();
-            scopeguard::defer! {
+            let abort_guard = scopeguard::guard((), |_| {
                 let database_identity = module_info.database_identity;
-                log::warn!("websocket connection aborted for client identity `{client_identity}` and database identity `{database_identity}`");
+                log::warn!(
+                    "websocket connection aborted for client identity `{client_identity}` and database identity `{database_identity}`"
+                );
                 module_info.metrics.ws_clients_aborted.inc();
-            };
+            });
 
-            fut.await
+            fut.await;
+            ScopeGuard::into_inner(abort_guard);
         })
         .abort_handle();
 
