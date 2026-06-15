@@ -2,64 +2,26 @@ use duct::cmd;
 use rand::seq::IteratorRandom;
 use spacetimedb::messages::control_db::HostType;
 use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_guard::SpacetimeDbGuard;
 use spacetimedb_paths::{RootDir, SpacetimePaths};
 use std::fs::create_dir_all;
-use std::sync::{Mutex, OnceLock};
-use std::thread::JoinHandle;
+use std::sync::Mutex;
 
 use crate::invoke_cli;
-use crate::modules::{start_runtime, CompilationMode, CompiledModule};
+use crate::modules::{CompilationMode, CompiledModule};
 use tempfile::TempDir;
 
-/// Ensure that the server thread we're testing against is still running, starting
-/// it if it hasn't been started yet.
-pub fn ensure_standalone_process() -> &'static SpacetimePaths {
-    static PATHS: OnceLock<SpacetimePaths> = OnceLock::new();
-    static JOIN_HANDLE: OnceLock<Mutex<Option<JoinHandle<anyhow::Result<()>>>>> = OnceLock::new();
+struct SdkTestPaths {
+    paths: SpacetimePaths,
+    _root: TempDir,
+}
 
-    let paths = PATHS.get_or_init(|| {
-        let dir = TempDir::with_prefix("stdb-sdk-test")
-            .expect("Failed to create tempdir")
-            // TODO: This leaks the tempdir.
-            //       We need the tempdir to live for the duration of the process,
-            //       and all the options for post-`main` cleanup seem sketchy.
-            .keep();
-        SpacetimePaths::from_root_dir(&RootDir(dir))
-    });
-
-    let join_handle = JOIN_HANDLE.get_or_init(|| {
-        Mutex::new(Some(std::thread::spawn(move || {
-            start_runtime().block_on(spacetimedb_standalone::start_server(
-                &paths.data_dir,
-                Some(&paths.cli_config_dir.0),
-            ))
-        })))
-    });
-
-    let mut join_handle = join_handle.lock().unwrap_or_else(|e| e.into_inner());
-
-    if join_handle
-        .as_ref()
-        .expect("Standalone process already finished")
-        .is_finished()
-    {
-        match join_handle.take().unwrap().join() {
-            Ok(Ok(())) => {}
-            Ok(Err(e)) => panic!("standalone process failed: {e:?}"),
-            Err(e) => {
-                let msg = if let Some(s) = e.downcast_ref::<String>() {
-                    s
-                } else if let Some(s) = e.downcast_ref::<&str>() {
-                    s
-                } else {
-                    "dyn Any"
-                };
-                panic!("standalone process failed by panic: {msg}")
-            }
-        }
+impl SdkTestPaths {
+    fn new() -> Self {
+        let root = TempDir::with_prefix("stdb-sdk-test").expect("Failed to create tempdir");
+        let paths = SpacetimePaths::from_root_dir(&RootDir(root.path().to_path_buf()));
+        Self { paths, _root: root }
     }
-
-    paths
 }
 
 pub struct Test {
@@ -105,11 +67,13 @@ pub struct Test {
     /// Will run with access to the env vars:
     /// - `SPACETIME_SDK_TEST_CLIENT_PROJECT` bound to the `client_project` path.
     /// - `SPACETIME_SDK_TEST_DB_NAME` bound to the database identity or name.
+    /// - `SPACETIME_SDK_TEST_SERVER_URL` bound to the server URL for this test.
     run_command: String,
 }
 
 pub const TEST_MODULE_PROJECT_ENV_VAR: &str = "SPACETIME_SDK_TEST_MODULE_PROJECT";
 pub const TEST_DB_NAME_ENV_VAR: &str = "SPACETIME_SDK_TEST_DB_NAME";
+pub const TEST_SERVER_URL_ENV_VAR: &str = "SPACETIME_SDK_TEST_SERVER_URL";
 pub const TEST_CLIENT_PROJECT_ENV_VAR: &str = "SPACETIME_SDK_TEST_CLIENT_PROJECT";
 
 fn language_is_unreal(language: &str) -> bool {
@@ -121,7 +85,8 @@ impl Test {
         TestBuilder::default()
     }
     pub fn run(self) {
-        let paths = ensure_standalone_process();
+        let sdk_paths = SdkTestPaths::new();
+        let paths = &sdk_paths.paths;
 
         let (file, host_type) = compile_module(&self.module_name);
 
@@ -137,9 +102,11 @@ impl Test {
 
         compile_client(&self.compile_command, &self.client_project);
 
-        let db_name = publish_module(paths, &file, host_type);
+        let guard = SpacetimeDbGuard::spawn_in_temp_data_dir();
+        let server_url = guard.host_url.as_str();
+        let db_name = publish_module(paths, server_url, &file, host_type);
 
-        run_client(&self.run_command, &self.client_project, &db_name);
+        run_client(&self.run_command, &self.client_project, server_url, &db_name);
     }
 }
 
@@ -213,7 +180,7 @@ fn compile_module(module: &str) -> (String, HostType) {
 
 // Note: this function does not memoize because we want each test to publish the same
 // module as a separate clean database instance for isolation purposes.
-fn publish_module(paths: &SpacetimePaths, wasm_file: &str, host_type: HostType) -> String {
+fn publish_module(paths: &SpacetimePaths, server_url: &str, wasm_file: &str, host_type: HostType) -> String {
     let name = random_module_name();
     invoke_cli(
         paths,
@@ -221,7 +188,7 @@ fn publish_module(paths: &SpacetimePaths, wasm_file: &str, host_type: HostType) 
             "publish",
             "--anonymous",
             "--server",
-            "local",
+            server_url,
             match host_type {
                 HostType::Wasm => "--bin-path",
                 HostType::Js => "--js-path",
@@ -268,10 +235,7 @@ fn publish_module(paths: &SpacetimePaths, wasm_file: &str, host_type: HostType) 
 ///   If you need bindings for multiple different modules, put them in different subdirs.
 /// - If multiple distinct test harness processes run concurrently,
 ///   they will encounter the race condition described above,
-///   because the `BINDINGS_GENERATED` lock is not shared between harness processes.
-///   Running multiple test harness processes concurrently will break anyways
-///   because each will try to run `spacetime start` as a subprocess and will therefore
-///   contend over port 3000.
+///   because the binding-generation lock is not shared between harness processes.
 ///   Prefer constructing multiple `Test`s and `Test::run`ing them
 ///   from within the same harness process.
 //
@@ -384,12 +348,13 @@ fn compile_client(compile_command: &str, client_project: &str) {
     })
 }
 
-fn run_client(run_command: &str, client_project: &str, db_name: &str) {
+fn run_client(run_command: &str, client_project: &str, server_url: &str, db_name: &str) {
     let (exe, args) = split_command_string(run_command);
 
     let output = cmd(exe, args)
         .dir(client_project)
         .env(TEST_CLIENT_PROJECT_ENV_VAR, client_project)
+        .env(TEST_SERVER_URL_ENV_VAR, server_url)
         .env(TEST_DB_NAME_ENV_VAR, db_name)
         .env(
             "RUST_LOG",
