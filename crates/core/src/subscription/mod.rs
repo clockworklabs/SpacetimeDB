@@ -27,14 +27,7 @@ pub mod subscription;
 pub mod tx;
 pub mod websocket_building;
 
-/// Execute a subscription query over a view.
-///
-/// Specifically this utility is for queries that return rows from a view.
-/// Unlike user tables, views have internal columns that should not be returned to clients.
-/// The [`ViewProject`] operator implicitly drops these columns as part of its execution.
-///
-/// NOTE: This method was largely copied from [`execute_plan`].
-/// TODO: Merge with [`execute_plan`].
+/// Execute subscription query fragments over a view.
 pub fn execute_plan_for_view<'p, F>(
     plan_fragments: impl IntoIterator<Item = &'p PipelinedProject>,
     num_cols: usize,
