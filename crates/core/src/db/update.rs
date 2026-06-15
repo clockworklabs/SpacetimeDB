@@ -6,6 +6,7 @@ use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::ColSet;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::auto_migrate::{AutoMigratePlan, ManualMigratePlan, MigratePlan};
 use spacetimedb_schema::schema::{column_schemas_from_defs, IndexSchema, Schema, SequenceSchema};
 
@@ -215,7 +216,16 @@ fn auto_migrate_database(
 
                 log!(logger, "Creating index `{index_name}` on table `{table_full_name}`");
 
-                let index_schema = IndexSchema::from_module_def(owning_def, index_def, table_id, 0.into());
+                let mut index_schema = IndexSchema::from_module_def(owning_def, index_def, table_id, 0.into());
+
+                // Apply namespace prefix for submodule indexes
+                if !prefix.is_empty() {
+                    index_schema.index_name =
+                        RawIdentifier::from(format!("{}{}", prefix, index_schema.index_name));
+                    if let Some(alias) = &index_schema.alias {
+                        index_schema.alias = Some(RawIdentifier::from(format!("{}{}", prefix, alias)));
+                    }
+                }
 
                 stdb.create_index(tx, index_schema, is_unique)?;
             }
