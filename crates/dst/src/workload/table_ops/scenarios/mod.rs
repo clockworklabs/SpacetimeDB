@@ -13,6 +13,27 @@ pub enum TableScenarioId {
     RandomCrud,
 }
 
+impl TableScenarioId {
+    pub fn parse(value: &str) -> anyhow::Result<Self> {
+        match value {
+            "random-crud" => Ok(Self::RandomCrud),
+            _ => anyhow::bail!("unsupported scenario: {value}; expected: random-crud"),
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::RandomCrud => "random-crud",
+        }
+    }
+}
+
+impl std::fmt::Display for TableScenarioId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 impl TableScenario for RandomCrudScenario {
     fn generate_schema(&self, rng: &Rng) -> SchemaPlan {
         random_crud::generate_schema(rng)

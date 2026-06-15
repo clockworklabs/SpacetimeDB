@@ -31,8 +31,25 @@ pub(crate) use runtime::PropertyRuntime;
 pub(crate) trait TargetPropertyAccess {
     fn schema_plan(&self) -> &SchemaPlan;
     fn lookup_in_connection(&self, conn: SessionId, table: usize, id: u64) -> Result<Option<SimRow>, String>;
-    fn collect_rows_in_connection(&self, conn: SessionId, table: usize) -> Result<Vec<SimRow>, String>;
-    fn collect_rows_for_table(&self, table: usize) -> Result<Vec<SimRow>, String>;
+    fn visit_rows_in_connection(
+        &self,
+        conn: SessionId,
+        table: usize,
+        visitor: &mut dyn FnMut(SimRow) -> Result<(), String>,
+    ) -> Result<(), String>;
+    fn visit_rows_for_table(
+        &self,
+        table: usize,
+        visitor: &mut dyn FnMut(SimRow) -> Result<(), String>,
+    ) -> Result<(), String>;
+    fn collect_rows_for_table(&self, table: usize) -> Result<Vec<SimRow>, String> {
+        let mut rows = Vec::new();
+        self.visit_rows_for_table(table, &mut |row| {
+            rows.push(row);
+            Ok(())
+        })?;
+        Ok(rows)
+    }
     fn count_rows(&self, table: usize) -> Result<usize, String>;
     fn count_by_col_eq(&self, table: usize, col: u16, value: &AlgebraicValue) -> Result<usize, String>;
     fn range_scan(
@@ -73,6 +90,8 @@ pub(crate) enum PropertyKind {
     RangeScanMatchesModel,
     /// Model/oracle: full scans match the oracle session-visible model.
     FullScanMatchesModel,
+    /// Model/oracle: post-reopen table state matches the oracle model.
+    TablesVerifiedMatchesModel,
 }
 
 #[derive(Clone, Debug)]
@@ -121,7 +140,9 @@ pub(crate) enum TableObservation {
     FullScan {
         conn: SessionId,
         table: usize,
-        actual: Vec<SimRow>,
+    },
+    TablesVerified {
+        conn: SessionId,
     },
     CommitOrRollback,
 }
@@ -181,7 +202,9 @@ enum PropertyEvent<'a> {
     FullScan {
         conn: SessionId,
         table: usize,
-        actual: &'a [SimRow],
+    },
+    TablesVerified {
+        conn: SessionId,
     },
     CommitOrRollback,
     TableWorkloadFinished(&'a TableWorkloadOutcome),

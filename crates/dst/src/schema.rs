@@ -23,6 +23,9 @@ pub struct TablePlan {
     /// A value like `[1]` means a single-column secondary index on column 1.
     /// A value like `[0, 1]` means a composite btree index over columns 0 and 1.
     pub extra_indexes: Vec<Vec<u16>>,
+    /// If true, rows are visible only within the inserting transaction
+    /// and are not persisted to committed state after commit.
+    pub is_event: bool,
 }
 
 /// Column definition used by simulators.

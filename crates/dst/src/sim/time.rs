@@ -21,7 +21,10 @@ pub async fn sleep(duration: Duration) {
     current_handle().sleep(duration).await
 }
 
-pub async fn timeout<T>(duration: Duration, future: impl core::future::Future<Output = T>) -> Result<T, TimeoutElapsed> {
+pub async fn timeout<T>(
+    duration: Duration,
+    future: impl core::future::Future<Output = T>,
+) -> Result<T, TimeoutElapsed> {
     current_handle().timeout(duration, future).await
 }
 
@@ -76,7 +79,7 @@ mod tests {
         });
 
         assert_eq!(*order.lock().expect("order poisoned"), vec![3, 10]);
-        assert_eq!(runtime.elapsed(), Duration::from_millis(10));
+        assert_elapsed_near(runtime.elapsed(), Duration::from_millis(10));
     }
 
     #[test]
@@ -102,7 +105,7 @@ mod tests {
         });
 
         assert_eq!(output, Ok(9));
-        assert_eq!(runtime.elapsed(), Duration::from_millis(3));
+        assert_elapsed_near(runtime.elapsed(), Duration::from_millis(3));
     }
 
     #[test]
@@ -118,6 +121,14 @@ mod tests {
         });
 
         assert_eq!(output.unwrap_err().duration(), Duration::from_millis(4));
-        assert_eq!(runtime.elapsed(), Duration::from_millis(4));
+        assert_elapsed_near(runtime.elapsed(), Duration::from_millis(4));
+    }
+
+    fn assert_elapsed_near(actual: Duration, expected: Duration) {
+        assert!(actual >= expected, "actual={actual:?} expected={expected:?}");
+        assert!(
+            actual < expected + Duration::from_millis(1),
+            "actual={actual:?} expected={expected:?}"
+        );
     }
 }

@@ -4,7 +4,7 @@ use spacetimedb_sats::AlgebraicValue;
 
 use crate::{
     client::SessionId,
-    schema::{distinct_value_for_type, generate_value_for_type, ColumnPlan, SchemaPlan, SimRow},
+    schema::{distinct_value_for_type, generate_value_for_type, ColumnPlan, SchemaPlan, SimRow, TablePlan},
     sim::{fork_seed, Rng},
 };
 
@@ -22,6 +22,8 @@ pub(crate) struct GenerationModel {
     committed: Vec<Vec<SimRow>>,
     next_ids: Vec<u64>,
     active_writer: Option<SessionId>,
+    is_event: Vec<bool>,
+    table_counter: usize,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -42,6 +44,8 @@ impl GenerationModel {
                 .map(|idx| fork_seed(seed, idx as u64 + 100))
                 .collect(),
             active_writer: None,
+            is_event: schema.tables.iter().map(|t| t.is_event).collect(),
+            table_counter: schema.tables.len(),
         }
     }
 
@@ -184,7 +188,9 @@ impl GenerationModel {
             self.committed[*table].retain(|candidate| candidate != row);
         }
         for (table, row) in &inserts {
-            self.committed[*table].push(row.clone());
+            if !self.is_event[*table] {
+                self.committed[*table].push(row.clone());
+            }
         }
     }
 
@@ -225,6 +231,36 @@ impl GenerationModel {
             indexes.push(cols);
         }
     }
+
+    pub(crate) fn add_table(&mut self, schema: &TablePlan, is_event: bool) -> usize {
+        let table_idx = self.table_counter;
+        self.table_counter += 1;
+        self.schema.tables.push(schema.clone());
+        self.committed.push(Vec::new());
+        self.next_ids.push(1);
+        self.is_event.push(is_event);
+        for conn in &mut self.connections {
+            if let Some(snapshot) = &mut conn.read_snapshot {
+                snapshot.push(Vec::new());
+            }
+        }
+        table_idx
+    }
+
+    pub(crate) fn truncate(&mut self, conn: SessionId, table: usize) {
+        self.committed[table].clear();
+        let pending = &mut self.connections[conn.as_index()];
+        pending.staged_inserts.retain(|(t, _)| *t != table);
+        pending.staged_deletes.retain(|(t, _)| *t != table);
+        if let Some(snapshot) = &mut pending.read_snapshot {
+            snapshot[table].clear();
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn drop_table(&mut self, conn: SessionId, table: usize) {
+        self.truncate(conn, table);
+    }
 }
 
 /// Replay model used as the oracle for table workload properties.
@@ -237,6 +273,7 @@ pub struct TableOracle {
     committed: Vec<Vec<SimRow>>,
     connections: Vec<ExpectedConnection>,
     active_writer: Option<SessionId>,
+    is_event: Vec<bool>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -265,6 +302,7 @@ impl TableOracle {
             committed: vec![Vec::new(); table_count],
             connections: vec![ExpectedConnection::default(); connection_count],
             active_writer: None,
+            is_event: vec![false; table_count],
         }
     }
 
@@ -316,6 +354,19 @@ impl TableOracle {
             TableOperation::InsertRows { conn, table, rows } => self.predict_insert_rows(*conn, *table, rows),
             TableOperation::DeleteRows { conn, table, rows } => self.predict_delete_rows(*conn, *table, rows),
             TableOperation::AddColumn { .. } | TableOperation::AddIndex { .. } => Ok(PredictedOutcome::Applied),
+            TableOperation::AddTable { .. } => Ok(PredictedOutcome::Applied),
+            TableOperation::DropTable { conn, table } => {
+                self.ensure_connection(*conn)?;
+                self.ensure_table(*table)?;
+                Ok(PredictedOutcome::Applied)
+            }
+            TableOperation::TruncateTable { conn, table } => {
+                self.ensure_connection(*conn)?;
+                self.ensure_table(*table)?;
+                Ok(PredictedOutcome::Applied)
+            }
+            TableOperation::Reopen { .. } => Ok(PredictedOutcome::Applied),
+            TableOperation::VerifyTables { .. } => Ok(PredictedOutcome::Applied),
             TableOperation::PointLookup { .. }
             | TableOperation::PredicateCount { .. }
             | TableOperation::RangeScan { .. }
@@ -352,7 +403,9 @@ impl TableOracle {
                     self.committed[table].retain(|candidate| *candidate != row);
                 }
                 for (table, row) in state.staged_inserts.drain(..) {
-                    self.committed[table].push(row);
+                    if !self.is_event[table] {
+                        self.committed[table].push(row);
+                    }
                 }
                 state.in_tx = false;
                 self.active_writer = None;
@@ -376,6 +429,17 @@ impl TableOracle {
                 self.add_column(*table, default.clone());
             }
             TableOperation::AddIndex { .. } => {}
+            TableOperation::AddTable { schema, .. } => {
+                self.add_table(schema.is_event);
+            }
+            TableOperation::DropTable { conn, table } => {
+                self.drop_table(*conn, *table);
+            }
+            TableOperation::TruncateTable { conn, table } => {
+                self.truncate(*conn, *table);
+            }
+            TableOperation::Reopen { .. } => {}
+            TableOperation::VerifyTables { .. } => {}
             TableOperation::PointLookup { .. }
             | TableOperation::PredicateCount { .. }
             | TableOperation::RangeScan { .. }
@@ -526,11 +590,14 @@ impl TableOracle {
         rows
     }
 
-    pub fn committed_rows(mut self) -> Vec<Vec<SimRow>> {
-        for table_rows in &mut self.committed {
-            table_rows.sort_by_key(|row| row.id().unwrap_or_default());
-        }
-        self.committed
+    pub fn table_count(&self) -> usize {
+        self.committed.len()
+    }
+
+    pub fn committed_rows_for_table(&self, table: usize) -> Vec<SimRow> {
+        let mut rows = self.committed[table].clone();
+        rows.sort_by_key(|row| row.id().unwrap_or_default());
+        rows
     }
 
     fn insert(&mut self, conn: SessionId, table: usize, row: SimRow) {
@@ -593,6 +660,30 @@ impl TableOracle {
                 }
             }
         }
+    }
+
+    pub fn add_table(&mut self, is_event: bool) {
+        self.committed.push(Vec::new());
+        self.is_event.push(is_event);
+        for conn in &mut self.connections {
+            if let Some(snapshot) = &mut conn.read_snapshot {
+                snapshot.push(Vec::new());
+            }
+        }
+    }
+
+    fn truncate(&mut self, conn: SessionId, table: usize) {
+        self.committed[table].clear();
+        let state = &mut self.connections[conn.as_index()];
+        state.staged_inserts.retain(|(t, _)| *t != table);
+        state.staged_deletes.retain(|(t, _)| *t != table);
+        if let Some(snapshot) = &mut state.read_snapshot {
+            snapshot[table].clear();
+        }
+    }
+
+    fn drop_table(&mut self, conn: SessionId, table: usize) {
+        self.truncate(conn, table);
     }
 }
 

@@ -6,7 +6,9 @@ use crate::{
     client::SessionId,
     core::{StreamingProperties, TargetEngine},
     schema::{SchemaPlan, SimRow},
-    workload::table_ops::{PredictedOutcome, TableErrorKind, TableOracle, TableWorkloadInteraction, TableWorkloadOutcome},
+    workload::table_ops::{
+        PredictedOutcome, TableErrorKind, TableOracle, TableWorkloadInteraction, TableWorkloadOutcome,
+    },
 };
 
 use super::{
@@ -47,8 +49,12 @@ impl PropertyModels {
 }
 
 impl TableModel {
-    pub(super) fn committed_rows(&self) -> Vec<Vec<SimRow>> {
-        self.oracle.clone().committed_rows()
+    pub(super) fn table_count(&self) -> usize {
+        self.oracle.table_count()
+    }
+
+    pub(super) fn committed_rows_for_table(&self, table: usize) -> Vec<SimRow> {
+        self.oracle.committed_rows_for_table(table)
     }
 
     pub(super) fn lookup_by_id(&self, conn: SessionId, table: usize, id: u64) -> Option<SimRow> {
@@ -268,14 +274,12 @@ impl PropertyRuntime {
         )
     }
 
-    fn on_full_scan(
-        &mut self,
-        access: &dyn TargetPropertyAccess,
-        conn: SessionId,
-        table: usize,
-        actual: &[SimRow],
-    ) -> Result<(), String> {
-        self.observe_event(access, PropertyEvent::FullScan { conn, table, actual })
+    fn on_full_scan(&mut self, access: &dyn TargetPropertyAccess, conn: SessionId, table: usize) -> Result<(), String> {
+        self.observe_event(access, PropertyEvent::FullScan { conn, table })
+    }
+
+    fn on_tables_verified(&mut self, access: &dyn TargetPropertyAccess, conn: SessionId) -> Result<(), String> {
+        self.observe_event(access, PropertyEvent::TablesVerified { conn })
     }
 
     fn on_commit_or_rollback(&mut self, access: &dyn TargetPropertyAccess) -> Result<(), String> {
@@ -350,7 +354,8 @@ impl PropertyRuntime {
                 upper,
                 actual,
             } => self.on_range_scan(access, *conn, *table, cols, lower, upper, actual)?,
-            TableObservation::FullScan { conn, table, actual } => self.on_full_scan(access, *conn, *table, actual)?,
+            TableObservation::FullScan { conn, table } => self.on_full_scan(access, *conn, *table)?,
+            TableObservation::TablesVerified { conn } => self.on_tables_verified(access, *conn)?,
             TableObservation::CommitOrRollback => {}
         }
 
@@ -409,6 +414,7 @@ impl Default for PropertyRuntime {
             PropertyKind::PredicateCountMatchesModel,
             PropertyKind::RangeScanMatchesModel,
             PropertyKind::FullScanMatchesModel,
+            PropertyKind::TablesVerifiedMatchesModel,
         ])
     }
 }
@@ -422,6 +428,7 @@ fn observed_error_kind(observation: &TableObservation) -> Option<TableErrorKind>
         | TableObservation::PredicateCount { .. }
         | TableObservation::RangeScan { .. }
         | TableObservation::FullScan { .. }
+        | TableObservation::TablesVerified { .. }
         | TableObservation::CommitOrRollback => None,
     }
 }

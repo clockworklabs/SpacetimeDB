@@ -17,7 +17,8 @@ use spacetimedb_lib::{
     db::auth::{StAccess, StTableType},
     Identity,
 };
-use spacetimedb_primitives::TableId;
+
+use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_runtime::Handle as RuntimeHandle;
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_schema::{
@@ -25,28 +26,25 @@ use spacetimedb_schema::{
     schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableSchema},
     table_name::TableName,
 };
-use spacetimedb_snapshot::SnapshotStore;
 use spacetimedb_table::page_pool::PagePool;
 use tracing::{info, trace};
 
 use crate::{
     client::SessionId,
-    config::{CommitlogFaultProfile, RunConfig},
+    config::RunConfig,
     core::{self, TargetEngine},
-    properties::{
-        PropertyRuntime, TableMutation, TableObservation, TargetPropertyAccess,
-    },
-    schema::{SchemaPlan, SimRow},
+    properties::{PropertyRuntime, TableMutation, TableObservation, TargetPropertyAccess},
+    schema::{SchemaPlan, SimRow, TablePlan},
     sim::{
         commitlog::{CommitlogFaultConfig, FaultableRepo},
-        fork_seed,
-        snapshot::BuggifiedSnapshotRepo,
-        storage_faults::StorageFaultConfig,
-        Rng,
+        fork_seed, Rng,
     },
-    workload::table_ops::{
-        ConnectionWriteState, TableErrorKind, TableOperation, TableScenario, TableScenarioId, TableWorkloadInteraction,
-        TableWorkloadOutcome, TableWorkloadSource,
+    workload::{
+        commitlog_ops::CommitlogWorkloadSource,
+        table_ops::{
+            ConnectionWriteState, TableErrorKind, TableOperation, TableScenario, TableScenarioId,
+            TableWorkloadInteraction, TableWorkloadOutcome,
+        },
     },
 };
 
@@ -63,30 +61,26 @@ pub async fn run_generated_with_config_and_scenario(
     };
     let schema_rng = Rng::new(fork_seed(seed, 122));
     let schema = scenario.generate_schema(&schema_rng);
-    let source = TableWorkloadSource::new(
-        seed,
-        scenario,
-        schema.clone(),
-        num_connections,
-        config.max_interactions_or_default(usize::MAX),
-    );
+    // Use the lifecycle-wrapped source so every run exercises commitlog
+    // close/reopen/replay. The lifecycle layer periodically injects
+    // Reopen + VerifyTables operations into the interaction stream.
+    let source = CommitlogWorkloadSource::new(seed, scenario, schema.clone(), num_connections, usize::MAX);
 
     let sim_handle = crate::sim::current_handle().expect("must run inside sim Runtime::block_on");
     let rt_handle = RuntimeHandle::simulation(sim_handle.clone());
 
     // Build faulty commitlog + persistence
+    let page_pool = PagePool::new_for_test();
+    let commitlog_fault_profile = config.commitlog_fault_profile;
     let clog_repo = FaultableRepo::new(
         Memory::unlimited(),
-        CommitlogFaultConfig::for_profile(CommitlogFaultProfile::Default),
+        CommitlogFaultConfig::for_profile(commitlog_fault_profile),
     );
+    // Clone the repo so we can reopen from it later.
+    let clog_repo_for_reopen = clog_repo.clone();
     let local = DurabilityLocal::open_with_repo(clog_repo, rt_handle.clone(), DurabilityOpts::default())?;
     let history = local.as_history();
     let durability = Arc::new(local);
-
-    // Build faulty snapshot store
-    let snap_repo = Arc::new(BuggifiedSnapshotRepo::new(
-        StorageFaultConfig::for_profile(CommitlogFaultProfile::Default),
-    )?) as Arc<dyn SnapshotStore>;
 
     // Enable buggify after setup so initial replay is fault-free
     sim_handle.enable_buggify();
@@ -94,20 +88,35 @@ pub async fn run_generated_with_config_and_scenario(
     let persistence = Persistence {
         durability,
         disk_size: {
-            use std::io;
             use spacetimedb_commitlog::repo::SizeOnDisk;
-            Arc::new(|| io::Result::Ok(SizeOnDisk { total_bytes: 0, total_blocks: 0 })) as DiskSizeFn
+            use std::io;
+            Arc::new(|| {
+                io::Result::Ok(SizeOnDisk {
+                    total_bytes: 0,
+                    total_blocks: 0,
+                })
+            }) as DiskSizeFn
         },
-        snapshot_store: Some(snap_repo),
         snapshots: None,
-        runtime: rt_handle,
+        runtime: rt_handle.clone(),
     };
 
-    let engine = RelationalDbEngine::new(seed, &schema, num_connections, history, Some(persistence))?;
+    let engine = RelationalDbEngine::new(
+        seed,
+        &schema,
+        num_connections,
+        history,
+        Some(persistence),
+        clog_repo_for_reopen,
+        rt_handle,
+        page_pool,
+        commitlog_fault_profile,
+    )?;
     let properties = PropertyRuntime::for_table_workload(scenario, schema.clone(), num_connections);
     let outcome = core::run_streaming(source, engine, properties, config).await?;
     info!(
-        applied_steps = outcome.final_row_counts.iter().sum::<u64>(),
+        interactions_executed = outcome.interactions_executed,
+        final_row_count = outcome.final_row_counts.iter().sum::<u64>(),
         "relational_db_table complete"
     );
     Ok(outcome)
@@ -120,25 +129,50 @@ struct RelationalDbEngine {
     base_schema: SchemaPlan,
     base_table_ids: Vec<TableId>,
     step: usize,
+    /// Clone of the commitlog repo, kept for close/reopen cycles.
+    clog_repo: FaultableRepo<Memory>,
+    /// Runtime handle for creating new durability instances.
+    rt_handle: RuntimeHandle,
+    /// Page pool for creating new RelationalDB instances.
+    page_pool: PagePool,
+    /// Database identity, preserved across reopen.
+    db_identity: Identity,
+    /// Owner identity, preserved across reopen.
+    owner_identity: Identity,
+    commitlog_fault_profile: crate::config::CommitlogFaultProfile,
 }
 
 impl RelationalDbEngine {
+    #[allow(clippy::too_many_arguments)]
     fn new<H: spacetimedb_durability::History<TxData = spacetimedb_core::db::relational_db::Txdata>>(
-        _seed: u64, schema: &SchemaPlan, num_connections: usize,
-        history: H, persistence: Option<Persistence>,
+        _seed: u64,
+        schema: &SchemaPlan,
+        num_connections: usize,
+        history: H,
+        persistence: Option<Persistence>,
+        clog_repo: FaultableRepo<Memory>,
+        rt_handle: RuntimeHandle,
+        page_pool: PagePool,
+        commitlog_fault_profile: crate::config::CommitlogFaultProfile,
     ) -> anyhow::Result<Self> {
+        info!("DST: before RelationalDB::open");
+        let db_identity = Identity::ZERO;
+        let owner_identity = Identity::ZERO;
         let (db, connected_clients) = RelationalDB::open(
-            Identity::ZERO,
-            Identity::ZERO,
+            db_identity,
+            owner_identity,
             history,
             persistence,
             None,
-            PagePool::new_for_test(),
+            page_pool.clone(),
         )?;
+        info!("DST: after RelationalDB::open");
         assert_eq!(connected_clients.len(), 0);
+        info!("DST: before set_initialized");
         db.with_auto_commit(Workload::Internal, |tx| {
             db.set_initialized(tx, spacetimedb_datastore::traits::Program::empty(HostType::Wasm.into()))
         })?;
+        info!("DST: after set_initialized");
 
         let mut engine = Self {
             db: Some(db),
@@ -147,13 +181,23 @@ impl RelationalDbEngine {
             base_schema: schema.clone(),
             base_table_ids: Vec::with_capacity(schema.tables.len()),
             step: 0,
+            clog_repo,
+            rt_handle,
+            page_pool,
+            db_identity,
+            owner_identity,
+            commitlog_fault_profile,
         };
+        info!("DST: before install_base_schema");
         engine.install_base_schema().map_err(anyhow::Error::msg)?;
+        info!("DST: after install_base_schema");
         Ok(engine)
     }
 
     fn db(&self) -> Result<&RelationalDB, String> {
-        self.db.as_ref().ok_or_else(|| "relational db not initialized".to_string())
+        self.db
+            .as_ref()
+            .ok_or_else(|| "relational db not initialized".to_string())
     }
 
     fn install_base_schema(&mut self) -> Result<(), String> {
@@ -284,13 +328,14 @@ impl RelationalDbEngine {
                     .map(|(idx, existing)| ColumnSchema::for_test(idx as u16, &existing.name, existing.ty.clone()))
                     .collect::<Vec<_>>();
                 columns.push(ColumnSchema::for_test(column_idx, &column.name, column.ty.clone()));
-                self.with_mut_tx(*conn, |engine, tx| {
-                    let new_table_id = engine
+                let new_table_id = self.with_mut_tx(*conn, |engine, tx| {
+                    engine
                         .db()?
                         .add_columns_to_table(tx, table_id, columns.clone(), vec![default.clone()])
-                        .map_err(|err| format!("add column failed: {err}"))?;
-                    Ok(new_table_id)
+                        .map_err(|err| format!("add column failed: {err}"))
                 })?;
+                self.base_schema.tables[*table].columns.push(column.clone());
+                self.base_table_ids[*table] = new_table_id;
                 Ok(TableObservation::Applied)
             }
             TableOperation::AddIndex { conn, table, cols } => {
@@ -357,14 +402,17 @@ impl RelationalDbEngine {
                     actual,
                 })
             }
-            TableOperation::FullScan { conn, table } => {
-                let actual = self.collect_rows_in_connection(*conn, *table)?;
-                Ok(TableObservation::FullScan {
-                    conn: *conn,
-                    table: *table,
-                    actual,
-                })
+            TableOperation::FullScan { conn, table } => Ok(TableObservation::FullScan {
+                conn: *conn,
+                table: *table,
+            }),
+            TableOperation::AddTable { conn, schema } => self.execute_add_table(*conn, schema),
+            TableOperation::DropTable { conn, table } => self.execute_drop_table(*conn, *table),
+            TableOperation::TruncateTable { conn, table } => self.execute_truncate_table(*conn, *table),
+            TableOperation::Reopen { .. } => {
+                Err("Reopen must be handled via execute_interaction async path".to_string())
             }
+            TableOperation::VerifyTables { conn } => self.execute_verify_tables(*conn),
         }
     }
 
@@ -393,9 +441,7 @@ impl RelationalDbEngine {
             }
             None => {
                 if self.execution.active_writer.is_some() || self.any_open_read_tx() {
-                    Ok(TableObservation::ObservedError(
-                        TableErrorKind::WriteConflict,
-                    ))
+                    Ok(TableObservation::ObservedError(TableErrorKind::WriteConflict))
                 } else {
                     Err(format!(
                         "connection {conn} failed to begin write transaction without an open conflicting lock"
@@ -612,15 +658,21 @@ impl RelationalDbEngine {
         result
     }
 
-    fn collect_rows_by_id(&self, table_id: TableId) -> Result<Vec<SimRow>, String> {
+    fn visit_rows_by_id(
+        &self,
+        table_id: TableId,
+        visitor: &mut dyn FnMut(SimRow) -> Result<(), String>,
+    ) -> Result<(), String> {
         self.with_fresh_read_tx(|db, tx| {
-            let mut rows = db
-                .iter(tx, table_id)
+            let cols = [0u16].into_iter().collect::<ColList>();
+            let bounds = (Bound::<AlgebraicValue>::Unbounded, Bound::<AlgebraicValue>::Unbounded);
+            for row_ref in db
+                .iter_by_col_range(tx, table_id, cols, bounds)
                 .map_err(|err| format!("scan failed: {err}"))?
-                .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
-                .collect::<Vec<_>>();
-            rows.sort_by_key(|row| row.id().unwrap_or_default());
-            Ok(rows)
+            {
+                visitor(SimRow::from_product_value(row_ref.to_product_value()))?;
+            }
+            Ok(())
         })
     }
 
@@ -651,28 +703,35 @@ impl RelationalDbEngine {
         }
     }
 
-    fn collect_rows_in_connection(&self, conn: SessionId, table: usize) -> Result<Vec<SimRow>, String> {
+    fn visit_rows_in_connection(
+        &self,
+        conn: SessionId,
+        table: usize,
+        visitor: &mut dyn FnMut(SimRow) -> Result<(), String>,
+    ) -> Result<(), String> {
         let table_id = self.table_id_for_index(table)?;
+        let cols = [0u16].into_iter().collect::<ColList>();
+        let bounds = (Bound::<AlgebraicValue>::Unbounded, Bound::<AlgebraicValue>::Unbounded);
         if let Some(Some(tx)) = self.execution.tx_by_connection.get(conn.as_index()) {
-            let mut rows = self
+            for row_ref in self
                 .db()?
-                .iter_mut(tx, table_id)
+                .iter_by_col_range_mut(tx, table_id, cols, bounds)
                 .map_err(|err| format!("in-tx scan failed: {err}"))?
-                .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
-                .collect::<Vec<_>>();
-            rows.sort_by_key(|row| row.id().unwrap_or_default());
-            Ok(rows)
+            {
+                visitor(SimRow::from_product_value(row_ref.to_product_value()))?;
+            }
+            Ok(())
         } else if let Some(Some(tx)) = self.read_tx_by_connection.get(conn.as_index()) {
-            let mut rows = self
+            for row_ref in self
                 .db()?
-                .iter(tx, table_id)
+                .iter_by_col_range(tx, table_id, cols, bounds)
                 .map_err(|err| format!("read-tx scan failed: {err}"))?
-                .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
-                .collect::<Vec<_>>();
-            rows.sort_by_key(|row| row.id().unwrap_or_default());
-            Ok(rows)
+            {
+                visitor(SimRow::from_product_value(row_ref.to_product_value()))?;
+            }
+            Ok(())
         } else {
-            self.collect_rows_by_id(table_id)
+            self.visit_rows_by_id(table_id, visitor)
         }
     }
 
@@ -717,37 +776,186 @@ impl RelationalDbEngine {
         let table_id = self.table_id_for_index(table)?;
         let cols_list = cols.iter().copied().collect::<spacetimedb_primitives::ColList>();
         if let Some(Some(tx)) = self.execution.tx_by_connection.get(conn.as_index()) {
-            let mut rows = self
+            let rows = self
                 .db()?
                 .iter_by_col_range_mut(tx, table_id, cols_list, (lower, upper))
                 .map_err(|err| format!("in-tx range scan failed: {err}"))?
                 .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
                 .collect::<Vec<_>>();
-            rows.sort_by_key(|row| row.id().unwrap_or_default());
             Ok(rows)
         } else if let Some(Some(tx)) = self.read_tx_by_connection.get(conn.as_index()) {
-            let mut rows = self
+            let rows = self
                 .db()?
                 .iter_by_col_range(tx, table_id, cols_list, (lower, upper))
                 .map_err(|err| format!("read-tx range scan failed: {err}"))?
                 .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
                 .collect::<Vec<_>>();
-            rows.sort_by_key(|row| row.id().unwrap_or_default());
             Ok(rows)
         } else {
             self.with_fresh_read_tx(|db, tx| {
-                let mut rows = db
+                let rows = db
                     .iter_by_col_range(tx, table_id, cols_list, (lower, upper))
                     .map_err(|err| format!("range scan failed: {err}"))?
                     .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
                     .collect::<Vec<_>>();
-                rows.sort_by_key(|row| row.id().unwrap_or_default());
                 Ok(rows)
             })
         }
     }
+
+    fn execute_add_table(&mut self, conn: SessionId, schema: &TablePlan) -> Result<TableObservation, String> {
+        let columns = schema
+            .columns
+            .iter()
+            .enumerate()
+            .map(|(idx, col)| ColumnSchema::for_test(idx as u16, &col.name, col.ty.clone()))
+            .collect::<Vec<_>>();
+        let mut indexes = vec![IndexSchema::for_test(
+            format!("{}_id_idx", schema.name),
+            BTreeAlgorithm::from(0),
+        )];
+        for cols in &schema.extra_indexes {
+            let cols_name = cols.iter().map(|c| format!("c{c}")).collect::<Vec<_>>().join("_");
+            indexes.push(IndexSchema::for_test(
+                format!("{}_{}_idx", schema.name, cols_name),
+                BTreeAlgorithm::from(cols.iter().copied().collect::<ColList>()),
+            ));
+        }
+        let constraints = vec![ConstraintSchema::unique_for_test(
+            format!("{}_id_unique", schema.name),
+            0,
+        )];
+        let table_schema = TableSchema::new(
+            TableId::SENTINEL,
+            TableName::for_test(&schema.name),
+            None,
+            columns,
+            indexes,
+            constraints,
+            vec![],
+            StTableType::User,
+            StAccess::Public,
+            None,
+            Some(0.into()),
+            schema.is_event,
+            None,
+        );
+        self.with_mut_tx(conn, |engine, tx| {
+            let table_id = engine
+                .db()?
+                .create_table(tx, table_schema.clone())
+                .map_err(|err| format!("add table failed: {err}"))?;
+            engine.base_table_ids.push(table_id);
+            engine.base_schema.tables.push(schema.clone());
+            Ok(())
+        })?;
+        Ok(TableObservation::Applied)
+    }
+
+    fn execute_truncate_table(&mut self, conn: SessionId, table: usize) -> Result<TableObservation, String> {
+        let table_id = self.table_id_for_index(table)?;
+        self.with_mut_tx(conn, |engine, tx| {
+            engine
+                .db()?
+                .clear_table(tx, table_id)
+                .map_err(|err| format!("truncate table failed: {err}"))?;
+            Ok(())
+        })?;
+        Ok(TableObservation::Applied)
+    }
+
+    fn execute_drop_table(&mut self, conn: SessionId, table: usize) -> Result<TableObservation, String> {
+        // Clear all rows from the table, like truncate, but exercise the DDL path.
+        // Future work: actually drop the table schema from the catalog.
+        let table_id = self.table_id_for_index(table)?;
+        self.with_mut_tx(conn, |engine, tx| {
+            engine
+                .db()?
+                .clear_table(tx, table_id)
+                .map_err(|err| format!("drop table (clear) failed: {err}"))?;
+            Ok(())
+        })?;
+        Ok(TableObservation::Applied)
+    }
+
+    fn execute_verify_tables(&mut self, conn: SessionId) -> Result<TableObservation, String> {
+        Ok(TableObservation::TablesVerified { conn })
+    }
+
+    /// Close the current RelationalDB and reopen from the commitlog.
+    ///
+    /// This exercises the full replay path: durability close, commitlog reopen,
+    /// `apply_history`, and `ReplayCommittedState`. After reopening, the DB
+    /// should have exactly the same committed state as before close.
+    async fn execute_reopen(&mut self) -> Result<TableObservation, String> {
+        // 1. Take ownership of the current DB and shut down its durability.
+        let db = self
+            .db
+            .take()
+            .ok_or_else(|| "db not initialized for reopen".to_string())?;
+        let _ = db.shutdown().await;
+        drop(db);
+
+        // 2. Create a new Local durability from the stored repo clone.
+        let new_local = DurabilityLocal::open_with_repo(
+            self.clog_repo.clone(),
+            self.rt_handle.clone(),
+            DurabilityOpts::default(),
+        )
+        .map_err(|e| format!("reopen: durability open failed: {e}"))?;
+        let new_history = new_local.as_history();
+        let new_durability: Arc<spacetimedb_durability::Local<spacetimedb_sats::ProductValue, FaultableRepo<Memory>>> =
+            Arc::new(new_local);
+
+        // 3. Build persistence for the new DB.
+        let persistence = Persistence {
+            durability: new_durability.clone(),
+            disk_size: {
+                use spacetimedb_commitlog::repo::SizeOnDisk;
+                use std::io;
+                Arc::new(|| {
+                    io::Result::Ok(SizeOnDisk {
+                        total_bytes: 0,
+                        total_blocks: 0,
+                    })
+                }) as DiskSizeFn
+            },
+            snapshots: None,
+            runtime: self.rt_handle.clone(),
+        };
+
+        // 4. Open a new RelationalDB from the same commitlog history.
+        let (new_db, connected_clients) = RelationalDB::open(
+            self.db_identity,
+            self.owner_identity,
+            new_history,
+            Some(persistence),
+            None,
+            self.page_pool.clone(),
+        )
+        .map_err(|e| format!("reopen: RelationalDB::open failed: {e}"))?;
+        if !connected_clients.is_empty() {
+            return Err(format!(
+                "reopen: got {} connected clients, expected 0",
+                connected_clients.len()
+            ));
+        }
+
+        self.db = Some(new_db);
+        // Reset execution state: no open transactions after reopen.
+        self.execution.active_writer = None;
+        for slot in &mut self.execution.tx_by_connection {
+            *slot = None;
+        }
+        for slot in &mut self.read_tx_by_connection {
+            *slot = None;
+        }
+
+        Ok(TableObservation::Applied)
+    }
 }
 
+#[allow(clippy::manual_async_fn)]
 impl TargetEngine<TableWorkloadInteraction> for RelationalDbEngine {
     type Observation = TableObservation;
     type Outcome = TableWorkloadOutcome;
@@ -757,24 +965,49 @@ impl TargetEngine<TableWorkloadInteraction> for RelationalDbEngine {
         &'a mut self,
         interaction: &'a TableWorkloadInteraction,
     ) -> impl std::future::Future<Output = Result<Self::Observation, Self::Error>> + 'a {
-        async move { self.execute(interaction) }
+        async move {
+            if matches!(interaction.op, TableOperation::Reopen { .. }) {
+                return self.execute_reopen().await;
+            }
+            self.execute(interaction)
+        }
     }
 
-    fn finish(&mut self) {}
+    fn finish(&mut self) {
+        let Some(db) = self.db.as_ref() else {
+            return;
+        };
+        for tx in &mut self.execution.tx_by_connection {
+            if let Some(tx) = tx.take() {
+                let _ = db.rollback_mut_tx(tx);
+            }
+        }
+        self.execution.active_writer = None;
+        for tx in &mut self.read_tx_by_connection {
+            if let Some(tx) = tx.take() {
+                let _ = db.release_tx(tx);
+            }
+        }
+    }
 
     fn collect_outcome<'a>(&'a mut self) -> impl std::future::Future<Output = anyhow::Result<Self::Outcome>> + 'a {
         async move {
-            let mut final_rows = Vec::with_capacity(self.base_schema.tables.len());
             let mut final_row_counts = Vec::with_capacity(self.base_schema.tables.len());
             for table in 0..self.base_schema.tables.len() {
                 let table_id = self.table_id_for_index(table).map_err(anyhow::Error::msg)?;
-                let rows = self.collect_rows_by_id(table_id).map_err(anyhow::Error::msg)?;
-                final_row_counts.push(rows.len() as u64);
-                final_rows.push(rows);
+                let mut row_count = 0u64;
+                self.visit_rows_by_id(table_id, &mut |_| {
+                    row_count += 1;
+                    Ok(())
+                })
+                .map_err(anyhow::Error::msg)?;
+                final_row_counts.push(row_count);
             }
             Ok(TableWorkloadOutcome {
+                interactions_executed: 0,
+                commitlog_fault_profile: self.commitlog_fault_profile,
+                commitlog_fault_summary: self.clog_repo.fault_summary(),
                 final_row_counts,
-                final_rows,
             })
         }
     }
@@ -789,13 +1022,22 @@ impl TargetPropertyAccess for RelationalDbEngine {
         self.lookup_base_row(conn, table, id)
     }
 
-    fn collect_rows_in_connection(&self, conn: SessionId, table: usize) -> Result<Vec<SimRow>, String> {
-        self.collect_rows_in_connection(conn, table)
+    fn visit_rows_in_connection(
+        &self,
+        conn: SessionId,
+        table: usize,
+        visitor: &mut dyn FnMut(SimRow) -> Result<(), String>,
+    ) -> Result<(), String> {
+        RelationalDbEngine::visit_rows_in_connection(self, conn, table, visitor)
     }
 
-    fn collect_rows_for_table(&self, table: usize) -> Result<Vec<SimRow>, String> {
+    fn visit_rows_for_table(
+        &self,
+        table: usize,
+        visitor: &mut dyn FnMut(SimRow) -> Result<(), String>,
+    ) -> Result<(), String> {
         let table_id = self.table_id_for_index(table)?;
-        self.collect_rows_by_id(table_id)
+        self.visit_rows_by_id(table_id, visitor)
     }
 
     fn count_rows(&self, table: usize) -> Result<usize, String> {
@@ -828,12 +1070,11 @@ impl TargetPropertyAccess for RelationalDbEngine {
         let table_id = self.table_id_for_index(table)?;
         let cols_list = cols.iter().copied().collect::<spacetimedb_primitives::ColList>();
         self.with_fresh_read_tx(|db, tx| {
-            let mut rows = db
+            let rows = db
                 .iter_by_col_range(tx, table_id, cols_list, (lower, upper))
                 .map_err(|err| format!("range scan failed: {err}"))?
                 .map(|row_ref| SimRow::from_product_value(row_ref.to_product_value()))
                 .collect::<Vec<_>>();
-            rows.sort_by_key(|row| row.id().unwrap_or_default());
             Ok(rows)
         })
     }

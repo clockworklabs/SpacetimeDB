@@ -4,7 +4,9 @@ use spacetimedb_sats::AlgebraicValue;
 
 use crate::{
     client::SessionId,
-    schema::{ColumnPlan, SchemaPlan, SimRow},
+    config::{CommitlogFaultProfile, StorageFaultSummary},
+    core::{RunOutcome, RunStats},
+    schema::{ColumnPlan, SchemaPlan, SimRow, TablePlan},
     sim::Rng,
 };
 
@@ -90,6 +92,17 @@ pub enum TableOperation {
     },
     /// Scan all visible rows and compare against the model.
     FullScan { conn: SessionId, table: usize },
+    /// Create a new table dynamically.
+    AddTable { conn: SessionId, schema: TablePlan },
+    /// Drop an existing table.
+    DropTable { conn: SessionId, table: usize },
+    /// Clear all rows from a table.
+    TruncateTable { conn: SessionId, table: usize },
+    /// Close the database and reopen from the commitlog to exercise replay.
+    Reopen { conn: SessionId },
+    /// Full scan every table and compare against the oracle model.
+    /// Useful right after a reopen to catch replay bugs early.
+    VerifyTables { conn: SessionId },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -122,6 +135,12 @@ pub enum TableInteractionCase {
     PredicateCount,
     RangeScan,
     FullScan,
+    AddTable,
+    AddEventTable,
+    DropTable,
+    TruncateTable,
+    Reopen,
+    VerifyTables,
 }
 
 impl PlannedInteraction {
@@ -264,15 +283,59 @@ impl PlannedInteraction {
     pub fn full_scan(conn: SessionId, table: usize) -> Self {
         Self::new(TableOperation::FullScan { conn, table }, TableInteractionCase::FullScan)
     }
+
+    pub fn add_table(conn: SessionId, schema: TablePlan) -> Self {
+        let case = if schema.is_event {
+            TableInteractionCase::AddEventTable
+        } else {
+            TableInteractionCase::AddTable
+        };
+        Self::new(TableOperation::AddTable { conn, schema }, case)
+    }
+
+    pub fn truncate_table(conn: SessionId, table: usize) -> Self {
+        Self::new(
+            TableOperation::TruncateTable { conn, table },
+            TableInteractionCase::TruncateTable,
+        )
+    }
+
+    pub fn drop_table(conn: SessionId, table: usize) -> Self {
+        Self::new(
+            TableOperation::DropTable { conn, table },
+            TableInteractionCase::DropTable,
+        )
+    }
+
+    pub fn reopen(conn: SessionId) -> Self {
+        Self::new(TableOperation::Reopen { conn }, TableInteractionCase::Reopen)
+    }
+
+    pub fn verify_tables(conn: SessionId) -> Self {
+        Self::new(
+            TableOperation::VerifyTables { conn },
+            TableInteractionCase::VerifyTables,
+        )
+    }
 }
 
 /// Final state gathered from a table-workload engine after execution ends.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TableWorkloadOutcome {
+    /// Interactions executed by the shared runner.
+    pub interactions_executed: usize,
+    /// Commitlog fault profile used for this run.
+    pub commitlog_fault_profile: CommitlogFaultProfile,
+    /// Faults injected while executing this run.
+    pub commitlog_fault_summary: StorageFaultSummary,
     /// Row count for each table in schema order.
     pub final_row_counts: Vec<u64>,
-    /// Full committed rows for each table in schema order.
-    pub final_rows: Vec<Vec<SimRow>>,
+}
+
+impl RunOutcome for TableWorkloadOutcome {
+    fn record_run_stats(&mut self, stats: RunStats) {
+        self.interactions_executed = stats.interactions_executed;
+    }
 }
 
 /// Per-session write transaction bookkeeping shared by locking targets.

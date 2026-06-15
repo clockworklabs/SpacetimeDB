@@ -16,6 +16,9 @@ metrics_group!(
         #[name = spacetime_replay_total_time_seconds]
         #[help = "Total time spent replaying a database upon restart, including snapshot read, snapshot restore and commitlog replay"]
         #[labels(db: Identity)]
+        // We expect a small number of observations per label
+        // (exactly one, for non-replicated databases, and one per leader change for replicated databases)
+        // so we'll just store a `Gauge` with the most recent observation for each database.
         pub replay_total_time_seconds: GaugeVec,
 
         #[name = spacetime_replay_snapshot_read_time_seconds]
@@ -70,6 +73,8 @@ metrics_group!(
         #[name = spacetime_snapshot_compression_time_total_sec]
         #[help = "The time (in seconds) it took to do a compression pass on the snapshot repository, including scheduling overhead"]
         #[labels(db: Identity)]
+        // Not sure what range to expect, but certainly slower than snapshot
+        // creation.
         #[buckets(0.001, 0.01, 0.1, 1.0, 5.0, 10.0)]
         pub snapshot_compression_time_total: HistogramVec,
 
@@ -143,6 +148,7 @@ impl ExecutionCounters {
         }
     }
 
+    /// Update the global system metrics with transaction-level execution metrics.
     pub fn record(&self, metrics: &ExecutionMetrics) {
         if metrics.index_seeks > 0 {
             self.rdb_num_index_seeks.inc_by(metrics.index_seeks as u64);

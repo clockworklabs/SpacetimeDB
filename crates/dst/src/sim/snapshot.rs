@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! In-memory snapshot storage with deterministic fault injection.
 //!
 //! This is intentionally a semantic snapshot seam, not a filesystem facade. It
@@ -14,9 +16,11 @@ use spacetimedb_snapshot::{
 };
 use spacetimedb_table::{blob_store::BlobStore, page_pool::PagePool, table::Table};
 
-use crate::sim::storage_faults::{
-    is_injected_fault_text, StorageFaultConfig, StorageFaultController, StorageFaultDomain, StorageFaultKind,
-    StorageFaultSummary,
+use crate::{
+    config::StorageFaultSummary,
+    sim::storage_faults::{
+        is_injected_fault_text, StorageFaultConfig, StorageFaultController, StorageFaultDomain, StorageFaultKind,
+    },
 };
 
 pub(crate) type SnapshotFaultConfig = StorageFaultConfig;

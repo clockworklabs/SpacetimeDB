@@ -21,6 +21,8 @@ in progress.
 - Generation, execution, and property checking stay separate so failures are
   diagnosable as workload bugs, target bugs, or weak assertions.
 - Runs stream interactions instead of materializing a full plan by default.
+- Properties stream target state through accessors instead of storing full-scan
+  observations or final row snapshots.
 - Fault injection is explicit, configurable, and summarized in the outcome.
 - Shared probability and weighting logic belongs in `workload::strategy`, not
   ad hoc scenario code.
@@ -39,9 +41,11 @@ CLI -> TargetDescriptor -> WorkloadSource -> TargetEngine -> Observation
 The core contracts are:
 
 - `WorkloadSource`: deterministic pull-based interaction stream.
-- `TargetEngine`: target-specific execution and outcome collection.
+- `TargetEngine`: target-specific execution and cheap outcome summaries.
 - `StreamingProperties`: reusable property checks over observations and target
   accessors.
+- `TargetPropertyAccess`: streamed target state access for checks that need
+  table rows; observations and outcomes should not carry full-table copies.
 
 ## Client Model
 
@@ -135,17 +139,15 @@ Current property families include:
 ## Fault Injection
 
 `relational-db-commitlog` can wrap the in-memory commitlog repo in
-`BuggifiedRepo`. Fault decisions are deterministic from the run seed and
+`FaultableRepo`. Fault decisions are deterministic from the run seed and
 summarized in the final outcome.
 
 Profiles:
 
 - `off`: no injected disk behavior.
-- `light`: latency and occasional short I/O.
-- `default`: stronger latency and short I/O pressure.
-- `aggressive`: higher latency and short I/O rates. I/O error hooks exist but
-  are currently disabled in profile-driven runs because local durability does
-  not yet classify those errors as recoverable target outcomes.
+- `light`: low-probability latency, short I/O, and transient storage errors.
+- `default`: moderate-probability latency, short I/O, and transient storage errors.
+- `aggressive`: high-probability latency, short I/O, and transient storage errors.
 
 ## Running
 
@@ -155,11 +157,10 @@ Fast local run:
 cargo run -p spacetimedb-dst -- run --target relational-db-commitlog --seed 42 --max-interactions 200
 ```
 
-Scenario examples:
+Scenario example:
 
 ```bash
-cargo run -p spacetimedb-dst -- run --target relational-db-commitlog --scenario banking --duration 5m
-cargo run -p spacetimedb-dst -- run --target relational-db-commitlog --scenario indexed-ranges --duration 5m
+cargo run -p spacetimedb-dst -- run --target relational-db-commitlog --scenario random-crud --duration 5m
 ```
 
 Run with commitlog faults:
@@ -179,6 +180,10 @@ RUST_LOG=trace cargo run -p spacetimedb-dst -- run --target relational-db-commit
 ```
 
 ## Run Budgets
+
+`--harness-phase-timeout` is a virtual-time watchdog for one harness phase
+(`execute_interaction`, `finish`, or `collect_outcome`). It defaults to `30s` and
+can be disabled with `off`, but disabling it makes the harness deadlock-prone.
 
 Prefer `--max-interactions` when reporting or replaying a failure. It is the
 deterministic interaction budget, so target, scenario, seed, interaction count,
@@ -200,7 +205,7 @@ Start here:
 - `src/properties.rs`: property catalog and oracle/model checks.
 - `src/targets/relational_db_commitlog.rs`: target adapter for RelationalDB,
   commitlog durability, fault injection, close/reopen, and replay.
-- `src/targets/buggified_repo.rs`: deterministic disk-like fault layer.
+- `src/sim/commitlog.rs`: deterministic disk-like commitlog fault layer.
 
 ## Adding A New Target
 

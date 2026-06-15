@@ -1,13 +1,13 @@
 //! Shared run-budget configuration for DST targets.
 
-use std::time::{Duration, Instant};
+use std::{
+    fmt,
+    time::{Duration, Instant},
+};
 
 /// Storage fault-injection profile for commitlog and snapshot wrappers.
-///
-/// These are not CLI options yet; they are programmatic knobs for targeted
-/// fault-injection tests.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) enum CommitlogFaultProfile {
+pub enum CommitlogFaultProfile {
     /// No faults injected regardless of buggify state.
     Off,
     /// Low probability latency and short I/O only.
@@ -19,7 +19,54 @@ pub(crate) enum CommitlogFaultProfile {
     Aggressive,
 }
 
+impl CommitlogFaultProfile {
+    pub fn parse(value: &str) -> anyhow::Result<Self> {
+        match value {
+            "off" => Ok(Self::Off),
+            "light" => Ok(Self::Light),
+            "default" => Ok(Self::Default),
+            "aggressive" => Ok(Self::Aggressive),
+            _ => anyhow::bail!(
+                "unsupported commitlog fault profile: {value}; expected one of: off, light, default, aggressive"
+            ),
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Light => "light",
+            Self::Default => "default",
+            Self::Aggressive => "aggressive",
+        }
+    }
+}
+
+impl fmt::Display for CommitlogFaultProfile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct StorageFaultSummary {
+    pub profile: CommitlogFaultProfile,
+    pub latency: usize,
+    pub short_read: usize,
+    pub short_write: usize,
+    pub read_error: usize,
+    pub write_error: usize,
+    pub flush_error: usize,
+    pub fsync_error: usize,
+    pub open_error: usize,
+    pub metadata_error: usize,
+    pub no_space: usize,
+    pub partial_failure: usize,
+}
+
 /// Common stop conditions for generated DST runs.
+pub const DEFAULT_HARNESS_PHASE_TIMEOUT_MS: u64 = 30_000;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RunConfig {
     /// Hard cap on generated interactions. `None` means no interaction budget.
@@ -34,6 +81,10 @@ pub struct RunConfig {
     /// with host speed and runtime behavior. Use `max_interactions` when a
     /// failure needs precise replay.
     pub max_duration_ms: Option<u64>,
+    /// Virtual-time watchdog for each target execution and collection phase.
+    /// `None` disables the watchdog.
+    pub harness_phase_timeout_ms: Option<u64>,
+    pub commitlog_fault_profile: CommitlogFaultProfile,
 }
 
 impl Default for RunConfig {
@@ -41,6 +92,8 @@ impl Default for RunConfig {
         Self {
             max_interactions: None,
             max_duration_ms: None,
+            harness_phase_timeout_ms: Some(DEFAULT_HARNESS_PHASE_TIMEOUT_MS),
+            commitlog_fault_profile: CommitlogFaultProfile::Default,
         }
     }
 }
@@ -50,6 +103,8 @@ impl RunConfig {
         Self {
             max_interactions: Some(max_interactions),
             max_duration_ms: None,
+            harness_phase_timeout_ms: Some(DEFAULT_HARNESS_PHASE_TIMEOUT_MS),
+            commitlog_fault_profile: CommitlogFaultProfile::Default,
         }
     }
 
@@ -57,6 +112,8 @@ impl RunConfig {
         Ok(Self {
             max_interactions: None,
             max_duration_ms: Some(parse_duration_spec(duration)?.as_millis() as u64),
+            harness_phase_timeout_ms: Some(DEFAULT_HARNESS_PHASE_TIMEOUT_MS),
+            commitlog_fault_profile: CommitlogFaultProfile::Default,
         })
     }
 

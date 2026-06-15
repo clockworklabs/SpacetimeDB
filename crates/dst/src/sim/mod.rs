@@ -7,6 +7,7 @@
 pub(crate) mod commitlog;
 pub(crate) mod snapshot;
 pub(crate) mod storage_faults;
+pub mod time;
 
 use std::{cell::RefCell, future::Future, time::Duration};
 

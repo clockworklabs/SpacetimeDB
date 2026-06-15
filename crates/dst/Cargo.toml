@@ -19,9 +19,9 @@ anyhow.workspace = true
 clap.workspace = true
 futures-util.workspace = true
 spacetimedb-datastore = { workspace = true, features = ["test"] }
-spacetimedb_core = { package = "spacetimedb-core", path = "../core", version = "=2.2.0", features = ["test"] }
+spacetimedb_core = { package = "spacetimedb-core", path = "../core", features = ["test"] }
 spacetimedb-commitlog = { workspace = true, features = ["test"] }
-spacetimedb_durability = { package = "spacetimedb-durability", path = "../durability", version = "=2.2.0", features = ["test"] }
+spacetimedb-durability = { workspace = true, features = ["test"] }
 spacetimedb-lib.workspace = true
 spacetimedb-snapshot.workspace = true
 spacetimedb-primitives.workspace = true

@@ -32,6 +32,7 @@ pub(super) fn rule_for_kind(kind: PropertyKind) -> Box<dyn PropertyRule> {
         PropertyKind::PredicateCountMatchesModel => Box::<PredicateCountMatchesModelRule>::default(),
         PropertyKind::RangeScanMatchesModel => Box::<RangeScanMatchesModelRule>::default(),
         PropertyKind::FullScanMatchesModel => Box::<FullScanMatchesModelRule>::default(),
+        PropertyKind::TablesVerifiedMatchesModel => Box::<TablesVerifiedMatchesModelRule>::default(),
     }
 }
 
@@ -62,12 +63,8 @@ impl<S: TableScenario> PropertyRule for OracleTableStateRule<S> {
     fn observe(&mut self, ctx: &PropertyContext<'_>, event: PropertyEvent<'_>) -> Result<(), String> {
         match event {
             PropertyEvent::TableWorkloadFinished(outcome) => {
-                let expected_rows = ctx.models.table().committed_rows();
-                if outcome.final_rows != expected_rows {
-                    return Err(format!(
-                        "[OracleTableState] final table state mismatch: expected={expected_rows:?} actual={:?}",
-                        outcome.final_rows
-                    ));
+                for table in 0..ctx.models.table().table_count() {
+                    assert_committed_rows_match_model(ctx, table, "[OracleTableState]")?;
                 }
                 self.scenario
                     .validate_outcome(&self.schema, outcome)
@@ -371,12 +368,51 @@ fn assert_visible_rows_match_model(
     property: &str,
     interaction: &crate::workload::table_ops::TableWorkloadInteraction,
 ) -> Result<(), String> {
-    let mut actual = ctx.access.collect_rows_in_connection(conn, table)?;
-    actual.sort_by_key(|row| row.id().unwrap_or_default());
     let expected = ctx.models.table().visible_rows(conn, table);
-    if actual != expected {
+    assert_rows_match_expected(
+        &expected,
+        |visitor| ctx.access.visit_rows_in_connection(conn, table, visitor),
+        format!(
+            "{property} visible rows changed unexpectedly on conn={conn}, table={table}; interaction={interaction:?}"
+        ),
+    )
+}
+
+fn assert_committed_rows_match_model(ctx: &PropertyContext<'_>, table: usize, property: &str) -> Result<(), String> {
+    let expected = ctx.models.table().committed_rows_for_table(table);
+    assert_rows_match_expected(
+        &expected,
+        |visitor| ctx.access.visit_rows_for_table(table, visitor),
+        format!("{property} committed rows mismatch on table={table}"),
+    )
+}
+
+fn assert_rows_match_expected(
+    expected: &[SimRow],
+    visit_rows: impl FnOnce(&mut dyn FnMut(SimRow) -> Result<(), String>) -> Result<(), String>,
+    context: String,
+) -> Result<(), String> {
+    let mut index = 0usize;
+    visit_rows(&mut |actual| {
+        let expected_row = expected.get(index).ok_or_else(|| {
+            format!(
+                "{context}: unexpected extra row at index {index}: actual={actual:?}, expected_len={}",
+                expected.len()
+            )
+        })?;
+        if &actual != expected_row {
+            return Err(format!(
+                "{context}: row mismatch at index {index}: expected={expected_row:?}, actual={actual:?}"
+            ));
+        }
+        index += 1;
+        Ok(())
+    })?;
+
+    if let Some(expected_row) = expected.get(index) {
         return Err(format!(
-            "{property} visible rows changed unexpectedly on conn={conn}, table={table}: expected={expected:?}, actual={actual:?}; interaction={interaction:?}"
+            "{context}: missing row at index {index}: expected={expected_row:?}, actual_len={index}, expected_len={}",
+            expected.len()
         ));
     }
     Ok(())
@@ -462,14 +498,33 @@ struct FullScanMatchesModelRule;
 
 impl PropertyRule for FullScanMatchesModelRule {
     fn observe(&mut self, ctx: &PropertyContext<'_>, event: PropertyEvent<'_>) -> Result<(), String> {
-        let PropertyEvent::FullScan { conn, table, actual } = event else {
+        let PropertyEvent::FullScan { conn, table } = event else {
             return Ok(());
         };
         let expected = ctx.models.table().full_scan(conn, table);
-        if actual != expected.as_slice() {
-            return Err(format!(
-                "[Model::FullScan] mismatch conn={conn}, table={table}: expected={expected:?}, actual={actual:?}"
-            ));
+        assert_rows_match_expected(
+            &expected,
+            |visitor| ctx.access.visit_rows_in_connection(conn, table, visitor),
+            format!("[Model::FullScan] mismatch conn={conn}, table={table}"),
+        )
+    }
+}
+
+#[derive(Default)]
+struct TablesVerifiedMatchesModelRule;
+
+impl PropertyRule for TablesVerifiedMatchesModelRule {
+    fn observe(&mut self, ctx: &PropertyContext<'_>, event: PropertyEvent<'_>) -> Result<(), String> {
+        let PropertyEvent::TablesVerified { conn } = event else {
+            return Ok(());
+        };
+        for table in 0..ctx.models.table().table_count() {
+            let expected = ctx.models.table().committed_rows_for_table(table);
+            assert_rows_match_expected(
+                &expected,
+                |visitor| ctx.access.visit_rows_for_table(table, visitor),
+                format!("[TablesVerifiedMatchesModel] table {table} state mismatch after reopen on conn={conn}"),
+            )?;
         }
         Ok(())
     }

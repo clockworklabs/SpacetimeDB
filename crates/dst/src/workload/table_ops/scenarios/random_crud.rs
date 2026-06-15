@@ -34,6 +34,9 @@ struct TableWorkloadProfile {
     unique_key_conflict_insert_pct: usize,
     add_column_pct: usize,
     add_index_pct: usize,
+    add_table_pct: usize,
+    add_event_table_pct: usize,
+    truncate_table_pct: usize,
 }
 
 const RANDOM_CRUD_PROFILE: TableWorkloadProfile = TableWorkloadProfile {
@@ -58,6 +61,9 @@ const RANDOM_CRUD_PROFILE: TableWorkloadProfile = TableWorkloadProfile {
     unique_key_conflict_insert_pct: 4,
     add_column_pct: 1,
     add_index_pct: 2,
+    add_table_pct: 2,
+    add_event_table_pct: 1,
+    truncate_table_pct: 3,
 };
 
 pub fn generate_schema(rng: &Rng) -> SchemaPlan {
@@ -116,6 +122,7 @@ fn generate_schema_with_profile(rng: &Rng, profile: TableWorkloadProfile) -> Sch
             name: format!("dst_table_{table_idx}_{}", rng.next_u64() % 10_000),
             columns,
             extra_indexes,
+            is_event: false,
         });
     }
 
@@ -195,6 +202,22 @@ fn fill_pending_with_profile(planner: &mut ScenarioPlanner<'_>, conn: SessionId,
         && planner.roll_percent(profile.add_index_pct)
         && emit_add_index(planner, conn, table, &visible_rows)
     {
+        return;
+    }
+    if planner.active_writer().is_none()
+        && !planner.any_read_tx()
+        && planner.roll_percent(profile.add_table_pct + profile.add_event_table_pct)
+        && emit_add_table(planner, conn, profile)
+    {
+        return;
+    }
+    if !visible_rows.is_empty()
+        && planner.active_writer().is_none()
+        && !planner.any_read_tx()
+        && planner.roll_percent(profile.truncate_table_pct)
+    {
+        planner.truncate(conn, table);
+        planner.push_interaction(TableWorkloadInteraction::truncate_table(conn, table));
         return;
     }
     if emit_query(planner, conn, table, &visible_rows) {
@@ -301,6 +324,38 @@ fn emit_add_index(planner: &mut ScenarioPlanner<'_>, conn: SessionId, table: usi
             Bound::Included(upper),
         ));
     }
+    true
+}
+
+fn emit_add_table(planner: &mut ScenarioPlanner<'_>, conn: SessionId, profile: TableWorkloadProfile) -> bool {
+    let is_event = planner
+        .roll_percent(profile.add_event_table_pct * 100 / (profile.add_table_pct + profile.add_event_table_pct).max(1));
+    let extra_cols = 1 + planner.choose_index(3);
+    let mut columns = vec![ColumnPlan {
+        name: "id".into(),
+        ty: AlgebraicType::U64,
+    }];
+    for col_idx in 0..extra_cols {
+        let ty = match planner.choose_index(4) {
+            0 => AlgebraicType::Bool,
+            1 => AlgebraicType::U64,
+            2 => AlgebraicType::String,
+            _ => generate_supported_type_for_churn(planner),
+        };
+        columns.push(ColumnPlan {
+            name: format!("c_add_{}_{}", planner.choose_index(1000), col_idx),
+            ty,
+        });
+    }
+    let table_name = format!("dst_added_{}", planner.choose_index(10_000));
+    let schema = TablePlan {
+        name: table_name,
+        columns,
+        extra_indexes: vec![],
+        is_event,
+    };
+    planner.add_table(&schema, is_event);
+    planner.push_interaction(TableWorkloadInteraction::add_table(conn, schema));
     true
 }
 

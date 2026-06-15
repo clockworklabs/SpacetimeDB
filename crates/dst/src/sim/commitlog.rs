@@ -7,20 +7,25 @@ use std::{
 
 use spacetimedb_commitlog::{
     repo::{
-        CompressOnce, CompressionStats, Repo, RepoWithoutLockFile, SegmentLen, SegmentReader, TxOffset, TxOffsetIndex, TxOffsetIndexMut,
+        CompressOnce, CompressionStats, Repo, RepoWithoutLockFile, SegmentLen, SegmentReader, TxOffset, TxOffsetIndex,
+        TxOffsetIndexMut,
     },
     segment::{FileLike, Header},
 };
 
-use crate::sim::storage_faults::{
-    is_injected_fault_text, ShortIoKind, StorageFaultConfig, StorageFaultController, StorageFaultDomain,
-    StorageFaultKind, StorageFaultSummary,
+use crate::{
+    config::StorageFaultSummary,
+    sim::storage_faults::{
+        is_injected_fault_text, ShortIoKind, StorageFaultConfig, StorageFaultController, StorageFaultDomain,
+        StorageFaultKind,
+    },
 };
 
 pub(crate) type CommitlogFaultConfig = StorageFaultConfig;
 pub(crate) type CommitlogFaultSummary = StorageFaultSummary;
 
 /// Returns true if `text` contains an error created by this fault layer.
+#[allow(dead_code)]
 pub(crate) fn is_injected_disk_error_text(text: &str) -> bool {
     is_injected_fault_text(StorageFaultDomain::Disk, text)
 }
@@ -45,6 +50,7 @@ impl<R> FaultableRepo<R> {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn enable_faults(&self) {
         self.faults.enable();
     }
@@ -53,6 +59,7 @@ impl<R> FaultableRepo<R> {
         self.faults.summary()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn with_faults_suspended<T>(&self, f: impl FnOnce() -> T) -> T {
         self.faults.with_suspended(f)
     }

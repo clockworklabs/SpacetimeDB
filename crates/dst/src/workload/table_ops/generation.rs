@@ -165,6 +165,19 @@ impl<'a> ScenarioPlanner<'a> {
         self.model.add_index(table, cols);
     }
 
+    pub fn add_table(&mut self, schema: &TablePlan, is_event: bool) -> usize {
+        self.model.add_table(schema, is_event)
+    }
+
+    pub fn truncate(&mut self, conn: SessionId, table: usize) {
+        self.model.truncate(conn, table);
+    }
+
+    #[allow(dead_code)]
+    pub fn drop_table(&mut self, conn: SessionId, table: usize) {
+        self.model.drop_table(conn, table);
+    }
+
     pub fn absent_row(&mut self, conn: SessionId, table: usize) -> crate::schema::SimRow {
         self.model.absent_row(self.rng, conn, table)
     }
@@ -183,13 +196,7 @@ impl<'a> ScenarioPlanner<'a> {
 }
 
 impl<S: TableScenario> TableWorkloadSource<S> {
-    pub fn new(
-        seed: u64,
-        scenario: S,
-        schema: SchemaPlan,
-        num_connections: usize,
-        target_interactions: usize,
-    ) -> Self {
+    pub fn new(seed: u64, scenario: S, schema: SchemaPlan, num_connections: usize, target_interactions: usize) -> Self {
         Self {
             rng: Rng::new(fork_seed(seed, 17)),
             scenario,

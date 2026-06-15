@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! Shared storage fault-injection primitives for DST simulation helpers.
 //!
 //! Fault decisions use [`spacetimedb_runtime::sim::Handle::buggify_with_prob`]
@@ -12,7 +14,7 @@ use std::{
     time::Duration,
 };
 
-use crate::config::CommitlogFaultProfile;
+use crate::config::{CommitlogFaultProfile, StorageFaultSummary};
 
 const INJECTED_ERROR_PREFIX: &str = "dst injected ";
 
@@ -106,22 +108,6 @@ impl StorageFaultConfig {
             },
         }
     }
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct StorageFaultSummary {
-    pub(crate) profile: CommitlogFaultProfile,
-    pub(crate) latency: usize,
-    pub(crate) short_read: usize,
-    pub(crate) short_write: usize,
-    pub(crate) read_error: usize,
-    pub(crate) write_error: usize,
-    pub(crate) flush_error: usize,
-    pub(crate) fsync_error: usize,
-    pub(crate) open_error: usize,
-    pub(crate) metadata_error: usize,
-    pub(crate) no_space: usize,
-    pub(crate) partial_failure: usize,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -263,7 +249,7 @@ impl StorageFaultController {
     }
 
     fn sample_latency(&self, probability: f64) -> bool {
-        if probability <= 0.0 {
+        if probability <= 0.0 || !self.active() {
             return false;
         }
         match &self.handle {
