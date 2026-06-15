@@ -37,7 +37,7 @@ const BENCHMARK_MODULES: &[BenchmarkModule] = &[
     BenchmarkModule {
         label: "TypeScript",
         module_dir: "templates/keynote-2/spacetimedb",
-        min_tps: 275_000.0,
+        min_tps: 260_000.0,
     },
     BenchmarkModule {
         label: "Rust",

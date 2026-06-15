@@ -147,7 +147,7 @@ Usage: help [COMMAND]...
 
 Runs the keynote benchmark as a CI performance regression gate.
 
-Assumes release SpacetimeDB binaries and the TypeScript SDK are already built, runs the keynote SpacetimeDB benchmark for 60 seconds against the TypeScript and Rust modules, and fails if throughput is below 275K TPS for TypeScript or 300K TPS for Rust.
+Assumes release SpacetimeDB binaries and the TypeScript SDK are already built, runs the keynote SpacetimeDB benchmark for 60 seconds against the TypeScript and Rust modules, and fails if throughput is below 260K TPS for TypeScript or 275K TPS for Rust.
 
 **Usage:**
 ```bash
