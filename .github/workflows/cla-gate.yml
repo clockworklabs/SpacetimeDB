@@ -1,16 +1,15 @@
 name: CLA Gate
 
-# This workflow publishes a repository-owned commit status named `CLA Gate`.
-# Make `CLA Gate` required instead of requiring CLA Assistant's raw `license/cla`
-# status directly. That lets merge queue entries pass without waiting for CLA
-# Assistant to report on the synthetic merge-group SHA, while pull requests still
-# mirror the real CLA Assistant result.
+# This workflow makes CLA checks work with merge queue entries. Merge groups get
+# a repository-owned `CLA Gate` commit status on the synthetic queue SHA, while
+# pull request/status events use this Actions job result based on CLA Assistant's
+# raw `license/cla` status.
 #
-# SECURITY: This workflow uses pull_request_target so it can publish commit
-# statuses on external PRs. It must never check out, build, or execute PR code.
+# SECURITY: Pull request runs must still check out trusted base-branch code, not
+# PR code, before running repository scripts.
 
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, reopened]
   status:
   merge_group:
@@ -82,7 +81,7 @@ jobs:
             if (context.eventName === "status") {
               targetSha = context.payload.sha;
               claStatusArgs = ["--sha", targetSha];
-            } else if (context.eventName === "pull_request_target") {
+            } else if (context.eventName === "pull_request") {
               const pr = context.payload.pull_request;
               targetSha = pr.head.sha;
               claStatusArgs = ["--pr", String(pr.number)];
@@ -98,9 +97,12 @@ jobs:
               return;
             }
 
-            await postStatus({
-              sha: targetSha,
-              state: status.state,
-              description: status.description || undefined,
-              targetUrl: status.target_url || undefined,
-            });
+            if (status.state === "success") {
+              core.info(`license/cla is success for ${targetSha}`);
+              return;
+            }
+
+            const state = status.state || "missing";
+            const description = status.description || "license/cla status is missing";
+            const targetUrl = status.target_url ? ` (${status.target_url})` : "";
+            core.setFailed(`license/cla is ${state}: ${description}${targetUrl}`);
