@@ -149,10 +149,10 @@ function countLoc(backend) {
     backendLoc = countLines(stdbBackend);
   }
 
-  // PostgreSQL backend
-  const pgServer = path.join(appDir, 'server');
-  if (fs.existsSync(pgServer)) {
-    backendLoc = countLines(pgServer);
+  // Express backend (postgres + mongodb both use a server/ dir)
+  const expressServer = path.join(appDir, 'server');
+  if (fs.existsSync(expressServer)) {
+    backendLoc = countLines(expressServer);
   }
 
   // Frontend

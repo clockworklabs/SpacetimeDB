@@ -21,3 +21,9 @@ telemetry/metrics.jsonl
 
 # Raw telemetry contains PII (email, account IDs) - store privately
 **/telemetry/**/raw-telemetry.jsonl
+
+# Generated benchmark run output (app source, telemetry, cost reports).
+# Canonical runs are published to the external spacetimedb-ai-test-results
+# repo — they are not tracked in this monorepo.
+/sequential-upgrade/
+/one-shot/
