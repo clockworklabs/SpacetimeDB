@@ -21,6 +21,7 @@ fn compile_expr(expr: Expr, var: &mut impl VarLabel) -> PhysicalExpr {
             PhysicalExpr::BinOp(op, a, b)
         }
         Expr::Value(v, _) => PhysicalExpr::Value(v),
+        Expr::Param(param, ty) => PhysicalExpr::Param(param, ty),
         Expr::Field(proj) => PhysicalExpr::Field(compile_field_project(var, proj)),
     }
 }
