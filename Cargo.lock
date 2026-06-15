@@ -8454,6 +8454,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-release"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "serde",
+ "serde_json",
+ "toml 0.8.23",
+]
+
+[[package]]
 name = "spacetimedb-runtime"
 version = "2.5.0"
 dependencies = [
