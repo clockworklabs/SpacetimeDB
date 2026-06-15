@@ -333,4 +333,32 @@ internal static class ErrorDescriptor
                 $"HTTP handler method {method.Identifier} must be non-generic and take exactly two parameters.",
             method => method.ParameterList
         );
+
+    public static readonly ErrorDescriptor<(
+        MethodDeclarationSyntax method,
+        SyntaxNode primaryKeySyntax,
+        string primaryKey,
+        string rowType
+    )> ViewPrimaryKeyColumnNotFound =
+        new(
+            group,
+            "View primary key column not found",
+            ctx =>
+                $"View '{ctx.method.Identifier}' declares primary key '{ctx.primaryKey}', but row type '{ctx.rowType}' does not have a field with that source name.",
+            ctx => ctx.primaryKeySyntax
+        );
+
+    public static readonly ErrorDescriptor<(
+        MethodDeclarationSyntax method,
+        SyntaxNode primaryKeySyntax,
+        string primaryKey,
+        string type
+    )> ViewPrimaryKeyNotFilterable =
+        new(
+            group,
+            "View primary key column type is not supported",
+            ctx =>
+                $"View '{ctx.method.Identifier}' declares primary key '{ctx.primaryKey}', but its type '{ctx.type}' is not supported for view primary keys.",
+            ctx => ctx.primaryKeySyntax
+        );
 }

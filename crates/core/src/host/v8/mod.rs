@@ -171,7 +171,7 @@ const REDUCER_ARGS_BUFFER_SIZE: usize = 4_096;
 const JS_PROCEDURE_INSTANCE_QUEUE_CAPACITY: usize = 1;
 
 #[derive(Copy, Clone)]
-pub(crate) enum JsWorkerKind {
+pub enum JsWorkerKind {
     Main,
     Procedure,
 }
@@ -345,8 +345,6 @@ fn env_on_isolate_unwrap(isolate: &mut Isolate) -> &mut JsInstanceEnv {
 struct JsInstanceEnv {
     instance_env: InstanceEnv,
     module_def: Option<Arc<ModuleDef>>,
-    /// Last used-heap sample captured by the worker's periodic heap checks.
-    cached_used_heap_size: usize,
 
     /// The slab of `BufferIters` created for this instance.
     iters: RowIters,
@@ -371,7 +369,6 @@ impl JsInstanceEnv {
         Self {
             instance_env,
             module_def: None,
-            cached_used_heap_size: 0,
             call_times: CallTimes::new(),
             iters: <_>::default(),
             chunk_pool: <_>::default(),
@@ -424,16 +421,6 @@ impl JsInstanceEnv {
             total_duration,
             wasm_instance_env_call_times,
         }
-    }
-
-    /// Refresh the cached heap usage after an explicit V8 heap sample.
-    fn set_cached_used_heap_size(&mut self, bytes: usize) {
-        self.cached_used_heap_size = bytes;
-    }
-
-    /// Return the last heap sample without forcing a fresh V8 query.
-    fn cached_used_heap_size(&self) -> usize {
-        self.cached_used_heap_size
     }
 
     fn set_module_def(&mut self, module_def: Arc<ModuleDef>) {
@@ -1134,11 +1121,8 @@ fn adjust_gauge(gauge: &IntGauge, delta: i64) {
     }
 }
 
-fn sample_heap_stats(scope: &mut PinScope<'_, '_>, metrics: &mut V8HeapMetrics) -> v8::HeapStatistics {
-    // Whenever we sample heap statistics, we cache them on the isolate so that
-    // the per-call execution stats can avoid querying them on each invocation.
+fn record_heap_stats(scope: &mut PinScope<'_, '_>, metrics: &mut V8HeapMetrics) -> v8::HeapStatistics {
     let stats = scope.get_heap_statistics();
-    env_on_isolate_unwrap(scope).set_cached_used_heap_size(stats.used_heap_size());
     metrics.observe(&stats);
     stats
 }
@@ -1162,14 +1146,14 @@ fn should_retire_worker_for_heap(
     metrics: &mut V8HeapMetrics,
     config: V8HeapPolicyConfig,
 ) -> Option<(usize, usize)> {
-    let stats = sample_heap_stats(scope, metrics);
+    let stats = record_heap_stats(scope, metrics);
     let (used, limit) = heap_usage(&stats);
     if !heap_fraction_at_or_above(used, limit, config.heap_gc_trigger_fraction) {
         return None;
     }
 
     scope.low_memory_notification();
-    let stats = sample_heap_stats(scope, metrics);
+    let stats = record_heap_stats(scope, metrics);
     let (used, limit) = heap_usage(&stats);
     if heap_fraction_at_or_above(used, limit, config.heap_retire_fraction) {
         Some((used, limit))
@@ -1707,7 +1691,7 @@ where
                         .with_label_values(&info.database_identity),
                     initial_heap_limit: heap_policy.heap_limit_bytes,
                 };
-                let _initial_heap_stats = sample_heap_stats(inst.scope, &mut heap_metrics);
+                let _initial_heap_stats = record_heap_stats(inst.scope, &mut heap_metrics);
 
                 // Process requests to the worker.
                 //
@@ -2040,25 +2024,16 @@ where
             .unwrap_or(FunctionBudget::MAX);
         let energy = EnergyStats::from_used(budget, energy_used);
 
-        // Reuse the last periodic heap sample instead of querying V8 on every call.
-        // We use this statistic for energy tracking, so eventual consistency is fine.
-        let memory_allocation = env.cached_used_heap_size();
-
         if heap_limit_hit.get() > 1 {
             let database_identity = *env.instance_env.database_identity();
             tracing::warn!(
                 %database_identity,
-                used_heap_size = memory_allocation,
                 current_heap_limit = scope.get_heap_statistics().heap_size_limit(),
                 "Module hit heap limit multiple times in single call, even after doubling!",
             )
         }
 
-        let stats = ExecutionStats {
-            energy,
-            timings,
-            memory_allocation,
-        };
+        let stats = ExecutionStats { energy, timings };
         ExecutionResult { stats, call_result }
     })
 }

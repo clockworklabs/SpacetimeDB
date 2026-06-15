@@ -19,6 +19,7 @@ class WebsocketTestAdapter implements WebSocketAdapter {
   #onclose: (ev: CloseEvent) => void = () => {};
   #onopen: () => void = () => {};
   #onmessage: (msg: { data: Uint8Array }) => void = () => {};
+  #onerror: (msg: ErrorEvent) => void = () => {};
 
   constructor() {
     this.messageQueue = [];
@@ -39,7 +40,13 @@ class WebsocketTestAdapter implements WebSocketAdapter {
     this.#onmessage = handler;
   }
 
-  set onerror(_handler: (msg: ErrorEvent) => void) {}
+  set onerror(handler: (msg: ErrorEvent) => void) {
+    this.#onerror = handler;
+  }
+
+  error(error: Error): void {
+    this.#onerror(error as unknown as ErrorEvent);
+  }
 
   send(message: Uint8Array<ArrayBuffer>): void {
     const rawMessage = message.slice();

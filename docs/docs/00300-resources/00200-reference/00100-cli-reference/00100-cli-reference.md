@@ -597,8 +597,7 @@ Subscribe to SQL queries on the database. WARNING: This command is UNSTABLE and 
 ###### **Options:**
 
 * `-n`, `--num-updates <NUM-UPDATES>` — The number of subscription updates to receive before exiting
-* `-t`, `--timeout <TIMEOUT>` — The timeout, in seconds, after which to disconnect and stop receiving subscription messages. If `-n` is specified, it will stop after whichever
-                     one comes first.
+* `-t`, `--timeout <TIMEOUT>` — The timeout, in seconds, after which to disconnect and stop receiving subscription messages. If `-n` is specified, it will stop after whichever one comes first. Timing out before receiving `-n` updates is an error.
 * `--print-initial-update` — Print the initial update for the queries.
 * `--confirmed <CONFIRMED>` — Instruct the server to deliver only updates of confirmed transactions
 

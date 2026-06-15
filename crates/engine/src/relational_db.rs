@@ -1024,6 +1024,17 @@ impl RelationalDB {
         Ok(self.inner.alter_table_row_type_mut_tx(tx, table_id, column_schemas)?)
     }
 
+    pub(crate) fn alter_event_table_row_type(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+        column_schemas: Vec<ColumnSchema>,
+    ) -> Result<(), DBError> {
+        Ok(self
+            .inner
+            .alter_event_table_row_type_mut_tx(tx, table_id, column_schemas)?)
+    }
+
     pub(crate) fn add_columns_to_table_mut_tx(
         &self,
         tx: &mut MutTx,
