@@ -1180,6 +1180,9 @@ impl Deref for TxContext {
     }
 }
 
+/// We need to passthrough identity and connection_id because procedures can be invoked by users.
+/// For [HttpContext] this is always anonymous ([Identity::ZERO]).
+/// Construct the inner [ReducerContext] with the appropriate caller information.
 fn try_with_tx<T, E>(
     body: impl Fn(&TxContext) -> Result<T, E>,
     identity: Identity,
@@ -1195,7 +1198,6 @@ fn try_with_tx<T, E>(
             .expect("holding `&mut HandlerContext`, so should not be in a tx already; called manually elsewhere?");
         let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp);
 
-        // Use the internal auth context (no external caller identity).
         let tx = ReducerContext::new(crate::Local {}, identity, connection_id, timestamp);
         let tx = TxContext(tx);
 
