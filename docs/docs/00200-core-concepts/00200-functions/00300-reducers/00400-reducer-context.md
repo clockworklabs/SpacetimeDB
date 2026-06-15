@@ -274,15 +274,15 @@ Never use external random number generators (like `Random` in C# without using t
 
 ## Module Identity
 
-The context provides access to the module's own identity, which is useful for distinguishing between user-initiated and system-initiated reducer calls.
+The context provides access to the module's own identity, which is useful when a reducer needs to refer to the database itself.
 
-This is particularly important for [scheduled reducers](./00300-reducers.md) that should only be invoked by the system, not by external clients.
+Scheduled reducers and procedures are private by default in SpacetimeDB 2.x, so you do not need to compare the sender against the module identity to prevent ordinary clients from calling them directly. If you need both a scheduled function and a client-callable entry point, keep the scheduled function private and define a separate public reducer that wraps the shared logic.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-import { schema, table, t, SenderError } from 'spacetimedb/server';
+import { schema, table, t } from 'spacetimedb/server';
 
 const scheduledTask = table(
   { name: 'scheduled_task', scheduled: (): any => send_reminder },
@@ -296,12 +296,7 @@ const scheduledTask = table(
 const spacetimedb = schema({ scheduledTask });
 export default spacetimedb;
 
-export const send_reminder = spacetimedb.reducer({ arg: scheduledTask.rowType }, (ctx, { arg }) => {
-  // Only allow the scheduler (module identity) to call this
-  if (ctx.sender != ctx.identity) {
-    throw new SenderError('This reducer can only be called by the scheduler');
-  }
-  
+export const send_reminder = spacetimedb.reducer({ arg: scheduledTask.rowType }, (_ctx, { arg }) => {
   console.log(`Reminder: ${arg.message}`);
 });
 ```
@@ -325,14 +320,8 @@ public static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void SendReminder(ReducerContext ctx, ScheduledTask task)
+    public static void SendReminder(ReducerContext _ctx, ScheduledTask task)
     {
-        // Only allow the scheduler (module identity) to call this
-        if (ctx.Sender != ctx.Identity)
-        {
-            throw new Exception("This reducer can only be called by the scheduler");
-        }
-        
         Log.Info($"Reminder: {task.message}");
     }
 }
@@ -354,12 +343,7 @@ pub struct ScheduledTask {
 }
 
 #[reducer]
-fn send_reminder(ctx: &ReducerContext, task: ScheduledTask) {
-    // Only allow the scheduler (module identity) to call this
-    if ctx.sender() != ctx.identity() {
-        panic!("This reducer can only be called by the scheduler");
-    }
-    
+fn send_reminder(_ctx: &ReducerContext, task: ScheduledTask) {
     spacetimedb::log::info!("Reminder: {}", task.message);
 }
 ```
@@ -383,12 +367,7 @@ FIELD_PrimaryKeyAutoInc(scheduled_task, task_id);
 // Register the table for scheduling (column 1 = scheduled_at field, 0-based index)
 SPACETIMEDB_SCHEDULE(scheduled_task, 1, send_reminder);
 
-SPACETIMEDB_REDUCER(send_reminder, ReducerContext ctx, ScheduledTask task) {
-    // Only allow the scheduler (module identity) to call this
-    if (ctx.sender() != ctx.identity()) {
-        return Err("This reducer can only be called by the scheduler");
-    }
-    
+SPACETIMEDB_REDUCER(send_reminder, ReducerContext _ctx, ScheduledTask task) {
     LOG_INFO("Reminder: " + task.message);
     return Ok();
 }

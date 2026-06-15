@@ -5,9 +5,9 @@ use crate::locking_tx_datastore::mut_tx::{IndexScanPoint, IndexScanRanged};
 use crate::system_tables::{
     ConnectionIdViaU128, StColumnAccessorFields, StColumnAccessorRow, StColumnFields, StColumnRow,
     StConnectionCredentialsFields, StConnectionCredentialsRow, StConstraintFields, StConstraintRow, StEventTableFields,
-    StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StScheduledFields, StScheduledRow,
-    StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow,
-    StViewFields, StViewParamFields, StViewRow, SystemTable, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID,
+    StEventTableRow, StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StScheduledFields,
+    StScheduledRow, StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow, StTableFields,
+    StTableRow, StViewFields, StViewParamFields, StViewRow, SystemTable, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID,
     ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID,
     ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID,
 };
@@ -94,6 +94,14 @@ pub trait StateView {
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?;
         StTableRow::try_from(row_ref)
+    }
+
+    fn find_st_event_table_row(&self, table_id: TableId) -> Result<StEventTableRow> {
+        let row_ref = self
+            .iter_by_col_eq(ST_EVENT_TABLE_ID, StEventTableFields::TableId, &table_id.into())?
+            .next()
+            .ok_or_else(|| TableError::IdNotFound(SystemTable::st_event_table, table_id.into()))?;
+        StEventTableRow::try_from(row_ref)
     }
 
     /// Look up an `st_table_accessor` row by its accessor name

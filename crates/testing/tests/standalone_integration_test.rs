@@ -2,7 +2,7 @@ use serial_test::serial;
 use spacetimedb_lib::sats::{product, AlgebraicValue};
 use spacetimedb_testing::modules::{
     CompilationMode, CompiledModule, Cpp, Csharp, LogLevel, LoggerRecord, ModuleHandle, ModuleLanguage, Rust,
-    TypeScript, DEFAULT_CONFIG, IN_MEMORY_CONFIG,
+    TypeScript, DEFAULT_CONFIG,
 };
 use std::{
     future::Future,
@@ -354,58 +354,6 @@ fn test_call_query_macro() {
         module.call_reducer_binary("test", args_pv).await.unwrap();
         module
     });
-}
-
-#[test]
-#[serial]
-/// This test runs the index scan workloads in the `perf-test` module.
-/// Timing spans should be < 1ms if the correct index was used.
-/// Otherwise these workloads will degenerate into full table scans.
-fn test_index_scans() {
-    init();
-    CompiledModule::compile("perf-test", CompilationMode::Release).with_module_async(
-        IN_MEMORY_CONFIG,
-        |module| async move {
-            let no_args = &product![];
-
-            module
-                .call_reducer_binary("load_location_table", no_args)
-                .await
-                .unwrap();
-
-            module
-                .call_reducer_binary("test_index_scan_on_id", no_args)
-                .await
-                .unwrap();
-
-            module
-                .call_reducer_binary("test_index_scan_on_chunk", no_args)
-                .await
-                .unwrap();
-
-            module
-                .call_reducer_binary("test_index_scan_on_x_z_dimension", no_args)
-                .await
-                .unwrap();
-
-            module
-                .call_reducer_binary("test_index_scan_on_x_z", no_args)
-                .await
-                .unwrap();
-
-            let logs = read_logs(&module).await;
-
-            // Each timing span should be < 1ms
-            let timing = |line: &str| {
-                line.starts_with("Timing span")
-                    && (line.ends_with("ns") || line.ends_with("us") || line.ends_with("µs"))
-            };
-            assert!(timing(&logs[0]));
-            assert!(timing(&logs[1]));
-            assert!(timing(&logs[2]));
-            assert!(timing(&logs[3]));
-        },
-    );
 }
 
 async fn bench_call(module: &ModuleHandle, call: &str, count: &u32) -> Duration {

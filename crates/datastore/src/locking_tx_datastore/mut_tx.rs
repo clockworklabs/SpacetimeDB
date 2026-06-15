@@ -20,12 +20,12 @@ use crate::{
     error::{IndexError, SequenceError, TableError},
     system_tables::{
         with_sys_table_buf, StClientFields, StClientRow, StColumnAccessorFields, StColumnAccessorRow, StColumnFields,
-        StColumnRow, StConstraintFields, StConstraintRow, StEventTableRow, StFields as _, StIndexAccessorFields,
-        StIndexAccessorRow, StIndexFields, StIndexRow, StRowLevelSecurityFields, StRowLevelSecurityRow,
-        StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow,
-        StTableFields, StTableRow, SystemTable, ST_CLIENT_ID, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID,
-        ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID,
-        ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
+        StColumnRow, StConstraintFields, StConstraintRow, StEventTableFields, StEventTableRow, StFields as _,
+        StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StRowLevelSecurityFields,
+        StRowLevelSecurityRow, StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow,
+        StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow, SystemTable, ST_CLIENT_ID,
+        ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID,
+        ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
     },
 };
 use crate::{execution_context::ExecutionContext, system_tables::StViewColumnRow};
@@ -1017,6 +1017,15 @@ impl MutTxId {
             )?;
         }
 
+        // Remove the table's row from `st_event_table`, if it is an event table.
+        if schema.is_event {
+            self.delete_col_eq(
+                ST_EVENT_TABLE_ID,
+                StEventTableFields::TableId.col_id(),
+                &table_id.into(),
+            )?;
+        }
+
         // Delete the table from memory, both in the tx an committed states.
         self.tx_state.insert_tables.remove(&table_id);
         // No need to keep the delete tables.
@@ -1206,6 +1215,46 @@ impl MutTxId {
 
         // Remember the pending change so we can undo if necessary.
         self.push_schema_change(PendingSchemaChange::TableAlterRowType(table_id, old_column_schemas));
+
+        Ok(())
+    }
+
+    pub(crate) fn alter_event_table_row_type(
+        &mut self,
+        table_id: TableId,
+        column_schemas: Vec<ColumnSchema>,
+    ) -> Result<()> {
+        // Sanity check: is this actually an event table?
+        if self.find_st_event_table_row(table_id).is_err() {
+            return Err(TableError::ReschemaNotAnEventTable(table_id).into());
+        }
+
+        // Write to the table in the tx state.
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+
+        if tx_table.row_count != 0 || commit_table.row_count != 0 {
+            // N.b. the delete table must also be empty, 'cause the committed table is empty.
+            return Err(TableError::EventTableNotEmpty(table_id).into());
+        }
+
+        let old_column_schemas = tx_table
+            .change_columns_of_empty_table_to(column_schemas.clone())
+            .map_err(|_| TableError::EventTableNotEmpty(table_id))?;
+
+        commit_table
+            .change_columns_of_empty_table_to(column_schemas.clone())
+            .map_err(|_| TableError::EventTableNotEmpty(table_id))?;
+
+        // Update system tables.
+        // We'll simply remove all rows in `st_columns` and then add the new ones.
+        // The datastore takes care of not persisting any no-op delete/inserts to the commitlog.
+        let table_name = self.find_st_table_row(table_id)?.table_name;
+        self.drop_st_column(table_id)?;
+        self.drop_st_column_accessor(&table_name)?;
+        self.insert_st_column(&table_name, &column_schemas)?;
+
+        // Remember the pending change so we can undo if necessary.
+        self.push_schema_change(PendingSchemaChange::ReschemaEventTable(table_id, old_column_schemas));
 
         Ok(())
     }
