@@ -112,6 +112,7 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LLM_VENDOR: openrouter
           LLM_BENCHMARK_API_KEY: ${{ secrets.LLM_BENCHMARK_API_KEY }}
           LLM_BENCHMARK_UPLOAD_URL: ${{ secrets.LLM_BENCHMARK_UPLOAD_URL }}
           DOTNET_MULTILEVEL_LOOKUP: "0"
