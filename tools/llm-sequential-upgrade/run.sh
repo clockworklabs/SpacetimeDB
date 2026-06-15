@@ -24,8 +24,30 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Configurable container name for PostgreSQL backend
+# Configurable container names for the Docker-backed databases
 POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-llm-sequential-upgrade-postgres-1}"
+MONGO_CONTAINER="${MONGO_CONTAINER:-llm-sequential-upgrade-mongodb-1}"
+
+# Detect which backend an existing app dir was generated with.
+# Prefers the explicit `.benchmark-backend` marker (written at generate time);
+# falls back to directory shape for legacy apps. NOTE: postgres and mongodb both
+# use a `server/` dir, so the marker is the ONLY reliable discriminator between
+# them — a marker-less mongodb app would be misdetected as postgres.
+# Prints the backend name, or "unknown".
+detect_backend() {
+  local app_dir="$1"
+  if [[ -f "$app_dir/.benchmark-backend" ]]; then
+    tr -d '[:space:]' < "$app_dir/.benchmark-backend"
+    return
+  fi
+  if [[ -d "$app_dir/backend/spacetimedb" ]]; then
+    echo "spacetime"
+  elif [[ -d "$app_dir/server" ]]; then
+    echo "postgres"  # legacy fallback; mongodb apps must carry the marker
+  else
+    echo "unknown"
+  fi
+}
 
 # ─── Parse arguments ─────────────────────────────────────────────────────────
 
@@ -68,18 +90,21 @@ esac
 # Each backend has a 100-port range. Run-index offsets within that range.
 #   SpacetimeDB: 6173 + run-index  (6173, 6174, 6175, ...)
 #   PostgreSQL:  6273 + run-index  (6273, 6274, 6275, ...)
-#   Express:     6001 + run-index  (6001, 6002, 6003, ...)
+#   MongoDB:     6373 + run-index  (6373, 6374, 6375, ...)
+#   Express:     6001 + run-index  (6001, 6002, 6003, ...)  [postgres & mongodb]
 VITE_PORT_STDB=$((6173 + RUN_INDEX))
 VITE_PORT_PG=$((6273 + RUN_INDEX))
+VITE_PORT_MONGO=$((6373 + RUN_INDEX))
 EXPRESS_PORT=$((6001 + RUN_INDEX))
 PG_PORT=6432  # Shared container, isolation via per-run database names
+MONGO_PORT=6437  # Shared container, isolation via per-run database names
 STDB_PORT=3000  # SpacetimeDB server is shared, modules are isolated by name
 
-if [[ "$BACKEND" == "spacetime" ]]; then
-  VITE_PORT=$VITE_PORT_STDB
-else
-  VITE_PORT=$VITE_PORT_PG
-fi
+case "$BACKEND" in
+  spacetime) VITE_PORT=$VITE_PORT_STDB ;;
+  mongodb)   VITE_PORT=$VITE_PORT_MONGO ;;
+  *)         VITE_PORT=$VITE_PORT_PG ;;  # postgres
+esac
 
 # Variant-specific defaults
 if [[ "$VARIANT" == "one-shot" ]]; then
@@ -158,6 +183,8 @@ fi
 
 PG_DATABASE="spacetime"
 PG_CONNECTION_URL="postgresql://spacetime:spacetime@localhost:6432/spacetime"
+MONGO_DATABASE="chat-app"
+MONGO_CONNECTION_URL="mongodb://localhost:6437/chat-app"
 
 if [[ "$BACKEND" == "spacetime" ]]; then
   if spacetime server ping local &>/dev/null; then
@@ -189,6 +216,25 @@ elif [[ "$BACKEND" == "postgres" ]]; then
     echo "[OK] PostgreSQL database: $PG_DATABASE (default)"
   fi
   PG_CONNECTION_URL="postgresql://spacetime:spacetime@localhost:6432/$PG_DATABASE"
+elif [[ "$BACKEND" == "mongodb" ]]; then
+  if docker exec "$MONGO_CONTAINER" mongosh --quiet --eval "db.runCommand({ping:1})" &>/dev/null; then
+    echo "[OK] MongoDB container is running"
+  else
+    echo "[FAIL] MongoDB is not reachable. Check Docker container $MONGO_CONTAINER."
+    exit 1
+  fi
+
+  # Per-run database isolation: each run-index gets its own database.
+  # MongoDB creates databases lazily on first write, so there's nothing to
+  # pre-create — just pick a distinct name. Run 0 uses "chat-app".
+  if [[ $RUN_INDEX -gt 0 ]]; then
+    MONGO_DATABASE="chat-app_run${RUN_INDEX}"
+    echo "[OK] MongoDB database: $MONGO_DATABASE (run-index $RUN_INDEX)"
+  else
+    MONGO_DATABASE="chat-app"
+    echo "[OK] MongoDB database: $MONGO_DATABASE (default)"
+  fi
+  MONGO_CONNECTION_URL="mongodb://localhost:6437/$MONGO_DATABASE"
 fi
 
 if ! docker info &>/dev/null; then
@@ -272,13 +318,10 @@ if [[ -n "$UPGRADE_MODE" || -n "$FIX_MODE" ]]; then
   else
     APP_DIR="$FIX_APP_DIR"
   fi
-  # Detect backend from app directory structure BEFORE deriving paths.
-  # Must happen here so $BACKEND is correct for TELEMETRY_DIR assignment below.
-  if [[ -d "$APP_DIR/backend/spacetimedb" ]]; then
-    BACKEND="spacetime"
-  elif [[ -d "$APP_DIR/server" ]]; then
-    BACKEND="postgres"
-  fi
+  # Detect backend from the app's marker (or directory shape) BEFORE deriving
+  # paths. Must happen here so $BACKEND is correct for TELEMETRY_DIR below.
+  _detected="$(detect_backend "$APP_DIR")"
+  [[ "$_detected" != "unknown" ]] && BACKEND="$_detected"
   # Walk up from app dir: chat-app-* → results → <backend> → <variant>-DATE
   RUN_BASE_DIR="$(cd "$APP_DIR/../../.." 2>/dev/null && pwd)"
   # Validate it looks like a run base dir (has a backend subdirectory)
@@ -318,6 +361,9 @@ else
   RUN_ID="$BACKEND-level$LEVEL-$TIMESTAMP"
   APP_DIR="$RESULTS_DIR/chat-app-$TIMESTAMP"
   mkdir -p "$APP_DIR"
+  # Marker so fix/upgrade mode can reliably re-detect the backend later
+  # (postgres and mongodb both use a server/ dir; this disambiguates them).
+  echo "$BACKEND" > "$APP_DIR/.benchmark-backend"
 fi
 
 RUN_DIR="$TELEMETRY_DIR/$RUN_ID"
@@ -394,6 +440,7 @@ cat > "$RUN_DIR/metadata.json" <<EOF
   "vitePort": $VITE_PORT,
   "expressPort": $EXPRESS_PORT,
   "pgDatabase": "${PG_DATABASE:-}",
+  "mongoDatabase": "${MONGO_DATABASE:-}",
   "sessionId": "$SESSION_ID"
 }
 EOF
@@ -464,14 +511,8 @@ if [[ -n "$FIX_MODE" ]]; then
   echo "  Bug report: $APP_DIR_NATIVE/BUG_REPORT.md"
   echo ""
 
-  # Detect backend from existing app directory structure
-  if [[ -d "$APP_DIR/backend/spacetimedb" ]]; then
-    FIX_BACKEND="spacetime"
-  elif [[ -d "$APP_DIR/server" ]]; then
-    FIX_BACKEND="postgres"
-  else
-    FIX_BACKEND="unknown"
-  fi
+  # Detect backend from the app's marker (or directory shape)
+  FIX_BACKEND="$(detect_backend "$APP_DIR")"
 
   PROMPT=$(cat <<PROMPT_EOF
 Fix the bugs in the sequential upgrade app.
@@ -532,14 +573,8 @@ elif [[ -n "$UPGRADE_MODE" ]]; then
     echo "  Saved to $SNAPSHOT_DIR"
   fi
 
-  # Detect backend from existing app directory structure
-  if [[ -d "$APP_DIR/backend/spacetimedb" ]]; then
-    UPGRADE_BACKEND="spacetime"
-  elif [[ -d "$APP_DIR/server" ]]; then
-    UPGRADE_BACKEND="postgres"
-  else
-    UPGRADE_BACKEND="unknown"
-  fi
+  # Detect backend from the app's marker (or directory shape)
+  UPGRADE_BACKEND="$(detect_backend "$APP_DIR")"
 
   # Resolve prompt file path
   if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
@@ -678,28 +713,48 @@ if [[ -z "$FIX_MODE" && -z "$UPGRADE_MODE" ]]; then
   #   standard: SDK rules only (no templates, no step-by-step phases)
   #   minimal:  just the tech stack name (least prescriptive)
   if [[ "$RULES" == "minimal" ]]; then
-    if [[ "$BACKEND" == "spacetime" ]]; then
-      echo "Build this app using the SpacetimeDB TypeScript SDK (npm package: spacetimedb)." > "$APP_DIR/CLAUDE.md"
-      echo "Server module in backend/spacetimedb/, React client in client/." >> "$APP_DIR/CLAUDE.md"
-      echo "Vite dev server port: $VITE_PORT" >> "$APP_DIR/CLAUDE.md"
-    else
-      echo "Build this app using PostgreSQL + Express + Socket.io + Drizzle ORM." > "$APP_DIR/CLAUDE.md"
-      echo "Express server in server/, React client in client/." >> "$APP_DIR/CLAUDE.md"
-      echo "PostgreSQL connection: $PG_CONNECTION_URL" >> "$APP_DIR/CLAUDE.md"
-      echo "Express port: $EXPRESS_PORT | Vite port: $VITE_PORT" >> "$APP_DIR/CLAUDE.md"
-    fi
+    case "$BACKEND" in
+      spacetime)
+        echo "Build this app using the SpacetimeDB TypeScript SDK (npm package: spacetimedb)." > "$APP_DIR/CLAUDE.md"
+        echo "Server module in backend/spacetimedb/, React client in client/." >> "$APP_DIR/CLAUDE.md"
+        echo "Vite dev server port: $VITE_PORT" >> "$APP_DIR/CLAUDE.md"
+        ;;
+      mongodb)
+        echo "Build this app using MongoDB + Express + Socket.io + Mongoose." > "$APP_DIR/CLAUDE.md"
+        echo "Express server in server/, React client in client/." >> "$APP_DIR/CLAUDE.md"
+        echo "MongoDB connection: $MONGO_CONNECTION_URL" >> "$APP_DIR/CLAUDE.md"
+        echo "Express port: $EXPRESS_PORT | Vite port: $VITE_PORT" >> "$APP_DIR/CLAUDE.md"
+        ;;
+      *)  # postgres
+        echo "Build this app using PostgreSQL + Express + Socket.io + Drizzle ORM." > "$APP_DIR/CLAUDE.md"
+        echo "Express server in server/, React client in client/." >> "$APP_DIR/CLAUDE.md"
+        echo "PostgreSQL connection: $PG_CONNECTION_URL" >> "$APP_DIR/CLAUDE.md"
+        echo "Express port: $EXPRESS_PORT | Vite port: $VITE_PORT" >> "$APP_DIR/CLAUDE.md"
+        ;;
+    esac
     echo "Assembled minimal CLAUDE.md (rules=$RULES)"
   elif [[ "$RULES" == "standard" ]]; then
-    if [[ "$BACKEND" == "spacetime" ]]; then
-      cat "$SCRIPT_DIR/backends/spacetime-sdk-rules.md" > "$APP_DIR/CLAUDE.md"
-    else
-      echo "# PostgreSQL Backend" > "$APP_DIR/CLAUDE.md"
-      echo "" >> "$APP_DIR/CLAUDE.md"
-      echo "PostgreSQL connection: \`$PG_CONNECTION_URL\`" >> "$APP_DIR/CLAUDE.md"
-      echo "" >> "$APP_DIR/CLAUDE.md"
-      echo "Use Express (port $EXPRESS_PORT) + Socket.io + Drizzle ORM. Server in \`server/\`, client in \`client/\`." >> "$APP_DIR/CLAUDE.md"
-      echo "Vite dev server port: $VITE_PORT" >> "$APP_DIR/CLAUDE.md"
-    fi
+    case "$BACKEND" in
+      spacetime)
+        cat "$SCRIPT_DIR/backends/spacetime-sdk-rules.md" > "$APP_DIR/CLAUDE.md"
+        ;;
+      mongodb)
+        echo "# MongoDB Backend" > "$APP_DIR/CLAUDE.md"
+        echo "" >> "$APP_DIR/CLAUDE.md"
+        echo "MongoDB connection: \`$MONGO_CONNECTION_URL\`" >> "$APP_DIR/CLAUDE.md"
+        echo "" >> "$APP_DIR/CLAUDE.md"
+        echo "Use Express (port $EXPRESS_PORT) + Socket.io + Mongoose. Server in \`server/\`, client in \`client/\`." >> "$APP_DIR/CLAUDE.md"
+        echo "Vite dev server port: $VITE_PORT" >> "$APP_DIR/CLAUDE.md"
+        ;;
+      *)  # postgres
+        echo "# PostgreSQL Backend" > "$APP_DIR/CLAUDE.md"
+        echo "" >> "$APP_DIR/CLAUDE.md"
+        echo "PostgreSQL connection: \`$PG_CONNECTION_URL\`" >> "$APP_DIR/CLAUDE.md"
+        echo "" >> "$APP_DIR/CLAUDE.md"
+        echo "Use Express (port $EXPRESS_PORT) + Socket.io + Drizzle ORM. Server in \`server/\`, client in \`client/\`." >> "$APP_DIR/CLAUDE.md"
+        echo "Vite dev server port: $VITE_PORT" >> "$APP_DIR/CLAUDE.md"
+        ;;
+    esac
     echo "Assembled standard CLAUDE.md (rules=$RULES)"
   else
     # guided (default) — full phases + SDK rules + templates
@@ -731,12 +786,15 @@ if [[ -z "$FIX_MODE" && -z "$UPGRADE_MODE" ]]; then
     sed -i \
       -e "s/6173/$VITE_PORT_STDB/g" \
       -e "s/6273/$VITE_PORT_PG/g" \
+      -e "s/6373/$VITE_PORT_MONGO/g" \
       -e "s/:6001/:$EXPRESS_PORT/g" \
       -e "s/localhost:6001/localhost:$EXPRESS_PORT/g" \
       -e "s|localhost:6432/spacetime|localhost:6432/$PG_DATABASE|g" \
       -e "s|spacetime:spacetime@localhost:6432/spacetime|spacetime:spacetime@localhost:6432/$PG_DATABASE|g" \
+      -e "s|localhost:6437/chat-app|localhost:6437/$MONGO_DATABASE|g" \
       "$APP_DIR/CLAUDE.md"
-    echo "  Patched for run-index=$RUN_INDEX (Vite=$VITE_PORT, Express=$EXPRESS_PORT, DB=$PG_DATABASE)"
+    if [[ "$BACKEND" == "mongodb" ]]; then _DB_LABEL="$MONGO_DATABASE"; else _DB_LABEL="$PG_DATABASE"; fi
+    echo "  Patched for run-index=$RUN_INDEX (Vite=$VITE_PORT, Express=$EXPRESS_PORT, DB=$_DB_LABEL)"
   fi
 fi
 
