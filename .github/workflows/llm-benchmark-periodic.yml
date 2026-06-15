@@ -62,9 +62,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "8.0.x"
+        run: |
+          DOTNET_INSTALL_DIR="${RUNNER_TEMP}/dotnet-8"
+          curl -fsSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh
+          bash dotnet-install.sh --channel 8.0 --install-dir "$DOTNET_INSTALL_DIR" --no-path
+          echo "DOTNET_ROOT=$DOTNET_INSTALL_DIR" >> "$GITHUB_ENV"
+          echo "$DOTNET_INSTALL_DIR" >> "$GITHUB_PATH"
+          "$DOTNET_INSTALL_DIR/dotnet" --info
 
       - name: Install WASI workload
         env:
