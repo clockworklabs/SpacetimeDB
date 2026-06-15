@@ -482,15 +482,15 @@ impl Publisher for TypeScriptPublisher {
         if let Some(dir) = nodejs_dir {
             prepend_paths.push(dir);
         }
-        if let Some(ref pnpm) = pnpm_exe {
-            if let Some(parent) = pnpm.parent() {
-                prepend_paths.push(parent.to_path_buf());
-            }
+        if let Some(ref pnpm) = pnpm_exe
+            && let Some(parent) = pnpm.parent()
+        {
+            prepend_paths.push(parent.to_path_buf());
         }
-        if let Some(node) = node_exe {
-            if let Some(parent) = node.parent() {
-                prepend_paths.push(parent.to_path_buf());
-            }
+        if let Some(node) = node_exe
+            && let Some(parent) = node.parent()
+        {
+            prepend_paths.push(parent.to_path_buf());
         }
         let child_path = if !prepend_paths.is_empty() {
             let mut paths = path_entries();
