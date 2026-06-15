@@ -758,7 +758,7 @@ impl InstanceCommon {
         }
     }
 
-    /// Re-evaluates all views which have entries in `st_view_subs`.
+    /// Re-evaluates all materialized view instances tracked in view lifecycle state.
     fn evaluate_subscribed_views<I: WasmInstance>(
         &mut self,
         tx: MutTxId,
@@ -1367,7 +1367,10 @@ impl InstanceCommon {
             (Ok(raw), sender) => {
                 // This is wrapped in a closure to simplify error handling.
                 let outcome: Result<ViewOutcome, anyhow::Error> = (|| {
-                    let view_call = ViewCallInfo { view_id, sender };
+                    let view_call = match sender {
+                        Some(sender) => ViewCallInfo::sender(view_id, sender),
+                        None => ViewCallInfo::anonymous(view_id),
+                    };
                     let result = ViewResult::from_return_data(raw).context("Error parsing view result")?;
                     let typespace = self.info.module_def.typespace();
                     let row_product_type = typespace
@@ -1517,10 +1520,10 @@ fn collect_subscribed_view_calls(
         let table_id = st_view
             .table_id
             .ok_or_else(|| anyhow::anyhow!("view {} does not have a backing table in database", &view_name))?;
-        let subs = tx.lookup_st_view_subs(view_id)?;
+        let view_instances = tx.subscribed_view_instances_for_view(view_id);
 
         if *is_anonymous {
-            if subs.is_empty() {
+            if view_instances.is_empty() {
                 continue;
             }
             view_calls.push(CallViewParams {
@@ -1537,14 +1540,17 @@ fn collect_subscribed_view_calls(
             continue;
         }
 
-        for sub in subs {
+        for args in view_instances {
+            let Some(sender) = args.sender() else {
+                continue;
+            };
             view_calls.push(CallViewParams {
                 view_name: view_name.clone(),
                 view_id,
                 table_id,
                 fn_ptr: *fn_ptr,
                 caller: owner_identity,
-                sender: Some(sub.identity.into()),
+                sender: Some(sender),
                 args: ArgsTuple::nullary(),
                 row_type: *product_type_ref,
                 timestamp: Timestamp::now(),
@@ -1791,10 +1797,7 @@ impl InstanceOp for ViewOp<'_> {
     }
 
     fn call_type(&self) -> FuncCallType {
-        FuncCallType::View(ViewCallInfo {
-            view_id: self.view_id,
-            sender: Some(*self.sender),
-        })
+        FuncCallType::View(ViewCallInfo::sender(self.view_id, *self.sender))
     }
 }
 
@@ -1819,10 +1822,7 @@ impl InstanceOp for AnonymousViewOp<'_> {
     }
 
     fn call_type(&self) -> FuncCallType {
-        FuncCallType::View(ViewCallInfo {
-            view_id: self.view_id,
-            sender: None,
-        })
+        FuncCallType::View(ViewCallInfo::anonymous(self.view_id))
     }
 }
 
@@ -1920,9 +1920,9 @@ impl InstanceOp for HttpHandlerOp {
 mod tests {
     use super::collect_subscribed_view_calls;
     use crate::db::relational_db::tests_utils::{begin_mut_tx, TestDB};
+    use spacetimedb_datastore::locking_tx_datastore::{ViewCallInfo, ViewInstanceArgs};
     use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
     use spacetimedb_lib::{AlgebraicType, Identity, ProductType};
-    use spacetimedb_primitives::ArgId;
     use spacetimedb_sats::raw_identifier::RawIdentifier;
     use spacetimedb_schema::def::ModuleDef;
 
@@ -1960,8 +1960,9 @@ mod tests {
 
         let mut tx = begin_mut_tx(&stdb);
         let (view_id, _table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
-        tx.subscribe_view(view_id, ArgId::SENTINEL, Identity::ZERO)?;
-        tx.subscribe_view(view_id, ArgId::SENTINEL, Identity::ONE)?;
+        let view_call = ViewCallInfo::anonymous(view_id);
+        tx.subscribe_view(view_call.clone(), ViewInstanceArgs::Anonymous, Identity::ZERO)?;
+        tx.subscribe_view(view_call, ViewInstanceArgs::Anonymous, Identity::ONE)?;
 
         // Two subscriber rows exist, but anonymous views should still be reevaluated once
         // because they share a single materialization.
@@ -1989,8 +1990,10 @@ mod tests {
 
         let mut tx = begin_mut_tx(&stdb);
         let (view_id, _table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
-        tx.subscribe_view(view_id, ArgId::SENTINEL, Identity::ZERO)?;
-        tx.subscribe_view(view_id, ArgId::SENTINEL, Identity::ONE)?;
+        let zero_args = ViewInstanceArgs::Sender(Identity::ZERO);
+        let one_args = ViewInstanceArgs::Sender(Identity::ONE);
+        tx.subscribe_view(ViewCallInfo::from_args(view_id, zero_args), zero_args, Identity::ZERO)?;
+        tx.subscribe_view(ViewCallInfo::from_args(view_id, one_args), one_args, Identity::ONE)?;
 
         // Sender-backed views keep one materialization per sender, so reevaluation must
         // preserve both callers.
