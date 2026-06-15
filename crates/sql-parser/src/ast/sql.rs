@@ -25,18 +25,32 @@ impl SqlAst {
     pub fn qualify_vars(self) -> Self {
         match self {
             Self::Select(select) => Self::Select(select.qualify_vars()),
+            Self::Insert(SqlInsert {
+                table: with,
+                fields,
+                values,
+                returning,
+            }) => Self::Insert(SqlInsert {
+                table: with.clone(),
+                fields,
+                values,
+                returning: returning.map(|proj| proj.qualify_vars(with)),
+            }),
             Self::Update(SqlUpdate {
                 table: with,
                 assignments,
                 filter,
+                returning,
             }) => Self::Update(SqlUpdate {
                 table: with.clone(),
-                filter: filter.map(|expr| expr.qualify_vars(with)),
+                filter: filter.map(|expr| expr.qualify_vars(with.clone())),
                 assignments,
+                returning: returning.map(|proj| proj.qualify_vars(with)),
             }),
-            Self::Delete(SqlDelete { table: with, filter }) => Self::Delete(SqlDelete {
+            Self::Delete(SqlDelete { table: with, filter, returning }) => Self::Delete(SqlDelete {
                 table: with.clone(),
-                filter: filter.map(|expr| expr.qualify_vars(with)),
+                filter: filter.map(|expr| expr.qualify_vars(with.clone())),
+                returning: returning.map(|proj| proj.qualify_vars(with)),
             }),
             _ => self,
         }
@@ -111,6 +125,7 @@ pub struct SqlInsert {
     pub table: SqlIdent,
     pub fields: Vec<SqlIdent>,
     pub values: SqlValues,
+    pub returning: Option<Project>,
 }
 
 /// VALUES literals
@@ -123,6 +138,7 @@ pub struct SqlUpdate {
     pub table: SqlIdent,
     pub assignments: Vec<SqlSet>,
     pub filter: Option<SqlExpr>,
+    pub returning: Option<Project>,
 }
 
 impl SqlUpdate {
@@ -140,6 +156,7 @@ impl SqlUpdate {
 pub struct SqlDelete {
     pub table: SqlIdent,
     pub filter: Option<SqlExpr>,
+    pub returning: Option<Project>,
 }
 
 impl SqlDelete {
