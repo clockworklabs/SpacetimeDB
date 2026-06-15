@@ -45,6 +45,8 @@ jobs:
 
       - name: Setup .NET SDK
         if: matrix.lang == 'csharp'
+        env:
+          DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
         run: |
           DOTNET_INSTALL_DIR="${RUNNER_TEMP}/dotnet-8"
           curl -fsSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh
@@ -59,11 +61,14 @@ jobs:
           DOTNET_MULTILEVEL_LOOKUP: "0"
           DOTNET_CLI_HOME: ${{ runner.temp }}/dotnet-home
           DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+          DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
         run: |
           dotnet workload install wasi-experimental --skip-manifest-update --disable-parallel
 
       - name: Pack C# runtime packages
         if: matrix.lang == 'csharp'
+        env:
+          DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
         run: |
           dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
           dotnet pack -c Release crates/bindings-csharp/Runtime
@@ -100,6 +105,7 @@ jobs:
           DOTNET_MULTILEVEL_LOOKUP: "0"
           DOTNET_CLI_HOME: ${{ runner.temp }}/dotnet-home
           DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+          DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
           MSBUILDDISABLENODEREUSE: "1"
           DOTNET_CLI_USE_MSBUILD_SERVER: "0"
           LLM_BENCH_CSHARP_CONCURRENCY: "1"
