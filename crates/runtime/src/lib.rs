@@ -27,15 +27,35 @@ pub type TokioHandle = tokio::runtime::Handle;
 pub type TokioRuntime = tokio::runtime::Runtime;
 pub type TokioRuntimeBuilder = tokio::runtime::Builder;
 
-// We intentionally re-export `tokio::sync` even when the simulation backend is
-// selected. Async and non-blocking synchronization operations are
-// executor-agnostic, so driving them from the deterministic simulation runtime
-// remains deterministic.
+// We intentionally expose a small subset of `tokio::sync` under the simulation
+// backend. Tokio's async synchronization primitives are runtime-agnostic: they
+// can be polled by this executor instead of a Tokio runtime.
 //
-// Callers must avoid APIs that block or park OS threads on their own, such as
-// `blocking_send`, because those semantics are outside the simulation runtime's
-// deterministic scheduler.
-pub use tokio::sync;
+// Runtime-agnostic does not translate to deterministic by itself. For
+// deterministic simulation, `Waker`s must be invoked by a task running on the
+// deterministic executor. For the exports below, that means sends, receives,
+// closes, drops of senders/receivers, and watch updates must be driven by
+// simulated tasks.
+//
+// Anything outside the simulated runtime that invokes a stored `Waker`
+// bypasses the deterministic executor. This includes Tokio timers,
+// OS/kernel readiness routed through another runtime, and blocking threads.
+//
+// Tokio documents `*_timeout` methods as non-runtime-agnostic because they
+// require Tokio's timer; in this subset, that includes
+// `mpsc::Sender::send_timeout`.
+//
+// Also avoid blocking methods. The blocking methods currently reachable from
+// this subset are `mpsc::Sender::blocking_send`,
+// `mpsc::Receiver::blocking_recv`, `mpsc::Receiver::blocking_recv_many`,
+// `mpsc::UnboundedReceiver::blocking_recv`, and
+// `mpsc::UnboundedReceiver::blocking_recv_many`. These block or park the
+// calling OS thread, which is outside the simulation runtime.
+pub mod sync {
+    // TODO: Remove unbounded channels as resources should be bounded.
+    pub use tokio::sync::mpsc;
+    pub use tokio::sync::watch;
+}
 
 #[derive(Clone)]
 pub enum Handle {
