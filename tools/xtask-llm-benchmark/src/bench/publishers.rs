@@ -480,7 +480,8 @@ impl Publisher for DotnetPublisher {
             .env(
                 "DOTNET_DbgMiniDumpName",
                 source.join("dotnet-dump-%p").display().to_string(),
-            );
+            )
+            .env("SPACETIME_DOTNET_PUBLISH_BINLOG", "1");
         run(&mut pubcmd, "spacetime publish (csharp)")?;
 
         Ok(())

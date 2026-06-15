@@ -214,6 +214,41 @@ jobs:
             exit 1
           fi
 
+      - name: Analyze .NET crash dumps
+        if: failure()
+        run: |
+          set +e
+          mkdir -p target/llm-dry-run-analysis/dotnet-dumps
+
+          mapfile -t DUMPS < <(find target/llm-runs -type f -name 'dotnet-dump-*' 2>/dev/null | sort)
+          if [ "${#DUMPS[@]}" -eq 0 ]; then
+            echo "No .NET crash dumps found."
+            exit 0
+          fi
+
+          TOOL_DIR="${RUNNER_TEMP}/dotnet-tools"
+          mkdir -p "$TOOL_DIR"
+          if ! dotnet tool install --tool-path "$TOOL_DIR" dotnet-dump; then
+            echo "::warning::failed to install dotnet-dump; raw dumps will still be uploaded"
+            exit 0
+          fi
+
+          for DUMP in "${DUMPS[@]}"; do
+            SAFE_NAME="$(echo "$DUMP" | tr '/ ' '__')"
+            OUT="target/llm-dry-run-analysis/dotnet-dumps/${SAFE_NAME}.txt"
+            {
+              echo "Dump: $DUMP"
+              echo
+              "$TOOL_DIR/dotnet-dump" analyze "$DUMP" \
+                --command "clrthreads" \
+                --command "threads" \
+                --command "clrstack -all" \
+                --command "pe" \
+                --command "exit"
+            } > "$OUT" 2>&1
+            cat "$OUT"
+          done
+
       - name: Upload LLM benchmark debug artifacts
         if: failure()
         uses: actions/upload-artifact@v4

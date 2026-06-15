@@ -71,7 +71,20 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
     })?;
 
     let publish_verbosity = std::env::var("SPACETIME_DOTNET_PUBLISH_VERBOSITY").unwrap_or_else(|_| "quiet".to_string());
-    dotnet!("publish", "-c", config_name, "-v", publish_verbosity.as_str()).run()?;
+    let mut publish_args = vec![
+        OsString::from("publish"),
+        OsString::from("-c"),
+        OsString::from(config_name),
+        OsString::from("-v"),
+        OsString::from(publish_verbosity),
+    ];
+    if std::env::var_os("SPACETIME_DOTNET_PUBLISH_BINLOG").is_some() {
+        publish_args.push(OsString::from(format!(
+            "/bl:{}",
+            project_path.join("dotnet-publish.binlog").display()
+        )));
+    }
+    duct::cmd("dotnet", publish_args).dir(project_path).run()?;
 
     // check if file exists
     let subdir = if std::env::var_os("EXPERIMENTAL_WASM_AOT").is_some_and(|v| v == "1") {
