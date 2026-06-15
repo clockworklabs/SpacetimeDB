@@ -92,7 +92,7 @@ public ulong AuthorId;
 
 // Multi-column (struct-level):
 [SpacetimeDB.Table(Accessor = "Membership")]
-[SpacetimeDB.Index.BTree(Accessor = "ByGroupUser", Columns = ["GroupId", "UserId"])]
+[SpacetimeDB.Index.BTree(Accessor = "ByGroupUser", Columns = new[] { nameof(GroupId), nameof(UserId) })]
 public partial struct Membership { public ulong GroupId; public Identity UserId; ... }
 ```
 
@@ -207,7 +207,7 @@ public static void Tick(ReducerContext ctx, TickTimer timer)
 }
 
 // One-time: fires once at a specific time
-var at = new ScheduleAt.Time(DateTimeOffset.UtcNow.AddSeconds(10));
+var at = new ScheduleAt.Time(ctx.Timestamp + new TimeDuration(10_000_000));
 // Repeating: fires on an interval
 var at = new ScheduleAt.Interval(TimeSpan.FromSeconds(5));
 
