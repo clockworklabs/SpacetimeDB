@@ -271,6 +271,9 @@ jobs:
     needs: [lints]
     name: Keynote Bench
     runs-on: spacetimedb-benchmark-runner
+    concurrency:
+      group: ci-benchmark-runner
+      queue: max
     timeout-minutes: 60
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -324,6 +327,50 @@ jobs:
 
       - name: Run keynote-2 benchmark regression check
         run: cargo ci keynote-bench
+
+  index_scan_bench:
+    needs: [lints]
+    name: Index Scan Bench
+    runs-on: spacetimedb-benchmark-runner
+    concurrency:
+      group: ci-benchmark-runner
+      queue: max
+    timeout-minutes: 60
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
+    steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          save-if: false
+          prefix-key: v1
+
+      - name: Run index scan benchmark regression check
+        run: cargo bench -p spacetimedb-bench --bench index_scan_gate
 
   lints:
     name: Lints
