@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_macros)]
+
 use clap::{Parser, Subcommand};
 mod crates_resolver;
 
