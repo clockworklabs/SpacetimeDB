@@ -127,6 +127,12 @@ impl HandlerContext {
     }
 
     /// Read the current module's [`Identity`].
+    #[deprecated(note = "Use `HandlerContext::database_identity` instead.")]
+    pub fn identity(&self) -> Identity {
+        self.database_identity()
+    }
+
+    /// Read the current module's [`Identity`].
     pub fn database_identity(&self) -> Identity {
         Identity::from_byte_array(spacetimedb_bindings_sys::identity())
     }
