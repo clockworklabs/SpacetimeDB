@@ -254,6 +254,55 @@ Usage: docs
 
 - `--help`: Print help
 
+### `cla-assistant`
+
+**Usage:**
+```bash
+Usage: cla-assistant <COMMAND>
+```
+
+**Options:**
+
+- `--help`: Print help
+
+#### `retry`
+
+**Usage:**
+```bash
+Usage: retry [OPTIONS] --pr-number <PR_NUMBER>
+```
+
+**Options:**
+
+- `--pr-number <PR_NUMBER>`: Pull request number to check
+- `--repo <REPO>`: Repository in `owner/name` form. Defaults to GITHUB_REPOSITORY
+- `--help`: Print help
+
+#### `status`
+
+**Usage:**
+```bash
+Usage: status [OPTIONS] <--pr <PR>|--sha <SHA>>
+```
+
+**Options:**
+
+- `--pr <PR>`: Pull request number whose head commit should be checked
+- `--sha <SHA>`: Commit SHA to check
+- `--repo <REPO>`: Repository in `owner/name` form. Defaults to GITHUB_REPOSITORY
+- `--help`: Print help
+
+#### `help`
+
+**Usage:**
+```bash
+Usage: help [COMMAND]...
+```
+
+**Options:**
+
+- `subcommand <COMMAND>`: Print help for the subcommand(s)
+
 ### `help`
 
 **Usage:**

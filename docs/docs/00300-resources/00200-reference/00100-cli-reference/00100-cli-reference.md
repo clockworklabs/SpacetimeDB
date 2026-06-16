@@ -253,7 +253,7 @@ Start development mode with auto-regenerate client module bindings, auto-rebuild
 
   Default value: `src/module_bindings`
 * `--module-path <MODULE-PATH>` — Path to the SpacetimeDB server module, relative to current directory. Defaults to `<project-path>/spacetimedb`.
-* `--client-lang <CLIENT-LANG>` — The programming language for the generated client module bindings (e.g., typescript, csharp, python). If not specified, it will be detected from the project.
+* `--client-lang <CLIENT-LANG>` — The programming language for the generated client module bindings (e.g., typescript, csharp, rust, unrealcpp). If not specified, it will be detected from the project.
 
   Possible values: `csharp`, `typescript`, `rust`, `unrealcpp`
 
@@ -322,7 +322,7 @@ Run `spacetime rename --help` for more detailed information.
 
 Generate client files for a spacetime module.
 
-**Usage:** `spacetime generate [DATABASE] --lang <LANG> --out-dir <DIR> [--module-path <DIR> | --bin-path <PATH> | --unreal-module-name <MODULE_NAME> | --uproject-dir <DIR> | --include-private]`
+**Usage:** `spacetime generate [DATABASE] --lang <LANG> [--module-path <DIR> | --bin-path <PATH> | --js-path <PATH>] [--out-dir <DIR> | --uproject-dir <DIR>] [--unreal-module-name <MODULE_NAME>] [OPTIONS]`
 
 Run `spacetime help generate` for more detailed information.
 
@@ -601,8 +601,7 @@ Subscribe to SQL queries on the database. WARNING: This command is UNSTABLE and 
 ###### **Options:**
 
 * `-n`, `--num-updates <NUM-UPDATES>` — The number of subscription updates to receive before exiting
-* `-t`, `--timeout <TIMEOUT>` — The timeout, in seconds, after which to disconnect and stop receiving subscription messages. If `-n` is specified, it will stop after whichever
-                     one comes first.
+* `-t`, `--timeout <TIMEOUT>` — The timeout, in seconds, after which to disconnect and stop receiving subscription messages. If `-n` is specified, it will stop after whichever one comes first. Timing out before receiving `-n` updates is an error.
 * `--print-initial-update` — Print the initial update for the queries.
 * `--confirmed <CONFIRMED>` — Instruct the server to deliver only updates of confirmed transactions
 

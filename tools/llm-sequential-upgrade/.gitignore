@@ -1,0 +1,23 @@
+# Node modules and build artifacts inside generated apps
+**/results/**/node_modules/
+**/results/**/dist/
+**/results/**/.vite/
+**/results/**/drizzle/
+
+# Telemetry backup files
+**/telemetry/*.jsonl.bak
+
+
+# Playwright
+**/playwright/node_modules/
+**/playwright/test-results/
+**/playwright/playwright-report/
+
+# Isolation git repos inside generated apps (created by run.sh, cleaned up after)
+**/results/**/.git/
+# OTel collector live dump - not tracked
+telemetry/logs.jsonl
+telemetry/metrics.jsonl
+
+# Raw telemetry contains PII (email, account IDs) - store privately
+**/telemetry/**/raw-telemetry.jsonl

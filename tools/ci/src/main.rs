@@ -13,6 +13,7 @@ use std::{env, fs};
 const README_PATH: &str = "tools/ci/README.md";
 
 mod ci_docs;
+mod cla_assistant;
 mod keynote_bench;
 mod smoketest;
 mod util;
@@ -367,6 +368,11 @@ enum CiCmd {
     VersionUpgradeCheck,
     /// Builds the docs site.
     Docs,
+    /// Interacts with CLA Assistant.
+    ClaAssistant {
+        #[command(subcommand)]
+        cmd: cla_assistant::ClaAssistantCmd,
+    },
 }
 
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
@@ -770,6 +776,10 @@ fn main() -> Result<()> {
 
         Some(CiCmd::Docs) => {
             run_docs_build()?;
+        }
+
+        Some(CiCmd::ClaAssistant { cmd }) => {
+            cla_assistant::run(cmd)?;
         }
 
         None => run_all_clap_subcommands(&cli.skip)?,

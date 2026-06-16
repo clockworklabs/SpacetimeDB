@@ -586,6 +586,36 @@ fn test_auto_migration_add_view() {
 }
 
 #[test]
+fn test_view_primary_key_auto_migration_disconnects_clients() {
+    let mut test = Smoketest::builder()
+        .precompiled_module("views-primary-key-auto-migrate")
+        .build();
+
+    let sub = test
+        .subscribe_background_until_closed(&["select * from player"])
+        .unwrap();
+
+    test.use_precompiled_module("views-primary-key-auto-migrate-updated");
+    let identity = test.database_identity.clone().unwrap();
+    test.publish_module_with_options(&identity, false, true).unwrap();
+
+    sub.collect().unwrap();
+
+    let logs = test.logs(100).unwrap();
+    assert!(
+        logs.iter().any(|l| l.contains("Disconnecting all users")),
+        "Expected disconnect log in logs: {:?}",
+        logs
+    );
+    assert!(
+        logs.iter()
+            .any(|l| l.contains("VIEW PRIMARY KEY UPDATE: client disconnected")),
+        "Expected client_disconnected reducer log in logs: {:?}",
+        logs
+    );
+}
+
+#[test]
 fn test_view_accessibility() {
     let test = Smoketest::builder().precompiled_module("views-callable").build();
 
@@ -642,7 +672,7 @@ fn test_subscribing_with_different_identities() {
 
     test.new_identity().unwrap();
 
-    let sub = test.subscribe_background(&["select * from my_player"], 2).unwrap();
+    let sub = test.subscribe_background(&["select * from my_player"], 1).unwrap();
     test.call("insert_player", &["Bob"]).unwrap();
     let events = sub.collect().unwrap();
 

@@ -151,14 +151,11 @@ namespace SpacetimeDB
 
         private ProcedureTxContext? _cached;
 
-        [Experimental("STDB_UNSTABLE")]
         public Local Db => _db;
 
-        [Experimental("STDB_UNSTABLE")]
         public TResult WithTx<TResult>(Func<ProcedureTxContext, TResult> body) =>
             base.WithTx(tx => body((ProcedureTxContext)tx));
 
-        [Experimental("STDB_UNSTABLE")]
         public TxOutcome<TResult> TryWithTx<TResult, TError>(
             Func<ProcedureTxContext, Result<TResult, TError>> body
         )
@@ -252,7 +249,6 @@ namespace SpacetimeDB
         }
     }
 
-    [Experimental("STDB_UNSTABLE")]
     public sealed class ProcedureTxContext : global::SpacetimeDB.ProcedureTxContextBase
     {
         internal ProcedureTxContext(Internal.TxContext inner)

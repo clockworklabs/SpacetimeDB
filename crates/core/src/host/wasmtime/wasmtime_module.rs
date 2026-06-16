@@ -761,7 +761,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let Some(call_procedure) = self.call_procedure.as_ref() else {
             let res = module_host_actor::ProcedureExecuteResult {
-                stats: zero_execution_stats(store),
+                stats: ExecutionStats::default(),
                 call_result: Err(anyhow::anyhow!(
                     "Module defines procedure {} but does not export `{}`",
                     op.name,
@@ -834,7 +834,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let Some(call_http_handler) = self.call_http_handler.as_ref() else {
             let res = module_host_actor::HttpHandlerExecuteResult {
-                stats: zero_execution_stats(store),
+                stats: ExecutionStats::default(),
                 call_result: Err(anyhow::anyhow!(
                     "Module defines http handler {} but does not export `{}`",
                     op.name,
@@ -945,12 +945,15 @@ fn finish_opcall(
         remaining,
     };
 
-    let stats = ExecutionStats {
-        energy,
-        timings,
-        memory_allocation: get_memory_size(store),
-    };
+    record_memory_size(store);
+
+    let stats = ExecutionStats { energy, timings };
     (stats, ret_bytes)
+}
+
+fn record_memory_size(store: &mut Store<WasmInstanceEnv>) {
+    let memory_usage = get_memory_size(store);
+    store.data_mut().record_memory_size(memory_usage);
 }
 
 fn finish_http_handler_opcall(
@@ -962,14 +965,6 @@ fn finish_http_handler_opcall(
     let response_body_bytes = store.data_mut().take_bytes_sink(response_body_sink);
     let (stats, response_bytes) = finish_opcall(store, initial_budget, response_sink);
     (stats, response_bytes, response_body_bytes)
-}
-
-fn zero_execution_stats(store: &Store<WasmInstanceEnv>) -> ExecutionStats {
-    ExecutionStats {
-        energy: module_host_actor::EnergyStats::ZERO,
-        timings: module_host_actor::ExecutionTimings::zero(),
-        memory_allocation: get_memory_size(store),
-    }
 }
 
 fn get_memory_size(store: &Store<WasmInstanceEnv>) -> usize {

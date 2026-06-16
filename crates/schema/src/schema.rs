@@ -55,15 +55,10 @@ pub trait Schema: Sized {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ViewDefInfo {
     pub view_id: ViewId,
-    pub has_args: bool,
     pub is_anonymous: bool,
 }
 
-impl ViewDefInfo {
-    pub fn num_private_cols(&self) -> usize {
-        (if self.is_anonymous { 0 } else { 1 }) + (if self.has_args { 1 } else { 0 })
-    }
-}
+pub const VIEW_ARG_HASH_COL: ColId = ColId(0);
 
 /// A wrapper around a [`TableSchema`] for views.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -99,7 +94,7 @@ impl TableOrViewSchema {
     }
 
     /// Returns the [`TableSchema`] of the underlying datastore table.
-    /// For views, this schema will include the internal `sender` and `arg_id` columns.
+    /// For views, this schema will include the internal `arg_hash` column when present.
     pub fn inner(&self) -> Arc<TableSchema> {
         self.inner.clone()
     }
@@ -109,32 +104,10 @@ impl TableOrViewSchema {
     /// The [`ColId`]s in this list do not necessarily correspond to their position in this list.
     /// Rather they correspond to the position of the column in the physical datastore table.
     /// This is important since this method may not return all columns recorded in the datastore.
-    /// For views in particular it will not include the internal `sender` and `arg_id` columns.
+    /// For views in particular it will not include the internal `arg_hash` column.
     /// Hence columns in this list should be looked up by their [`ColId`] - not their position.
     pub fn public_columns(&self) -> &[ColumnSchema] {
-        match self.view_info {
-            Some(ViewDefInfo {
-                has_args: true,
-                is_anonymous: false,
-                ..
-            }) => &self.inner.columns[2..],
-            Some(ViewDefInfo {
-                has_args: true,
-                is_anonymous: true,
-                ..
-            }) => &self.inner.columns[1..],
-            Some(ViewDefInfo {
-                has_args: false,
-                is_anonymous: false,
-                ..
-            }) => &self.inner.columns[1..],
-            Some(ViewDefInfo {
-                has_args: false,
-                is_anonymous: true,
-                ..
-            })
-            | None => &self.inner.columns,
-        }
+        &self.inner.columns[self.inner.num_private_cols()..]
     }
 
     /// Check if the `col_name` exist on this [`TableOrViewSchema`]
@@ -297,10 +270,7 @@ impl TableSchema {
     /// How many private columns does this table have?
     /// Will only be non-zero in the case of views.
     pub fn num_private_cols(&self) -> usize {
-        self.view_info
-            .as_ref()
-            .map(|view_info| view_info.num_private_cols())
-            .unwrap_or_default()
+        usize::from(self.is_view())
     }
 
     /// Update the table id of this schema.
@@ -759,9 +729,7 @@ impl TableSchema {
         let ViewDef {
             name,
             is_public,
-            is_anonymous,
             primary_key,
-            param_columns,
             return_columns,
             ..
         } = view_def;
@@ -783,16 +751,10 @@ impl TableSchema {
             StAccess::Private
         };
 
-        let view_info = ViewDefInfo {
-            view_id: ViewId::SENTINEL,
-            has_args: !param_columns.is_empty(),
-            is_anonymous: *is_anonymous,
-        };
-
         TableSchema::new(
             TableId::SENTINEL,
             TableName::new(name.clone()),
-            Some(view_info),
+            None,
             columns,
             vec![],
             vec![],
@@ -820,25 +782,33 @@ impl TableSchema {
     /// fn my_view(ctx: &ViewContext, x: u32, y: u32) -> Vec<MyTable> { ... }
     ///
     /// #[view(accessor = my_anonymous_view, public)]
-    /// fn my_anonymous_view(ctx: &AnonymousViewContext, x: u32, y: u32) -> Vec<MyTable> { ... }
+    /// fn my_anonymous_view(ctx: &AnonymousViewContext) -> Vec<MyTable> { ... }
+    ///
+    /// #[view(accessor = my_parameterized_anonymous_view, public)]
+    /// fn my_parameterized_anonymous_view(ctx: &AnonymousViewContext, x: u32, y: u32) -> Vec<MyTable> { ... }
     /// ```
     ///
     /// The above views are materialized with the following schema:
     ///
     /// my_view:
     ///
-    /// | sender         | arg_id | a   | b   |
-    /// |----------------|--------|-----|-----|
-    /// | (some = 0x...) | u64    | u32 | u32 |
+    /// | arg_hash | a   | b   |
+    /// |----------|-----|-----|
+    /// | u256     | u32 | u32 |
     ///
     /// my_anonymous_view:
     ///
-    /// | sender      | arg_id | a   | b   |
-    /// |-------------|--------|-----|-----|
-    /// | (none = ()) | u64    | u32 | u32 |
+    /// | arg_hash | a   | b   |
+    /// |----------|-----|-----|
+    /// | u256     | u32 | u32 |
     ///
-    /// Note, `sender` and `arg_id` are internal columns not defined by the module,
-    /// where `arg_id` is a foreign key into `st_view_arg`.
+    /// my_parameterized_anonymous_view:
+    ///
+    /// | arg_hash | a   | b   |
+    /// |----------|-----|-----|
+    /// | u256     | u32 | u32 |
+    ///
+    /// Note, `arg_hash` is an internal column not defined by the module.
     pub fn from_view_def_for_datastore(module_def: &ModuleDef, view_def: &ViewDef) -> Self {
         module_def.expect_contains(view_def);
 
@@ -847,41 +817,26 @@ impl TableSchema {
             is_public,
             is_anonymous,
             primary_key,
-            param_columns,
             return_columns,
             accessor_name,
             ..
         } = view_def;
 
-        let n = return_columns.len() + 2;
-        let mut columns = Vec::with_capacity(n);
-        let mut meta_cols = 0;
-
-        let mut push_column = |name: &'static str, col_type| {
-            meta_cols += 1;
-            columns.push(ColumnSchema {
-                table_id: TableId::SENTINEL,
-                col_pos: columns.len().into(),
-                col_name: Identifier::new_assume_valid(name.into()),
-                col_type,
-                alias: None,
-            });
-        };
-
-        if !is_anonymous {
-            push_column("sender", AlgebraicType::identity());
-        }
-
-        if !param_columns.is_empty() {
-            push_column("arg_id", AlgebraicType::U64);
-        }
+        let mut columns = Vec::with_capacity(return_columns.len() + 1);
+        columns.push(ColumnSchema {
+            table_id: TableId::SENTINEL,
+            col_pos: VIEW_ARG_HASH_COL,
+            col_name: Identifier::new_assume_valid("arg_hash".into()),
+            col_type: AlgebraicType::U256,
+            alias: None,
+        });
 
         columns.extend(
             return_columns
                 .iter()
                 .map(|def| ColumnSchema::from_view_column_def(module_def, def))
                 .enumerate()
-                .map(|(i, schema)| (ColId::from(meta_cols + i), schema))
+                .map(|(i, schema)| (ColId::from(1 + i), schema))
                 .map(|(col_pos, schema)| ColumnSchema { col_pos, ..schema }),
         );
 
@@ -895,50 +850,30 @@ impl TableSchema {
             RawIdentifier::new(format!("{name}_{cols_name}_key"))
         };
 
-        let mut indexes = match meta_cols {
-            1 => vec![IndexSchema {
-                index_id: IndexId::SENTINEL,
-                table_id: TableId::SENTINEL,
-                index_name: make_index_name(&col_list![0]),
-                index_algorithm: IndexAlgorithm::BTree(col_list![0].into()),
-                alias: None,
-            }],
-            2 => vec![IndexSchema {
-                index_id: IndexId::SENTINEL,
-                table_id: TableId::SENTINEL,
-                index_name: make_index_name(&col_list![0, 1]),
-                index_algorithm: IndexAlgorithm::BTree(col_list![0, 1].into()),
-                alias: None,
-            }],
-            _ => vec![],
-        };
+        let arg_hash_cols = col_list![VIEW_ARG_HASH_COL];
+        let mut indexes = vec![IndexSchema {
+            index_id: IndexId::SENTINEL,
+            table_id: TableId::SENTINEL,
+            index_name: make_index_name(&arg_hash_cols),
+            index_algorithm: IndexAlgorithm::BTree(arg_hash_cols.into()),
+            alias: None,
+        }];
 
         let mut constraints = vec![];
         let view_primary_key = (module_def.raw_module_def_version() == RawModuleDefVersion::V10)
-            .then_some(primary_key.map(|pk| ColId::from(meta_cols + pk.idx())))
+            .then_some(primary_key.map(|pk| ColId::from(1 + pk.idx())))
             .flatten();
 
-        if *is_anonymous {
-            if let Some(pk_col) = view_primary_key {
-                let cols = col_list![pk_col];
-                constraints.push(ConstraintSchema {
-                    table_id: TableId::SENTINEL,
-                    constraint_id: ConstraintId::SENTINEL,
-                    constraint_name: make_constraint_name(&cols),
-                    data: ConstraintData::Unique(UniqueConstraintData {
-                        columns: ColSet::from(cols.clone()),
-                    }),
-                });
-                indexes.push(IndexSchema {
-                    index_id: IndexId::SENTINEL,
-                    table_id: TableId::SENTINEL,
-                    index_name: make_index_name(&cols),
-                    index_algorithm: IndexAlgorithm::BTree(cols.into()),
-                    alias: None,
-                });
-            }
-        } else if let Some(pk_col) = view_primary_key {
-            let cols = col_list![ColId(0), pk_col];
+        if let Some(pk_col) = view_primary_key {
+            let cols = col_list![VIEW_ARG_HASH_COL, pk_col];
+            constraints.push(ConstraintSchema {
+                table_id: TableId::SENTINEL,
+                constraint_id: ConstraintId::SENTINEL,
+                constraint_name: make_constraint_name(&cols),
+                data: ConstraintData::Unique(UniqueConstraintData {
+                    columns: ColSet::from(cols.clone()),
+                }),
+            });
             indexes.push(IndexSchema {
                 index_id: IndexId::SENTINEL,
                 table_id: TableId::SENTINEL,
@@ -956,7 +891,6 @@ impl TableSchema {
 
         let view_info = ViewDefInfo {
             view_id: ViewId::SENTINEL,
-            has_args: !param_columns.is_empty(),
             is_anonymous: *is_anonymous,
         };
 
@@ -971,7 +905,7 @@ impl TableSchema {
             StTableType::User,
             table_access,
             None,
-            if *is_anonymous { view_primary_key } else { None },
+            None,
             false,
             Some(accessor_name.clone()),
         )

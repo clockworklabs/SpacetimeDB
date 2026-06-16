@@ -6,11 +6,12 @@ slug: /intro/language-support
 
 ## Server Database Modules
 
-SpacetimeDB modules define your database schema and server-side business logic. Modules can be written in three languages:
+SpacetimeDB modules define your database schema and server-side business logic. Modules can be written in four languages:
 
 - **[Rust](../../00200-core-concepts/00100-databases.md)** - High performance, compiled to WebAssembly [(Quickstart)](../00200-quickstarts/00500-rust.md)
 - **[C#](../../00200-core-concepts/00100-databases.md)** - Great for Unity developers, compiled to WebAssembly [(Quickstart)](../00200-quickstarts/00600-c-sharp.md)
 - **[TypeScript](../../00200-core-concepts/00100-databases.md)** - Ideal for web developers, runs on V8 [(Quickstart)](../00200-quickstarts/00400-typescript.md)
+- **[C++](../../00200-core-concepts/00100-databases.md)** - Fits Unreal and C++ workflows, compiled to WebAssembly [(Quickstart)](../00200-quickstarts/00700-cpp.md)
 
 ## Client SDKs
 
