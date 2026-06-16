@@ -25,3 +25,14 @@
 **Redeploy:** Both
 
 **Server verified:** Client at http://localhost:6373 ✓
+
+## Iteration 3 — Fix (14:00)
+
+**Category:** Feature Broken
+**What broke:** Thread replies appeared in the main room chat flow when a new main-room message was sent.
+**Root cause:** The `POST /api/rooms/:roomId/read` endpoint fetched all messages for the room (`Message.find({ roomId })`) without filtering out thread replies (`parentId: null`). When any message was sent, the client called `markRead`, which triggered this endpoint, and the server broadcast `read-receipts-updated` containing all messages including thread replies. The client handler replaced its `messages` state with this full list, causing replies to surface in the main chat.
+**What I fixed:** Added `parentId: null` to the `Message.find` query in the read endpoint so `read-receipts-updated` only broadcasts top-level messages.
+**Files changed:** server/src/index.ts (line 194)
+**Redeploy:** Server only
+
+**Server verified:** Client at http://localhost:6373 ✓

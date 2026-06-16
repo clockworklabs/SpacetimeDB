@@ -191,7 +191,7 @@ app.post('/api/rooms/:roomId/read', async (req: Request, res: Response): Promise
     { roomId, readBy: { $ne: userName } },
     { $addToSet: { readBy: userName } }
   );
-  const messages = await Message.find({ roomId }).sort({ createdAt: 1 }).limit(100);
+  const messages = await Message.find({ roomId, parentId: null }).sort({ createdAt: 1 }).limit(100);
   io.to(roomId).emit('read-receipts-updated', { roomId, messages });
   res.json({ ok: true });
 });

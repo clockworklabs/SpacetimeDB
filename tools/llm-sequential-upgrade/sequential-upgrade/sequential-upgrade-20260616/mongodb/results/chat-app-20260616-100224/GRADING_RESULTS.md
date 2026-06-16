@@ -3,7 +3,7 @@
 **Model:** claude-sonnet-4-6
 **Date:** 2026-06-16
 **Backend:** mongodb
-**Level:** 7
+**Level:** 8
 **Grading Method:** Manual browser interaction
 
 ---
@@ -18,10 +18,11 @@
 ## Feature 8: Message Editing with History (Score: 3 / 3)
 ## Feature 9: Real-Time Permissions (Score: 3 / 3)
 ## Feature 10: Rich User Presence (Score: 3 / 3)
-**Browser Test Observations:** Initially 2/3 — three presence bugs (offline users not
-shown; "last active" frozen at "just now"; auto-away never triggered). Fixed in iteration 2;
-re-graded clean: offline users now listed with last-active, the timestamp ages, and auto-away
-fires after inactivity. Features 1–9 regression-checked, no regressions.
+## Feature 11: Message Threading (Score: 3 / 3)
+**Browser Test Observations:** Initially 2/3 — thread replies leaked into the main room chat
+when a main-room message was sent (read endpoint didn't filter out replies). Fixed in iteration 3
+(added `parentId: null` filter); re-graded clean: replies stay in the thread, reply count/preview
+and real-time sync work. Features 1–10 regression-checked, no regressions.
 
 ---
 
@@ -38,8 +39,9 @@ fires after inactivity. Features 1–9 regression-checked, no regressions.
 | 7. Message Reactions | 3/3 | |
 | 8. Message Editing | 3/3 | |
 | 9. Real-Time Permissions | 3/3 | |
-| 10. Rich User Presence | 3/3 | new at L7; 3 bugs fixed (iteration 2) |
-| **TOTAL** | **30/30** | |
+| 10. Rich User Presence | 3/3 | |
+| 11. Message Threading | 3/3 | new at L8; 1 bug fixed (iteration 3) |
+| **TOTAL** | **33/33** | |
 
-**Reprompt count:** 1 (presence: offline-list, last-active aging, auto-away)
-**Cost:** L7 upgrade $1.20 + fix $1.59 = $2.79
+**Reprompt count:** 1 (thread replies leaking into main chat)
+**Cost:** L8 upgrade $1.38 + fix $0.38 = $1.76
