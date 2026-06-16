@@ -100,13 +100,20 @@ function readGradingScores(backend) {
 
   const content = fs.readFileSync(gradingPath, 'utf-8');
 
-  // Extract total score from "**TOTAL** | **N** | **M**"
-  const totalMatch = content.match(/\*\*TOTAL\*\*.*?\*\*(\d+)\*\*.*?\*\*(\d+)\*\*/);
-  if (totalMatch) {
-    return { max: parseInt(totalMatch[1]), score: parseInt(totalMatch[2]) };
+  // Primary (canonical GRADING_RESULTS.md): "| **TOTAL** | **X/Y** | |"
+  // — score / max combined in one cell.
+  const slashMatch = content.match(/\*\*TOTAL\*\*.*?\*\*(\d+)\s*\/\s*(\d+)\*\*/);
+  if (slashMatch) {
+    return { score: parseInt(slashMatch[1]), max: parseInt(slashMatch[2]) };
   }
 
-  // Fallback: look for "Total Feature Score" in metrics
+  // Legacy: "**TOTAL** | **MAX** | **SCORE**" — two separate numeric cells.
+  const twoCellMatch = content.match(/\*\*TOTAL\*\*.*?\*\*(\d+)\*\*.*?\*\*(\d+)\*\*/);
+  if (twoCellMatch) {
+    return { max: parseInt(twoCellMatch[1]), score: parseInt(twoCellMatch[2]) };
+  }
+
+  // Fallback: prose "Total Feature Score: X / Y".
   const scoreMatch = content.match(/Total Feature Score.*?(\d+)\s*\/\s*(\d+)/);
   if (scoreMatch) {
     return { score: parseInt(scoreMatch[1]), max: parseInt(scoreMatch[2]) };

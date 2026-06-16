@@ -9,6 +9,7 @@
 #   ./run.sh --level 5 --backend postgres       # generate from scratch at level 5
 #   ./run.sh --variant one-shot --backend spacetime  # one-shot: all features in one prompt
 #   ./run.sh --rules standard --backend spacetime   # standard: SDK rules only, no templates
+#   ./run.sh --model claude-sonnet-4-6 --backend mongodb  # pin the model (parity)
 #   ./run.sh --run-index 1 --backend spacetime      # parallel run with offset ports
 #   ./run.sh --fix <app-dir>                    # fix bugs in existing app (reads BUG_REPORT.md)
 #   ./run.sh --upgrade <app-dir> --level 3      # add level 3 features to existing level 2 app (incremental feature file)
@@ -56,6 +57,9 @@ LEVEL_EXPLICIT=""
 BACKEND="spacetime"
 VARIANT="sequential-upgrade"
 RULES="guided"
+# Model to pin for the Code Agent. Defaults to $ANTHROPIC_MODEL if set, else the
+# CLI default. Pin the SAME model across backends/levels for a fair comparison.
+MODEL="${ANTHROPIC_MODEL:-}"
 RUN_INDEX=0
 FIX_MODE=""
 FIX_APP_DIR=""
@@ -69,6 +73,7 @@ while [[ $# -gt 0 ]]; do
     --backend) BACKEND="$2"; shift 2 ;;
     --variant) VARIANT="$2"; shift 2 ;;
     --rules) RULES="$2"; shift 2 ;;
+    --model) MODEL="$2"; shift 2 ;;
     --run-index) RUN_INDEX="$2"; shift 2 ;;
     --fix) FIX_MODE=1; FIX_APP_DIR="$2"; shift 2 ;;
     --upgrade) UPGRADE_MODE=1; UPGRADE_APP_DIR="$2"; shift 2 ;;
@@ -388,6 +393,7 @@ fi
 echo "=== Sequential Upgrade: ${MODE_LABEL^} ==="
 echo "  Variant:   $VARIANT"
 echo "  Rules:     $RULES"
+echo "  Model:     ${MODEL:-(CLI default)}"
 echo "  Level:     $LEVEL"
 echo "  Backend:   $BACKEND"
 echo "  Run index: $RUN_INDEX (Vite=$VITE_PORT)"
@@ -440,6 +446,7 @@ cat > "$RUN_DIR/metadata.json" <<EOF
   "phase": "$MODE_LABEL",
   "variant": "$VARIANT",
   "rules": "$RULES",
+  "model": "${MODEL:-default}",
   "runIndex": $RUN_INDEX,
   "vitePort": $VITE_PORT,
   "expressPort": $EXPRESS_PORT,
@@ -842,12 +849,19 @@ if [[ -n "$RESUME_SESSION" && -n "$UPGRADE_MODE" ]]; then
   fi
 fi
 
+# Pin the model when one is set (via --model or $ANTHROPIC_MODEL); otherwise the
+# CLI default is used. Same model across backends/levels = fair comparison.
+MODEL_FLAG=""
+if [[ -n "$MODEL" ]]; then
+  MODEL_FLAG="--model $MODEL"
+fi
+
 # --fork-session creates a new session branched from the prior one (keeps context)
 $CLAUDE_CMD --print --verbose --output-format text --dangerously-skip-permissions \
   --add-dir "$APP_DIR" \
   --add-dir "$SCRIPT_DIR" \
   --add-dir "$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts" \
-  --session-id "$SESSION_ID" $RESUME_FLAG -p "$PROMPT"
+  $MODEL_FLAG --session-id "$SESSION_ID" $RESUME_FLAG -p "$PROMPT"
 EXIT_CODE=$?
 
 echo ""
