@@ -1,0 +1,19 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: manual-release
+  cancel-in-progress: true
+
+jobs:
+  foo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Be done
+        run: echo

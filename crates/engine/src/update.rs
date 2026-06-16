@@ -1,24 +1,18 @@
 use super::relational_db::RelationalDB;
-use crate::database_logger::SystemLogger;
-use crate::sql::parser::RowLevelExpr;
+use crate::sql::rls::RowLevelExpr;
+use anyhow::Context;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColSet, TableId};
 use spacetimedb_schema::auto_migrate::{AutoMigratePlan, ManualMigratePlan, MigratePlan};
-use spacetimedb_schema::def::{TableDef, ViewDef};
+use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
 use spacetimedb_schema::schema::{column_schemas_from_defs, IndexSchema, Schema, SequenceSchema, TableSchema};
 
 /// The logger used for by [`update_database`] and friends.
 pub trait UpdateLogger {
     fn info(&self, msg: &str);
-}
-
-impl UpdateLogger for SystemLogger {
-    fn info(&self, msg: &str) {
-        self.info(msg);
-    }
 }
 
 /// The result of a database update.
@@ -341,15 +335,25 @@ fn auto_migrate_database(
     Ok(res)
 }
 
+/// Creates the table for `table_def` in `stdb`.
+pub fn create_table_from_def(
+    stdb: &RelationalDB,
+    tx: &mut MutTxId,
+    module_def: &ModuleDef,
+    table_def: &TableDef,
+) -> anyhow::Result<()> {
+    let schema = TableSchema::from_module_def(module_def, table_def, (), TableId::SENTINEL);
+    stdb.create_table(tx, schema)
+        .with_context(|| format!("failed to create table {}", &table_def.name))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{
-        db::relational_db::{
-            open_snapshot_repo,
-            tests_utils::{begin_mut_tx, insert, TestDB},
-        },
-        host::module_host::create_table_from_def,
+    use crate::relational_db::{
+        open_snapshot_repo,
+        tests_utils::{begin_mut_tx, insert, TestDB},
     };
     use spacetimedb_datastore::locking_tx_datastore::PendingSchemaChange;
     use spacetimedb_datastore::system_tables::ST_EVENT_TABLE_ID;
@@ -558,9 +562,18 @@ mod test {
         Ok(())
     }
 
+    fn with_snapshotting(manual: bool) -> anyhow::Result<TestDB> {
+        Ok(if manual {
+            TestDB::durable_without_snapshot_repo()?
+        } else {
+            TestDB::durable()?
+        })
+    }
+
     fn replay_event_table_schema_change(snapshot: TakeSnapshot) -> anyhow::Result<()> {
         let auth_ctx = AuthCtx::for_testing();
-        let stdb = TestDB::durable()?;
+        let with_snapshot = matches!(snapshot, TakeSnapshot::BeforeAutomigration);
+        let stdb = with_snapshotting(with_snapshot)?;
 
         let module_v1 = event_table_module(ProductType::from([
             ("old_payload", AlgebraicType::U64),
@@ -576,7 +589,7 @@ mod test {
             stdb.commit_tx(tx)?;
         }
 
-        if matches!(snapshot, TakeSnapshot::BeforeAutomigration) {
+        if with_snapshot {
             take_snapshot(&stdb)?;
         }
 
@@ -635,7 +648,8 @@ mod test {
     /// permanently preventing the database from reopening.
     fn replay_event_table_drop(snapshot: TakeSnapshot) -> anyhow::Result<()> {
         let auth_ctx = AuthCtx::for_testing();
-        let stdb = TestDB::durable()?;
+        let with_snapshot = matches!(snapshot, TakeSnapshot::BeforeAutomigration);
+        let stdb = with_snapshotting(with_snapshot)?;
 
         let module_v1 = event_table_module(ProductType::from([("payload", AlgebraicType::U64)]));
         let module_v2 = empty_module();
@@ -659,7 +673,7 @@ mod test {
             stdb.commit_tx(tx)?;
         }
 
-        if matches!(snapshot, TakeSnapshot::BeforeAutomigration) {
+        if with_snapshot {
             take_snapshot(&stdb)?;
         }
 

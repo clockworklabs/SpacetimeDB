@@ -609,6 +609,12 @@ export const top_players = spacetimedb.view({ name: 'top_players', public: true 
   return ctx.db.player.score.filter(1000);
 });
 
+// Procedural view with update callbacks.
+// The returned row type has exactly one `.primaryKey()` column.
+export const top_players_with_updates = spacetimedb.view({ name: 'top_players_with_updates', public: true }, t.array(player.rowType), ctx => {
+  return ctx.db.player.score.filter(1000);
+});
+
 // Perform a generic filter using the query builder.
 // Equivalent to `SELECT * FROM player WHERE score < 1000`.
 export const bottom_players = spacetimedb.view({ name: 'bottom_players', public: true }, t.array(player.rowType), ctx => {
@@ -639,6 +645,13 @@ public static Player? MyPlayer(ViewContext ctx)
 // Return potentially multiple rows
 [SpacetimeDB.View(Accessor = "TopPlayers", Public = true)]
 public static IEnumerable<Player> TopPlayers(ViewContext ctx)
+{
+    return ctx.Db.Player.Score.Filter(1000);
+}
+
+// Procedural view with update callbacks.
+[SpacetimeDB.View(Accessor = "TopPlayersWithUpdates", Public = true, PrimaryKey = "Id")]
+public static IEnumerable<Player> TopPlayersWithUpdates(ViewContext ctx)
 {
     return ctx.Db.Player.Score.Filter(1000);
 }
@@ -680,6 +693,12 @@ fn my_player(ctx: &ViewContext) -> Option<Player> {
 // Return multiple rows
 #[view(accessor = top_players, public)]
 fn top_players(ctx: &ViewContext) -> Vec<Player> {
+    ctx.db.player().score().filter(1000).collect()
+}
+
+// Procedural view with update callbacks.
+#[view(accessor = top_players_with_updates, public, primary_key = id)]
+fn top_players_with_updates(ctx: &ViewContext) -> Vec<Player> {
     ctx.db.player().score().filter(1000).collect()
 }
 
@@ -752,7 +771,7 @@ ctx.db                  // Database access
 ctx.sender              // Identity of caller
 ctx.connectionId        // ConnectionId | undefined
 ctx.timestamp           // Timestamp
-ctx.identity            // Module's identity
+ctx.databaseIdentity    // Module's identity
 ```
 
 </TabItem>
@@ -763,7 +782,7 @@ ctx.Db                  // Database access
 ctx.Sender              // Identity of caller
 ctx.ConnectionId        // ConnectionId?
 ctx.Timestamp           // Timestamp
-ctx.Identity            // Module's identity
+ctx.DatabaseIdentity    // Module's identity
 ctx.Rng                 // Random number generator
 ```
 
@@ -775,7 +794,7 @@ ctx.db                  // Database access
 ctx.sender()            // Identity of caller
 ctx.connection_id()     // Option<ConnectionId>
 ctx.timestamp           // Timestamp
-ctx.identity()          // Module's identity
+ctx.database_identity() // Module's identity
 ctx.rng()               // Random number generator
 ```
 
@@ -787,7 +806,7 @@ ctx.db                  // Database access (Table accessor)
 ctx.sender()            // Identity of caller (Identity type)
 ctx.connection_id       // std::optional<ConnectionId>
 ctx.timestamp           // Timestamp of current transaction (Timestamp type)
-ctx.identity()          // Module's own identity (Identity type)
+ctx.database_identity() // Module's own identity (Identity type)
 ctx.rng()               // Random number generator (for seeded randomness)
 ```
 
