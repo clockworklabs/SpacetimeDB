@@ -2,15 +2,17 @@ use anyhow::{bail, Result};
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
 use spacetimedb_execution::{
     pipelined::{PipelinedExecutor, PipelinedIxJoin, PipelinedIxScan, PipelinedProject},
-    Datastore, DeltaStore, Row,
+    Datastore, DeltaStore, ExecutionParams, Row,
 };
 use spacetimedb_expr::{check::SchemaView, expr::CollectViews};
 use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, query::Delta, AlgebraicValue};
-use spacetimedb_physical_plan::plan::{IxScan, Label, PhysicalPlan, ProjectPlan, TableScan};
+use spacetimedb_physical_plan::plan::{
+    IxScan, Label, ParamResolver, PhysicalExpr, PhysicalPlan, ProjectPlan, TableScan,
+};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId, ViewId};
 use spacetimedb_query::compile_subscription;
-use spacetimedb_schema::table_name::TableName;
-use std::ops::RangeBounds;
+use spacetimedb_schema::{schema::TableSchema, table_name::TableName};
+use std::{ops::RangeBounds, sync::Arc};
 
 /// A subscription is a view over a particular table.
 /// How do we incrementally maintain that view?
@@ -54,12 +56,13 @@ impl Fragments {
     fn for_each_insert<'a, Tx: Datastore + DeltaStore>(
         &self,
         tx: &'a Tx,
+        params: &impl ParamResolver,
         metrics: &mut ExecutionMetrics,
         f: &mut dyn FnMut(Row<'a>) -> Result<()>,
     ) -> Result<()> {
         for plan in &self.insert_plans {
             if !plan.is_empty(tx) {
-                plan.execute(tx, metrics, f)?;
+                plan.execute(tx, params, metrics, f)?;
             }
         }
         Ok(())
@@ -71,12 +74,13 @@ impl Fragments {
     fn for_each_delete<'a, Tx: Datastore + DeltaStore>(
         &self,
         tx: &'a Tx,
+        params: &impl ParamResolver,
         metrics: &mut ExecutionMetrics,
         f: &mut dyn FnMut(Row<'a>) -> Result<()>,
     ) -> Result<()> {
         for plan in &self.delete_plans {
             if !plan.is_empty(tx) {
-                plan.execute(tx, metrics, f)?;
+                plan.execute(tx, params, metrics, f)?;
             }
         }
         Ok(())
@@ -151,7 +155,7 @@ impl Fragments {
     /// dv(+) = R'ds(+) U dr(+)S' U dr(+)ds(-) U dr(-)ds(+)
     /// dv(-) = R'ds(-) U dr(-)S' U dr(+)ds(+) U dr(-)ds(-)
     /// ```
-    fn compile_from_plan(plan: &ProjectPlan, tables: &[Label], auth: &AuthCtx) -> Result<Self> {
+    fn compile_from_plan(plan: &ProjectPlan, tables: &[Label]) -> Result<Self> {
         /// Mutate a query plan by turning a table scan into a delta scan
         fn mut_plan(plan: &mut ProjectPlan, relvar: Label, delta: Delta) {
             plan.visit_mut(&mut |plan| match plan {
@@ -170,18 +174,18 @@ impl Fragments {
         }
 
         /// Return a new plan with delta scans for the given tables
-        fn new_plan(plan: &ProjectPlan, tables: &[(Label, Delta)], auth: &AuthCtx) -> Result<PipelinedProject> {
+        fn new_plan(plan: &ProjectPlan, tables: &[(Label, Delta)]) -> Result<PipelinedProject> {
             let mut plan = plan.clone();
             for (alias, delta) in tables {
                 mut_plan(&mut plan, *alias, *delta);
             }
-            plan.optimize(auth).map(PipelinedProject::from)
+            plan.optimize().map(PipelinedProject::from)
         }
 
         match tables {
             [dr] => Ok(Fragments {
-                insert_plans: vec![new_plan(plan, &[(*dr, Delta::Inserts)], auth)?],
-                delete_plans: vec![new_plan(plan, &[(*dr, Delta::Deletes)], auth)?],
+                insert_plans: vec![new_plan(plan, &[(*dr, Delta::Inserts)])?],
+                delete_plans: vec![new_plan(plan, &[(*dr, Delta::Deletes)])?],
             }),
             [dr, ds] => Ok(Fragments {
                 insert_plans: vec![
@@ -189,25 +193,21 @@ impl Fragments {
                         // dr(+)S'
                         plan,
                         &[(*dr, Delta::Inserts)],
-                        auth,
                     )?,
                     new_plan(
                         // R'ds(+)
                         plan,
                         &[(*ds, Delta::Inserts)],
-                        auth,
                     )?,
                     new_plan(
                         // dr(+)ds(-)
                         plan,
                         &[(*dr, Delta::Inserts), (*ds, Delta::Deletes)],
-                        auth,
                     )?,
                     new_plan(
                         // dr(-)ds(+)
                         plan,
                         &[(*dr, Delta::Deletes), (*ds, Delta::Inserts)],
-                        auth,
                     )?,
                 ],
                 delete_plans: vec![
@@ -215,25 +215,21 @@ impl Fragments {
                         // dr(-)S'
                         plan,
                         &[(*dr, Delta::Deletes)],
-                        auth,
                     )?,
                     new_plan(
                         // R'ds(-)
                         plan,
                         &[(*ds, Delta::Deletes)],
-                        auth,
                     )?,
                     new_plan(
                         // dr(+)ds(+)
                         plan,
                         &[(*dr, Delta::Inserts), (*ds, Delta::Inserts)],
-                        auth,
                     )?,
                     new_plan(
                         // dr(-)ds(-)
                         plan,
                         &[(*dr, Delta::Deletes), (*ds, Delta::Deletes)],
-                        auth,
                     )?,
                 ],
             }),
@@ -253,7 +249,7 @@ impl Fragments {
 /// ```
 ///
 /// Whenever `a` is updated, only the relevant queries are evaluated.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct JoinEdge {
     /// The [`TableId`] for `a`
     pub lhs_table: TableId,
@@ -296,6 +292,113 @@ impl JoinEdge {
     }
 }
 
+/// Metrics metadata derived once when a subscription plan is compiled.
+#[derive(Debug, Clone)]
+pub struct SubscriptionPlanMetrics {
+    scan_type: String,
+    unindexed_columns: String,
+}
+
+impl SubscriptionPlanMetrics {
+    fn from_physical_plan(plan: &PhysicalPlan) -> Self {
+        let has_table_scan = plan.any(&|p| matches!(p, PhysicalPlan::TableScan(..)));
+        let has_index_scan = plan.any(&|p| matches!(p, PhysicalPlan::IxScan(..)));
+        let has_post_filter = plan.any(&|p| matches!(p, PhysicalPlan::Filter(..)));
+
+        let scan_type = if has_table_scan && has_index_scan {
+            "mixed"
+        } else if has_table_scan {
+            "sequential"
+        } else if has_index_scan && has_post_filter {
+            "indexed_with_filter"
+        } else if has_index_scan {
+            "fully_indexed"
+        } else {
+            "unknown"
+        }
+        .to_owned();
+
+        let mut schema: Option<Arc<TableSchema>> = None;
+        plan.visit(&mut |p| match p {
+            PhysicalPlan::TableScan(scan, _) => {
+                schema = Some(scan.schema.clone());
+            }
+            PhysicalPlan::IxScan(scan, _) => {
+                schema = Some(scan.schema.clone());
+            }
+            _ => {}
+        });
+
+        let mut columns = Vec::new();
+        plan.visit(&mut |p| {
+            if let PhysicalPlan::Filter(_, expr) = p {
+                extract_columns(expr, schema.as_ref(), &mut columns);
+            }
+        });
+
+        Self {
+            scan_type,
+            unindexed_columns: columns.join(","),
+        }
+    }
+
+    pub fn scan_type(&self) -> &str {
+        &self.scan_type
+    }
+
+    pub fn unindexed_columns(&self) -> &str {
+        &self.unindexed_columns
+    }
+}
+
+fn extract_columns(expr: &PhysicalExpr, schema: Option<&Arc<TableSchema>>, columns: &mut Vec<String>) {
+    match expr {
+        PhysicalExpr::Field(tuple_field) => {
+            let col_name = schema
+                .and_then(|s| s.columns.get(tuple_field.field_pos))
+                .map(|col| col.col_name.to_string())
+                .unwrap_or_else(|| format!("col_{}", tuple_field.field_pos));
+            columns.push(col_name);
+        }
+        PhysicalExpr::BinOp(_, lhs, rhs) => {
+            extract_columns(lhs, schema, columns);
+            extract_columns(rhs, schema, columns);
+        }
+        PhysicalExpr::LogOp(_, exprs) => {
+            for expr in exprs {
+                extract_columns(expr, schema, columns);
+            }
+        }
+        PhysicalExpr::Product(exprs) => {
+            for expr in exprs {
+                extract_columns(expr, schema, columns);
+            }
+        }
+        PhysicalExpr::Value(_) | PhysicalExpr::Param(..) => {}
+    }
+}
+
+/// Metadata cached with a subscription after query planning is complete.
+#[derive(Debug)]
+struct SubscriptionMetadata {
+    /// A subscription can read from multiple tables.
+    table_ids: Vec<TableId>,
+    /// The table or view returned by this plan, if it returns whole rows.
+    return_schema: Option<Arc<TableSchema>>,
+    /// View ids read by this plan.
+    view_ids: Vec<ViewId>,
+    /// Whether this plan reads from an anonymous view.
+    reads_anonymous_view: bool,
+    /// Whether this plan reads from a non-anonymous view.
+    reads_non_anonymous_view: bool,
+    /// Search arguments used for pruning.
+    search_args: Vec<(TableId, ColId, AlgebraicValue)>,
+    /// Join edge used for pruning.
+    join_edge: Option<(JoinEdge, AlgebraicValue)>,
+    /// Scan classification used for runtime metrics.
+    scan_metrics: SubscriptionPlanMetrics,
+}
+
 /// A subscription defines a view over a table
 #[derive(Debug)]
 pub struct SubscriptionPlan {
@@ -303,18 +406,19 @@ pub struct SubscriptionPlan {
     return_id: TableId,
     /// To which table are we subscribed?
     return_name: TableName,
-    /// A subscription can read from multiple tables.
-    /// From which tables do we read?
-    table_ids: Vec<TableId>,
+    /// The cached executor for the non-incremental query plan.
+    base_plan: PipelinedProject,
+    /// Runtime bindings for this per-sender cached plan.
+    params: ExecutionParams,
     /// The plan fragments for updating the view
     fragments: Fragments,
-    /// The optimized plan without any delta scans
-    plan_opt: ProjectPlan,
+    /// Metadata derived from the physical plan at compile time.
+    metadata: SubscriptionMetadata,
 }
 
 impl CollectViews for SubscriptionPlan {
     fn collect_views(&self, views: &mut HashSet<ViewId>) {
-        self.plan_opt.collect_views(views);
+        views.extend(self.metadata.view_ids.iter().copied());
     }
 }
 
@@ -326,19 +430,26 @@ impl SubscriptionPlan {
 
     /// Does this plan return rows from a view?
     pub fn is_view(&self) -> bool {
-        self.plan_opt.returns_view_table()
+        self.metadata
+            .return_schema
+            .as_ref()
+            .is_some_and(|schema| schema.is_view())
     }
 
     /// Does this plan return rows from an event table?
     pub fn returns_event_table(&self) -> bool {
-        self.plan_opt.return_table().is_some_and(|schema| schema.is_event)
+        self.metadata
+            .return_schema
+            .as_ref()
+            .is_some_and(|schema| schema.is_event)
     }
 
     /// The number of columns returned.
     /// Only relevant if [`Self::is_view`] is true.
     pub fn num_cols(&self) -> usize {
-        self.plan_opt
-            .return_table()
+        self.metadata
+            .return_schema
+            .as_ref()
             .map(|schema| schema.num_cols())
             .unwrap_or_default()
     }
@@ -346,8 +457,9 @@ impl SubscriptionPlan {
     /// The number of private columns returned.
     /// Only relevant if [`Self::is_view`] is true.
     pub fn num_private_cols(&self) -> usize {
-        self.plan_opt
-            .return_table()
+        self.metadata
+            .return_schema
+            .as_ref()
             .map(|schema| schema.num_private_cols())
             .unwrap_or_default()
     }
@@ -364,12 +476,40 @@ impl SubscriptionPlan {
 
     /// From which tables does this plan read?
     pub fn table_ids(&self) -> impl Iterator<Item = TableId> + '_ {
-        self.table_ids.iter().copied()
+        self.metadata.table_ids.iter().copied()
     }
 
-    /// The optimized plan without any delta scans
-    pub fn optimized_physical_plan(&self) -> &ProjectPlan {
-        &self.plan_opt
+    /// The cached executor for the non-incremental query plan.
+    pub fn base_plan(&self) -> &PipelinedProject {
+        &self.base_plan
+    }
+
+    pub fn params(&self) -> &ExecutionParams {
+        &self.params
+    }
+
+    /// The table or view returned by this plan, if it returns whole rows.
+    pub fn return_table(&self) -> Option<&Arc<TableSchema>> {
+        self.metadata.return_schema.as_ref()
+    }
+
+    /// Does this plan read from an (anonymous) view?
+    pub fn reads_from_view(&self, anonymous: bool) -> bool {
+        if anonymous {
+            self.metadata.reads_anonymous_view
+        } else {
+            self.metadata.reads_non_anonymous_view
+        }
+    }
+
+    /// Search arguments used for pruning.
+    pub fn search_args(&self) -> impl Iterator<Item = (TableId, ColId, AlgebraicValue)> + '_ {
+        self.metadata.search_args.iter().cloned()
+    }
+
+    /// Scan classification used for runtime metrics.
+    pub fn scan_metrics(&self) -> &SubscriptionPlanMetrics {
+        &self.metadata.scan_metrics
     }
 
     /// From which indexes does this plan read?
@@ -386,7 +526,7 @@ impl SubscriptionPlan {
         metrics: &mut ExecutionMetrics,
         f: &mut dyn FnMut(Row<'a>) -> Result<()>,
     ) -> Result<()> {
-        self.fragments.for_each_insert(tx, metrics, f)
+        self.fragments.for_each_insert(tx, &self.params, metrics, f)
     }
 
     /// A subscription is just a view of a particular table.
@@ -398,7 +538,7 @@ impl SubscriptionPlan {
         metrics: &mut ExecutionMetrics,
         f: &mut dyn FnMut(Row<'a>) -> Result<()>,
     ) -> Result<()> {
-        self.fragments.for_each_delete(tx, metrics, f)
+        self.fragments.for_each_delete(tx, &self.params, metrics, f)
     }
 
     /// Returns a join edge for this query if it has one.
@@ -408,32 +548,40 @@ impl SubscriptionPlan {
     /// 2. Single column index lookup on the rhs table
     /// 3. No self joins
     pub fn join_edge(&self) -> Option<(JoinEdge, AlgebraicValue)> {
-        if !self.is_join() {
+        self.metadata.join_edge.clone()
+    }
+
+    fn join_edge_for_plan(
+        plan_opt: &ProjectPlan,
+        return_id: TableId,
+        is_join: bool,
+        params: &impl ParamResolver,
+    ) -> Option<(JoinEdge, AlgebraicValue)> {
+        if !is_join {
             return None;
         }
         let mut join_edge = None;
-        self.plan_opt.visit(&mut |op| match op {
-            PhysicalPlan::IxJoin(join, _) if join.rhs.table_id == self.return_id => {
+        plan_opt.visit(&mut |op| match op {
+            PhysicalPlan::IxJoin(join, _) if join.rhs.table_id == return_id => {
                 let Some((lhs_join_col, lhs_field)) = join.single_probe_field() else {
                     return;
                 };
                 let rhs_join_col = ColId(lhs_field.field_pos as u16);
                 match &*join.lhs {
                     PhysicalPlan::IxScan(scan, _)
-                        if scan.schema.table_id != self.return_id
-                            && scan.schema.is_unique(&ColList::new(rhs_join_col)) =>
+                        if scan.schema.table_id != return_id && scan.schema.is_unique(&ColList::new(rhs_join_col)) =>
                     {
-                        let Some((rhs_col, rhs_val)) = scan.single_col_lit_point() else {
+                        let Some((rhs_col, rhs_val)) = scan.single_col_point(params) else {
                             return;
                         };
                         let edge = JoinEdge {
-                            lhs_table: self.return_id,
+                            lhs_table: return_id,
                             rhs_table: scan.schema.table_id,
                             lhs_join_col,
                             rhs_join_col,
                             rhs_col,
                         };
-                        join_edge = Some((edge, rhs_val.clone()));
+                        join_edge = Some((edge, rhs_val));
                     }
                     _ => {}
                 }
@@ -445,6 +593,15 @@ impl SubscriptionPlan {
 
     /// Generate a plan for incrementally maintaining a subscription
     pub fn compile(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> Result<(Vec<Self>, bool)> {
+        Self::compile_plans(sql, tx, auth).map(|(plans, has_param, _)| (plans, has_param))
+    }
+
+    /// Generate a plan for incrementally maintaining a subscription
+    pub fn compile_plans(
+        sql: &str,
+        tx: &impl SchemaView,
+        auth: &AuthCtx,
+    ) -> Result<(Vec<Self>, bool, Vec<ProjectPlan>)> {
         let (plans, return_id, return_name, has_param) = compile_subscription(sql, tx, auth)?;
 
         /// Does this plan have any non-index joins?
@@ -482,9 +639,11 @@ impl SubscriptionPlan {
         }
 
         let mut subscriptions = vec![];
+        let mut physical_plans = vec![];
+        let params = ExecutionParams::from_auth(auth);
 
         for plan in plans {
-            let plan_opt = plan.clone().optimize(auth)?;
+            let plan_opt = plan.clone().optimize()?;
 
             if has_non_index_join(&plan_opt) {
                 bail!("Subscriptions require indexes on join columns")
@@ -496,17 +655,35 @@ impl SubscriptionPlan {
 
             let (table_ids, table_aliases) = table_ids_for_plan(&plan);
 
-            let fragments = Fragments::compile_from_plan(&plan, &table_aliases, auth)?;
+            let fragments = Fragments::compile_from_plan(&plan, &table_aliases)?;
+            let is_join = fragments.insert_plans.len() > 1 && fragments.delete_plans.len() > 1;
+
+            let mut view_ids = HashSet::new();
+            plan_opt.collect_views(&mut view_ids);
+
+            let metadata = SubscriptionMetadata {
+                table_ids,
+                return_schema: plan_opt.return_table(),
+                view_ids: view_ids.into_iter().collect(),
+                reads_anonymous_view: plan_opt.reads_from_view(true),
+                reads_non_anonymous_view: plan_opt.reads_from_view(false),
+                search_args: plan_opt.physical_plan().search_args(&params),
+                join_edge: Self::join_edge_for_plan(&plan_opt, return_id, is_join, &params),
+                scan_metrics: SubscriptionPlanMetrics::from_physical_plan(plan_opt.physical_plan()),
+            };
+
+            physical_plans.push(plan_opt.clone());
 
             subscriptions.push(Self {
                 return_id,
                 return_name: return_name.clone(),
-                table_ids,
-                plan_opt,
+                base_plan: PipelinedProject::from(plan_opt),
+                params,
                 fragments,
+                metadata,
             });
         }
 
-        Ok((subscriptions, has_param))
+        Ok((subscriptions, has_param, physical_plans))
     }
 }

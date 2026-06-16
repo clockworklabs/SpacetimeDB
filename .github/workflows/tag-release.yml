@@ -2,6 +2,8 @@ on:
   release:
     types: [published]
 
+permissions: {}
+
 jobs:
   on-release:
     name: Re-tag latest
@@ -21,3 +23,18 @@ jobs:
         run: |
           VERSION=${GITHUB_REF#refs/*/}
           docker buildx imagetools create clockworklabs/spacetimedb:$VERSION --tag clockworklabs/spacetimedb:latest
+
+  announce-release:
+    name: Announce GitHub release
+    runs-on: ubuntu-latest
+    needs: on-release
+    if: always()
+    steps:
+      - name: Send Discord notification
+        run: |
+          set -euo pipefail
+
+          message="SpacetimeDB GitHub release published: [${{ github.event.release.name }}](<${{ github.event.release.html_url }}>)"
+
+          data="$(jq --null-input --arg msg "$message" '.content=$msg')"
+          curl -X POST -H 'Content-Type: application/json' -d "$data" "${{ secrets.DISCORD_WEBHOOK_RELEASE_ANNOUNCE_URL }}"

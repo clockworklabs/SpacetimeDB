@@ -10,7 +10,7 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
-tokio = { workspace = true, optional = true }
+tokio.workspace = true
 async-task = { version = "4.4", default-features = false, optional = true }
 spin = { version = "0.9", default-features = false, features = ["mutex", "spin_mutex"], optional = true }
 libc = { version = "0.2", optional = true }
@@ -20,5 +20,5 @@ futures.workspace = true
 
 [features]
 default = ["tokio"]
-tokio = ["dep:tokio"]
+tokio = []
 simulation = ["dep:async-task", "dep:spin", "dep:libc"]
