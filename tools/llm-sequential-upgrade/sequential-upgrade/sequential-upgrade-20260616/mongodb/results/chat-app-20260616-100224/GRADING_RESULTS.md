@@ -3,7 +3,7 @@
 **Model:** claude-sonnet-4-6
 **Date:** 2026-06-16
 **Backend:** mongodb
-**Level:** 5
+**Level:** 6
 **Grading Method:** Manual browser interaction
 
 ---
@@ -16,10 +16,11 @@
 ## Feature 6: Ephemeral Messages (Score: 3 / 3)
 ## Feature 7: Message Reactions (Score: 3 / 3)
 ## Feature 8: Message Editing with History (Score: 3 / 3)
-**Browser Test Observations:** Edit own messages, "(edited)" indicator, viewable history,
-and real-time sync all work; cannot edit others' messages. Features 1–7 regression-checked,
-no regressions. (Noted out-of-rubric: spam-clicking Save adds duplicate identical history
-entries — no debounce/no-op guard; not a graded criterion, not docked.)
+## Feature 9: Real-Time Permissions (Score: 3 / 3)
+**Browser Test Observations:** Admin kick/ban, instant access loss for kicked users,
+promote-to-admin, and instant permission changes all work. Features 1–8 regression-checked,
+no regressions. (Out-of-rubric notes, not docked: duplicate room names allowed; spam-click
+on edit Save adds duplicate history entries — neither is a graded criterion.)
 
 ---
 
@@ -34,8 +35,9 @@ entries — no debounce/no-op guard; not a graded criterion, not docked.)
 | 5. Scheduled Messages | 3/3 | |
 | 6. Ephemeral Messages | 3/3 | |
 | 7. Message Reactions | 3/3 | |
-| 8. Message Editing | 3/3 | new at L5 |
-| **TOTAL** | **24/24** | |
+| 8. Message Editing | 3/3 | |
+| 9. Real-Time Permissions | 3/3 | new at L6 |
+| **TOTAL** | **27/27** | |
 
 **Reprompt count:** 0 (passed on first generate)
-**Cost:** L5 upgrade $0.57
+**Cost:** L6 upgrade $0.90 (successful retry; failed attempt excluded)
