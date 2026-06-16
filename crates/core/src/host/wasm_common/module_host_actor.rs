@@ -2,6 +2,7 @@ use super::instrumentation::CallTimes;
 use super::*;
 use crate::client::ClientActorId;
 use crate::database_logger;
+use crate::db::sql::ast::SchemaViewer;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
 use crate::error::DBError;
 use crate::host::host_controller::CallProcedureReturn;
@@ -22,7 +23,6 @@ use crate::identity::Identity;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
-use crate::sql::ast::SchemaViewer;
 use crate::sql::execute::run_with_instance;
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, CommitAndBroadcastEventSuccess};
 use crate::subscription::module_subscription_manager::TransactionOffset;
@@ -39,6 +39,7 @@ use spacetimedb_datastore::error::{DatastoreError, ViewError};
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, Program};
+use spacetimedb_execution::ExecutionParams;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::db::raw_def::v9::{Lifecycle, ViewResultHeader};
 use spacetimedb_lib::de::DeserializeSeed;
@@ -206,6 +207,8 @@ pub(crate) fn run_query_for_view(
     let mut metrics = ExecutionMetrics::default();
     let mut rows = Vec::new();
 
+    let params = ExecutionParams::from_auth(&auth);
+
     for plan in plans {
         // Track read sets for all tables involved in this plan.
         // TODO(jsdt): This means we will rerun the view and query for any change to these tables, so we should optimize this asap.
@@ -213,7 +216,7 @@ pub(crate) fn run_query_for_view(
             tx.record_table_scan(&op, table_id);
         }
 
-        plan.base_plan().execute(&*tx, &mut metrics, &mut |row| {
+        plan.base_plan().execute(&*tx, &params, &mut metrics, &mut |row| {
             rows.push(row.to_product_value());
             Ok(())
         })?;
