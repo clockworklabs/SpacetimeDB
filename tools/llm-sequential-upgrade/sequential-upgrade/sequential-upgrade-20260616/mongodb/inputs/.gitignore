@@ -4,9 +4,6 @@
 **/results/**/.vite/
 **/results/**/drizzle/
 
-# Local env files inside generated apps (not committed)
-**/results/**/.env
-
 # Telemetry backup files
 **/telemetry/*.jsonl.bak
 
@@ -18,10 +15,9 @@ telemetry/metrics.jsonl
 
 # Raw telemetry contains PII (email, account IDs) - store privately
 **/telemetry/**/raw-telemetry.jsonl
-# Verbose run transcripts (large, regenerable) - not tracked
-**/telemetry/**/run.log
 
-# NOTE: generated run output (sequential-upgrade/, one-shot/) IS tracked on this
-# branch so app state can be git-reverted between levels. Heavy/regenerable dirs,
-# local .env, verbose logs, and PII telemetry are excluded above. Canonical runs
-# still publish to the external spacetimedb-ai-test-results repo.
+# Generated benchmark run output (app source, telemetry, cost reports).
+# Canonical runs are published to the external spacetimedb-ai-test-results
+# repo — they are not tracked in this monorepo.
+/sequential-upgrade/
+/one-shot/
