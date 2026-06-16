@@ -11,12 +11,13 @@ const CRATES_IO_POLL_INTERVAL: Duration = Duration::from_secs(15);
 const CRATES_IO_POLL_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 
 pub struct CratesRelease {
+    pub version: String,
     pub dry_run: bool,
 }
 
 impl CratesRelease {
-    pub fn new(dry_run: bool) -> Self {
-        Self { dry_run }
+    pub fn new(version: String, dry_run: bool) -> Self {
+        Self { version, dry_run }
     }
 
     /// Publishes a single crate to crates.io
@@ -63,41 +64,6 @@ impl CratesRelease {
             "Failed to publish crate: {}\n--- stdout ---\n{}\n--- stderr ---\n{}",
             crate_name, stdout, stderr
         ))
-    }
-
-    fn crate_version(&self, crate_name: &str, manifest_map: &HashMap<String, PathBuf>) -> Result<String, String> {
-        let manifest_path = manifest_map
-            .get(crate_name)
-            .ok_or_else(|| format!("Crate '{}' not found in cargo metadata", crate_name))?;
-
-        let mut cmd = Command::new("cargo");
-        cmd.args(["pkgid", "--manifest-path", &manifest_path.to_string_lossy()]);
-        util::print_command(&cmd);
-
-        let output = cmd
-            .output()
-            .map_err(|e| format!("Failed to execute cargo pkgid for {}: {}", crate_name, e))?;
-
-        if !output.status.success() {
-            return Err(format!(
-                "Failed to get package id for {}\n--- stdout ---\n{}\n--- stderr ---\n{}",
-                crate_name,
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            ));
-        }
-
-        let pkgid = String::from_utf8_lossy(&output.stdout);
-        pkgid
-            .trim()
-            .rsplit_once('@')
-            .map(|(_, version)| version.to_string())
-            .ok_or_else(|| {
-                format!(
-                    "Failed to parse crate version from cargo pkgid output: {}",
-                    pkgid.trim()
-                )
-            })
     }
 
     fn wait_for_crate_available(&self, crate_name: &str, version: &str) -> Result<(), String> {
@@ -211,8 +177,7 @@ impl ReleaseTarget for CratesRelease {
         println!("\nStarting publish process...");
         for crate_name in &crates {
             self.publish_crate(crate_name, &manifest_map)?;
-            let version = self.crate_version(crate_name, &manifest_map)?;
-            self.wait_for_crate_available(crate_name, &version)?;
+            self.wait_for_crate_available(crate_name, &self.version)?;
             self.add_crate_owners(crate_name)?;
         }
 

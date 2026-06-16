@@ -49,14 +49,16 @@ Release the following packages to crates.io:
 - sdk
 
 ```bash
-cargo release crates
+cargo release crates 1.2.0
 ```
 
 You can also perform a dry run to see what would be published without actually publishing:
 
 ```bash
-cargo release crates --dry-run
+cargo release crates 1.2.0 --dry-run
 ```
+
+After each crate is published, the release waits for that crate version to become visible in the crates.io index before publishing dependent crates.
 
 ### NPM Package
 
