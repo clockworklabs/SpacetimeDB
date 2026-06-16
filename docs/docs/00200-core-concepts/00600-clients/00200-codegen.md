@@ -346,6 +346,7 @@ For each [view](../00200-functions/00500-views.md) in your module, codegen gener
 - **Type definitions** for the view's return type
 - **Subscription interfaces** for subscribing to view results
 - **Query methods** for accessing cached view results
+- **Update callbacks** when the view has a known primary key
 
 Views provide subscribable, computed queries over your data.
 
