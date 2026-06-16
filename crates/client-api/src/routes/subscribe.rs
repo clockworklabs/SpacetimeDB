@@ -504,7 +504,7 @@ async fn ws_client_actor_inner(
         let _ = unordered_tx.send(msg);
     })
     .await;
-    log::debug!("Client connection ended: {client_id}");
+    log::trace!("Client connection ended: {client_id}");
 }
 
 /// The main `select!` loop of the websocket client actor.
