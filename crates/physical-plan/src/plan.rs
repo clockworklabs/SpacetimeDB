@@ -6,10 +6,12 @@ use spacetimedb_expr::{
     expr::{AggType, CollectViews},
     StatementSource,
 };
-use spacetimedb_lib::{query::Delta, sats::size_of::SizeOf, AlgebraicType, AlgebraicValue, ProductValue};
+use spacetimedb_lib::{
+    empty_view_arg_hash_value, query::Delta, sats::size_of::SizeOf, AlgebraicType, AlgebraicValue, ProductValue,
+};
 use spacetimedb_primitives::{ColId, ColOrCols, ColSet, IndexId, TableId, ViewId};
-use spacetimedb_schema::schema::{IndexSchema, TableSchema};
-use spacetimedb_sql_parser::ast::{BinOp, LogOp, Parameter};
+use spacetimedb_schema::schema::{IndexSchema, TableSchema, VIEW_ARG_HASH_COL};
+use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 use spacetimedb_table::table::RowRef;
 use std::{
     borrow::Cow,
@@ -32,8 +34,15 @@ pub struct Label(pub usize);
 /// Concrete variable bindings are supplied at runtime
 /// and implement this minimal interface.
 pub trait ParamResolver {
-    fn resolve_param(&self, param: Parameter, ty: &AlgebraicType) -> AlgebraicValue;
+    fn resolve_param(&self, param: ParamSlot, ty: &AlgebraicType) -> AlgebraicValue;
 }
+
+/// A runtime parameter slot in a physical plan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParamSlot(pub u16);
+
+pub const PARAM_SENDER: ParamSlot = ParamSlot(0);
+pub const PARAM_VIEW_ARG_HASH: ParamSlot = ParamSlot(1);
 
 /// Physical plans always terminate with a projection.
 /// This type of projection returns row ids.
@@ -541,8 +550,8 @@ impl PhysicalPlan {
         Ok(optimized)
     }
 
-    /// If a view is not anonymous, its backing table has a `sender` column.
-    /// This column tracks which rows belong to which caller.
+    /// If a view has private arguments, its backing table has an `arg_hash` column.
+    /// This column tracks which rows belong to which argument tuple.
     ///
     /// As a result, queries over such views cannot read the entire backing table.
     /// They must only select the rows corresponding to the caller of the query.
@@ -553,24 +562,31 @@ impl PhysicalPlan {
     /// SELECT * FROM my_view
     /// ```
     ///
-    /// becomes
+    /// becomes the equivalent of
     /// ```sql
-    /// SELECT * FROM my_view WHERE sender = :sender
+    /// SELECT * FROM my_view WHERE arg_hash = <current view arg hash>
     /// ```
     fn expand_views(self) -> Self {
         match self {
-            Self::TableScan(scan, label) if scan.schema.is_view() && !scan.schema.is_anonymous_view() => Self::Filter(
-                Box::new(Self::TableScan(scan, label)),
-                PhysicalExpr::BinOp(
-                    BinOp::Eq,
-                    Box::new(PhysicalExpr::Param(Parameter::Sender, AlgebraicType::identity())),
-                    Box::new(PhysicalExpr::Field(TupleField {
-                        label,
-                        label_pos: None,
-                        field_pos: 0,
-                    })),
-                ),
-            ),
+            Self::TableScan(scan, label) if scan.schema.is_view() => {
+                let arg_hash = if scan.schema.is_anonymous_view() {
+                    PhysicalExpr::Value(empty_view_arg_hash_value())
+                } else {
+                    PhysicalExpr::Param(PARAM_VIEW_ARG_HASH, AlgebraicType::U256)
+                };
+                Self::Filter(
+                    Box::new(Self::TableScan(scan, label)),
+                    PhysicalExpr::BinOp(
+                        BinOp::Eq,
+                        Box::new(arg_hash),
+                        Box::new(PhysicalExpr::Field(TupleField {
+                            label,
+                            label_pos: None,
+                            field_pos: VIEW_ARG_HASH_COL.idx(),
+                        })),
+                    ),
+                )
+            }
             Self::IxJoin(
                 IxJoin {
                     lhs,
@@ -1392,7 +1408,7 @@ pub enum PhysicalExpr {
     /// A constant algebraic value
     Value(AlgebraicValue),
     /// A runtime parameter.
-    Param(Parameter, AlgebraicType),
+    Param(ParamSlot, AlgebraicType),
     /// A field projection expression
     Field(TupleField),
 }
