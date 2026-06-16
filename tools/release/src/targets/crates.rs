@@ -175,9 +175,10 @@ impl ReleaseTarget for CratesRelease {
         }
 
         println!("\nStarting publish process...");
+        let crates_io_version = self.version.strip_prefix('v').unwrap_or(&self.version);
         for crate_name in &crates {
             self.publish_crate(crate_name, &manifest_map)?;
-            self.wait_for_crate_available(crate_name, &self.version)?;
+            self.wait_for_crate_available(crate_name, crates_io_version)?;
             self.add_crate_owners(crate_name)?;
         }
 

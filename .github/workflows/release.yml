@@ -123,15 +123,11 @@ jobs:
       - name: Run release (dry-run)
         if: ${{ inputs.dry_run }}
         # NOTE: This will print a warning that `cargo-release release crates` dry runs are not supported
-        env:
-          RELEASE_TAG: ${{ github.event.inputs.release_tag }}
-        run: cargo-release release crates "${RELEASE_TAG#v}" --dry-run
+        run: cargo-release release crates ${{ github.event.inputs.release_tag }} --dry-run
 
       - name: Run release
         if: ${{ !inputs.dry_run }}
-        env:
-          RELEASE_TAG: ${{ github.event.inputs.release_tag }}
-        run: cargo-release release crates "${RELEASE_TAG#v}"
+        run: cargo-release release crates ${{ github.event.inputs.release_tag }}
 
   release-csharp:
     needs: build-cargo-release
