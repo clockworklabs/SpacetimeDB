@@ -23,7 +23,13 @@ import {
   type SubscriptionEventContextInterface,
 } from './event_context.ts';
 import { EventEmitter } from './event_emitter.ts';
-import type { Deserializer, Identity, InferTypeOfRow, Serializer } from '../';
+import type {
+  Deserializer,
+  Identity,
+  InferTypeOfParams,
+  InferTypeOfRow,
+  Serializer,
+} from '../';
 import type {
   ProcedureResultMessage,
   ReducerResultMessage,
@@ -375,7 +381,9 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       const { serialize: serializeArgs } =
         this.#reducerArgsSerializers[reducerName];
 
-      (out as any)[key] = (params: InferTypeOfRow<typeof reducer.params>) => {
+      (out as any)[key] = (
+        params: InferTypeOfParams<typeof reducer.params>
+      ) => {
         const writer = this.#reducerArgsEncoder;
         writer.clear();
         serializeArgs(writer, params);
@@ -406,7 +414,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         this.#procedureSerializers[procedureName];
 
       (out as any)[key] = (
-        params: InferTypeOfRow<typeof procedure.params>
+        params: InferTypeOfParams<typeof procedure.params>
       ): Promise<any> => {
         writer.clear();
         serializeArgs(writer, params);
@@ -428,7 +436,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     event: Event<
       ReducerEventInfo<
         RemoteModule['reducers'][number]['name'],
-        InferTypeOfRow<RemoteModule['reducers'][number]['params']>
+        InferTypeOfParams<RemoteModule['reducers'][number]['params']>
       >
     >
   ): EventContextInterface<RemoteModule> {

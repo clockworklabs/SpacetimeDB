@@ -46,3 +46,11 @@ pub fn create_player(ctx: &ReducerContext, name: String, location: Point) {
         location,
     });
 }
+
+#[reducer]
+pub fn set_player_alias(ctx: &ReducerContext, name: String, alias: Option<String>) {
+    ctx.db.user().insert(User {
+        identity: ctx.sender,
+        username: alias.unwrap_or(name),
+    });
+}
