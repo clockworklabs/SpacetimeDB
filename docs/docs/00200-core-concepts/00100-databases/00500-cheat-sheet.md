@@ -771,7 +771,7 @@ ctx.db                  // Database access
 ctx.sender              // Identity of caller
 ctx.connectionId        // ConnectionId | undefined
 ctx.timestamp           // Timestamp
-ctx.identity            // Module's identity
+ctx.databaseIdentity    // Module's identity
 ```
 
 </TabItem>
@@ -782,7 +782,7 @@ ctx.Db                  // Database access
 ctx.Sender              // Identity of caller
 ctx.ConnectionId        // ConnectionId?
 ctx.Timestamp           // Timestamp
-ctx.Identity            // Module's identity
+ctx.DatabaseIdentity    // Module's identity
 ctx.Rng                 // Random number generator
 ```
 
@@ -794,7 +794,7 @@ ctx.db                  // Database access
 ctx.sender()            // Identity of caller
 ctx.connection_id()     // Option<ConnectionId>
 ctx.timestamp           // Timestamp
-ctx.identity()          // Module's identity
+ctx.database_identity() // Module's identity
 ctx.rng()               // Random number generator
 ```
 
@@ -806,7 +806,7 @@ ctx.db                  // Database access (Table accessor)
 ctx.sender()            // Identity of caller (Identity type)
 ctx.connection_id       // std::optional<ConnectionId>
 ctx.timestamp           // Timestamp of current transaction (Timestamp type)
-ctx.identity()          // Module's own identity (Identity type)
+ctx.database_identity() // Module's own identity (Identity type)
 ctx.rng()               // Random number generator (for seeded randomness)
 ```
 
