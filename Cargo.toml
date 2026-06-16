@@ -20,6 +20,7 @@ members = [
   "crates/fs-utils",
   "crates/lib",
   "crates/metrics",
+  "crates/spacetimedb-mcp",
   "crates/paths",
   "crates/pg",
   "crates/physical-plan",
@@ -280,6 +281,8 @@ rustc-hash = "2"
 rustyline = { version = "12.0.0", features = [] }
 scoped-tls = "1.0.1"
 scopeguard = "1.1.0"
+rmcp = "1.7"
+schemars = "1"
 second-stack = "0.3"
 self-replace = "1.5"
 semver = "1"

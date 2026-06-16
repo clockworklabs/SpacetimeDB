@@ -1,0 +1,21 @@
+[package]
+name = "spacetimedb-mcp"
+version = "0.1.0"
+edition.workspace = true
+
+[[bin]]
+name = "spacetimedb-mcp"
+path = "src/main.rs"
+
+[dependencies]
+rmcp = { workspace = true, features = ["server", "transport-io", "macros"] }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true
