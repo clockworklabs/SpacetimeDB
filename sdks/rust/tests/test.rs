@@ -811,6 +811,7 @@ macro_rules! view_pk_tests {
 view_pk_tests!(rust_view_pk, "");
 view_pk_tests!(csharp_view_pk, "-cs");
 view_pk_tests!(typescript_view_pk, "-ts");
+view_pk_tests!(cpp_view_pk, "-cpp");
 
 macro_rules! procedural_view_pk_tests {
     ($mod_name:ident, $module:literal) => {
@@ -850,3 +851,4 @@ macro_rules! procedural_view_pk_tests {
 procedural_view_pk_tests!(rust_procedural_view_pk, "sdk-test-procedural-view-pk");
 procedural_view_pk_tests!(csharp_procedural_view_pk, "sdk-test-procedural-view-pk-cs");
 procedural_view_pk_tests!(typescript_procedural_view_pk, "sdk-test-procedural-view-pk-ts");
+procedural_view_pk_tests!(cpp_procedural_view_pk, "sdk-test-procedural-view-pk-cpp");

@@ -739,6 +739,12 @@ SPACETIMEDB_VIEW(std::vector<Player>, top_players, Public, ViewContext ctx) {
     return ctx.db[player_score].filter(range_from(int32_t(1000))).collect();
 }
 
+// Procedural view with update callbacks.
+SPACETIMEDB_VIEW(std::vector<Player>, top_players_with_updates, Public, ViewContext ctx) {
+    return ctx.db[player_score].filter(range_from(int32_t(1000))).collect();
+}
+VIEW_PrimaryKey(top_players_with_updates, id)
+
 // Perform a generic filter using the query builder.
 // Equivalent to `SELECT * FROM player WHERE score < 1000`.
 SPACETIMEDB_VIEW(Query<Player>, bottom_players, Public, ViewContext ctx) {
