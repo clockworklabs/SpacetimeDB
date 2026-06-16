@@ -46,6 +46,26 @@ _(SpacetimeDB / PostgreSQL L10–L12 are the published finish line; MongoDB fill
 
 All three backends at **100%** (full feature score) at every graded level.
 
+## Time to complete (wall-clock) — lower is better
+
+Sum of `totalDurationSec` across every Claude session (generate + each upgrade + each fix).
+
+| | Through L11 (apples-to-apples) | Published full run (L12) |
+|---|---|---|
+| **MongoDB** | **66.9 min** — 15 runs (11 gen/upgrade + 4 fix) | _L12 pending_ |
+| **SpacetimeDB** | **53.5 min** — 12 runs (11 + 1 fix) | 56.7 min — 13 runs |
+| **PostgreSQL** | **76.8 min** — 19 runs (11 + 8 fix) | 84.4 min — 22 runs |
+
+Same ranking as cost and fix-count: SpacetimeDB fastest, MongoDB middle, PostgreSQL slowest.
+The spread tracks fix cycles — each fix is an extra session, so Mongo's 3 extra fixes vs STDB
+explain most of the ~13-min gap through L11.
+
+> ⚠️ **Least-rigorous metric.** Wall-clock folds in API latency / server load *at run time*.
+> The published runs are April (`20260406`); this run is June (`20260616`) — any change in
+> Sonnet 4.6 serving latency between those dates shows up here but not in tokens or (pricing-
+> confirmed) dollars. Treat time as **directional/supporting**; lead with cost + fix-count +
+> quality, which are environment-independent.
+
 ---
 
 ## Read so far
