@@ -3,7 +3,7 @@
 **Model:** claude-sonnet-4-6
 **Date:** 2026-06-16
 **Backend:** mongodb
-**Level:** 10
+**Level:** 11
 **Grading Method:** Manual browser interaction
 
 ---
@@ -21,13 +21,11 @@
 ## Feature 11: Message Threading (Score: 3 / 3)
 ## Feature 12: Private Rooms & Direct Messages (Score: 3 / 3)
 ## Feature 13: Room Activity Indicators (Score: 3 / 3)
-**Browser Test Observations:** Activity badge rises live (⚡ Active after ≥1 msg in 2 min,
-🔥 Hot after ≥5 msgs in 5 min) on the room list with no refresh, AND decays live when the
-room goes quiet — the badge steps down / clears on its own as the 2-min / 5-min windows
-expire. One fix iteration: initial generate raised the badge but never lowered it without a
-manual refresh (no server-side periodic re-evaluation). Fixed by adding a 15-second timer
-that re-evaluates each tracked room's activity level and broadcasts `room-activity` on decay.
-Features 1–12 regression-checked, no regressions.
+## Feature 14: Draft Sync (Score: 3 / 3)
+**Browser Test Observations:** Unsent drafts persist per-room across navigation, sync live
+across the same user's open tabs (type in one tab → appears in the other with no refresh),
+survive a page reload (server-backed via `GET /api/drafts`), and clear everywhere on send.
+Features 1–13 regression-checked, no regressions. Passed on first generate (no fix needed).
 
 ---
 
@@ -47,8 +45,9 @@ Features 1–12 regression-checked, no regressions.
 | 10. Rich User Presence | 3/3 | |
 | 11. Message Threading | 3/3 | |
 | 12. Private Rooms & DMs | 3/3 | |
-| 13. Room Activity Indicators | 3/3 | new at L10; activity-decay bug fixed in iteration 4 |
-| **TOTAL** | **39/39** | |
+| 13. Room Activity Indicators | 3/3 | |
+| 14. Draft Sync | 3/3 | new at L11 |
+| **TOTAL** | **42/42** | |
 
-**Reprompt count:** 1 (activity-decay fix)
-**Cost:** L10 upgrade $0.75 + fix $0.40 = $1.15
+**Reprompt count:** 0 (passed on first generate)
+**Cost:** L11 upgrade $1.04
