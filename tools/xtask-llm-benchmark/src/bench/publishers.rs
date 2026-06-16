@@ -330,6 +330,10 @@ impl DotnetPublisher {
     fn configure_dotnet_env(cmd: &mut Command) -> &mut Command {
         cmd.env("DOTNET_CLI_TELEMETRY_OPTOUT", "1")
             .env("DOTNET_NOLOGO", "1")
+            // The CI runner's .NET install can crash while formatting localized
+            // DateTime/TimeZoneInfo data before publish starts. Force invariant
+            // globalization so generated C# module publish reaches MSBuild.
+            .env("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", "1")
             // Prevent MSBuild node reuse issues that cause "Pipe is broken" errors
             // when running multiple dotnet builds in parallel.
             .env("MSBUILDDISABLENODEREUSE", "1")
