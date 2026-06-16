@@ -1,11 +1,37 @@
 #![allow(clippy::disallowed_macros)]
 
 use spacetimedb_data_structures::map::{HashMap, HashSet};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
 
 const TEST_TIMEOUT_SECS: u64 = 5 * 60;
+pub const TEST_SERVER_URL_ENV_VAR: &str = "SPACETIME_SDK_TEST_SERVER_URL";
+
+static SERVER_URL: OnceLock<String> = OnceLock::new();
+
+pub fn set_server_url(url: String) {
+    if SERVER_URL.set(url).is_err() {
+        panic!("{TEST_SERVER_URL_ENV_VAR} was set more than once");
+    }
+}
+
+pub fn server_url() -> &'static str {
+    SERVER_URL.get_or_init(server_url_from_env).as_str()
+}
+
+fn server_url_from_env() -> String {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::env::var(TEST_SERVER_URL_ENV_VAR)
+            .unwrap_or_else(|_| panic!("{TEST_SERVER_URL_ENV_VAR} must be set by the SDK test harness"))
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        panic!("{TEST_SERVER_URL_ENV_VAR} must be passed to the wasm SDK test harness")
+    }
+}
 
 #[derive(Default)]
 struct TestCounterInner {

@@ -13,15 +13,13 @@ use spacetimedb_sdk::{
     i256, u256, Compression, ConnectionId, DbConnectionBuilder, DbContext, Event, Identity, ReducerEvent, Status,
     SubscriptionHandle, Table, TimeDuration, Timestamp, Uuid,
 };
-use test_counter::TestCounter;
+use test_counter::{server_url, TestCounter};
 
 use crate::simple_test_table::{insert_one, on_insert_one, SimpleTestTable};
 
 use crate::pk_test_table::{insert_update_delete_one, PkTestTable};
 
 use crate::unique_test_table::{insert_then_delete_one, UniqueTestTable};
-
-const LOCALHOST: &str = "http://localhost:3000";
 
 /// `Timestamp::now()` is stubbed on `wasm32-unknown-unknown`, so client-side tests
 /// that need a timestamp value must use a deterministic literal instead of wall-clock time.
@@ -89,6 +87,7 @@ pub async fn dispatch(test: &str, db_name: &str) {
 
         // "resubscribe" => exec_resubscribe(),
         //
+        "reauth" => exec_reauth(db_name).await,
         "reauth-part-1" => exec_reauth_part_1(db_name).await,
         "reauth-part-2" => exec_reauth_part_2(db_name).await,
 
@@ -372,7 +371,7 @@ async fn connect_with_then(
     let name = db_name.to_owned();
     let builder = DbConnection::builder()
         .with_database_name(name)
-        .with_uri(LOCALHOST)
+        .with_uri(server_url())
         .on_connect(|ctx, _, _| {
             callback(ctx);
             connected_result(Ok(()));
@@ -1724,8 +1723,13 @@ async fn exec_insert_primitives_as_strings(db_name: &str) {
 // }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn creds_store() -> credentials::File {
-    credentials::File::new("rust-sdk-test")
+fn creds_store(db_name: &str) -> credentials::File {
+    credentials::File::new(format!("rust-sdk-test-{db_name}"))
+}
+
+async fn exec_reauth(db_name: &str) {
+    exec_reauth_part_1(db_name).await;
+    exec_reauth_part_2(db_name).await;
 }
 
 /// Part of the `reauth` test, this connects to Spacetime to get new credentials,
@@ -1737,14 +1741,15 @@ async fn exec_reauth_part_1(db_name: &str) {
     let name = db_name.to_owned();
 
     let save_result = test_counter.add_test("save-credentials");
+    let creds = creds_store(db_name);
 
     DbConnection::builder()
-        .on_connect(|_, _identity, token| {
-            save_result(creds_store().save(token).map_err(Into::into));
+        .on_connect(move |_, _identity, token| {
+            save_result(creds.save(token).map_err(Into::into));
         })
         .on_connect_error(|_ctx, error| panic!("Connect failed: {error:?}"))
         .with_database_name(name)
-        .with_uri(LOCALHOST)
+        .with_uri(server_url())
         .build()
         .unwrap()
         .run_threaded();
@@ -1764,7 +1769,7 @@ async fn exec_reauth_part_2(db_name: &str) {
 
     let creds_match_result = test_counter.add_test("creds-match");
 
-    let token = creds_store().load().unwrap().unwrap();
+    let token = creds_store(db_name).load().unwrap().unwrap();
 
     DbConnection::builder()
         .on_connect({
@@ -1780,7 +1785,7 @@ async fn exec_reauth_part_2(db_name: &str) {
         .on_connect_error(|_ctx, error| panic!("Connect failed: {error:?}"))
         .with_database_name(name)
         .with_token(Some(token))
-        .with_uri(LOCALHOST)
+        .with_uri(server_url())
         .build()
         .unwrap()
         .run_threaded();
@@ -1811,7 +1816,7 @@ async fn exec_reconnect_different_connection_id(db_name: &str) {
     let initial_connection = build_and_run(
         DbConnection::builder()
             .with_database_name(db_name)
-            .with_uri(LOCALHOST)
+            .with_uri(server_url())
             .on_connect_error(|_ctx, error| panic!("on_connect_error: {error:?}"))
             .on_connect(move |_, _, _| {
                 initial_connect_result(Ok(()));
@@ -1838,7 +1843,7 @@ async fn exec_reconnect_different_connection_id(db_name: &str) {
     let _re_connection = build_and_run(
         DbConnection::builder()
             .with_database_name(db_name)
-            .with_uri(LOCALHOST)
+            .with_uri(server_url())
             .on_connect_error(|_ctx, error| panic!("on_connect_error: {error:?}"))
             .on_connect(move |ctx, _, _| {
                 reconnect_result(Ok(()));

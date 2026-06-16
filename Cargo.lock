@@ -8748,6 +8748,7 @@ dependencies = [
  "spacetimedb-client-api-messages",
  "spacetimedb-core",
  "spacetimedb-data-structures",
+ "spacetimedb-guard",
  "spacetimedb-lib",
  "spacetimedb-paths",
  "spacetimedb-schema",
