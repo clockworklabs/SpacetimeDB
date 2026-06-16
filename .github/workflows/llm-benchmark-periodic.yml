@@ -64,13 +64,9 @@ jobs:
       - name: Setup .NET SDK
         env:
           DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
-        run: |
-          DOTNET_INSTALL_DIR="${RUNNER_TEMP}/dotnet-8"
-          curl -fsSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh
-          bash dotnet-install.sh --channel 8.0 --install-dir "$DOTNET_INSTALL_DIR" --no-path
-          echo "DOTNET_ROOT=$DOTNET_INSTALL_DIR" >> "$GITHUB_ENV"
-          echo "$DOTNET_INSTALL_DIR" >> "$GITHUB_PATH"
-          "$DOTNET_INSTALL_DIR/dotnet" --info
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
 
       - name: Install WASI workload
         env:
@@ -79,9 +75,7 @@ jobs:
           DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
           DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
         run: |
-          dotnet --info
           dotnet workload install wasi-experimental --skip-manifest-update --disable-parallel
-          dotnet workload list
 
       - name: Pack C# runtime packages
         if: ${{ github.event_name != 'workflow_dispatch' || contains(inputs.languages || 'rust,csharp,typescript', 'csharp') }}
@@ -133,8 +127,6 @@ jobs:
           MSBUILDDISABLENODEREUSE: "1"
           DOTNET_CLI_USE_MSBUILD_SERVER: "0"
           LLM_BENCH_CSHARP_CONCURRENCY: "1"
-          LLM_DEBUG: "1"
-          LLM_DEBUG_VERBOSE: "1"
           INPUT_LANGUAGES: ${{ inputs.languages || 'rust,csharp,typescript' }}
           INPUT_MODEL_SET: ${{ inputs.model_set || 'website_active' }}
           INPUT_MODELS: ${{ inputs.models || '' }}
@@ -219,48 +211,3 @@ jobs:
             echo "::error::$FAILED benchmark run(s) failed"
             exit 1
           fi
-
-      - name: Analyze .NET crash dumps
-        if: failure()
-        run: |
-          set +e
-          mkdir -p target/llm-dry-run-analysis/dotnet-dumps
-
-          mapfile -t DUMPS < <(find target/llm-runs -type f -name 'dotnet-dump-*' 2>/dev/null | sort)
-          if [ "${#DUMPS[@]}" -eq 0 ]; then
-            echo "No .NET crash dumps found."
-            exit 0
-          fi
-
-          TOOL_DIR="${RUNNER_TEMP}/dotnet-tools"
-          mkdir -p "$TOOL_DIR"
-          if ! dotnet tool install --tool-path "$TOOL_DIR" dotnet-dump; then
-            echo "::warning::failed to install dotnet-dump; raw dumps will still be uploaded"
-            exit 0
-          fi
-
-          for DUMP in "${DUMPS[@]}"; do
-            SAFE_NAME="$(echo "$DUMP" | tr '/ ' '__')"
-            OUT="target/llm-dry-run-analysis/dotnet-dumps/${SAFE_NAME}.txt"
-            {
-              echo "Dump: $DUMP"
-              echo
-              "$TOOL_DIR/dotnet-dump" analyze "$DUMP" \
-                --command "clrthreads" \
-                --command "threads" \
-                --command "clrstack -all" \
-                --command "pe" \
-                --command "exit"
-            } > "$OUT" 2>&1
-            cat "$OUT"
-          done
-
-      - name: Upload LLM benchmark debug artifacts
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: llm-benchmark-debug-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            target/llm-runs
-            target/llm-dry-run-analysis
-          if-no-files-found: ignore

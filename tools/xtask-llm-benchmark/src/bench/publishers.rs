@@ -1,9 +1,8 @@
-use crate::bench::utils::{debug_llm, debug_llm_verbose, sanitize_db_name};
+use crate::bench::utils::sanitize_db_name;
 use anyhow::{bail, Context, Result};
 use regex::Regex;
 use std::borrow::Cow;
 use std::env;
-use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -239,33 +238,6 @@ fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
         || combined.contains("code <signal")
 }
 
-fn os_string(value: &OsStr) -> String {
-    value.to_string_lossy().into_owned()
-}
-
-fn log_command_context(cmd: &Command, label: &str) {
-    eprintln!("⚠️ {label}: program: {}", os_string(cmd.get_program()));
-    let args: Vec<_> = cmd.get_args().map(os_string).collect();
-    eprintln!("⚠️ {label}: args: {:?}", args);
-    eprintln!(
-        "⚠️ {label}: cwd: {}",
-        cmd.get_current_dir()
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|| env::current_dir()
-                .map(|path| path.display().to_string())
-                .unwrap_or_default())
-    );
-
-    let env_overrides: Vec<_> = cmd
-        .get_envs()
-        .map(|(key, value)| {
-            let value = value.map(os_string).unwrap_or_else(|| "<removed>".to_string());
-            format!("{}={value}", os_string(key))
-        })
-        .collect();
-    eprintln!("⚠️ {label}: env overrides: {:?}", env_overrides);
-}
-
 fn run(cmd: &mut Command, label: &str) -> Result<()> {
     run_with_retry(cmd, label, 3)
 }
@@ -303,8 +275,6 @@ fn run_with_retry(cmd: &mut Command, label: &str, max_retries: u32) -> Result<()
         if out.status.success() {
             return Ok(());
         }
-
-        log_command_context(cmd, label);
 
         let code = out.status.code().unwrap_or(-1);
         let stderr_raw = String::from_utf8_lossy(&out.stderr);
@@ -360,87 +330,14 @@ impl DotnetPublisher {
     fn configure_dotnet_env(cmd: &mut Command) -> &mut Command {
         cmd.env("DOTNET_CLI_TELEMETRY_OPTOUT", "1")
             .env("DOTNET_NOLOGO", "1")
+            // The CI runner's .NET install can crash while formatting localized
+            // DateTime/TimeZoneInfo data before publish starts. Force invariant
+            // globalization so generated C# module publish reaches MSBuild.
             .env("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", "1")
             // Prevent MSBuild node reuse issues that cause "Pipe is broken" errors
             // when running multiple dotnet builds in parallel.
             .env("MSBUILDDISABLENODEREUSE", "1")
             .env("DOTNET_CLI_USE_MSBUILD_SERVER", "0")
-            // The workflow has already installed and verified wasi-experimental.
-            // Avoid the CLI's duplicate `dotnet workload list` probe, which can
-            // crash in CI before we reach the actual generated module build.
-            .env("SPACETIME_SKIP_DOTNET_WORKLOAD_CHECK", "1")
-            .env("SPACETIME_DOTNET_PUBLISH_VERBOSITY", "normal")
-    }
-
-    fn log_dotnet_probe(args: &[&str], label: &str) {
-        let mut cmd = Command::new("dotnet");
-        cmd.args(args);
-        Self::configure_dotnet_env(&mut cmd);
-
-        eprintln!("==> {label}: {:?}", cmd);
-        match cmd.output() {
-            Ok(out) => {
-                let stdout_raw = String::from_utf8_lossy(&out.stdout);
-                let stderr_raw = String::from_utf8_lossy(&out.stderr);
-                let stdout = strip_ansi_codes(&stdout_raw);
-                let stderr = strip_ansi_codes(&stderr_raw);
-                eprintln!("--- {label} status ---\n{}", out.status);
-                eprintln!("--- {label} stdout ---\n{stdout}");
-                eprintln!("--- {label} stderr ---\n{stderr}");
-            }
-            Err(error) => eprintln!("--- {label} failed to start ---\n{error}"),
-        }
-    }
-
-    fn log_csharp_source_context(source: &Path) -> Result<()> {
-        eprintln!("C# publish source: {}", source.display());
-
-        let mut entries = Vec::new();
-        for ent in fs::read_dir(source).with_context(|| format!("failed to read {}", source.display()))? {
-            let ent = ent?;
-            let path = ent.path();
-            let kind = if path.is_dir() { "dir" } else { "file" };
-            entries.push(format!("{kind}: {}", path.display()));
-        }
-        entries.sort();
-        eprintln!("C# publish source top-level entries:\n{}", entries.join("\n"));
-
-        let mut project_files = Vec::new();
-        for ent in fs::read_dir(source)? {
-            let ent = ent?;
-            let path = ent.path();
-            if path.extension().is_some_and(|ext| ext == "csproj") {
-                project_files.push(path);
-            }
-        }
-        project_files.sort();
-        for path in project_files {
-            match fs::read_to_string(&path) {
-                Ok(contents) => {
-                    let contents: String = contents.chars().take(16_000).collect();
-                    eprintln!("--- {} ---\n{contents}", path.display());
-                }
-                Err(error) => eprintln!("failed to read {}: {error}", path.display()),
-            }
-        }
-
-        for file_name in ["NuGet.config", "nuget.config", "global.json"] {
-            let path = source.join(file_name);
-            if path.exists() {
-                match fs::read_to_string(&path) {
-                    Ok(contents) => eprintln!("--- {} ---\n{contents}", path.display()),
-                    Err(error) => eprintln!("failed to read {}: {error}", path.display()),
-                }
-            }
-        }
-
-        if debug_llm_verbose() {
-            Self::log_dotnet_probe(&["--info"], "dotnet --info");
-            Self::log_dotnet_probe(&["workload", "list"], "dotnet workload list");
-            Self::log_dotnet_probe(&["nuget", "locals", "all", "--list"], "dotnet nuget locals all --list");
-        }
-
-        Ok(())
     }
 }
 
@@ -452,9 +349,6 @@ impl Publisher for DotnetPublisher {
         println!("publish csharp module {}", module_name);
 
         Self::ensure_csproj(source)?;
-        if debug_llm() {
-            Self::log_csharp_source_context(source)?;
-        }
 
         let db = sanitize_db_name(module_name);
         let source = source
@@ -474,14 +368,6 @@ impl Publisher for DotnetPublisher {
             .arg(&db)
             .current_dir(&source);
         Self::configure_dotnet_env(&mut pubcmd);
-        pubcmd
-            .env("DOTNET_DbgEnableMiniDump", "1")
-            .env("DOTNET_DbgMiniDumpType", "4")
-            .env(
-                "DOTNET_DbgMiniDumpName",
-                source.join("dotnet-dump-%p").display().to_string(),
-            )
-            .env("SPACETIME_DOTNET_PUBLISH_BINLOG", "1");
         run(&mut pubcmd, "spacetime publish (csharp)")?;
 
         Ok(())
