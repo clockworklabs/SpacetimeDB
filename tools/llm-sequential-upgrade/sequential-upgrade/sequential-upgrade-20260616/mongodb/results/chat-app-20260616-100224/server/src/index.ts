@@ -31,6 +31,8 @@ const userSockets = new Map<string, Set<string>>();
 
 // roomId -> array of recent message timestamps (for activity tracking)
 const roomActivityTimestamps = new Map<string, Date[]>();
+// roomId -> last emitted activity level (to detect changes during decay)
+const lastEmittedActivityLevel = new Map<string, 'hot' | 'active' | ''>();
 
 function getActivityLevel(roomId: string): 'hot' | 'active' | '' {
   const timestamps = roomActivityTimestamps.get(roomId);
@@ -49,7 +51,9 @@ function trackMessageActivity(roomId: string): void {
   timestamps.push(new Date());
   const cutoff = new Date(Date.now() - 10 * 60 * 1000);
   roomActivityTimestamps.set(roomId, timestamps.filter((t) => t > cutoff));
-  io.emit('room-activity', { roomId, level: getActivityLevel(roomId) });
+  const level = getActivityLevel(roomId);
+  lastEmittedActivityLevel.set(roomId, level);
+  io.emit('room-activity', { roomId, level });
 }
 
 function clearTyping(roomId: string, userName: string): void {
@@ -686,6 +690,25 @@ setInterval(async () => {
     console.error('Ephemeral message cleanup error:', err);
   }
 }, 5000);
+
+// Periodically re-evaluate activity levels so badges decay in real time when rooms go quiet
+setInterval(() => {
+  for (const [roomId, timestamps] of roomActivityTimestamps.entries()) {
+    const cutoff = new Date(Date.now() - 10 * 60 * 1000);
+    const fresh = timestamps.filter((t) => t > cutoff);
+    if (fresh.length !== timestamps.length) roomActivityTimestamps.set(roomId, fresh);
+    const level = getActivityLevel(roomId);
+    const prev = lastEmittedActivityLevel.get(roomId) ?? '';
+    if (level !== prev) {
+      lastEmittedActivityLevel.set(roomId, level);
+      io.emit('room-activity', { roomId, level });
+    }
+    if (fresh.length === 0) {
+      roomActivityTimestamps.delete(roomId);
+      lastEmittedActivityLevel.delete(roomId);
+    }
+  }
+}, 15000);
 
 const PORT = Number(process.env.PORT) || 6001;
 httpServer.listen(PORT, () => {

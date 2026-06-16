@@ -36,3 +36,14 @@
 **Redeploy:** Server only
 
 **Server verified:** Client at http://localhost:6373 ✓
+
+## Iteration 4 — Fix (14:50)
+
+**Category:** Feature Broken
+**What broke:** Room activity badge (🔥 Hot / ⚡ Active) did not decay in real time — once set, it stayed until the page was manually refreshed.
+**Root cause:** `trackMessageActivity` emits a `room-activity` event on every new message, so badges go up correctly. But there was no periodic re-evaluation on the server: when a room went quiet, the in-memory timestamps aged past the 2-minute / 5-minute windows but no event was ever sent to clients to lower the badge.
+**What I fixed:** Added a `lastEmittedActivityLevel` map to track the last broadcast level per room. Added a 15-second `setInterval` that re-evaluates `getActivityLevel` for every tracked room, emits `room-activity` when the level changes (i.e., decays), and prunes rooms whose timestamp window is fully expired.
+**Files changed:** server/src/index.ts (lines 33-53, 695-711)
+**Redeploy:** Server only
+
+**Server verified:** Client at http://localhost:6373 ✓

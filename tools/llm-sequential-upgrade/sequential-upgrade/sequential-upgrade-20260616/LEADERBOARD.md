@@ -4,7 +4,7 @@
 Same model (**claude-sonnet-4-6**), same composed prompts, same feature spec, exhaustive
 fix-to-100% at every level. Cost = Claude Code `cost_usd` (OTel), apples-to-apples.
 
-_Last updated: through **L9** (L10 next)._
+_Last updated: through **L10** (L11 next)._
 
 ---
 
@@ -21,7 +21,7 @@ _Last updated: through **L9** (L10 next)._
 | L7  Rich Presence | **7.54** | 8.08 | 12.27 |
 | L8  Message Threading | 9.30 | **9.06** | 14.19 |
 | L9  Private Rooms & DMs | 10.75 | **10.45** | 15.96 |
-| L10 Activity Indicators | — | 11.27 | 16.53 |
+| L10 Activity Indicators | 11.90 | **11.27** | 16.53 |
 | L11 Draft Sync | — | 11.67 | 17.47 |
 | L12 Anonymous Migration | — | 12.62 | 19.68 |
 
@@ -34,10 +34,11 @@ _(SpacetimeDB / PostgreSQL L10–L12 are the published finish line; MongoDB fill
 
 | Through | MongoDB | SpacetimeDB | PostgreSQL |
 |---|---|---|---|
-| L9 | 3 (L1, L7, L8) | 1 (L1) | 8 |
+| L10 | 4 (L1, L7, L8, L10) | 1 (L1) | 8 |
 
-> SpacetimeDB has been bug-free since L1. MongoDB took fixes at L7 (3 presence bugs) and
-> L8 (1 threading bug). PostgreSQL's 8 fixes were front-loaded (worst at L1).
+> SpacetimeDB has been bug-free since L1. MongoDB took fixes at L7 (3 presence bugs),
+> L8 (1 threading bug), and L10 (1 activity-decay bug). PostgreSQL's 8 fixes were
+> front-loaded (worst at L1).
 > **PG per-level caveat:** PG fix telemetry is all mislabeled `fix-level1`; cumulative
 > totals are correct but per-level distribution is not (PG bug reports span L1–L7).
 
@@ -52,7 +53,10 @@ All three backends at **100%** (full feature score) at every graded level.
 - **Cost:** MongoDB and SpacetimeDB are neck-and-neck (~$9, within ~3% at L8), both
   ~35% under PostgreSQL.
 - **Bugs:** SpacetimeDB cleanest (1), MongoDB close (3), PostgreSQL a mess (8).
-- **Trajectory:** the back half (private rooms, drafts, anon-migration) keeps stressing
-  sync, where SpacetimeDB's built-in model is expected to hold its small lead.
+- **Trajectory:** the back half keeps stressing sync, where SpacetimeDB's built-in model
+  holds its small lead. L10 (activity indicators) was a textbook example — Mongo's badge
+  rose live but didn't decay without a server-side re-evaluation timer (same class of bug
+  as L7 presence), costing a 4th fix cycle. STDB leads on cost at L10 ($11.27 vs $11.90).
+  Two levels left: L11 Draft Sync, L12 Anonymous Migration.
 
 _Bug-rate detail per level lives in each run's `level-N/BUG_REPORT.md`._

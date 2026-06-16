@@ -3,7 +3,7 @@
 **Model:** claude-sonnet-4-6
 **Date:** 2026-06-16
 **Backend:** mongodb
-**Level:** 9
+**Level:** 10
 **Grading Method:** Manual browser interaction
 
 ---
@@ -20,9 +20,14 @@
 ## Feature 10: Rich User Presence (Score: 3 / 3)
 ## Feature 11: Message Threading (Score: 3 / 3)
 ## Feature 12: Private Rooms & Direct Messages (Score: 3 / 3)
-**Browser Test Observations:** Private/invite-only rooms hidden from the public list, invite-by-username
-works, non-invited users can't see private content, and DMs are visible only to the two participants.
-Features 1–11 regression-checked, no regressions. Passed on first generate (no fix needed).
+## Feature 13: Room Activity Indicators (Score: 3 / 3)
+**Browser Test Observations:** Activity badge rises live (⚡ Active after ≥1 msg in 2 min,
+🔥 Hot after ≥5 msgs in 5 min) on the room list with no refresh, AND decays live when the
+room goes quiet — the badge steps down / clears on its own as the 2-min / 5-min windows
+expire. One fix iteration: initial generate raised the badge but never lowered it without a
+manual refresh (no server-side periodic re-evaluation). Fixed by adding a 15-second timer
+that re-evaluates each tracked room's activity level and broadcasts `room-activity` on decay.
+Features 1–12 regression-checked, no regressions.
 
 ---
 
@@ -41,8 +46,9 @@ Features 1–11 regression-checked, no regressions. Passed on first generate (no
 | 9. Real-Time Permissions | 3/3 | |
 | 10. Rich User Presence | 3/3 | |
 | 11. Message Threading | 3/3 | |
-| 12. Private Rooms & DMs | 3/3 | new at L9 |
-| **TOTAL** | **36/36** | |
+| 12. Private Rooms & DMs | 3/3 | |
+| 13. Room Activity Indicators | 3/3 | new at L10; activity-decay bug fixed in iteration 4 |
+| **TOTAL** | **39/39** | |
 
-**Reprompt count:** 0 (passed on first generate)
-**Cost:** L9 upgrade $1.45
+**Reprompt count:** 1 (activity-decay fix)
+**Cost:** L10 upgrade $0.75 + fix $0.40 = $1.15
