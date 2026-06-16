@@ -98,11 +98,16 @@ PG_PORT=6432  # Shared container, isolation via per-run database names
 MONGO_PORT=6437  # Shared container, isolation via per-run database names
 STDB_PORT=3000  # SpacetimeDB server is shared, modules are isolated by name
 
-case "$BACKEND" in
-  spacetime) VITE_PORT=$VITE_PORT_STDB ;;
-  mongodb)   VITE_PORT=$VITE_PORT_MONGO ;;
-  *)         VITE_PORT=$VITE_PORT_PG ;;  # postgres
-esac
+# Select VITE_PORT for the current $BACKEND. Called again after fix/upgrade
+# backend detection, since $BACKEND can change once the app dir is inspected.
+select_vite_port() {
+  case "$BACKEND" in
+    spacetime) VITE_PORT=$VITE_PORT_STDB ;;
+    mongodb)   VITE_PORT=$VITE_PORT_MONGO ;;
+    *)         VITE_PORT=$VITE_PORT_PG ;;  # postgres
+  esac
+}
+select_vite_port
 
 # Variant-specific defaults
 if [[ "$VARIANT" == "one-shot" ]]; then
@@ -319,6 +324,9 @@ if [[ -n "$UPGRADE_MODE" || -n "$FIX_MODE" ]]; then
   # paths. Must happen here so $BACKEND is correct for TELEMETRY_DIR below.
   _detected="$(detect_backend "$APP_DIR")"
   [[ "$_detected" != "unknown" ]] && BACKEND="$_detected"
+  # Backend may have changed — recompute the Vite port so fix/upgrade prompts
+  # reference the correct one (e.g. mongodb 6373, not the pre-detection default).
+  select_vite_port
   # Walk up from app dir: chat-app-* → results → <backend> → <variant>-DATE
   RUN_BASE_DIR="$(cd "$APP_DIR/../../.." 2>/dev/null && pwd)"
   # Validate it looks like a run base dir (has a backend subdirectory)

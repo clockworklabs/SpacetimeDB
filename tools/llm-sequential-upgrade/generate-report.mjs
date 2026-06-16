@@ -22,20 +22,24 @@ if (!runBaseDir) {
   process.exit(1);
 }
 
-// Find all cost-summary.json files
-const telemetryDir = path.join(runBaseDir, 'telemetry');
-if (!fs.existsSync(telemetryDir)) {
-  console.error(`Telemetry directory not found: ${telemetryDir}`);
+// Find all cost-summary.json files. Layout is per-backend:
+//   <runBaseDir>/<backend>/telemetry/<run-id>/cost-summary.json
+if (!fs.existsSync(runBaseDir)) {
+  console.error(`Run base directory not found: ${runBaseDir}`);
   process.exit(1);
 }
 
 const summaries = [];
-for (const entry of fs.readdirSync(telemetryDir)) {
-  const summaryPath = path.join(telemetryDir, entry, 'cost-summary.json');
-  if (fs.existsSync(summaryPath)) {
-    const data = JSON.parse(fs.readFileSync(summaryPath, 'utf-8'));
-    data._dir = entry;
-    summaries.push(data);
+for (const backendEntry of fs.readdirSync(runBaseDir)) {
+  const telemetryDir = path.join(runBaseDir, backendEntry, 'telemetry');
+  if (!fs.existsSync(telemetryDir) || !fs.statSync(telemetryDir).isDirectory()) continue;
+  for (const entry of fs.readdirSync(telemetryDir)) {
+    const summaryPath = path.join(telemetryDir, entry, 'cost-summary.json');
+    if (fs.existsSync(summaryPath)) {
+      const data = JSON.parse(fs.readFileSync(summaryPath, 'utf-8'));
+      data._dir = entry;
+      summaries.push(data);
+    }
   }
 }
 
@@ -79,7 +83,7 @@ function calcTotals(runs) {
 
 // Read GRADING_RESULTS.md for feature scores
 function readGradingScores(backend) {
-  const resultsDir = path.join(runBaseDir, 'results', backend);
+  const resultsDir = path.join(runBaseDir, backend, 'results');
   if (!fs.existsSync(resultsDir)) return null;
 
   const appDirs = fs.readdirSync(resultsDir)
@@ -113,7 +117,7 @@ function readGradingScores(backend) {
 
 // Count lines of code in app dir
 function countLoc(backend) {
-  const resultsDir = path.join(runBaseDir, 'results', backend);
+  const resultsDir = path.join(runBaseDir, backend, 'results');
   if (!fs.existsSync(resultsDir)) return null;
 
   const appDirs = fs.readdirSync(resultsDir)
