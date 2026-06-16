@@ -1,0 +1,18 @@
+{
+  "backend": "mongodb",
+  "level": 11,
+  "variant": "sequential-upgrade",
+  "rules": "guided",
+  "runIndex": 0,
+  "sessionId": "1630809b-bac1-482e-983e-59b8d7fb4f18",
+  "startedAt": "2026-06-16T19:00:00Z",
+  "endedAt": "2026-06-16T19:06:10Z",
+  "totalInputTokens": 2605,
+  "totalOutputTokens": 18417,
+  "totalTokens": 21022,
+  "cacheReadTokens": 2021318,
+  "cacheCreationTokens": 41676,
+  "totalCostUsd": 1.0414504,
+  "apiCalls": 26,
+  "totalDurationSec": 275.395
+}
