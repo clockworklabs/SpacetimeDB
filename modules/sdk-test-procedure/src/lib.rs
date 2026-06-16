@@ -42,7 +42,7 @@ fn will_panic(_ctx: &mut ProcedureContext) {
 
 #[procedure]
 fn read_my_schema(ctx: &mut ProcedureContext) -> String {
-    let module_identity = ctx.identity();
+    let module_identity = ctx.database_identity();
     match ctx.http.get(format!(
         "http://localhost:3000/v1/database/{module_identity}/schema?version=9"
     )) {
