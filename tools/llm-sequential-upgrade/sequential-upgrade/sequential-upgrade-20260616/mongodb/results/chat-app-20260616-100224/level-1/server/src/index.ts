@@ -4,7 +4,7 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import mongoose from 'mongoose';
-import { User, Room, Message, ScheduledMessage } from './models.js';
+import { User, Room, Message } from './models.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -181,42 +181,6 @@ app.get('/api/rooms/:roomId/unread', async (req: Request, res: Response): Promis
   res.json({ count });
 });
 
-app.post('/api/rooms/:roomId/scheduled', async (req: Request, res: Response): Promise<void> => {
-  const sender = typeof req.body?.sender === 'string' ? req.body.sender.trim() : '';
-  const text = typeof req.body?.text === 'string' ? req.body.text.trim().slice(0, 2000) : '';
-  const scheduledAtRaw = req.body?.scheduledAt;
-  if (!sender || !text || !scheduledAtRaw) {
-    res.status(400).json({ error: 'sender, text, and scheduledAt are required' });
-    return;
-  }
-  const scheduledAt = new Date(scheduledAtRaw as string);
-  if (isNaN(scheduledAt.getTime()) || scheduledAt <= new Date()) {
-    res.status(400).json({ error: 'scheduledAt must be a future date' });
-    return;
-  }
-  const scheduled = await ScheduledMessage.create({ roomId: req.params.roomId, sender, text, scheduledAt });
-  res.json({ scheduled });
-});
-
-app.get('/api/rooms/:roomId/scheduled', async (req: Request, res: Response): Promise<void> => {
-  const userName = req.query.userName;
-  if (typeof userName !== 'string' || !userName) {
-    res.status(400).json({ error: 'userName query param required' });
-    return;
-  }
-  const scheduled = await ScheduledMessage.find({
-    roomId: req.params.roomId,
-    sender: userName,
-    sent: false,
-  }).sort({ scheduledAt: 1 });
-  res.json({ scheduled });
-});
-
-app.delete('/api/scheduled/:id', async (req: Request, res: Response): Promise<void> => {
-  await ScheduledMessage.findByIdAndDelete(req.params.id);
-  res.json({ ok: true });
-});
-
 io.on('connection', (socket) => {
   let currentUser: string | null = null;
 
@@ -289,27 +253,6 @@ io.on('connection', (socket) => {
     io.emit('online-users', { users: online.map((u) => u.name) });
   });
 });
-
-setInterval(async () => {
-  try {
-    const due = await ScheduledMessage.find({ sent: false, scheduledAt: { $lte: new Date() } });
-    for (const scheduled of due) {
-      const msg = await Message.create({
-        roomId: scheduled.roomId,
-        sender: scheduled.sender,
-        text: scheduled.text,
-        readBy: [scheduled.sender],
-      });
-      scheduled.sent = true;
-      await scheduled.save();
-      const roomId = scheduled.roomId.toString();
-      io.to(roomId).emit('message', { message: msg });
-      io.to(roomId).emit('scheduled-message-sent', { scheduledId: scheduled._id.toString() });
-    }
-  } catch (err) {
-    console.error('Scheduled message poll error:', err);
-  }
-}, 10000);
 
 const PORT = Number(process.env.PORT) || 6001;
 httpServer.listen(PORT, () => {

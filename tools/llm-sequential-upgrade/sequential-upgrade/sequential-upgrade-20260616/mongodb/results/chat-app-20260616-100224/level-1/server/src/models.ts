@@ -51,25 +51,3 @@ const MessageSchema = new Schema<IMessage>({
 MessageSchema.index({ roomId: 1, createdAt: 1 });
 
 export const Message = mongoose.model<IMessage>('Message', MessageSchema);
-
-export interface IScheduledMessage extends Document {
-  roomId: mongoose.Types.ObjectId;
-  sender: string;
-  text: string;
-  scheduledAt: Date;
-  sent: boolean;
-  createdAt: Date;
-}
-
-const ScheduledMessageSchema = new Schema<IScheduledMessage>({
-  roomId: { type: Schema.Types.ObjectId, ref: 'Room', required: true },
-  sender: { type: String, required: true },
-  text: { type: String, required: true, maxlength: 2000 },
-  scheduledAt: { type: Date, required: true },
-  sent: { type: Boolean, default: false },
-  createdAt: { type: Date, default: Date.now },
-});
-
-ScheduledMessageSchema.index({ scheduledAt: 1, sent: 1 });
-
-export const ScheduledMessage = mongoose.model<IScheduledMessage>('ScheduledMessage', ScheduledMessageSchema);

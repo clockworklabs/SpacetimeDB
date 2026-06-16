@@ -17,15 +17,6 @@ interface Message {
   readBy: string[];
 }
 
-interface ScheduledMessage {
-  _id: string;
-  roomId: string;
-  sender: string;
-  text: string;
-  scheduledAt: string;
-  sent: boolean;
-}
-
 const TYPING_STOP_DELAY = 2000;
 
 export default function App() {
@@ -43,9 +34,6 @@ export default function App() {
   const [messageText, setMessageText] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [createRoomError, setCreateRoomError] = useState('');
-  const [scheduledMessages, setScheduledMessages] = useState<ScheduledMessage[]>([]);
-  const [showScheduler, setShowScheduler] = useState(false);
-  const [scheduleTime, setScheduleTime] = useState('');
 
   const socketRef = useRef<Socket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -125,10 +113,6 @@ export default function App() {
       setRooms((prev) => prev.map((r) => (r._id === room._id ? room : r)));
     });
 
-    socket.on('scheduled-message-sent', ({ scheduledId }: { scheduledId: string }) => {
-      setScheduledMessages((prev) => prev.filter((m) => m._id !== scheduledId));
-    });
-
     Promise.all([
       fetch('/api/rooms').then((r) => r.json()),
       fetch('/api/users').then((r) => r.json()),
@@ -175,18 +159,10 @@ export default function App() {
     setCurrentRoomId(roomId);
     setMessages([]);
     setTypingUsers([]);
-    setScheduledMessages([]);
-    setShowScheduler(false);
-    setScheduleTime('');
     setUnreadCounts((prev) => ({ ...prev, [roomId]: 0 }));
     socketRef.current?.emit('join-room', roomId);
-    const uname = userNameRef.current;
-    const [msgData, schedData] = await Promise.all([
-      fetch(`/api/rooms/${roomId}/messages`).then((r) => r.json()),
-      fetch(`/api/rooms/${roomId}/scheduled?userName=${encodeURIComponent(uname)}`).then((r) => r.json()),
-    ]);
-    setMessages(msgData.messages ?? []);
-    setScheduledMessages(schedData.scheduled ?? []);
+    const data = await fetch(`/api/rooms/${roomId}/messages`).then((r) => r.json());
+    setMessages(data.messages ?? []);
     markRead(roomId);
   }, [stopTyping, markRead]);
 
@@ -256,9 +232,6 @@ export default function App() {
       setCurrentRoomId(null);
       setMessages([]);
       setTypingUsers([]);
-      setScheduledMessages([]);
-      setShowScheduler(false);
-      setScheduleTime('');
     }
   };
 
@@ -268,30 +241,11 @@ export default function App() {
     const text = messageText.trim();
     setMessageText('');
     stopTyping();
-    if (scheduleTime) {
-      const res = await fetch(`/api/rooms/${currentRoomId}/scheduled`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sender: userName, text, scheduledAt: new Date(scheduleTime).toISOString() }),
-      });
-      if (res.ok) {
-        const { scheduled } = await res.json();
-        setScheduledMessages((prev) => [...prev, scheduled]);
-        setScheduleTime('');
-        setShowScheduler(false);
-      }
-    } else {
-      await fetch(`/api/rooms/${currentRoomId}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sender: userName, text }),
-      });
-    }
-  };
-
-  const handleCancelScheduled = async (id: string) => {
-    await fetch(`/api/scheduled/${id}`, { method: 'DELETE' });
-    setScheduledMessages((prev) => prev.filter((m) => m._id !== id));
+    await fetch(`/api/rooms/${currentRoomId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sender: userName, text }),
+    });
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -467,47 +421,6 @@ export default function App() {
               <div ref={messagesEndRef} />
             </div>
 
-            {scheduledMessages.length > 0 && (
-              <div className="scheduled-panel">
-                <div className="scheduled-panel-header">Scheduled ({scheduledMessages.length})</div>
-                {scheduledMessages.map((sm) => (
-                  <div key={sm._id} className="scheduled-item">
-                    <span className="scheduled-time">
-                      {new Date(sm.scheduledAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                    <span className="scheduled-text">{sm.text}</span>
-                    <button
-                      className="cancel-scheduled-btn"
-                      onClick={() => handleCancelScheduled(sm._id)}
-                      title="Cancel scheduled message"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {showScheduler && (
-              <div className="scheduler-row">
-                <span className="scheduler-label">Send at:</span>
-                <input
-                  type="datetime-local"
-                  className="schedule-time-input"
-                  value={scheduleTime}
-                  min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
-                  onChange={(e) => setScheduleTime(e.target.value)}
-                />
-                <button
-                  type="button"
-                  className="cancel-scheduler-btn"
-                  onClick={() => { setShowScheduler(false); setScheduleTime(''); }}
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
-
             <form className="input-area" onSubmit={handleSendMessage}>
               <input
                 type="text"
@@ -518,17 +431,7 @@ export default function App() {
                 maxLength={2000}
                 autoFocus
               />
-              <button
-                type="button"
-                className={`schedule-toggle-btn${showScheduler ? ' active' : ''}`}
-                onClick={() => setShowScheduler((v) => !v)}
-                title="Schedule message"
-              >
-                🕐
-              </button>
-              <button type="submit" disabled={!messageText.trim() || (showScheduler && !scheduleTime)}>
-                {showScheduler && scheduleTime ? 'Schedule' : 'Send'}
-              </button>
+              <button type="submit" disabled={!messageText.trim()}>Send</button>
             </form>
           </>
         )}
