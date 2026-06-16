@@ -30,6 +30,7 @@ jobs:
       TARGET_OWNER: clockworklabs
       TARGET_REPO: SpacetimeDBPrivate
     steps:
+      # Required for the path filter check below on non-PR commits (e.g. `master`)
       - name: Checkout
         uses: actions/checkout@v4
 
