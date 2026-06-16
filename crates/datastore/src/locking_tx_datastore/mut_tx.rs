@@ -43,8 +43,9 @@ use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
 use spacetimedb_lib::{
     db::raw_def::v9::RawSql,
     db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP},
+    empty_view_arg_hash_value,
     metrics::ExecutionMetrics,
-    ConnectionId, Identity, Timestamp,
+    sender_view_arg_hash_value, ConnectionId, Identity, Timestamp,
 };
 use spacetimedb_primitives::{
     col_list, ArgId, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
@@ -57,7 +58,10 @@ use spacetimedb_schema::{
     def::{ModuleDef, ViewColumnDef, ViewDef, ViewParamDef},
     identifier::Identifier,
     reducer_name::ReducerName,
-    schema::{ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema},
+    schema::{
+        ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema,
+        VIEW_ARG_HASH_COL,
+    },
     table_name::TableName,
 };
 use spacetimedb_table::{
@@ -2369,6 +2373,16 @@ impl<'a, I: Iterator<Item = RowRef<'a>>> Iterator for FilterDeleted<'a, I> {
 }
 
 impl MutTxId {
+    /// Returns the hash value for an anonymous view's empty arguments.
+    pub fn anonymous_view_arg_hash() -> AlgebraicValue {
+        empty_view_arg_hash_value()
+    }
+
+    /// Returns the hash value for a sender-scoped view's arguments.
+    pub fn view_arg_hash(sender: Identity) -> AlgebraicValue {
+        sender_view_arg_hash_value(sender)
+    }
+
     /// Does this caller have an entry for `view_id` in `st_view_sub`?
     pub fn is_view_materialized(&self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<bool> {
         use StViewSubFields::*;
@@ -2542,14 +2556,15 @@ impl MutTxId {
             } = self.lookup_st_view(view_id)?;
             let table_id = table_id.expect("views have backing table");
 
-            if is_anonymous {
-                if !self.has_other_st_view_sub_entries(view_id, sub_row_ptr)? {
-                    self.clear_table(table_id)?;
-                    self.drop_view_from_committed_read_set(view_id);
-                }
-            } else {
+            let drop_materialization = !is_anonymous || !self.has_other_st_view_sub_entries(view_id, sub_row_ptr)?;
+            if drop_materialization {
+                let arg_hash = if is_anonymous {
+                    Self::anonymous_view_arg_hash()
+                } else {
+                    Self::view_arg_hash(sender)
+                };
                 let rows_to_delete = self
-                    .iter_by_col_eq(table_id, 0, &sender.into())?
+                    .iter_by_col_eq(table_id, VIEW_ARG_HASH_COL, &arg_hash)?
                     .map(|res| res.pointer())
                     .collect::<Vec<_>>();
 
@@ -2557,7 +2572,11 @@ impl MutTxId {
                     self.delete(table_id, row_ptr)?;
                 }
 
-                self.drop_view_with_sender_from_committed_read_set(view_id, sender);
+                if is_anonymous {
+                    self.drop_view_from_committed_read_set(view_id);
+                } else {
+                    self.drop_view_with_sender_from_committed_read_set(view_id, sender);
+                }
             }
 
             // Finally, delete the subscription row
