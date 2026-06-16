@@ -7,5 +7,7 @@ import { type Infer as __Infer } from '../../../../src/index';
 
 // Import all reducer arg schemas
 import CreatePlayerReducer from '../create_player_reducer';
+import SetPlayerAliasReducer from '../set_player_alias_reducer';
 
 export type CreatePlayerParams = __Infer<typeof CreatePlayerReducer>;
+export type SetPlayerAliasParams = __Infer<typeof SetPlayerAliasReducer>;
