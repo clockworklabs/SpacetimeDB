@@ -74,7 +74,7 @@ app.post('/api/users', async (req: Request, res: Response): Promise<void> => {
 });
 
 app.get('/api/users', async (_req: Request, res: Response): Promise<void> => {
-  const users = await User.find({ online: true }).select('name status lastSeen');
+  const users = await User.find({}).select('name status lastSeen online');
   res.json({ users });
 });
 
@@ -93,8 +93,8 @@ app.patch('/api/users/:userName/status', async (req: Request, res: Response): Pr
     { new: true }
   );
   if (!user) { res.status(404).json({ error: 'User not found' }); return; }
-  const online = await User.find({ online: true }).select('name status lastSeen');
-  io.emit('online-users', { users: online });
+  const allUsers = await User.find({}).select('name status lastSeen online');
+  io.emit('online-users', { users: allUsers });
   res.json({ user });
 });
 
@@ -348,8 +348,8 @@ io.on('connection', (socket) => {
       { online: true, socketId: socket.id, lastSeen: new Date() },
       { upsert: true, new: true }
     );
-    const online = await User.find({ online: true }).select('name status lastSeen');
-    io.emit('online-users', { users: online });
+    const allUsers = await User.find({}).select('name status lastSeen online');
+    io.emit('online-users', { users: allUsers });
   });
 
   socket.on('join-room', (roomId: string) => {
@@ -404,8 +404,8 @@ io.on('connection', (socket) => {
       }
     }
     for (const roomId of roomsToUpdate) broadcastTyping(roomId);
-    const online = await User.find({ online: true }).select('name status lastSeen');
-    io.emit('online-users', { users: online });
+    const allUsers = await User.find({}).select('name status lastSeen online');
+    io.emit('online-users', { users: allUsers });
   });
 });
 

@@ -3,7 +3,7 @@
 **Model:** claude-sonnet-4-6
 **Date:** 2026-06-16
 **Backend:** mongodb
-**Level:** 6
+**Level:** 7
 **Grading Method:** Manual browser interaction
 
 ---
@@ -17,10 +17,11 @@
 ## Feature 7: Message Reactions (Score: 3 / 3)
 ## Feature 8: Message Editing with History (Score: 3 / 3)
 ## Feature 9: Real-Time Permissions (Score: 3 / 3)
-**Browser Test Observations:** Admin kick/ban, instant access loss for kicked users,
-promote-to-admin, and instant permission changes all work. Features 1–8 regression-checked,
-no regressions. (Out-of-rubric notes, not docked: duplicate room names allowed; spam-click
-on edit Save adds duplicate history entries — neither is a graded criterion.)
+## Feature 10: Rich User Presence (Score: 3 / 3)
+**Browser Test Observations:** Initially 2/3 — three presence bugs (offline users not
+shown; "last active" frozen at "just now"; auto-away never triggered). Fixed in iteration 2;
+re-graded clean: offline users now listed with last-active, the timestamp ages, and auto-away
+fires after inactivity. Features 1–9 regression-checked, no regressions.
 
 ---
 
@@ -36,8 +37,9 @@ on edit Save adds duplicate history entries — neither is a graded criterion.)
 | 6. Ephemeral Messages | 3/3 | |
 | 7. Message Reactions | 3/3 | |
 | 8. Message Editing | 3/3 | |
-| 9. Real-Time Permissions | 3/3 | new at L6 |
-| **TOTAL** | **27/27** | |
+| 9. Real-Time Permissions | 3/3 | |
+| 10. Rich User Presence | 3/3 | new at L7; 3 bugs fixed (iteration 2) |
+| **TOTAL** | **30/30** | |
 
-**Reprompt count:** 0 (passed on first generate)
-**Cost:** L6 upgrade $0.90 (successful retry; failed attempt excluded)
+**Reprompt count:** 1 (presence: offline-list, last-active aging, auto-away)
+**Cost:** L7 upgrade $1.20 + fix $1.59 = $2.79

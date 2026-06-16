@@ -8,3 +8,20 @@
 **Redeploy:** Server only
 
 **Server verified:** Client at http://localhost:6373 ✓
+
+## Iteration 2 — Fix (12:38)
+
+**Category:** Feature Broken
+**What broke:** (1) Offline users not shown in presence list; (2) "Last active" time frozen at "just now"; (3) Auto-away status never triggers.
+**Root cause:**
+- Bug 1: All server `User.find({ online: true })` queries filtered out offline users, so only currently-connected users appeared in the presence panel and `online-users` broadcasts.
+- Bug 2: The component only re-rendered for the "last active" label when ephemeral messages existed (1-second tick). With no ephemeral messages, `lastActiveLabel()` was computed once at render time and never recomputed.
+- Bug 3: The auto-away timer used `mousemove` as an activity signal. Any mouse movement — including hovering over the UI to check the status indicator — reset the 5-minute timer, making it practically impossible to trigger in a grading session.
+**What I fixed:**
+- Bug 1: Changed all four `User.find({ online: true })` calls (REST endpoint + three socket broadcasts) to `User.find({})`, adding the `online` field to the returned payload. Updated client `UserInfo` interface to include `online?: boolean`, updated presence list to show offline users with a grey dot and "Last active X ago", and updated the section title counter to exclude offline users.
+- Bug 2: Added a dedicated 30-second `setInterval` that calls `setTick` unconditionally, ensuring the presence list re-renders regularly so `lastActiveLabel()` produces fresh elapsed-time strings.
+- Bug 3: Replaced `mousemove` with `mousedown` and removed the redundant `click` listener. The auto-away timer now resets only on deliberate clicks or keystrokes, not on passive mouse movement.
+**Files changed:** server/src/index.ts (lines 77, 96, 351, 407); client/src/App.tsx (UserInfo interface, presence list render, tick effect, auto-away listeners)
+**Redeploy:** Both
+
+**Server verified:** Client at http://localhost:6373 ✓

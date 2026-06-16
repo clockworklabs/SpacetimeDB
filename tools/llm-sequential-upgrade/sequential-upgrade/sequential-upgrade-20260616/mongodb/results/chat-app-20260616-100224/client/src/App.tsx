@@ -48,6 +48,7 @@ interface UserInfo {
   name: string;
   status: UserStatus;
   lastSeen: string;
+  online?: boolean;
 }
 
 const TYPING_STOP_DELAY = 2000;
@@ -118,6 +119,12 @@ export default function App() {
     return () => clearInterval(id);
   }, [hasEphemeral]);
 
+  // Periodic tick to recompute "last active" labels in the presence list
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 30000);
+    return () => clearInterval(id);
+  }, []);
+
   const currentRoom = rooms.find((r) => r._id === currentRoomId) ?? null;
 
   useEffect(() => {
@@ -168,15 +175,13 @@ export default function App() {
       scheduleAutoAway();
     };
 
-    document.addEventListener('mousemove', onActivity);
+    document.addEventListener('mousedown', onActivity);
     document.addEventListener('keydown', onActivity);
-    document.addEventListener('click', onActivity);
     scheduleAutoAway();
 
     return () => {
-      document.removeEventListener('mousemove', onActivity);
+      document.removeEventListener('mousedown', onActivity);
       document.removeEventListener('keydown', onActivity);
-      document.removeEventListener('click', onActivity);
       if (autoAwayTimerRef.current !== null) clearTimeout(autoAwayTimerRef.current);
     };
   }, [userName, patchStatus]);
@@ -533,6 +538,7 @@ export default function App() {
   const visibleOnlineUsers = onlineUsersData.filter((u) =>
     u.name !== userName || userStatus !== 'invisible'
   );
+  const onlineCount = visibleOnlineUsers.filter((u) => u.online !== false && u.status !== 'invisible').length;
 
   if (!userName) {
     return (
@@ -621,13 +627,15 @@ export default function App() {
         </div>
 
         <div className="section">
-          <div className="section-title">Online — {visibleOnlineUsers.filter((u) => u.status !== 'invisible').length}</div>
+          <div className="section-title">Online — {onlineCount}</div>
           <div className="online-users">
             {visibleOnlineUsers.map((u) => {
-              const showLastActive = u.status === 'away' || u.status === 'invisible';
+              const isOffline = u.online === false;
+              const effectiveStatus = isOffline ? 'offline' : u.status;
+              const showLastActive = isOffline || u.status === 'away' || u.status === 'invisible';
               return (
                 <div key={u.name} className="online-user">
-                  <span className={statusDotClass(u.status)} title={u.status} />
+                  <span className={`status-dot ${effectiveStatus}`} title={effectiveStatus} />
                   <div className="online-user-info">
                     <span>{u.name}</span>
                     {showLastActive && (
@@ -690,7 +698,7 @@ export default function App() {
                   const isCurrentUserAdmin = (currentRoom.admins ?? []).includes(userName);
                   const isSelf = member === userName;
                   const memberInfo = onlineUsersData.find((u) => u.name === member);
-                  const mStatus = memberInfo?.status ?? 'offline';
+                  const mStatus = memberInfo?.online === false ? 'offline' : (memberInfo?.status ?? 'offline');
                   return (
                     <div key={member} className="member-item">
                       <span className={`status-dot ${mStatus}`} title={mStatus} />
