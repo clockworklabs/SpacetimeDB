@@ -30,6 +30,10 @@ harness = false
 name = "index"
 harness = false
 
+[[bench]]
+name = "index_scan_gate"
+harness = false
+
 [[bin]]
 name = "summarize"
 

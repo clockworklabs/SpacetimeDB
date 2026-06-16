@@ -12,6 +12,7 @@ use spacetimedb_datastore::{
 };
 use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore, Row};
 use spacetimedb_lib::{metrics::ExecutionMetrics, Identity};
+use spacetimedb_physical_plan::plan::ParamResolver;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::bsatn::ToBsatn;
 use spacetimedb_sats::Serialize;
@@ -102,6 +103,7 @@ pub fn execute_plan_for_view<'p, F>(
     num_cols: usize,
     num_private_cols: usize,
     tx: &(impl Datastore + DeltaStore),
+    params: &impl ParamResolver,
     rlb_pool: &impl RowListBuilderSource<F>,
 ) -> Result<(F::List, u64, ExecutionMetrics)>
 where
@@ -110,7 +112,7 @@ where
     build_list_with_executor(rlb_pool, |metrics, add| {
         let col_list = ColList::from_iter(num_private_cols..num_cols);
         for fragment in plan_fragments {
-            fragment.execute(tx, metrics, &mut |row| match row {
+            fragment.execute(tx, params, metrics, &mut |row| match row {
                 Row::Ptr(ptr) => add(ptr.project_product(&col_list)?),
                 Row::Ref(val) => add(val.project_product(&col_list)?),
             })?;
@@ -123,6 +125,7 @@ where
 pub fn execute_plan<'p, F>(
     plan_fragments: impl IntoIterator<Item = &'p PipelinedProject>,
     tx: &(impl Datastore + DeltaStore),
+    params: &impl ParamResolver,
     rlb_pool: &impl RowListBuilderSource<F>,
 ) -> Result<(F::List, u64, ExecutionMetrics)>
 where
@@ -130,7 +133,7 @@ where
 {
     build_list_with_executor(rlb_pool, |metrics, add| {
         for fragment in plan_fragments {
-            fragment.execute(tx, metrics, add)?;
+            fragment.execute(tx, params, metrics, add)?;
         }
         Ok(())
     })
@@ -208,6 +211,7 @@ pub fn collect_table_update_for_view<'p, Tx, F>(
     table_id: TableId,
     table_name: TableName,
     tx: &Tx,
+    params: &impl ParamResolver,
     update_type: TableUpdateType,
     rlb_pool: &impl RowListBuilderSource<F>,
 ) -> Result<(ws_v1::TableUpdate<F>, ExecutionMetrics)>
@@ -215,7 +219,7 @@ where
     Tx: Datastore + DeltaStore,
     F: BuildableWebsocketFormat,
 {
-    execute_plan_for_view::<F>(plan_fragments, num_cols, num_private_cols, tx, rlb_pool).map(
+    execute_plan_for_view::<F>(plan_fragments, num_cols, num_private_cols, tx, params, rlb_pool).map(
         |(rows, num_rows, metrics)| table_update_from_rows(rows, num_rows, metrics, table_id, table_name, update_type),
     )
 }
@@ -226,13 +230,14 @@ pub fn collect_table_update<'p, F>(
     table_id: TableId,
     table_name: TableName,
     tx: &(impl Datastore + DeltaStore),
+    params: &impl ParamResolver,
     update_type: TableUpdateType,
     rlb_pool: &impl RowListBuilderSource<F>,
 ) -> Result<(ws_v1::TableUpdate<F>, ExecutionMetrics)>
 where
     F: BuildableWebsocketFormat,
 {
-    execute_plan::<F>(plan_fragments, tx, rlb_pool).map(|(rows, num_rows, metrics)| {
+    execute_plan::<F>(plan_fragments, tx, params, rlb_pool).map(|(rows, num_rows, metrics)| {
         table_update_from_rows(rows, num_rows, metrics, table_id, table_name, update_type)
     })
 }
@@ -265,6 +270,7 @@ pub fn execute_plans<F: BuildableWebsocketFormat>(
                         table_id,
                         table_name.clone(),
                         tx,
+                        plan.params(),
                         update_type,
                         rlb_pool,
                     )?
@@ -274,6 +280,7 @@ pub fn execute_plans<F: BuildableWebsocketFormat>(
                         table_id,
                         table_name.clone(),
                         tx,
+                        plan.params(),
                         update_type,
                         rlb_pool,
                     )?
