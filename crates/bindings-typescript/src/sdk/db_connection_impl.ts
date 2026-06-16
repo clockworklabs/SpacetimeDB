@@ -27,7 +27,6 @@ import type {
   Deserializer,
   Identity,
   InferTypeOfParams,
-  InferTypeOfRow,
   Serializer,
 } from '../';
 import type {
