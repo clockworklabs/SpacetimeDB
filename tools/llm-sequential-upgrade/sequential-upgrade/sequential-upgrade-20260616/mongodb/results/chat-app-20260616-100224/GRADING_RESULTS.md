@@ -3,7 +3,7 @@
 **Model:** claude-sonnet-4-6
 **Date:** 2026-06-16
 **Backend:** mongodb
-**Level:** 8
+**Level:** 9
 **Grading Method:** Manual browser interaction
 
 ---
@@ -19,10 +19,10 @@
 ## Feature 9: Real-Time Permissions (Score: 3 / 3)
 ## Feature 10: Rich User Presence (Score: 3 / 3)
 ## Feature 11: Message Threading (Score: 3 / 3)
-**Browser Test Observations:** Initially 2/3 — thread replies leaked into the main room chat
-when a main-room message was sent (read endpoint didn't filter out replies). Fixed in iteration 3
-(added `parentId: null` filter); re-graded clean: replies stay in the thread, reply count/preview
-and real-time sync work. Features 1–10 regression-checked, no regressions.
+## Feature 12: Private Rooms & Direct Messages (Score: 3 / 3)
+**Browser Test Observations:** Private/invite-only rooms hidden from the public list, invite-by-username
+works, non-invited users can't see private content, and DMs are visible only to the two participants.
+Features 1–11 regression-checked, no regressions. Passed on first generate (no fix needed).
 
 ---
 
@@ -40,8 +40,9 @@ and real-time sync work. Features 1–10 regression-checked, no regressions.
 | 8. Message Editing | 3/3 | |
 | 9. Real-Time Permissions | 3/3 | |
 | 10. Rich User Presence | 3/3 | |
-| 11. Message Threading | 3/3 | new at L8; 1 bug fixed (iteration 3) |
-| **TOTAL** | **33/33** | |
+| 11. Message Threading | 3/3 | |
+| 12. Private Rooms & DMs | 3/3 | new at L9 |
+| **TOTAL** | **36/36** | |
 
-**Reprompt count:** 1 (thread replies leaking into main chat)
-**Cost:** L8 upgrade $1.38 + fix $0.38 = $1.76
+**Reprompt count:** 0 (passed on first generate)
+**Cost:** L9 upgrade $1.45
