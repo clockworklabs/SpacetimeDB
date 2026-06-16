@@ -3,28 +3,19 @@
 **Model:** claude-sonnet-4-6
 **Date:** 2026-06-16
 **Backend:** mongodb
-**Level:** 2
+**Level:** 3
 **Grading Method:** Manual browser interaction
 
 ---
 
 ## Feature 1: Basic Chat (Score: 3 / 3)
-**Browser Test Observations:** All criteria pass; presence regression-checked (multi-tab fix holds).
-
 ## Feature 2: Typing Indicators (Score: 3 / 3)
-**Browser Test Observations:** Real-time, auto-expires.
-
 ## Feature 3: Read Receipts (Score: 3 / 3)
-**Browser Test Observations:** Real-time; sender excluded from own seen-by.
-
 ## Feature 4: Unread Message Counts (Score: 3 / 3)
-**Browser Test Observations:** Accurate, live, clears on open.
-
 ## Feature 5: Scheduled Messages (Score: 3 / 3)
-- [x] Compose and schedule a message for future delivery
-- [x] Pending scheduled messages visible to author with cancel option
-- [x] Message appears in the room at the scheduled time
-**Browser Test Observations:** Scheduling, pending list with cancel, and timed delivery all work.
+## Feature 6: Ephemeral Messages (Score: 3 / 3)
+**Browser Test Observations:** Auto-delete timer, countdown indicator, and permanent
+deletion on expiry all work. Features 1–5 regression-checked, no regressions.
 
 ---
 
@@ -36,8 +27,9 @@
 | 2. Typing Indicators | 3/3 | |
 | 3. Read Receipts | 3/3 | |
 | 4. Unread Counts | 3/3 | |
-| 5. Scheduled Messages | 3/3 | new at L2 |
-| **TOTAL** | **15/15** | |
+| 5. Scheduled Messages | 3/3 | |
+| 6. Ephemeral Messages | 3/3 | new at L3 |
+| **TOTAL** | **18/18** | |
 
 **Reprompt count:** 0 (passed on first generate)
-**Cost:** L2 upgrade $0.78
+**Cost:** L3 upgrade $0.77
