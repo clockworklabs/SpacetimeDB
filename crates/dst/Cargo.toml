@@ -7,7 +7,15 @@ rust-version.workspace = true
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
-spacetimedb-runtime = { path = "../runtime/",default-features = false,  features = ["simulation"]}
+spacetimedb-datastore = { path = "../datastore", default-features = false, features = ["simulation"] }
+spacetimedb-durability = { path = "../durability", default-features = false, features = ["simulation"] }
+spacetimedb-engine = { path = "../engine", default-features = false, features = ["simulation"] }
+spacetimedb-lib.workspace = true
+spacetimedb-primitives.workspace = true
+spacetimedb-runtime = { path = "../runtime/", default-features = false, features = ["simulation"] }
+spacetimedb-sats.workspace = true
+spacetimedb-schema.workspace = true
+spacetimedb-table = { path = "../table", default-features = false }
 tracing.workspace = true
 
 [lints]

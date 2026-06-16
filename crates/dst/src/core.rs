@@ -1,5 +1,17 @@
 use anyhow::Error;
 
+pub trait Target {
+    const NAME: &'static str;
+
+    fn prepare(config: &crate::RunConfig) -> Result<(), Error>
+    where
+        Self: Sized;
+
+    fn run_streaming(config: crate::RunConfig) -> Result<String, Error>
+    where
+        Self: Sized;
+}
+
 pub trait TargetDriver<I> {
     type Observation;
     type Outcome;
