@@ -8206,6 +8206,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-dst"
+version = "2.5.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "spacetimedb-runtime",
+ "tracing",
+]
+
+[[package]]
 name = "spacetimedb-durability"
 version = "2.5.0"
 dependencies = [

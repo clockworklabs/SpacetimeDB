@@ -1,0 +1,14 @@
+[package]
+name = "spacetimedb-dst"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+spacetimedb-runtime = { path = "../runtime/",default-features = false,  features = ["simulation"]}
+tracing.workspace = true
+
+[lints]
+workspace = true
