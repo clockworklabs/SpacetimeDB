@@ -18,6 +18,7 @@ function App() {
     }
   );
   const createPlayer = useReducer(reducers.createPlayer);
+  const setPlayerAlias = useReducer(reducers.setPlayerAlias);
 
   useEffect(() => {
     setTimeout(() => {
@@ -38,6 +39,7 @@ function App() {
           };
           console.log('Creating player:', player);
           createPlayer(player);
+          setPlayerAlias({ name: player.name });
         }}
       >
         Update
