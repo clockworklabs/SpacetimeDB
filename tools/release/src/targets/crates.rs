@@ -3,8 +3,12 @@ use anyhow::Result;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
+use std::thread;
+use std::time::{Duration, Instant};
 
 const CRATE_OWNERS: &[&str] = &["cloutiertyler", "jdetter", "bfops", "rekhoff", "spacetimedb-devops"];
+const CRATES_IO_POLL_INTERVAL: Duration = Duration::from_secs(15);
+const CRATES_IO_POLL_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 
 pub struct CratesRelease {
     pub dry_run: bool,
@@ -59,6 +63,85 @@ impl CratesRelease {
             "Failed to publish crate: {}\n--- stdout ---\n{}\n--- stderr ---\n{}",
             crate_name, stdout, stderr
         ))
+    }
+
+    fn crate_version(&self, crate_name: &str, manifest_map: &HashMap<String, PathBuf>) -> Result<String, String> {
+        let manifest_path = manifest_map
+            .get(crate_name)
+            .ok_or_else(|| format!("Crate '{}' not found in cargo metadata", crate_name))?;
+
+        let mut cmd = Command::new("cargo");
+        cmd.args(["pkgid", "--manifest-path", &manifest_path.to_string_lossy()]);
+        util::print_command(&cmd);
+
+        let output = cmd
+            .output()
+            .map_err(|e| format!("Failed to execute cargo pkgid for {}: {}", crate_name, e))?;
+
+        if !output.status.success() {
+            return Err(format!(
+                "Failed to get package id for {}\n--- stdout ---\n{}\n--- stderr ---\n{}",
+                crate_name,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+
+        let pkgid = String::from_utf8_lossy(&output.stdout);
+        pkgid
+            .trim()
+            .rsplit_once('@')
+            .map(|(_, version)| version.to_string())
+            .ok_or_else(|| {
+                format!(
+                    "Failed to parse crate version from cargo pkgid output: {}",
+                    pkgid.trim()
+                )
+            })
+    }
+
+    fn wait_for_crate_available(&self, crate_name: &str, version: &str) -> Result<(), String> {
+        let spec = format!("{}@{}", crate_name, version);
+        let deadline = Instant::now() + CRATES_IO_POLL_TIMEOUT;
+        let mut attempt = 1;
+
+        println!(
+            "Waiting for {} to be visible in the crates.io index before publishing dependent crates...",
+            spec
+        );
+
+        loop {
+            let mut cmd = Command::new("cargo");
+            cmd.args(["info", &spec]);
+            util::print_command(&cmd);
+
+            let output = cmd
+                .output()
+                .map_err(|e| format!("Failed to execute cargo info {}: {}", spec, e))?;
+
+            if output.status.success() {
+                println!("{} is visible in the crates.io index.", spec);
+                return Ok(());
+            }
+
+            if Instant::now() >= deadline {
+                return Err(format!(
+                    "Timed out waiting for {} to become visible in the crates.io index\n--- stdout ---\n{}\n--- stderr ---\n{}",
+                    spec,
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                ));
+            }
+
+            println!(
+                "{} is not visible yet; retrying in {}s (attempt {}).",
+                spec,
+                CRATES_IO_POLL_INTERVAL.as_secs(),
+                attempt
+            );
+            attempt += 1;
+            thread::sleep(CRATES_IO_POLL_INTERVAL);
+        }
     }
 
     fn add_crate_owners(&self, crate_name: &str) -> Result<(), String> {
@@ -128,6 +211,8 @@ impl ReleaseTarget for CratesRelease {
         println!("\nStarting publish process...");
         for crate_name in &crates {
             self.publish_crate(crate_name, &manifest_map)?;
+            let version = self.crate_version(crate_name, &manifest_map)?;
+            self.wait_for_crate_available(crate_name, &version)?;
             self.add_crate_owners(crate_name)?;
         }
 
