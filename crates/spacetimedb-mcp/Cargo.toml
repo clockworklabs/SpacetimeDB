@@ -9,6 +9,8 @@ path = "src/main.rs"
 
 [dependencies]
 rmcp = { workspace = true, features = ["server", "transport-io", "macros"] }
+spacetimedb-lib = { workspace = true, features = ["serde"] }
+reqwest.workspace = true
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true

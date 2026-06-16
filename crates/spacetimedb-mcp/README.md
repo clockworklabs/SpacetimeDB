@@ -4,9 +4,9 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for
 SpacetimeDB. It exposes SpacetimeDB to MCP-aware agents and editors as a set of
 tools, built on the official Rust MCP SDK ([`rmcp`](https://crates.io/crates/rmcp)).
 
-> Status: early scaffold. Only a `ping` health-check tool exists today.
-> SpacetimeDB-specific tools (read-only schema and reducer introspection first)
-> are being added incrementally.
+> Status: early. Read-only schema introspection works today (`get_schema`,
+> `list_tables`, `list_reducers`); a `ping` health check is also included.
+> Further tools (SQL, subscriptions, the CLI workflow) are deferred for now.
 
 ## Transport
 
@@ -25,13 +25,23 @@ The binary lands at `target/debug/spacetimedb-mcp`.
 
 ## Run
 
-Point an MCP client at the built binary. Example client config entry:
+Point an MCP client at the built binary. The introspection tools talk to a
+running SpacetimeDB host, configured via environment variables:
+
+| Variable            | Default                 | Purpose                                            |
+| ------------------- | ----------------------- | -------------------------------------------------- |
+| `SPACETIMEDB_HOST`  | `http://127.0.0.1:3000` | Base URL of the SpacetimeDB host to query.         |
+| `SPACETIMEDB_TOKEN` | _(unset)_               | Bearer token, required only for private databases. |
+
+The target database (a name or identity) is passed as an argument to each tool,
+so one server can introspect any database on the host. Example client config:
 
 ```json
 {
   "mcpServers": {
     "spacetimedb": {
-      "command": "/path/to/target/debug/spacetimedb-mcp"
+      "command": "/path/to/target/debug/spacetimedb-mcp",
+      "env": { "SPACETIMEDB_HOST": "http://127.0.0.1:3000" }
     }
   }
 }
@@ -53,9 +63,12 @@ The `tools/call` response should echo `pong: hi`.
 
 ## Tools
 
-| Tool   | Description                                    |
-| ------ | ---------------------------------------------- |
-| `ping` | Health check. Echoes an optional message back. |
+| Tool            | Arguments  | Description                                                          |
+| --------------- | ---------- | -------------------------------------------------------------------- |
+| `ping`          | `message?` | Health check. Echoes an optional message back.                       |
+| `get_schema`    | `database` | Full module definition (typespace, tables, reducers) as JSON.        |
+| `list_tables`   | `database` | Names of all tables in the database.                                 |
+| `list_reducers` | `database` | Reducers in the database, with each reducer's lifecycle role if any. |
 
-More tools (schema, table, and reducer introspection) will be listed here as
-they land.
+All introspection is read-only. Write operations, SQL, and subscriptions are
+intentionally out of scope for now.

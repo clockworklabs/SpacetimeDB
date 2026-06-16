@@ -8448,10 +8448,12 @@ name = "spacetimedb-mcp"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "reqwest 0.12.24",
  "rmcp",
  "schemars 1.0.4",
  "serde",
  "serde_json",
+ "spacetimedb-lib",
  "tokio",
  "tracing",
  "tracing-subscriber",

@@ -4,14 +4,17 @@
 //! speaks JSON-RPC over stdin/stdout, and logs to stderr only. Nothing else may
 //! touch stdout or the protocol stream is corrupted.
 
+mod stdb;
+
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    model::{ServerCapabilities, ServerInfo},
+    model::{ErrorData, ServerCapabilities, ServerInfo},
     schemars, tool, tool_handler, tool_router,
     transport::stdio,
     ServerHandler, ServiceExt,
 };
 use serde::Deserialize;
+use spacetimedb_lib::sats;
 
 #[derive(Clone)]
 struct SpacetimeDbMcp {
@@ -22,10 +25,21 @@ struct SpacetimeDbMcp {
     tool_router: ToolRouter<Self>,
 }
 
+/// Surface an internal error to the MCP client as a tool error.
+fn to_mcp_error(err: anyhow::Error) -> ErrorData {
+    ErrorData::internal_error(err.to_string(), None)
+}
+
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct PingParams {
     /// Optional message echoed back, to confirm round-trip works.
     message: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct DatabaseParams {
+    /// Name or identity of the target database, as known to the SpacetimeDB host.
+    database: String,
 }
 
 #[tool_router]
@@ -43,6 +57,48 @@ impl SpacetimeDbMcp {
             None => "pong".to_string(),
         }
     }
+
+    #[tool(
+        description = "Fetch the full schema (module definition) of a database as JSON: typespace, tables, and reducers."
+    )]
+    async fn get_schema(&self, Parameters(p): Parameters<DatabaseParams>) -> Result<String, ErrorData> {
+        let def = stdb::Client::from_env()
+            .module_def(&p.database)
+            .await
+            .map_err(to_mcp_error)?;
+        serde_json::to_string_pretty(sats::serde::SerdeWrapper::from_ref(&def)).map_err(|e| to_mcp_error(e.into()))
+    }
+
+    #[tool(description = "List the names of all tables defined in a database.")]
+    async fn list_tables(&self, Parameters(p): Parameters<DatabaseParams>) -> Result<String, ErrorData> {
+        let def = stdb::Client::from_env()
+            .module_def(&p.database)
+            .await
+            .map_err(to_mcp_error)?;
+        let names: Vec<String> = def.tables.iter().map(|t| t.name.to_string()).collect();
+        serde_json::to_string_pretty(&names).map_err(|e| to_mcp_error(e.into()))
+    }
+
+    #[tool(
+        description = "List the reducers in a database, with each reducer's lifecycle role (init, on_connect, on_disconnect) when it has one."
+    )]
+    async fn list_reducers(&self, Parameters(p): Parameters<DatabaseParams>) -> Result<String, ErrorData> {
+        let def = stdb::Client::from_env()
+            .module_def(&p.database)
+            .await
+            .map_err(to_mcp_error)?;
+        let reducers: Vec<serde_json::Value> = def
+            .reducers
+            .iter()
+            .map(|r| {
+                serde_json::json!({
+                    "name": r.name.to_string(),
+                    "lifecycle": r.lifecycle.map(|l| format!("{l:?}")),
+                })
+            })
+            .collect();
+        serde_json::to_string_pretty(&reducers).map_err(|e| to_mcp_error(e.into()))
+    }
 }
 
 #[tool_handler]
@@ -58,8 +114,9 @@ impl ServerHandler for SpacetimeDbMcp {
         info.server_info.version = env!("CARGO_PKG_VERSION").into();
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
         info.instructions = Some(
-            "MCP server for SpacetimeDB. Introspect schema, tables, and reducers; \
-             run SQL; call reducers; manage modules via the spacetime CLI."
+            "MCP server for SpacetimeDB. Introspect a database's schema, tables, and reducers \
+             against a running SpacetimeDB host (set SPACETIMEDB_HOST, and SPACETIMEDB_TOKEN \
+             for private databases)."
                 .into(),
         );
         info
