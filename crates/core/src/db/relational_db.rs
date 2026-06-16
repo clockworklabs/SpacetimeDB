@@ -50,7 +50,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue}
 use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{
-    ColumnSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
+    ColumnSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema, VIEW_ARG_HASH_COL,
 };
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_snapshot::{DynSnapshotRepo, ReconstructedSnapshot, SnapshotError, SnapshotRepository};
@@ -1559,10 +1559,10 @@ impl RelationalDB {
         Ok(None)
     }
 
-    /// Write `rows` into a (sender) view's backing table.
+    /// Write `rows` into a sender-scoped view's backing table.
     ///
     /// # Process
-    /// 1. Delete all rows for `sender` from the view's backing table
+    /// 1. Delete all rows for `sender`'s implicit argument hash from the view's backing table
     /// 2. Insert the new rows into the backing table
     ///
     /// # Arguments
@@ -1578,39 +1578,24 @@ impl RelationalDB {
         sender: Identity,
         rows: Vec<ProductValue>,
     ) -> Result<(), DBError> {
-        // Delete rows for `sender` from the backing table
+        let arg_hash = MutTxId::view_arg_hash(sender);
+        self.materialize_view_arg_hash(tx, table_id, arg_hash, rows)
+    }
+
+    fn materialize_view_arg_hash(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        arg_hash: AlgebraicValue,
+        rows: Vec<ProductValue>,
+    ) -> Result<(), DBError> {
         let rows_to_delete = self
-            .iter_by_col_eq_mut(tx, table_id, ColId(0), &sender.into())?
+            .iter_by_col_eq_mut(tx, table_id, VIEW_ARG_HASH_COL, &arg_hash)?
             .map(|res| res.pointer())
             .collect::<Vec<_>>();
         self.delete(tx, table_id, rows_to_delete);
 
-        self.write_view_rows(tx, table_id, rows, Some(sender))?;
-
-        Ok(())
-    }
-
-    /// Write `rows` into an anonymous view's backing table.
-    ///
-    /// # Process
-    /// 1. Clear the view's backing table
-    /// 2. Insert the new rows into the backing table
-    ///
-    /// # Arguments
-    /// * `tx` - Mutable transaction context
-    /// * `table_id` - The id of the view's backing table
-    /// * `rows` - Product values to insert
-    #[allow(clippy::too_many_arguments)]
-    pub fn materialize_anonymous_view(
-        &self,
-        tx: &mut MutTxId,
-        table_id: TableId,
-        rows: Vec<ProductValue>,
-    ) -> Result<(), DBError> {
-        // Clear entire backing table
-        self.clear_table(tx, table_id)?;
-
-        self.write_view_rows(tx, table_id, rows, None)?;
+        self.write_view_rows(tx, table_id, rows, &arg_hash)?;
 
         Ok(())
     }
@@ -1626,10 +1611,11 @@ impl RelationalDB {
         view_call: ViewCallInfo,
         rows: Vec<ProductValue>,
     ) -> Result<(), DBError> {
-        match view_call.sender {
-            Some(sender) => self.materialize_view(tx, table_id, sender, rows)?,
-            None => self.materialize_anonymous_view(tx, table_id, rows)?,
-        }
+        let arg_hash = match view_call.sender {
+            Some(sender) => MutTxId::view_arg_hash(sender),
+            None => MutTxId::anonymous_view_arg_hash(),
+        };
+        self.materialize_view_arg_hash(tx, table_id, arg_hash, rows)?;
         tx.replace_view_read_set(view_call);
 
         Ok(())
@@ -1640,34 +1626,18 @@ impl RelationalDB {
         tx: &mut MutTxId,
         table_id: TableId,
         rows: Vec<ProductValue>,
-        sender: Option<Identity>,
+        arg_hash: &AlgebraicValue,
     ) -> Result<(), DBError> {
-        match sender {
-            Some(sender) => {
-                for product in rows {
-                    let value = ProductValue::from_iter(std::iter::once(sender.into()).chain(product.elements));
-                    self.insert(
-                        tx,
-                        table_id,
-                        &value
-                            .to_bsatn_vec()
-                            .map_err(|_| ViewError::SerializeRow)
-                            .map_err(DatastoreError::from)?,
-                    )?;
-                }
-            }
-            None => {
-                for product in rows {
-                    self.insert(
-                        tx,
-                        table_id,
-                        &product
-                            .to_bsatn_vec()
-                            .map_err(|_| ViewError::SerializeRow)
-                            .map_err(DatastoreError::from)?,
-                    )?;
-                }
-            }
+        for product in rows {
+            let value = ProductValue::from_iter(std::iter::once(arg_hash.clone()).chain(product.elements));
+            self.insert(
+                tx,
+                table_id,
+                &value
+                    .to_bsatn_vec()
+                    .map_err(|_| ViewError::SerializeRow)
+                    .map_err(DatastoreError::from)?,
+            )?;
         }
 
         Ok(())
@@ -2256,8 +2226,8 @@ pub mod tests_utils {
         row: ProductValue,
     ) -> Result<RowRef<'a>, DBError> {
         let meta_cols = match sender {
-            Some(identity) => vec![identity.into()],
-            None => vec![],
+            Some(identity) => vec![MutTxId::view_arg_hash(identity)],
+            None => vec![MutTxId::anonymous_view_arg_hash()],
         };
         let cols = meta_cols.into_iter().chain(row.elements);
         let row = ProductValue::from_iter(cols);
@@ -2512,8 +2482,9 @@ mod tests {
 
     fn project_views(stdb: &TestDB, table_id: TableId, sender: Identity) -> Vec<ProductValue> {
         let tx = begin_tx(stdb);
+        let arg_hash = MutTxId::view_arg_hash(sender);
 
-        stdb.iter_by_col_eq(&tx, table_id, 0, &sender.into())
+        stdb.iter_by_col_eq(&tx, table_id, VIEW_ARG_HASH_COL, &arg_hash)
             .unwrap()
             .map(|row| {
                 let pv = row.to_product_value();
@@ -2526,10 +2497,16 @@ mod tests {
 
     fn project_anonymous_views(stdb: &TestDB, table_id: TableId) -> Vec<ProductValue> {
         let tx = begin_tx(stdb);
+        let arg_hash = MutTxId::anonymous_view_arg_hash();
 
-        stdb.iter(&tx, table_id)
+        stdb.iter_by_col_eq(&tx, table_id, VIEW_ARG_HASH_COL, &arg_hash)
             .unwrap()
-            .map(|row| row.to_product_value())
+            .map(|row| {
+                let pv = row.to_product_value();
+                ProductValue {
+                    elements: pv.elements.iter().skip(1).cloned().collect(),
+                }
+            })
             .collect()
     }
 
@@ -2737,7 +2714,12 @@ mod tests {
         let mut tx = begin_mut_tx(&stdb);
         tx.subscribe_view(view_id, ArgId::SENTINEL, stale_sender)?;
         tx.subscribe_view(view_id, ArgId::SENTINEL, live_sender)?;
-        stdb.materialize_anonymous_view(&mut tx, table_id, vec![product![42u8]])?;
+        stdb.materialize_view_call(
+            &mut tx,
+            table_id,
+            ViewCallInfo { view_id, sender: None },
+            vec![product![42u8]],
+        )?;
         stdb.commit_tx(tx)?;
 
         let mut tx = begin_mut_tx(&stdb);
@@ -2786,7 +2768,12 @@ mod tests {
 
         let mut tx = begin_mut_tx(&stdb);
         tx.subscribe_view(view_id, ArgId::SENTINEL, sender)?;
-        stdb.materialize_anonymous_view(&mut tx, table_id, vec![product![42u8]])?;
+        stdb.materialize_view_call(
+            &mut tx,
+            table_id,
+            ViewCallInfo { view_id, sender: None },
+            vec![product![42u8]],
+        )?;
         stdb.commit_tx(tx)?;
 
         let mut tx = begin_mut_tx(&stdb);

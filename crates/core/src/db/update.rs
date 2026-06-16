@@ -558,9 +558,18 @@ mod test {
         Ok(())
     }
 
+    fn with_snapshotting(manual: bool) -> anyhow::Result<TestDB> {
+        Ok(if manual {
+            TestDB::durable_without_snapshot_repo()?
+        } else {
+            TestDB::durable()?
+        })
+    }
+
     fn replay_event_table_schema_change(snapshot: TakeSnapshot) -> anyhow::Result<()> {
         let auth_ctx = AuthCtx::for_testing();
-        let stdb = TestDB::durable()?;
+        let with_snapshot = matches!(snapshot, TakeSnapshot::BeforeAutomigration);
+        let stdb = with_snapshotting(with_snapshot)?;
 
         let module_v1 = event_table_module(ProductType::from([
             ("old_payload", AlgebraicType::U64),
@@ -576,7 +585,7 @@ mod test {
             stdb.commit_tx(tx)?;
         }
 
-        if matches!(snapshot, TakeSnapshot::BeforeAutomigration) {
+        if with_snapshot {
             take_snapshot(&stdb)?;
         }
 
@@ -635,7 +644,8 @@ mod test {
     /// permanently preventing the database from reopening.
     fn replay_event_table_drop(snapshot: TakeSnapshot) -> anyhow::Result<()> {
         let auth_ctx = AuthCtx::for_testing();
-        let stdb = TestDB::durable()?;
+        let with_snapshot = matches!(snapshot, TakeSnapshot::BeforeAutomigration);
+        let stdb = with_snapshotting(with_snapshot)?;
 
         let module_v1 = event_table_module(ProductType::from([("payload", AlgebraicType::U64)]));
         let module_v2 = empty_module();
@@ -659,7 +669,7 @@ mod test {
             stdb.commit_tx(tx)?;
         }
 
-        if matches!(snapshot, TakeSnapshot::BeforeAutomigration) {
+        if with_snapshot {
             take_snapshot(&stdb)?;
         }
 
