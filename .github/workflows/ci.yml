@@ -459,7 +459,6 @@ jobs:
       matrix:
         include:
           - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-new-runner-2 }
-          - { target: aarch64-unknown-linux-gnu, runner: arm-runner }
           - { target: aarch64-apple-darwin, runner: macos-latest }
           - { target: x86_64-pc-windows-msvc, runner: windows-latest }
     runs-on: ${{ matrix.runner }}
@@ -476,11 +475,6 @@ jobs:
 
       - name: Install rust target
         run: rustup target add ${{ matrix.target }}
-
-      - name: Install packages
-        if: ${{ matrix.runner == 'arm-runner' }}
-        shell: bash
-        run: sudo apt install -y libssl-dev
 
       - name: Test spacetimedb-update
         env:
