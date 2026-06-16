@@ -20,7 +20,7 @@ SpacetimeDB is a relational database that is also a server. It lets you upload a
 ## Critical Rules
 
 1. **Reducers are transactional.** They do not return data to callers. Use subscriptions to read data.
-2. **Reducers must be deterministic.** No filesystem, network, timers, or random. All state must come from tables.
+2. **Reducers must be deterministic.** Do not use filesystem, network, system timers, or external randomness. Use `ctx.timestamp`/`ctx.Timestamp`/`ctx.timestamp` and the deterministic RNG on the reducer context when you need time or random values.
 3. **Read data via tables/subscriptions**, not reducer return values. Clients get data through subscribed queries.
 4. **Auto-increment IDs are not sequential.** Gaps are normal, do not use for ordering. Use timestamps or explicit sequence columns.
 5. **`ctx.sender` is the authenticated principal.** Never trust identity passed as arguments.
@@ -64,7 +64,7 @@ name            position_x          total_kills
 
 ## Reducers
 
-Reducers are transactional functions that modify database state. They run atomically, cannot interact with the outside world, and do not return data to callers. See the language-specific server skills for syntax.
+Reducers are transactional functions that modify database state. They run atomically, cannot interact with the outside world, and do not return data to callers. For timestamps or randomness, use the deterministic values provided by `ReducerContext`. See the language-specific server skills for syntax.
 
 ## Event Tables
 
