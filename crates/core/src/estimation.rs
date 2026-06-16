@@ -152,7 +152,7 @@ mod tests {
             .map(|(plans, ..)| plans)
             .expect("failed to compile sql query")
             .into_iter()
-            .map(|plan| plan.optimize(&auth).expect("failed to optimize sql query"))
+            .map(|plan| plan.optimize().expect("failed to optimize sql query"))
             .map(|plan| row_estimate(&tx, &plan))
             .sum()
     }
@@ -166,7 +166,7 @@ mod tests {
             .map(|(plans, ..)| plans)
             .expect("failed to compile sql query")
             .into_iter()
-            .map(|plan| plan.optimize(&auth).expect("failed to optimize sql query"))
+            .map(|plan| plan.optimize().expect("failed to optimize sql query"))
             .map(|plan| estimate_rows_scanned(&tx, plan.physical_plan()))
             .sum()
     }

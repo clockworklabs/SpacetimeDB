@@ -609,6 +609,12 @@ export const top_players = spacetimedb.view({ name: 'top_players', public: true 
   return ctx.db.player.score.filter(1000);
 });
 
+// Procedural view with update callbacks.
+// The returned row type has exactly one `.primaryKey()` column.
+export const top_players_with_updates = spacetimedb.view({ name: 'top_players_with_updates', public: true }, t.array(player.rowType), ctx => {
+  return ctx.db.player.score.filter(1000);
+});
+
 // Perform a generic filter using the query builder.
 // Equivalent to `SELECT * FROM player WHERE score < 1000`.
 export const bottom_players = spacetimedb.view({ name: 'bottom_players', public: true }, t.array(player.rowType), ctx => {
@@ -639,6 +645,13 @@ public static Player? MyPlayer(ViewContext ctx)
 // Return potentially multiple rows
 [SpacetimeDB.View(Accessor = "TopPlayers", Public = true)]
 public static IEnumerable<Player> TopPlayers(ViewContext ctx)
+{
+    return ctx.Db.Player.Score.Filter(1000);
+}
+
+// Procedural view with update callbacks.
+[SpacetimeDB.View(Accessor = "TopPlayersWithUpdates", Public = true, PrimaryKey = "Id")]
+public static IEnumerable<Player> TopPlayersWithUpdates(ViewContext ctx)
 {
     return ctx.Db.Player.Score.Filter(1000);
 }
@@ -683,6 +696,12 @@ fn top_players(ctx: &ViewContext) -> Vec<Player> {
     ctx.db.player().score().filter(1000).collect()
 }
 
+// Procedural view with update callbacks.
+#[view(accessor = top_players_with_updates, public, primary_key = id)]
+fn top_players_with_updates(ctx: &ViewContext) -> Vec<Player> {
+    ctx.db.player().score().filter(1000).collect()
+}
+
 // Perform a generic filter using the query builder.
 // Equivalent to `SELECT * FROM player WHERE score < 1000`.
 #[view(accessor = bottom_players, public)]
@@ -718,6 +737,14 @@ SPACETIMEDB_VIEW(std::optional<Player>, my_player, Public, ViewContext ctx) {
 // Return multiple rows using indexed field
 SPACETIMEDB_VIEW(std::vector<Player>, top_players, Public, ViewContext ctx) {
     return ctx.db[player_score].filter(range_from(int32_t(1000))).collect();
+}
+
+// Perform a generic filter using the query builder.
+// Equivalent to `SELECT * FROM player WHERE score < 1000`.
+SPACETIMEDB_VIEW(Query<Player>, bottom_players, Public, ViewContext ctx) {
+    return ctx.from[player].where([](const auto& p) {
+        return p.score.lt(int32_t(1000));
+    });
 }
 
 struct PlayerCount {

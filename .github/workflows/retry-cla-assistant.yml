@@ -77,6 +77,6 @@ jobs:
         run: |
           while read -r pr_number; do
             if [ -n "${pr_number}" ]; then
-              cargo ci retry-cla-assistant --pr-number "${pr_number}"
+              cargo ci cla-assistant retry --pr-number "${pr_number}"
             fi
           done < "${{ steps.prs.outputs.path }}"

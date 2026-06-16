@@ -188,6 +188,82 @@ describe('DbConnection', () => {
     expect(connectCalled).toBeFalsy();
   });
 
+  test('marks connection inactive before invoking onDisconnect callback', async () => {
+    const onDisconnectPromise = new Deferred<void>();
+    const wsAdapter = new WebsocketTestAdapter();
+    let callbackIsActive: boolean | undefined;
+
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.openWebSocket)
+      .onDisconnect(ctx => {
+        callbackIsActive = ctx.isActive;
+        onDisconnectPromise.resolve();
+      })
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.close();
+
+    await onDisconnectPromise.promise;
+
+    expect(callbackIsActive).toBe(false);
+    expect(client.isActive).toBe(false);
+  });
+
+  test('marks disconnect as requested when disconnect() is called', async () => {
+    const onDisconnectPromise = new Deferred<void>();
+    const wsAdapter = new WebsocketTestAdapter();
+
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.openWebSocket)
+      .onDisconnect(() => {
+        onDisconnectPromise.resolve();
+      })
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+
+    expect(client.isDisconnectRequested).toBe(false);
+    client.disconnect();
+    expect(client.isDisconnectRequested).toBe(true);
+
+    await onDisconnectPromise.promise;
+    expect(client.isActive).toBe(false);
+  });
+
+  test('marks connection inactive before invoking onConnectError callback from websocket error', async () => {
+    const onConnectErrorPromise = new Deferred<void>();
+    const wsAdapter = new WebsocketTestAdapter();
+    let callbackIsActive: boolean | undefined;
+    const error = new Error('websocket failed');
+
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.openWebSocket)
+      .onConnectError(ctx => {
+        callbackIsActive = ctx.isActive;
+        onConnectErrorPromise.resolve();
+      })
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    client.isActive = true;
+    wsAdapter.error(error);
+
+    await onConnectErrorPromise.promise;
+
+    expect(callbackIsActive).toBe(false);
+    expect(client.isActive).toBe(false);
+  });
+
   test('call onConnect callback after getting an identity', async () => {
     const onConnectPromise = new Deferred<void>();
 
