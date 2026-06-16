@@ -1,6 +1,6 @@
-use spacetimedb::{reducer, table, Identity, ReducerContext, SpacetimeType, Table};
+use spacetimedb::{reducer, table, view, Identity, ReducerContext, SpacetimeType, Table, ViewContext};
 
-#[table(name = player, public)]
+#[table(accessor = player, public)]
 pub struct Player {
     #[primary_key]
     #[auto_inc]
@@ -16,14 +16,14 @@ pub struct Point {
     pub y: u16,
 }
 
-#[table(name = user, public)]
+#[table(accessor = user, public)]
 pub struct User {
     #[primary_key]
     pub identity: Identity,
     pub username: String,
 }
 
-#[table(name = unindexed_player, public)]
+#[table(accessor = unindexed_player, public)]
 pub struct UnindexedPlayer {
     #[primary_key]
     #[auto_inc]
@@ -36,12 +36,12 @@ pub struct UnindexedPlayer {
 #[reducer]
 pub fn create_player(ctx: &ReducerContext, name: String, location: Point) {
     ctx.db.user().insert(User {
-        identity: ctx.sender,
+        identity: ctx.sender(),
         username: name.clone(),
     });
     ctx.db.player().insert(Player {
         id: 0,
-        user_id: ctx.sender,
+        user_id: ctx.sender(),
         name,
         location,
     });
@@ -50,7 +50,12 @@ pub fn create_player(ctx: &ReducerContext, name: String, location: Point) {
 #[reducer]
 pub fn set_player_alias(ctx: &ReducerContext, name: String, alias: Option<String>) {
     ctx.db.user().insert(User {
-        identity: ctx.sender,
+        identity: ctx.sender(),
         username: alias.unwrap_or(name),
     });
+}
+
+#[view(accessor = my_user_procedural, public, primary_key = id)]
+pub fn my_user_procedural(ctx: &ViewContext) -> Vec<Player> {
+    ctx.db.player().id().find(1u32).into_iter().collect()
 }

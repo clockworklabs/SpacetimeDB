@@ -102,6 +102,11 @@ namespace SpacetimeDB
         public string? Name { get; init; }
 
         /// <summary>
+        /// The source/accessor name of the view return column that identifies rows.
+        /// </summary>
+        public string? PrimaryKey { get; init; }
+
+        /// <summary>
         /// Marks the view as callable by any client. Leave false to restrict to the module owner.
         /// </summary>
         public bool Public { get; init; } = false;
@@ -203,4 +208,10 @@ namespace SpacetimeDB
     {
         public string? Name { get; init; }
     }
+
+    [AttributeUsage(AttributeTargets.Method, Inherited = false)]
+    public sealed class HttpHandlerAttribute() : Attribute { }
+
+    [AttributeUsage(AttributeTargets.Method, Inherited = false)]
+    public sealed class HttpRouterAttribute() : Attribute { }
 }

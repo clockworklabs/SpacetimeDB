@@ -28,7 +28,7 @@ Reducers are isolated and cannot interact with the outside world - they can only
 
 **[Procedures](./00200-functions/00400-procedures.md)** are functions similar to reducers, but with the ability to perform operations beyond the database. Unlike reducers, procedures can make HTTP requests to external services. However, procedures don't automatically run in database transactions - they must manually open and commit transactions to read from or modify database state.
 
-Procedures are currently in beta and should only be used when you need their special capabilities, such as making HTTP requests. For standard database operations, prefer using reducers.
+Procedures should only be used when you need their special capabilities, such as making HTTP requests. For standard database operations, prefer using reducers.
 
 ## Views
 

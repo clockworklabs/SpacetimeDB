@@ -20,12 +20,12 @@ use crate::{
     error::{IndexError, SequenceError, TableError},
     system_tables::{
         with_sys_table_buf, StClientFields, StClientRow, StColumnAccessorFields, StColumnAccessorRow, StColumnFields,
-        StColumnRow, StConstraintFields, StConstraintRow, StEventTableRow, StFields as _, StIndexAccessorFields,
-        StIndexAccessorRow, StIndexFields, StIndexRow, StRowLevelSecurityFields, StRowLevelSecurityRow,
-        StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow,
-        StTableFields, StTableRow, SystemTable, ST_CLIENT_ID, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID,
-        ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID, ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID,
-        ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
+        StColumnRow, StConstraintFields, StConstraintRow, StEventTableFields, StEventTableRow, StFields as _,
+        StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StRowLevelSecurityFields,
+        StRowLevelSecurityRow, StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow,
+        StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow, SystemTable, ST_CLIENT_ID,
+        ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID,
+        ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
     },
 };
 use crate::{execution_context::ExecutionContext, system_tables::StViewColumnRow};
@@ -43,11 +43,12 @@ use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
 use spacetimedb_lib::{
     db::raw_def::v9::RawSql,
     db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP},
+    empty_view_arg_hash_value,
     metrics::ExecutionMetrics,
-    ConnectionId, Identity, Timestamp,
+    sender_view_arg_hash_value, ConnectionId, Identity, Timestamp,
 };
 use spacetimedb_primitives::{
-    col_list, ArgId, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewFnPtr, ViewId,
+    col_list, ArgId, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
 };
 use spacetimedb_sats::{
     bsatn::to_writer, memory_usage::MemoryUsage, raw_identifier::RawIdentifier, ser::Serialize, AlgebraicValue,
@@ -57,7 +58,10 @@ use spacetimedb_schema::{
     def::{ModuleDef, ViewColumnDef, ViewDef, ViewParamDef},
     identifier::Identifier,
     reducer_name::ReducerName,
-    schema::{ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema},
+    schema::{
+        ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema,
+        VIEW_ARG_HASH_COL,
+    },
     table_name::TableName,
 };
 use spacetimedb_table::{
@@ -79,8 +83,6 @@ use std::{
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ViewCallInfo {
     pub view_id: ViewId,
-    pub table_id: TableId,
-    pub fn_ptr: ViewFnPtr,
     pub sender: Option<Identity>,
 }
 
@@ -88,6 +90,7 @@ pub struct ViewCallInfo {
 #[derive(Default)]
 pub struct ViewReadSets {
     tables: IntMap<TableId, TableReadSet>,
+    replacements: HashSet<ViewCallInfo>,
 }
 
 impl MemoryUsage for ViewReadSets {
@@ -99,7 +102,7 @@ impl MemoryUsage for ViewReadSets {
 impl ViewReadSets {
     /// Returns whether there are no read sets recorded.
     pub fn is_empty(&self) -> bool {
-        self.tables.is_empty()
+        self.tables.is_empty() && self.replacements.is_empty()
     }
 
     /// Returns the views that perform a full scan of this table
@@ -115,6 +118,14 @@ impl ViewReadSets {
         self.tables.entry(table_id).or_default().insert_table_scan(call);
     }
 
+    /// Record that `call` was successfully materialized in this transaction.
+    ///
+    /// On commit, the committed read set for this exact view call should be replaced
+    /// by the dependencies recorded in this transaction.
+    pub fn replace_view_read_set(&mut self, call: ViewCallInfo) {
+        self.replacements.insert(call);
+    }
+
     /// Removes keys for `view_id` from the read set
     pub fn remove_view(&mut self, view_id: ViewId, sender: Option<Identity>) {
         self.tables.retain(|_, readset| {
@@ -123,8 +134,20 @@ impl ViewReadSets {
         });
     }
 
+    /// Removes keys for exactly `call` from the read set.
+    fn remove_view_call(&mut self, call: &ViewCallInfo) {
+        self.tables.retain(|_, readset| {
+            readset.remove_view_call(call);
+            !readset.is_empty()
+        });
+    }
+
     /// Merge or union read sets together
     pub fn merge(&mut self, readset: Self) {
+        for call in readset.replacements {
+            self.remove_view_call(&call);
+        }
+
         for (table_id, rs) in readset.tables {
             self.tables.entry(table_id).or_default().merge(rs);
         }
@@ -212,6 +235,19 @@ impl TableReadSet {
         });
     }
 
+    /// Removes keys for exactly `call` from the read set.
+    fn remove_view_call(&mut self, call: &ViewCallInfo) {
+        self.table_scans.retain(|candidate| candidate != call);
+
+        self.index_reads.retain(|_cols, key_map| {
+            key_map.retain(|_key, views| {
+                views.retain(|candidate| candidate != call);
+                !views.is_empty()
+            });
+            !key_map.is_empty()
+        });
+    }
+
     /// Merge (union) another table read set into this one
     fn merge(&mut self, other: TableReadSet) {
         // merge table scans
@@ -255,7 +291,7 @@ pub struct MutTxId {
     pub(crate) _not_send: PhantomData<std::rc::Rc<()>>,
 }
 
-static_assert_size!(MutTxId, 432);
+static_assert_size!(MutTxId, 464);
 
 impl MutTxId {
     /// Record that a view performs a table scan in this transaction's read set
@@ -263,6 +299,14 @@ impl MutTxId {
         if let FuncCallType::View(view) = op {
             self.read_sets.insert_full_table_scan(table_id, view.clone());
         }
+    }
+
+    /// Replace the committed read set for `call` with the read set recorded in this transaction.
+    ///
+    /// This is transaction-local state. If the transaction rolls back, the committed read set is
+    /// left unchanged.
+    pub fn replace_view_read_set(&mut self, call: ViewCallInfo) {
+        self.read_sets.replace_view_read_set(call);
     }
 
     /// Record that a view performs a ranged index scan in this transaction's read set.
@@ -977,6 +1021,15 @@ impl MutTxId {
             )?;
         }
 
+        // Remove the table's row from `st_event_table`, if it is an event table.
+        if schema.is_event {
+            self.delete_col_eq(
+                ST_EVENT_TABLE_ID,
+                StEventTableFields::TableId.col_id(),
+                &table_id.into(),
+            )?;
+        }
+
         // Delete the table from memory, both in the tx an committed states.
         self.tx_state.insert_tables.remove(&table_id);
         // No need to keep the delete tables.
@@ -1166,6 +1219,46 @@ impl MutTxId {
 
         // Remember the pending change so we can undo if necessary.
         self.push_schema_change(PendingSchemaChange::TableAlterRowType(table_id, old_column_schemas));
+
+        Ok(())
+    }
+
+    pub(crate) fn alter_event_table_row_type(
+        &mut self,
+        table_id: TableId,
+        column_schemas: Vec<ColumnSchema>,
+    ) -> Result<()> {
+        // Sanity check: is this actually an event table?
+        if self.find_st_event_table_row(table_id).is_err() {
+            return Err(TableError::ReschemaNotAnEventTable(table_id).into());
+        }
+
+        // Write to the table in the tx state.
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+
+        if tx_table.row_count != 0 || commit_table.row_count != 0 {
+            // N.b. the delete table must also be empty, 'cause the committed table is empty.
+            return Err(TableError::EventTableNotEmpty(table_id).into());
+        }
+
+        let old_column_schemas = tx_table
+            .change_columns_of_empty_table_to(column_schemas.clone())
+            .map_err(|_| TableError::EventTableNotEmpty(table_id))?;
+
+        commit_table
+            .change_columns_of_empty_table_to(column_schemas.clone())
+            .map_err(|_| TableError::EventTableNotEmpty(table_id))?;
+
+        // Update system tables.
+        // We'll simply remove all rows in `st_columns` and then add the new ones.
+        // The datastore takes care of not persisting any no-op delete/inserts to the commitlog.
+        let table_name = self.find_st_table_row(table_id)?.table_name;
+        self.drop_st_column(table_id)?;
+        self.drop_st_column_accessor(&table_name)?;
+        self.insert_st_column(&table_name, &column_schemas)?;
+
+        // Remember the pending change so we can undo if necessary.
+        self.push_schema_change(PendingSchemaChange::ReschemaEventTable(table_id, old_column_schemas));
 
         Ok(())
     }
@@ -2280,6 +2373,16 @@ impl<'a, I: Iterator<Item = RowRef<'a>>> Iterator for FilterDeleted<'a, I> {
 }
 
 impl MutTxId {
+    /// Returns the hash value for an anonymous view's empty arguments.
+    pub fn anonymous_view_arg_hash() -> AlgebraicValue {
+        empty_view_arg_hash_value()
+    }
+
+    /// Returns the hash value for a sender-scoped view's arguments.
+    pub fn view_arg_hash(sender: Identity) -> AlgebraicValue {
+        sender_view_arg_hash_value(sender)
+    }
+
     /// Does this caller have an entry for `view_id` in `st_view_sub`?
     pub fn is_view_materialized(&self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<bool> {
         use StViewSubFields::*;
@@ -2453,14 +2556,15 @@ impl MutTxId {
             } = self.lookup_st_view(view_id)?;
             let table_id = table_id.expect("views have backing table");
 
-            if is_anonymous {
-                if !self.has_other_st_view_sub_entries(view_id, sub_row_ptr)? {
-                    self.clear_table(table_id)?;
-                    self.drop_view_from_committed_read_set(view_id);
-                }
-            } else {
+            let drop_materialization = !is_anonymous || !self.has_other_st_view_sub_entries(view_id, sub_row_ptr)?;
+            if drop_materialization {
+                let arg_hash = if is_anonymous {
+                    Self::anonymous_view_arg_hash()
+                } else {
+                    Self::view_arg_hash(sender)
+                };
                 let rows_to_delete = self
-                    .iter_by_col_eq(table_id, 0, &sender.into())?
+                    .iter_by_col_eq(table_id, VIEW_ARG_HASH_COL, &arg_hash)?
                     .map(|res| res.pointer())
                     .collect::<Vec<_>>();
 
@@ -2468,7 +2572,11 @@ impl MutTxId {
                     self.delete(table_id, row_ptr)?;
                 }
 
-                self.drop_view_with_sender_from_committed_read_set(view_id, sender);
+                if is_anonymous {
+                    self.drop_view_from_committed_read_set(view_id);
+                } else {
+                    self.drop_view_with_sender_from_committed_read_set(view_id, sender);
+                }
             }
 
             // Finally, delete the subscription row
