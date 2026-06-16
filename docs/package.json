@@ -5,6 +5,7 @@
   "scripts": {
     "docusaurus": "docusaurus",
     "dev": "docusaurus start",
+    "prebuild": "node scripts/sync-agent-skills.mjs",
     "build": "docusaurus build",
     "swizzle": "docusaurus swizzle",
     "deploy": "docusaurus deploy",
@@ -12,6 +13,7 @@
     "serve": "docusaurus serve",
     "generate-cli-docs": "node scripts/generate-cli-docs.mjs",
     "generate-llms": "docusaurus build && node scripts/generate-llms.mjs",
+    "sync-agent-skills": "node scripts/sync-agent-skills.mjs",
     "rewrite-links": "node scripts/rewrite-doc-links.mjs",
     "rewrite-links:write": "node scripts/rewrite-doc-links.mjs --write",
     "write-translations": "docusaurus write-translations",
