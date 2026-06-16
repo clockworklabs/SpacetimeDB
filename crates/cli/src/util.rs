@@ -197,6 +197,12 @@ impl AuthHeader {
             val
         })
     }
+
+    /// The raw bearer token, if any. Used by `spacetime sidecar` to pass the
+    /// caller's credentials into a sidecar container.
+    pub fn token(&self) -> Option<&str> {
+        self.token.as_deref()
+    }
 }
 
 pub const VALID_PROTOCOLS: [&str; 2] = ["http", "https"];
