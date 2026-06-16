@@ -88,8 +88,6 @@ pub async fn dispatch(test: &str, db_name: &str) {
         // "resubscribe" => exec_resubscribe(),
         //
         "reauth" => exec_reauth(db_name).await,
-        "reauth-part-1" => exec_reauth_part_1(db_name).await,
-        "reauth-part-2" => exec_reauth_part_2(db_name).await,
 
         "should-fail" => exec_should_fail(db_name).await,
 

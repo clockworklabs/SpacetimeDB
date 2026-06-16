@@ -12,25 +12,34 @@ static SERVER_URL: OnceLock<String> = OnceLock::new();
 
 pub fn set_server_url(url: String) {
     if SERVER_URL.set(url).is_err() {
-        panic!("{TEST_SERVER_URL_ENV_VAR} was set more than once");
+        panic!("SDK test server URL was initialized more than once");
     }
 }
 
 pub fn server_url() -> &'static str {
-    SERVER_URL.get_or_init(server_url_from_env).as_str()
-}
-
-fn server_url_from_env() -> String {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        std::env::var(TEST_SERVER_URL_ENV_VAR)
-            .unwrap_or_else(|_| panic!("{TEST_SERVER_URL_ENV_VAR} must be set by the SDK test harness"))
+        SERVER_URL.get_or_init(read_server_url_from_env).as_str()
     }
 
     #[cfg(target_arch = "wasm32")]
     {
-        panic!("{TEST_SERVER_URL_ENV_VAR} must be passed to the wasm SDK test harness")
+        SERVER_URL
+            .get()
+            .unwrap_or_else(|| {
+                panic!(
+                    "server URL was not initialized; \
+                     the wasm SDK test harness must read {TEST_SERVER_URL_ENV_VAR} and pass it to run()"
+                )
+            })
+            .as_str()
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn read_server_url_from_env() -> String {
+    std::env::var(TEST_SERVER_URL_ENV_VAR)
+        .unwrap_or_else(|_| panic!("{TEST_SERVER_URL_ENV_VAR} must be set by the SDK test harness"))
 }
 
 #[derive(Default)]
