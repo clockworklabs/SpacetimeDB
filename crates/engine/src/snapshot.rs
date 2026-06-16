@@ -14,10 +14,10 @@ use prometheus::{Histogram, IntGauge};
 use spacetimedb_datastore::locking_tx_datastore::{committed_state::CommittedState, datastore::Locking};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::Identity;
+use spacetimedb_runtime::sync::watch;
 use spacetimedb_snapshot::{CompressionStats, DynSnapshotRepo};
-use tokio::sync::watch;
 
-use crate::worker_metrics::WORKER_METRICS;
+use crate::metrics::ENGINE_METRICS;
 use spacetimedb_runtime::Handle;
 
 pub type SnapshotDatabaseState = Arc<RwLock<CommittedState>>;
@@ -158,9 +158,9 @@ struct SnapshotMetrics {
 impl SnapshotMetrics {
     fn new(db: Identity) -> Self {
         Self {
-            snapshot_timing_total: WORKER_METRICS.snapshot_creation_time_total.with_label_values(&db),
-            snapshot_timing_inner: WORKER_METRICS.snapshot_creation_time_inner.with_label_values(&db),
-            snapshot_timing_fsync: WORKER_METRICS.snapshot_creation_time_fsync.with_label_values(&db),
+            snapshot_timing_total: ENGINE_METRICS.snapshot_creation_time_total.with_label_values(&db),
+            snapshot_timing_inner: ENGINE_METRICS.snapshot_creation_time_inner.with_label_values(&db),
+            snapshot_timing_fsync: ENGINE_METRICS.snapshot_creation_time_fsync.with_label_values(&db),
         }
     }
 }
@@ -280,15 +280,15 @@ struct CompressionMetrics {
 impl CompressionMetrics {
     fn new(db: Identity) -> Self {
         Self {
-            timing_total: WORKER_METRICS.snapshot_compression_time_total.with_label_values(&db),
-            timing_inner: WORKER_METRICS.snapshot_compression_time_inner.with_label_values(&db),
-            timing_single: WORKER_METRICS.snapshot_compression_time_single.with_label_values(&db),
-            skipped: WORKER_METRICS.snapshot_compression_skipped.with_label_values(&db),
-            compressed: WORKER_METRICS.snapshot_compression_compressed.with_label_values(&db),
-            objects_compressed: WORKER_METRICS
+            timing_total: ENGINE_METRICS.snapshot_compression_time_total.with_label_values(&db),
+            timing_inner: ENGINE_METRICS.snapshot_compression_time_inner.with_label_values(&db),
+            timing_single: ENGINE_METRICS.snapshot_compression_time_single.with_label_values(&db),
+            skipped: ENGINE_METRICS.snapshot_compression_skipped.with_label_values(&db),
+            compressed: ENGINE_METRICS.snapshot_compression_compressed.with_label_values(&db),
+            objects_compressed: ENGINE_METRICS
                 .snapshot_compression_objects_compressed
                 .with_label_values(&db),
-            objects_hardlinked: WORKER_METRICS
+            objects_hardlinked: ENGINE_METRICS
                 .snapshot_compression_objects_hardlinked
                 .with_label_values(&db),
         }
