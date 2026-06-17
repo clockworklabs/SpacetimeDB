@@ -1,6 +1,6 @@
 # Backend: SpacetimeDB
 
-Instructions for generating, building, and deploying the **SpacetimeDB** backend.
+Server module + React client built on the SpacetimeDB TypeScript SDK.
 
 ---
 
