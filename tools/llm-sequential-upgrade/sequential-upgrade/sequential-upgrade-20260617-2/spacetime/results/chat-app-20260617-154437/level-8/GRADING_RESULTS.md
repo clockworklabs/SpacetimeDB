@@ -97,16 +97,3 @@
 
 **Reprompt count:** 1 (multi-connection presence: user marked offline when one of several connections closed)
 **Cost:** L7 upgrade $1.69 + fix $0.48 = $2.18
-
----
-
-## Level 8 — Message Threading (Features 1–11)
-
-| Feature | Score |
-|---------|-------|
-| 1–10 (regression) | 3/3 each |
-| 11. Message Threading | 3/3 |
-| **TOTAL** | **33/33** |
-
-**Reprompt count:** 0 (passed on first grade)
-**Cost:** L8 upgrade $1.60
