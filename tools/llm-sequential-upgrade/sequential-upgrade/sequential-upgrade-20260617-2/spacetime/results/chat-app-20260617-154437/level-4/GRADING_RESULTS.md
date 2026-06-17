@@ -45,16 +45,3 @@
 
 **Reprompt count:** 0 (passed on first grade)
 **Cost:** L3 upgrade $1.28
-
----
-
-## Level 4 — Message Reactions (Features 1–7)
-
-| Feature | Score |
-|---------|-------|
-| 1–6 (regression) | 3/3 each |
-| 7. Message Reactions | 3/3 |
-| **TOTAL** | **21/21** |
-
-**Reprompt count:** 0 (passed on first grade)
-**Cost:** L4 upgrade $0.85
