@@ -59,33 +59,5 @@ const readReceipt = table(
   }
 );
 
-const scheduledMessage = table(
-  {
-    name: 'scheduled_message',
-    public: true,
-    scheduled: (): any => sendScheduledMessage,
-  },
-  {
-    scheduled_id: t.u64().primaryKey().autoInc(),
-    scheduled_at: t.scheduleAt(),
-    roomId: t.u64(),
-    senderIdentity: t.identity(),
-    text: t.string(),
-  }
-);
-
-const spacetimedb = schema({ user, room, roomMember, message, typingIndicator, readReceipt, scheduledMessage });
+const spacetimedb = schema({ user, room, roomMember, message, typingIndicator, readReceipt });
 export default spacetimedb;
-
-export const sendScheduledMessage = spacetimedb.reducer(
-  { timer: scheduledMessage.rowType },
-  (ctx, { timer }) => {
-    ctx.db.message.insert({
-      id: 0n,
-      roomId: timer.roomId,
-      senderIdentity: timer.senderIdentity,
-      text: timer.text,
-      sentAt: ctx.timestamp,
-    });
-  }
-);

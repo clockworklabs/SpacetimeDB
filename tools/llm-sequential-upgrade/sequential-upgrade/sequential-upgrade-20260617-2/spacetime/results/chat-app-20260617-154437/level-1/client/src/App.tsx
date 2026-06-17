@@ -10,33 +10,8 @@ function formatTime(microsSinceUnixEpoch: bigint): string {
   return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function formatScheduledTime(scheduledAt: { tag: string; value: bigint } | { microsSinceUnixEpoch: bigint } | unknown): string {
-  try {
-    const sa = scheduledAt as Record<string, unknown>;
-    let us: bigint | undefined;
-    if (sa.tag === 'time' && typeof sa.value === 'bigint') {
-      us = sa.value;
-    } else if (typeof (sa as { microsSinceUnixEpoch?: unknown }).microsSinceUnixEpoch === 'bigint') {
-      us = (sa as { microsSinceUnixEpoch: bigint }).microsSinceUnixEpoch;
-    }
-    if (us !== undefined) {
-      const ms = Number(us / 1000n);
-      return new Date(ms).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-    }
-  } catch {
-    // ignore
-  }
-  return '(unknown time)';
-}
-
 function identityHex(identity: { toHexString: () => string }): string {
   return identity.toHexString();
-}
-
-function getMinDatetimeLocal(): string {
-  const now = new Date(Date.now() + 60_000); // at least 1 minute from now
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
 }
 
 export default function App() {
@@ -49,7 +24,6 @@ export default function App() {
   const [messages] = useTable(tables.message);
   const [typingIndicators] = useTable(tables.typingIndicator);
   const [readReceipts] = useTable(tables.readReceipt);
-  const [scheduledMessages] = useTable(tables.scheduledMessage);
 
   const [subscribed, setSubscribed] = useState(false);
   const [currentRoomId, setCurrentRoomId] = useState<bigint | null>(null);
@@ -57,8 +31,6 @@ export default function App() {
   const [nameInput, setNameInput] = useState('');
   const [newRoomName, setNewRoomName] = useState('');
   const [showCreateRoom, setShowCreateRoom] = useState(false);
-  const [showSchedule, setShowSchedule] = useState(false);
-  const [scheduleDateTime, setScheduleDateTime] = useState('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastTypingRef = useRef<number>(0);
@@ -88,7 +60,6 @@ export default function App() {
         tables.message,
         tables.typingIndicator,
         tables.readReceipt,
-        tables.scheduledMessage,
       ]);
   }, [conn, isActive]);
 
@@ -117,10 +88,6 @@ export default function App() {
       ti.roomId === currentRoomId &&
       identityHex(ti.userIdentity) !== myHex &&
       nowUs - ti.updatedAt.microsSinceUnixEpoch < TYPING_EXPIRY_US
-  );
-
-  const myPendingScheduled = scheduledMessages.filter(
-    sm => sm.roomId === currentRoomId && identityHex(sm.senderIdentity) === myHex
   );
 
   function getUnreadCount(roomId: bigint): number {
@@ -190,23 +157,6 @@ export default function App() {
     if (!messageInput.trim() || !currentRoomId || !conn || !isActive) return;
     conn.reducers.sendMessage({ roomId: currentRoomId, text: messageInput.trim() });
     setMessageInput('');
-  }
-
-  function handleScheduleMessage(e: React.FormEvent) {
-    e.preventDefault();
-    if (!messageInput.trim() || !currentRoomId || !conn || !isActive || !scheduleDateTime) return;
-    const scheduledAtMs = new Date(scheduleDateTime).getTime();
-    if (isNaN(scheduledAtMs) || scheduledAtMs <= Date.now()) return;
-    const scheduledAtUs = BigInt(Math.floor(scheduledAtMs)) * 1000n;
-    conn.reducers.scheduleMessage({ roomId: currentRoomId, text: messageInput.trim(), scheduledAtUs });
-    setMessageInput('');
-    setShowSchedule(false);
-    setScheduleDateTime('');
-  }
-
-  function handleCancelScheduled(scheduledId: bigint) {
-    if (!conn || !isActive) return;
-    conn.reducers.cancelScheduledMessage({ scheduledId });
   }
 
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -403,26 +353,6 @@ export default function App() {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Pending Scheduled Messages */}
-            {myPendingScheduled.length > 0 && (
-              <div className="scheduled-list">
-                <div className="scheduled-list-title">Scheduled ({myPendingScheduled.length})</div>
-                {myPendingScheduled.map(sm => (
-                  <div key={String(sm.scheduledId)} className="scheduled-item">
-                    <span className="scheduled-text">{sm.text}</span>
-                    <span className="scheduled-time">{formatScheduledTime(sm.scheduledAt)}</span>
-                    <button
-                      className="cancel-scheduled-btn"
-                      onClick={() => handleCancelScheduled(sm.scheduledId)}
-                      title="Cancel scheduled message"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
             {/* Input Area */}
             <div className="input-area">
               <div className="typing-indicator">
@@ -448,34 +378,6 @@ export default function App() {
                 )}
                 {currentTyping.length > 2 && 'Multiple users are typing...'}
               </div>
-
-              {showSchedule && (
-                <form className="schedule-form" onSubmit={handleScheduleMessage}>
-                  <input
-                    className="schedule-datetime"
-                    type="datetime-local"
-                    value={scheduleDateTime}
-                    min={getMinDatetimeLocal()}
-                    onChange={e => setScheduleDateTime(e.target.value)}
-                    required
-                  />
-                  <button
-                    className="schedule-confirm-btn"
-                    type="submit"
-                    disabled={!messageInput.trim() || !scheduleDateTime}
-                  >
-                    Schedule Send
-                  </button>
-                  <button
-                    type="button"
-                    className="schedule-cancel-btn"
-                    onClick={() => { setShowSchedule(false); setScheduleDateTime(''); }}
-                  >
-                    Cancel
-                  </button>
-                </form>
-              )}
-
               <form className="message-form" onSubmit={handleSendMessage}>
                 <input
                   className="message-input"
@@ -486,14 +388,6 @@ export default function App() {
                   maxLength={2000}
                   autoFocus
                 />
-                <button
-                  className="schedule-toggle-btn"
-                  type="button"
-                  title="Schedule message"
-                  onClick={() => setShowSchedule(s => !s)}
-                >
-                  &#128337;
-                </button>
                 <button
                   className="send-btn"
                   type="submit"

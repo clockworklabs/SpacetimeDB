@@ -19,16 +19,3 @@
 
 **Reprompt count:** 0 (passed on first grade)
 **Cost:** L1 generate $1.67
-
----
-
-## Level 2 — Scheduled Messages (Features 1–5)
-
-| Feature | Score |
-|---------|-------|
-| 1–4 (regression) | 3/3 each |
-| 5. Scheduled Messages | 3/3 |
-| **TOTAL** | **15/15** |
-
-**Reprompt count:** 0 (passed on first grade)
-**Cost:** L2 upgrade $1.04

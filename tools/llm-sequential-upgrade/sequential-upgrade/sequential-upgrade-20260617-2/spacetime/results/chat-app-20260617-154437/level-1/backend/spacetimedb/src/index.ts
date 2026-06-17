@@ -1,9 +1,7 @@
 import { t, SenderError } from 'spacetimedb/server';
-import { ScheduleAt } from 'spacetimedb';
 import spacetimedb from './schema';
 
 export { default } from './schema';
-export { sendScheduledMessage } from './schema';
 
 export const onConnect = spacetimedb.clientConnected((ctx) => {
   const existing = ctx.db.user.identity.find(ctx.sender);
@@ -129,41 +127,5 @@ export const markRead = spacetimedb.reducer(
     } else {
       ctx.db.readReceipt.insert({ id: 0n, roomId, userIdentity: ctx.sender, lastReadMessageId: messageId });
     }
-  }
-);
-
-export const scheduleMessage = spacetimedb.reducer(
-  { roomId: t.u64(), text: t.string(), scheduledAtUs: t.u64() },
-  (ctx, { roomId, text, scheduledAtUs }) => {
-    const trimmed = text.trim();
-    if (trimmed.length === 0) throw new SenderError('Message cannot be empty');
-    if (trimmed.length > 2000) throw new SenderError('Message too long');
-    const user = ctx.db.user.identity.find(ctx.sender);
-    if (!user || !user.name) throw new SenderError('Set your name first');
-    const isMember = [...ctx.db.roomMember.roomId.filter(roomId)]
-      .some(m => m.userIdentity.toHexString() === ctx.sender.toHexString());
-    if (!isMember) throw new SenderError('Not a member of this room');
-    if (scheduledAtUs <= ctx.timestamp.microsSinceUnixEpoch) {
-      throw new SenderError('Scheduled time must be in the future');
-    }
-    ctx.db.scheduledMessage.insert({
-      scheduled_id: 0n,
-      scheduled_at: ScheduleAt.time(scheduledAtUs),
-      roomId,
-      senderIdentity: ctx.sender,
-      text: trimmed,
-    });
-  }
-);
-
-export const cancelScheduledMessage = spacetimedb.reducer(
-  { scheduledId: t.u64() },
-  (ctx, { scheduledId }) => {
-    const scheduled = ctx.db.scheduledMessage.scheduled_id.find(scheduledId);
-    if (!scheduled) throw new SenderError('Scheduled message not found');
-    if (scheduled.senderIdentity.toHexString() !== ctx.sender.toHexString()) {
-      throw new SenderError('Cannot cancel another user\'s scheduled message');
-    }
-    ctx.db.scheduledMessage.scheduled_id.delete(scheduledId);
   }
 );
