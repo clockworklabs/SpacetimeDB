@@ -768,20 +768,31 @@ if [[ -z "$FIX_MODE" && -z "$UPGRADE_MODE" ]]; then
     esac
     echo "Assembled standard CLAUDE.md (rules=$RULES)"
   else
-    # guided (default) — full phases + SDK rules + templates
+    # guided (default) — full phases + official SpacetimeDB skills + templates
     if [[ "$BACKEND" == "spacetime" ]]; then
+      # SDK reference comes from the maintained official skills at the repo root.
+      # Fall back to the in-tree sdk-rules fork only if the skills are absent.
+      _server_skill="$SCRIPT_DIR/../../skills/typescript-server/SKILL.md"
+      _client_skill="$SCRIPT_DIR/../../skills/typescript-client/SKILL.md"
+      _strip_fm() { awk 'NR==1 && /^---$/ {fm=1; next} fm && /^---$/ {fm=0; next} !fm {print}' "$1"; }
       {
         cat "$SCRIPT_DIR/backends/spacetime.md"
-        echo ""
-        echo "---"
-        echo ""
-        cat "$SCRIPT_DIR/backends/spacetime-sdk-rules.md"
-        echo ""
-        echo "---"
-        echo ""
+        echo ""; echo "---"; echo ""
+        if [[ -f "$_server_skill" && -f "$_client_skill" ]]; then
+          _strip_fm "$_server_skill"
+          echo ""; echo "---"; echo ""
+          _strip_fm "$_client_skill"
+        else
+          cat "$SCRIPT_DIR/backends/spacetime-sdk-rules.md"
+        fi
+        echo ""; echo "---"; echo ""
         cat "$SCRIPT_DIR/backends/spacetime-templates.md"
       } > "$APP_DIR/CLAUDE.md"
-      echo "Assembled guided CLAUDE.md from spacetime.md + sdk-rules + templates"
+      if [[ -f "$_server_skill" && -f "$_client_skill" ]]; then
+        echo "Assembled guided CLAUDE.md from spacetime.md + official skills (server+client) + templates"
+      else
+        echo "Assembled guided CLAUDE.md from spacetime.md + sdk-rules fork (skills missing) + templates"
+      fi
     else
       cp "$SCRIPT_DIR/backends/$BACKEND.md" "$APP_DIR/CLAUDE.md"
       echo "Copied backends/$BACKEND.md → app CLAUDE.md"
