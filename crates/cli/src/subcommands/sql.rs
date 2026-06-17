@@ -292,7 +292,7 @@ mod tests {
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::sats::time_duration::TimeDuration;
     use spacetimedb_lib::sats::timestamp::Timestamp;
-    use spacetimedb_lib::sats::{product, GroundSpacetimeType, ProductType};
+    use spacetimedb_lib::sats::{product, ArrayValue, GroundSpacetimeType, ProductType};
     use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ConnectionId, Identity, Uuid};
 
     fn make_row(row: &[AlgebraicValue]) -> Result<Box<RawValue>, serde_json::Error> {
@@ -510,6 +510,48 @@ Roundtrip time: 1.00ms"#,
         let mut table = table.split('\n').map(|x| x.trim_end()).join("\n");
         table.insert(0, '\n');
         assert_eq!(expected, table);
+    }
+
+    #[test]
+    fn output_arrays() -> ResultTest<()> {
+        let kind: ProductType = [
+            ("ints", AlgebraicType::array(AlgebraicType::I32)),
+            ("strings", AlgebraicType::array(AlgebraicType::String)),
+            ("nested", AlgebraicType::array(AlgebraicType::array(AlgebraicType::I32))),
+            ("bytes", AlgebraicType::bytes()),
+        ]
+        .into();
+
+        let value = product![
+            AlgebraicValue::Array(ArrayValue::I32([1, 2, 3].into())),
+            AlgebraicValue::Array(ArrayValue::String(["one".into(), "two".into()].into())),
+            AlgebraicValue::Array(ArrayValue::Array(
+                [ArrayValue::I32([1, 2].into()), ArrayValue::I32([3, 4].into())].into()
+            )),
+            AlgebraicValue::Bytes([0xde, 0xad].into()),
+        ];
+
+        expect_psql_table(
+            PsqlClient::SpacetimeDB,
+            &kind,
+            vec![value.clone()],
+            r#"
+ ints      | strings        | nested           | bytes
+-----------+----------------+------------------+--------
+ [1, 2, 3] | ["one", "two"] | [[1, 2], [3, 4]] | 0xdead"#,
+        );
+
+        expect_psql_table(
+            PsqlClient::Postgres,
+            &kind,
+            vec![value],
+            r#"
+ ints      | strings        | nested           | bytes
+-----------+----------------+------------------+----------
+ {1, 2, 3} | {"one", "two"} | {{1, 2}, {3, 4}} | "0xdead""#,
+        );
+
+        Ok(())
     }
 
     // Verify the output of `sql` matches the inputs that return true for [`AlgebraicType::is_special()`]
