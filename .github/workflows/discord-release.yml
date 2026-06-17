@@ -51,8 +51,6 @@ jobs:
           # Dry run: just print what would be sent
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             echo "=== DRY RUN - Message that would be sent to Discord ==="
-            echo "Discord Webhook URL: ${DISCORD_WEBHOOK_URL:+<set>}"
-            echo ""
             echo "JSON payload:"
             echo "$data" | jq .
             echo ""
