@@ -12,9 +12,7 @@ import {
 
 export default __t.row({
   id: __t.u64().primaryKey(),
-  roomId: __t.u64().name("room_id"),
-  senderIdentity: __t.identity().name("sender_identity"),
-  text: __t.string(),
-  sentAt: __t.timestamp().name("sent_at"),
-  expiresAt: __t.option(__t.u64()).name("expires_at"),
+  name: __t.string(),
+  createdBy: __t.identity().name("created_by"),
+  createdAt: __t.timestamp().name("created_at"),
 });

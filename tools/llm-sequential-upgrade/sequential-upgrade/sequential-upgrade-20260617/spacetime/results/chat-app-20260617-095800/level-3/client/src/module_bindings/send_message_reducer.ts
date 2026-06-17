@@ -10,11 +10,7 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export default __t.row({
-  id: __t.u64().primaryKey(),
-  roomId: __t.u64().name("room_id"),
-  senderIdentity: __t.identity().name("sender_identity"),
+export default {
+  roomId: __t.u64(),
   text: __t.string(),
-  sentAt: __t.timestamp().name("sent_at"),
-  expiresAt: __t.option(__t.u64()).name("expires_at"),
-});
+};
