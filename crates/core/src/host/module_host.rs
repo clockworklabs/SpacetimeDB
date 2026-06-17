@@ -6,6 +6,7 @@ use crate::client::messages::{OneOffQueryResponseMessage, ProcedureResultMessage
 use crate::client::{ClientActorId, ClientConnectionSender, WsVersion};
 use crate::database_logger::{DatabaseLogger, LogLevel, Record};
 use crate::db::relational_db::{RelationalDB, Tx};
+use crate::db::sql::ast::SchemaViewer;
 use crate::error::DBError;
 use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::hash::Hash;
@@ -18,9 +19,7 @@ use crate::host::{InvalidFunctionArguments, InvalidViewArguments};
 use crate::identity::Identity;
 use crate::messages::control_db::{Database, HostType};
 use crate::replica_context::ReplicaContext;
-use crate::sql::ast::SchemaViewer;
 use crate::sql::execute::SqlResult;
-use crate::sql::parser::RowLevelExpr;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::module_subscription_manager::BroadcastError;
 pub use crate::subscription::module_subscription_manager::TransactionOffset;
@@ -51,7 +50,9 @@ use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 pub use spacetimedb_durability::{DurabilityExited, DurableOffset};
+use spacetimedb_engine::sql::rls::RowLevelExpr;
 use spacetimedb_execution::pipelined::PipelinedProject;
+use spacetimedb_execution::ExecutionParams;
 use spacetimedb_execution::RelValue;
 use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
@@ -64,10 +65,9 @@ use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue};
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
-use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, ViewDef};
+use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, ViewDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::reducer_name::ReducerName;
-use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_schema::table_name::TableName;
 use std::collections::VecDeque;
 use std::fmt;
@@ -549,19 +549,6 @@ impl GenericModuleInstance for super::v8::JsProcedureInstance {
     }
 }
 
-/// Creates the table for `table_def` in `stdb`.
-pub fn create_table_from_def(
-    stdb: &RelationalDB,
-    tx: &mut MutTxId,
-    module_def: &ModuleDef,
-    table_def: &TableDef,
-) -> anyhow::Result<()> {
-    let schema = TableSchema::from_module_def(module_def, table_def, (), TableId::SENTINEL);
-    stdb.create_table(tx, schema)
-        .with_context(|| format!("failed to create table {}", &table_def.name))?;
-    Ok(())
-}
-
 /// Creates the table for `view_def` in `stdb`.
 pub fn create_table_from_view_def(
     stdb: &RelationalDB,
@@ -614,7 +601,7 @@ fn init_database_inner(
             table_defs.sort_by_key(|x| &x.name);
             for def in table_defs {
                 logger.info(&format!("Creating table `{}`", &def.name));
-                create_table_from_def(stdb, tx, module_def, def)?;
+                spacetimedb_engine::update::create_table_from_def(stdb, tx, module_def, def)?;
             }
 
             // Create all in-memory views defined by the module.
@@ -3278,7 +3265,7 @@ impl ModuleHost {
         // Optimize each fragment.
         let optimized = plans
             .into_iter()
-            .map(|plan| plan.optimize(auth))
+            .map(|plan| plan.optimize())
             .collect::<Result<Vec<_>, _>>()?;
 
         check_row_limit(
@@ -3306,10 +3293,12 @@ impl ModuleHost {
 
         let table_name = table_name.into();
         let delta_tx = DeltaTx::from(tx);
-        let (rows, _, metrics) = if returns_view_table && num_private_cols > 0 {
-            execute_plan_for_view::<F>(optimized.iter(), num_cols, num_private_cols, &delta_tx, rlb_pool)
+        let params = ExecutionParams::from_auth(auth);
+        let plan_fragments = optimized.iter();
+        let (rows, _, metrics) = if returns_view_table {
+            execute_plan_for_view::<F>(plan_fragments, num_cols, num_private_cols, &delta_tx, &params, rlb_pool)
         } else {
-            execute_plan::<F>(optimized.iter(), &delta_tx, rlb_pool)
+            execute_plan::<F>(optimized.iter(), &delta_tx, &params, rlb_pool)
         }
         .context("One-off queries are not allowed to modify the database")?;
 

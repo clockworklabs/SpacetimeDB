@@ -1180,7 +1180,14 @@ impl Deref for TxContext {
     }
 }
 
-fn try_with_tx<T, E>(body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
+/// We need to passthrough identity and connection_id because procedures can be invoked by users.
+/// For [HttpContext] this is always anonymous ([Identity::ZERO]).
+/// Construct the inner [ReducerContext] with the appropriate caller information.
+fn try_with_tx<T, E>(
+    body: impl Fn(&TxContext) -> Result<T, E>,
+    identity: Identity,
+    connection_id: Option<ConnectionId>,
+) -> Result<T, E> {
     let abort = || {
         crate::sys::procedure::procedure_abort_mut_tx()
             .expect("should have a pending mutable anon tx as `procedure_start_mut_tx` preceded")
@@ -1191,8 +1198,7 @@ fn try_with_tx<T, E>(body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> 
             .expect("holding `&mut HandlerContext`, so should not be in a tx already; called manually elsewhere?");
         let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp);
 
-        // Use the internal auth context (no external caller identity).
-        let tx = ReducerContext::new(crate::Local {}, Identity::ZERO, None, timestamp);
+        let tx = ReducerContext::new(crate::Local {}, identity, connection_id, timestamp);
         let tx = TxContext(tx);
 
         struct DoOnDrop<F: Fn()>(F);
@@ -1225,9 +1231,9 @@ fn try_with_tx<T, E>(body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> 
     res
 }
 
-fn with_tx<T>(body: impl Fn(&TxContext) -> T) -> T {
+fn with_tx<T>(body: impl Fn(&TxContext) -> T, identity: Identity, connection_id: Option<ConnectionId>) -> T {
     use core::convert::Infallible;
-    match try_with_tx::<T, Infallible>(|tx| Ok(body(tx))) {
+    match try_with_tx::<T, Infallible>(|tx| Ok(body(tx)), identity, connection_id) {
         Ok(v) => v,
         Err(e) => match e {},
     }
@@ -1293,7 +1299,13 @@ impl ProcedureContext {
     }
 
     /// Read the current module's [`Identity`].
+    #[deprecated(note = "Use `ProcedureContext::database_identity` instead.")]
     pub fn identity(&self) -> Identity {
+        self.database_identity()
+    }
+
+    /// Read the current module's [`Identity`].
+    pub fn database_identity(&self) -> Identity {
         // Hypothetically, we *could* read the module identity out of the system tables.
         // However, this would be:
         // - Onerous, because we have no tooling to inspect the system tables from module code.
@@ -1359,7 +1371,7 @@ impl ProcedureContext {
     /// callers should avoid writing to any captured mutable state within `body`,
     /// This includes interior mutability through types like [`std::cell::Cell`].
     pub fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
-        with_tx(body)
+        with_tx(body, self.sender(), self.connection_id())
     }
 
     /// Acquire a mutable transaction
@@ -1392,7 +1404,7 @@ impl ProcedureContext {
     /// callers should avoid writing to any captured mutable state within `body`,
     /// This includes interior mutability through types like [`std::cell::Cell`].
     pub fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
-        try_with_tx(body)
+        try_with_tx(body, self.sender(), self.connection_id())
     }
 
     ///  Create a new random [`Uuid`] `v4` using the built-in RNG.
