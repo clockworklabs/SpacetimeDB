@@ -58,16 +58,3 @@
 
 **Reprompt count:** 0 (passed on first grade)
 **Cost:** L4 upgrade $0.85
-
----
-
-## Level 5 — Message Editing with History (Features 1–8)
-
-| Feature | Score |
-|---------|-------|
-| 1–7 (regression) | 3/3 each |
-| 8. Message Editing with History | 3/3 |
-| **TOTAL** | **24/24** |
-
-**Reprompt count:** 0 (passed on first grade)
-**Cost:** L5 upgrade $1.22

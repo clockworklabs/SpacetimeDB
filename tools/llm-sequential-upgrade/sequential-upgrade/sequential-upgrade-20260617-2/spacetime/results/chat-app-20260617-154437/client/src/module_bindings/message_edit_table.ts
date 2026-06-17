@@ -12,10 +12,7 @@ import {
 
 export default __t.row({
   id: __t.u64().primaryKey(),
-  roomId: __t.u64().name("room_id"),
-  senderIdentity: __t.identity().name("sender_identity"),
-  text: __t.string(),
-  sentAt: __t.timestamp().name("sent_at"),
-  expiresAtUs: __t.option(__t.u64()).name("expires_at_us"),
-  editedAt: __t.option(__t.timestamp()).name("edited_at"),
+  messageId: __t.u64().name("message_id"),
+  editedAt: __t.timestamp().name("edited_at"),
+  previousText: __t.string().name("previous_text"),
 });
