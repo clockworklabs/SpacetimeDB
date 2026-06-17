@@ -132,5 +132,5 @@ fn test_locked_database_allows_publish() {
         .unwrap();
 
     // Republish without --delete-data — should succeed
-    test.publish().current_database().run().unwrap();
+    test.publish().current_database().unwrap().run().unwrap();
 }
