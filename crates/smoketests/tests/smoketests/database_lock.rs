@@ -28,7 +28,7 @@ fn test_locked_database_cannot_be_reset() {
         .build();
 
     let name = format!("test-lock-reset-{}", std::process::id());
-    test.publish_module_named(&name, false).unwrap();
+    test.publish().name(&name).run().unwrap();
 
     let identity = test.database_identity.as_ref().unwrap();
 
@@ -37,7 +37,7 @@ fn test_locked_database_cannot_be_reset() {
         .unwrap();
 
     // Try to republish with --delete-data — should fail
-    let result = test.publish_module_with_options(&name, true, false);
+    let result = test.publish().name(&name).clear(true).run();
     assert!(
         result.is_err(),
         "Expected publish with --delete-data to fail on a locked database, but it succeeded"
@@ -123,7 +123,7 @@ fn test_locked_database_allows_publish() {
         .build();
 
     let name = format!("test-lock-publish-{}", std::process::id());
-    test.publish_module_named(&name, false).unwrap();
+    test.publish().name(&name).run().unwrap();
 
     let identity = test.database_identity.as_ref().unwrap();
 
@@ -132,5 +132,5 @@ fn test_locked_database_allows_publish() {
         .unwrap();
 
     // Republish without --delete-data — should succeed
-    test.publish_module_clear(false).unwrap();
+    test.publish().run().unwrap();
 }
