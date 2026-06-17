@@ -44,7 +44,7 @@ Only read files you created, the backend instructions, and the feature prompts.
 1. Read `backends/<backend>.md` for pre-flight checks, phases, and deploy steps
 2. Read the language setup: `../llm-oneshot/apps/chat-app/prompts/language/typescript-<backend>.md`
 3. Read the feature prompt: `../llm-oneshot/apps/chat-app/prompts/composed/<NN>_<name>.md`
-4. Follow the phases in the backend file (generate backend → generate client → verify → deploy)
+4. Follow the phases in the backend file, in order
 5. Output `DEPLOY_COMPLETE` when the dev server is confirmed running
 
 For **upgrade**: only add the NEW features from the target level. Do not rewrite existing working features.
