@@ -23,6 +23,9 @@ on:
         type: boolean
         default: true
 
+permissions:
+  contents: read
+
 jobs:
   publicDiscordNotification:
     runs-on: ubuntu-latest
