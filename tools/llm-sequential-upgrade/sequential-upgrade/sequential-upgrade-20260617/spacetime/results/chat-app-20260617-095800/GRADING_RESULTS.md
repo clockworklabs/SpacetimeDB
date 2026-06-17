@@ -3,7 +3,7 @@
 **Model:** claude-sonnet-4-6
 **Date:** 2026-06-17
 **Backend:** spacetime
-**Level:** 4
+**Level:** 5
 **Grading Method:** Manual browser interaction
 **Setup:** fresh 20260617 baseline — cleaned prompts + official skills + SpacetimeDB 2.6.0
 
@@ -16,9 +16,10 @@
 ## Feature 5: Scheduled Messages (Score: 3 / 3)
 ## Feature 6: Ephemeral Messages (Score: 3 / 3)
 ## Feature 7: Message Reactions (Score: 3 / 3)
-**Browser Test Observations:** Emoji reactions add/toggle with live per-emoji counts that
-update in real time for all room members. Features 1–6 regression-checked, no regressions.
-Passed on first upgrade (no fix needed).
+## Feature 8: Message Editing with History (Score: 3 / 3)
+**Browser Test Observations:** Users edit their own messages (not others'), edited messages
+show an "edited" indicator with accessible edit history, and edits propagate live to all room
+members. Features 1–7 regression-checked, no regressions. Passed on first upgrade (no fix).
 
 ---
 
@@ -32,8 +33,9 @@ Passed on first upgrade (no fix needed).
 | 4. Unread Counts | 3/3 | |
 | 5. Scheduled Messages | 3/3 | |
 | 6. Ephemeral Messages | 3/3 | |
-| 7. Message Reactions | 3/3 | new at L4 |
-| **TOTAL** | **21/21** | |
+| 7. Message Reactions | 3/3 | |
+| 8. Message Editing | 3/3 | new at L5 |
+| **TOTAL** | **24/24** | |
 
 **Reprompt count:** 0 (passed on first upgrade)
-**Cost:** L4 upgrade $0.88 (cumulative $5.54; ~+26% vs published)
+**Cost:** L5 upgrade $1.32 (cumulative $6.86; ~+29% vs published)
