@@ -57,9 +57,11 @@ LEVEL_EXPLICIT=""
 BACKEND="spacetime"
 VARIANT="sequential-upgrade"
 RULES="guided"
-# Model to pin for the Code Agent. Defaults to $ANTHROPIC_MODEL if set, else the
-# CLI default. Pin the SAME model across backends/levels for a fair comparison.
-MODEL="${ANTHROPIC_MODEL:-}"
+# Model to pin for the Code Agent. Defaults to the benchmark's canonical model so
+# unpinned runs can't silently inherit the CLI default (which may differ per env).
+# Override with --model or $ANTHROPIC_MODEL. Pin the SAME model across
+# backends/levels for a fair comparison.
+MODEL="${ANTHROPIC_MODEL:-claude-sonnet-4-6}"
 RUN_INDEX=0
 FIX_MODE=""
 FIX_APP_DIR=""
@@ -867,12 +869,21 @@ if [[ -n "$MODEL" ]]; then
   MODEL_FLAG="--model $MODEL"
 fi
 
-# --fork-session creates a new session branched from the prior one (keeps context)
-$CLAUDE_CMD --print --verbose --output-format text --dangerously-skip-permissions \
-  --add-dir "$APP_DIR" \
-  --add-dir "$SCRIPT_DIR" \
-  --add-dir "$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts" \
-  $MODEL_FLAG --session-id "$SESSION_ID" $RESUME_FLAG -p "$PROMPT"
+# Assemble args as an array so optional/empty flags can't break word-splitting or
+# the line continuation (an unquoted empty expansion previously orphaned --add-dir
+# and, under `set -e`, killed the script before telemetry was parsed).
+# --fork-session (when resuming) branches a new session from the prior one.
+CLAUDE_ARGS=(
+  --print --verbose --output-format text --dangerously-skip-permissions
+  --add-dir "$APP_DIR"
+  --add-dir "$SCRIPT_DIR"
+  --add-dir "$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts"
+  --session-id "$SESSION_ID"
+)
+[[ -n "$MODEL" ]] && CLAUDE_ARGS+=(--model "$MODEL")
+[[ -n "${PREV_SESSION_ID:-}" ]] && CLAUDE_ARGS+=(--resume "$PREV_SESSION_ID" --fork-session)
+CLAUDE_ARGS+=(-p "$PROMPT")
+$CLAUDE_CMD "${CLAUDE_ARGS[@]}"
 EXIT_CODE=$?
 
 echo ""
