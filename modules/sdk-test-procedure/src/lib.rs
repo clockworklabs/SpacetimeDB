@@ -41,11 +41,13 @@ fn will_panic(_ctx: &mut ProcedureContext) {
 }
 
 #[procedure]
-fn read_my_schema(ctx: &mut ProcedureContext) -> String {
+fn read_my_schema(ctx: &mut ProcedureContext, server_url: String) -> String {
     let module_identity = ctx.database_identity();
-    match ctx.http.get(format!(
-        "http://localhost:3000/v1/database/{module_identity}/schema?version=9"
-    )) {
+    let server_url = server_url.trim_end_matches('/');
+    match ctx
+        .http
+        .get(format!("{server_url}/v1/database/{module_identity}/schema?version=9"))
+    {
         Ok(result) => result.into_body().into_string_lossy(),
         Err(e) => panic!("{e}"),
     }
