@@ -71,16 +71,3 @@
 
 **Reprompt count:** 0 (passed on first grade)
 **Cost:** L5 upgrade $1.22
-
----
-
-## Level 6 — Real-Time Permissions (Features 1–9)
-
-| Feature | Score |
-|---------|-------|
-| 1–8 (regression) | 3/3 each |
-| 9. Real-Time Permissions | 3/3 |
-| **TOTAL** | **27/27** |
-
-**Reprompt count:** 0 (passed on first grade)
-**Cost:** L6 upgrade $1.17
