@@ -60,14 +60,6 @@ export interface ModuleTestHarness<S extends UntypedSchemaDef> {
   viewContext(auth: TestAuth): ViewCtx<S>;
   anonymousViewContext(): AnonymousViewCtx<S>;
   runQuery<Row>(query: Query<any>): Row[];
-
-  setHttpResponder(
-    responder: (
-      test: ModuleTestHarness<S>,
-      req: HttpRequest,
-      body: Uint8Array
-    ) => HttpResponse
-  ): void;
 }
 
 export class TestClock {
@@ -250,13 +242,6 @@ class ModuleTestHarnessImpl<S extends UntypedSchemaDef>
   #schema: Schema<S>;
   #runtime: TestRuntimeContext;
   #backend: TestDatastoreBackend;
-  #httpResponder:
-    | ((
-        test: ModuleTestHarness<S>,
-        req: HttpRequest,
-        body: Uint8Array
-      ) => HttpResponse)
-    | undefined;
 
   constructor(
     schema: Schema<S>,
@@ -347,16 +332,6 @@ class ModuleTestHarnessImpl<S extends UntypedSchemaDef>
       .map(row => rowDeserializer(new BinaryReader(row))) as Row[];
   }
 
-  setHttpResponder(
-    responder: (
-      test: ModuleTestHarness<S>,
-      req: HttpRequest,
-      body: Uint8Array
-    ) => HttpResponse
-  ): void {
-    this.#httpResponder = responder;
-  }
-
   makeProcedureContext(
     auth: TestAuth,
     hooks: ProcedureTestHooks<S>,
@@ -390,7 +365,7 @@ class ModuleTestHarnessImpl<S extends UntypedSchemaDef>
       auth.connectionId,
       () => makeDbView(this.#schema, backend.currentBackend()),
       backend,
-      makeHttpClient(this, responder ?? this.#httpResponder),
+      makeHttpClient(this, responder),
       duration => this.#sleep(duration, hooks),
       makeRandomFromSeed(procedureSeed),
       makeRandomFromSeed(procedureSeed ^ 0xa53d5eedc01dca11n)

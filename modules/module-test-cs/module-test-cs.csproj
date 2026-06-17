@@ -7,7 +7,6 @@
   -->
   <ItemGroup>
     <ProjectReference Include="../../crates/bindings-csharp/Codegen/Codegen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="../../crates/bindings-csharp/Runtime/Runtime.csproj" />
   </ItemGroup>
 
 </Project>

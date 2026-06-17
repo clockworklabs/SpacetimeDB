@@ -7,7 +7,6 @@
 
   <ItemGroup>
     <ProjectReference Include="../../../BSATN.Runtime/BSATN.Runtime.csproj" />
-    <ProjectReference Include="../../../Runtime/Runtime.csproj" />
   </ItemGroup>
 
 </Project>

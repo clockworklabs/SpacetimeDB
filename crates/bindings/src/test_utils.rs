@@ -340,10 +340,21 @@ pub struct ProcedureContextBuilder<'a> {
     test: &'a TestContext,
     auth: TestAuth,
     hooks: ProcedureTestHooks,
+    http_responder: crate::http::TestHttpResponder,
 }
 
 #[cfg(all(feature = "unstable", not(target_arch = "wasm32")))]
 impl<'a> ProcedureContextBuilder<'a> {
+    /// Install the HTTP responder used by this procedure context.
+    pub fn http(
+        mut self,
+        responder: impl Fn(&TestContext, crate::http::Request) -> Result<crate::http::Response, crate::http::Error>
+            + 'static,
+    ) -> Self {
+        self.http_responder = std::rc::Rc::new(responder);
+        self
+    }
+
     /// Install transaction hooks used by this procedure context.
     pub fn hooks(mut self, hooks: ProcedureTestHooks) -> Self {
         self.hooks = hooks;
@@ -352,7 +363,8 @@ impl<'a> ProcedureContextBuilder<'a> {
 
     /// Build the procedure context.
     pub fn build(self) -> crate::ProcedureContext {
-        self.test.procedure_context_with_hooks(self.auth, self.hooks)
+        self.test
+            .procedure_context_with_options(self.auth, self.hooks, self.http_responder)
     }
 }
 
@@ -365,8 +377,6 @@ pub struct TestContext {
     pub rng: TestRng,
     pub identity: crate::Identity,
     datastore: std::sync::Arc<TestDatastore>,
-    #[cfg(feature = "unstable")]
-    http_responder: std::rc::Rc<std::cell::RefCell<Option<crate::http::TestHttpResponder>>>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -379,8 +389,6 @@ impl Clone for TestContext {
             rng: self.rng.clone(),
             identity: self.identity,
             datastore: self.datastore.clone(),
-            #[cfg(feature = "unstable")]
-            http_responder: self.http_responder.clone(),
         }
     }
 }
@@ -402,8 +410,6 @@ impl TestContext {
             rng: TestRng::default(),
             identity: crate::Identity::ZERO,
             datastore,
-            #[cfg(feature = "unstable")]
-            http_responder: std::rc::Rc::new(std::cell::RefCell::new(None)),
         })
     }
 
@@ -442,21 +448,9 @@ impl TestContext {
         crate::AnonymousViewContext::__test(crate::LocalReadOnly::__test(self.datastore.clone()))
     }
 
-    /// Set the HTTP responder used by future procedure contexts created from this test context.
     #[cfg(feature = "unstable")]
-    pub fn set_http_responder(
-        &self,
-        responder: impl Fn(&TestContext, crate::http::Request) -> Result<crate::http::Response, crate::http::Error>
-            + 'static,
-    ) {
-        self.http_responder.borrow_mut().replace(std::rc::Rc::new(responder));
-    }
-
-    #[cfg(feature = "unstable")]
-    fn http_responder(&self) -> crate::http::TestHttpResponder {
-        self.http_responder.borrow().clone().unwrap_or_else(|| {
-            std::rc::Rc::new(|_, _| Err(crate::http::Error::new("no test HTTP responder configured")))
-        })
+    fn default_http_responder() -> crate::http::TestHttpResponder {
+        std::rc::Rc::new(|_, _| Err(crate::http::Error::new("no test HTTP responder configured")))
     }
 
     /// Run `body` with a reducer context backed by a single mutable transaction.
@@ -482,7 +476,7 @@ impl TestContext {
     /// Create a procedure context backed by this test context's datastore.
     #[cfg(feature = "unstable")]
     pub fn procedure_context(&self, auth: TestAuth) -> crate::ProcedureContext {
-        self.procedure_context_with_hooks(auth, ProcedureTestHooks::new())
+        self.procedure_context_builder(auth).build()
     }
 
     /// Create a builder for a procedure context backed by this test context's datastore.
@@ -492,11 +486,17 @@ impl TestContext {
             test: self,
             auth,
             hooks: ProcedureTestHooks::new(),
+            http_responder: Self::default_http_responder(),
         }
     }
 
     #[cfg(feature = "unstable")]
-    fn procedure_context_with_hooks(&self, auth: TestAuth, hooks: ProcedureTestHooks) -> crate::ProcedureContext {
+    fn procedure_context_with_options(
+        &self,
+        auth: TestAuth,
+        hooks: ProcedureTestHooks,
+        http_responder: crate::http::TestHttpResponder,
+    ) -> crate::ProcedureContext {
         let (auth, connection_id, sender) = auth.into_parts(self.identity);
         crate::ProcedureContext::__test(
             self.datastore.clone(),
@@ -505,7 +505,7 @@ impl TestContext {
             connection_id,
             self.clock.now(),
             self.identity,
-            crate::http::HttpClient::test(self.clone(), self.http_responder()),
+            crate::http::HttpClient::test(self.clone(), http_responder),
             self.clone(),
             hooks,
             #[cfg(feature = "rand08")]

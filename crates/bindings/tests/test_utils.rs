@@ -812,19 +812,20 @@ fn procedure_context_uses_test_http_responder() {
     let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
     let seen_request = std::rc::Rc::new(std::cell::RefCell::new(None));
 
-    test.set_http_responder({
-        let seen_request = seen_request.clone();
-        move |_test, request| {
-            seen_request.replace(Some((request.method().as_str().to_owned(), request.uri().to_string())));
-            Ok(spacetimedb::http::Response::builder()
-                .status(201)
-                .header("x-test", "yes")
-                .body(spacetimedb::http::Body::from("created"))
-                .expect("test response should be valid"))
-        }
-    });
-
-    let procedure = test.procedure_context(TestAuth::internal());
+    let procedure = test
+        .procedure_context_builder(TestAuth::internal())
+        .http({
+            let seen_request = seen_request.clone();
+            move |_test, request| {
+                seen_request.replace(Some((request.method().as_str().to_owned(), request.uri().to_string())));
+                Ok(spacetimedb::http::Response::builder()
+                    .status(201)
+                    .header("x-test", "yes")
+                    .body(spacetimedb::http::Body::from("created"))
+                    .expect("test response should be valid"))
+            }
+        })
+        .build();
     let response = procedure
         .http
         .get("https://example.invalid/create")
@@ -844,23 +845,24 @@ fn procedure_context_uses_test_http_responder() {
 fn procedure_context_http_responder_can_interleave_reducer() {
     let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
 
-    test.set_http_responder(|test, _request| {
-        test.with_reducer_tx(TestAuth::internal(), |ctx| {
-            ctx.db.test_utils_user().insert(TestUtilsUser {
-                id: 27,
-                name: "HTTP interleaved reducer".to_owned(),
-            });
-            Ok::<_, ()>(())
+    let procedure = test
+        .procedure_context_builder(TestAuth::internal())
+        .http(|test, _request| {
+            test.with_reducer_tx(TestAuth::internal(), |ctx| {
+                ctx.db.test_utils_user().insert(TestUtilsUser {
+                    id: 27,
+                    name: "HTTP interleaved reducer".to_owned(),
+                });
+                Ok::<_, ()>(())
+            })
+            .expect("interleaved reducer should commit");
+
+            Ok(spacetimedb::http::Response::builder()
+                .status(200)
+                .body(spacetimedb::http::Body::empty())
+                .expect("test response should be valid"))
         })
-        .expect("interleaved reducer should commit");
-
-        Ok(spacetimedb::http::Response::builder()
-            .status(200)
-            .body(spacetimedb::http::Body::empty())
-            .expect("test response should be valid"))
-    });
-
-    let procedure = test.procedure_context(TestAuth::internal());
+        .build();
     procedure
         .http
         .get("https://example.invalid/interleave")

@@ -380,18 +380,19 @@ mod tests {
     fn test_procedure_context_can_mock_http() {
         let test = spacetimedb::test_utils::TestContext::new().expect("test context should initialize");
 
-        test.set_http_responder(|_, request| {
-            assert_eq!(request.method().as_str(), "GET");
-            assert_eq!(request.uri().to_string(), "https://example.invalid/status");
+        let mut ctx = test
+            .procedure_context_builder(spacetimedb::test_utils::TestAuth::internal())
+            .http(|_, request| {
+                assert_eq!(request.method().as_str(), "GET");
+                assert_eq!(request.uri().to_string(), "https://example.invalid/status");
 
-            Ok(spacetimedb::http::Response::builder()
-                .status(200)
-                .header("content-type", "text/plain")
-                .body(spacetimedb::http::Body::from("chat service is healthy"))
-                .expect("test response should be valid"))
-        });
-
-        let mut ctx = test.procedure_context(spacetimedb::test_utils::TestAuth::internal());
+                Ok(spacetimedb::http::Response::builder()
+                    .status(200)
+                    .header("content-type", "text/plain")
+                    .body(spacetimedb::http::Body::from("chat service is healthy"))
+                    .expect("test response should be valid"))
+            })
+            .build();
         let message = fetch_status_message(&mut ctx).expect("mock HTTP call should succeed");
 
         assert_eq!(message, "chat service is healthy");
