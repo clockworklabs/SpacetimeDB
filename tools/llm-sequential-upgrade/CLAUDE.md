@@ -60,8 +60,6 @@ For **upgrade**: only add the NEW features from the target level. Do not rewrite
 5. Append to `ITERATION_LOG.md` (see format below)
 6. Output `FIX_COMPLETE`
 
-Do NOT do browser testing — that happens in a separate session.
-
 ---
 
 ## ITERATION_LOG.md

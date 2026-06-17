@@ -1,8 +1,6 @@
 # Backend: MongoDB
 
-Instructions for generating, building, and deploying the **MongoDB** backend.
-
-This backend uses standard Node.js/TypeScript patterns — you only need this file from `backends/`.
+Standard Node.js/TypeScript backend — you only need this file from `backends/`.
 
 ---
 
@@ -273,9 +271,3 @@ Wait for both servers to be ready:
 | MongoDB (Docker) | 6437 | Database |
 | Express API server | 6001 | REST + Socket.io |
 | Vite dev server | **6373** | React client — do not use 6173 or 6273 |
-
----
-
-## Reference Files
-
-The language and feature prompt files are provided as absolute paths in the launch prompt. No additional reference files are needed — this backend uses standard Node.js/TypeScript patterns.
