@@ -4,6 +4,7 @@
 //! speaks JSON-RPC over stdin/stdout, and logs to stderr only. Nothing else may
 //! touch stdout or the protocol stream is corrupted.
 
+mod introspect;
 mod stdb;
 
 use rmcp::{
@@ -14,7 +15,6 @@ use rmcp::{
     ServerHandler, ServiceExt,
 };
 use serde::Deserialize;
-use spacetimedb_lib::sats;
 
 #[derive(Clone)]
 struct SpacetimeDbMcp {
@@ -66,7 +66,7 @@ impl SpacetimeDbMcp {
             .module_def(&p.database)
             .await
             .map_err(to_mcp_error)?;
-        serde_json::to_string_pretty(sats::serde::SerdeWrapper::from_ref(&def)).map_err(|e| to_mcp_error(e.into()))
+        introspect::schema_json(&def).map_err(|e| to_mcp_error(e.into()))
     }
 
     #[tool(description = "List the names of all tables defined in a database.")]
@@ -75,8 +75,7 @@ impl SpacetimeDbMcp {
             .module_def(&p.database)
             .await
             .map_err(to_mcp_error)?;
-        let names: Vec<String> = def.tables.iter().map(|t| t.name.to_string()).collect();
-        serde_json::to_string_pretty(&names).map_err(|e| to_mcp_error(e.into()))
+        serde_json::to_string_pretty(&introspect::table_names(&def)).map_err(|e| to_mcp_error(e.into()))
     }
 
     #[tool(
@@ -87,17 +86,7 @@ impl SpacetimeDbMcp {
             .module_def(&p.database)
             .await
             .map_err(to_mcp_error)?;
-        let reducers: Vec<serde_json::Value> = def
-            .reducers
-            .iter()
-            .map(|r| {
-                serde_json::json!({
-                    "name": r.name.to_string(),
-                    "lifecycle": r.lifecycle.map(|l| format!("{l:?}")),
-                })
-            })
-            .collect();
-        serde_json::to_string_pretty(&reducers).map_err(|e| to_mcp_error(e.into()))
+        serde_json::to_string_pretty(&introspect::reducer_summaries(&def)).map_err(|e| to_mcp_error(e.into()))
     }
 }
 

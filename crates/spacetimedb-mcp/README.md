@@ -23,6 +23,17 @@ cargo build -p spacetimedb-mcp
 
 The binary lands at `target/debug/spacetimedb-mcp`.
 
+## Test
+
+```bash
+cargo test -p spacetimedb-mcp
+```
+
+Unit tests cover the schema-to-output transformations and the
+serialize/deserialize round trip the client relies on; an integration test
+serves a canned schema over a throwaway HTTP server and checks the full
+fetch-and-decode path, so no running SpacetimeDB instance is required.
+
 ## Run
 
 Point an MCP client at the built binary. The introspection tools talk to a
