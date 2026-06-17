@@ -12,9 +12,11 @@ import {
 
 export default __t.row({
   id: __t.u64().primaryKey(),
-  name: __t.string(),
-  createdBy: __t.identity().name("created_by"),
-  createdAt: __t.timestamp().name("created_at"),
-  isPrivate: __t.bool().name("is_private"),
-  isDm: __t.bool().name("is_dm"),
+  roomId: __t.u64().name("room_id"),
+  senderIdentity: __t.identity().name("sender_identity"),
+  text: __t.string(),
+  sentAt: __t.timestamp().name("sent_at"),
+  expiresAt: __t.option(__t.u64()).name("expires_at"),
+  editedAt: __t.option(__t.timestamp()).name("edited_at"),
+  parentMessageId: __t.option(__t.u64()).name("parent_message_id"),
 });

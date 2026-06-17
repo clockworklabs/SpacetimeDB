@@ -12,9 +12,7 @@ import {
 
 export default __t.row({
   id: __t.u64().primaryKey(),
-  name: __t.string(),
-  createdBy: __t.identity().name("created_by"),
-  createdAt: __t.timestamp().name("created_at"),
-  isPrivate: __t.bool().name("is_private"),
-  isDm: __t.bool().name("is_dm"),
+  messageId: __t.u64().name("message_id"),
+  previousText: __t.string().name("previous_text"),
+  editedAt: __t.timestamp().name("edited_at"),
 });
