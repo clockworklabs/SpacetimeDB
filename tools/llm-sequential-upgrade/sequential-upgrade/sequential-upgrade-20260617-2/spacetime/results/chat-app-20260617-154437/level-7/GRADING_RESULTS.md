@@ -84,16 +84,3 @@
 
 **Reprompt count:** 0 (passed on first grade)
 **Cost:** L6 upgrade $1.17
-
----
-
-## Level 7 — Rich User Presence (Features 1–10)
-
-| Feature | Score |
-|---------|-------|
-| 1–9 (regression) | 3/3 each |
-| 10. Rich User Presence | 3/3 |
-| **TOTAL** | **30/30** |
-
-**Reprompt count:** 1 (multi-connection presence: user marked offline when one of several connections closed)
-**Cost:** L7 upgrade $1.69 + fix $0.48 = $2.18

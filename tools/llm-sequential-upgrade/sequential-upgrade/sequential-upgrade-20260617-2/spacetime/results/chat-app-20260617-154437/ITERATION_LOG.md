@@ -14,3 +14,14 @@
 **Redeploy:** Server only (re-published module after fix)
 
 **Server verified:** Client at http://localhost:6173 ✓
+
+## Iteration 1 — Fix (L7 Bug)
+
+**Category:** Feature Broken (presence correctness)
+**What broke:** Closing one of several same-identity tabs immediately marked the user offline, even with another tab still active.
+**Root cause:** `clientDisconnected` unconditionally set `online: false` on every connection close. SpacetimeDB fires `clientDisconnected` per ConnectionId, but a single Identity can hold multiple simultaneous connections.
+**What I fixed:** Added an `active_connection` table (private, keyed by `connectionId`, indexed by `userIdentity`). On `clientConnected`, insert the connection row. On `clientDisconnected`, delete the row then count remaining rows for that identity — only set `online: false` when zero remain.
+**Files changed:** `backend/spacetimedb/src/schema.ts` (added `activeConnection` table, updated schema export); `backend/spacetimedb/src/index.ts` (updated `onConnect`/`onDisconnect` to track connections)
+**Redeploy:** Both (republished module + regenerated bindings + restarted Vite client)
+
+**Server verified:** Client at http://localhost:6173 ✓

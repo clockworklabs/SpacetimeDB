@@ -6,9 +6,6 @@ export { default } from './schema';
 export { sendScheduledMessage, deleteExpiredMessage } from './schema';
 
 export const onConnect = spacetimedb.clientConnected((ctx) => {
-  if (ctx.connectionId) {
-    ctx.db.activeConnection.insert({ connectionId: ctx.connectionId, userIdentity: ctx.sender });
-  }
   const existing = ctx.db.user.identity.find(ctx.sender);
   if (existing) {
     ctx.db.user.identity.update({ ...existing, online: true, status: 'online', lastActiveAt: ctx.timestamp });
@@ -18,17 +15,9 @@ export const onConnect = spacetimedb.clientConnected((ctx) => {
 });
 
 export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
-  if (ctx.connectionId) {
-    ctx.db.activeConnection.connectionId.delete(ctx.connectionId);
-  }
-  const remaining = [...ctx.db.activeConnection.byIdentity.filter(ctx.sender)];
   const existing = ctx.db.user.identity.find(ctx.sender);
   if (existing) {
-    if (remaining.length === 0) {
-      ctx.db.user.identity.update({ ...existing, online: false, lastActiveAt: ctx.timestamp });
-    } else {
-      ctx.db.user.identity.update({ ...existing, lastActiveAt: ctx.timestamp });
-    }
+    ctx.db.user.identity.update({ ...existing, online: false, lastActiveAt: ctx.timestamp });
   }
   for (const ti of [...ctx.db.typingIndicator.iter()]) {
     if (ti.userIdentity.toHexString() === ctx.sender.toHexString()) {

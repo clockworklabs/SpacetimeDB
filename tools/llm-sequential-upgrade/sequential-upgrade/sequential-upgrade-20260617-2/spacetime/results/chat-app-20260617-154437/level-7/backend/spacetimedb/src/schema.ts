@@ -126,19 +126,7 @@ const roomPermission = table(
   }
 );
 
-const activeConnection = table(
-  {
-    name: 'active_connection',
-    public: false,
-    indexes: [{ accessor: 'byIdentity', algorithm: 'btree', columns: ['userIdentity'] }],
-  },
-  {
-    connectionId: t.connectionId().primaryKey(),
-    userIdentity: t.identity(),
-  }
-);
-
-const spacetimedb = schema({ user, room, roomMember, message, typingIndicator, readReceipt, scheduledMessage, messageExpiry, messageReaction, messageEdit, roomPermission, activeConnection });
+const spacetimedb = schema({ user, room, roomMember, message, typingIndicator, readReceipt, scheduledMessage, messageExpiry, messageReaction, messageEdit, roomPermission });
 export default spacetimedb;
 
 export const sendScheduledMessage = spacetimedb.reducer(
