@@ -387,8 +387,23 @@ impl SchedulerActor {
 
         let params = ScheduledFunctionParams(item.clone());
         let result = match params.kind(module_host.info()) {
-            ScheduledFunctionKind::Procedure => module_host.call_scheduled_procedure(params).await,
-            ScheduledFunctionKind::Reducer => module_host.call_scheduled_reducer(params).await,
+            ScheduledFunctionKind::Procedure => {
+                panic::AssertUnwindSafe(module_host.call_scheduled_procedure(params))
+                    .catch_unwind()
+                    .await
+            }
+            ScheduledFunctionKind::Reducer => {
+                panic::AssertUnwindSafe(module_host.call_scheduled_reducer(params))
+                    .catch_unwind()
+                    .await
+            }
+        };
+        let result = match result {
+            Ok(result) => result,
+            Err(_) => {
+                log::warn!("scheduled function panicked");
+                return;
+            }
         };
 
         match result {
