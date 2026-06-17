@@ -18,6 +18,8 @@ telemetry/metrics.jsonl
 
 # Raw telemetry contains PII (email, account IDs) - store privately
 **/telemetry/**/raw-telemetry.jsonl
+# Full Claude Code session transcript (large; contains absolute paths/PII) - store privately
+**/telemetry/**/session-transcript.jsonl
 # Verbose run transcripts (large, regenerable) - not tracked
 **/telemetry/**/run.log
 

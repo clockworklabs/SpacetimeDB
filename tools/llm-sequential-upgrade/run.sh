@@ -900,6 +900,20 @@ m.sessionId = '$SESSION_ID';
 fs.writeFileSync(f, JSON.stringify(m, null, 2));
 " -- "$METADATA_FILE_NATIVE" || echo "WARNING: Failed to update metadata with end time"
 
+# ─── Capture Claude Code session transcript ──────────────────────────────────
+# The full session transcript (every prompt, tool call, and error) lives in
+# Claude Code's projects dir, keyed by session id. Copy it next to the telemetry
+# so each level/phase preserves a studyable record. Located by session id, so it
+# is independent of how Claude Code encodes the project path.
+TRANSCRIPT_SRC=$(find "$HOME/.claude/projects" -name "$SESSION_ID.jsonl" 2>/dev/null | head -1)
+if [[ -n "$TRANSCRIPT_SRC" && -f "$TRANSCRIPT_SRC" ]]; then
+  if cp "$TRANSCRIPT_SRC" "$RUN_DIR/session-transcript.jsonl" 2>/dev/null; then
+    echo "Saved session transcript -> $RUN_DIR/session-transcript.jsonl"
+  fi
+else
+  echo "NOTE: session transcript for $SESSION_ID not found under ~/.claude/projects"
+fi
+
 # ─── Snapshot completed level (upgrade mode) ─────────────────────────────────
 
 if [[ -n "$UPGRADE_MODE" && $EXIT_CODE -eq 0 ]]; then
