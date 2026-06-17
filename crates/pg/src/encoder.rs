@@ -2,8 +2,8 @@ use crate::pg_server::PgError;
 use pgwire::api::portal::Format;
 use pgwire::api::results::{DataRowEncoder, FieldInfo};
 use pgwire::api::Type;
-use spacetimedb_lib::sats::satn::{PsqlChars, PsqlPrintFmt, PsqlType, TypedWriter};
-use spacetimedb_lib::sats::{satn, ValueWithType};
+use spacetimedb_lib::sats::satn::{PsqlChars, PsqlClient, PsqlPrintFmt, PsqlType, TypedWriter};
+use spacetimedb_lib::sats::{satn, ArrayValue, ValueWithType};
 use spacetimedb_lib::{
     ser, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, TimeDuration, Timestamp, Uuid,
 };
@@ -54,7 +54,11 @@ pub(crate) fn type_of(schema: &ProductType, ty: &ProductTypeElement) -> Type {
             | AlgebraicType::U128
             | AlgebraicType::I256
             | AlgebraicType::U256 => Type::NUMERIC_ARRAY,
-            _ => Type::ANYARRAY,
+            AlgebraicType::F32 => Type::FLOAT4_ARRAY,
+            AlgebraicType::F64 => Type::FLOAT8_ARRAY,
+            AlgebraicType::Ref(_) | AlgebraicType::Sum(_) | AlgebraicType::Product(_) | AlgebraicType::Array(_) => {
+                Type::JSON_ARRAY
+            }
         },
         AlgebraicType::Product(_) => match format {
             PsqlPrintFmt::Hex => Type::BYTEA,
@@ -155,7 +159,9 @@ impl TypedWriter for PsqlFormatter<'_> {
             return Ok(());
         }
 
-        let PsqlChars { start, sep, end, quote } = ty.client.format_chars();
+        let PsqlChars {
+            start, sep, end, quote, ..
+        } = ty.client.format_chars();
         let name = name.map(Cow::from).unwrap_or_else(|| Cow::from(tag.to_string()));
         let json = format!(
             "{start}{quote}{name}{quote}{sep} {}{end}",
@@ -163,6 +169,78 @@ impl TypedWriter for PsqlFormatter<'_> {
         );
         self.encoder.encode_field(&json)?;
         Ok(())
+    }
+
+    fn write_array(
+        &mut self,
+        value: &ValueWithType<'_, ArrayValue>,
+        psql: &PsqlType,
+        ty: &AlgebraicType,
+    ) -> Result<bool, Self::Error> {
+        // `array<u8>` is a byte array in SQL output, so keep the existing bytea path.
+        if *ty == AlgebraicType::U8 {
+            return Ok(false);
+        }
+
+        fn collect<I, O, F>(arr: &[I], map: F) -> Vec<O>
+        where
+            F: FnMut(&I) -> O,
+        {
+            arr.iter().map(map).collect()
+        }
+
+        let complex_value = |elem: AlgebraicValue, elem_ty: &AlgebraicType, client| {
+            let tuple = ProductType::from([elem_ty.clone()]);
+            let psql_ty = PsqlType {
+                client,
+                tuple: &tuple,
+                field: &tuple.elements[0],
+                idx: 0,
+            };
+            satn::PsqlWrapper {
+                ty: psql_ty,
+                value: value.with(elem_ty, &elem),
+            }
+            .to_string()
+        };
+
+        match value.value() {
+            ArrayValue::Bool(arr) => self.encoder.encode_field(&arr.as_ref())?,
+            ArrayValue::I8(arr) => self.encoder.encode_field(&arr.as_ref())?,
+            ArrayValue::U8(arr) => self.encoder.encode_field(&arr.as_ref())?,
+            ArrayValue::I16(arr) => self.encoder.encode_field(&arr.as_ref())?,
+            ArrayValue::U16(arr) => self.encoder.encode_field(&collect(arr, |v| i32::from(*v)))?,
+            ArrayValue::I32(arr) => self.encoder.encode_field(&arr.as_ref())?,
+            ArrayValue::U32(arr) => self.encoder.encode_field(&collect(arr, |v| i64::from(*v)))?,
+            ArrayValue::I64(arr) => self.encoder.encode_field(&arr.as_ref())?,
+            ArrayValue::U64(arr) => self.encoder.encode_field(&collect(arr, |v| v.to_string()))?,
+            ArrayValue::I128(arr) => self.encoder.encode_field(&collect(arr, |v| v.to_string()))?,
+            ArrayValue::U128(arr) => self.encoder.encode_field(&collect(arr, |v| v.to_string()))?,
+            ArrayValue::I256(arr) => self.encoder.encode_field(&collect(arr, |v| v.to_string()))?,
+            ArrayValue::U256(arr) => self.encoder.encode_field(&collect(arr, |v| v.to_string()))?,
+            ArrayValue::F32(arr) => self.encoder.encode_field(&collect(arr, |v| *v.as_ref()))?,
+            ArrayValue::F64(arr) => self.encoder.encode_field(&collect(arr, |v| *v.as_ref()))?,
+            ArrayValue::String(arr) => self.encoder.encode_field(&collect(arr, |v| v.to_string()))?,
+            ArrayValue::Array(arr) => {
+                // Nested arrays are exposed as JSON arrays for the PostgreSQL wire protocol.
+                let values = collect(arr, |v| {
+                    complex_value(AlgebraicValue::Array(v.clone()), ty, PsqlClient::SpacetimeDB)
+                });
+                self.encoder.encode_field(&values)?;
+            }
+            ArrayValue::Sum(arr) => {
+                let values = collect(arr, |v| complex_value(AlgebraicValue::Sum(v.clone()), ty, psql.client));
+                self.encoder.encode_field(&values)?;
+            }
+            ArrayValue::Product(arr) => {
+                let values = collect(arr, |v| {
+                    complex_value(AlgebraicValue::Product(v.clone()), ty, psql.client)
+                });
+                self.encoder.encode_field(&values)?;
+            }
+        }
+
+        Ok(true)
     }
 }
 
@@ -173,7 +251,7 @@ mod tests {
     use futures::StreamExt;
     use spacetimedb_client_api_messages::http::SqlStmtResult;
     use spacetimedb_lib::sats::algebraic_value::Packed;
-    use spacetimedb_lib::sats::{i256, product, u256, AlgebraicType, ProductType, SumTypeVariant};
+    use spacetimedb_lib::sats::{i256, product, u256, AlgebraicType, ArrayValue, ProductType, SumTypeVariant};
     use spacetimedb_lib::{ConnectionId, Identity};
 
     async fn run(schema: ProductType, row: ProductValue) -> String {
@@ -234,6 +312,30 @@ mod tests {
 
         let row = run(schema, value).await;
         assert_eq!(row, "\0\0\0\u{1}1\0\0\0\u{2}-1\0\0\0\u{2}-2\0\0\0\u{1}3\0\0\0\u{2}-4\0\0\0\u{1}5\0\0\0\u{2}-6\0\0\0\u{1}7\0\0\0\u{2}-8\0\0\0\u{1}9\0\0\0\u{3}-10\0\0\0\u{2}11\0\0\0\u{5}12.34\0\0\0\u{5}56.78\0\0\0\u{4}test\0\0\0\u{1}t");
+    }
+
+    #[tokio::test]
+    async fn test_array() {
+        let schema = ProductType::from([
+            AlgebraicType::array(AlgebraicType::I32),
+            AlgebraicType::array(AlgebraicType::String),
+            AlgebraicType::array(AlgebraicType::array(AlgebraicType::I32)),
+            AlgebraicType::bytes(),
+        ]);
+        let value = product![
+            AlgebraicValue::Array(ArrayValue::I32([1, 2, 3].into())),
+            AlgebraicValue::Array(ArrayValue::String(["one".into(), "two".into()].into())),
+            AlgebraicValue::Array(ArrayValue::Array(
+                [ArrayValue::I32([1, 2].into()), ArrayValue::I32([3, 4].into())].into()
+            )),
+            AlgebraicValue::Bytes([0xde, 0xad].into()),
+        ];
+
+        let row = run(schema, value).await;
+        assert_eq!(
+            row,
+            "\0\0\0\u{7}{1,2,3}\0\0\0\t{one,two}\0\0\0\u{13}{\"[1, 2]\",\"[3, 4]\"}\0\0\0\u{6}\\xdead"
+        );
     }
 
     #[tokio::test]
