@@ -418,3 +418,134 @@ describe('ConnectionManager retained reconnect behavior', () => {
     );
   });
 });
+
+describe('ConnectionManager.rebuild', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+  });
+
+  test('swaps the live connection for one built from a fresh builder', () => {
+    const key = nextKey();
+    const firstBuilder = new MockBuilder();
+    const secondBuilder = new MockBuilder();
+
+    const first = retainMock(key, firstBuilder);
+    first.simulateConnect();
+    expect(ConnectionManager.getSnapshot(key)?.isActive).toBe(true);
+
+    const second = ConnectionManager.rebuild(
+      key,
+      secondBuilder as any
+    ) as unknown as MockConnection;
+
+    // The new connection comes from the replacement builder...
+    expect(secondBuilder.buildCount).toBe(1);
+    expect(second).toBe(secondBuilder.connections[0]);
+    expect(second).not.toBe(first);
+    expect(ConnectionManager.getConnection(key)).toBe(second);
+    // ...and the old one is torn down.
+    expect(first.disconnected).toBe(true);
+
+    second.simulateConnect();
+    expect(ConnectionManager.getSnapshot(key)?.isActive).toBe(true);
+    expect(ConnectionManager.getSnapshot(key)?.connectionId).toBe(
+      second.connectionId
+    );
+
+    ConnectionManager.release(key);
+  });
+
+  test('preserves the ref count so a single release still tears down', () => {
+    const key = nextKey();
+    const firstBuilder = new MockBuilder();
+    const secondBuilder = new MockBuilder();
+
+    retainMock(key, firstBuilder);
+    retainMock(key, secondBuilder); // refCount: 2
+
+    const rebuilt = ConnectionManager.rebuild(
+      key,
+      new MockBuilder() as any
+    ) as unknown as MockConnection;
+    expect(rebuilt).not.toBeNull();
+
+    // refCount was 2 and is untouched: one release leaves the entry live.
+    ConnectionManager.release(key);
+    vi.advanceTimersByTime(0);
+    expect(ConnectionManager.getConnection(key)).toBe(rebuilt);
+
+    ConnectionManager.release(key);
+    vi.advanceTimersByTime(0);
+    expect(ConnectionManager.getConnection(key)).toBeNull();
+  });
+
+  test('detaches the old connection callbacks before closing it', () => {
+    const key = nextKey();
+    const first = retainMock(key, new MockBuilder());
+    expect(first.callbackCounts()).toEqual({
+      connect: 1,
+      disconnect: 1,
+      connectError: 1,
+    });
+
+    ConnectionManager.rebuild(key, new MockBuilder() as any);
+
+    expect(first.callbackCounts()).toEqual({
+      connect: 0,
+      disconnect: 0,
+      connectError: 0,
+    });
+
+    ConnectionManager.release(key);
+  });
+
+  test('cancels a pending auto-reconnect and resets the backoff', () => {
+    const key = nextKey();
+    const builder = new MockBuilder();
+
+    const first = retainMock(key, builder);
+    // Two consecutive failures so the backoff has advanced past the base delay.
+    first.simulateDisconnect();
+    vi.advanceTimersByTime(connectionManagerReconnectDelayMs(0));
+    builder.connections[1].simulateConnectError(new Error('still down'));
+    expect(builder.buildCount).toBe(2);
+
+    // rebuild() takes over: the scheduled reconnect must not also fire.
+    const replacement = new MockBuilder();
+    ConnectionManager.rebuild(key, replacement as any);
+    expect(replacement.buildCount).toBe(1);
+
+    vi.advanceTimersByTime(CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS);
+    // No stale timer rebuilt the old builder...
+    expect(builder.buildCount).toBe(2);
+    expect(replacement.buildCount).toBe(1);
+
+    // ...and the backoff was reset: a fresh drop reconnects after the base delay.
+    replacement.connections[0].simulateConnect();
+    replacement.connections[0].simulateDisconnect();
+    vi.advanceTimersByTime(connectionManagerReconnectDelayMs(0));
+    expect(replacement.buildCount).toBe(2);
+
+    ConnectionManager.release(key);
+  });
+
+  test('returns null when the key has no retained entry', () => {
+    const key = nextKey();
+    expect(ConnectionManager.rebuild(key, new MockBuilder() as any)).toBeNull();
+  });
+
+  test('returns null after the entry has been fully released', () => {
+    const key = nextKey();
+    const first = retainMock(key, new MockBuilder());
+    first.simulateConnect();
+    ConnectionManager.release(key);
+    vi.advanceTimersByTime(0); // let the deferred release run
+
+    expect(ConnectionManager.rebuild(key, new MockBuilder() as any)).toBeNull();
+  });
+});
