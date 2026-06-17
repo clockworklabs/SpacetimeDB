@@ -1,6 +1,6 @@
 import { SenderError, t } from 'spacetimedb/server';
-import spacetimedb, { ScheduleAt } from './schema.js';
-export { default, sendScheduledMessage } from './schema.js';
+import spacetimedb from './schema.js';
+export { default } from './schema.js';
 
 export const onConnect = spacetimedb.clientConnected((ctx) => {
   const existing = ctx.db.user.identity.find(ctx.sender);
@@ -129,38 +129,5 @@ export const markRead = spacetimedb.reducer(
     } else {
       ctx.db.readReceipt.insert({ id: 0n, roomId, userIdentity: ctx.sender, lastReadMessageId });
     }
-  }
-);
-
-// Schedule a message to be sent at a future time (scheduledAtMicros = Unix epoch microseconds)
-export const scheduleMessage = spacetimedb.reducer(
-  { roomId: t.u64(), text: t.string(), scheduledAtMicros: t.i64() },
-  (ctx, { roomId, text, scheduledAtMicros }) => {
-    if (!ctx.db.user.identity.find(ctx.sender)) throw new SenderError('Must set name first');
-    const trimmed = text.trim();
-    if (trimmed.length === 0) throw new SenderError('Message cannot be empty');
-    if (trimmed.length > 2000) throw new SenderError('Message too long');
-
-    const memberships = [...ctx.db.membership.by_room_user.filter([roomId, ctx.sender])];
-    if (memberships.length === 0) throw new SenderError('Must join room first');
-
-    ctx.db.scheduledMessage.insert({
-      scheduled_id: 0n,
-      scheduled_at: ScheduleAt.time(BigInt(scheduledAtMicros)),
-      roomId,
-      senderIdentity: ctx.sender,
-      text: trimmed,
-    });
-  }
-);
-
-// Cancel a pending scheduled message (only the sender can cancel)
-export const cancelScheduledMessage = spacetimedb.reducer(
-  { scheduledId: t.u64() },
-  (ctx, { scheduledId }) => {
-    const row = ctx.db.scheduledMessage.scheduled_id.find(scheduledId);
-    if (!row) throw new SenderError('Scheduled message not found');
-    if (!row.senderIdentity.equals(ctx.sender)) throw new SenderError('Not your scheduled message');
-    ctx.db.scheduledMessage.scheduled_id.delete(scheduledId);
   }
 );

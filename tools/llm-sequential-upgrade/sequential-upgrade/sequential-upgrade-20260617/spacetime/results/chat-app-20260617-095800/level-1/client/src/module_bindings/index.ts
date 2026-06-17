@@ -34,12 +34,10 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
-import CancelScheduledMessageReducer from "./cancel_scheduled_message_reducer";
 import CreateRoomReducer from "./create_room_reducer";
 import JoinRoomReducer from "./join_room_reducer";
 import LeaveRoomReducer from "./leave_room_reducer";
 import MarkReadReducer from "./mark_read_reducer";
-import ScheduleMessageReducer from "./schedule_message_reducer";
 import SendMessageReducer from "./send_message_reducer";
 import SetNameReducer from "./set_name_reducer";
 import SetTypingReducer from "./set_typing_reducer";
@@ -51,7 +49,6 @@ import MembershipRow from "./membership_table";
 import MessageRow from "./message_table";
 import ReadReceiptRow from "./read_receipt_table";
 import RoomRow from "./room_table";
-import ScheduledMessageRow from "./scheduled_message_table";
 import TypingIndicatorRow from "./typing_indicator_table";
 import UserRow from "./user_table";
 
@@ -127,20 +124,6 @@ const tablesSchema = __schema({
       { name: 'room_name_key', constraint: 'unique', columns: ['name'] },
     ],
   }, RoomRow),
-  scheduledMessage: __table({
-    name: 'scheduled_message',
-    indexes: [
-      { accessor: 'scheduled_id', name: 'scheduled_message_scheduled_id_idx_btree', algorithm: 'btree', columns: [
-        'scheduledId',
-      ] },
-      { accessor: 'by_sender', name: 'scheduled_message_sender_identity_idx_btree', algorithm: 'btree', columns: [
-        'senderIdentity',
-      ] },
-    ],
-    constraints: [
-      { name: 'scheduled_message_scheduled_id_key', constraint: 'unique', columns: ['scheduledId'] },
-    ],
-  }, ScheduledMessageRow),
   typingIndicator: __table({
     name: 'typing_indicator',
     indexes: [
@@ -170,12 +153,10 @@ const tablesSchema = __schema({
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
-  __reducerSchema("cancel_scheduled_message", CancelScheduledMessageReducer),
   __reducerSchema("create_room", CreateRoomReducer),
   __reducerSchema("join_room", JoinRoomReducer),
   __reducerSchema("leave_room", LeaveRoomReducer),
   __reducerSchema("mark_read", MarkReadReducer),
-  __reducerSchema("schedule_message", ScheduleMessageReducer),
   __reducerSchema("send_message", SendMessageReducer),
   __reducerSchema("set_name", SetNameReducer),
   __reducerSchema("set_typing", SetTypingReducer),

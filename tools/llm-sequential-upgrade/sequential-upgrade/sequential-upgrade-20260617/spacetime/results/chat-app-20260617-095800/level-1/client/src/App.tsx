@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useSpacetimeDB, useTable } from 'spacetimedb/react';
 import { DbConnection, tables } from './module_bindings';
-import type { Message, ScheduledMessage } from './module_bindings/types';
+import type { Message } from './module_bindings/types';
 import type { Identity } from 'spacetimedb';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -23,19 +23,6 @@ function colorForName(name: string): string {
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
   return colors[Math.abs(hash) % colors.length];
-}
-
-function getScheduledDate(scheduledAt: ScheduledMessage['scheduledAt']): Date {
-  const sa = scheduledAt as any;
-  if (sa?.tag === 'Time') {
-    return new Date(Number(sa.value.microsSinceUnixEpoch / 1000n));
-  }
-  return new Date();
-}
-
-function formatScheduledAt(scheduledAt: ScheduledMessage['scheduledAt']): string {
-  const date = getScheduledDate(scheduledAt);
-  return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 // ── Setup screen ─────────────────────────────────────────────────────────────
@@ -123,81 +110,6 @@ function CreateRoomModal({ onClose, onCreate }: {
   );
 }
 
-// ── Schedule message modal ────────────────────────────────────────────────────
-
-function ScheduleMessageModal({ onClose, onSchedule }: {
-  onClose: () => void;
-  onSchedule: (text: string, scheduledAtMicros: bigint) => void;
-}) {
-  const [text, setText] = useState('');
-  const [scheduledAt, setScheduledAt] = useState('');
-  const [error, setError] = useState('');
-
-  // Default to 5 minutes from now
-  useEffect(() => {
-    const d = new Date(Date.now() + 5 * 60 * 1000);
-    // Format for datetime-local: YYYY-MM-DDTHH:mm
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const local = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    setScheduledAt(local);
-  }, []);
-
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose(); }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmed = text.trim();
-    if (!trimmed) { setError('Message cannot be empty'); return; }
-    if (!scheduledAt) { setError('Please pick a time'); return; }
-    const ms = new Date(scheduledAt).getTime();
-    if (isNaN(ms)) { setError('Invalid date/time'); return; }
-    if (ms <= Date.now()) { setError('Scheduled time must be in the future'); return; }
-    onSchedule(trimmed, BigInt(ms) * 1000n);
-    onClose();
-  }
-
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <h2 className="modal-title">Schedule Message</h2>
-        <form onSubmit={handleSubmit}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <textarea
-              className="input"
-              placeholder="Message text"
-              value={text}
-              onChange={e => { setText(e.target.value); setError(''); }}
-              rows={3}
-              style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: '14px' }}
-              autoFocus
-            />
-            <div>
-              <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px' }}>
-                Send at
-              </label>
-              <input
-                className="input"
-                type="datetime-local"
-                value={scheduledAt}
-                onChange={e => { setScheduledAt(e.target.value); setError(''); }}
-              />
-            </div>
-            {error && <p className="error-text">{error}</p>}
-          </div>
-          <div className="modal-actions">
-            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary">Schedule</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
 // ── Main App ──────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -207,7 +119,6 @@ export default function App() {
   const [subscribed, setSubscribed] = useState(false);
   const [activeRoomId, setActiveRoomId] = useState<bigint | null>(null);
   const [showCreateRoom, setShowCreateRoom] = useState(false);
-  const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [messageText, setMessageText] = useState('');
   const [hasSetName, setHasSetName] = useState(false);
   const [isScrolledUp, setIsScrolledUp] = useState(false);
@@ -232,7 +143,6 @@ export default function App() {
         tables.message,
         tables.typingIndicator,
         tables.readReceipt,
-        tables.scheduledMessage,
       ]);
   }, [conn, isActive]);
 
@@ -242,7 +152,6 @@ export default function App() {
   const [messages] = useTable(tables.message);
   const [typingIndicators] = useTable(tables.typingIndicator);
   const [readReceipts] = useTable(tables.readReceipt);
-  const [scheduledMessages] = useTable(tables.scheduledMessage);
 
   const myUser = myIdentity ? users.find(u => idHex(u.identity) === idHex(myIdentity)) : undefined;
   const myMemberships = myIdentity
@@ -257,17 +166,6 @@ export default function App() {
     : [];
 
   const onlineUsers = users.filter(u => u.online);
-
-  // Pending scheduled messages for the current user in the active room
-  const myPendingScheduled = myIdentity && activeRoomId
-    ? scheduledMessages
-        .filter(sm => idHex(sm.senderIdentity) === idHex(myIdentity) && sm.roomId === activeRoomId)
-        .sort((a, b) => {
-          const aDate = getScheduledDate(a.scheduledAt);
-          const bDate = getScheduledDate(b.scheduledAt);
-          return aDate.getTime() - bDate.getTime();
-        })
-    : [];
 
   // ── unread counts ───────────────────────────────────────────────────────────
 
@@ -392,15 +290,6 @@ export default function App() {
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     sendTypingStop();
     setIsScrolledUp(false);
-  }
-
-  function handleScheduleMessage(text: string, scheduledAtMicros: bigint) {
-    if (!activeRoomId) return;
-    conn?.reducers.scheduleMessage({ roomId: activeRoomId, text, scheduledAtMicros });
-  }
-
-  function handleCancelScheduled(scheduledId: bigint) {
-    conn?.reducers.cancelScheduledMessage({ scheduledId });
   }
 
   // ── loading / setup state ───────────────────────────────────────────────────
@@ -591,30 +480,6 @@ export default function App() {
               </button>
             )}
 
-            {/* Pending scheduled messages */}
-            {myPendingScheduled.length > 0 && (
-              <div className="scheduled-panel">
-                <div className="scheduled-panel-header">
-                  Scheduled ({myPendingScheduled.length})
-                </div>
-                {myPendingScheduled.map(sm => (
-                  <div key={String(sm.scheduledId)} className="scheduled-item">
-                    <div className="scheduled-item-body">
-                      <span className="scheduled-item-time">{formatScheduledAt(sm.scheduledAt)}</span>
-                      <span className="scheduled-item-text">{sm.text}</span>
-                    </div>
-                    <button
-                      className="btn btn-tiny btn-danger"
-                      onClick={() => handleCancelScheduled(sm.scheduledId)}
-                      title="Cancel scheduled message"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
             {/* Message input */}
             <form className="message-input-bar" onSubmit={handleSendMessage}>
               <input
@@ -624,14 +489,6 @@ export default function App() {
                 value={messageText}
                 onChange={handleMessageInput}
               />
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => setShowScheduleModal(true)}
-                title="Schedule a message"
-              >
-                Schedule
-              </button>
               <button type="submit" className="btn btn-primary" disabled={!messageText.trim()}>
                 Send
               </button>
@@ -644,13 +501,6 @@ export default function App() {
         <CreateRoomModal
           onClose={() => setShowCreateRoom(false)}
           onCreate={handleCreateRoom}
-        />
-      )}
-
-      {showScheduleModal && (
-        <ScheduleMessageModal
-          onClose={() => setShowScheduleModal(false)}
-          onSchedule={handleScheduleMessage}
         />
       )}
     </div>
