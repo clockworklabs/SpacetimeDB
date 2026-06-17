@@ -558,6 +558,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: cargo ci update-flow --target=${{ matrix.target }} --github-token-auth
 
+  # this is a no-op version of the above check with a trivially-passing body.
+  # we can't just let the check be entirely skipped because each matrix target is a required check,
+  # and skipping this check means that the matrix isn't "populated" so the required checks wouldn't be met.
   update_noop:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip == 'true' }}
