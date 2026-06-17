@@ -2,9 +2,7 @@ use crate::module_bindings::*;
 use anyhow::Context;
 use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Table};
 use std::sync::{Arc, Mutex};
-use test_counter::TestCounter;
-
-const LOCALHOST: &str = "http://localhost:3000";
+use test_counter::{server_url, TestCounter};
 
 pub async fn dispatch(test: &str, db_name: &str) {
     match test {
@@ -62,7 +60,7 @@ async fn connect_with_then(
     let name = db_name.to_owned();
     let builder = DbConnection::builder()
         .with_database_name(name)
-        .with_uri(LOCALHOST)
+        .with_uri(server_url())
         .on_connect(|ctx, _, _| {
             callback(ctx);
             connected_result(Ok(()));
