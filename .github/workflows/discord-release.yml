@@ -29,7 +29,7 @@ jobs:
     steps:
       - name: Send Discord notification
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.PUBLIC_DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_PUBLIC_ANNOUNCEMENTS_WEBHOOK_URL }}
           RELEASE_BODY: ${{ github.event.release.body || github.event.inputs.release_body }}
           RELEASE_URL: ${{ github.event.release.html_url || github.event.inputs.release_url }}
           RELEASE_TAG: ${{ github.event.release.tag_name || github.event.inputs.release_tag }}
