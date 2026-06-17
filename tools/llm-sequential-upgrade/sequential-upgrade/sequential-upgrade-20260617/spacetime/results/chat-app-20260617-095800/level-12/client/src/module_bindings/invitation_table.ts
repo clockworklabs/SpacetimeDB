@@ -11,10 +11,10 @@ import {
 } from "spacetimedb";
 
 export default __t.row({
-  identity: __t.identity().primaryKey(),
-  name: __t.string(),
-  online: __t.bool(),
+  id: __t.u64().primaryKey(),
+  roomId: __t.u64().name("room_id"),
+  inviterIdentity: __t.identity().name("inviter_identity"),
+  inviteeIdentity: __t.identity().name("invitee_identity"),
   status: __t.string(),
-  lastActiveAt: __t.timestamp().name("last_active_at"),
-  isAnonymous: __t.bool().name("is_anonymous"),
+  createdAt: __t.timestamp().name("created_at"),
 });
