@@ -1,8 +1,6 @@
-# Sequential Upgrade: LLM Cost-to-Done Benchmark
+# Chat App: Build Instructions
 
-You are running an automated benchmark that measures the **total cost to build a fully working chat app** — comparing SpacetimeDB vs PostgreSQL.
-
-Your job is to **generate, build, deploy, and fix** the app. Grading happens in a separate manual session — you do NOT test in the browser.
+Your job is to **generate, build, deploy, and fix** a fully working chat app. Verification happens in a separate session — you do NOT test in the browser.
 
 ---
 
@@ -33,7 +31,7 @@ Depending on the mode passed in the launch prompt:
 ## Anti-Contamination
 
 Do NOT read any files under:
-- `../llm-oneshot/apps/chat-app/typescript/` (graded reference implementations)
+- `../llm-oneshot/apps/chat-app/typescript/` (reference implementations)
 - `../llm-oneshot/apps/chat-app/staging/`
 - Any other AI-generated app code in this workspace
 
@@ -62,7 +60,7 @@ For **upgrade**: only add the NEW features from the target level. Do not rewrite
 5. Append to `ITERATION_LOG.md` (see format below)
 6. Output `FIX_COMPLETE`
 
-Do NOT do browser testing — that happens in the grading session.
+Do NOT do browser testing — that happens in a separate session.
 
 ---
 
@@ -85,6 +83,6 @@ Append to this file after every fix. Never overwrite.
 
 ---
 
-## Cost Tracking
+## Telemetry
 
-Cost is tracked automatically via OpenTelemetry — do NOT estimate tokens or produce a COST_REPORT.md. That is generated automatically after the session ends.
+Do NOT estimate tokens or produce a COST_REPORT.md — that's captured automatically after the session ends.

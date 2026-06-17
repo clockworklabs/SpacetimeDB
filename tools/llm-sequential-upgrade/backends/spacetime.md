@@ -114,9 +114,8 @@ Wait for the dev server to be ready (poll `http://localhost:6173` up to 30 secon
 
 ## App Identity
 
-- HTML `<title>` MUST be **"SpacetimeDB Chat"** (not "Chat App" or anything generic)
+- HTML `<title>` MUST be **"SpacetimeDB Chat"** (not a generic "Chat App")
 - The app MUST show **"SpacetimeDB Chat"** as the visible header/title in the UI
-- This distinguishes it from the PostgreSQL version during testing
 
 ---
 

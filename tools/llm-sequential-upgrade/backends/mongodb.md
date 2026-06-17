@@ -2,7 +2,7 @@
 
 Instructions for generating, building, and deploying the **MongoDB** backend.
 
-**Do NOT read SpacetimeDB SDK rule files.** This backend uses standard Node.js/TypeScript patterns.
+This backend uses standard Node.js/TypeScript patterns — you only need this file from `backends/`.
 
 ---
 
@@ -174,7 +174,7 @@ Skip — MongoDB has no binding generation. The client calls REST/Socket.io APIs
   }
   ```
 
-- `client/vite.config.ts` — port **6373** (NOT 6173 = SpacetimeDB, NOT 6273 = PostgreSQL), proxy `/api` and `/socket.io` to `http://localhost:6001`
+- `client/vite.config.ts` — port **6373** (do not use 6173 or 6273 — they may be in use), proxy `/api` and `/socket.io` to `http://localhost:6001`
   ```typescript
   import { defineConfig } from 'vite';
   import react from '@vitejs/plugin-react';
@@ -259,29 +259,10 @@ Wait for both servers to be ready:
 
 ---
 
-## Key Differences from SpacetimeDB
-
-For context on what makes this backend different (this helps the benchmark comparison):
-
-| Aspect | SpacetimeDB | MongoDB |
-|--------|-------------|---------|
-| Real-time | Built-in subscriptions | Socket.io (manual) |
-| API layer | Reducers (auto-exposed) | Express routes (manual) |
-| Schema | `table()` + `reducer()` | Mongoose `Schema` + `model()` |
-| Bindings | Auto-generated types | Manual type definitions |
-| Deployment | `spacetime publish` | Start Express server |
-| State sync | Automatic client cache | Manual fetch + Socket.io |
-| Online presence | Via lifecycle hooks | Manual Socket.io tracking |
-| Typing indicators | Reducer + subscription | Socket.io events |
-| Infra dependencies | SpacetimeDB only | MongoDB + Express + Socket.io + CORS |
-
----
-
 ## App Identity
 
-- HTML `<title>` MUST be **"MongoDB Chat"** (not "Chat App", not "SpacetimeDB Chat")
+- HTML `<title>` MUST be **"MongoDB Chat"** (not a generic "Chat App")
 - The app MUST show **"MongoDB Chat"** as the visible header/title in the UI
-- This distinguishes it from the other backends' versions during testing
 
 ---
 
@@ -291,7 +272,7 @@ For context on what makes this backend different (this helps the benchmark compa
 |---------|------|-------|
 | MongoDB (Docker) | 6437 | Database |
 | Express API server | 6001 | REST + Socket.io |
-| Vite dev server | **6373** | React client — NOT 6173 (SpacetimeDB), NOT 6273 (PostgreSQL) |
+| Vite dev server | **6373** | React client — do not use 6173 or 6273 |
 
 ---
 
