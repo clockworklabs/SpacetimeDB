@@ -1,8 +1,6 @@
 use crate::module_bindings::*;
 use spacetimedb_sdk::{error::InternalError, DbConnectionBuilder, DbContext, Table, TableWithPrimaryKey};
-use test_counter::TestCounter;
-
-const LOCALHOST: &str = "http://localhost:3000";
+use test_counter::{server_url, TestCounter};
 
 type ResultRecorder = Box<dyn Send + FnOnce(Result<(), anyhow::Error>)>;
 
@@ -52,7 +50,7 @@ async fn connect_then_named(
     let name = db_name.to_owned();
     let conn = DbConnection::builder()
         .with_database_name(name)
-        .with_uri(LOCALHOST)
+        .with_uri(server_url())
         .on_connect(|ctx, _, _| {
             callback(ctx);
             connected_result(Ok(()));

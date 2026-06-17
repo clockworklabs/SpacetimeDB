@@ -1,0 +1,59 @@
+[package]
+name = "spacetimedb-engine"
+version.workspace = true
+edition.workspace = true
+license-file = "LICENSE"
+description = "Database engine and local persistence runtime for SpacetimeDB"
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["tokio"]
+tokio = ["spacetimedb-runtime/tokio", "spacetimedb-datastore/tokio", "spacetimedb-durability/tokio", "spacetimedb-snapshot/tokio"]
+simulation = ["spacetimedb-runtime/simulation", "spacetimedb-datastore/simulation", "spacetimedb-durability/simulation", "spacetimedb-snapshot/simulation"]
+test = ["spacetimedb-commitlog/test", "spacetimedb-datastore/test"]
+
+[dependencies]
+anyhow = { workspace = true, features = ["backtrace"] }
+async-trait.workspace = true
+enum-map.workspace = true
+futures.workspace = true
+hex.workspace = true
+itertools.workspace = true
+log.workspace = true
+once_cell.workspace = true
+parking_lot.workspace = true
+prometheus.workspace = true
+serde.workspace = true
+sled.workspace = true
+spacetimedb-commitlog.workspace = true
+spacetimedb-data-structures.workspace = true
+spacetimedb-datastore = { path = "../datastore", default-features = false }
+spacetimedb-durability = { path = "../durability", default-features = false }
+spacetimedb-expr.workspace = true
+spacetimedb-fs-utils.workspace = true
+spacetimedb-lib = { workspace = true, features = ["serde", "metrics_impls"] }
+spacetimedb-metrics.workspace = true
+spacetimedb-paths.workspace = true
+spacetimedb-primitives.workspace = true
+spacetimedb-runtime = { path = "../runtime", default-features = false }
+spacetimedb-sats = { workspace = true, features = ["serde"] }
+spacetimedb-schema.workspace = true
+spacetimedb-snapshot = { path = "../snapshot", default-features = false }
+spacetimedb-table.workspace = true
+sqlparser.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+bytes.workspace = true
+env_logger.workspace = true
+fs_extra.workspace = true
+pretty_assertions.workspace = true
+spacetimedb-commitlog = { workspace = true, features = ["test"] }
+spacetimedb-datastore = { path = "../datastore", default-features = false, features = ["test"] }
+spacetimedb-schema = { workspace = true, features = ["test"] }
+tokio.workspace = true

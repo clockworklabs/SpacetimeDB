@@ -1,8 +1,8 @@
 use super::execution_unit::QueryHash;
 use super::query::CompiledQuery;
 use crate::db::relational_db::RelationalDB;
+use crate::db::sql::ast::SchemaViewer;
 use crate::error::DBError;
-use crate::sql::ast::SchemaViewer;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::identity::AuthCtx;
