@@ -11,10 +11,7 @@ import {
 } from "spacetimedb";
 
 export default __t.row({
-  id: __t.u64().primaryKey(),
-  roomId: __t.u64().name("room_id"),
-  senderIdentity: __t.identity().name("sender_identity"),
-  text: __t.string(),
-  sentAt: __t.timestamp().name("sent_at"),
-  expiresAtUs: __t.option(__t.u64()).name("expires_at_us"),
+  identity: __t.identity().primaryKey(),
+  name: __t.string(),
+  online: __t.bool(),
 });
