@@ -23,7 +23,7 @@ fn test_timestamp_route() {
     );
 
     // Publish a module with the random name
-    test.publish_module_named(&name, false).unwrap();
+    test.publish().name(&name).run().unwrap();
 
     // A request for the timestamp at an extant database is a success
     let resp = test
