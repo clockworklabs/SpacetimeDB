@@ -570,13 +570,10 @@ pub fn create_table_from_def_with_prefix(
 ) -> anyhow::Result<()> {
     let mut schema = TableSchema::from_module_def(owning_def, table_def, (), TableId::SENTINEL);
     if !name_prefix.is_empty() {
-        // Use accessor_name so the canonical DB name matches what TypeScript looks up
-        // as `namespace + table.sourceName`. '.' is not a valid XID char so namespaced
-        // table names can never collide with user-defined tables.
         let prefixed_name = format!("{}{}", name_prefix, &*table_def.accessor_name);
         schema.table_name = TableName::new_raw(RawIdentifier::from(prefixed_name));
 
-        // No alias needed: the namespaced canonical name is already the unique lookup key.
+        // No alias needed
         schema.alias = None;
 
         // Apply the namespace to the scheduled reducer/procedure name so the scheduler can
