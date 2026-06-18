@@ -1,17 +1,6 @@
 import { t, SenderError } from 'spacetimedb/server';
-import { ScheduleAt } from 'spacetimedb';
 import spacetimedb from './schema';
 export { default } from './schema';
-export { processScheduledMessages } from './schema';
-
-export const init = spacetimedb.init((ctx) => {
-  if ([...ctx.db.scheduledMessageTimer.iter()].length === 0) {
-    ctx.db.scheduledMessageTimer.insert({
-      scheduled_id: 0n,
-      scheduled_at: ScheduleAt.interval(10_000_000n), // 10 seconds in micros
-    });
-  }
-});
 
 export const onConnect = spacetimedb.clientConnected((ctx) => {
   const existing = ctx.db.user.identity.find(ctx.sender);
@@ -174,37 +163,5 @@ export const markRead = spacetimedb.reducer(
         lastReadMessageId: messageId,
       });
     }
-  }
-);
-
-export const scheduleMessage = spacetimedb.reducer(
-  { roomId: t.u64(), content: t.string(), sendAt: t.u64() },
-  (ctx, { roomId, content, sendAt }) => {
-    const user = ctx.db.user.identity.find(ctx.sender);
-    if (!user || user.name === '') throw new SenderError('Set a display name first');
-    if (!ctx.db.room.id.find(roomId)) throw new SenderError('Room not found');
-    const membership = [...ctx.db.roomMember.by_room_user.filter([roomId, ctx.sender])];
-    if (membership.length === 0) throw new SenderError('Not a member of this room');
-    const trimmed = content.trim();
-    if (trimmed.length === 0 || trimmed.length > 2000) throw new SenderError('Message must be 1-2000 characters');
-    if (sendAt <= ctx.timestamp.microsSinceUnixEpoch) throw new SenderError('Scheduled time must be in the future');
-
-    ctx.db.scheduledMessage.insert({
-      id: 0n,
-      roomId,
-      sender: ctx.sender,
-      content: trimmed,
-      sendAt,
-    });
-  }
-);
-
-export const cancelScheduledMessage = spacetimedb.reducer(
-  { id: t.u64() },
-  (ctx, { id }) => {
-    const pending = ctx.db.scheduledMessage.id.find(id);
-    if (!pending) return;
-    if (!pending.sender.equals(ctx.sender)) throw new SenderError('Not your scheduled message');
-    ctx.db.scheduledMessage.id.delete(id);
   }
 );

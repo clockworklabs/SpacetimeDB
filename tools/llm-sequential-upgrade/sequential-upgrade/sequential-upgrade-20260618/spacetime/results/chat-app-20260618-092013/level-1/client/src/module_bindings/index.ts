@@ -34,12 +34,10 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
-import CancelScheduledMessageReducer from "./cancel_scheduled_message_reducer";
 import CreateRoomReducer from "./create_room_reducer";
 import JoinRoomReducer from "./join_room_reducer";
 import LeaveRoomReducer from "./leave_room_reducer";
 import MarkReadReducer from "./mark_read_reducer";
-import ScheduleMessageReducer from "./schedule_message_reducer";
 import SendMessageReducer from "./send_message_reducer";
 import SetNameReducer from "./set_name_reducer";
 import UpdateTypingReducer from "./update_typing_reducer";
@@ -50,7 +48,6 @@ import UpdateTypingReducer from "./update_typing_reducer";
 import MessageRow from "./message_table";
 import RoomRow from "./room_table";
 import RoomMemberRow from "./room_member_table";
-import ScheduledMessageRow from "./scheduled_message_table";
 import TypingIndicatorRow from "./typing_indicator_table";
 import UserRow from "./user_table";
 import UserRoomReadRow from "./user_room_read_table";
@@ -105,20 +102,6 @@ const tablesSchema = __schema({
       { name: 'room_member_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, RoomMemberRow),
-  scheduledMessage: __table({
-    name: 'scheduled_message',
-    indexes: [
-      { accessor: 'id', name: 'scheduled_message_id_idx_btree', algorithm: 'btree', columns: [
-        'id',
-      ] },
-      { accessor: 'by_sender', name: 'scheduled_message_sender_idx_btree', algorithm: 'btree', columns: [
-        'sender',
-      ] },
-    ],
-    constraints: [
-      { name: 'scheduled_message_id_key', constraint: 'unique', columns: ['id'] },
-    ],
-  }, ScheduledMessageRow),
   typingIndicator: __table({
     name: 'typing_indicator',
     indexes: [
@@ -176,12 +159,10 @@ const tablesSchema = __schema({
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
-  __reducerSchema("cancel_scheduled_message", CancelScheduledMessageReducer),
   __reducerSchema("create_room", CreateRoomReducer),
   __reducerSchema("join_room", JoinRoomReducer),
   __reducerSchema("leave_room", LeaveRoomReducer),
   __reducerSchema("mark_read", MarkReadReducer),
-  __reducerSchema("schedule_message", ScheduleMessageReducer),
   __reducerSchema("send_message", SendMessageReducer),
   __reducerSchema("set_name", SetNameReducer),
   __reducerSchema("update_typing", UpdateTypingReducer),

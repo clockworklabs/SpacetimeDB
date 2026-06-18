@@ -34,21 +34,6 @@ export const RoomMember = __t.object("RoomMember", {
 });
 export type RoomMember = __Infer<typeof RoomMember>;
 
-export const ScheduledMessage = __t.object("ScheduledMessage", {
-  id: __t.u64(),
-  roomId: __t.u64(),
-  sender: __t.identity(),
-  content: __t.string(),
-  sendAt: __t.u64(),
-});
-export type ScheduledMessage = __Infer<typeof ScheduledMessage>;
-
-export const ScheduledMessageTimer = __t.object("ScheduledMessageTimer", {
-  scheduledId: __t.u64(),
-  scheduledAt: __t.scheduleAt(),
-});
-export type ScheduledMessageTimer = __Infer<typeof ScheduledMessageTimer>;
-
 export const TypingIndicator = __t.object("TypingIndicator", {
   id: __t.u64(),
   roomId: __t.u64(),

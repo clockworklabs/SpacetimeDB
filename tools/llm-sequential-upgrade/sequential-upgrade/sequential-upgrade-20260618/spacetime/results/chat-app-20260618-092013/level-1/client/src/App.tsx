@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTable, useSpacetimeDB } from 'spacetimedb/react';
 import { DbConnection, tables } from './module_bindings';
-import type { Message, Room, User, UserRoomRead, TypingIndicator, ScheduledMessage } from './module_bindings/types';
+import type { Message, Room, User, UserRoomRead, TypingIndicator } from './module_bindings/types';
 
 // ---- helpers ----
 
@@ -11,18 +11,6 @@ function tsToMs(ts: { microsSinceUnixEpoch: bigint }): number {
 
 function formatTime(ts: { microsSinceUnixEpoch: bigint }): string {
   return new Date(tsToMs(ts)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-function formatScheduledTime(microsSinceEpoch: bigint): string {
-  return new Date(Number(microsSinceEpoch / 1000n)).toLocaleString([], {
-    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-  });
-}
-
-function toLocalDateTimeMin(): string {
-  const d = new Date(Date.now() + 60000);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 const NAME_COLORS = ['#4cf490', '#a880ff', '#02befa', '#fbdc8e', '#ff4c4c', '#4cf4d8', '#f490c4'];
@@ -48,6 +36,8 @@ function MessageList({ messages, users, myIdentity, userRoomReads }: MessageList
   const getUserByIdentity = (hex: string): User | undefined =>
     users.find(u => u.identity.toHexString() === hex);
 
+  // For each message, find users whose lastReadMessageId equals this message's id
+  // (i.e., this is the latest message they've read)
   const getExactReaders = (msg: Message, idx: number): User[] => {
     const nextMsg = messages[idx + 1];
     return userRoomReads
@@ -62,6 +52,7 @@ function MessageList({ messages, users, myIdentity, userRoomReads }: MessageList
       .filter(u => u.identity.toHexString() !== msg.sender.toHexString());
   };
 
+  // Group consecutive messages from same sender
   type Group = { sender: User | undefined; senderHex: string; msgs: { msg: Message; idx: number }[] };
   const groups: Group[] = [];
   messages.forEach((msg, idx) => {
@@ -116,36 +107,6 @@ function MessageList({ messages, users, myIdentity, userRoomReads }: MessageList
   );
 }
 
-// ---- ScheduledMessagesList ----
-
-interface ScheduledMessagesListProps {
-  pending: readonly ScheduledMessage[];
-  onCancel: (id: bigint) => void;
-}
-
-function ScheduledMessagesList({ pending, onCancel }: ScheduledMessagesListProps) {
-  if (pending.length === 0) return null;
-  return (
-    <div className="scheduled-panel">
-      <div className="scheduled-header">Scheduled ({pending.length})</div>
-      {pending.map(sm => (
-        <div key={String(sm.id)} className="scheduled-item">
-          <div className="scheduled-item-info">
-            <span className="scheduled-time">{formatScheduledTime(sm.sendAt)}</span>
-            <span className="scheduled-content">{sm.content}</span>
-          </div>
-          <button
-            className="btn-cancel"
-            onClick={() => onCancel(sm.id)}
-          >
-            Cancel
-          </button>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // ---- App ----
 
 export default function App() {
@@ -164,18 +125,13 @@ export default function App() {
   const [typingActive, setTypingActive] = useState(false);
   const [, setTick] = useState(0);
 
-  // Scheduled messages state
-  const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [scheduleContent, setScheduleContent] = useState('');
-  const [scheduleDateTime, setScheduleDateTime] = useState('');
-  const [scheduleError, setScheduleError] = useState('');
-
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedRoomIdRef = useRef<bigint | null>(null);
   selectedRoomIdRef.current = selectedRoomId;
 
+  // Refresh every second for typing indicator age
   useEffect(() => {
     const id = setInterval(() => setTick(t => t + 1), 1000);
     return () => clearInterval(id);
@@ -197,7 +153,6 @@ export default function App() {
         tables.message,
         tables.typingIndicator,
         tables.userRoomRead,
-        tables.scheduledMessage,
       ]);
   }, [conn, isActive]);
 
@@ -207,7 +162,6 @@ export default function App() {
   const [messages] = useTable(tables.message);
   const [typingIndicators] = useTable(tables.typingIndicator);
   const [userRoomReads] = useTable(tables.userRoomRead);
-  const [scheduledMessages] = useTable(tables.scheduledMessage);
 
   const myHex = myIdentity?.toHexString();
   const myUser = users.find(u => u.identity.toHexString() === myHex);
@@ -230,17 +184,7 @@ export default function App() {
       return d > 0n ? 1 : d < 0n ? -1 : 0;
     });
 
-  // Pending scheduled messages for the current room, authored by me
-  const myPendingScheduled = scheduledMessages
-    .filter(sm =>
-      sm.roomId === selectedRoomId &&
-      sm.sender.toHexString() === myHex
-    )
-    .sort((a, b) => {
-      const d = a.sendAt - b.sendAt;
-      return d > 0n ? 1 : d < 0n ? -1 : 0;
-    });
-
+  // Unread count
   const getUnreadCount = (roomId: bigint): number => {
     const read = userRoomReads.find(
       r => r.roomId === roomId && r.userIdentity.toHexString() === myHex
@@ -249,6 +193,7 @@ export default function App() {
     return messages.filter(m => m.roomId === roomId && m.id > lastReadId).length;
   };
 
+  // Typing users in selected room (excluding self, not expired)
   const typingUsers = selectedRoomId
     ? typingIndicators
         .filter(ti => {
@@ -260,12 +205,14 @@ export default function App() {
         .filter((u): u is User => u !== undefined)
     : [];
 
+  // Mark as read when messages arrive in selected room
   useEffect(() => {
     if (!conn || !selectedRoomId || roomMessages.length === 0) return;
     const latest = roomMessages[roomMessages.length - 1];
     conn.reducers.markRead({ roomId: selectedRoomId, messageId: latest.id });
   }, [selectedRoomId, roomMessages.length]);
 
+  // Auto-scroll
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
@@ -286,6 +233,7 @@ export default function App() {
     setIsAtBottom(c.scrollHeight - c.scrollTop - c.clientHeight < 60);
   };
 
+  // Typing
   const stopTyping = useCallback(() => {
     if (!conn || !selectedRoomIdRef.current) return;
     conn.reducers.updateTyping({ roomId: selectedRoomIdRef.current, isTyping: false });
@@ -309,6 +257,7 @@ export default function App() {
     }
   };
 
+  // Clear typing on room change
   useEffect(() => {
     return () => {
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
@@ -349,35 +298,6 @@ export default function App() {
     if (!conn) return;
     conn.reducers.leaveRoom({ roomId });
     if (selectedRoomId === roomId) setSelectedRoomId(null);
-  };
-
-  const openScheduleModal = () => {
-    setScheduleContent(messageInput);
-    setScheduleDateTime(toLocalDateTimeMin());
-    setScheduleError('');
-    setShowScheduleModal(true);
-  };
-
-  const handleScheduleMessage = () => {
-    if (!conn || !selectedRoomId) return;
-    if (!scheduleContent.trim()) { setScheduleError('Message cannot be empty'); return; }
-    if (!scheduleDateTime) { setScheduleError('Please select a send time'); return; }
-    const sendAtMs = new Date(scheduleDateTime).getTime();
-    if (isNaN(sendAtMs) || sendAtMs <= Date.now()) {
-      setScheduleError('Scheduled time must be in the future');
-      return;
-    }
-    const sendAt = BigInt(sendAtMs) * 1000n;
-    conn.reducers.scheduleMessage({ roomId: selectedRoomId, content: scheduleContent.trim(), sendAt });
-    setShowScheduleModal(false);
-    setMessageInput('');
-    setScheduleContent('');
-    setScheduleError('');
-  };
-
-  const handleCancelScheduled = (id: bigint) => {
-    if (!conn) return;
-    conn.reducers.cancelScheduledMessage({ id });
   };
 
   // ---- Connecting screen ----
@@ -560,12 +480,6 @@ export default function App() {
               </button>
             )}
 
-            {/* Pending scheduled messages for this room */}
-            <ScheduledMessagesList
-              pending={myPendingScheduled}
-              onCancel={handleCancelScheduled}
-            />
-
             {/* Typing indicator */}
             <div className="typing-row">
               {typingUsers.length > 0 && (
@@ -593,14 +507,6 @@ export default function App() {
                 }}
                 maxLength={2000}
               />
-              <button
-                className="btn-ghost"
-                onClick={openScheduleModal}
-                title="Schedule message"
-                aria-label="schedule message"
-              >
-                Schedule
-              </button>
               <button
                 className="btn-primary"
                 onClick={handleSendMessage}
@@ -643,52 +549,6 @@ export default function App() {
               </button>
               <button className="btn-primary" onClick={handleCreateRoom}>
                 Create
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Schedule Message Modal */}
-      {showScheduleModal && (
-        <div
-          className="modal-backdrop"
-          onClick={() => { setShowScheduleModal(false); setScheduleError(''); }}
-        >
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <h3>Schedule a Message</h3>
-            <input
-              type="text"
-              placeholder="Message content..."
-              value={scheduleContent}
-              onChange={e => setScheduleContent(e.target.value)}
-              maxLength={2000}
-              autoFocus
-            />
-            <label className="schedule-label">
-              <span className="muted small">Send at</span>
-              <input
-                type="datetime-local"
-                value={scheduleDateTime}
-                min={toLocalDateTimeMin()}
-                onChange={e => setScheduleDateTime(e.target.value)}
-                className="datetime-input"
-              />
-            </label>
-            {scheduleError && <p className="error-msg">{scheduleError}</p>}
-            <div className="modal-actions">
-              <button
-                className="btn-ghost"
-                onClick={() => { setShowScheduleModal(false); setScheduleError(''); }}
-              >
-                Cancel
-              </button>
-              <button
-                className="btn-primary"
-                onClick={handleScheduleMessage}
-                disabled={!scheduleContent.trim() || !scheduleDateTime}
-              >
-                Schedule
               </button>
             </div>
           </div>

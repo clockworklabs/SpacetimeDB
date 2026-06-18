@@ -80,54 +80,5 @@ const userRoomRead = table(
   }
 );
 
-// Stores user-scheduled messages pending delivery (public so authors can see their own)
-const scheduledMessage = table(
-  {
-    name: 'scheduled_message',
-    public: true,
-    indexes: [{ accessor: 'by_sender', algorithm: 'btree', columns: ['sender'] }],
-  },
-  {
-    id: t.u64().primaryKey().autoInc(),
-    roomId: t.u64(),
-    sender: t.identity(),
-    content: t.string(),
-    sendAt: t.u64(), // microseconds since Unix epoch
-  }
-);
-
-// Repeating timer that polls for due scheduled messages every 10 seconds
-const scheduledMessageTimer = table(
-  {
-    name: 'scheduled_message_timer',
-    scheduled: (): any => processScheduledMessages,
-  },
-  {
-    scheduled_id: t.u64().primaryKey().autoInc(),
-    scheduled_at: t.scheduleAt(),
-  }
-);
-
-const spacetimedb = schema({ user, room, roomMember, message, typingIndicator, userRoomRead, scheduledMessage, scheduledMessageTimer });
+const spacetimedb = schema({ user, room, roomMember, message, typingIndicator, userRoomRead });
 export default spacetimedb;
-export { scheduledMessageTimer };
-
-// Fires every 10 seconds to deliver any due scheduled messages
-export const processScheduledMessages = spacetimedb.reducer(
-  { timer: scheduledMessageTimer.rowType },
-  (ctx, { timer: _timer }) => {
-    const now = ctx.timestamp.microsSinceUnixEpoch;
-    for (const pending of [...ctx.db.scheduledMessage.iter()]) {
-      if (pending.sendAt <= now) {
-        ctx.db.message.insert({
-          id: 0n,
-          roomId: pending.roomId,
-          sender: pending.sender,
-          content: pending.content,
-          sentAt: ctx.timestamp,
-        });
-        ctx.db.scheduledMessage.id.delete(pending.id);
-      }
-    }
-  }
-);
