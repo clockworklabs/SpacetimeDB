@@ -83,6 +83,15 @@ const spacetimedb = schema({ entity, record });  // ONE object, not spread args
 export default spacetimedb;
 ```
 
+The published module's **entry file must export the schema as default**. If you split tables
+(`schema.ts`) from reducers/lifecycle (`index.ts`), re-export it from the entry — otherwise
+publish aborts with *"haven't exported your schema"*:
+
+```typescript
+// index.ts
+export { default } from './schema';   // re-export the schema for the module entry
+```
+
 ## Reducers
 
 Export name becomes the reducer name:
