@@ -13,7 +13,6 @@ import type {
 import type { Values } from './type_util';
 import type { Bool as SatsBool } from './algebraic_type_variants';
 import { Uuid } from './uuid';
-import { u128ToHexString } from './util';
 
 /**
  * Helper to get the set of table names.
@@ -854,15 +853,16 @@ function literalValueToSql(value: unknown): string {
   if (value === null || value === undefined) {
     return 'NULL';
   }
-  if (value instanceof Identity || value instanceof ConnectionId) {
+  if (
+    value instanceof Identity ||
+    value instanceof ConnectionId ||
+    value instanceof Uuid
+  ) {
     // We use this hex string syntax.
     return `0x${value.toHexString()}`;
   }
   if (value instanceof Timestamp) {
     return `'${value.toISOString()}'`;
-  }
-  if (value instanceof Uuid) {
-    return `0x${u128ToHexString(value.asBigInt())}`;
   }
   switch (typeof value) {
     case 'number':
