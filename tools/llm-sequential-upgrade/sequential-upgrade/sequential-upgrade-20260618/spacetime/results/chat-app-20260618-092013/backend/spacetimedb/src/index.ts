@@ -1,0 +1,167 @@
+import { t, SenderError } from 'spacetimedb/server';
+import spacetimedb from './schema';
+export { default } from './schema';
+
+export const onConnect = spacetimedb.clientConnected((ctx) => {
+  const existing = ctx.db.user.identity.find(ctx.sender);
+  if (existing) {
+    ctx.db.user.identity.update({ ...existing, online: true });
+  } else {
+    ctx.db.user.insert({ identity: ctx.sender, name: '', online: true });
+  }
+});
+
+export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
+  const existing = ctx.db.user.identity.find(ctx.sender);
+  if (existing) {
+    ctx.db.user.identity.update({ ...existing, online: false });
+  }
+  for (const indicator of [...ctx.db.typingIndicator.userIdentity.filter(ctx.sender)]) {
+    ctx.db.typingIndicator.id.delete(indicator.id);
+  }
+});
+
+export const setName = spacetimedb.reducer(
+  { name: t.string() },
+  (ctx, { name }) => {
+    const trimmed = name.trim();
+    if (trimmed.length === 0 || trimmed.length > 32) {
+      throw new SenderError('Name must be 1-32 characters');
+    }
+    const user = ctx.db.user.identity.find(ctx.sender);
+    if (!user) throw new SenderError('Not connected');
+    ctx.db.user.identity.update({ ...user, name: trimmed });
+  }
+);
+
+export const createRoom = spacetimedb.reducer(
+  { name: t.string() },
+  (ctx, { name }) => {
+    const trimmed = name.trim();
+    if (trimmed.length === 0 || trimmed.length > 64) {
+      throw new SenderError('Room name must be 1-64 characters');
+    }
+    const user = ctx.db.user.identity.find(ctx.sender);
+    if (!user || user.name === '') throw new SenderError('Set a display name first');
+
+    const room = ctx.db.room.insert({
+      id: 0n,
+      name: trimmed,
+      createdBy: ctx.sender,
+      createdAt: ctx.timestamp,
+    });
+
+    ctx.db.roomMember.insert({
+      id: 0n,
+      roomId: room.id,
+      userIdentity: ctx.sender,
+    });
+  }
+);
+
+export const joinRoom = spacetimedb.reducer(
+  { roomId: t.u64() },
+  (ctx, { roomId }) => {
+    const user = ctx.db.user.identity.find(ctx.sender);
+    if (!user || user.name === '') throw new SenderError('Set a display name first');
+
+    if (!ctx.db.room.id.find(roomId)) throw new SenderError('Room not found');
+
+    const existing = [...ctx.db.roomMember.by_room_user.filter([roomId, ctx.sender])];
+    if (existing.length > 0) return;
+
+    ctx.db.roomMember.insert({
+      id: 0n,
+      roomId,
+      userIdentity: ctx.sender,
+    });
+  }
+);
+
+export const leaveRoom = spacetimedb.reducer(
+  { roomId: t.u64() },
+  (ctx, { roomId }) => {
+    for (const member of [...ctx.db.roomMember.by_room_user.filter([roomId, ctx.sender])]) {
+      ctx.db.roomMember.id.delete(member.id);
+    }
+    for (const indicator of [...ctx.db.typingIndicator.by_room_user.filter([roomId, ctx.sender])]) {
+      ctx.db.typingIndicator.id.delete(indicator.id);
+    }
+  }
+);
+
+export const sendMessage = spacetimedb.reducer(
+  { roomId: t.u64(), content: t.string() },
+  (ctx, { roomId, content }) => {
+    const user = ctx.db.user.identity.find(ctx.sender);
+    if (!user || user.name === '') throw new SenderError('Set a display name first');
+
+    if (!ctx.db.room.id.find(roomId)) throw new SenderError('Room not found');
+
+    const membership = [...ctx.db.roomMember.by_room_user.filter([roomId, ctx.sender])];
+    if (membership.length === 0) throw new SenderError('Not a member of this room');
+
+    const trimmed = content.trim();
+    if (trimmed.length === 0 || trimmed.length > 2000) {
+      throw new SenderError('Message must be 1-2000 characters');
+    }
+
+    ctx.db.message.insert({
+      id: 0n,
+      roomId,
+      sender: ctx.sender,
+      content: trimmed,
+      sentAt: ctx.timestamp,
+    });
+  }
+);
+
+export const updateTyping = spacetimedb.reducer(
+  { roomId: t.u64(), isTyping: t.bool() },
+  (ctx, { roomId, isTyping }) => {
+    const membership = [...ctx.db.roomMember.by_room_user.filter([roomId, ctx.sender])];
+    if (membership.length === 0) return;
+
+    const existing = [...ctx.db.typingIndicator.by_room_user.filter([roomId, ctx.sender])];
+
+    if (isTyping) {
+      if (existing.length > 0) {
+        ctx.db.typingIndicator.id.update({ ...existing[0], updatedAt: ctx.timestamp });
+      } else {
+        ctx.db.typingIndicator.insert({
+          id: 0n,
+          roomId,
+          userIdentity: ctx.sender,
+          updatedAt: ctx.timestamp,
+        });
+      }
+    } else {
+      for (const indicator of existing) {
+        ctx.db.typingIndicator.id.delete(indicator.id);
+      }
+    }
+  }
+);
+
+export const markRead = spacetimedb.reducer(
+  { roomId: t.u64(), messageId: t.u64() },
+  (ctx, { roomId, messageId }) => {
+    const membership = [...ctx.db.roomMember.by_room_user.filter([roomId, ctx.sender])];
+    if (membership.length === 0) return;
+
+    const existing = [...ctx.db.userRoomRead.by_room_user.filter([roomId, ctx.sender])];
+
+    if (existing.length > 0) {
+      if (messageId > existing[0].lastReadMessageId) {
+        ctx.db.userRoomRead.id.update({ ...existing[0], lastReadMessageId: messageId });
+      }
+    } else {
+      ctx.db.userRoomRead.insert({
+        id: 0n,
+        roomId,
+        userIdentity: ctx.sender,
+        lastReadMessageId: messageId,
+      });
+    }
+  }
+);
