@@ -1,7 +1,8 @@
 use spacetimedb_datastore::execution_context::Workload;
+use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_durability::EmptyHistory;
 use spacetimedb_engine::error::DBError;
-use spacetimedb_engine::relational_db::RelationalDB;
+use spacetimedb_engine::relational_db::{MutTx, RelationalDB};
 use spacetimedb_lib::RawModuleDef;
 use spacetimedb_primitives::TableId;
 use spacetimedb_runtime::sim::Rng;
@@ -22,6 +23,7 @@ pub struct EngineTarget {
     db: RelationalDB,
     schema: SchemaPlan,
     table_ids: Vec<TableId>,
+    active_mut_tx: Option<MutTx>,
 }
 
 impl EngineTarget {
@@ -60,45 +62,63 @@ impl EngineTarget {
             Ok(())
         })?;
 
-        Ok(Self { db, schema, table_ids })
+        Ok(Self {
+            db,
+            schema,
+            table_ids,
+            active_mut_tx: None,
+        })
     }
 
-    pub fn execute(&self, interaction: &Interaction) -> Result<Observation, DBError> {
+    pub fn execute(&mut self, interaction: &Interaction) -> anyhow::Result<Observation> {
         match interaction {
+            Interaction::BeginMutTx => {
+                anyhow::ensure!(
+                    self.active_mut_tx.is_none(),
+                    "begin mutable transaction while one is already active"
+                );
+                self.active_mut_tx = Some(self.db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal));
+                Ok(Observation::BeganMutTx)
+            }
             Interaction::Insert { table, row } => {
                 let table_id = self.table_ids[*table];
                 let bytes = row_to_bytes(row);
-                let count_after = self
-                    .db
-                    .with_auto_commit(Workload::Internal, |tx| -> Result<u64, DBError> {
-                        match self.db.insert(tx, table_id, &bytes) {
-                            Ok(_) => {}
-                            Err(_) => {
-                                let cnt = self.db.iter_mut(tx, table_id)?.collect::<Vec<_>>().len() as u64;
-                                return Ok(cnt);
-                            }
-                        }
-                        let cnt = self.db.iter_mut(tx, table_id)?.collect::<Vec<_>>().len() as u64;
-                        Ok(cnt)
-                    })?;
+                let tx = self
+                    .active_mut_tx
+                    .as_mut()
+                    .ok_or_else(|| anyhow::anyhow!("insert without active mutable transaction"))?;
+                match self.db.insert(tx, table_id, &bytes) {
+                    Ok(_) => {}
+                    Err(_) => {}
+                }
+                let count_after = self.db.iter_mut(tx, table_id)?.count() as u64;
                 Ok(Observation::Inserted { count_after })
             }
             Interaction::Delete { table, row } => {
                 let table_id = self.table_ids[*table];
-                let count_after = self
-                    .db
-                    .with_auto_commit(Workload::Internal, |tx| -> Result<u64, DBError> {
-                        self.db.delete_by_rel(tx, table_id, [row.clone()]);
-                        let cnt = self.db.iter_mut(tx, table_id)?.count() as u64;
-                        Ok(cnt)
-                    })?;
+                let tx = self
+                    .active_mut_tx
+                    .as_mut()
+                    .ok_or_else(|| anyhow::anyhow!("delete without active mutable transaction"))?;
+                self.db.delete_by_rel(tx, table_id, [row.clone()]);
+                let count_after = self.db.iter_mut(tx, table_id)?.count() as u64;
                 Ok(Observation::Deleted { count_after })
+            }
+            Interaction::CommitTx => {
+                let tx = self
+                    .active_mut_tx
+                    .take()
+                    .ok_or_else(|| anyhow::anyhow!("commit without active mutable transaction"))?;
+                self.db.finish_tx(tx, Ok::<(), anyhow::Error>(()))?;
+                Ok(Observation::Committed)
             }
             Interaction::Count { table } => {
                 let table_id = self.table_ids[*table];
-                let count = self.db.with_auto_commit(Workload::Internal, |tx| {
-                    self.db.iter_mut(tx, table_id).map(|it| it.count() as u64)
-                })?;
+                let tx = self
+                    .active_mut_tx
+                    .as_mut()
+                    .ok_or_else(|| anyhow::anyhow!("count without active mutable transaction"))?;
+                let count = self.db.iter_mut(tx, table_id)?.count() as u64;
                 Ok(Observation::Counted { count })
             }
         }
@@ -119,7 +139,7 @@ impl TargetDriver<Interaction> for EngineTarget {
     type Outcome = Outcome;
 
     fn execute(&mut self, interaction: &Interaction) -> Result<Self::Observation, anyhow::Error> {
-        self.execute(interaction)
+        EngineTarget::execute(self, interaction)
     }
 }
 pub struct EngineTest;

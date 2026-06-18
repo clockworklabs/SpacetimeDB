@@ -8,15 +8,19 @@ pub type Row = ProductValue;
 
 #[derive(Debug, Clone)]
 pub enum Interaction {
+    BeginMutTx,
     Insert { table: usize, row: Row },
     Delete { table: usize, row: Row },
+    CommitTx,
     Count { table: usize },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Observation {
+    BeganMutTx,
     Inserted { count_after: u64 },
     Deleted { count_after: u64 },
+    Committed,
     Counted { count: u64 },
 }
 
@@ -24,6 +28,7 @@ pub enum Observation {
 pub struct Model {
     schema: SchemaPlan,
     tables: Vec<TableState>,
+    in_mut_tx: bool,
 }
 
 #[derive(Debug)]
@@ -34,7 +39,11 @@ struct TableState {
 impl Model {
     pub fn new(schema: SchemaPlan) -> Self {
         let tables = schema.tables.iter().map(|_| TableState { rows: vec![] }).collect();
-        Self { schema, tables }
+        Self {
+            schema,
+            tables,
+            in_mut_tx: false,
+        }
     }
 
     fn violates_unique_constraint(&self, table: usize, row: &Row) -> bool {
@@ -53,7 +62,13 @@ impl Model {
 
     pub fn apply(&mut self, interaction: &Interaction) -> Observation {
         match interaction {
+            Interaction::BeginMutTx => {
+                debug_assert!(!self.in_mut_tx);
+                self.in_mut_tx = true;
+                Observation::BeganMutTx
+            }
             Interaction::Insert { table, row } => {
+                debug_assert!(self.in_mut_tx);
                 let table_plan = &self.schema.tables[*table];
 
                 if self.violates_unique_constraint(*table, row) || self.tables[*table].rows.contains(row) {
@@ -77,16 +92,29 @@ impl Model {
                 }
             }
             Interaction::Delete { table, row } => {
+                debug_assert!(self.in_mut_tx);
                 let rows = &mut self.tables[*table].rows;
                 rows.retain(|r| r != row);
                 Observation::Deleted {
                     count_after: rows.len() as u64,
                 }
             }
-            Interaction::Count { table } => Observation::Counted {
-                count: self.tables[*table].rows.len() as u64,
-            },
+            Interaction::CommitTx => {
+                debug_assert!(self.in_mut_tx);
+                self.in_mut_tx = false;
+                Observation::Committed
+            }
+            Interaction::Count { table } => {
+                debug_assert!(self.in_mut_tx);
+                Observation::Counted {
+                    count: self.tables[*table].rows.len() as u64,
+                }
+            }
         }
+    }
+
+    pub fn in_mut_tx(&self) -> bool {
+        self.in_mut_tx
     }
 
     pub fn row_count(&self, table: usize) -> u64 {
@@ -135,25 +163,33 @@ impl WorkloadGen {
     }
 
     pub fn next_interaction(&mut self) -> Interaction {
-        let model = &self.model;
         let table_idx = self.rng.index(self.schema().tables.len());
 
-        let coin = self.rng.next_u64() % 10;
-        if coin < 6 {
-            Interaction::Insert {
-                table: table_idx,
-                row: self.gen_row(&self.schema().tables[table_idx]),
-            }
-        } else if coin < 8 && !model.rows(table_idx).is_empty() {
-            let rows = model.rows(table_idx);
-            let row_index = self.rng.index(rows.len());
-            Interaction::Delete {
-                table: table_idx,
-                row: rows[row_index].clone(),
+        let interaction = if self.model.in_mut_tx() {
+            let coin = self.rng.next_u64() % 10;
+            if coin < 5 {
+                Interaction::Insert {
+                    table: table_idx,
+                    row: self.gen_row(&self.schema().tables[table_idx]),
+                }
+            } else if coin < 7 && !self.model.rows(table_idx).is_empty() {
+                let rows = self.model.rows(table_idx);
+                let row_index = self.rng.index(rows.len());
+                Interaction::Delete {
+                    table: table_idx,
+                    row: rows[row_index].clone(),
+                }
+            } else if coin < 9 {
+                Interaction::Count { table: table_idx }
+            } else {
+                Interaction::CommitTx
             }
         } else {
-            Interaction::Count { table: table_idx }
-        }
+            Interaction::BeginMutTx
+        };
+
+        self.model.apply(&interaction);
+        interaction
     }
 }
 impl Iterator for WorkloadGen {
