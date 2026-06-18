@@ -112,6 +112,19 @@ Wait for the dev server to be ready (poll `http://localhost:6173` up to 30 secon
 
 ---
 
+## Common TypeScript gotchas (SpacetimeDB + React)
+
+- **bigint in JSX:** ids/counts from `t.u64()`/`t.i64()` columns are `bigint`. React cannot
+  render a bigint — `Type '0n' is not assignable to ReactNode`. Wrap it: `{Number(row.id)}`
+  or `{String(count)}`.
+- **`ctx.connectionId` is nullable** (`ConnectionId | null`) in lifecycle hooks — null-check
+  before using it.
+- **Optional columns in `insert`:** every `insert` must list all optional columns (set unused
+  ones to `undefined`). When you add a new optional column to a table, update every existing
+  `insert` call for that table.
+
+---
+
 ## App Identity
 
 - HTML `<title>` MUST be **"SpacetimeDB Chat"** (not a generic "Chat App")
@@ -119,11 +132,16 @@ Wait for the dev server to be ready (poll `http://localhost:6173` up to 30 secon
 
 ---
 
-## Redeploy (for fix iterations)
+## Redeploy (fix iterations & upgrades)
 
 - If **backend changed**: re-publish module, regenerate bindings if schema changed
   ```bash
   spacetime publish chat-app-<timestamp> --module-path <backend-dir>
   spacetime generate --lang typescript --out-dir <client>/src/module_bindings --module-path <backend-dir>
+  ```
+  **If the schema changed (common on upgrades)**, a plain publish aborts needing a migration and
+  prompts `[y/N]` (hangs headless). Skip it — go straight to the non-interactive wipe-and-publish:
+  ```bash
+  echo y | spacetime publish chat-app-<timestamp> --module-path <backend-dir> --delete-data
   ```
 - If **client changed**: Vite HMR handles it automatically (or restart dev server if needed)

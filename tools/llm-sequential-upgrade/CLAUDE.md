@@ -28,6 +28,14 @@ Depending on the mode passed in the launch prompt:
 
 ---
 
+## Shell Syntax
+
+Windows host with both a Bash and a PowerShell tool — don't mix syntax. In the Bash tool use
+POSIX: `mkdir -p` not `New-Item`, `sleep` not `Start-Sleep`, `2>/dev/null` not `2>$null`,
+`VAR=x` not `$VAR=x`. PowerShell cmdlets in bash fail with "command not found".
+
+---
+
 ## Anti-Contamination
 
 Do NOT read any files under:

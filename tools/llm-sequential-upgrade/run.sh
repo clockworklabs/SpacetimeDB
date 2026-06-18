@@ -57,10 +57,7 @@ LEVEL_EXPLICIT=""
 BACKEND="spacetime"
 VARIANT="sequential-upgrade"
 RULES="guided"
-# Model to pin for the Code Agent. Defaults to the benchmark's canonical model so
-# unpinned runs can't silently inherit the CLI default (which may differ per env).
-# Override with --model or $ANTHROPIC_MODEL. Pin the SAME model across
-# backends/levels for a fair comparison.
+# Pin the canonical model so unpinned runs don't inherit the CLI default. Override with --model.
 MODEL="${ANTHROPIC_MODEL:-claude-sonnet-4-6}"
 RUN_INDEX=0
 FIX_MODE=""
@@ -410,6 +407,10 @@ echo ""
 # run.sh is invoked from within a Claude Desktop agent session (Bash tool).
 unset CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST
 unset CLAUDE_CODE_ENTRYPOINT
+
+# Force 5-min cache tier + freeze CLI version for consistent cost billing across runs.
+export FORCE_PROMPT_CACHING_5M=1
+export DISABLE_AUTOUPDATER=1
 
 export CLAUDE_CODE_ENABLE_TELEMETRY=1
 export OTEL_LOGS_EXPORTER=otlp
@@ -869,10 +870,7 @@ if [[ -n "$MODEL" ]]; then
   MODEL_FLAG="--model $MODEL"
 fi
 
-# Assemble args as an array so optional/empty flags can't break word-splitting or
-# the line continuation (an unquoted empty expansion previously orphaned --add-dir
-# and, under `set -e`, killed the script before telemetry was parsed).
-# --fork-session (when resuming) branches a new session from the prior one.
+# Build args as an array so empty optional flags (model/resume) can't break the invocation.
 CLAUDE_ARGS=(
   --print --verbose --output-format text --dangerously-skip-permissions
   --add-dir "$APP_DIR"
