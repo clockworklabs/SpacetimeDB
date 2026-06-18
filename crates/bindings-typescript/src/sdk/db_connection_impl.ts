@@ -112,7 +112,23 @@ export type DbConnectionConfig<RemoteModule extends UntypedRemoteModule> = {
 
 type ProcedureCallback = (result: ProcedureResultMessage['result']) => void;
 
+type Deferred<T> = {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason?: unknown) => void;
+};
+
 const TEXT_ENCODER = new TextEncoder();
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve!: Deferred<T>['resolve'];
+  let reject!: Deferred<T>['reject'];
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 function getClientMessageVariantTag(name: string): number {
   if (ClientMessage.algebraicType.tag !== 'Sum') {
@@ -1119,7 +1135,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     argsBuffer: Uint8Array,
     reducerArgs?: object
   ): Promise<void> {
-    const { promise, resolve, reject } = Promise.withResolvers<void>();
+    const { promise, resolve, reject } = createDeferred<void>();
     const requestId = this.#getNextRequestId();
     this.#sendCallReducerMessage(requestId, encodedReducerName, argsBuffer);
     if (reducerArgs) {
@@ -1154,7 +1170,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     argsBuffer: Uint8Array,
     reducerArgs?: object
   ): Promise<void> {
-    const { promise, resolve, reject } = Promise.withResolvers<void>();
+    const { promise, resolve, reject } = createDeferred<void>();
     const requestId = this.#getNextRequestId();
     const message = ClientMessage.CallReducer({
       reducer: reducerName,
@@ -1235,7 +1251,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     encodedProcedureName: Uint8Array,
     argsBuffer: Uint8Array
   ): Promise<Uint8Array> {
-    const { promise, resolve, reject } = Promise.withResolvers<Uint8Array>();
+    const { promise, resolve, reject } = createDeferred<Uint8Array>();
     const requestId = this.#getNextRequestId();
     this.#sendCallProcedureMessage(requestId, encodedProcedureName, argsBuffer);
     this.#procedureCallbacks.set(requestId, result => {
@@ -1252,7 +1268,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     procedureName: string,
     argsBuffer: Uint8Array
   ): Promise<Uint8Array> {
-    const { promise, resolve, reject } = Promise.withResolvers<Uint8Array>();
+    const { promise, resolve, reject } = createDeferred<Uint8Array>();
     const requestId = this.#getNextRequestId();
     const message = ClientMessage.CallProcedure({
       procedure: procedureName,
