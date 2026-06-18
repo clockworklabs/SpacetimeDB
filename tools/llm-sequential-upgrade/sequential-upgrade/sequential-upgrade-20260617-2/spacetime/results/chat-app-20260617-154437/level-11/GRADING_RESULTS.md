@@ -136,16 +136,3 @@
 
 **Reprompt count:** 0 (passed on first grade)
 **Cost:** L10 upgrade $0.68
-
----
-
-## Level 11 — Draft Sync (Features 1–14)
-
-| Feature | Score |
-|---------|-------|
-| 1–13 (regression) | 3/3 each |
-| 14. Draft Sync | 3/3 |
-| **TOTAL** | **42/42** |
-
-**Reprompt count:** 0 (passed on first grade)
-**Cost:** L11 upgrade $1.07
