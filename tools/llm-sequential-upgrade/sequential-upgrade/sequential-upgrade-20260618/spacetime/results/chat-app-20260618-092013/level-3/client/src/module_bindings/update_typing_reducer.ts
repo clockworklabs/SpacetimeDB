@@ -12,6 +12,5 @@ import {
 
 export default {
   roomId: __t.u64(),
-  content: __t.string(),
-  ttlSeconds: __t.option(__t.u32()),
+  isTyping: __t.bool(),
 };

@@ -11,7 +11,5 @@ import {
 } from "spacetimedb";
 
 export default {
-  roomId: __t.u64(),
-  content: __t.string(),
-  ttlSeconds: __t.option(__t.u32()),
+  id: __t.u64(),
 };

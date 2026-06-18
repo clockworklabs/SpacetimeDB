@@ -32,16 +32,3 @@
 
 **Reprompt count:** 0 (passed on first grade)
 **Cost:** L2 upgrade $1.03 (1 publish attempt, vs 3 pre-migration-note)
-
----
-
-## Level 3 — Ephemeral Messages (Features 1–6)
-
-| Feature | Score |
-|---------|-------|
-| 1–5 (regression) | 3/3 each |
-| 6. Ephemeral Messages | 3/3 |
-| **TOTAL** | **18/18** |
-
-**Reprompt count:** 0 (passed on first grade)
-**Cost:** L3 upgrade $0.80 (1 publish, 0 errors)

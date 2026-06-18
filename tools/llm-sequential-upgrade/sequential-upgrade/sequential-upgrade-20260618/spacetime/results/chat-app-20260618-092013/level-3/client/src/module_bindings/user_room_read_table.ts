@@ -10,8 +10,9 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export default {
-  roomId: __t.u64(),
-  content: __t.string(),
-  ttlSeconds: __t.option(__t.u32()),
-};
+export default __t.row({
+  id: __t.u64().primaryKey(),
+  roomId: __t.u64().name("room_id"),
+  userIdentity: __t.identity().name("user_identity"),
+  lastReadMessageId: __t.u64().name("last_read_message_id"),
+});
