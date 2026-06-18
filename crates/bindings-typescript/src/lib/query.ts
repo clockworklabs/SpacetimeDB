@@ -13,6 +13,7 @@ import type {
 import type { Values } from './type_util';
 import type { Bool as SatsBool } from './algebraic_type_variants';
 import { Uuid } from './uuid';
+import { u128ToHexString } from './util';
 
 /**
  * Helper to get the set of table names.
@@ -861,7 +862,7 @@ function literalValueToSql(value: unknown): string {
     return `'${value.toISOString()}'`;
   }
   if (value instanceof Uuid) {
-    return value.toString();
+    return u128ToHexString(value.__uuid__);
   }
   switch (typeof value) {
     case 'number':
