@@ -10,9 +10,6 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export default __t.row({
-  identity: __t.identity().primaryKey(),
-  name: __t.string(),
+export default {
   status: __t.string(),
-  lastActiveAt: __t.timestamp().name("last_active_at"),
-});
+};

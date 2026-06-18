@@ -11,8 +11,8 @@ import {
 } from "spacetimedb";
 
 export default __t.row({
-  identity: __t.identity().primaryKey(),
-  name: __t.string(),
-  status: __t.string(),
-  lastActiveAt: __t.timestamp().name("last_active_at"),
+  id: __t.u64().primaryKey(),
+  messageId: __t.u64().name("message_id"),
+  userIdentity: __t.identity().name("user_identity"),
+  emoji: __t.string(),
 });
