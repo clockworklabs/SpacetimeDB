@@ -10,9 +10,9 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export default {
-  roomId: __t.u64(),
-  content: __t.string(),
-  ttlSeconds: __t.option(__t.u32()),
-  parentMessageId: __t.option(__t.u64()),
-};
+export default __t.row({
+  id: __t.u64().primaryKey(),
+  messageId: __t.u64().name("message_id"),
+  previousContent: __t.string().name("previous_content"),
+  editedAt: __t.timestamp().name("edited_at"),
+});
