@@ -359,7 +359,7 @@ export default function App() {
   }, [token]);
 
   useEffect(() => {
-    if (!conn || !isActive) return;
+    if (!conn || !isActive || !myIdentity) return;
     conn
       .subscriptionBuilder()
       .onApplied(() => setSubscribed(true))
@@ -368,14 +368,18 @@ export default function App() {
         tables.room,
         tables.roomMember,
         tables.roomBan,
-        tables.message,
+        // Semijoin: only messages for rooms where the current user is a member.
+        // When kicked (room_member row deleted), messages from that room are removed from the local cache.
+        tables.roomMember
+          .where(m => m.userIdentity.eq(myIdentity))
+          .rightSemijoin(tables.message, (member, msg) => member.roomId.eq(msg.roomId)),
         tables.typingIndicator,
         tables.userRoomRead,
         tables.scheduledMessage,
         tables.messageReaction,
         tables.messageEditHistory,
       ]);
-  }, [conn, isActive]);
+  }, [conn, isActive, myIdentity]);
 
   const [users] = useTable(tables.user);
   const [rooms] = useTable(tables.room);
@@ -755,8 +759,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Kicked feedback */}
-            {isKickedFromSelectedRoom && (
+            {isKickedFromSelectedRoom ? (
               <div className="kicked-overlay">
                 <div className="kicked-card">
                   <p className="kicked-text">You have been kicked from this room.</p>
@@ -765,144 +768,146 @@ export default function App() {
                   </button>
                 </div>
               </div>
-            )}
-
-            {/* Members panel */}
-            {showMembersPanel && (
-              <div className="members-panel">
-                <div className="members-panel-header">
-                  <span>Members ({selectedRoomMembers.length})</span>
-                  <button className="icon-btn" onClick={() => setShowMembersPanel(false)}>✕</button>
-                </div>
-                {selectedRoomMembers.map(member => {
-                  const memberUser = users.find(u => u.identity.toHexString() === member.userIdentity.toHexString());
-                  const isMe = member.userIdentity.toHexString() === myHex;
-                  return (
-                    <div key={String(member.id)} className="member-row">
-                      <div className="member-info">
-                        <span className="member-name" style={{ color: nameColor(memberUser?.name ?? '?') }}>
-                          {memberUser?.name ?? 'Unknown'}
-                          {isMe && <span className="muted small"> (you)</span>}
-                        </span>
-                        {member.isAdmin && <span className="admin-badge">Admin</span>}
-                      </div>
-                      {iAmAdminInSelected && !isMe && !member.isAdmin && (
-                        <div className="member-actions">
-                          <button
-                            className="btn-danger btn-sm"
-                            onClick={() => handleKickUser(member.id)}
-                          >
-                            Kick
-                          </button>
-                          <button
-                            className="btn-ghost btn-sm"
-                            onClick={() => handlePromoteToAdmin(member.id)}
-                          >
-                            Promote
-                          </button>
-                        </div>
-                      )}
+            ) : (
+              <>
+                {/* Members panel */}
+                {showMembersPanel && (
+                  <div className="members-panel">
+                    <div className="members-panel-header">
+                      <span>Members ({selectedRoomMembers.length})</span>
+                      <button className="icon-btn" onClick={() => setShowMembersPanel(false)}>✕</button>
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                    {selectedRoomMembers.map(member => {
+                      const memberUser = users.find(u => u.identity.toHexString() === member.userIdentity.toHexString());
+                      const isMe = member.userIdentity.toHexString() === myHex;
+                      return (
+                        <div key={String(member.id)} className="member-row">
+                          <div className="member-info">
+                            <span className="member-name" style={{ color: nameColor(memberUser?.name ?? '?') }}>
+                              {memberUser?.name ?? 'Unknown'}
+                              {isMe && <span className="muted small"> (you)</span>}
+                            </span>
+                            {member.isAdmin && <span className="admin-badge">Admin</span>}
+                          </div>
+                          {iAmAdminInSelected && !isMe && !member.isAdmin && (
+                            <div className="member-actions">
+                              <button
+                                className="btn-danger btn-sm"
+                                onClick={() => handleKickUser(member.id)}
+                              >
+                                Kick
+                              </button>
+                              <button
+                                className="btn-ghost btn-sm"
+                                onClick={() => handlePromoteToAdmin(member.id)}
+                              >
+                                Promote
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
 
-            {/* Messages */}
-            <div
-              ref={messagesContainerRef}
-              className="messages-area"
-              onScroll={handleScroll}
-            >
-              {roomMessages.length === 0 ? (
-                <div className="fullscreen-center flex-1">
-                  <p className="muted">No messages yet — say something!</p>
+                {/* Messages */}
+                <div
+                  ref={messagesContainerRef}
+                  className="messages-area"
+                  onScroll={handleScroll}
+                >
+                  {roomMessages.length === 0 ? (
+                    <div className="fullscreen-center flex-1">
+                      <p className="muted">No messages yet — say something!</p>
+                    </div>
+                  ) : (
+                    <MessageList
+                      messages={roomMessages}
+                      users={users}
+                      myIdentity={myIdentity}
+                      userRoomReads={userRoomReads}
+                      reactions={messageReactions}
+                      editHistory={messageEditHistories}
+                      onToggleReaction={handleToggleReaction}
+                      onEditMessage={handleEditMessage}
+                    />
+                  )}
+                  <div ref={messagesEndRef} />
                 </div>
-              ) : (
-                <MessageList
-                  messages={roomMessages}
-                  users={users}
-                  myIdentity={myIdentity}
-                  userRoomReads={userRoomReads}
-                  reactions={messageReactions}
-                  editHistory={messageEditHistories}
-                  onToggleReaction={handleToggleReaction}
-                  onEditMessage={handleEditMessage}
+
+                {/* Scroll to bottom */}
+                {!isAtBottom && (
+                  <button
+                    className="scroll-btn"
+                    onClick={() => { scrollToBottom(); setIsAtBottom(true); }}
+                  >
+                    ↓ Scroll to latest
+                  </button>
+                )}
+
+                {/* Pending scheduled messages for this room */}
+                <ScheduledMessagesList
+                  pending={myPendingScheduled}
+                  onCancel={handleCancelScheduled}
                 />
-              )}
-              <div ref={messagesEndRef} />
-            </div>
 
-            {/* Scroll to bottom */}
-            {!isAtBottom && (
-              <button
-                className="scroll-btn"
-                onClick={() => { scrollToBottom(); setIsAtBottom(true); }}
-              >
-                ↓ Scroll to latest
-              </button>
+                {/* Typing indicator */}
+                <div className="typing-row">
+                  {typingUsers.length > 0 && (
+                    <span className="typing-text">
+                      {typingUsers.length === 1
+                        ? `${typingUsers[0].name} is typing...`
+                        : `${typingUsers.map(u => u.name).join(', ')} are typing...`}
+                    </span>
+                  )}
+                </div>
+
+                {/* Input bar */}
+                <div className="input-bar">
+                  <input
+                    type="text"
+                    className="message-input"
+                    placeholder={`Message #${selectedRoom.name}`}
+                    value={messageInput}
+                    onChange={e => handleTyping(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage();
+                      }
+                    }}
+                    maxLength={2000}
+                  />
+                  <select
+                    className={`ephemeral-select${ephemeralTtl !== null ? ' ephemeral-active' : ''}`}
+                    value={ephemeralTtl ?? ''}
+                    onChange={e => setEphemeralTtl(e.target.value ? Number(e.target.value) : null)}
+                    title="Disappearing message duration"
+                  >
+                    <option value="">No expiry</option>
+                    <option value="60">⏱ 1 min</option>
+                    <option value="300">⏱ 5 min</option>
+                    <option value="600">⏱ 10 min</option>
+                  </select>
+                  <button
+                    className="btn-ghost"
+                    onClick={openScheduleModal}
+                    title="Schedule message"
+                    aria-label="schedule message"
+                  >
+                    Schedule
+                  </button>
+                  <button
+                    className="btn-primary"
+                    onClick={handleSendMessage}
+                    disabled={!messageInput.trim()}
+                  >
+                    Send
+                  </button>
+                </div>
+              </>
             )}
-
-            {/* Pending scheduled messages for this room */}
-            <ScheduledMessagesList
-              pending={myPendingScheduled}
-              onCancel={handleCancelScheduled}
-            />
-
-            {/* Typing indicator */}
-            <div className="typing-row">
-              {typingUsers.length > 0 && (
-                <span className="typing-text">
-                  {typingUsers.length === 1
-                    ? `${typingUsers[0].name} is typing...`
-                    : `${typingUsers.map(u => u.name).join(', ')} are typing...`}
-                </span>
-              )}
-            </div>
-
-            {/* Input bar */}
-            <div className="input-bar">
-              <input
-                type="text"
-                className="message-input"
-                placeholder={`Message #${selectedRoom.name}`}
-                value={messageInput}
-                onChange={e => handleTyping(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage();
-                  }
-                }}
-                maxLength={2000}
-              />
-              <select
-                className={`ephemeral-select${ephemeralTtl !== null ? ' ephemeral-active' : ''}`}
-                value={ephemeralTtl ?? ''}
-                onChange={e => setEphemeralTtl(e.target.value ? Number(e.target.value) : null)}
-                title="Disappearing message duration"
-              >
-                <option value="">No expiry</option>
-                <option value="60">⏱ 1 min</option>
-                <option value="300">⏱ 5 min</option>
-                <option value="600">⏱ 10 min</option>
-              </select>
-              <button
-                className="btn-ghost"
-                onClick={openScheduleModal}
-                title="Schedule message"
-                aria-label="schedule message"
-              >
-                Schedule
-              </button>
-              <button
-                className="btn-primary"
-                onClick={handleSendMessage}
-                disabled={!messageInput.trim()}
-              >
-                Send
-              </button>
-            </div>
           </div>
         )}
       </main>
