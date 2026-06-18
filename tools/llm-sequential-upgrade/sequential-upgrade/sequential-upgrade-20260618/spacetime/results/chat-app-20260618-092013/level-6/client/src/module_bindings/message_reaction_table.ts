@@ -12,7 +12,7 @@ import {
 
 export default __t.row({
   id: __t.u64().primaryKey(),
-  roomId: __t.u64().name("room_id"),
+  messageId: __t.u64().name("message_id"),
   userIdentity: __t.identity().name("user_identity"),
-  isAdmin: __t.bool().name("is_admin"),
+  emoji: __t.string(),
 });

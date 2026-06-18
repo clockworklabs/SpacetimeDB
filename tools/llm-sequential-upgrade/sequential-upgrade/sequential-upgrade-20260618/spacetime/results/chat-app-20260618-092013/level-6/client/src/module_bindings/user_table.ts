@@ -11,8 +11,7 @@ import {
 } from "spacetimedb";
 
 export default __t.row({
-  id: __t.u64().primaryKey(),
-  roomId: __t.u64().name("room_id"),
-  userIdentity: __t.identity().name("user_identity"),
-  isAdmin: __t.bool().name("is_admin"),
+  identity: __t.identity().primaryKey(),
+  name: __t.string(),
+  online: __t.bool(),
 });

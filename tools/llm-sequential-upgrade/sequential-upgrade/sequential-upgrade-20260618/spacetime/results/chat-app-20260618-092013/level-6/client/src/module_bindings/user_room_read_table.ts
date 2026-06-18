@@ -14,5 +14,5 @@ export default __t.row({
   id: __t.u64().primaryKey(),
   roomId: __t.u64().name("room_id"),
   userIdentity: __t.identity().name("user_identity"),
-  isAdmin: __t.bool().name("is_admin"),
+  lastReadMessageId: __t.u64().name("last_read_message_id"),
 });

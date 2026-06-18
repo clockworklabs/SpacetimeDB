@@ -13,6 +13,8 @@ import {
 export default __t.row({
   id: __t.u64().primaryKey(),
   roomId: __t.u64().name("room_id"),
-  userIdentity: __t.identity().name("user_identity"),
-  isAdmin: __t.bool().name("is_admin"),
+  sender: __t.identity(),
+  content: __t.string(),
+  sentAt: __t.timestamp().name("sent_at"),
+  expiresAt: __t.option(__t.u64()).name("expires_at"),
 });

@@ -13,6 +13,7 @@ import {
 export default __t.row({
   id: __t.u64().primaryKey(),
   roomId: __t.u64().name("room_id"),
-  userIdentity: __t.identity().name("user_identity"),
-  isAdmin: __t.bool().name("is_admin"),
+  sender: __t.identity(),
+  content: __t.string(),
+  sendAt: __t.u64().name("send_at"),
 });
