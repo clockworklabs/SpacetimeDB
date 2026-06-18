@@ -862,7 +862,7 @@ function literalValueToSql(value: unknown): string {
     return `'${value.toISOString()}'`;
   }
   if (value instanceof Uuid) {
-    return u128ToHexString(value.__uuid__);
+    return `0x${u128ToHexString(value.asBigInt())}`;
   }
   switch (typeof value) {
     case 'number':
