@@ -123,16 +123,3 @@
 
 **Reprompt count:** 0 (passed on first grade)
 **Cost:** L9 upgrade $1.46
-
----
-
-## Level 10 — Room Activity Indicators (Features 1–13)
-
-| Feature | Score |
-|---------|-------|
-| 1–12 (regression) | 3/3 each |
-| 13. Room Activity Indicators | 3/3 |
-| **TOTAL** | **39/39** |
-
-**Reprompt count:** 0 (passed on first grade)
-**Cost:** L10 upgrade $0.68
