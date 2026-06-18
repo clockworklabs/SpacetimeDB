@@ -523,10 +523,10 @@ export const getMySchemaViaHttp = spacetimedb.procedure(t.string(), ctx => {
   }
 });
 
-export const get_simple = spacetimedb.httpHandler(
+export const getSimple = spacetimedb.httpHandler(
   (_ctx, _req) => new SyncResponse('ok')
 );
 
 export const router = spacetimedb.httpRouter(
-  new Router().get('/get', get_simple)
+  new Router().get('/get', getSimple)
 );
