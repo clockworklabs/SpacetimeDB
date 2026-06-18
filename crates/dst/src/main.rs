@@ -5,6 +5,7 @@ use spacetimedb_runtime::sim::Rng;
 
 mod engine;
 mod schema;
+mod sim;
 mod traits;
 
 use crate::{engine::EngineTest, traits::TestSuite};

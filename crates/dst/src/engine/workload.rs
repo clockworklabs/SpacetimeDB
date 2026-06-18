@@ -13,6 +13,7 @@ pub enum Interaction {
     Delete { table: usize, row: Row },
     CommitTx,
     Count { table: usize },
+    Replay,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,33 +23,44 @@ pub enum Observation {
     Deleted { count_after: u64 },
     Committed,
     Counted { count: u64 },
+    Replayed,
 }
 
 #[derive(Debug)]
 pub struct Model {
     schema: SchemaPlan,
-    tables: Vec<TableState>,
-    in_mut_tx: bool,
+    committed_tables: Vec<TableState>,
+    pending_tables: Option<Vec<TableState>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct TableState {
     rows: Vec<Row>,
 }
 
 impl Model {
     pub fn new(schema: SchemaPlan) -> Self {
-        let tables = schema.tables.iter().map(|_| TableState { rows: vec![] }).collect();
+        let committed_tables = schema.tables.iter().map(|_| TableState { rows: vec![] }).collect();
         Self {
             schema,
-            tables,
-            in_mut_tx: false,
+            committed_tables,
+            pending_tables: None,
         }
     }
 
-    fn violates_unique_constraint(&self, table: usize, row: &Row) -> bool {
+    fn tables(&self) -> &[TableState] {
+        self.pending_tables.as_deref().unwrap_or(&self.committed_tables)
+    }
+
+    fn pending_tables_mut(&mut self) -> &mut [TableState] {
+        self.pending_tables
+            .as_deref_mut()
+            .expect("mutable interaction without active transaction")
+    }
+
+    fn violates_unique_constraint_in(&self, tables: &[TableState], table: usize, row: &Row) -> bool {
         let table_plan = &self.schema.tables[table];
-        let rows = &self.tables[table].rows;
+        let rows = &tables[table].rows;
         for constraint in &table_plan.unique_constraints {
             if rows
                 .iter()
@@ -63,22 +75,24 @@ impl Model {
     pub fn apply(&mut self, interaction: &Interaction) -> Observation {
         match interaction {
             Interaction::BeginMutTx => {
-                debug_assert!(!self.in_mut_tx);
-                self.in_mut_tx = true;
+                debug_assert!(self.pending_tables.is_none());
+                self.pending_tables = Some(self.committed_tables.clone());
                 Observation::BeganMutTx
             }
             Interaction::Insert { table, row } => {
-                debug_assert!(self.in_mut_tx);
-                let table_plan = &self.schema.tables[*table];
+                debug_assert!(self.pending_tables.is_some());
+                let primary_key = self.schema.tables[*table].primary_key;
 
-                if self.violates_unique_constraint(*table, row) || self.tables[*table].rows.contains(row) {
+                if self.violates_unique_constraint_in(self.tables(), *table, row)
+                    || self.tables()[*table].rows.contains(row)
+                {
                     return Observation::Inserted {
-                        count_after: self.tables[*table].rows.len() as u64,
+                        count_after: self.tables()[*table].rows.len() as u64,
                     };
                 }
 
-                let rows = &mut self.tables[*table].rows;
-                if let Some(pk_col) = table_plan.primary_key {
+                let rows = &mut self.pending_tables_mut()[*table].rows;
+                if let Some(pk_col) = primary_key {
                     if let Some(pos) = rows.iter().position(|r| r.elements[pk_col] == row.elements[pk_col]) {
                         rows[pos] = row.clone();
                         return Observation::Inserted {
@@ -92,37 +106,41 @@ impl Model {
                 }
             }
             Interaction::Delete { table, row } => {
-                debug_assert!(self.in_mut_tx);
-                let rows = &mut self.tables[*table].rows;
+                debug_assert!(self.pending_tables.is_some());
+                let rows = &mut self.pending_tables_mut()[*table].rows;
                 rows.retain(|r| r != row);
                 Observation::Deleted {
                     count_after: rows.len() as u64,
                 }
             }
             Interaction::CommitTx => {
-                debug_assert!(self.in_mut_tx);
-                self.in_mut_tx = false;
+                debug_assert!(self.pending_tables.is_some());
+                self.committed_tables = self.pending_tables.take().expect("active transaction");
                 Observation::Committed
             }
             Interaction::Count { table } => {
-                debug_assert!(self.in_mut_tx);
+                debug_assert!(self.pending_tables.is_some());
                 Observation::Counted {
-                    count: self.tables[*table].rows.len() as u64,
+                    count: self.tables()[*table].rows.len() as u64,
                 }
+            }
+            Interaction::Replay => {
+                self.pending_tables = None;
+                Observation::Replayed
             }
         }
     }
 
     pub fn in_mut_tx(&self) -> bool {
-        self.in_mut_tx
+        self.pending_tables.is_some()
     }
 
     pub fn row_count(&self, table: usize) -> u64 {
-        self.tables[table].rows.len() as u64
+        self.tables()[table].rows.len() as u64
     }
 
     pub fn rows(&self, table: usize) -> &[Row] {
-        &self.tables[table].rows
+        &self.tables()[table].rows
     }
 }
 
@@ -166,24 +184,28 @@ impl WorkloadGen {
         let table_idx = self.rng.index(self.schema().tables.len());
 
         let interaction = if self.model.in_mut_tx() {
-            let coin = self.rng.next_u64() % 10;
-            if coin < 5 {
+            let coin = self.rng.next_u64() % 11;
+            if coin == 0 {
+                Interaction::Replay
+            } else if coin < 6 {
                 Interaction::Insert {
                     table: table_idx,
                     row: self.gen_row(&self.schema().tables[table_idx]),
                 }
-            } else if coin < 7 && !self.model.rows(table_idx).is_empty() {
+            } else if coin < 8 && !self.model.rows(table_idx).is_empty() {
                 let rows = self.model.rows(table_idx);
                 let row_index = self.rng.index(rows.len());
                 Interaction::Delete {
                     table: table_idx,
                     row: rows[row_index].clone(),
                 }
-            } else if coin < 9 {
+            } else if coin < 10 {
                 Interaction::Count { table: table_idx }
             } else {
                 Interaction::CommitTx
             }
+        } else if self.rng.next_u64() % 5 == 0 {
+            Interaction::Replay
         } else {
             Interaction::BeginMutTx
         };

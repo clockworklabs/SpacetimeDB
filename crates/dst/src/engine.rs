@@ -1,11 +1,15 @@
+use std::{io, sync::Arc};
+
+use spacetimedb_commitlog::SizeOnDisk;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::traits::IsolationLevel;
-use spacetimedb_durability::EmptyHistory;
 use spacetimedb_engine::error::DBError;
+use spacetimedb_engine::persistence::{DiskSizeFn, Durability as EngineDurability, Persistence};
 use spacetimedb_engine::relational_db::{MutTx, RelationalDB};
-use spacetimedb_lib::RawModuleDef;
+use spacetimedb_lib::{Identity, RawModuleDef};
 use spacetimedb_primitives::TableId;
-use spacetimedb_runtime::sim::Rng;
+use spacetimedb_runtime::sim::{Rng, Runtime as SimRuntime};
+use spacetimedb_runtime::Handle;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_table::page_pool::PagePool;
@@ -18,27 +22,73 @@ use self::workload::{row_to_bytes, Interaction, Observation};
 use crate::engine::properties::EngineProperties;
 use crate::engine::workload::{Model, WorkloadGen};
 use crate::schema::{default_schema, lower_schema, SchemaPlan};
+use crate::sim::commitlog::{InMemoryCommitlog, InMemoryCommitlogHandle};
 use crate::traits::{TargetDriver, TestSuite};
+
 pub struct EngineTarget {
-    db: RelationalDB,
+    db: Option<RelationalDB>,
     schema: SchemaPlan,
     table_ids: Vec<TableId>,
     active_mut_tx: Option<MutTx>,
+    commitlog: InMemoryCommitlog,
+    runtime_handle: Handle,
+    runtime: SimRuntime,
 }
 
 impl EngineTarget {
-    pub fn init(schema: SchemaPlan) -> Result<Self, DBError> {
-        let history = EmptyHistory::new();
-        let (db, _) = RelationalDB::open(
-            spacetimedb_lib::Identity::ZERO,
-            spacetimedb_lib::Identity::ZERO,
+    pub fn init(schema: SchemaPlan, runtime_seed: u64) -> anyhow::Result<Self> {
+        let runtime = SimRuntime::new(runtime_seed);
+        let runtime_handle = Handle::simulation(runtime.handle());
+        let commitlog = InMemoryCommitlog::new();
+        let db = Self::open_db(&commitlog, runtime_handle.clone())?;
+
+        Self::install_schema(&db, &schema)?;
+        let table_ids = Self::load_table_ids(&db, &schema)?;
+
+        Ok(Self {
+            db: Some(db),
+            schema,
+            table_ids,
+            active_mut_tx: None,
+            commitlog,
+            runtime_handle,
+            runtime,
+        })
+    }
+
+    fn open_db(commitlog: &InMemoryCommitlog, runtime_handle: Handle) -> anyhow::Result<RelationalDB> {
+        let history = commitlog.open_handle()?;
+        let persistence = Self::persistence(history.clone(), runtime_handle);
+        let (db, connected_clients) = RelationalDB::open(
+            Identity::ZERO,
+            Identity::ZERO,
             history,
-            None,
+            Some(persistence),
             None,
             PagePool::new_for_test(),
         )?;
+        anyhow::ensure!(connected_clients.is_empty(), "replay produced connected clients");
+        Ok(db)
+    }
 
-        let raw = lower_schema(&schema);
+    fn persistence(handle: InMemoryCommitlogHandle, runtime_handle: Handle) -> Persistence {
+        let durability: Arc<EngineDurability> = Arc::new(handle);
+        let disk_size: DiskSizeFn = Arc::new(|| {
+            io::Result::Ok(SizeOnDisk {
+                total_bytes: 0,
+                total_blocks: 0,
+            })
+        });
+        Persistence {
+            durability,
+            disk_size,
+            snapshots: None,
+            runtime: runtime_handle,
+        }
+    }
+
+    fn install_schema(db: &RelationalDB, schema: &SchemaPlan) -> anyhow::Result<()> {
+        let raw = lower_schema(schema);
         let raw_module_def = RawModuleDef::V10(raw);
         let module_def =
             ModuleDef::try_from(raw_module_def).map_err(|e| anyhow::anyhow!("schema validation failed: {e}"))?;
@@ -51,6 +101,10 @@ impl EngineTarget {
             Ok(())
         })?;
 
+        Ok(())
+    }
+
+    fn load_table_ids(db: &RelationalDB, schema: &SchemaPlan) -> anyhow::Result<Vec<TableId>> {
         let mut table_ids = Vec::with_capacity(schema.tables.len());
         db.with_auto_commit(Workload::Internal, |tx| -> Result<(), DBError> {
             for table_plan in &schema.tables {
@@ -61,13 +115,20 @@ impl EngineTarget {
             }
             Ok(())
         })?;
+        Ok(table_ids)
+    }
 
-        Ok(Self {
-            db,
-            schema,
-            table_ids,
-            active_mut_tx: None,
-        })
+    fn replay(&mut self) -> anyhow::Result<()> {
+        self.active_mut_tx.take();
+        let db = self
+            .db
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("replay without open database"))?;
+
+        drop(db);
+
+        self.db = Some(Self::open_db(&self.commitlog, self.runtime_handle.clone())?);
+        Ok(())
     }
 
     pub fn execute(&mut self, interaction: &Interaction) -> anyhow::Result<Observation> {
@@ -77,31 +138,43 @@ impl EngineTarget {
                     self.active_mut_tx.is_none(),
                     "begin mutable transaction while one is already active"
                 );
-                self.active_mut_tx = Some(self.db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal));
+                let db = self
+                    .db
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("database is not open"))?;
+                self.active_mut_tx = Some(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal));
                 Ok(Observation::BeganMutTx)
             }
             Interaction::Insert { table, row } => {
                 let table_id = self.table_ids[*table];
                 let bytes = row_to_bytes(row);
+                let db = self
+                    .db
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("database is not open"))?;
                 let tx = self
                     .active_mut_tx
                     .as_mut()
                     .ok_or_else(|| anyhow::anyhow!("insert without active mutable transaction"))?;
-                match self.db.insert(tx, table_id, &bytes) {
+                match db.insert(tx, table_id, &bytes) {
                     Ok(_) => {}
                     Err(_) => {}
                 }
-                let count_after = self.db.iter_mut(tx, table_id)?.count() as u64;
+                let count_after = db.iter_mut(tx, table_id)?.count() as u64;
                 Ok(Observation::Inserted { count_after })
             }
             Interaction::Delete { table, row } => {
                 let table_id = self.table_ids[*table];
+                let db = self
+                    .db
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("database is not open"))?;
                 let tx = self
                     .active_mut_tx
                     .as_mut()
                     .ok_or_else(|| anyhow::anyhow!("delete without active mutable transaction"))?;
-                self.db.delete_by_rel(tx, table_id, [row.clone()]);
-                let count_after = self.db.iter_mut(tx, table_id)?.count() as u64;
+                db.delete_by_rel(tx, table_id, [row.clone()]);
+                let count_after = db.iter_mut(tx, table_id)?.count() as u64;
                 Ok(Observation::Deleted { count_after })
             }
             Interaction::CommitTx => {
@@ -109,29 +182,42 @@ impl EngineTarget {
                     .active_mut_tx
                     .take()
                     .ok_or_else(|| anyhow::anyhow!("commit without active mutable transaction"))?;
-                self.db.finish_tx(tx, Ok::<(), anyhow::Error>(()))?;
+                let db = self
+                    .db
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("database is not open"))?;
+                db.finish_tx(tx, Ok::<(), anyhow::Error>(()))?;
                 Ok(Observation::Committed)
             }
             Interaction::Count { table } => {
                 let table_id = self.table_ids[*table];
+                let db = self
+                    .db
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("database is not open"))?;
                 let tx = self
                     .active_mut_tx
                     .as_mut()
                     .ok_or_else(|| anyhow::anyhow!("count without active mutable transaction"))?;
-                let count = self.db.iter_mut(tx, table_id)?.count() as u64;
+                let count = db.iter_mut(tx, table_id)?.count() as u64;
                 Ok(Observation::Counted { count })
+            }
+            Interaction::Replay => {
+                self.replay()?;
+                Ok(Observation::Replayed)
             }
         }
     }
 
     pub fn db(&self) -> &RelationalDB {
-        &self.db
+        self.db.as_ref().expect("database is open")
     }
 
     pub fn schema(&self) -> &SchemaPlan {
         &self.schema
     }
 }
+
 pub struct Outcome;
 impl TargetDriver<Interaction> for EngineTarget {
     type Observation = Observation;
@@ -155,7 +241,8 @@ impl TestSuite for EngineTest {
 
     fn build(&self, rng: Rng) -> Result<(Self::Interactions, Self::Target, Self::Properties), anyhow::Error> {
         let schema = default_schema(rng.clone());
-        let target = EngineTarget::init(schema.clone())?;
+        let runtime_seed = rng.next_u64();
+        let target = EngineTarget::init(schema.clone(), runtime_seed)?;
         let properties = EngineProperties {};
 
         let model = Model::new(schema);
