@@ -84,8 +84,7 @@ export default spacetimedb;
 ```
 
 The published module's **entry file must export the schema as default**. If you split tables
-(`schema.ts`) from reducers/lifecycle (`index.ts`), re-export it from the entry — otherwise
-publish aborts with *"haven't exported your schema"*:
+(`schema.ts`) from reducers/lifecycle (`index.ts`), re-export it from the entry:
 
 ```typescript
 // index.ts
