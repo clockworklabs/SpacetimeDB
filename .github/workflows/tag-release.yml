@@ -31,8 +31,7 @@ jobs:
   announce-release:
     name: Announce GitHub release (Internal)
     runs-on: ubuntu-latest
-    needs: on-release
-    if: always()
+    if: github.event_name == 'release'
     steps:
       - name: Send Discord notification
         run: |
@@ -60,7 +59,7 @@ jobs:
           message+=$'\n\n'
           message+="View the full release notes:"
           message+=$'\n'
-          message+="${RELEASE_URL}"
+          message+="<${RELEASE_URL}>"
           message+=$'\n\n'
           message+="${RELEASE_BODY}"
 
