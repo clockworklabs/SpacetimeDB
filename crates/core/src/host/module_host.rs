@@ -6,6 +6,7 @@ use crate::client::messages::{OneOffQueryResponseMessage, ProcedureResultMessage
 use crate::client::{ClientActorId, ClientConnectionSender, WsVersion};
 use crate::database_logger::{DatabaseLogger, LogLevel, Record};
 use crate::db::relational_db::{RelationalDB, Tx};
+use crate::db::sql::ast::SchemaViewer;
 use crate::error::DBError;
 use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::hash::Hash;
@@ -18,9 +19,7 @@ use crate::host::{InvalidFunctionArguments, InvalidViewArguments};
 use crate::identity::Identity;
 use crate::messages::control_db::{Database, HostType};
 use crate::replica_context::ReplicaContext;
-use crate::sql::ast::SchemaViewer;
 use crate::sql::execute::SqlResult;
-use crate::sql::parser::RowLevelExpr;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::module_subscription_manager::BroadcastError;
 pub use crate::subscription::module_subscription_manager::TransactionOffset;
@@ -51,7 +50,9 @@ use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 pub use spacetimedb_durability::{DurabilityExited, DurableOffset};
-use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
+use spacetimedb_engine::sql::rls::RowLevelExpr;
+use spacetimedb_execution::pipelined::PipelinedProject;
+use spacetimedb_execution::ExecutionParams;
 use spacetimedb_execution::RelValue;
 use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
@@ -64,10 +65,9 @@ use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue, Typespace};
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
-use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, ViewDef};
+use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, ViewDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::reducer_name::ReducerName;
-use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_schema::table_name::TableName;
 use std::collections::VecDeque;
 use std::fmt;
@@ -549,79 +549,6 @@ impl GenericModuleInstance for super::v8::JsProcedureInstance {
     }
 }
 
-/// Creates the table for `table_def` in `stdb`.
-pub fn create_table_from_def(
-    stdb: &RelationalDB,
-    tx: &mut MutTxId,
-    module_def: &ModuleDef,
-    table_def: &TableDef,
-) -> anyhow::Result<()> {
-    create_table_from_def_with_prefix(stdb, tx, module_def, table_def, "")
-}
-
-/// Creates a submodule table in `stdb`, applying the namespace to its canonical name.
-/// `name_prefix` is the dot-terminated namespace string (e.g. `"alias."`).
-pub fn create_table_from_def_with_prefix(
-    stdb: &RelationalDB,
-    tx: &mut MutTxId,
-    owning_def: &ModuleDef,
-    table_def: &TableDef,
-    name_prefix: &str,
-) -> anyhow::Result<()> {
-    let mut schema = TableSchema::from_module_def(owning_def, table_def, (), TableId::SENTINEL);
-    if !name_prefix.is_empty() {
-        let prefixed_name = format!("{}{}", name_prefix, &*table_def.accessor_name);
-        schema.table_name = TableName::new_raw(RawIdentifier::from(prefixed_name));
-
-        // No alias needed
-        schema.alias = None;
-
-        // Apply the namespace to the scheduled reducer/procedure name so the scheduler can
-        // resolve it via the namespaced reducer_by_name / procedure_by_name
-        if let Some(schedule) = &mut schema.schedule {
-            let prefixed_fn = format!("{}{}", name_prefix, &*schedule.function_name);
-            schedule.function_name = Identifier::new_assume_valid(RawIdentifier::from(prefixed_fn));
-        }
-
-        // Apply the namespace to index canonical names and aliases for global uniqueness.
-        for index in &mut schema.indexes {
-            index.index_name = RawIdentifier::from(format!("{}{}", name_prefix, index.index_name));
-            if let Some(alias) = &index.alias {
-                index.alias = Some(RawIdentifier::from(format!("{}{}", name_prefix, alias)));
-            }
-        }
-    }
-    stdb.create_table(tx, schema)
-        .with_context(|| format!("failed to create table {}{}", name_prefix, &*table_def.accessor_name))?;
-    Ok(())
-}
-
-/// Creates the table for `view_def` in `stdb`.
-pub fn create_table_from_view_def(
-    stdb: &RelationalDB,
-    tx: &mut MutTxId,
-    module_def: &ModuleDef,
-    view_def: &ViewDef,
-) -> anyhow::Result<()> {
-    stdb.create_view(tx, module_def, view_def)
-        .with_context(|| format!("failed to create table for view {}", &view_def.name))?;
-    Ok(())
-}
-
-/// Creates the table for a submodule `view_def` in `stdb`, applying the namespace prefix.
-/// `name_prefix` is the dot-terminated namespace string (e.g. `"lib."`).
-pub fn create_table_from_view_def_with_prefix(
-    stdb: &RelationalDB,
-    tx: &mut MutTxId,
-    owning_def: &ModuleDef,
-    view_def: &ViewDef,
-    name_prefix: &str,
-) -> anyhow::Result<()> {
-    stdb.create_view_with_prefix(tx, owning_def, view_def, name_prefix)
-        .with_context(|| format!("failed to create table for view {}{}", name_prefix, &view_def.name))?;
-    Ok(())
-}
-
 /// Moves out the `trapped: bool` from `res`.
 fn extract_trapped<T, E>(res: Result<(T, bool), E>) -> (Result<T, E>, bool) {
     match res {
@@ -667,7 +594,7 @@ fn init_database_inner(
             for (prefix, owning_def, def) in table_defs {
                 let display_name = format!("{}{}", prefix, def.name);
                 logger.info(&format!("Creating table `{}`", display_name));
-                create_table_from_def_with_prefix(stdb, tx, owning_def, def, &prefix)?;
+                spacetimedb_engine::update::create_table_from_def_with_prefix(stdb, tx, owning_def, def, &prefix)?;
             }
 
             // Create all in-memory views defined by the module (root + submodule).
@@ -681,9 +608,11 @@ fn init_database_inner(
                 let display_name = format!("{}{}", prefix, def.name);
                 logger.info(&format!("Creating table for view `{}`", display_name));
                 if prefix.is_empty() {
-                    create_table_from_view_def(stdb, tx, owning_def, def)?;
+                    spacetimedb_engine::update::create_table_from_view_def(stdb, tx, owning_def, def)?;
                 } else {
-                    create_table_from_view_def_with_prefix(stdb, tx, owning_def, def, &prefix)?;
+                    spacetimedb_engine::update::create_table_from_view_def_with_prefix(
+                        stdb, tx, owning_def, def, &prefix,
+                    )?;
                 }
             }
 
@@ -3030,10 +2959,7 @@ impl ModuleHost {
             let table_id = match st_view.table_id {
                 Some(t) => t,
                 None => {
-                    outcome = ViewOutcome::Failed(format!(
-                        "view {:?} does not have a backing table",
-                        view_id
-                    ));
+                    outcome = ViewOutcome::Failed(format!("view {:?} does not have a backing table", view_id));
                     break;
                 }
             };
@@ -3154,7 +3080,17 @@ impl ModuleHost {
             .map_err(InvalidViewArguments)?;
 
         Ok(Self::call_view_inner(
-            instance, tx, view_name, view_id, table_id, global_fn_ptr, caller, sender, args, row_type, timestamp,
+            instance,
+            tx,
+            view_name,
+            view_id,
+            table_id,
+            global_fn_ptr,
+            caller,
+            sender,
+            args,
+            row_type,
+            timestamp,
             owning_def.typespace().clone(),
         ))
     }
@@ -3392,7 +3328,7 @@ impl ModuleHost {
         // Optimize each fragment.
         let optimized = plans
             .into_iter()
-            .map(|plan| plan.optimize(auth))
+            .map(|plan| plan.optimize())
             .collect::<Result<Vec<_>, _>>()?;
 
         check_row_limit(
@@ -3420,14 +3356,12 @@ impl ModuleHost {
 
         let table_name = table_name.into();
         let delta_tx = DeltaTx::from(tx);
-        let (rows, _, metrics) = if returns_view_table && num_private_cols > 0 {
-            let optimized = optimized
-                .into_iter()
-                .map(|plan| ViewProject::new(plan, num_cols, num_private_cols))
-                .collect::<Vec<_>>();
-            execute_plan_for_view::<F>(&optimized, &delta_tx, rlb_pool)
+        let params = ExecutionParams::from_auth(auth);
+        let plan_fragments = optimized.iter();
+        let (rows, _, metrics) = if returns_view_table {
+            execute_plan_for_view::<F>(plan_fragments, num_cols, num_private_cols, &delta_tx, &params, rlb_pool)
         } else {
-            execute_plan::<F>(&optimized, &delta_tx, rlb_pool)
+            execute_plan::<F>(optimized.iter(), &delta_tx, &params, rlb_pool)
         }
         .context("One-off queries are not allowed to modify the database")?;
 

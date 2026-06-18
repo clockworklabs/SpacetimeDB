@@ -23,7 +23,12 @@ import {
   type SubscriptionEventContextInterface,
 } from './event_context.ts';
 import { EventEmitter } from './event_emitter.ts';
-import type { Deserializer, Identity, InferTypeOfRow, Serializer } from '../';
+import type {
+  Deserializer,
+  Identity,
+  InferTypeOfParams,
+  Serializer,
+} from '../';
 import type {
   ProcedureResultMessage,
   ReducerResultMessage,
@@ -142,6 +147,14 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    * Whether or not the connection is active.
    */
   isActive = false;
+
+  /**
+   * Whether `disconnect()` has been called on this connection.
+   * Once requested, the connection will not be reused: managed environments
+   * (such as the React `SpacetimeDBProvider`) use this to avoid reconnecting
+   * after an intentional disconnect.
+   */
+  isDisconnectRequested = false;
 
   /**
    * This connection's public identity.
@@ -326,12 +339,12 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         this.ws = v;
 
         this.ws.onclose = () => {
-          this.#emitter.emit('disconnect', this);
           this.isActive = false;
+          this.#emitter.emit('disconnect', this);
         };
         this.ws.onerror = (e: ErrorEvent) => {
-          this.#emitter.emit('connectError', this, e);
           this.isActive = false;
+          this.#emitter.emit('connectError', this, e);
         };
         this.ws.onopen = this.#handleOnOpen.bind(this);
         this.ws.onmessage = this.#handleOnMessage.bind(this);
@@ -380,7 +393,9 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       const { serialize: serializeArgs } =
         this.#reducerArgsSerializers[reducerName];
 
-      (out as any)[key] = (params: InferTypeOfRow<typeof reducer.params>) => {
+      (out as any)[key] = (
+        params: InferTypeOfParams<typeof reducer.params>
+      ) => {
         const writer = this.#reducerArgsEncoder;
         writer.clear();
         serializeArgs(writer, params);
@@ -411,7 +426,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         this.#procedureSerializers[procedureName];
 
       (out as any)[key] = (
-        params: InferTypeOfRow<typeof procedure.params>
+        params: InferTypeOfParams<typeof procedure.params>
       ): Promise<any> => {
         writer.clear();
         serializeArgs(writer, params);
@@ -433,7 +448,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     event: Event<
       ReducerEventInfo<
         RemoteModule['reducers'][number]['name'],
-        InferTypeOfRow<RemoteModule['reducers'][number]['params']>
+        InferTypeOfParams<RemoteModule['reducers'][number]['params']>
       >
     >
   ): EventContextInterface<RemoteModule> {
@@ -1304,6 +1319,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    * ```
    */
   disconnect(): void {
+    this.isDisconnectRequested = true;
     this.wsPromise.then(ws => ws?.close());
   }
 

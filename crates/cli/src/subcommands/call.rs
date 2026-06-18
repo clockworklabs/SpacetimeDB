@@ -119,6 +119,15 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
     let arguments = call_arguments
         .zip(&call_def.params().elements)
         .map(|(argument, element)| match &element.algebraic_type {
+            // Accept a hex-ish string as an [Identity] parameter.
+            AlgebraicType::Product(p) if p.is_identity() => {
+                let argument = argument.trim_matches('"');
+                match argument.as_bytes() {
+                    [b'0', b'x', ..] => format!("[\"{argument}\"]"),
+                    [b'c', b'2', b'0', b'0', ..] => format!("[\"0x{argument}\"]"),
+                    _ => argument.to_string(),
+                }
+            }
             AlgebraicType::String if !argument.starts_with('\"') || !argument.ends_with('\"') => {
                 format!("\"{argument}\"")
             }
@@ -136,22 +145,21 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
 
         let error = Err(e).context(format!("Response text: {response_text}"));
 
-        let error_msg = if response_text.starts_with("no such reducer")
-            || response_text.starts_with("no such procedure")
-        {
-            no_such_reducer_or_procedure(&database_identity, database, reducer_procedure_name, &module_def)
-        } else if response_text.starts_with("invalid arguments") {
-            invalid_arguments(
-                &database_identity,
-                database,
-                &response_text,
-                owning_def.typespace(),
-                reducer_procedure_name,
-                call_def,
-            )
-        } else {
-            return error;
-        };
+        let error_msg =
+            if response_text.starts_with("no such reducer") || response_text.starts_with("no such procedure") {
+                no_such_reducer_or_procedure(&database_identity, database, reducer_procedure_name, &module_def)
+            } else if response_text.starts_with("invalid arguments") {
+                invalid_arguments(
+                    &database_identity,
+                    database,
+                    &response_text,
+                    owning_def.typespace(),
+                    reducer_procedure_name,
+                    call_def,
+                )
+            } else {
+                return error;
+            };
 
         return error.context(error_msg);
     }

@@ -61,7 +61,8 @@ pub fn generate(module: &ModuleDef, lang: &dyn Lang, options: &CodegenOptions) -
             .all_procedures_with_prefix()
             .into_iter()
             .filter(|(prefix, _, procedure)| !prefix.is_empty() && !procedure.visibility.is_private())
-            .map(|(prefix, owning_def, procedure)| lang.generate_submodule_procedure_file(owning_def, &prefix, procedure)),
+            .map(|(prefix, owning_def, procedure)| lang
+                .generate_submodule_procedure_file(owning_def, &prefix, procedure)),
         lang.generate_global_files(module, options),
     )
     .collect()
@@ -123,7 +124,12 @@ pub trait Lang {
 
     /// Generate an arg-schema file for a reducer from a submodule.
     /// Filename goes in a subdirectory named after the namespace prefix.
-    fn generate_submodule_reducer_file(&self, owning_def: &ModuleDef, prefix: &str, reducer: &ReducerDef) -> OutputFile {
+    fn generate_submodule_reducer_file(
+        &self,
+        owning_def: &ModuleDef,
+        prefix: &str,
+        reducer: &ReducerDef,
+    ) -> OutputFile {
         let mut file = self.generate_reducer_file(owning_def, reducer);
         let ns_path = prefix.trim_end_matches('.').replace('.', "/");
         file.filename = format!("{}/{}", ns_path, file.filename);
@@ -132,7 +138,12 @@ pub trait Lang {
 
     /// Generate an arg-schema file for a procedure from a submodule.
     /// Filename goes in a subdirectory named after the namespace prefix.
-    fn generate_submodule_procedure_file(&self, owning_def: &ModuleDef, prefix: &str, procedure: &ProcedureDef) -> OutputFile {
+    fn generate_submodule_procedure_file(
+        &self,
+        owning_def: &ModuleDef,
+        prefix: &str,
+        procedure: &ProcedureDef,
+    ) -> OutputFile {
         let mut file = self.generate_procedure_file(owning_def, procedure);
         let ns_path = prefix.trim_end_matches('.').replace('.', "/");
         file.filename = format!("{}/{}", ns_path, file.filename);

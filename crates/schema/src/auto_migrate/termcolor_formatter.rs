@@ -12,6 +12,7 @@ use super::formatter::{
     AccessChangeInfo, Action, ColumnChange, ColumnChanges, ConstraintInfo, IndexInfo, MigrationFormatter, NewColumns,
     RlsInfo, ScheduleInfo, SequenceInfo, TableInfo,
 };
+use crate::identifier::NamespacedIdentifier;
 
 /// Color scheme for consistent formatting
 #[derive(Debug, Clone)]
@@ -424,6 +425,18 @@ impl MigrationFormatter for TermColorFormatter {
             true,
         )?;
         self.buffer.write_all(b"\n")
+    }
+
+    fn format_event_table_reschema(&mut self, table_name: &NamespacedIdentifier) -> io::Result<()> {
+        // TODO(format-event-table-reschema): I (pgoldman 2026-06-10) didn't have time to meaningfully format event table reschemas,
+        // so for now we're just printing the table name.
+
+        self.write_action_prefix(&Action::Changed)?;
+        self.buffer.write_all(b" schema of event table ")?;
+        self.write_colored(table_name, Some(self.colors.table_name), true)?;
+        self.buffer.write_all(b"\n")?;
+
+        Ok(())
     }
 }
 

@@ -96,7 +96,11 @@ pub fn run_build(
         if let Ok(module_def) = crate::subcommands::generate::extract_descriptions(&result.0) {
             let tty = std::io::stderr().is_terminal();
             for warning in module_def.collect_warnings() {
-                let prefix = if tty { "warning:".yellow().to_string() } else { "warning:".to_string() };
+                let prefix = if tty {
+                    "warning:".yellow().to_string()
+                } else {
+                    "warning:".to_string()
+                };
                 eprintln!("{prefix} {warning}");
                 println!();
             }

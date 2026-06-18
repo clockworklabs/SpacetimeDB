@@ -1,7 +1,7 @@
 use super::module_host::{EventStatus, ModuleHost, ModuleInfo, NoSuchModule};
 use super::scheduler::SchedulerStarter;
 use super::v8::V8HeapMetrics;
-use super::wasmtime::WasmtimeRuntime;
+use super::wasmtime::{WasmMemoryBytesMetric, WasmtimeRuntime};
 use super::{Scheduler, UpdateDatabaseResult};
 use crate::client::{ClientActorId, ClientName};
 use crate::config::{V8Config, WasmConfig};
@@ -38,6 +38,7 @@ use spacetimedb_datastore::traits::Program;
 use spacetimedb_durability::{self as durability};
 use spacetimedb_lib::{AlgebraicValue, Identity, Timestamp};
 use spacetimedb_paths::server::{ModuleLogsDir, ServerDataDir};
+use spacetimedb_runtime::AbortHandle;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_schema::auto_migrate::{ponder_migrate, AutoMigrateError, MigrationPolicy, PrettyPrintStyle};
 use spacetimedb_schema::def::{ModuleDef, RawModuleDefVersion};
@@ -47,7 +48,6 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{watch, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock as AsyncRwLock};
-use tokio::task::AbortHandle;
 use tokio::time::error::Elapsed;
 use tokio::time::{interval_at, timeout, Instant};
 
@@ -889,7 +889,8 @@ impl Host {
             ..
         } = host_controller;
         let replica_dir = data_dir.replica(replica_id);
-        let (tx_metrics_queue, tx_metrics_recorder_task) = spawn_tx_metrics_recorder();
+        let runtime = spacetimedb_runtime::Handle::tokio_current();
+        let (tx_metrics_queue, tx_metrics_recorder_task) = spawn_tx_metrics_recorder(&runtime);
 
         let (db, connected_clients) = match config.storage {
             db::Storage::Memory => RelationalDB::open(
@@ -902,8 +903,13 @@ impl Host {
             )?,
             db::Storage::Disk => {
                 // Replay from the local state.
-                let history = relational_db::local_history(&replica_dir).await?;
-                let persistence = persistence.persistence(&database, replica_id).await?;
+                let history = relational_db::local_history(&replica_dir, &runtime).await?;
+                let persistence_db = db::persistence::Database {
+                    id: database.id,
+                    database_identity: database.database_identity,
+                    owner_identity: database.owner_identity,
+                };
+                let persistence = persistence.persistence(&persistence_db, replica_id).await?;
                 // Loading a database from persistent storage involves heavy
                 // blocking I/O. `asyncify` to avoid blocking the async worker.
                 let (db, clients) = asyncify({
@@ -1084,8 +1090,9 @@ impl Host {
         module_host.clear_all_clients().await?;
 
         scheduler_starter.start(&module_host)?;
-        let disk_metrics_recorder_task = tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle();
-        let view_cleanup_task = spawn_view_cleanup_loop(replica_ctx.relational_db().clone());
+        let disk_metrics_recorder_task: spacetimedb_runtime::AbortHandle =
+            tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle().into();
+        let view_cleanup_task = spawn_view_cleanup_loop(replica_ctx.relational_db().clone(), &runtime);
 
         let module = watch::Sender::new(module_host);
 
@@ -1411,8 +1418,8 @@ where
     let _ = DATA_SIZE_METRICS
         .data_size_blob_store_bytes_used_by_blobs
         .remove_label_values(db);
-    let _ = WORKER_METRICS.wasm_memory_bytes.remove_label_values(db);
 
+    WasmMemoryBytesMetric::remove_all_metric_label_values_for_database(db);
     V8HeapMetrics::remove_all_metric_label_values_for_database(db);
 
     let _ = WORKER_METRICS.v8_request_queue_length.remove_label_values(db);

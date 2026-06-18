@@ -86,12 +86,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .map(ExplicitNamesLookup::new)
         .unwrap_or_default();
     let view_primary_keys = def.view_primary_keys().cloned().unwrap_or_default();
-    let submodules = validate_submodules(
-        def.submodules()
-            .into_iter()
-            .flat_map(|s| s.iter().cloned())
-            .collect(),
-    );
+    let submodules = validate_submodules(def.submodules().into_iter().flat_map(|s| s.iter().cloned()).collect());
 
     // Original `typespace` needs to be preserved to be assign `accesor_name`s to columns.
     let typespace_with_accessor_names = typespace.clone();

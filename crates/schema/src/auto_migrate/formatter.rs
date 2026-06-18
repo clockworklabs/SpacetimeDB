@@ -6,7 +6,7 @@ use super::AutoMigratePlan;
 use crate::{
     auto_migrate::AutoMigrateStep,
     def::{ConstraintData, FunctionKind, ModuleDef},
-    identifier::Identifier,
+    identifier::{Identifier, NamespacedIdentifier},
 };
 use itertools::Itertools;
 use spacetimedb_lib::db::raw_def::v9::{TableAccess, TableType};
@@ -73,14 +73,18 @@ fn format_step<F: MigrationFormatter>(
             f.format_change_access(&access_info)
         }
         AutoMigrateStep::ChangePrimaryKey(table) => {
-            let (_, _, old_table) = plan
-                .old
-                .find_table_by_full_name(&**table)
-                .ok_or_else(|| FormattingErrors::TableNotFound { table: (&**table).into() })?;
-            let (_, _, new_table) = plan
-                .new
-                .find_table_by_full_name(&**table)
-                .ok_or_else(|| FormattingErrors::TableNotFound { table: (&**table).into() })?;
+            let (_, _, old_table) =
+                plan.old
+                    .find_table_by_full_name(&**table)
+                    .ok_or_else(|| FormattingErrors::TableNotFound {
+                        table: (&**table).into(),
+                    })?;
+            let (_, _, new_table) =
+                plan.new
+                    .find_table_by_full_name(&**table)
+                    .ok_or_else(|| FormattingErrors::TableNotFound {
+                        table: (&**table).into(),
+                    })?;
             f.format_change_primary_key(&**table, old_table.primary_key, new_table.primary_key)
         }
         AutoMigrateStep::AddSchedule(schedule) => {
@@ -108,10 +112,17 @@ fn format_step<F: MigrationFormatter>(
             f.format_change_columns(&column_changes)
         }
         AutoMigrateStep::AddColumns(table) => {
+            // FIXME: It looks (pgoldman 2026-06-10) like `super::auto_migrate_table` will emit only `AddColumns`
+            // in the case where a table has both new columns and changed columns.
+            // As such, we probably need to call `extract_column_changes` here too.
             let new_columns = extract_new_columns(&**table, plan)?;
             f.format_add_columns(&new_columns)
         }
         AutoMigrateStep::DisconnectAllUsers => f.format_disconnect_warning(),
+
+        // TODO(format-event-table-reschema): I (pgoldman 2026-06-10) didn't have time to meaningfully format event table reschemas,
+        // so for now we're just printing the table name.
+        AutoMigrateStep::ReschemaEventTable(table) => f.format_event_table_reschema(table),
     }?;
 
     Ok(())
@@ -170,6 +181,9 @@ pub trait MigrationFormatter {
     fn format_change_columns(&mut self, column_changes: &ColumnChanges) -> io::Result<()>;
     fn format_add_columns(&mut self, new_columns: &NewColumns) -> io::Result<()>;
     fn format_disconnect_warning(&mut self) -> io::Result<()>;
+    // TODO(format-event-table-reschema): I (pgoldman 2026-06-10) didn't have time to meaningfully format event table reschemas,
+    // so for now we're just printing the table name.
+    fn format_event_table_reschema(&mut self, table_name: &NamespacedIdentifier) -> io::Result<()>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -275,14 +289,13 @@ pub struct NewColumns {
     pub columns: Vec<ColumnInfo>,
 }
 
-fn extract_table_info(
-    full_name: &str,
-    plan: &super::AutoMigratePlan,
-) -> Result<TableInfo, FormattingErrors> {
+fn extract_table_info(full_name: &str, plan: &super::AutoMigratePlan) -> Result<TableInfo, FormattingErrors> {
     let (_, owning_def, table_def) =
-        plan.new.find_table_by_full_name(full_name).ok_or_else(|| FormattingErrors::TableNotFound {
-            table: full_name.into(),
-        })?;
+        plan.new
+            .find_table_by_full_name(full_name)
+            .ok_or_else(|| FormattingErrors::TableNotFound {
+                table: full_name.into(),
+            })?;
 
     let columns = table_def
         .columns
@@ -378,10 +391,9 @@ fn extract_table_info(
 }
 
 fn extract_view_info(full_name: &str, module_def: &ModuleDef) -> Result<ViewInfo, FormattingErrors> {
-    let (_, owning_def, view_def) =
-        module_def.find_view_by_full_name(full_name).ok_or_else(|| FormattingErrors::ViewNotFound {
-            view: full_name.into(),
-        })?;
+    let (_, owning_def, view_def) = module_def
+        .find_view_by_full_name(full_name)
+        .ok_or_else(|| FormattingErrors::ViewNotFound { view: full_name.into() })?;
 
     let name = RawIdentifier::new(full_name);
     let is_anonymous = view_def.is_anonymous;
@@ -423,8 +435,9 @@ fn extract_view_info(full_name: &str, module_def: &ModuleDef) -> Result<ViewInfo
 }
 
 fn extract_index_info(full_name: &str, module_def: &ModuleDef) -> Result<IndexInfo, FormattingErrors> {
-    let (prefix, _, table_def, index_def) =
-        module_def.find_index_by_full_name(full_name).ok_or(FormattingErrors::IndexNotFound)?;
+    let (prefix, _, table_def, index_def) = module_def
+        .find_index_by_full_name(full_name)
+        .ok_or(FormattingErrors::IndexNotFound)?;
 
     let columns = index_def
         .algorithm
@@ -486,9 +499,11 @@ fn extract_access_change_info(
     plan: &super::AutoMigratePlan,
 ) -> Result<AccessChangeInfo, FormattingErrors> {
     let (_, _, table_def) =
-        plan.new.find_table_by_full_name(full_name).ok_or_else(|| FormattingErrors::TableNotFound {
-            table: full_name.into(),
-        })?;
+        plan.new
+            .find_table_by_full_name(full_name)
+            .ok_or_else(|| FormattingErrors::TableNotFound {
+                table: full_name.into(),
+            })?;
 
     Ok(AccessChangeInfo {
         table_name: RawIdentifier::new(full_name),
@@ -522,18 +537,19 @@ fn extract_rls_info(rls: &str, plan: &super::AutoMigratePlan) -> Result<Option<R
     }))
 }
 
-fn extract_column_changes(
-    full_name: &str,
-    plan: &super::AutoMigratePlan,
-) -> Result<ColumnChanges, FormattingErrors> {
+fn extract_column_changes(full_name: &str, plan: &super::AutoMigratePlan) -> Result<ColumnChanges, FormattingErrors> {
     let (_, old_owning, old_table) =
-        plan.old.find_table_by_full_name(full_name).ok_or_else(|| FormattingErrors::TableNotFound {
-            table: full_name.into(),
-        })?;
+        plan.old
+            .find_table_by_full_name(full_name)
+            .ok_or_else(|| FormattingErrors::TableNotFound {
+                table: full_name.into(),
+            })?;
     let (_, new_owning, new_table) =
-        plan.new.find_table_by_full_name(full_name).ok_or_else(|| FormattingErrors::TableNotFound {
-            table: full_name.into(),
-        })?;
+        plan.new
+            .find_table_by_full_name(full_name)
+            .ok_or_else(|| FormattingErrors::TableNotFound {
+                table: full_name.into(),
+            })?;
 
     let mut changes = Vec::new();
 
@@ -570,13 +586,17 @@ fn extract_column_changes(
 
 fn extract_new_columns(full_name: &str, plan: &super::AutoMigratePlan) -> Result<NewColumns, FormattingErrors> {
     let (_, new_owning, table_def) =
-        plan.new.find_table_by_full_name(full_name).ok_or_else(|| FormattingErrors::TableNotFound {
-            table: full_name.into(),
-        })?;
+        plan.new
+            .find_table_by_full_name(full_name)
+            .ok_or_else(|| FormattingErrors::TableNotFound {
+                table: full_name.into(),
+            })?;
     let (_, _, old_table_def) =
-        plan.old.find_table_by_full_name(full_name).ok_or_else(|| FormattingErrors::TableNotFound {
-            table: full_name.into(),
-        })?;
+        plan.old
+            .find_table_by_full_name(full_name)
+            .ok_or_else(|| FormattingErrors::TableNotFound {
+                table: full_name.into(),
+            })?;
 
     let mut new_columns = Vec::new();
     for column in &table_def.columns {

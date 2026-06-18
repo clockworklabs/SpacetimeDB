@@ -33,8 +33,8 @@ use spacetimedb_data_structures::map::{Equivalent, HashMap};
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v10::{
     ExplicitNames, MethodOrAny, RawConstraintDefV10, RawHttpHandlerDefV10, RawHttpRouteDefV10, RawIndexDefV10,
-    RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section, RawSubmoduleV10, RawProcedureDefV10,
-    RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10, RawScopedTypeNameV10, RawSequenceDefV10,
+    RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section, RawProcedureDefV10, RawReducerDefV10,
+    RawRowLevelSecurityDefV10, RawScheduleDefV10, RawScopedTypeNameV10, RawSequenceDefV10, RawSubmoduleV10,
     RawTableDefV10, RawTypeDefV10, RawViewDefV10, RawViewPrimaryKeyDefV10,
 };
 use spacetimedb_lib::db::raw_def::v9::{
@@ -652,7 +652,11 @@ impl ModuleDef {
         for submodule in self.submodules.values() {
             let submodule_anon = submodule.total_anon_view_count() as u32;
             let submodule_non_anon = submodule.total_non_anon_view_count() as u32;
-            let submodule_count = if is_anonymous { submodule_anon } else { submodule_non_anon };
+            let submodule_count = if is_anonymous {
+                submodule_anon
+            } else {
+                submodule_non_anon
+            };
             let submodule_off = if is_anonymous { anon_off } else { non_anon_off };
             if global_id < submodule_off + submodule_count {
                 return submodule.get_view_by_global_id_inner(global_id, is_anonymous, anon_off, non_anon_off);
@@ -728,7 +732,12 @@ impl ModuleDef {
 
     /// Total anonymous view count including all submodules (depth-first sum).
     pub fn total_anon_view_count(&self) -> usize {
-        self.anon_view_count() + self.submodules.values().map(|m| m.total_anon_view_count()).sum::<usize>()
+        self.anon_view_count()
+            + self
+                .submodules
+                .values()
+                .map(|m| m.total_anon_view_count())
+                .sum::<usize>()
     }
 
     /// Total non-anonymous view count including all submodules (depth-first sum).

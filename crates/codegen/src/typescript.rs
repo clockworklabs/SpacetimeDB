@@ -12,11 +12,13 @@ use std::iter;
 use std::ops::Deref;
 
 use convert_case::{Case, Casing};
+use spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_primitives::ColId;
-use spacetimedb_lib::db::raw_def::v9::TableAccess;
-use spacetimedb_schema::def::{ConstraintDef, IndexDef, ModuleDef, ProcedureDef, ReducerDef, TableDef, TypeDef, ViewDef};
+use spacetimedb_schema::def::{
+    ConstraintDef, IndexDef, ModuleDef, ProcedureDef, ReducerDef, TableDef, TypeDef, ViewDef,
+};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::TableSchema;
@@ -82,8 +84,7 @@ impl Lang for TypeScript {
 
         writeln!(out, "export default __t.row({{");
         out.indent(1);
-        write_object_type_builder_fields(module, out, &product_def.elements, table.primary_key, true, true)
-            .unwrap();
+        write_object_type_builder_fields(module, out, &product_def.elements, table.primary_key, true, true).unwrap();
         out.dedent(1);
         writeln!(out, "}});");
         OutputFile {
@@ -141,15 +142,8 @@ impl Lang for TypeScript {
 
         writeln!(out, "export const params = {{");
         out.with_indent(|out| {
-            write_object_type_builder_fields(
-                module,
-                out,
-                &procedure.params_for_generate.elements,
-                None,
-                true,
-                false,
-            )
-            .unwrap()
+            write_object_type_builder_fields(module, out, &procedure.params_for_generate.elements, None, true, false)
+                .unwrap()
         });
         writeln!(out, "}};");
 
@@ -288,7 +282,15 @@ impl Lang for TypeScript {
             let view_name_pascalcase = view.accessor_name.deref().to_case(Case::Pascal);
             writeln!(out, "{}: __table({{", view.accessor_name);
             out.indent(1);
-            write_table_opts(module, out, type_ref, view.name.deref(), iter::empty(), iter::empty(), false);
+            write_table_opts(
+                module,
+                out,
+                type_ref,
+                view.name.deref(),
+                iter::empty(),
+                iter::empty(),
+                false,
+            );
             out.dedent(1);
             writeln!(out, "}}, {}Row),", view_name_pascalcase);
         }
@@ -299,7 +301,15 @@ impl Lang for TypeScript {
             let type_ref = table.product_type_ref;
             writeln!(out, "\"{source_name}\": __table({{");
             out.indent(1);
-            write_table_opts(owning_def, out, type_ref, &source_name, iter_indexes(table), iter_constraints(table), table.is_event);
+            write_table_opts(
+                owning_def,
+                out,
+                type_ref,
+                &source_name,
+                iter_indexes(table),
+                iter_constraints(table),
+                table.is_event,
+            );
             out.dedent(1);
             writeln!(out, "}}, {row_type}Row),");
         }
@@ -310,7 +320,15 @@ impl Lang for TypeScript {
             let type_ref = view.product_type_ref;
             writeln!(out, "\"{source_name}\": __table({{");
             out.indent(1);
-            write_table_opts(owning_def, out, type_ref, &source_name, iter::empty(), iter::empty(), false);
+            write_table_opts(
+                owning_def,
+                out,
+                type_ref,
+                &source_name,
+                iter::empty(),
+                iter::empty(),
+                false,
+            );
             out.dedent(1);
             writeln!(out, "}}, {row_type}Row),");
         }
@@ -358,7 +376,10 @@ impl Lang for TypeScript {
         for (prefix, _, procedure) in &ns_procedures {
             let wire_name = format!("{}{}", prefix, procedure.name);
             let args_type = submodule_procedure_args_type_name(prefix, &procedure.accessor_name);
-            writeln!(out, "__procedureSchema(\"{wire_name}\", {args_type}.params, {args_type}.returnType),");
+            writeln!(
+                out,
+                "__procedureSchema(\"{wire_name}\", {args_type}.params, {args_type}.returnType),"
+            );
         }
         out.dedent(1);
         writeln!(out, ");");
@@ -822,9 +843,7 @@ fn define_body_for_product(
         writeln!(out, "}});");
     } else {
         writeln!(out);
-        out.with_indent(|out| {
-            write_object_type_builder_fields(module, out, elements, None, true, false).unwrap()
-        });
+        out.with_indent(|out| write_object_type_builder_fields(module, out, elements, None, true, false).unwrap());
         writeln!(out, "}});");
     }
     writeln!(out, "export type {name} = __Infer<typeof {name}>;");
@@ -1067,9 +1086,7 @@ fn define_body_for_sum(
             (Identifier::for_test(pascal), ty.clone())
         })
         .collect();
-    out.with_indent(|out| {
-        write_object_type_builder_fields(module, out, &pascal_variants, None, false, false).unwrap()
-    });
+    out.with_indent(|out| write_object_type_builder_fields(module, out, &pascal_variants, None, false, false).unwrap());
     writeln!(out, "}});");
     writeln!(out, "export type {name} = __Infer<typeof {name}>;");
     out.newline();
@@ -1142,7 +1159,10 @@ struct NsTree {
 
 impl NsTree {
     fn new() -> Self {
-        NsTree { entries: Vec::new(), children: BTreeMap::new() }
+        NsTree {
+            entries: Vec::new(),
+            children: BTreeMap::new(),
+        }
     }
 
     fn insert(&mut self, path_segs: &[&str], combined_qb_key: String, local_ts_key: String) {
@@ -1205,9 +1225,7 @@ fn emit_ns_tree(out: &mut Indenter, tree: &BTreeMap<String, NsTree>) {
 /// `flat_key` matches SDK's `accessorName = toCamelCase(wireName)`.
 /// SDK toCamelCase only splits on `_`/`-`, so `/` is kept verbatim:
 /// `"lib.library_reducer"` → `"lib.libraryReducer"`.  Bracket notation is required.
-fn build_reducer_ns_tree<'a>(
-    ns_reducers: &[(String, &'a ModuleDef, &'a ReducerDef)],
-) -> BTreeMap<String, NsTree> {
+fn build_reducer_ns_tree<'a>(ns_reducers: &[(String, &'a ModuleDef, &'a ReducerDef)]) -> BTreeMap<String, NsTree> {
     let mut tree: BTreeMap<String, NsTree> = BTreeMap::new();
     for (prefix, _, reducer) in ns_reducers {
         if !is_reducer_invokable(reducer) {
