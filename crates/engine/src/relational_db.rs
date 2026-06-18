@@ -1,9 +1,9 @@
-use crate::db::durability::{request_durability, spawn_close as spawn_durability_close};
-use crate::db::MetricsRecorderQueue;
+use crate::durability::{request_durability, spawn_close as spawn_durability_close};
 use crate::error::{DBError, RestoreSnapshotError};
-use crate::subscription::ExecutionCounters;
+use crate::metrics::ExecutionCounters;
+use crate::metrics::ENGINE_METRICS;
 use crate::util::asyncify;
-use crate::worker_metrics::WORKER_METRICS;
+use crate::MetricsRecorderQueue;
 use anyhow::{anyhow, Context};
 use enum_map::EnumMap;
 use spacetimedb_commitlog::repo::OnNewSegmentFn;
@@ -43,6 +43,7 @@ use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Identity;
 use spacetimedb_paths::server::{ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
+use spacetimedb_runtime::sync::watch;
 use spacetimedb_runtime::Handle;
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
@@ -62,7 +63,6 @@ use std::borrow::Cow;
 use std::io;
 use std::ops::RangeBounds;
 use std::sync::Arc;
-use tokio::sync::watch;
 
 pub use super::persistence::{DiskSizeFn, Durability, Persistence};
 pub use super::snapshot::SnapshotWorker;
@@ -303,7 +303,7 @@ impl RelationalDB {
         apply_history(&inner, database_identity, history)?;
 
         let elapsed_time = start_time.elapsed();
-        WORKER_METRICS
+        ENGINE_METRICS
             .replay_total_time_seconds
             .with_label_values(&database_identity)
             .set(elapsed_time.as_secs_f64());
@@ -495,7 +495,7 @@ impl RelationalDB {
 
             let elapsed_time = start.elapsed();
 
-            WORKER_METRICS
+            ENGINE_METRICS
                 .replay_snapshot_read_time_seconds
                 .with_label_values(database_identity)
                 .set(elapsed_time.as_secs_f64());
@@ -519,7 +519,7 @@ impl RelationalDB {
                 .inspect(|_| {
                     let elapsed_time = start.elapsed();
 
-                    WORKER_METRICS.replay_snapshot_restore_time_seconds.with_label_values(database_identity).set(elapsed_time.as_secs_f64());
+                    ENGINE_METRICS.replay_snapshot_restore_time_seconds.with_label_values(database_identity).set(elapsed_time.as_secs_f64());
 
                     log::info!(
                         "[{database_identity}] DATABASE: restored from snapshot of tx_offset {snapshot_offset} in {elapsed_time:?}",
@@ -1061,7 +1061,7 @@ impl RelationalDB {
     /// Reports the `TxMetrics`s passed.
     ///
     /// Should only be called after the tx lock has been fully released.
-    pub(crate) fn report_tx_metrics(
+    pub fn report_tx_metrics(
         &self,
         reducer: Option<ReducerName>,
         tx_data: Option<Arc<TxData>>,
@@ -1090,7 +1090,10 @@ const VIEWS_EXPIRATION: std::time::Duration = std::time::Duration::from_secs(10 
 const VIEW_CLEANUP_BUDGET: std::time::Duration = std::time::Duration::from_millis(10);
 
 /// Spawn a background task that periodically cleans up expired views
-pub fn spawn_view_cleanup_loop(db: Arc<RelationalDB>) -> tokio::task::AbortHandle {
+pub fn spawn_view_cleanup_loop(
+    db: Arc<RelationalDB>,
+    handle: &spacetimedb_runtime::Handle,
+) -> spacetimedb_runtime::AbortHandle {
     fn run_view_cleanup(db: &RelationalDB) {
         match db.with_auto_commit(Workload::Internal, |tx| {
             tx.clear_expired_views(VIEWS_EXPIRATION, VIEW_CLEANUP_BUDGET)
@@ -1117,23 +1120,19 @@ pub fn spawn_view_cleanup_loop(db: Arc<RelationalDB>) -> tokio::task::AbortHandl
         }
     }
 
-    tokio::spawn(async move {
-        loop {
-            // Offload actual cleanup to blocking thread pool, as `VIEW_CLEANUP_BUDGET` is defined
-            // in milliseconds, which may be too long for async tasks.
-            let db = db.clone();
-            let db_identity = db.database_identity();
-            tokio::task::spawn_blocking(move || run_view_cleanup(&db))
-                .await
-                .inspect_err(|e| {
-                    log::error!("[{}] DATABASE: failed to run view cleanup task: {}", db_identity, e);
-                })
-                .ok();
+    let handle_clone = handle.clone();
+    handle
+        .spawn(async move {
+            loop {
+                // Offload actual cleanup to blocking thread pool, as `VIEW_CLEANUP_BUDGET` is defined
+                // in milliseconds, which may be too long for async tasks.
+                let db = db.clone();
+                handle_clone.spawn_blocking(move || run_view_cleanup(&db)).await;
 
-            tokio::time::sleep(VIEWS_EXPIRATION).await;
-        }
-    })
-    .abort_handle()
+                handle_clone.sleep(VIEWS_EXPIRATION).await;
+            }
+        })
+        .abort_handle()
 }
 impl RelationalDB {
     pub fn create_table(&self, tx: &mut MutTx, schema: TableSchema) -> Result<TableId, DBError> {
@@ -1539,7 +1538,7 @@ impl RelationalDB {
     }
 
     /// Read the value of [ST_VARNAME_ROW_LIMIT] from `st_var`
-    pub(crate) fn row_limit(&self, tx: &Tx) -> Result<Option<u64>, DBError> {
+    pub fn row_limit(&self, tx: &Tx) -> Result<Option<u64>, DBError> {
         let data = self.read_var(tx, StVarName::RowLimit);
 
         if let Some(StVarValue::U64(limit)) = data? {
@@ -1650,10 +1649,10 @@ fn apply_history(
     history: impl durability::History<TxData = Txdata>,
 ) -> Result<(), DBError> {
     let counters = ApplyHistoryCounters {
-        replay_commitlog_time_seconds: WORKER_METRICS
+        replay_commitlog_time_seconds: ENGINE_METRICS
             .replay_commitlog_time_seconds
             .with_label_values(&database_identity),
-        replay_commitlog_num_commits: WORKER_METRICS
+        replay_commitlog_num_commits: ENGINE_METRICS
             .replay_commitlog_num_commits
             .with_label_values(&database_identity),
     };
@@ -1696,10 +1695,11 @@ pub async fn local_durability_with_options(
             snapshot_worker.request_snapshot_ignore_closed();
         }) as Arc<OnNewSegmentFn>
     });
-    let local = asyncify(move || {
+    let durability_runtime = runtime.clone();
+    let local = asyncify(&runtime, move || {
         durability::Local::open(
             replica_dir.clone(),
-            runtime,
+            durability_runtime,
             opts,
             // Give the durability a handle to request a new snapshot run,
             // which it will send down whenever we rotate commitlog segments.
@@ -1719,9 +1719,12 @@ pub async fn local_durability_with_options(
 /// Open a [History] for replay from the local durable state.
 ///
 /// Currently, this is simply a read-only copy of the commitlog.
-pub async fn local_history(replica_dir: &ReplicaDir) -> io::Result<impl History<TxData = Txdata> + use<>> {
+pub async fn local_history(
+    replica_dir: &ReplicaDir,
+    runtime: &Handle,
+) -> io::Result<impl History<TxData = Txdata> + use<>> {
     let commitlog_dir = replica_dir.commit_log();
-    asyncify(move || Commitlog::open(commitlog_dir, <_>::default(), None)).await
+    asyncify(runtime, move || Commitlog::open(commitlog_dir, <_>::default(), None)).await
 }
 
 /// Watches snapshot creation events and compresses all commitlog segments older
@@ -1730,9 +1733,10 @@ pub async fn local_history(replica_dir: &ReplicaDir) -> io::Result<impl History<
 /// Suitable **only** for non-replicated databases.
 pub async fn snapshot_watching_commitlog_compressor(
     mut snapshot_rx: watch::Receiver<u64>,
-    mut clog_tx: Option<tokio::sync::mpsc::Sender<u64>>,
-    mut snap_tx: Option<tokio::sync::mpsc::Sender<u64>>,
+    mut clog_tx: Option<spacetimedb_runtime::sync::mpsc::Sender<u64>>,
+    mut snap_tx: Option<spacetimedb_runtime::sync::mpsc::Sender<u64>>,
     durability: LocalDurability,
+    runtime: Handle,
 ) {
     let mut prev_snapshot_offset = *snapshot_rx.borrow_and_update();
     while snapshot_rx.changed().await.is_ok() {
@@ -1745,7 +1749,7 @@ pub async fn snapshot_watching_commitlog_compressor(
             tracing::warn!("failed to send offset {snapshot_offset} after snapshot creation: {err}");
         }
 
-        let res: io::Result<_> = asyncify(move || {
+        let res: io::Result<_> = asyncify(&runtime, move || {
             let segment_offsets = durability.existing_segment_offsets()?;
             let start_idx = segment_offsets
                 .binary_search(&prev_snapshot_offset)
@@ -1807,19 +1811,21 @@ fn default_row_count_fn(db: Identity) -> RowCountFn {
 
 #[cfg(any(test, feature = "test"))]
 pub mod tests_utils {
-    use crate::db::snapshot;
-    use crate::db::snapshot::SnapshotWorker;
-    use crate::messages::control_db::HostType;
+    use crate::snapshot;
+    use crate::snapshot::SnapshotWorker;
+    use crate::MetricsRecorderQueue;
 
     use super::*;
     use core::ops::Deref;
     use durability::{Durability, EmptyHistory};
     use spacetimedb_datastore::locking_tx_datastore::MutTxId;
     use spacetimedb_datastore::locking_tx_datastore::TxId;
+    use spacetimedb_datastore::system_tables::ModuleKind;
     use spacetimedb_fs_utils::compression::CompressType;
     use spacetimedb_lib::{bsatn::to_vec, ser::Serialize};
     use spacetimedb_paths::server::ReplicaDir;
     use spacetimedb_paths::FromPathUnchecked;
+    use spacetimedb_runtime::{TokioHandle, TokioRuntime, TokioRuntimeBuilder};
     use tempfile::TempDir;
 
     pub enum TestDBDir {
@@ -1848,7 +1854,7 @@ pub mod tests_utils {
     pub type TestDBParts = (
         Arc<RelationalDB>,
         Option<Arc<durability::Local<ProductValue>>>,
-        Option<tokio::runtime::Runtime>,
+        Option<TokioRuntime>,
         Option<TestDBDir>,
     );
 
@@ -1893,7 +1899,7 @@ pub mod tests_utils {
 
     struct DurableState {
         durability: Arc<durability::Local<ProductValue>>,
-        rt: tokio::runtime::Runtime,
+        rt: TokioRuntime,
         replica_dir: TestDBDir,
     }
 
@@ -1919,7 +1925,7 @@ pub mod tests_utils {
         /// database.
         pub fn durable() -> Result<Self, DBError> {
             let dir = TempReplicaDir::new()?;
-            let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
+            let rt = TokioRuntimeBuilder::new_multi_thread().enable_all().build()?;
             // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
             let _rt = rt.enter();
             let (db, durability) = Self::durable_internal(&dir, rt.handle().clone(), true)?;
@@ -1938,7 +1944,7 @@ pub mod tests_utils {
 
         pub fn durable_without_snapshot_repo() -> Result<Self, DBError> {
             let dir = TempReplicaDir::new()?;
-            let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
+            let rt = TokioRuntimeBuilder::new_multi_thread().enable_all().build()?;
             // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
             let _rt = rt.enter();
             let (db, durability) = Self::durable_internal(&dir, rt.handle().clone(), false)?;
@@ -1957,7 +1963,7 @@ pub mod tests_utils {
 
         pub fn open_existing_durable(
             root: &ReplicaDir,
-            rt: tokio::runtime::Handle,
+            rt: TokioHandle,
             replica_id: u64,
             db_identity: Identity,
             owner_identity: Identity,
@@ -1972,9 +1978,8 @@ pub mod tests_utils {
                 .transpose()?;
 
             let runtime = Handle::tokio(rt.clone());
-            let (local, disk_size_fn) =
+            let (local, disk_size_fn): (LocalDurability, DiskSizeFn) =
                 rt.block_on(local_durability(root.clone(), runtime.clone(), snapshots.as_ref()))?;
-            let history = local.as_history();
 
             let persistence = Persistence {
                 durability: local.clone(),
@@ -1986,7 +1991,7 @@ pub mod tests_utils {
             let (db, _) = RelationalDB::open(
                 db_identity,
                 owner_identity,
-                history,
+                local.as_history(),
                 Some(persistence),
                 None,
                 PagePool::new_for_test(),
@@ -2064,7 +2069,7 @@ pub mod tests_utils {
 
         /// Handle to the tokio runtime, available if [`Self::durable`] was used
         /// to create the [`TestDB`].
-        pub fn runtime(&self) -> Option<&tokio::runtime::Handle> {
+        pub fn runtime(&self) -> Option<&TokioHandle> {
             self.durable.as_ref().map(|ds| ds.rt.handle())
         }
 
@@ -2088,7 +2093,7 @@ pub mod tests_utils {
 
         fn durable_internal(
             root: &ReplicaDir,
-            rt: tokio::runtime::Handle,
+            rt: TokioHandle,
             want_snapshot_repo: bool,
         ) -> Result<(RelationalDB, Arc<durability::Local<ProductValue>>), DBError> {
             let snapshots = want_snapshot_repo
@@ -2099,16 +2104,15 @@ pub mod tests_utils {
                 })
                 .transpose()?;
             let runtime = Handle::tokio(rt.clone());
-            let (local, disk_size_fn) =
+            let (local, disk_size_fn): (LocalDurability, DiskSizeFn) =
                 rt.block_on(local_durability(root.clone(), runtime.clone(), snapshots.as_ref()))?;
-            let history = local.as_history();
             let persistence = Persistence {
                 durability: local.clone(),
                 disk_size: disk_size_fn,
                 snapshots,
                 runtime,
             };
-            let db = Self::open_db(history, Some(persistence), None, 0)?;
+            let db = Self::open_db(local.as_history(), Some(persistence), None, 0)?;
 
             Ok((db, local))
         }
@@ -2130,7 +2134,7 @@ pub mod tests_utils {
             assert_eq!(connected_clients.len(), expected_num_clients);
             let db = db.with_row_count(Self::row_count_fn());
             db.with_auto_commit(Workload::Internal, |tx| {
-                db.set_initialized(tx, Program::empty(HostType::Wasm.into()))
+                db.set_initialized(tx, Program::empty(ModuleKind::WASM))
             })?;
             Ok(db)
         }
@@ -2309,7 +2313,7 @@ mod tests {
 
     use super::tests_utils::begin_mut_tx;
     use super::*;
-    use crate::db::relational_db::tests_utils::{begin_tx, create_view_for_test, insert, make_snapshot, TestDB};
+    use crate::relational_db::tests_utils::{begin_tx, create_view_for_test, insert, make_snapshot, TestDB};
     use anyhow::bail;
     use bytes::Bytes;
     use commitlog::payload::txdata;

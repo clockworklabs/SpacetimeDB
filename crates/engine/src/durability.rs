@@ -10,7 +10,7 @@ use spacetimedb_durability::Transaction;
 use spacetimedb_lib::Identity;
 use spacetimedb_sats::ProductValue;
 
-use crate::db::persistence::Durability;
+use crate::persistence::Durability;
 use spacetimedb_runtime::Handle;
 
 pub(super) fn request_durability(
