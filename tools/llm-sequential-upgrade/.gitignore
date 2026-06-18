@@ -22,6 +22,9 @@ telemetry/metrics.jsonl
 **/telemetry/**/session-transcript.jsonl
 # Verbose run transcripts (large, regenerable) - not tracked
 **/telemetry/**/run.log
+# Local absolute app paths (machine-specific) - not tracked; cost data lives in cost-summary.json
+**/telemetry/**/app-dir.txt
+**/telemetry/**/metadata.json
 
 # NOTE: generated run output (sequential-upgrade/, one-shot/) IS tracked on this
 # branch so app state can be git-reverted between levels. Heavy/regenerable dirs,
