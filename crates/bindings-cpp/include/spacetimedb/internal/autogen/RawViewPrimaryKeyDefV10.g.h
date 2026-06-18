@@ -12,11 +12,17 @@
 #include <memory>
 #include "../autogen_base.h"
 #include "spacetimedb/bsatn/bsatn.h"
-#include "RawModuleDefV8.g.h"
-#include "RawModuleDefV10.g.h"
-#include "RawModuleDefV9.g.h"
 
 namespace SpacetimeDB::Internal {
 
-SPACETIMEDB_INTERNAL_TAGGED_ENUM(RawModuleDef, SpacetimeDB::Internal::RawModuleDefV8, SpacetimeDB::Internal::RawModuleDefV9, SpacetimeDB::Internal::RawModuleDefV10)
+SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawViewPrimaryKeyDefV10) {
+    std::string view_source_name;
+    std::vector<std::string> columns;
+
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
+        ::SpacetimeDB::bsatn::serialize(writer, view_source_name);
+        ::SpacetimeDB::bsatn::serialize(writer, columns);
+    }
+    SPACETIMEDB_PRODUCT_TYPE_EQUALITY(view_source_name, columns)
+};
 } // namespace SpacetimeDB::Internal
