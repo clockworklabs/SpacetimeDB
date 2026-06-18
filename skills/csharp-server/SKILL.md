@@ -203,7 +203,7 @@ public partial struct TickTimer
 [SpacetimeDB.Reducer]
 public static void Tick(ReducerContext ctx, TickTimer timer)
 {
-    // timer row is auto-deleted after this reducer runs
+    // One-shot rows auto-delete after this runs; interval rows remain.
 }
 
 // One-time: fires once at a specific time

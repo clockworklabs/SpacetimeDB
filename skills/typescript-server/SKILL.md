@@ -156,7 +156,7 @@ const tickTimer = table({
 
 export const tick = spacetimedb.reducer(
   { timer: tickTimer.rowType },
-  (ctx, { timer }) => { /* timer row auto-deleted after this runs */ }
+  (ctx, { timer }) => { /* one-shot rows auto-delete after this runs; interval rows remain */ }
 );
 
 // One-time: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch + delayMicros)

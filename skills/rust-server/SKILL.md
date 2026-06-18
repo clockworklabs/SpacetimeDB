@@ -201,7 +201,7 @@ pub struct TickTimer {
 
 #[spacetimedb::reducer]
 pub fn tick(ctx: &ReducerContext, timer: TickTimer) {
-    // timer row is auto-deleted after this reducer runs
+    // One-shot rows auto-delete after this runs; interval rows remain.
 }
 
 // One-time: fires once at a specific time
