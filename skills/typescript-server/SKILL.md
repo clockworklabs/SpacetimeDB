@@ -200,6 +200,10 @@ const Shape = t.enum('Shape', {
 
 ## Views
 
+A client subscribing to a view receives only the rows it returns. Use a per-user view
+(keyed on `ctx.sender`) for per-viewer access control: deleting a row it depends on
+(e.g. a membership row) automatically drops the rows it was exposing from that client.
+
 ```typescript
 // Anonymous view (same for all clients):
 export const activeUsers = spacetimedb.anonymousView(
