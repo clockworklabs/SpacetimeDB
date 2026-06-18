@@ -21,7 +21,7 @@ fn test_delete_database_aborts_without_confirmation() {
         .build();
 
     let name = format!("delete-db-abort-{}", std::process::id());
-    test.publish_module_named(&name, false).unwrap();
+    test.publish().name(&name).run().unwrap();
 
     let output = test
         .spacetime(&["delete", "--server", &test.server_url, &name])
@@ -43,11 +43,10 @@ fn test_delete_database_with_confirmation() {
         .build();
 
     let name = format!("delete-database-{}", std::process::id());
-    test.publish_module_named(&name, false).unwrap();
+    test.publish().name(&name).run().unwrap();
 
-    // Start subscription in background to collect updates
-    // We request many updates but will stop early when we delete the db
-    let sub = test.subscribe_background(&["SELECT * FROM counter"], 1000).unwrap();
+    // Start subscription in background to collect updates until deleting the database closes it.
+    let sub = test.subscribe(&["SELECT * FROM counter"]).background().unwrap();
 
     // Let the scheduled reducer run for a bit
     thread::sleep(Duration::from_secs(2));
@@ -78,7 +77,7 @@ fn test_delete_database_yes_skips_confirmation() {
         .build();
 
     let name = format!("delete-db-yes-{}", std::process::id());
-    test.publish_module_named(&name, false).unwrap();
+    test.publish().name(&name).run().unwrap();
 
     let output = test
         .spacetime(&["delete", "--server", &test.server_url, "--yes", &name])

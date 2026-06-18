@@ -11,7 +11,7 @@ fn test_module_update() {
     let name = format!("module-update-{}", std::process::id());
 
     // Initial publish
-    test.publish_module_named(&name, false).unwrap();
+    test.publish().name(&name).run().unwrap();
 
     test.call("add", &["Robert"]).unwrap();
     test.call("add", &["Julie"]).unwrap();
@@ -25,11 +25,11 @@ fn test_module_update() {
     assert!(logs.iter().any(|l| l.contains("Hello, World!")));
 
     // Unchanged module is ok
-    test.publish_module_named(&name, false).unwrap();
+    test.publish().name(&name).run().unwrap();
 
     // Changing an existing table isn't (adds age column to Person)
     test.use_precompiled_module("modules-breaking");
-    let result = test.publish_module_named(&name, false);
+    let result = test.publish().name(&name).run();
     assert!(result.is_err(), "Expected publish to fail with breaking change");
     let err = result.unwrap_err().to_string();
     assert!(
@@ -43,7 +43,7 @@ fn test_module_update() {
 
     // Adding a table is ok
     test.use_precompiled_module("modules-add-table");
-    test.publish_module_named(&name, false).unwrap();
+    test.publish().name(&name).run().unwrap();
     test.call("are_we_updated_yet", &[]).unwrap();
 
     let logs = test.logs(2).unwrap();
@@ -103,15 +103,19 @@ fn test_hotswap_module() {
     let name = format!("hotswap-module-{}", std::process::id());
 
     // Publish initial module and subscribe to all
-    test.publish_module_named(&name, false).unwrap();
-    let sub = test.subscribe_background(&["SELECT * FROM *"], 2).unwrap();
+    test.publish().name(&name).run().unwrap();
+    let sub = test
+        .subscribe(&["SELECT * FROM *"])
+        .expect_rows(2)
+        .background()
+        .unwrap();
 
     // Trigger event on the subscription
     test.call("add_person", &["Horst"]).unwrap();
 
     // Update the module (adds Pet table)
     test.use_precompiled_module("hotswap-updated");
-    test.publish_module_named(&name, false).unwrap();
+    test.publish().name(&name).run().unwrap();
 
     // Assert that the module was updated
     test.call("add_pet", &["Turtle"]).unwrap();

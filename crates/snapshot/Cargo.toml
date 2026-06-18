@@ -6,10 +6,15 @@ rust-version.workspace = true
 license-file = "LICENSE"
 description = "Low-level interfaces for capturing and restoring snapshots of database states"
 
+[features]
+default = ["tokio"]
+tokio = ["spacetimedb-durability/tokio"]
+simulation = ["spacetimedb-durability/simulation"]
+
 [dependencies]
 spacetimedb-table.workspace = true
 spacetimedb-data-structures.workspace = true
-spacetimedb-durability.workspace = true
+spacetimedb-durability = { path = "../durability", default-features = false }
 spacetimedb-lib.workspace = true
 spacetimedb-sats = { workspace = true, features = ["blake3"] }
 spacetimedb-primitives.workspace = true
@@ -35,6 +40,7 @@ spacetimedb-core = { path = "../core", features = ["test"] }
 spacetimedb-schema = { path = "../schema" }
 spacetimedb-datastore = { path = "../datastore", features = ["test"] }
 spacetimedb-durability = { workspace = true, features = ["test"] }
+spacetimedb-runtime = { workspace = true }
 
 anyhow.workspace = true
 env_logger.workspace = true

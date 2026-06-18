@@ -4,9 +4,9 @@ use crate::db_metrics::DB_METRICS;
 use crate::error::{DatastoreError, IndexError, TableError, ViewError};
 use crate::locking_tx_datastore::state_view::{iter_st_column_for_table, StateView};
 use crate::system_tables::{
-    is_built_in_meta_row, table_id_is_reserved, StColumnRow, StConstraintData, StConstraintRow, StFields as _,
-    StIndexRow, StSequenceFields, StTableFields, StTableRow, StViewRow, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID,
-    ST_SEQUENCE_ID, ST_TABLE_ID, ST_VIEW_ARG_ID, ST_VIEW_ID, ST_VIEW_SUB_ID,
+    is_built_in_meta_row, table_id_is_reserved, StColumnRow, StConstraintData, StConstraintRow, StEventTableFields,
+    StFields as _, StIndexRow, StSequenceFields, StTableFields, StTableRow, StViewRow, ST_COLUMN_ID, ST_CONSTRAINT_ID,
+    ST_EVENT_TABLE_ID, ST_INDEX_ID, ST_SEQUENCE_ID, ST_TABLE_ID, ST_VIEW_ARG_ID, ST_VIEW_ID, ST_VIEW_SUB_ID,
 };
 use anyhow::{anyhow, Context};
 use core::cell::RefMut;
@@ -498,6 +498,11 @@ impl<'cs> ReplayCommittedState<'cs> {
         // We fix this by, for each system sequence, deleting all but the row with the highest allocation.
         self.fixup_delete_duplicate_system_sequence_rows();
 
+        // Prior versions of `MutTxId::drop_table` did not delete a dropped event table's
+        // `st_event_table` row, leaving it orphaned.
+        // Delete any such rows referring to tables which no longer exist.
+        self.fixup_delete_orphaned_st_event_table_rows();
+
         // `build_missing_tables` must be called before indexes.
         // Honestly this should maybe just be one big procedure.
         // See John Carmack's philosophy on this.
@@ -596,6 +601,55 @@ impl<'cs> ReplayCommittedState<'cs> {
                 st_sequence.delete(blob_store, row_pointer_to_delete, |_| ())
                     .expect("Duplicated `st_sequence` row at `row_pointer_to_delete` should be present in `st_sequence` during fixup");
             }
+        }
+    }
+
+    /// Delete any `st_event_table` rows which refer to tables that do not exist in `st_table`.
+    ///
+    /// Prior versions of `MutTxId::drop_table` did not delete a dropped event table's
+    /// `st_event_table` row, so commitlogs and snapshots written by those versions
+    /// may contain orphaned `st_event_table` rows.
+    /// We call this method in [`ReplayCommittedState::rebuild_state_after_replay`]
+    /// to delete such rows.
+    pub(super) fn fixup_delete_orphaned_st_event_table_rows(&mut self) {
+        // `st_event_table` will not have been built when replaying a history
+        // from before it was introduced; `migrate_system_tables` creates it later on.
+        if self.get_table(ST_EVENT_TABLE_ID).is_none() {
+            return;
+        }
+
+        // Collect the ids of all extant tables.
+        let extant_tables: IntSet<TableId> = self
+            .table_scan(ST_TABLE_ID)
+            .expect("`st_table` should exist")
+            .map(|row_ref| {
+                row_ref
+                    .read_col::<TableId>(StTableFields::TableId)
+                    .expect("`st_table` row should conform to `st_table` schema")
+            })
+            .collect();
+
+        // Find all `st_event_table` rows which refer to tables that don't exist.
+        let orphaned_rows: Vec<RowPointer> = self
+            .table_scan(ST_EVENT_TABLE_ID)
+            .expect("`st_event_table` was found above")
+            .filter(|row_ref| {
+                let table_id = row_ref
+                    .read_col::<TableId>(StEventTableFields::TableId)
+                    .expect("`st_event_table` row should conform to `st_event_table` schema");
+                !extant_tables.contains(&table_id)
+            })
+            .map(|row_ref| row_ref.pointer())
+            .collect();
+
+        let (st_event_table, blob_store, ..) = self
+            .get_table_and_blob_store_mut(ST_EVENT_TABLE_ID)
+            .expect("`st_event_table` was found above");
+
+        for ptr in orphaned_rows {
+            st_event_table
+                .delete(blob_store, ptr, |_| ())
+                .expect("Orphaned `st_event_table` row at `ptr` should be present in `st_event_table` during fixup");
         }
     }
 
@@ -869,9 +923,16 @@ impl<'cs> ReplayCommittedState<'cs> {
         // because their initial insertion order matches their `col_pos` order.
         columns.sort_by_key(|col: &ColumnSchema| col.col_pos);
 
+        let is_event = self.is_event_table_for_replay(table_id)?;
         // Update the columns and layout of the the in-memory table.
         if let Some(table) = self.tables.get_mut(&table_id) {
-            table.change_columns_to(columns).map_err(TableError::from)?;
+            if is_event {
+                table
+                    .change_columns_of_empty_table_to(columns)
+                    .map_err(|_| TableError::EventTableNotEmpty(table_id))?;
+            } else {
+                table.change_columns_to(columns).map_err(TableError::from)?;
+            }
         }
 
         Ok(())
@@ -933,10 +994,32 @@ impl<'cs> ReplayCommittedState<'cs> {
             // and that there wasn't any corresponding insert at all.
             // If that's the case, `row_ptr` won't be in `self.replay_columns_to_ignore`,
             // which is fine.
+            let referenced_table_id = Self::read_table_id(row);
             self.replay_columns_to_ignore.remove(&row_ptr);
+
+            // If the referenced table was dropped earlier in this transaction,
+            // don't try to refresh its layout: its `st_table` row is already gone,
+            // so `st_column_changed` would fail to look up the table's name.
+            // This happens when dropping an event table,
+            // as the `st_table` delete (table id 1) is replayed
+            // before the `st_column` deletes (table id 2),
+            // while the table's `st_event_table` row (table id 17) is still present.
+            if !self.replay_table_dropped.contains(&referenced_table_id)
+                && self.is_event_table_for_replay(referenced_table_id)?
+            {
+                self.st_column_changed(referenced_table_id)?;
+            }
         }
 
         Ok(())
+    }
+
+    fn is_event_table_for_replay(&self, table_id: TableId) -> Result<bool> {
+        match self.find_st_event_table_row(table_id) {
+            Ok(_) => Ok(true),
+            Err(DatastoreError::Table(TableError::IdNotFound(..))) => Ok(false),
+            Err(e) => Err(e),
+        }
     }
 
     /// Assuming that a `TableId` is stored as the first field in `row`, read it.
@@ -1093,6 +1176,50 @@ mod tests {
             all_rows(&datastore, &tx, table_id).len(),
             0,
             "replay_insert should be a no-op for event tables"
+        );
+        Ok(())
+    }
+
+    /// Regression test for orphaned `st_event_table` rows.
+    ///
+    /// Prior versions of `MutTxId::drop_table` did not delete a dropped event table's
+    /// `st_event_table` row, so commitlogs and snapshots written by those versions
+    /// contain rows referring to tables which no longer exist.
+    /// [`ReplayCommittedState::fixup_delete_orphaned_st_event_table_rows`]
+    /// must delete those orphans while preserving rows for extant event tables.
+    #[test]
+    fn test_fixup_deletes_orphaned_st_event_table_rows() -> ResultTest<()> {
+        let (datastore, tx, table_id) = setup_event_table()?;
+        commit(&datastore, tx)?;
+
+        // Get the schema of `st_event_table` for `replay_insert`.
+        let tx = begin_mut_tx(&datastore);
+        let st_event_table_schema = datastore.schema_for_table_mut_tx(&tx, ST_EVENT_TABLE_ID)?;
+        let _ = datastore.rollback_mut_tx(tx);
+
+        // Pick a table id which does not exist.
+        let orphan_table_id = TableId::from(u32::MAX);
+        assert_ne!(orphan_table_id, table_id);
+        let orphan_row = spacetimedb_sats::product![orphan_table_id];
+
+        {
+            let state = datastore.committed_state.write();
+            let mut committed_state = ReplayCommittedState::new(state);
+
+            // Simulate replaying a commitlog written by a version
+            // where `drop_table` left an orphaned `st_event_table` row.
+            committed_state.replay_insert(ST_EVENT_TABLE_ID, &st_event_table_schema, &orphan_row)?;
+
+            // The fixup should delete the orphan and keep the extant event table's row.
+            committed_state.fixup_delete_orphaned_st_event_table_rows();
+        }
+
+        let tx = begin_mut_tx(&datastore);
+        let rows = all_rows(&datastore, &tx, ST_EVENT_TABLE_ID);
+        assert_eq!(
+            rows,
+            [spacetimedb_sats::product![table_id]],
+            "the orphaned `st_event_table` row should be deleted and the extant one kept"
         );
         Ok(())
     }

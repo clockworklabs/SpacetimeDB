@@ -483,7 +483,7 @@ mod tests {
         def::ModuleDef,
         schema::{Schema, TableOrViewSchema, TableSchema},
     };
-    use spacetimedb_sql_parser::ast::BinOp;
+    use spacetimedb_sql_parser::ast::{BinOp, Parameter};
 
     use crate::{
         check::{parse_and_type_sub, test_utils::build_module_def, SchemaView},
@@ -602,7 +602,7 @@ mod tests {
                             field: 0,
                             ty: AlgebraicType::identity(),
                         })),
-                        Box::new(Expr::Value(Identity::ONE.into(), AlgebraicType::identity()))
+                        Box::new(Expr::Param(Parameter::Sender, AlgebraicType::identity()))
                     )
                 ),
                 "users".into()
@@ -649,7 +649,7 @@ mod tests {
                                         field: 0,
                                         ty: AlgebraicType::identity(),
                                     })),
-                                    Box::new(Expr::Value(Identity::ONE.into(), AlgebraicType::identity())),
+                                    Box::new(Expr::Param(Parameter::Sender, AlgebraicType::identity())),
                                 ),
                             )),
                             Expr::BinOp(
@@ -700,7 +700,7 @@ mod tests {
                                     field: 0,
                                     ty: AlgebraicType::identity(),
                                 })),
-                                Box::new(Expr::Value(Identity::ONE.into(), AlgebraicType::identity())),
+                                Box::new(Expr::Param(Parameter::Sender, AlgebraicType::identity())),
                             ),
                         )),
                         Expr::BinOp(

@@ -115,7 +115,7 @@ pub(super) fn call_call_view_anon(
     }
 }
 
-pub use self::common::{call_call_procedure, call_describe_module};
+pub use self::common::{call_call_http_handler, call_call_procedure, call_describe_module};
 
 /// Get the hooks for the module.
 ///
