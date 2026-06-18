@@ -11,10 +11,12 @@ import {
 } from "spacetimedb";
 
 export default __t.row({
-  identity: __t.identity().primaryKey(),
-  name: __t.string(),
-  online: __t.bool(),
-  status: __t.string(),
-  lastActiveAt: __t.option(__t.timestamp()).name("last_active_at"),
-  isAnonymous: __t.bool().name("is_anonymous"),
+  id: __t.u64().primaryKey(),
+  roomId: __t.u64().name("room_id"),
+  senderIdentity: __t.identity().name("sender_identity"),
+  text: __t.string(),
+  sentAt: __t.timestamp().name("sent_at"),
+  expiresAtUs: __t.option(__t.u64()).name("expires_at_us"),
+  editedAt: __t.option(__t.timestamp()).name("edited_at"),
+  parentId: __t.option(__t.u64()).name("parent_id"),
 });

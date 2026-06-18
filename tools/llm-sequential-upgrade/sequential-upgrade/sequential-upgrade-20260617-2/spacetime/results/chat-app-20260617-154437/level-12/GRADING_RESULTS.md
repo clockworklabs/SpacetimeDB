@@ -149,25 +149,3 @@
 
 **Reprompt count:** 0 (passed on first grade)
 **Cost:** L11 upgrade $1.07
-
----
-
-## Level 12 — Anonymous Migration (Features 1–15)
-
-| Feature | Score |
-|---------|-------|
-| 1–14 (regression) | 3/3 each |
-| 15. Anonymous Migration | 3/3 |
-| **TOTAL** | **45/45** |
-
-**Reprompt count:** 0 (passed on first grade)
-**Cost:** L12 upgrade $1.44
-
----
-
-## Run complete — final tally (SpacetimeDB 20260617-2: post-fix templates + full skills + 2.6.0)
-
-- **Quality:** 45/45 at L12; every feature 3/3 on first grade.
-- **Fix iterations:** 1 total — L7 (multi-connection presence).
-- **Cumulative cost:** $15.65.
-- **vs Mongo (both fixed to 100%):** STDB $15.65 (1 fix) vs Mongo $13.92 (4 fixes).
