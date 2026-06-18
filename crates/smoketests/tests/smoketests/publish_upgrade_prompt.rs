@@ -27,17 +27,23 @@ fn upgrade_prompt_on_publish() {
     let db_name = format!("upgrade-smoke-{}", random_string());
 
     test.use_precompiled_wasm_path(&old_wasm).unwrap();
-    let initial_identity = test.publish_module_named(&db_name, false).unwrap();
+    let initial_identity = test.publish().name(&db_name).run().unwrap();
     assert_eq!(test.database_identity.as_deref(), Some(initial_identity.as_str()));
 
     // Switch back to source-built module, which uses current bindings.
     test.write_module_code(MODULE_CODE).unwrap();
 
-    let deny_err = test.publish_module_named_no_force(&db_name).unwrap_err().to_string();
+    let deny_err = test
+        .publish()
+        .name(&db_name)
+        .force(false)
+        .run()
+        .unwrap_err()
+        .to_string();
     assert!(deny_err.contains("major version upgrade from 1.0 to 2.0"));
     assert!(deny_err.contains("Please type 'upgrade' to accept this change:"));
 
-    let accepted_identity = test.publish_module_with_stdin(&db_name, "upgrade\n").unwrap();
+    let accepted_identity = test.publish().name(&db_name).stdin("upgrade\n").run().unwrap();
     assert_eq!(accepted_identity, initial_identity);
 }
 
@@ -51,13 +57,13 @@ fn upgrade_prompt_suppressed_by_yes_flag() {
     let db_name = format!("upgrade-smoke-yes-{}", random_string());
 
     test.use_precompiled_wasm_path(&old_wasm).unwrap();
-    let initial_identity = test.publish_module_named(&db_name, false).unwrap();
+    let initial_identity = test.publish().name(&db_name).run().unwrap();
     assert_eq!(test.database_identity.as_deref(), Some(initial_identity.as_str()));
 
     // Switch back to source-built module, which uses current bindings.
     test.write_module_code(MODULE_CODE).unwrap();
 
     // With --yes, the upgrade prompt should be suppressed and publish should succeed.
-    let accepted_identity = test.publish_module_named(&db_name, false).unwrap();
+    let accepted_identity = test.publish().name(&db_name).run().unwrap();
     assert_eq!(accepted_identity, initial_identity);
 }

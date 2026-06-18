@@ -1,12 +1,13 @@
 use std::env;
 use std::future::Future;
+use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Instant;
 
 use bytes::{Bytes, BytesMut};
-use futures::TryStreamExt as _;
+use futures::{FutureExt as _, TryStreamExt as _};
 use spacetimedb::config::CertificateAuthority;
 use spacetimedb::messages::control_db::HostType;
 use spacetimedb::util::jobs::JobCores;
@@ -54,8 +55,9 @@ pub(crate) fn module_path(name: &str) -> PathBuf {
 }
 
 pub struct ModuleHandle {
-    // Needs to hold a reference to the standalone env.
-    _env: Arc<StandaloneEnv>,
+    // Keep the in-process standalone env alive for the lifetime of module.
+    // The teardown helper will use it to drive the same shutdown path a standalone server would use.
+    env: Arc<StandaloneEnv>,
     pub client: ClientConnection,
     receiver: ClientConnectionReceiver,
     pub db_identity: Identity,
@@ -226,8 +228,10 @@ impl CompiledModule {
         with_runtime(move |runtime| {
             runtime.block_on(async {
                 let module = self.load_module(config, None).await;
-
-                routine(module).await;
+                let env = module.env.clone();
+                let db_identity = module.db_identity;
+                let routine_result = AssertUnwindSafe(routine(module)).catch_unwind().await.map(drop);
+                finish_module_test(&env, db_identity, routine_result).await;
             });
         });
     }
@@ -238,8 +242,12 @@ impl CompiledModule {
     {
         with_runtime(move |runtime| {
             let module = runtime.block_on(async { self.load_module(config, None).await });
+            let env = module.env.clone();
+            let db_identity = module.db_identity;
+            let func_result = std::panic::catch_unwind(AssertUnwindSafe(|| func(runtime, &module)));
+            drop(module);
 
-            func(runtime, &module);
+            runtime.block_on(async { finish_module_test(&env, db_identity, func_result).await });
         });
     }
 
@@ -316,10 +324,41 @@ impl CompiledModule {
             ClientConnection::dummy_with_receiver(client_id, ClientConfig::for_test(), instance.id, module_rx);
 
         ModuleHandle {
-            _env: env,
+            env,
             client,
             receiver,
             db_identity,
+        }
+    }
+}
+
+/// These standalone module tests run a `StandaloneEnv` in-process.
+/// That means [`CompiledModule::with_module_async`] and [`CompiledModule::with_module`]
+/// own the Tokio runtime, host controller, module host, scheduler, `RelationalDB`,
+/// JS worker threads, etc.
+///
+/// Some modules schedule repeating reducers during `init`.
+/// If these helpers return without explicitly shutting the database down,
+/// scheduled reducer calls can still be queued or running
+/// while the Tokio runtime and V8 worker state are being torn down.
+///
+/// [`StandaloneEnv::delete_database`] is the public standalone shutdown path.
+/// It removes the database and replica from standalone control state,
+/// asks the host controller to exit the module host, closes and waits for the scheduler,
+/// and then shuts down the `RelationalDB`.
+async fn finish_module_test(env: &StandaloneEnv, db_identity: Identity, test_result: std::thread::Result<()>) {
+    let cleanup_result = env.delete_database(&Identity::ZERO, &db_identity).await;
+
+    // Cleanup should not hide the result of the test body.
+    // If the test already panicked, resume that panic after attempting shutdown.
+    // If the test passed, make cleanup failure a test failure.
+    match (test_result, cleanup_result) {
+        (Ok(()), Ok(())) => {}
+        (Ok(()), Err(err)) => panic!("failed to delete test database {db_identity}: {err:#}"),
+        (Err(panic), Ok(())) => std::panic::resume_unwind(panic),
+        (Err(panic), Err(err)) => {
+            log::error!("failed to delete test database {db_identity} after test panic: {err:#}");
+            std::panic::resume_unwind(panic);
         }
     }
 }
