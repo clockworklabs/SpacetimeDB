@@ -15,6 +15,7 @@ use crate::host::ProcedureCallError;
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
+use crate::resource::{MemoryObserver, ModuleInstanceMemoryTracker};
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::module_subscription_manager::{spawn_send_worker, SubscriptionManager, TransactionOffset};
 use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
@@ -108,6 +109,8 @@ pub struct HostController {
     program_storage: ProgramStorage,
     /// The [`EnergyMonitor`] used by this controller.
     energy_monitor: Arc<dyn EnergyMonitor>,
+    /// The [`MemoryObserver`] used by this controller.
+    memory_observer: Arc<dyn MemoryObserver>,
     /// Provides persistence services for each replica.
     persistence: Arc<dyn PersistenceProvider>,
     /// The page pool all databases will use by cloning the ref counted pool.
@@ -221,12 +224,14 @@ pub struct CallProcedureReturn {
 }
 
 impl HostController {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         data_dir: Arc<ServerDataDir>,
         default_config: db::Config,
         runtime_config: HostRuntimeConfig,
         program_storage: ProgramStorage,
         energy_monitor: Arc<impl EnergyMonitor>,
+        memory_observer: Arc<dyn MemoryObserver>,
         persistence: Arc<dyn PersistenceProvider>,
         db_cores: JobCores,
     ) -> Self {
@@ -235,6 +240,7 @@ impl HostController {
             default_config,
             program_storage,
             energy_monitor,
+            memory_observer,
             persistence,
             runtimes: HostRuntimes::new(Some(&data_dir), runtime_config),
             data_dir,
@@ -653,6 +659,7 @@ async fn make_replica_ctx(
     replica_id: u64,
     relational_db: Arc<RelationalDB>,
     bsatn_rlb_pool: BsatnRowListBuilderPool,
+    memory_observer: Arc<dyn MemoryObserver>,
 ) -> anyhow::Result<ReplicaContext> {
     let logger = match module_logs {
         Some(path) => asyncify(move || Arc::new(DatabaseLogger::open_today(path))).await,
@@ -680,11 +687,14 @@ async fn make_replica_ctx(
         }
     });
 
+    let module_instance_memory_tracker = ModuleInstanceMemoryTracker::new(database.database_identity, memory_observer);
+
     Ok(ReplicaContext {
         database,
         replica_id,
         logger,
         subscriptions,
+        module_instance_memory_tracker,
     })
 }
 
@@ -756,6 +766,7 @@ struct ModuleLauncher<F> {
     on_panic: F,
     relational_db: Arc<RelationalDB>,
     energy_monitor: Arc<dyn EnergyMonitor>,
+    memory_observer: Arc<dyn MemoryObserver>,
     module_logs: Option<ModuleLogsDir>,
     runtimes: Arc<HostRuntimes>,
     core: AllocatedJobCore,
@@ -779,6 +790,7 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
             self.replica_id,
             self.relational_db,
             self.bsatn_rlb_pool,
+            self.memory_observer,
         )
         .await
         .map(Arc::new)?;
@@ -886,6 +898,7 @@ impl Host {
             persistence,
             page_pool,
             bsatn_rlb_pool,
+            memory_observer,
             ..
         } = host_controller;
         let replica_dir = data_dir.replica(replica_id);
@@ -979,6 +992,7 @@ impl Host {
                     on_panic: host_controller.unregister_fn(replica_id),
                     relational_db,
                     energy_monitor: energy_monitor.clone(),
+                    memory_observer: memory_observer.clone(),
                     module_logs: match config.storage {
                         db::Storage::Memory => None,
                         db::Storage::Disk => Some(replica_dir.module_logs()),
@@ -1008,6 +1022,7 @@ impl Host {
                     on_panic: host_controller.unregister_fn(replica_id),
                     relational_db: relational_db.clone(),
                     energy_monitor: energy_monitor.clone(),
+                    memory_observer: memory_observer.clone(),
                     module_logs: match config.storage {
                         db::Storage::Memory => None,
                         db::Storage::Disk => Some(replica_dir.clone().module_logs()),
@@ -1031,6 +1046,7 @@ impl Host {
                             on_panic: host_controller.unregister_fn(replica_id),
                             relational_db: relational_db.clone(),
                             energy_monitor: energy_monitor.clone(),
+                            memory_observer: memory_observer.clone(),
                             module_logs: match config.storage {
                                 db::Storage::Memory => None,
                                 db::Storage::Disk => Some(replica_dir.module_logs()),
@@ -1131,6 +1147,7 @@ impl Host {
             None,
             page_pool,
         )?;
+        let memory_observer: Arc<dyn MemoryObserver> = Arc::new(());
 
         ModuleLauncher {
             database,
@@ -1142,6 +1159,7 @@ impl Host {
             on_panic: || log::error!("launch_module on_panic called for temporary publish in-memory instance"),
             relational_db: Arc::new(db),
             energy_monitor: Arc::new(NullEnergyMonitor),
+            memory_observer,
             module_logs: None,
             runtimes: runtimes.clone(),
             core,
