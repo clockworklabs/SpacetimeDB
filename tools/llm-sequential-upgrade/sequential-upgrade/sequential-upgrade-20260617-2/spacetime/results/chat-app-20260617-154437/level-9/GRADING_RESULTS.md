@@ -110,16 +110,3 @@
 
 **Reprompt count:** 0 (passed on first grade)
 **Cost:** L8 upgrade $1.60
-
----
-
-## Level 9 — Private Rooms & DMs (Features 1–12)
-
-| Feature | Score |
-|---------|-------|
-| 1–11 (regression) | 3/3 each |
-| 12. Private Rooms & Direct Messages | 3/3 |
-| **TOTAL** | **36/36** |
-
-**Reprompt count:** 0 (passed on first grade)
-**Cost:** L9 upgrade $1.46

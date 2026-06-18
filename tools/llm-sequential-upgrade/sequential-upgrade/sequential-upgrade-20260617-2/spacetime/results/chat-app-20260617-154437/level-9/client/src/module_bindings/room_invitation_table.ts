@@ -12,9 +12,9 @@ import {
 
 export default __t.row({
   id: __t.u64().primaryKey(),
-  name: __t.string(),
-  createdBy: __t.identity().name("created_by"),
-  createdAt: __t.timestamp().name("created_at"),
-  isPrivate: __t.bool().name("is_private"),
-  isDm: __t.bool().name("is_dm"),
+  roomId: __t.u64().name("room_id"),
+  inviterIdentity: __t.identity().name("inviter_identity"),
+  inviteeIdentity: __t.identity().name("invitee_identity"),
+  invitedAt: __t.timestamp().name("invited_at"),
+  status: __t.string(),
 });

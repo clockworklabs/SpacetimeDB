@@ -11,10 +11,9 @@ import {
 } from "spacetimedb";
 
 export default __t.row({
-  id: __t.u64().primaryKey(),
-  name: __t.string(),
-  createdBy: __t.identity().name("created_by"),
-  createdAt: __t.timestamp().name("created_at"),
-  isPrivate: __t.bool().name("is_private"),
-  isDm: __t.bool().name("is_dm"),
+  scheduledId: __t.u64().primaryKey().name("scheduled_id"),
+  scheduledAt: __t.scheduleAt().name("scheduled_at"),
+  roomId: __t.u64().name("room_id"),
+  senderIdentity: __t.identity().name("sender_identity"),
+  text: __t.string(),
 });
