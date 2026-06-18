@@ -756,18 +756,15 @@ export default function App() {
   useEffect(() => {
     setIsAtBottom(true);
     setTimeout(() => messagesEndRef.current?.scrollIntoView(), 50);
+    const draft = selectedRoomId !== null
+      ? messageDraftsRef.current.find(
+          d => d.roomId === selectedRoomId && d.userIdentity.toHexString() === myHexRef.current
+        )
+      : undefined;
+    setMessageInput(draft?.content ?? '');
     setShowMembersPanel(false);
     setOpenThreadId(null);
   }, [selectedRoomId]);
-
-  // Sync draft into message input whenever the draft table updates (real-time cross-session sync)
-  useEffect(() => {
-    if (!selectedRoomId || !myHex) return;
-    const draft = messageDrafts.find(
-      d => d.roomId === selectedRoomId && d.userIdentity.toHexString() === myHex
-    );
-    setMessageInput(draft?.content ?? '');
-  }, [messageDrafts, selectedRoomId, myHex]);
 
   // Watch for DM room being created (pendingDmTarget)
   useEffect(() => {

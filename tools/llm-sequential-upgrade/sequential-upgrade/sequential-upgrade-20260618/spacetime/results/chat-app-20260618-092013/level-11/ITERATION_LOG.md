@@ -21,14 +21,3 @@
 **Redeploy:** Client only
 
 **Server verified:** Client at http://localhost:6173 ✓
-
-## Iteration 3 — Fix (09:XX)
-
-**Category:** Feature Broken
-**What broke:** Draft edits from another session (same user, different tab) didn't update the message input in real time; the input only reflected the draft on room selection.
-**Root cause:** `messageInput` was only set from the draft inside the `useEffect` that fires on `selectedRoomId` change. After the room was selected, incoming draft updates in `messageDrafts` (subscribed via SpacetimeDB) were never applied to the input.
-**What I fixed:** Split the `[selectedRoomId]` effect so only non-input side-effects (scroll, panel resets) stay there. Added a new `useEffect` watching `[messageDrafts, selectedRoomId, myHex]` that finds the current room's draft and calls `setMessageInput` whenever the draft table changes — including updates arriving from other sessions.
-**Files changed:** `client/src/App.tsx` (lines ~756-775)
-**Redeploy:** Client only
-
-**Server verified:** Client at http://localhost:6173 ✓
