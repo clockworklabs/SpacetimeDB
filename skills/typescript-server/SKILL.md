@@ -113,6 +113,9 @@ ctx.db.entity.id.delete(entityId);                         // Delete by PK
 
 Note: `iter()` and `filter()` return iterators. Spread to Array for `.sort()`, `.filter()`, `.map()`.
 
+`insert()` requires **every** column — set optional (`t.option(...)`) columns you aren't using to
+`undefined`: `ctx.db.message.insert({ id: 0n, text, parentId: undefined })`.
+
 ## Lifecycle Hooks
 
 MUST be `export const`. Bare calls are silently ignored:
@@ -130,6 +133,10 @@ export const onDisconnect = spacetimedb.clientDisconnected((ctx) => { ... });
 ```typescript
 // Auth: ctx.sender is the caller's Identity
 if (!row.owner.equals(ctx.sender)) throw new SenderError('unauthorized');
+
+// ctx.connectionId: the per-connection id, NULLABLE (ConnectionId | null) — null-check before use.
+// One Identity can hold several connections (multiple tabs/devices).
+if (ctx.connectionId) { /* ... */ }
 
 // Server timestamp (deterministic per reducer call)
 ctx.db.item.insert({ id: 0n, createdAt: ctx.timestamp });
@@ -161,6 +168,8 @@ export const tick = spacetimedb.reducer(
 
 // One-time: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch + delayMicros)
 // Repeating: ScheduleAt.interval(60_000_000n)
+// Read time back from a scheduleAt value (tagged union):
+//   const micros = at.tag === 'time' ? at.value : at.value.microsSinceUnixEpoch;  // bigint
 ```
 
 ## Custom Types

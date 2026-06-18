@@ -106,3 +106,11 @@ conn.db.user.onInsert((ctx, user) => console.log('Joined:', user.name));
 conn.db.user.onDelete((ctx, user) => console.log('Left:', user.name));
 conn.db.user.onUpdate((ctx, oldUser, newUser) => console.log('Updated:', newUser.name));
 ```
+
+## Gotchas
+
+- **`useTable` rows are `readonly`** — copy before sorting/mutating, or it fails to type-check
+  (`TS4104`): `const [rows] = useTable(tables.message); const sorted = [...rows].sort(...)`.
+- **bigint in JSX** — ids/counts from `t.u64()`/`t.i64()` columns are `bigint`, which React
+  cannot render (`TS2322: '0n' is not assignable to ReactNode`). Wrap it: `{Number(row.id)}`
+  or `{String(count)}`.

@@ -112,19 +112,6 @@ Wait for the dev server to be ready (poll `http://localhost:6173` up to 30 secon
 
 ---
 
-## Common TypeScript gotchas (SpacetimeDB + React)
-
-- **bigint in JSX:** ids/counts from `t.u64()`/`t.i64()` columns are `bigint`. React cannot
-  render a bigint — `Type '0n' is not assignable to ReactNode`. Wrap it: `{Number(row.id)}`
-  or `{String(count)}`.
-- **`ctx.connectionId` is nullable** (`ConnectionId | null`) in lifecycle hooks — null-check
-  before using it.
-- **Optional columns in `insert`:** every `insert` must list all optional columns (set unused
-  ones to `undefined`). When you add a new optional column to a table, update every existing
-  `insert` call for that table.
-
----
-
 ## App Identity
 
 - HTML `<title>` MUST be **"SpacetimeDB Chat"** (not a generic "Chat App")
