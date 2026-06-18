@@ -59,7 +59,7 @@ jobs:
           message+=$'\n\n'
           message+="View the full release notes:"
           message+=$'\n'
-          message+="${RELEASE_URL}"
+          message+="<${RELEASE_URL}>"
           message+=$'\n\n'
           message+="${RELEASE_BODY}"
 
