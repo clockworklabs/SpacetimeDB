@@ -23,7 +23,12 @@ import {
   type SubscriptionEventContextInterface,
 } from './event_context.ts';
 import { EventEmitter } from './event_emitter.ts';
-import type { Deserializer, Identity, InferTypeOfRow, Serializer } from '../';
+import type {
+  Deserializer,
+  Identity,
+  InferTypeOfParams,
+  Serializer,
+} from '../';
 import type {
   ProcedureResultMessage,
   ReducerResultMessage,
@@ -107,7 +112,23 @@ export type DbConnectionConfig<RemoteModule extends UntypedRemoteModule> = {
 
 type ProcedureCallback = (result: ProcedureResultMessage['result']) => void;
 
+type Deferred<T> = {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason?: unknown) => void;
+};
+
 const TEXT_ENCODER = new TextEncoder();
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve!: Deferred<T>['resolve'];
+  let reject!: Deferred<T>['reject'];
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 function getClientMessageVariantTag(name: string): number {
   if (ClientMessage.algebraicType.tag !== 'Sum') {
@@ -383,7 +404,9 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       const { serialize: serializeArgs } =
         this.#reducerArgsSerializers[reducerName];
 
-      (out as any)[key] = (params: InferTypeOfRow<typeof reducer.params>) => {
+      (out as any)[key] = (
+        params: InferTypeOfParams<typeof reducer.params>
+      ) => {
         const writer = this.#reducerArgsEncoder;
         writer.clear();
         serializeArgs(writer, params);
@@ -414,7 +437,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         this.#procedureSerializers[procedureName];
 
       (out as any)[key] = (
-        params: InferTypeOfRow<typeof procedure.params>
+        params: InferTypeOfParams<typeof procedure.params>
       ): Promise<any> => {
         writer.clear();
         serializeArgs(writer, params);
@@ -436,7 +459,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     event: Event<
       ReducerEventInfo<
         RemoteModule['reducers'][number]['name'],
-        InferTypeOfRow<RemoteModule['reducers'][number]['params']>
+        InferTypeOfParams<RemoteModule['reducers'][number]['params']>
       >
     >
   ): EventContextInterface<RemoteModule> {
@@ -1112,7 +1135,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     argsBuffer: Uint8Array,
     reducerArgs?: object
   ): Promise<void> {
-    const { promise, resolve, reject } = Promise.withResolvers<void>();
+    const { promise, resolve, reject } = createDeferred<void>();
     const requestId = this.#getNextRequestId();
     this.#sendCallReducerMessage(requestId, encodedReducerName, argsBuffer);
     if (reducerArgs) {
@@ -1147,7 +1170,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     argsBuffer: Uint8Array,
     reducerArgs?: object
   ): Promise<void> {
-    const { promise, resolve, reject } = Promise.withResolvers<void>();
+    const { promise, resolve, reject } = createDeferred<void>();
     const requestId = this.#getNextRequestId();
     const message = ClientMessage.CallReducer({
       reducer: reducerName,
@@ -1228,7 +1251,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     encodedProcedureName: Uint8Array,
     argsBuffer: Uint8Array
   ): Promise<Uint8Array> {
-    const { promise, resolve, reject } = Promise.withResolvers<Uint8Array>();
+    const { promise, resolve, reject } = createDeferred<Uint8Array>();
     const requestId = this.#getNextRequestId();
     this.#sendCallProcedureMessage(requestId, encodedProcedureName, argsBuffer);
     this.#procedureCallbacks.set(requestId, result => {
@@ -1245,7 +1268,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     procedureName: string,
     argsBuffer: Uint8Array
   ): Promise<Uint8Array> {
-    const { promise, resolve, reject } = Promise.withResolvers<Uint8Array>();
+    const { promise, resolve, reject } = createDeferred<Uint8Array>();
     const requestId = this.#getNextRequestId();
     const message = ClientMessage.CallProcedure({
       procedure: procedureName,
