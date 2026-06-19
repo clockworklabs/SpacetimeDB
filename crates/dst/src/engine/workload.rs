@@ -2,6 +2,7 @@ use spacetimedb_lib::bsatn::to_vec;
 use spacetimedb_lib::{AlgebraicValue, ProductValue};
 use spacetimedb_runtime::sim::Rng;
 
+use super::model::Model;
 use crate::schema::{SchemaPlan, TablePlan, Type};
 
 pub type Row = ProductValue;
@@ -21,7 +22,7 @@ pub enum Observation {
     BeganMutTx,
     Inserted { count_after: u64 },
     Deleted { count_after: u64 },
-    Committed { summaries: Vec<TableSummary> },
+    Committed { delta: CommitDelta },
     Counted { count: u64 },
     Replayed { summaries: Vec<TableSummary> },
 }
@@ -32,130 +33,17 @@ pub struct TableSummary {
     pub hash: u64,
 }
 
-#[derive(Debug)]
-pub struct Model {
-    schema: SchemaPlan,
-    committed_tables: Vec<TableState>,
-    pending_tables: Option<Vec<TableState>>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommitDelta {
+    pub tables: Vec<TableDelta>,
 }
 
-#[derive(Debug, Clone)]
-struct TableState {
-    rows: Vec<Row>,
-}
-
-impl Model {
-    pub fn new(schema: SchemaPlan) -> Self {
-        let committed_tables = schema.tables.iter().map(|_| TableState { rows: vec![] }).collect();
-        Self {
-            schema,
-            committed_tables,
-            pending_tables: None,
-        }
-    }
-
-    fn tables(&self) -> &[TableState] {
-        self.pending_tables.as_deref().unwrap_or(&self.committed_tables)
-    }
-
-    fn pending_tables_mut(&mut self) -> &mut [TableState] {
-        self.pending_tables
-            .as_deref_mut()
-            .expect("mutable interaction without active transaction")
-    }
-
-    fn violates_unique_constraint_in(&self, tables: &[TableState], table: usize, row: &Row) -> bool {
-        let table_plan = &self.schema.tables[table];
-        let rows = &tables[table].rows;
-        for constraint in &table_plan.unique_constraints {
-            if rows
-                .iter()
-                .any(|r| constraint.columns.iter().all(|&c| r.elements[c] == row.elements[c]))
-            {
-                return true;
-            }
-        }
-        false
-    }
-
-    pub fn apply(&mut self, interaction: &Interaction) -> Observation {
-        match interaction {
-            Interaction::BeginMutTx => {
-                debug_assert!(self.pending_tables.is_none());
-                self.pending_tables = Some(self.committed_tables.clone());
-                Observation::BeganMutTx
-            }
-            Interaction::Insert { table, row } => {
-                debug_assert!(self.pending_tables.is_some());
-                let primary_key = self.schema.tables[*table].primary_key;
-
-                if self.violates_unique_constraint_in(self.tables(), *table, row)
-                    || self.tables()[*table].rows.contains(row)
-                {
-                    return Observation::Inserted {
-                        count_after: self.tables()[*table].rows.len() as u64,
-                    };
-                }
-
-                let rows = &mut self.pending_tables_mut()[*table].rows;
-                if let Some(pk_col) = primary_key {
-                    if let Some(pos) = rows.iter().position(|r| r.elements[pk_col] == row.elements[pk_col]) {
-                        rows[pos] = row.clone();
-                        return Observation::Inserted {
-                            count_after: rows.len() as u64,
-                        };
-                    }
-                }
-                rows.push(row.clone());
-                Observation::Inserted {
-                    count_after: rows.len() as u64,
-                }
-            }
-            Interaction::Delete { table, row } => {
-                debug_assert!(self.pending_tables.is_some());
-                let rows = &mut self.pending_tables_mut()[*table].rows;
-                rows.retain(|r| r != row);
-                Observation::Deleted {
-                    count_after: rows.len() as u64,
-                }
-            }
-            Interaction::CommitTx => {
-                debug_assert!(self.pending_tables.is_some());
-                self.committed_tables = self.pending_tables.take().expect("active transaction");
-                Observation::Committed {
-                    summaries: self.summaries(),
-                }
-            }
-            Interaction::Count { table } => {
-                debug_assert!(self.pending_tables.is_some());
-                Observation::Counted {
-                    count: self.tables()[*table].rows.len() as u64,
-                }
-            }
-            Interaction::Replay => {
-                self.pending_tables = None;
-                Observation::Replayed {
-                    summaries: self.summaries(),
-                }
-            }
-        }
-    }
-
-    pub fn in_mut_tx(&self) -> bool {
-        self.pending_tables.is_some()
-    }
-
-    pub fn row_count(&self, table: usize) -> u64 {
-        self.tables()[table].rows.len() as u64
-    }
-
-    pub fn summaries(&self) -> Vec<TableSummary> {
-        self.tables().iter().map(|table| summarize_rows(&table.rows)).collect()
-    }
-
-    pub fn rows(&self, table: usize) -> &[Row] {
-        &self.tables()[table].rows
-    }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableDelta {
+    pub table: usize,
+    pub inserts: TableSummary,
+    pub deletes: TableSummary,
+    pub truncated: bool,
 }
 
 pub struct WorkloadGen {
@@ -169,7 +57,7 @@ impl WorkloadGen {
     }
 
     fn schema(&self) -> &SchemaPlan {
-        &self.model.schema
+        self.model.schema()
     }
 
     fn gen_value(&self, ty: Type) -> AlgebraicValue {

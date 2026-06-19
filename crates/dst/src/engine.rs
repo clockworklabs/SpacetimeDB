@@ -2,7 +2,7 @@ use std::{io, sync::Arc};
 
 use spacetimedb_commitlog::SizeOnDisk;
 use spacetimedb_datastore::execution_context::Workload;
-use spacetimedb_datastore::traits::IsolationLevel;
+use spacetimedb_datastore::traits::{IsolationLevel, TxData};
 use spacetimedb_engine::error::DBError;
 use spacetimedb_engine::persistence::{DiskSizeFn, Durability as EngineDurability, Persistence};
 use spacetimedb_engine::relational_db::{MutTx, RelationalDB};
@@ -14,13 +14,15 @@ use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_table::page_pool::PagePool;
 
+mod model;
 mod properties;
 mod workload;
 
-use self::workload::{row_to_bytes, summarize_rows, Interaction, Observation, TableSummary};
+use self::workload::{row_to_bytes, summarize_rows, CommitDelta, Interaction, Observation, TableDelta, TableSummary};
 
+use crate::engine::model::Model;
 use crate::engine::properties::EngineProperties;
-use crate::engine::workload::{Model, WorkloadGen};
+use crate::engine::workload::WorkloadGen;
 use crate::schema::{default_schema, lower_schema, SchemaPlan};
 use crate::sim::commitlog::{InMemoryCommitlog, InMemoryCommitlogHandle};
 use crate::traits::{TargetDriver, TestSuite};
@@ -154,6 +156,32 @@ impl EngineTarget {
         Ok(summaries)
     }
 
+    fn commit_delta_from_tx_data(&self, tx_data: &TxData) -> CommitDelta {
+        let mut tables = Vec::new();
+
+        for (table_id, entry) in tx_data.iter_table_entries() {
+            let Some(table) = self.table_ids.iter().position(|id| *id == table_id) else {
+                continue;
+            };
+
+            let inserts = summarize_rows(entry.inserts.as_ref());
+            let deletes = summarize_rows(entry.deletes.as_ref());
+            if inserts.count == 0 && deletes.count == 0 && !entry.truncated {
+                continue;
+            }
+
+            tables.push(TableDelta {
+                table,
+                inserts,
+                deletes,
+                truncated: entry.truncated,
+            });
+        }
+
+        tables.sort_by_key(|delta| delta.table);
+        CommitDelta { tables }
+    }
+
     pub fn execute(&mut self, interaction: &Interaction) -> anyhow::Result<Observation> {
         match interaction {
             Interaction::BeginMutTx => {
@@ -209,9 +237,11 @@ impl EngineTarget {
                     .db
                     .as_ref()
                     .ok_or_else(|| anyhow::anyhow!("database is not open"))?;
-                db.finish_tx(tx, Ok::<(), anyhow::Error>(()))?;
+                let Some((_tx_offset, tx_data, _tx_metrics, _reducer)) = db.commit_tx(tx)? else {
+                    anyhow::bail!("commit produced no transaction data");
+                };
                 Ok(Observation::Committed {
-                    summaries: self.table_summaries()?,
+                    delta: self.commit_delta_from_tx_data(&tx_data),
                 })
             }
             Interaction::Count { table } => {
