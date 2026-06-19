@@ -1,4 +1,4 @@
-use crate::client::MessageExecutionError;
+use crate::client::{messages::CloseFrame, MessageExecutionError};
 
 use super::{ClientConnection, DataMessage, MessageHandleError};
 use serde::de::Error as _;
@@ -52,22 +52,37 @@ pub(super) async fn handle_decoded_message(
             let res = client.enqueue_reducer_v2(reducer, args, request_id, timer, flags).await;
             match res {
                 Ok(_) => {
-                    // If this was not a success, we would have already sent an error message.
+                    // If this was not a success, i.e. the reducer returned an error and rolled back,
+                    // we have already sent an error message.
                     Ok(())
                 }
                 Err(e) => {
                     let err_msg = format!("{e:#}");
-                    let server_message = ws_v2::ServerMessage::ReducerResult(ws_v2::ReducerResult {
-                        request_id,
-                        // Maybe we should use the same timestamp that was used for the reducer context, but this is probably fine for now.
-                        timestamp: Timestamp::now(),
-                        result: ws_v2::ReducerOutcome::InternalError(err_msg.into()),
-                    });
-                    // TODO: Should we kill the client here, or does it mean the client is already dead.
-                    if let Err(send_err) = client.send_message(None, server_message) {
-                        log::warn!("Failed to send reducer error to client: {send_err}");
+
+                    if let Some(code) = e.close_code() {
+                        // pgoldman 2026-05-14: I've sorta bolted on this error path,
+                        // which attempts to instruct clients on how to handle disconnects,
+                        // as a way to bypass the existing error-handling code which goes through `MessageExecutionError`.
+                        // Prior to my changes, an error in `CallReducer` never resulted in a `MessageExecutionError`,
+                        // as all errors were treated like `ErrorClientConnectionBehavior::RespondError`.
+                        return Err(MessageHandleError::DisconnectClient(CloseFrame {
+                            code,
+                            reason: err_msg.into(),
+                        }));
+                    } else {
+                        let server_message = ws_v2::ServerMessage::ReducerResult(ws_v2::ReducerResult {
+                            request_id,
+                            // Maybe we should use the same timestamp that was used for the reducer context, but this is probably fine for now.
+                            timestamp: Timestamp::now(),
+                            result: ws_v2::ReducerOutcome::InternalError(err_msg.into()),
+                        });
+
+                        // TODO: Should we kill the client here, or does it mean the client is already dead.
+                        if let Err(send_err) = client.send_message(None, server_message) {
+                            log::warn!("Failed to send reducer error to client: {send_err}");
+                        }
+                        Ok(())
                     }
-                    Ok(())
                 }
             }
         }

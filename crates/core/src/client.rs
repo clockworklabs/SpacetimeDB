@@ -11,9 +11,9 @@ mod message_handlers_v3;
 pub mod messages;
 
 pub use client_connection::{
-    ClientConfig, ClientConnection, ClientConnectionReceiver, ClientConnectionSender, ClientSendError, DataMessage,
-    MeteredDeque, MeteredReceiver, MeteredSender, MeteredUnboundedReceiver, MeteredUnboundedSender, Protocol,
-    WsVersion,
+    ClientConfig, ClientConnection, ClientConnectionReceiver, ClientConnectionSender, ClientDisconnectError,
+    ClientDisconnectSender, ClientSendError, DataMessage, MeteredDeque, MeteredReceiver, MeteredSender,
+    MeteredUnboundedReceiver, MeteredUnboundedSender, Protocol, WsVersion,
 };
 pub use client_connection_index::ClientActorIndex;
 pub use message_handlers::MessageHandleError;

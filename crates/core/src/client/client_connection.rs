@@ -19,7 +19,6 @@ use bytes::Bytes;
 use bytestring::ByteString;
 use derive_more::From;
 use futures::prelude::*;
-use log::warn;
 use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_auth::identity::{ConnectionAuthCtx, SpacetimeIdentityClaims};
 use spacetimedb_client_api_messages::websocket::{common as ws_common, v1 as ws_v1, v2 as ws_v2};
@@ -28,8 +27,7 @@ use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
 use tokio::sync::mpsc::error::{SendError, TrySendError};
-use tokio::sync::{mpsc, oneshot, watch};
-use tokio::task::AbortHandle;
+use tokio::sync::{mpsc, watch};
 use tracing::trace;
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
@@ -240,7 +238,7 @@ impl ClientConnectionReceiver {
             Ok(Some(mut durable)) => {
                 trace!("waiting for offset {wait_for_offset} to become durable");
                 if durable.wait_for(wait_for_offset).await.is_err() {
-                    warn!("database went away while waiting for durable offset");
+                    log::warn!("database went away while waiting for durable offset");
                     return 0;
                 }
                 self.drain_pending(buf, n)
@@ -298,7 +296,15 @@ pub struct ClientConnectionSender {
     pub auth: ConnectionAuthCtx,
     pub config: ClientConfig,
     sendtx: mpsc::Sender<ClientUpdate>,
-    abort_handle: AbortHandle,
+    /// Optional because dummy/test senders are not necessarily backed by a
+    /// live websocket actor control queue.
+    ///
+    /// Production websocket-backed senders receive this at spawn-time so they
+    /// can request a transport-level close through the websocket control path.
+    /// Test constructors such as [`ClientConnectionSender::dummy_with_channel`]
+    /// and [`ClientConnectionSender::dummy`] intentionally leave this as
+    /// `None` unless a test explicitly wires a control queue.
+    disconnect_tx: Option<ClientDisconnectSender>,
     cancelled: AtomicBool,
 
     /// Handles on Prometheus metrics related to connections to this database.
@@ -345,12 +351,37 @@ impl ClientConnectionMetrics {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct ClientDisconnectSender(mpsc::UnboundedSender<crate::client::messages::CloseFrame>);
+
+impl ClientDisconnectSender {
+    pub fn new(inner: mpsc::UnboundedSender<crate::client::messages::CloseFrame>) -> Self {
+        Self(inner)
+    }
+
+    pub fn send(&self, close_frame: crate::client::messages::CloseFrame) -> Result<(), ClientDisconnectError> {
+        self.0
+            .send(close_frame)
+            .map_err(|_| ClientDisconnectError::Disconnected)
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ClientSendError {
     #[error("client disconnected")]
     Disconnected,
     #[error("client was not responding and has been disconnected")]
     Cancelled,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ClientDisconnectError {
+    #[error("client was already cancelled")]
+    Cancelled,
+    #[error("disconnect channel disconnected")]
+    Disconnected,
+    #[error("disconnect handle is not configured")]
+    NoDisconnectHandle,
 }
 
 impl ClientConnectionSender {
@@ -360,11 +391,6 @@ impl ClientConnectionSender {
         offset_supply: impl DurableOffsetSupply + 'static,
     ) -> (Self, ClientConnectionReceiver) {
         let (sendtx, rx) = mpsc::channel(CLIENT_CHANNEL_CAPACITY_TEST);
-        // just make something up, it doesn't need to be attached to a real task
-        let abort_handle = match tokio::runtime::Handle::try_current() {
-            Ok(h) => h.spawn(async {}).abort_handle(),
-            Err(_) => tokio::runtime::Runtime::new().unwrap().spawn(async {}).abort_handle(),
-        };
 
         let receiver = ClientConnectionReceiver::new(config.confirmed_reads, MeteredReceiver::new(rx), offset_supply);
         let cancelled = AtomicBool::new(false);
@@ -382,7 +408,7 @@ impl ClientConnectionSender {
             auth: ConnectionAuthCtx::try_from(dummy_claims).expect("dummy claims should always be valid"),
             config,
             sendtx,
-            abort_handle,
+            disconnect_tx: None,
             cancelled,
             metrics: None,
         };
@@ -393,8 +419,34 @@ impl ClientConnectionSender {
         Self::dummy_with_channel(id, config, offset_supply).0
     }
 
+    #[cfg(test)]
+    pub(crate) fn dummy_with_disconnect_channel(
+        id: ClientActorId,
+        config: ClientConfig,
+        offset_supply: impl DurableOffsetSupply + 'static,
+    ) -> (
+        Self,
+        ClientConnectionReceiver,
+        mpsc::UnboundedReceiver<crate::client::messages::CloseFrame>,
+    ) {
+        let (mut sender, receiver) = Self::dummy_with_channel(id, config, offset_supply);
+        let (disconnect_tx, disconnect_rx) = mpsc::unbounded_channel();
+        sender.disconnect_tx = Some(ClientDisconnectSender::new(disconnect_tx));
+        (sender, receiver, disconnect_rx)
+    }
+
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Relaxed)
+    }
+
+    pub fn disconnect(&self, close_frame: crate::client::messages::CloseFrame) -> Result<(), ClientDisconnectError> {
+        if self.cancelled.load(Relaxed) {
+            return Err(ClientDisconnectError::Cancelled);
+        }
+        self.disconnect_tx
+            .as_ref()
+            .ok_or(ClientDisconnectError::NoDisconnectHandle)?
+            .send(close_frame)
     }
 
     /// Send a message to the client. For data-related messages, you should probably use
@@ -429,8 +481,13 @@ impl ClientConnectionSender {
 
         match self.sendtx.try_send(message) {
             Err(mpsc::error::TrySendError::Full(_)) => {
-                // we've hit CLIENT_CHANNEL_CAPACITY messages backed up in
-                // the channel, so forcibly kick the client
+                // We've hit `CLIENT_CHANNEL_CAPACITY` messages backed up in the channel,
+                // so forcibly kick the client.
+                //
+                // Mark the sender cancelled first so subsequent ordered sends
+                // fail fast immediately, then request websocket close using the
+                // same control-plane close path as any other server-initiated
+                // disconnect.
                 tracing::warn!(
                     identity = %self.id.identity,
                     connection_id = %self.id.connection_id,
@@ -442,8 +499,13 @@ impl ClientConnectionSender {
                     self.id,
                     self.sendtx.capacity(),
                 );
-                self.abort_handle.abort();
                 self.cancelled.store(true, Ordering::Relaxed);
+                if let Some(disconnect_tx) = &self.disconnect_tx {
+                    let _ = disconnect_tx.send(crate::client::messages::CloseFrame {
+                        code: crate::client::messages::CloseCode::Again,
+                        reason: "client channel capacity exceeded".into(),
+                    });
+                }
                 return Err(ClientSendError::Cancelled);
             }
             Err(mpsc::error::TrySendError::Closed(_)) => return Err(ClientSendError::Disconnected),
@@ -839,6 +901,7 @@ impl ClientConnection {
         config: ClientConfig,
         replica_id: u64,
         mut module_rx: watch::Receiver<ModuleHost>,
+        disconnect_tx: Option<ClientDisconnectSender>,
         actor: impl FnOnce(ClientConnection, ClientConnectionReceiver) -> Fut,
         _proof_of_client_connected_call: Connected,
     ) -> ClientConnection
@@ -853,25 +916,9 @@ impl ClientConnection {
 
         let (sendtx, sendrx) = mpsc::channel::<ClientUpdate>(CLIENT_CHANNEL_CAPACITY);
 
-        let (fut_tx, fut_rx) = oneshot::channel::<Fut>();
-        // weird dance so that we can get an abort_handle into ClientConnection
         let module_info = module.info.clone();
         let database_identity = module_info.database_identity;
         let client_identity = id.identity;
-        let abort_handle = tokio::spawn(async move {
-            let Ok(fut) = fut_rx.await else { return };
-
-            let _gauge_guard = module_info.metrics.connected_clients.inc_scope();
-            module_info.metrics.ws_clients_spawned.inc();
-            scopeguard::defer! {
-                let database_identity = module_info.database_identity;
-                log::warn!("websocket connection aborted for client identity `{client_identity}` and database identity `{database_identity}`");
-                module_info.metrics.ws_clients_aborted.inc();
-            };
-
-            fut.await
-        })
-        .abort_handle();
 
         let metrics = ClientConnectionMetrics::new(database_identity, config.protocol);
         let receiver = ClientConnectionReceiver::new(
@@ -885,7 +932,7 @@ impl ClientConnection {
             auth,
             config,
             sendtx,
-            abort_handle,
+            disconnect_tx,
             cancelled: AtomicBool::new(false),
             metrics: Some(metrics),
         });
@@ -897,8 +944,17 @@ impl ClientConnection {
         };
 
         let actor_fut = actor(this.clone(), receiver);
-        // if this fails, the actor() function called .abort(), which like... okay, I guess?
-        let _ = fut_tx.send(actor_fut);
+        tokio::spawn(async move {
+            let _gauge_guard = module_info.metrics.connected_clients.inc_scope();
+            module_info.metrics.ws_clients_spawned.inc();
+            scopeguard::defer! {
+                let database_identity = module_info.database_identity;
+                log::warn!("websocket connection aborted for client identity `{client_identity}` and database identity `{database_identity}`");
+                module_info.metrics.ws_clients_aborted.inc();
+            };
+
+            actor_fut.await
+        });
 
         this
     }
@@ -1468,5 +1524,42 @@ mod tests {
         assert_pending(&mut pin!(receiver.recv())).await;
         offset.mark_durable_at(3);
         assert_received_update(receiver.recv()).await;
+    }
+
+    #[test]
+    fn disconnect_without_handle_returns_no_disconnect_handle() {
+        let sender = ClientConnectionSender::dummy(
+            ClientActorId::for_test(Identity::ZERO),
+            ClientConfig::for_test(),
+            NoneDurableOffset,
+        );
+        let res = sender.disconnect(crate::client::messages::CloseFrame {
+            code: crate::client::messages::CloseCode::Away,
+            reason: "disconnect".into(),
+        });
+        assert_matches!(res, Err(ClientDisconnectError::NoDisconnectHandle));
+    }
+
+    #[test]
+    fn send_overflow_marks_cancelled_and_emits_disconnect() {
+        let (sender, _receiver, mut disconnect_rx) = ClientConnectionSender::dummy_with_disconnect_channel(
+            ClientActorId::for_test(Identity::ZERO),
+            ClientConfig::for_test(),
+            NoneDurableOffset,
+        );
+
+        for _ in 0..CLIENT_CHANNEL_CAPACITY_TEST {
+            sender.send_message(None, empty_tx_update()).unwrap();
+        }
+
+        let res = sender.send_message(None, empty_tx_update());
+        assert_matches!(res, Err(ClientSendError::Cancelled));
+        assert!(sender.is_cancelled());
+
+        let close_frame = disconnect_rx.try_recv().expect("expected disconnect request");
+        assert_eq!(close_frame.code, crate::client::messages::CloseCode::Again);
+
+        let res = sender.send_message(None, empty_tx_update());
+        assert_matches!(res, Err(ClientSendError::Cancelled));
     }
 }
