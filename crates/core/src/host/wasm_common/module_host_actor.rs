@@ -52,6 +52,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, Deserialize, ProductValu
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use spacetimedb_schema::def::deserialize::FunctionDef;
 use spacetimedb_schema::def::{ModuleDef, ViewDef};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_subscription::SubscriptionPlan;
@@ -1507,7 +1508,7 @@ fn collect_subscribed_view_calls(
             .table_id
             .ok_or_else(|| anyhow::anyhow!("view {} does not have a backing table in database", display_name))?;
         let subs = tx.lookup_st_view_subs(view_id)?;
-        let view_name = Identifier::new_assume_valid(display_name.into());
+        let view_name = RawIdentifier::from(display_name);
         let view_typespace = owning_def.typespace().clone();
 
         if *is_anonymous {
@@ -1757,7 +1758,7 @@ fn lifecyle_modifications_to_tx(
 */
 
 pub trait InstanceOp {
-    fn name(&self) -> &Identifier;
+    fn name(&self) -> &RawIdentifier;
     fn timestamp(&self) -> Timestamp;
     fn call_type(&self) -> FuncCallType;
 }
@@ -1765,7 +1766,7 @@ pub trait InstanceOp {
 /// Describes a view call in a cheaply shareable way.
 #[derive(Clone, Debug)]
 pub struct ViewOp<'a> {
-    pub name: &'a Identifier,
+    pub name: &'a RawIdentifier,
     pub view_id: ViewId,
     pub table_id: TableId,
     pub fn_ptr: ViewFnPtr,
@@ -1775,7 +1776,7 @@ pub struct ViewOp<'a> {
 }
 
 impl InstanceOp for ViewOp<'_> {
-    fn name(&self) -> &Identifier {
+    fn name(&self) -> &RawIdentifier {
         self.name
     }
 
@@ -1794,7 +1795,7 @@ impl InstanceOp for ViewOp<'_> {
 /// Describes an anonymous view call in a cheaply shareable way.
 #[derive(Clone, Debug)]
 pub struct AnonymousViewOp<'a> {
-    pub name: &'a Identifier,
+    pub name: &'a RawIdentifier,
     pub view_id: ViewId,
     pub table_id: TableId,
     pub fn_ptr: ViewFnPtr,
@@ -1803,7 +1804,7 @@ pub struct AnonymousViewOp<'a> {
 }
 
 impl InstanceOp for AnonymousViewOp<'_> {
-    fn name(&self) -> &Identifier {
+    fn name(&self) -> &RawIdentifier {
         self.name
     }
 
@@ -1832,8 +1833,8 @@ pub struct ReducerOp<'a> {
 }
 
 impl InstanceOp for ReducerOp<'_> {
-    fn name(&self) -> &Identifier {
-        self.name.as_identifier()
+    fn name(&self) -> &RawIdentifier {
+        self.name.as_identifier().as_raw()
     }
     fn timestamp(&self) -> Timestamp {
         self.timestamp
@@ -1876,8 +1877,8 @@ pub struct ProcedureOp {
 }
 
 impl InstanceOp for ProcedureOp {
-    fn name(&self) -> &Identifier {
-        &self.name
+    fn name(&self) -> &RawIdentifier {
+        self.name.as_raw()
     }
     fn timestamp(&self) -> Timestamp {
         self.timestamp
@@ -1898,8 +1899,8 @@ pub struct HttpHandlerOp {
 }
 
 impl InstanceOp for HttpHandlerOp {
-    fn name(&self) -> &Identifier {
-        &self.name
+    fn name(&self) -> &RawIdentifier {
+        self.name.as_raw()
     }
     fn timestamp(&self) -> Timestamp {
         self.timestamp

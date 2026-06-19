@@ -20,7 +20,7 @@ use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef};
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use spacetimedb_schema::def::ModuleDef;
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use wasmtime::{
     AsContext, AsContextMut, Caller, ExternType, Instance, InstancePre, Linker, Store, TypedFunc, WasmBacktrace,
     WasmParams, WasmResults,
@@ -244,7 +244,7 @@ pub(super) fn call_view_export(
     mut ctx: impl AsContextMut<Data = WasmInstanceEnv>,
     call_view: Option<CallViewType>,
     call_view_anon: Option<CallViewAnonType>,
-    view_name: &Identifier,
+    view_name: &RawIdentifier,
     fn_ptr: u32,
     sender: Option<Identity>,
     args_source: u32,
@@ -630,7 +630,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         // Prepare arguments to the reducer + the error sink & start timings.
         let args_bytes = op.args.get_bsatn().clone();
 
-        let reducer_name = op.name.clone().into();
+        let reducer_name: RawIdentifier = op.name.clone().into();
         let (args_source, errors_sink) =
             store
                 .data_mut()
@@ -757,7 +757,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (args_source, result_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name.clone(), op.arg_bytes, op.timestamp, FuncCallType::Procedure);
+                .start_funcall(op.name.clone().into(), op.arg_bytes, op.timestamp, FuncCallType::Procedure);
 
         let Some(call_procedure) = self.call_procedure.as_ref() else {
             let res = module_host_actor::ProcedureExecuteResult {
@@ -825,7 +825,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (request_source, response_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name.clone(), op.request_bytes, op.timestamp, call_type);
+                .start_funcall(op.name.clone().into(), op.request_bytes, op.timestamp, call_type);
         let request_body_source = store
             .data_mut()
             .create_extra_bytes_source(op.request_body_bytes)

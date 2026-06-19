@@ -23,7 +23,7 @@ use spacetimedb_lib::{bsatn, ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use spacetimedb_primitives::{errno, ColId, ViewFnPtr};
 use spacetimedb_schema::def::ModuleDef;
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use std::future::Future;
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -323,7 +323,7 @@ impl WasmInstanceEnv {
     /// as well as the handle used to write the reducer error message or procedure return value.
     pub fn start_funcall(
         &mut self,
-        name: Identifier,
+        name: RawIdentifier,
         args: bytes::Bytes,
         ts: Timestamp,
         func_type: FuncCallType,
@@ -1765,7 +1765,7 @@ impl WasmInstanceEnv {
 
                 let table_id = resolved.table_id;
                 let view_def = resolved.view_def;
-                let view_name = &view_def.name;
+                let view_name = view_def.name.as_raw();
                 let fn_ptr = view_def.fn_ptr;
 
                 let current_tx = tx.take().expect("procedure tx missing during view refresh");
@@ -1824,7 +1824,7 @@ impl WasmInstanceEnv {
     fn call_view<'a>(
         caller: &mut Caller<'a, Self>,
         view_call: &ViewCallInfo,
-        view_name: &Identifier,
+        view_name: &RawIdentifier,
         fn_ptr: ViewFnPtr,
     ) -> anyhow::Result<ViewReturnData> {
         let prev_func_type = caller

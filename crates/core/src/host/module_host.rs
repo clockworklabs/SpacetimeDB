@@ -1061,7 +1061,7 @@ impl ProcedureResultTarget {
 }
 
 pub struct CallViewParams {
-    pub view_name: Identifier,
+    pub view_name: RawIdentifier,
     pub view_id: ViewId,
     pub table_id: TableId,
     pub fn_ptr: ViewFnPtr,
@@ -1102,14 +1102,15 @@ pub(crate) fn resolve_view_for_refresh<'a>(
         .table_id
         .ok_or_else(|| anyhow::anyhow!("view {:?} does not have a backing table", view_id))?;
 
-    let view_name: Identifier = st_view.view_name.into();
-    let view_def = module_def.view(&view_name).ok_or_else(|| {
-        anyhow::anyhow!(
-            "view `{}` for view id `{}` not found in current module",
-            view_name,
-            view_id
-        )
-    })?;
+    let (_, view_def, _) = module_def
+        .view_by_name_with_global_fn_ptr(st_view.view_name.as_ref())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "view `{}` for view id `{}` not found in current module",
+                st_view.view_name,
+                view_id
+            )
+        })?;
 
     let is_anonymous = view_call.sender.is_none();
 
@@ -1118,7 +1119,7 @@ pub(crate) fn resolve_view_for_refresh<'a>(
             "found is_anonymous={} in st_view, but {} in readset when updating view `{}`",
             st_view.is_anonymous,
             is_anonymous,
-            view_name,
+            st_view.view_name,
         ));
     }
 
@@ -1129,7 +1130,7 @@ pub(crate) fn resolve_view_for_refresh<'a>(
             "found is_anonymous={} in st_view, but {} in module when updating view `{}`",
             st_view.is_anonymous,
             is_anonymous,
-            view_name,
+            st_view.view_name,
         ));
     }
 
@@ -2884,7 +2885,7 @@ impl ModuleHost {
         view_collector.collect_views(&mut view_ids);
         for view_id in view_ids {
             let st_view_row = tx.lookup_st_view(view_id)?;
-            let view_name = Identifier::new_assume_valid(st_view_row.view_name.into());
+            let view_name: RawIdentifier = st_view_row.view_name.into();
             let view_id = st_view_row.view_id;
             let table_id = st_view_row.table_id.ok_or(ViewCallError::TableDoesNotExist(view_id))?;
             let is_anonymous = st_view_row.is_anonymous;
@@ -2987,7 +2988,7 @@ impl ModuleHost {
                 ));
                 break;
             }
-            let view_name = &view_def.name;
+            let view_name = view_def.name.as_raw();
             let args = match FunctionArgs::Nullary.into_tuple_for_def(owning_def, view_def) {
                 Ok(args) => args,
                 Err(err) => {
@@ -3039,7 +3040,7 @@ impl ModuleHost {
     fn call_view<I: WasmInstance>(
         instance: &mut RefInstance<'_, I>,
         tx: MutTxId,
-        view_name: &Identifier,
+        view_name: &RawIdentifier,
         view_id: ViewId,
         table_id: TableId,
         args: FunctionArgs,
@@ -3062,7 +3063,7 @@ impl ModuleHost {
     fn call_view_at<I: WasmInstance>(
         instance: &mut RefInstance<'_, I>,
         tx: MutTxId,
-        view_name: &Identifier,
+        view_name: &RawIdentifier,
         view_id: ViewId,
         table_id: TableId,
         args: FunctionArgs,
@@ -3098,7 +3099,7 @@ impl ModuleHost {
     fn call_view_inner<I: WasmInstance>(
         instance: &mut RefInstance<'_, I>,
         tx: MutTxId,
-        name: &Identifier,
+        name: &RawIdentifier,
         view_id: ViewId,
         table_id: TableId,
         fn_ptr: ViewFnPtr,

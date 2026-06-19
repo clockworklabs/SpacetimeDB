@@ -28,7 +28,7 @@ use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_primitives::{ColId, IndexId, ProcedureId, TableId, ViewFnPtr};
 use spacetimedb_sats::bsatn;
 use spacetimedb_schema::def::ModuleDef;
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use v8::{FunctionCallbackArguments, Isolate, Local, PinScope, Value};
 
 /// Calls the `__call_procedure__` function `fun`.
@@ -761,7 +761,7 @@ fn refresh_views(
 
             let table_id = resolved.table_id;
             let view_def = resolved.view_def;
-            let view_name = &view_def.name;
+            let view_name = view_def.name.as_raw();
             let fn_ptr = view_def.fn_ptr;
 
             let current_tx = tx.take().expect("procedure tx missing during view refresh");
@@ -848,7 +848,7 @@ fn call_view(
     scope: &mut PinScope<'_, '_>,
     hooks: &HookFunctions<'_>,
     view_call: &ViewCallInfo,
-    view_name: &Identifier,
+    view_name: &RawIdentifier,
     table_id: TableId,
     fn_ptr: ViewFnPtr,
 ) -> SysCallResult<ViewReturnData> {
