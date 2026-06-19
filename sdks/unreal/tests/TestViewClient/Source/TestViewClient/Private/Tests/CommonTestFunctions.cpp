@@ -8,11 +8,11 @@ void UTestHelperDelegates::HandleConnect(UDbConnection* Conn, FSpacetimeDBIdenti
 	}
 }
 
-void UTestHelperDelegates::HandleConnectError(UDbConnection* Conn, const FString& Error)
+void UTestHelperDelegates::HandleConnectError(const FString& Error)
 {
 	if (OnConnectError)
 	{
-		OnConnectError(Conn, Error);
+		OnConnectError(Error);
 	}
 }
 
@@ -65,7 +65,7 @@ UDbConnection* ConnectThen(
 		Callback(Conn);
 		Counter->MarkSuccess(ConnectTestName);
 	};
-	TestHelper->OnConnectError = [Counter, ConnectTestName](UDbConnection*, const FString& Error)
+	TestHelper->OnConnectError = [Counter, ConnectTestName](const FString& Error)
 	{
 		Counter->MarkFailure(ConnectTestName, FString::Printf(TEXT("Connect error: %s"), *Error));
 	};
@@ -84,7 +84,7 @@ UDbConnection* ConnectThen(
 	BIND_DELEGATE_SAFE(ErrorDelegate, TestHelper, UTestHelperDelegates, HandleConnectError);
 
 	UDbConnection* Conn = UDbConnection::Builder()
-		->WithUri(TEXT("localhost:3000"))
+		->WithUri(GetServerUrl())
 		->WithDatabaseName(DbName)
 		->OnConnect(ConnectDelegate)
 		->OnDisconnect(DisconnectDelegate)
@@ -118,6 +118,23 @@ bool GetDbName(FString& DBName, FString& Error)
 
 	Error = TEXT("No DB name. Pass -SpacetimeDbName=<name> or set SPACETIME_SDK_TEST_DB_NAME.");
 	return false;
+}
+
+FString GetServerUrl()
+{
+	const FString ServerUrlEnv = FPlatformMisc::GetEnvironmentVariable(TEXT("SPACETIME_SDK_TEST_SERVER_URL"));
+	if (!ServerUrlEnv.IsEmpty())
+	{
+		return ServerUrlEnv;
+	}
+
+	FString CmdValue;
+	if (FParse::Value(FCommandLine::Get(), TEXT("-SpacetimeServerUrl="), CmdValue))
+	{
+		return CmdValue;
+	}
+
+	return TEXT("localhost:3000");
 }
 
 bool ValidateParameterConfig(FAutomationTestBase* Test)

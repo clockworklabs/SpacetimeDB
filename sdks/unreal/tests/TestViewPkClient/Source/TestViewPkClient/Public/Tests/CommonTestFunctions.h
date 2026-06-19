@@ -38,9 +38,9 @@ public:
 	UFUNCTION()
 	void HandleConnect(UDbConnection* Conn, FSpacetimeDBIdentity Identity, const FString& Token);
 
-	TFunction<void(UDbConnection*, const FString&)> OnConnectError;
+	TFunction<void(const FString&)> OnConnectError;
 	UFUNCTION()
-	void HandleConnectError(UDbConnection* Conn, const FString& Error);
+	void HandleConnectError(const FString& Error);
 
 	TFunction<void(UDbConnection*, const FString&)> OnDisconnect;
 	UFUNCTION()
@@ -61,6 +61,7 @@ UDbConnection* ConnectThen(
 	TFunction<void(UDbConnection*)> Callback);
 
 bool GetDbName(FString& DBName, FString& Error);
+FString GetServerUrl();
 bool ValidateParameterConfig(FAutomationTestBase* Test);
 bool ReportTestResult(FAutomationTestBase& Test, const FString& TestName, TSharedPtr<FTestCounter> Counter, bool bTimedOut);
 

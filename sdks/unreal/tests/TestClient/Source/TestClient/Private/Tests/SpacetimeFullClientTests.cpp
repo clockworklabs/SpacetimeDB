@@ -1809,7 +1809,7 @@ static FString GetReauthTokenPath()
     return FPaths::Combine(Dir, TEXT("reauth_token.txt"));
 }
 
-bool FReauth1Test::RunTest(const FString &Parameters)
+bool FReauthTest::RunTest(const FString &Parameters)
 {
 	TestName = "Reauth";
 
@@ -1821,81 +1821,49 @@ bool FReauth1Test::RunTest(const FString &Parameters)
 	// Create and register a test counter to track completion.
 	UTestHandler *Handler = CreateTestHandler<UTestHandler>();
 	Handler->Counter->Register(TEXT("ReauthPart1"));
+	Handler->Counter->Register(TEXT("ReauthPart2"));
 
-	UDbConnection *Connection = ConnectThen(Handler->Counter, TestName, [this, Handler](UDbConnection *Conn)
-											{
-			UCredentials::Init(TestName);
+	ConnectThen(Handler->Counter, TEXT("ReauthPart1"), [this, Handler](UDbConnection *Conn)
+	{
 			const FString Token = UCredentials::LoadToken();
 			UE_LOG(LogTemp, Display, TEXT("[Reauth1] Loaded token: '%s'"), *Token);
 			if (!Token.IsEmpty())
 			{
 				const FString TokenFilePath = GetReauthTokenPath();
 				const bool bOK = FFileHelper::SaveStringToFile(Token, *TokenFilePath);
-                UE_LOG(LogTemp, Display, TEXT("[Reauth1] Save token -> %s (ok=%d)"), *TokenFilePath, bOK);
+				UE_LOG(LogTemp, Display, TEXT("[Reauth1] Save token -> %s (ok=%d)"), *TokenFilePath, bOK);
 
 				UCredentials::SaveToken(Token);
 				Handler->Counter->MarkSuccess("ReauthPart1");
+
+				ConnectWithThen(
+					Handler->Counter,
+					TEXT("ReauthPart2"),
+					[Token](UDbConnectionBuilder *Builder)
+					{
+						return Builder->WithToken(Token);
+					},
+					[Handler, Token](UDbConnection *Conn)
+					{
+						const FString CurrentToken = UCredentials::LoadToken();
+						UE_LOG(LogTemp, Display, TEXT("[Reauth2] CurrentToken='%s' OldToken='%s'"),
+							*CurrentToken, *Token);
+						if (CurrentToken == Token)
+						{
+							Handler->Counter->MarkSuccess("ReauthPart2");
+						}
+						else
+						{
+							Handler->Counter->MarkFailure("ReauthPart2", FString(TEXT("Unexpected Token: ")) + CurrentToken);
+						}
+					});
 			}
 			else
 			{
 				Handler->Counter->MarkFailure("ReauthPart1", TEXT("Token was not saved"));
-			} });
-
-	// Wait for the test counter to signal completion.
-	ADD_LATENT_AUTOMATION_COMMAND(FWaitForTestCounter(*this, TestName, Handler->Counter, FPlatformTime::Seconds()));
-
-	return true;
-}
-
-bool FReauth2Test::RunTest(const FString &Parameters)
-{
-	TestName = "Reauth";
-
-	if (!ValidateParameterConfig(this))
-	{
-		return false;
-	}
-
-	// Create and register a test counter to track completion.
-	UTestHandler *Handler = CreateTestHandler<UTestHandler>();
-	Handler->Counter->Register(TEXT("ReauthPart2"));
-
-	UCredentials::Init(TestName);
-	const FString TokenFilePath = GetReauthTokenPath();
-	//const FString OldToken = UCredentials::LoadToken();
-	FString OldToken;
-    const bool bRead = FFileHelper::LoadFileToString(OldToken, *TokenFilePath);
-
-    UE_LOG(LogTemp, Display, TEXT("[Reauth2] Read token (ok=%d) from %s: '%s'"),
-           bRead, *TokenFilePath, *OldToken);
-    if (!bRead || OldToken.IsEmpty())
-    {
-        Handler->Counter->MarkFailure("ReauthPart2", TEXT("Missing/empty token file"));
-        ADD_LATENT_AUTOMATION_COMMAND(FWaitForTestCounter(*this, TestName, Handler->Counter, FPlatformTime::Seconds()));
-        return true;
-    }
-
-	UDbConnection *Connection = ConnectWithThen(
-		Handler->Counter,
-		TestName,
-		[OldToken](UDbConnectionBuilder *Builder)
-		{
-			return Builder->WithToken(OldToken);
-		},
-		[this, Handler, OldToken](UDbConnection *Conn)
-		{
-			const FString CurrentToken = UCredentials::LoadToken();
-			            UE_LOG(LogTemp, Display, TEXT("[Reauth2] CurrentToken='%s' OldToken='%s'"),
-                   *CurrentToken, *OldToken);
-			if (CurrentToken == OldToken)
-			{
-				Handler->Counter->MarkSuccess("ReauthPart2");
+				Handler->Counter->MarkFailure("ReauthPart2", TEXT("Skipped because part 1 did not save a token"));
 			}
-			else
-			{
-				Handler->Counter->MarkFailure("ReauthPart2", FString(TEXT("Unexpected Token: ")) + CurrentToken);
-			}
-		});
+	});
 
 	// Wait for the test counter to signal completion.
 	ADD_LATENT_AUTOMATION_COMMAND(FWaitForTestCounter(*this, TestName, Handler->Counter, FPlatformTime::Seconds()));

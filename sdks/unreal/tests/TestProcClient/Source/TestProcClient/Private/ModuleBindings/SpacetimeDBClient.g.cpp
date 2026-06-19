@@ -201,7 +201,7 @@ void URemoteProcedures::InvalidRequest(FOnInvalidRequestComplete Callback)
 	Conn->CallProcedureTyped(TEXT("invalid_request"), FInvalidRequestArgs(), Wrapper);
 }
 
-void URemoteProcedures::ReadMySchema(FOnReadMySchemaComplete Callback)
+void URemoteProcedures::ReadMySchema(const FString& ServerUrl, FOnReadMySchemaComplete Callback)
 {
     if (!Conn)
     {
@@ -227,7 +227,7 @@ void URemoteProcedures::ReadMySchema(FOnReadMySchemaComplete Callback)
             // Fire the user's typed delegate
             Callback.ExecuteIfBound(Context, ResultValue, bSuccess);
         });
-	Conn->CallProcedureTyped(TEXT("read_my_schema"), FReadMySchemaArgs(), Wrapper);
+	Conn->CallProcedureTyped(TEXT("read_my_schema"), FReadMySchemaArgs(ServerUrl), Wrapper);
 }
 
 void URemoteProcedures::ReturnEnumA(const uint32 A, FOnReturnEnumAComplete Callback)

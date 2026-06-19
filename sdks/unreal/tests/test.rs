@@ -213,8 +213,7 @@ fn unreal_insert_primitives_as_strings() {
 #[test]
 #[serial(Group4)]
 fn unreal_reauth() {
-    make_test("ReauthPart1Test").run();
-    make_test("ReauthPart2Test").run();
+    make_test("ReauthTest").run();
 }
 
 #[test]
