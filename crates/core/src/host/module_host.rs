@@ -2285,17 +2285,7 @@ impl ModuleHost {
 
     fn log_reducer_submit_error(&self, reducer_name: &str, err: &ReducerCallError) {
         let log_message = match err {
-            // Only log NoSuchReducer when the name is also not a known procedure.
-            // The HTTP /call/:reducer endpoint falls back to procedure on NoSuchReducer,
-            // so a valid procedure name would otherwise incorrectly produce an error log.
-            ReducerCallError::NoSuchReducer => {
-                let module_def = &self.info().module_def;
-                if module_def.procedure_by_name(reducer_name).is_none() {
-                    Some(no_such_function_log_message("reducer", reducer_name))
-                } else {
-                    None
-                }
-            }
+            ReducerCallError::NoSuchReducer => Some(no_such_function_log_message("reducer", reducer_name)),
             ReducerCallError::Args(_) => Some(args_error_log_message("reducer", reducer_name)),
             _ => None,
         };
