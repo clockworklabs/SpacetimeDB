@@ -955,6 +955,7 @@ impl Host {
                 (db, clients)
             }
         };
+        let db = db.with_memory_observer(memory_observer.clone());
         let (mut program, program_needs_init) = match db.program()? {
             // Launch module with program from existing database.
             Some(program) => {

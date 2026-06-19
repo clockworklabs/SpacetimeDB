@@ -2,6 +2,7 @@ use crate::durability::{request_durability, spawn_close as spawn_durability_clos
 use crate::error::{DBError, RestoreSnapshotError};
 use crate::metrics::ExecutionCounters;
 use crate::metrics::ENGINE_METRICS;
+use crate::resource::{DatabaseMemoryType, MemoryObservation, MemoryObserver};
 use crate::util::asyncify;
 use crate::MetricsRecorderQueue;
 use anyhow::{anyhow, Context};
@@ -114,6 +115,9 @@ pub struct RelationalDB {
 
     /// An async queue for recording transaction metrics off the main thread
     metrics_recorder_queue: Option<MetricsRecorderQueue>,
+
+    /// An observer for memory usage changes in this database.
+    memory_observer: Arc<dyn MemoryObserver>,
 }
 
 /// Perform a snapshot every `SNAPSHOT_FREQUENCY` transactions.
@@ -169,7 +173,22 @@ impl RelationalDB {
 
             workload_type_to_exec_counters,
             metrics_recorder_queue,
+            memory_observer: Arc::new(()),
         }
+    }
+
+    pub fn with_memory_observer(mut self, memory_observer: Arc<dyn MemoryObserver>) -> Self {
+        self.memory_observer = memory_observer;
+        self.observe_datastore_pages();
+        self
+    }
+
+    fn observe_datastore_pages(&self) {
+        self.memory_observer.memory_observed(MemoryObservation {
+            database_identity: self.database_identity,
+            kind: DatabaseMemoryType::Datastore,
+            bytes: self.inner.datastore_page_bytes(),
+        });
     }
 
     /// Open a database, which may or may not already exist.
@@ -830,6 +849,7 @@ impl RelationalDB {
         };
 
         self.maybe_do_snapshot(&tx_data);
+        self.observe_datastore_pages();
 
         Ok(Some((tx_offset, tx_data, tx_metrics, reducer)))
     }
@@ -844,6 +864,7 @@ impl RelationalDB {
         });
 
         self.maybe_do_snapshot(&tx_data);
+        self.observe_datastore_pages();
 
         (tx_data, tx_metrics, tx)
     }

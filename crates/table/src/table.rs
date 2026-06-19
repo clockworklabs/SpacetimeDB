@@ -1622,6 +1622,11 @@ impl Table {
         (self.num_pages() * PAGE_DATA_SIZE) + (self.blob_store_bytes.0)
     }
 
+    /// Returns the bytes occupied by this table's allocated physical row pages.
+    pub fn page_bytes(&self) -> u64 {
+        (self.num_pages() * mem::size_of::<Page>()) as u64
+    }
+
     /// Reset the internal storage of `self` to be `pages`.
     ///
     /// This recomputes the pointer map based on the `pages`,

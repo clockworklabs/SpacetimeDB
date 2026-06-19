@@ -198,6 +198,7 @@ impl Locking {
                 .with_label_values(&database_identity, &table_id.into(), &schema.table_name)
                 .set(table_size as i64);
         }
+        committed_state.rebuild_datastore_page_bytes();
 
         // Double check that our in-memory system table ids match the on-disk schemas.
         // committed_state.assert_system_table_schemas_match()?;
@@ -236,6 +237,13 @@ impl Locking {
     pub fn assert_system_tables_match(&self) -> Result<()> {
         let committed_state = self.committed_state.read_arc();
         committed_state.assert_system_table_schemas_match()
+    }
+
+    /// Returns committed datastore table page bytes.
+    ///
+    /// This reads the cached committed-state aggregate.
+    pub fn datastore_page_bytes(&self) -> u64 {
+        self.committed_state.read().datastore_page_bytes()
     }
 
     pub fn take_snapshot_internal(

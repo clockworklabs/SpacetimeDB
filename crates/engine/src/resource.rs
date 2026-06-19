@@ -7,7 +7,11 @@ use std::sync::{
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DatabaseMemoryType {
     /// Module instance memory such as Wasmtime linear memory and V8 physical heap memory.
-    Instance,
+    Module,
+    /// Memory allocated and managed by the datastore.
+    ///
+    /// Currently only page-level memory.
+    Datastore,
 }
 
 #[derive(Clone, Debug)]
@@ -62,7 +66,7 @@ impl ModuleInstanceMemoryTracker {
         let bytes = adjust_atomic_u64(&self.inner.instance_bytes, delta);
         self.inner.observer.memory_observed(MemoryObservation {
             database_identity: self.inner.database_identity,
-            kind: DatabaseMemoryType::Instance,
+            kind: DatabaseMemoryType::Module,
             bytes,
         });
     }

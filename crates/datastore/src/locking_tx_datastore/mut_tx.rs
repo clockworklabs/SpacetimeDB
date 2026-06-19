@@ -1040,6 +1040,8 @@ impl MutTxId {
             .tables
             .remove(&table_id)
             .expect("there should be a schema in the committed state if we reach here");
+        self.committed_state_write_lock
+            .sub_datastore_page_bytes(commit_table.page_bytes());
         self.push_schema_change(PendingSchemaChange::TableRemoved(table_id, commit_table));
 
         Ok(())
