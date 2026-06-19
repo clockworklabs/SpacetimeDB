@@ -21,9 +21,15 @@ pub enum Observation {
     BeganMutTx,
     Inserted { count_after: u64 },
     Deleted { count_after: u64 },
-    Committed,
+    Committed { summaries: Vec<TableSummary> },
     Counted { count: u64 },
-    Replayed,
+    Replayed { summaries: Vec<TableSummary> },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TableSummary {
+    pub count: u64,
+    pub hash: u64,
 }
 
 #[derive(Debug)]
@@ -116,7 +122,9 @@ impl Model {
             Interaction::CommitTx => {
                 debug_assert!(self.pending_tables.is_some());
                 self.committed_tables = self.pending_tables.take().expect("active transaction");
-                Observation::Committed
+                Observation::Committed {
+                    summaries: self.summaries(),
+                }
             }
             Interaction::Count { table } => {
                 debug_assert!(self.pending_tables.is_some());
@@ -126,7 +134,9 @@ impl Model {
             }
             Interaction::Replay => {
                 self.pending_tables = None;
-                Observation::Replayed
+                Observation::Replayed {
+                    summaries: self.summaries(),
+                }
             }
         }
     }
@@ -137,6 +147,10 @@ impl Model {
 
     pub fn row_count(&self, table: usize) -> u64 {
         self.tables()[table].rows.len() as u64
+    }
+
+    pub fn summaries(&self) -> Vec<TableSummary> {
+        self.tables().iter().map(|table| summarize_rows(&table.rows)).collect()
     }
 
     pub fn rows(&self, table: usize) -> &[Row] {
@@ -225,4 +239,25 @@ use spacetimedb_sats::ArrayValue;
 
 pub fn row_to_bytes(row: &Row) -> Vec<u8> {
     to_vec(row).expect("row serialization must not fail")
+}
+
+pub fn summarize_rows(rows: &[Row]) -> TableSummary {
+    let mut hash = 0u64;
+    for row in rows {
+        let row_hash = stable_hash(&row_to_bytes(row));
+        hash = hash.wrapping_add(row_hash.rotate_left((row_hash & 31) as u32));
+    }
+    TableSummary {
+        count: rows.len() as u64,
+        hash,
+    }
+}
+
+fn stable_hash(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    for byte in bytes {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(0x100_0000_01b3);
+    }
+    hash
 }

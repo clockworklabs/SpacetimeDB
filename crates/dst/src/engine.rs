@@ -17,7 +17,7 @@ use spacetimedb_table::page_pool::PagePool;
 mod properties;
 mod workload;
 
-use self::workload::{row_to_bytes, Interaction, Observation};
+use self::workload::{row_to_bytes, summarize_rows, Interaction, Observation, TableSummary};
 
 use crate::engine::properties::EngineProperties;
 use crate::engine::workload::{Model, WorkloadGen};
@@ -131,6 +131,29 @@ impl EngineTarget {
         Ok(())
     }
 
+    fn table_summaries(&self) -> anyhow::Result<Vec<TableSummary>> {
+        let db = self
+            .db
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("database is not open"))?;
+        let tx = db.begin_tx(Workload::Internal);
+        let mut summaries = Vec::with_capacity(self.table_ids.len());
+
+        for table_id in &self.table_ids {
+            let rows = match db.iter(&tx, *table_id) {
+                Ok(iter) => iter.map(|row| row.to_product_value()).collect::<Vec<_>>(),
+                Err(err) => {
+                    let _ = db.release_tx(tx);
+                    return Err(err.into());
+                }
+            };
+            summaries.push(summarize_rows(&rows));
+        }
+
+        let _ = db.release_tx(tx);
+        Ok(summaries)
+    }
+
     pub fn execute(&mut self, interaction: &Interaction) -> anyhow::Result<Observation> {
         match interaction {
             Interaction::BeginMutTx => {
@@ -187,7 +210,9 @@ impl EngineTarget {
                     .as_ref()
                     .ok_or_else(|| anyhow::anyhow!("database is not open"))?;
                 db.finish_tx(tx, Ok::<(), anyhow::Error>(()))?;
-                Ok(Observation::Committed)
+                Ok(Observation::Committed {
+                    summaries: self.table_summaries()?,
+                })
             }
             Interaction::Count { table } => {
                 let table_id = self.table_ids[*table];
@@ -204,7 +229,9 @@ impl EngineTarget {
             }
             Interaction::Replay => {
                 self.replay()?;
-                Ok(Observation::Replayed)
+                Ok(Observation::Replayed {
+                    summaries: self.table_summaries()?,
+                })
             }
         }
     }
@@ -243,7 +270,7 @@ impl TestSuite for EngineTest {
         let schema = default_schema(rng.clone());
         let runtime_seed = rng.next_u64();
         let target = EngineTarget::init(schema.clone(), runtime_seed)?;
-        let properties = EngineProperties {};
+        let properties = EngineProperties::new(schema.clone());
 
         let model = Model::new(schema);
         let interactions = WorkloadGen::new(rng, model);
