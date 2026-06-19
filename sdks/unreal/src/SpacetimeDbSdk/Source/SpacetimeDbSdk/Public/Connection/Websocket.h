@@ -69,6 +69,8 @@ public:
 	 */
 	bool IsConnected() const;
 
+	void SetNativeBinaryMessageTarget(class UDbConnectionBase* Target);
+
 	/**
 	* Sets the initial auth token used when connecting.
 	* @param Token JWT or session token expected by the server.
@@ -107,10 +109,12 @@ private:
 	void HandleMessageReceived(const FString& Message);
 	/** Handler for incoming binary messages */
 	void HandleBinaryMessageReceived(const void* Data, SIZE_T Size, bool bIsLastFragment);
+	void DispatchCompleteBinaryMessage(TArray<uint8>&& Message);
 	/** Handler for socket close */
 	void HandleClosed(int32 StatusCode, const FString& Reason, bool bWasClean);
 
 	FString InitToken;
+	TWeakObjectPtr<class UDbConnectionBase> NativeBinaryMessageTarget;
 
 	/** Buffer used to accumulate binary fragments until a complete message
 	*  is received. */

@@ -29,8 +29,8 @@ protected:
      */
     template<typename T>
     FTableAppliedDiff<T> BaseUpdate(
-        const TArray<FWithBsatn<T>>& InsertsRef,
-        const TArray<FWithBsatn<T>>& DeletesRef,
+        TArray<FWithBsatn<T>>& InsertsRef,
+        TArray<FWithBsatn<T>>& DeletesRef,
         const TSharedPtr<UClientCache<T>>& ClientCache,
         const FString& InTableName
     )
@@ -42,19 +42,19 @@ protected:
             return {};
         }
 
-        TArray<TPair<TArray<uint8>, T>> Inserts;
-        for (const FWithBsatn<T>& Insert : InsertsRef)
+        // Forward ownership of the worker-preprocessed row arrays to avoid rebuilding them on the game thread.
+        using FCompactPrimaryKeyTraits = UE::SpacetimeDB::TCompactPrimaryKeyTraits<T>;
+        if constexpr (FCompactPrimaryKeyTraits::bEnabled)
         {
-            Inserts.Add({ Insert.Bsatn, Insert.Row });
+            return ClientCache->ApplyDiffByPrimaryKey(
+                InTableName,
+                MoveTemp(InsertsRef),
+                MoveTemp(DeletesRef),
+                FCompactPrimaryKeyTraits::GetUniqueIndexName());
         }
-
-        TArray<TArray<uint8>> Deletes;
-        for (const FWithBsatn<T>& Delete : DeletesRef)
+        else
         {
-            Deletes.Add(Delete.Bsatn);
+            return ClientCache->ApplyDiff(InTableName, MoveTemp(InsertsRef), MoveTemp(DeletesRef));
         }
-
-        // Forward to the shared client cache implementation
-        return ClientCache->ApplyDiff(InTableName, Inserts, Deletes);
     }
 };

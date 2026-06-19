@@ -138,9 +138,10 @@ UDbConnectionBase* UDbConnectionBuilderBase::BuildConnection(UDbConnectionBase* 
 
 	Connection->WebSocket->OnConnectionError.AddDynamic(Connection, &UDbConnectionBase::HandleWSError);
 	Connection->WebSocket->OnClosed.AddDynamic(Connection, &UDbConnectionBase::HandleWSClosed);
-	Connection->WebSocket->OnBinaryMessageReceived.AddDynamic(Connection, &UDbConnectionBase::HandleWSBinaryMessage);
+	Connection->WebSocket->SetNativeBinaryMessageTarget(Connection);
 	// Set the initialization token for the WebSocket connection
 	Connection->WebSocket->SetInitToken(Token);
+	Connection->StartInboundMessageWorker();
 	// Connect the WebSocket to the constructed URL
 	Connection->WebSocket->Connect(WebSocketUrl);
 
