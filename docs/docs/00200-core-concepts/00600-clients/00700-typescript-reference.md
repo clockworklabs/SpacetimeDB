@@ -1088,7 +1088,7 @@ function MyComponent() {
   return (
     <div>
       <p>Connected as: {identity?.toHexString()}</p>
-      <button onClick={() => conn?.reducers.createPlayer('Alice')}>
+      <button onClick={() => conn?.reducers.createPlayer({ name: 'Alice' })}>
         Create Player
       </button>
     </div>
@@ -1136,7 +1136,7 @@ import { useReducer } from 'spacetimedb/react';
 import { reducers } from './module_bindings';
 
 const createPlayer = useReducer(reducers.createPlayer);
-createPlayer('Alice');
+createPlayer({ name: 'Alice' });
 ```
 
 `useReducer` returns a function that calls the generated reducer. Calls made before the connection is ready are queued and flushed once the connection is established.
