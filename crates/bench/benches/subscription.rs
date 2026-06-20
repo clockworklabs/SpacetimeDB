@@ -11,7 +11,7 @@ use spacetimedb_bench::database::BenchDatabase as _;
 use spacetimedb_bench::spacetime_raw::SpacetimeRaw;
 use spacetimedb_client_api_messages::websocket::v1::BsatnFormat;
 use spacetimedb_datastore::execution_context::Workload;
-use spacetimedb_execution::pipelined::PipelinedProject;
+use spacetimedb_execution::{pipelined::PipelinedProject, ExecutionParams};
 use spacetimedb_primitives::{col_list, TableId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::{bsatn, product, AlgebraicType, AlgebraicValue};
@@ -113,9 +113,10 @@ fn eval(c: &mut Criterion) {
             let auth = AuthCtx::for_testing();
             let schema_viewer = &SchemaViewer::new(&tx, &auth);
             let (plans, table_id, table_name, _) = compile_subscription(sql, schema_viewer, &auth).unwrap();
+            let params = ExecutionParams::from_auth(&auth);
             let plans = plans
                 .into_iter()
-                .map(|plan| plan.optimize(&auth).unwrap())
+                .map(|plan| plan.optimize().unwrap())
                 .map(PipelinedProject::from)
                 .collect::<Vec<_>>();
             let tx = DeltaTx::from(&tx);
@@ -126,6 +127,7 @@ fn eval(c: &mut Criterion) {
                     table_id,
                     table_name.clone(),
                     &tx,
+                    &params,
                     TableUpdateType::Subscribe,
                     &bsatn_rlb_pool,
                 ));

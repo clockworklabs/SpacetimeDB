@@ -492,26 +492,225 @@ impl ApiResponse {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct PublishOptions {
-    pub clear: bool,
-    pub break_clients: bool,
-    pub num_replicas: Option<u32>,
-    pub organization: Option<String>,
-    pub force: bool,
-    pub stdin_input: Option<String>,
+pub struct PublishBuilder<'a> {
+    smoketest: &'a mut Smoketest,
+    name: Option<String>,
+    clear: bool,
+    break_clients: bool,
+    num_replicas: Option<u32>,
+    organization: Option<String>,
+    force: bool,
+    stdin_input: Option<String>,
+    source: Option<ModuleSource>,
 }
 
-impl Default for PublishOptions {
-    fn default() -> Self {
+#[derive(Clone, Copy, Debug)]
+pub enum ModuleLanguage {
+    TypeScript,
+    CSharp,
+    Cpp,
+}
+
+struct ModuleSource {
+    language: ModuleLanguage,
+    project_dir_name: String,
+    module_source: String,
+}
+
+impl<'a> PublishBuilder<'a> {
+    fn new(smoketest: &'a mut Smoketest) -> Self {
         Self {
+            smoketest,
+            name: None,
             clear: false,
             break_clients: false,
             num_replicas: None,
             organization: None,
             force: true,
             stdin_input: None,
+            source: None,
         }
+    }
+
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    pub fn clear(mut self, clear: bool) -> Self {
+        self.clear = clear;
+        self
+    }
+
+    pub fn break_clients(mut self, break_clients: bool) -> Self {
+        self.break_clients = break_clients;
+        self
+    }
+
+    pub fn num_replicas(mut self, num_replicas: u32) -> Self {
+        self.num_replicas = Some(num_replicas);
+        self
+    }
+
+    pub fn organization(mut self, organization: impl Into<String>) -> Self {
+        self.organization = Some(organization.into());
+        self
+    }
+
+    pub fn force(mut self, force: bool) -> Self {
+        self.force = force;
+        self
+    }
+
+    pub fn stdin(mut self, stdin_input: impl Into<String>) -> Self {
+        self.force = false;
+        self.stdin_input = Some(stdin_input.into());
+        self
+    }
+
+    pub fn current_database(mut self) -> Result<Self> {
+        let identity = self
+            .smoketest
+            .database_identity
+            .as_ref()
+            .context("No database published yet")?
+            .clone();
+        self.name = Some(identity);
+        Ok(self)
+    }
+
+    pub fn source(
+        mut self,
+        language: ModuleLanguage,
+        project_dir_name: impl Into<String>,
+        module_source: impl Into<String>,
+    ) -> Self {
+        self.source = Some(ModuleSource {
+            language,
+            project_dir_name: project_dir_name.into(),
+            module_source: module_source.into(),
+        });
+        self
+    }
+
+    pub fn run(self) -> Result<String> {
+        let PublishBuilder {
+            smoketest,
+            name,
+            clear,
+            break_clients,
+            num_replicas,
+            organization,
+            force,
+            stdin_input,
+            source,
+        } = self;
+
+        if let Some(source) = source {
+            let module_name = name.as_deref().context("No module name provided for source publish")?;
+            return match source.language {
+                ModuleLanguage::TypeScript => smoketest.publish_typescript_module_source_internal(
+                    &source.project_dir_name,
+                    module_name,
+                    &source.module_source,
+                    clear,
+                ),
+                ModuleLanguage::CSharp => smoketest.publish_csharp_module_source_internal(
+                    &source.project_dir_name,
+                    module_name,
+                    &source.module_source,
+                    clear,
+                ),
+                ModuleLanguage::Cpp => smoketest.publish_cpp_module_source_internal(
+                    &source.project_dir_name,
+                    module_name,
+                    &source.module_source,
+                    clear,
+                ),
+            };
+        }
+
+        smoketest.publish_module_internal(
+            name.as_deref(),
+            clear,
+            break_clients,
+            num_replicas,
+            organization.as_deref(),
+            force,
+            stdin_input.as_deref(),
+        )
+    }
+}
+
+pub struct SubscribeBuilder<'a> {
+    smoketest: &'a Smoketest,
+    database: Option<String>,
+    queries: Vec<String>,
+    expected_rows: Option<usize>,
+    confirmed: Option<bool>,
+}
+
+impl<'a> SubscribeBuilder<'a> {
+    fn new(smoketest: &'a Smoketest, queries: &[&str]) -> Self {
+        Self {
+            smoketest,
+            database: None,
+            queries: queries.iter().map(|query| query.to_string()).collect(),
+            expected_rows: None,
+            confirmed: None,
+        }
+    }
+
+    pub fn database(mut self, database: impl Into<String>) -> Self {
+        self.database = Some(database.into());
+        self
+    }
+
+    pub fn expect_rows(mut self, expected_rows: usize) -> Self {
+        self.expected_rows = Some(expected_rows);
+        self
+    }
+
+    pub fn confirmed(mut self, confirmed: bool) -> Self {
+        self.confirmed = Some(confirmed);
+        self
+    }
+
+    pub fn run(self) -> Result<Vec<serde_json::Value>> {
+        let start = Instant::now();
+        let owned_identity;
+        let database = if let Some(database) = self.database.as_deref() {
+            database
+        } else {
+            owned_identity = self
+                .smoketest
+                .database_identity
+                .as_ref()
+                .context("No database published")?
+                .clone();
+            &owned_identity
+        };
+        let queries = self.queries.iter().map(String::as_str).collect::<Vec<_>>();
+        self.smoketest
+            .subscribe_on_impl(database, &queries, self.expected_rows, self.confirmed, start)
+    }
+
+    pub fn background(self) -> Result<SubscriptionHandle> {
+        let owned_identity;
+        let database = if let Some(database) = self.database.as_deref() {
+            database
+        } else {
+            owned_identity = self
+                .smoketest
+                .database_identity
+                .as_ref()
+                .context("No database published")?
+                .clone();
+            &owned_identity
+        };
+        let queries = self.queries.iter().map(String::as_str).collect::<Vec<_>>();
+        self.smoketest
+            .subscribe_background_on_impl(database, &queries, self.expected_rows, self.confirmed)
     }
 }
 
@@ -690,7 +889,7 @@ pub fn noop(_ctx: &ReducerContext) {}
         }
 
         if self.autopublish {
-            smoketest.publish_module().expect("Failed to publish module");
+            smoketest.publish().run().expect("Failed to publish module");
         }
 
         eprintln!("[TIMING] total build: {:?}", build_start.elapsed());
@@ -904,28 +1103,7 @@ impl Smoketest {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
-    /// Initializes, writes, and publishes a TypeScript module from source.
-    ///
-    /// Will publish with the `--clear-database` flag.
-    ///
-    /// The module is initialized at `<test_project_dir>/<project_dir_name>/spacetimedb`.
-    /// On success this updates `self.database_identity`.
-    pub fn publish_typescript_module_source(
-        &mut self,
-        project_dir_name: &str,
-        module_name: &str,
-        module_source: &str,
-    ) -> Result<String> {
-        self.publish_typescript_module_source_clear(project_dir_name, module_name, module_source, true)
-    }
-
-    /// Initializes, writes, and publishes a TypeScript module from source.
-    ///
-    /// If `clear` is `true`, this will publish with the `--clear-database` flag.
-    ///
-    /// The module is initialized at `<test_project_dir>/<project_dir_name>/spacetimedb`.
-    /// On success this updates `self.database_identity`.
-    pub fn publish_typescript_module_source_clear(
+    fn publish_typescript_module_source_internal(
         &mut self,
         project_dir_name: &str,
         module_name: &str,
@@ -980,15 +1158,12 @@ impl Smoketest {
         Ok(identity)
     }
 
-    /// Initializes, writes, and publishes a C# module from source.
-    ///
-    /// The module is initialized at `<test_project_dir>/<project_dir_name>/spacetimedb`.
-    /// On success this updates `self.database_identity`.
-    pub fn publish_csharp_module_source(
+    fn publish_csharp_module_source_internal(
         &mut self,
         project_dir_name: &str,
         module_name: &str,
         module_source: &str,
+        clear: bool,
     ) -> Result<String> {
         let module_root = self.project_dir.path().join(project_dir_name);
         let module_root_str = module_root.to_str().context("Invalid C# project path")?;
@@ -1007,16 +1182,19 @@ impl Smoketest {
         csharp::prepare_csharp_module(&module_path)?;
 
         let module_path_str = module_path.to_str().context("Invalid C# module path")?;
-        let publish_output = self.spacetime(&[
+        let mut publish_args = vec![
             "publish",
             "--server",
             &self.server_url,
             "--module-path",
             module_path_str,
             "--yes",
-            "--clear-database",
-            module_name,
-        ])?;
+        ];
+        if clear {
+            publish_args.push("--clear-database");
+        }
+        publish_args.push(module_name);
+        let publish_output = self.spacetime(&publish_args)?;
         csharp::verify_csharp_module_restore(&module_path)?;
 
         let identity = parse_identity_from_publish_output(&publish_output)?;
@@ -1025,15 +1203,12 @@ impl Smoketest {
         Ok(identity)
     }
 
-    /// Writes and publishes a C++ module from source.
-    ///
-    /// The module is created at `<test_project_dir>/<project_dir_name>`.
-    /// On success this updates `self.database_identity`.
-    pub fn publish_cpp_module_source(
+    fn publish_cpp_module_source_internal(
         &mut self,
         project_dir_name: &str,
         module_name: &str,
         module_source: &str,
+        clear: bool,
     ) -> Result<String> {
         let module_path = self.project_dir.path().join(project_dir_name);
         let src_dir = module_path.join("src");
@@ -1050,16 +1225,19 @@ impl Smoketest {
         fs::write(src_dir.join("lib.cpp"), module_source).context("Failed to write C++ module code")?;
 
         let module_path_str = module_path.to_str().context("Invalid C++ module path")?;
-        let publish_output = self.spacetime(&[
+        let mut publish_args = vec![
             "publish",
             "--server",
             &self.server_url,
             "--module-path",
             module_path_str,
             "--yes",
-            "--clear-database",
-            module_name,
-        ])?;
+        ];
+        if clear {
+            publish_args.push("--clear-database");
+        }
+        publish_args.push(module_name);
+        let publish_output = self.spacetime(&publish_args)?;
 
         let identity = parse_identity_from_publish_output(&publish_output)?;
         self.database_identity = Some(identity.clone());
@@ -1167,91 +1345,30 @@ log = "0.4"
         output
     }
 
-    /// Publishes the module and stores the database identity.
-    pub fn publish_module(&mut self) -> Result<String> {
-        self.publish_module_internal_ext(None, PublishOptions::default())
+    pub fn publish(&mut self) -> PublishBuilder<'_> {
+        PublishBuilder::new(self)
     }
 
-    /// Publishes the module with a specific name and optional clear flag.
+    /// Publishes the module and stores the database identity.
     ///
     /// If `name` is provided, the database will be published with that name.
     /// If `clear` is true, the database will be cleared before publishing.
-    pub fn publish_module_named(&mut self, name: &str, clear: bool) -> Result<String> {
-        self.publish_module_internal_ext(
-            Some(name),
-            PublishOptions {
-                clear,
-                ..PublishOptions::default()
-            },
-        )
-    }
-
-    pub fn publish_module_named_ext(&mut self, name: &str, opts: PublishOptions) -> Result<String> {
-        self.publish_module_internal_ext(Some(name), opts)
-    }
-
-    /// Re-publishes the module to the existing database identity with optional clear.
+    /// If `force` is false, the publish command will not pass `--yes`, so interactive prompts are not suppressed.
+    /// If `stdin_input` is provided, it will be passed to the CLI for interactive prompts.
     ///
-    /// This is useful for testing auto-migrations where you want to update
-    /// the module without clearing the database.
-    pub fn publish_module_clear(&mut self, clear: bool) -> Result<String> {
-        let identity = self
-            .database_identity
-            .as_ref()
-            .context("No database published yet")?
-            .clone();
-        self.publish_module_internal_ext(
-            Some(&identity),
-            PublishOptions {
-                clear,
-                ..PublishOptions::default()
-            },
-        )
-    }
-
-    /// Publishes the module with name, clear, and break_clients options.
-    pub fn publish_module_with_options(&mut self, name: &str, clear: bool, break_clients: bool) -> Result<String> {
-        self.publish_module_internal_ext(
-            Some(name),
-            PublishOptions {
-                clear,
-                break_clients,
-                ..PublishOptions::default()
-            },
-        )
-    }
-
-    /// Publishes the module and allows supplying stdin input to the CLI.
-    ///
-    /// Useful for interactive publish prompts which require typed acknowledgements.
-    /// Note: does NOT pass `--yes` so that interactive prompts are not suppressed.
-    pub fn publish_module_with_stdin(&mut self, name: &str, stdin_input: &str) -> Result<String> {
-        self.publish_module_internal_ext(
-            Some(name),
-            PublishOptions {
-                force: false,
-                stdin_input: Some(stdin_input.to_string()),
-                ..PublishOptions::default()
-            },
-        )
-    }
-
-    /// Publishes the module without passing `--yes`, so interactive prompts are not suppressed.
-    pub fn publish_module_named_no_force(&mut self, name: &str) -> Result<String> {
-        self.publish_module_internal_ext(
-            Some(name),
-            PublishOptions {
-                force: false,
-                ..PublishOptions::default()
-            },
-        )
-    }
-
-    pub fn publish_module_with_options_ext(&mut self, name: &str, opts: PublishOptions) -> Result<String> {
-        self.publish_module_internal_ext(Some(name), opts)
-    }
-
-    fn publish_module_internal_ext(&mut self, name: Option<&str>, opts: PublishOptions) -> Result<String> {
+    /// When `name` is an existing database identity, this re-publishes to that database, which is useful for testing
+    /// auto-migrations where you want to update the module without clearing the database.
+    #[allow(clippy::too_many_arguments)]
+    fn publish_module_internal(
+        &mut self,
+        name: Option<&str>,
+        clear: bool,
+        break_clients: bool,
+        num_replicas: Option<u32>,
+        organization: Option<&str>,
+        force: bool,
+        stdin_input: Option<&str>,
+    ) -> Result<String> {
         let start = Instant::now();
 
         // Determine the WASM path - either precompiled or build it
@@ -1273,8 +1390,7 @@ log = "0.4"
                 .env("CARGO_TARGET_DIR", &target_dir);
 
             let build_output = build_cmd.output().expect("Failed to execute spacetime build");
-            let build_elapsed = build_start.elapsed();
-            eprintln!("[TIMING] spacetime build: {:?}", build_elapsed);
+            eprintln!("[TIMING] spacetime build: {:?}", build_start.elapsed());
 
             if !build_output.status.success() {
                 bail!(
@@ -1294,37 +1410,34 @@ log = "0.4"
         let publish_start = Instant::now();
         let mut args = vec!["publish", "--server", &self.server_url, "--bin-path", &wasm_path_str];
 
-        if opts.force {
+        if force {
             args.push("--yes");
         }
 
-        if opts.clear {
+        if clear {
             args.push("--clear-database");
         }
 
-        if opts.break_clients {
+        if break_clients {
             args.push("--break-clients");
         }
 
-        let num_replicas_owned = opts.num_replicas.map(|n| n.to_string());
+        let num_replicas_owned = num_replicas.map(|n| n.to_string());
         if let Some(n) = num_replicas_owned.as_ref() {
             args.push("--num-replicas");
             args.push(n);
         }
 
-        let org_owned = opts.organization.clone();
-        if let Some(org) = org_owned.as_ref() {
+        if let Some(org) = organization {
             args.push("--organization");
             args.push(org);
         }
 
-        let name_owned;
         if let Some(n) = name {
-            name_owned = n.to_string();
-            args.push(&name_owned);
+            args.push(n);
         }
 
-        let output = match opts.stdin_input.as_deref() {
+        let output = match stdin_input {
             Some(stdin_input) => self.spacetime_with_stdin(&args, stdin_input)?,
             None => self.spacetime(&args)?,
         };
@@ -1334,15 +1447,9 @@ log = "0.4"
         );
         eprintln!("[TIMING] publish_module total: {:?}", start.elapsed());
 
-        // Parse the identity from output like "identity: abc123..."
-        let re = Regex::new(r"identity: ([0-9a-fA-F]+)").unwrap();
-        if let Some(caps) = re.captures(&output) {
-            let identity = caps.get(1).unwrap().as_str().to_string();
+        parse_identity_from_publish_output(&output).inspect(|identity| {
             self.database_identity = Some(identity.clone());
-            Ok(identity)
-        } else {
-            bail!("Failed to parse database identity from publish output: {}", output);
-        }
+        })
     }
 
     /// Calls a reducer or procedure with the given arguments.
@@ -1598,50 +1705,15 @@ log = "0.4"
         Ok(ApiResponse { status_code, body })
     }
 
-    /// Starts a subscription and waits for N updates (synchronous).
-    ///
-    /// Returns the updates as JSON values.
-    /// For tests that need to perform actions while subscribed, use `subscribe_background` instead.
-    pub fn subscribe(&self, queries: &[&str], n: usize) -> Result<Vec<serde_json::Value>> {
-        self.subscribe_opts(queries, n, None)
-    }
-
-    pub fn subscribe_on(&self, database: &str, queries: &[&str], n: usize) -> Result<Vec<serde_json::Value>> {
-        self.subscribe_on_opts(database, queries, n, Some(false))
-    }
-
-    /// Starts a subscription with --confirmed flag and waits for N updates.
-    pub fn subscribe_confirmed(&self, queries: &[&str], n: usize) -> Result<Vec<serde_json::Value>> {
-        self.subscribe_opts(queries, n, Some(true))
-    }
-
-    pub fn subscribe_on_confirmed(&self, database: &str, queries: &[&str], n: usize) -> Result<Vec<serde_json::Value>> {
-        self.subscribe_on_opts(database, queries, n, Some(true))
-    }
-
-    /// Internal helper for subscribe with options.
-    fn subscribe_opts(&self, queries: &[&str], n: usize, confirmed: Option<bool>) -> Result<Vec<serde_json::Value>> {
-        let start = Instant::now();
-        let identity = self.database_identity.as_ref().context("No database published")?;
-        self.subscribe_on_impl(identity, queries, n, confirmed, start)
-    }
-
-    fn subscribe_on_opts(
-        &self,
-        database: &str,
-        queries: &[&str],
-        n: usize,
-        confirmed: Option<bool>,
-    ) -> Result<Vec<serde_json::Value>> {
-        let start = Instant::now();
-        self.subscribe_on_impl(database, queries, n, confirmed, start)
+    pub fn subscribe(&self, queries: &[&str]) -> SubscribeBuilder<'_> {
+        SubscribeBuilder::new(self, queries)
     }
 
     fn subscribe_on_impl(
         &self,
         database: &str,
         queries: &[&str],
-        n: usize,
+        n: Option<usize>,
         confirmed: Option<bool>,
         start: Instant,
     ) -> Result<Vec<serde_json::Value>> {
@@ -1660,8 +1732,10 @@ log = "0.4"
             "30".to_string(),
             "-n".to_string(),
         ];
-        let n_str = n.to_string();
-        args.push(n_str);
+        if let Some(n) = n {
+            let n_str = n.to_string();
+            args.push(n_str);
+        }
         args.push("--print-initial-update".to_string());
         if let Some(confirmed) = confirmed {
             args.push("--confirmed".to_string());
@@ -1674,7 +1748,7 @@ log = "0.4"
             .stderr(Stdio::piped());
 
         let output = cmd.output().context("Failed to run subscribe command")?;
-        eprintln!("[TIMING] subscribe (n={}): {:?}", n, start.elapsed());
+        eprintln!("[TIMING] subscribe (n={:?}): {:?}", n, start.elapsed());
 
         if !output.status.success() {
             bail!("subscribe failed:\nstderr: {}", String::from_utf8_lossy(&output.stderr));
@@ -1686,67 +1760,6 @@ log = "0.4"
             .filter(|line| !line.trim().is_empty())
             .map(|line| serde_json::from_str(line).context("Failed to parse subscription update"))
             .collect()
-    }
-
-    /// Starts a subscription in the background and returns a handle.
-    ///
-    /// This matches Python's subscribe semantics - start subscription first,
-    /// perform actions, then call the handle to collect results.
-    pub fn subscribe_background(&self, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
-        self.subscribe_background_opts(queries, Some(n), None)
-    }
-
-    pub fn subscribe_background_until_closed(&self, queries: &[&str]) -> Result<SubscriptionHandle> {
-        self.subscribe_background_opts(queries, None, None)
-    }
-
-    pub fn subscribe_background_on(&self, database: &str, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
-        self.subscribe_background_on_opts(database, queries, Some(n), Some(false))
-    }
-
-    /// Starts a subscription in the background with --confirmed flag.
-    pub fn subscribe_background_confirmed(&self, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
-        self.subscribe_background_opts(queries, Some(n), Some(true))
-    }
-
-    /// Starts a subscription in the background with --confirmed flag.
-    pub fn subscribe_background_unconfirmed(&self, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
-        self.subscribe_background_opts(queries, Some(n), Some(false))
-    }
-
-    pub fn subscribe_background_on_confirmed(
-        &self,
-        database: &str,
-        queries: &[&str],
-        n: usize,
-    ) -> Result<SubscriptionHandle> {
-        self.subscribe_background_on_opts(database, queries, Some(n), Some(true))
-    }
-
-    /// Internal helper for background subscribe with options.
-    fn subscribe_background_opts(
-        &self,
-        queries: &[&str],
-        n: Option<usize>,
-        confirmed: Option<bool>,
-    ) -> Result<SubscriptionHandle> {
-        let identity = self
-            .database_identity
-            .as_ref()
-            .context("No database published")?
-            .clone();
-
-        self.subscribe_background_on_impl(&identity, queries, n, confirmed)
-    }
-
-    fn subscribe_background_on_opts(
-        &self,
-        database: &str,
-        queries: &[&str],
-        n: Option<usize>,
-        confirmed: Option<bool>,
-    ) -> Result<SubscriptionHandle> {
-        self.subscribe_background_on_impl(database, queries, n, confirmed)
     }
 
     fn subscribe_background_on_impl(
