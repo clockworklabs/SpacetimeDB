@@ -22,8 +22,57 @@ permissions:
   pull-requests: read
 
 jobs:
+  merge_queue_noop:
+    name: Detect merge queue no-op
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.compare.outputs.skip }}
+    steps:
+      - name: Checkout merge queue commit
+        uses: actions/checkout@v4
+
+      - name: Compare merge queue commit to PR head
+        id: compare
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "skip=false" >>"$GITHUB_OUTPUT"
+
+          if [[ "${GITHUB_EVENT_NAME}" != "merge_group" ]]; then
+            echo "Not a merge_group event; running CI normally."
+            exit 0
+          fi
+
+          if [[ ! "${HEAD_REF}" =~ /pr-([0-9]+)- ]]; then
+            echo "Could not parse PR number from merge group head ref: ${HEAD_REF}"
+            exit 0
+          fi
+
+          pr_number="${BASH_REMATCH[1]}"
+          pr_head_sha="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" --jq '.head.sha')"
+          pr_head_repo="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" --jq '.head.repo.full_name')"
+
+          if [[ -z "${pr_head_sha}" || "${pr_head_sha}" == "null" || -z "${pr_head_repo}" || "${pr_head_repo}" == "null" ]]; then
+            echo "Could not resolve PR head SHA for PR #${pr_number}; running CI normally."
+            exit 0
+          fi
+
+          git fetch --no-tags --depth=1 "https://github.com/${pr_head_repo}.git" "${pr_head_sha}"
+
+          if git diff --quiet "${pr_head_sha}" "${GITHUB_SHA}" --; then
+            echo "Merge queue commit ${GITHUB_SHA} has the same tree as PR #${pr_number} head ${pr_head_sha}; skipping duplicate CI."
+            echo "skip=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "Merge queue commit ${GITHUB_SHA} differs from PR #${pr_number} head ${pr_head_sha}; running CI normally."
+          fi
+
   smoketests:
-    needs: [lints]
+    needs: [merge_queue_noop, lints]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Smoketests (${{ matrix.name }})
     strategy:
       matrix:
@@ -176,8 +225,26 @@ jobs:
           }
           cargo ci smoketests -- --test-threads=1          
 
+  # this is a no-op version of the above check with a trivially-passing body.
+  # we can't just let the check be entirely skipped because each matrix target is a required check,
+  # and skipping this check means that the matrix isn't "populated" so the required checks wouldn't be met.
+  smoketests_noop:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip == 'true' }}
+    name: Smoketests (${{ matrix.name }})
+    strategy:
+      matrix:
+        include:
+          - name: Linux
+          - name: Windows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip duplicate merge queue smoketest
+        run: echo "Merge queue commit has the same tree as the PR head; smoketest already ran for the PR."
+
   test:
-    needs: [lints]
+    needs: [merge_queue_noop, lints]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Test Suite
     runs-on: spacetimedb-new-runner-2
 
@@ -261,6 +328,9 @@ jobs:
 
           wasm-bindgen --version
 
+      - name: Check engine simulation build
+        run: cargo check -p spacetimedb-engine --no-default-features --features simulation
+
         # Source emsdk environment to make emcc (Emscripten compiler) available in PATH.
       - name: Run tests
         run: |
@@ -268,7 +338,8 @@ jobs:
           cargo ci test
 
   keynote_bench:
-    needs: [lints]
+    needs: [merge_queue_noop, lints]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Keynote Bench
     runs-on: spacetimedb-benchmark-runner
     concurrency:
@@ -329,7 +400,8 @@ jobs:
         run: cargo ci keynote-bench
 
   index_scan_bench:
-    needs: [lints]
+    needs: [merge_queue_noop, lints]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Index Scan Bench
     runs-on: spacetimedb-benchmark-runner
     concurrency:
@@ -373,6 +445,8 @@ jobs:
         run: cargo bench -p spacetimedb-bench --bench index_scan_gate
 
   lints:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Lints
     runs-on: spacetimedb-new-runner-2
     env:
@@ -413,6 +487,8 @@ jobs:
         run: cargo ci lint
 
   wasm_bindings:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Build and test wasm bindings
     runs-on: spacetimedb-new-runner-2
     env:
@@ -439,6 +515,8 @@ jobs:
         run: cargo ci wasm-bindings
 
   publish_checks:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check that packages are publishable
     runs-on: spacetimedb-new-runner-2
     permissions: read-all
@@ -453,13 +531,14 @@ jobs:
         run: cargo ci publish-checks
 
   update:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Test spacetimedb-update flow (${{ matrix.target }})
     permissions: read-all
     strategy:
       matrix:
         include:
           - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-new-runner-2 }
-          - { target: aarch64-unknown-linux-gnu, runner: arm-runner }
           - { target: aarch64-apple-darwin, runner: macos-latest }
           - { target: x86_64-pc-windows-msvc, runner: windows-latest }
     runs-on: ${{ matrix.runner }}
@@ -477,15 +556,29 @@ jobs:
       - name: Install rust target
         run: rustup target add ${{ matrix.target }}
 
-      - name: Install packages
-        if: ${{ matrix.runner == 'arm-runner' }}
-        shell: bash
-        run: sudo apt install -y libssl-dev
-
       - name: Test spacetimedb-update
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: cargo ci update-flow --target=${{ matrix.target }} --github-token-auth
+
+  # this is a no-op version of the above check with a trivially-passing body.
+  # we can't just let the check be entirely skipped because each matrix target is a required check,
+  # and skipping this check means that the matrix isn't "populated" so the required checks wouldn't be met.
+  update_noop:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip == 'true' }}
+    name: Test spacetimedb-update flow (${{ matrix.target }})
+    permissions: read-all
+    strategy:
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu }
+          - { target: aarch64-apple-darwin }
+          - { target: x86_64-pc-windows-msvc }
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip duplicate merge queue update test
+        run: echo "Merge queue commit has the same tree as the PR head; update-flow already ran for the PR."
 
   unreal_engine_tests:
     name: Unreal Engine Tests
@@ -581,6 +674,8 @@ jobs:
             '
 
   ci_command_docs:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check CI command docs
     runs-on: spacetimedb-new-runner-2
     env:
@@ -612,6 +707,8 @@ jobs:
         run: cargo ci self-docs --check
 
   cli_docs:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check CLI docs
     permissions: read-all
     runs-on: spacetimedb-new-runner-2
@@ -677,10 +774,10 @@ jobs:
           cargo ci cli-docs
 
   unity-testsuite:
-    needs: [lints]
+    needs: [merge_queue_noop, lints]
     # Skip if this is an external contribution.
     # The license secrets will be empty, so the step would fail anyway.
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
     permissions:
       contents: read
       checks: write
@@ -823,7 +920,8 @@ jobs:
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
 
   godot-testsuite:
-    needs: [lints]
+    needs: [merge_queue_noop, lints]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     permissions:
       contents: read
     runs-on: spacetimedb-new-runner-2
@@ -948,7 +1046,8 @@ jobs:
         run: godot --headless --path demo/Blackholio/client-godot --scene res://tests/GodotPlayModeTests.tscn
 
   csharp-testsuite:
-    needs: [lints]
+    needs: [merge_queue_noop, lints]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     runs-on: spacetimedb-new-runner-2
     timeout-minutes: 30
     env:
@@ -1065,6 +1164,8 @@ jobs:
           }
 
   global_json_policy:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Verify global.json files are symlinks
     runs-on: ubuntu-latest
     permissions:
@@ -1104,6 +1205,8 @@ jobs:
         run: cargo ci global-json-policy
 
   smoketests_mod_rs_complete:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check smoketests/mod.rs is complete
     runs-on: ubuntu-latest
     permissions:
@@ -1161,6 +1264,8 @@ jobs:
           cargo ci smoketests check-mod-list
 
   docs-build:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Docs build
     runs-on: spacetimedb-new-runner-2
     env:
@@ -1200,6 +1305,8 @@ jobs:
         run: cargo ci docs
 
   typescript-test:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: TypeScript - Tests
     runs-on: spacetimedb-new-runner-2
     env:

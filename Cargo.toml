@@ -14,6 +14,7 @@ members = [
   "crates/data-structures",
   "crates/datastore",
   "crates/durability",
+  "crates/engine",
   "crates/execution",
   "crates/expr",
   "crates/guard",
@@ -133,8 +134,10 @@ spacetimedb-core = { path = "crates/core", version = "=2.6.0" }
 spacetimedb-data-structures = { path = "crates/data-structures", version = "=2.6.0" }
 spacetimedb-datastore = { path = "crates/datastore", version = "=2.6.0" }
 spacetimedb-durability = { path = "crates/durability", version = "=2.6.0" }
+spacetimedb-engine = { path = "crates/engine", version = "=2.6.0" }
 spacetimedb-execution = { path = "crates/execution", version = "=2.6.0" }
 spacetimedb-expr = { path = "crates/expr", version = "=2.6.0" }
+spacetimedb-fs-utils = { path = "crates/fs-utils", version = "=2.6.0" }
 spacetimedb-guard = { path = "crates/guard", version = "=2.6.0" }
 spacetimedb-lib = { path = "crates/lib", default-features = false, version = "=2.6.0" }
 spacetimedb-memory-usage = { path = "crates/memory-usage", version = "=2.6.0", default-features = false }
@@ -144,16 +147,15 @@ spacetimedb-pg = { path = "crates/pg", version = "=2.6.0" }
 spacetimedb-physical-plan = { path = "crates/physical-plan", version = "=2.6.0" }
 spacetimedb-primitives = { path = "crates/primitives", version = "=2.6.0" }
 spacetimedb-query = { path = "crates/query", version = "=2.6.0" }
-spacetimedb-sats = { path = "crates/sats", version = "=2.6.0" }
-spacetimedb-schema = { path = "crates/schema", version = "=2.6.0" }
-spacetimedb-standalone = { path = "crates/standalone", version = "=2.6.0" }
-spacetimedb-sql-parser = { path = "crates/sql-parser", version = "=2.6.0" }
-spacetimedb-table = { path = "crates/table", version = "=2.6.0" }
-spacetimedb-fs-utils = { path = "crates/fs-utils", version = "=2.6.0" }
-spacetimedb-snapshot = { path = "crates/snapshot", version = "=2.6.0" }
-spacetimedb-subscription = { path = "crates/subscription", version = "=2.6.0" }
 spacetimedb-query-builder = { path = "crates/query-builder", version = "=2.6.0" }
 spacetimedb-runtime = { path = "crates/runtime", version = "=2.6.0" }
+spacetimedb-sats = { path = "crates/sats", version = "=2.6.0" }
+spacetimedb-schema = { path = "crates/schema", version = "=2.6.0" }
+spacetimedb-snapshot = { path = "crates/snapshot", version = "=2.6.0" }
+spacetimedb-standalone = { path = "crates/standalone", version = "=2.6.0" }
+spacetimedb-subscription = { path = "crates/subscription", version = "=2.6.0" }
+spacetimedb-sql-parser = { path = "crates/sql-parser", version = "=2.6.0" }
+spacetimedb-table = { path = "crates/table", version = "=2.6.0" }
 
 # Prevent `ahash` from pulling in `getrandom` by disabling default features.
 # Modules use `getrandom02` and we need to prevent an incompatible version

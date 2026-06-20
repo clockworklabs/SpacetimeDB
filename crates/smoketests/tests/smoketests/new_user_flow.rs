@@ -11,7 +11,7 @@ fn test_new_user_flow() {
 
     // Create a new identity and publish
     test.new_identity().unwrap();
-    test.publish_module().unwrap();
+    test.publish().run().unwrap();
 
     // Calling our database
     test.call("say_hello", &[]).unwrap();
