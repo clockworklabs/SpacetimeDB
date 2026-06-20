@@ -13,6 +13,7 @@ use spacetimedb_runtime::Handle;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_table::page_pool::PagePool;
+use spacetimedb_table::read_column::ReadColumn;
 
 mod model;
 mod properties;
@@ -182,6 +183,21 @@ impl EngineTarget {
         CommitDelta { tables }
     }
 
+    fn auto_inc_values_from_tx_data(&self, tx_data: &TxData) -> Vec<u64> {
+        let Some((table_idx, col_idx)) = self.schema.auto_inc_table_and_column() else {
+            return vec![];
+        };
+        let table_id = self.table_ids[table_idx];
+        let mut values = tx_data
+            .iter_table_entries()
+            .filter(|(id, _)| *id == table_id)
+            .flat_map(|(_, entry)| entry.inserts.iter())
+            .filter_map(|row| row.read_col::<u64>(col_idx).ok())
+            .collect::<Vec<_>>();
+        values.sort_unstable();
+        values
+    }
+
     pub fn execute(&mut self, interaction: &Interaction) -> anyhow::Result<Observation> {
         match interaction {
             Interaction::BeginMutTx => {
@@ -242,6 +258,7 @@ impl EngineTarget {
                 };
                 Ok(Observation::Committed {
                     delta: self.commit_delta_from_tx_data(&tx_data),
+                    auto_inc_values: self.auto_inc_values_from_tx_data(&tx_data),
                 })
             }
             Interaction::Count { table } => {

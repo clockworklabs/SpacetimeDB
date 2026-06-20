@@ -20,11 +20,22 @@ pub enum Interaction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Observation {
     BeganMutTx,
-    Inserted { count_after: u64 },
-    Deleted { count_after: u64 },
-    Committed { delta: CommitDelta },
-    Counted { count: u64 },
-    Replayed { summaries: Vec<TableSummary> },
+    Inserted {
+        count_after: u64,
+    },
+    Deleted {
+        count_after: u64,
+    },
+    Committed {
+        delta: CommitDelta,
+        auto_inc_values: Vec<u64>,
+    },
+    Counted {
+        count: u64,
+    },
+    Replayed {
+        summaries: Vec<TableSummary>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,8 +93,35 @@ impl WorkloadGen {
             .collect::<ProductValue>()
     }
 
+    fn gen_insert_row(&self, table_idx: usize) -> Row {
+        let table = &self.schema().tables[table_idx];
+        let mut row = self.gen_row(table);
+        if let Some(sequence) = table.sequences.first() {
+            row.elements[sequence.column] = match sequence.ty {
+                Type::I64 => AlgebraicValue::I64(0),
+                Type::U64 => AlgebraicValue::U64(0),
+                _ => unreachable!("sequence columns are integral"),
+            };
+        }
+        row
+    }
+
+    fn non_auto_inc_table_idx(&self) -> Option<usize> {
+        let auto_inc_table = self
+            .schema()
+            .auto_inc_table_and_column()
+            .map(|(table_idx, _)| table_idx);
+        (0..self.schema().tables.len()).find(|&table_idx| Some(table_idx) != auto_inc_table)
+    }
+
     pub fn next_interaction(&mut self) -> Interaction {
-        let table_idx = self.rng.index(self.schema().tables.len());
+        let insert_table_idx = self
+            .schema()
+            .auto_inc_table_and_column()
+            .map(|(table_idx, _)| table_idx)
+            .filter(|_| self.rng.next_u64() % 3 != 0)
+            .unwrap_or_else(|| self.rng.index(self.schema().tables.len()));
+        let read_write_table_idx = self.non_auto_inc_table_idx();
 
         let interaction = if self.model.in_mut_tx() {
             let coin = self.rng.next_u64() % 11;
@@ -91,17 +129,20 @@ impl WorkloadGen {
                 Interaction::Replay
             } else if coin < 6 {
                 Interaction::Insert {
-                    table: table_idx,
-                    row: self.gen_row(&self.schema().tables[table_idx]),
+                    table: insert_table_idx,
+                    row: self.gen_insert_row(insert_table_idx),
                 }
-            } else if coin < 8 && !self.model.rows(table_idx).is_empty() {
+            } else if coin < 8 && read_write_table_idx.is_some_and(|table_idx| !self.model.rows(table_idx).is_empty()) {
+                let table_idx = read_write_table_idx.expect("checked above");
                 let rows = self.model.rows(table_idx);
                 let row_index = self.rng.index(rows.len());
                 Interaction::Delete {
                     table: table_idx,
                     row: rows[row_index].clone(),
                 }
-            } else if coin < 10 {
+            } else if coin < 10
+                && let Some(table_idx) = read_write_table_idx
+            {
                 Interaction::Count { table: table_idx }
             } else {
                 Interaction::CommitTx

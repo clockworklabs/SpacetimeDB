@@ -6,7 +6,8 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, Pro
 
 pub fn default_schema(rng: Rng) -> SchemaPlan {
     let profile = SchemaProfile::default();
-    let plan = SchemaGenerator::new(rng, profile).gen_schema();
+    let mut plan = SchemaGenerator::new(rng, profile).gen_schema();
+    plan.ensure_auto_inc_table();
     plan
 }
 
@@ -71,6 +72,45 @@ impl SchemaPlan {
     fn new(rng: Rng) {
         let profile = SchemaProfile::default();
         let schema = SchemaGenerator::new(rng, profile).gen_schema();
+    }
+
+    pub fn auto_inc_table_and_column(&self) -> Option<(usize, usize)> {
+        self.tables
+            .iter()
+            .enumerate()
+            .find_map(|(table_idx, table)| table.sequences.first().map(|sequence| (table_idx, sequence.column)))
+    }
+
+    pub fn ensure_auto_inc_table(&mut self) {
+        if self.auto_inc_table_and_column().is_some() {
+            return;
+        }
+
+        let table = self.tables.first_mut().expect("schema must contain at least one table");
+        if table.columns.is_empty() {
+            table.columns.push(ColumnPlan {
+                name: "id".into(),
+                ty: Type::U64,
+            });
+        } else {
+            table.columns[0].ty = Type::U64;
+        }
+
+        table.primary_key = Some(0);
+        if !table
+            .unique_constraints
+            .iter()
+            .any(|constraint| constraint.columns == [0])
+        {
+            table.unique_constraints.push(UniqueConstraintPlan { columns: vec![0] });
+        }
+        if !table.indexes.iter().any(|index| index.columns == [0]) {
+            table.indexes.push(IndexPlan {
+                columns: vec![0],
+                algorithm: IndexAlgorithm::BTree,
+            });
+        }
+        table.sequences = vec![SequencePlan::new(0, Type::U64).expect("u64 is integral")];
     }
 }
 

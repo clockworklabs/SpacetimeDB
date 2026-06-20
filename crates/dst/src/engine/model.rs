@@ -61,9 +61,10 @@ impl Model {
             Interaction::Insert { table, row } => {
                 debug_assert!(self.pending_tables.is_some());
                 let primary_key = self.schema.tables[*table].primary_key;
+                let row = row.clone();
 
-                if self.violates_unique_constraint_in(self.tables(), *table, row)
-                    || self.tables()[*table].rows.contains(row)
+                if self.violates_unique_constraint_in(self.tables(), *table, &row)
+                    || self.tables()[*table].rows.contains(&row)
                 {
                     return Observation::Inserted {
                         count_after: self.tables()[*table].rows.len() as u64,
@@ -79,7 +80,7 @@ impl Model {
                         };
                     }
                 }
-                rows.push(row.clone());
+                rows.push(row);
                 Observation::Inserted {
                     count_after: rows.len() as u64,
                 }
@@ -97,7 +98,10 @@ impl Model {
                 let pending_tables = self.pending_tables.take().expect("active transaction");
                 let delta = commit_delta_from_tables(&self.committed_tables, &pending_tables);
                 self.committed_tables = pending_tables;
-                Observation::Committed { delta }
+                Observation::Committed {
+                    delta,
+                    auto_inc_values: vec![],
+                }
             }
             Interaction::Count { table } => {
                 debug_assert!(self.pending_tables.is_some());
