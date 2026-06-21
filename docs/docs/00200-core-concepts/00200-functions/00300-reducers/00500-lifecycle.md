@@ -22,7 +22,7 @@ export const init = spacetimedb.init((ctx) => {
   console.log('Database initializing...');
   
   // Set up default data
-  if (ctx.db.settings.count === 0) {
+  if (ctx.db.settings.count() === 0n) {
     ctx.db.settings.insert({
       key: 'welcome_message',
       value: 'Hello, SpacetimeDB!'
@@ -133,7 +133,7 @@ export const init = spacetimedb.init((ctx) => {
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "Config")]
+[SpacetimeDB.Table(Accessor = "Config")]
 public partial struct Config
 {
     [SpacetimeDB.PrimaryKey]

@@ -8,7 +8,6 @@ use std::rc::Rc;
 
 #[cfg(feature = "unstable")]
 mod client_visibility_filter;
-#[cfg(feature = "unstable")]
 pub mod http;
 pub mod log_stopwatch;
 mod logger;
@@ -49,6 +48,8 @@ pub use spacetimedb_lib::ScheduleAt;
 pub use spacetimedb_lib::TimeDuration;
 pub use spacetimedb_lib::Timestamp;
 pub use spacetimedb_lib::Uuid;
+#[doc(hidden)]
+pub use spacetimedb_lib::ViewPrimaryKeyColumn;
 pub use spacetimedb_primitives::TableId;
 pub use sys::Errno;
 pub use table::{
@@ -365,9 +366,9 @@ pub use spacetimedb_bindings_macro::settings;
 ///     // The following line would panic, since we use `insert` rather than `try_insert`.
 ///     // let result = ctx.db.country().insert(Country { code: "CN".into(), national_bird: "Blue Magpie".into() });
 ///
-///     // If we wanted to *update* the row for Australia, we can use the `update` method of `UniqueIndex`.
-///     // The following line will succeed:
-///     ctx.db.country().code().update(Country {
+///     // If we wanted to replace the row for Australia, we can delete it and insert the new row.
+///     assert!(ctx.db.country().code().delete("AU".to_string()));
+///     ctx.db.country().insert(Country {
 ///         code: "AU".into(), national_bird: "Australian Emu".into()
 ///     });
 /// }
@@ -772,7 +773,6 @@ pub use spacetimedb_bindings_macro::reducer;
 /// [clients]: https://spacetimedb.com/docs/#client
 // TODO(procedure-async): update docs and examples with `async`-ness.
 #[doc(inline)]
-#[cfg(feature = "unstable")]
 pub use spacetimedb_bindings_macro::procedure;
 
 /// Marks a function as a spacetimedb view.
@@ -1118,7 +1118,7 @@ impl ReducerContext {
     /// #[reducer]
     /// fn generate_uuid_v4(ctx: &ReducerContext) -> Result<(), Box<dyn std::error::Error>> {
     ///     let uuid = ctx.new_uuid_v4()?;
-    ///     log::info!(uuid);
+    ///     log::info!("{uuid}");
     ///     Ok(())
     /// }
     /// # }
@@ -1140,7 +1140,7 @@ impl ReducerContext {
     /// #[reducer]
     /// fn generate_uuid_v7(ctx: &ReducerContext) -> Result<(), Box<dyn std::error::Error>> {
     ///     let uuid = ctx.new_uuid_v7()?;
-    ///     log::info!(uuid);
+    ///     log::info!("{uuid}");
     ///     Ok(())
     /// }
     /// # }
@@ -1153,7 +1153,6 @@ impl ReducerContext {
     }
 }
 
-#[cfg(feature = "unstable")]
 /// The context that an anonymous transaction
 /// in [`ProcedureContext::with_tx`] is provided with.
 ///
@@ -1167,14 +1166,12 @@ impl ReducerContext {
 /// Implements the `DbContext` trait for accessing views into a database.
 pub struct TxContext(ReducerContext);
 
-#[cfg(feature = "unstable")]
 impl AsRef<ReducerContext> for TxContext {
     fn as_ref(&self) -> &ReducerContext {
         &self.0
     }
 }
 
-#[cfg(feature = "unstable")]
 impl Deref for TxContext {
     type Target = ReducerContext;
 
@@ -1183,8 +1180,14 @@ impl Deref for TxContext {
     }
 }
 
-#[cfg(feature = "unstable")]
-fn try_with_tx<T, E>(body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
+/// We need to passthrough identity and connection_id because procedures can be invoked by users.
+/// For [HttpContext] this is always anonymous ([Identity::ZERO]).
+/// Construct the inner [ReducerContext] with the appropriate caller information.
+fn try_with_tx<T, E>(
+    body: impl Fn(&TxContext) -> Result<T, E>,
+    identity: Identity,
+    connection_id: Option<ConnectionId>,
+) -> Result<T, E> {
     let abort = || {
         crate::sys::procedure::procedure_abort_mut_tx()
             .expect("should have a pending mutable anon tx as `procedure_start_mut_tx` preceded")
@@ -1195,8 +1198,7 @@ fn try_with_tx<T, E>(body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> 
             .expect("holding `&mut HandlerContext`, so should not be in a tx already; called manually elsewhere?");
         let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp);
 
-        // Use the internal auth context (no external caller identity).
-        let tx = ReducerContext::new(crate::Local {}, Identity::ZERO, None, timestamp);
+        let tx = ReducerContext::new(crate::Local {}, identity, connection_id, timestamp);
         let tx = TxContext(tx);
 
         struct DoOnDrop<F: Fn()>(F);
@@ -1229,10 +1231,9 @@ fn try_with_tx<T, E>(body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> 
     res
 }
 
-#[cfg(feature = "unstable")]
-fn with_tx<T>(body: impl Fn(&TxContext) -> T) -> T {
+fn with_tx<T>(body: impl Fn(&TxContext) -> T, identity: Identity, connection_id: Option<ConnectionId>) -> T {
     use core::convert::Infallible;
-    match try_with_tx::<T, Infallible>(|tx| Ok(body(tx))) {
+    match try_with_tx::<T, Infallible>(|tx| Ok(body(tx)), identity, connection_id) {
         Ok(v) => v,
         Err(e) => match e {},
     }
@@ -1245,7 +1246,6 @@ fn with_tx<T>(body: impl Fn(&TxContext) -> T) -> T {
 /// Includes information about the client calling the procedure and the time of invocation,
 /// and exposes methods for running transactions and performing side-effecting operations.
 #[non_exhaustive]
-#[cfg(feature = "unstable")]
 pub struct ProcedureContext {
     /// The `Identity` of the client that invoked the procedure.
     sender: Identity,
@@ -1272,7 +1272,6 @@ pub struct ProcedureContext {
     counter_uuid: Cell<u32>,
 }
 
-#[cfg(feature = "unstable")]
 impl ProcedureContext {
     fn new(sender: Identity, connection_id: Option<ConnectionId>, timestamp: Timestamp) -> Self {
         Self {
@@ -1300,7 +1299,13 @@ impl ProcedureContext {
     }
 
     /// Read the current module's [`Identity`].
+    #[deprecated(note = "Use `ProcedureContext::database_identity` instead.")]
     pub fn identity(&self) -> Identity {
+        self.database_identity()
+    }
+
+    /// Read the current module's [`Identity`].
+    pub fn database_identity(&self) -> Identity {
         // Hypothetically, we *could* read the module identity out of the system tables.
         // However, this would be:
         // - Onerous, because we have no tooling to inspect the system tables from module code.
@@ -1333,7 +1338,6 @@ impl ProcedureContext {
     /// # }
     /// ```
     // TODO(procedure-sleep-until): remove this method
-    #[cfg(feature = "unstable")]
     pub fn sleep_until(&mut self, timestamp: Timestamp) {
         let new_time = sys::procedure::sleep_until(timestamp.to_micros_since_unix_epoch());
         let new_time = Timestamp::from_micros_since_unix_epoch(new_time);
@@ -1366,9 +1370,8 @@ impl ProcedureContext {
     /// and return the same result on each invocation,
     /// callers should avoid writing to any captured mutable state within `body`,
     /// This includes interior mutability through types like [`std::cell::Cell`].
-    #[cfg(feature = "unstable")]
     pub fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
-        with_tx(body)
+        with_tx(body, self.sender(), self.connection_id())
     }
 
     /// Acquire a mutable transaction
@@ -1400,9 +1403,8 @@ impl ProcedureContext {
     /// and return the same result on each invocation,
     /// callers should avoid writing to any captured mutable state within `body`,
     /// This includes interior mutability through types like [`std::cell::Cell`].
-    #[cfg(feature = "unstable")]
     pub fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
-        try_with_tx(body)
+        try_with_tx(body, self.sender(), self.connection_id())
     }
 
     ///  Create a new random [`Uuid`] `v4` using the built-in RNG.
@@ -1412,14 +1414,14 @@ impl ProcedureContext {
     /// use spacetimedb::{procedure, ProcedureContext, Uuid};
     ///
     /// #[procedure]
-    /// fn generate_uuid_v4(ctx: &ProcedureContext) -> Uuid {
-    ///     let uuid = ctx.new_uuid_v4();
-    ///     log::info!(uuid);
+    /// fn generate_uuid_v4(ctx: &mut ProcedureContext) -> Uuid {
+    ///     let uuid = ctx.new_uuid_v4().expect("failed to generate uuid");
+    ///     log::info!("{uuid}");
     ///     uuid
     /// }
     /// # }
     /// ```
-    #[cfg(all(feature = "unstable", feature = "rand"))]
+    #[cfg(feature = "rand")]
     pub fn new_uuid_v4(&self) -> anyhow::Result<Uuid> {
         let mut bytes = [0u8; 16];
         self.rng().try_fill_bytes(&mut bytes)?;
@@ -1434,14 +1436,14 @@ impl ProcedureContext {
     /// use spacetimedb::{procedure, ProcedureContext, Uuid};
     ///
     /// #[procedure]
-    /// fn generate_uuid_v7(ctx: &ProcedureContext) -> Result<Uuid, Box<dyn std::error::Error>> {
-    ///     let uuid = ctx.new_uuid_v7()?;
-    ///     log::info!(uuid);
-    ///     Ok(uuid)
+    /// fn generate_uuid_v7(ctx: &mut ProcedureContext) -> Uuid {
+    ///     let uuid = ctx.new_uuid_v7().expect("failed to generate uuid");
+    ///     log::info!("{uuid}");
+    ///     uuid
     /// }
     /// # }
     /// ```
-    #[cfg(all(feature = "unstable", feature = "rand"))]
+    #[cfg(feature = "rand")]
     pub fn new_uuid_v7(&self) -> anyhow::Result<Uuid> {
         let mut random_bytes = [0u8; 4];
         self.rng().try_fill_bytes(&mut random_bytes)?;
@@ -1468,7 +1470,6 @@ pub trait DbContext {
     ///
     /// This method is provided for times when a programmer wants to be generic over the `DbContext` type.
     /// Concrete-typed code is expected to read the `.db` field off the particular `DbContext` implementor.
-    #[cfg(feature = "unstable")]
     fn db_read_only(&self) -> &LocalReadOnly;
 }
 
@@ -1479,7 +1480,6 @@ impl DbContext for AnonymousViewContext {
         &self.db
     }
 
-    #[cfg(feature = "unstable")]
     fn db_read_only(&self) -> &LocalReadOnly {
         &self.db
     }
@@ -1492,13 +1492,11 @@ impl DbContext for ReducerContext {
         &self.db
     }
 
-    #[cfg(feature = "unstable")]
     fn db_read_only(&self) -> &LocalReadOnly {
         self.db.get_read_only()
     }
 }
 
-#[cfg(feature = "unstable")]
 impl DbContext for TxContext {
     type DbView = Local;
 
@@ -1518,7 +1516,6 @@ impl DbContext for ViewContext {
         &self.db
     }
 
-    #[cfg(feature = "unstable")]
     fn db_read_only(&self) -> &LocalReadOnly {
         &self.db
     }
@@ -1536,7 +1533,6 @@ impl DbContext for ViewContext {
 pub struct Local {}
 
 impl Local {
-    #[cfg(feature = "unstable")]
     fn get_read_only(&self) -> &LocalReadOnly {
         &LocalReadOnly {}
     }

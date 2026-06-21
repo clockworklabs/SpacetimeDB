@@ -15,6 +15,7 @@ use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::{bsatn, AlgebraicType};
 use std::collections::VecDeque;
 use std::io;
+use std::sync::atomic::AtomicU32;
 use std::time::Duration;
 use thiserror::Error;
 use tokio::io::AsyncWriteExt;
@@ -57,8 +58,8 @@ pub fn cli() -> clap::Command {
                 .value_parser(value_parser!(u32))
                 .help(
                     "The timeout, in seconds, after which to disconnect and stop receiving \
-                     subscription messages. If `-n` is specified, it will stop after whichever
-                     one comes first.",
+                     subscription messages. If `-n` is specified, it will stop after whichever \
+                     one comes first. Timing out before receiving `-n` updates is an error.",
                 ),
         )
         .arg(
@@ -127,10 +128,13 @@ impl SubscribeConnection {
         &mut self,
         num: Option<u32>,
         module_def: &RawModuleDefV9,
+        num_received: &UpdateCounter,
     ) -> Result<(), Error> {
         match self {
-            Self::V3 { ws, pending } => consume_transaction_updates_v3(ws, pending, num, module_def).await,
-            Self::V1 { ws } => consume_transaction_updates_v1(ws, num, module_def).await,
+            Self::V3 { ws, pending } => {
+                consume_transaction_updates_v3(ws, pending, num, module_def, num_received).await
+            }
+            Self::V1 { ws } => consume_transaction_updates_v1(ws, num, module_def, num_received).await,
         }
     }
 
@@ -181,13 +185,14 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let api = ClientApi::new(conn);
     let module_def = api.module_def().await?;
     let mut conn = connect_with_fallback(&api, confirmed).await?;
+    let num_received = UpdateCounter::new();
 
     let task = async {
         conn.subscribe(queries.iter().cloned().map(Into::into).collect())
             .await?;
         conn.await_initial_update(print_initial_update.then_some(&module_def))
             .await?;
-        conn.consume_transaction_updates(num, &module_def).await
+        conn.consume_transaction_updates(num, &module_def, &num_received).await
     };
 
     let res = if let Some(timeout) = timeout {
@@ -195,8 +200,16 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         match tokio::time::timeout(timeout, task).await {
             Ok(res) => res,
             Err(_elapsed) => {
+                let received = num_received.get();
                 eprintln!("timed out after {}s", timeout.as_secs());
-                Ok(())
+                match num {
+                    Some(expected) if received < expected => Err(Error::UpdateLimitTimedOut {
+                        expected,
+                        received,
+                        timeout_secs: timeout.as_secs(),
+                    }),
+                    _ => Ok(()),
+                }
             }
         }
     } else {
@@ -206,12 +219,11 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     // Close the connection gracefully.
     // This will return an error if the server already closed,
     // or the connection is in a bad state.
-    // The error (if any) relevant to the user is already stored in `res`,
-    // so we can ignore errors here -- graceful close is basically a
-    // courtesy to the server.
+    // The error (if any) relevant to the user is already stored in `res`.
     conn.close().await;
-    // The server closing the connection is not considered an error,
-    // but any other error is.
+    // The server closing the connection is not considered an error
+    // if `-n` is not set, but any other error is. When `-n` is set,
+    // an early close or timeout from the update loop is reported as an error.
     res.or_else(|e| {
         if e.is_server_closed_connection() {
             Ok(())
@@ -324,6 +336,14 @@ enum Error {
     TransactionFailure { reason: Box<str> },
     #[error("encountered error in initial subscribe: {reason}")]
     SubscribeFailure { reason: Box<str> },
+    #[error("subscription closed after receiving {received}/{expected} updates")]
+    UpdateLimitNotReached { expected: u32, received: u32 },
+    #[error("subscription timed out after {timeout_secs}s after receiving {received}/{expected} updates")]
+    UpdateLimitTimedOut {
+        expected: u32,
+        received: u32,
+        timeout_secs: u64,
+    },
     #[error("error formatting response: {source:#}")]
     Reformat {
         #[source]
@@ -345,6 +365,22 @@ enum Error {
     Io(#[from] io::Error),
 }
 
+struct UpdateCounter(AtomicU32);
+
+impl UpdateCounter {
+    fn new() -> Self {
+        Self(AtomicU32::new(0))
+    }
+
+    fn get(&self) -> u32 {
+        self.0.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn increment(&self) {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
 impl Error {
     fn is_server_closed_connection(&self) -> bool {
         matches!(
@@ -353,6 +389,22 @@ impl Error {
                 source: WsError::ConnectionClosed
             }
         )
+    }
+}
+
+fn connection_closed_error(num: Option<u32>, num_received: u32) -> Error {
+    match num {
+        // this is necessarily an error, because if we had received all the updates then we would have already closed the connection ourselves and would not have reached this point
+        Some(expected) => Error::UpdateLimitNotReached {
+            expected,
+            received: num_received,
+        },
+        None => {
+            eprintln!("disconnected by server");
+            Error::Websocket {
+                source: WsError::ConnectionClosed,
+            }
+        }
     }
 }
 
@@ -479,21 +531,18 @@ async fn consume_transaction_updates_v1<S>(
     ws: &mut S,
     num: Option<u32>,
     module_def: &RawModuleDefV9,
+    num_received: &UpdateCounter,
 ) -> Result<(), Error>
 where
     S: TryStream<Ok = WsMessage, Error = WsError> + Unpin,
 {
     let mut stdout = tokio::io::stdout();
-    let mut num_received = 0;
     loop {
-        if num.is_some_and(|n| num_received >= n) {
+        if num.is_some_and(|n| num_received.get() >= n) {
             return Ok(());
         }
         let Some(msg) = ws.try_next().await.map_err(|source| Error::Websocket { source })? else {
-            eprintln!("disconnected by server");
-            return Err(Error::Websocket {
-                source: WsError::ConnectionClosed,
-            });
+            return Err(connection_closed_error(num, num_received.get()));
         };
 
         let Some(msg) = parse_msg_json(&msg) else { continue };
@@ -513,7 +562,7 @@ where
             }) => {
                 let output = format_output_json_v1(&update, module_def)?;
                 stdout.write_all(output.as_bytes()).await?;
-                num_received += 1;
+                num_received.increment();
             }
             _ => continue,
         }
@@ -527,21 +576,18 @@ async fn consume_transaction_updates_v3<S>(
     pending: &mut VecDeque<ws_v2::ServerMessage>,
     num: Option<u32>,
     module_def: &RawModuleDefV9,
+    num_received: &UpdateCounter,
 ) -> Result<(), Error>
 where
     S: TryStream<Ok = WsMessage, Error = WsError> + Unpin,
 {
     let mut stdout = tokio::io::stdout();
-    let mut num_received = 0;
     loop {
-        if num.is_some_and(|n| num_received >= n) {
+        if num.is_some_and(|n| num_received.get() >= n) {
             return Ok(());
         }
         let Some(msg) = next_server_message(ws, pending).await? else {
-            eprintln!("disconnected by server");
-            return Err(Error::Websocket {
-                source: WsError::ConnectionClosed,
-            });
+            return Err(connection_closed_error(num, num_received.get()));
         };
 
         match msg {
@@ -556,7 +602,7 @@ where
             ws_v2::ServerMessage::TransactionUpdate(update) => {
                 let output = format_output_json_transaction_update(&update, module_def)?;
                 stdout.write_all(output.as_bytes()).await?;
-                num_received += 1;
+                num_received.increment();
             }
             _ => continue,
         }

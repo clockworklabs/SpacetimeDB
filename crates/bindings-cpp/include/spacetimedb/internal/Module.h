@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <optional>
+#include <utility>
 #include "../bsatn/types.h"
 #include "../reducer_macros.h"
 #include "../reducer_context.h"
@@ -115,10 +116,12 @@ private:
 public:
     // Registration support routed through the V10 module-definition builder.
     static void RegisterClientVisibilityFilter(const char* sql);
+    static void RegisterClientVisibilityFilter(const std::string& sql);
     static void SetCaseConversionPolicy(CaseConversionPolicy policy);
     static void RegisterExplicitTableName(const std::string& source_name, const std::string& canonical_name);
     static void RegisterExplicitFunctionName(const std::string& source_name, const std::string& canonical_name);
     static void RegisterExplicitIndexName(const std::string& source_name, const std::string& canonical_name);
+    static void RegisterViewPrimaryKey(const std::string& view_source_name, std::vector<std::string> columns);
 };
 
 // Helper functions for module description
@@ -152,6 +155,10 @@ public:
     static void RegisterClientVisibilityFilter(const char* sql) {
         Internal::Module::RegisterClientVisibilityFilter(sql);
     }
+
+    static void RegisterClientVisibilityFilter(const std::string& sql) {
+        Internal::Module::RegisterClientVisibilityFilter(sql);
+    }
     
     // Module metadata (future extension)
     static void SetMetadata([[maybe_unused]] const char* name, [[maybe_unused]] const char* version) {
@@ -172,6 +179,10 @@ public:
 
     static void RegisterExplicitIndexName(const char* source_name, const char* canonical_name) {
         Internal::Module::RegisterExplicitIndexName(source_name, canonical_name);
+    }
+
+    static void RegisterViewPrimaryKey(const char* view_source_name, std::vector<std::string> columns) {
+        Internal::Module::RegisterViewPrimaryKey(view_source_name, std::move(columns));
     }
 };
 

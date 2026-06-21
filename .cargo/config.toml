@@ -2,7 +2,6 @@
 rustflags = ["--cfg", "tokio_unstable"]
 
 [alias]
-bump-versions = "run -p upgrade-version --"
 llm = "run --package xtask-llm-benchmark --bin llm_benchmark --"
 ci = "run -p ci --"
 regen = "run -p regen --"

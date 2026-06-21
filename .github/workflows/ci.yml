@@ -22,8 +22,57 @@ permissions:
   pull-requests: read
 
 jobs:
+  merge_queue_noop:
+    name: Detect merge queue no-op
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.compare.outputs.skip }}
+    steps:
+      - name: Checkout merge queue commit
+        uses: actions/checkout@v4
+
+      - name: Compare merge queue commit to PR head
+        id: compare
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "skip=false" >>"$GITHUB_OUTPUT"
+
+          if [[ "${GITHUB_EVENT_NAME}" != "merge_group" ]]; then
+            echo "Not a merge_group event; running CI normally."
+            exit 0
+          fi
+
+          if [[ ! "${HEAD_REF}" =~ /pr-([0-9]+)- ]]; then
+            echo "Could not parse PR number from merge group head ref: ${HEAD_REF}"
+            exit 0
+          fi
+
+          pr_number="${BASH_REMATCH[1]}"
+          pr_head_sha="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" --jq '.head.sha')"
+          pr_head_repo="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" --jq '.head.repo.full_name')"
+
+          if [[ -z "${pr_head_sha}" || "${pr_head_sha}" == "null" || -z "${pr_head_repo}" || "${pr_head_repo}" == "null" ]]; then
+            echo "Could not resolve PR head SHA for PR #${pr_number}; running CI normally."
+            exit 0
+          fi
+
+          git fetch --no-tags --depth=1 "https://github.com/${pr_head_repo}.git" "${pr_head_sha}"
+
+          if git diff --quiet "${pr_head_sha}" "${GITHUB_SHA}" --; then
+            echo "Merge queue commit ${GITHUB_SHA} has the same tree as PR #${pr_number} head ${pr_head_sha}; skipping duplicate CI."
+            echo "skip=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "Merge queue commit ${GITHUB_SHA} differs from PR #${pr_number} head ${pr_head_sha}; running CI normally."
+          fi
+
   smoketests:
-    needs: [lints]
+    needs: [merge_queue_noop, lints]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Smoketests (${{ matrix.name }})
     strategy:
       matrix:
@@ -36,6 +85,7 @@ jobs:
     timeout-minutes: 120
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
       SPACETIMEDB_CPP_DIR: ${{ github.workspace }}/crates/bindings-cpp
     steps:
       - name: Find Git ref
@@ -175,13 +225,32 @@ jobs:
           }
           cargo ci smoketests -- --test-threads=1          
 
+  # this is a no-op version of the above check with a trivially-passing body.
+  # we can't just let the check be entirely skipped because each matrix target is a required check,
+  # and skipping this check means that the matrix isn't "populated" so the required checks wouldn't be met.
+  smoketests_noop:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip == 'true' }}
+    name: Smoketests (${{ matrix.name }})
+    strategy:
+      matrix:
+        include:
+          - name: Linux
+          - name: Windows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip duplicate merge queue smoketest
+        run: echo "Merge queue commit has the same tree as the PR head; smoketest already ran for the PR."
+
   test:
-    needs: [lints]
+    needs: [merge_queue_noop, lints]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Test Suite
     runs-on: spacetimedb-new-runner-2
 
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
     steps:
       - name: Find Git ref
         env:
@@ -259,6 +328,9 @@ jobs:
 
           wasm-bindgen --version
 
+      - name: Check engine simulation build
+        run: cargo check -p spacetimedb-engine --no-default-features --features simulation
+
         # Source emsdk environment to make emcc (Emscripten compiler) available in PATH.
       - name: Run tests
         run: |
@@ -266,12 +338,17 @@ jobs:
           cargo ci test
 
   keynote_bench:
-    needs: [lints]
+    needs: [merge_queue_noop, lints]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Keynote Bench
     runs-on: spacetimedb-benchmark-runner
+    concurrency:
+      group: ci-benchmark-runner
+      queue: max
     timeout-minutes: 60
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
     steps:
       - name: Find Git ref
         env:
@@ -322,11 +399,59 @@ jobs:
       - name: Run keynote-2 benchmark regression check
         run: cargo ci keynote-bench
 
+  index_scan_bench:
+    needs: [merge_queue_noop, lints]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    name: Index Scan Bench
+    runs-on: spacetimedb-benchmark-runner
+    concurrency:
+      group: ci-benchmark-runner
+      queue: max
+    timeout-minutes: 60
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
+    steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          save-if: false
+          prefix-key: v1
+
+      - name: Run index scan benchmark regression check
+        run: cargo bench -p spacetimedb-bench --bench index_scan_gate
+
   lints:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Lints
     runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
@@ -362,10 +487,13 @@ jobs:
         run: cargo ci lint
 
   wasm_bindings:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Build and test wasm bindings
     runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
     steps:
       - uses: actions/checkout@v3
 
@@ -387,9 +515,13 @@ jobs:
         run: cargo ci wasm-bindings
 
   publish_checks:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check that packages are publishable
     runs-on: spacetimedb-new-runner-2
     permissions: read-all
+    env:
+      RUST_BACKTRACE: full
     steps:
       - uses: actions/checkout@v3
       - uses: dsherret/rust-toolchain-file@v1
@@ -399,16 +531,19 @@ jobs:
         run: cargo ci publish-checks
 
   update:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Test spacetimedb-update flow (${{ matrix.target }})
     permissions: read-all
     strategy:
       matrix:
         include:
           - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-new-runner-2 }
-          - { target: aarch64-unknown-linux-gnu, runner: arm-runner }
           - { target: aarch64-apple-darwin, runner: macos-latest }
           - { target: x86_64-pc-windows-msvc, runner: windows-latest }
     runs-on: ${{ matrix.runner }}
+    env:
+      RUST_BACKTRACE: full
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -421,15 +556,29 @@ jobs:
       - name: Install rust target
         run: rustup target add ${{ matrix.target }}
 
-      - name: Install packages
-        if: ${{ matrix.runner == 'arm-runner' }}
-        shell: bash
-        run: sudo apt install -y libssl-dev
-
       - name: Test spacetimedb-update
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: cargo ci update-flow --target=${{ matrix.target }} --github-token-auth
+
+  # this is a no-op version of the above check with a trivially-passing body.
+  # we can't just let the check be entirely skipped because each matrix target is a required check,
+  # and skipping this check means that the matrix isn't "populated" so the required checks wouldn't be met.
+  update_noop:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip == 'true' }}
+    name: Test spacetimedb-update flow (${{ matrix.target }})
+    permissions: read-all
+    strategy:
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu }
+          - { target: aarch64-apple-darwin }
+          - { target: x86_64-pc-windows-msvc }
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip duplicate merge queue update test
+        run: echo "Merge queue commit has the same tree as the PR head; update-flow already ran for the PR."
 
   unreal_engine_tests:
     name: Unreal Engine Tests
@@ -453,6 +602,8 @@ jobs:
       # Run as root because otherwise we get permission denied for various directories inside the container. I tried doing dances to allow it to run
       # without this (reassigning env vars and stuff), but was unable to get it to work and it felt like an uphill battle.
       options: --user 0:0
+    env:
+      RUST_BACKTRACE: full
     steps:
       # Uncomment this before merging so that it will run properly if run manually through the GH actions flow. It was playing weird with rolled back
       # commits though.
@@ -523,8 +674,12 @@ jobs:
             '
 
   ci_command_docs:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check CI command docs
     runs-on: spacetimedb-new-runner-2
+    env:
+      RUST_BACKTRACE: full
     steps:
       - name: Find Git ref
         env:
@@ -552,11 +707,14 @@ jobs:
         run: cargo ci self-docs --check
 
   cli_docs:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check CLI docs
     permissions: read-all
     runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
     steps:
       - name: Find Git ref
         env:
@@ -616,10 +774,10 @@ jobs:
           cargo ci cli-docs
 
   unity-testsuite:
-    needs: [lints]
+    needs: [merge_queue_noop, lints]
     # Skip if this is an external contribution.
     # The license secrets will be empty, so the step would fail anyway.
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
     permissions:
       contents: read
       checks: write
@@ -627,6 +785,7 @@ jobs:
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
     steps:
       - name: Checkout repository
         id: checkout-stdb
@@ -760,18 +919,144 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
 
-  csharp-testsuite:
-    needs: [lints]
+  godot-testsuite:
+    needs: [merge_queue_noop, lints]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    permissions:
+      contents: read
     runs-on: spacetimedb-new-runner-2
-    timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      UseLocalBsatnRuntime: true
     steps:
       - name: Checkout repository
         id: checkout-stdb
         uses: actions/checkout@v4
 
-      # Run cheap .NET tests first. If those fail, no need to run expensive Unity tests.
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@v3
+        with:
+          global-json-file: global.json
+
+      - name: Override NuGet packages
+        run: |
+          dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
+          dotnet pack -c Release crates/bindings-csharp/Runtime
+
+          # Write out the nuget config file to `nuget.config`. This causes the spacetimedb-csharp-sdk repository
+          # to be aware of the local versions of the `bindings-csharp` packages in SpacetimeDB, and use them if
+          # available. Otherwise, `spacetimedb-csharp-sdk` will use the NuGet versions of the packages.
+          # This means that (if version numbers match) we will test the local versions of the C# packages, even
+          # if they're not pushed to NuGet.
+          # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
+          cd sdks/csharp
+          ./tools~/write-nuget-config.sh ../..
+
+      - name: Restore .NET solution
+        working-directory: sdks/csharp
+        run: dotnet restore --configfile NuGet.Config SpacetimeDB.ClientSDK.sln
+
+      # Now, setup the Godot tests.
+      - name: Patch spacetimedb dependency in Cargo.toml
+        working-directory: demo/Blackholio/server-rust
+        run: |
+          sed -i "s|spacetimedb *=.*|spacetimedb = \{ path = \"../../../crates/bindings\" \}|" Cargo.toml
+          cat Cargo.toml
+
+      - name: Install Rust toolchain
+        uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          # Let the main CI job save the cache since it builds the most things
+          save-if: false
+          prefix-key: v1
+
+      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
+      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
+      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
+      # `cargo build --manifest-path` (which apparently build different dependency trees).
+      # However, we've been unable to fix it so... /shrug
+      - name: Check v8 outputs
+        run: |
+          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
+          if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
+            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
+            cargo clean --release -p v8 || true
+            cargo build --release -p v8
+          fi
+
+      - name: Install SpacetimeDB CLI from the local checkout
+        run: |
+          export CARGO_HOME="$HOME/.cargo"
+          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+          cargo install --force --path crates/cli --locked --message-format=short
+          cargo install --force --path crates/standalone --locked --message-format=short
+          # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
+          ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
+
+      - name: Generate client bindings
+        working-directory: demo/Blackholio/server-rust
+        run: bash ./generate.sh -y
+
+      - name: Check for changes
+        run: |
+          tools/check-diff.sh demo/Blackholio/client-godot/module_bindings || {
+              echo 'Error: Godot bindings are dirty. Please run `demo/Blackholio/server-rust/generate.sh`.'
+              exit 1
+          }
+
+      - name: Patch SpacetimeDB Godot SDK dependency
+        working-directory: demo/Blackholio/client-godot
+        run: |
+          dotnet remove package SpacetimeDB.ClientSDK.Godot
+          dotnet add reference ../../../sdks/csharp/SpacetimeDB.ClientSDK.Godot.csproj
+          cat blackholio.csproj
+
+      - name: Setup Godot
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.6.2
+          use-dotnet: true
+
+      - name: Restore Godot project
+        working-directory: demo/Blackholio/client-godot
+        run: dotnet restore --configfile ../../../NuGet.Config blackholio.csproj
+
+      - name: Build Godot project
+        run: godot --headless --verbose --path demo/Blackholio/client-godot --build-solutions --quit
+
+      - name: Start SpacetimeDB
+        run: |
+          spacetime start &
+          disown
+
+      - name: Publish godot-tests module to SpacetimeDB
+        working-directory: demo/Blackholio/server-rust
+        run: |
+          spacetime login --server-issued-login local
+          bash ./publish.sh
+
+      - name: Run Godot tests
+        run: godot --headless --path demo/Blackholio/client-godot --scene res://tests/GodotPlayModeTests.tscn
+
+  csharp-testsuite:
+    needs: [merge_queue_noop, lints]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    runs-on: spacetimedb-new-runner-2
+    timeout-minutes: 30
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
+    steps:
+      - name: Checkout repository
+        id: checkout-stdb
+        uses: actions/checkout@v4
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@v3
@@ -879,10 +1164,14 @@ jobs:
           }
 
   global_json_policy:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Verify global.json files are symlinks
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      RUST_BACKTRACE: full
     steps:
       - name: Find Git ref
         env:
@@ -916,12 +1205,15 @@ jobs:
         run: cargo ci global-json-policy
 
   smoketests_mod_rs_complete:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Check smoketests/mod.rs is complete
     runs-on: ubuntu-latest
     permissions:
       contents: read
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
     steps:
       - name: Find Git ref
         env:
@@ -972,8 +1264,12 @@ jobs:
           cargo ci smoketests check-mod-list
 
   docs-build:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Docs build
     runs-on: spacetimedb-new-runner-2
+    env:
+      RUST_BACKTRACE: full
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -1009,8 +1305,12 @@ jobs:
         run: cargo ci docs
 
   typescript-test:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: TypeScript - Tests
     runs-on: spacetimedb-new-runner-2
+    env:
+      RUST_BACKTRACE: full
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -1118,24 +1418,3 @@ jobs:
       # - name: Print rows in the user table
       #   if: always()
       #   run: spacetime sql quickstart-chat "SELECT * FROM user"
-
-  version_upgrade_check:
-    runs-on: spacetimedb-new-runner-2
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-      - uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
-      # pnpm is required for regenerating the typescript bindings
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - uses: ./.github/actions/setup-pnpm
-        with:
-          run_install: true
-      - name: Verify that upgrade-version still works
-        run: cargo ci version-upgrade-check
-      - name: Show diff
-        run: git diff HEAD

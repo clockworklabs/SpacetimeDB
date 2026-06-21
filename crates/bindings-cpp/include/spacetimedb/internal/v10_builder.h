@@ -26,6 +26,7 @@
 #include "autogen/RawReducerDefV10.g.h"
 #include "autogen/RawProcedureDefV10.g.h"
 #include "autogen/RawViewDefV10.g.h"
+#include "autogen/RawViewPrimaryKeyDefV10.g.h"
 #include "autogen/RawScheduleDefV10.g.h"
 #include "autogen/RawLifeCycleReducerDefV10.g.h"
 #include "autogen/RawHttpHandlerDefV10.g.h"
@@ -34,6 +35,7 @@
 #include "autogen/RawRowLevelSecurityDefV9.g.h"
 #include "autogen/RawTypeDefV10.g.h"
 #include "field_registration.h"
+#include "../query_builder.h"
 #include "buffer_pool.h"
 #include "runtime_registration.h"
 #include "template_utils.h"
@@ -466,10 +468,14 @@ public:
                 [func](ViewContext& ctx, BytesSource args_source) -> std::vector<uint8_t> {
                     (void)args_source;
                     auto result = func(ctx);
-                    auto result_vec = view_result_to_vec(std::move(result));
                     IterBuf buf = IterBuf::take();
-                    {
-                        bsatn::Writer writer(buf.get());
+                    bsatn::Writer writer(buf.get());
+                    if constexpr (query_builder::QueryBuilderReturn<ReturnType>) {
+                        writer.write_u8(1);
+                        bsatn::serialize(writer, result.into_sql());
+                    } else {
+                        writer.write_u8(0);
+                        auto result_vec = view_result_to_vec(std::move(result));
                         bsatn::serialize(writer, result_vec);
                     }
                     return buf.release();
@@ -480,10 +486,14 @@ public:
                 [func](AnonymousViewContext& ctx, BytesSource args_source) -> std::vector<uint8_t> {
                     (void)args_source;
                     auto result = func(ctx);
-                    auto result_vec = view_result_to_vec(std::move(result));
                     IterBuf buf = IterBuf::take();
-                    {
-                        bsatn::Writer writer(buf.get());
+                    bsatn::Writer writer(buf.get());
+                    if constexpr (query_builder::QueryBuilderReturn<ReturnType>) {
+                        writer.write_u8(1);
+                        bsatn::serialize(writer, result.into_sql());
+                    } else {
+                        writer.write_u8(0);
+                        auto result_vec = view_result_to_vec(std::move(result));
                         bsatn::serialize(writer, result_vec);
                     }
                     return buf.release();
@@ -492,8 +502,17 @@ public:
         }
 
         auto& type_reg = getModuleTypeRegistration();
-        auto bsatn_return = bsatn::bsatn_traits<ReturnType>::algebraic_type();
-        AlgebraicType return_type = type_reg.registerType(bsatn_return, "", &typeid(ReturnType));
+        AlgebraicType return_type = [&]() {
+            if constexpr (query_builder::QueryBuilderReturn<ReturnType>) {
+                using RowType = query_builder::query_row_type_t<ReturnType>;
+                auto row_bsatn = bsatn::bsatn_traits<RowType>::algebraic_type();
+                auto row_type = type_reg.registerType(row_bsatn, "", &typeid(RowType));
+                return MakeQueryReturnAlgebraicType(std::move(row_type));
+            } else {
+                auto bsatn_return = bsatn::bsatn_traits<ReturnType>::algebraic_type();
+                return type_reg.registerType(bsatn_return, "", &typeid(ReturnType));
+            }
+        }();
         bool is_anonymous = std::is_same_v<ContextType, AnonymousViewContext>;
         uint32_t index = static_cast<uint32_t>(is_anonymous ? (GetAnonymousViewHandlerCount() - 1) : (GetViewHandlerCount() - 1));
 
@@ -614,6 +633,10 @@ public:
         row_level_security_.push_back(RawRowLevelSecurityDefV9{sql_query});
     }
 
+    void RegisterViewPrimaryKey(const std::string& view_source_name, std::vector<std::string> columns) {
+        view_primary_keys_.push_back(RawViewPrimaryKeyDefV10{view_source_name, std::move(columns)});
+    }
+
     void SetTableIsEventFlag(const std::string& table_name, bool is_event);
     bool GetTableIsEventFlag(const std::string& table_name) const;
 
@@ -658,6 +681,7 @@ private:
                                                uint16_t field_idx) const;
     static AlgebraicType MakeUnitAlgebraicType();
     static AlgebraicType MakeStringAlgebraicType();
+    static AlgebraicType MakeQueryReturnAlgebraicType(AlgebraicType row_type);
 
     std::vector<std::pair<std::string, bool>> table_is_event_;
     std::optional<CaseConversionPolicy> case_conversion_policy_;
@@ -667,6 +691,7 @@ private:
     std::vector<RawReducerDefV10> reducers_;
     std::vector<RawProcedureDefV10> procedures_;
     std::vector<RawViewDefV10> views_;
+    std::vector<RawViewPrimaryKeyDefV10> view_primary_keys_;
     std::vector<RawHttpHandlerDefV10> http_handlers_;
     std::vector<RawHttpRouteDefV10> http_routes_;
     std::vector<RawScheduleDefV10> schedules_;
@@ -685,4 +710,3 @@ V10Builder& getV10Builder();
 } // namespace SpacetimeDB
 
 #endif // SPACETIMEDB_V10_BUILDER_H
-

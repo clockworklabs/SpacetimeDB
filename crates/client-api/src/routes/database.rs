@@ -202,7 +202,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
             let (status, body) = reducer_outcome_response(&owner_identity, &reducer, result.outcome);
             Ok((
                 status,
-                TypedHeader(SpacetimeEnergyUsed(result.energy_used)),
+                TypedHeader(SpacetimeEnergyUsed(result.execution_budget_used)),
                 TypedHeader(SpacetimeExecutionDurationMicros(result.execution_duration)),
                 body,
             )
@@ -848,6 +848,14 @@ pub async fn reset<S: NodeDelegate + ControlStateDelegate + Authorization>(
     ctx.authorize_action(auth.claims.identity, database.database_identity, Action::ResetDatabase)
         .await?;
 
+    if ctx.is_database_locked(&database_identity).await.map_err(log_and_500)? {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Database is locked and cannot be reset with --delete-data. Run `spacetime unlock` first.",
+        )
+            .into());
+    }
+
     let num_replicas = num_replicas.map(validate_replication_factor).transpose()?.flatten();
     ctx.reset_database(
         &auth.claims.identity,
@@ -1323,7 +1331,56 @@ pub async fn delete_database<S: ControlStateDelegate + Authorization>(
 
     ctx.authorize_action(auth.claims.identity, database_identity, Action::DeleteDatabase)
         .await?;
+
+    if ctx.is_database_locked(&database_identity).await.map_err(log_and_500)? {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Database is locked and cannot be deleted. Run `spacetime unlock` first.",
+        )
+            .into());
+    }
+
     ctx.delete_database(&auth.claims.identity, &database_identity)
+        .await
+        .map_err(log_and_500)?;
+
+    Ok(())
+}
+
+pub async fn lock_database<S: ControlStateDelegate + Authorization>(
+    State(ctx): State<S>,
+    Path(DeleteDatabaseParams { name_or_identity }): Path<DeleteDatabaseParams>,
+    Extension(auth): Extension<SpacetimeAuth>,
+) -> axum::response::Result<impl IntoResponse> {
+    let database_identity = name_or_identity.resolve(&ctx).await?;
+    let Some(_database) = worker_ctx_find_database(&ctx, &database_identity).await? else {
+        return Err(StatusCode::NOT_FOUND.into());
+    };
+
+    ctx.authorize_action(auth.claims.identity, database_identity, Action::DeleteDatabase)
+        .await?;
+
+    ctx.set_database_lock(&auth.claims.identity, &database_identity, true)
+        .await
+        .map_err(log_and_500)?;
+
+    Ok(())
+}
+
+pub async fn unlock_database<S: ControlStateDelegate + Authorization>(
+    State(ctx): State<S>,
+    Path(DeleteDatabaseParams { name_or_identity }): Path<DeleteDatabaseParams>,
+    Extension(auth): Extension<SpacetimeAuth>,
+) -> axum::response::Result<impl IntoResponse> {
+    let database_identity = name_or_identity.resolve(&ctx).await?;
+    let Some(_database) = worker_ctx_find_database(&ctx, &database_identity).await? else {
+        return Err(StatusCode::NOT_FOUND.into());
+    };
+
+    ctx.authorize_action(auth.claims.identity, database_identity, Action::DeleteDatabase)
+        .await?;
+
+    ctx.set_database_lock(&auth.claims.identity, &database_identity, false)
         .await
         .map_err(log_and_500)?;
 
@@ -1498,6 +1555,10 @@ pub struct DatabaseRoutes<S> {
     pub db_reset: MethodRouter<S>,
     /// GET: /database/: name_or_identity/unstable/timestamp
     pub timestamp_get: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/lock
+    pub lock_post: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/unlock
+    pub unlock_post: MethodRouter<S>,
     /// ANY: /database/:name_or_identity/route
     pub http_route_root: MethodRouter<S>,
     /// ANY: /database/:name_or_identity/route/
@@ -1529,6 +1590,8 @@ where
             pre_publish: post(pre_publish::<S>),
             db_reset: put(reset::<S>),
             timestamp_get: get(get_timestamp::<S>),
+            lock_post: post(lock_database::<S>),
+            unlock_post: post(unlock_database::<S>),
             http_route_root: any(handle_http_route_root::<S>),
             http_route_root_slash: any(handle_http_route_root_slash::<S>),
             http_route: any(handle_http_route::<S>),
@@ -1556,7 +1619,9 @@ where
             .route("/sql", self.sql_post)
             .route("/unstable/timestamp", self.timestamp_get)
             .route("/pre_publish", self.pre_publish)
-            .route("/reset", self.db_reset);
+            .route("/reset", self.db_reset)
+            .route("/lock", self.lock_post)
+            .route("/unlock", self.unlock_post);
 
         let authed_root_router = axum::Router::new().route(
             "/",
@@ -1761,6 +1826,10 @@ mod tests {
         async fn lookup_namespace_owner(&self, _name: &str) -> anyhow::Result<Option<Identity>> {
             Ok(None)
         }
+
+        async fn is_database_locked(&self, _database_identity: &Identity) -> anyhow::Result<bool> {
+            Ok(false)
+        }
     }
 
     #[async_trait]
@@ -1786,6 +1855,15 @@ mod tests {
             &self,
             _caller_identity: &Identity,
             _database_identity: &Identity,
+        ) -> anyhow::Result<()> {
+            Err(anyhow::anyhow!("unused"))
+        }
+
+        async fn set_database_lock(
+            &self,
+            _caller_identity: &Identity,
+            _database_identity: &Identity,
+            _locked: bool,
         ) -> anyhow::Result<()> {
             Err(anyhow::anyhow!("unused"))
         }
