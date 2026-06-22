@@ -179,15 +179,15 @@ impl RelationalDB {
 
     pub fn with_memory_observer(mut self, memory_observer: Arc<dyn MemoryObserver>) -> Self {
         self.memory_observer = memory_observer;
-        self.observe_datastore_pages();
+        self.observe_datastore_memory();
         self
     }
 
-    fn observe_datastore_pages(&self) {
+    fn observe_datastore_memory(&self) {
         self.memory_observer.memory_observed(MemoryObservation {
             database_identity: self.database_identity,
             kind: DatabaseMemoryType::Datastore,
-            bytes: self.inner.datastore_page_bytes(),
+            bytes: self.inner.datastore_memory_bytes(),
         });
     }
 
@@ -849,7 +849,7 @@ impl RelationalDB {
         };
 
         self.maybe_do_snapshot(&tx_data);
-        self.observe_datastore_pages();
+        self.observe_datastore_memory();
 
         Ok(Some((tx_offset, tx_data, tx_metrics, reducer)))
     }
@@ -864,7 +864,7 @@ impl RelationalDB {
         });
 
         self.maybe_do_snapshot(&tx_data);
-        self.observe_datastore_pages();
+        self.observe_datastore_memory();
 
         (tx_data, tx_metrics, tx)
     }

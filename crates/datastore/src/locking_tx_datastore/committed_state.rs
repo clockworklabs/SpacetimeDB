@@ -209,6 +209,17 @@ impl CommittedState {
         self.datastore_page_bytes
     }
 
+    /// Returns committed datastore bytes.
+    ///
+    /// This currently includes the pages allocated by the datastore
+    /// and the objects stored in the [`BlobStore`].
+    ///
+    /// TODO: Eventually this should also include index bytes
+    /// once indexes are managed by the page cache.
+    pub fn datastore_memory_bytes(&self) -> u64 {
+        self.datastore_page_bytes + self.blob_store.physical_bytes_used_by_blobs()
+    }
+
     /// Recomputes `datastore_page_bytes` from committed tables.
     ///
     /// This is only used for bootstrap, snapshot restore, and replay paths.

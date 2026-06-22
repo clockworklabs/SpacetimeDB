@@ -76,7 +76,7 @@ pub(super) struct TxState {
     pub(super) pending_schema_changes: ThinVec<PendingSchemaChange>,
 }
 
-static_assert_size!(TxState, 88);
+static_assert_size!(TxState, 96);
 
 impl MemoryUsage for TxState {
     fn heap_usage(&self) -> usize {

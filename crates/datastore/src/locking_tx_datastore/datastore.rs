@@ -246,6 +246,13 @@ impl Locking {
         self.committed_state.read().datastore_page_bytes()
     }
 
+    /// Returns committed datastore bytes.
+    ///
+    /// Currently just page and blobstore bytes.
+    pub fn datastore_memory_bytes(&self) -> u64 {
+        self.committed_state.read().datastore_memory_bytes()
+    }
+
     pub fn take_snapshot_internal(
         committed_state: &RwLock<CommittedState>,
         repo: &DynSnapshotRepo,
