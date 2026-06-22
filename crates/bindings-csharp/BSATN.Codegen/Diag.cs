@@ -164,13 +164,13 @@ internal static class ErrorDescriptor
             @enum => @enum.Members[256]
         );
 
-    public static readonly ErrorDescriptor<INamedTypeSymbol> TaggedEnumInlineTuple =
+    public static readonly ErrorDescriptor<(INamedTypeSymbol baseType, SyntaxNode location)> TaggedEnumInlineTuple =
         new(
             group,
             "Tagged enum variants must be declared with inline tuples",
-            baseType =>
-                $"{baseType} does not have the expected format SpacetimeDB.TaggedEnum<(TVariant1 v1, ..., TVariantN vN)>.",
-            baseType => baseType
+            ctx =>
+                $"{ctx.baseType} does not have the expected format SpacetimeDB.TaggedEnum<(TVariant1 v1, ..., TVariantN vN)>.",
+            ctx => ctx.location
         );
 
     public static readonly ErrorDescriptor<IFieldSymbol> TaggedEnumField =
