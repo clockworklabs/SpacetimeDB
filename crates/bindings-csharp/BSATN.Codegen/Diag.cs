@@ -164,7 +164,10 @@ internal static class ErrorDescriptor
             @enum => @enum.Members[256]
         );
 
-    public static readonly ErrorDescriptor<(INamedTypeSymbol baseType, SyntaxNode location)> TaggedEnumInlineTuple =
+    public static readonly ErrorDescriptor<(
+        INamedTypeSymbol baseType,
+        SyntaxNode location
+    )> TaggedEnumInlineTuple =
         new(
             group,
             "Tagged enum variants must be declared with inline tuples",

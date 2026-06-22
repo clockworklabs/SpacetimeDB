@@ -563,7 +563,13 @@ public abstract record BaseTypeDeclaration<M>
                 is not INamedTypeSymbol { IsTupleType: true, TupleElements: var taggedEnumVariants }
             )
             {
-                diag.Report(ErrorDescriptor.TaggedEnumInlineTuple, (type.BaseType, (SyntaxNode?)typeSyntax.BaseList?.Types.FirstOrDefault()?.Type ?? typeSyntax));
+                diag.Report(
+                    ErrorDescriptor.TaggedEnumInlineTuple,
+                    (
+                        type.BaseType,
+                        (SyntaxNode?)typeSyntax.BaseList?.Types.FirstOrDefault()?.Type ?? typeSyntax
+                    )
+                );
             }
 
             if (fields.FirstOrDefault() is { } field)
