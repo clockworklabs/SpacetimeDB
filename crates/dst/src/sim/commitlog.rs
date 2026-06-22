@@ -261,28 +261,54 @@ impl Segment {
 
 impl io::Write for Segment {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let mut storage = self.storage.write().unwrap();
-
-        let mut remaining = (storage.alloc - self.pos) as usize;
-        if remaining == 0 {
-            let mut avail = self.space.lock().unwrap();
-            if *avail == 0 {
-                return Err(enospc());
-            }
-
-            let want = buf.len().next_multiple_of(PAGE_SIZE);
-            let have = want.min(*avail as usize);
-
-            storage.alloc += have as u64;
-            *avail -= have as u64;
-            remaining = (storage.alloc - self.pos) as usize;
+        if buf.is_empty() {
+            return Ok(0);
         }
 
-        let read = buf.len().min(remaining);
-        storage.buf.extend(&buf[..read]);
-        self.pos += read as u64;
+        let mut storage = self.storage.write().unwrap();
+        let requested_end = self
+            .pos
+            .checked_add(buf.len() as u64)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "write position overflow"))?;
 
-        Ok(read)
+        if requested_end > storage.alloc {
+            let mut avail = self.space.lock().unwrap();
+
+            if self.pos >= storage.alloc {
+                let minimum_alloc = next_page_multiple(
+                    self.pos
+                        .checked_add(1)
+                        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "write position overflow"))?,
+                )?;
+                let needed = minimum_alloc - storage.alloc;
+                if *avail < needed {
+                    return Err(enospc());
+                }
+            }
+
+            let target_alloc = next_page_multiple(requested_end)?;
+            let wanted = target_alloc - storage.alloc;
+            let available = wanted.min(*avail);
+
+            storage.alloc += available;
+            *avail -= available;
+        }
+
+        debug_assert!(self.pos < storage.alloc);
+        let writable = buf.len().min((storage.alloc - self.pos) as usize);
+        let start = self.pos as usize;
+        let end = start + writable;
+
+        if storage.buf.len() < start {
+            storage.buf.resize(start, 0);
+        }
+        if storage.buf.len() < end {
+            storage.buf.resize(end, 0);
+        }
+        storage.buf[start..end].copy_from_slice(&buf[..writable]);
+        self.pos += writable as u64;
+
+        Ok(writable)
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -412,6 +438,57 @@ impl io::Seek for ReadOnlySegment {
 
 impl SegmentLen for ReadOnlySegment {}
 
+fn next_page_multiple(size: u64) -> io::Result<u64> {
+    let page = PAGE_SIZE as u64;
+    let remainder = size % page;
+    if remainder == 0 {
+        return Ok(size);
+    }
+
+    size.checked_add(page - remainder)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "allocation size overflow"))
+}
+
 fn enospc() -> io::Error {
     io::Error::new(io::ErrorKind::StorageFull, "no space left on device")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Read, Seek, Write};
+
+    use super::*;
+
+    fn segment() -> Segment {
+        Segment::from_shared(Arc::new(Mutex::new(u64::MAX)), Arc::new(RwLock::new(Storage::new())))
+    }
+
+    #[test]
+    fn write_overwrites_at_seek_position() {
+        let mut segment = segment();
+
+        segment.write_all(b"abcdef").unwrap();
+        segment.seek(io::SeekFrom::Start(2)).unwrap();
+        segment.write_all(b"XY").unwrap();
+
+        let mut bytes = Vec::new();
+        segment.seek(io::SeekFrom::Start(0)).unwrap();
+        segment.read_to_end(&mut bytes).unwrap();
+
+        assert_eq!(bytes, b"abXYef");
+    }
+
+    #[test]
+    fn write_after_end_fills_gap_with_zeroes() {
+        let mut segment = segment();
+
+        segment.seek(io::SeekFrom::Start(4)).unwrap();
+        segment.write_all(&[1, 2]).unwrap();
+
+        let mut bytes = Vec::new();
+        segment.seek(io::SeekFrom::Start(0)).unwrap();
+        segment.read_to_end(&mut bytes).unwrap();
+
+        assert_eq!(bytes, &[0, 0, 0, 0, 1, 2]);
+    }
 }

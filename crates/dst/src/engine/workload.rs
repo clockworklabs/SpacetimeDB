@@ -46,10 +46,16 @@ impl InteractionCounts {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Observation {
     BeganMutTx,
-    Inserted { rows_count: u64 },
-    Deleted { rows_count: u64 },
+    Inserted { outcome: InsertOutcome },
+    Deleted,
     Committed { delta: CommitDelta },
     Replayed { state: CountState },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InsertOutcome {
+    Accepted(Row),
+    UniqueConstraintViolation,
 }
 
 #[derive(Debug, Clone, Copy)]

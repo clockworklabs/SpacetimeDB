@@ -1,5 +1,5 @@
 use super::workload::{
-    normalize_rows, CommitDelta, CountState, Interaction, Observation, Row, TableDelta, TableRowCount,
+    normalize_rows, CommitDelta, CountState, InsertOutcome, Interaction, Observation, Row, TableDelta, TableRowCount,
 };
 use crate::schema::SchemaPlan;
 
@@ -20,6 +20,8 @@ struct PendingTx {
     tables: Vec<PendingTable>,
 }
 
+// Keep mutable transactions as an overlay: committed rows stay shared, while
+// pending tables record only new rows and delete markers.
 #[derive(Debug, Default)]
 struct PendingTable {
     inserts: Vec<Row>,
@@ -27,19 +29,8 @@ struct PendingTable {
 }
 
 impl PendingTable {
-    fn is_touched(&self) -> bool {
-        !self.inserts.is_empty() || !self.deletes.is_empty()
-    }
-
     fn is_deleted(&self, row: &Row) -> bool {
         self.deletes.iter().any(|deleted| deleted == row)
-    }
-
-    fn after_contains(&self, before_rows: &[Row], row: &Row) -> bool {
-        self.inserts.iter().any(|inserted| inserted == row)
-            || before_rows
-                .iter()
-                .any(|before| !self.is_deleted(before) && before == row)
     }
 }
 
@@ -74,61 +65,29 @@ impl Model {
         &mut self.pending_tx.as_mut().expect("active transaction").tables[table]
     }
 
-    fn committed_row_is_visible(&self, table: usize, row: &Row) -> bool {
-        self.pending_table(table)
-            .is_none_or(|pending_table| !pending_table.is_deleted(row))
+    fn visible_committed_rows(&self, table: usize) -> impl Iterator<Item = &Row> + '_ {
+        let pending_table = self.pending_table(table);
+        self.committed_tables[table]
+            .rows
+            .iter()
+            .filter(move |row| pending_table.is_none_or(|pending_table| !pending_table.is_deleted(row)))
+    }
+
+    // Visibility is committed rows minus delete markers, followed by pending inserts.
+    fn visible_rows(&self, table: usize) -> impl Iterator<Item = &Row> + '_ {
+        self.visible_committed_rows(table).chain(
+            self.pending_table(table)
+                .into_iter()
+                .flat_map(|pending_table| pending_table.inserts.iter()),
+        )
     }
 
     fn visible_count(&self, table: usize) -> u64 {
-        let committed_count = self.committed_tables[table]
-            .rows
-            .iter()
-            .filter(|row| self.committed_row_is_visible(table, row))
-            .count();
-        let pending_insert_count = self
-            .pending_table(table)
-            .map_or(0, |pending_table| pending_table.inserts.len());
-        (committed_count + pending_insert_count) as u64
+        self.visible_rows(table).count() as u64
     }
 
-    fn any_visible_row(&self, table: usize, mut matches: impl FnMut(&Row) -> bool) -> bool {
-        for row in &self.committed_tables[table].rows {
-            if self.committed_row_is_visible(table, row) && matches(row) {
-                return true;
-            }
-        }
-
-        if let Some(pending_table) = self.pending_table(table) {
-            for row in &pending_table.inserts {
-                if matches(row) {
-                    return true;
-                }
-            }
-        }
-
-        false
-    }
-
-    fn visible_contains(&self, table: usize, row: &Row) -> bool {
-        self.any_visible_row(table, |visible_row| visible_row == row)
-    }
-
-    fn committed_visible_contains(&self, table: usize, row: &Row) -> bool {
-        self.committed_tables[table]
-            .rows
-            .iter()
-            .any(|committed_row| self.committed_row_is_visible(table, committed_row) && committed_row == row)
-    }
-
-    fn committed_visible_pk_match(&self, table: usize, pk_col: usize, row: &Row) -> Option<Row> {
-        self.committed_tables[table]
-            .rows
-            .iter()
-            .find(|committed_row| {
-                self.committed_row_is_visible(table, committed_row)
-                    && committed_row.elements[pk_col] == row.elements[pk_col]
-            })
-            .cloned()
+    fn any_visible_row(&self, table: usize, matches: impl FnMut(&Row) -> bool) -> bool {
+        self.visible_rows(table).any(matches)
     }
 
     fn violates_unique_constraint(&self, table: usize, row: &Row) -> bool {
@@ -155,58 +114,36 @@ impl Model {
             }
             Interaction::Insert { table, row } => {
                 debug_assert!(self.pending_tx.is_some());
-                let primary_key = self.schema.tables[*table].primary_key;
-                let count_before = self.visible_count(*table);
-
-                if self.violates_unique_constraint(*table, row) || self.visible_contains(*table, row) {
+                // Properties feed the target-returned row here, so sequence-generated
+                // values become part of the oracle before commit/replay checks run.
+                if self.any_visible_row(*table, |visible_row| visible_row == row) {
                     return Observation::Inserted {
-                        rows_count: count_before,
+                        outcome: InsertOutcome::Accepted(row.clone()),
                     };
                 }
 
-                if let Some(pk_col) = primary_key {
-                    if let Some(replaced_row) = self.committed_visible_pk_match(*table, pk_col, row) {
-                        let pending_table = self.pending_table_mut(*table);
-                        if !pending_table.is_deleted(&replaced_row) {
-                            pending_table.deletes.push(replaced_row);
-                        }
-                        pending_table.inserts.push(row.clone());
-                        return Observation::Inserted {
-                            rows_count: count_before,
-                        };
-                    }
-
-                    let pending_table = self.pending_table_mut(*table);
-                    if let Some(pos) = pending_table
-                        .inserts
-                        .iter()
-                        .position(|inserted| inserted.elements[pk_col] == row.elements[pk_col])
-                    {
-                        pending_table.inserts[pos] = row.clone();
-                        return Observation::Inserted {
-                            rows_count: count_before,
-                        };
-                    }
+                if self.violates_unique_constraint(*table, row) {
+                    return Observation::Inserted {
+                        outcome: InsertOutcome::UniqueConstraintViolation,
+                    };
                 }
 
                 self.pending_table_mut(*table).inserts.push(row.clone());
                 Observation::Inserted {
-                    rows_count: count_before + 1,
+                    outcome: InsertOutcome::Accepted(row.clone()),
                 }
             }
             Interaction::Delete { table, row } => {
                 debug_assert!(self.pending_tx.is_some());
-                if self.visible_contains(*table, row) {
-                    let committed_has_row = self.committed_visible_contains(*table, row);
+                if self.any_visible_row(*table, |visible_row| visible_row == row) {
+                    let committed_has_row = self.visible_committed_rows(*table).any(|committed| committed == row);
                     let pending_table = self.pending_table_mut(*table);
                     pending_table.inserts.retain(|inserted| inserted != row);
                     if committed_has_row && !pending_table.is_deleted(row) {
                         pending_table.deletes.push(row.clone());
                     }
                 }
-                Observation::Deleted {
-                    rows_count: self.visible_count(*table),
-                }
+                Observation::Deleted
             }
             Interaction::CommitTx => {
                 debug_assert!(self.pending_tx.is_some());
@@ -227,7 +164,7 @@ impl Model {
         let mut tables = Vec::new();
 
         for (table, pending_table) in pending_tx.tables.into_iter().enumerate() {
-            if !pending_table.is_touched() {
+            if pending_table.inserts.is_empty() && pending_table.deletes.is_empty() {
                 continue;
             }
 
@@ -240,10 +177,11 @@ impl Model {
                     .cloned()
                     .collect(),
             );
+            // A delete followed by the same insert leaves the committed set unchanged.
             let deletes = normalize_rows(
                 before_rows
                     .iter()
-                    .filter(|before| !pending_table.after_contains(before_rows, before))
+                    .filter(|before| pending_table.is_deleted(before) && !pending_table.inserts.contains(before))
                     .cloned()
                     .collect(),
             );
@@ -280,33 +218,12 @@ impl Model {
     }
 
     pub fn row(&self, table: usize, row: usize) -> Option<&Row> {
-        let mut remaining = row;
-        for committed_row in &self.committed_tables[table].rows {
-            if !self.committed_row_is_visible(table, committed_row) {
-                continue;
-            }
-            if remaining == 0 {
-                return Some(committed_row);
-            }
-            remaining -= 1;
-        }
-
-        self.pending_table(table)
-            .and_then(|pending_table| pending_table.inserts.get(remaining))
+        self.visible_rows(table).nth(row)
     }
 
     #[cfg(test)]
     pub fn rows(&self, table: usize) -> Vec<Row> {
-        let mut rows = Vec::with_capacity(self.row_count(table));
-        for committed_row in &self.committed_tables[table].rows {
-            if self.committed_row_is_visible(table, committed_row) {
-                rows.push(committed_row.clone());
-            }
-        }
-        if let Some(pending_table) = self.pending_table(table) {
-            rows.extend(pending_table.inserts.iter().cloned());
-        }
-        rows
+        self.visible_rows(table).cloned().collect()
     }
 
     fn light_snapshot(&self) -> CountState {
@@ -361,7 +278,10 @@ mod tests {
         model.apply(&Interaction::BeginMutTx);
 
         let pending_tx = model.pending_tx.as_ref().expect("active transaction");
-        assert!(pending_tx.tables.iter().all(|table| !table.is_touched()));
+        assert!(pending_tx
+            .tables
+            .iter()
+            .all(|table| table.inserts.is_empty() && table.deletes.is_empty()));
         assert_eq!(model.rows(0), vec![row(1)]);
     }
 

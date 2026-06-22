@@ -19,7 +19,8 @@ mod properties;
 mod workload;
 
 use self::workload::{
-    normalize_rows, row_to_bytes, CommitDelta, CountState, Interaction, Observation, TableDelta, TableRowCount,
+    normalize_rows, row_to_bytes, CommitDelta, CountState, InsertOutcome, Interaction, Observation, TableDelta,
+    TableRowCount,
 };
 
 use crate::engine::model::Model;
@@ -32,7 +33,6 @@ use crate::traits::{TargetDriver, TestSuite};
 pub struct EngineTarget {
     db: Option<RelationalDB>,
     table_ids: Vec<TableId>,
-    row_counts: Vec<u64>,
     active_mut_tx: Option<MutTx>,
     commitlog: InMemoryCommitlog,
     runtime_handle: Handle,
@@ -50,7 +50,6 @@ impl EngineTarget {
 
         Ok(Self {
             db: Some(db),
-            row_counts: vec![0; table_ids.len()],
             table_ids,
             active_mut_tx: None,
             commitlog,
@@ -215,15 +214,15 @@ impl EngineTarget {
                     .active_mut_tx
                     .as_mut()
                     .ok_or_else(|| anyhow::anyhow!("insert without active mutable transaction"))?;
-                match db.insert(tx, table_id, &bytes) {
-                    Ok(_) => self.row_counts[*table] += 1,
-                    // Generated rows can intentionally hit unique constraints; the model treats those inserts as no-ops.
-                    Err(error) if Self::is_unique_constraint_violation(&error) => {}
+                let outcome = match db.insert(tx, table_id, &bytes) {
+                    Ok((_generated_columns, row, _flags)) => InsertOutcome::Accepted(row.to_product_value()),
+                    // Generated rows can intentionally hit unique constraints; the oracle validates that rejection.
+                    Err(error) if Self::is_unique_constraint_violation(&error) => {
+                        InsertOutcome::UniqueConstraintViolation
+                    }
                     Err(error) => return Err(error.into()),
-                }
-                Ok(Observation::Inserted {
-                    rows_count: self.row_counts[*table],
-                })
+                };
+                Ok(Observation::Inserted { outcome })
             }
             Interaction::Delete { table, row } => {
                 let table_id = self.table_ids[*table];
@@ -235,13 +234,8 @@ impl EngineTarget {
                     .active_mut_tx
                     .as_mut()
                     .ok_or_else(|| anyhow::anyhow!("delete without active mutable transaction"))?;
-                let deleted = db.delete_by_rel(tx, table_id, [row.clone()]) as u64;
-                self.row_counts[*table] = self.row_counts[*table]
-                    .checked_sub(deleted)
-                    .ok_or_else(|| anyhow::anyhow!("delete removed more rows than were tracked"))?;
-                Ok(Observation::Deleted {
-                    rows_count: self.row_counts[*table],
-                })
+                db.delete_by_rel(tx, table_id, [row.clone()]);
+                Ok(Observation::Deleted)
             }
             Interaction::CommitTx => {
                 let tx = self
@@ -262,9 +256,9 @@ impl EngineTarget {
             Interaction::Replay => {
                 let _ = self.active_mut_tx.take();
                 self.reopen_from_commitlog()?;
-                let state = self.count_state()?;
-                self.row_counts = state.row_counts.iter().map(|row_count| row_count.count).collect();
-                Ok(Observation::Replayed { state })
+                Ok(Observation::Replayed {
+                    state: self.count_state()?,
+                })
             }
         };
 

@@ -1,5 +1,5 @@
 use super::model::Model;
-use super::workload::{Interaction, Observation};
+use super::workload::{InsertOutcome, Interaction, Observation, Row};
 use crate::schema::SchemaPlan;
 use crate::traits::Properties;
 
@@ -10,19 +10,12 @@ pub struct EngineProperties {
 
 impl EngineProperties {
     pub fn new(schema: SchemaPlan) -> Self {
-        let ignored_tables: Vec<usize> = schema
-            .tables
-            .iter()
-            .enumerate()
-            .filter_map(|(table, plan)| (!plan.sequences.is_empty()).then_some(table))
-            .collect();
         Self {
             oracle: EngineOracle::new(schema),
             properties: vec![
-                Box::new(CommitMatches {
-                    ignored_tables: ignored_tables.clone(),
-                }),
-                Box::new(ReplayMatchesModel { ignored_tables }),
+                Box::new(InsertMatches),
+                Box::new(CommitMatches),
+                Box::new(ReplayMatchesModel),
             ],
         }
     }
@@ -30,7 +23,7 @@ impl EngineProperties {
 
 impl Properties<Interaction, Observation> for EngineProperties {
     fn observe(&mut self, interaction: &Interaction, observation: &Observation) -> Result<(), anyhow::Error> {
-        let expected = self.oracle.apply(interaction);
+        let expected = self.oracle.apply(interaction, observation)?;
 
         for property in &self.properties {
             if property.observes(interaction) {
@@ -60,14 +53,73 @@ impl EngineOracle {
         }
     }
 
-    fn apply(&mut self, interaction: &Interaction) -> Observation {
-        self.model.apply(interaction)
+    fn apply(&mut self, interaction: &Interaction, observation: &Observation) -> anyhow::Result<Observation> {
+        let observation = match (interaction, observation) {
+            (
+                Interaction::Insert { table, .. },
+                Observation::Inserted {
+                    outcome: InsertOutcome::Accepted(row),
+                },
+            ) => self.apply_insert(*table, row),
+            (
+                Interaction::Insert { .. },
+                Observation::Inserted {
+                    outcome: InsertOutcome::UniqueConstraintViolation,
+                },
+            ) => self.model.apply(interaction),
+            (Interaction::Insert { .. }, _) => anyhow::bail!("insert produced unexpected observation"),
+            _ => self.model.apply(interaction),
+        };
+
+        Ok(observation)
+    }
+
+    fn apply_insert(&mut self, table: usize, row: &Row) -> Observation {
+        self.model.apply(&Interaction::Insert {
+            table,
+            row: row.clone(),
+        })
     }
 }
 
-struct CommitMatches {
-    ignored_tables: Vec<usize>,
+struct InsertMatches;
+
+impl EngineProperty for InsertMatches {
+    fn observes(&self, interaction: &Interaction) -> bool {
+        matches!(interaction, Interaction::Insert { .. })
+    }
+
+    fn check(
+        &self,
+        _interaction: &Interaction,
+        observation: &Observation,
+        expected: &Observation,
+    ) -> anyhow::Result<()> {
+        let Observation::Inserted { outcome } = observation else {
+            anyhow::bail!("insert_matches: insert produced unexpected observation");
+        };
+        let Observation::Inserted { outcome: expected } = expected else {
+            unreachable!("InsertMatches only subscribes to insert interactions");
+        };
+
+        match (outcome, expected) {
+            (InsertOutcome::Accepted(row), InsertOutcome::Accepted(expected)) => {
+                anyhow::ensure!(row == expected, "insert_matches: accepted row diverged from model");
+            }
+            (InsertOutcome::UniqueConstraintViolation, InsertOutcome::UniqueConstraintViolation) => {}
+            (InsertOutcome::Accepted(_), InsertOutcome::UniqueConstraintViolation) => {
+                anyhow::bail!("insert_matches: target accepted row rejected by model");
+            }
+            (InsertOutcome::UniqueConstraintViolation, InsertOutcome::Accepted(_)) => {
+                anyhow::bail!("insert_matches: target rejected row accepted by model");
+            }
+        }
+
+        Ok(())
+    }
 }
+
+struct CommitMatches;
 
 impl EngineProperty for CommitMatches {
     fn observes(&self, interaction: &Interaction) -> bool {
@@ -87,17 +139,12 @@ impl EngineProperty for CommitMatches {
             unreachable!("CommitMatches only subscribes to commit interactions");
         };
 
-        anyhow::ensure!(
-            filter_commit_delta(delta, &self.ignored_tables) == filter_commit_delta(expected, &self.ignored_tables),
-            "commit_matches: committed delta diverged from model"
-        );
+        anyhow::ensure!(delta == expected, "commit_matches: committed delta diverged from model");
         Ok(())
     }
 }
 
-struct ReplayMatchesModel {
-    ignored_tables: Vec<usize>,
-}
+struct ReplayMatchesModel;
 
 impl EngineProperty for ReplayMatchesModel {
     fn observes(&self, interaction: &Interaction) -> bool {
@@ -118,31 +165,9 @@ impl EngineProperty for ReplayMatchesModel {
         };
 
         anyhow::ensure!(
-            filter_count_state(state, &self.ignored_tables) == filter_count_state(expected, &self.ignored_tables),
+            state == expected,
             "replay_matches_model: replayed state diverged from model"
         );
         Ok(())
-    }
-}
-
-fn filter_commit_delta(delta: &super::workload::CommitDelta, ignored_tables: &[usize]) -> super::workload::CommitDelta {
-    super::workload::CommitDelta {
-        tables: delta
-            .tables
-            .iter()
-            .filter(|table| !ignored_tables.contains(&table.table))
-            .cloned()
-            .collect(),
-    }
-}
-
-fn filter_count_state(state: &super::workload::CountState, ignored_tables: &[usize]) -> super::workload::CountState {
-    super::workload::CountState {
-        row_counts: state
-            .row_counts
-            .iter()
-            .filter(|table| !ignored_tables.contains(&table.table))
-            .copied()
-            .collect(),
     }
 }

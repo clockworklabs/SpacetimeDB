@@ -11,11 +11,10 @@ cargo test -p spacetimedb-dst
 ## Run
 
 ```sh
-cargo run -p spacetimedb-dst -- run --seed 42 --tables 5
+cargo run -p spacetimedb-dst -- run --seed 42 --max-interactions 1000
 ```
 
 Options:
 
 - `--seed <u64>` — RNG seed (defaults to wall-clock nanos)
-- `--tables <usize>` — number of tables to generate (default 3)
 - `--max-interactions <usize>` — interaction budget
