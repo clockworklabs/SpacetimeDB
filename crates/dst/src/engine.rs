@@ -3,7 +3,7 @@ use std::{io, sync::Arc};
 use spacetimedb_commitlog::SizeOnDisk;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::traits::{IsolationLevel, TxData};
-use spacetimedb_engine::error::DBError;
+use spacetimedb_engine::error::{DBError, DatastoreError, IndexError};
 use spacetimedb_engine::persistence::{DiskSizeFn, Durability as EngineDurability, Persistence};
 use spacetimedb_engine::relational_db::{MutTx, RelationalDB};
 use spacetimedb_lib::{Identity, RawModuleDef};
@@ -13,29 +13,29 @@ use spacetimedb_runtime::Handle;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_table::page_pool::PagePool;
-use spacetimedb_table::read_column::ReadColumn;
 
 mod model;
 mod properties;
 mod workload;
 
-use self::workload::{row_to_bytes, summarize_rows, CommitDelta, Interaction, Observation, TableDelta, TableSummary};
+use self::workload::{
+    normalize_rows, row_to_bytes, CommitDelta, CountState, Interaction, Observation, TableDelta, TableRowCount,
+};
 
 use crate::engine::model::Model;
 use crate::engine::properties::EngineProperties;
 use crate::engine::workload::WorkloadGen;
-use crate::schema::{default_schema, lower_schema, SchemaPlan};
+use crate::schema::{default_schema, to_raw_def, SchemaPlan};
 use crate::sim::commitlog::{InMemoryCommitlog, InMemoryCommitlogHandle};
 use crate::traits::{TargetDriver, TestSuite};
 
 pub struct EngineTarget {
     db: Option<RelationalDB>,
-    schema: SchemaPlan,
     table_ids: Vec<TableId>,
+    row_counts: Vec<u64>,
     active_mut_tx: Option<MutTx>,
     commitlog: InMemoryCommitlog,
     runtime_handle: Handle,
-    runtime: SimRuntime,
 }
 
 impl EngineTarget {
@@ -50,12 +50,11 @@ impl EngineTarget {
 
         Ok(Self {
             db: Some(db),
-            schema,
+            row_counts: vec![0; table_ids.len()],
             table_ids,
             active_mut_tx: None,
             commitlog,
             runtime_handle,
-            runtime,
         })
     }
 
@@ -91,7 +90,7 @@ impl EngineTarget {
     }
 
     fn install_schema(db: &RelationalDB, schema: &SchemaPlan) -> anyhow::Result<()> {
-        let raw = lower_schema(schema);
+        let raw = to_raw_def(schema);
         let raw_module_def = RawModuleDef::V10(raw);
         let module_def =
             ModuleDef::try_from(raw_module_def).map_err(|e| anyhow::anyhow!("schema validation failed: {e}"))?;
@@ -121,8 +120,7 @@ impl EngineTarget {
         Ok(table_ids)
     }
 
-    fn replay(&mut self) -> anyhow::Result<()> {
-        self.active_mut_tx.take();
+    fn reopen_from_commitlog(&mut self) -> anyhow::Result<()> {
         let db = self
             .db
             .take()
@@ -134,27 +132,34 @@ impl EngineTarget {
         Ok(())
     }
 
-    fn table_summaries(&self) -> anyhow::Result<Vec<TableSummary>> {
+    fn count_state(&self) -> anyhow::Result<CountState> {
         let db = self
             .db
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("database is not open"))?;
         let tx = db.begin_tx(Workload::Internal);
-        let mut summaries = Vec::with_capacity(self.table_ids.len());
+        let mut row_counts = Vec::with_capacity(self.table_ids.len());
 
-        for table_id in &self.table_ids {
-            let rows = match db.iter(&tx, *table_id) {
-                Ok(iter) => iter.map(|row| row.to_product_value()).collect::<Vec<_>>(),
+        for (table, table_id) in self.table_ids.iter().enumerate() {
+            let count = match db.iter(&tx, *table_id) {
+                Ok(iter) => iter.count() as u64,
                 Err(err) => {
                     let _ = db.release_tx(tx);
                     return Err(err.into());
                 }
             };
-            summaries.push(summarize_rows(&rows));
+            row_counts.push(TableRowCount { table, count });
         }
 
         let _ = db.release_tx(tx);
-        Ok(summaries)
+        Ok(CountState { row_counts })
+    }
+
+    fn is_unique_constraint_violation(error: &DBError) -> bool {
+        matches!(
+            error,
+            DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(_)))
+        )
     }
 
     fn commit_delta_from_tx_data(&self, tx_data: &TxData) -> CommitDelta {
@@ -165,9 +170,9 @@ impl EngineTarget {
                 continue;
             };
 
-            let inserts = summarize_rows(entry.inserts.as_ref());
-            let deletes = summarize_rows(entry.deletes.as_ref());
-            if inserts.count == 0 && deletes.count == 0 && !entry.truncated {
+            let inserts = normalize_rows(entry.inserts.iter().cloned().collect());
+            let deletes = normalize_rows(entry.deletes.iter().cloned().collect());
+            if inserts.is_empty() && deletes.is_empty() && !entry.truncated {
                 continue;
             }
 
@@ -183,23 +188,10 @@ impl EngineTarget {
         CommitDelta { tables }
     }
 
-    fn auto_inc_values_from_tx_data(&self, tx_data: &TxData) -> Vec<u64> {
-        let Some((table_idx, col_idx)) = self.schema.auto_inc_table_and_column() else {
-            return vec![];
-        };
-        let table_id = self.table_ids[table_idx];
-        let mut values = tx_data
-            .iter_table_entries()
-            .filter(|(id, _)| *id == table_id)
-            .flat_map(|(_, entry)| entry.inserts.iter())
-            .filter_map(|row| row.read_col::<u64>(col_idx).ok())
-            .collect::<Vec<_>>();
-        values.sort_unstable();
-        values
-    }
-
     pub fn execute(&mut self, interaction: &Interaction) -> anyhow::Result<Observation> {
-        match interaction {
+        tracing::debug!(?interaction, "executing interaction");
+
+        let observation = match interaction {
             Interaction::BeginMutTx => {
                 anyhow::ensure!(
                     self.active_mut_tx.is_none(),
@@ -224,11 +216,14 @@ impl EngineTarget {
                     .as_mut()
                     .ok_or_else(|| anyhow::anyhow!("insert without active mutable transaction"))?;
                 match db.insert(tx, table_id, &bytes) {
-                    Ok(_) => {}
-                    Err(_) => {}
+                    Ok(_) => self.row_counts[*table] += 1,
+                    // Generated rows can intentionally hit unique constraints; the model treats those inserts as no-ops.
+                    Err(error) if Self::is_unique_constraint_violation(&error) => {}
+                    Err(error) => return Err(error.into()),
                 }
-                let count_after = db.iter_mut(tx, table_id)?.count() as u64;
-                Ok(Observation::Inserted { count_after })
+                Ok(Observation::Inserted {
+                    rows_count: self.row_counts[*table],
+                })
             }
             Interaction::Delete { table, row } => {
                 let table_id = self.table_ids[*table];
@@ -240,9 +235,13 @@ impl EngineTarget {
                     .active_mut_tx
                     .as_mut()
                     .ok_or_else(|| anyhow::anyhow!("delete without active mutable transaction"))?;
-                db.delete_by_rel(tx, table_id, [row.clone()]);
-                let count_after = db.iter_mut(tx, table_id)?.count() as u64;
-                Ok(Observation::Deleted { count_after })
+                let deleted = db.delete_by_rel(tx, table_id, [row.clone()]) as u64;
+                self.row_counts[*table] = self.row_counts[*table]
+                    .checked_sub(deleted)
+                    .ok_or_else(|| anyhow::anyhow!("delete removed more rows than were tracked"))?;
+                Ok(Observation::Deleted {
+                    rows_count: self.row_counts[*table],
+                })
             }
             Interaction::CommitTx => {
                 let tx = self
@@ -258,37 +257,23 @@ impl EngineTarget {
                 };
                 Ok(Observation::Committed {
                     delta: self.commit_delta_from_tx_data(&tx_data),
-                    auto_inc_values: self.auto_inc_values_from_tx_data(&tx_data),
                 })
-            }
-            Interaction::Count { table } => {
-                let table_id = self.table_ids[*table];
-                let db = self
-                    .db
-                    .as_ref()
-                    .ok_or_else(|| anyhow::anyhow!("database is not open"))?;
-                let tx = self
-                    .active_mut_tx
-                    .as_mut()
-                    .ok_or_else(|| anyhow::anyhow!("count without active mutable transaction"))?;
-                let count = db.iter_mut(tx, table_id)?.count() as u64;
-                Ok(Observation::Counted { count })
             }
             Interaction::Replay => {
-                self.replay()?;
-                Ok(Observation::Replayed {
-                    summaries: self.table_summaries()?,
-                })
+                let _ = self.active_mut_tx.take();
+                self.reopen_from_commitlog()?;
+                let state = self.count_state()?;
+                self.row_counts = state.row_counts.iter().map(|row_count| row_count.count).collect();
+                Ok(Observation::Replayed { state })
             }
+        };
+
+        match &observation {
+            Ok(observation) => tracing::debug!(?observation, "observed interaction"),
+            Err(error) => tracing::error!(?interaction, %error, "interaction failed"),
         }
-    }
 
-    pub fn db(&self) -> &RelationalDB {
-        self.db.as_ref().expect("database is open")
-    }
-
-    pub fn schema(&self) -> &SchemaPlan {
-        &self.schema
+        observation
     }
 }
 

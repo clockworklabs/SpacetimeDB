@@ -2,6 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Args, Parser, Subcommand};
 use spacetimedb_runtime::sim::Rng;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod engine;
 mod schema;
@@ -38,7 +39,24 @@ fn main() -> anyhow::Result<()> {
     }
 }
 
-fn init_tracing() {}
+fn init_tracing() {
+    let timer = tracing_subscriber::fmt::time();
+    let format = tracing_subscriber::fmt::format::Format::default()
+        .with_timer(timer)
+        .with_line_number(true)
+        .with_file(true)
+        .with_target(false)
+        .compact();
+    let fmt_layer = tracing_subscriber::fmt::Layer::default()
+        .event_format(format)
+        .with_writer(std::io::stderr);
+    let env_filter_layer = tracing_subscriber::EnvFilter::from_default_env();
+
+    let _ = tracing_subscriber::Registry::default()
+        .with(fmt_layer)
+        .with(env_filter_layer)
+        .try_init();
+}
 
 fn run_command(args: RunArgs) -> anyhow::Result<()> {
     let seed = resolve_seed(args.seed);
@@ -47,13 +65,13 @@ fn run_command(args: RunArgs) -> anyhow::Result<()> {
         seed,
     };
 
-    eprintln!("seed: {}", config.seed);
+    tracing::info!(?config, "initial run config");
 
     // Generate schema from seed.
     let rng = Rng::new(config.seed);
 
     let test = EngineTest {};
-    test.run(rng)?;
+    test.run(rng, config.max_interactions)?;
     Ok(())
 }
 

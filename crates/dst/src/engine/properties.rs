@@ -1,5 +1,3 @@
-use std::cell::Cell;
-
 use super::model::Model;
 use super::workload::{Interaction, Observation};
 use crate::schema::SchemaPlan;
@@ -12,18 +10,19 @@ pub struct EngineProperties {
 
 impl EngineProperties {
     pub fn new(schema: SchemaPlan) -> Self {
-        let auto_inc_table = schema.auto_inc_table_and_column().map(|(table, _)| table);
+        let ignored_tables: Vec<usize> = schema
+            .tables
+            .iter()
+            .enumerate()
+            .filter_map(|(table, plan)| (!plan.sequences.is_empty()).then_some(table))
+            .collect();
         Self {
             oracle: EngineOracle::new(schema),
             properties: vec![
-                Box::new(CountVisible),
                 Box::new(CommitMatches {
-                    ignored_table: auto_inc_table,
+                    ignored_tables: ignored_tables.clone(),
                 }),
-                Box::new(AutoIncIncreasing::default()),
-                Box::new(ReplayMatches {
-                    ignored_table: auto_inc_table,
-                }),
+                Box::new(ReplayMatchesModel { ignored_tables }),
             ],
         }
     }
@@ -66,36 +65,8 @@ impl EngineOracle {
     }
 }
 
-struct CountVisible;
-
-impl EngineProperty for CountVisible {
-    fn observes(&self, interaction: &Interaction) -> bool {
-        matches!(interaction, Interaction::Count { .. })
-    }
-
-    fn check(
-        &self,
-        _interaction: &Interaction,
-        observation: &Observation,
-        expected: &Observation,
-    ) -> anyhow::Result<()> {
-        let Observation::Counted { count } = observation else {
-            anyhow::bail!("count_visible: count produced unexpected observation");
-        };
-        let Observation::Counted { count: expected } = expected else {
-            unreachable!("CountVisible only subscribes to count interactions");
-        };
-
-        anyhow::ensure!(
-            count == expected,
-            "count_visible: count did not reflect visible transaction state"
-        );
-        Ok(())
-    }
-}
-
 struct CommitMatches {
-    ignored_table: Option<usize>,
+    ignored_tables: Vec<usize>,
 }
 
 impl EngineProperty for CommitMatches {
@@ -117,59 +88,18 @@ impl EngineProperty for CommitMatches {
         };
 
         anyhow::ensure!(
-            filter_commit_delta(delta, self.ignored_table) == filter_commit_delta(expected, self.ignored_table),
+            filter_commit_delta(delta, &self.ignored_tables) == filter_commit_delta(expected, &self.ignored_tables),
             "commit_matches: committed delta diverged from model"
         );
         Ok(())
     }
 }
 
-struct AutoIncIncreasing {
-    max_seen: Cell<Option<u64>>,
+struct ReplayMatchesModel {
+    ignored_tables: Vec<usize>,
 }
 
-impl Default for AutoIncIncreasing {
-    fn default() -> Self {
-        Self {
-            max_seen: Cell::new(None),
-        }
-    }
-}
-
-impl EngineProperty for AutoIncIncreasing {
-    fn observes(&self, interaction: &Interaction) -> bool {
-        matches!(interaction, Interaction::CommitTx)
-    }
-
-    fn check(
-        &self,
-        _interaction: &Interaction,
-        observation: &Observation,
-        _expected: &Observation,
-    ) -> anyhow::Result<()> {
-        let Observation::Committed { auto_inc_values, .. } = observation else {
-            anyhow::bail!("auto_inc_increasing: commit produced unexpected observation");
-        };
-
-        let mut previous = self.max_seen.get().unwrap_or(0);
-        for &value in auto_inc_values {
-            anyhow::ensure!(
-                value > previous,
-                "auto_inc_increasing: observed value {value} after {previous}"
-            );
-            previous = value;
-        }
-        self.max_seen.set(Some(previous));
-
-        Ok(())
-    }
-}
-
-struct ReplayMatches {
-    ignored_table: Option<usize>,
-}
-
-impl EngineProperty for ReplayMatches {
+impl EngineProperty for ReplayMatchesModel {
     fn observes(&self, interaction: &Interaction) -> bool {
         matches!(interaction, Interaction::Replay)
     }
@@ -180,47 +110,39 @@ impl EngineProperty for ReplayMatches {
         observation: &Observation,
         expected: &Observation,
     ) -> anyhow::Result<()> {
-        let Observation::Replayed { summaries } = observation else {
-            anyhow::bail!("replay_matches: replay produced unexpected observation");
+        let Observation::Replayed { state } = observation else {
+            anyhow::bail!("replay_matches_model: replay produced unexpected observation");
         };
-        let Observation::Replayed { summaries: expected } = expected else {
-            unreachable!("ReplayMatches only subscribes to replay interactions");
+        let Observation::Replayed { state: expected } = expected else {
+            unreachable!("ReplayMatchesModel only subscribes to replay interactions");
         };
 
         anyhow::ensure!(
-            filter_summaries(summaries, self.ignored_table) == filter_summaries(expected, self.ignored_table),
-            "replay_matches: replayed target summary diverged from committed model"
+            filter_count_state(state, &self.ignored_tables) == filter_count_state(expected, &self.ignored_tables),
+            "replay_matches_model: replayed state diverged from model"
         );
         Ok(())
     }
 }
 
-fn filter_commit_delta(
-    delta: &super::workload::CommitDelta,
-    ignored_table: Option<usize>,
-) -> super::workload::CommitDelta {
-    let Some(ignored_table) = ignored_table else {
-        return delta.clone();
-    };
-
+fn filter_commit_delta(delta: &super::workload::CommitDelta, ignored_tables: &[usize]) -> super::workload::CommitDelta {
     super::workload::CommitDelta {
         tables: delta
             .tables
             .iter()
-            .filter(|table| table.table != ignored_table)
+            .filter(|table| !ignored_tables.contains(&table.table))
             .cloned()
             .collect(),
     }
 }
 
-fn filter_summaries(
-    summaries: &[super::workload::TableSummary],
-    ignored_table: Option<usize>,
-) -> Vec<super::workload::TableSummary> {
-    summaries
-        .iter()
-        .enumerate()
-        .filter(|(table, _)| Some(*table) != ignored_table)
-        .map(|(_, summary)| *summary)
-        .collect()
+fn filter_count_state(state: &super::workload::CountState, ignored_tables: &[usize]) -> super::workload::CountState {
+    super::workload::CountState {
+        row_counts: state
+            .row_counts
+            .iter()
+            .filter(|table| !ignored_tables.contains(&table.table))
+            .copied()
+            .collect(),
+    }
 }

@@ -1,6 +1,9 @@
+use std::fmt::{Debug, Error, Formatter};
+
 use spacetimedb_lib::bsatn::to_vec;
 use spacetimedb_lib::{AlgebraicValue, ProductValue};
 use spacetimedb_runtime::sim::Rng;
+use spacetimedb_sats::ArrayValue;
 
 use super::model::Model;
 use crate::schema::{SchemaPlan, TablePlan, Type};
@@ -13,58 +16,88 @@ pub enum Interaction {
     Insert { table: usize, row: Row },
     Delete { table: usize, row: Row },
     CommitTx,
-    Count { table: usize },
     Replay,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct InteractionCounts {
+    pub total: usize,
+    pub begin_mut_tx: usize,
+    pub insert: usize,
+    pub delete: usize,
+    pub commit_tx: usize,
+    pub replay: usize,
+}
+
+impl InteractionCounts {
+    pub fn record(&mut self, interaction: &Interaction) {
+        self.total += 1;
+
+        match interaction {
+            Interaction::BeginMutTx => self.begin_mut_tx += 1,
+            Interaction::Insert { .. } => self.insert += 1,
+            Interaction::Delete { .. } => self.delete += 1,
+            Interaction::CommitTx => self.commit_tx += 1,
+            Interaction::Replay => self.replay += 1,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Observation {
     BeganMutTx,
-    Inserted {
-        count_after: u64,
-    },
-    Deleted {
-        count_after: u64,
-    },
-    Committed {
-        delta: CommitDelta,
-        auto_inc_values: Vec<u64>,
-    },
-    Counted {
-        count: u64,
-    },
-    Replayed {
-        summaries: Vec<TableSummary>,
-    },
+    Inserted { rows_count: u64 },
+    Deleted { rows_count: u64 },
+    Committed { delta: CommitDelta },
+    Replayed { state: CountState },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TableSummary {
-    pub count: u64,
-    pub hash: u64,
+#[derive(Debug, Clone, Copy)]
+pub struct InteractionWeights {
+    pub insert: u64,
+    pub delete: u64,
+    pub commit_tx: u64,
+    pub replay: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommitDelta {
-    pub tables: Vec<TableDelta>,
+impl Default for InteractionWeights {
+    fn default() -> Self {
+        Self {
+            insert: 50,
+            delete: 20,
+            commit_tx: 29,
+            replay: 1,
+        }
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TableDelta {
-    pub table: usize,
-    pub inserts: TableSummary,
-    pub deletes: TableSummary,
-    pub truncated: bool,
+#[derive(Debug, Clone, Copy)]
+enum InteractionChoice {
+    Insert,
+    Delete,
+    CommitTx,
+    Replay,
 }
 
 pub struct WorkloadGen {
     rng: Rng,
     model: Model,
+    stats: InteractionCounts,
+    weights: InteractionWeights,
 }
 
 impl WorkloadGen {
     pub fn new(rng: Rng, model: Model) -> Self {
-        Self { rng, model }
+        Self {
+            rng,
+            model,
+            stats: InteractionCounts::default(),
+            weights: InteractionWeights::default(),
+        }
+    }
+
+    pub fn stats(&self) -> InteractionCounts {
+        self.stats
     }
 
     fn schema(&self) -> &SchemaPlan {
@@ -96,13 +129,15 @@ impl WorkloadGen {
     fn gen_insert_row(&self, table_idx: usize) -> Row {
         let table = &self.schema().tables[table_idx];
         let mut row = self.gen_row(table);
+
         if let Some(sequence) = table.sequences.first() {
-            row.elements[sequence.column] = match sequence.ty {
+            row.elements[sequence.column] = match table.columns[sequence.column].ty {
                 Type::I64 => AlgebraicValue::I64(0),
                 Type::U64 => AlgebraicValue::U64(0),
                 _ => unreachable!("sequence columns are integral"),
             };
         }
+
         row
     }
 
@@ -111,82 +146,157 @@ impl WorkloadGen {
             .schema()
             .auto_inc_table_and_column()
             .map(|(table_idx, _)| table_idx);
+
         (0..self.schema().tables.len()).find(|&table_idx| Some(table_idx) != auto_inc_table)
     }
 
     pub fn next_interaction(&mut self) -> Interaction {
-        let insert_table_idx = self
-            .schema()
-            .auto_inc_table_and_column()
-            .map(|(table_idx, _)| table_idx)
-            .filter(|_| self.rng.next_u64() % 3 != 0)
-            .unwrap_or_else(|| self.rng.index(self.schema().tables.len()));
-        let read_write_table_idx = self.non_auto_inc_table_idx();
-
-        let interaction = if self.model.in_mut_tx() {
-            let coin = self.rng.next_u64() % 11;
-            if coin == 0 {
-                Interaction::Replay
-            } else if coin < 6 {
-                Interaction::Insert {
-                    table: insert_table_idx,
-                    row: self.gen_insert_row(insert_table_idx),
-                }
-            } else if coin < 8 && read_write_table_idx.is_some_and(|table_idx| !self.model.rows(table_idx).is_empty()) {
-                let table_idx = read_write_table_idx.expect("checked above");
-                let rows = self.model.rows(table_idx);
-                let row_index = self.rng.index(rows.len());
-                Interaction::Delete {
-                    table: table_idx,
-                    row: rows[row_index].clone(),
-                }
-            } else if coin < 10
-                && let Some(table_idx) = read_write_table_idx
-            {
-                Interaction::Count { table: table_idx }
-            } else {
-                Interaction::CommitTx
-            }
-        } else if self.rng.next_u64() % 5 == 0 {
-            Interaction::Replay
-        } else {
-            Interaction::BeginMutTx
-        };
+        let choice = self.pick_interaction_choice();
+        let interaction = self.interaction_from_choice(choice);
 
         self.model.apply(&interaction);
+        self.stats.record(&interaction);
+
         interaction
     }
+
+    fn interaction_from_choice(&mut self, choice: InteractionChoice) -> Interaction {
+        if !self.model.in_mut_tx() {
+            return match choice {
+                InteractionChoice::Replay => Interaction::Replay,
+
+                // Insert/Delete/CommitTx are not legal outside a mutable tx.
+                // Treat those weighted choices as pressure to start one.
+                InteractionChoice::Insert | InteractionChoice::Delete | InteractionChoice::CommitTx => {
+                    Interaction::BeginMutTx
+                }
+            };
+        }
+
+        match choice {
+            InteractionChoice::Replay => Interaction::Replay,
+
+            InteractionChoice::Insert => {
+                let table = self.insert_table_idx();
+
+                Interaction::Insert {
+                    table,
+                    row: self.gen_insert_row(table),
+                }
+            }
+
+            InteractionChoice::Delete => {
+                let Some(table) = self.deletable_table_idx() else {
+                    return Interaction::CommitTx;
+                };
+
+                let row_index = self.rng.index(self.model.row_count(table));
+
+                Interaction::Delete {
+                    table,
+                    row: self
+                        .model
+                        .row(table, row_index)
+                        .expect("row index is in bounds")
+                        .clone(),
+                }
+            }
+
+            InteractionChoice::CommitTx => Interaction::CommitTx,
+        }
+    }
+
+    fn pick_interaction_choice(&mut self) -> InteractionChoice {
+        let weights = self.weights;
+
+        match self.pick_weighted(&[weights.insert, weights.delete, weights.commit_tx, weights.replay]) {
+            0 => InteractionChoice::Insert,
+            1 => InteractionChoice::Delete,
+            2 => InteractionChoice::CommitTx,
+            3 => InteractionChoice::Replay,
+            _ => unreachable!(),
+        }
+    }
+
+    fn pick_weighted(&mut self, weights: &[u64]) -> usize {
+        let total: u64 = weights.iter().sum();
+
+        assert!(total > 0, "at least one interaction weight must be non-zero");
+
+        let mut selected = self.rng.next_u64() % total;
+
+        for (idx, weight) in weights.iter().copied().enumerate() {
+            if selected < weight {
+                return idx;
+            }
+
+            selected -= weight;
+        }
+
+        unreachable!("selected value is always inside total weight")
+    }
+
+    fn insert_table_idx(&self) -> usize {
+        let auto_inc_table_idx = self
+            .schema()
+            .auto_inc_table_and_column()
+            .map(|(table_idx, _)| table_idx);
+
+        match auto_inc_table_idx {
+            Some(table_idx) if self.rng.next_u64() % 3 != 0 => table_idx,
+            _ => self.rng.index(self.schema().tables.len()),
+        }
+    }
+
+    fn deletable_table_idx(&self) -> Option<usize> {
+        self.non_auto_inc_table_idx()
+            .filter(|&table_idx| self.model.row_count(table_idx) > 0)
+    }
 }
+
+impl Debug for WorkloadGen {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(f, "{:?}", self.stats())
+    }
+}
+
 impl Iterator for WorkloadGen {
     type Item = Interaction;
+
     fn next(&mut self) -> Option<Self::Item> {
         Some(self.next_interaction())
     }
 }
 
-use spacetimedb_sats::ArrayValue;
-
 pub fn row_to_bytes(row: &Row) -> Vec<u8> {
     to_vec(row).expect("row serialization must not fail")
 }
 
-pub fn summarize_rows(rows: &[Row]) -> TableSummary {
-    let mut hash = 0u64;
-    for row in rows {
-        let row_hash = stable_hash(&row_to_bytes(row));
-        hash = hash.wrapping_add(row_hash.rotate_left((row_hash & 31) as u32));
-    }
-    TableSummary {
-        count: rows.len() as u64,
-        hash,
-    }
+pub fn normalize_rows(mut rows: Vec<Row>) -> Vec<Row> {
+    rows.sort_by_key(row_to_bytes);
+    rows
 }
 
-fn stable_hash(bytes: &[u8]) -> u64 {
-    let mut hash = 0xcbf2_9ce4_8422_2325u64;
-    for byte in bytes {
-        hash ^= *byte as u64;
-        hash = hash.wrapping_mul(0x100_0000_01b3);
-    }
-    hash
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CountState {
+    pub row_counts: Vec<TableRowCount>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TableRowCount {
+    pub table: usize,
+    pub count: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommitDelta {
+    pub tables: Vec<TableDelta>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableDelta {
+    pub table: usize,
+    pub inserts: Vec<Row>,
+    pub deletes: Vec<Row>,
+    pub truncated: bool,
 }

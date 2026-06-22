@@ -18,6 +18,7 @@ spacetimedb-sats.workspace = true
 spacetimedb-schema.workspace = true
 spacetimedb-table = { path = "../table", default-features = false }
 tracing.workspace = true
+tracing-subscriber.workspace = true
 
 [lints]
 workspace = true

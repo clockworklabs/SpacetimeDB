@@ -2,7 +2,7 @@ use spacetimedb_lib::db::raw_def::v10::*;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, TableAccess, TableType};
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_runtime::sim::Rng;
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, ProductType, ProductTypeElement};
+use spacetimedb_sats::{AlgebraicType, ArrayType, ProductType, ProductTypeElement};
 
 pub fn default_schema(rng: Rng) -> SchemaPlan {
     let profile = SchemaProfile::default();
@@ -40,27 +40,6 @@ impl Type {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Value {
-    Bool(bool),
-    I64(i64),
-    U64(u64),
-    String(String),
-    Bytes(Vec<u8>),
-}
-
-impl Value {
-    fn to_algebraic(&self) -> AlgebraicValue {
-        match self {
-            Value::Bool(b) => AlgebraicValue::Bool(*b),
-            Value::I64(v) => AlgebraicValue::I64(*v),
-            Value::U64(v) => AlgebraicValue::U64(*v),
-            Value::String(s) => AlgebraicValue::String(s.clone().into()),
-            Value::Bytes(b) => AlgebraicValue::Array(ArrayValue::U8(b.clone().into())),
-        }
-    }
-}
-
 // Schema plan — the canonical source of truth.
 // This Schema should be able to translate to valid `RawModuleDefV10`.
 #[derive(Debug, Clone)]
@@ -69,11 +48,6 @@ pub struct SchemaPlan {
 }
 
 impl SchemaPlan {
-    fn new(rng: Rng) {
-        let profile = SchemaProfile::default();
-        let schema = SchemaGenerator::new(rng, profile).gen_schema();
-    }
-
     pub fn auto_inc_table_and_column(&self) -> Option<(usize, usize)> {
         self.tables
             .iter()
@@ -122,7 +96,6 @@ pub struct TablePlan {
     pub indexes: Vec<IndexPlan>,
     pub unique_constraints: Vec<UniqueConstraintPlan>,
     pub sequences: Vec<SequencePlan>,
-    pub default_values: Vec<DefaultPlan>,
     pub is_public: bool,
 }
 
@@ -151,19 +124,11 @@ pub struct UniqueConstraintPlan {
     pub columns: Vec<usize>,
 }
 
-/// A sequence on a specific column. The column's type is carried inline
-/// so callers cannot create a sequence on a non-integral column —
-/// the constructor requires `ty.is_integral()`.
+/// A sequence on a specific integral column.
 #[derive(Debug, Clone)]
 pub struct SequencePlan {
     /// Index into `TablePlan.columns`.
     pub column: usize,
-    /// The type of that column. Must be integral (I64 or U64).
-    pub ty: Type,
-    pub start: Option<i128>,
-    pub min_value: Option<i128>,
-    pub max_value: Option<i128>,
-    pub increment: i128,
 }
 
 impl SequencePlan {
@@ -172,37 +137,23 @@ impl SequencePlan {
         if !ty.is_integral() {
             return None;
         }
-        Some(Self {
-            column,
-            ty,
-            start: None,
-            min_value: None,
-            max_value: None,
-            increment: 1,
-        })
+        Some(Self { column })
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct DefaultPlan {
-    /// Index into `TablePlan.columns`.
-    pub column: usize,
-    pub value: Value,
-}
-
 // Lowering into RawModuleDefV10.
-pub fn lower_schema(schema: &SchemaPlan) -> RawModuleDefV10 {
+pub fn to_raw_def(schema: &SchemaPlan) -> RawModuleDefV10 {
     let mut builder = RawModuleDefV10Builder::new();
     builder.set_case_conversion_policy(CaseConversionPolicy::None);
 
     for table in &schema.tables {
-        lower_table(&mut builder, table);
+        to_raw_def_table(&mut builder, table);
     }
 
     builder.finish()
 }
 
-fn lower_table(builder: &mut RawModuleDefV10Builder, table: &TablePlan) {
+fn to_raw_def_table(builder: &mut RawModuleDefV10Builder, table: &TablePlan) {
     let product_type = ProductType {
         elements: table
             .columns
@@ -259,12 +210,6 @@ fn lower_table(builder: &mut RawModuleDefV10Builder, table: &TablePlan) {
     // Sequences — all of them.
     for seq in &table.sequences {
         tbl = tbl.with_column_sequence(ColId(seq.column as u16));
-    }
-
-    // Default values.
-    for default in &table.default_values {
-        let algebraic_val = default.value.to_algebraic();
-        tbl = tbl.with_default_column_value(ColId(default.column as u16), algebraic_val);
     }
 
     tbl.finish();
@@ -466,7 +411,6 @@ impl SchemaGenerator {
             indexes,
             unique_constraints,
             sequences,
-            default_values: vec![],
             is_public: !self.rng.sample_probability(self.profile.private_prob),
         }
     }
@@ -508,12 +452,11 @@ mod tests {
                 }],
                 unique_constraints: vec![UniqueConstraintPlan { columns: vec![0] }],
                 sequences: vec![SequencePlan::new(0, Type::U64).unwrap()],
-                default_values: vec![],
                 is_public: true,
             }],
         };
 
-        let raw = lower_schema(&schema);
+        let raw = to_raw_def(&schema);
 
         // Should have Typespace, Types, and Tables sections.
         assert!(raw.typespace().is_some());
