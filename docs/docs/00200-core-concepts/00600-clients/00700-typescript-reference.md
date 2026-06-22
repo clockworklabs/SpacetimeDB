@@ -1197,10 +1197,11 @@ function Root() {
 
 #### `useSpacetimeDB()`
 
-Returns the current `DbConnection` from the provider context:
+Returns the current connection state and a `getConnection()` function for accessing the provider-managed `DbConnection`:
 
 ```tsx
-const conn = useSpacetimeDB();
+const { isActive, identity, token, getConnection } = useSpacetimeDB<DbConnection>();
+const conn = getConnection();
 ```
 
 #### `useTable(query, callbacks?)`
