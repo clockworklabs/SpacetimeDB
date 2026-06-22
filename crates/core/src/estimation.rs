@@ -133,8 +133,8 @@ mod tests {
     use super::{estimate_rows_scanned, row_estimate};
     use crate::db::relational_db::tests_utils::{begin_tx, insert, with_auto_commit};
     use crate::db::relational_db::{tests_utils::TestDB, RelationalDB};
+    use crate::db::sql::ast::SchemaViewer;
     use crate::error::DBError;
-    use crate::sql::ast::SchemaViewer;
     use spacetimedb_lib::{identity::AuthCtx, AlgebraicType};
     use spacetimedb_query::compile_subscription;
     use spacetimedb_sats::product;
@@ -152,7 +152,7 @@ mod tests {
             .map(|(plans, ..)| plans)
             .expect("failed to compile sql query")
             .into_iter()
-            .map(|plan| plan.optimize(&auth).expect("failed to optimize sql query"))
+            .map(|plan| plan.optimize().expect("failed to optimize sql query"))
             .map(|plan| row_estimate(&tx, &plan))
             .sum()
     }
@@ -166,7 +166,7 @@ mod tests {
             .map(|(plans, ..)| plans)
             .expect("failed to compile sql query")
             .into_iter()
-            .map(|plan| plan.optimize(&auth).expect("failed to optimize sql query"))
+            .map(|plan| plan.optimize().expect("failed to optimize sql query"))
             .map(|plan| estimate_rows_scanned(&tx, plan.physical_plan()))
             .sum()
     }

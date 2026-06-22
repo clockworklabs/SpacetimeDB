@@ -35,6 +35,7 @@ use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
 use spacetimedb_datastore::traits::{IsolationLevel, TxData};
 use spacetimedb_durability::TxOffset;
+use spacetimedb_execution::ExecutionParams;
 use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -467,6 +468,7 @@ impl ModuleSubscriptions {
             .unwrap_or_default();
 
         let tx = DeltaTx::from(tx);
+        let params = ExecutionParams::from_sender(sender.id.identity);
 
         // TODO: See the comment on `collect_table_update_for_view`.
         // The following view and non-view branches should be merged together,
@@ -479,6 +481,7 @@ impl ModuleSubscriptions {
                 table_id,
                 table_name.clone(),
                 &tx,
+                &params,
                 update_type,
                 &self.bsatn_rlb_pool,
             )
@@ -488,6 +491,7 @@ impl ModuleSubscriptions {
                 table_id,
                 table_name.clone(),
                 &tx,
+                &params,
                 update_type,
                 &self.bsatn_rlb_pool,
             )
@@ -499,6 +503,7 @@ impl ModuleSubscriptions {
                 table_id,
                 table_name,
                 &tx,
+                &params,
                 update_type,
                 &JsonRowListBuilderFakePool,
             )
@@ -508,6 +513,7 @@ impl ModuleSubscriptions {
                 table_id,
                 table_name,
                 &tx,
+                &params,
                 update_type,
                 &JsonRowListBuilderFakePool,
             )
@@ -2034,6 +2040,7 @@ mod tests {
     use spacetimedb_client_api_messages::energy::FunctionBudget;
     use spacetimedb_client_api_messages::websocket::{common::RowListLen as _, v1 as ws_v1, v2 as ws_v2};
     use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
+    use spacetimedb_datastore::locking_tx_datastore::MutTxId;
     use spacetimedb_datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
     use spacetimedb_execution::dml::MutDatastore;
     use spacetimedb_lib::bsatn::ToBsatn;
@@ -2530,7 +2537,8 @@ mod tests {
         subs.remove_subscriber(client_id_for_b);
 
         // Delete the backing row and verify the surviving subscriber still receives the view delta.
-        let _ = commit_tx(&db, &subs, [(view_table_id, product![id_for_a, 7_u8])], [])?;
+        let arg_hash = MutTxId::view_arg_hash(id_for_a);
+        let _ = commit_tx(&db, &subs, [(view_table_id, product![arg_hash, 7_u8])], [])?;
 
         let schema = ProductType::from([AlgebraicType::U8]);
         assert_v2_tx_update_for_table(

@@ -4,11 +4,13 @@
 #include "spacetimedb/query_builder.h"
 #include "spacetimedb/internal/Module.h"
 #include "spacetimedb/internal/v10_builder.h"
+#include "spacetimedb/table_with_constraints.h"
 #include "spacetimedb/macros.h"  // For parseParameterNames
 #include "spacetimedb/error_handling.h"
 #include <string>
 #include <vector>
 #include <type_traits>
+#include <utility>
 
 namespace SpacetimeDB {
 namespace Internal {
@@ -151,3 +153,19 @@ struct is_valid_view_return_type
         SpacetimeDB::Module::RegisterExplicitFunctionName(#view_name, canonical_name); \
     } \
     return_type view_name(ctx_param)
+
+#define VIEW_PrimaryKey(view_name, field_name) \
+    static_assert([]() constexpr { \
+        using RowType = typename std::remove_cv_t<decltype(view_name##_view)>::type; \
+        using FieldType = decltype(std::declval<RowType>().field_name); \
+        static_assert(::SpacetimeDB::FilterableValue<FieldType>, \
+            "View primary key field '" #field_name "' must have a filterable type."); \
+        return true; \
+    }(), "View primary key validation for " #view_name "." #field_name); \
+    inline std::true_type indexed_member_lookup(::SpacetimeDB::query_builder::member_tag< \
+        typename std::remove_cv_t<decltype(view_name##_view)>::type, \
+        &std::remove_cv_t<decltype(view_name##_view)>::type::field_name>); \
+    extern "C" __attribute__((export_name("__preinit__41_view_primary_key_" #view_name "_" #field_name "_line_" SPACETIMEDB_STRINGIFY(__LINE__)))) \
+    void SPACETIMEDB_PASTE(__preinit__41_view_primary_key_, SPACETIMEDB_PASTE(view_name, SPACETIMEDB_PASTE(_, SPACETIMEDB_PASTE(field_name, SPACETIMEDB_PASTE(_line_, __LINE__)))))() { \
+        ::SpacetimeDB::Module::RegisterViewPrimaryKey(#view_name, std::vector<std::string>{#field_name}); \
+    }

@@ -13,8 +13,8 @@ use std::{env, fs};
 const README_PATH: &str = "tools/ci/README.md";
 
 mod ci_docs;
+mod cla_assistant;
 mod keynote_bench;
-mod retry_cla_assistant;
 mod smoketest;
 mod util;
 
@@ -368,8 +368,11 @@ enum CiCmd {
     VersionUpgradeCheck,
     /// Builds the docs site.
     Docs,
-    /// Retries CLA Assistant if `license/cla` is the only remaining PR blocker.
-    RetryClaAssistant(retry_cla_assistant::RetryClaAssistantArgs),
+    /// Interacts with CLA Assistant.
+    ClaAssistant {
+        #[command(subcommand)]
+        cmd: cla_assistant::ClaAssistantCmd,
+    },
 }
 
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
@@ -513,6 +516,20 @@ fn main() -> Result<()> {
                 "unstable",
                 "--",
                 "--test-threads=2",
+            )
+            .run()?;
+            // The SDK test harness uses the same child-process server guard as smoketests,
+            // which expects release CLI/standalone binaries to already exist.
+            cmd!(
+                "cargo",
+                "build",
+                "--release",
+                "-p",
+                "spacetimedb-cli",
+                "-p",
+                "spacetimedb-standalone",
+                "--features",
+                "spacetimedb-standalone/allow_loopback_http_for_tests",
             )
             .run()?;
             // SDK procedure tests intentionally make localhost HTTP requests.
@@ -775,8 +792,8 @@ fn main() -> Result<()> {
             run_docs_build()?;
         }
 
-        Some(CiCmd::RetryClaAssistant(args)) => {
-            retry_cla_assistant::run(args)?;
+        Some(CiCmd::ClaAssistant { cmd }) => {
+            cla_assistant::run(cmd)?;
         }
 
         None => run_all_clap_subcommands(&cli.skip)?,

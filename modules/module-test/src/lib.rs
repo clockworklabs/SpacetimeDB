@@ -1,6 +1,7 @@
 #![allow(clippy::disallowed_names)]
 use std::time::Duration;
 
+use spacetimedb::http::{Body, HandlerContext, Request, Response, Router};
 use spacetimedb::spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb::spacetimedb_lib::{self, bsatn};
 use spacetimedb::{
@@ -543,13 +544,23 @@ fn with_tx(ctx: &mut ProcedureContext) {
 /// This is a silly thing to do, but an effective test of the procedure HTTP API.
 #[spacetimedb::procedure]
 fn get_my_schema_via_http(ctx: &mut ProcedureContext) -> String {
-    let module_identity = ctx.identity();
+    let module_identity = ctx.database_identity();
     match ctx.http.get(format!(
         "http://localhost:3000/v1/database/{module_identity}/schema?version=9"
     )) {
         Ok(result) => result.into_body().into_string_lossy(),
         Err(e) => format!("{e}"),
     }
+}
+
+#[spacetimedb::http::handler]
+fn get_simple(_ctx: &mut HandlerContext, _req: Request) -> Response {
+    Response::new(Body::from_bytes("ok"))
+}
+
+#[spacetimedb::http::router]
+fn router() -> Router {
+    Router::new().get("/get", get_simple)
 }
 
 #[spacetimedb::settings]
