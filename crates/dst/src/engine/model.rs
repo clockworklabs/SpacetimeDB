@@ -154,7 +154,7 @@ impl Model {
             Interaction::Replay => {
                 self.pending_tx = None;
                 Observation::Replayed {
-                    state: self.light_snapshot(),
+                    state: self.count_state(),
                 }
             }
         }
@@ -226,7 +226,7 @@ impl Model {
         self.visible_rows(table).cloned().collect()
     }
 
-    fn light_snapshot(&self) -> CountState {
+    fn count_state(&self) -> CountState {
         let row_counts = (0..self.schema.tables.len())
             .map(|table| TableRowCount {
                 table,

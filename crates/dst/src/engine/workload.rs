@@ -112,7 +112,7 @@ impl WorkloadGen {
 
     fn gen_value(&self, ty: Type) -> AlgebraicValue {
         match ty {
-            Type::Bool => AlgebraicValue::Bool(self.rng.next_u64() % 2 == 0),
+            Type::Bool => AlgebraicValue::Bool(self.rng.next_u64().is_multiple_of(2)),
             Type::I64 => AlgebraicValue::I64(self.rng.next_u64() as i64),
             Type::U64 => AlgebraicValue::U64(self.rng.next_u64()),
             Type::String => AlgebraicValue::String(format!("v_{}", self.rng.next_u64()).into()),
@@ -249,7 +249,7 @@ impl WorkloadGen {
             .map(|(table_idx, _)| table_idx);
 
         match auto_inc_table_idx {
-            Some(table_idx) if self.rng.next_u64() % 3 != 0 => table_idx,
+            Some(table_idx) if !self.rng.next_u64().is_multiple_of(3) => table_idx,
             _ => self.rng.index(self.schema().tables.len()),
         }
     }

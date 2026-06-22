@@ -315,10 +315,10 @@ impl SchemaGenerator {
             }
         }
         // Ensure PK has a matching unique constraint.
-        if let Some(pk) = pk {
-            if !seen.contains(&vec![*pk]) {
-                result.push(UniqueConstraintPlan { columns: vec![*pk] });
-            }
+        if let Some(pk) = pk
+            && !seen.iter().any(|cols| cols.len() == 1 && cols[0] == *pk)
+        {
+            result.push(UniqueConstraintPlan { columns: vec![*pk] });
         }
         result
     }

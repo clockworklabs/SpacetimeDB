@@ -271,11 +271,8 @@ impl EngineTarget {
     }
 }
 
-pub struct Outcome;
 impl TargetDriver<Interaction> for EngineTarget {
     type Observation = Observation;
-
-    type Outcome = Outcome;
 
     fn execute(&mut self, interaction: &Interaction) -> Result<Self::Observation, anyhow::Error> {
         EngineTarget::execute(self, interaction)

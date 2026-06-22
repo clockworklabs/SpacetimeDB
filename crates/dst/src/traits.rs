@@ -4,7 +4,6 @@ use spacetimedb_runtime::sim::Rng;
 /// This should be implemented by System under test.
 pub trait TargetDriver<I> {
     type Observation;
-    type Outcome;
 
     fn execute(&mut self, interaction: &I) -> Result<Self::Observation, Error>;
 }
@@ -14,13 +13,21 @@ pub trait Properties<I, O> {
     fn observe(&mut self, interaction: &I, observation: &O) -> Result<(), Error>;
 }
 
+pub type TestSuiteParts<S> = (
+    <S as TestSuite>::Interactions,
+    <S as TestSuite>::Target,
+    <S as TestSuite>::Properties,
+);
+
 pub trait TestSuite {
     type Interaction;
     type Interactions: Iterator<Item = Self::Interaction> + std::fmt::Debug;
     type Target: TargetDriver<Self::Interaction>;
     type Properties: Properties<Self::Interaction, <Self::Target as TargetDriver<Self::Interaction>>::Observation>;
 
-    fn build(&self, rng: Rng) -> Result<(Self::Interactions, Self::Target, Self::Properties), Error>;
+    fn build(&self, rng: Rng) -> Result<TestSuiteParts<Self>, Error>
+    where
+        Self: Sized;
 
     fn run(&self, rng: Rng, max_interactions: Option<usize>) -> Result<(), Error>
     where
