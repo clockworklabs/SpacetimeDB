@@ -2107,7 +2107,7 @@ impl MutTxId {
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - `String`, the name of the reducer which ran during this transaction.
     pub(super) fn commit(self) -> (TxOffset, TxData, TxMetrics, Option<ReducerName>) {
-        let (tx_offset, tx_data, tx_metrics, reducer) = self.commit_and_then(|_| {});
+        let (tx_offset, tx_data, tx_metrics, reducer, _) = self.commit_and_then(|_| {});
         let tx_data =
             Arc::try_unwrap(tx_data).unwrap_or_else(|_| panic!("noop commit callback must not retain tx data"));
         (tx_offset, tx_data, tx_metrics, reducer)
@@ -2116,7 +2116,7 @@ impl MutTxId {
     pub(super) fn commit_and_then(
         mut self,
         before_release: impl FnOnce(&Arc<TxData>),
-    ) -> (TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>) {
+    ) -> (TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>, u64) {
         let tx_offset = self.committed_state_write_lock.next_tx_offset;
         let tx_data = self
             .committed_state_write_lock
@@ -2151,9 +2151,12 @@ impl MutTxId {
         };
 
         let tx_data = Arc::new(tx_data);
+        // Capture the cached committed memory total while this transaction still owns the write lock.
+        // Callers can observe this value after commit without re-entering `committed_state`.
+        let datastore_memory_bytes = self.committed_state_write_lock.datastore_memory_bytes();
         before_release(&tx_data);
 
-        (tx_offset, tx_data, tx_metrics, reducer)
+        (tx_offset, tx_data, tx_metrics, reducer, datastore_memory_bytes)
     }
 
     /// Commits this transaction, applying its changes to the committed state.
@@ -2170,7 +2173,7 @@ impl MutTxId {
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - [`TxId`], a read-only transaction with a shared lock on the committed state.
     pub(super) fn commit_downgrade(self, workload: Workload) -> (TxData, TxMetrics, TxId) {
-        let (tx_data, tx_metrics, tx) = self.commit_downgrade_and_then(workload, |_| {});
+        let (tx_data, tx_metrics, tx, _) = self.commit_downgrade_and_then(workload, |_| {});
         let tx_data =
             Arc::try_unwrap(tx_data).unwrap_or_else(|_| panic!("noop commit callback must not retain tx data"));
         (tx_data, tx_metrics, tx)
@@ -2180,7 +2183,7 @@ impl MutTxId {
         mut self,
         workload: Workload,
         before_downgrade: impl FnOnce(&Arc<TxData>),
-    ) -> (Arc<TxData>, TxMetrics, TxId) {
+    ) -> (Arc<TxData>, TxMetrics, TxId, u64) {
         let tx_data = self
             .committed_state_write_lock
             .merge(self.tx_state, self.read_sets, &self.ctx);
@@ -2200,6 +2203,7 @@ impl MutTxId {
         );
 
         let tx_data = Arc::new(tx_data);
+        let datastore_memory_bytes = self.committed_state_write_lock.datastore_memory_bytes();
         before_downgrade(&tx_data);
 
         // Update the workload type of the execution context
@@ -2211,7 +2215,7 @@ impl MutTxId {
             ctx: self.ctx,
             metrics: ExecutionMetrics::default(),
         };
-        (tx_data, tx_metrics, tx)
+        (tx_data, tx_metrics, tx, datastore_memory_bytes)
     }
 
     /// Rolls back this transaction, discarding its changes.

@@ -179,15 +179,15 @@ impl RelationalDB {
 
     pub fn with_memory_observer(mut self, memory_observer: Arc<dyn MemoryObserver>) -> Self {
         self.memory_observer = memory_observer;
-        self.observe_datastore_memory();
+        self.observe_datastore_memory(self.inner.datastore_memory_bytes());
         self
     }
 
-    fn observe_datastore_memory(&self) {
+    fn observe_datastore_memory(&self, bytes: u64) {
         self.memory_observer.memory_observed(MemoryObservation {
             database_identity: self.database_identity,
             kind: DatabaseMemoryType::Datastore,
-            bytes: self.inner.datastore_memory_bytes(),
+            bytes,
         });
     }
 
@@ -841,15 +841,16 @@ impl RelationalDB {
 
         let reducer_context = tx.ctx.reducer_context().cloned();
         // TODO: Never returns `None` -- should it?
-        let Some((tx_offset, tx_data, tx_metrics, reducer)) = self.inner.commit_mut_tx_and_then(tx, |tx_data| {
-            self.request_durability(reducer_context, tx_data);
-        })?
+        let Some((tx_offset, tx_data, tx_metrics, reducer, datastore_memory_bytes)) =
+            self.inner.commit_mut_tx_and_then(tx, |tx_data| {
+                self.request_durability(reducer_context, tx_data);
+            })?
         else {
             return Ok(None);
         };
 
         self.maybe_do_snapshot(&tx_data);
-        self.observe_datastore_memory();
+        self.observe_datastore_memory(datastore_memory_bytes);
 
         Ok(Some((tx_offset, tx_data, tx_metrics, reducer)))
     }
@@ -859,12 +860,13 @@ impl RelationalDB {
         log::trace!("COMMIT MUT TX");
 
         let reducer_context = tx.ctx.reducer_context().cloned();
-        let (tx_data, tx_metrics, tx) = self.inner.commit_mut_tx_downgrade_and_then(tx, workload, |tx_data| {
-            self.request_durability(reducer_context, tx_data);
-        });
+        let (tx_data, tx_metrics, tx, datastore_memory_bytes) =
+            self.inner.commit_mut_tx_downgrade_and_then(tx, workload, |tx_data| {
+                self.request_durability(reducer_context, tx_data);
+            });
 
         self.maybe_do_snapshot(&tx_data);
-        self.observe_datastore_memory();
+        self.observe_datastore_memory(datastore_memory_bytes);
 
         (tx_data, tx_metrics, tx)
     }

@@ -986,7 +986,7 @@ impl Locking {
         &self,
         tx: MutTxId,
         before_release: impl FnOnce(&Arc<TxData>),
-    ) -> Result<Option<(TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>)>> {
+    ) -> Result<Option<(TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>, u64)>> {
         Ok(Some(tx.commit_and_then(before_release)))
     }
 
@@ -997,7 +997,7 @@ impl Locking {
         tx: MutTxId,
         workload: Workload,
         before_downgrade: impl FnOnce(&Arc<TxData>),
-    ) -> (Arc<TxData>, TxMetrics, TxId) {
+    ) -> (Arc<TxData>, TxMetrics, TxId, u64) {
         tx.commit_downgrade_and_then(workload, before_downgrade)
     }
 }
