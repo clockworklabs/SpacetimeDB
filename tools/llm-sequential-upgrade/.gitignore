@@ -26,7 +26,9 @@ telemetry/metrics.jsonl
 **/telemetry/**/app-dir.txt
 **/telemetry/**/metadata.json
 
-# NOTE: generated run output (sequential-upgrade/, one-shot/) IS tracked on this
-# branch so app state can be git-reverted between levels. Heavy/regenerable dirs,
-# local .env, verbose logs, and PII telemetry are excluded above. Canonical runs
-# still publish to the external spacetimedb-ai-test-results repo.
+# Sequential-upgrade run output is NOT tracked here — it lives in the external
+# spacetimedb-ai-test-results repo. run.sh still writes run dirs locally (output
+# dir unchanged); per-level rollback uses the level-N/ snapshot dirs, not git.
+sequential-upgrade/sequential-upgrade-*/
+# (one-shot/ output remains tracked. Heavy/regenerable dirs, local .env, verbose
+# logs, and PII telemetry are excluded above.)
