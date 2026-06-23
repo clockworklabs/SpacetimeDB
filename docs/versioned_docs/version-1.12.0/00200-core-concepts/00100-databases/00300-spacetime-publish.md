@@ -93,7 +93,7 @@ spacetime publish --break-clients <DATABASE_NAME>
 To completely reset your database and delete all data:
 
 ```bash
-spacetime publish --delete-data <DATABASE_NAME>
+spacetime publish <DATABASE_NAME> --delete-data always
 ```
 
 ⚠️ **Warning:** This permanently deletes all data in your database!

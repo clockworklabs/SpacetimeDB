@@ -913,7 +913,7 @@ spacetime login                          # Authenticate
 # Module management
 spacetime build                          # Build module
 spacetime publish <NAME>                 # Publish module
-spacetime publish --delete-data <NAME>   # Reset database
+spacetime publish <NAME> --delete-data always  # Reset database
 spacetime delete <NAME>                  # Delete database
 
 # Database operations
@@ -926,7 +926,7 @@ spacetime call <NAME> reducer arg1 arg2  # Call reducer
 # Code generation
 spacetime generate --lang rust <NAME>    # Generate Rust client
 spacetime generate --lang csharp <NAME>  # Generate C# client
-spacetime generate --lang ts <NAME>      # Generate TypeScript client
+spacetime generate --lang typescript <NAME>  # Generate TypeScript client
 ```
 
 ## Common Types
