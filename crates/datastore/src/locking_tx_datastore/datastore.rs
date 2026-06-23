@@ -198,6 +198,7 @@ impl Locking {
                 .with_label_values(&database_identity, &table_id.into(), &schema.table_name)
                 .set(table_size as i64);
         }
+        committed_state.rebuild_datastore_page_bytes();
 
         // Double check that our in-memory system table ids match the on-disk schemas.
         // committed_state.assert_system_table_schemas_match()?;
@@ -236,6 +237,20 @@ impl Locking {
     pub fn assert_system_tables_match(&self) -> Result<()> {
         let committed_state = self.committed_state.read_arc();
         committed_state.assert_system_table_schemas_match()
+    }
+
+    /// Returns committed datastore table page bytes.
+    ///
+    /// This reads the cached committed-state aggregate.
+    pub fn datastore_page_bytes(&self) -> u64 {
+        self.committed_state.read().datastore_page_bytes()
+    }
+
+    /// Returns committed datastore bytes.
+    ///
+    /// Currently just page and blobstore bytes.
+    pub fn datastore_memory_bytes(&self) -> u64 {
+        self.committed_state.read().datastore_memory_bytes()
     }
 
     pub fn take_snapshot_internal(
@@ -971,7 +986,7 @@ impl Locking {
         &self,
         tx: MutTxId,
         before_release: impl FnOnce(&Arc<TxData>),
-    ) -> Result<Option<(TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>)>> {
+    ) -> Result<Option<(TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>, u64)>> {
         Ok(Some(tx.commit_and_then(before_release)))
     }
 
@@ -982,7 +997,7 @@ impl Locking {
         tx: MutTxId,
         workload: Workload,
         before_downgrade: impl FnOnce(&Arc<TxData>),
-    ) -> (Arc<TxData>, TxMetrics, TxId) {
+    ) -> (Arc<TxData>, TxMetrics, TxId, u64) {
         tx.commit_downgrade_and_then(workload, before_downgrade)
     }
 }
