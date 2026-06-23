@@ -16,8 +16,15 @@ import {
   type TablesToSchema,
   type UntypedSchemaDef,
 } from '../lib/schema';
-import type { UntypedTableSchema } from '../lib/table_schema';
-import { ColumnBuilder, TypeBuilder } from '../lib/type_builders';
+import type { IndexOpts } from '../lib/indexes';
+import type { TableSchema, UntypedTableSchema } from '../lib/table_schema';
+import {
+  ColumnBuilder,
+  RowBuilder,
+  TypeBuilder,
+} from '../lib/type_builders';
+import type { t } from '../lib/type_builders';
+import type { HasExactlyOneKnownKey } from '../lib/type_util';
 import {
   Router,
   type HandlerFn,
@@ -55,6 +62,30 @@ import {
 } from './views';
 import type { UntypedTableDef } from '../lib/table';
 
+type ScheduledReducerOrProcedure<
+  Params extends Record<string, RowBuilder<any>>,
+> =
+  | ReducerExport<any, Params>
+  | ProcedureExport<any, Params, ReturnType<typeof t.unit>>;
+
+export type ScheduledFunctionExport<
+  Row extends Record<string, ColumnBuilder<any, any, any>>,
+  Params extends Record<string, RowBuilder<Row>>,
+> = HasExactlyOneKnownKey<Params> extends true
+  ? ScheduledReducerOrProcedure<Params>
+  : never;
+
+/**
+ * Internal erased form of a scheduled reducer/procedure export.
+ *
+ * The public `Schema.schedule(...)` API preserves row/return-type checks before
+ * values enter `pendingSchedules`. From this point on, schedule resolution only
+ * needs the export object identity to look up its registered function name.
+ */
+type UntypedScheduledFunctionExport =
+  | ReducerExport<any, any>
+  | ProcedureExport<any, any, any>;
+
 export class SchemaInner<
   S extends UntypedSchemaDef = UntypedSchemaDef,
 > extends ModuleContext {
@@ -67,14 +98,11 @@ export class SchemaInner<
   anonViews: AnonViews = [];
   httpHandlers: HandlerFn[] = [];
   /**
-   * Maps ReducerExport objects to the name of the reducer.
-   * Used for resolving the reducers of scheduled tables.
+   * Maps reducer/procedure export objects to their source names.
+   * Used for resolving scheduled table targets.
    */
-  functionExports: Map<
-    | ReducerExport<UntypedSchemaDef, any>
-    | ProcedureExport<UntypedSchemaDef, any, any>,
-    string
-  > = new Map();
+  functionExports: Map<UntypedScheduledFunctionExport, string> = new Map();
+  tableSourceNames: Map<UntypedTableSchema, string> = new Map();
   httpHandlerExports: Map<HttpHandlerExport<UntypedSchemaDef>, string> =
     new Map();
   pendingSchedules: PendingSchedule[] = [];
@@ -104,7 +132,21 @@ export class SchemaInner<
   }
 
   resolveSchedules() {
-    for (const { reducer, scheduleAtCol, tableName } of this.pendingSchedules) {
+    for (const { reducer, table } of this.pendingSchedules) {
+      const tableName = this.tableSourceNames.get(table);
+      if (tableName === undefined) {
+        throw new TypeError(
+          'Schedule target table is not part of this schema.'
+        );
+      }
+
+      const { scheduleAtCol } = table;
+      if (scheduleAtCol === undefined) {
+        throw new TypeError(
+          `Table ${tableName} defines a schedule, but it does not have a ScheduleAt column.`
+        );
+      }
+
       const functionName = this.functionExports.get(reducer());
       if (functionName === undefined) {
         const msg = `Table ${tableName} defines a schedule, but it seems like the associated function was not exported.`;
@@ -136,7 +178,10 @@ export class SchemaInner<
   }
 }
 
-type PendingSchedule = UntypedTableSchema['schedule'] & { tableName: string };
+type PendingSchedule = {
+  table: UntypedTableSchema;
+  reducer: () => UntypedScheduledFunctionExport;
+};
 type PendingHttpRoute = {
   handler: HttpHandlerExport<UntypedSchemaDef>;
   method: MethodOrAny;
@@ -474,22 +519,22 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
     params: Params,
     ret: Ret,
     fn: ProcedureFn<S, Params, Ret>
-  ): ProcedureFn<S, Params, Ret>;
+  ): ProcedureExport<S, Params, Ret>;
   procedure<Ret extends TypeBuilder<any, any>>(
     ret: Ret,
     fn: ProcedureFn<S, {}, Ret>
-  ): ProcedureFn<S, {}, Ret>;
+  ): ProcedureExport<S, {}, Ret>;
   procedure<Params extends ParamsObj, Ret extends TypeBuilder<any, any>>(
     opts: ProcedureOpts,
     params: Params,
     ret: Ret,
     fn: ProcedureFn<S, Params, Ret>
-  ): ProcedureFn<S, Params, Ret>;
+  ): ProcedureExport<S, Params, Ret>;
   procedure<Ret extends TypeBuilder<any, any>>(
     opts: ProcedureOpts,
     ret: Ret,
     fn: ProcedureFn<S, {}, Ret>
-  ): ProcedureFn<S, {}, Ret>;
+  ): ProcedureExport<S, {}, Ret>;
   procedure<Params extends ParamsObj, Ret extends TypeBuilder<any, any>>(
     ...args:
       | [Params, Ret, ProcedureFn<S, Params, Ret>]
@@ -517,6 +562,31 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
         break;
     }
     return makeProcedureExport(this.#ctx, opts, params, ret, fn);
+  }
+
+  /**
+   * Registers a table as the schedule table for a reducer or procedure.
+   *
+   * Prefer this over `table({ scheduled })` when table definitions and
+   * reducer/procedure definitions live in separate modules.
+   */
+  schedule<
+    Row extends Record<string, ColumnBuilder<any, any, any>>,
+    Idx extends readonly IndexOpts<keyof Row & string>[],
+    Params extends Record<string, RowBuilder<Row>>,
+  >(
+    table: TableSchema<Row, Idx>,
+    reducerOrProcedure: ScheduledFunctionExport<Row, Params>
+  ): ModuleExport {
+    return {
+      [exportContext]: this.#ctx,
+      [registerExport](ctx, _exportName) {
+        ctx.pendingSchedules.push({
+          table,
+          reducer: () => reducerOrProcedure,
+        });
+      },
+    };
   }
 
   httpHandler(fn: HandlerFn<S>): HttpHandlerExport<S>;
@@ -639,11 +709,12 @@ export function schema<const H extends Record<string, UntypedTableSchema>>(
     for (const [accName, table] of Object.entries(tables)) {
       const tableDef = table.tableDef(ctx, accName);
       tableSchemas[accName] = tableToSchema(accName, table, tableDef);
+      ctx.tableSourceNames.set(table, tableDef.sourceName);
       ctx.moduleDef.tables.push(tableDef);
       if (table.schedule) {
         ctx.pendingSchedules.push({
-          ...table.schedule,
-          tableName: tableDef.sourceName,
+          table,
+          reducer: table.schedule.reducer,
         });
       }
       if (table.tableName) {

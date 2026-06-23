@@ -97,3 +97,75 @@ spacetimedbIndexSplit.init(ctx => {
   // @ts-expect-error `nickname` is not indexed, so no index accessor should exist.
   const _nickname = ctx.db.account.nickname;
 });
+
+const scheduledMessages = table(
+  {},
+  {
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+    text: t.string(),
+  }
+);
+
+const spacetimedbSchedules = schema({ scheduledMessages });
+
+const processScheduledMessage = spacetimedbSchedules.reducer(
+  {
+    scheduledMessage: scheduledMessages.rowType,
+  },
+  (_ctx, { scheduledMessage }) => {
+    scheduledMessage.text;
+  }
+);
+
+spacetimedbSchedules.schedule(scheduledMessages, processScheduledMessage);
+
+const processWrongPayload = spacetimedbSchedules.reducer(
+  {
+    text: t.string(),
+  },
+  () => {}
+);
+
+// @ts-expect-error scheduled reducers must take the scheduled table row type.
+spacetimedbSchedules.schedule(scheduledMessages, processWrongPayload);
+
+const processNoPayload = spacetimedbSchedules.reducer({}, () => {});
+
+// @ts-expect-error scheduled reducers must take exactly one payload field.
+spacetimedbSchedules.schedule(scheduledMessages, processNoPayload);
+
+const processMultiplePayloadFields = spacetimedbSchedules.reducer(
+  {
+    first: scheduledMessages.rowType,
+    second: scheduledMessages.rowType,
+  },
+  () => {}
+);
+
+// @ts-expect-error scheduled reducers must take exactly one payload field.
+spacetimedbSchedules.schedule(scheduledMessages, processMultiplePayloadFields);
+
+const processScheduledProcedure = spacetimedbSchedules.procedure(
+  {
+    scheduledMessage: scheduledMessages.rowType,
+  },
+  t.unit(),
+  (_ctx, { scheduledMessage }) => {
+    scheduledMessage.text;
+    return {};
+  }
+);
+
+spacetimedbSchedules.schedule(scheduledMessages, processScheduledProcedure);
+
+const processWrongReturnProcedure = spacetimedbSchedules.procedure(
+  {
+    scheduledMessage: scheduledMessages.rowType,
+  },
+  t.string(),
+  () => ''
+);
+
+// @ts-expect-error scheduled procedures must return unit.
+spacetimedbSchedules.schedule(scheduledMessages, processWrongReturnProcedure);

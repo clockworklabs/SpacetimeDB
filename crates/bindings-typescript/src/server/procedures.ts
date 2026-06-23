@@ -30,11 +30,17 @@ import {
   type SchemaInner,
 } from './schema';
 
+declare const procedureReturnTypeBrand: unique symbol;
+
 export type ProcedureExport<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
   Ret extends TypeBuilder<any, any>,
-> = ProcedureFn<S, Params, Ret> & ModuleExport;
+> = ProcedureFn<S, Params, Ret> &
+  ModuleExport & {
+    /** Type-only brand used to preserve the procedure return builder in assignability checks. */
+    readonly [procedureReturnTypeBrand]: Ret;
+  };
 
 export function makeProcedureExport<
   S extends UntypedSchemaDef,
@@ -49,8 +55,13 @@ export function makeProcedureExport<
 ): ProcedureExport<S, Params, Ret> {
   const name = opts?.name;
 
-  const procedureExport: ProcedureExport<S, Params, Ret> = (...args) =>
-    fn(...args);
+  // ProcedureExport carries a type-only return-builder brand, so the plain
+  // function literal needs a cast when we attach module export metadata below.
+  const procedureExport = ((...args) => fn(...args)) as ProcedureExport<
+    S,
+    Params,
+    Ret
+  >;
   procedureExport[exportContext] = ctx;
   procedureExport[registerExport] = (ctx, exportName) => {
     registerProcedure(ctx, name ?? exportName, params, ret, fn);
