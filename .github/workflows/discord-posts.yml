@@ -35,6 +35,12 @@ jobs:
               commit_sha: sha,
             });
 
+            if (prs.length !== 1) {
+              core.setOutput('is_pr_merge', 'false');
+              core.setFailed(`Expected exactly one PR associated with ${sha}, found ${prs.length}.`);
+              return;
+            }
+
             const mergedPrs = prs
               .filter((pr) => pr.merged_at && pr.base?.ref === 'master')
               .sort((a, b) => new Date(b.merged_at) - new Date(a.merged_at));
@@ -127,6 +133,23 @@ jobs:
             message+="(cc <@&${MENTION_ON_FAILURE}> - Releases may be affected)"
           fi
           # Use `jq` to construct the json data blob in the format required by the webhook.
+          data="$(jq --null-input --arg msg "$message" '.content=$msg')"
+          curl -X POST -H 'Content-Type: application/json' -d "$data" "${DISCORD_WEBHOOK_URL}"
+
+  notifyFailure:
+    needs:
+      - resolvePush
+      - discordNotification
+    runs-on: ubuntu-latest
+    if: ${{ always() && (needs.resolvePush.result == 'failure' || needs.discordNotification.result == 'failure') }}
+    steps:
+      - name: Send failure notification
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          message="Discord notification workflow failed."
+          message+=$'\n'
+          message+="Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           data="$(jq --null-input --arg msg "$message" '.content=$msg')"
           curl -X POST -H 'Content-Type: application/json' -d "$data" "${DISCORD_WEBHOOK_URL}"
 
