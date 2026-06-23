@@ -28,6 +28,7 @@ runs:
         prefix-key: v1
 
     - name: Check v8 outputs
+      shell: bash
       run: |
         find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
         if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
@@ -35,6 +36,7 @@ runs:
           cargo clean --release -p v8 || true
           cargo build --release -p v8
         fi
+      working-directory: ${{ inputs.public_root }}
 
     - name: Build public keynote benchmark binaries
       shell: bash
