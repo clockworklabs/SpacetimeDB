@@ -8370,6 +8370,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-io-tokio"
+version = "2.7.1"
+dependencies = [
+ "libc",
+ "spacetimedb-io-types",
+ "static_assertions",
+ "tokio",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "spacetimedb-io-types"
+version = "2.7.1"
+dependencies = [
+ "zerocopy",
+]
+
+[[package]]
 name = "spacetimedb-jsonwebtoken"
 version = "9.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11635,18 +11653,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.27"
+version = "0.8.55"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0894878a5fa3edfd6da3f88c4805f4c8558e2b996227a3d864f47fe11e38282c"
+checksum = "b5a105cd7b140f6eeec8acff2ea38135d3cab283ada58540f629fe51e46696eb"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.27"
+version = "0.8.55"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88d2b8d9c68ad2b9e4340d7832716a4d21a22a1154777ad56ea55c51a9cf3831"
+checksum = "0fe976fb70c78cd64cccfe3a6fc142244e8a77b70959b30faf9d0ac37ee228eb"
 dependencies = [
  "proc-macro2",
  "quote",

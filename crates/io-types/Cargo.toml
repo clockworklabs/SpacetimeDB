@@ -1,0 +1,11 @@
+[package]
+name = "spacetimedb-io-types"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+zerocopy.workspace = true
+
+[lints]
+workspace = true
