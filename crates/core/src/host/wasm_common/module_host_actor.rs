@@ -2,15 +2,17 @@ use super::instrumentation::CallTimes;
 use super::*;
 use crate::client::ClientActorId;
 use crate::database_logger;
+use crate::db::sql::ast::SchemaViewer;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
 use crate::error::DBError;
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::{
-    call_identity_connected, init_database, CallProcedureParams, CallReducerParams, CallViewParams,
-    ClientConnectedError, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleInfo, RefInstance,
-    SqlCommand, SqlCommandResult, ViewCallResult, ViewCommand, ViewCommandResult, ViewOutcome,
+    call_identity_connected, init_database, CallHttpHandlerParams, CallProcedureParams, CallReducerParams,
+    CallViewParams, ClientConnectedError, DatabaseUpdate, EventStatus, HttpHandlerCallError, ModuleEvent,
+    ModuleFunctionCall, ModuleInfo, RefInstance, SqlCommand, SqlCommandResult, ViewCallResult, ViewCommand,
+    ViewCommandResult, ViewOutcome,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::{
@@ -21,7 +23,6 @@ use crate::identity::Identity;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
-use crate::sql::ast::SchemaViewer;
 use crate::sql::execute::run_with_instance;
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, CommitAndBroadcastEventSuccess};
 use crate::subscription::module_subscription_manager::TransactionOffset;
@@ -31,22 +32,21 @@ use anyhow::{anyhow, bail, ensure, Context};
 use bytes::{Buf, Bytes};
 use core::future::Future;
 use core::time::Duration;
-use prometheus::{Histogram, IntCounter, IntGauge};
+use prometheus::{Histogram, IntCounter};
 use spacetimedb_auth::identity::ConnectionAuthCtx;
-use spacetimedb_client_api_messages::energy::EnergyQuanta;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, ViewError};
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, Program};
-use spacetimedb_execution::pipelined::PipelinedProject;
+use spacetimedb_execution::ExecutionParams;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::db::raw_def::v9::{Lifecycle, ViewResultHeader};
 use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::{bsatn, ConnectionId, Hash, ProductType, RawModuleDef, Timestamp};
-use spacetimedb_primitives::{ProcedureId, TableId, ViewFnPtr, ViewId};
+use spacetimedb_lib::{bsatn, http as st_http, ConnectionId, Hash, ProductType, RawModuleDef, Timestamp};
+use spacetimedb_primitives::{HttpHandlerId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, Deserialize, ProductValue, Typespace, WithTypespace};
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
@@ -98,11 +98,23 @@ pub trait WasmInstance {
         op: ProcedureOp,
         budget: FunctionBudget,
     ) -> impl Future<Output = (ProcedureExecuteResult, Option<TransactionOffset>)>;
+
+    fn call_http_handler(
+        &mut self,
+        op: HttpHandlerOp,
+        budget: FunctionBudget,
+    ) -> impl Future<Output = (HttpHandlerExecuteResult, Option<TransactionOffset>)>;
 }
 
 pub struct EnergyStats {
     pub budget: FunctionBudget,
     pub remaining: FunctionBudget,
+}
+
+impl Default for EnergyStats {
+    fn default() -> Self {
+        Self::ZERO
+    }
 }
 
 impl EnergyStats {
@@ -111,9 +123,15 @@ impl EnergyStats {
         remaining: FunctionBudget::ZERO,
     };
 
+    pub fn from_used(budget: FunctionBudget, used: FunctionBudget) -> Self {
+        // TODO: should this be a saturating_sub?
+        let remaining = budget - used;
+        Self { budget, remaining }
+    }
+
     /// Returns the used energy amount.
     fn used(&self) -> FunctionBudget {
-        (self.budget.get() - self.remaining.get()).into()
+        self.budget - self.remaining
     }
 }
 
@@ -170,11 +188,10 @@ pub(crate) fn run_query_for_view(
 
     // Validate shape and disallow views-on-views.
     for plan in &plans {
-        let phys = plan.optimized_physical_plan();
-        let Some(source_schema) = phys.return_table() else {
+        let Some(source_schema) = plan.return_table() else {
             bail!("query does not return plain table rows");
         };
-        if phys.reads_from_view(true) || phys.reads_from_view(false) {
+        if plan.reads_from_view(true) || plan.reads_from_view(false) {
             bail!("view definition cannot read from other views");
         }
         if source_schema.row_type != *expected_row_type {
@@ -190,6 +207,8 @@ pub(crate) fn run_query_for_view(
     let mut metrics = ExecutionMetrics::default();
     let mut rows = Vec::new();
 
+    let params = ExecutionParams::from_auth(&auth);
+
     for plan in plans {
         // Track read sets for all tables involved in this plan.
         // TODO(jsdt): This means we will rerun the view and query for any change to these tables, so we should optimize this asap.
@@ -197,8 +216,7 @@ pub(crate) fn run_query_for_view(
             tx.record_table_scan(&op, table_id);
         }
 
-        let pipelined = PipelinedProject::from(plan.optimized_physical_plan().clone());
-        pipelined.execute(&*tx, &mut metrics, &mut |row| {
+        plan.base_plan().execute(&*tx, &params, &mut metrics, &mut |row| {
             rows.push(row.to_product_value());
             Ok(())
         })?;
@@ -207,6 +225,7 @@ pub(crate) fn run_query_for_view(
     Ok(rows)
 }
 
+#[derive(Default)]
 pub struct ExecutionTimings {
     pub total_duration: Duration,
     pub wasm_instance_env_call_times: CallTimes,
@@ -226,14 +245,14 @@ impl ExecutionTimings {
 /// The result that `__call_reducer__` produces during normal non-trap execution.
 pub type ReducerResult = Result<Option<Bytes>, Box<str>>;
 
+#[derive(Default)]
 pub struct ExecutionStats {
     pub energy: EnergyStats,
     pub timings: ExecutionTimings,
-    pub memory_allocation: usize,
 }
 
 impl ExecutionStats {
-    fn energy_used(&self) -> FunctionBudget {
+    fn execution_budget_used(&self) -> FunctionBudget {
         self.energy.used()
     }
 
@@ -312,6 +331,8 @@ impl ViewResult {
 pub type ViewExecuteResult = ExecutionResult<ViewReturnData, ExecutionError>;
 
 pub type ProcedureExecuteResult = ExecutionResult<Bytes, anyhow::Error>;
+
+pub type HttpHandlerExecuteResult = ExecutionResult<(Bytes, Bytes), anyhow::Error>;
 
 pub struct WasmModuleHostActor<T: WasmModule> {
     module: T::InstancePre,
@@ -393,6 +414,15 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         let initial_instance = module.make_from_instance(instance);
 
         Ok((module, initial_instance))
+    }
+
+    pub fn with_runtime_module<U: WasmModule>(&self, module: U) -> Result<WasmModuleHostActor<U>, InitializationError> {
+        let module = module.instantiate_pre()?;
+        Ok(WasmModuleHostActor {
+            module,
+            common: self.common.clone(),
+            func_names: self.func_names.clone(),
+        })
     }
 }
 
@@ -528,11 +558,29 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
-    pub(in crate::host) async fn call_scheduled_function(
+    pub async fn call_http_handler(
+        &mut self,
+        params: CallHttpHandlerParams,
+    ) -> Result<(st_http::Response, Bytes), HttpHandlerCallError> {
+        let (res, trapped) = self.common.call_http_handler(params, &mut self.instance).await;
+        self.trapped = trapped;
+        res
+    }
+
+    pub(in crate::host) async fn call_scheduled_procedure(
         &mut self,
         params: ScheduledFunctionParams,
     ) -> CallScheduledFunctionResult {
-        let (res, trapped) = self.common.call_scheduled_function(params, &mut self.instance).await;
+        let (res, trapped) = self.common.call_scheduled_procedure(params, &mut self.instance).await;
+        self.trapped = trapped;
+        res
+    }
+
+    pub(in crate::host) fn call_scheduled_reducer(
+        &mut self,
+        params: ScheduledFunctionParams,
+    ) -> CallScheduledFunctionResult {
+        let (res, trapped) = self.common.call_scheduled_reducer(params, &mut self.instance);
         self.trapped = trapped;
         res
     }
@@ -562,8 +610,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 pub struct InstanceCommon {
     info: Arc<ModuleInfo>,
     energy_monitor: Arc<dyn EnergyMonitor>,
-    allocated_memory: usize,
-    metric_wasm_memory_bytes: IntGauge,
     vm_metrics: AllVmMetrics,
 }
 
@@ -576,11 +622,6 @@ impl InstanceCommon {
             info: module.info(),
             vm_metrics,
             energy_monitor: module.energy_monitor(),
-            // Will be updated on the first reducer call.
-            allocated_memory: 0,
-            metric_wasm_memory_bytes: WORKER_METRICS
-                .wasm_memory_bytes
-                .with_label_values(module.database_identity()),
         }
     }
 
@@ -638,7 +679,7 @@ impl InstanceCommon {
                 log::info!("Database updated, {} host-type={}", stdb.database_identity(), host_type);
 
                 let succeed = |info: Arc<ModuleInfo>,
-                               energy_quanta_used: EnergyQuanta,
+                               execution_budget_used: FunctionBudget,
                                host_execution_duration: Duration,
                                tx: MutTxId|
                  -> TransactionOffset {
@@ -649,7 +690,7 @@ impl InstanceCommon {
                         function_call: ModuleFunctionCall::update(),
                         status: EventStatus::Committed(DatabaseUpdate::default()),
                         reducer_return_value: None,
-                        energy_quanta_used,
+                        execution_budget_used,
                         host_execution_duration,
                         request_id: None,
                         timer: None,
@@ -663,7 +704,7 @@ impl InstanceCommon {
 
                 let res: UpdateDatabaseResult = match res {
                     crate::db::update::UpdateResult::Success => {
-                        let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO.into(), Duration::ZERO, tx);
+                        let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO, Duration::ZERO, tx);
                         UpdateDatabaseResult::UpdatePerformed {
                             tx_offset,
                             durable_offset,
@@ -685,7 +726,8 @@ impl InstanceCommon {
                             stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
                             UpdateDatabaseResult::ErrorExecutingMigration(anyhow::anyhow!(msg))
                         } else {
-                            let tx_offset = succeed(self.info.clone(), out.energy_used.into(), out.total_duration, tx);
+                            let tx_offset =
+                                succeed(self.info.clone(), out.execution_budget_used, out.total_duration, tx);
                             UpdateDatabaseResult::UpdatePerformed {
                                 tx_offset,
                                 durable_offset,
@@ -693,7 +735,7 @@ impl InstanceCommon {
                         }
                     }
                     crate::db::update::UpdateResult::RequiresClientDisconnect => {
-                        let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO.into(), Duration::ZERO, tx);
+                        let tx_offset = succeed(self.info.clone(), FunctionBudget::ZERO, Duration::ZERO, tx);
                         UpdateDatabaseResult::UpdatePerformedWithClientDisconnect {
                             tx_offset,
                             durable_offset,
@@ -762,18 +804,11 @@ impl InstanceCommon {
         let ProcedureExecuteResult {
             stats:
                 ExecutionStats {
-                    memory_allocation,
                     // TODO(procedure-energy): Do something with timing and energy.
                     ..
                 },
             call_result,
         } = result;
-
-        // TODO(shub): deduplicate with reducer and view logic.
-        if self.allocated_memory != memory_allocation {
-            self.metric_wasm_memory_bytes.set(memory_allocation as i64);
-            self.allocated_memory = memory_allocation;
-        }
 
         let trapped = call_result.is_err();
 
@@ -808,6 +843,82 @@ impl InstanceCommon {
         };
 
         (CallProcedureReturn { result, tx_offset }, trapped)
+    }
+
+    pub(crate) async fn call_http_handler<I: WasmInstance>(
+        &mut self,
+        params: CallHttpHandlerParams,
+        inst: &mut I,
+    ) -> (Result<(st_http::Response, Bytes), HttpHandlerCallError>, bool) {
+        let CallHttpHandlerParams {
+            timestamp,
+            handler_id,
+            request,
+            request_body,
+        } = params;
+
+        let Some(handler_def) = self.info.module_def.get_http_handler_by_id(handler_id) else {
+            return (Err(HttpHandlerCallError::NoSuchHandler), false);
+        };
+        let handler_name = &handler_def.name;
+
+        let request_bytes = match bsatn::to_vec(&request) {
+            Ok(bytes) => bytes.into(),
+            Err(err) => {
+                return (
+                    Err(HttpHandlerCallError::InternalError(format!(
+                        "failed to serialize request: {err}"
+                    ))),
+                    false,
+                )
+            }
+        };
+
+        let op = HttpHandlerOp {
+            id: handler_id,
+            name: handler_name.clone(),
+            timestamp,
+            request_bytes,
+            request_body_bytes: request_body,
+        };
+
+        let energy_fingerprint = FunctionFingerprint {
+            module_hash: self.info.module_hash,
+            module_identity: self.info.owner_identity,
+            caller_identity: self.info.owner_identity,
+            function_name: handler_name,
+        };
+
+        let budget = self.energy_monitor.reducer_budget(&energy_fingerprint);
+
+        let (result, _tx_offset) = inst.call_http_handler(op, budget).await;
+
+        let HttpHandlerExecuteResult {
+            stats:
+                ExecutionStats {
+                    // TODO(http-handler-energy): Do something with timing and energy.
+                    ..
+                },
+            call_result,
+        } = result;
+
+        let trapped = call_result.is_err();
+
+        let result = match call_result {
+            Err(err) => {
+                inst.log_traceback("http handler", handler_name, &err);
+                WORKER_METRICS
+                    .wasm_instance_errors
+                    .with_label_values(&self.info.database_identity, &self.info.module_hash, handler_name)
+                    .inc();
+                Err(HttpHandlerCallError::InternalError(format!("{err}")))
+            }
+            Ok((response_bytes, response_body)) => bsatn::from_slice::<st_http::Response>(&response_bytes[..])
+                .map(|response| (response, response_body))
+                .map_err(|err| HttpHandlerCallError::InternalError(format!("{err}"))),
+        };
+
+        (result, trapped)
     }
 
     /// Execute a reducer.
@@ -940,7 +1051,7 @@ impl InstanceCommon {
         };
 
         // Account for view execution in reducer reporting metrics
-        vm_metrics.report_energy_used(out.energy_used);
+        vm_metrics.report_execution_budget_used(out.execution_budget_used);
         vm_metrics.report_total_duration(out.total_duration);
         vm_metrics.report_abi_duration(out.abi_duration);
 
@@ -953,7 +1064,7 @@ impl InstanceCommon {
             reducer_return_value = None;
         }
 
-        let energy_quanta_used = result.stats.energy_used().into();
+        let execution_budget_used = result.stats.execution_budget_used();
         let total_duration = result.stats.total_duration();
 
         let event = ModuleEvent {
@@ -967,7 +1078,7 @@ impl InstanceCommon {
             },
             status,
             reducer_return_value,
-            energy_quanta_used,
+            execution_budget_used,
             host_execution_duration: total_duration,
             request_id,
             timer,
@@ -976,7 +1087,7 @@ impl InstanceCommon {
 
         let res = ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),
-            energy_used: energy_quanta_used,
+            execution_budget_used,
             execution_duration: total_duration,
         };
 
@@ -1019,23 +1130,17 @@ impl InstanceCommon {
         let result = vm_call_function(budget);
 
         let stats: &ExecutionStats = result.as_ref();
-        let energy_used = stats.energy.used();
-        let energy_quanta_used = energy_used.into();
+        let execution_budget_used = stats.energy.used();
         let timings = &stats.timings;
-        let memory_allocation = stats.memory_allocation;
 
         self.energy_monitor
-            .record_reducer(&energy_fingerprint, energy_quanta_used, timings.total_duration);
-        if self.allocated_memory != memory_allocation {
-            self.metric_wasm_memory_bytes.set(memory_allocation as i64);
-            self.allocated_memory = memory_allocation;
-        }
+            .record_reducer(&energy_fingerprint, execution_budget_used, timings.total_duration);
 
         maybe_log_long_running_function(function_name, timings.total_duration);
 
         function_span
             .record("timings.total_duration", tracing::field::debug(timings.total_duration))
-            .record("energy.used", tracing::field::debug(energy_used));
+            .record("energy.used", tracing::field::debug(execution_budget_used));
 
         result
     }
@@ -1241,6 +1346,7 @@ impl InstanceCommon {
             (Ok(raw), sender) => {
                 // This is wrapped in a closure to simplify error handling.
                 let outcome: Result<ViewOutcome, anyhow::Error> = (|| {
+                    let view_call = ViewCallInfo { view_id, sender };
                     let result = ViewResult::from_return_data(raw).context("Error parsing view result")?;
                     let typespace = self.info.module_def.typespace();
                     let row_product_type = typespace
@@ -1253,28 +1359,14 @@ impl InstanceCommon {
                         ViewResult::Rows(bytes) => deserialize_view_rows(row_type, bytes, typespace)
                             .context("Error deserializing rows returned by view".to_string())?,
                         ViewResult::RawSql(query) => self
-                            .run_query_for_view(
-                                &mut tx,
-                                &query,
-                                &row_product_type,
-                                &ViewCallInfo {
-                                    view_id,
-                                    table_id,
-                                    fn_ptr,
-                                    sender,
-                                },
-                            )
+                            .run_query_for_view(&mut tx, &query, &row_product_type, &view_call)
                             .context("Error executing raw SQL returned by view".to_string())?,
                     };
 
                     let replica_ctx = inst.replica_ctx();
                     let stdb = replica_ctx.relational_db();
-                    let res = match sender {
-                        Some(sender) => stdb.materialize_view(&mut tx, table_id, sender, rows),
-                        None => stdb.materialize_anonymous_view(&mut tx, table_id, rows),
-                    };
-
-                    res.context("Error materializing view")?;
+                    stdb.materialize_view_call(&mut tx, table_id, view_call, rows)
+                        .context("Error materializing view")?;
 
                     Ok(ViewOutcome::Success)
                 })();
@@ -1291,7 +1383,7 @@ impl InstanceCommon {
         let res = ViewCallResult {
             outcome,
             tx,
-            energy_used: result.stats.energy_used(),
+            execution_budget_used: result.stats.execution_budget_used(),
             total_duration: result.stats.total_duration(),
             abi_duration: result.stats.abi_duration(),
         };
@@ -1343,7 +1435,7 @@ impl InstanceCommon {
 
             out.tx = result.tx;
             out.outcome = result.outcome;
-            out.energy_used += result.energy_used;
+            out.execution_budget_used += result.execution_budget_used;
             out.total_duration += result.total_duration;
             out.abi_duration += result.abi_duration;
 
@@ -1363,12 +1455,20 @@ impl InstanceCommon {
         self.info.relational_db().clear_all_clients().map_err(Into::into)
     }
 
-    pub(crate) async fn call_scheduled_function<I: WasmInstance>(
+    pub(crate) async fn call_scheduled_procedure<I: WasmInstance>(
         &mut self,
         params: ScheduledFunctionParams,
         inst: &mut I,
     ) -> (CallScheduledFunctionResult, bool) {
-        crate::host::scheduler::call_scheduled_function(&self.info.clone(), params, self, inst).await
+        crate::host::scheduler::call_scheduled_procedure(&self.info.clone(), params, self, inst).await
+    }
+
+    pub(crate) fn call_scheduled_reducer<I: WasmInstance>(
+        &mut self,
+        params: ScheduledFunctionParams,
+        inst: &mut I,
+    ) -> (CallScheduledFunctionResult, bool) {
+        crate::host::scheduler::call_scheduled_reducer(&self.info.clone(), params, self, inst)
     }
 }
 
@@ -1538,8 +1638,8 @@ impl VmMetrics {
         self.reducer_plus_query_duration.clone().with_timer(start)
     }
 
-    fn report_energy_used(&self, energy_used: FunctionBudget) {
-        self.reducer_fuel_used.inc_by(energy_used.get());
+    fn report_execution_budget_used(&self, execution_budget_used: FunctionBudget) {
+        self.reducer_fuel_used.inc_by(execution_budget_used.get());
     }
 
     fn report_total_duration(&self, duration: Duration) {
@@ -1552,10 +1652,10 @@ impl VmMetrics {
 
     /// Reports some VM metrics.
     fn report(&self, stats: &ExecutionStats) {
-        let energy_used = stats.energy.used();
+        let execution_budget_used = stats.energy.used();
         let reducer_duration = stats.timings.total_duration;
         let abi_time = stats.timings.wasm_instance_env_call_times.sum();
-        self.report_energy_used(energy_used);
+        self.report_execution_budget_used(execution_budget_used);
         self.report_total_duration(reducer_duration);
         self.report_abi_duration(abi_time);
     }
@@ -1672,8 +1772,6 @@ impl InstanceOp for ViewOp<'_> {
     fn call_type(&self) -> FuncCallType {
         FuncCallType::View(ViewCallInfo {
             view_id: self.view_id,
-            table_id: self.table_id,
-            fn_ptr: self.fn_ptr,
             sender: Some(*self.sender),
         })
     }
@@ -1702,8 +1800,6 @@ impl InstanceOp for AnonymousViewOp<'_> {
     fn call_type(&self) -> FuncCallType {
         FuncCallType::View(ViewCallInfo {
             view_id: self.view_id,
-            table_id: self.table_id,
-            fn_ptr: self.fn_ptr,
             sender: None,
         })
     }
@@ -1766,6 +1862,28 @@ pub struct ProcedureOp {
 }
 
 impl InstanceOp for ProcedureOp {
+    fn name(&self) -> &Identifier {
+        &self.name
+    }
+    fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+    fn call_type(&self) -> FuncCallType {
+        FuncCallType::Procedure
+    }
+}
+
+/// Describes an HTTP handler call in a cheaply shareable way.
+#[derive(Clone, Debug)]
+pub struct HttpHandlerOp {
+    pub id: HttpHandlerId,
+    pub name: Identifier,
+    pub timestamp: Timestamp,
+    pub request_bytes: Bytes,
+    pub request_body_bytes: Bytes,
+}
+
+impl InstanceOp for HttpHandlerOp {
     fn name(&self) -> &Identifier {
         &self.name
     }

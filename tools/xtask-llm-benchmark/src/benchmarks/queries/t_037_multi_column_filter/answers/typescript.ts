@@ -2,7 +2,7 @@ import { schema, table, t } from 'spacetimedb/server';
 
 const eventLog = table({
   name: 'event_log',
-  indexes: [{ name: 'byCategorySeverity', algorithm: 'btree', columns: ['category', 'severity'] }],
+  indexes: [{ accessor: 'byCategorySeverity', algorithm: 'btree', columns: ['category', 'severity'] }],
 }, {
   id: t.u64().primaryKey().autoInc(),
   category: t.string(),

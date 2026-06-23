@@ -41,7 +41,7 @@ target_link_libraries(${OUTPUT_NAME} PRIVATE spacetimedb_cpp_library)
 # Emscripten specific settings
 if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   # Export list as a single variable (no extra quoting per-platform)
-  set(EXPORTED_FUNCS "['_malloc','_free','___describe_module__','___call_reducer__','___call_procedure__','___call_view__','___call_view_anon__']")
+  set(EXPORTED_FUNCS "['_malloc','_free','___describe_module__','___call_reducer__','___call_procedure__','___call_view__','___call_view_anon__','___call_http_handler__']")
 
   # Produce a standalone .wasm (no JS harness) with no entry point
   target_link_options(lib PRIVATE

@@ -3,6 +3,7 @@
 use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
+use serde_json::Value;
 use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::path::Path;
@@ -12,6 +13,8 @@ use std::{env, fs};
 const README_PATH: &str = "tools/ci/README.md";
 
 mod ci_docs;
+mod cla_assistant;
+mod keynote_bench;
 mod smoketest;
 mod util;
 
@@ -91,6 +94,204 @@ fn check_global_json_policy() -> Result<()> {
     Ok(())
 }
 
+fn package_json_pnpm_version(package_manager: &str) -> Option<&str> {
+    package_manager.strip_prefix("pnpm@")
+}
+
+fn git_tracked_files(pathspec: &str) -> Result<Vec<PathBuf>> {
+    let output = cmd!("git", "ls-files", pathspec).read()?;
+    Ok(output.lines().map(PathBuf::from).collect())
+}
+
+fn package_json_string_value(package_json: &Value, key: &str) -> Option<String> {
+    package_json.get(key)?.as_str().map(str::to_owned)
+}
+
+fn package_json_engines_pnpm(package_json: &Value) -> Option<String> {
+    package_json.get("engines")?.get("pnpm")?.as_str().map(str::to_owned)
+}
+
+fn read_package_json(path: &Path) -> Result<Value> {
+    let contents = fs::read_to_string(path)?;
+    Ok(serde_json::from_str(&contents)?)
+}
+
+fn is_npm_package_json(package_json: &Value) -> bool {
+    [
+        "bin",
+        "dependencies",
+        "devDependencies",
+        "exports",
+        "main",
+        "optionalDependencies",
+        "packageManager",
+        "peerDependencies",
+        "scripts",
+        "type",
+    ]
+    .iter()
+    .any(|key| package_json.get(key).is_some())
+}
+
+fn is_template_path(path: &Path) -> bool {
+    path.starts_with("templates")
+}
+
+fn minimum_release_age(path: &Path) -> Result<u64> {
+    let workspace = fs::read_to_string(path)?;
+    workspace
+        .lines()
+        .find_map(|line| {
+            let line = line.trim();
+            let value = line.strip_prefix("minimumReleaseAge:")?.trim();
+            value.parse::<u64>().ok()
+        })
+        .ok_or_else(|| anyhow::anyhow!("{} is missing minimumReleaseAge", path.display()))
+}
+
+fn npmrc_minimum_release_age(path: &Path, expected_minimum_release_age: u64) -> Result<u64> {
+    let contents = fs::read_to_string(path).map_err(|err| {
+        if err.kind() == std::io::ErrorKind::NotFound {
+            anyhow::anyhow!(
+                "{} is tracked but missing from the working tree. Restore it with:\nminimum-release-age={}",
+                path.display(),
+                expected_minimum_release_age
+            )
+        } else {
+            anyhow::anyhow!(
+                "failed to read {} while checking pnpm minimum package age: {err}",
+                path.display()
+            )
+        }
+    })?;
+    contents
+        .lines()
+        .find_map(|line| {
+            let line = line.trim();
+            let value = line.strip_prefix("minimum-release-age=")?.trim();
+            value.parse::<u64>().ok()
+        })
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "{} must contain `minimum-release-age={}` to match root pnpm-workspace.yaml",
+                path.display(),
+                expected_minimum_release_age
+            )
+        })
+}
+
+fn check_pnpm_release_age_policy() -> Result<()> {
+    ensure_repo_root()?;
+
+    let root_package_json_path = Path::new("package.json");
+    let root_package_json = read_package_json(root_package_json_path)?;
+    let package_manager = package_json_string_value(&root_package_json, "packageManager")
+        .ok_or_else(|| anyhow::anyhow!("package.json is missing packageManager"))?;
+    let package_manager_version = package_json_pnpm_version(&package_manager)
+        .ok_or_else(|| anyhow::anyhow!("packageManager must be pnpm@<version>, found {package_manager:?}"))?;
+
+    let expected_engine_pnpm = format!(">={package_manager_version}");
+    let engine_pnpm = package_json_engines_pnpm(&root_package_json)
+        .ok_or_else(|| anyhow::anyhow!("package.json engines is missing pnpm"))?;
+    if engine_pnpm != expected_engine_pnpm {
+        bail!("package.json engines.pnpm must be {expected_engine_pnpm:?}, found {engine_pnpm:?}");
+    }
+
+    for package_json_path in git_tracked_files(":(glob)**/package.json")? {
+        let package_json = read_package_json(&package_json_path)?;
+        let Some(found_package_manager) = package_json_string_value(&package_json, "packageManager") else {
+            continue;
+        };
+        if found_package_manager != package_manager {
+            bail!(
+                "{} packageManager must match root package.json: expected {:?}, found {:?}",
+                package_json_path.display(),
+                package_manager,
+                found_package_manager
+            );
+        }
+    }
+
+    let root_workspace_path = Path::new("pnpm-workspace.yaml");
+    let root_minimum_release_age = minimum_release_age(root_workspace_path)?;
+    for workspace_path in git_tracked_files(":(glob)**/pnpm-workspace.yaml")? {
+        let found_minimum_release_age = minimum_release_age(&workspace_path)?;
+        if found_minimum_release_age != root_minimum_release_age {
+            bail!(
+                "{} minimumReleaseAge must match root pnpm-workspace.yaml: expected {}, found {}",
+                workspace_path.display(),
+                root_minimum_release_age,
+                found_minimum_release_age
+            );
+        }
+    }
+
+    for npmrc_path in git_tracked_files(":(glob)**/.npmrc")? {
+        // Template package roots are copied into projects created by `spacetime init`.
+        // They must not embed this repo's package-age policy; smoketests enforce it
+        // at the pnpm process boundary instead.
+        if is_template_path(&npmrc_path) {
+            continue;
+        }
+        let found_minimum_release_age = npmrc_minimum_release_age(&npmrc_path, root_minimum_release_age)?;
+        if found_minimum_release_age != root_minimum_release_age {
+            bail!(
+                "{} minimum-release-age must match root pnpm-workspace.yaml: expected {}, found {}",
+                npmrc_path.display(),
+                root_minimum_release_age,
+                found_minimum_release_age
+            );
+        }
+    }
+
+    for package_json_path in git_tracked_files(":(glob)**/package.json")? {
+        // Template package roots are copied into projects created by `spacetime init`.
+        // They must not require adjacent .npmrc files for this repo's package-age
+        // policy; smoketests enforce it at the pnpm process boundary instead.
+        if is_template_path(&package_json_path) {
+            continue;
+        }
+        let package_json = read_package_json(&package_json_path)?;
+        if !is_npm_package_json(&package_json) {
+            continue;
+        }
+        let package_dir = package_json_path
+            .parent()
+            .expect("git-tracked package.json path should have a parent");
+        let npmrc_path = package_dir.join(".npmrc");
+        if !npmrc_path.is_file() {
+            bail!(
+                "{} is required because {} is an npm/pnpm package manifest.\nAdd {} containing:\nminimum-release-age={}",
+                npmrc_path.display(),
+                package_json_path.display(),
+                npmrc_path.display(),
+                root_minimum_release_age
+            );
+        }
+        let found_minimum_release_age = npmrc_minimum_release_age(&npmrc_path, root_minimum_release_age)?;
+        if found_minimum_release_age != root_minimum_release_age {
+            bail!(
+                "{} minimum-release-age must match root pnpm-workspace.yaml: expected {}, found {}",
+                npmrc_path.display(),
+                root_minimum_release_age,
+                found_minimum_release_age
+            );
+        }
+    }
+
+    for workflow_path in git_tracked_files(".github/workflows/*")? {
+        let contents = fs::read_to_string(&workflow_path)?;
+        if contents.contains("pnpm/action-setup@v4") {
+            bail!(
+                "{} must use ./.github/actions/setup-pnpm instead of pnpm/action-setup@v4",
+                workflow_path.display()
+            );
+        }
+    }
+
+    Ok(())
+}
+
 #[derive(Subcommand)]
 enum CiCmd {
     /// Runs tests
@@ -116,6 +317,12 @@ enum CiCmd {
     ///
     /// Executes the smoketests suite with some default exclusions.
     Smoketests(smoketest::SmoketestsArgs),
+    /// Runs the keynote benchmark as a CI performance regression gate.
+    ///
+    /// Assumes release SpacetimeDB binaries and the TypeScript SDK are already built, runs the
+    /// keynote SpacetimeDB benchmark for 60 seconds against the TypeScript and Rust modules, and
+    /// fails if throughput is below 275K TPS for TypeScript or 300K TPS for Rust.
+    KeynoteBench,
     /// Tests the update flow
     ///
     /// Tests the self-update flow by building the spacetimedb-update binary for the specified
@@ -161,6 +368,11 @@ enum CiCmd {
     VersionUpgradeCheck,
     /// Builds the docs site.
     Docs,
+    /// Interacts with CLA Assistant.
+    ClaAssistant {
+        #[command(subcommand)]
+        cmd: cla_assistant::ClaAssistantCmd,
+    },
 }
 
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
@@ -284,10 +496,40 @@ fn main() -> Result<()> {
                 "spacetimedb-smoketests",
                 "--exclude",
                 "spacetimedb-sdk",
+                "--exclude",
+                "spacetimedb",
                 "--",
                 "--test-threads=2",
                 "--skip",
                 "unreal"
+            )
+            .run()?;
+            // Bindings snapshot tests rely on the unstable feature,
+            // as they compile and test APIs which are gated behind that feature,
+            // e.g. procedures, HTTP handlers.
+            cmd!(
+                "cargo",
+                "test",
+                "-p",
+                "spacetimedb",
+                "--features",
+                "unstable",
+                "--",
+                "--test-threads=2",
+            )
+            .run()?;
+            // The SDK test harness uses the same child-process server guard as smoketests,
+            // which expects release CLI/standalone binaries to already exist.
+            cmd!(
+                "cargo",
+                "build",
+                "--release",
+                "-p",
+                "spacetimedb-cli",
+                "-p",
+                "spacetimedb-standalone",
+                "--features",
+                "spacetimedb-standalone/allow_loopback_http_for_tests",
             )
             .run()?;
             // SDK procedure tests intentionally make localhost HTTP requests.
@@ -352,6 +594,7 @@ fn main() -> Result<()> {
 
         Some(CiCmd::Lint) => {
             ensure_repo_root()?;
+            check_pnpm_release_age_policy()?;
             // `cargo fmt --all` only checks files that Cargo discovers through workspace/package targets.
             // However, we also keep Rust sources in a locations that are tracked but not part of our workspace,
             // so this approach properly catches all the files, where `cargo fmt` does not.
@@ -393,6 +636,10 @@ fn main() -> Result<()> {
                 .dir("crates/bindings-csharp")
                 .run()?;
             cmd!("pnpm", "lint").run()?;
+            cmd!("cargo", "test", "--doc", "--target", "wasm32-unknown-unknown")
+                .dir("crates/bindings")
+                .run()?;
+            cmd!("cargo", "test", "--doc").dir("crates/bindings").run()?;
             // `bindings` is the only crate we care strongly about documenting,
             // since we link to its docs.rs from our website.
             // We won't pass `--no-deps`, though,
@@ -433,6 +680,11 @@ fn main() -> Result<()> {
         Some(CiCmd::Smoketests(args)) => {
             ensure_repo_root()?;
             smoketest::run(args)?;
+        }
+
+        Some(CiCmd::KeynoteBench) => {
+            ensure_repo_root()?;
+            keynote_bench::run()?;
         }
 
         Some(CiCmd::UpdateFlow {
@@ -538,6 +790,10 @@ fn main() -> Result<()> {
 
         Some(CiCmd::Docs) => {
             run_docs_build()?;
+        }
+
+        Some(CiCmd::ClaAssistant { cmd }) => {
+            cla_assistant::run(cmd)?;
         }
 
         None => run_all_clap_subcommands(&cli.skip)?,

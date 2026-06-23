@@ -90,16 +90,38 @@ pub enum RawModuleDefV10Section {
     /// Names provided explicitly by the user that do not follow from the case conversion policy.
     ExplicitNames(ExplicitNames),
 
-    /// Mounted submodules, keyed by the namespace they are mounted under.
-    Mounts(Vec<RawModuleMountV10>),
+    /// HTTP handler function definitions.
+    HttpHandlers(Vec<RawHttpHandlerDefV10>),
+
+    /// HTTP route definitions.
+    HttpRoutes(Vec<RawHttpRouteDefV10>),
+
+    /// Primary key metadata for views.
+    ViewPrimaryKeys(Vec<RawViewPrimaryKeyDefV10>),
 }
 
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
-pub struct RawModuleMountV10 {
-    pub namespace: String,
-    pub module: RawModuleDefV10,
+pub struct RawHttpHandlerDefV10 {
+    pub source_name: RawIdentifier,
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawHttpRouteDefV10 {
+    pub handler_function: RawIdentifier,
+    pub method: MethodOrAny,
+    pub path: RawIdentifier,
+}
+
+#[derive(Debug, Clone, SpacetimeType, PartialEq, Eq, PartialOrd, Ord)]
+#[sats(crate = crate)]
+#[non_exhaustive]
+pub enum MethodOrAny {
+    Any,
+    Method(crate::http::Method),
 }
 
 #[derive(Debug, Clone, Copy, Default, SpacetimeType)]
@@ -520,15 +542,22 @@ pub struct RawViewDefV10 {
     pub return_type: AlgebraicType,
 }
 
-impl RawModuleDefV10 {
-    /// Get the mounted submodules for this module definition.
-    pub fn mounts(&self) -> Option<&Vec<RawModuleMountV10>> {
-        self.sections.iter().find_map(|s| match s {
-            RawModuleDefV10Section::Mounts(mounts) => Some(mounts),
-            _ => None,
-        })
-    }
+/// Primary key metadata for a view.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawViewPrimaryKeyDefV10 {
+    /// The source/accessor name of the view this primary key applies to.
+    pub view_source_name: RawIdentifier,
 
+    /// The source/accessor names of the columns that make up the primary key.
+    ///
+    /// Currently only a single column is supported, but this is a vector to keep
+    /// the raw definition compatible with future composite view primary keys.
+    pub columns: Vec<RawIdentifier>,
+}
+
+impl RawModuleDefV10 {
     /// Get the types section, if present.
     pub fn types(&self) -> Option<&Vec<RawTypeDefV10>> {
         self.sections.iter().find_map(|s| match s {
@@ -573,6 +602,14 @@ impl RawModuleDefV10 {
     pub fn views(&self) -> Option<&Vec<RawViewDefV10>> {
         self.sections.iter().find_map(|s| match s {
             RawModuleDefV10Section::Views(views) => Some(views),
+            _ => None,
+        })
+    }
+
+    /// Get the view primary keys section, if present.
+    pub fn view_primary_keys(&self) -> Option<&Vec<RawViewPrimaryKeyDefV10>> {
+        self.sections.iter().find_map(|s| match s {
+            RawModuleDefV10Section::ViewPrimaryKeys(primary_keys) => Some(primary_keys),
             _ => None,
         })
     }
@@ -624,6 +661,20 @@ impl RawModuleDefV10 {
     pub fn explicit_names(&self) -> Option<&ExplicitNames> {
         self.sections.iter().find_map(|s| match s {
             RawModuleDefV10Section::ExplicitNames(names) => Some(names),
+            _ => None,
+        })
+    }
+
+    pub fn http_handlers(&self) -> Option<&Vec<RawHttpHandlerDefV10>> {
+        self.sections.iter().find_map(|s| match s {
+            RawModuleDefV10Section::HttpHandlers(handlers) => Some(handlers),
+            _ => None,
+        })
+    }
+
+    pub fn http_routes(&self) -> Option<&Vec<RawHttpRouteDefV10>> {
+        self.sections.iter().find_map(|s| match s {
+            RawModuleDefV10Section::HttpRoutes(routes) => Some(routes),
             _ => None,
         })
     }
@@ -718,6 +769,26 @@ impl RawModuleDefV10Builder {
         match &mut self.module.sections[idx] {
             RawModuleDefV10Section::Views(views) => views,
             _ => unreachable!("Just ensured Views section exists"),
+        }
+    }
+
+    /// Get mutable access to the view primary keys section, creating it if missing.
+    fn view_primary_keys_mut(&mut self) -> &mut Vec<RawViewPrimaryKeyDefV10> {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::ViewPrimaryKeys(_)))
+            .unwrap_or_else(|| {
+                self.module
+                    .sections
+                    .push(RawModuleDefV10Section::ViewPrimaryKeys(Vec::new()));
+                self.module.sections.len() - 1
+            });
+
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::ViewPrimaryKeys(primary_keys) => primary_keys,
+            _ => unreachable!("Just ensured ViewPrimaryKeys section exists"),
         }
     }
 
@@ -821,6 +892,46 @@ impl RawModuleDefV10Builder {
         match &mut self.module.sections[idx] {
             RawModuleDefV10Section::ExplicitNames(names) => names,
             _ => unreachable!("Just ensured ExplicitNames section exists"),
+        }
+    }
+
+    /// Get mutable access to the HTTP handlers section, creating it if missing.
+    fn http_handlers_mut(&mut self) -> &mut Vec<RawHttpHandlerDefV10> {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::HttpHandlers(_)))
+            .unwrap_or_else(|| {
+                self.module
+                    .sections
+                    .push(RawModuleDefV10Section::HttpHandlers(Vec::new()));
+                self.module.sections.len() - 1
+            });
+
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::HttpHandlers(handlers) => handlers,
+            _ => unreachable!("Just ensured HttpHandlers section exists"),
+        }
+    }
+
+    /// Get mutable access to the HTTP routes section, creating it if missing.
+    fn http_routes_mut(&mut self) -> &mut Vec<RawHttpRouteDefV10> {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::HttpRoutes(_)))
+            .unwrap_or_else(|| {
+                self.module
+                    .sections
+                    .push(RawModuleDefV10Section::HttpRoutes(Vec::new()));
+                self.module.sections.len() - 1
+            });
+
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::HttpRoutes(routes) => routes,
+            _ => unreachable!("Just ensured HttpRoutes section exists"),
         }
     }
 
@@ -1015,6 +1126,18 @@ impl RawModuleDefV10Builder {
         });
     }
 
+    /// Add primary key metadata for a view.
+    pub fn add_view_primary_key<C, I>(&mut self, view_source_name: impl Into<RawIdentifier>, columns: I)
+    where
+        C: Into<RawIdentifier>,
+        I: IntoIterator<Item = C>,
+    {
+        self.view_primary_keys_mut().push(RawViewPrimaryKeyDefV10 {
+            view_source_name: view_source_name.into(),
+            columns: columns.into_iter().map(Into::into).collect(),
+        });
+    }
+
     /// Add a lifecycle reducer assignment to the module.
     ///
     /// The function must be a previously-added reducer.
@@ -1067,6 +1190,27 @@ impl RawModuleDefV10Builder {
     pub fn add_row_level_security(&mut self, sql: &str) {
         self.row_level_security_mut()
             .push(RawRowLevelSecurityDefV10 { sql: sql.into() });
+    }
+
+    /// Add an HTTP handler to the module.
+    pub fn add_http_handler(&mut self, source_name: impl Into<RawIdentifier>) {
+        self.http_handlers_mut().push(RawHttpHandlerDefV10 {
+            source_name: source_name.into(),
+        });
+    }
+
+    /// Add an HTTP route to the module.
+    pub fn add_http_route(
+        &mut self,
+        handler_function: impl Into<RawIdentifier>,
+        method: MethodOrAny,
+        path: impl Into<RawIdentifier>,
+    ) {
+        self.http_routes_mut().push(RawHttpRouteDefV10 {
+            handler_function: handler_function.into(),
+            method,
+            path: path.into(),
+        });
     }
 
     pub fn add_explicit_names(&mut self, names: ExplicitNames) {

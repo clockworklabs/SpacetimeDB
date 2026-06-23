@@ -194,7 +194,10 @@ export class ModuleContext {
     schedules: [],
     procedures: [],
     views: [],
+    viewPrimaryKeys: [],
     lifeCycleReducers: [],
+    httpHandlers: [],
+    httpRoutes: [],
     caseConversionPolicy: { tag: 'SnakeCase' },
     explicitNames: {
       entries: [],
@@ -220,11 +223,29 @@ export class ModuleContext {
     push(module.reducers && { tag: 'Reducers', value: module.reducers });
     push(module.procedures && { tag: 'Procedures', value: module.procedures });
     push(module.views && { tag: 'Views', value: module.views });
+    push(
+      module.viewPrimaryKeys && {
+        tag: 'ViewPrimaryKeys',
+        value: module.viewPrimaryKeys,
+      }
+    );
     push(module.schedules && { tag: 'Schedules', value: module.schedules });
     push(
       module.lifeCycleReducers && {
         tag: 'LifeCycleReducers',
         value: module.lifeCycleReducers,
+      }
+    );
+    push(
+      module.httpHandlers && {
+        tag: 'HttpHandlers',
+        value: module.httpHandlers,
+      }
+    );
+    push(
+      module.httpRoutes && {
+        tag: 'HttpRoutes',
+        value: module.httpRoutes,
       }
     );
     push(

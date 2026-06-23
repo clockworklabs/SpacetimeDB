@@ -8,7 +8,7 @@ fn test_client_connected_error_rejects_connection() {
         .build();
 
     // Subscribe should fail because client_connected returns an error
-    let result = test.subscribe(&["SELECT * FROM all_u8s"], 0);
+    let result = test.subscribe(&["SELECT * FROM all_u8s"]).expect_rows(0).run();
     assert!(
         result.is_err(),
         "Expected subscribe to fail when client_connected returns error"
@@ -35,7 +35,7 @@ fn test_client_disconnected_error_still_deletes_st_client() {
         .build();
 
     // Subscribe should succeed (client_connected returns Ok)
-    let result = test.subscribe(&["SELECT * FROM all_u8s"], 0);
+    let result = test.subscribe(&["SELECT * FROM all_u8s"]).expect_rows(0).run();
     assert!(result.is_ok(), "Expected subscribe to succeed");
 
     let logs = test.logs(100).unwrap();

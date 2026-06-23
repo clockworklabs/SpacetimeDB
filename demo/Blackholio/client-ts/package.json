@@ -1,0 +1,28 @@
+{
+  "name": "@clockworklabs/blackholio-client-ts",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "packageManager": "pnpm@10.16.0",
+  "engines": {
+    "node": ">=18",
+    "pnpm": ">=10.16.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "pnpm run typecheck && vite build",
+    "lint": "pnpm run typecheck",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path ../server-rust"
+  },
+  "dependencies": {
+    "phaser": "4.1.0",
+    "spacetimedb": "link:../../../crates/bindings-typescript"
+  },
+  "devDependencies": {
+    "typescript": "~5.6.2",
+    "vite": "^7.1.5",
+    "vitest": "^3.2.4"
+  }
+}
