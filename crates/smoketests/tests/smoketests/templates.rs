@@ -844,7 +844,7 @@ fn test_csharp_template(test: &Smoketest, template: &Template, project_path: &Pa
         "--module-path",
         server_path.to_str().unwrap(),
         "--dotnet-version",
-        "8", // Force .NET 8 JIT path to match template TFM
+        "10", // Force .NET 10 so Roslyn 5 analyzers can load.
         &domain,
     ])
     .with_context(|| format!("spacetime publish failed for C# server in template {}", template.id))?;

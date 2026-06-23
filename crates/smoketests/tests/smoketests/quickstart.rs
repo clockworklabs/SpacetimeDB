@@ -540,8 +540,7 @@ impl QuickstartTest {
         eprintln!("Generating server code {}: {:?}...", self.config.lang, server_path);
 
         // Initialize the project (local operation, doesn't need server)
-        // For C#, force .NET 8 to avoid auto-detecting .NET 10 in CI environments
-        // where the system wasi-sdk may not satisfy .NET 10's version requirement.
+        // For C#, force .NET 10 so Roslyn 5 analyzers can load.
         let is_csharp = self.config.lang == "csharp";
         let mut init_args = vec![
             "init",
@@ -553,7 +552,7 @@ impl QuickstartTest {
             "spacetimedb-project",
         ];
         if is_csharp {
-            init_args.extend_from_slice(&["--dotnet-version", "8"]);
+            init_args.extend_from_slice(&["--dotnet-version", "10"]);
         }
         let output = self.test.spacetime(&init_args)?;
         eprintln!("spacetime init output: {}", output);
