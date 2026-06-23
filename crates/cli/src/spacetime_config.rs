@@ -391,6 +391,20 @@ impl Default for CommandSchemaBuilder {
 }
 
 impl CommandSchema {
+    /// Return only values accepted by this command schema.
+    ///
+    /// `SpacetimeConfig` stores entity-level fields like `database`, `server`, and
+    /// `module-path` together, while each command accepts only a subset of them.
+    /// This keeps command fallbacks from reimplementing schema-key filtering.
+    pub fn filter_config_values(&self, values: &HashMap<String, Value>) -> HashMap<String, Value> {
+        let valid_config_keys: HashSet<String> = self.keys.iter().map(|k| k.config_name().to_string()).collect();
+        values
+            .iter()
+            .filter(|(key, _)| valid_config_keys.contains(&key.replace('-', "_")))
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect()
+    }
+
     /// Get a value from clap arguments only (not from config).
     /// Useful for filtering or checking if a value was provided via CLI.
     pub fn get_clap_arg<T: Clone + Send + Sync + 'static>(

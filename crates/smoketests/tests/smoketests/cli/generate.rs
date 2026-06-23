@@ -89,3 +89,70 @@ fn cli_generate_with_config_but_no_match_uses_cli_args() {
         "Generated files should exist in CLI-specified output directory"
     );
 }
+
+#[test]
+fn cli_generate_uses_root_module_path_without_generate_entries() {
+    let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+
+    let output = cli_cmd()
+        .args([
+            "init",
+            "--non-interactive",
+            "--lang",
+            "rust",
+            "--project-path",
+            temp_dir.path().to_str().unwrap(),
+            "test-project",
+        ])
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("failed to execute");
+    assert!(
+        output.status.success(),
+        "init failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let project_dir = temp_dir.path().to_path_buf();
+    let default_module_dir = project_dir.join("spacetimedb");
+    let custom_module_dir = project_dir.join("server-rust");
+    std::fs::rename(&default_module_dir, &custom_module_dir).expect("failed to move module dir");
+    patch_module_cargo_to_local_bindings(&custom_module_dir).expect("failed to patch module Cargo.toml");
+
+    std::fs::write(
+        project_dir.join("spacetime.json"),
+        r#"{
+  "module-path": "server-rust"
+}"#,
+    )
+    .expect("failed to write config");
+
+    let output = cli_cmd()
+        .args(["build", "--module-path", custom_module_dir.to_str().unwrap()])
+        .output()
+        .expect("failed to execute");
+    assert!(
+        output.status.success(),
+        "build failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let output_dir = project_dir.join("bindings");
+    let output = cli_cmd()
+        .args(["generate", "--lang", "rust", "--out-dir", output_dir.to_str().unwrap()])
+        .current_dir(&project_dir)
+        .output()
+        .expect("failed to execute");
+    assert!(
+        output.status.success(),
+        "generate failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert!(
+        predicate::path::exists().eval(&output_dir.join("lib.rs"))
+            || predicate::path::exists().eval(&output_dir.join("mod.rs")),
+        "generated Rust bindings should exist in configured output directory"
+    );
+}
