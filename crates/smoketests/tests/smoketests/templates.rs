@@ -673,6 +673,21 @@ fn setup_csharp_nuget(project_path: &Path) -> Result<PathBuf> {
     <add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />
   </packageSources>
   <packageSourceMapping>
+    <packageSource key="SpacetimeDB.BSATN.Runtime">
+      <package pattern="SpacetimeDB.BSATN.Runtime" />
+    </packageSource>
+    <packageSource key="SpacetimeDB.Runtime">
+      <package pattern="SpacetimeDB.Runtime" />
+    </packageSource>
+    <packageSource key="SpacetimeDB.BSATN.Codegen">
+      <package pattern="SpacetimeDB.BSATN.Codegen" />
+    </packageSource>
+    <packageSource key="SpacetimeDB.Codegen">
+      <package pattern="SpacetimeDB.Codegen" />
+    </packageSource>
+    <packageSource key="SpacetimeDB.ClientSDK">
+      <package pattern="SpacetimeDB.ClientSDK" />
+    </packageSource>
     <packageSource key="dotnet-experimental">
       <package pattern="Microsoft.DotNet.ILCompiler.LLVM" />
       <package pattern="runtime.*" />
