@@ -35,21 +35,15 @@ jobs:
               commit_sha: sha,
             });
 
-            if (prs.length !== 1) {
+            if (prs.length === 0) {
               core.setOutput('is_pr_merge', 'false');
+              return;
+            }
+            if (prs.length > 1) {
               core.setFailed(`Expected exactly one PR associated with ${sha}, found ${prs.length}.`);
               return;
             }
-
-            const mergedPrs = prs
-              .filter((pr) => pr.merged_at && pr.base?.ref === 'master')
-              .sort((a, b) => new Date(b.merged_at) - new Date(a.merged_at));
-            const pr = mergedPrs[0];
-
-            if (!pr) {
-              core.setOutput('is_pr_merge', 'false');
-              return;
-            }
+            const pr = prs[0];
 
             const headRepo = pr.head?.repo?.full_name || '';
             core.setOutput('is_pr_merge', 'true');
