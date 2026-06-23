@@ -237,6 +237,12 @@ fn anthropic_max_output_tokens() -> u32 {
 pub fn normalize_anthropic_model(id: &str) -> &str {
     let lid = id.to_ascii_lowercase().replace('_', "-");
     match lid.as_str() {
+        // Opus 4.8
+        "opus-4.8" | "claude-opus-4.8" | "claude-opus-4-8" => "claude-opus-4-8",
+
+        // Sonnet 4.6
+        "sonnet-4.6" | "claude-sonnet-4.6" | "claude-sonnet-4-6" => "claude-sonnet-4-6",
+
         // Sonnet 4.5
         "sonnet-4.5" | "claude-sonnet-4.5" | "claude-sonnet-4-5" => "claude-sonnet-4-5",
         "claude-sonnet-4-5-20250929" => "claude-sonnet-4-5-20250929",
