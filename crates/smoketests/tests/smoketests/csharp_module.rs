@@ -109,7 +109,7 @@ fn test_build_csharp_module() {
 
     // Run dotnet publish
     let output = Command::new("dotnet")
-        .args(["publish"])
+        .args(["publish", "-f", "net10.0"])
         .current_dir(&server_path)
         .output()
         .expect("Failed to run dotnet publish");
