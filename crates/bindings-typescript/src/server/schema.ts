@@ -18,11 +18,7 @@ import {
 } from '../lib/schema';
 import type { IndexOpts } from '../lib/indexes';
 import type { TableSchema, UntypedTableSchema } from '../lib/table_schema';
-import {
-  ColumnBuilder,
-  RowBuilder,
-  TypeBuilder,
-} from '../lib/type_builders';
+import { ColumnBuilder, RowBuilder, TypeBuilder } from '../lib/type_builders';
 import type { t } from '../lib/type_builders';
 import type { HasExactlyOneKnownKey } from '../lib/type_util';
 import {
@@ -71,9 +67,10 @@ type ScheduledReducerOrProcedure<
 export type ScheduledFunctionExport<
   Row extends Record<string, ColumnBuilder<any, any, any>>,
   Params extends Record<string, RowBuilder<Row>>,
-> = HasExactlyOneKnownKey<Params> extends true
-  ? ScheduledReducerOrProcedure<Params>
-  : never;
+> =
+  HasExactlyOneKnownKey<Params> extends true
+    ? ScheduledReducerOrProcedure<Params>
+    : never;
 
 /**
  * Internal erased form of a scheduled reducer/procedure export.

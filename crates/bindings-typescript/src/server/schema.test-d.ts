@@ -114,7 +114,7 @@ const processScheduledMessage = spacetimedbSchedules.reducer(
     scheduledMessage: scheduledMessages.rowType,
   },
   (_ctx, { scheduledMessage }) => {
-    scheduledMessage.text;
+    void scheduledMessage.text;
   }
 );
 
@@ -152,7 +152,7 @@ const processScheduledProcedure = spacetimedbSchedules.procedure(
   },
   t.unit(),
   (_ctx, { scheduledMessage }) => {
-    scheduledMessage.text;
+    void scheduledMessage.text;
     return {};
   }
 );
