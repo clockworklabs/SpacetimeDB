@@ -367,34 +367,10 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
 
-      - uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/keynote-bench-setup
         with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          save-if: false
-          prefix-key: v1
-
-      - name: Build keynote benchmark binaries
-        run: cargo build --release -p spacetimedb-cli -p spacetimedb-standalone
-
-      # Node 24 is the current Active LTS line.
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      - uses: ./.github/actions/setup-pnpm
-        with:
-          run_install: true
-
-      - name: Build TypeScript SDK
-        run: pnpm build
-        working-directory: crates/bindings-typescript
+          public_root: .
+          rust_cache_workspaces: ${{ github.workspace }}
 
       - name: Run keynote-2 benchmark regression check
         run: cargo ci keynote-bench

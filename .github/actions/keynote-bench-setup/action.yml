@@ -1,0 +1,58 @@
+name: Keynote Bench Setup
+description: Shared setup for the keynote benchmark job
+
+inputs:
+  public_root:
+    description: Path to the public SpacetimeDB checkout in the caller workspace
+    required: false
+    default: .
+  rust_cache_workspaces:
+    description: Workspace paths passed to Swatinem/rust-cache
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: dsherret/rust-toolchain-file@v1
+
+    - name: Set default rust toolchain
+      shell: bash
+      run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+    - name: Cache Rust dependencies
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: ${{ inputs.rust_cache_workspaces }}
+        shared-key: spacetimedb
+        save-if: false
+        prefix-key: v1
+
+    - name: Build public keynote benchmark binaries
+      shell: bash
+      run: cargo build --release -p spacetimedb-cli -p spacetimedb-standalone
+      working-directory: ${{ inputs.public_root }}
+
+    # Node 24 is the current Active LTS line.
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 24
+
+    - name: Set up pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        package_json_file: ${{ inputs.public_root }}/package.json
+
+    - name: Configure pnpm package age policy
+      shell: bash
+      run: pnpm config set --global minimumReleaseAge 1440
+
+    - name: Install dependencies
+      shell: bash
+      run: pnpm install
+      working-directory: ${{ inputs.public_root }}
+
+    - name: Build TypeScript SDK
+      shell: bash
+      run: pnpm build
+      working-directory: ${{ inputs.public_root }}/crates/bindings-typescript
