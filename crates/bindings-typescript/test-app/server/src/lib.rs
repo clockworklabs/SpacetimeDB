@@ -47,6 +47,14 @@ pub fn create_player(ctx: &ReducerContext, name: String, location: Point) {
     });
 }
 
+#[reducer]
+pub fn set_player_alias(ctx: &ReducerContext, name: String, alias: Option<String>) {
+    ctx.db.user().insert(User {
+        identity: ctx.sender(),
+        username: alias.unwrap_or(name),
+    });
+}
+
 #[view(accessor = my_user_procedural, public, primary_key = id)]
 pub fn my_user_procedural(ctx: &ViewContext) -> Vec<Player> {
     ctx.db.player().id().find(1u32).into_iter().collect()

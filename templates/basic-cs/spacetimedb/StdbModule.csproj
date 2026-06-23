@@ -12,7 +12,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SpacetimeDB.Runtime" Version="2.6.*" />
+    <PackageReference Include="SpacetimeDB.Runtime" Version="2.7.*" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">

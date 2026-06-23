@@ -189,10 +189,10 @@ For example, a `create_user` reducer becomes:
 
 ```typescript
 // Call the reducer
-conn.reducers.createUser(name, email);
+conn.reducers.createUser({ name, email });
 
 // Register a callback to observe reducer invocations
-conn.reducers.onCreateUser((ctx, name, email) => {
+conn.reducers.onCreateUser((ctx, { name, email }) => {
   console.log(`User created: ${name}`);
 });
 ```

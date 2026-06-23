@@ -521,6 +521,20 @@ fn main() -> Result<()> {
                 "--test-threads=2",
             )
             .run()?;
+            // The SDK test harness uses the same child-process server guard as smoketests,
+            // which expects release CLI/standalone binaries to already exist.
+            cmd!(
+                "cargo",
+                "build",
+                "--release",
+                "-p",
+                "spacetimedb-cli",
+                "-p",
+                "spacetimedb-standalone",
+                "--features",
+                "spacetimedb-standalone/allow_loopback_http_for_tests",
+            )
+            .run()?;
             // SDK procedure tests intentionally make localhost HTTP requests.
             cmd!(
                 "cargo",

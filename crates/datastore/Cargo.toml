@@ -10,14 +10,14 @@ rust-version.workspace = true
 spacetimedb-data-structures.workspace = true
 spacetimedb-lib = { workspace = true, features = ["serde", "metrics_impls"] }
 spacetimedb-commitlog.workspace = true
-spacetimedb-durability.workspace = true
+spacetimedb-durability = { path = "../durability", default-features = false }
 spacetimedb-metrics.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-paths.workspace = true
 spacetimedb-sats = { workspace = true, features = ["serde"] }
 spacetimedb-schema.workspace = true
 spacetimedb-table.workspace = true
-spacetimedb-snapshot.workspace = true
+spacetimedb-snapshot = { path = "../snapshot", default-features = false }
 spacetimedb-execution.workspace = true
 
 anyhow = { workspace = true, features = ["backtrace"] }
@@ -39,7 +39,9 @@ thin-vec.workspace = true
 [features]
 # Print a warning when doing an unindexed `iter_by_col_range` on a large table.
 unindexed_iter_by_col_range_warn = []
-default = ["unindexed_iter_by_col_range_warn"]
+default = ["unindexed_iter_by_col_range_warn", "tokio"]
+tokio = ["spacetimedb-durability/tokio", "spacetimedb-snapshot/tokio"]
+simulation = ["spacetimedb-durability/simulation", "spacetimedb-snapshot/simulation"]
 # Enable test helpers and utils
 test = ["spacetimedb-commitlog/test", "spacetimedb-schema/test"]
 

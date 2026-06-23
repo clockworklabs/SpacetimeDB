@@ -15,6 +15,7 @@ use crate::host::ProcedureCallError;
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
+use crate::resource::{MemoryObserver, ModuleInstanceMemoryTracker};
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::module_subscription_manager::{spawn_send_worker, SubscriptionManager, TransactionOffset};
 use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
@@ -38,6 +39,7 @@ use spacetimedb_datastore::traits::Program;
 use spacetimedb_durability::{self as durability};
 use spacetimedb_lib::{AlgebraicValue, Identity, Timestamp};
 use spacetimedb_paths::server::{ModuleLogsDir, ServerDataDir};
+use spacetimedb_runtime::AbortHandle;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_schema::auto_migrate::{ponder_migrate, AutoMigrateError, MigrationPolicy, PrettyPrintStyle};
 use spacetimedb_schema::def::{ModuleDef, RawModuleDefVersion};
@@ -47,7 +49,6 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{watch, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock as AsyncRwLock};
-use tokio::task::AbortHandle;
 use tokio::time::error::Elapsed;
 use tokio::time::{interval_at, timeout, Instant};
 
@@ -108,6 +109,8 @@ pub struct HostController {
     program_storage: ProgramStorage,
     /// The [`EnergyMonitor`] used by this controller.
     energy_monitor: Arc<dyn EnergyMonitor>,
+    /// The [`MemoryObserver`] used by this controller.
+    memory_observer: Arc<dyn MemoryObserver>,
     /// Provides persistence services for each replica.
     persistence: Arc<dyn PersistenceProvider>,
     /// The page pool all databases will use by cloning the ref counted pool.
@@ -221,12 +224,14 @@ pub struct CallProcedureReturn {
 }
 
 impl HostController {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         data_dir: Arc<ServerDataDir>,
         default_config: db::Config,
         runtime_config: HostRuntimeConfig,
         program_storage: ProgramStorage,
         energy_monitor: Arc<impl EnergyMonitor>,
+        memory_observer: Arc<dyn MemoryObserver>,
         persistence: Arc<dyn PersistenceProvider>,
         db_cores: JobCores,
     ) -> Self {
@@ -235,6 +240,7 @@ impl HostController {
             default_config,
             program_storage,
             energy_monitor,
+            memory_observer,
             persistence,
             runtimes: HostRuntimes::new(Some(&data_dir), runtime_config),
             data_dir,
@@ -653,6 +659,7 @@ async fn make_replica_ctx(
     replica_id: u64,
     relational_db: Arc<RelationalDB>,
     bsatn_rlb_pool: BsatnRowListBuilderPool,
+    memory_observer: Arc<dyn MemoryObserver>,
 ) -> anyhow::Result<ReplicaContext> {
     let logger = match module_logs {
         Some(path) => asyncify(move || Arc::new(DatabaseLogger::open_today(path))).await,
@@ -680,11 +687,14 @@ async fn make_replica_ctx(
         }
     });
 
+    let module_instance_memory_tracker = ModuleInstanceMemoryTracker::new(database.database_identity, memory_observer);
+
     Ok(ReplicaContext {
         database,
         replica_id,
         logger,
         subscriptions,
+        module_instance_memory_tracker,
     })
 }
 
@@ -756,6 +766,7 @@ struct ModuleLauncher<F> {
     on_panic: F,
     relational_db: Arc<RelationalDB>,
     energy_monitor: Arc<dyn EnergyMonitor>,
+    memory_observer: Arc<dyn MemoryObserver>,
     module_logs: Option<ModuleLogsDir>,
     runtimes: Arc<HostRuntimes>,
     core: AllocatedJobCore,
@@ -779,6 +790,7 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
             self.replica_id,
             self.relational_db,
             self.bsatn_rlb_pool,
+            self.memory_observer,
         )
         .await
         .map(Arc::new)?;
@@ -886,10 +898,12 @@ impl Host {
             persistence,
             page_pool,
             bsatn_rlb_pool,
+            memory_observer,
             ..
         } = host_controller;
         let replica_dir = data_dir.replica(replica_id);
-        let (tx_metrics_queue, tx_metrics_recorder_task) = spawn_tx_metrics_recorder();
+        let runtime = spacetimedb_runtime::Handle::tokio_current();
+        let (tx_metrics_queue, tx_metrics_recorder_task) = spawn_tx_metrics_recorder(&runtime);
 
         let (db, connected_clients) = match config.storage {
             db::Storage::Memory => RelationalDB::open(
@@ -902,8 +916,13 @@ impl Host {
             )?,
             db::Storage::Disk => {
                 // Replay from the local state.
-                let history = relational_db::local_history(&replica_dir).await?;
-                let persistence = persistence.persistence(&database, replica_id).await?;
+                let history = relational_db::local_history(&replica_dir, &runtime).await?;
+                let persistence_db = db::persistence::Database {
+                    id: database.id,
+                    database_identity: database.database_identity,
+                    owner_identity: database.owner_identity,
+                };
+                let persistence = persistence.persistence(&persistence_db, replica_id).await?;
                 // Loading a database from persistent storage involves heavy
                 // blocking I/O. `asyncify` to avoid blocking the async worker.
                 let (db, clients) = asyncify({
@@ -936,6 +955,7 @@ impl Host {
                 (db, clients)
             }
         };
+        let db = db.with_memory_observer(memory_observer.clone());
         let (mut program, program_needs_init) = match db.program()? {
             // Launch module with program from existing database.
             Some(program) => {
@@ -973,6 +993,7 @@ impl Host {
                     on_panic: host_controller.unregister_fn(replica_id),
                     relational_db,
                     energy_monitor: energy_monitor.clone(),
+                    memory_observer: memory_observer.clone(),
                     module_logs: match config.storage {
                         db::Storage::Memory => None,
                         db::Storage::Disk => Some(replica_dir.module_logs()),
@@ -1002,6 +1023,7 @@ impl Host {
                     on_panic: host_controller.unregister_fn(replica_id),
                     relational_db: relational_db.clone(),
                     energy_monitor: energy_monitor.clone(),
+                    memory_observer: memory_observer.clone(),
                     module_logs: match config.storage {
                         db::Storage::Memory => None,
                         db::Storage::Disk => Some(replica_dir.clone().module_logs()),
@@ -1025,6 +1047,7 @@ impl Host {
                             on_panic: host_controller.unregister_fn(replica_id),
                             relational_db: relational_db.clone(),
                             energy_monitor: energy_monitor.clone(),
+                            memory_observer: memory_observer.clone(),
                             module_logs: match config.storage {
                                 db::Storage::Memory => None,
                                 db::Storage::Disk => Some(replica_dir.module_logs()),
@@ -1084,8 +1107,9 @@ impl Host {
         module_host.clear_all_clients().await?;
 
         scheduler_starter.start(&module_host)?;
-        let disk_metrics_recorder_task = tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle();
-        let view_cleanup_task = spawn_view_cleanup_loop(replica_ctx.relational_db().clone());
+        let disk_metrics_recorder_task: spacetimedb_runtime::AbortHandle =
+            tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle().into();
+        let view_cleanup_task = spawn_view_cleanup_loop(replica_ctx.relational_db().clone(), &runtime);
 
         let module = watch::Sender::new(module_host);
 
@@ -1124,6 +1148,7 @@ impl Host {
             None,
             page_pool,
         )?;
+        let memory_observer: Arc<dyn MemoryObserver> = Arc::new(());
 
         ModuleLauncher {
             database,
@@ -1135,6 +1160,7 @@ impl Host {
             on_panic: || log::error!("launch_module on_panic called for temporary publish in-memory instance"),
             relational_db: Arc::new(db),
             energy_monitor: Arc::new(NullEnergyMonitor),
+            memory_observer,
             module_logs: None,
             runtimes: runtimes.clone(),
             core,
