@@ -19,6 +19,8 @@ runs:
     - uses: pnpm/action-setup@v4
       with:
         package_json_file: ${{ inputs.package_json_file }}
+      env:
+        INPUT_PACKAGE_JSON_FILE: ${{ inputs.package_json_file }}
 
     - name: Configure pnpm package age policy
       shell: bash
