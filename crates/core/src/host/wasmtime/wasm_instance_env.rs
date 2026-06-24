@@ -13,6 +13,7 @@ use crate::host::wasm_common::module_host_actor::{
 };
 use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, RowIters, TimingSpan, TimingSpanIdx, TimingSpanSet};
 use crate::host::AbiCall;
+use crate::resource::ModuleInstanceMemoryTracker;
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, Context as _};
@@ -144,6 +145,7 @@ pub(super) struct WasmInstanceEnv {
 
 pub(in crate::host) struct WasmMemoryBytesMetric {
     wasm_memory_bytes: IntGauge,
+    tracker: ModuleInstanceMemoryTracker,
 
     /// Previous value observed by this intance.
     ///
@@ -158,9 +160,10 @@ pub(in crate::host) struct WasmMemoryBytesMetric {
 }
 
 impl WasmMemoryBytesMetric {
-    fn new(database_identity: Identity) -> Self {
+    fn new(database_identity: Identity, tracker: ModuleInstanceMemoryTracker) -> Self {
         Self {
             wasm_memory_bytes: WORKER_METRICS.wasm_memory_bytes.with_label_values(&database_identity),
+            tracker,
             last_observed: 0,
         }
     }
@@ -176,6 +179,10 @@ impl WasmMemoryBytesMetric {
             self.wasm_memory_bytes.sub(-delta);
         }
 
+        // Each WASM instance reports only its own delta.
+        // The shared tracker folds those deltas into a database-wide aggregate
+        // used for memory-limit enforcement.
+        self.tracker.adjust_wasm_linear(delta);
         self.last_observed = memory_usage;
     }
 
@@ -188,6 +195,8 @@ impl Drop for WasmMemoryBytesMetric {
     fn drop(&mut self) {
         // Clean up this instance's metric value by subtracting its part of the usage.
         self.wasm_memory_bytes.sub(self.last_observed);
+        // Remove this instance's contribution from the database-wide aggregate.
+        self.tracker.adjust_wasm_linear(-self.last_observed);
     }
 }
 
@@ -200,6 +209,7 @@ impl WasmInstanceEnv {
     /// Create a new `WasmEnstanceEnv` from the given `InstanceEnv`.
     pub fn new(instance_env: InstanceEnv) -> Self {
         let database_identity = *instance_env.database_identity();
+        let instance_memory_tracker = instance_env.replica_ctx.module_instance_memory_tracker.clone();
         Self {
             instance_env,
             module_def: None,
@@ -214,7 +224,7 @@ impl WasmInstanceEnv {
             timing_spans: Default::default(),
             call_times: CallTimes::new(),
             chunk_pool: <_>::default(),
-            linear_memory_size_metric: WasmMemoryBytesMetric::new(database_identity),
+            linear_memory_size_metric: WasmMemoryBytesMetric::new(database_identity, instance_memory_tracker),
         }
     }
 
