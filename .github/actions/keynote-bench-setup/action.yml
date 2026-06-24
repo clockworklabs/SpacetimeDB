@@ -49,19 +49,11 @@ runs:
       with:
         node-version: 24
 
-    - name: Set up pnpm
-      uses: pnpm/action-setup@v4
+    - uses: ./.github/actions/setup-pnpm
       with:
         package_json_file: ${{ inputs.public_root }}/package.json
-
-    - name: Configure pnpm package age policy
-      shell: bash
-      run: pnpm config set --global minimumReleaseAge 1440
-
-    - name: Install dependencies
-      shell: bash
-      run: pnpm install
-      working-directory: ${{ inputs.public_root }}
+        working_directory: ${{ inputs.public_root }}
+        run_install: "true"
 
     - name: Build TypeScript SDK
       shell: bash
