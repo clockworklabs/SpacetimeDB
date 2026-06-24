@@ -8,7 +8,9 @@ vi.mock('spacetime:sys@2.0', () => ({
   moduleHooks,
 }));
 
-vi.mock('spacetime:sys@2.1', () => ({}));
+vi.mock('spacetime:sys@2.1', () => ({
+  moduleHooks,
+}));
 
 vi.mock('../src/server/runtime', () => ({
   makeHooks: () => ({}),
