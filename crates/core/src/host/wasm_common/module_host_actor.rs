@@ -49,7 +49,7 @@ use spacetimedb_lib::{bsatn, http as st_http, ConnectionId, Hash, ProductType, R
 use spacetimedb_primitives::{HttpHandlerId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, Deserialize, ProductValue, Typespace, WithTypespace};
-use spacetimedb_schema::auto_migrate::{ponder_migrate, MigratePlan, MigrationPolicy, MigrationPolicyError};
+use spacetimedb_schema::auto_migrate::{ponder_migrate, MigrationPolicy, MigrationPolicyError};
 use spacetimedb_schema::def::deserialize::FunctionDef;
 use spacetimedb_schema::def::{ModuleDef, ViewDef};
 use spacetimedb_schema::identifier::Identifier;
@@ -651,14 +651,10 @@ impl InstanceCommon {
         let system_logger = replica_ctx.logger.system_logger();
         let stdb = &replica_ctx.relational_db();
 
-        let mut plan: MigratePlan = match ponder_migrate(&old_module_info.module_def, &self.info.module_def) {
+        let plan = match ponder_migrate(&old_module_info.module_def, &self.info.module_def) {
             Ok(plan) => plan,
             Err(e) => return Ok(UpdateDatabaseResult::AutoMigrateError(e.into())),
         };
-
-        if let Err(e) = crate::db::update::add_view_backing_table_recreate_steps(stdb, &mut plan) {
-            return Ok(UpdateDatabaseResult::ErrorExecutingMigration(e));
-        }
 
         if let Err(e) = policy.permits_migrate_plan(
             self.info.database_identity,

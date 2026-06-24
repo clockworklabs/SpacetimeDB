@@ -29,62 +29,64 @@ pub enum UpdateResult {
     EvaluateSubscribedViews,
 }
 
-type ViewKey<'a> = <ViewDef as ModuleDefLookup>::Key<'a>;
-
-/// Force view recreation when the stored backing table's row layout no longer
-/// matches the layout expected by the new module definition.
-pub fn add_view_backing_table_recreate_steps<'def>(
+/// Build a repair-only migration plan for views whose stored backing table row
+/// layout is stale compared to the currently loaded module definition.
+pub fn stale_view_backing_table_recreate_plan<'def>(
     stdb: &RelationalDB,
-    plan: &mut MigratePlan<'def>,
-) -> anyhow::Result<()> {
-    let MigratePlan::Auto(plan) = plan else {
-        return Ok(());
-    };
+    module_def: &'def ModuleDef,
+) -> anyhow::Result<Option<MigratePlan<'def>>> {
+    let steps = stale_view_backing_table_recreate_steps(stdb, module_def)?;
+    if steps.is_empty() {
+        return Ok(None);
+    }
 
-    stdb.with_read_only(Workload::Internal, |tx| -> anyhow::Result<()> {
-        let mut changed = false;
+    Ok(Some(MigratePlan::Auto(AutoMigratePlan {
+        old: module_def,
+        new: module_def,
+        prechecks: Vec::new(),
+        steps,
+    })))
+}
 
-        for view in plan.new.views() {
-            let key = view.key();
+fn stale_view_backing_table_recreate_steps<'def>(
+    stdb: &RelationalDB,
+    module_def: &'def ModuleDef,
+) -> anyhow::Result<Vec<AutoMigrateStep<'def>>> {
+    stdb.with_read_only(Workload::Internal, |tx| -> anyhow::Result<_> {
+        let mut steps = Vec::new();
 
-            // A normal view schema change is already handled by the public migration plan.
-            // This pass only upgrades stale backing tables.
-            if view_recreate_is_planned(&plan.steps, key) {
-                continue;
+        for view in module_def.views() {
+            if view_backing_table_needs_recreate(stdb, tx, module_def, view)? {
+                steps.extend([
+                    AutoMigrateStep::RemoveView(view.key()),
+                    AutoMigrateStep::AddView(view.key()),
+                ]);
             }
-
-            let Some(table_id) = view_backing_table_id(tx, view)? else {
-                continue;
-            };
-
-            let actual = stdb.schema_for_table(tx, table_id)?;
-            let expected = TableSchema::from_view_def_for_datastore(plan.new, view);
-
-            if !view_backing_row_layout_changed(&actual, &expected) {
-                continue;
-            }
-
-            // UpdateView would recompute rows into the stale physical layout.
-            // Dropping and recreating the view rebuilds the backing table.
-            replace_view_update_with_recreate_steps(&mut plan.steps, key);
-            changed = true;
         }
 
-        if changed {
-            plan.steps.sort();
+        if !steps.is_empty() {
+            ensure_disconnect_all_users(&mut steps);
+            steps.sort();
         }
 
-        Ok(())
+        Ok(steps)
     })
 }
 
-fn view_recreate_is_planned<'def>(steps: &[AutoMigrateStep<'def>], key: ViewKey<'def>) -> bool {
-    steps.iter().any(|step| {
-        matches!(
-            step,
-            AutoMigrateStep::AddView(existing) | AutoMigrateStep::RemoveView(existing) if *existing == key
-        )
-    })
+fn view_backing_table_needs_recreate(
+    stdb: &RelationalDB,
+    tx: &mut TxId,
+    module_def: &ModuleDef,
+    view: &ViewDef,
+) -> anyhow::Result<bool> {
+    let Some(table_id) = view_backing_table_id(tx, view)? else {
+        return Ok(false);
+    };
+
+    let actual = stdb.schema_for_table(tx, table_id)?;
+    let expected = TableSchema::from_view_def_for_datastore(module_def, view);
+
+    Ok(view_backing_row_layout_changed(&actual, &expected))
 }
 
 fn view_backing_table_id(tx: &mut TxId, view: &ViewDef) -> anyhow::Result<Option<TableId>> {
@@ -101,17 +103,6 @@ fn view_backing_table_id(tx: &mut TxId, view: &ViewDef) -> anyhow::Result<Option
 
 fn view_backing_row_layout_changed(actual: &TableSchema, expected: &TableSchema) -> bool {
     actual.row_type != expected.row_type
-}
-
-fn replace_view_update_with_recreate_steps<'def>(steps: &mut Vec<AutoMigrateStep<'def>>, key: ViewKey<'def>) {
-    steps.retain(|step| {
-        !matches!(
-            step,
-            AutoMigrateStep::UpdateView(existing) | AutoMigrateStep::ChangeAccess(existing) if *existing == key
-        )
-    });
-    steps.extend([AutoMigrateStep::RemoveView(key), AutoMigrateStep::AddView(key)]);
-    ensure_disconnect_all_users(steps);
 }
 
 fn ensure_disconnect_all_users(steps: &mut Vec<AutoMigrateStep<'_>>) {
@@ -718,13 +709,12 @@ mod test {
     }
 
     #[test]
-    fn stale_view_backing_schema_forces_remove_add_view() -> anyhow::Result<()> {
+    fn stale_view_backing_schema_generates_startup_repair_plan() -> anyhow::Result<()> {
         let stdb = TestDB::durable()?;
         let module_def = view_module();
         create_backing_table(&stdb, old_view_backing_schema(&module_def))?;
 
-        let mut plan = ponder_migrate(&module_def, &module_def)?;
-        add_view_backing_table_recreate_steps(&stdb, &mut plan)?;
+        let plan = stale_view_backing_table_recreate_plan(&stdb, &module_def)?.expect("expected repair plan");
 
         let MigratePlan::Auto(plan) = &plan else {
             panic!("expected auto migration");
@@ -739,24 +729,16 @@ mod test {
     }
 
     #[test]
-    fn current_view_backing_schema_does_not_force_remove_add_view() -> anyhow::Result<()> {
+    fn current_view_backing_schema_skips_startup_repair_plan() -> anyhow::Result<()> {
         let stdb = TestDB::durable()?;
         let module_def = view_module();
         let view = module_def.view("my_view").unwrap();
         let backing_schema = TableSchema::from_view_def_for_datastore(&module_def, view);
         create_backing_table(&stdb, backing_schema)?;
 
-        let mut plan = ponder_migrate(&module_def, &module_def)?;
-        add_view_backing_table_recreate_steps(&stdb, &mut plan)?;
+        let plan = stale_view_backing_table_recreate_plan(&stdb, &module_def)?;
 
-        let MigratePlan::Auto(plan) = &plan else {
-            panic!("expected auto migration");
-        };
-        let my_view = view.key();
-        assert!(plan.steps.contains(&AutoMigrateStep::UpdateView(my_view)));
-        assert!(!plan.steps.contains(&AutoMigrateStep::RemoveView(my_view)));
-        assert!(!plan.steps.contains(&AutoMigrateStep::AddView(my_view)));
-        assert!(!plan.steps.contains(&AutoMigrateStep::DisconnectAllUsers));
+        assert!(plan.is_none(), "{plan:#?}");
 
         Ok(())
     }
