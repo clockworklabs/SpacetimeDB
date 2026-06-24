@@ -15,6 +15,10 @@
     <RestoreAdditionalProjectSources Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json;$(RestoreAdditionalProjectSources)</RestoreAdditionalProjectSources>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <DefineConstants>$(DefineConstants);EXPERIMENTAL_WASM_AOT</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <!-- Note: BSATN.Codegen is included in the BSATN.Runtime NuGet package. -->
     <ProjectReference Include="../BSATN.Runtime/BSATN.Runtime.csproj" />

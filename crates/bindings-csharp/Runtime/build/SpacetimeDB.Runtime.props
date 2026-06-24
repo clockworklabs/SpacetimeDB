@@ -25,7 +25,7 @@
     <WasmEnableThreads>false</WasmEnableThreads>
     <WasmBuildNative>false</WasmBuildNative>
     <SpacetimeNamespace>spacetime_10.0</SpacetimeNamespace>
-    <RestoreAdditionalProjectSources>https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json</RestoreAdditionalProjectSources>
+    <RestoreAdditionalProjectSources>https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json;$(RestoreAdditionalProjectSources)</RestoreAdditionalProjectSources>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(_UseNativeAotLlvm)' != 'true'">
