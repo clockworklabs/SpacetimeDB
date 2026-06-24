@@ -109,8 +109,7 @@ conn.db.user.onUpdate((ctx, oldUser, newUser) => console.log('Updated:', newUser
 
 ## Gotchas
 
-- **`useTable` rows are `readonly`** — copy before sorting/mutating, or it fails to type-check
-  (`TS4104`): `const [rows] = useTable(tables.message); const sorted = [...rows].sort(...)`.
-- **bigint in JSX** — ids/counts from `t.u64()`/`t.i64()` columns are `bigint`, which React
-  cannot render (`TS2322: '0n' is not assignable to ReactNode`). Wrap it: `{Number(row.id)}`
-  or `{String(count)}`.
+- **`useTable` rows are `readonly`.** Copy before sorting/mutating, or it fails to type-check:
+  `const [rows] = useTable(tables.message); const sorted = [...rows].sort(...)`.
+- **bigint in JSX.** ids/counts from `t.u64()`/`t.i64()` columns are `bigint`, which React
+  cannot render. Wrap it: `{Number(row.id)}` or `{String(count)}`.
