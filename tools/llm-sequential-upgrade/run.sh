@@ -29,12 +29,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-llm-sequential-upgrade-postgres-1}"
 MONGO_CONTAINER="${MONGO_CONTAINER:-llm-sequential-upgrade-mongodb-1}"
 
-# Detect which backend an existing app dir was generated with.
-# Prefers the explicit `.benchmark-backend` marker (written at generate time);
-# falls back to directory shape for legacy apps. NOTE: postgres and mongodb both
-# use a `server/` dir, so the marker is the ONLY reliable discriminator between
-# them — a marker-less mongodb app would be misdetected as postgres.
-# Prints the backend name, or "unknown".
+# Detect a generated app's backend via the .benchmark-backend marker, falling back to
+# directory shape. The marker is required since postgres and mongodb both use a server/ dir.
 detect_backend() {
   local app_dir="$1"
   if [[ -f "$app_dir/.benchmark-backend" ]]; then
@@ -903,10 +899,7 @@ fs.writeFileSync(f, JSON.stringify(m, null, 2));
 " -- "$METADATA_FILE_NATIVE" || echo "WARNING: Failed to update metadata with end time"
 
 # ─── Capture Claude Code session transcript ──────────────────────────────────
-# The full session transcript (every prompt, tool call, and error) lives in
-# Claude Code's projects dir, keyed by session id. Copy it next to the telemetry
-# so each level/phase preserves a studyable record. Located by session id, so it
-# is independent of how Claude Code encodes the project path.
+# Copy the session transcript (located by session id) next to the telemetry as a studyable record.
 TRANSCRIPT_SRC=$(find "$HOME/.claude/projects" -name "$SESSION_ID.jsonl" 2>/dev/null | head -1)
 if [[ -n "$TRANSCRIPT_SRC" && -f "$TRANSCRIPT_SRC" ]]; then
   if cp "$TRANSCRIPT_SRC" "$RUN_DIR/session-transcript.jsonl" 2>/dev/null; then

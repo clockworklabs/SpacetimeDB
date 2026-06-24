@@ -22,13 +22,9 @@ telemetry/metrics.jsonl
 **/telemetry/**/session-transcript.jsonl
 # Verbose run transcripts (large, regenerable) - not tracked
 **/telemetry/**/run.log
-# Local absolute app paths (machine-specific) - not tracked; cost data lives in cost-summary.json
+# Local absolute app paths (machine-specific)
 **/telemetry/**/app-dir.txt
 **/telemetry/**/metadata.json
 
-# Sequential-upgrade run output is NOT tracked here — it lives in the external
-# spacetimedb-ai-test-results repo. run.sh still writes run dirs locally (output
-# dir unchanged); per-level rollback uses the level-N/ snapshot dirs, not git.
+# Sequential-upgrade run output lives in the external spacetimedb-ai-test-results repo
 sequential-upgrade/sequential-upgrade-*/
-# (one-shot/ output remains tracked. Heavy/regenerable dirs, local .env, verbose
-# logs, and PII telemetry are excluded above.)
