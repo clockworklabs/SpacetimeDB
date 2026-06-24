@@ -57,7 +57,7 @@ internal static partial class FFI
     // In the future C# will allow to specify Wasm import namespace in
     // `LibraryImport` directly.
     const string StdbNamespace10_0 =
-#if EXPERIMENTAL_WASM_AOT
+#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
         "spacetime_10.0"
 #else
         "bindings"
@@ -65,7 +65,7 @@ internal static partial class FFI
     ;
 
     const string StdbNamespace10_1 =
-#if EXPERIMENTAL_WASM_AOT
+#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
         "spacetime_10.1"
 #else
         "bindings"
@@ -73,7 +73,7 @@ internal static partial class FFI
     ;
 
     const string StdbNamespace10_2 =
-#if EXPERIMENTAL_WASM_AOT
+#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
         "spacetime_10.2"
 #else
         "bindings"
@@ -81,7 +81,7 @@ internal static partial class FFI
     ;
 
     const string StdbNamespace10_3 =
-#if EXPERIMENTAL_WASM_AOT
+#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
         "spacetime_10.3"
 #else
         "bindings"
@@ -89,7 +89,7 @@ internal static partial class FFI
     ;
 
     const string StdbNamespace10_4 =
-#if EXPERIMENTAL_WASM_AOT
+#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
         "spacetime_10.4"
 #else
         "bindings"
@@ -97,7 +97,7 @@ internal static partial class FFI
     ;
 
     const string StdbNamespace10_5 =
-#if EXPERIMENTAL_WASM_AOT
+#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
         "spacetime_10.5"
 #else
         "bindings"

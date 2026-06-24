@@ -30,11 +30,13 @@ public static class GeneratorSnapshotTests
     {
         private readonly string projectDir;
         public CSharpCompilation SampleCompilation { get; }
+        public CSharpParseOptions ParseOptions { get; }
 
         public Fixture(string projectDir, CSharpCompilation sampleCompilation)
         {
             this.projectDir = projectDir;
             SampleCompilation = sampleCompilation;
+            ParseOptions = (CSharpParseOptions)sampleCompilation.SyntaxTrees.First().Options;
         }
 
         public static async Task<Fixture> Compile(string name)
@@ -51,7 +53,7 @@ public static class GeneratorSnapshotTests
 
         private static CSharpGeneratorDriver CreateDriver(
             IIncrementalGenerator generator,
-            LanguageVersion languageVersion
+            CSharpParseOptions parseOptions
         )
         {
             return CSharpGeneratorDriver.Create(
@@ -60,8 +62,8 @@ public static class GeneratorSnapshotTests
                     disabledOutputs: IncrementalGeneratorOutputKind.None,
                     trackIncrementalGeneratorSteps: true
                 ),
-                // Make sure that generated files are parsed with the same language version.
-                parseOptions: new(languageVersion)
+                // Make sure generated files are parsed with the same language version and feature flags.
+                parseOptions: parseOptions
             );
         }
 
@@ -69,7 +71,7 @@ public static class GeneratorSnapshotTests
             IIncrementalGenerator generator
         )
         {
-            var driver = CreateDriver(generator, SampleCompilation.LanguageVersion);
+            var driver = CreateDriver(generator, ParseOptions);
 
             // Store the new driver instance - it contains the results and the cache.
             var driverAfterGen = driver.RunGenerators(SampleCompilation);
@@ -85,7 +87,7 @@ public static class GeneratorSnapshotTests
 
         public GeneratorDriverRunResult RunGeneratorAndGetResult(IIncrementalGenerator generator)
         {
-            var driver = CreateDriver(generator, SampleCompilation.LanguageVersion);
+            var driver = CreateDriver(generator, ParseOptions);
             return driver.RunGenerators(SampleCompilation).GetRunResult();
         }
 
@@ -241,7 +243,7 @@ public static class GeneratorSnapshotTests
             "namespace User; public sealed class UseLocal { public SpacetimeDB.Local Db; }";
         var userTree = CSharpSyntaxTree.ParseText(
             userCode,
-            new CSharpParseOptions(compilationAfterGen.LanguageVersion)
+            fixture.ParseOptions
         );
         var compilationWithUserCode = compilationAfterGen.AddSyntaxTrees(userTree);
         AssertNoCs0436Diagnostics(compilationWithUserCode);
@@ -330,8 +332,11 @@ public static class GeneratorSnapshotTests
             }
             """;
 
-        var parseOptions = new CSharpParseOptions(fixture.SampleCompilation.LanguageVersion);
-        var tree = CSharpSyntaxTree.ParseText(source, parseOptions, path: "KeywordNames.cs");
+        var tree = CSharpSyntaxTree.ParseText(
+            source,
+            fixture.ParseOptions,
+            path: "KeywordNames.cs"
+        );
         var compilation = fixture.SampleCompilation.AddSyntaxTrees(tree);
 
         var driver = CSharpGeneratorDriver.Create(
@@ -343,7 +348,7 @@ public static class GeneratorSnapshotTests
                 disabledOutputs: IncrementalGeneratorOutputKind.None,
                 trackIncrementalGeneratorSteps: true
             ),
-            parseOptions: parseOptions
+            parseOptions: fixture.ParseOptions
         );
 
         var runResult = driver.RunGenerators(compilation).GetRunResult();
