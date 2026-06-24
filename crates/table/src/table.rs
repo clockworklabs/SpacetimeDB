@@ -1531,6 +1531,34 @@ impl Table {
         Some(index)
     }
 
+    /// Take the pointer map, if any, returning it.
+    ///
+    /// This is used when making an index unique — a unique index subsumes
+    /// the pointer map's role of preventing duplicate rows.
+    pub fn take_pointer_map(&mut self) -> Option<PointerMap> {
+        self.pointer_map.take()
+    }
+
+    /// Restore a previously taken pointer map.
+    ///
+    /// This is used on rollback when a unique constraint is removed
+    /// and no other unique indices remain.
+    pub fn restore_pointer_map(&mut self, pointer_map: PointerMap) {
+        self.pointer_map = Some(pointer_map);
+    }
+
+    /// Returns whether this table has any unique index.
+    pub fn has_unique_index(&self) -> bool {
+        self.indexes.values().any(|idx| idx.is_unique())
+    }
+
+    /// Returns whether this table currently holds a pointer map.
+    ///
+    /// Verifies the invariant "pointer map is present iff no unique index exists".
+    pub fn has_pointer_map(&self) -> bool {
+        self.pointer_map.is_some()
+    }
+
     /// Returns an iterator over all the rows of `self`, yielded as [`RowRef`]s.
     pub fn scan_rows<'a>(&'a self, blob_store: &'a dyn BlobStore) -> TableScanIter<'a> {
         TableScanIter {
@@ -1588,6 +1616,28 @@ impl Table {
             .map(|(id, idx)| (*id, idx))
     }
 
+    /// Returns all [`TableIndex`]es with the given [`ColList`].
+    pub fn get_indexes_by_cols(&self, cols: &ColList) -> Vec<(IndexId, &TableIndex)> {
+        self.indexes
+            .iter()
+            .filter(|(_, index)| index.indexed_columns() == cols)
+            .map(|(id, idx)| (*id, idx))
+            .collect()
+    }
+
+    /// Makes the index at `index_id` non-unique.
+    ///
+    /// If no unique indices remain after this, rebuilds and restores the pointer map.
+    pub fn make_index_non_unique(&mut self, index_id: IndexId, blob_store: &dyn BlobStore) {
+        if let Some(idx) = self.indexes.get_mut(&index_id) {
+            idx.make_non_unique();
+        }
+        if !self.has_unique_index() && self.pointer_map.is_none() {
+            let pm = self.rebuild_pointer_map(blob_store);
+            self.restore_pointer_map(pm);
+        }
+    }
+
     /// Clones the structure of this table into a new one with
     /// the same schema, visitor program, and indices.
     /// The new table will be completely empty
@@ -1620,6 +1670,11 @@ impl Table {
     /// For more details, refer to the documentation of `self.blob_store_bytes`.
     pub fn bytes_occupied_overestimate(&self) -> usize {
         (self.num_pages() * PAGE_DATA_SIZE) + (self.blob_store_bytes.0)
+    }
+
+    /// Returns the bytes occupied by this table's allocated physical row pages.
+    pub fn page_bytes(&self) -> u64 {
+        (self.num_pages() * mem::size_of::<Page>()) as u64
     }
 
     /// Reset the internal storage of `self` to be `pages`.

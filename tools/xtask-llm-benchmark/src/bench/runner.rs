@@ -473,6 +473,23 @@ async fn maybe_generate_analysis(cfg: &BenchRunContext<'_>, outcomes: &[RunOutco
     Ok(analysis)
 }
 
+async fn upload_batch_for_context(
+    cfg: &BenchRunContext<'_>,
+    outcomes: &[RunOutcome],
+    analysis: Option<&str>,
+) -> Result<()> {
+    if let Some(api) = cfg.api_client.clone() {
+        let mode = cfg.mode.to_string();
+        let outcomes = outcomes.to_vec();
+        let analysis = analysis.map(str::to_string);
+        tokio::task::spawn_blocking(move || api.upload_batch(&mode, &outcomes, analysis.as_deref())).await??;
+    } else {
+        eprintln!("[runner] no API client configured; skipping upload");
+    }
+
+    Ok(())
+}
+
 pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Result<Vec<RunOutcome>> {
     let total_wall = Instant::now();
 
@@ -632,11 +649,7 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
                 None
             }
         };
-        if let Some(ref api) = cfg.api_client {
-            api.upload_batch(cfg.mode, &outcomes, analysis.as_deref())?;
-        } else {
-            eprintln!("[runner] no API client configured; skipping upload");
-        }
+        upload_batch_for_context(cfg, &outcomes, analysis.as_deref()).await?;
     } else {
         eprintln!("[runner] no results; skipping upload");
     }
@@ -831,11 +844,7 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
                 None
             }
         };
-        if let Some(ref api) = cfg.api_client {
-            api.upload_batch(cfg.mode, &outcomes, analysis.as_deref())?;
-        } else {
-            eprintln!("[runner] no API client configured; skipping upload");
-        }
+        upload_batch_for_context(cfg, &outcomes, analysis.as_deref()).await?;
     }
 
     println!(

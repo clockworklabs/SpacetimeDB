@@ -370,6 +370,11 @@ metrics_group!(
         #[labels(db: Identity)]
         pub total_outgoing_queue_length: IntGaugeVec,
 
+        #[name = spacetime_client_outgoing_queue_disconnects_total]
+        #[help = "The number of clients disconnected because their outgoing WebSocket message queue filled up"]
+        #[labels(db: Identity)]
+        pub client_outgoing_queue_disconnects: IntCounterVec,
+
         #[name = spacetime_module_create_instance_time_seconds]
         #[help = "Time taken to construct a WASM instance or V8 isolate to run module code"]
         #[labels(db: Identity, module_type: HostType)]
