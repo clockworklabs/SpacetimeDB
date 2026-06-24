@@ -1411,13 +1411,18 @@ impl Host {
         );
 
         let res = match ponder_migrate(&old_module.module_def, &module_def) {
-            Ok(plan) => MigratePlanResult::Success {
-                old_module_hash: old_module.module_hash,
-                new_module_hash: program.hash,
-                breaks_client: plan.breaks_client(),
-                plan: plan.pretty_print(style)?.into(),
-                major_version_upgrade,
-            },
+            Ok(mut plan) => {
+                let stdb = self.replica_ctx.relational_db();
+                db::update::add_view_backing_table_recreate_steps(stdb, &mut plan)?;
+
+                MigratePlanResult::Success {
+                    old_module_hash: old_module.module_hash,
+                    new_module_hash: program.hash,
+                    breaks_client: plan.breaks_client(),
+                    plan: plan.pretty_print(style)?.into(),
+                    major_version_upgrade,
+                }
+            }
             Err(e) => MigratePlanResult::AutoMigrationError {
                 error: e,
                 major_version_upgrade,

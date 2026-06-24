@@ -1,13 +1,16 @@
 use super::relational_db::RelationalDB;
 use crate::sql::rls::RowLevelExpr;
 use anyhow::Context;
-use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+use spacetimedb_datastore::execution_context::Workload;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
+use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
+use spacetimedb_datastore::system_tables::{StViewFields, StViewRow, ST_VIEW_ID};
 use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColSet, TableId};
-use spacetimedb_schema::auto_migrate::{AutoMigratePlan, ManualMigratePlan, MigratePlan};
-use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
+use spacetimedb_schema::auto_migrate::{AutoMigratePlan, AutoMigrateStep, ManualMigratePlan, MigratePlan};
+use spacetimedb_schema::def::{ModuleDef, ModuleDefLookup, TableDef, ViewDef};
 use spacetimedb_schema::schema::{
     column_schemas_from_defs, ConstraintSchema, IndexSchema, Schema, SequenceSchema, TableSchema,
 };
@@ -24,6 +27,100 @@ pub enum UpdateResult {
     Success,
     RequiresClientDisconnect,
     EvaluateSubscribedViews,
+}
+
+type ViewKey<'a> = <ViewDef as ModuleDefLookup>::Key<'a>;
+
+/// Force view recreation when the stored backing table's row layout no longer
+/// matches the layout expected by the new module definition.
+pub fn add_view_backing_table_recreate_steps<'def>(
+    stdb: &RelationalDB,
+    plan: &mut MigratePlan<'def>,
+) -> anyhow::Result<()> {
+    let MigratePlan::Auto(plan) = plan else {
+        return Ok(());
+    };
+
+    stdb.with_read_only(Workload::Internal, |tx| -> anyhow::Result<()> {
+        let mut changed = false;
+
+        for view in plan.new.views() {
+            let key = view.key();
+
+            // A normal view schema change is already handled by the public migration plan.
+            // This pass only upgrades stale backing tables.
+            if view_recreate_is_planned(&plan.steps, key) {
+                continue;
+            }
+
+            let Some(table_id) = view_backing_table_id(tx, view)? else {
+                continue;
+            };
+
+            let actual = stdb.schema_for_table(tx, table_id)?;
+            let expected = TableSchema::from_view_def_for_datastore(plan.new, view);
+
+            if !view_backing_row_layout_changed(&actual, &expected) {
+                continue;
+            }
+
+            // UpdateView would recompute rows into the stale physical layout.
+            // Dropping and recreating the view rebuilds the backing table.
+            replace_view_update_with_recreate_steps(&mut plan.steps, key);
+            changed = true;
+        }
+
+        if changed {
+            plan.steps.sort();
+        }
+
+        Ok(())
+    })
+}
+
+fn view_recreate_is_planned<'def>(steps: &[AutoMigrateStep<'def>], key: ViewKey<'def>) -> bool {
+    steps.iter().any(|step| {
+        matches!(
+            step,
+            AutoMigrateStep::AddView(existing) | AutoMigrateStep::RemoveView(existing) if *existing == key
+        )
+    })
+}
+
+fn view_backing_table_id(tx: &mut TxId, view: &ViewDef) -> anyhow::Result<Option<TableId>> {
+    let view_name = AlgebraicValue::from(<Box<str>>::from(&*view.name));
+    let Some(row) = tx
+        .iter_by_col_eq(ST_VIEW_ID, StViewFields::ViewName, &view_name)?
+        .next()
+    else {
+        return Ok(None);
+    };
+
+    Ok(StViewRow::try_from(row)?.table_id)
+}
+
+fn view_backing_row_layout_changed(actual: &TableSchema, expected: &TableSchema) -> bool {
+    actual.row_type != expected.row_type
+}
+
+fn replace_view_update_with_recreate_steps<'def>(steps: &mut Vec<AutoMigrateStep<'def>>, key: ViewKey<'def>) {
+    steps.retain(|step| {
+        !matches!(
+            step,
+            AutoMigrateStep::UpdateView(existing) | AutoMigrateStep::ChangeAccess(existing) if *existing == key
+        )
+    });
+    steps.extend([AutoMigrateStep::RemoveView(key), AutoMigrateStep::AddView(key)]);
+    ensure_disconnect_all_users(steps);
+}
+
+fn ensure_disconnect_all_users(steps: &mut Vec<AutoMigrateStep<'_>>) {
+    if !steps
+        .iter()
+        .any(|step| matches!(step, AutoMigrateStep::DisconnectAllUsers))
+    {
+        steps.push(AutoMigrateStep::DisconnectAllUsers);
+    }
 }
 
 /// Update the database according to the migration plan.
@@ -573,6 +670,95 @@ mod test {
             .finish()
             .try_into()
             .expect("should be a valid module definition")
+    }
+
+    fn view_module() -> ModuleDef {
+        let mut builder = RawModuleDefV10Builder::new();
+        let return_type_ref = builder.add_algebraic_type(
+            [],
+            "my_view_return_type",
+            AlgebraicType::product([("a", AlgebraicType::U64)]),
+            true,
+        );
+        builder.add_view(
+            "my_view",
+            0,
+            true,
+            true,
+            ProductType::unit(),
+            AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+        );
+        builder.add_view_primary_key("my_view", ["a"]);
+        builder
+            .finish()
+            .try_into()
+            .expect("should be a valid module definition")
+    }
+
+    fn old_view_backing_schema(module_def: &ModuleDef) -> TableSchema {
+        let view = module_def.view("my_view").unwrap();
+        let mut schema = TableSchema::from_view_def_for_datastore(module_def, view);
+
+        schema.columns.remove(0);
+        for (pos, col) in schema.columns.iter_mut().enumerate() {
+            col.col_pos = pos.into();
+        }
+        schema.indexes.clear();
+        schema.constraints.clear();
+        schema.reset();
+
+        schema
+    }
+
+    fn create_backing_table(stdb: &TestDB, schema: TableSchema) -> anyhow::Result<()> {
+        let mut tx = begin_mut_tx(stdb);
+        stdb.create_table(&mut tx, schema)?;
+        stdb.commit_tx(tx)?;
+        Ok(())
+    }
+
+    #[test]
+    fn stale_view_backing_schema_forces_remove_add_view() -> anyhow::Result<()> {
+        let stdb = TestDB::durable()?;
+        let module_def = view_module();
+        create_backing_table(&stdb, old_view_backing_schema(&module_def))?;
+
+        let mut plan = ponder_migrate(&module_def, &module_def)?;
+        add_view_backing_table_recreate_steps(&stdb, &mut plan)?;
+
+        let MigratePlan::Auto(plan) = &plan else {
+            panic!("expected auto migration");
+        };
+        let my_view = module_def.view("my_view").unwrap().key();
+        assert!(plan.steps.contains(&AutoMigrateStep::RemoveView(my_view)));
+        assert!(plan.steps.contains(&AutoMigrateStep::AddView(my_view)));
+        assert!(plan.steps.contains(&AutoMigrateStep::DisconnectAllUsers));
+        assert!(!plan.steps.contains(&AutoMigrateStep::UpdateView(my_view)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn current_view_backing_schema_does_not_force_remove_add_view() -> anyhow::Result<()> {
+        let stdb = TestDB::durable()?;
+        let module_def = view_module();
+        let view = module_def.view("my_view").unwrap();
+        let backing_schema = TableSchema::from_view_def_for_datastore(&module_def, view);
+        create_backing_table(&stdb, backing_schema)?;
+
+        let mut plan = ponder_migrate(&module_def, &module_def)?;
+        add_view_backing_table_recreate_steps(&stdb, &mut plan)?;
+
+        let MigratePlan::Auto(plan) = &plan else {
+            panic!("expected auto migration");
+        };
+        let my_view = view.key();
+        assert!(plan.steps.contains(&AutoMigrateStep::UpdateView(my_view)));
+        assert!(!plan.steps.contains(&AutoMigrateStep::RemoveView(my_view)));
+        assert!(!plan.steps.contains(&AutoMigrateStep::AddView(my_view)));
+        assert!(!plan.steps.contains(&AutoMigrateStep::DisconnectAllUsers));
+
+        Ok(())
     }
 
     enum TakeSnapshot {
