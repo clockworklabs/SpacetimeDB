@@ -308,3 +308,29 @@ When writing documentation that will be used by the benchmark:
 **Timeouts / Rate-limits**
 - Lower `LLM_BENCH_CONCURRENCY` or `LLM_BENCH_ROUTE_CONCURRENCY`.
 - Some providers aggressively throttle bursts; use backoff/retry when supported.
+
+---
+
+## Installing Git hooks
+
+The repository provides `git-hooks/install-hooks.sh` to configure developer Git hooks.
+
+- Recommended (cross-platform): run the installer to configure Git to use the bundled hooks directory without creating symlinks:
+
+```bash
+# from the repo root
+bash git-hooks/install-hooks.sh
+
+# verify
+git config --get core.hooksPath
+```
+
+- What it does: the installer prefers `git config core.hooksPath git-hooks/hooks`, which works on Linux, macOS, and Windows (Git for Windows) and avoids requiring filesystem symlink privileges.
+
+- If you need to revert:
+
+```bash
+git config --unset core.hooksPath
+```
+
+- If your environment does not have `git` on PATH, the installer will try to create a symlink as a fallback and will print a warning; prefer running the installer with `git` available or set `core.hooksPath` manually.
