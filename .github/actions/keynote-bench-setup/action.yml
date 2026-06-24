@@ -43,18 +43,6 @@ runs:
       run: cargo build --release -p spacetimedb-cli -p spacetimedb-standalone
       working-directory: ${{ inputs.public_root }}
 
-    # Node 24 is the current Active LTS line.
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: 24
-
-    - uses: ./.github/actions/setup-pnpm
-      with:
-        package_json_file: ${{ inputs.public_root }}/package.json
-        working_directory: ${{ inputs.public_root }}
-        run_install: "true"
-
     - name: Build TypeScript SDK
       shell: bash
       run: pnpm build

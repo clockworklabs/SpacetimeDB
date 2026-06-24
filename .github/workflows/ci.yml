@@ -377,6 +377,18 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
 
+      # Node 24 is the current Active LTS line.
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          package_json_file: package.json
+          working_directory: .
+          run_install: "true"
+
       - uses: ./.github/actions/keynote-bench-setup
         with:
           public_root: .
