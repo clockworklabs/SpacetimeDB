@@ -241,10 +241,7 @@ public static class GeneratorSnapshotTests
         // make sure a downstream "user" file that references SpacetimeDB.Local doesn't trigger CS0436.
         var userCode =
             "namespace User; public sealed class UseLocal { public SpacetimeDB.Local Db; }";
-        var userTree = CSharpSyntaxTree.ParseText(
-            userCode,
-            fixture.ParseOptions
-        );
+        var userTree = CSharpSyntaxTree.ParseText(userCode, fixture.ParseOptions);
         var compilationWithUserCode = compilationAfterGen.AddSyntaxTrees(userTree);
         AssertNoCs0436Diagnostics(compilationWithUserCode);
     }
