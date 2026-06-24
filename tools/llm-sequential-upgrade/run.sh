@@ -481,7 +481,8 @@ snapshot_inputs() {
   # Backend specs (only relevant backend)
   cp "$SCRIPT_DIR/backends/$BACKEND.md" "$INPUTS_DIR/backends/" 2>/dev/null || true
   if [[ "$BACKEND" == "spacetime" ]]; then
-    cp "$SCRIPT_DIR/backends/spacetime-sdk-rules.md" "$INPUTS_DIR/backends/" 2>/dev/null || true
+    cp "$SCRIPT_DIR/../../skills/typescript-server/SKILL.md" "$INPUTS_DIR/backends/typescript-server-SKILL.md" 2>/dev/null || true
+    cp "$SCRIPT_DIR/../../skills/typescript-client/SKILL.md" "$INPUTS_DIR/backends/typescript-client-SKILL.md" 2>/dev/null || true
     cp "$SCRIPT_DIR/backends/spacetime-templates.md" "$INPUTS_DIR/backends/" 2>/dev/null || true
   fi
 
@@ -750,7 +751,11 @@ if [[ -z "$FIX_MODE" && -z "$UPGRADE_MODE" ]]; then
   elif [[ "$RULES" == "standard" ]]; then
     case "$BACKEND" in
       spacetime)
-        cat "$SCRIPT_DIR/backends/spacetime-sdk-rules.md" > "$APP_DIR/CLAUDE.md"
+        _strip='NR==1 && /^---$/ {fm=1; next} fm && /^---$/ {fm=0; next} !fm {print}'
+        { awk "$_strip" "$SCRIPT_DIR/../../skills/typescript-server/SKILL.md"
+          echo ""; echo "---"; echo ""
+          awk "$_strip" "$SCRIPT_DIR/../../skills/typescript-client/SKILL.md"
+        } > "$APP_DIR/CLAUDE.md"
         ;;
       mongodb)
         echo "# MongoDB Backend" > "$APP_DIR/CLAUDE.md"
@@ -771,31 +776,19 @@ if [[ -z "$FIX_MODE" && -z "$UPGRADE_MODE" ]]; then
     esac
     echo "Assembled standard CLAUDE.md (rules=$RULES)"
   else
-    # guided (default) — phases + SDK reference + templates.
-    # SDK reference is selectable via STDB_SDK_REF: focused (default) | skills | fork
+    # guided (default) — phases + the official customer SDK skills + templates.
     if [[ "$BACKEND" == "spacetime" ]]; then
       _strip_fm() { awk 'NR==1 && /^---$/ {fm=1; next} fm && /^---$/ {fm=0; next} !fm {print}' "$1"; }
-      _sdk_ref="${STDB_SDK_REF:-focused}"
       {
         cat "$SCRIPT_DIR/backends/spacetime.md"
         echo ""; echo "---"; echo ""
-        case "$_sdk_ref" in
-          skills)
-            _strip_fm "$SCRIPT_DIR/../../skills/typescript-server/SKILL.md"
-            echo ""; echo "---"; echo ""
-            _strip_fm "$SCRIPT_DIR/../../skills/typescript-client/SKILL.md"
-            ;;
-          fork)
-            cat "$SCRIPT_DIR/backends/spacetime-sdk-rules.md"
-            ;;
-          *)  # focused (default) — lean reference, parity in scope with mongo/pg backend files
-            cat "$SCRIPT_DIR/backends/spacetime-sdk-focused.md"
-            ;;
-        esac
+        _strip_fm "$SCRIPT_DIR/../../skills/typescript-server/SKILL.md"
+        echo ""; echo "---"; echo ""
+        _strip_fm "$SCRIPT_DIR/../../skills/typescript-client/SKILL.md"
         echo ""; echo "---"; echo ""
         cat "$SCRIPT_DIR/backends/spacetime-templates.md"
       } > "$APP_DIR/CLAUDE.md"
-      echo "Assembled guided CLAUDE.md from spacetime.md + SDK ref [$_sdk_ref] + templates"
+      echo "Assembled guided CLAUDE.md from spacetime.md + official skills + templates"
     else
       cp "$SCRIPT_DIR/backends/$BACKEND.md" "$APP_DIR/CLAUDE.md"
       echo "Copied backends/$BACKEND.md → app CLAUDE.md"

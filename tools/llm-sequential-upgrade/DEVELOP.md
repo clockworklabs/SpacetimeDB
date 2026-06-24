@@ -269,8 +269,8 @@ llm-sequential-upgrade/
   parse-telemetry.mjs              # Telemetry → COST_REPORT.md
   backends/
     spacetime.md                   # SpacetimeDB-specific phases
-    spacetime-sdk-rules.md         # SpacetimeDB SDK patterns
     spacetime-templates.md         # Code templates
+    # SDK reference = the official skills/typescript-{server,client}/SKILL.md
     postgres.md                    # PostgreSQL-specific phases
     mongodb.md                     # MongoDB-specific phases
   test-plans/
