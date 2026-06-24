@@ -121,9 +121,6 @@ ctx.db.entity.id.delete(entityId);                         // Delete by PK
 
 Note: `iter()` and `filter()` return iterators. Spread to Array for `.sort()`, `.filter()`, `.map()`.
 
-`insert()` requires **every** column — set optional (`t.option(...)`) columns you aren't using to
-`undefined`: `ctx.db.message.insert({ id: 0n, text, parentId: undefined })`.
-
 ## Lifecycle Hooks
 
 MUST be `export const`. Bare calls are silently ignored:
