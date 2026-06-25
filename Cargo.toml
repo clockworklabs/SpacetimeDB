@@ -66,6 +66,7 @@ members = [
   "sdks/rust/tests/procedural-view-pk-client",
   "sdks/rust/tests/event-table-client",
   "tools/ci",
+  "tools/keynote-bench-harness",
   "tools/license-check",
   "tools/replace-spacetimedb",
   "tools/generate-client-api",
@@ -233,9 +234,8 @@ is-terminal = "0.4"
 itertools = "0.12"
 itoa = "1"
 json5 = "0.4"
-jsonwebtoken = { package = "spacetimedb-jsonwebtoken", version = "9.3.0" }
+jsonwebtoken = { version = "10.4.0", features = ["rust_crypto"] }
 junction = "1"
-jwks = { package = "spacetimedb-jwks", version = "0.1.3" }
 lazy_static = "1.4.0"
 lean_string = "0.5.1"
 log = "0.4.17"

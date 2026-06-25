@@ -559,7 +559,7 @@ class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
   }
 }
 
-function makeTableView(
+export function makeTableView(
   typespace: Typespace,
   table: RawTableDefV10
 ): Table<any> {
@@ -932,6 +932,10 @@ function makeTableView(
       };
       index = {
         filter: (range: any[]): IteratorObject<RowType<any>> => {
+          // A bare scalar or `Range` is the only type-valid way to express a
+          // one-column prefix scan; normalize it to a single-element array so
+          // `.length` and `serializeRange` see a prefix rather than NaN.
+          if (!Array.isArray(range)) range = [range];
           if (range.length === numColumns) {
             const buf = LEAF_BUF;
             const point_len = serializePoint(buf, range);
@@ -953,6 +957,7 @@ function makeTableView(
           }
         },
         delete: (range: any[]): u32 => {
+          if (!Array.isArray(range)) range = [range];
           if (range.length === numColumns) {
             const buf = LEAF_BUF;
             const point_len = serializePoint(buf, range);

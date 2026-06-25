@@ -506,6 +506,10 @@ impl RelationalDB {
             snapshot_offset: TxOffset,
             page_pool: &PagePool,
         ) -> Result<ReconstructedSnapshot, Box<SnapshotError>> {
+            fn u64_to_i64(value: u64) -> i64 {
+                value.min(i64::MAX as u64) as i64
+            }
+
             log::info!("[{database_identity}] DATABASE: restoring snapshot of tx_offset {snapshot_offset}");
             let start = std::time::Instant::now();
 
@@ -515,10 +519,24 @@ impl RelationalDB {
 
             let elapsed_time = start.elapsed();
 
-            ENGINE_METRICS
-                .replay_snapshot_read_time_seconds
-                .with_label_values(database_identity)
-                .set(elapsed_time.as_secs_f64());
+            for (kind, metrics) in snapshot.read_metrics.iter() {
+                ENGINE_METRICS
+                    .replay_snapshot_read_time_seconds
+                    .with_label_values(database_identity, kind)
+                    .set(metrics.read_time.as_secs_f64());
+                ENGINE_METRICS
+                    .replay_snapshot_num_objects_read
+                    .with_label_values(database_identity, kind)
+                    .set(u64_to_i64(metrics.files));
+                ENGINE_METRICS
+                    .replay_snapshot_bytes_read_from_disk
+                    .with_label_values(database_identity, kind)
+                    .set(u64_to_i64(metrics.disk_bytes));
+                ENGINE_METRICS
+                    .replay_snapshot_read_hash_seconds
+                    .with_label_values(database_identity, kind)
+                    .set(metrics.hash_time.as_secs_f64());
+            }
 
             log::info!(
                 "[{database_identity}] DATABASE: read snapshot of tx_offset {snapshot_offset} in {elapsed_time:?}",
