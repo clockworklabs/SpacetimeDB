@@ -10,7 +10,7 @@
     <SelfContained>true</SelfContained>
     <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
 
-    <RestoreAdditionalProjectSources>https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json;https://api.nuget.org/v3/index.json</RestoreAdditionalProjectSources>
+    <RestoreAdditionalProjectSources>https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json;https://api.nuget.org/v3/index.json;$(RestoreAdditionalProjectSources)</RestoreAdditionalProjectSources>
   </PropertyGroup>
 
   <ItemGroup>
