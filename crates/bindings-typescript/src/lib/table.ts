@@ -20,10 +20,7 @@ import type {
   UntypedIndex,
 } from './indexes';
 import ScheduleAt from './schedule_at';
-import type {
-  TableSchema,
-  UntypedScheduledFunctionExport,
-} from './table_schema';
+import type { TableSchema, TableSchedule } from './table_schema';
 import {
   RowBuilder,
   type ColumnBuilder,
@@ -497,9 +494,9 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     CoerceRow<Row>
   >['algebraicType']['value'];
 
-  const schedule =
+  const schedule: TableSchedule | undefined =
     scheduled && scheduleAtCol !== undefined
-      ? { reducer: scheduled as () => UntypedScheduledFunctionExport }
+      ? { reducer: scheduled }
       : undefined;
 
   return {

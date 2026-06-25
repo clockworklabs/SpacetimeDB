@@ -16,6 +16,10 @@ export type UntypedScheduledFunctionExport =
   | ReducerExport<any, any>
   | ProcedureExport<any, any, any>;
 
+export type TableSchedule = {
+  reducer: () => UntypedScheduledFunctionExport;
+};
+
 /**
  * Represents a handle to a database table, including its name, row type, and row spacetime type.
  */
@@ -71,9 +75,7 @@ export type TableSchema<
    * @deprecated Prefer `spacetime.schedule(table, reducerOrProcedure)` so table
    * definitions can live in a separate module from reducer/procedure definitions.
    */
-  readonly schedule?: {
-    reducer: () => UntypedScheduledFunctionExport;
-  };
+  readonly schedule?: TableSchedule;
 };
 
 export type UntypedTableSchema = TableSchema<
