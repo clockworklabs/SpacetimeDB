@@ -534,6 +534,47 @@ describe('ConnectionManager.rebuild', () => {
     ConnectionManager.release(key);
   });
 
+  test('surfaces a build failure into pool state and re-throws', () => {
+    const key = nextKey();
+    const builder = new MockBuilder();
+    const buildError = new Error('build failed');
+
+    const first = retainMock(key, builder);
+    first.simulateConnect();
+    expect(ConnectionManager.getSnapshot(key)?.isActive).toBe(true);
+
+    // A builder whose build() throws (e.g. the new token is rejected synchronously).
+    const failingBuilder = {
+      build() {
+        throw buildError;
+      },
+      onConnect() {
+        return this;
+      },
+      onDisconnect() {
+        return this;
+      },
+      onConnectError() {
+        return this;
+      },
+    };
+
+    expect(() => ConnectionManager.rebuild(key, failingBuilder as any)).toThrow(
+      buildError
+    );
+
+    // The old connection is gone and the pool reflects the failure rather than
+    // a stale "live" connection.
+    expect(first.disconnected).toBe(true);
+    expect(ConnectionManager.getConnection(key)).toBeNull();
+    expect(ConnectionManager.getSnapshot(key)?.isActive).toBe(false);
+    expect(ConnectionManager.getSnapshot(key)?.connectionError).toBe(
+      buildError
+    );
+
+    ConnectionManager.release(key);
+  });
+
   test('returns null when the key has no retained entry', () => {
     const key = nextKey();
     expect(ConnectionManager.rebuild(key, new MockBuilder() as any)).toBeNull();

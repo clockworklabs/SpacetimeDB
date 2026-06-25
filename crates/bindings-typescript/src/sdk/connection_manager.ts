@@ -343,7 +343,21 @@ class ConnectionManagerImpl {
     }
     managed.connection = undefined;
 
-    return this.#buildManagedConnection(managed, builder) as T;
+    try {
+      return this.#buildManagedConnection(managed, builder) as T;
+    } catch (error) {
+      // The old connection is already torn down, so a failed rebuild would
+      // otherwise leave the pool reporting a stale "live" connection. Surface
+      // the failure into pool state (matching the onConnectError shape) so
+      // subscribers see a disconnected/errored connection, then re-throw so
+      // the caller can handle it.
+      this.#updateState(managed, {
+        isActive: false,
+        connectionError:
+          error instanceof Error ? error : new Error(String(error)),
+      });
+      throw error;
+    }
   }
 
   release(key: string): void {
