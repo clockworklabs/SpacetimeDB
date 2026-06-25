@@ -2809,11 +2809,10 @@ impl MutTxId {
         self.get_view_instance(call).map(|state| state.args)
     }
 
-    /// Returns materialized view instances with at least one active subscriber for `view_id`.
-    pub fn subscribed_view_instances_for_view(&self, view_id: ViewId) -> Vec<ViewInstanceArgs> {
+    /// Returns all materialized view instances for `view_id`.
+    pub fn materialized_view_instances_for_view(&self, view_id: ViewId) -> Vec<ViewInstanceArgs> {
         self.effective_view_instances_for_view(view_id)
             .into_values()
-            .filter(|state| state.has_subscribers())
             .map(|state| state.args)
             .collect()
     }

@@ -1499,7 +1499,7 @@ fn collect_subscribed_view_calls(
         let table_id = st_view
             .table_id
             .ok_or_else(|| anyhow::anyhow!("view {} does not have a backing table in database", &view_name))?;
-        let view_instances = tx.subscribed_view_instances_for_view(view_id);
+        let view_instances = tx.materialized_view_instances_for_view(view_id);
 
         if *is_anonymous {
             if view_instances.is_empty() {
