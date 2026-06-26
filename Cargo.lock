@@ -915,6 +915,7 @@ dependencies = [
  "clap 4.5.50",
  "duct",
  "env_logger 0.10.2",
+ "keynote-bench-harness",
  "log",
  "regex",
  "reqwest",
@@ -3817,6 +3818,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ecc2af9a1119c51f12a14607e783cb977bde58bc069ff0c3da1095e635d70654"
 dependencies = [
  "cpufeatures",
+]
+
+[[package]]
+name = "keynote-bench-harness"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "reqwest",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
