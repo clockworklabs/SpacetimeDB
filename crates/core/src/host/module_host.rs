@@ -1,6 +1,6 @@
 use super::{
-    ArgsTuple, FunctionArgs, InvalidProcedureArguments, InvalidReducerArguments, ReducerCallResult, ReducerId,
-    ReducerOutcome, Scheduler,
+    ArgsTuple, FunctionArgs, InvalidProcedureArguments, InvalidReducerArguments, ReducerCallResult,
+    ReducerCallResultWithTxOffset, ReducerId, ReducerOutcome, Scheduler,
 };
 use crate::client::messages::{OneOffQueryResponseMessage, ProcedureResultMessage, SerializableMessage};
 use crate::client::{ClientActorId, ClientConnectionSender, WsVersion};
@@ -21,8 +21,8 @@ use crate::messages::control_db::{Database, HostType};
 use crate::replica_context::ReplicaContext;
 use crate::sql::execute::SqlResult;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
-use crate::subscription::module_subscription_manager::BroadcastError;
 pub use crate::subscription::module_subscription_manager::TransactionOffset;
+use crate::subscription::module_subscription_manager::{from_tx_offset, BroadcastError};
 use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRowListBuilderFakePool};
 use crate::subscription::tx::DeltaTx;
 use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
@@ -574,8 +574,8 @@ pub(crate) fn init_database(
     replica_ctx: &ReplicaContext,
     module_def: &ModuleDef,
     program: Program,
-    call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResult, bool),
-) -> (anyhow::Result<Option<ReducerCallResult>>, bool) {
+    call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResultWithTxOffset, bool),
+) -> (anyhow::Result<InitDatabaseResult>, bool) {
     extract_trapped(init_database_inner(replica_ctx, module_def, program, call_reducer))
 }
 
@@ -583,8 +583,8 @@ fn init_database_inner(
     replica_ctx: &ReplicaContext,
     module_def: &ModuleDef,
     program: Program,
-    call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResult, bool),
-) -> anyhow::Result<(Option<ReducerCallResult>, bool)> {
+    call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResultWithTxOffset, bool),
+) -> anyhow::Result<(InitDatabaseResult, bool)> {
     log::debug!("init database");
     let timestamp = Timestamp::now();
     let stdb = replica_ctx.relational_db();
@@ -632,22 +632,40 @@ fn init_database_inner(
 
     let rcr = match module_def.lifecycle_reducer(Lifecycle::Init) {
         None => {
-            if let Some((_tx_offset, tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
-                stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
-            }
-            (None, false)
+            let (tx_offset, tx_data, tx_metrics, reducer) = stdb
+                .commit_tx(tx)?
+                .context("database initialization did not commit a transaction")?;
+            stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
+            (
+                InitDatabaseResult {
+                    reducer: None,
+                    tx_offset: from_tx_offset(tx_offset),
+                },
+                false,
+            )
         }
 
         Some((reducer_id, _)) => {
             logger.info("Invoking `init` reducer");
             let params = CallReducerParams::from_system(timestamp, owner_identity, reducer_id, ArgsTuple::nullary());
             let (res, trapped) = call_reducer(Some(tx), params);
-            (Some(res), trapped)
+            (
+                InitDatabaseResult {
+                    reducer: Some(res.result),
+                    tx_offset: res.tx_offset,
+                },
+                trapped,
+            )
         }
     };
 
     logger.info("Database initialized");
     Ok(rcr)
+}
+
+pub struct InitDatabaseResult {
+    pub reducer: Option<ReducerCallResult>,
+    pub tx_offset: TransactionOffset,
 }
 
 pub fn call_identity_connected(
@@ -3063,7 +3081,7 @@ impl ModuleHost {
         instance.common.call_view_with_tx(tx, params, instance.instance)
     }
 
-    pub async fn init_database(&self, program: Program) -> Result<Option<ReducerCallResult>, InitDatabaseError> {
+    pub async fn init_database(&self, program: Program) -> Result<InitDatabaseResult, InitDatabaseError> {
         call_instance!(
             self,
             "<init_database>",
