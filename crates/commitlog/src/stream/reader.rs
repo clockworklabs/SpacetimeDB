@@ -4,18 +4,14 @@ use async_stream::try_stream;
 use bytes::{Buf as _, Bytes};
 use futures::Stream;
 use log::{trace, warn};
-use tokio::{
-    io::{self, AsyncBufRead, AsyncReadExt as _, AsyncSeek, AsyncSeekExt as _},
-    task::spawn_blocking,
-};
-use tokio_util::io::SyncIoBridge;
+use tokio::io::{self, AsyncBufRead, AsyncReadExt as _, AsyncSeek, AsyncSeekExt as _};
 
 use crate::{
     commit,
     error::source_chain,
     index::IndexError,
     repo::Repo,
-    segment::{self, seek_to_offset, CHECKSUM_LEN},
+    segment::{self, CHECKSUM_LEN},
 };
 
 use super::{
@@ -82,33 +78,45 @@ fn read_segment(
         if range.start > segment_start {
             // Don't send a segment header if we're not reading from the start.
             send_segment_header = None;
-            segment = spawn_blocking(move || {
-                let mut segment = SyncIoBridge::new(segment);
-                if let Ok(offset_index) = repo.get_offset_index(segment_start) {
-                    trace!("seek_to_offset segment={} start={}", segment_start, range.start);
-                    seek_to_offset(&mut segment, &offset_index, range.start)
-                        .inspect_err(|e| match e {
-                            IndexError::KeyNotFound =>
-                                trace!(
-                                    "offset not found segment={} offset={}",
-                                    segment_start, range.start
-                                ),
-                            e => {
-                                warn!(
-                                    "error reading index segment={} offset={}: {} {}",
-                                    segment_start,
-                                    range.start,
-                                    e,
-                                    source_chain(&e)
-                                )
-                            }
-                        })
-                        .ok();
+            if let Ok(offset_index) = repo.get_offset_index(segment_start) {
+                trace!("seek_to_offset segment={} start={}", segment_start, range.start);
+                match offset_index.key_lookup(range.start) {
+                    Ok((index_key, byte_offset)) if index_key != 0 => {
+                        let pos = segment.stream_position().await?;
+                        segment.seek(SeekFrom::Start(byte_offset)).await?;
+
+                        let mut header_buf = [0u8; commit::Header::LEN];
+                        segment.read_exact(&mut header_buf).await?;
+                        let header = commit::Header::decode(&header_buf[..])?
+                            .ok_or_else(|| io::Error::new(io::ErrorKind::UnexpectedEof, "unexpected EOF"))?;
+
+                        if header.min_tx_offset == index_key {
+                            segment.seek(SeekFrom::Start(byte_offset)).await?;
+                        } else {
+                            segment.seek(SeekFrom::Start(pos)).await?;
+                            Err::<(), io::Error>(io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                "mismatched key in offset index file",
+                            ))?;
+                        }
+                    }
+                    Ok((_index_key, _byte_offset)) => {}
+                    Err(err) => match err {
+                        IndexError::KeyNotFound => {
+                            trace!("offset not found segment={} offset={}", segment_start, range.start);
+                        }
+                        _ => {
+                            warn!(
+                                "error reading index segment={} offset={}: {} {}",
+                                segment_start,
+                                range.start,
+                                err,
+                                source_chain(&err)
+                            );
+                        }
+                    },
                 }
-                segment.into_inner()
-            })
-            .await
-            .unwrap();
+            }
         }
 
         let checksum_len = CHECKSUM_LEN[segment_header.checksum_algorithm as usize];

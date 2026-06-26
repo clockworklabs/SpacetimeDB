@@ -8017,6 +8017,7 @@ dependencies = [
  "spacetimedb-fs-utils",
  "spacetimedb-paths",
  "spacetimedb-primitives",
+ "spacetimedb-runtime",
  "spacetimedb-sats",
  "tempfile",
  "thiserror 1.0.69",
@@ -8210,6 +8211,7 @@ name = "spacetimedb-dst"
 version = "2.6.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "clap 4.5.50",
  "spacetimedb-commitlog",
  "spacetimedb-datastore",

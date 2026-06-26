@@ -247,6 +247,14 @@ pub struct Handle {
 }
 
 impl Handle {
+    /// Drive a future to completion on this runtime.
+    ///
+    /// This is primarily for narrow sync-to-async bridge points where the
+    /// caller is constrained to a synchronous API.
+    pub fn block_on<F: Future>(&self, future: F) -> F::Output {
+        self.executor.block_on(future)
+    }
+
     /// Create a new simulated node owned by this runtime.
     pub fn create_node(&self) -> NodeBuilder {
         NodeBuilder {

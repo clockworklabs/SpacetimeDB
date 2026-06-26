@@ -159,7 +159,20 @@ fn real_getrandom() -> unsafe extern "C" fn(*mut u8, usize, u32) -> isize {
     })
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+unsafe extern "C" fn macos_getrandom(buf: *mut u8, buflen: usize, _flags: u32) -> isize {
+    unsafe {
+        libc::arc4random_buf(buf.cast(), buflen);
+    }
+    buflen as isize
+}
+
+#[cfg(target_os = "macos")]
+fn real_getrandom() -> unsafe extern "C" fn(*mut u8, usize, u32) -> isize {
+    macos_getrandom
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn real_getrandom() -> unsafe extern "C" fn(*mut u8, usize, u32) -> isize {
     compile_error!("unsupported OS for DST getrandom override");
 }

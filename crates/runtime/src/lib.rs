@@ -62,7 +62,7 @@ pub enum Handle {
     #[cfg(feature = "tokio")]
     Tokio(TokioHandle),
     #[cfg(feature = "simulation")]
-    Simulation(sim::Handle),
+    Simulation { handle: sim::Handle, node: sim::NodeId },
 }
 
 pub struct JoinHandle<T> {
@@ -152,6 +152,17 @@ impl fmt::Display for JoinError {
 
 impl std::error::Error for JoinError {}
 
+impl fmt::Debug for Handle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            #[cfg(feature = "tokio")]
+            Self::Tokio(_) => f.write_str("Handle::Tokio(..)"),
+            #[cfg(feature = "simulation")]
+            Self::Simulation { node, .. } => f.debug_struct("Handle::Simulation").field("node", node).finish(),
+        }
+    }
+}
+
 impl<T> JoinHandleInner<T> {
     fn abort_handle(&self) -> AbortHandle {
         match self {
@@ -193,6 +204,10 @@ impl<T> JoinHandleInner<T> {
 impl<T> JoinHandle<T> {
     pub fn abort_handle(&self) -> AbortHandle {
         self.inner.abort_handle()
+    }
+
+    pub fn abort(&self) {
+        self.abort_handle().abort();
     }
 }
 
@@ -237,6 +252,17 @@ impl fmt::Display for RuntimeTimeout {
 
 impl std::error::Error for RuntimeTimeout {}
 
+impl JoinError {
+    pub fn is_panic(&self) -> bool {
+        match &self.inner {
+            #[cfg(feature = "tokio")]
+            JoinErrorInner::Tokio(err) => err.is_panic(),
+            #[cfg(feature = "simulation")]
+            JoinErrorInner::Simulation(_) => false,
+        }
+    }
+}
+
 impl Handle {
     pub fn tokio(handle: TokioHandle) -> Self {
         #[cfg(feature = "tokio")]
@@ -265,7 +291,30 @@ impl Handle {
 #[cfg(feature = "simulation")]
 impl Handle {
     pub fn simulation(handle: sim::Handle) -> Self {
-        Self::Simulation(handle)
+        Self::Simulation {
+            handle,
+            node: sim::NodeId::MAIN,
+        }
+    }
+
+    pub fn simulation_on(handle: sim::Handle, node: sim::NodeId) -> Self {
+        Self::Simulation { handle, node }
+    }
+
+    pub fn create_node(&self) -> sim::NodeBuilder {
+        match self {
+            Self::Simulation { handle, .. } => handle.create_node(),
+            #[cfg(feature = "tokio")]
+            Self::Tokio(_) => panic!("simulation node requested from tokio runtime handle"),
+        }
+    }
+
+    pub fn bind_to_sim_node(&self, node: sim::NodeId) -> Self {
+        match self {
+            Self::Simulation { handle, .. } => Self::simulation_on(handle.clone(), node),
+            #[cfg(feature = "tokio")]
+            Self::Tokio(_) => panic!("simulation node binding requested from tokio runtime handle"),
+        }
     }
 }
 
@@ -277,9 +326,24 @@ impl Handle {
                 inner: JoinHandleInner::Tokio(handle.spawn(future)),
             },
             #[cfg(feature = "simulation")]
-            Self::Simulation(handle) => JoinHandle {
-                inner: JoinHandleInner::Simulation(handle.spawn_on(sim::NodeId::MAIN, future)),
+            Self::Simulation { handle, node } => JoinHandle {
+                inner: JoinHandleInner::Simulation(handle.spawn_on(*node, future)),
             },
+        }
+    }
+
+    pub fn block_on<F: Future>(&self, future: F) -> F::Output {
+        match self {
+            #[cfg(feature = "tokio")]
+            Self::Tokio(handle) => {
+                if TokioHandle::try_current().is_ok() {
+                    tokio::task::block_in_place(|| handle.block_on(future))
+                } else {
+                    handle.block_on(future)
+                }
+            }
+            #[cfg(feature = "simulation")]
+            Self::Simulation { handle, .. } => handle.block_on(future),
         }
     }
 
@@ -302,8 +366,8 @@ impl Handle {
             // progress. Callers should not expect blocking-pool semantics on
             // the simulation backend.
             #[cfg(feature = "simulation")]
-            Self::Simulation(handle) => handle
-                .spawn_on(sim::NodeId::MAIN, async move { f() })
+            Self::Simulation { handle, node } => handle
+                .spawn_on(*node, async move { f() })
                 .await
                 .expect("simulation spawn_blocking task should not be cancelled"),
         }
@@ -320,7 +384,7 @@ impl Handle {
                 .await
                 .map_err(|_| RuntimeTimeout),
             #[cfg(feature = "simulation")]
-            Self::Simulation(handle) => handle.timeout(timeout_after, future).await.map_err(|_| RuntimeTimeout),
+            Self::Simulation { handle, .. } => handle.timeout(timeout_after, future).await.map_err(|_| RuntimeTimeout),
         }
     }
 
@@ -329,7 +393,7 @@ impl Handle {
             #[cfg(feature = "tokio")]
             Self::Tokio(_) => tokio::time::sleep(duration).await,
             #[cfg(feature = "simulation")]
-            Self::Simulation(handle) => handle.sleep(duration).await,
+            Self::Simulation { handle, .. } => handle.sleep(duration).await,
         }
     }
 }

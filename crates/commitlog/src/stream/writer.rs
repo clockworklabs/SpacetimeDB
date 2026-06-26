@@ -5,6 +5,8 @@ use std::{
 
 use futures::TryFutureExt;
 use log::{debug, error, info, trace, warn};
+#[cfg(feature = "simulation")]
+use spacetimedb_runtime::Handle;
 use tokio::{
     io::{AsyncBufRead, AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt},
     task::spawn_blocking,
@@ -63,6 +65,8 @@ where
 {
     repo: R,
     commitlog_options: Options,
+    #[cfg(feature = "simulation")]
+    runtime: Option<Handle>,
 
     last_written_tx_range: Option<Range<u64>>,
     current_segment: Option<CurrentSegment<R::AsyncSegmentWriter>>,
@@ -96,10 +100,40 @@ where
         commitlog_options: Options,
         on_trailing: OnTrailingData,
     ) -> io::Result<(Self, Option<segment::Metadata>)> {
+        #[cfg(feature = "simulation")]
+        let runtime = None;
+
+        Self::create_and_metadata_inner(
+            repo,
+            commitlog_options,
+            on_trailing,
+            #[cfg(feature = "simulation")]
+            runtime,
+        )
+    }
+
+    #[cfg(feature = "simulation")]
+    pub fn create_with_runtime(
+        runtime: Handle,
+        repo: R,
+        commitlog_options: Options,
+        on_trailing: OnTrailingData,
+    ) -> io::Result<Self> {
+        Self::create_and_metadata_inner(repo, commitlog_options, on_trailing, Some(runtime)).map(|(this, _)| this)
+    }
+
+    fn create_and_metadata_inner(
+        repo: R,
+        commitlog_options: Options,
+        on_trailing: OnTrailingData,
+        #[cfg(feature = "simulation")] runtime: Option<Handle>,
+    ) -> io::Result<(Self, Option<segment::Metadata>)> {
         let Some(last) = repo.existing_offsets()?.pop() else {
             let this = Self {
                 repo,
                 commitlog_options,
+                #[cfg(feature = "simulation")]
+                runtime,
                 last_written_tx_range: None,
                 current_segment: None,
                 commit_buf: <_>::default(),
@@ -154,6 +188,8 @@ where
         let this = Self {
             repo,
             commitlog_options,
+            #[cfg(feature = "simulation")]
+            runtime,
             last_written_tx_range: Some(meta.tx_range.clone()),
             current_segment: Some(current_segment),
             commit_buf: <_>::default(),
@@ -210,12 +246,16 @@ where
                         .map(|range| range.end)
                         .unwrap_or_default()
                 );
-                let (segment, index) = spawn_blocking({
-                    let repo = self.repo.clone();
-                    let last_written_tx_range = self.last_written_tx_range.clone();
-                    let commitlog_options = self.commitlog_options;
-                    move || create_segment(repo, last_written_tx_range, commitlog_options, header)
-                })
+                let (segment, index) = spawn_blocking_with_runtime(
+                    #[cfg(feature = "simulation")]
+                    self.runtime.clone(),
+                    {
+                        let repo = self.repo.clone();
+                        let last_written_tx_range = self.last_written_tx_range.clone();
+                        let commitlog_options = self.commitlog_options;
+                        move || create_segment(repo, last_written_tx_range, commitlog_options, header)
+                    },
+                )
                 .await
                 .unwrap()
                 .map(|(segment, index)| (segment.into_async_writer(), index))?;
@@ -266,7 +306,12 @@ where
         let Some(current_segment) = self.current_segment.as_mut() else {
             return Ok(());
         };
-        current_segment.flush_and_sync().await
+        current_segment
+            .flush_and_sync(
+                #[cfg(feature = "simulation")]
+                self.runtime.clone(),
+            )
+            .await
     }
 
     async fn append_all_inner(
@@ -364,7 +409,12 @@ where
     async fn close_current_segment(&mut self) -> io::Result<()> {
         if let Some(current_segment) = self.current_segment.take() {
             trace!("closing current segment");
-            current_segment.close().await?;
+            current_segment
+                .close(
+                    #[cfg(feature = "simulation")]
+                    self.runtime.clone(),
+                )
+                .await?;
         }
 
         Ok(())
@@ -378,11 +428,18 @@ where
     fn drop(&mut self) {
         if let Some(current_segment) = self.current_segment.take() {
             trace!("closing current segment on writer drop");
-            tokio::spawn(
-                current_segment
-                    .close()
-                    .inspect_err(|e| warn!("error closing segment on drop: {e}")),
-            );
+            let close = current_segment
+                .close(
+                    #[cfg(feature = "simulation")]
+                    self.runtime.clone(),
+                )
+                .inspect_err(|e| warn!("error closing segment on drop: {e}"));
+            #[cfg(feature = "simulation")]
+            if let Some(runtime) = self.runtime.clone() {
+                runtime.spawn(close);
+                return;
+            }
+            tokio::spawn(close);
         }
     }
 }
@@ -410,28 +467,75 @@ struct CurrentSegment<W> {
 }
 
 impl<W: AsyncWriteExt + AsyncFsync + Unpin> CurrentSegment<W> {
-    async fn close(mut self) -> io::Result<()> {
-        self.flush_and_sync().await
+    async fn close(mut self, #[cfg(feature = "simulation")] runtime: Option<Handle>) -> io::Result<()> {
+        self.flush_and_sync(
+            #[cfg(feature = "simulation")]
+            runtime,
+        )
+        .await
     }
 
-    async fn flush_and_sync(&mut self) -> io::Result<()> {
+    async fn flush_and_sync(&mut self, #[cfg(feature = "simulation")] runtime: Option<Handle>) -> io::Result<()> {
         self.segment.flush().await?;
         self.segment.fsync().await;
         if let Some(mut index) = self.offset_index.take() {
-            let index = spawn_blocking(move || {
-                index
-                    .fsync()
-                    .inspect_err(|e| warn!("offset index fsync failed: {e}"))
-                    .ok();
-                index
-            })
-            .await
-            .unwrap();
+            let index = {
+                #[cfg(feature = "simulation")]
+                if let Some(runtime) = runtime {
+                    runtime
+                        .spawn_blocking(move || {
+                            index
+                                .fsync()
+                                .inspect_err(|e| warn!("offset index fsync failed: {e}"))
+                                .ok();
+                            index
+                        })
+                        .await
+                } else {
+                    spawn_blocking(move || {
+                        index
+                            .fsync()
+                            .inspect_err(|e| warn!("offset index fsync failed: {e}"))
+                            .ok();
+                        index
+                    })
+                    .await
+                    .unwrap()
+                }
+                #[cfg(not(feature = "simulation"))]
+                {
+                    spawn_blocking(move || {
+                        index
+                            .fsync()
+                            .inspect_err(|e| warn!("offset index fsync failed: {e}"))
+                            .ok();
+                        index
+                    })
+                    .await
+                    .unwrap()
+                }
+            };
             self.offset_index = Some(index);
         }
 
         Ok(())
     }
+}
+
+async fn spawn_blocking_with_runtime<F, T>(
+    #[cfg(feature = "simulation")] runtime: Option<Handle>,
+    f: F,
+) -> Result<T, tokio::task::JoinError>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    #[cfg(feature = "simulation")]
+    if let Some(runtime) = runtime {
+        return Ok(runtime.spawn_blocking(f).await);
+    }
+
+    spawn_blocking(f).await
 }
 
 /// Create a new segment at offset `last_written_tx_range.end`.

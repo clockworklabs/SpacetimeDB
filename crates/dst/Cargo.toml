@@ -4,19 +4,36 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+default = ["engine-target"]
+engine-target = [
+    "dep:clap",
+    "dep:spacetimedb-commitlog",
+    "dep:spacetimedb-datastore",
+    "dep:spacetimedb-durability",
+    "dep:spacetimedb-engine",
+    "dep:spacetimedb-lib",
+    "dep:spacetimedb-primitives",
+    "dep:spacetimedb-runtime",
+    "dep:spacetimedb-sats",
+    "dep:spacetimedb-schema",
+    "dep:spacetimedb-table",
+]
+
 [dependencies]
 anyhow.workspace = true
-clap.workspace = true
-spacetimedb-datastore = { path = "../datastore", default-features = false, features = ["simulation"] }
-spacetimedb-commitlog.workspace = true
-spacetimedb-durability = { path = "../durability", default-features = false, features = ["simulation"] }
-spacetimedb-engine = { path = "../engine", default-features = false, features = ["simulation"] }
-spacetimedb-lib.workspace = true
-spacetimedb-primitives.workspace = true
-spacetimedb-runtime = { path = "../runtime/", default-features = false, features = ["simulation"] }
-spacetimedb-sats.workspace = true
-spacetimedb-schema.workspace = true
-spacetimedb-table = { path = "../table", default-features = false }
+async-trait.workspace = true
+clap = { workspace = true, optional = true }
+spacetimedb-datastore = { path = "../datastore", default-features = false, features = ["simulation"], optional = true }
+spacetimedb-commitlog = { workspace = true, optional = true }
+spacetimedb-durability = { path = "../durability", default-features = false, features = ["simulation"], optional = true }
+spacetimedb-engine = { path = "../engine", default-features = false, features = ["simulation"], optional = true }
+spacetimedb-lib = { workspace = true, optional = true }
+spacetimedb-primitives = { workspace = true, optional = true }
+spacetimedb-runtime = { path = "../runtime/", default-features = false, features = ["simulation"], optional = true }
+spacetimedb-sats = { workspace = true, optional = true }
+spacetimedb-schema = { workspace = true, optional = true }
+spacetimedb-table = { path = "../table", default-features = false, optional = true }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
