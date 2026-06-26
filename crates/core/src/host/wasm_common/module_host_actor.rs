@@ -49,7 +49,7 @@ use spacetimedb_lib::{bsatn, http as st_http, ConnectionId, Hash, ProductType, R
 use spacetimedb_primitives::{HttpHandlerId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, Deserialize, ProductValue, Typespace, WithTypespace};
-use spacetimedb_schema::auto_migrate::{MigrationPolicy, MigrationPolicyError};
+use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use spacetimedb_schema::def::deserialize::FunctionDef;
 use spacetimedb_schema::def::{ModuleDef, ViewDef};
 use spacetimedb_schema::identifier::Identifier;
@@ -651,7 +651,7 @@ impl InstanceCommon {
         let system_logger = replica_ctx.logger.system_logger();
         let stdb = &replica_ctx.relational_db();
 
-        let plan = match policy.try_migrate(
+        let plan: MigratePlan = match policy.try_migrate(
             self.info.database_identity,
             old_module_info.module_hash,
             &old_module_info.module_def,
@@ -659,10 +659,12 @@ impl InstanceCommon {
             &self.info.module_def,
         ) {
             Ok(plan) => plan,
-            Err(MigrationPolicyError::AutoMigrateFailure(e)) => {
-                return Ok(UpdateDatabaseResult::AutoMigrateError(e.into()));
+            Err(e) => {
+                return match e {
+                    MigrationPolicyError::AutoMigrateFailure(e) => Ok(UpdateDatabaseResult::AutoMigrateError(e.into())),
+                    _ => Ok(UpdateDatabaseResult::ErrorExecutingMigration(e.into())),
+                }
             }
-            Err(e) => return Ok(UpdateDatabaseResult::ErrorExecutingMigration(e.into())),
         };
 
         let program_hash = program.hash;
