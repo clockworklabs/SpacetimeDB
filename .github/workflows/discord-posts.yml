@@ -29,12 +29,30 @@ jobs:
           script: |
             const { owner, repo } = context.repo;
             const sha = context.sha;
-            const prs = await github.paginate(github.rest.repos.listPullRequestsAssociatedWithCommit, {
-              owner,
-              repo,
-              commit_sha: sha,
-            });
-            core.info(`API response contained ${prs.length} associated PR(s).`);
+
+            async function findAssociatedPRs() {
+              // It seems that when we do this too promptly after a PR merge then the data isn't there, so we have a retry loop.
+              for (let attempt = 1; attempt <= 3; attempt++) {
+                core.info('Looking for associated PRs..');
+                const prs = await github.paginate(github.rest.repos.listPullRequestsAssociatedWithCommit, {
+                  owner,
+                  repo,
+                  commit_sha: sha,
+                });
+
+                if (prs.length > 0) {
+                  return prs;
+                }
+
+                core.info('No associated PRs found. Will check again.');
+                await new Promise((resolve) => setTimeout(resolve, 30000));
+              }
+
+              return [];
+            }
+
+            const prs = await findAssociatedPRs();
+            core.info(`Associated PR info found:`);
             core.info(JSON.stringify(prs, null, 2));
 
             if (prs.length === 0) {
