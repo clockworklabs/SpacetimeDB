@@ -134,10 +134,11 @@ unsafe extern "C" fn pthread_attr_init(attr: *mut libc::pthread_attr_t) -> libc:
 
 // Randomness syscall hooks.
 
-// Hook OS randomness by interposing `getrandom`.
+// Hook OS randomness by interposing the platform randomness entry point.
 //
 // This crate no longer tries to make host randomness deterministic. Any such
 // request is surfaced with a warning and then delegated to the host OS.
+#[cfg(target_os = "linux")]
 #[unsafe(no_mangle)]
 #[inline(never)]
 unsafe extern "C" fn getrandom(buf: *mut u8, buflen: usize, flags: u32) -> isize {
@@ -159,16 +160,12 @@ fn real_getrandom() -> unsafe extern "C" fn(*mut u8, usize, u32) -> isize {
     })
 }
 
-#[cfg(not(target_os = "linux"))]
-fn real_getrandom() -> unsafe extern "C" fn(*mut u8, usize, u32) -> isize {
-    compile_error!("unsupported OS for DST getrandom override");
-}
-
 // Hook `getentropy` and route it through the same deterministic path as
 // `getrandom`.
 //
 // The 256-byte limit is part of the getentropy contract. Keeping this wrapper
 // small means all entropy decisions stay centralized in `getrandom`.
+#[cfg(target_os = "linux")]
 #[unsafe(no_mangle)]
 #[inline(never)]
 unsafe extern "C" fn getentropy(buf: *mut u8, buflen: usize) -> i32 {
@@ -179,6 +176,29 @@ unsafe extern "C" fn getentropy(buf: *mut u8, buflen: usize) -> i32 {
         -1 => -1,
         _ => 0,
     }
+}
+
+// macOS does not expose Linux's `getrandom`, so interpose `getentropy` directly.
+#[cfg(target_os = "macos")]
+#[unsafe(no_mangle)]
+#[inline(never)]
+unsafe extern "C" fn getentropy(buf: *mut u8, buflen: usize) -> i32 {
+    if in_simulation() {
+        eprintln!("warning: randomness requested; delegating to host OS");
+        eprintln!("{}", std::backtrace::Backtrace::force_capture());
+    }
+    unsafe { real_getentropy()(buf, buflen) }
+}
+
+#[cfg(target_os = "macos")]
+fn real_getentropy() -> unsafe extern "C" fn(*mut u8, usize) -> i32 {
+    type GetentropyFn = unsafe extern "C" fn(*mut u8, usize) -> i32;
+    static GETENTROPY: OnceLock<GetentropyFn> = OnceLock::new();
+    *GETENTROPY.get_or_init(|| unsafe {
+        let ptr = libc::dlsym(libc::RTLD_NEXT, c"getentropy".as_ptr().cast());
+        assert!(!ptr.is_null(), "failed to resolve original getentropy");
+        std::mem::transmute(ptr)
+    })
 }
 
 #[cfg(test)]
