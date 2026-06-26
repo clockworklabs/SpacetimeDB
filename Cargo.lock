@@ -8804,6 +8804,7 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "cargo_metadata",
+ "fs_extra",
  "predicates",
  "regex",
  "reqwest",
