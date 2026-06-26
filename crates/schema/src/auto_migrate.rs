@@ -131,14 +131,25 @@ impl MigrationPolicy {
         new_module_def: &'def ModuleDef,
     ) -> anyhow::Result<MigratePlan<'def>, MigrationPolicyError> {
         let plan = ponder_migrate(old_module_def, new_module_def).map_err(MigrationPolicyError::AutoMigrateFailure)?;
+        self.permits_migrate_plan(database_identity, old_module_hash, new_module_hash, &plan)?;
+        Ok(plan)
+    }
 
+    /// Validate an already-generated migration plan under this policy.
+    pub fn permits_migrate_plan(
+        &self,
+        database_identity: Identity,
+        old_module_hash: spacetimedb_lib::Hash,
+        new_module_hash: spacetimedb_lib::Hash,
+        plan: &MigratePlan<'_>,
+    ) -> anyhow::Result<(), MigrationPolicyError> {
         let token = MigrationToken {
             database_identity,
             old_module_hash,
             new_module_hash,
         };
-        self.permits_plan(&plan, &token)?;
-        Ok(plan)
+        self.permits_plan(plan, &token)?;
+        Ok(())
     }
 }
 

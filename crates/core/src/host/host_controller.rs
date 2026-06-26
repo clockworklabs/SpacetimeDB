@@ -36,7 +36,7 @@ use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::system_tables::ModuleKind;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_durability::{self as durability};
-use spacetimedb_lib::{AlgebraicValue, Identity, Timestamp};
+use spacetimedb_lib::{identity::AuthCtx, AlgebraicValue, Identity, Timestamp};
 use spacetimedb_paths::server::{ModuleLogsDir, ServerDataDir};
 use spacetimedb_runtime::AbortHandle;
 use spacetimedb_sats::hash::Hash;
@@ -808,6 +808,31 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
     }
 }
 
+fn repair_stale_view_backing_tables_on_launch(launched: &LaunchedModule) -> anyhow::Result<()> {
+    let info = launched.module_host.info();
+    let stdb = info.relational_db().clone();
+    let Some(plan) = db::update::stale_view_backing_table_recreate_plan(stdb.as_ref(), &info.module_def)? else {
+        return Ok(());
+    };
+
+    info!(
+        "repairing stale view backing tables during module launch: {}",
+        info.database_identity
+    );
+    let system_logger = launched.replica_ctx.logger.system_logger();
+    system_logger.info("Repairing stale view backing tables");
+
+    let auth_ctx = AuthCtx::for_current(info.owner_identity);
+    stdb.with_auto_commit(Workload::Internal, |tx| -> anyhow::Result<()> {
+        match db::update::update_database(stdb.as_ref(), tx, auth_ctx, plan, system_logger)? {
+            db::update::UpdateResult::Success | db::update::UpdateResult::RequiresClientDisconnect => Ok(()),
+            db::update::UpdateResult::EvaluateSubscribedViews => {
+                bail!("startup view backing table repair unexpectedly requested view evaluation")
+            }
+        }
+    })
+}
+
 /// Update a module.
 ///
 /// If the `db` is not initialized yet (i.e. its program hash is `None`),
@@ -1059,6 +1084,7 @@ impl Host {
                 Result::from(call_result)?;
             }
         } else {
+            repair_stale_view_backing_tables_on_launch(&launched)?;
             drop(program)
         }
 
