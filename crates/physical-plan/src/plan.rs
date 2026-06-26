@@ -6,9 +6,7 @@ use spacetimedb_expr::{
     expr::{AggType, CollectViews},
     StatementSource,
 };
-use spacetimedb_lib::{
-    empty_view_arg_hash_value, query::Delta, sats::size_of::SizeOf, AlgebraicType, AlgebraicValue, ProductValue,
-};
+use spacetimedb_lib::{query::Delta, sats::size_of::SizeOf, AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{ColId, ColOrCols, ColSet, IndexId, TableId, ViewId};
 use spacetimedb_schema::schema::{IndexSchema, TableSchema, VIEW_ARG_HASH_COL};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
@@ -42,7 +40,50 @@ pub trait ParamResolver {
 pub struct ParamSlot(pub u16);
 
 pub const PARAM_SENDER: ParamSlot = ParamSlot(0);
-pub const PARAM_VIEW_ARG_HASH: ParamSlot = ParamSlot(1);
+pub const PARAM_FIRST_VIEW_ARG_HASH: ParamSlot = ParamSlot(1);
+
+impl ParamSlot {
+    pub fn view_arg_hash(label: Label, source: ViewArgHashSource) -> Self {
+        let label = u16::try_from(label.0).expect("too many relvars for physical plan parameters");
+        let label = label.checked_mul(2).expect("too many relvars for physical plan parameters");
+        let source_offset: u16 = match source {
+            ViewArgHashSource::Empty => 0,
+            ViewArgHashSource::Sender => 1,
+        };
+        Self(
+            PARAM_FIRST_VIEW_ARG_HASH
+                .0
+                .checked_add(label)
+                .and_then(|slot| slot.checked_add(source_offset))
+                .expect("too many relvars for physical plan parameters"),
+        )
+    }
+
+    pub fn view_arg_hash_source(self) -> Option<ViewArgHashSource> {
+        let source_offset = self.0.checked_sub(PARAM_FIRST_VIEW_ARG_HASH.0)? % 2;
+        match source_offset {
+            0 => Some(ViewArgHashSource::Empty),
+            1 => Some(ViewArgHashSource::Sender),
+            _ => unreachable!("modulo 2 only yields 0 or 1"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ViewArgHashSource {
+    Empty,
+    Sender,
+}
+
+impl ViewArgHashSource {
+    fn from_schema(schema: &TableSchema) -> Self {
+        if schema.is_anonymous_view() {
+            Self::Empty
+        } else {
+            Self::Sender
+        }
+    }
+}
 
 /// Physical plans always terminate with a projection.
 /// This type of projection returns row ids.
@@ -553,9 +594,10 @@ impl PhysicalPlan {
     /// If a view has private arguments, its backing table has an `arg_hash` column.
     /// This column tracks which rows belong to which argument tuple.
     ///
-    /// As a result, queries over such views cannot read the entire backing table.
-    /// They must only select the rows corresponding to the caller of the query.
-    /// Hence we must add an implicit selection over these types of views.
+    /// As a result, queries over views cannot read the entire backing table.
+    /// They must only select the rows corresponding to the view arguments used
+    /// by each view reference. Hence we must add an implicit selection over
+    /// these types of views.
     ///
     /// Ex.
     /// ```sql
@@ -569,11 +611,8 @@ impl PhysicalPlan {
     fn expand_views(self) -> Self {
         match self {
             Self::TableScan(scan, label) if scan.schema.is_view() => {
-                let arg_hash = if scan.schema.is_anonymous_view() {
-                    PhysicalExpr::Value(empty_view_arg_hash_value())
-                } else {
-                    PhysicalExpr::Param(PARAM_VIEW_ARG_HASH, AlgebraicType::U256)
-                };
+                let source = ViewArgHashSource::from_schema(&scan.schema);
+                let arg_hash = PhysicalExpr::Param(ParamSlot::view_arg_hash(label, source), AlgebraicType::U256);
                 Self::Filter(
                     Box::new(Self::TableScan(scan, label)),
                     PhysicalExpr::BinOp(
