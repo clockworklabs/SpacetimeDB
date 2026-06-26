@@ -34,12 +34,17 @@ jobs:
               repo,
               commit_sha: sha,
             });
+            core.info(`API response contained ${prs.length} associated PR(s).`);
+            core.info(JSON.stringify(prs, null, 2));
 
             if (prs.length === 0) {
+              core.info('No associated PRs found. Treating this push as a direct/non-PR push.');
               core.setOutput('is_pr_merge', 'false');
+              core.info('Output is_pr_merge=false');
               return;
             }
             if (prs.length > 1) {
+              core.info('Multiple associated PRs found. Failing because downstream notification expects exactly one PR.');
               core.setFailed(`Expected exactly one PR associated with ${sha}, found ${prs.length}.`);
               return;
             }
