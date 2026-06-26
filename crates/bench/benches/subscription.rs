@@ -113,10 +113,16 @@ fn eval(c: &mut Criterion) {
             let auth = AuthCtx::for_testing();
             let schema_viewer = &SchemaViewer::new(&tx, &auth);
             let (plans, table_id, table_name, _) = compile_subscription(sql, schema_viewer, &auth).unwrap();
-            let params = ExecutionParams::from_auth(&auth);
             let plans = plans
                 .into_iter()
                 .map(|plan| plan.optimize().unwrap())
+                .collect::<Vec<_>>();
+            let params = ExecutionParams::from_auth_and_view_arg_hash_params(
+                &auth,
+                plans.iter().flat_map(|plan| plan.view_arg_hash_params()),
+            );
+            let plans = plans
+                .into_iter()
                 .map(PipelinedProject::from)
                 .collect::<Vec<_>>();
             let tx = DeltaTx::from(&tx);

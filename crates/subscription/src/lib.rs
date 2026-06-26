@@ -7,7 +7,7 @@ use spacetimedb_execution::{
 use spacetimedb_expr::{check::SchemaView, expr::CollectViews};
 use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, query::Delta, AlgebraicValue};
 use spacetimedb_physical_plan::plan::{
-    IxScan, Label, ParamResolver, PhysicalExpr, PhysicalPlan, ProjectPlan, TableScan,
+    IxScan, Label, ParamResolver, PhysicalExpr, PhysicalPlan, ProjectPlan, TableScan, ViewArgHashParam,
 };
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId, ViewId};
 use spacetimedb_query::compile_subscription;
@@ -397,6 +397,8 @@ struct SubscriptionMetadata {
     join_edge: Option<(JoinEdge, AlgebraicValue)>,
     /// Scan classification used for runtime metrics.
     scan_metrics: SubscriptionPlanMetrics,
+    /// Runtime view arg hash slots used by this plan.
+    view_arg_hash_params: Vec<ViewArgHashParam>,
 }
 
 /// A subscription defines a view over a table
@@ -486,6 +488,10 @@ impl SubscriptionPlan {
 
     pub fn params(&self) -> &ExecutionParams {
         &self.params
+    }
+
+    pub fn view_arg_hash_params(&self) -> impl Iterator<Item = ViewArgHashParam> + '_ {
+        self.metadata.view_arg_hash_params.iter().copied()
     }
 
     /// The table or view returned by this plan, if it returns whole rows.
@@ -640,10 +646,12 @@ impl SubscriptionPlan {
 
         let mut subscriptions = vec![];
         let mut physical_plans = vec![];
-        let params = ExecutionParams::from_auth(auth);
 
         for plan in plans {
             let plan_opt = plan.clone().optimize()?;
+            let view_arg_hash_params = plan_opt.view_arg_hash_params();
+            let params =
+                ExecutionParams::from_auth_and_view_arg_hash_params(auth, view_arg_hash_params.iter().copied());
 
             if has_non_index_join(&plan_opt) {
                 bail!("Subscriptions require indexes on join columns")
@@ -670,6 +678,7 @@ impl SubscriptionPlan {
                 search_args: plan_opt.physical_plan().search_args(&params),
                 join_edge: Self::join_edge_for_plan(&plan_opt, return_id, is_join, &params),
                 scan_metrics: SubscriptionPlanMetrics::from_physical_plan(plan_opt.physical_plan()),
+                view_arg_hash_params,
             };
 
             physical_plans.push(plan_opt.clone());

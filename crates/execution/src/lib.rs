@@ -5,55 +5,96 @@ use spacetimedb_lib::{
     hash_empty_view_args, hash_sender_view_args, identity::AuthCtx, query::Delta, AlgebraicType, Identity,
 };
 use spacetimedb_physical_plan::plan::{
-    ParamResolver, ParamSlot, ProjectField, TupleField, ViewArgHashSource, PARAM_SENDER,
+    ParamResolver, ParamSlot, ProjectField, TupleField, ViewArgHashParam, ViewArgHashSource, PARAM_SENDER,
 };
 use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::bsatn::{BufReservedFill, EncodeError, ToBsatn};
 use spacetimedb_sats::buffer::BufWriter;
 use spacetimedb_sats::product_value::InvalidFieldError;
-use spacetimedb_sats::{impl_serialize, u256, AlgebraicValue, ProductValue};
+use spacetimedb_sats::{impl_serialize, AlgebraicValue, ProductValue};
 use spacetimedb_table::{static_assert_size, table::RowRef};
 
 pub mod dml;
 pub mod pipelined;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ParamBinding {
+    Value(AlgebraicValue),
+    Sender(Identity),
+}
+
+impl ParamBinding {
+    fn resolve(&self, ty: &AlgebraicType) -> AlgebraicValue {
+        match self {
+            Self::Value(value) => value.clone(),
+            Self::Sender(sender) if ty.is_identity() => (*sender).into(),
+            Self::Sender(sender) if ty.is_bytes() => AlgebraicValue::Bytes(sender.to_be_byte_array().into()),
+            Self::Sender(_) => panic!("unsupported type for :sender: {ty:?}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct ExecutionParams {
-    sender: Identity,
-    empty_view_arg_hash: u256,
-    sender_view_arg_hash: u256,
+    values: Vec<Option<ParamBinding>>,
 }
 
 impl ExecutionParams {
-    pub fn from_sender(sender: Identity) -> Self {
-        Self {
-            sender,
-            empty_view_arg_hash: hash_empty_view_args().to_u256(),
-            sender_view_arg_hash: hash_sender_view_args(sender).to_u256(),
-        }
+    fn from_sender(sender: Identity) -> Self {
+        let mut params = Self::default();
+        params.bind(PARAM_SENDER, ParamBinding::Sender(sender));
+        params
     }
 
-    pub fn from_auth(auth: &AuthCtx) -> Self {
-        Self::from_sender(auth.caller())
+    pub fn from_sender_and_view_arg_hash_params(
+        sender: Identity,
+        params: impl IntoIterator<Item = ViewArgHashParam>,
+    ) -> Self {
+        let empty_arg_hash = AlgebraicValue::U256(hash_empty_view_args().to_u256().into());
+        let sender_arg_hash = AlgebraicValue::U256(hash_sender_view_args(sender).to_u256().into());
+        let mut values = Self::from_sender(sender);
+
+        for ViewArgHashParam { slot, source } in params {
+            let hash = match source {
+                ViewArgHashSource::Empty => empty_arg_hash.clone(),
+                ViewArgHashSource::Sender => sender_arg_hash.clone(),
+            };
+            values.bind(slot, ParamBinding::Value(hash));
+        }
+
+        values
+    }
+
+    pub fn from_auth_and_view_arg_hash_params(
+        auth: &AuthCtx,
+        params: impl IntoIterator<Item = ViewArgHashParam>,
+    ) -> Self {
+        Self::from_sender_and_view_arg_hash_params(auth.caller(), params)
+    }
+
+    fn bind(&mut self, slot: ParamSlot, binding: ParamBinding) {
+        let index = usize::from(slot.0);
+        if self.values.len() <= index {
+            self.values.resize(index + 1, None);
+        }
+
+        match &self.values[index] {
+            Some(existing) if existing != &binding => {
+                panic!("conflicting binding for physical plan parameter slot {}", slot.0)
+            }
+            Some(_) => {}
+            None => self.values[index] = Some(binding),
+        }
     }
 }
 
 impl ParamResolver for ExecutionParams {
     fn resolve_param(&self, param: ParamSlot, ty: &AlgebraicType) -> AlgebraicValue {
-        match param {
-            PARAM_SENDER if ty.is_identity() => self.sender.into(),
-            PARAM_SENDER if ty.is_bytes() => AlgebraicValue::Bytes(self.sender.to_be_byte_array().into()),
-            PARAM_SENDER => panic!("unsupported type for :sender: {ty:?}"),
-            slot if slot.view_arg_hash_source().is_some() && matches!(ty, AlgebraicType::U256) => {
-                let hash = match slot.view_arg_hash_source().expect("checked above") {
-                    ViewArgHashSource::Empty => self.empty_view_arg_hash,
-                    ViewArgHashSource::Sender => self.sender_view_arg_hash,
-                };
-                AlgebraicValue::U256(hash.into())
-            }
-            slot if slot.view_arg_hash_source().is_some() => panic!("unsupported type for view arg hash: {ty:?}"),
-            ParamSlot(slot) => panic!("unknown physical plan parameter slot: {slot}"),
-        }
+        self.values
+            .get(usize::from(param.0))
+            .and_then(|value| value.as_ref())
+            .unwrap_or_else(|| panic!("unknown physical plan parameter slot: {}", param.0))
+            .resolve(ty)
     }
 }
 

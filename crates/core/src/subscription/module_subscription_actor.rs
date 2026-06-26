@@ -467,7 +467,10 @@ impl ModuleSubscriptions {
             .unwrap_or_default();
 
         let tx = DeltaTx::from(tx);
-        let params = ExecutionParams::from_sender(sender.id.identity);
+        let params = ExecutionParams::from_sender_and_view_arg_hash_params(
+            sender.id.identity,
+            plan_fragments.iter().flat_map(|plan| plan.view_arg_hash_params()),
+        );
 
         // TODO: See the comment on `collect_table_update_for_view`.
         // The following view and non-view branches should be merged together,

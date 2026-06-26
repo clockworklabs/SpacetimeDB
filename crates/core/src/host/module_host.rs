@@ -3283,6 +3283,10 @@ impl ModuleHost {
         let num_private_cols = return_table()
             .map(|schema| schema.num_private_cols())
             .unwrap_or_default();
+        let params = ExecutionParams::from_auth_and_view_arg_hash_params(
+            auth,
+            optimized.iter().flat_map(|plan| plan.view_arg_hash_params()),
+        );
 
         let optimized = optimized
             .into_iter()
@@ -3292,7 +3296,6 @@ impl ModuleHost {
 
         let table_name = table_name.into();
         let delta_tx = DeltaTx::from(tx);
-        let params = ExecutionParams::from_auth(auth);
         let plan_fragments = optimized.iter();
         let (rows, _, metrics) = if returns_view_table {
             execute_plan_for_view::<F>(plan_fragments, num_cols, num_private_cols, &delta_tx, &params, rlb_pool)

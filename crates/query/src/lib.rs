@@ -78,8 +78,8 @@ pub fn execute_select_stmt<Tx: Datastore + DeltaStore>(
 ) -> Result<Vec<ProductValue>> {
     let plan = compile_select_list(stmt).optimize()?;
     let plan = check_row_limit(plan)?;
+    let params = ExecutionParams::from_auth_and_view_arg_hash_params(auth, plan.view_arg_hash_params());
     let plan = ProjectListExecutor::from(plan);
-    let params = ExecutionParams::from_auth(auth);
     let mut rows = vec![];
     plan.execute(tx, &params, metrics, &mut |row| {
         rows.push(row);
@@ -96,6 +96,7 @@ pub fn execute_dml_stmt<Tx: MutDatastore>(
     metrics: &mut ExecutionMetrics,
 ) -> Result<()> {
     let plan = compile_dml_plan(stmt).optimize()?;
+    let params = ExecutionParams::from_auth_and_view_arg_hash_params(auth, plan.view_arg_hash_params());
     let plan = MutExecutor::from(plan);
-    plan.execute(tx, &ExecutionParams::from_auth(auth), metrics)
+    plan.execute(tx, &params, metrics)
 }

@@ -58,15 +58,6 @@ impl ParamSlot {
                 .expect("too many relvars for physical plan parameters"),
         )
     }
-
-    pub fn view_arg_hash_source(self) -> Option<ViewArgHashSource> {
-        let source_offset = self.0.checked_sub(PARAM_FIRST_VIEW_ARG_HASH.0)? % 2;
-        match source_offset {
-            0 => Some(ViewArgHashSource::Empty),
-            1 => Some(ViewArgHashSource::Sender),
-            _ => unreachable!("modulo 2 only yields 0 or 1"),
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -83,6 +74,12 @@ impl ViewArgHashSource {
             Self::Sender
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ViewArgHashParam {
+    pub slot: ParamSlot,
+    pub source: ViewArgHashSource,
 }
 
 /// Physical plans always terminate with a projection.
@@ -178,6 +175,10 @@ impl ProjectPlan {
         match self {
             Self::None(plan) | Self::Name(plan, ..) => plan.reads_from_view(anonymous),
         }
+    }
+
+    pub fn view_arg_hash_params(&self) -> Vec<ViewArgHashParam> {
+        self.physical_plan().view_arg_hash_params()
     }
 
     /// Does this plan use an event table as the lookup (rhs) table in a semi-join?
@@ -292,6 +293,12 @@ impl ProjectListPlan {
         }
     }
 
+    pub fn view_arg_hash_params(&self) -> Vec<ViewArgHashParam> {
+        self.plan_iter()
+            .flat_map(PhysicalPlan::view_arg_hash_params)
+            .collect()
+    }
+
     /// Does this plan use an event table as the lookup (rhs) table in a semi-join?
     pub fn reads_from_event_table(&self) -> bool {
         match self {
@@ -393,6 +400,27 @@ impl PhysicalPlan {
             ok = ok || f(plan);
         });
         ok
+    }
+
+    pub fn view_arg_hash_params(&self) -> Vec<ViewArgHashParam> {
+        fn push_param_for_schema(params: &mut Vec<ViewArgHashParam>, schema: &TableSchema, label: Label) {
+            if schema.is_view() {
+                let source = ViewArgHashSource::from_schema(schema);
+                params.push(ViewArgHashParam {
+                    slot: ParamSlot::view_arg_hash(label, source),
+                    source,
+                });
+            }
+        }
+
+        let mut params = Vec::new();
+        self.visit(&mut |plan| match plan {
+            Self::TableScan(scan, label) => push_param_for_schema(&mut params, &scan.schema, *label),
+            Self::IxScan(scan, label) => push_param_for_schema(&mut params, &scan.schema, *label),
+            Self::IxJoin(join, _) => push_param_for_schema(&mut params, &join.rhs, join.rhs_label),
+            _ => {}
+        });
+        params
     }
 
     /// Applies `f` recursively to all subplans

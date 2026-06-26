@@ -9,7 +9,10 @@ use spacetimedb_lib::{AlgebraicValue, ProductValue};
 use spacetimedb_primitives::ColId;
 use spacetimedb_schema::schema::TableOrViewSchema;
 
-use crate::{compile::compile_select, plan::ProjectPlan};
+use crate::{
+    compile::compile_select,
+    plan::{ProjectPlan, ViewArgHashParam},
+};
 
 /// A plan for mutating a table in the database
 pub enum MutationPlan {
@@ -25,6 +28,14 @@ impl MutationPlan {
             Self::Insert(..) => Ok(self),
             Self::Delete(plan) => Ok(Self::Delete(plan.optimize()?)),
             Self::Update(plan) => Ok(Self::Update(plan.optimize()?)),
+        }
+    }
+
+    pub fn view_arg_hash_params(&self) -> Vec<ViewArgHashParam> {
+        match self {
+            Self::Insert(..) => Vec::new(),
+            Self::Delete(plan) => plan.filter.view_arg_hash_params(),
+            Self::Update(plan) => plan.filter.view_arg_hash_params(),
         }
     }
 }
