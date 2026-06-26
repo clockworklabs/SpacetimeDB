@@ -107,6 +107,7 @@ Size in bytes of the memory buffer holding commit data before flushing to storag
 [websocket]
 ping-interval = "15s"
 idle-timeout = "30s"
+pong-timeout = "15s"
 close-handshake-timeout = "250ms"
 incoming-queue-length = 2048
 ```
@@ -122,6 +123,12 @@ Values are strings of any format the [`humantime`] crate can parse.
 
 If the server hasn't received any data from the client (including `Pong` responses to previous `Ping`s it sent), it will consider the client unresponsive and close the connection.
 Should be greater than `websocket.ping-interval` to be effective.
+
+Values are strings of any format the [`humantime`] crate can parse.
+
+#### `websocket.pong-timeout`
+
+Time the server waits for a `Pong` response after sending a `Ping` frame. If the client doesn't respond within this timeout, the server considers it unresponsive and closes the connection.
 
 Values are strings of any format the [`humantime`] crate can parse.
 

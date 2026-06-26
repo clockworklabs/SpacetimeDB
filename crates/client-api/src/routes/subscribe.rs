@@ -346,6 +346,10 @@ impl ActorState {
         self.got_pong.swap(false, Ordering::Relaxed)
     }
 
+    pub fn ponged(&self) -> bool {
+        self.got_pong.load(Ordering::Relaxed)
+    }
+
     pub fn next_idle_deadline(&self) -> Instant {
         Instant::now() + self.config.idle_timeout
     }
@@ -375,6 +379,12 @@ pub struct WebSocketOptions {
     #[serde(with = "humantime_duration")]
     #[serde(default = "WebSocketOptions::default_idle_timeout")]
     pub idle_timeout: Duration,
+    /// Amount of time a client has to respond to a server `Ping` frame.
+    ///
+    /// Default: 15s
+    #[serde(with = "humantime_duration")]
+    #[serde(default = "WebSocketOptions::default_pong_timeout")]
+    pub pong_timeout: Duration,
     /// For how long to keep draining the incoming messages until a client close
     /// is received.
     ///
@@ -400,12 +410,14 @@ impl Default for WebSocketOptions {
 impl WebSocketOptions {
     const DEFAULT_PING_INTERVAL: Duration = Duration::from_secs(15);
     const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+    const DEFAULT_PONG_TIMEOUT: Duration = Duration::from_secs(15);
     const DEFAULT_CLOSE_HANDSHAKE_TIMEOUT: Duration = Duration::from_millis(250);
     const DEFAULT_INCOMING_QUEUE_LENGTH: NonZeroUsize = NonZeroUsize::new(16384).expect("16384 > 0, qed");
 
     const DEFAULT: Self = Self {
         ping_interval: Self::DEFAULT_PING_INTERVAL,
         idle_timeout: Self::DEFAULT_IDLE_TIMEOUT,
+        pong_timeout: Self::DEFAULT_PONG_TIMEOUT,
         close_handshake_timeout: Self::DEFAULT_CLOSE_HANDSHAKE_TIMEOUT,
         incoming_queue_length: Self::DEFAULT_INCOMING_QUEUE_LENGTH,
     };
@@ -416,6 +428,10 @@ impl WebSocketOptions {
 
     const fn default_idle_timeout() -> Duration {
         Self::DEFAULT_IDLE_TIMEOUT
+    }
+
+    const fn default_pong_timeout() -> Duration {
+        Self::DEFAULT_PONG_TIMEOUT
     }
 
     const fn default_close_handshake_timeout() -> Duration {
@@ -456,14 +472,13 @@ async fn ws_client_actor_inner(
 
     // Channel for [`UnorderedWsMessage`]s.
     let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
+    let (ping_sent_tx, ping_sent_rx) = watch::channel(None);
 
     // Split websocket into send and receive halves.
     let (ws_send, ws_recv) = ws.split();
 
     // Set up the idle timer.
     let (idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
-    let idle_timer = ws_idle_timer(idle_rx);
-
     let bsatn_rlb_pool = client.module().subscriptions().bsatn_rlb_pool.clone();
 
     // Spawn a task to send outgoing messages
@@ -474,6 +489,7 @@ async fn ws_client_actor_inner(
         ws_send,
         sendrx,
         unordered_rx,
+        ping_sent_tx,
         bsatn_rlb_pool,
     ));
     // Spawn a task to handle incoming messages.
@@ -500,9 +516,17 @@ async fn ws_client_actor_inner(
         }
     };
 
-    ws_main_loop(state, hotswap, idle_timer, send_task, recv_task, move |msg| {
-        let _ = unordered_tx.send(msg);
-    })
+    ws_main_loop(
+        state,
+        hotswap,
+        idle_rx,
+        ping_sent_rx,
+        send_task,
+        recv_task,
+        move |msg| {
+            let _ = unordered_tx.send(msg);
+        },
+    )
     .await;
     log::info!("Client connection ended: {client_id}");
 }
@@ -572,8 +596,9 @@ async fn ws_client_actor_inner(
 ///   must be disconnected.
 ///
 /// * **idle_timer**:
-///   Abstraction for [`ws_idle_timer`]: if and when the future completes, the
-///   connection is considered unresponsive, and the connection is closed.
+///   The receive side of the activity channel used to drive the idle timer. If
+///   the idle timer completes and no server ping is awaiting a pong, the
+///   connection is considered unresponsive and is closed.
 ///
 ///   The idle timer should be reset whenever data is received from the websocket.
 ///
@@ -613,7 +638,8 @@ async fn ws_client_actor_inner(
 async fn ws_main_loop<HotswapWatcher>(
     state: Arc<ActorState>,
     hotswap: impl Fn() -> HotswapWatcher,
-    idle_timer: impl Future<Output = ()>,
+    mut idle_rx: watch::Receiver<Instant>,
+    mut ping_sent_rx: watch::Receiver<Option<Instant>>,
     mut send_task: JoinHandle<()>,
     mut recv_task: JoinHandle<()>,
     unordered_tx: impl Fn(UnorderedWsMessage),
@@ -629,16 +655,39 @@ async fn ws_main_loop<HotswapWatcher>(
     };
     // Set up the ping interval.
     let mut ping_interval = tokio::time::interval(state.config.ping_interval);
+    // Set up the idle and pong timeout timers.
+    let mut idle_deadline = *idle_rx.borrow();
+    let idle_timer = sleep_until(idle_deadline);
+    let pong_timer = sleep_until(Instant::now() + state.config.pong_timeout);
+    let mut pong_timer_armed = false;
     // Arm the first hotswap watcher.
     let watch_hotswap = hotswap();
 
     pin_mut!(watch_hotswap);
     pin_mut!(idle_timer);
+    pin_mut!(pong_timer);
 
     loop {
         let closed = state.closed();
 
         tokio::select! {
+            biased;
+
+            Ok(()) = idle_rx.changed() => {
+                let new_deadline = *idle_rx.borrow_and_update();
+                if new_deadline != idle_deadline {
+                    idle_deadline = new_deadline;
+                    idle_timer.as_mut().reset(idle_deadline);
+                }
+            },
+
+            Ok(()) = ping_sent_rx.changed() => {
+                if let Some(sent_at) = *ping_sent_rx.borrow_and_update() {
+                    pong_timer_armed = true;
+                    pong_timer.as_mut().reset(sent_at + state.config.pong_timeout);
+                }
+            },
+
             // Drive send and receive tasks to completion,
             // propagating panics.
             //
@@ -666,27 +715,6 @@ async fn ws_main_loop<HotswapWatcher>(
                 break;
             },
 
-            // Exit if we haven't heard from the client for too long.
-            _ = &mut idle_timer => {
-                log::warn!("Client {} timed out", state.client_id);
-                break;
-            },
-
-            // Update the client's module host if it was hotswapped,
-            // or close the session if the module exited.
-            //
-            // Branch is disabled if we already sent a close frame.
-            res = &mut watch_hotswap, if !closed => {
-                if let Err(NoSuchModule) = res {
-                    let close = CloseFrame {
-                        code: CloseCode::Away,
-                        reason: "module exited".into()
-                    };
-                    unordered_tx(close.into());
-                }
-                watch_hotswap.set(hotswap());
-            },
-
             // Send ping.
             //
             // If we didn't receive a response to the last ping,
@@ -703,7 +731,41 @@ async fn ws_main_loop<HotswapWatcher>(
                 if was_ponged {
                     unordered_tx(UnorderedWsMessage::Ping(Bytes::new()));
                 }
-            }
+            },
+
+            // Exit if we haven't heard from the client for too long.
+            //
+            // If a ping is outstanding, let the pong timer decide whether to
+            // disconnect. This guarantees that a ping which was actually sent
+            // gives the client a full `pong_timeout` window to respond, even if
+            // the actor was not polled until the idle timer had already expired.
+            _ = &mut idle_timer, if !closed && state.ponged() => {
+                log::warn!("Client {} timed out", state.client_id);
+                break;
+            },
+
+            _ = &mut pong_timer, if pong_timer_armed && !closed => {
+                pong_timer_armed = false;
+                if !state.ponged() {
+                    log::warn!("Client {} did not respond to ping", state.client_id);
+                    break;
+                }
+            },
+
+            // Update the client's module host if it was hotswapped,
+            // or close the session if the module exited.
+            //
+            // Branch is disabled if we already sent a close frame.
+            res = &mut watch_hotswap, if !closed => {
+                if let Err(NoSuchModule) = res {
+                    let close = CloseFrame {
+                        code: CloseCode::Away,
+                        reason: "module exited".into()
+                    };
+                    unordered_tx(close.into());
+                }
+                watch_hotswap.set(hotswap());
+            },
         }
     }
 }
@@ -715,6 +777,7 @@ async fn ws_main_loop<HotswapWatcher>(
 /// the sleep is reset to the new deadline.
 ///
 /// The `activity` should be updated whenever a new message is received.
+#[cfg(test)]
 async fn ws_idle_timer(mut activity: watch::Receiver<Instant>) {
     let mut deadline = *activity.borrow();
     let sleep = sleep_until(deadline);
@@ -1115,12 +1178,18 @@ async fn ws_send_loop(
     ws: impl Sink<WsMessage, Error: Display> + Unpin,
     messages: impl Receiver<OutboundMessage>,
     unordered: mpsc::UnboundedReceiver<UnorderedWsMessage>,
+    ping_sent_tx: watch::Sender<Option<Instant>>,
     bsatn_rlb_pool: BsatnRowListBuilderPool,
 ) {
     let metrics = SendMetrics::new(state.database);
-    ws_send_loop_inner(state, ws, messages, unordered, move |encode_rx, frames_tx| {
-        ws_encode_task(metrics, config, encode_rx, frames_tx, bsatn_rlb_pool)
-    })
+    ws_send_loop_inner(
+        state,
+        ws,
+        messages,
+        unordered,
+        ping_sent_tx,
+        move |encode_rx, frames_tx| ws_encode_task(metrics, config, encode_rx, frames_tx, bsatn_rlb_pool),
+    )
     .await
 }
 
@@ -1129,6 +1198,7 @@ async fn ws_send_loop_inner<T, U, Encoder>(
     mut ws: impl Sink<WsMessage, Error: Display> + Unpin,
     mut messages: impl Receiver<T>,
     mut unordered: mpsc::UnboundedReceiver<UnorderedWsMessage>,
+    ping_sent_tx: watch::Sender<Option<Instant>>,
     encoder: impl FnOnce(mpsc::UnboundedReceiver<U>, mpsc::UnboundedSender<Frame>) -> Encoder,
 ) where
     T: Into<U>,
@@ -1229,6 +1299,7 @@ async fn ws_send_loop_inner<T, U, Encoder>(
                             log::warn!("error sending ping: {e:#}");
                             break;
                         }
+                        ping_sent_tx.send(Some(Instant::now())).ok();
                     },
                     UnorderedWsMessage::Error(err) => {
                         log::trace!("encoding execution error");
@@ -2112,6 +2183,7 @@ mod tests {
         let state = Arc::new(dummy_actor_state());
         let (messages_tx, messages_rx) = mpsc::channel(64);
         let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
+        let (ping_sent_tx, _ping_sent_rx) = watch::channel(None);
 
         let send_loop = ws_send_loop(
             state,
@@ -2119,6 +2191,7 @@ mod tests {
             sink::drain(),
             messages_rx,
             unordered_rx,
+            ping_sent_tx,
             BsatnRowListBuilderPool::new(),
         );
         pin_mut!(send_loop);
@@ -2136,6 +2209,7 @@ mod tests {
         let state = Arc::new(dummy_actor_state());
         let (messages_tx, messages_rx) = mpsc::channel(64);
         let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
+        let (ping_sent_tx, _ping_sent_rx) = watch::channel(None);
 
         let send_loop = ws_send_loop(
             state.clone(),
@@ -2143,6 +2217,7 @@ mod tests {
             sink::drain(),
             messages_rx,
             unordered_rx,
+            ping_sent_tx,
             BsatnRowListBuilderPool::new(),
         );
         pin_mut!(send_loop);
@@ -2189,6 +2264,7 @@ mod tests {
             let state = Arc::new(dummy_actor_state());
             let (messages_tx, messages_rx) = mpsc::channel(64);
             let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
+            let (ping_sent_tx, _ping_sent_rx) = watch::channel(None);
 
             let send_loop = ws_send_loop(
                 state.clone(),
@@ -2196,6 +2272,7 @@ mod tests {
                 UnfeedableSink,
                 messages_rx,
                 unordered_rx,
+                ping_sent_tx,
                 BsatnRowListBuilderPool::new(),
             );
             pin_mut!(send_loop);
@@ -2238,6 +2315,7 @@ mod tests {
             let state = Arc::new(dummy_actor_state());
             let (messages_tx, messages_rx) = mpsc::channel(64);
             let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
+            let (ping_sent_tx, _ping_sent_rx) = watch::channel(None);
 
             let send_loop = ws_send_loop(
                 state.clone(),
@@ -2245,6 +2323,7 @@ mod tests {
                 UnflushableSink,
                 messages_rx,
                 unordered_rx,
+                ping_sent_tx,
                 BsatnRowListBuilderPool::new(),
             );
             pin_mut!(send_loop);
@@ -2260,19 +2339,25 @@ mod tests {
     #[tokio::test]
     async fn main_loop_terminates_if_either_send_or_recv_terminates() {
         let state = Arc::new(dummy_actor_state());
+        let (_idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
+        let (_ping_sent_tx, ping_sent_rx) = watch::channel(None);
         ws_main_loop(
             state.clone(),
             future::pending,
-            future::pending(),
+            idle_rx,
+            ping_sent_rx,
             tokio::spawn(sleep(Duration::from_millis(10))),
             tokio::spawn(future::pending()),
             drop,
         )
         .await;
+        let (_idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
+        let (_ping_sent_tx, ping_sent_rx) = watch::channel(None);
         ws_main_loop(
             state,
             future::pending,
-            future::pending(),
+            idle_rx,
+            ping_sent_rx,
             tokio::spawn(future::pending()),
             tokio::spawn(sleep(Duration::from_millis(10))),
             drop,
@@ -2281,12 +2366,19 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)] // see [NOTE: start_paused]
-    async fn main_loop_terminates_on_idle_timeout() {
+    async fn main_loop_terminates_on_pong_timeout() {
         let state = Arc::new(dummy_actor_state_with_config(WebSocketOptions {
             idle_timeout: Duration::from_millis(10),
+            pong_timeout: Duration::from_millis(15),
             ..<_>::default()
         }));
-        let (idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
+        let (_idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
+        let (ping_sent_tx, ping_sent_rx) = watch::channel(None);
+        let unordered_tx = move |m| {
+            if let UnorderedWsMessage::Ping(_) = m {
+                ping_sent_tx.send(Some(Instant::now())).ok();
+            }
+        };
 
         let start = Instant::now();
         let mut t = tokio::spawn({
@@ -2295,27 +2387,23 @@ mod tests {
                 ws_main_loop(
                     state,
                     future::pending,
-                    ws_idle_timer(idle_rx),
+                    idle_rx,
+                    ping_sent_rx,
                     tokio::spawn(future::pending()),
                     tokio::spawn(future::pending()),
-                    drop,
+                    unordered_tx,
                 )
                 .await
             }
         });
 
-        let loop_start = Instant::now();
-        for _ in 0..5 {
-            sleep(Duration::from_millis(5)).await;
-            idle_tx.send(state.next_idle_deadline()).unwrap();
-            assert!(is_pending(&mut t).await);
-        }
-        let timeout = loop_start.elapsed() + Duration::from_millis(10);
+        sleep(state.config.idle_timeout).await;
+        assert!(is_pending(&mut t).await);
 
         t.await.unwrap();
         let elapsed = start.elapsed();
-        assert!(elapsed >= timeout);
-        assert!(elapsed < timeout + Duration::from_millis(10));
+        assert!(elapsed >= state.config.pong_timeout);
+        assert!(elapsed < state.config.pong_timeout + Duration::from_millis(5));
     }
 
     #[tokio::test(start_paused = true)] // see [NOTE: start_paused]
@@ -2323,9 +2411,11 @@ mod tests {
         let state = Arc::new(dummy_actor_state_with_config(WebSocketOptions {
             ping_interval: Duration::from_millis(5),
             idle_timeout: Duration::from_millis(10),
+            pong_timeout: Duration::from_millis(10),
             ..<_>::default()
         }));
         let (idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
+        let (ping_sent_tx, ping_sent_rx) = watch::channel(None);
         // Pretend we received a pong immediately after sending a ping,
         // but only five times.
         let unordered_tx = {
@@ -2333,6 +2423,7 @@ mod tests {
             let pings = AtomicUsize::new(0);
             move |m| {
                 if let UnorderedWsMessage::Ping(_) = m {
+                    ping_sent_tx.send(Some(Instant::now())).ok();
                     let n = pings.fetch_add(1, Ordering::Relaxed);
                     if n < 5 {
                         state.set_ponged();
@@ -2349,7 +2440,8 @@ mod tests {
                 ws_main_loop(
                     state,
                     future::pending,
-                    ws_idle_timer(idle_rx),
+                    idle_rx,
+                    ping_sent_rx,
                     tokio::spawn(future::pending()),
                     tokio::spawn(future::pending()),
                     unordered_tx,
@@ -2359,7 +2451,7 @@ mod tests {
         });
 
         let expected_timeout = (5 * state.config.ping_interval) + state.config.idle_timeout;
-        let res = timeout(expected_timeout, t).await;
+        let res = timeout(expected_timeout + Duration::from_millis(5), t).await;
         let elapsed = start.elapsed();
 
         // It didn't time out.
@@ -2375,10 +2467,53 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)] // see [NOTE: start_paused]
+    async fn main_loop_waits_pong_timeout_after_ping_even_after_idle_timeout() {
+        let state = Arc::new(dummy_actor_state_with_config(WebSocketOptions {
+            ping_interval: Duration::from_millis(5),
+            idle_timeout: Duration::from_millis(10),
+            pong_timeout: Duration::from_millis(15),
+            ..<_>::default()
+        }));
+        let (_idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
+        let (ping_sent_tx, ping_sent_rx) = watch::channel(None);
+        let unordered_tx = move |m| {
+            if let UnorderedWsMessage::Ping(_) = m {
+                ping_sent_tx.send(Some(Instant::now())).ok();
+            }
+        };
+
+        let start = Instant::now();
+        let mut t = tokio::spawn({
+            let state = state.clone();
+            async move {
+                ws_main_loop(
+                    state,
+                    future::pending,
+                    idle_rx,
+                    ping_sent_rx,
+                    tokio::spawn(future::pending()),
+                    tokio::spawn(future::pending()),
+                    unordered_tx,
+                )
+                .await
+            }
+        });
+
+        sleep(state.config.idle_timeout).await;
+        assert!(is_pending(&mut t).await);
+
+        t.await.unwrap();
+        let elapsed = start.elapsed();
+        assert!(elapsed >= state.config.pong_timeout);
+        assert!(elapsed < state.config.pong_timeout + Duration::from_millis(5));
+    }
+
+    #[tokio::test(start_paused = true)] // see [NOTE: start_paused]
     async fn main_loop_terminates_when_module_exits() {
         let state = Arc::new(dummy_actor_state());
 
         let (_idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
+        let (_ping_sent_tx, ping_sent_rx) = watch::channel(None);
         let unordered_tx = {
             let state = state.clone();
             move |m| {
@@ -2398,7 +2533,8 @@ mod tests {
             ws_main_loop(
                 state.clone(),
                 hotswap,
-                ws_idle_timer(idle_rx),
+                idle_rx,
+                ping_sent_rx,
                 // Pretend we received a close immediately after sending one.
                 tokio::spawn(async move {
                     loop {
@@ -2499,9 +2635,10 @@ mod tests {
         const MESSAGE_SIZE: usize = 10 * 1024 * 1024;
         const FRAME_SIZE: usize = 4096;
         const NUM_CONTROL_FRAMES: usize = 2;
+        let (ping_sent_tx, _ping_sent_rx) = watch::channel(None);
 
         let send_loop = tokio::spawn(async move {
-            ws_send_loop_inner(state, &mut received, messages_rx, unordered_rx, encoder).await;
+            ws_send_loop_inner(state, &mut received, messages_rx, unordered_rx, ping_sent_tx, encoder).await;
             received
         });
         messages_tx.send(Bytes::from_static(&[1; MESSAGE_SIZE])).await.unwrap();
