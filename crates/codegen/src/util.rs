@@ -95,16 +95,7 @@ pub(super) fn is_type_filterable(typespace: &TypespaceForGenerate, ty: &Algebrai
         AlgebraicTypeUse::Ref(r) => typespace[r].is_plain_enum(),
 
         // Options of filterable types:
-        AlgebraicTypeUse::Option(inner) => {
-            print!("Considering whether Option<{inner:?}> is filterable... ");
-            let res = is_type_filterable(typespace, inner);
-            if res {
-                println!("It is!");
-            } else {
-                println!("It is not.");
-            }
-            res
-        }
+        AlgebraicTypeUse::Option(inner) => is_type_filterable(typespace, inner),
 
         _ => false,
     }
