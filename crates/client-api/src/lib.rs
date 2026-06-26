@@ -146,7 +146,7 @@ impl Host {
             .await
             .map_err(|_| (StatusCode::NOT_FOUND, "module not found".to_string()))?;
 
-        tracing::info!(sql = body);
+        tracing::debug!(sql = body);
         let mut header = vec![];
         let sql_start = std::time::Instant::now();
         let sql_span = tracing::trace_span!("execute_sql", total_duration = tracing::field::Empty,);
