@@ -240,6 +240,16 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
+            fn delete_option_some() {
+                make_test("delete-option-some").run();
+            }
+
+            #[test]
+            fn delete_option_none() {
+                make_test("delete-option-none").run();
+            }
+
+            #[test]
             fn insert_struct() {
                 make_test("insert-struct").run();
             }
