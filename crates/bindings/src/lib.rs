@@ -1591,7 +1591,13 @@ impl CtxDbWrite for ReducerContext {
     }
 }
 
-/// This trait allows you to be generic over all contexts that allow to retrieve the caller [Identity].
+/// Contexts which can retrieve the sender [`Identity`].
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from views, reducers, and transactions started by procedures and HTTP handlers.
+///
+/// When operating on a concrete-typed [`ViewContext`], [`ReducerContext`] or [`TxContext`], this trait is not necessary,
+/// as the context's inherent `sender` method provides the same access.
 pub trait CtxWithSender {
     fn sender(&self) -> Identity;
 }
