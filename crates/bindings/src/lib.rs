@@ -1533,9 +1533,13 @@ impl Local {
     }
 }
 
-/// This trait allows you to be generic over all contexts that allow you to read from the db.
-/// including views, reducers and even procedures and http handlers through [TxContext].
-/// Useful when trying to encapsulate logic in reusable parts.
+/// Contexts which provide read access to the database.
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from views, reducers, and transactions started by procedures and HTTP handlers.
+///
+/// When operating on a concrete-typed [`ViewContext`], [`ReducerContext`] or [`TxContext`],
+/// this trait is not necessary, as the context's `db` field provides the same (or greater, read-write) access.
 pub trait CtxDbRead {
     fn db_read_only(&self) -> &LocalReadOnly;
 }
