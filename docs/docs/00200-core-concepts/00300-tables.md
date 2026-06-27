@@ -320,7 +320,7 @@ Use idiomatic naming conventions for each language:
 | Language | Convention | Example Table | Example Accessor |
 |----------|------------|---------------|------------------|
 | **TypeScript** | snake_case | `'player_score'` | `ctx.db.playerScore` |
-| **C#** | PascalCase | `Name = "PlayerScore"` | `ctx.Db.PlayerScore` |
+| **C#** | PascalCase | `Accessor = "PlayerScore"` | `ctx.Db.PlayerScore` |
 | **Rust** | lower_snake_case | `name = player_score` | `ctx.db.player_score()` |
 | **C++** | lower_snake_case | `player_score` | `ctx.db[player_score]` |
 
@@ -403,7 +403,7 @@ import { table, t } from 'spacetimedb/server';
 
 // Define the shared column schema
 const playerColumns = {
-  identity: t.Identity.primaryKey(),
+  identity: t.identity().primaryKey(),
   playerId: t.i32().unique().autoInc(),
   name: t.string(),
 };

@@ -26,9 +26,19 @@ namespace SpacetimeDB.Types
 
             public readonly IdUniqueIndex Id;
 
+            public sealed class SenderIndex : BTreeIndexBase<SpacetimeDB.Identity>
+            {
+                protected override SpacetimeDB.Identity GetKey(ViewPkPlayer row) => row.Sender;
+
+                public SenderIndex(ViewPkPlayerHandle table) : base(table) { }
+            }
+
+            public readonly SenderIndex Sender;
+
             internal ViewPkPlayerHandle(DbConnection conn) : base(conn)
             {
                 Id = new(this);
+                Sender = new(this);
             }
 
             protected override object GetPrimaryKey(ViewPkPlayer row) => row.Id;
@@ -40,11 +50,13 @@ namespace SpacetimeDB.Types
     public sealed class ViewPkPlayerCols
     {
         public global::SpacetimeDB.Col<ViewPkPlayer, ulong> Id { get; }
+        public global::SpacetimeDB.Col<ViewPkPlayer, SpacetimeDB.Identity> Sender { get; }
         public global::SpacetimeDB.Col<ViewPkPlayer, string> Name { get; }
 
         public ViewPkPlayerCols(string tableName)
         {
             Id = new global::SpacetimeDB.Col<ViewPkPlayer, ulong>(tableName, "id");
+            Sender = new global::SpacetimeDB.Col<ViewPkPlayer, SpacetimeDB.Identity>(tableName, "sender");
             Name = new global::SpacetimeDB.Col<ViewPkPlayer, string>(tableName, "name");
         }
     }
@@ -52,10 +64,12 @@ namespace SpacetimeDB.Types
     public sealed class ViewPkPlayerIxCols
     {
         public global::SpacetimeDB.IxCol<ViewPkPlayer, ulong> Id { get; }
+        public global::SpacetimeDB.IxCol<ViewPkPlayer, SpacetimeDB.Identity> Sender { get; }
 
         public ViewPkPlayerIxCols(string tableName)
         {
             Id = new global::SpacetimeDB.IxCol<ViewPkPlayer, ulong>(tableName, "id");
+            Sender = new global::SpacetimeDB.IxCol<ViewPkPlayer, SpacetimeDB.Identity>(tableName, "sender");
         }
     }
 }

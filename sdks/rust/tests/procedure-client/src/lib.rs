@@ -8,9 +8,10 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[cfg(all(target_arch = "wasm32", feature = "browser"))]
 #[wasm_bindgen]
-pub async fn run(test_name: String, db_name: String) {
+pub async fn run(test_name: String, db_name: String, server_url: String) {
     console_error_panic_hook::set_once();
-    // The shared wasm test harness passes both the selected test name and the
-    // published database name. wasm clients cannot rely on the native env-var path.
+    // The shared wasm test harness passes test settings explicitly
+    // WASM clients cannot rely on the native env-var path.
+    test_counter::set_server_url(server_url);
     test_handlers::dispatch(&test_name, &db_name).await;
 }

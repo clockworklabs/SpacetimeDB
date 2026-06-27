@@ -1,0 +1,69 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+:root {
+  font-family: Inter, 'Segoe UI', Arial, sans-serif;
+  color: #16241e;
+  background: #f2efe7;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --ink: #16241e;
+  --soft-ink: #667368;
+  --surface: #fffdf7;
+  --outline: #dfd6c5;
+  --accent: #15784e;
+  --accent-dark: #0d5838;
+  --wrong: #b54832;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 0.55rem;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+  font-weight: 650;
+  padding: 0.65rem 1rem;
+}
+
+button:hover:not(:disabled) {
+  background: var(--accent-dark);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+input {
+  border: 1px solid var(--outline);
+  border-radius: 0.55rem;
+  padding: 0.65rem 0.75rem;
+}
+
+input:focus-visible,
+button:focus-visible {
+  outline: 3px solid #68ba92;
+  outline-offset: 2px;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}

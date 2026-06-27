@@ -13,7 +13,7 @@ use core::mem;
 use futures::TryFutureExt;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
-use spacetimedb_client_api_messages::energy::EnergyQuanta;
+use spacetimedb_client_api_messages::energy::FunctionBudget;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
@@ -793,7 +793,7 @@ impl InstanceEnv {
             request_id: None,
             timer: None,
             // The procedure will pick up the tab for the energy.
-            energy_quanta_used: EnergyQuanta { quanta: 0 },
+            execution_budget_used: FunctionBudget::ZERO,
             host_execution_duration: Duration::from_millis(0),
         };
         // Commit the tx and broadcast it.
@@ -1347,6 +1347,7 @@ mod test {
         host::Scheduler,
         messages::control_db::{Database, HostType},
         replica_context::ReplicaContext,
+        resource::ModuleInstanceMemoryTracker,
         subscription::module_subscription_actor::ModuleSubscriptions,
     };
     use anyhow::{anyhow, Result};
@@ -1380,6 +1381,7 @@ mod test {
                 replica_id: 0,
                 logger,
                 subscriptions: subs,
+                module_instance_memory_tracker: ModuleInstanceMemoryTracker::new(Identity::ZERO, Arc::new(())),
             },
             runtime,
         ))

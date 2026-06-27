@@ -211,7 +211,7 @@ export const register_document = spacetimedb.reducer({
   storageUrl: t.string(),
 }, (ctx, { filename, mimeType, sizeBytes, storageUrl }) => {
   ctx.db.document.insert({
-    id: 0,  // auto-increment
+    id: 0n,  // auto-increment
     ownerId: ctx.sender,
     filename,
     mimeType,

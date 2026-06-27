@@ -1057,7 +1057,8 @@ The `on_delete` callback runs whenever a previously-resident row is deleted from
 spacetimedb_sdk::TableWithPrimaryKey
 ```
 
-Implemented for handles whose rows have a known primary key, including query builder views with inferred primary keys.
+Implemented for handles whose rows have a known primary key.
+This includes table handles for tables with primary keys, query builder view handles with inferred primary keys, and procedural view handles with declared primary keys.
 
 | Name                                        | Description                                                                          |
 | ------------------------------------------- | ------------------------------------------------------------------------------------ |
@@ -1077,7 +1078,7 @@ trait spacetimedb_sdk::TableWithPrimaryKey {
 
 The `on_update` callback runs whenever an already-resident row in the client cache is updated, i.e. replaced with a new row that has the same primary key. Registering an `on_update` callback returns a callback id, which can later be passed to `remove_on_update` to cancel the callback. Newly registered or canceled callbacks do not take effect until the following event.
 
-This also applies to query builder views over tables with primary keys.
+This also applies to views with known primary keys, including query builder views with inferred keys and procedural views that declare a primary key.
 
 ### Unique constraint index access
 

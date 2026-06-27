@@ -1,6 +1,6 @@
 use std::fmt;
 use std::fs::{self, File};
-use std::io;
+use std::io::{self, Seek};
 use std::sync::Arc;
 
 use log::{debug, warn};
@@ -277,7 +277,7 @@ impl Repo for Fs {
         // The segment file either does not exist, or is of length zero.
         // Write the header to a temporary file and atomically move it into place.
         let mut tmp = tempfile::Builder::new().make_in(&self.root.0, |tmp_path| {
-            File::options().read(true).append(true).create_new(true).open(tmp_path)
+            File::options().read(true).write(true).create_new(true).open(tmp_path)
         })?;
         header.write(&mut tmp)?;
         tmp.as_file_mut().sync_all()?;
@@ -292,7 +292,11 @@ impl Repo for Fs {
     }
 
     fn open_segment_writer(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
-        File::options().read(true).append(true).open(self.segment_path(offset))
+        // NOTE: We previously used `O_APPEND`, but Windows demands `write(true)`
+        // so that we can truncate trailing garbage in [super::resume_segment_writer].
+        let mut file = File::options().read(true).write(true).open(self.segment_path(offset))?;
+        file.seek(io::SeekFrom::End(0))?;
+        Ok(file)
     }
 
     fn segment_file_path(&self, offset: u64) -> Option<String> {

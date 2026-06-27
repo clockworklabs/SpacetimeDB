@@ -14,7 +14,7 @@ fn test_sql_format() {
         .autopublish(false)
         .build();
 
-    test.publish_module_named("pgwire-sql-format", true).unwrap();
+    test.publish().name("pgwire-sql-format").clear(true).run().unwrap();
     test.call("test", &[]).unwrap();
 
     test.assert_psql(
@@ -86,7 +86,7 @@ fn test_sql_conn() {
         .autopublish(false)
         .build();
 
-    test.publish_module_named("pgwire-sql-conn", true).unwrap();
+    test.publish().name("pgwire-sql-conn").clear(true).run().unwrap();
     test.call("test", &[]).unwrap();
 
     let token = test.read_token().unwrap();
@@ -158,7 +158,7 @@ fn test_failures() {
         .autopublish(false)
         .build();
 
-    test.publish_module_named("pgwire-failure", true).unwrap();
+    test.publish().name("pgwire-failure").clear(true).run().unwrap();
 
     // Empty query returns empty result
     let output = test.psql("pgwire-failure", "").unwrap();

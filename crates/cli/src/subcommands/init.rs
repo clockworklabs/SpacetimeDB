@@ -179,6 +179,8 @@ pub fn cli() -> clap::Command {
                 .short('t')
                 .long("template")
                 .value_name("TEMPLATE")
+                .num_args(0..=1)
+                .default_missing_value("")
                 .help("Template ID or GitHub repository (owner/repo or URL)"),
         )
         .arg(
@@ -206,6 +208,19 @@ pub async fn fetch_templates_list() -> anyhow::Result<Vec<TemplateDefinition>> {
     let templates_list: TemplatesList = serde_json::from_str(content).context("Failed to parse templates list JSON")?;
 
     Ok(templates_list.templates)
+}
+
+async fn print_templates_list() -> anyhow::Result<()> {
+    let templates = fetch_templates_list().await?;
+
+    println!("{}", "Available templates:".bold());
+    for template in &templates {
+        println!("  {} - {}", template.id, template.description);
+    }
+    println!("\nCreate a project: spacetime init --template <id>");
+    println!("Browse all templates: {}", "https://spacetimedb.com/templates".cyan());
+
+    Ok(())
 }
 
 pub async fn check_and_prompt_login(config: &mut Config) -> anyhow::Result<bool> {
@@ -1018,6 +1033,16 @@ fn get_spacetimedb_typescript_version() -> &'static str {
     embedded::get_typescript_bindings_version()
 }
 
+fn to_major_minor_patch_wildcard(version: &str) -> String {
+    let mut parts = version.split('.');
+    let major = parts.next();
+    let minor = parts.next();
+    match (major, minor) {
+        (Some(major), Some(minor)) if !major.is_empty() && !minor.is_empty() => format!("{major}.{minor}.*"),
+        _ => version.to_string(),
+    }
+}
+
 fn update_package_json(dir: &Path, package_name: &str) -> anyhow::Result<()> {
     let package_path = dir.join("package.json");
     if !package_path.exists() {
@@ -1033,7 +1058,7 @@ fn update_package_json(dir: &Path, package_name: &str) -> anyhow::Result<()> {
     if let Some(deps) = package.get_mut("dependencies")
         && deps.get("spacetimedb").is_some()
     {
-        deps["spacetimedb"] = json!(format!("^{}", get_spacetimedb_typescript_version()));
+        deps["spacetimedb"] = json!(to_major_minor_patch_wildcard(get_spacetimedb_typescript_version()));
     }
 
     let updated_content = serde_json::to_string_pretty(&package)?;
@@ -1042,17 +1067,9 @@ fn update_package_json(dir: &Path, package_name: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn to_patch_wildcard(ver: &str) -> String {
-    let mut parts: Vec<&str> = ver.split('.').collect();
-    if parts.len() >= 3 {
-        parts[2] = "*";
-    }
-    parts.join(".")
-}
-
 fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> {
     let version = env!("CARGO_PKG_VERSION");
-    let patch_wildcard = to_patch_wildcard(version);
+    let patch_wildcard = to_major_minor_patch_wildcard(version);
     let cargo_path = dir.join("Cargo.toml");
     if !cargo_path.exists() {
         return Ok(());
@@ -1088,7 +1105,8 @@ fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> 
                 if has_path(dep_item) {
                     if key == "spacetimedb" {
                         if let Some(version) = embedded::get_workspace_dependency_version(&key) {
-                            set_dependency_version(dep_item, version, true);
+                            let patch_wildcard = to_major_minor_patch_wildcard(version);
+                            set_dependency_version(dep_item, patch_wildcard.as_str(), true);
                         }
                     } else if key == "spacetimedb-sdk" {
                         set_dependency_version(dep_item, patch_wildcard.as_str(), true);
@@ -1099,7 +1117,12 @@ fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> 
                 if uses_workspace(dep_item)
                     && let Some(version) = embedded::get_workspace_dependency_version(&key)
                 {
-                    set_dependency_version(dep_item, version, key == "spacetimedb");
+                    let version = if key == "spacetimedb" || key == "spacetimedb-sdk" {
+                        to_major_minor_patch_wildcard(version)
+                    } else {
+                        version.to_string()
+                    };
+                    set_dependency_version(dep_item, version.as_str(), key == "spacetimedb");
                 }
             }
         }
@@ -1271,13 +1294,12 @@ fn pretty_format_xml(xml: &str) -> anyhow::Result<String> {
     Ok(String::from_utf8(result)?)
 }
 
-/// Just do 2.* for now
 fn get_spacetimedb_csharp_runtime_version() -> String {
-    "2.*".to_string()
+    to_major_minor_patch_wildcard(env!("CARGO_PKG_VERSION"))
 }
 
 fn get_spacetimedb_csharp_clientsdk_version() -> String {
-    "2.*".to_string()
+    to_major_minor_patch_wildcard(env!("CARGO_PKG_VERSION"))
 }
 
 /// Writes a `.env.local` file that includes all common
@@ -1669,6 +1691,13 @@ fn check_for_git() -> bool {
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathBuf> {
     let options = InitOptions::from_args(args);
+
+    // --template without arg prints templates list and link to website
+    if options.template.as_deref() == Some("") {
+        print_templates_list().await?;
+        return Ok(PathBuf::new());
+    }
+
     let is_interactive = !options.non_interactive;
     let template = options.template.as_ref();
     let server_lang = options.lang.as_ref();
@@ -2162,6 +2191,146 @@ fn check_for_emscripten_and_cmake() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn cli_patch_wildcard() -> String {
+        to_major_minor_patch_wildcard(env!("CARGO_PKG_VERSION"))
+    }
+
+    fn dependency_version<'a>(doc: &'a DocumentMut, name: &str) -> Option<&'a str> {
+        let dep = doc.get("dependencies")?.get(name)?;
+        match dep {
+            Item::Value(value) => value
+                .as_inline_table()
+                .and_then(|table| table.get("version"))
+                .and_then(|value| value.as_str()),
+            Item::Table(table) => table.get("version").and_then(|value| value.as_str()),
+            _ => dep.as_str(),
+        }
+    }
+
+    fn dependency_has_path(doc: &DocumentMut, name: &str) -> bool {
+        let Some(dep) = doc.get("dependencies").and_then(|deps| deps.get(name)) else {
+            return false;
+        };
+        has_path(dep)
+    }
+
+    #[test]
+    fn test_to_major_minor_patch_wildcard() {
+        assert_eq!(to_major_minor_patch_wildcard("2.4.1"), "2.4.*");
+        assert_eq!(to_major_minor_patch_wildcard("2.4"), "2.4.*");
+        assert_eq!(to_major_minor_patch_wildcard("not-semver"), "not-semver");
+    }
+
+    #[test]
+    fn test_update_package_json_uses_major_minor_patch_wildcard() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let package_json = temp.path().join("package.json");
+        std::fs::write(
+            &package_json,
+            r#"{
+  "name": "old-name",
+  "dependencies": {
+    "spacetimedb": "workspace:^"
+  }
+}"#,
+        )
+        .unwrap();
+
+        update_package_json(temp.path(), "new-name").unwrap();
+
+        let content = std::fs::read_to_string(package_json).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed["name"], "new-name");
+        assert_eq!(
+            parsed["dependencies"]["spacetimedb"],
+            to_major_minor_patch_wildcard(get_spacetimedb_typescript_version())
+        );
+    }
+
+    #[test]
+    fn test_update_cargo_toml_rewrites_spacetimedb_deps_to_patch_wildcards() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let cargo_toml = temp.path().join("Cargo.toml");
+        std::fs::write(
+            &cargo_toml,
+            r#"[package]
+name = "old-name"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+spacetimedb = { path = "../../../crates/bindings" }
+spacetimedb-sdk = { path = "../../sdks/rust" }
+bytes.workspace = true
+"#,
+        )
+        .unwrap();
+
+        update_cargo_toml_name(temp.path(), "new-name").unwrap();
+
+        let content = std::fs::read_to_string(cargo_toml).unwrap();
+        let doc: DocumentMut = content.parse().unwrap();
+        assert_eq!(doc["package"]["name"].as_str(), Some("new_name"));
+        assert_eq!(
+            dependency_version(&doc, "spacetimedb"),
+            Some(
+                to_major_minor_patch_wildcard(embedded::get_workspace_dependency_version("spacetimedb").unwrap())
+                    .as_str()
+            )
+        );
+        assert!(!dependency_has_path(&doc, "spacetimedb"));
+        assert_eq!(
+            dependency_version(&doc, "spacetimedb-sdk"),
+            Some(cli_patch_wildcard().as_str())
+        );
+        assert!(!dependency_has_path(&doc, "spacetimedb-sdk"));
+        assert_eq!(
+            dependency_version(&doc, "bytes"),
+            embedded::get_workspace_dependency_version("bytes")
+        );
+    }
+
+    #[test]
+    fn test_update_csproj_to_nuget_uses_major_minor_patch_wildcard() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let csproj = temp.path().join("StdbModule.csproj");
+        std::fs::write(
+            &csproj,
+            r#"<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="SpacetimeDB.Runtime" Version="workspace" />
+    <ProjectReference Include="..\Runtime\Runtime.csproj" />
+  </ItemGroup>
+</Project>
+"#,
+        )
+        .unwrap();
+
+        update_csproj_server_to_nuget(temp.path()).unwrap();
+
+        let content = std::fs::read_to_string(csproj).unwrap();
+        let root = Element::parse(content.as_bytes()).unwrap();
+        let runtime_version = root.children.iter().find_map(|node| {
+            let XMLNode::Element(item_group) = node else {
+                return None;
+            };
+            item_group.children.iter().find_map(|node| {
+                let XMLNode::Element(package_ref) = node else {
+                    return None;
+                };
+                if package_ref.name == "PackageReference"
+                    && package_ref.attributes.get("Include").map(String::as_str) == Some("SpacetimeDB.Runtime")
+                {
+                    package_ref.attributes.get("Version").map(String::as_str)
+                } else {
+                    None
+                }
+            })
+        });
+        assert_eq!(runtime_version, Some(cli_patch_wildcard().as_str()));
+        assert!(!content.contains("ProjectReference"));
+    }
 
     #[test]
     fn test_create_default_spacetime_config_if_missing_creates_expected_config() {
