@@ -27,6 +27,10 @@ use spacetimedb_lib::version::spacetimedb_lib_version;
 
 const INDENT: &str = "  ";
 
+fn ts_string_literal(s: &str) -> String {
+    serde_json::to_string(s).expect("serializing a string literal cannot fail")
+}
+
 pub struct TypeScript;
 
 impl Lang for TypeScript {
@@ -196,10 +200,17 @@ impl Lang for TypeScript {
         writeln!(out, "/** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */");
         writeln!(out, "const tablesSchema = __schema({{");
         out.indent(1);
+        let mut table_accessor_aliases = Vec::new();
+        let mut table_accessor_names = BTreeSet::new();
         for table in iter_tables(module, options.visibility) {
             let type_ref = table.product_type_ref;
+            let table_accessor = table.accessor_name.deref().to_case(Case::Camel);
             let table_name_pascalcase = table.accessor_name.deref().to_case(Case::Pascal);
-            writeln!(out, "{}: __table({{", table.accessor_name);
+            table_accessor_names.insert(table_accessor.clone());
+            if table.accessor_name.deref() != table_accessor {
+                table_accessor_aliases.push((table.accessor_name.to_string(), table_accessor.clone()));
+            }
+            writeln!(out, "{table_accessor}: __table({{");
             out.indent(1);
             write_table_opts(
                 module,
@@ -215,8 +226,13 @@ impl Lang for TypeScript {
         }
         for view in iter_views(module) {
             let type_ref = view.product_type_ref;
+            let view_accessor = view.accessor_name.deref().to_case(Case::Camel);
             let view_name_pascalcase = view.accessor_name.deref().to_case(Case::Pascal);
-            writeln!(out, "{}: __table({{", view.accessor_name);
+            table_accessor_names.insert(view_accessor.clone());
+            if view.accessor_name.deref() != view_accessor {
+                table_accessor_aliases.push((view.accessor_name.to_string(), view_accessor.clone()));
+            }
+            writeln!(out, "{view_accessor}: __table({{");
             out.indent(1);
             write_table_opts(module, out, type_ref, &view.name, iter::empty(), iter::empty(), false);
             out.dedent(1);
@@ -224,6 +240,9 @@ impl Lang for TypeScript {
         }
         out.dedent(1);
         writeln!(out, "}});");
+
+        table_accessor_aliases.retain(|(deprecated_accessor, _)| !table_accessor_names.contains(deprecated_accessor));
+        let has_table_accessor_aliases = !table_accessor_aliases.is_empty();
 
         writeln!(out);
         writeln!(out, "/** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */");
@@ -258,6 +277,34 @@ impl Lang for TypeScript {
         out.dedent(1);
         writeln!(out, ");");
 
+        if has_table_accessor_aliases {
+            writeln!(out);
+            writeln!(
+                out,
+                "type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, \"tables\"> & {{"
+            );
+            out.indent(1);
+            writeln!(out, "tables: typeof tablesSchema.schemaType.tables & {{");
+            out.indent(1);
+            for (deprecated_accessor, target_accessor) in &table_accessor_aliases {
+                writeln!(
+                    out,
+                    "/** @deprecated Use `{target_accessor}` instead. This alias will be removed in the next major version. */"
+                );
+                writeln!(
+                    out,
+                    "readonly {}: Omit<typeof tablesSchema.schemaType.tables[{}], \"accessorName\"> & {{ readonly accessorName: {} }};",
+                    ts_string_literal(deprecated_accessor),
+                    ts_string_literal(target_accessor),
+                    ts_string_literal(deprecated_accessor)
+                );
+            }
+            out.dedent(1);
+            writeln!(out, "}};");
+            out.dedent(1);
+            writeln!(out, "}};");
+        }
+
         writeln!(out);
         writeln!(
             out,
@@ -270,25 +317,144 @@ impl Lang for TypeScript {
         writeln!(out, "cliVersion: \"{}\" as const,", spacetimedb_lib_version());
         out.dedent(1);
         writeln!(out, "}},");
-        writeln!(out, "tables: tablesSchema.schemaType.tables,");
+        if has_table_accessor_aliases {
+            writeln!(
+                out,
+                "tables: tablesSchema.schemaType.tables as __SchemaWithTableAccessorAliases[\"tables\"],"
+            );
+        } else {
+            writeln!(out, "tables: tablesSchema.schemaType.tables,");
+        }
         writeln!(out, "reducers: reducersSchema.reducersType.reducers,");
         writeln!(out, "...proceduresSchema,");
         out.dedent(1);
         writeln!(out, "}} satisfies __RemoteModule<");
         out.indent(1);
-        writeln!(out, "typeof tablesSchema.schemaType,");
+        if has_table_accessor_aliases {
+            writeln!(out, "__SchemaWithTableAccessorAliases,");
+        } else {
+            writeln!(out, "typeof tablesSchema.schemaType,");
+        }
         writeln!(out, "typeof reducersSchema.reducersType,");
         writeln!(out, "typeof proceduresSchema");
         out.dedent(1);
         writeln!(out, ">;");
         out.dedent(1);
 
+        if has_table_accessor_aliases {
+            writeln!(out);
+            writeln!(out, "const tableAccessorAliases = {{");
+            out.indent(1);
+            for (deprecated_accessor, target_accessor) in &table_accessor_aliases {
+                writeln!(
+                    out,
+                    "{}: {},",
+                    ts_string_literal(deprecated_accessor),
+                    ts_string_literal(target_accessor)
+                );
+            }
+            out.dedent(1);
+            writeln!(out, "}} as const;");
+
+            writeln!(out);
+            writeln!(
+                out,
+                "function __withTableAccessorAliases<T extends object>(target: T, freeze = false): T {{"
+            );
+            out.indent(1);
+            writeln!(
+                out,
+                "const out = Object.create(Object.getPrototypeOf(target)) as T & Record<string, unknown>;"
+            );
+            writeln!(
+                out,
+                "Object.defineProperties(out, Object.getOwnPropertyDescriptors(target));"
+            );
+            writeln!(
+                out,
+                "for (const [deprecatedAccessor, targetAccessor] of Object.entries(tableAccessorAliases)) {{"
+            );
+            out.indent(1);
+            writeln!(out, "if (deprecatedAccessor in out) {{");
+            out.indent(1);
+            writeln!(out, "continue;");
+            out.dedent(1);
+            writeln!(out, "}}");
+            writeln!(out, "Object.defineProperty(out, deprecatedAccessor, {{");
+            out.indent(1);
+            writeln!(out, "enumerable: true,");
+            writeln!(out, "configurable: false,");
+            writeln!(out, "get: () => out[targetAccessor],");
+            out.dedent(1);
+            writeln!(out, "}});");
+            out.dedent(1);
+            writeln!(out, "}}");
+            writeln!(out, "return freeze ? Object.freeze(out) : out;");
+            out.dedent(1);
+            writeln!(out, "}}");
+
+            writeln!(out);
+            writeln!(
+                out,
+                "type __DbViewBase = __DbConnectionImpl<typeof REMOTE_MODULE>[\"db\"];"
+            );
+            writeln!(out, "export type DbView = __DbViewBase & {{");
+            out.indent(1);
+            for (deprecated_accessor, target_accessor) in &table_accessor_aliases {
+                writeln!(
+                    out,
+                    "/** @deprecated Use `{target_accessor}` instead. This alias will be removed in the next major version. */"
+                );
+                writeln!(
+                    out,
+                    "readonly {}: __DbViewBase[{}];",
+                    ts_string_literal(deprecated_accessor),
+                    ts_string_literal(target_accessor)
+                );
+            }
+            out.dedent(1);
+            writeln!(out, "}};");
+
+            writeln!(out);
+            writeln!(
+                out,
+                "type __TablesBase = __QueryBuilder<typeof tablesSchema.schemaType>;"
+            );
+            writeln!(out, "export type Tables = __TablesBase & {{");
+            out.indent(1);
+            for (deprecated_accessor, target_accessor) in &table_accessor_aliases {
+                writeln!(
+                    out,
+                    "/** @deprecated Use `{target_accessor}` instead. This alias will be removed in the next major version. */"
+                );
+                writeln!(
+                    out,
+                    "readonly {}: __TablesBase[{}];",
+                    ts_string_literal(deprecated_accessor),
+                    ts_string_literal(target_accessor)
+                );
+            }
+            out.dedent(1);
+            writeln!(out, "}};");
+        }
+
         writeln!(out);
         writeln!(out, "/** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */");
-        writeln!(
-            out,
-            "export const tables: __QueryBuilder<typeof tablesSchema.schemaType> = __makeQueryBuilder(tablesSchema.schemaType);"
-        );
+        if has_table_accessor_aliases {
+            writeln!(
+                out,
+                "const tablesBase: __TablesBase = __makeQueryBuilder(tablesSchema.schemaType);"
+            );
+            writeln!(
+                out,
+                "export const tables: Tables = __withTableAccessorAliases(tablesBase, true) as Tables;"
+            );
+        } else {
+            writeln!(
+                out,
+                "export const tables: __QueryBuilder<typeof tablesSchema.schemaType> = __makeQueryBuilder(tablesSchema.schemaType);"
+            );
+        }
         writeln!(out);
         writeln!(out, "/** The reducers available in this remote SpacetimeDB module. */");
         writeln!(
@@ -311,31 +477,59 @@ impl Lang for TypeScript {
             out,
             "/** The context type returned in callbacks for all possible events. */"
         );
-        writeln!(
-            out,
-            "export type EventContext = __EventContextInterface<typeof REMOTE_MODULE>;"
-        );
+        if has_table_accessor_aliases {
+            writeln!(
+                out,
+                "export type EventContext = Omit<__EventContextInterface<typeof REMOTE_MODULE>, \"db\"> & {{ db: DbView }};"
+            );
+        } else {
+            writeln!(
+                out,
+                "export type EventContext = __EventContextInterface<typeof REMOTE_MODULE>;"
+            );
+        }
 
         writeln!(out, "/** The context type returned in callbacks for reducer events. */");
-        writeln!(
-            out,
-            "export type ReducerEventContext = __ReducerEventContextInterface<typeof REMOTE_MODULE>;"
-        );
+        if has_table_accessor_aliases {
+            writeln!(
+                out,
+                "export type ReducerEventContext = Omit<__ReducerEventContextInterface<typeof REMOTE_MODULE>, \"db\"> & {{ db: DbView }};"
+            );
+        } else {
+            writeln!(
+                out,
+                "export type ReducerEventContext = __ReducerEventContextInterface<typeof REMOTE_MODULE>;"
+            );
+        }
 
         writeln!(
             out,
             "/** The context type returned in callbacks for subscription events. */"
         );
-        writeln!(
-            out,
-            "export type SubscriptionEventContext = __SubscriptionEventContextInterface<typeof REMOTE_MODULE>;"
-        );
+        if has_table_accessor_aliases {
+            writeln!(
+                out,
+                "export type SubscriptionEventContext = Omit<__SubscriptionEventContextInterface<typeof REMOTE_MODULE>, \"db\"> & {{ db: DbView }};"
+            );
+        } else {
+            writeln!(
+                out,
+                "export type SubscriptionEventContext = __SubscriptionEventContextInterface<typeof REMOTE_MODULE>;"
+            );
+        }
 
         writeln!(out, "/** The context type returned in callbacks for error events. */");
-        writeln!(
-            out,
-            "export type ErrorContext = __ErrorContextInterface<typeof REMOTE_MODULE>;"
-        );
+        if has_table_accessor_aliases {
+            writeln!(
+                out,
+                "export type ErrorContext = Omit<__ErrorContextInterface<typeof REMOTE_MODULE>, \"db\"> & {{ db: DbView }};"
+            );
+        } else {
+            writeln!(
+                out,
+                "export type ErrorContext = __ErrorContextInterface<typeof REMOTE_MODULE>;"
+            );
+        }
 
         writeln!(out, "/** The subscription handle type to manage active subscriptions created from a {{@link SubscriptionBuilder}}. */");
         writeln!(
@@ -370,6 +564,22 @@ impl Lang for TypeScript {
             "export class DbConnection extends __DbConnectionImpl<typeof REMOTE_MODULE> {{"
         );
         out.indent(1);
+        if has_table_accessor_aliases {
+            writeln!(out, "declare db: DbView;");
+
+            writeln!(out);
+            writeln!(
+                out,
+                "constructor(config: __DbConnectionConfig<typeof REMOTE_MODULE>) {{"
+            );
+            out.indent(1);
+            writeln!(out, "super(config);");
+            writeln!(out, "this.db = __withTableAccessorAliases(this.db) as DbView;");
+            out.dedent(1);
+            writeln!(out, "}}");
+
+            writeln!(out);
+        }
         writeln!(out, "/** Creates a new {{@link DbConnectionBuilder}} to configure and connect to the remote SpacetimeDB instance. */");
         writeln!(out, "static builder = (): DbConnectionBuilder => {{");
         out.indent(1);
