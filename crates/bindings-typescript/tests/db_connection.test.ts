@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'vitest';
+import { assertType, beforeEach, describe, expect, test } from 'vitest';
 import {
   BinaryWriter,
   ConnectionId,
@@ -149,6 +149,19 @@ function encodeMyUserProcedural(value: MyUserViewRow): Uint8Array {
 }
 
 describe('DbConnection', () => {
+  test('keeps deprecated snake_case db aliases working', async () => {
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(() => Promise.reject(new Error('expected test failure')))
+      .build();
+
+    assertType<typeof client.db.unindexedPlayer>(client.db.unindexed_player);
+    expect(client.db.unindexed_player).toBe(client.db.unindexedPlayer);
+
+    await client['wsPromise'];
+  });
+
   test('call onConnectError callback after websocket connection failed to be established', async () => {
     const onConnectErrorPromise = new Deferred<void>();
 
@@ -923,11 +936,11 @@ describe('DbConnection', () => {
 
     // `onUpdate` is only available when the generated view row binding carries
     // primary-key metadata.
-    client.db.my_user_procedural.onInsert((_ctx, row) => {
+    client.db.myUserProcedural.onInsert((_ctx, row) => {
       expect(row).toEqual(initialRow);
       initialInsertPromise.resolve();
     });
-    client.db.my_user_procedural.onUpdate((_ctx, oldRow, newRow) => {
+    client.db.myUserProcedural.onUpdate((_ctx, oldRow, newRow) => {
       updates.push({
         oldRow,
         newRow,
@@ -952,7 +965,7 @@ describe('DbConnection', () => {
 
     await initialInsertPromise.promise;
     expect(client.db.player.count()).toEqual(1n);
-    expect(client.db.my_user_procedural.count()).toEqual(1n);
+    expect(client.db.myUserProcedural.count()).toEqual(1n);
 
     // A delete and insert with the same primary key in one transaction should
     // be coalesced by the client cache into `onUpdate`, not separate delete and
@@ -985,8 +998,8 @@ describe('DbConnection', () => {
       },
     ]);
     expect(client.db.player.count()).toEqual(1n);
-    expect(client.db.my_user_procedural.count()).toEqual(1n);
-    expect([...client.db.my_user_procedural.iter()][0]).toEqual(updatedRow);
+    expect(client.db.myUserProcedural.count()).toEqual(1n);
+    expect([...client.db.myUserProcedural.iter()][0]).toEqual(updatedRow);
   });
 
   test('Filtering works', async () => {

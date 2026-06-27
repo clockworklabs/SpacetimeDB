@@ -2,6 +2,7 @@ use crate::durability::{request_durability, spawn_close as spawn_durability_clos
 use crate::error::{DBError, RestoreSnapshotError};
 use crate::metrics::ExecutionCounters;
 use crate::metrics::ENGINE_METRICS;
+use crate::resource::{DatabaseMemoryType, MemoryObservation, MemoryObserver};
 use crate::util::asyncify;
 use crate::MetricsRecorderQueue;
 use anyhow::{anyhow, Context};
@@ -51,7 +52,8 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue}
 use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{
-    ColumnSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema, VIEW_ARG_HASH_COL,
+    ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
+    VIEW_ARG_HASH_COL,
 };
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_snapshot::{DynSnapshotRepo, ReconstructedSnapshot, SnapshotError, SnapshotRepository};
@@ -114,6 +116,9 @@ pub struct RelationalDB {
 
     /// An async queue for recording transaction metrics off the main thread
     metrics_recorder_queue: Option<MetricsRecorderQueue>,
+
+    /// An observer for memory usage changes in this database.
+    memory_observer: Arc<dyn MemoryObserver>,
 }
 
 /// Perform a snapshot every `SNAPSHOT_FREQUENCY` transactions.
@@ -169,7 +174,22 @@ impl RelationalDB {
 
             workload_type_to_exec_counters,
             metrics_recorder_queue,
+            memory_observer: Arc::new(()),
         }
+    }
+
+    pub fn with_memory_observer(mut self, memory_observer: Arc<dyn MemoryObserver>) -> Self {
+        self.memory_observer = memory_observer;
+        self.observe_datastore_memory(self.inner.datastore_memory_bytes());
+        self
+    }
+
+    fn observe_datastore_memory(&self, bytes: u64) {
+        self.memory_observer.memory_observed(MemoryObservation {
+            database_identity: self.database_identity,
+            kind: DatabaseMemoryType::Datastore,
+            bytes,
+        });
     }
 
     /// Open a database, which may or may not already exist.
@@ -486,6 +506,10 @@ impl RelationalDB {
             snapshot_offset: TxOffset,
             page_pool: &PagePool,
         ) -> Result<ReconstructedSnapshot, Box<SnapshotError>> {
+            fn u64_to_i64(value: u64) -> i64 {
+                value.min(i64::MAX as u64) as i64
+            }
+
             log::info!("[{database_identity}] DATABASE: restoring snapshot of tx_offset {snapshot_offset}");
             let start = std::time::Instant::now();
 
@@ -495,10 +519,24 @@ impl RelationalDB {
 
             let elapsed_time = start.elapsed();
 
-            ENGINE_METRICS
-                .replay_snapshot_read_time_seconds
-                .with_label_values(database_identity)
-                .set(elapsed_time.as_secs_f64());
+            for (kind, metrics) in snapshot.read_metrics.iter() {
+                ENGINE_METRICS
+                    .replay_snapshot_read_time_seconds
+                    .with_label_values(database_identity, kind)
+                    .set(metrics.read_time.as_secs_f64());
+                ENGINE_METRICS
+                    .replay_snapshot_num_objects_read
+                    .with_label_values(database_identity, kind)
+                    .set(u64_to_i64(metrics.files));
+                ENGINE_METRICS
+                    .replay_snapshot_bytes_read_from_disk
+                    .with_label_values(database_identity, kind)
+                    .set(u64_to_i64(metrics.disk_bytes));
+                ENGINE_METRICS
+                    .replay_snapshot_read_hash_seconds
+                    .with_label_values(database_identity, kind)
+                    .set(metrics.hash_time.as_secs_f64());
+            }
 
             log::info!(
                 "[{database_identity}] DATABASE: read snapshot of tx_offset {snapshot_offset} in {elapsed_time:?}",
@@ -822,14 +860,16 @@ impl RelationalDB {
 
         let reducer_context = tx.ctx.reducer_context().cloned();
         // TODO: Never returns `None` -- should it?
-        let Some((tx_offset, tx_data, tx_metrics, reducer)) = self.inner.commit_mut_tx_and_then(tx, |tx_data| {
-            self.request_durability(reducer_context, tx_data);
-        })?
+        let Some((tx_offset, tx_data, tx_metrics, reducer, datastore_memory_bytes)) =
+            self.inner.commit_mut_tx_and_then(tx, |tx_data| {
+                self.request_durability(reducer_context, tx_data);
+            })?
         else {
             return Ok(None);
         };
 
         self.maybe_do_snapshot(&tx_data);
+        self.observe_datastore_memory(datastore_memory_bytes);
 
         Ok(Some((tx_offset, tx_data, tx_metrics, reducer)))
     }
@@ -839,11 +879,13 @@ impl RelationalDB {
         log::trace!("COMMIT MUT TX");
 
         let reducer_context = tx.ctx.reducer_context().cloned();
-        let (tx_data, tx_metrics, tx) = self.inner.commit_mut_tx_downgrade_and_then(tx, workload, |tx_data| {
-            self.request_durability(reducer_context, tx_data);
-        });
+        let (tx_data, tx_metrics, tx, datastore_memory_bytes) =
+            self.inner.commit_mut_tx_downgrade_and_then(tx, workload, |tx_data| {
+                self.request_durability(reducer_context, tx_data);
+            });
 
         self.maybe_do_snapshot(&tx_data);
+        self.observe_datastore_memory(datastore_memory_bytes);
 
         (tx_data, tx_metrics, tx)
     }
@@ -1515,6 +1557,11 @@ impl RelationalDB {
     ///Removes the [Sequence] from database instance
     pub fn drop_sequence(&self, tx: &mut MutTx, seq_id: SequenceId) -> Result<(), DBError> {
         Ok(self.inner.drop_sequence_mut_tx(tx, seq_id)?)
+    }
+
+    /// Creates a new constraint in the database instance.
+    pub fn create_constraint(&self, tx: &mut MutTx, constraint: ConstraintSchema) -> Result<ConstraintId, DBError> {
+        Ok(self.inner.create_constraint_mut_tx(tx, constraint)?)
     }
 
     ///Removes the [Constraints] from database instance

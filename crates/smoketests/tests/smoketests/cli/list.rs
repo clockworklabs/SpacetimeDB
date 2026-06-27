@@ -28,7 +28,7 @@ fn cli_list_shows_database_names_and_identities() {
     let primary_name = format!("list-db-{}", std::process::id());
     let alias_name = format!("{primary_name}-alias");
     let second_alias_name = format!("{primary_name}-alt");
-    let identity = test.publish_module_named(&primary_name, false).unwrap();
+    let identity = test.publish().name(&primary_name).run().unwrap();
 
     let json_body = format!(r#"["{}","{}"]"#, alias_name, second_alias_name);
     let response = test

@@ -85,10 +85,11 @@ use crate::host::wasm_common::module_host_actor::{
     ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp, WasmInstance,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
-use crate::host::{ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
+use crate::host::{InitDatabaseResult, ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
+use crate::resource::ModuleInstanceMemoryTracker;
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::jobs::{AllocatedJobCore, CorePinner, LoadBalanceOnDropGuard};
 use crate::worker_metrics::WORKER_METRICS;
@@ -534,7 +535,7 @@ impl JsMainInstance {
         self.request(DisconnectClientRequest { client_id }).await
     }
 
-    pub async fn init_database(&self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
+    pub async fn init_database(&self, program: Program) -> anyhow::Result<InitDatabaseResult> {
         self.request(InitDatabaseRequest { program }).await
     }
 
@@ -661,7 +662,7 @@ js_main_request! {
 js_main_request! {
     InitDatabaseRequest {
         program: Program,
-    } => "init_database", anyhow::Result<Option<ReducerCallResult>>, InitDatabase
+    } => "init_database", anyhow::Result<InitDatabaseResult>, InitDatabase
 }
 
 js_main_request! {
@@ -861,7 +862,7 @@ enum JsMainWorkerRequest {
     },
     /// See [`JsMainInstance::init_database`].
     InitDatabase {
-        reply_tx: JsReplyTx<anyhow::Result<Option<ReducerCallResult>>>,
+        reply_tx: JsReplyTx<anyhow::Result<InitDatabaseResult>>,
         program: Program,
     },
 }
@@ -965,6 +966,7 @@ pub(in crate::host) struct V8HeapMetrics {
     external_memory_bytes: IntGauge,
     native_contexts: IntGauge,
     detached_contexts: IntGauge,
+    module_instance_memory_tracker: ModuleInstanceMemoryTracker,
 
     /// Previous values observed by this instance.
     ///
@@ -1035,7 +1037,7 @@ impl V8HeapMetrics {
         }
     }
 
-    fn new(database_identity: &Identity, worker_kind: JsWorkerKind) -> Self {
+    fn new(database_identity: &Identity, worker_kind: JsWorkerKind, mem_tracker: ModuleInstanceMemoryTracker) -> Self {
         Self {
             total_heap_size_bytes: WORKER_METRICS
                 .v8_total_heap_size_bytes
@@ -1061,6 +1063,7 @@ impl V8HeapMetrics {
             detached_contexts: WORKER_METRICS
                 .v8_detached_contexts
                 .with_label_values(database_identity, &worker_kind),
+            module_instance_memory_tracker: mem_tracker,
             last_observed: V8HeapSnapshot::default(),
         }
     }
@@ -1077,6 +1080,11 @@ impl V8HeapMetrics {
         adjust_gauge(&self.external_memory_bytes, delta.external_memory_bytes);
         adjust_gauge(&self.native_contexts, delta.native_contexts);
         adjust_gauge(&self.detached_contexts, delta.detached_contexts);
+        // Each live V8 isolate reports only the delta from its last heap sample.
+        // The shared tracker folds those deltas into a database-wide aggregate
+        // used tor memory-limit enforcement.
+        self.module_instance_memory_tracker
+            .adjust_v8_physical(delta.total_physical_size_bytes);
     }
 
     fn observe(&mut self, stats: &v8::HeapStatistics) {
@@ -1481,8 +1489,8 @@ fn handle_main_worker_request(
         }
         JsMainWorkerRequest::InitDatabase { reply_tx, program } => {
             handle_worker_request("init_database", reply_tx, || {
-                let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
-                let (res, trapped): (Result<Option<ReducerCallResult>, anyhow::Error>, bool) =
+                let call_reducer = |tx, params| instance_common.call_reducer_with_tx_offset(tx, params, inst);
+                let (res, trapped): (Result<InitDatabaseResult, anyhow::Error>, bool) =
                     init_database(replica_ctx, &info.module_def, program, call_reducer);
                 (res, trapped)
             })
@@ -1679,7 +1687,11 @@ where
                 let info = &module_common.info();
                 let mut instance_common = InstanceCommon::new(&module_common);
                 let replica_ctx: &Arc<ReplicaContext> = module_common.replica_ctx();
-                let mut heap_metrics = V8HeapMetrics::new(&info.database_identity, worker_kind);
+                let mut heap_metrics = V8HeapMetrics::new(
+                    &info.database_identity,
+                    worker_kind,
+                    replica_ctx.module_instance_memory_tracker.clone(),
+                );
 
                 let mut inst = V8Instance {
                     scope,

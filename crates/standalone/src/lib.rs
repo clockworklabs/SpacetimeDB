@@ -86,6 +86,7 @@ impl StandaloneEnv {
             HostRuntimeConfig::new(config.wasm, config.v8),
             program_store.clone(),
             energy_monitor,
+            Arc::new(()),
             persistence_provider,
             db_cores,
         );
@@ -260,6 +261,10 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
     async fn lookup_namespace_owner(&self, name: &str) -> anyhow::Result<Option<Identity>> {
         let name: DatabaseName = name.parse()?;
         Ok(self.control_db.spacetime_lookup_tld(Tld::from(name))?)
+    }
+
+    async fn is_database_locked(&self, database_identity: &Identity) -> anyhow::Result<bool> {
+        Ok(self.control_db.is_database_locked(database_identity)?)
     }
 }
 
@@ -481,6 +486,19 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         Ok(self
             .control_db
             .spacetime_replace_domains(database_identity, owner_identity, domain_names)?)
+    }
+
+    async fn set_database_lock(
+        &self,
+        _caller_identity: &Identity,
+        database_identity: &Identity,
+        locked: bool,
+    ) -> anyhow::Result<()> {
+        let Some(_database) = self.control_db.get_database_by_identity(database_identity)? else {
+            anyhow::bail!("Database not found: {}", database_identity.to_abbreviated_hex());
+        };
+        self.control_db.set_database_lock(database_identity, locked)?;
+        Ok(())
     }
 }
 
