@@ -1638,7 +1638,13 @@ impl CtxWithTimestamp for TxContext {
     }
 }
 
-/// This trait allows you to be generic over all contexts that allow to use the [HttpClient].
+/// Contexts which can perform outgoing HTTP requests.
+///
+/// This type is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from procedures and HTTP handlers.
+///
+/// When operating on a concrete-typed [`ProcedureContext`] or [`HandlerContext`], this trait is not necessary,
+/// as the context's `http` field provides the same access.
 pub trait CtxWithHttp {
     fn http(&self) -> &HttpClient;
 }
