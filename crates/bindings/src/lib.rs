@@ -1596,7 +1596,7 @@ impl CtxDbWrite for ReducerContext {
 /// This trait is useful for writing reusable logic which is generic over the context type,
 /// allowing it to be used from views, reducers, and transactions started by procedures and HTTP handlers.
 ///
-/// When operating on a concrete-typed [`ViewContext`], [`ReducerContext`] or [`TxContext`], this trait is not necessary,
+/// When operating on a concrete-typed [`ViewContext`], [`ReducerContext`], [`ProcedureContext`] or [`TxContext`], this trait is not necessary,
 /// as the context's inherent `sender` method provides the same access.
 pub trait CtxWithSender {
     fn sender(&self) -> Identity;
@@ -1617,6 +1617,12 @@ impl CtxWithSender for ReducerContext {
 impl CtxWithSender for TxContext {
     fn sender(&self) -> Identity {
         self.0.sender
+    }
+}
+
+impl CtxWithSender for ProcedureContext {
+    fn sender(&self) -> Identity {
+        self.sender
     }
 }
 
@@ -1641,6 +1647,108 @@ impl CtxWithTimestamp for ReducerContext {
 impl CtxWithTimestamp for TxContext {
     fn timestamp(&self) -> Timestamp {
         self.timestamp
+    }
+}
+
+impl CtxWithTimestamp for ProcedureContext {
+    fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+}
+
+impl CtxWithTimestamp for HandlerContext {
+    fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+}
+
+/// Contexts which can retrieve the current [`AuthCtx`].
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from reducers and procedures.
+///
+/// When operating on a concrete-typed [`ReducerContext`], [`ProcedureContext`], [`TxContext`],
+/// this trait is not necessary, as the context's sender_auth method provides the same access.
+pub trait CtxWithSenderAuth {
+    fn sender_auth(&self) -> &AuthCtx;
+}
+
+impl CtxWithSenderAuth for ReducerContext {
+    fn sender_auth(&self) -> &AuthCtx {
+        self.sender_auth()
+    }
+}
+
+impl CtxWithSenderAuth for TxContext {
+    fn sender_auth(&self) -> &AuthCtx {
+        self.0.sender_auth()
+    }
+}
+
+/// Contexts which can enter a start a transaction with a [`TxContext`] inside the function.
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from reducers and procedures.
+///
+/// When operating on a concrete-typed [`HandlerContext`], [`ProcedureContext`],
+/// this trait is not necessary, as the context's methods provide the same access.
+pub trait CtxWithTxManagement {
+    fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T;
+    fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E>;
+}
+
+impl CtxWithTxManagement for ProcedureContext {
+    fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
+        self.with_tx(body)
+    }
+
+    fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
+        self.try_with_tx(body)
+    }
+}
+
+impl CtxWithTxManagement for HandlerContext {
+    fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
+        self.with_tx(body)
+    }
+
+    fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
+        self.try_with_tx(body)
+    }
+}
+
+/// Contexts which can retrieve the current [`StdbRng`] state.
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from reducers and procedures.
+///
+/// When operating on a concrete-typed [`HandlerContext`], [`ProcedureContext`], [`ReducerContext`], [`TxContext`]
+/// this trait is not necessary, as the context's methods provide the same access.
+pub trait CtxWithRng {
+    fn rng(&self) -> &StdbRng;
+}
+
+impl CtxWithRng for ProcedureContext {
+    fn rng(&self) -> &StdbRng {
+        self.rng()
+    }
+}
+
+impl CtxWithRng for HandlerContext {
+    fn rng(&self) -> &StdbRng {
+        self.rng()
+    }
+}
+
+impl CtxWithRng for ReducerContext {
+    fn rng(&self) -> &StdbRng {
+        self.rng()
+    }
+}
+
+impl CtxWithRng for TxContext {
+    fn rng(&self) -> &StdbRng {
+        self.0.rng()
     }
 }
 
