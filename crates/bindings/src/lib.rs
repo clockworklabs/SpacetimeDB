@@ -24,11 +24,12 @@ pub use spacetimedb_query_builder as query_builder;
 #[cfg(feature = "unstable")]
 pub use client_visibility_filter::Filter;
 pub use log;
+#[cfg(feature = "rand08")]
+use rand::distributions::{Distribution, Standard};
 #[cfg(feature = "rand")]
 pub use rand08 as rand;
 #[cfg(feature = "rand")]
 use rand08::RngCore;
-#[cfg(feature = "rand08")]
 pub use rng::StdbRng;
 pub use sats::SpacetimeType;
 #[doc(hidden)]
@@ -1726,11 +1727,21 @@ impl CtxWithTxManagement for HandlerContext {
 /// this trait is not necessary, as the context's methods provide the same access.
 pub trait CtxWithRng {
     fn rng(&self) -> &StdbRng;
+    fn random<T>(&self) -> T
+    where
+        Standard: Distribution<T>;
 }
 
 impl CtxWithRng for ProcedureContext {
     fn rng(&self) -> &StdbRng {
         self.rng()
+    }
+
+    fn random<T>(&self) -> T
+    where
+        Standard: Distribution<T>,
+    {
+        self.random()
     }
 }
 
@@ -1738,17 +1749,38 @@ impl CtxWithRng for HandlerContext {
     fn rng(&self) -> &StdbRng {
         self.rng()
     }
+
+    fn random<T>(&self) -> T
+    where
+        Standard: Distribution<T>,
+    {
+        self.random()
+    }
 }
 
 impl CtxWithRng for ReducerContext {
     fn rng(&self) -> &StdbRng {
         self.rng()
     }
+
+    fn random<T>(&self) -> T
+    where
+        Standard: Distribution<T>,
+    {
+        self.random()
+    }
 }
 
 impl CtxWithRng for TxContext {
     fn rng(&self) -> &StdbRng {
         self.0.rng()
+    }
+
+    fn random<T>(&self) -> T
+    where
+        Standard: Distribution<T>,
+    {
+        self.0.random()
     }
 }
 
