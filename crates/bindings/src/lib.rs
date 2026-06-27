@@ -1568,7 +1568,13 @@ impl CtxDbRead for AnonymousViewContext {
     }
 }
 
-/// This trait allows you to be generic over all contexts that allow read/write access to the db.
+/// Contexts which provide read-write access to the database.
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from reducers and from transactions started by procedures and HTTP handlers.
+///
+/// When operating on a concrete-typed [`ReducerContext`] or [`TxContext`], this trait is not necessary,
+/// as the context's `db` field provides the same access.
 pub trait CtxDbWrite: CtxDbRead {
     fn db(&self) -> &Local;
 }
