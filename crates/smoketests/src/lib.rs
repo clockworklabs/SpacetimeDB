@@ -448,6 +448,8 @@ pub struct Smoketest {
     /// The SpacetimeDB server guard (stops server on drop).
     /// None when running against a remote server.
     pub guard: Option<SpacetimeDbGuard>,
+    /// Owns a copied fixture data directory, if this smoketest was started from one.
+    _data_dir_fixture: Option<tempfile::TempDir>,
     /// Temporary directory containing the module project.
     pub project_dir: tempfile::TempDir,
     /// Additional features for the spacetimedb bindings dependency.
@@ -718,11 +720,17 @@ impl<'a> SubscribeBuilder<'a> {
 pub struct SmoketestBuilder {
     module_code: Option<String>,
     precompiled_module: Option<String>,
+    data_dir_fixture: Option<DataDirFixture>,
     bindings_features: Vec<String>,
     extra_deps: String,
     autopublish: bool,
     pg_port: Option<u16>,
     server_url_override: Option<String>,
+}
+
+struct DataDirFixture {
+    path: PathBuf,
+    database_identity: String,
 }
 
 impl Default for SmoketestBuilder {
@@ -737,6 +745,7 @@ impl SmoketestBuilder {
         Self {
             module_code: None,
             precompiled_module: None,
+            data_dir_fixture: None,
             bindings_features: vec!["unstable".to_string()],
             extra_deps: String::new(),
             autopublish: true,
@@ -747,6 +756,18 @@ impl SmoketestBuilder {
 
     pub fn server_url(mut self, url: &str) -> Self {
         self.server_url_override = Some(url.to_string());
+        self
+    }
+
+    /// Starts the local server from a copy of a persisted standalone data directory fixture.
+    ///
+    /// The fixture directory is copied to a temporary directory before startup so tests can
+    /// freely mutate it. Tests using this should normally also call `autopublish(false)`.
+    pub fn data_dir_fixture(mut self, path: impl AsRef<Path>, database_identity: impl Into<String>) -> Self {
+        self.data_dir_fixture = Some(DataDirFixture {
+            path: path.as_ref().to_path_buf(),
+            database_identity: database_identity.into(),
+        });
         self
     }
 
@@ -822,20 +843,50 @@ impl SmoketestBuilder {
         let _ = ensure_binaries_built();
         let build_start = Instant::now();
 
+        let fixture_identity = self
+            .data_dir_fixture
+            .as_ref()
+            .map(|fixture| fixture.database_identity.clone());
+
         // Check if we're running against a remote server
-        let (guard, server_url) = if let Some(url) = self.server_url_override {
+        let (guard, server_url, data_dir_fixture) = if let Some(fixture) = self.data_dir_fixture.as_ref() {
+            if self.server_url_override.is_some() || remote_server_url().is_some() {
+                panic!("data_dir_fixture requires a local server managed by the smoketest harness");
+            }
+
+            let temp_dir = tempfile::tempdir().expect("Failed to create temp data fixture directory");
+            let copy_options = fs_extra::dir::CopyOptions {
+                content_only: true,
+                overwrite: true,
+                ..Default::default()
+            };
+            fs_extra::dir::copy(&fixture.path, temp_dir.path(), &copy_options).unwrap_or_else(|err| {
+                panic!(
+                    "failed to copy data dir fixture from {} to {}: {err:#}",
+                    fixture.path.display(),
+                    temp_dir.path().display()
+                )
+            });
+
+            let guard = timed!(
+                "server spawn from data dir fixture",
+                SpacetimeDbGuard::spawn_with_data_dir(temp_dir.path().to_path_buf(), self.pg_port)
+            );
+            let url = guard.host_url.clone();
+            (Some(guard), url, Some(temp_dir))
+        } else if let Some(url) = self.server_url_override {
             eprintln!("[REMOTE] Using explicit server URL: {}", url);
-            (None, url)
+            (None, url, None)
         } else if let Some(remote_url) = remote_server_url() {
             eprintln!("[REMOTE] Using remote server: {}", remote_url);
-            (None, remote_url)
+            (None, remote_url, None)
         } else {
             let guard = timed!(
                 "server spawn",
                 SpacetimeDbGuard::spawn_in_temp_data_dir_with_pg_port(self.pg_port)
             );
             let url = guard.host_url.clone();
-            (Some(guard), url)
+            (Some(guard), url, None)
         };
 
         let project_dir = tempfile::tempdir().expect("Failed to create temp project directory");
@@ -863,8 +914,9 @@ impl SmoketestBuilder {
         let config_path = project_dir.path().join("config.toml");
         let mut smoketest = Smoketest {
             guard,
+            _data_dir_fixture: data_dir_fixture,
             project_dir,
-            database_identity: None,
+            database_identity: fixture_identity,
             server_url,
             config_path,
             module_name,
