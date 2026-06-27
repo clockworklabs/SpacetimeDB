@@ -1614,7 +1614,14 @@ impl CtxWithSender for TxContext {
     }
 }
 
-/// This trait allows you to be generic over all contexts that allow to retrieve the [Timestamp] of calling them.
+/// Contexts which can retrieve the current [`Timestamp`].
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from reducers, procedures, HTTP handlers,
+/// and transactions started by procedures and HTTP handlers.
+///
+/// When operating on a concrete-typed [`ReducerContext`], [`ProcedureContext`], [`HandlerContext`] or [`TxContext`],
+/// this trait is not necessary, as the context's `timestamp` field provides the same access.
 pub trait CtxWithTimestamp {
     fn timestamp(&self) -> Timestamp;
 }
