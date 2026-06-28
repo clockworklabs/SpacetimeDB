@@ -1,4 +1,4 @@
-use spacetimedb_smoketests::Smoketest;
+use spacetimedb_smoketests::{require_server_issued_login, Smoketest};
 
 /// Test that a locked database cannot be deleted.
 #[test]
@@ -97,6 +97,8 @@ fn test_unlock_is_idempotent() {
 /// Test that a non-owner cannot lock or unlock a database.
 #[test]
 fn test_non_owner_cannot_lock_or_unlock() {
+    require_server_issued_login!();
+
     let test = Smoketest::builder().precompiled_module("modules-basic").build();
 
     let identity = test.database_identity.as_ref().unwrap().clone();

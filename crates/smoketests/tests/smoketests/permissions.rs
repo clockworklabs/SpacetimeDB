@@ -1,4 +1,4 @@
-use spacetimedb_smoketests::Smoketest;
+use spacetimedb_smoketests::{require_server_issued_login, Smoketest};
 use std::path::PathBuf;
 
 fn workspace_root() -> PathBuf {
@@ -34,6 +34,8 @@ fn test_describe() {
 /// Ensure that we are not able to view the logs of a module that we don't have permission to view
 #[test]
 fn test_logs() {
+    require_server_issued_login!();
+
     let test = Smoketest::builder().precompiled_module("modules-basic").build();
 
     // Call say_hello as owner
@@ -57,6 +59,8 @@ fn test_logs() {
 /// Ensure that you cannot publish to an identity that you do not own
 #[test]
 fn test_publish() {
+    require_server_issued_login!();
+
     let test = Smoketest::builder().precompiled_module("modules-basic").build();
 
     let identity = test.database_identity.as_ref().unwrap().clone();
@@ -97,6 +101,8 @@ fn test_publish() {
 /// Test that you can't replace names of a database you don't own
 #[test]
 fn test_replace_names() {
+    require_server_issued_login!();
+
     let mut test = Smoketest::builder()
         .precompiled_module("modules-basic")
         .autopublish(false)
@@ -123,6 +129,8 @@ fn test_replace_names() {
 /// Ensure that a private table can only be queried by the database owner
 #[test]
 fn test_private_table() {
+    require_server_issued_login!();
+
     let test = Smoketest::builder().precompiled_module("permissions-private").build();
 
     // Owner can query private table
@@ -189,6 +197,8 @@ fn test_private_table() {
 /// Ensure that you cannot delete a database that you do not own
 #[test]
 fn test_cannot_delete_others_database() {
+    require_server_issued_login!();
+
     let test = Smoketest::builder().build();
 
     let identity = test.database_identity.as_ref().unwrap().clone();

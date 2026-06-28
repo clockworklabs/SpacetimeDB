@@ -1,9 +1,11 @@
-use spacetimedb_smoketests::Smoketest;
+use spacetimedb_smoketests::{require_server_issued_login, Smoketest};
 
 // TODO: This test originally was testing to make sure that our tutorial isn't broken. Since our onboarding has changed we should probably update this test in the future.
 /// Test the entirety of the new user flow.
 #[test]
 fn test_new_user_flow() {
+    require_server_issued_login!();
+
     let mut test = Smoketest::builder()
         .precompiled_module("new-user-flow")
         .autopublish(false)
