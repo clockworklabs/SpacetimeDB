@@ -1,5 +1,5 @@
 [package]
-name = "spacetimedb-dst"
+name = "spacetimedb-dst-lib"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
