@@ -1661,10 +1661,6 @@ log = "0.4"
     ///
     /// This is useful for tests that need to test with multiple identities.
     pub fn new_identity(&self) -> Result<()> {
-        if is_spacetime_login() {
-            bail!("new_identity requires server-issued login mode");
-        }
-
         let cli_path = ensure_binaries_built();
         let config_path_str = self.config_path.to_str().unwrap();
 

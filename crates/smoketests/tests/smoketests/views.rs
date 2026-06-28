@@ -2,8 +2,7 @@ use std::path::PathBuf;
 
 use serde_json::{json, Value};
 use spacetimedb_smoketests::{
-    require_dotnet, require_local_server, require_pnpm, require_server_issued_login, workspace_root, ModuleLanguage,
-    Smoketest,
+    require_dotnet, require_local_server, require_pnpm, workspace_root, ModuleLanguage, Smoketest,
 };
 
 const STALE_VIEW_BACKING_TABLE_FIXTURE_IDENTITY: &str =
@@ -724,8 +723,6 @@ fn test_repair_stale_anonymous_view_backing_table_on_startup() {
 
 #[test]
 fn test_view_accessibility() {
-    require_server_issued_login!();
-
     let test = Smoketest::builder().precompiled_module("views-callable").build();
 
     test.new_identity().unwrap();
@@ -775,8 +772,6 @@ fn test_recovery_from_trapped_views_auto_migration() {
 
 #[test]
 fn test_subscribing_with_different_identities() {
-    require_server_issued_login!();
-
     let test = Smoketest::builder().precompiled_module("views-subscribe").build();
 
     test.call("insert_player", &["Alice"]).unwrap();
@@ -1123,8 +1118,6 @@ fn expected_pk_join_projection(view_name: &str) -> Value {
 }
 
 fn run_pk_join_subscription_test(query: &str, projected_view_name: &str, mutations: &[PkJoinMutation]) {
-    require_server_issued_login!();
-
     let test = Smoketest::builder().precompiled_module("views-query").build();
 
     // Seed rows for identity A in both underlying tables.
