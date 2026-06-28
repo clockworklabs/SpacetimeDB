@@ -58,10 +58,8 @@ jobs:
   build-cargo-release:
     runs-on: spacetimedb-new-runner-2
     steps:
-      - name: Checkout release tag
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.release_tag }}
 
       - name: Set up Rust
         uses: dsherret/rust-toolchain-file@v1
