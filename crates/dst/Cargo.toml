@@ -5,18 +5,19 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+async-trait.workspace = true
 anyhow.workspace = true
 clap.workspace = true
-spacetimedb-datastore = { path = "../datastore", default-features = false, features = ["simulation"] }
+spacetimedb-datastore.workspace = true
 spacetimedb-commitlog.workspace = true
-spacetimedb-durability = { path = "../durability", default-features = false, features = ["simulation"] }
-spacetimedb-engine = { path = "../engine", default-features = false, features = ["simulation"] }
+spacetimedb-durability.workspace = true
+spacetimedb-engine.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-primitives.workspace = true
-spacetimedb-runtime = { path = "../runtime/", default-features = false, features = ["simulation"] }
+spacetimedb-runtime = { workspace = true, features = ["simulation"] }
 spacetimedb-sats.workspace = true
 spacetimedb-schema.workspace = true
-spacetimedb-table = { path = "../table", default-features = false }
+spacetimedb-table.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
