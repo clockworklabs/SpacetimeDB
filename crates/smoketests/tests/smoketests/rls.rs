@@ -1,8 +1,10 @@
-use spacetimedb_smoketests::Smoketest;
+use spacetimedb_smoketests::{require_server_issued_login, Smoketest};
 
 /// Tests for querying tables with RLS rules
 #[test]
 fn test_rls_rules() {
+    require_server_issued_login!();
+
     let test = Smoketest::builder().precompiled_module("rls").build();
 
     // Insert a user for Alice (current identity)

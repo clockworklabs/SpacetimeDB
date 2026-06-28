@@ -78,6 +78,11 @@ pub fn is_remote_server() -> bool {
     remote_server_url().is_some()
 }
 
+/// Returns true if remote smoketests are using a SpacetimeAuth-issued token.
+pub fn is_spacetime_login() -> bool {
+    std::env::var("SPACETIME_SMOKETEST_SPACETIME_LOGIN").ok().as_deref() == Some("1")
+}
+
 /// Skip this test if running against a remote server.
 ///
 /// Use this macro at the start of tests that require a local server,
@@ -101,6 +106,19 @@ macro_rules! require_local_server {
             #[allow(clippy::disallowed_macros)]
             {
                 eprintln!("Skipping test: requires local server");
+            }
+            return;
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! require_server_issued_login {
+    () => {
+        if $crate::is_spacetime_login() {
+            #[allow(clippy::disallowed_macros)]
+            {
+                eprintln!("Skipping test: requires server-issued throwaway identities");
             }
             return;
         }
@@ -912,6 +930,9 @@ impl SmoketestBuilder {
         let module_name = format!("smoketest_module_{}", random_string());
 
         let config_path = project_dir.path().join("config.toml");
+        if let Ok(base_config) = std::env::var("SPACETIME_SMOKETEST_BASE_CONFIG") {
+            fs::write(&config_path, base_config).expect("Failed to write base smoketest config");
+        }
         let mut smoketest = Smoketest {
             guard,
             _data_dir_fixture: data_dir_fixture,
@@ -1639,6 +1660,10 @@ log = "0.4"
     ///
     /// This is useful for tests that need to test with multiple identities.
     pub fn new_identity(&self) -> Result<()> {
+        if is_spacetime_login() {
+            bail!("new_identity requires server-issued login mode");
+        }
+
         let cli_path = ensure_binaries_built();
         let config_path_str = self.config_path.to_str().unwrap();
 
