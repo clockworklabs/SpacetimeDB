@@ -30,13 +30,13 @@ Maincloud and maincloud staging require SpacetimeAuth-issued tokens rather than
 server-issued tokens. Use `--spacetime-login` for those:
 
 ```bash
-SPACETIME_SMOKETEST_TOKEN=<token> \
-  cargo ci smoketests --server https://maincloud.staging.spacetimedb.com --spacetime-login
+cargo ci smoketests --server https://maincloud.staging.spacetimedb.com --spacetime-login
 ```
 
-If `SPACETIME_SMOKETEST_TOKEN` is omitted, the runner invokes `spacetime login`.
-Tests that need throwaway server-issued identities should call
-`require_server_issued_login!()` so they skip in SpacetimeAuth mode.
+The runner invokes `spacetime login` once, then copies that logged-in config
+into each isolated smoketest config. Tests that need throwaway server-issued
+identities should call `require_server_issued_login!()` so they skip in
+SpacetimeAuth mode.
 
 ### WARNING: Stale Binary Risk
 

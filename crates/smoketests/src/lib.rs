@@ -930,8 +930,9 @@ impl SmoketestBuilder {
         let module_name = format!("smoketest_module_{}", random_string());
 
         let config_path = project_dir.path().join("config.toml");
-        if let Ok(base_config) = std::env::var("SPACETIME_SMOKETEST_BASE_CONFIG") {
-            fs::write(&config_path, base_config).expect("Failed to write base smoketest config");
+        if let Ok(base_config_path) = std::env::var("SPACETIME_SMOKETEST_BASE_CONFIG_PATH") {
+            fs::copy(&base_config_path, &config_path)
+                .unwrap_or_else(|err| panic!("failed to copy base smoketest config from {base_config_path}: {err:#}"));
         }
         let mut smoketest = Smoketest {
             guard,
