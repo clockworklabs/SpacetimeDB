@@ -1,0 +1,97 @@
+[gd_scene format=3 uid="uid://c7ooixyfpcdfl"]
+
+[ext_resource type="Script" uid="uid://7os6vnhqnsel" path="res://scripts/main.gd" id="1"]
+[ext_resource type="Script" uid="uid://cf0aiq5wss7i6" path="res://scripts/ui/username_screen.gd" id="2"]
+[ext_resource type="Script" uid="uid://ddv043dnpielv" path="res://scripts/ui/death_screen.gd" id="3"]
+[ext_resource type="Script" uid="uid://corci6id1y164" path="res://scripts/ui/leaderboard.gd" id="4"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_leaderboard"]
+content_margin_left = 8.0
+content_margin_top = 8.0
+content_margin_right = 8.0
+content_margin_bottom = 8.0
+bg_color = Color(0, 0, 0, 0.5)
+
+[node name="Main" type="Node2D" unique_id=2066025383]
+script = ExtResource("1")
+
+[node name="WorldBorder" type="Node2D" parent="." unique_id=1339913805]
+
+[node name="EntityContainer" type="Node2D" parent="." unique_id=1977138769]
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=126881989]
+position = Vector2(500, 500)
+
+[node name="UI" type="CanvasLayer" parent="." unique_id=150712039]
+
+[node name="UsernameScreen" type="CenterContainer" parent="UI" unique_id=2085017660]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("2")
+
+[node name="VBox" type="VBoxContainer" parent="UI/UsernameScreen" unique_id=384289580]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="UI/UsernameScreen/VBox" unique_id=1966296046]
+layout_mode = 2
+text = "BLACKHOLIO"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="NameInput" type="LineEdit" parent="UI/UsernameScreen/VBox" unique_id=764459742]
+layout_mode = 2
+placeholder_text = "Enter your name..."
+alignment = 1
+max_length = 20
+
+[node name="PlayButton" type="Button" parent="UI/UsernameScreen/VBox" unique_id=1940916041]
+layout_mode = 2
+text = "Play"
+
+[node name="DeathScreen" type="CenterContainer" parent="UI" unique_id=779658285]
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("3")
+
+[node name="VBox" type="VBoxContainer" parent="UI/DeathScreen" unique_id=1499278143]
+layout_mode = 2
+
+[node name="DeathLabel" type="Label" parent="UI/DeathScreen/VBox" unique_id=1506471399]
+layout_mode = 2
+text = "You were eaten!"
+horizontal_alignment = 1
+
+[node name="RespawnButton" type="Button" parent="UI/DeathScreen/VBox" unique_id=1143948232]
+layout_mode = 2
+text = "Respawn"
+
+[node name="Leaderboard" type="PanelContainer" parent="UI" unique_id=1523017034]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -200.0
+offset_bottom = 300.0
+grow_horizontal = 0
+theme_override_styles/panel = SubResource("StyleBoxFlat_leaderboard")
+script = ExtResource("4")
+
+[node name="MarginContainer" type="MarginContainer" parent="UI/Leaderboard" unique_id=1203123258]
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="UI/Leaderboard/MarginContainer" unique_id=1653594296]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="UI/Leaderboard/MarginContainer/VBox" unique_id=1745468671]
+layout_mode = 2
+text = "Leaderboard"
+horizontal_alignment = 1
+
+[node name="Rows" type="VBoxContainer" parent="UI/Leaderboard/MarginContainer/VBox" unique_id=1690461270]
+layout_mode = 2

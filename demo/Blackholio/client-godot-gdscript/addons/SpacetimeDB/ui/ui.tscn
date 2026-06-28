@@ -1,0 +1,331 @@
+[gd_scene format=3 uid="uid://dcklym85vmdt3"]
+
+[ext_resource type="Script" uid="uid://y32201k503ps" path="res://addons/SpacetimeDB/ui/ui.gd" id="1_ej8d4"]
+[ext_resource type="Texture2D" uid="uid://bbwidmvngko0a" path="res://addons/SpacetimeDB/ui/icons/Remove.svg" id="1_mgbt2"]
+[ext_resource type="Texture2D" uid="uid://yyihsx4ptqm6" path="res://addons/SpacetimeDB/ui/icons/Add.svg" id="2_3cpcg"]
+[ext_resource type="Texture2D" uid="uid://db1mkfv85i0hu" path="res://addons/SpacetimeDB/ui/icons/ActionCopy.svg" id="4_ej8d4"]
+[ext_resource type="Texture2D" uid="uid://bj322os6s3pwb" path="res://addons/SpacetimeDB/ui/icons/Clear.svg" id="4_raufm"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ej8d4"]
+bg_color = Color(0.18000486, 0.1800049, 0.18000478, 1)
+border_width_left = 8
+border_width_top = 8
+border_width_right = 8
+border_width_bottom = 8
+border_color = Color(0.18039216, 0.18039216, 0.18039216, 1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_ej8d4"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_e5a4l"]
+
+[sub_resource type="SystemFont" id="SystemFont_3cpcg"]
+font_names = PackedStringArray("Consolas", "Monospace")
+subpixel_positioning = 0
+
+[sub_resource type="SystemFont" id="SystemFont_d0lf3"]
+font_names = PackedStringArray("Consolas", "Monospace")
+font_weight = 600
+subpixel_positioning = 0
+
+[sub_resource type="SystemFont" id="SystemFont_ej8d4"]
+font_names = PackedStringArray("Consolas", "Monospace")
+font_italic = true
+font_weight = 600
+subpixel_positioning = 0
+
+[sub_resource type="SystemFont" id="SystemFont_raufm"]
+font_names = PackedStringArray("Consolas", "Monospace")
+font_italic = true
+subpixel_positioning = 0
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_e5a4l"]
+content_margin_left = 4.0
+content_margin_top = 6.0
+content_margin_right = 4.0
+bg_color = Color(0.129412, 0.14902, 0.180392, 1)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+anti_aliasing = false
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_d0lf3"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_raufm"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_k511v"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_3cpcg"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_43xhi"]
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_qc7xu"]
+
+[node name="Control" type="Control" unique_id=300651625]
+custom_minimum_size = Vector2(0, 250)
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_ej8d4")
+
+[node name="Prefabs" type="Node" parent="." unique_id=1220440482]
+
+[node name="ModulePrefab" type="PanelContainer" parent="Prefabs" unique_id=877885599]
+visible = false
+custom_minimum_size = Vector2(245, 0)
+offset_left = 902.0
+offset_top = 64.0
+offset_right = 1142.0
+offset_bottom = 146.0
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_ej8d4")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Prefabs/ModulePrefab" unique_id=570480037]
+layout_mode = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="Prefabs/ModulePrefab/VBoxContainer" unique_id=571671027]
+self_modulate = Color(1, 1, 1, 0)
+custom_minimum_size = Vector2(0, 31)
+layout_mode = 2
+theme_override_constants/separation = 5
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Prefabs/ModulePrefab/VBoxContainer/HBoxContainer" unique_id=96668723]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ModuleNameInput" type="LineEdit" parent="Prefabs/ModulePrefab/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=2107428798]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "ModuleName"
+placeholder_text = "Module"
+
+[node name="ModuleAliasInput" type="LineEdit" parent="Prefabs/ModulePrefab/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=353182820]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "ModuleName"
+placeholder_text = "Module"
+
+[node name="RemoveButton" type="Button" parent="Prefabs/ModulePrefab/VBoxContainer/HBoxContainer" unique_id=1627445943]
+custom_minimum_size = Vector2(26, 27)
+layout_mode = 2
+size_flags_horizontal = 8
+size_flags_vertical = 4
+tooltip_text = "Remove Module"
+theme_override_styles/normal = SubResource("StyleBoxEmpty_ej8d4")
+theme_override_styles/focus = SubResource("StyleBoxEmpty_e5a4l")
+icon = ExtResource("1_mgbt2")
+icon_alignment = 1
+
+[node name="ReducerCheckbox" type="CheckBox" parent="Prefabs/ModulePrefab/VBoxContainer" unique_id=144177559]
+layout_mode = 2
+button_pressed = true
+text = "Hide scheduled reducer"
+
+[node name="TableCheckbox" type="CheckBox" parent="Prefabs/ModulePrefab/VBoxContainer" unique_id=1106248549]
+layout_mode = 2
+button_pressed = true
+text = "Hide private tables"
+
+[node name="Main" type="VBoxContainer" parent="." unique_id=1927142397]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 4
+
+[node name="Content" type="HBoxContainer" parent="Main" unique_id=158794253]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 4
+
+[node name="Logs" type="RichTextLabel" parent="Main/Content" unique_id=776566878]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 9)
+layout_mode = 2
+size_flags_horizontal = 3
+focus_mode = 2
+theme_override_constants/line_separation = 3
+theme_override_fonts/normal_font = SubResource("SystemFont_3cpcg")
+theme_override_fonts/bold_font = SubResource("SystemFont_d0lf3")
+theme_override_fonts/bold_italics_font = SubResource("SystemFont_ej8d4")
+theme_override_fonts/italics_font = SubResource("SystemFont_raufm")
+theme_override_styles/normal = SubResource("StyleBoxFlat_e5a4l")
+bbcode_enabled = true
+text = "SpacetimeDB SDK v0.1.0 (c) 2025-present flametime and contributors
+[img]res://addons/SpacetimeDB/ui/icons/Error.svg[/img] [color=#FF786B][b]ERROR:[/b] Plugin failed to load[/color]
+"
+scroll_following = true
+shortcut_keys_enabled = false
+selection_enabled = true
+deselect_on_focus_loss_enabled = false
+
+[node name="Sidebar" type="VBoxContainer" parent="Main/Content" unique_id=478231058]
+custom_minimum_size = Vector2(250, 0)
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="ScrollContainer" type="ScrollContainer" parent="Main/Content/Sidebar" unique_id=1958680145]
+custom_minimum_size = Vector2(250, 0)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Main/Content/Sidebar/ScrollContainer" unique_id=288646920]
+custom_minimum_size = Vector2(250, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="ModulesLabel" type="Label" parent="Main/Content/Sidebar/ScrollContainer/VBoxContainer" unique_id=1554960587]
+layout_mode = 2
+text = "Modules"
+horizontal_alignment = 1
+
+[node name="AddModuleHint" type="RichTextLabel" parent="Main/Content/Sidebar/ScrollContainer/VBoxContainer" unique_id=1922651127]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_styles/normal = SubResource("StyleBoxEmpty_d0lf3")
+bbcode_enabled = true
+text = "Add a module by entering the name below and clicking [img]res://addons/SpacetimeDB/ui/icons/Add.svg[/img]"
+fit_content = true
+scroll_active = false
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="ModulesContainer" type="VBoxContainer" parent="Main/Content/Sidebar/ScrollContainer/VBoxContainer" unique_id=1083011433]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="ModulesLabel2" type="Label" parent="Main/Content/Sidebar/ScrollContainer/VBoxContainer" unique_id=1852514859]
+layout_mode = 2
+text = "Add New Module"
+horizontal_alignment = 1
+
+[node name="PanelContainer2" type="PanelContainer" parent="Main/Content/Sidebar/ScrollContainer/VBoxContainer" unique_id=470251646]
+custom_minimum_size = Vector2(245, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_ej8d4")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Main/Content/Sidebar/ScrollContainer/VBoxContainer/PanelContainer2" unique_id=731307918]
+layout_mode = 2
+
+[node name="NewModule" type="HBoxContainer" parent="Main/Content/Sidebar/ScrollContainer/VBoxContainer/PanelContainer2/VBoxContainer" unique_id=133310361]
+self_modulate = Color(1, 1, 1, 0)
+custom_minimum_size = Vector2(0, 35)
+layout_mode = 2
+theme_override_constants/separation = 5
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Main/Content/Sidebar/ScrollContainer/VBoxContainer/PanelContainer2/VBoxContainer/NewModule" unique_id=157228287]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ModuleNameInput" type="LineEdit" parent="Main/Content/Sidebar/ScrollContainer/VBoxContainer/PanelContainer2/VBoxContainer/NewModule/VBoxContainer" unique_id=352108602]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Enter module name"
+
+[node name="ModuleAliasInput" type="LineEdit" parent="Main/Content/Sidebar/ScrollContainer/VBoxContainer/PanelContainer2/VBoxContainer/NewModule/VBoxContainer" unique_id=191976263]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Enter Alias name"
+
+[node name="AddButton" type="Button" parent="Main/Content/Sidebar/ScrollContainer/VBoxContainer/PanelContainer2/VBoxContainer/NewModule" unique_id=1405223987]
+custom_minimum_size = Vector2(26, 27)
+layout_mode = 2
+size_flags_horizontal = 8
+size_flags_vertical = 4
+tooltip_text = "Add Module"
+theme_override_styles/normal = SubResource("StyleBoxEmpty_raufm")
+theme_override_styles/focus = SubResource("StyleBoxEmpty_k511v")
+icon = ExtResource("2_3cpcg")
+icon_alignment = 1
+
+[node name="ReducerCheckbox" type="CheckBox" parent="Main/Content/Sidebar/ScrollContainer/VBoxContainer/PanelContainer2/VBoxContainer" unique_id=1426498162]
+unique_name_in_owner = true
+layout_mode = 2
+button_pressed = true
+text = "Hide scheduled reducer"
+
+[node name="TablesCheckbox" type="CheckBox" parent="Main/Content/Sidebar/ScrollContainer/VBoxContainer/PanelContainer2/VBoxContainer" unique_id=1656566781]
+unique_name_in_owner = true
+layout_mode = 2
+button_pressed = true
+text = "Hide private tables"
+
+[node name="GenerateButton" type="Button" parent="Main/Content/Sidebar" unique_id=1719959949]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 31)
+layout_mode = 2
+disabled = true
+text = "Generate schema"
+
+[node name="BottomBar" type="HBoxContainer" parent="Main" unique_id=401228737]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="LogsControls" type="BoxContainer" parent="Main/BottomBar" unique_id=1586402036]
+layout_mode = 2
+theme_override_constants/separation = 6
+alignment = 1
+
+[node name="ClearLogsButton" type="Button" parent="Main/BottomBar/LogsControls" unique_id=1781787773]
+custom_minimum_size = Vector2(26, 27)
+layout_mode = 2
+tooltip_text = "Clear Output (Ctrl+Alt+K)"
+theme_override_styles/normal = SubResource("StyleBoxEmpty_3cpcg")
+theme_override_styles/focus = SubResource("StyleBoxEmpty_43xhi")
+icon = ExtResource("4_raufm")
+icon_alignment = 1
+
+[node name="CopyLogsButton" type="Button" parent="Main/BottomBar/LogsControls" unique_id=164088141]
+custom_minimum_size = Vector2(26, 27)
+layout_mode = 2
+tooltip_text = "Copy Selection (Ctrl+C)"
+theme_override_styles/normal = SubResource("StyleBoxEmpty_3cpcg")
+theme_override_styles/focus = SubResource("StyleBoxEmpty_qc7xu")
+icon = ExtResource("4_ej8d4")
+icon_alignment = 1
+
+[node name="VSeparator" type="VSeparator" parent="Main/BottomBar" unique_id=1722862201]
+layout_mode = 2
+
+[node name="ServerUri" type="HBoxContainer" parent="Main/BottomBar" unique_id=1799167615]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 0
+
+[node name="Label" type="Label" parent="Main/BottomBar/ServerUri" unique_id=416552565]
+layout_mode = 2
+text = "Server URI:"
+vertical_alignment = 1
+
+[node name="UriInput" type="LineEdit" parent="Main/BottomBar/ServerUri" unique_id=134731222]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "http://127.0.0.1:3000"
+placeholder_text = "Enter the server URI"
+
+[node name="CheckUri" type="Button" parent="Main/BottomBar" unique_id=741931029]
+layout_mode = 2
+text = "Check URI"
+
+[connection signal="pressed" from="Main/Content/Sidebar/ScrollContainer/VBoxContainer/PanelContainer2/VBoxContainer/NewModule/AddButton" to="." method="_on_new_module"]
+[connection signal="pressed" from="Main/Content/Sidebar/GenerateButton" to="." method="_on_generate_code"]
+[connection signal="pressed" from="Main/BottomBar/LogsControls/ClearLogsButton" to="." method="_on_clear_logs"]
+[connection signal="pressed" from="Main/BottomBar/LogsControls/CopyLogsButton" to="." method="_on_copy_selected_logs"]
+[connection signal="pressed" from="Main/BottomBar/CheckUri" to="." method="_on_check_uri"]
