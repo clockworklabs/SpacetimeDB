@@ -104,7 +104,7 @@ When specified, tests will connect to the given URL instead of starting local se
 
 - `--spacetime-login <SPACETIME_LOGIN>`: Use a SpacetimeAuth-issued login for remote-server tests.
 
-This is required for maincloud and maincloud staging, which reject direct server-issued logins for privileged operations.
+This is required for servers that reject direct server-issued logins for privileged operations.
 
 Optionally accepts an auth host to pass through to `spacetime login`, for example `--spacetime-login=https://maincloud.staging.spacetimedb.com`.
 
