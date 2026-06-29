@@ -79,7 +79,7 @@ pub fn is_remote_server() -> bool {
 }
 
 /// Returns true if remote smoketests are using a SpacetimeAuth-issued token.
-pub fn is_auth_host() -> bool {
+pub fn is_using_auth_host() -> bool {
     std::env::var("SPACETIME_USE_AUTH_HOST").ok().as_deref() == Some("1")
 }
 
@@ -115,7 +115,7 @@ macro_rules! require_local_server {
 #[macro_export]
 macro_rules! require_server_issued_login {
     () => {
-        if $crate::is_auth_host() {
+        if $crate::is_using_auth_host() {
             #[allow(clippy::disallowed_macros)]
             {
                 eprintln!("Skipping test: requires server-issued throwaway identities");
