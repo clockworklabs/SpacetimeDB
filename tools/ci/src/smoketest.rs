@@ -2,6 +2,7 @@
 use anyhow::{bail, ensure, Context, Result};
 use clap::{Args, Subcommand};
 use duct::cmd;
+use spacetimedb_guard::ensure_binaries_built;
 use std::ffi::OsStr;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -141,7 +142,8 @@ fn run_smoketest(server: Option<String>, dotnet: bool, spacetime_login: bool, ar
     // 2. Build pre-compiled modules (this also warms the WASM dependency cache)
     build_precompiled_modules()?;
 
-    let base_config_dir = prepare_base_config(server.as_deref(), spacetime_login)?;
+    let cli_path = ensure_binaries_built();
+    let base_config_dir = prepare_base_config(&cli_path, server.as_deref(), spacetime_login)?;
     let base_config_path = base_config_dir.path().join("config.toml");
 
     // 4. Detect whether to use nextest or cargo test
@@ -198,7 +200,7 @@ fn run_smoketest(server: Option<String>, dotnet: bool, spacetime_login: bool, ar
     Ok(())
 }
 
-fn prepare_base_config(server: Option<&str>, spacetime_login: bool) -> Result<TempDir> {
+fn prepare_base_config(cli_path: &Path, server: Option<&str>, spacetime_login: bool) -> Result<TempDir> {
     if server.is_none() && spacetime_login {
         bail!("--spacetime-login requires --server");
     }
@@ -208,14 +210,14 @@ fn prepare_base_config(server: Option<&str>, spacetime_login: bool) -> Result<Te
     let config_path_str = config_path.to_str().context("invalid temp config path")?;
 
     // run an arbitrary command in order to initialize the config file
-    let status = Command::new("target/release/spacetime")
+    let status = Command::new(cli_path)
         .args(["--config-path", config_path_str, "server", "set-default", "local"])
         .status()
         .context("failed to initialize smoketest server config")?;
     ensure!(status.success(), "spacetime server set-default failed");
 
     if let Some(server) = server {
-        let status = Command::new("target/release/spacetime")
+        let status = Command::new(cli_path)
             .args([
                 "--config-path",
                 config_path_str,
@@ -233,13 +235,13 @@ fn prepare_base_config(server: Option<&str>, spacetime_login: bool) -> Result<Te
 
     if spacetime_login {
         eprintln!("Logging in with SpacetimeAuth for remote smoketests...");
-        let status = Command::new("target/release/spacetime")
+        let status = Command::new(cli_path)
             .args(["--config-path", config_path_str, "login"])
             .status()
             .context("failed to run spacetime login")?;
         ensure!(status.success(), "spacetime login failed");
     } else if server.is_some() {
-        let status = Command::new("target/release/spacetime")
+        let status = Command::new(cli_path)
             .args([
                 "--config-path",
                 config_path_str,
