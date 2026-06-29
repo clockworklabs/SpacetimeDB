@@ -33,9 +33,9 @@ pub struct SmoketestsArgs {
     /// This is required for servers that reject direct server-issued logins for privileged operations.
     ///
     /// Optionally accepts an auth host to pass through to `spacetime login`,
-    /// for example `--spacetime-login=https://spacetimedb.com`.
+    /// for example `--auth-host=https://spacetimedb.com`.
     #[arg(long, num_args = 0..=1, require_equals = true, default_missing_value = "")]
-    spacetime_login: Option<String>,
+    auth_host: Option<String>,
 
     #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
     dotnet: bool,
@@ -66,7 +66,7 @@ pub fn run(args: SmoketestsArgs) -> Result<()> {
             eprintln!("smoketests/mod.rs is up to date.");
             Ok(())
         }
-        None => run_smoketest(args.server, args.dotnet, args.spacetime_login.as_deref(), args.args),
+        None => run_smoketest(args.server, args.dotnet, args.auth_host.as_deref(), args.args),
     }
 }
 
@@ -137,12 +137,7 @@ fn build_precompiled_modules() -> Result<()> {
 /// 16 was found to be optimal - higher values cause OS scheduler overhead.
 const DEFAULT_PARALLELISM: &str = "16";
 
-fn run_smoketest(
-    server: Option<String>,
-    dotnet: bool,
-    spacetime_login_auth_host: Option<&str>,
-    args: Vec<String>,
-) -> Result<()> {
+fn run_smoketest(server: Option<String>, dotnet: bool, auth_host: Option<&str>, args: Vec<String>) -> Result<()> {
     // 1. Build binaries first (single process, no race)
     build_binaries()?;
 
@@ -150,7 +145,7 @@ fn run_smoketest(
     build_precompiled_modules()?;
 
     let cli_path = ensure_binaries_built();
-    let base_config_dir = prepare_base_config(&cli_path, server.as_deref(), spacetime_login_auth_host)?;
+    let base_config_dir = prepare_base_config(&cli_path, server.as_deref(), auth_host)?;
     let base_config_path = base_config_dir.path().join("config.toml");
 
     // 4. Detect whether to use nextest or cargo test
@@ -170,13 +165,7 @@ fn run_smoketest(
     let mut cmd = if use_nextest {
         eprintln!("Running smoketests with cargo nextest...\n");
         let mut cmd = Command::new("cargo");
-        set_env(
-            &mut cmd,
-            server,
-            dotnet,
-            spacetime_login_auth_host.is_some(),
-            &base_config_path,
-        );
+        set_env(&mut cmd, server, dotnet, auth_host.is_some(), &base_config_path);
         cmd.args([
             "nextest",
             "run",
@@ -198,13 +187,7 @@ fn run_smoketest(
     } else {
         eprintln!("Running smoketests with cargo test...\n");
         let mut cmd = Command::new("cargo");
-        set_env(
-            &mut cmd,
-            server,
-            dotnet,
-            spacetime_login_auth_host.is_some(),
-            &base_config_path,
-        );
+        set_env(&mut cmd, server, dotnet, auth_host.is_some(), &base_config_path);
         cmd.args(["test", "--release", "-p", "spacetimedb-smoketests"]);
         cmd
     };
@@ -219,13 +202,9 @@ fn run_smoketest(
     Ok(())
 }
 
-fn prepare_base_config(
-    cli_path: &Path,
-    server: Option<&str>,
-    spacetime_login_auth_host: Option<&str>,
-) -> Result<TempDir> {
-    if server.is_none() && spacetime_login_auth_host.is_some() {
-        bail!("--spacetime-login requires --server");
+fn prepare_base_config(cli_path: &Path, server: Option<&str>, auth_host: Option<&str>) -> Result<TempDir> {
+    if server.is_none() && auth_host.is_some() {
+        bail!("--auth-host requires --server");
     }
 
     let temp_dir = tempfile::tempdir()?;
@@ -256,7 +235,7 @@ fn prepare_base_config(
         ensure!(status.success(), "spacetime server edit failed");
     }
 
-    if let Some(auth_host) = spacetime_login_auth_host {
+    if let Some(auth_host) = auth_host {
         eprintln!("Logging in with SpacetimeAuth for remote smoketests...");
         let mut login = Command::new(cli_path);
         login.args(["--config-path", config_path_str, "login"]);
@@ -288,15 +267,12 @@ fn prepare_base_config(
     Ok(temp_dir)
 }
 
-fn set_env(cmd: &mut Command, server: Option<String>, dotnet: bool, spacetime_login: bool, base_config_path: &Path) {
+fn set_env(cmd: &mut Command, server: Option<String>, dotnet: bool, auth_host: bool, base_config_path: &Path) {
     if let Some(ref server_url) = server {
         cmd.env("SPACETIME_REMOTE_SERVER", server_url);
     }
     cmd.env("SPACETIME_SMOKETEST_BASE_CONFIG_PATH", base_config_path);
-    cmd.env(
-        "SPACETIME_SMOKETEST_SPACETIME_LOGIN",
-        if spacetime_login { "1" } else { "0" },
-    );
+    cmd.env("SPACETIME_SMOKETEST_AUTH_HOST", if auth_host { "1" } else { "0" });
     cmd.env("SMOKETESTS_DOTNET", if dotnet { "1" } else { "0" });
 }
 

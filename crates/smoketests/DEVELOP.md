@@ -27,10 +27,10 @@ cargo ci smoketests --server https://example.spacetimedb.com
 ```
 
 Maincloud and maincloud staging require SpacetimeAuth-issued tokens rather than
-server-issued tokens. Use `--spacetime-login` for those:
+server-issued tokens. Use `--auth-host` for those:
 
 ```bash
-cargo ci smoketests --server https://maincloud.staging.spacetimedb.com --spacetime-login
+cargo ci smoketests --server https://maincloud.staging.spacetimedb.com --auth-host
 ```
 
 The runner invokes `spacetime login` once, then copies that logged-in config
