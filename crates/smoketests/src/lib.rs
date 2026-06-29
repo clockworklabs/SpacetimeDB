@@ -976,10 +976,8 @@ impl Smoketest {
 
     /// Returns the server host (without protocol), e.g., "127.0.0.1:3000".
     pub fn server_host(&self) -> &str {
-        self.server_url
-            .strip_prefix("http://")
-            .or_else(|| self.server_url.strip_prefix("https://"))
-            .unwrap_or(&self.server_url)
+        let (_, host) = split_server_url(&self.server_url);
+        host
     }
 
     /// Returns the PostgreSQL wire protocol port, if enabled.
@@ -1005,10 +1003,10 @@ impl Smoketest {
     }
 
     pub fn login_with_token(&self, token: &str) -> Result<()> {
-        let host = self.server_host();
+        let (protocol, host) = split_server_url(&self.server_url);
         let config_str = format!(
-            "default_server = \"localhost\"\n\nspacetimedb_token = \"{}\"\n\n[[server_configs]]\nnickname = \"localhost\"\nhost = \"{}\"\nprotocol = \"http\"\n",
-            token, host
+            "default_server = \"localhost\"\n\nspacetimedb_token = \"{}\"\n\n[[server_configs]]\nnickname = \"localhost\"\nhost = \"{}\"\nprotocol = \"{}\"\n",
+            token, host, protocol
         );
         fs::write(&self.config_path, config_str).context("Failed to write config.toml")?;
         Ok(())
@@ -1701,58 +1699,25 @@ log = "0.4"
         body: Option<&[u8]>,
         extra_headers: &str,
     ) -> Result<ApiResponse> {
-        use std::io::{Read, Write};
-        use std::net::TcpStream;
-
-        // Parse server URL to get host and port
-        let url = &self.server_url;
-        let host_port = url
-            .strip_prefix("http://")
-            .or_else(|| url.strip_prefix("https://"))
-            .unwrap_or(url);
-
-        let mut stream = TcpStream::connect(host_port).context("Failed to connect to server")?;
-        stream.set_read_timeout(Some(std::time::Duration::from_secs(30))).ok();
-
-        // Get auth token
         let token = self.read_token()?;
+        let method = reqwest::Method::from_bytes(method.as_bytes()).context("invalid HTTP method")?;
+        let url = format!("{}{}", self.server_url.trim_end_matches('/'), path);
 
-        // Build HTTP request
-        let content_length = body.map(|b| b.len()).unwrap_or(0);
-        let request = format!(
-            "{} {} HTTP/1.1\r\nHost: {}\r\nContent-Length: {}\r\nAuthorization: Bearer {}\r\n{}Connection: close\r\n\r\n",
-            method, path, host_port, content_length, token, extra_headers
-        );
-
-        stream.write_all(request.as_bytes())?;
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .context("failed to build HTTP client")?;
+        let mut request = client.request(method, url).bearer_auth(token);
+        if extra_headers.contains("Content-Type: application/json") {
+            request = request.header(reqwest::header::CONTENT_TYPE, "application/json");
+        }
         if let Some(body) = body {
-            stream.write_all(body)?;
+            request = request.body(body.to_vec());
         }
 
-        // Read response
-        let mut response = Vec::new();
-        stream.read_to_end(&mut response)?;
-
-        // Parse HTTP response
-        let response_str = String::from_utf8_lossy(&response);
-        let mut lines = response_str.lines();
-
-        // Parse status line
-        let status_line = lines.next().context("Empty response")?;
-        let status_code: u16 = status_line
-            .split_whitespace()
-            .nth(1)
-            .and_then(|s| s.parse().ok())
-            .context("Failed to parse status code")?;
-
-        // Find body (after empty line)
-        let header_end = response_str.find("\r\n\r\n").unwrap_or(response_str.len());
-        let body_start = header_end + 4;
-        let body = if body_start < response.len() {
-            response[body_start..].to_vec()
-        } else {
-            Vec::new()
-        };
+        let response = request.send().context("HTTP request failed")?;
+        let status_code = response.status().as_u16();
+        let body = response.bytes().context("failed to read HTTP response body")?.to_vec();
 
         Ok(ApiResponse { status_code, body })
     }
@@ -1925,6 +1890,16 @@ impl Drop for SubscriptionHandle {
             }
             Err(_) => {}
         }
+    }
+}
+
+fn split_server_url(server_url: &str) -> (&str, &str) {
+    if let Some(host) = server_url.strip_prefix("http://") {
+        ("http", host)
+    } else if let Some(host) = server_url.strip_prefix("https://") {
+        ("https", host)
+    } else {
+        ("http", server_url)
     }
 }
 
