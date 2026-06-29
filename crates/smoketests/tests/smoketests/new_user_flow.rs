@@ -4,6 +4,8 @@ use spacetimedb_smoketests::{require_server_issued_login, Smoketest};
 /// Test the entirety of the new user flow.
 #[test]
 fn test_new_user_flow() {
+    // This flow creates a throwaway server-issued identity with `new_identity`,
+    // which is not available when smoketests use SpacetimeAuth login.
     require_server_issued_login!();
 
     let mut test = Smoketest::builder()

@@ -519,7 +519,7 @@ pub struct PublishBuilder<'a> {
     break_clients: bool,
     num_replicas: Option<u32>,
     organization: Option<String>,
-    force: bool,
+    force: Option<&'static str>,
     stdin_input: Option<String>,
     source: Option<ModuleSource>,
 }
@@ -546,7 +546,7 @@ impl<'a> PublishBuilder<'a> {
             break_clients: false,
             num_replicas: None,
             organization: None,
-            force: true,
+            force: Some("all"),
             stdin_input: None,
             source: None,
         }
@@ -577,13 +577,13 @@ impl<'a> PublishBuilder<'a> {
         self
     }
 
-    pub fn force(mut self, force: bool) -> Self {
+    pub fn force(mut self, force: Option<&'static str>) -> Self {
         self.force = force;
         self
     }
 
     pub fn stdin(mut self, stdin_input: impl Into<String>) -> Self {
-        self.force = false;
+        self.force = None;
         self.stdin_input = Some(stdin_input.into());
         self
     }
@@ -1438,7 +1438,7 @@ log = "0.4"
         break_clients: bool,
         num_replicas: Option<u32>,
         organization: Option<&str>,
-        force: bool,
+        force: Option<&str>,
         stdin_input: Option<&str>,
     ) -> Result<String> {
         let start = Instant::now();
@@ -1481,9 +1481,10 @@ log = "0.4"
         // Now publish with --bin-path to skip rebuild
         let publish_start = Instant::now();
         let mut args = vec!["publish", "--server", &self.server_url, "--bin-path", &wasm_path_str];
-
-        if force {
-            args.push("--yes");
+        let force_arg;
+        if let Some(force) = force {
+            force_arg = format!("--yes={force}");
+            args.push(&force_arg);
         }
 
         if clear {
