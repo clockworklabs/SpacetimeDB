@@ -33,7 +33,7 @@ pub struct SmoketestsArgs {
     /// This is required for servers that reject direct server-issued logins for privileged operations.
     ///
     /// Optionally accepts an auth host to pass through to `spacetime login`,
-    /// for example `--spacetime-login=https://maincloud.staging.spacetimedb.com`.
+    /// for example `--spacetime-login=https://spacetimedb.com`.
     #[arg(long, num_args = 0..=1, require_equals = true, default_missing_value = "")]
     spacetime_login: Option<String>,
 
