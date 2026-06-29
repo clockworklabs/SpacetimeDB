@@ -12,7 +12,7 @@ use spacetimedb::auth::token_validation::{
     new_validator, DefaultValidator, TokenSigner, TokenValidationError, TokenValidator,
 };
 use spacetimedb::auth::JwtKeys;
-use spacetimedb::energy::EnergyQuanta;
+use spacetimedb::energy::FunctionBudget;
 use spacetimedb::identity::Identity;
 use spacetimedb_data_structures::map::HashMap;
 use std::time::{Duration, SystemTime};
@@ -282,10 +282,12 @@ impl<TV: TokenValidator + Send + Sync> JwtAuthProvider for JwtKeyAuthProvider<TV
 
 #[cfg(test)]
 mod tests {
-    use crate::auth::{SpacetimeCreds, TokenClaims};
-    use anyhow::Ok;
+    use crate::auth::{AuthorizationRejection, SpacetimeCreds, TokenClaims};
+    use anyhow::{anyhow, Ok};
+    use axum::{body::to_bytes, response::IntoResponse};
+    use http::StatusCode;
 
-    use spacetimedb::auth::{token_validation::TokenValidator, JwtKeys};
+    use spacetimedb::auth::{token_validation::TokenValidationError, token_validation::TokenValidator, JwtKeys};
     use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, HashSet};
 
     // Make sure that when we encode TokenClaims, we can decode to get the expected identity.
@@ -365,11 +367,25 @@ mod tests {
             .as_object()
             .ok_or_else(|| anyhow::anyhow!("Failed to parse JWT payload as object"))?;
         let keys: HashSet<String> = as_object.keys().map(|s| s.to_string()).collect();
-        let expected_keys = vec!["iss", "sub", "aud", "iat", "exp", "hex_identity"]
+        // No-expiration tokens used to include `"exp": null`; new tokens omit it.
+        let expected_keys = vec!["iss", "sub", "aud", "iat", "hex_identity"]
             .into_iter()
             .map(|s| s.to_string())
             .collect::<HashSet<String>>();
         assert_eq!(keys, expected_keys);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn authorization_rejection_custom_uses_display_message() -> Result<(), anyhow::Error> {
+        let response =
+            AuthorizationRejection::Custom(TokenValidationError::Other(anyhow!("invalid jwks issuer"))).into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        let body = String::from_utf8(to_bytes(response.into_body(), usize::MAX).await?.to_vec())?;
+        assert_eq!(body, "invalid jwks issuer");
+        assert!(!body.contains("Other("));
+        assert!(!body.contains("Stack backtrace"));
         Ok(())
     }
 }
@@ -385,6 +401,7 @@ pub struct SpacetimeAuthHeader {
     auth: Option<SpacetimeAuth>,
 }
 
+#[async_trait::async_trait]
 impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for SpacetimeAuthHeader {
     type Rejection = AuthorizationRejection;
     async fn from_request_parts(parts: &mut request::Parts, state: &S) -> Result<Self, Self::Rejection> {
@@ -434,7 +451,7 @@ impl IntoResponse for AuthorizationRejection {
         match self {
             AuthorizationRejection::Jwt(e) if *e.kind() == JwtErrorKind::InvalidSignature => ROTATED.into_response(),
             AuthorizationRejection::Jwt(_) | AuthorizationRejection::Header(_) => INVALID.into_response(),
-            AuthorizationRejection::Custom(msg) => (StatusCode::UNAUTHORIZED, format!("{msg:?}")).into_response(),
+            AuthorizationRejection::Custom(msg) => (StatusCode::UNAUTHORIZED, msg.to_string()).into_response(),
             AuthorizationRejection::Required => REQUIRED.into_response(),
         }
     }
@@ -460,6 +477,7 @@ impl SpacetimeAuthHeader {
 
 pub struct SpacetimeAuthRequired(pub SpacetimeAuth);
 
+#[async_trait::async_trait]
 impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for SpacetimeAuthRequired {
     type Rejection = AuthorizationRejection;
     async fn from_request_parts(parts: &mut request::Parts, state: &S) -> Result<Self, Self::Rejection> {
@@ -501,7 +519,7 @@ impl headers::Header for SpacetimeIdentityToken {
     }
 }
 
-pub struct SpacetimeEnergyUsed(pub EnergyQuanta);
+pub struct SpacetimeEnergyUsed(pub FunctionBudget);
 impl headers::Header for SpacetimeEnergyUsed {
     fn name() -> &'static http::HeaderName {
         static NAME: http::HeaderName = http::HeaderName::from_static("spacetime-energy-used");
@@ -513,9 +531,7 @@ impl headers::Header for SpacetimeEnergyUsed {
     }
 
     fn encode<E: Extend<HeaderValue>>(&self, values: &mut E) {
-        let mut buf = itoa::Buffer::new();
-        let value = buf.format(self.0.get());
-        values.extend([value.try_into().unwrap()]);
+        values.extend([self.0.get().into()]);
     }
 }
 

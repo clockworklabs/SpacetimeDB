@@ -1,5 +1,6 @@
 namespace SpacetimeDB.Modules.ModuleTestCs;
 
+using System.Collections.Generic;
 using System.Reflection.Metadata.Ecma335;
 using SpacetimeDB;
 
@@ -152,6 +153,16 @@ public partial struct RepeatingTestArg
     public Timestamp prev_time;
 }
 
+[Table(Accessor = "nonrepeating_test_arg", Scheduled = nameof(Module.nonrepeating_test), ScheduledAt = nameof(scheduled_at))]
+public partial struct NonrepeatingTestArg
+{
+    [PrimaryKey]
+    [AutoInc]
+    public ulong scheduled_id;
+    public ScheduleAt scheduled_at;
+    public Timestamp prev_time;
+}
+
 [Table(Accessor = "has_special_stuff")]
 public partial struct HasSpecialStuff
 {
@@ -233,6 +244,17 @@ static partial class Module
             scheduled_id = 0,
             scheduled_at = new TimeDuration(1000000)
         });
+        
+        var currentTime = ctx.Timestamp;
+        var oneSeconds = new TimeDuration { Microseconds = 1_000_000 };
+        var futureTimestamp = currentTime + oneSeconds;
+        
+        ctx.Db.nonrepeating_test_arg.Insert(new NonrepeatingTestArg
+        {
+            prev_time = ctx.Timestamp,
+            scheduled_id = 0,
+            scheduled_at = new ScheduleAt.Time(futureTimestamp)
+        });
     }
 
     [Reducer]
@@ -240,6 +262,13 @@ static partial class Module
     {
         var deltaTime = ctx.Timestamp.TimeDurationSince(arg.prev_time);
         Log.Trace($"Timestamp: {ctx.Timestamp}, Delta time: {deltaTime}");
+    }
+    
+    [Reducer]
+    public static void nonrepeating_test(ReducerContext ctx, NonrepeatingTestArg arg)
+    {
+        var deltaTime = ctx.Timestamp.TimeDurationSince(arg.prev_time);
+        Log.Trace($"This reducers runs only once, at Timestamp: {ctx.Timestamp}, Delta time: {deltaTime}");
     }
 
     [Reducer]
@@ -272,7 +301,7 @@ static partial class Module
     public static void log_module_identity(ReducerContext ctx)
     {
         // Note: converting to lowercase to match the Rust formatting.
-        Log.Info($"Module identity: {ctx.Identity.ToString().ToLower()}");
+        Log.Info($"Module identity: {ctx.DatabaseIdentity.ToString().ToLower()}");
     }
 
     [Reducer]
@@ -464,7 +493,7 @@ static partial class Module
     public static void assert_caller_identity_is_module_identity(ReducerContext ctx)
     {
         var caller = ctx.Sender;
-        var owner = ctx.Identity;
+        var owner = ctx.DatabaseIdentity;
         if (!caller.Equals(owner))
         {
             throw new Exception($"Caller {caller} is not the owner {owner}");
@@ -474,4 +503,19 @@ static partial class Module
             Log.Info($"Called by the owner {owner}");
         }
     }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse get_simple(HandlerContext ctx, HttpRequest request)
+    {
+        return new HttpResponse(
+            200,
+            HttpVersion.Http11,
+            new List<HttpHeader>(),
+            HttpBody.FromString("ok")
+        );
+    }
+
+    [SpacetimeDB.HttpRouter]
+    public static Router router() =>
+        SpacetimeDB.Router.New().Get("/get", Handlers.get_simple);
 }

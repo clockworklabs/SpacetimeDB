@@ -63,7 +63,7 @@ export default class BinaryWriter {
     return fromByteArray(this.getBuffer());
   }
 
-  getBuffer(): Uint8Array {
+  getBuffer(): Uint8Array<ArrayBuffer> {
     return new Uint8Array(this.buffer.buffer, 0, this.offset);
   }
 

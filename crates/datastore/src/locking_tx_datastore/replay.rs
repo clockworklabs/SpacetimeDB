@@ -1,46 +1,139 @@
 use super::committed_state::CommittedState;
-use super::datastore::Result;
+use super::datastore::{Locking, Result};
 use crate::db_metrics::DB_METRICS;
-use crate::error::{IndexError, TableError};
-use crate::locking_tx_datastore::datastore::ReplayError;
-use crate::locking_tx_datastore::state_view::iter_st_column_for_table;
-use crate::locking_tx_datastore::state_view::StateView;
-use crate::system_tables::{is_built_in_meta_row, StFields as _};
-use crate::system_tables::{StColumnRow, StTableFields, StTableRow, ST_COLUMN_ID, ST_TABLE_ID};
+use crate::error::{DatastoreError, IndexError, TableError, ViewError};
+use crate::locking_tx_datastore::state_view::{iter_st_column_for_table, StateView};
+use crate::system_tables::{
+    is_built_in_meta_row, table_id_is_reserved, StColumnRow, StConstraintData, StConstraintRow, StEventTableFields,
+    StFields as _, StIndexRow, StSequenceFields, StTableFields, StTableRow, StViewRow, ST_COLUMN_ID, ST_CONSTRAINT_ID,
+    ST_EVENT_TABLE_ID, ST_INDEX_ID, ST_SEQUENCE_ID, ST_TABLE_ID, ST_VIEW_ARG_ID, ST_VIEW_ID, ST_VIEW_SUB_ID,
+};
 use anyhow::{anyhow, Context};
+use core::cell::RefMut;
 use core::ops::{Deref, DerefMut, RangeBounds};
-use parking_lot::{RwLock, RwLockReadGuard};
+use parking_lot::RwLockWriteGuard;
+use prometheus::core::{AtomicF64, GenericGauge};
+use prometheus::IntGauge;
 use spacetimedb_commitlog::payload::txdata;
-use spacetimedb_data_structures::map::{HashSet, IntMap, IntSet};
+use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap, IntSet};
+use spacetimedb_durability::History;
+use spacetimedb_durability::Txdata;
 use spacetimedb_lib::Identity;
-use spacetimedb_primitives::{ColId, ColList, TableId};
+use spacetimedb_primitives::{ColId, ColList, ColSet, SequenceId, TableId};
 use spacetimedb_sats::algebraic_value::de::ValueDeserializer;
 use spacetimedb_sats::buffer::BufReader;
-use spacetimedb_sats::{AlgebraicValue, Deserialize, ProductValue};
+use spacetimedb_sats::{bsatn, AlgebraicValue, Deserialize, ProductValue};
+use spacetimedb_schema::def::IndexAlgorithm;
 use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::{InsertError, RowRef};
 use std::cell::RefCell;
 use std::sync::Arc;
+use thiserror::Error;
+
+pub fn apply_history(
+    datastore: &Locking,
+    database_identity: Identity,
+    history: impl History<TxData = Txdata<ProductValue>>,
+    counters: ApplyHistoryCounters,
+) -> Result<()> {
+    log::info!("[{database_identity}] DATABASE: applying transaction history...");
+
+    // TODO: Revisit once we actually replay history suffixes, ie. starting
+    // from an offset larger than the history's min offset.
+    // TODO: We may want to require that a `tokio::runtime::Handle` is
+    // always supplied when constructing a `RelationalDB`. This would allow
+    // to spawn a timer task here which just prints the progress periodically
+    // in case the history is finite but very long.
+    let (_, max_tx_offset) = history.tx_range_hint();
+    let mut last_logged_percentage = 0;
+    let progress = |tx_offset: u64| {
+        if let Some(max_tx_offset) = max_tx_offset {
+            let percentage = f64::floor((tx_offset as f64 / max_tx_offset as f64) * 100.0) as i32;
+            if percentage > last_logged_percentage && percentage % 10 == 0 {
+                log::info!("[{database_identity}] Loaded {percentage}% ({tx_offset}/{max_tx_offset})");
+                last_logged_percentage = percentage;
+            }
+        // Print _something_ even if we don't know what's still ahead.
+        } else if tx_offset.is_multiple_of(10_000) {
+            log::info!("[{database_identity}] Loading transaction {tx_offset}");
+        }
+    };
+
+    let time_before = std::time::Instant::now();
+
+    let mut replay = datastore.replay(
+        progress,
+        // We don't want to instantiate an incorrect state;
+        // if the commitlog contains an inconsistency we'd rather get a hard error than showing customers incorrect data.
+        ErrorBehavior::FailFast,
+    );
+    let start_tx_offset = replay.next_tx_offset();
+    history
+        .fold_transactions_from(start_tx_offset, &mut replay)
+        .map_err(anyhow::Error::from)?;
+
+    let time_elapsed = time_before.elapsed();
+    counters.replay_commitlog_time_seconds.set(time_elapsed.as_secs_f64());
+
+    let end_tx_offset = replay.next_tx_offset();
+    counters
+        .replay_commitlog_num_commits
+        .set((end_tx_offset - start_tx_offset) as _);
+
+    log::info!("[{database_identity}] DATABASE: applied transaction history");
+    replay.committed_state().rebuild_state_after_replay(datastore)?;
+    log::info!("[{database_identity}] DATABASE: rebuilt state after replay");
+
+    Ok(())
+}
+
+pub struct ApplyHistoryCounters {
+    pub replay_commitlog_time_seconds: GenericGauge<AtomicF64>,
+    pub replay_commitlog_num_commits: IntGauge,
+}
+
+#[derive(Debug, Error)]
+pub enum ReplayError {
+    #[error("Expected tx offset {expected}, encountered {encountered}")]
+    InvalidOffset { expected: u64, encountered: u64 },
+    #[error(transparent)]
+    Decode(#[from] bsatn::DecodeError),
+    #[error(transparent)]
+    Db(#[from] DatastoreError),
+    #[error(transparent)]
+    Any(#[from] anyhow::Error),
+}
 
 /// A [`spacetimedb_commitlog::Decoder`] suitable for replaying a transaction
 /// history into the database state.
-pub struct Replay<F> {
-    pub(super) database_identity: Identity,
-    pub(super) committed_state: Arc<RwLock<CommittedState>>,
-    pub(super) progress: RefCell<F>,
-    pub(super) error_behavior: ErrorBehavior,
+pub struct Replay<'a, F> {
+    database_identity: Identity,
+    committed_state: RefCell<ReplayCommittedState<'a>>,
+    progress: RefCell<F>,
+    error_behavior: ErrorBehavior,
 }
 
-impl<F> Replay<F> {
-    fn using_visitor<T>(&self, f: impl FnOnce(&mut ReplayVisitor<'_, F>) -> T) -> T {
-        let mut committed_state = self.committed_state.write();
-        let state = &mut *committed_state;
-        let committed_state = ReplayCommittedState::new(state);
+impl<'a, F> Replay<'a, F> {
+    pub fn new(
+        database_identity: Identity,
+        committed_state: RwLockWriteGuard<'a, CommittedState>,
+        progress: F,
+        error_behavior: ErrorBehavior,
+    ) -> Self {
+        Self {
+            database_identity,
+            committed_state: RefCell::new(ReplayCommittedState::new(committed_state)),
+            progress: RefCell::new(progress),
+            error_behavior,
+        }
+    }
+
+    fn using_visitor<T>(&self, f: impl FnOnce(&mut ReplayVisitor<'_, '_, F>) -> T) -> T {
         let mut visitor = ReplayVisitor {
             database_identity: &self.database_identity,
-            committed_state,
+            committed_state: &mut self.committed_state.borrow_mut(),
             progress: &mut *self.progress.borrow_mut(),
             dropped_table_names: IntMap::default(),
             error_behavior: self.error_behavior,
@@ -49,16 +142,16 @@ impl<F> Replay<F> {
     }
 
     pub fn next_tx_offset(&self) -> u64 {
-        self.committed_state.read_arc().next_tx_offset
+        self.committed_state.borrow().next_tx_offset
     }
 
     // NOTE: This is not unused.
-    pub fn committed_state(&self) -> RwLockReadGuard<'_, CommittedState> {
-        self.committed_state.read()
+    pub fn committed_state(&self) -> RefMut<'_, ReplayCommittedState<'a>> {
+        self.committed_state.borrow_mut()
     }
 }
 
-impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for &mut Replay<F> {
+impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for &mut Replay<'_, F> {
     type Record = txdata::Txdata<ProductValue>;
     type Error = txdata::DecoderError<ReplayError>;
 
@@ -139,9 +232,9 @@ pub enum ErrorBehavior {
     Warn,
 }
 
-struct ReplayVisitor<'a, F> {
+struct ReplayVisitor<'a, 'cs, F> {
     database_identity: &'a Identity,
-    committed_state: ReplayCommittedState<'a>,
+    committed_state: &'a mut ReplayCommittedState<'cs>,
     progress: &'a mut F,
     // Since deletes are handled before truncation / drop, sometimes the schema
     // info is gone. We save the name on the first delete of that table so metrics
@@ -150,7 +243,7 @@ struct ReplayVisitor<'a, F> {
     error_behavior: ErrorBehavior,
 }
 
-impl<F> ReplayVisitor<'_, F> {
+impl<F> ReplayVisitor<'_, '_, F> {
     /// Process `err` according to `self.error_behavior`,
     /// either warning about it or returning it.
     ///
@@ -166,7 +259,7 @@ impl<F> ReplayVisitor<'_, F> {
     }
 }
 
-impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_, F> {
+impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_, '_, F> {
     type Error = ReplayError;
     // NOTE: Technically, this could be `()` if and when we can extract the
     // row data without going through `ProductValue` (PV).
@@ -314,9 +407,9 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
 }
 
 /// A `CommittedState` under construction during replay.
-struct ReplayCommittedState<'cs> {
-    /// The committed state being contructed.
-    state: &'cs mut CommittedState,
+pub struct ReplayCommittedState<'cs> {
+    /// The committed state being constructed.
+    state: RwLockWriteGuard<'cs, CommittedState>,
 
     /// Whether the table was dropped within the current transaction during replay.
     ///
@@ -361,31 +454,302 @@ struct ReplayCommittedState<'cs> {
     ///
     /// [`RowPointer`]s from this set are passed to the `unsafe` [`Table::get_row_ref_unchecked`],
     /// so it's important to properly maintain only [`RowPointer`]s to valid, extant, non-deleted rows.
-    pub(super) replay_table_updated: IntMap<TableId, RowPointer>,
+    replay_table_updated: IntMap<TableId, RowPointer>,
 }
 
 impl Deref for ReplayCommittedState<'_> {
     type Target = CommittedState;
 
     fn deref(&self) -> &Self::Target {
-        self.state
+        &self.state
     }
 }
 
 impl DerefMut for ReplayCommittedState<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut *self.state
+        &mut self.state
     }
 }
 
 impl<'cs> ReplayCommittedState<'cs> {
-    fn new(state: &'cs mut CommittedState) -> Self {
+    fn new(state: RwLockWriteGuard<'cs, CommittedState>) -> Self {
         Self {
             state,
             replay_table_dropped: <_>::default(),
             replay_columns_to_ignore: <_>::default(),
             replay_table_updated: <_>::default(),
         }
+    }
+
+    /// The purpose of this is to rebuild the state of the datastore
+    /// after having inserted all of rows from the message log.
+    /// This is necessary because, for example, inserting a row into `st_table`
+    /// is not equivalent to calling `create_table`.
+    /// There may eventually be better way to do this, but this will have to do for now.
+    pub fn rebuild_state_after_replay(&mut self, datastore: &Locking) -> Result<()> {
+        // Prior versions of `RelationalDb::migrate_system_tables` (defined in the `core` crate)
+        // initialized newly-created system sequences to `allocation: 4097`,
+        // while `committed_state::bootstrap_system_tables` sets `allocation: 4096`.
+        // This affected the system table migration which added
+        // `st_view_view_id_seq` and `st_view_arg_id_seq`.
+        // As a result, when replaying these databases' commitlogs without a snapshot,
+        // we will end up with two rows in `st_sequence` for each of these sequences,
+        // resulting in a unique constraint violation in `Self::build_indexes`.
+        // We fix this by, for each system sequence, deleting all but the row with the highest allocation.
+        self.fixup_delete_duplicate_system_sequence_rows();
+
+        // Prior versions of `MutTxId::drop_table` did not delete a dropped event table's
+        // `st_event_table` row, leaving it orphaned.
+        // Delete any such rows referring to tables which no longer exist.
+        self.fixup_delete_orphaned_st_event_table_rows();
+
+        // `build_missing_tables` must be called before indexes.
+        // Honestly this should maybe just be one big procedure.
+        // See John Carmack's philosophy on this.
+        self.reschema_tables()?;
+        self.build_missing_tables()?;
+        self.build_indexes()?;
+        self.collect_ephemeral_tables()?;
+        self.rebuild_datastore_page_bytes();
+
+        // Figure out where to pick up for each sequence.
+        build_sequence_state(datastore, self)?;
+
+        Ok(())
+    }
+
+    /// Delete all but the highest-allocation `st_sequence` row for each system sequence.
+    ///
+    /// Prior versions of `RelationalDb::migrate_system_tables` (defined in the `core` crate)
+    /// initialized newly-created system sequences to `allocation: 4097`,
+    /// while [`CommittedState::bootstrap_system_tables`] sets `allocation: 4096`.
+    /// This affected the system table migration which added
+    /// `st_view_view_id_seq` and `st_view_arg_id_seq`.
+    /// As a result, when replaying these databases' commitlogs without a snapshot,
+    /// we will end up with two rows in `st_sequence` for each of these sequences,
+    /// resulting in a unique constraint violation in `CommittedState::build_indexes`.
+    /// We call this method in [`ReplayCommittedState::rebuild_state_after_replay`]
+    /// to avoid that unique constraint violation.
+    pub(super) fn fixup_delete_duplicate_system_sequence_rows(&mut self) {
+        struct StSequenceRowInfo {
+            sequence_id: SequenceId,
+            allocated: i128,
+            row_pointer: RowPointer,
+        }
+
+        // Get all the `st_sequence` rows which refer to sequences on system tables,
+        // including any duplicates caused by the bug described above.
+        let sequence_rows = self
+            .table_scan(ST_SEQUENCE_ID)
+            .expect("`st_sequence` should exist")
+            .filter_map(|row_ref| {
+                // Read the table ID to which the sequence refers,
+                // in order to determine if this is a system sequence or not.
+                let table_id = row_ref
+                    .read_col::<TableId>(StSequenceFields::TableId)
+                    .expect("`st_sequence` row should conform to `st_sequence` schema");
+
+                // If this sequence refers to a system table, it may need a fixup.
+                // User tables' sequences will never need fixups.
+                table_id_is_reserved(table_id).then(|| {
+                    let allocated = row_ref
+                        .read_col::<i128>(StSequenceFields::Allocated)
+                        .expect("`st_sequence` row should conform to `st_sequence` schema");
+                    let sequence_id = row_ref
+                        .read_col::<SequenceId>(StSequenceFields::SequenceId)
+                        .expect("`st_sequence` row should conform to `st_sequence` schema");
+                    StSequenceRowInfo {
+                        allocated,
+                        sequence_id,
+                        row_pointer: row_ref.pointer(),
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let (st_sequence, blob_store, ..) = self
+            .get_table_and_blob_store_mut(ST_SEQUENCE_ID)
+            .expect("`st_sequence` should exist");
+
+        // Track the row with the highest allocation for each sequence.
+        let mut highest_allocations: HashMap<SequenceId, (i128, RowPointer)> = HashMap::default();
+
+        for StSequenceRowInfo {
+            sequence_id,
+            allocated,
+            row_pointer,
+        } in sequence_rows
+        {
+            // For each `st_sequence` row which refers to a system table,
+            // if we've already seen a row for the same sequence,
+            // keep only the row with the higher allocation.
+            if let Some((prev_allocated, prev_row_pointer)) =
+                highest_allocations.insert(sequence_id, (allocated, row_pointer))
+            {
+                // We have a duplicate row. We want to keep whichever has the higher `allocated`,
+                // and delete the other.
+                let row_pointer_to_delete = if prev_allocated > allocated {
+                    // The previous row has a higher allocation than the new row,
+                    // so delete the new row and restore `previous` to `highest_allocations`.
+                    highest_allocations.insert(sequence_id, (prev_allocated, prev_row_pointer));
+                    row_pointer
+                } else {
+                    // The previous row does not have a higher allocation than the new,
+                    // so delete the previous row and keep the new one.
+                    prev_row_pointer
+                };
+
+                st_sequence.delete(blob_store, row_pointer_to_delete, |_| ())
+                    .expect("Duplicated `st_sequence` row at `row_pointer_to_delete` should be present in `st_sequence` during fixup");
+            }
+        }
+    }
+
+    /// Delete any `st_event_table` rows which refer to tables that do not exist in `st_table`.
+    ///
+    /// Prior versions of `MutTxId::drop_table` did not delete a dropped event table's
+    /// `st_event_table` row, so commitlogs and snapshots written by those versions
+    /// may contain orphaned `st_event_table` rows.
+    /// We call this method in [`ReplayCommittedState::rebuild_state_after_replay`]
+    /// to delete such rows.
+    pub(super) fn fixup_delete_orphaned_st_event_table_rows(&mut self) {
+        // `st_event_table` will not have been built when replaying a history
+        // from before it was introduced; `migrate_system_tables` creates it later on.
+        if self.get_table(ST_EVENT_TABLE_ID).is_none() {
+            return;
+        }
+
+        // Collect the ids of all extant tables.
+        let extant_tables: IntSet<TableId> = self
+            .table_scan(ST_TABLE_ID)
+            .expect("`st_table` should exist")
+            .map(|row_ref| {
+                row_ref
+                    .read_col::<TableId>(StTableFields::TableId)
+                    .expect("`st_table` row should conform to `st_table` schema")
+            })
+            .collect();
+
+        // Find all `st_event_table` rows which refer to tables that don't exist.
+        let orphaned_rows: Vec<RowPointer> = self
+            .table_scan(ST_EVENT_TABLE_ID)
+            .expect("`st_event_table` was found above")
+            .filter(|row_ref| {
+                let table_id = row_ref
+                    .read_col::<TableId>(StEventTableFields::TableId)
+                    .expect("`st_event_table` row should conform to `st_event_table` schema");
+                !extant_tables.contains(&table_id)
+            })
+            .map(|row_ref| row_ref.pointer())
+            .collect();
+
+        let (st_event_table, blob_store, ..) = self
+            .get_table_and_blob_store_mut(ST_EVENT_TABLE_ID)
+            .expect("`st_event_table` was found above");
+
+        for ptr in orphaned_rows {
+            st_event_table
+                .delete(blob_store, ptr, |_| ())
+                .expect("Orphaned `st_event_table` row at `ptr` should be present in `st_event_table` during fixup");
+        }
+    }
+
+    pub(super) fn build_indexes(&mut self) -> Result<()> {
+        let st_indexes = self.tables.get(&ST_INDEX_ID).unwrap();
+        let rows = st_indexes
+            .scan_rows(&self.blob_store)
+            .map(StIndexRow::try_from)
+            .collect::<Result<Vec<_>>>()?;
+
+        let st_constraints = self.tables.get(&ST_CONSTRAINT_ID).unwrap();
+        let unique_constraints: HashSet<(TableId, ColSet)> = st_constraints
+            .scan_rows(&self.blob_store)
+            .map(StConstraintRow::try_from)
+            .filter_map(Result::ok)
+            .filter_map(|constraint| match constraint.constraint_data {
+                StConstraintData::Unique { columns } => Some((constraint.table_id, columns)),
+                _ => None,
+            })
+            .collect();
+
+        for index_row in rows {
+            let index_id = index_row.index_id;
+            let table_id = index_row.table_id;
+            let (table, blob_store, index_id_map, _) = self
+                .get_table_and_blob_store_mut(table_id)
+                .expect("index should exist in committed state; cannot create it");
+            let algo: IndexAlgorithm = index_row.index_algorithm.into();
+            let columns: ColSet = algo.columns().into();
+            let is_unique = unique_constraints.contains(&(table_id, columns));
+
+            let index = table.new_index(&algo, is_unique)?;
+            // SAFETY: `index` was derived from `table`.
+            unsafe { table.insert_index(blob_store, index_id, index) }
+                .expect("rebuilding should not cause constraint violations");
+            index_id_map.insert(index_id, table_id);
+        }
+        Ok(())
+    }
+
+    pub(super) fn collect_ephemeral_tables(&mut self) -> Result<()> {
+        self.ephemeral_tables = self.ephemeral_tables()?.into_iter().collect();
+        Ok(())
+    }
+
+    fn ephemeral_tables(&self) -> Result<Vec<TableId>> {
+        let mut tables = vec![ST_VIEW_SUB_ID, ST_VIEW_ARG_ID];
+
+        let Some(st_view) = self.tables.get(&ST_VIEW_ID) else {
+            return Ok(tables);
+        };
+        let backing_tables = st_view
+            .scan_rows(&self.blob_store)
+            .map(|row_ref| {
+                let StViewRow { table_id, view_id, .. } = StViewRow::try_from(row_ref)?;
+                table_id.ok_or_else(|| DatastoreError::View(ViewError::TableNotFound(view_id)))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        tables.extend(backing_tables);
+
+        Ok(tables)
+    }
+
+    /// After replaying all old transactions,
+    /// inserts and deletes into the system tables
+    /// might not be reflected in the schemas of the built tables.
+    /// So we must re-schema every built table.
+    pub(super) fn reschema_tables(&mut self) -> Result<()> {
+        // For already built tables, we need to reschema them to account for constraints et al.
+        let mut schemas = Vec::with_capacity(self.tables.len());
+        for table_id in self.tables.keys().copied() {
+            schemas.push(self.schema_for_table_raw(table_id)?);
+        }
+        for (table, schema) in self.tables.values_mut().zip(schemas) {
+            table.with_mut_schema(|s| *s = schema);
+        }
+        Ok(())
+    }
+
+    /// After replaying all old transactions, tables which have rows will
+    /// have been created in memory, but tables with no rows will not have
+    /// been created. This function ensures that they are created.
+    pub(super) fn build_missing_tables(&mut self) -> Result<()> {
+        // Find all ids of tables that are in `st_tables` but haven't been built.
+        let table_ids = self
+            .get_table(ST_TABLE_ID)
+            .unwrap()
+            .scan_rows(&self.blob_store)
+            .map(|r| r.read_col(StTableFields::TableId).unwrap())
+            .filter(|table_id| self.get_table(*table_id).is_none())
+            .collect::<Vec<_>>();
+
+        // Construct their schemas and insert tables for them.
+        for table_id in table_ids {
+            let schema = self.schema_for_table(table_id)?;
+            self.create_table(table_id, schema);
+        }
+        Ok(())
     }
 
     fn replay_insert(&mut self, table_id: TableId, schema: &Arc<TableSchema>, row: &ProductValue) -> Result<()> {
@@ -512,7 +876,7 @@ impl<'cs> ReplayCommittedState<'cs> {
         let target_col_id = ColId::deserialize(ValueDeserializer::from_ref(&st_column_row.elements[1]))
             .expect("second field in `st_column` should decode to a `ColId`");
 
-        let outdated_st_column_rows = iter_st_column_for_table(self.state, &target_table_id.into())?
+        let outdated_st_column_rows = iter_st_column_for_table(self, &target_table_id.into())?
             .filter_map(|row_ref| {
                 StColumnRow::try_from(row_ref)
                     .map(|c| (c.col_pos == target_col_id && row_ref.pointer() != row_ptr).then(|| row_ref.pointer()))
@@ -542,7 +906,7 @@ impl<'cs> ReplayCommittedState<'cs> {
         // and not the other one, as it is being replaced.
         // `Self::ignore_previous_version_of_column` has marked the old version as ignored,
         // so filter only the non-ignored columns.
-        let mut columns = iter_st_column_for_table(self.state, &table_id.into())?
+        let mut columns = iter_st_column_for_table(self, &table_id.into())?
             .filter(|row_ref| !self.replay_columns_to_ignore.contains(&row_ref.pointer()))
             .map(|row_ref| {
                 let row = StColumnRow::try_from(row_ref)?;
@@ -560,9 +924,16 @@ impl<'cs> ReplayCommittedState<'cs> {
         // because their initial insertion order matches their `col_pos` order.
         columns.sort_by_key(|col: &ColumnSchema| col.col_pos);
 
+        let is_event = self.is_event_table_for_replay(table_id)?;
         // Update the columns and layout of the the in-memory table.
         if let Some(table) = self.tables.get_mut(&table_id) {
-            table.change_columns_to(columns).map_err(TableError::from)?;
+            if is_event {
+                table
+                    .change_columns_of_empty_table_to(columns)
+                    .map_err(|_| TableError::EventTableNotEmpty(table_id))?;
+            } else {
+                table.change_columns_to(columns).map_err(TableError::from)?;
+            }
         }
 
         Ok(())
@@ -624,10 +995,32 @@ impl<'cs> ReplayCommittedState<'cs> {
             // and that there wasn't any corresponding insert at all.
             // If that's the case, `row_ptr` won't be in `self.replay_columns_to_ignore`,
             // which is fine.
+            let referenced_table_id = Self::read_table_id(row);
             self.replay_columns_to_ignore.remove(&row_ptr);
+
+            // If the referenced table was dropped earlier in this transaction,
+            // don't try to refresh its layout: its `st_table` row is already gone,
+            // so `st_column_changed` would fail to look up the table's name.
+            // This happens when dropping an event table,
+            // as the `st_table` delete (table id 1) is replayed
+            // before the `st_column` deletes (table id 2),
+            // while the table's `st_event_table` row (table id 17) is still present.
+            if !self.replay_table_dropped.contains(&referenced_table_id)
+                && self.is_event_table_for_replay(referenced_table_id)?
+            {
+                self.st_column_changed(referenced_table_id)?;
+            }
         }
 
         Ok(())
+    }
+
+    fn is_event_table_for_replay(&self, table_id: TableId) -> Result<bool> {
+        match self.find_st_event_table_row(table_id) {
+            Ok(_) => Ok(true),
+            Err(DatastoreError::Table(TableError::IdNotFound(..))) => Ok(false),
+            Err(e) => Err(e),
+        }
     }
 
     /// Assuming that a `TableId` is stored as the first field in `row`, read it.
@@ -677,6 +1070,13 @@ impl<'cs> ReplayCommittedState<'cs> {
 
         Ok(())
     }
+}
+
+pub(super) fn build_sequence_state(datastore: &Locking, cs: &mut CommittedState) -> Result<()> {
+    let sequence_state = cs.build_sequence_state()?;
+    // Reset our sequence state so that they start in the right places.
+    *datastore.sequence_state.lock() = sequence_state;
+    Ok(())
 }
 
 impl StateView for ReplayCommittedState<'_> {
@@ -766,7 +1166,7 @@ mod tests {
         // Directly call replay_insert on committed state.
         let row = u32_str_u32(1, "Carol", 40);
         {
-            let state = &mut *datastore.committed_state.write();
+            let state = datastore.committed_state.write();
             let mut committed_state = ReplayCommittedState::new(state);
             committed_state.replay_insert(table_id, &schema, &row)?;
         }
@@ -777,6 +1177,50 @@ mod tests {
             all_rows(&datastore, &tx, table_id).len(),
             0,
             "replay_insert should be a no-op for event tables"
+        );
+        Ok(())
+    }
+
+    /// Regression test for orphaned `st_event_table` rows.
+    ///
+    /// Prior versions of `MutTxId::drop_table` did not delete a dropped event table's
+    /// `st_event_table` row, so commitlogs and snapshots written by those versions
+    /// contain rows referring to tables which no longer exist.
+    /// [`ReplayCommittedState::fixup_delete_orphaned_st_event_table_rows`]
+    /// must delete those orphans while preserving rows for extant event tables.
+    #[test]
+    fn test_fixup_deletes_orphaned_st_event_table_rows() -> ResultTest<()> {
+        let (datastore, tx, table_id) = setup_event_table()?;
+        commit(&datastore, tx)?;
+
+        // Get the schema of `st_event_table` for `replay_insert`.
+        let tx = begin_mut_tx(&datastore);
+        let st_event_table_schema = datastore.schema_for_table_mut_tx(&tx, ST_EVENT_TABLE_ID)?;
+        let _ = datastore.rollback_mut_tx(tx);
+
+        // Pick a table id which does not exist.
+        let orphan_table_id = TableId::from(u32::MAX);
+        assert_ne!(orphan_table_id, table_id);
+        let orphan_row = spacetimedb_sats::product![orphan_table_id];
+
+        {
+            let state = datastore.committed_state.write();
+            let mut committed_state = ReplayCommittedState::new(state);
+
+            // Simulate replaying a commitlog written by a version
+            // where `drop_table` left an orphaned `st_event_table` row.
+            committed_state.replay_insert(ST_EVENT_TABLE_ID, &st_event_table_schema, &orphan_row)?;
+
+            // The fixup should delete the orphan and keep the extant event table's row.
+            committed_state.fixup_delete_orphaned_st_event_table_rows();
+        }
+
+        let tx = begin_mut_tx(&datastore);
+        let rows = all_rows(&datastore, &tx, ST_EVENT_TABLE_ID);
+        assert_eq!(
+            rows,
+            [spacetimedb_sats::product![table_id]],
+            "the orphaned `st_event_table` row should be deleted and the extant one kept"
         );
         Ok(())
     }

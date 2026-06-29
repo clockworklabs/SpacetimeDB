@@ -33,13 +33,12 @@ use scopeguard::ScopeGuard;
 use spacetimedb_commitlog::{
     payload::txdata::{Mutations, Ops},
     repo::{self, OnNewSegmentFn, Repo},
-    segment,
     tests::helpers::enable_logging,
 };
 use spacetimedb_durability::{local::OpenError, Durability, Transaction, Txdata};
 use spacetimedb_paths::{server::ReplicaDir, FromPathUnchecked};
 use tempfile::{NamedTempFile, TempDir};
-use tokio::{sync::watch, time::sleep};
+use tokio::{sync::watch, time::timeout};
 
 const MB: u64 = 1024 * 1024;
 
@@ -93,6 +92,7 @@ async fn local_durability_crashes_on_new_segment_if_not_enough_space() {
                 new_segment_tx.send_replace(());
             });
             let durability = local_durability(replica_dir, 256 * MB, Some(on_new_segment)).await?;
+            let mut durable_offset = durability.durable_tx_offset();
             let txdata = txdata();
 
             // Mark initial segment as seen.
@@ -103,8 +103,13 @@ async fn local_durability_crashes_on_new_segment_if_not_enough_space() {
             }
             // Ensure new segment is created.
             new_segment_rx.changed().await?;
-            // Yield to give fallocate a chance to run (and fail).
-            sleep(Duration::from_millis(5)).await;
+            // Wait for fallocate to run (and fail).
+            match timeout(Duration::from_secs(10), durable_offset.wait_for(256)).await {
+                Ok(Err(_)) => {}
+                Ok(Ok(offset)) => return Err(anyhow!("durability unexpectedly reached offset {offset}")),
+                Err(_) => return Err(anyhow!("timed out waiting for durability actor to exit")),
+            }
+
             // Durability actor should have crashed, so this should panic.
             info!("trying append on crashed durability");
             durability.append_tx(Box::new(Transaction::from((256, txdata.clone()))));
@@ -135,9 +140,7 @@ async fn local_durability_crashes_on_resume_with_insuffient_space() -> anyhow::R
         // Write a segment with only a header and no `fallocate` reservation.
         {
             let repo = repo::Fs::new(replica_dir.commit_log(), None)?;
-            let mut segment = repo.create_segment(0)?;
-            segment::Header::default().write(&mut segment)?;
-            segment.sync_data()?;
+            repo.create_segment(0, <_>::default())?;
         }
 
         // Try to open local durability with a 1GiB segment size,
@@ -164,7 +167,7 @@ async fn local_durability(
 ) -> Result<spacetimedb_durability::Local<[u8; 1024 * 1024]>, spacetimedb_durability::local::OpenError> {
     spacetimedb_durability::Local::open(
         dir,
-        tokio::runtime::Handle::current(),
+        spacetimedb_runtime::Handle::tokio_current(),
         spacetimedb_durability::local::Options {
             commitlog: spacetimedb_commitlog::Options {
                 max_segment_size,

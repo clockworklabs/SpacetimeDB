@@ -26,6 +26,7 @@ use core::{
 use core::{mem, ops::RangeBounds};
 use derive_more::{Add, AddAssign, From, Sub, SubAssign};
 use enum_as_inner::EnumAsInner;
+use itertools::Itertools;
 use smallvec::SmallVec;
 use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId, TableId};
 use spacetimedb_sats::{
@@ -45,7 +46,7 @@ use spacetimedb_sats::{
 };
 use spacetimedb_sats::{memory_usage::MemoryUsage, raw_identifier::RawIdentifier};
 use spacetimedb_schema::{
-    def::{BTreeAlgorithm, IndexAlgorithm},
+    def::IndexAlgorithm,
     identifier::Identifier,
     schema::{columns_to_row_type, ColumnSchema, IndexSchema, TableSchema},
     table_name::TableName,
@@ -342,6 +343,10 @@ fn table_row_type_dependents(row_type: ProductType) -> (RowTypeLayout, StaticLay
     (row_layout, static_layout, visitor_prog)
 }
 
+#[derive(Error, Debug)]
+#[error("Table is not empty")]
+pub struct TableNotEmptyError;
+
 // Public API:
 impl Table {
     /// Creates a new empty table with the given `schema` and `squashed_offset`.
@@ -363,6 +368,27 @@ impl Table {
         column_schemas: Vec<ColumnSchema>,
     ) -> Result<Vec<ColumnSchema>, Box<ChangeColumnsError>> {
         unsafe { self.change_columns_to_unchecked(column_schemas, Self::validate_row_type_layout) }
+    }
+
+    /// Like [`Self::change_columns_to`], but doesn't care if the new schema is compatible.
+    ///
+    /// Returns an error if there are any rows in `self`.
+    pub fn change_columns_of_empty_table_to(
+        &mut self,
+        column_schemas: Vec<ColumnSchema>,
+    ) -> Result<Vec<ColumnSchema>, TableNotEmptyError> {
+        if self.row_count > 0 {
+            return Err(TableNotEmptyError);
+        }
+        // Remove and drop any pages, as even though they must be empty,
+        // they may have residual layout-derived data which conflicts with the new schema.
+        // Safety: there aren't any pages here, so they cannot conflict with the schema or row layout.
+        unsafe { self.set_pages(Vec::new(), &NullBlobStore) };
+
+        // Safety: the table has no rows according to its row count,
+        // and no pages 'cause we just did `set_pages` to the empty vec.
+        unsafe { self.change_columns_to_unchecked(column_schemas, |_, _, _| Ok::<(), std::convert::Infallible>(())) }
+            .map_err(|e| match e {})
     }
 
     /// Validate that the old row type layout can be changed to the new.
@@ -476,6 +502,9 @@ impl Table {
     ///
     /// The caller must ensure, using `validate`,
     /// that `new_row_layout` is compatible with the rows existing in `self`.
+    ///
+    /// Or, the table must be entirely empty, containing zero rows and zero pages.
+    /// Zero pages is necessary because empty pages may contain layout-derived metadata.
     pub unsafe fn change_columns_to_unchecked<E>(
         &mut self,
         column_schemas: Vec<ColumnSchema>,
@@ -526,9 +555,7 @@ impl Table {
         let schema = self.get_schema().clone();
         let row_type = schema.get_row_type();
         for index in self.indexes.values_mut() {
-            index.key_type = row_type
-                .project(&index.indexed_columns)
-                .expect("new row type should have as many columns as before")
+            index.recompute_key_type(row_type);
         }
     }
 
@@ -1413,36 +1440,59 @@ impl Table {
     /// # Safety
     ///
     /// Caller must promise that `index` was constructed with the same row type/layout as this table.
-    pub unsafe fn insert_index(&mut self, blob_store: &dyn BlobStore, index_id: IndexId, mut index: TableIndex) {
+    pub unsafe fn insert_index(
+        &mut self,
+        blob_store: &dyn BlobStore,
+        index_id: IndexId,
+        mut index: TableIndex,
+    ) -> Result<(), String> {
         let rows = self.scan_rows(blob_store);
         // SAFETY: Caller promised that table's row type/layout
         // matches that which `index` was constructed with.
         // It follows that this applies to any `rows`, as required.
         let violation = unsafe { index.build_from_rows(rows) };
-        violation.unwrap_or_else(|ptr| {
-            let index_schema = &self.schema.indexes.iter().find(|index_schema| index_schema.index_id == index_id).expect("Index should exist");
-            let indexed_column = if let IndexAlgorithm::BTree(BTreeAlgorithm { columns }) = &index_schema.index_algorithm {
-                Some(columns)
-            } else { None };
-            let indexed_column = indexed_column.and_then(|columns| columns.as_singleton());
-            let indexed_column_info = indexed_column.and_then(|column| self.schema.get_column(column.idx()));
+        violation.map_err(|ptr| {
             // SAFETY: `ptr` just came out of `self.scan_rows`, so it is present.
             let row = unsafe { self.get_row_ref_unchecked(blob_store, ptr) }.to_product_value();
-            panic!(
-                "Adding index `{}` {:?} to table `{}` {:?} on column `{}` {:?} should cause no unique constraint violations.
 
-Found violation at pointer {ptr:?} to row {:?}.",
-                index_schema.index_name,
-                index_schema.index_id,
-                self.schema.table_name,
-                self.schema.table_id,
-                indexed_column_info.map(|column| &column.col_name[..]).unwrap_or("unknown column"),
-                indexed_column,
-                row,
-            );
-        });
+            if let Some(index_schema) = self.schema.indexes.iter().find(|index_schema| index_schema.index_id == index_id) {
+                let cols = index_schema.index_algorithm.columns().to_owned();
+                let cols_infos = cols
+                    .iter()
+                    .map(|col|
+                        self.schema.get_column(col.idx())
+                            .map(|c| format!("`{}`", &*c.col_name))
+                            .unwrap_or_else(|| "<unknown>".into())
+                    )
+                    .join(",");
+
+                format!(
+                    "Adding index `{}` {:?} to table `{}` {:?} on columns `{}` {:?} should cause no unique constraint violations.\
+                    Found violation at pointer {ptr:?} to row {:?}.",
+                    index_schema.index_name,
+                    index_schema.index_id,
+                    self.schema.table_name,
+                    self.schema.table_id,
+                    cols_infos,
+                    cols,
+                    row,
+                )
+            } else {
+                format!(
+                    "Adding index to table `{}` {:?} on columns `{:?}` with key type {:?} should cause no unique constraint violations.\
+                    Found violation at pointer {ptr:?} to row {:?}.",
+                    self.schema.table_name,
+                    self.schema.table_id,
+                    index.indexed_columns(),
+                    index.key_type(),
+                    row,
+                )
+            }
+        })?;
+
         // SAFETY: Forward caller requirement.
         unsafe { self.add_index(index_id, index) };
+        Ok(())
     }
 
     /// Adds an index to the table without populating.
@@ -1479,6 +1529,34 @@ Found violation at pointer {ptr:?} to row {:?}.",
         }
 
         Some(index)
+    }
+
+    /// Take the pointer map, if any, returning it.
+    ///
+    /// This is used when making an index unique — a unique index subsumes
+    /// the pointer map's role of preventing duplicate rows.
+    pub fn take_pointer_map(&mut self) -> Option<PointerMap> {
+        self.pointer_map.take()
+    }
+
+    /// Restore a previously taken pointer map.
+    ///
+    /// This is used on rollback when a unique constraint is removed
+    /// and no other unique indices remain.
+    pub fn restore_pointer_map(&mut self, pointer_map: PointerMap) {
+        self.pointer_map = Some(pointer_map);
+    }
+
+    /// Returns whether this table has any unique index.
+    pub fn has_unique_index(&self) -> bool {
+        self.indexes.values().any(|idx| idx.is_unique())
+    }
+
+    /// Returns whether this table currently holds a pointer map.
+    ///
+    /// Verifies the invariant "pointer map is present iff no unique index exists".
+    pub fn has_pointer_map(&self) -> bool {
+        self.pointer_map.is_some()
     }
 
     /// Returns an iterator over all the rows of `self`, yielded as [`RowRef`]s.
@@ -1534,8 +1612,30 @@ Found violation at pointer {ptr:?} to row {:?}.",
     pub fn get_index_by_cols(&self, cols: &ColList) -> Option<(IndexId, &TableIndex)> {
         self.indexes
             .iter()
-            .find(|(_, index)| &index.indexed_columns == cols)
+            .find(|(_, index)| index.indexed_columns() == cols)
             .map(|(id, idx)| (*id, idx))
+    }
+
+    /// Returns all [`TableIndex`]es with the given [`ColList`].
+    pub fn get_indexes_by_cols(&self, cols: &ColList) -> Vec<(IndexId, &TableIndex)> {
+        self.indexes
+            .iter()
+            .filter(|(_, index)| index.indexed_columns() == cols)
+            .map(|(id, idx)| (*id, idx))
+            .collect()
+    }
+
+    /// Makes the index at `index_id` non-unique.
+    ///
+    /// If no unique indices remain after this, rebuilds and restores the pointer map.
+    pub fn make_index_non_unique(&mut self, index_id: IndexId, blob_store: &dyn BlobStore) {
+        if let Some(idx) = self.indexes.get_mut(&index_id) {
+            idx.make_non_unique();
+        }
+        if !self.has_unique_index() && self.pointer_map.is_none() {
+            let pm = self.rebuild_pointer_map(blob_store);
+            self.restore_pointer_map(pm);
+        }
     }
 
     /// Clones the structure of this table into a new one with
@@ -1570,6 +1670,11 @@ Found violation at pointer {ptr:?} to row {:?}.",
     /// For more details, refer to the documentation of `self.blob_store_bytes`.
     pub fn bytes_occupied_overestimate(&self) -> usize {
         (self.num_pages() * PAGE_DATA_SIZE) + (self.blob_store_bytes.0)
+    }
+
+    /// Returns the bytes occupied by this table's allocated physical row pages.
+    pub fn page_bytes(&self) -> u64 {
+        (self.num_pages() * mem::size_of::<Page>()) as u64
     }
 
     /// Reset the internal storage of `self` to be `pages`.
@@ -2256,7 +2361,7 @@ impl UniqueConstraintViolation {
 
         // Fetch the names of the columns used in the index.
         let cols = schema
-            .get_columns(&index.indexed_columns)
+            .get_columns(index.indexed_columns())
             .map(|(_, cs)| cs.unwrap().col_name.clone())
             .collect();
 
@@ -2283,7 +2388,7 @@ impl Table {
         index_id: IndexId,
         row: RowRef<'_>,
     ) -> UniqueConstraintViolation {
-        let value = row.project(&index.indexed_columns).unwrap();
+        let value = index.project_row(row);
         let schema = self.get_schema();
         UniqueConstraintViolation::build(schema, index, index_id, value)
     }
@@ -2407,6 +2512,7 @@ pub(crate) mod test {
     use super::*;
     use crate::blob_store::{HashMapBlobStore, NullBlobStore};
     use crate::page::tests::hash_unmodified_save_get;
+    use crate::table_index::KeySize;
     use crate::var_len::VarLenGranule;
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseResult;
@@ -2453,7 +2559,7 @@ pub(crate) mod test {
 
         let index = table.new_index(&algo, true).unwrap();
         // SAFETY: Index was derived from `table`.
-        unsafe { table.insert_index(&NullBlobStore, index_schema.index_id, index) };
+        unsafe { table.insert_index(&NullBlobStore, index_schema.index_id, index) }.unwrap();
 
         // Reserve a page so that we can check the hash.
         let pi = table.inner.pages.reserve_empty_page(&pool, table.row_size()).unwrap();
@@ -2539,8 +2645,7 @@ pub(crate) mod test {
             .iter()
             .map(|row_ptr| {
                 let row_ref = table.get_row_ref(blob_store, row_ptr).unwrap();
-                let key = row_ref.project(&index.indexed_columns).unwrap();
-                crate::table_index::KeySize::key_size_in_bytes(&key) as u64
+                index.project_row(row_ref).key_size_in_bytes() as u64
             })
             .sum()
     }
@@ -2553,6 +2658,8 @@ pub(crate) mod test {
         ty: ProductType,
         vals: Vec<ProductValue>,
         indexed_columns: ColList,
+        index_kind: IndexKind,
+        is_unique: bool,
     ) -> Result<(), TestCaseError> {
         let pool = PagePool::new_for_test();
         let mut blob_store = HashMapBlobStore::default();
@@ -2565,13 +2672,13 @@ pub(crate) mod test {
         // We haven't added any indexes yet, so there should be 0 rows in indexes.
         prop_assert_eq!(table.num_rows_in_indexes(), 0);
 
-        let index_id = IndexId(0);
+        let index_id = IndexId::SENTINEL;
 
-        let index = TableIndex::new(&ty, indexed_columns.clone(), IndexKind::BTree, false).unwrap();
+        let index = TableIndex::new(&ty, indexed_columns.clone(), index_kind, is_unique).unwrap();
         // Add an index on column 0.
         // Safety:
         // We're using `ty` as the row type for both `table` and the new index.
-        unsafe { table.insert_index(&blob_store, index_id, index) };
+        prop_assume!(unsafe { table.insert_index(&blob_store, index_id, index) }.is_ok());
 
         // We have one index, which should be fully populated,
         // so in total we should have the same number of rows in indexes as we have rows.
@@ -2595,14 +2702,15 @@ pub(crate) mod test {
         let key_size_in_pvs = vals
             .iter()
             .map(|row| crate::table_index::KeySize::key_size_in_bytes(&row.project(&indexed_columns).unwrap()) as u64)
-            .sum();
+            .sum::<u64>();
         prop_assert_eq!(index.num_key_bytes(), key_size_in_pvs);
 
         let index = TableIndex::new(&ty, indexed_columns, IndexKind::BTree, false).unwrap();
         // Add a duplicate of the same index, so we can check that all above quantities double.
         // Safety:
         // As above, we're using `ty` as the row type for both `table` and the new index.
-        unsafe { table.insert_index(&blob_store, IndexId(1), index) };
+        unsafe { table.insert_index(&blob_store, IndexId(1), index) }
+            .expect("already inserted this index, should not error");
 
         prop_assert_eq!(table.num_rows_in_indexes(), table.num_rows() * 2);
         prop_assert_eq!(table.bytes_used_by_index_keys(), key_size_in_pvs * 2);
@@ -2721,14 +2829,55 @@ pub(crate) mod test {
             // which is already what the actual implementation does.
         }
 
+        /// Test that the recording of non-full pages and counts of var-len granules available
+        /// by the page manager are correct after insertions and deletes.
+        ///
+        /// Tested here rather than in pages.rs because it's easier to test with typed rows than raw byte buffers.
         #[test]
-        fn index_size_reporting_matches_slow_implementations_single_column((ty, vals) in generate_typed_row_vec(1..SIZE, 128, 2048)) {
-            test_index_size_reporting(ty, vals, ColList::from(ColId(0)))?;
+        fn non_full_pages_consistent((ty, vals) in generate_typed_row_vec(0..SIZE, 128, 2048)) {
+            let pool = PagePool::new_for_test();
+            let mut blob_store = HashMapBlobStore::default();
+            let mut table = table(ty);
+            let mut inserted_row_ptrs = Vec::new();
+
+            table.inner.pages.assert_non_full_pages_consistent(table.inner.row_layout.size());
+
+            // Insert 3 rows at a time, then delete the last 1.
+            // This keeps the page usage growing towards fullness, but also includes some deletes.
+            for rows in vals.chunks(3) {
+                for row in rows {
+                    let row_ptr = match table.insert(&pool, &mut blob_store, row) {
+                        Ok((_, row_ref)) => row_ref.pointer(),
+                        Err(InsertError::Duplicate(_)) => continue,
+                        Err(e) => return Err(TestCaseError::fail(format!("unexpected insert error: {e:?}"))),
+                    };
+                    inserted_row_ptrs.push(row_ptr);
+                    table.inner.pages.assert_non_full_pages_consistent(table.inner.row_layout.size());
+                }
+
+                if let Some(row_ptr) = inserted_row_ptrs.pop() {
+                    table.delete(&mut blob_store, row_ptr, |_| ());
+                    table.inner.pages.assert_non_full_pages_consistent(table.inner.row_layout.size());
+                }
+            }
         }
 
         #[test]
-        fn index_size_reporting_matches_slow_implementations_two_column((ty, vals) in generate_typed_row_vec(2..SIZE, 128, 2048)) {
-            test_index_size_reporting(ty, vals, ColList::from([ColId(0), ColId(1)]))?;
+        fn index_size_reporting_matches_slow_implementations_single_column(
+            (ty, vals) in generate_typed_row_vec(1..SIZE, 128, 2048),
+            index_kind: IndexKind,
+            is_unique: bool
+        ) {
+            test_index_size_reporting(ty, vals, [0].into(), index_kind, is_unique)?;
+        }
+
+        #[test]
+        fn index_size_reporting_matches_slow_implementations_two_column(
+            (ty, vals) in generate_typed_row_vec(2..SIZE, 128, 2048),
+            index_kind: IndexKind,
+            is_unique: bool
+        ) {
+            test_index_size_reporting(ty, vals, [0, 1].into(), index_kind, is_unique)?
         }
     }
 
@@ -2774,6 +2923,55 @@ pub(crate) mod test {
                     .map(move |po| RowPointer::new(false, pi, po, table.squashed_offset))
             });
         assert!(complex.eq(simple));
+    }
+
+    /// Assert that we prefer inserting into lower-`PageIndex` pages when possible,
+    /// and that `non_full_pages` is correctly updated even for pages with no var-len granules available.
+    ///
+    /// A previous incorrect implementation of [`Pages`]
+    /// used only the available number of var-len granules to decide if a page was full,
+    /// not considering that a page with zero var-len granules available could still have space for one or more rows,
+    /// provided those rows were entirely fixed-len.
+    /// This test demonstrates that we will insert an entirely fixed-len row into a non-full page with zero granules available.
+    ///
+    /// This test also demonstrates that, when searching for a page to insert into, we'll prefer the lowest-indexed page,
+    /// assuming no other reason to prefer a different page.
+    #[test]
+    fn prefer_earlier_non_full_page() {
+        let pool = PagePool::new_for_test();
+        let mut blob_store = HashMapBlobStore::default();
+        let mut table = table(ProductType::from([AlgebraicType::I32]));
+
+        let mut inserted_ptrs = Vec::new();
+        let mut next_value = 0i32;
+        while table.num_pages() < 2 {
+            let (_, row_ref) = table.insert(&pool, &mut blob_store, &product![next_value]).unwrap();
+            inserted_ptrs.push(row_ref.pointer());
+            next_value += 1;
+        }
+
+        let first_page = &table.inner.pages[PageIndex(0)];
+        let second_page = &table.inner.pages[PageIndex(1)];
+        assert!(first_page.is_full(table.row_size()));
+        assert_eq!(first_page.available_var_len_granules(), 0);
+        assert!(!second_page.is_full(table.row_size()));
+        assert!(second_page.available_var_len_granules() > 0);
+
+        let first_ptr = inserted_ptrs[0];
+        table.delete(&mut blob_store, first_ptr, |_| ());
+
+        let first_page = &table.inner.pages[PageIndex(0)];
+        assert!(!first_page.is_full(table.row_size()));
+        assert_eq!(first_page.available_var_len_granules(), 0);
+
+        let (_, row_ref) = table.insert(&pool, &mut blob_store, &product![next_value]).unwrap();
+        let new_ptr = row_ref.pointer();
+        assert_eq!(new_ptr.page_index(), first_ptr.page_index());
+        assert_eq!(new_ptr.page_offset(), first_ptr.page_offset());
+
+        let first_page = &table.inner.pages[PageIndex(0)];
+        assert!(first_page.is_full(table.row_size()));
+        assert_eq!(first_page.available_var_len_granules(), 0);
     }
 
     #[test]

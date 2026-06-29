@@ -1,13 +1,14 @@
-﻿Write a SpacetimeDB backend module in Rust that defines one table and a reducer that deletes a row.
+Write a SpacetimeDB backend module in Rust that defines one table and two reducers: one that inserts a row and one that deletes a row.
 
 TABLE
 - user
   - Struct: User
   - Fields:
-    - id: i32 (primary key)
+    - id: u64 (primary key, auto_inc)
     - name: String
     - age: i32
     - active: bool
 
 REDUCERS
-- delete_user: given id:i32, delete the row in user with that id
+- insert_user: given name:String, age:i32, active:bool, insert a new row (id is auto-assigned)
+- delete_user: given id:u64, delete the row in user with that id

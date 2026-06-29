@@ -1,5 +1,7 @@
 use spacetimedb_data_structures::error_stream::ErrorStream;
+use spacetimedb_lib::db::raw_def::v10::MethodOrAny;
 use spacetimedb_lib::db::raw_def::v9::{Lifecycle, RawScopedTypeNameV9};
+use spacetimedb_lib::http::ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION;
 use spacetimedb_lib::{ProductType, SumType};
 use spacetimedb_primitives::{ColId, ColList, ColSet};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
@@ -84,6 +86,17 @@ pub enum ValidationError {
         view: RawIdentifier,
         ty: PrettyAlgebraicType,
     },
+    #[error("View {view} referenced by primary key definition not found")]
+    ViewPrimaryKeyViewNotFound { view: RawIdentifier },
+    #[error("View {view} has multiple primary key definitions")]
+    RepeatedViewPrimaryKey { view: RawIdentifier },
+    #[error("View {view} has multiple primary key columns: {columns:?}")]
+    MultipleViewPrimaryKeyColumns {
+        view: RawIdentifier,
+        columns: Vec<RawIdentifier>,
+    },
+    #[error("Primary key column {column} for view {view} not found")]
+    ViewPrimaryKeyColumnNotFound { view: RawIdentifier, column: RawIdentifier },
     #[error("Table {table} has invalid product_type_ref {ref_}")]
     InvalidProductTypeRef {
         table: RawIdentifier,
@@ -135,6 +148,17 @@ pub enum ValidationError {
     TableNotFound { table: RawIdentifier },
     #[error("Name {name} is used for multiple reducers, procedures and/or views")]
     DuplicateFunctionName { name: Identifier },
+    #[error("HTTP handler name {name} is used for multiple HTTP handlers")]
+    DuplicateHttpHandlerName { name: Identifier },
+    #[error("HTTP route duplicates method {method:?} for path {path}")]
+    DuplicateHttpRoute { path: RawIdentifier, method: MethodOrAny },
+    #[error(
+        "HTTP route path `{path}` is invalid; allowed characters are {allowed}",
+        allowed = ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION
+    )]
+    InvalidHttpRoutePath { path: RawIdentifier },
+    #[error("HTTP route refers to unknown HTTP handler `{handler}`")]
+    MissingHttpHandler { handler: RawIdentifier },
     #[error("lifecycle event {lifecycle:?} without reducer")]
     LifecycleWithoutReducer { lifecycle: Lifecycle },
     #[error("lifecycle event {lifecycle:?} assigned multiple reducers")]

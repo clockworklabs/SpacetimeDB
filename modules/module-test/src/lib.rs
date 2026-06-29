@@ -1,11 +1,12 @@
 #![allow(clippy::disallowed_names)]
 use std::time::Duration;
 
+use spacetimedb::http::{Body, HandlerContext, Request, Response, Router};
 use spacetimedb::spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb::spacetimedb_lib::{self, bsatn};
 use spacetimedb::{
     duration, table, CaseConversionPolicy, ConnectionId, Deserialize, Identity, ReducerContext, SpacetimeType, Table,
-    Timestamp, ViewContext,
+    TimeDuration, Timestamp, ViewContext,
 };
 use spacetimedb::{log, ProcedureContext};
 
@@ -161,6 +162,15 @@ pub struct RepeatingTestArg {
     prev_time: Timestamp,
 }
 
+#[spacetimedb::table(accessor = nonrepeating_test_arg, scheduled(nonrepeating_test))]
+pub struct NonrepeatingTestArg {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    scheduled_at: spacetimedb::ScheduleAt,
+    prev_time: Timestamp,
+}
+
 #[spacetimedb::table(accessor = has_special_stuff)]
 pub struct HasSpecialStuff {
     identity: Identity,
@@ -222,6 +232,16 @@ pub fn init(ctx: &ReducerContext) {
         scheduled_id: 0,
         scheduled_at: duration!("1000ms").into(),
     });
+
+    let current_time = ctx.timestamp;
+    let one_second = TimeDuration::from_micros(1_000_000);
+    let future_timestamp: Timestamp = current_time + one_second;
+
+    ctx.db.nonrepeating_test_arg().insert(NonrepeatingTestArg {
+        prev_time: ctx.timestamp,
+        scheduled_id: 1,
+        scheduled_at: future_timestamp.into(),
+    });
 }
 
 #[spacetimedb::reducer]
@@ -231,6 +251,19 @@ pub fn repeating_test(ctx: &ReducerContext, arg: RepeatingTestArg) {
         .duration_since(arg.prev_time)
         .expect("arg.prev_time is later than ctx.timestamp... huh?");
     log::trace!("Timestamp: {:?}, Delta time: {:?}", ctx.timestamp, delta_time);
+}
+
+#[spacetimedb::reducer]
+pub fn nonrepeating_test(ctx: &ReducerContext, arg: NonrepeatingTestArg) {
+    let delta_time = ctx
+        .timestamp
+        .duration_since(arg.prev_time)
+        .expect("arg.prev_time is later than ctx.timestamp... huh?");
+    log::trace!(
+        "This reducers runs only once, at Timestamp: {:?}, Delta time: {:?}",
+        ctx.timestamp,
+        delta_time
+    );
 }
 
 #[spacetimedb::reducer]
@@ -263,7 +296,7 @@ pub fn list_over_age(ctx: &ReducerContext, age: u8) {
 
 #[spacetimedb::reducer]
 fn log_module_identity(ctx: &ReducerContext) {
-    log::info!("Module identity: {}", ctx.identity());
+    log::info!("Module identity: {}", ctx.database_identity());
 }
 
 #[spacetimedb::reducer]
@@ -398,6 +431,8 @@ pub fn query_private(ctx: &ReducerContext) {
 /// and therefore that all of the different accesses listed here are well-typed.
 // TODO(testing): Add tests (in smoketests?) for index arg combos which are expected not to compile.
 fn test_btree_index_args(ctx: &ReducerContext) {
+    fn assert_filterable<T: spacetimedb::FilterableValue>() {}
+
     // Single-column string index on `test_e.name`:
     // Tests that we can pass `&String` or `&str`, but not `str`.
     let string = "String".to_string();
@@ -466,12 +501,15 @@ fn test_btree_index_args(ctx: &ReducerContext) {
     let _ = ctx.db.points().multi_column_index().filter((&0i64, &1i64..&3i64));
 
     // ctx.db.points().multi_column_index().filter((0i64..3i64, 1i64)); // SHOULD FAIL
+    // Timestamp filterability coverage.
+    assert_filterable::<Timestamp>();
+    assert_filterable::<&Timestamp>();
 }
 
 #[spacetimedb::reducer]
 fn assert_caller_identity_is_module_identity(ctx: &ReducerContext) {
     let caller = ctx.sender();
-    let owner = ctx.identity();
+    let owner = ctx.database_identity();
     if caller != owner {
         panic!("Caller {caller} is not the owner {owner}");
     } else {
@@ -506,13 +544,23 @@ fn with_tx(ctx: &mut ProcedureContext) {
 /// This is a silly thing to do, but an effective test of the procedure HTTP API.
 #[spacetimedb::procedure]
 fn get_my_schema_via_http(ctx: &mut ProcedureContext) -> String {
-    let module_identity = ctx.identity();
+    let module_identity = ctx.database_identity();
     match ctx.http.get(format!(
         "http://localhost:3000/v1/database/{module_identity}/schema?version=9"
     )) {
         Ok(result) => result.into_body().into_string_lossy(),
         Err(e) => format!("{e}"),
     }
+}
+
+#[spacetimedb::http::handler]
+fn get_simple(_ctx: &mut HandlerContext, _req: Request) -> Response {
+    Response::new(Body::from_bytes("ok"))
+}
+
+#[spacetimedb::http::router]
+fn router() -> Router {
+    Router::new().get("/get", get_simple)
 }
 
 #[spacetimedb::settings]

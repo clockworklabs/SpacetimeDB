@@ -1,17 +1,17 @@
 import BinaryReader from '../lib/binary_reader.ts';
 import BinaryWriter from '../lib/binary_writer.ts';
 import { ClientMessage, ServerMessage } from './client_api/types';
-import type { WebsocketAdapter } from './websocket_decompress_adapter';
+import type { WebSocketAdapter, WebSocketFactory } from './ws';
 import { PREFERRED_WS_PROTOCOLS, V3_WS_PROTOCOL } from './websocket_protocols';
 import {
   decodeClientMessagesV3,
   encodeServerMessagesV3,
 } from './websocket_v3_frames.ts';
 
-class WebsocketTestAdapter implements WebsocketAdapter {
+class WebsocketTestAdapter implements WebSocketAdapter {
   protocol: string = '';
 
-  messageQueue: Uint8Array[];
+  messageQueue: Uint8Array<ArrayBuffer>[];
   outgoingMessages: ClientMessage[];
   closed: boolean;
   supportedProtocols: string[];
@@ -19,6 +19,7 @@ class WebsocketTestAdapter implements WebsocketAdapter {
   #onclose: (ev: CloseEvent) => void = () => {};
   #onopen: () => void = () => {};
   #onmessage: (msg: { data: Uint8Array }) => void = () => {};
+  #onerror: (msg: ErrorEvent) => void = () => {};
 
   constructor() {
     this.messageQueue = [];
@@ -39,9 +40,15 @@ class WebsocketTestAdapter implements WebsocketAdapter {
     this.#onmessage = handler;
   }
 
-  set onerror(_handler: (msg: ErrorEvent) => void) {}
+  set onerror(handler: (msg: ErrorEvent) => void) {
+    this.#onerror = handler;
+  }
 
-  send(message: Uint8Array): void {
+  error(error: Error): void {
+    this.#onerror(error as unknown as ErrorEvent);
+  }
+
+  send(message: Uint8Array<ArrayBuffer>): void {
     const rawMessage = message.slice();
     const outgoingMessages =
       this.protocol === V3_WS_PROTOCOL
@@ -85,28 +92,16 @@ class WebsocketTestAdapter implements WebsocketAdapter {
     this.#onmessage({ data: outboundData });
   }
 
-  async createWebSocketFn(_args: {
-    url: URL;
-    wsProtocol: string | string[];
-    nameOrAddress: string;
-    authToken?: string;
-    compression: 'gzip' | 'none';
-    lightMode: boolean;
-    confirmedReads?: boolean;
-  }): Promise<WebsocketTestAdapter> {
-    const requestedProtocols = Array.isArray(_args.wsProtocol)
-      ? _args.wsProtocol
-      : [_args.wsProtocol];
-    const negotiatedProtocol = requestedProtocols.find(protocol =>
+  openWebSocket: WebSocketFactory = async ({ wsProtocol }) => {
+    const negotiatedProtocol = wsProtocol.find(protocol =>
       this.supportedProtocols.includes(protocol)
     );
     if (!negotiatedProtocol) {
-      return Promise.reject(new Error('No compatible websocket protocol'));
+      throw new Error('No compatible websocket protocol');
     }
     this.protocol = negotiatedProtocol;
     return this;
-  }
+  };
 }
 
-export type { WebsocketTestAdapter };
 export default WebsocketTestAdapter;

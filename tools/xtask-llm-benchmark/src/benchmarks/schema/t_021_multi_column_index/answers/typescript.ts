@@ -2,9 +2,9 @@ import { table, schema, t } from 'spacetimedb/server';
 
 const log = table({
   name: 'log',
-  indexes: [{ name: 'byUserDay', algorithm: 'btree', columns: ['userId', 'day'] }],
+  indexes: [{ accessor: 'byUserDay', algorithm: 'btree', columns: ['userId', 'day'] }],
 }, {
-  id: t.i32().primaryKey(),
+  id: t.u64().primaryKey().autoInc(),
   userId: t.i32(),
   day: t.i32(),
   message: t.string(),
@@ -15,8 +15,8 @@ export default spacetimedb;
 
 export const seed = spacetimedb.reducer(
   ctx => {
-    ctx.db.log.insert({ id: 1, userId: 7, day: 1, message: "a" });
-    ctx.db.log.insert({ id: 2, userId: 7, day: 2, message: "b" });
-    ctx.db.log.insert({ id: 3, userId: 9, day: 1, message: "c" });
+    ctx.db.log.insert({ id: 0n, userId: 7, day: 1, message: "a" });
+    ctx.db.log.insert({ id: 0n, userId: 7, day: 2, message: "b" });
+    ctx.db.log.insert({ id: 0n, userId: 9, day: 1, message: "c" });
   }
 );

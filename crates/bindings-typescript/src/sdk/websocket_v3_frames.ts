@@ -28,9 +28,9 @@ function ensureMessageCount(
 
 function concatenateMessagesV3(
   writer: BinaryWriter,
-  messages: readonly Uint8Array[],
+  messages: readonly Uint8Array<ArrayBuffer>[],
   messageCount: number = messages.length
-): Uint8Array {
+): Uint8Array<ArrayBuffer> {
   ensureMessageCount(messages, messageCount);
   writer.clear();
   for (let i = 0; i < messageCount; i++) {
@@ -41,15 +41,15 @@ function concatenateMessagesV3(
 
 function splitMessagesV3(
   reader: BinaryReader,
-  data: Uint8Array,
+  data: Uint8Array<ArrayBuffer>,
   deserialize: (reader: BinaryReader) => unknown
-): Uint8Array[] {
+): Uint8Array<ArrayBuffer>[] {
   reader.reset(data);
   if (reader.remaining === 0) {
     throw new RangeError(EMPTY_V3_PAYLOAD_ERR);
   }
 
-  const messages: Uint8Array[] = [];
+  const messages: Uint8Array<ArrayBuffer>[] = [];
   while (reader.remaining > 0) {
     const startOffset = reader.offset;
     deserialize(reader);
@@ -60,7 +60,7 @@ function splitMessagesV3(
 }
 
 export function countClientMessagesForV3Frame(
-  messages: readonly Uint8Array[],
+  messages: readonly Uint8Array<ArrayBuffer>[],
   maxFrameBytes: number
 ): number {
   ensureMessages(messages);
@@ -86,13 +86,15 @@ export function countClientMessagesForV3Frame(
 
 export function encodeClientMessagesV3(
   writer: BinaryWriter,
-  messages: readonly Uint8Array[],
+  messages: readonly Uint8Array<ArrayBuffer>[],
   messageCount: number = messages.length
-): Uint8Array {
+): Uint8Array<ArrayBuffer> {
   return concatenateMessagesV3(writer, messages, messageCount);
 }
 
-export function decodeClientMessagesV3(data: Uint8Array): Uint8Array[] {
+export function decodeClientMessagesV3(
+  data: Uint8Array<ArrayBuffer>
+): Uint8Array<ArrayBuffer>[] {
   return splitMessagesV3(new BinaryReader(data), data, reader =>
     ClientMessage.deserialize(reader)
   );
@@ -100,8 +102,8 @@ export function decodeClientMessagesV3(data: Uint8Array): Uint8Array[] {
 
 export function encodeServerMessagesV3(
   writer: BinaryWriter,
-  messages: readonly Uint8Array[]
-): Uint8Array {
+  messages: readonly Uint8Array<ArrayBuffer>[]
+): Uint8Array<ArrayBuffer> {
   return concatenateMessagesV3(writer, messages);
 }
 
