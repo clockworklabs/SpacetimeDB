@@ -1670,14 +1670,20 @@ log = "0.4"
             .output();
 
         // Login with server-issued identity
-        // Format: login --server-issued-login <server>
+        // Remote smoketest configs edit the "localhost" server alias to point at the
+        // remote URL, matching the old Python smoketest runner.
+        let login_server = if std::env::var_os("SPACETIME_SMOKETEST_BASE_CONFIG_PATH").is_some() {
+            "localhost"
+        } else {
+            &self.server_url
+        };
         let output = Command::new(&cli_path)
             .args([
                 "--config-path",
                 config_path_str,
                 "login",
                 "--server-issued-login",
-                &self.server_url,
+                login_server,
             ])
             .output()
             .context("Failed to login with new identity")?;
