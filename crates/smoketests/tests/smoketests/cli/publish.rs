@@ -15,13 +15,31 @@ fn cli_can_publish_spacetimedb_on_disk() {
         .join("spacetimedb");
 
     let dir = dir.to_string();
+    // Needed when running smoketests against a remote server.
     let _ = test
-        .spacetime(&["publish", "--module-path", &dir, "--server", &test.server_url, "foobar"])
+        .spacetime(&[
+            "publish",
+            "--module-path",
+            &dir,
+            "--server",
+            &test.server_url,
+            "--yes=remote",
+            "foobar",
+        ])
         .unwrap();
 
     // Can republish without error to the same name
+    // Needed when running smoketests against a remote server.
     let _ = test
-        .spacetime(&["publish", "--module-path", &dir, "--server", &test.server_url, "foobar"])
+        .spacetime(&[
+            "publish",
+            "--module-path",
+            &dir,
+            "--server",
+            &test.server_url,
+            "--yes=remote",
+            "foobar",
+        ])
         .unwrap();
 }
 
@@ -228,10 +246,12 @@ fn cli_publish_with_config_but_no_match_uses_cli_args() {
     std::fs::write(module_dir.join("spacetime.json"), config_content).expect("failed to write config");
 
     // Publish with a different database name from CLI - should use CLI args, not config
+    // Needed when running smoketests against a remote server.
     test.spacetime(&[
         "publish",
         "--server",
         &test.server_url,
+        "--yes=remote",
         "cli-db-name",
         "--module-path",
         module_dir.to_str().unwrap(),
