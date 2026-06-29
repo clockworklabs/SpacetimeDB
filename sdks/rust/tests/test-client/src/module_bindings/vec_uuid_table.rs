@@ -40,6 +40,18 @@ impl VecUuidTableAccess for super::RemoteTables {
 pub struct VecUuidInsertCallbackId(__sdk::CallbackId);
 pub struct VecUuidDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for VecUuidTableHandle<'ctx> {
+    type Row = VecUuid;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = VecUuid> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for VecUuidTableHandle<'ctx> {
     type Row = VecUuid;
     type EventContext = super::EventContext;
@@ -64,6 +76,36 @@ impl<'ctx> __sdk::Table for VecUuidTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = VecUuidDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> VecUuidDeleteCallbackId {
+        VecUuidDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: VecUuidDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for VecUuidTableHandle<'ctx> {
+    type InsertCallbackId = VecUuidInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> VecUuidInsertCallbackId {
+        VecUuidInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: VecUuidInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for VecUuidTableHandle<'ctx> {
     type DeleteCallbackId = VecUuidDeleteCallbackId;
 
     fn on_delete(

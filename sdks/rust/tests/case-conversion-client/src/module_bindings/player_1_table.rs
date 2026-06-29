@@ -2,8 +2,8 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use super::player_1_type::Player1;
 use super::player_2_status_type::Player2Status;
+use super::player_row_type::PlayerRow;
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `Player1Canonical`.
@@ -15,7 +15,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 /// but to directly chain method calls,
 /// like `ctx.db.player_1().on_insert(...)`.
 pub struct Player1TableHandle<'ctx> {
-    imp: __sdk::TableHandle<Player1>,
+    imp: __sdk::TableHandle<PlayerRow>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -32,7 +32,7 @@ pub trait Player1TableAccess {
 impl Player1TableAccess for super::RemoteTables {
     fn player_1(&self) -> Player1TableHandle<'_> {
         Player1TableHandle {
-            imp: self.imp.get_table::<Player1>("Player1Canonical"),
+            imp: self.imp.get_table::<PlayerRow>("Player1Canonical"),
             ctx: std::marker::PhantomData,
         }
     }
@@ -41,14 +41,26 @@ impl Player1TableAccess for super::RemoteTables {
 pub struct Player1InsertCallbackId(__sdk::CallbackId);
 pub struct Player1DeleteCallbackId(__sdk::CallbackId);
 
-impl<'ctx> __sdk::Table for Player1TableHandle<'ctx> {
-    type Row = Player1;
+impl<'ctx> __sdk::TableLike for Player1TableHandle<'ctx> {
+    type Row = PlayerRow;
     type EventContext = super::EventContext;
 
     fn count(&self) -> u64 {
         self.imp.count()
     }
-    fn iter(&self) -> impl Iterator<Item = Player1> + '_ {
+    fn iter(&self) -> impl Iterator<Item = PlayerRow> + '_ {
+        self.imp.iter()
+    }
+}
+
+impl<'ctx> __sdk::Table for Player1TableHandle<'ctx> {
+    type Row = PlayerRow;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = PlayerRow> + '_ {
         self.imp.iter()
     }
 
@@ -65,6 +77,36 @@ impl<'ctx> __sdk::Table for Player1TableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = Player1DeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> Player1DeleteCallbackId {
+        Player1DeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: Player1DeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for Player1TableHandle<'ctx> {
+    type InsertCallbackId = Player1InsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> Player1InsertCallbackId {
+        Player1InsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: Player1InsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for Player1TableHandle<'ctx> {
     type DeleteCallbackId = Player1DeleteCallbackId;
 
     fn on_delete(
@@ -96,6 +138,21 @@ impl<'ctx> __sdk::TableWithPrimaryKey for Player1TableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithUpdate for Player1TableHandle<'ctx> {
+    type UpdateCallbackId = Player1UpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> Player1UpdateCallbackId {
+        Player1UpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: Player1UpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
 /// Access to the `player_1_id` unique index on the table `Player1Canonical`,
 /// which allows point queries on the field of the same name
 /// via the [`Player1Player1IdUnique::find`] method.
@@ -104,7 +161,7 @@ impl<'ctx> __sdk::TableWithPrimaryKey for Player1TableHandle<'ctx> {
 /// but to directly chain method calls,
 /// like `ctx.db.player_1().player_1_id().find(...)`.
 pub struct Player1Player1IdUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<Player1, u32>,
+    imp: __sdk::UniqueConstraintHandle<PlayerRow, u32>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
@@ -121,38 +178,38 @@ impl<'ctx> Player1TableHandle<'ctx> {
 impl<'ctx> Player1Player1IdUnique<'ctx> {
     /// Find the subscribed row whose `player_1_id` column value is equal to `col_val`,
     /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &u32) -> Option<Player1> {
+    pub fn find(&self, col_val: &u32) -> Option<PlayerRow> {
         self.imp.find(col_val)
     }
 }
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
-    let _table = client_cache.get_or_make_table::<Player1>("Player1Canonical");
+    let _table = client_cache.get_or_make_table::<PlayerRow>("Player1Canonical");
     _table.add_unique_constraint::<u32>("player_1_id", |row| &row.player_1_id);
 }
 
 #[doc(hidden)]
-pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<Player1>> {
+pub(super) fn parse_table_update(raw_updates: __ws::v2::TableUpdate) -> __sdk::Result<__sdk::TableUpdate<PlayerRow>> {
     __sdk::TableUpdate::parse_table_update(raw_updates).map_err(|e| {
-        __sdk::InternalError::failed_parse("TableUpdate<Player1>", "TableUpdate")
+        __sdk::InternalError::failed_parse("TableUpdate<PlayerRow>", "TableUpdate")
             .with_cause(e)
             .into()
     })
 }
 
 #[allow(non_camel_case_types)]
-/// Extension trait for query builder access to the table `Player1`.
+/// Extension trait for query builder access to the table `PlayerRow`.
 ///
 /// Implemented for [`__sdk::QueryTableAccessor`].
 pub trait player_1QueryTableAccess {
     #[allow(non_snake_case)]
-    /// Get a query builder for the table `Player1`.
-    fn player_1(&self) -> __sdk::__query_builder::Table<Player1>;
+    /// Get a query builder for the table `PlayerRow`.
+    fn player_1(&self) -> __sdk::__query_builder::Table<PlayerRow>;
 }
 
 impl player_1QueryTableAccess for __sdk::QueryTableAccessor {
-    fn player_1(&self) -> __sdk::__query_builder::Table<Player1> {
+    fn player_1(&self) -> __sdk::__query_builder::Table<PlayerRow> {
         __sdk::__query_builder::Table::new("Player1Canonical")
     }
 }

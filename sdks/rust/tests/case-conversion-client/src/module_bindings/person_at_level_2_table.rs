@@ -41,6 +41,18 @@ impl PersonAtLevel2TableAccess for super::RemoteTables {
 pub struct PersonAtLevel2InsertCallbackId(__sdk::CallbackId);
 pub struct PersonAtLevel2DeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for PersonAtLevel2TableHandle<'ctx> {
+    type Row = Person2;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = Person2> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for PersonAtLevel2TableHandle<'ctx> {
     type Row = Person2;
     type EventContext = super::EventContext;
@@ -79,57 +91,39 @@ impl<'ctx> __sdk::Table for PersonAtLevel2TableHandle<'ctx> {
     }
 }
 
-pub struct PersonAtLevel2UpdateCallbackId(__sdk::CallbackId);
+impl<'ctx> __sdk::WithInsert for PersonAtLevel2TableHandle<'ctx> {
+    type InsertCallbackId = PersonAtLevel2InsertCallbackId;
 
-impl<'ctx> __sdk::TableWithPrimaryKey for PersonAtLevel2TableHandle<'ctx> {
-    type UpdateCallbackId = PersonAtLevel2UpdateCallbackId;
-
-    fn on_update(
+    fn on_insert(
         &self,
-        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
-    ) -> PersonAtLevel2UpdateCallbackId {
-        PersonAtLevel2UpdateCallbackId(self.imp.on_update(Box::new(callback)))
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PersonAtLevel2InsertCallbackId {
+        PersonAtLevel2InsertCallbackId(self.imp.on_insert(Box::new(callback)))
     }
 
-    fn remove_on_update(&self, callback: PersonAtLevel2UpdateCallbackId) {
-        self.imp.remove_on_update(callback.0)
-    }
-}
-
-/// Access to the `person_2_id` unique index on the table `Level2Person`,
-/// which allows point queries on the field of the same name
-/// via the [`PersonAtLevel2Person2IdUnique::find`] method.
-///
-/// Users are encouraged not to explicitly reference this type,
-/// but to directly chain method calls,
-/// like `ctx.db.person_at_level_2().person_2_id().find(...)`.
-pub struct PersonAtLevel2Person2IdUnique<'ctx> {
-    imp: __sdk::UniqueConstraintHandle<Person2, u32>,
-    phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
-}
-
-impl<'ctx> PersonAtLevel2TableHandle<'ctx> {
-    /// Get a handle on the `person_2_id` unique index on the table `Level2Person`.
-    pub fn person_2_id(&self) -> PersonAtLevel2Person2IdUnique<'ctx> {
-        PersonAtLevel2Person2IdUnique {
-            imp: self.imp.get_unique_constraint::<u32>("person_2_id"),
-            phantom: std::marker::PhantomData,
-        }
+    fn remove_on_insert(&self, callback: PersonAtLevel2InsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
     }
 }
 
-impl<'ctx> PersonAtLevel2Person2IdUnique<'ctx> {
-    /// Find the subscribed row whose `person_2_id` column value is equal to `col_val`,
-    /// if such a row is present in the client cache.
-    pub fn find(&self, col_val: &u32) -> Option<Person2> {
-        self.imp.find(col_val)
+impl<'ctx> __sdk::WithDelete for PersonAtLevel2TableHandle<'ctx> {
+    type DeleteCallbackId = PersonAtLevel2DeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PersonAtLevel2DeleteCallbackId {
+        PersonAtLevel2DeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: PersonAtLevel2DeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
     }
 }
 
 #[doc(hidden)]
 pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::RemoteModule>) {
     let _table = client_cache.get_or_make_table::<Person2>("Level2Person");
-    _table.add_unique_constraint::<u32>("person_2_id", |row| &row.person_2_id);
 }
 
 #[doc(hidden)]

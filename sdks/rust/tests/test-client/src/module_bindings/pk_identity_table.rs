@@ -40,6 +40,18 @@ impl PkIdentityTableAccess for super::RemoteTables {
 pub struct PkIdentityInsertCallbackId(__sdk::CallbackId);
 pub struct PkIdentityDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for PkIdentityTableHandle<'ctx> {
+    type Row = PkIdentity;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = PkIdentity> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for PkIdentityTableHandle<'ctx> {
     type Row = PkIdentity;
     type EventContext = super::EventContext;
@@ -78,9 +90,54 @@ impl<'ctx> __sdk::Table for PkIdentityTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithInsert for PkIdentityTableHandle<'ctx> {
+    type InsertCallbackId = PkIdentityInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PkIdentityInsertCallbackId {
+        PkIdentityInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: PkIdentityInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for PkIdentityTableHandle<'ctx> {
+    type DeleteCallbackId = PkIdentityDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PkIdentityDeleteCallbackId {
+        PkIdentityDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: PkIdentityDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
 pub struct PkIdentityUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PkIdentityTableHandle<'ctx> {
+    type UpdateCallbackId = PkIdentityUpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> PkIdentityUpdateCallbackId {
+        PkIdentityUpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: PkIdentityUpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithUpdate for PkIdentityTableHandle<'ctx> {
     type UpdateCallbackId = PkIdentityUpdateCallbackId;
 
     fn on_update(
