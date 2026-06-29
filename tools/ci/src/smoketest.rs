@@ -207,6 +207,7 @@ fn prepare_base_config(server: Option<&str>, spacetime_login: bool) -> Result<Te
     let config_path = temp_dir.path().join("config.toml");
     let config_path_str = config_path.to_str().context("invalid temp config path")?;
 
+    // run an arbitrary command in order to initialize the config file
     let status = Command::new("target/release/spacetime")
         .args(["--config-path", config_path_str, "server", "set-default", "local"])
         .status()
