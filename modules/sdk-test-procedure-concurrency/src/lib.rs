@@ -1,6 +1,4 @@
-use spacetimedb::{
-    procedure, reducer, table, DbContext, ProcedureContext, ReducerContext, ScheduleAt, Table, TxContext,
-};
+use spacetimedb::{procedure, reducer, table, ProcedureContext, ReducerContext, ScheduleAt, Table, TxContext};
 use std::time::Duration;
 
 #[table(public, accessor = procedure_concurrency_row)]
@@ -19,7 +17,7 @@ fn insert_procedure_concurrency_row(ctx: &TxContext, insertion_context: &str) {
 
 #[reducer]
 fn insert_reducer_row(ctx: &ReducerContext) {
-    ctx.db().procedure_concurrency_row().insert(ProcedureConcurrencyRow {
+    ctx.db.procedure_concurrency_row().insert(ProcedureConcurrencyRow {
         insertion_order: 0,
         insertion_context: "reducer".into(),
     });
@@ -82,7 +80,7 @@ struct ScheduledReducerRow {
 
 #[reducer]
 fn insert_scheduled_reducer(ctx: &ReducerContext, _schedule: ScheduledReducerRow) {
-    ctx.db().procedure_concurrency_row().insert(ProcedureConcurrencyRow {
+    ctx.db.procedure_concurrency_row().insert(ProcedureConcurrencyRow {
         insertion_order: 0,
         insertion_context: "scheduled_reducer".into(),
     });
@@ -130,11 +128,11 @@ fn scheduled_procedure_sleep_between_inserts(ctx: &mut ProcedureContext, _schedu
 
 #[reducer]
 fn schedule_procedure_then_reducer(ctx: &ReducerContext) {
-    ctx.db().scheduled_procedure_row().insert(ScheduledProcedureRow {
+    ctx.db.scheduled_procedure_row().insert(ScheduledProcedureRow {
         scheduled_id: 0,
         scheduled_at: ctx.timestamp.into(),
     });
-    ctx.db().scheduled_reducer_row().insert(ScheduledReducerRow {
+    ctx.db.scheduled_reducer_row().insert(ScheduledReducerRow {
         scheduled_id: 0,
         scheduled_at: (ctx.timestamp + Duration::from_secs(2)).into(),
     });
