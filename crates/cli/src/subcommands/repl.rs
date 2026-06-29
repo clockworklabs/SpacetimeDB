@@ -1,5 +1,5 @@
 use crate::api::{ClientApi, Connection};
-use crate::sql::run_sql;
+use crate::sql::{run_sql, Format};
 use colored::*;
 use dirs::home_dir;
 use std::env::temp_dir;
@@ -38,7 +38,7 @@ sort by
 .clear
 ";
 
-pub async fn exec(con: Connection) -> Result<(), anyhow::Error> {
+pub(crate) async fn exec(con: Connection, format: Format) -> Result<(), anyhow::Error> {
     let database = con.database.clone();
     let mut rl = Editor::<ReplHelper, DefaultHistory>::new().unwrap();
     let history = home_dir().unwrap_or_else(temp_dir).join(".stdb.history.txt");
@@ -71,7 +71,7 @@ pub async fn exec(con: Connection) -> Result<(), anyhow::Error> {
                 sql => {
                     rl.add_history_entry(sql).ok();
 
-                    if let Err(err) = run_sql(api.sql(), sql, true).await {
+                    if let Err(err) = run_sql(api.sql(), sql, true, format).await {
                         eprintln!("{}", err.to_string().red())
                     }
                 }
