@@ -72,7 +72,7 @@ pub use spacetimedb_bindings_macro::http_handler as handler;
 
 /// Register a [`Router`](struct@Router) to route HTTP requests to handlers.
 ///
-/// This should annotate a function of no arguments which returns a [`Router`](struct@router).
+/// This should annotate a function of no arguments which returns a [`Router`](struct@Router).
 ///
 /// ```no_run
 /// # use spacetimedb::http::{handler, router, Request, Response, Body, HandlerContext, Router};

@@ -1601,8 +1601,8 @@ impl CtxDbWrite for ReducerContext {
 /// This trait is useful for writing reusable logic which is generic over the context type,
 /// allowing it to be used from views, reducers, and transactions started by procedures and HTTP handlers.
 ///
-/// When operating on a concrete-typed [`ViewContext`], [`ReducerContext`], [`ProcedureContext`] or [`TxContext`], this trait is not necessary,
-/// as the context's inherent `sender` method provides the same access.
+/// When operating on a concrete-typed [`ViewContext`], [`ReducerContext`], [`ProcedureContext`] or [`TxContext`],
+/// this trait is not necessary, as the context's inherent `sender` method provides the same access.
 pub trait CtxWithSender {
     fn sender(&self) -> Identity;
 }
@@ -1637,7 +1637,9 @@ impl CtxWithSender for ProcedureContext {
 /// allowing it to be used from reducers, procedures, HTTP handlers,
 /// and transactions started by procedures and HTTP handlers.
 ///
-/// When operating on a concrete-typed [`ReducerContext`], [`ProcedureContext`], [`HandlerContext`] or [`TxContext`],
+/// When operating on a concrete-typed [`ReducerContext`], [`ProcedureContext`]
+#[cfg_attr(feature = "unstable", doc = ", [`HandlerContext`]")]
+/// or [`TxContext`],
 /// this trait is not necessary, as the context's `timestamp` field provides the same access.
 pub trait CtxWithTimestamp {
     fn timestamp(&self) -> Timestamp;
@@ -1696,7 +1698,9 @@ impl CtxWithSenderAuth for TxContext {
 /// This trait is useful for writing reusable logic which is generic over the context type,
 /// allowing it to be used from reducers and procedures.
 ///
-/// When operating on a concrete-typed [`HandlerContext`], [`ProcedureContext`],
+/// When operating on a concrete-typed
+#[cfg_attr(feature = "unstable", doc = "[`HandlerContext`] or")]
+/// [`ProcedureContext`],
 /// this trait is not necessary, as the context's methods provide the same access.
 pub trait CtxWithTxManagement {
     fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T;
@@ -1729,7 +1733,9 @@ impl CtxWithTxManagement for HandlerContext {
 /// This trait is useful for writing reusable logic which is generic over the context type,
 /// allowing it to be used from reducers and procedures.
 ///
-/// When operating on a concrete-typed [`HandlerContext`], [`ProcedureContext`], [`ReducerContext`], [`TxContext`]
+/// When operating on a concrete-typed
+#[cfg_attr(feature = "unstable", doc = "[`HandlerContext`],")]
+/// [`ProcedureContext`], [`ReducerContext`], [`TxContext`]
 /// this trait is not necessary, as the context's methods provide the same access.
 #[cfg(feature = "rand08")]
 pub trait CtxWithRng {
@@ -1800,7 +1806,9 @@ impl CtxWithRng for TxContext {
 /// This type is useful for writing reusable logic which is generic over the context type,
 /// allowing it to be used from procedures and HTTP handlers.
 ///
-/// When operating on a concrete-typed [`ProcedureContext`] or [`HandlerContext`], this trait is not necessary,
+/// When operating on a concrete-typed [`ProcedureContext`]
+#[cfg_attr(feature = "unstable", doc = "or [`HandlerContext`],")]
+/// this trait is not necessary,
 /// as the context's `http` field provides the same access.
 pub trait CtxWithHttp {
     fn http(&self) -> &HttpClient;
