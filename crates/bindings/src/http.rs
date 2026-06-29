@@ -13,7 +13,7 @@ use crate::StdbRng;
 #[cfg(feature = "unstable")]
 use crate::{try_with_tx, with_tx, Timestamp, TxContext};
 use bytes::Bytes;
-#[cfg(all(feature = "rand", feature = "unstable"))]
+#[cfg(all(feature = "rand08", feature = "unstable"))]
 use rand08::RngCore;
 #[cfg(feature = "unstable")]
 use spacetimedb_lib::db::raw_def::v10::MethodOrAny;
@@ -22,10 +22,10 @@ use spacetimedb_lib::http as st_http;
 use spacetimedb_lib::http::{character_is_acceptable_for_route_path, ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION};
 #[cfg(feature = "unstable")]
 use spacetimedb_lib::Identity;
-#[cfg(all(feature = "unstable", feature = "rand"))]
+#[cfg(all(feature = "unstable", feature = "rand08"))]
 use spacetimedb_lib::Uuid;
 use spacetimedb_lib::{bsatn, TimeDuration};
-#[cfg(all(feature = "unstable", feature = "rand"))]
+#[cfg(all(feature = "unstable", feature = "rand08"))]
 use std::cell::Cell;
 #[cfg(all(feature = "unstable", feature = "rand08"))]
 use std::cell::OnceCell;
@@ -109,7 +109,7 @@ pub struct HandlerContext {
 
     /// A counter used for generating UUIDv7 values.
     /// **Note:** must be 0..=u32::MAX
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     pub(crate) counter_uuid: Cell<u32>,
 }
 
@@ -121,7 +121,7 @@ impl HandlerContext {
             http: HttpClient {},
             #[cfg(feature = "rand08")]
             rng: OnceCell::new(),
-            #[cfg(feature = "rand")]
+            #[cfg(feature = "rand08")]
             counter_uuid: Cell::new(0),
         }
     }
@@ -142,7 +142,7 @@ impl HandlerContext {
     }
 
     /// Create a new random [`Uuid`] `v4` using the built-in RNG.
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     pub fn new_uuid_v4(&self) -> anyhow::Result<Uuid> {
         let mut bytes = [0u8; 16];
         self.rng().try_fill_bytes(&mut bytes)?;
@@ -150,7 +150,7 @@ impl HandlerContext {
     }
 
     /// Create a new sortable [`Uuid`] `v7` using the built-in RNG, counter and timestamp.
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     pub fn new_uuid_v7(&self) -> anyhow::Result<Uuid> {
         let mut random_bytes = [0u8; 4];
         self.rng().try_fill_bytes(&mut random_bytes)?;

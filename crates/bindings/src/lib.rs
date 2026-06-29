@@ -1,9 +1,11 @@
 #![doc = include_str!("../README.md")]
 // ^ if you are working on docs, go read the top comment of README.md please.
 
-use core::cell::{Cell, LazyCell, OnceCell, RefCell};
+use core::cell::{LazyCell, OnceCell, RefCell};
 use core::ops::Deref;
 use spacetimedb_lib::bsatn;
+#[cfg(feature = "rand08")]
+use std::cell::Cell;
 use std::rc::Rc;
 
 #[cfg(feature = "unstable")]
@@ -26,10 +28,11 @@ pub use client_visibility_filter::Filter;
 pub use log;
 #[cfg(feature = "rand08")]
 use rand::distributions::{Distribution, Standard};
-#[cfg(feature = "rand")]
+#[cfg(feature = "rand08")]
 pub use rand08 as rand;
-#[cfg(feature = "rand")]
+#[cfg(feature = "rand08")]
 use rand08::RngCore;
+#[cfg(feature = "rand08")]
 pub use rng::StdbRng;
 pub use sats::SpacetimeType;
 #[doc(hidden)]
@@ -43,6 +46,9 @@ pub use spacetimedb_lib::ser::Serialize;
 pub use spacetimedb_lib::AlgebraicValue;
 pub use spacetimedb_lib::ConnectionId;
 // `FilterableValue` re-exported purely for rustdoc.
+#[cfg(feature = "unstable")]
+use crate::http::HandlerContext;
+use crate::http::HttpClient;
 pub use spacetimedb_lib::FilterableValue;
 pub use spacetimedb_lib::Identity;
 pub use spacetimedb_lib::ScheduleAt;
@@ -913,8 +919,6 @@ pub use spacetimedb_bindings_macro::view;
 pub struct QueryBuilder {}
 pub use query_builder::{Query, RawQuery};
 
-use crate::http::{HandlerContext, HttpClient};
-
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
 /// The other is [`ViewContext`].
 /// Use this type if the view does not depend on the caller's identity.
@@ -1030,7 +1034,7 @@ pub struct ReducerContext {
     rng: std::cell::OnceCell<StdbRng>,
     /// A counter used for generating UUIDv7 values.
     /// **Note:** must be 0..=u32::MAX
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     counter_uuid: Cell<u32>,
 }
 
@@ -1045,7 +1049,7 @@ impl ReducerContext {
             sender_auth: AuthCtx::internal(),
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
-            #[cfg(feature = "rand")]
+            #[cfg(feature = "rand08")]
             counter_uuid: Cell::new(0),
         }
     }
@@ -1060,7 +1064,7 @@ impl ReducerContext {
             sender_auth: AuthCtx::from_connection_id_opt(connection_id),
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
-            #[cfg(feature = "rand")]
+            #[cfg(feature = "rand08")]
             counter_uuid: Cell::new(0),
         }
     }
@@ -1126,7 +1130,7 @@ impl ReducerContext {
     /// }
     /// # }
     /// ```
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     pub fn new_uuid_v4(&self) -> anyhow::Result<Uuid> {
         let mut bytes = [0u8; 16];
         self.rng().try_fill_bytes(&mut bytes)?;
@@ -1148,7 +1152,7 @@ impl ReducerContext {
     /// }
     /// # }
     /// ```
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     pub fn new_uuid_v7(&self) -> anyhow::Result<Uuid> {
         let mut random_bytes = [0u8; 4];
         self.rng().try_fill_bytes(&mut random_bytes)?;
@@ -1265,7 +1269,7 @@ pub struct ProcedureContext {
     /// A counter used for generating UUIDv7 values.
     /// **Note:** must be 0..=u32::MAX
     // Disabled when compiling without `rand`, as both v4 and v7 UUIDs have random components.
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     counter_uuid: Cell<u32>,
 }
 
@@ -1278,7 +1282,7 @@ impl ProcedureContext {
             http: http::HttpClient {},
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
-            #[cfg(feature = "rand")]
+            #[cfg(feature = "rand08")]
             counter_uuid: Cell::new(0),
         }
     }
@@ -1412,7 +1416,7 @@ impl ProcedureContext {
     /// }
     /// # }
     /// ```
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     pub fn new_uuid_v4(&self) -> anyhow::Result<Uuid> {
         let mut bytes = [0u8; 16];
         self.rng().try_fill_bytes(&mut bytes)?;
@@ -1434,7 +1438,7 @@ impl ProcedureContext {
     /// }
     /// # }
     /// ```
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     pub fn new_uuid_v7(&self) -> anyhow::Result<Uuid> {
         let mut random_bytes = [0u8; 4];
         self.rng().try_fill_bytes(&mut random_bytes)?;
@@ -1657,6 +1661,7 @@ impl CtxWithTimestamp for ProcedureContext {
     }
 }
 
+#[cfg(feature = "unstable")]
 impl CtxWithTimestamp for HandlerContext {
     fn timestamp(&self) -> Timestamp {
         self.timestamp
@@ -1708,6 +1713,7 @@ impl CtxWithTxManagement for ProcedureContext {
     }
 }
 
+#[cfg(feature = "unstable")]
 impl CtxWithTxManagement for HandlerContext {
     fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
         self.with_tx(body)
@@ -1725,6 +1731,7 @@ impl CtxWithTxManagement for HandlerContext {
 ///
 /// When operating on a concrete-typed [`HandlerContext`], [`ProcedureContext`], [`ReducerContext`], [`TxContext`]
 /// this trait is not necessary, as the context's methods provide the same access.
+#[cfg(feature = "rand08")]
 pub trait CtxWithRng {
     fn rng(&self) -> &StdbRng;
     fn random<T>(&self) -> T
@@ -1732,6 +1739,7 @@ pub trait CtxWithRng {
         Standard: Distribution<T>;
 }
 
+#[cfg(feature = "rand08")]
 impl CtxWithRng for ProcedureContext {
     fn rng(&self) -> &StdbRng {
         self.rng()
@@ -1745,6 +1753,7 @@ impl CtxWithRng for ProcedureContext {
     }
 }
 
+#[cfg(all(feature = "unstable", feature = "rand08"))]
 impl CtxWithRng for HandlerContext {
     fn rng(&self) -> &StdbRng {
         self.rng()
@@ -1758,6 +1767,7 @@ impl CtxWithRng for HandlerContext {
     }
 }
 
+#[cfg(feature = "rand08")]
 impl CtxWithRng for ReducerContext {
     fn rng(&self) -> &StdbRng {
         self.rng()
@@ -1771,6 +1781,7 @@ impl CtxWithRng for ReducerContext {
     }
 }
 
+#[cfg(feature = "rand08")]
 impl CtxWithRng for TxContext {
     fn rng(&self) -> &StdbRng {
         self.0.rng()
@@ -1795,6 +1806,7 @@ pub trait CtxWithHttp {
     fn http(&self) -> &HttpClient;
 }
 
+#[cfg(feature = "unstable")]
 impl CtxWithHttp for HandlerContext {
     fn http(&self) -> &HttpClient {
         &self.http
