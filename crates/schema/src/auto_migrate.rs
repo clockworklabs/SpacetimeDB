@@ -131,14 +131,25 @@ impl MigrationPolicy {
         new_module_def: &'def ModuleDef,
     ) -> anyhow::Result<MigratePlan<'def>, MigrationPolicyError> {
         let plan = ponder_migrate(old_module_def, new_module_def).map_err(MigrationPolicyError::AutoMigrateFailure)?;
+        self.permits_migrate_plan(database_identity, old_module_hash, new_module_hash, &plan)?;
+        Ok(plan)
+    }
 
+    /// Validate an already-generated migration plan under this policy.
+    pub fn permits_migrate_plan(
+        &self,
+        database_identity: Identity,
+        old_module_hash: spacetimedb_lib::Hash,
+        new_module_hash: spacetimedb_lib::Hash,
+        plan: &MigratePlan<'_>,
+    ) -> anyhow::Result<(), MigrationPolicyError> {
         let token = MigrationToken {
             database_identity,
             old_module_hash,
             new_module_hash,
         };
-        self.permits_plan(&plan, &token)?;
-        Ok(plan)
+        self.permits_plan(plan, &token)?;
+        Ok(())
     }
 }
 
@@ -263,7 +274,6 @@ pub enum AutoMigrateStep<'def> {
     RemoveView(<ViewDef as ModuleDefLookup>::Key<'def>),
     /// Remove a row-level security query.
     RemoveRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
-
     /// Remove an empty table and all its sub-objects (indexes, constraints, sequences).
     /// Validated at execution time: fails if the table contains data.
     RemoveTable(<TableDef as ModuleDefLookup>::Key<'def>),
@@ -272,6 +282,10 @@ pub enum AutoMigrateStep<'def> {
     ///
     /// This should be done before any new indices are added.
     ChangeColumns(<TableDef as ModuleDefLookup>::Key<'def>),
+
+    /// Change the column types of an event table, in a way that may not be layout-compatible.
+    ReschemaEventTable(<TableDef as ModuleDefLookup>::Key<'def>),
+
     /// Add columns to a table, in a layout-INCOMPATIBLE way.
     ///
     /// This is a destructive operation that requires first running a `DisconnectAllUsers`.
@@ -289,6 +303,8 @@ pub enum AutoMigrateStep<'def> {
     AddTable(<TableDef as ModuleDefLookup>::Key<'def>),
     /// Add an index.
     AddIndex(<IndexDef as ModuleDefLookup>::Key<'def>),
+    /// Add a constraint to an existing table (with data validation precheck).
+    AddConstraint(<ConstraintDef as ModuleDefLookup>::Key<'def>),
     /// Add a sequence.
     AddSequence(<SequenceDef as ModuleDefLookup>::Key<'def>),
     /// Add a schedule annotation to a table.
@@ -631,7 +647,11 @@ fn auto_migrate_view<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def ViewDef,
     })
     .collect();
 
-    if old.is_anonymous != new.is_anonymous || incompatible_return_type || incompatible_param_types {
+    if old.is_anonymous != new.is_anonymous
+        || old.primary_key != new.primary_key
+        || incompatible_return_type
+        || incompatible_param_types
+    {
         plan.steps.push(AutoMigrateStep::AddView(new.key()));
         plan.steps.push(AutoMigrateStep::RemoveView(old.key()));
 
@@ -682,6 +702,10 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
         }
         .into())
     };
+
+    // Combined with our validation of `event_ok`, `old.is_event` is sufficient to identify this as an event table.
+    let is_event = old.is_event;
+
     if old.table_access != new.table_access {
         plan.steps.push(AutoMigrateStep::ChangeAccess(key));
     }
@@ -704,9 +728,16 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
     .map(|col_diff| -> Result<_> {
         match col_diff {
             Diff::Add { new } => {
-                if new.default_value.is_some() {
-                    // `row_type_changed`, `columns_added`
-                    Ok(ProductMonoid(Any(false), Any(true)))
+                if is_event {
+                    // Event tables never have any resident rows.
+                    // As such, this is not a data migration; the table doesn't have any data in it to migrate.
+                    // However, changing the schema of an event table will break clients.
+
+                    // `row_type_changed`, `columns_added`, `event_schema_changed`
+                    Ok(ArrayMonoid([Any(false), Any(false), Any(true)]))
+                } else if new.default_value.is_some() {
+                    // `row_type_changed`, `columns_added`, `event_schema_changed`
+                    Ok(ArrayMonoid([Any(false), Any(true), Any(false)]))
                 } else {
                     Err(AutoMigrateError::AddColumn {
                         table: new.table_name.clone(),
@@ -715,11 +746,22 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
                     .into())
                 }
             }
-            Diff::Remove { old } => Err(AutoMigrateError::RemoveColumn {
-                table: old.table_name.clone(),
-                column: old.name.clone(),
+            Diff::Remove { old } => {
+                if is_event {
+                    // Event tables never have any resident rows.
+                    // As such, this is not a data migration; the table doesn't have any data in it to migrate.
+                    // However, changing the schema of an event table will break clients.
+
+                    // `row_type_changed`, `columns_added`, `event_schema_changed`
+                    Ok(ArrayMonoid([Any(false), Any(false), Any(true)]))
+                } else {
+                    Err(AutoMigrateError::RemoveColumn {
+                        table: old.table_name.clone(),
+                        column: old.name.clone(),
+                    }
+                    .into())
+                }
             }
-            .into()),
             Diff::MaybeChange { old, new } => {
                 // Check column type upgradability.
                 let old_ty = WithTypespace::new(plan.old.typespace(), &old.ty)
@@ -734,7 +776,16 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
                     &|| old.name.clone(),
                     &old_ty,
                     &new_ty,
-                );
+                )
+                .or_else(|err| {
+                    if is_event {
+                        // If this is an event table, it's fine to layout-incompatibly non-upgradably change the layout,
+                        // 'cause there can't be any rows to break.
+                        Ok(Any(true))
+                    } else {
+                        Err(err)
+                    }
+                });
 
                 // Note that the diff algorithm relies on `ModuleDefLookup` for `ColumnDef`,
                 // which looks up columns by NAME, NOT position: precisely to allow this step to work!
@@ -743,7 +794,9 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
                 // it must be in the same place in the new version of the table.
                 // This guarantees that any added columns live at the end of the table.
                 let positions_ok = if old.col_id == new.col_id {
-                    Ok(())
+                    Ok(Any(false))
+                } else if is_event {
+                    Ok(Any(true))
                 } else {
                     Err(AutoMigrateError::ReorderTable {
                         table: old.table_name.clone(),
@@ -753,19 +806,33 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
 
                 (types_ok, positions_ok)
                     .combine_errors()
-                    // row_type_changed, column_added
-                    .map(|(x, _)| ProductMonoid(x, Any(false)))
+                    // `row_type_changed`, `column_added`, `event_schema_changed`
+                    .map(|(types_changed, positions_changed)| {
+                        if is_event {
+                            // Event tables get a different auto-migrate step when their schema changes,
+                            // as they don't have any rows to rewrite. So we track a different element in the array of change types.
+                            ArrayMonoid([Any(false), Any(false), types_changed | positions_changed])
+                        } else {
+                            assert!(!positions_changed.0);
+                            ArrayMonoid([types_changed, Any(false), Any(false)])
+                        }
+                    })
             }
         }
     })
-    .collect_all_errors::<ProductMonoid<Any, Any>>();
+    .collect_all_errors::<ArrayMonoid<Any, 3>>();
 
-    let ((), (), ProductMonoid(Any(row_type_changed), Any(columns_added))) =
+    let ((), (), ArrayMonoid([Any(row_type_changed), Any(columns_added), Any(event_schema_changed)])) =
         (type_ok, event_ok, columns_ok).combine_errors()?;
 
-    // If we're adding a column, we'll rewrite the whole table.
-    // That makes any `ChangeColumns` moot, so we can skip it.
-    if columns_added {
+    if event_schema_changed {
+        // If we're rewriting an event table, there's no data migration to do.
+        // But incompatibly changing the schema can break clients.
+        plan.ensure_disconnect_all_users();
+        plan.steps.push(AutoMigrateStep::ReschemaEventTable(key));
+    } else if columns_added {
+        // If we're adding a column, we'll rewrite the whole table.
+        // That makes any `ChangeColumns` moot, so we can skip it.
         plan.ensure_disconnect_all_users();
         plan.steps.push(AutoMigrateStep::AddColumns(key));
     } else if row_type_changed {
@@ -776,7 +843,7 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
 }
 
 /// An "any" monoid with `false` as identity and `|` as the operator.
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
 struct Any(bool);
 
 impl FromIterator<Any> for Any {
@@ -792,22 +859,35 @@ impl BitOr for Any {
     }
 }
 
-/// A monoid that allows running two `Any`s in parallel.
-#[derive(Default)]
-struct ProductMonoid<M1, M2>(M1, M2);
+/// A monoid that allows running a number of `Any`s in parallel.
+struct ArrayMonoid<Monoid, const N: usize>([Monoid; N]);
 
-impl<M1: BitOr<Output = M1>, M2: BitOr<Output = M2>> BitOr for ProductMonoid<M1, M2> {
-    type Output = Self;
-
-    fn bitor(self, rhs: Self) -> Self::Output {
-        Self(self.0 | rhs.0, self.1 | rhs.1)
+impl<Monoid, const N: usize> Default for ArrayMonoid<Monoid, N>
+where
+    [Monoid; N]: Default,
+{
+    fn default() -> Self {
+        Self(Default::default())
     }
 }
 
-impl<M1: BitOr<Output = M1> + Default, M2: BitOr<Output = M2> + Default> FromIterator<ProductMonoid<M1, M2>>
-    for ProductMonoid<M1, M2>
+impl<Monoid: BitOr<Output = Monoid> + Copy, const N: usize> BitOr for ArrayMonoid<Monoid, N> {
+    type Output = Self;
+
+    fn bitor(mut self, rhs: Self) -> Self::Output {
+        for n in 0..N {
+            self.0[n] = self.0[n] | rhs.0[n]
+        }
+        self
+    }
+}
+
+impl<Monoid: BitOr<Output = Monoid> + Copy, const N: usize> FromIterator<ArrayMonoid<Monoid, N>>
+    for ArrayMonoid<Monoid, N>
+where
+    ArrayMonoid<Monoid, N>: Default,
 {
-    fn from_iter<T: IntoIterator<Item = ProductMonoid<M1, M2>>>(iter: T) -> Self {
+    fn from_iter<T: IntoIterator<Item = ArrayMonoid<Monoid, N>>>(iter: T) -> Self {
         iter.into_iter().reduce(|p1, p2| p1 | p2).unwrap_or_default()
     }
 }
@@ -1040,11 +1120,9 @@ fn auto_migrate_constraints(
                         // it's okay to add a constraint in a new table.
                         Ok(())
                     } else {
-                        // it's not okay to add a new constraint to an existing table.
-                        Err(AutoMigrateError::AddUniqueConstraint {
-                            constraint: new.name.clone(),
-                        }
-                        .into())
+                        // existing table — duplicate detection happens inside create_constraint
+                        plan.steps.push(AutoMigrateStep::AddConstraint(new.key()));
+                        Ok(())
                     }
                 }
                 Diff::Remove { old } => {
@@ -1555,8 +1633,6 @@ mod tests {
         let apples = expect_identifier("Apples");
         let _bananas = expect_identifier("Bananas");
 
-        let apples_name_unique_constraint = "Apples_name_key";
-
         let weight = expect_identifier("weight");
         let count = expect_identifier("count");
         let name = expect_identifier("name");
@@ -1751,10 +1827,8 @@ mod tests {
             && type1.0 == prod1_ty && type2.0 == new_prod1_ty
         );
 
-        expect_error_matching!(
-            result,
-            AutoMigrateError::AddUniqueConstraint { constraint } => &constraint[..] == apples_name_unique_constraint
-        );
+        // Note: `AddUniqueConstraint` is no longer an error — adding unique constraints
+        // to existing tables is now allowed; duplicate detection happens inside create_constraint.
 
         expect_error_matching!(
             result,

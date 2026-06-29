@@ -172,6 +172,38 @@ export default defineConfig([
     esbuildOptions: commonEsbuildTweaks(),
   },
 
+  // Solid subpath (SSR-friendly): dist/solid/index.{mjs,cjs}
+  {
+    entry: { index: 'src/solid/index.ts' },
+    format: ['esm', 'cjs'],
+    target: 'es2022',
+    outDir: 'dist/solid',
+    dts: false,
+    sourcemap: true,
+    clean: true,
+    platform: 'neutral',
+    treeshake: 'smallest',
+    external: ['solid-js'],
+    outExtension,
+    esbuildOptions: commonEsbuildTweaks(),
+  },
+
+  // Solid subpath (browser ESM): dist/browser/solid/index.mjs
+  {
+    entry: { index: 'src/solid/index.ts' },
+    format: ['esm'],
+    target: 'es2022',
+    outDir: 'dist/browser/solid',
+    dts: false,
+    sourcemap: true,
+    clean: true,
+    platform: 'browser',
+    treeshake: 'smallest',
+    external: ['solid-js'],
+    outExtension,
+    esbuildOptions: commonEsbuildTweaks(),
+  },
+
   // SDK subpath (SSR-friendly): dist/sdk/index.{mjs,cjs}
   {
     entry: { index: 'src/sdk/index.ts' },

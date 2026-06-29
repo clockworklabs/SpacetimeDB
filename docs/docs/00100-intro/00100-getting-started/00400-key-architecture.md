@@ -316,8 +316,6 @@ Procedures can perform additional operations not possible in reducers, including
 However, procedures don't automatically run in database transactions,
 and must manually open and commit a transaction in order to read from or modify the database state.
 
-Procedures are currently in beta, and their API may change in upcoming SpacetimeDB releases.
-
 <Tabs groupId="syntax" queryString>
 <TabItem value="typescript" label="TypeScript">
 
@@ -497,10 +495,10 @@ A view can be written in a TypeScript module like so:
 ```typescript
 export const my_player = spacetimedb.view(
   { name: 'my_player', public: true },
-  t.option(players.row()),
+  t.option(players.rowType),
   (ctx) => {
     const row = ctx.db.players.identity.find(ctx.sender);
-    return row ?? null;
+    return row ?? undefined;
   }
 );
 ```

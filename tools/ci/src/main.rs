@@ -13,6 +13,8 @@ use std::{env, fs};
 const README_PATH: &str = "tools/ci/README.md";
 
 mod ci_docs;
+mod cla_assistant;
+mod keynote_bench;
 mod smoketest;
 mod util;
 
@@ -315,6 +317,12 @@ enum CiCmd {
     ///
     /// Executes the smoketests suite with some default exclusions.
     Smoketests(smoketest::SmoketestsArgs),
+    /// Runs the keynote benchmark as a CI performance regression gate.
+    ///
+    /// Assumes release SpacetimeDB binaries and the TypeScript SDK are already built, runs the
+    /// keynote SpacetimeDB benchmark for 60 seconds against the TypeScript and Rust modules, and
+    /// fails if throughput is below 275K TPS for TypeScript or 300K TPS for Rust.
+    KeynoteBench,
     /// Tests the update flow
     ///
     /// Tests the self-update flow by building the spacetimedb-update binary for the specified
@@ -360,6 +368,11 @@ enum CiCmd {
     VersionUpgradeCheck,
     /// Builds the docs site.
     Docs,
+    /// Interacts with CLA Assistant.
+    ClaAssistant {
+        #[command(subcommand)]
+        cmd: cla_assistant::ClaAssistantCmd,
+    },
 }
 
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
@@ -483,10 +496,40 @@ fn main() -> Result<()> {
                 "spacetimedb-smoketests",
                 "--exclude",
                 "spacetimedb-sdk",
+                "--exclude",
+                "spacetimedb",
                 "--",
                 "--test-threads=2",
                 "--skip",
                 "unreal"
+            )
+            .run()?;
+            // Bindings snapshot tests rely on the unstable feature,
+            // as they compile and test APIs which are gated behind that feature,
+            // e.g. procedures, HTTP handlers.
+            cmd!(
+                "cargo",
+                "test",
+                "-p",
+                "spacetimedb",
+                "--features",
+                "unstable",
+                "--",
+                "--test-threads=2",
+            )
+            .run()?;
+            // The SDK test harness uses the same child-process server guard as smoketests,
+            // which expects release CLI/standalone binaries to already exist.
+            cmd!(
+                "cargo",
+                "build",
+                "--release",
+                "-p",
+                "spacetimedb-cli",
+                "-p",
+                "spacetimedb-standalone",
+                "--features",
+                "spacetimedb-standalone/allow_loopback_http_for_tests",
             )
             .run()?;
             // SDK procedure tests intentionally make localhost HTTP requests.
@@ -593,6 +636,10 @@ fn main() -> Result<()> {
                 .dir("crates/bindings-csharp")
                 .run()?;
             cmd!("pnpm", "lint").run()?;
+            cmd!("cargo", "test", "--doc", "--target", "wasm32-unknown-unknown")
+                .dir("crates/bindings")
+                .run()?;
+            cmd!("cargo", "test", "--doc").dir("crates/bindings").run()?;
             // `bindings` is the only crate we care strongly about documenting,
             // since we link to its docs.rs from our website.
             // We won't pass `--no-deps`, though,
@@ -633,6 +680,11 @@ fn main() -> Result<()> {
         Some(CiCmd::Smoketests(args)) => {
             ensure_repo_root()?;
             smoketest::run(args)?;
+        }
+
+        Some(CiCmd::KeynoteBench) => {
+            ensure_repo_root()?;
+            keynote_bench::run()?;
         }
 
         Some(CiCmd::UpdateFlow {
@@ -738,6 +790,10 @@ fn main() -> Result<()> {
 
         Some(CiCmd::Docs) => {
             run_docs_build()?;
+        }
+
+        Some(CiCmd::ClaAssistant { cmd }) => {
+            cla_assistant::run(cmd)?;
         }
 
         None => run_all_clap_subcommands(&cli.skip)?,

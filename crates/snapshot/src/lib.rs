@@ -80,6 +80,31 @@ impl std::fmt::Display for ObjectType {
     }
 }
 
+#[derive(Debug, Copy, Clone, Default)]
+pub struct SnapshotReadKindMetrics {
+    /// Time spent reading, decoding, and verifying objects of this kind.
+    pub read_time: Duration,
+    /// Number of files read for this kind.
+    pub files: u64,
+    /// Number of bytes stored on disk for files of this kind.
+    pub disk_bytes: u64,
+    /// Time spent computing content hashes for objects of this kind.
+    pub hash_time: Duration,
+}
+
+#[derive(Debug, Copy, Clone, Default)]
+pub struct SnapshotReadMetrics {
+    pub metadata: SnapshotReadKindMetrics,
+    pub page: SnapshotReadKindMetrics,
+    pub blob: SnapshotReadKindMetrics,
+}
+
+impl SnapshotReadMetrics {
+    pub fn iter(&self) -> impl Iterator<Item = (&'static str, &SnapshotReadKindMetrics)> + '_ {
+        [("metadata", &self.metadata), ("page", &self.page), ("blob", &self.blob)].into_iter()
+    }
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum SnapshotError {
     #[error("Cannot open SnapshotRepo {0}: not an accessible directory")]
@@ -439,12 +464,24 @@ impl Snapshot {
     /// - The file at `path` is corrupted,
     ///   as detected by comparing the hash of its bytes to a hash recorded in the file.
     pub fn read_from_file(path: &SnapshotFilePath) -> Result<(Self, CompressType), SnapshotError> {
+        Self::read_from_file_with_metrics(path).map(|(snapshot, compress_type, _metrics)| (snapshot, compress_type))
+    }
+
+    fn read_from_file_with_metrics(
+        path: &SnapshotFilePath,
+    ) -> Result<(Self, CompressType, SnapshotReadKindMetrics), SnapshotError> {
+        let read_start = Instant::now();
+        let mut read_metrics = SnapshotReadKindMetrics {
+            files: 1,
+            ..Default::default()
+        };
         let err_read_object = |cause| SnapshotError::ReadObject {
             ty: ObjectType::Snapshot,
             source_repo: path.0.clone(),
             cause,
         };
         let snapshot_file = path.open_file(&o_rdonly()).map_err(err_read_object)?;
+        read_metrics.disk_bytes = snapshot_file.metadata().map_err(err_read_object)?.len();
         let mut snapshot_file = CompressReader::new(snapshot_file)?;
 
         // The snapshot file is prefixed with the hash of the `Snapshot`'s BSATN.
@@ -458,7 +495,9 @@ impl Snapshot {
         snapshot_file
             .read_to_end(&mut snapshot_bsatn)
             .map_err(err_read_object)?;
+        let hash_start = Instant::now();
         let computed_hash = blake3::hash(&snapshot_bsatn);
+        read_metrics.hash_time += hash_start.elapsed();
 
         // Compare the saved and computed hashes, and fail if they do not match.
         if hash != computed_hash {
@@ -476,7 +515,32 @@ impl Snapshot {
             cause,
         })?;
 
-        Ok((snapshot, snapshot_file.compress_type()))
+        read_metrics.read_time += read_start.elapsed();
+
+        Ok((snapshot, snapshot_file.compress_type(), read_metrics))
+    }
+
+    fn read_object_with_disk_bytes(
+        object_repo: &DirTrie,
+        file_id: &[u8; blake3::OUT_LEN],
+        ty: ObjectType,
+    ) -> Result<(Vec<u8>, u64), SnapshotError> {
+        let source_repo = || object_repo.root().to_path_buf();
+        let disk_bytes = fs::metadata(object_repo.file_path(file_id))
+            .map_err(|cause| SnapshotError::ReadObject {
+                ty,
+                source_repo: source_repo(),
+                cause,
+            })?
+            .len();
+        let buf = object_repo
+            .read_entry(file_id)
+            .map_err(|cause| SnapshotError::ReadObject {
+                ty,
+                source_repo: source_repo(),
+                cause,
+            })?;
+        Ok((buf, disk_bytes))
     }
 
     /// Construct a [`HashMapBlobStore`] containing all the blobs referenced in `self`,
@@ -484,21 +548,23 @@ impl Snapshot {
     ///
     /// Fails if any of the object files is missing or corrupted,
     /// as detected by comparing the hash of its bytes to the hash recorded in `self`.
-    fn reconstruct_blob_store(&self, object_repo: &DirTrie) -> Result<HashMapBlobStore, SnapshotError> {
+    fn reconstruct_blob_store(
+        &self,
+        object_repo: &DirTrie,
+        metrics: &mut SnapshotReadKindMetrics,
+    ) -> Result<HashMapBlobStore, SnapshotError> {
         let mut blob_store = HashMapBlobStore::default();
 
         for BlobEntry { hash, uses } in &self.blobs {
             // Read the bytes of the blob object.
-            let buf = object_repo
-                .read_entry(&hash.data)
-                .map_err(|cause| SnapshotError::ReadObject {
-                    ty: ObjectType::Blob(*hash),
-                    source_repo: object_repo.root().to_path_buf(),
-                    cause,
-                })?;
+            let (buf, disk_bytes) =
+                Self::read_object_with_disk_bytes(object_repo, &hash.data, ObjectType::Blob(*hash))?;
+            metrics.disk_bytes += disk_bytes;
 
             // Compute the blob's hash.
+            let hash_start = Instant::now();
             let computed_hash = BlobHash::hash_from_bytes(&buf);
+            metrics.hash_time += hash_start.elapsed();
 
             // Compare the computed hash to the one recorded in the `Snapshot`,
             // and fail if they do not match.
@@ -525,18 +591,15 @@ impl Snapshot {
         object_repo: &DirTrie,
         pages: &[blake3::Hash],
         page_pool: &PagePool,
+        metrics: &mut SnapshotReadKindMetrics,
     ) -> Result<Vec<Box<Page>>, SnapshotError> {
         pages
             .iter()
             .map(|hash| {
                 // Read the BSATN bytes of the on-disk page object.
-                let buf = object_repo
-                    .read_entry(hash.as_bytes())
-                    .map_err(|cause| SnapshotError::ReadObject {
-                        ty: ObjectType::Page(*hash),
-                        source_repo: object_repo.root().to_path_buf(),
-                        cause,
-                    })?;
+                let (buf, disk_bytes) =
+                    Self::read_object_with_disk_bytes(object_repo, hash.as_bytes(), ObjectType::Page(*hash))?;
+                metrics.disk_bytes += disk_bytes;
 
                 // Deserialize the bytes into a `Page`.
                 let page = page_pool.take_deserialize_from(&buf);
@@ -547,7 +610,9 @@ impl Snapshot {
                 })?;
 
                 // Compute the hash of the page.
+                let hash_start = Instant::now();
                 let computed_hash = page.content_hash();
+                metrics.hash_time += hash_start.elapsed();
 
                 // Compare the computed hash to the one recorded in the `Snapshot`,
                 // and fail if they do not match.
@@ -569,10 +634,11 @@ impl Snapshot {
         object_repo: &DirTrie,
         TableEntry { table_id, pages }: &TableEntry,
         page_pool: &PagePool,
+        metrics: &mut SnapshotReadKindMetrics,
     ) -> Result<(TableId, Vec<Box<Page>>), SnapshotError> {
         Ok((
             *table_id,
-            Self::reconstruct_one_table_pages(object_repo, pages, page_pool)?,
+            Self::reconstruct_one_table_pages(object_repo, pages, page_pool, metrics)?,
         ))
     }
 
@@ -590,10 +656,11 @@ impl Snapshot {
         &self,
         object_repo: &DirTrie,
         page_pool: &PagePool,
+        metrics: &mut SnapshotReadKindMetrics,
     ) -> Result<BTreeMap<TableId, Vec<Box<Page>>>, SnapshotError> {
         self.tables
             .iter()
-            .map(|tbl| Self::reconstruct_one_table(object_repo, tbl, page_pool))
+            .map(|tbl| Self::reconstruct_one_table(object_repo, tbl, page_pool, metrics))
             .collect()
     }
 
@@ -968,7 +1035,13 @@ impl SnapshotRepository {
         }
 
         let snapshot_file_path = snapshot_dir.snapshot_file(tx_offset);
-        let (snapshot, compress_type) = Snapshot::read_from_file(&snapshot_file_path)?;
+        let (snapshot, compress_type, metadata_metrics) = Snapshot::read_from_file_with_metrics(&snapshot_file_path)?;
+        let mut read_metrics = SnapshotReadMetrics {
+            metadata: metadata_metrics,
+            ..Default::default()
+        };
+        read_metrics.blob.files = snapshot.blobs.len() as u64;
+        read_metrics.page.files = snapshot.tables.iter().map(|table| table.pages.len() as u64).sum();
 
         if snapshot.magic != MAGIC {
             return Err(SnapshotError::BadMagic {
@@ -987,9 +1060,13 @@ impl SnapshotRepository {
         let snapshot_dir = self.snapshot_dir_path(tx_offset);
         let object_repo = Self::object_repo(&snapshot_dir)?;
 
-        let blob_store = snapshot.reconstruct_blob_store(&object_repo)?;
+        let blob_start = Instant::now();
+        let blob_store = snapshot.reconstruct_blob_store(&object_repo, &mut read_metrics.blob)?;
+        read_metrics.blob.read_time = blob_start.elapsed();
 
-        let tables = snapshot.reconstruct_tables(&object_repo, page_pool)?;
+        let page_start = Instant::now();
+        let tables = snapshot.reconstruct_tables(&object_repo, page_pool, &mut read_metrics.page)?;
+        read_metrics.page.read_time = page_start.elapsed();
 
         Ok(ReconstructedSnapshot {
             database_identity: snapshot.database_identity,
@@ -999,6 +1076,7 @@ impl SnapshotRepository {
             blob_store,
             tables,
             compress_type,
+            read_metrics,
         })
     }
 
@@ -1475,6 +1553,8 @@ pub struct ReconstructedSnapshot {
     pub tables: BTreeMap<TableId, Vec<Box<Page>>>,
     /// If the snapshot was compressed or not.
     pub compress_type: CompressType,
+    /// Metrics collected while reading this snapshot from disk.
+    pub read_metrics: SnapshotReadMetrics,
 }
 
 /// A [Path] statically known to point to either a file or a directory.
@@ -1492,14 +1572,39 @@ impl FileOrDirPath<'_> {
     /// On Windows, only the file needs to be synced, and it's even an error to
     /// sync a directory. Passing in [Self::Dir] is thus a no-op on Windows.
     fn sync_all(&self) -> io::Result<()> {
-        #[cfg(target_os = "windows")]
-        if let Self::Dir(_) = self {
-            return Ok(());
+        match self {
+            #[cfg(target_os = "windows")]
+            Self::Dir(path) => Ok(()),
+            #[cfg(not(target_os = "windows"))]
+            Self::Dir(path) => File::open(path)
+                .map_err(|e| {
+                    io::Error::new(
+                        e.kind(),
+                        format!("failed to open directory {} for fsync: {}", path.display(), e),
+                    )
+                })?
+                .sync_all()
+                .map_err(|e| io::Error::new(e.kind(), format!("failed to fsync directory {}: {}", path.display(), e))),
+            Self::File(path) => {
+                File::options()
+                    .read(true)
+                    // Windows needs the file to be writable for `sync_all` to work.
+                    // Set all the open options explicitly, just for visibility.
+                    .write(true)
+                    .truncate(false)
+                    .create(false)
+                    .append(false)
+                    .open(path)
+                    .map_err(|e| {
+                        io::Error::new(
+                            e.kind(),
+                            format!("failed to open file {} for fsync: {}", path.display(), e),
+                        )
+                    })?
+                    .sync_all()
+                    .map_err(|e| io::Error::new(e.kind(), format!("failed to fsync file {}: {}", path.display(), e)))
+            }
         }
-        let (Self::File(path) | Self::Dir(path)) = self;
-        File::open(path)
-            .and_then(|fd| fd.sync_all())
-            .map_err(|e| io::Error::new(e.kind(), format!("failed to fsync {}: {}", path.display(), e)))
     }
 }
 

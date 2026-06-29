@@ -178,7 +178,7 @@ export const schedule_periodic_tasks = spacetimedb.reducer((ctx) => {
 <TabItem value="csharp" label="C#">
 
 ```csharp
-public partial class Module
+public static partial class Module
 {
     [SpacetimeDB.Reducer]
     public static void SchedulePeriodicTasks(ReducerContext ctx)
@@ -291,10 +291,11 @@ public static partial class Module
     public static void ScheduleTimedTasks(ReducerContext ctx)
     {
         // Schedule for 10 seconds from now
+        var tenSecondsFromNow = ctx.Timestamp + new TimeDuration(10_000_000);
         ctx.Db.Reminder.Insert(new Reminder
         {
             Message = "Your auction has ended",
-            ScheduledAt = new ScheduleAt.Time(DateTimeOffset.UtcNow.AddSeconds(10))
+            ScheduledAt = new ScheduleAt.Time(tenSecondsFromNow)
         });
 
         // Schedule for a specific time
@@ -363,6 +364,14 @@ ctx.db[reminder].insert(Reminder{
 2. **SpacetimeDB monitors** the schedule table
 3. **When the time arrives**, the specified reducer/procedure is automatically called with the row as a parameter
 4. **The row is typically deleted** or updated by the reducer after processing
+
+### Row Lifecycle
+
+SpacetimeDB passes the schedule row to the scheduled reducer or procedure as an argument. One-shot schedule rows are removed at different times depending on the kind of function being called:
+
+- Scheduled procedures delete the row before execution, so `schedule_table.find(scheduled_id)` returns `null` and `.update()` fails.
+- Scheduled reducers delete the row after execution, so the row is visible in the schedule table while the reducer runs.
+- Interval schedules are never deleted automatically. Only one-shot schedules are removed after they run.
 
 ## Use Cases
 
