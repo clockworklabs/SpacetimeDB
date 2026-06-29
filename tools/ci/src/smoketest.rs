@@ -275,9 +275,7 @@ fn set_env(cmd: &mut Command, server: Option<String>, dotnet: bool, spacetime_lo
         cmd.env("SPACETIME_REMOTE_SERVER", server_url);
     }
     cmd.env("SPACETIME_SMOKETEST_BASE_CONFIG_PATH", base_config_path);
-    if spacetime_login {
-        cmd.env("SPACETIME_SMOKETEST_SPACETIME_LOGIN", "1");
-    }
+    cmd.env("SPACETIME_SMOKETEST_SPACETIME_LOGIN", if spacetime_login { "1" } else { "0" });
     cmd.env("SMOKETESTS_DOTNET", if dotnet { "1" } else { "0" });
 }
 
