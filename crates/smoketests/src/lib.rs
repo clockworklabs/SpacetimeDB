@@ -1668,16 +1668,13 @@ log = "0.4"
             .output();
 
         // Login with server-issued identity
-        // Remote smoketest configs edit the default "local" server alias to point at the
-        // remote URL, matching the old Python smoketest runner's named-server flow.
-        let login_server = if is_remote_server() { "local" } else { &self.server_url };
         let output = Command::new(&cli_path)
             .args([
                 "--config-path",
                 config_path_str,
                 "login",
                 "--server-issued-login",
-                login_server,
+                &self.server_url,
             ])
             .output()
             .context("Failed to login with new identity")?;
