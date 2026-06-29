@@ -106,7 +106,7 @@ When specified, tests will connect to the given URL instead of starting local se
 
 This is required for servers that reject direct server-issued logins for privileged operations.
 
-Optionally accepts an auth host to pass through to `spacetime login`, for example `--spacetime-login=https://maincloud.staging.spacetimedb.com`.
+Optionally accepts an auth host to pass through to `spacetime login`, for example `--spacetime-login=https://spacetimedb.com`.
 
 - `--dotnet <DOTNET>`:
 - `args <ARGS>`: Additional arguments to pass to the test runner
