@@ -80,7 +80,7 @@ pub fn is_remote_server() -> bool {
 
 /// Returns true if remote smoketests are using a SpacetimeAuth-issued token.
 pub fn is_auth_host() -> bool {
-    std::env::var("SPACETIME_SMOKETEST_AUTH_HOST").ok().as_deref() == Some("1")
+    std::env::var("SPACETIME_USE_AUTH_HOST").ok().as_deref() == Some("1")
 }
 
 /// Skip this test if running against a remote server.

@@ -272,7 +272,7 @@ fn set_env(cmd: &mut Command, server: Option<String>, dotnet: bool, auth_host: b
         cmd.env("SPACETIME_REMOTE_SERVER", server_url);
     }
     cmd.env("SPACETIME_SMOKETEST_BASE_CONFIG_PATH", base_config_path);
-    cmd.env("SPACETIME_SMOKETEST_AUTH_HOST", if auth_host { "1" } else { "0" });
+    cmd.env("SPACETIME_USE_AUTH_HOST", if auth_host { "1" } else { "0" });
     cmd.env("SMOKETESTS_DOTNET", if dotnet { "1" } else { "0" });
 }
 
