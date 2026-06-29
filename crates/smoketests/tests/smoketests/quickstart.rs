@@ -766,7 +766,11 @@ log = "0.4"
 
         // Replace server address
         let host = self.test.server_host();
-        let protocol = "http"; // The smoketest server uses http
+        let protocol = if self.test.server_url.starts_with("https://") {
+            "https"
+        } else {
+            "http"
+        };
         main_code = main_code.replace("http://localhost:3000", &format!("{}://{}", protocol, host));
 
         // Write the client code

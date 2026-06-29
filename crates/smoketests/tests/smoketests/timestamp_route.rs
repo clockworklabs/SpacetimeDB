@@ -1,10 +1,12 @@
-use spacetimedb_smoketests::{random_string, Smoketest};
+use spacetimedb_smoketests::{random_string, require_server_issued_login, Smoketest};
 
 const TIMESTAMP_TAG: &str = "__timestamp_micros_since_unix_epoch__";
 
 /// Test the /v1/database/{name}/unstable/timestamp endpoint
 #[test]
 fn test_timestamp_route() {
+    require_server_issued_login!();
+
     let mut test = Smoketest::builder().autopublish(false).build();
 
     let name = random_string();
