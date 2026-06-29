@@ -1672,7 +1672,7 @@ log = "0.4"
         // Login with server-issued identity
         // Remote smoketest configs edit the "localhost" server alias to point at the
         // remote URL, matching the old Python smoketest runner.
-        let login_server = if std::env::var_os("SPACETIME_SMOKETEST_BASE_CONFIG_PATH").is_some() {
+        let login_server = if is_remote_server() {
             "localhost"
         } else {
             &self.server_url

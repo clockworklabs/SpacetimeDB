@@ -141,8 +141,8 @@ fn run_smoketest(server: Option<String>, dotnet: bool, spacetime_login: bool, ar
     // 2. Build pre-compiled modules (this also warms the WASM dependency cache)
     build_precompiled_modules()?;
 
-    let base_config_dir = prepare_remote_base_config(server.as_deref(), spacetime_login)?;
-    let base_config_path = base_config_dir.as_ref().map(|dir| dir.path().join("config.toml"));
+    let base_config_dir = prepare_base_config(server.as_deref(), spacetime_login)?;
+    let base_config_path = base_config_dir.path().join("config.toml");
 
     // 4. Detect whether to use nextest or cargo test
     let use_nextest = Command::new("cargo")
@@ -161,7 +161,7 @@ fn run_smoketest(server: Option<String>, dotnet: bool, spacetime_login: bool, ar
     let mut cmd = if use_nextest {
         eprintln!("Running smoketests with cargo nextest...\n");
         let mut cmd = Command::new("cargo");
-        set_env(&mut cmd, server, dotnet, spacetime_login, base_config_path.as_deref());
+        set_env(&mut cmd, server, dotnet, spacetime_login, &base_config_path);
         cmd.args([
             "nextest",
             "run",
@@ -183,7 +183,7 @@ fn run_smoketest(server: Option<String>, dotnet: bool, spacetime_login: bool, ar
     } else {
         eprintln!("Running smoketests with cargo test...\n");
         let mut cmd = Command::new("cargo");
-        set_env(&mut cmd, server, dotnet, spacetime_login, base_config_path.as_deref());
+        set_env(&mut cmd, server, dotnet, spacetime_login, &base_config_path);
         cmd.args(["test", "--release", "-p", "spacetimedb-smoketests"]);
         cmd
     };
@@ -198,41 +198,47 @@ fn run_smoketest(server: Option<String>, dotnet: bool, spacetime_login: bool, ar
     Ok(())
 }
 
-const DEFAULT_REMOTE_CONFIG: &str = r#"default_server = "localhost"
-
-[[server_configs]]
-nickname = "localhost"
-host = "127.0.0.1:3000"
-protocol = "http"
-"#;
-
-fn prepare_remote_base_config(server: Option<&str>, spacetime_login: bool) -> Result<Option<TempDir>> {
+fn prepare_base_config(server: Option<&str>, spacetime_login: bool) -> Result<TempDir> {
     if server.is_none() && spacetime_login {
         bail!("--spacetime-login requires --server");
     }
-    let Some(server) = server else {
-        return Ok(None);
-    };
 
     let temp_dir = tempfile::tempdir()?;
     let config_path = temp_dir.path().join("config.toml");
     let config_path_str = config_path.to_str().context("invalid temp config path")?;
-    fs::write(&config_path, DEFAULT_REMOTE_CONFIG).context("failed to write base smoketest config")?;
 
     let status = Command::new("target/release/spacetime")
         .args([
             "--config-path",
             config_path_str,
             "server",
-            "edit",
-            "localhost",
+            "add",
             "--url",
-            server,
-            "--yes",
+            "http://127.0.0.1:3000",
+            "--no-fingerprint",
+            "--default",
+            "localhost",
         ])
         .status()
-        .context("failed to edit smoketest server config")?;
-    ensure!(status.success(), "spacetime server edit failed");
+        .context("failed to initialize smoketest server config")?;
+    ensure!(status.success(), "spacetime server add failed");
+
+    if let Some(server) = server {
+        let status = Command::new("target/release/spacetime")
+            .args([
+                "--config-path",
+                config_path_str,
+                "server",
+                "edit",
+                "localhost",
+                "--url",
+                server,
+                "--yes",
+            ])
+            .status()
+            .context("failed to edit smoketest server config")?;
+        ensure!(status.success(), "spacetime server edit failed");
+    }
 
     if spacetime_login {
         eprintln!("Logging in with SpacetimeAuth for remote smoketests...");
@@ -241,7 +247,7 @@ fn prepare_remote_base_config(server: Option<&str>, spacetime_login: bool) -> Re
             .status()
             .context("failed to run spacetime login")?;
         ensure!(status.success(), "spacetime login failed");
-    } else {
+    } else if server.is_some() {
         let status = Command::new("target/release/spacetime")
             .args([
                 "--config-path",
@@ -261,22 +267,14 @@ fn prepare_remote_base_config(server: Option<&str>, spacetime_login: bool) -> Re
         config_path.display()
     );
 
-    Ok(Some(temp_dir))
+    Ok(temp_dir)
 }
 
-fn set_env(
-    cmd: &mut Command,
-    server: Option<String>,
-    dotnet: bool,
-    spacetime_login: bool,
-    base_config_path: Option<&Path>,
-) {
+fn set_env(cmd: &mut Command, server: Option<String>, dotnet: bool, spacetime_login: bool, base_config_path: &Path) {
     if let Some(ref server_url) = server {
         cmd.env("SPACETIME_REMOTE_SERVER", server_url);
     }
-    if let Some(base_config_path) = base_config_path {
-        cmd.env("SPACETIME_SMOKETEST_BASE_CONFIG_PATH", base_config_path);
-    }
+    cmd.env("SPACETIME_SMOKETEST_BASE_CONFIG_PATH", base_config_path);
     if spacetime_login {
         cmd.env("SPACETIME_SMOKETEST_SPACETIME_LOGIN", "1");
     }

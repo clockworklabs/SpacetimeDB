@@ -102,6 +102,10 @@ Usage: smoketests [OPTIONS] [ARGS]... [COMMAND]
 
 When specified, tests will connect to the given URL instead of starting local server instances. Tests that require local server control (like restart tests) will be skipped.
 
+- `--spacetime-login`: Use a SpacetimeAuth-issued login for remote-server tests.
+
+This is required for maincloud and maincloud staging, which reject direct server-issued logins for privileged operations.
+
 - `--dotnet <DOTNET>`:
 - `args <ARGS>`: Additional arguments to pass to the test runner
 - `--help`: Print help (see a summary with '-h')
