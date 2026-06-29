@@ -975,7 +975,7 @@ impl Smoketest {
     }
 
     /// Returns the server host (without protocol), e.g., "127.0.0.1:3000".
-    pub fn server_host(&self) -> String {
+    pub fn server_host(&self) -> &str {
         let (_, host) = split_server_url(&self.server_url);
         host
     }
@@ -1024,8 +1024,7 @@ impl Smoketest {
         let pg_port = self.pg_port().context("PostgreSQL wire protocol not enabled")?;
 
         // Extract just the host part (without port)
-        let server_host = self.server_host();
-        let host = server_host.split(':').next().unwrap_or("127.0.0.1");
+        let host = self.server_host().split(':').next().unwrap_or("127.0.0.1");
 
         let output = Command::new("psql")
             .args([
@@ -1894,18 +1893,13 @@ impl Drop for SubscriptionHandle {
     }
 }
 
-fn split_server_url(server_url: &str) -> (String, String) {
-    if let Ok(url) = reqwest::Url::parse(server_url)
-        && let Some(host) = url.host_str()
-    {
-        let protocol = url.scheme().to_string();
-        let host = match url.port() {
-            Some(port) => format!("{host}:{port}"),
-            None => host.to_string(),
-        };
-        (protocol, host)
+fn split_server_url(server_url: &str) -> (&str, &str) {
+    if let Some(host) = server_url.strip_prefix("http://") {
+        ("http", host)
+    } else if let Some(host) = server_url.strip_prefix("https://") {
+        ("https", host)
     } else {
-        ("http".to_string(), server_url.to_string())
+        ("http", server_url)
     }
 }
 

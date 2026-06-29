@@ -91,8 +91,7 @@ fn test_sql_conn() {
 
     let token = test.read_token().unwrap();
     let pg_port = test.pg_port().expect("PostgreSQL wire protocol not enabled");
-    let server_host = test.server_host();
-    let host = server_host.split(':').next().unwrap_or("127.0.0.1");
+    let host = test.server_host().split(':').next().unwrap_or("127.0.0.1");
 
     let mut cfg = tokio_postgres::Config::new();
     cfg.host(host);
