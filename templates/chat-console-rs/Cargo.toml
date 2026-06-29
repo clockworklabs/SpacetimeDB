@@ -4,10 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace]
-members = ["spacetimedb"]
-
-[workspace.dependencies]
-log = "0.4"
+exclude = ["spacetimedb"]
 
 [dependencies]
 spacetimedb-sdk = { path = "../../sdks/rust" }
