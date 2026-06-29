@@ -1,14 +1,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use super::ast::SchemaViewer;
-use crate::db::relational_db::RelationalDB;
-use crate::energy::EnergyQuanta;
+use crate::db::sql::ast::SchemaViewer;
+use crate::energy::FunctionBudget;
 use crate::error::DBError;
 use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::host::module_host::{
-    DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, RefInstance, ViewCallError, ViewCallResult,
-    ViewOutcome, WasmInstance,
+    DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, RefInstance, ViewCallResult, ViewOutcome,
+    WasmInstance,
 };
 use crate::host::{ArgsTuple, ModuleHost};
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
@@ -17,6 +16,7 @@ use crate::subscription::tx::DeltaTx;
 use anyhow::anyhow;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::traits::IsolationLevel;
+use spacetimedb_engine::relational_db::RelationalDB;
 use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -58,7 +58,7 @@ pub async fn run(
     head: &mut Vec<(RawIdentifier, AlgebraicType)>,
 ) -> Result<SqlResult, DBError> {
     match module {
-        Some(module) => module.call_view_sql(db, sql_text, auth, subs, head).await,
+        Some(module) => module.call_sql(db, sql_text, auth, subs, head).await,
         None => run_inner::<crate::host::wasmtime::WasmtimeInstance>(None, db, sql_text, auth, subs, head).map(|x| x.0),
     }
 }
@@ -163,7 +163,7 @@ fn run_inner<I: WasmInstance>(
             if let ViewOutcome::Failed(err) = result.outcome {
                 let (_, metrics, reducer) = db.rollback_mut_tx(result.tx);
                 db.report_mut_tx_metrics(reducer, metrics, None);
-                return Err(DBError::View(ViewCallError::InternalError(err)));
+                return Err(DBError::View(spacetimedb_engine::error::ViewError::InternalError(err)));
             }
 
             let tx = result.tx;
@@ -204,7 +204,7 @@ fn run_inner<I: WasmInstance>(
                 },
                 status: EventStatus::Committed(DatabaseUpdate::default()),
                 reducer_return_value: None,
-                energy_quanta_used: EnergyQuanta::ZERO,
+                execution_budget_used: FunctionBudget::ZERO,
                 host_execution_duration: Duration::ZERO,
                 request_id: None,
                 timer: None,

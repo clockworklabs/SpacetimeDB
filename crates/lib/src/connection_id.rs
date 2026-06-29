@@ -300,10 +300,9 @@ mod tests {
         use crate::WithTypespace;
 
         proptest! {
-            /// Tests the round-trip used when using the `spacetime subscribe`
-            /// CLI command.
-            /// Somewhat confusingly, this is distinct from the ser-de path
-            /// in `test_serde_roundtrip`.
+            /// Tests deserialization through the serde seed adapter without
+            /// relying on `serde_json::Value` to preserve arbitrary-precision
+            /// numbers.
             #[test]
             fn test_wrapper_roundtrip(val: u128) {
                 let conn_id = ConnectionId::from_u128(val);
@@ -313,12 +312,12 @@ mod tests {
                 let empty = Typespace::default();
                 let conn_id_ty = ConnectionId::get_type();
                 let conn_id_ty = WithTypespace::new(&empty, &conn_id_ty);
-                let row = serde_json::from_str::<serde_json::Value>(&ser[..])?;
+                let mut de = serde_json::Deserializer::from_str(&ser);
                 let de = ::serde::de::DeserializeSeed::deserialize(
                     crate::de::serde::SeedWrapper(
                         conn_id_ty
                     ),
-                    row)?;
+                    &mut de)?;
                 let de = ConnectionId::deserialize(ValueDeserializer::new(de)).unwrap();
                 prop_assert_eq!(conn_id, de);
             }

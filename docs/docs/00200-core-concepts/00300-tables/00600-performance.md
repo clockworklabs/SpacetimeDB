@@ -518,7 +518,7 @@ When inserting or updating multiple rows, batch them in a single reducer call ra
 export const spawn_enemies = spacetimedb.reducer({ count: t.u32() }, (ctx, { count }) => {
   for (let i = 0; i < count; i++) {
     ctx.db.enemy.insert({
-      id: 0, // auto_inc
+      id: 0n, // auto_inc
       health: 100,
     });
   }

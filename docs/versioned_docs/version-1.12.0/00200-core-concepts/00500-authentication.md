@@ -14,10 +14,10 @@ to learn more about how OIDC works and why it's a great choice for authenticatio
 ## SpacetimeAuth
 
 To make it easier to get started with authentication, SpacetimeDB offers
-[SpacetimeAuth](https://spacetimedb.com/docs/spacetimeauth), a fully managed
-OIDC provider built specifically for SpacetimeDB applications. SpacetimeAuth handles
-user management, authentication flows, and token issuance, so you don't have to
-worry about building and maintaining your own authentication service.
+[SpacetimeAuth](./00500-authentication/00100-spacetimeauth/index.md), a fully
+managed OIDC provider built specifically for SpacetimeDB applications. SpacetimeAuth
+handles user management, authentication flows, and token issuance, so you don't have
+to worry about building and maintaining your own authentication service.
 
 SpacetimeAuth is meant to be simple to use and easy to integrate with SpacetimeDB.
 While being production-ready and able to support most common use cases, it is not
@@ -46,7 +46,7 @@ Sometimes, you may need to authenticate your servers, APIs or other services tha
 interact with your SpacetimeDB database. OIDC tokens can also be used for this
 purpose, allowing secure communication between your services and SpacetimeDB.
 
-To authenticate your services, you have e few options depending on your OIDC provider:
+To authenticate your services, you have a few options depending on your OIDC provider:
 
 - **Client credentials flow**: Many OIDC providers support the client credentials
   flow, which allows your service to obtain an access token using its own

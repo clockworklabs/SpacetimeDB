@@ -66,8 +66,10 @@ You should be prompted for a username and you should be able to move around, eat
 Blackholio/
 ├── client-unity/      # Unity client project
 ├── client-unreal/     # Unreal Engine client project
+├── client-ts/         # Browser client using Phaser and TypeScript
 ├── server-csharp/     # SpacetimeDB server module (C# implementation)
 ├── server-rust/       # SpacetimeDB server module (Rust implementation)
+├── server-ts/         # SpacetimeDB server module (TypeScript implementation)
 ├── DEVELOP.md         # Development guidelines
 └── README.md          # This file
 ```

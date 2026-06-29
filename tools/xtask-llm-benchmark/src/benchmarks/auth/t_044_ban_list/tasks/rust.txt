@@ -1,0 +1,35 @@
+Write a SpacetimeDB backend module in Rust that implements a ban list enforced on game entry.
+
+TABLES
+- admin
+  - Struct: Admin
+  - private table
+  - Fields:
+    - identity: Identity (primary key)
+
+- banned
+  - Struct: Banned
+  - private table
+  - Fields:
+    - identity: Identity (primary key)
+
+- player
+  - Struct: Player
+  - public table
+  - Fields:
+    - identity: Identity (primary key)
+    - name: String
+
+REDUCERS
+- add_admin(ctx, target: Identity)
+  - If ctx.sender is not in the admin table, panic with "not admin"
+  - Insert Admin { identity: target } (ignore if already present)
+
+- ban_player(ctx, target: Identity)
+  - If ctx.sender is not in the admin table, panic with "not admin"
+  - Insert Banned { identity: target }
+  - Remove the Player row for target if one exists
+
+- join_game(ctx, name: String)
+  - If ctx.sender is in the banned table, panic with "banned"
+  - Insert Player { identity: ctx.sender, name }; if already present, panic with "already in game"

@@ -1,0 +1,33 @@
+Write a SpacetimeDB backend module in C# that implements document ownership and explicit sharing.
+
+TABLES
+- Document
+  - Struct: Document
+  - public table
+  - Fields:
+    - Id: ulong (primary key, AutoInc)
+    - Owner: Identity (index BTree)
+    - Title: string
+
+- DocumentShare
+  - Struct: DocumentShare
+  - public table
+  - Fields:
+    - DocumentId: ulong (index BTree)
+    - SharedWith: Identity (index BTree)
+
+REDUCERS
+- CreateDocument(ctx, string title)
+  - Insert a Document with Owner = ctx.Sender and the given Title, Id = 0 for AutoInc
+
+- ShareDocument(ctx, ulong documentId, Identity target)
+  - Load the Document by Id; if missing, throw exception with "not found"
+  - If Document.Owner != ctx.Sender, throw exception with "not owner"
+  - Insert a DocumentShare { DocumentId = documentId, SharedWith = target }
+
+- EditDocument(ctx, ulong documentId, string newTitle)
+  - Load the Document by Id; if missing, throw exception with "not found"
+  - The caller is authorized if they are the Owner OR if a DocumentShare row exists
+    with matching DocumentId and SharedWith == ctx.Sender
+  - If neither condition is true, throw exception with "unauthorized"
+  - Update the Document's Title to newTitle

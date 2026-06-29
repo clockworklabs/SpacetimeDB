@@ -25,9 +25,9 @@ Throw a `SenderError`:
 import { SenderError } from 'spacetimedb/server';
 
 export const transfer_credits = spacetimedb.reducer(
-  { to_user: t.u64(), amount: t.u32() },
+  { to_user: t.identity(), amount: t.u32() },
   (ctx, { to_user, amount }) => {
-    const fromUser = ctx.db.users.id.find(ctx.sender);
+    const fromUser = ctx.db.users.identity.find(ctx.sender);
     if (!fromUser) {
       throw new SenderError('User not found');
     }
@@ -60,9 +60,9 @@ Throw an exception:
 
 ```csharp
 [SpacetimeDB.Reducer]
-public static void TransferCredits(ReducerContext ctx, ulong toUser, uint amount)
+public static void TransferCredits(ReducerContext ctx, Identity toUser, uint amount)
 {
-    var fromUser = ctx.Db.User.Id.Find(ctx.Sender);
+    var fromUser = ctx.Db.User.Identity.Find(ctx.Sender);
     if (fromUser == null)
     {
         throw new InvalidOperationException("User not found");
@@ -86,13 +86,13 @@ Return an error:
 #[reducer]
 pub fn transfer_credits(
     ctx: &ReducerContext,
-    to_user: u64,
+    to_user: Identity,
     amount: u32
 ) -> Result<(), String> {
-    let from_balance = ctx.db.users().id().find(ctx.sender.identity)
-        .ok_or("User not found");
+    let from_user = ctx.db.users().identity().find(ctx.sender())
+        .ok_or("User not found")?;
     
-    if from_balance.credits < amount {
+    if from_user.credits < amount {
         return Err("Insufficient credits".to_string());
     }
     

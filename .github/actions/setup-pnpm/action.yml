@@ -1,0 +1,31 @@
+name: Set up pnpm
+description: Install pnpm and configure repository package-age policy before any install
+inputs:
+  package_json_file:
+    description: package.json file used to determine the pnpm version
+    required: false
+    default: package.json
+  run_install:
+    description: Run pnpm install after configuring pnpm
+    required: false
+    default: "false"
+  working_directory:
+    description: Directory to run pnpm install in
+    required: false
+    default: .
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v4
+      with:
+        package_json_file: ${{ inputs.package_json_file }}
+
+    - name: Configure pnpm package age policy
+      shell: bash
+      run: pnpm config set --global minimumReleaseAge 1440
+
+    - name: Install dependencies
+      if: inputs.run_install == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: pnpm install

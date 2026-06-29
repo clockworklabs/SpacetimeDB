@@ -1,0 +1,13 @@
+Write a SpacetimeDB backend module in C# that defines a public anonymous view over a table.
+
+TABLE
+- Announcement (public)
+  - Fields:
+    - Id: ulong (primary key, auto-increment)
+    - Message: string
+    - Active: bool (btree index)
+
+VIEW
+- ActiveAnnouncements (AnonymousViewContext, public)
+  - Returns: IEnumerable<Announcement>
+  - Body: return all rows where Active == true using the btree index filter
