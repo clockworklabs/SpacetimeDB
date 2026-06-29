@@ -235,10 +235,6 @@ fn prepare_remote_base_config(server: Option<&str>, spacetime_login: bool) -> Re
     ensure!(status.success(), "spacetime server edit failed");
 
     if spacetime_login {
-        let _ = Command::new("target/release/spacetime")
-            .args(["--config-path", config_path_str, "logout"])
-            .status();
-
         eprintln!("Logging in with SpacetimeAuth for remote smoketests...");
         let status = Command::new("target/release/spacetime")
             .args(["--config-path", config_path_str, "login"])
