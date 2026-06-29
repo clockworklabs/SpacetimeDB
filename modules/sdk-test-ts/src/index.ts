@@ -627,6 +627,163 @@ const uniqueTables = {
   ),
 } as const;
 
+// Tables mapping a unique Option<T> for some T to a boring i32 payload.
+const uniqueOptionTables = {
+  uniqueOptionU8: tbl(
+    'uniqueOptionU8',
+    {
+      insert_or_panic: 'insert_unique_option_u8',
+      update_non_pk_by: ['update_unique_option_u8', 'n'],
+      delete_by: ['delete_unique_option_u8', 'n'],
+    },
+    { n: t.option(t.u8()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionU16: tbl(
+    'uniqueOptionU16',
+    {
+      insert_or_panic: 'insert_unique_option_u16',
+      update_non_pk_by: ['update_unique_option_u16', 'n'],
+      delete_by: ['delete_unique_option_u16', 'n'],
+    },
+    { n: t.option(t.u16()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionU32: tbl(
+    'uniqueOptionU32',
+    {
+      insert_or_panic: 'insert_unique_option_u32',
+      update_non_pk_by: ['update_unique_option_u32', 'n'],
+      delete_by: ['delete_unique_option_u32', 'n'],
+    },
+    { n: t.option(t.u32()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionU64: tbl(
+    'uniqueOptionU64',
+    {
+      insert_or_panic: 'insert_unique_option_u64',
+      update_non_pk_by: ['update_unique_option_u64', 'n'],
+      delete_by: ['delete_unique_option_u64', 'n'],
+    },
+    { n: t.option(t.u64()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionU128: tbl(
+    'uniqueOptionU128',
+    {
+      insert_or_panic: 'insert_unique_option_u128',
+      update_non_pk_by: ['update_unique_option_u128', 'n'],
+      delete_by: ['delete_unique_option_u128', 'n'],
+    },
+    { n: t.option(t.u128()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionU256: tbl(
+    'uniqueOptionU256',
+    {
+      insert_or_panic: 'insert_unique_option_u256',
+      update_non_pk_by: ['update_unique_option_u256', 'n'],
+      delete_by: ['delete_unique_option_u256', 'n'],
+    },
+    { n: t.option(t.u256()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionI8: tbl(
+    'uniqueOptionI8',
+    {
+      insert_or_panic: 'insert_unique_option_i8',
+      update_non_pk_by: ['update_unique_option_i8', 'n'],
+      delete_by: ['delete_unique_option_i8', 'n'],
+    },
+    { n: t.option(t.i8()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionI16: tbl(
+    'uniqueOptionI16',
+    {
+      insert_or_panic: 'insert_unique_option_i16',
+      update_non_pk_by: ['update_unique_option_i16', 'n'],
+      delete_by: ['delete_unique_option_i16', 'n'],
+    },
+    { n: t.option(t.i16()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionI32: tbl(
+    'uniqueOptionI32',
+    {
+      insert_or_panic: 'insert_unique_option_i32',
+      update_non_pk_by: ['update_unique_option_i32', 'n'],
+      delete_by: ['delete_unique_option_i32', 'n'],
+    },
+    { n: t.option(t.i32()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionI64: tbl(
+    'uniqueOptionI64',
+    {
+      insert_or_panic: 'insert_unique_option_i64',
+      update_non_pk_by: ['update_unique_option_i64', 'n'],
+      delete_by: ['delete_unique_option_i64', 'n'],
+    },
+    { n: t.option(t.i64()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionI128: tbl(
+    'uniqueOptionI128',
+    {
+      insert_or_panic: 'insert_unique_option_i128',
+      update_non_pk_by: ['update_unique_option_i128', 'n'],
+      delete_by: ['delete_unique_option_i128', 'n'],
+    },
+    { n: t.option(t.i128()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionI256: tbl(
+    'uniqueOptionI256',
+    {
+      insert_or_panic: 'insert_unique_option_i256',
+      update_non_pk_by: ['update_unique_option_i256', 'n'],
+      delete_by: ['delete_unique_option_i256', 'n'],
+    },
+    { n: t.option(t.i256()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionBool: tbl(
+    'uniqueOptionBool',
+    {
+      insert_or_panic: 'insert_unique_option_bool',
+      update_non_pk_by: ['update_unique_option_bool', 'b'],
+      delete_by: ['delete_unique_option_bool', 'b'],
+    },
+    { b: t.option(t.bool()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionString: tbl(
+    'uniqueOptionString',
+    {
+      insert_or_panic: 'insert_unique_option_string',
+      update_non_pk_by: ['update_unique_option_string', 's'],
+      delete_by: ['delete_unique_option_string', 's'],
+    },
+    { s: t.option(t.string()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionIdentity: tbl(
+    'uniqueOptionIdentity',
+    {
+      insert_or_panic: 'insert_unique_option_identity',
+      update_non_pk_by: ['update_unique_option_identity', 'i'],
+      delete_by: ['delete_unique_option_identity', 'i'],
+    },
+    { i: t.option(t.identity()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionConnectionId: tbl(
+    'uniqueOptionConnectionId',
+    {
+      insert_or_panic: 'insert_unique_option_connection_id',
+      update_non_pk_by: ['update_unique_option_connection_id', 'a'],
+      delete_by: ['delete_unique_option_connection_id', 'a'],
+    },
+    { a: t.option(t.connectionId()).index('btree').unique(), data: t.i32() }
+  ),
+  uniqueOptionUuid: tbl(
+    'uniqueOptionUuid',
+    {
+      insert_or_panic: 'insert_unique_option_uuid',
+      update_non_pk_by: ['update_unique_option_uuid', 'u'],
+      delete_by: ['delete_unique_option_uuid', 'u'],
+    },
+    { u: t.option(t.uuid()).index('btree').unique(), data: t.i32() }
+  ),
+} as const;
+
 // Tables mapping a primary key to a boring i32 payload.
 // This allows us to test update and delete events.
 const pkTables = {
@@ -876,6 +1033,7 @@ const allTables = {
   ...optionTables,
   ...resultTables,
   ...uniqueTables,
+  ...uniqueOptionTables,
   ...pkTables,
   ...weirdTables,
 } as const;

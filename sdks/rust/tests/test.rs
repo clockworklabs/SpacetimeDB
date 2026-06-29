@@ -211,7 +211,7 @@ macro_rules! declare_tests_with_suffix {
 
             #[test]
             fn update_uuid() {
-                make_test("delete-uuid").run();
+                make_test("update-uuid").run();
             }
 
             #[test]

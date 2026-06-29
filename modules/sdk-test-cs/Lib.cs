@@ -1369,6 +1369,465 @@ public static partial class Module
         ctx.Db.unique_uuid.u.Delete(u);
     }
 
+    [SpacetimeDB.Table(Accessor = "unique_option_u8", Public = true)]
+    public partial struct UniqueOptionU8
+    {
+        [SpacetimeDB.Unique]
+        public byte? n;
+        public int data;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_unique_option_u8(ReducerContext ctx, byte? n, int data)
+    {
+        ctx.Db.unique_option_u8.Insert(new UniqueOptionU8 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void update_unique_option_u8(ReducerContext ctx, byte? n, int data)
+    {
+        ctx.Db.unique_option_u8.n.Delete(n);
+        ctx.Db.unique_option_u8.Insert(new UniqueOptionU8 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void delete_unique_option_u8(ReducerContext ctx, byte? n)
+    {
+        ctx.Db.unique_option_u8.n.Delete(n);
+    }
+
+    [SpacetimeDB.Table(Accessor = "unique_option_u16", Public = true)]
+    public partial struct UniqueOptionU16
+    {
+        [SpacetimeDB.Unique]
+        public ushort? n;
+        public int data;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_unique_option_u16(ReducerContext ctx, ushort? n, int data)
+    {
+        ctx.Db.unique_option_u16.Insert(new UniqueOptionU16 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void update_unique_option_u16(ReducerContext ctx, ushort? n, int data)
+    {
+        ctx.Db.unique_option_u16.n.Delete(n);
+        ctx.Db.unique_option_u16.Insert(new UniqueOptionU16 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void delete_unique_option_u16(ReducerContext ctx, ushort? n)
+    {
+        ctx.Db.unique_option_u16.n.Delete(n);
+    }
+
+    [SpacetimeDB.Table(Accessor = "unique_option_u32", Public = true)]
+    public partial struct UniqueOptionU32
+    {
+        [SpacetimeDB.Unique]
+        public uint? n;
+        public int data;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_unique_option_u32(ReducerContext ctx, uint? n, int data)
+    {
+        ctx.Db.unique_option_u32.Insert(new UniqueOptionU32 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void update_unique_option_u32(ReducerContext ctx, uint? n, int data)
+    {
+        ctx.Db.unique_option_u32.n.Delete(n);
+        ctx.Db.unique_option_u32.Insert(new UniqueOptionU32 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void delete_unique_option_u32(ReducerContext ctx, uint? n)
+    {
+        ctx.Db.unique_option_u32.n.Delete(n);
+    }
+
+    [SpacetimeDB.Table(Accessor = "unique_option_u64", Public = true)]
+    public partial struct UniqueOptionU64
+    {
+        [SpacetimeDB.Unique]
+        public ulong? n;
+        public int data;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_unique_option_u64(ReducerContext ctx, ulong? n, int data)
+    {
+        ctx.Db.unique_option_u64.Insert(new UniqueOptionU64 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void update_unique_option_u64(ReducerContext ctx, ulong? n, int data)
+    {
+        ctx.Db.unique_option_u64.n.Delete(n);
+        ctx.Db.unique_option_u64.Insert(new UniqueOptionU64 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void delete_unique_option_u64(ReducerContext ctx, ulong? n)
+    {
+        ctx.Db.unique_option_u64.n.Delete(n);
+    }
+
+    [SpacetimeDB.Table(Accessor = "unique_option_u128", Public = true)]
+    public partial struct UniqueOptionU128
+    {
+        [SpacetimeDB.Unique]
+        public U128? n;
+        public int data;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_unique_option_u128(ReducerContext ctx, U128? n, int data)
+    {
+        ctx.Db.unique_option_u128.Insert(new UniqueOptionU128 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void update_unique_option_u128(ReducerContext ctx, U128? n, int data)
+    {
+        ctx.Db.unique_option_u128.n.Delete(n);
+        ctx.Db.unique_option_u128.Insert(new UniqueOptionU128 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void delete_unique_option_u128(ReducerContext ctx, U128? n)
+    {
+        ctx.Db.unique_option_u128.n.Delete(n);
+    }
+
+    [SpacetimeDB.Table(Accessor = "unique_option_u256", Public = true)]
+    public partial struct UniqueOptionU256
+    {
+        [SpacetimeDB.Unique]
+        public U256? n;
+        public int data;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_unique_option_u256(ReducerContext ctx, U256? n, int data)
+    {
+        ctx.Db.unique_option_u256.Insert(new UniqueOptionU256 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void update_unique_option_u256(ReducerContext ctx, U256? n, int data)
+    {
+        ctx.Db.unique_option_u256.n.Delete(n);
+        ctx.Db.unique_option_u256.Insert(new UniqueOptionU256 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void delete_unique_option_u256(ReducerContext ctx, U256? n)
+    {
+        ctx.Db.unique_option_u256.n.Delete(n);
+    }
+
+    [SpacetimeDB.Table(Accessor = "unique_option_i8", Public = true)]
+    public partial struct UniqueOptionI8
+    {
+        [SpacetimeDB.Unique]
+        public sbyte? n;
+        public int data;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_unique_option_i8(ReducerContext ctx, sbyte? n, int data)
+    {
+        ctx.Db.unique_option_i8.Insert(new UniqueOptionI8 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void update_unique_option_i8(ReducerContext ctx, sbyte? n, int data)
+    {
+        ctx.Db.unique_option_i8.n.Delete(n);
+        ctx.Db.unique_option_i8.Insert(new UniqueOptionI8 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void delete_unique_option_i8(ReducerContext ctx, sbyte? n)
+    {
+        ctx.Db.unique_option_i8.n.Delete(n);
+    }
+
+    [SpacetimeDB.Table(Accessor = "unique_option_i16", Public = true)]
+    public partial struct UniqueOptionI16
+    {
+        [SpacetimeDB.Unique]
+        public short? n;
+        public int data;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_unique_option_i16(ReducerContext ctx, short? n, int data)
+    {
+        ctx.Db.unique_option_i16.Insert(new UniqueOptionI16 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void update_unique_option_i16(ReducerContext ctx, short? n, int data)
+    {
+        ctx.Db.unique_option_i16.n.Delete(n);
+        ctx.Db.unique_option_i16.Insert(new UniqueOptionI16 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void delete_unique_option_i16(ReducerContext ctx, short? n)
+    {
+        ctx.Db.unique_option_i16.n.Delete(n);
+    }
+
+    [SpacetimeDB.Table(Accessor = "unique_option_i32", Public = true)]
+    public partial struct UniqueOptionI32
+    {
+        [SpacetimeDB.Unique]
+        public int? n;
+        public int data;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_unique_option_i32(ReducerContext ctx, int? n, int data)
+    {
+        ctx.Db.unique_option_i32.Insert(new UniqueOptionI32 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void update_unique_option_i32(ReducerContext ctx, int? n, int data)
+    {
+        ctx.Db.unique_option_i32.n.Delete(n);
+        ctx.Db.unique_option_i32.Insert(new UniqueOptionI32 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void delete_unique_option_i32(ReducerContext ctx, int? n)
+    {
+        ctx.Db.unique_option_i32.n.Delete(n);
+    }
+
+    [SpacetimeDB.Table(Accessor = "unique_option_i64", Public = true)]
+    public partial struct UniqueOptionI64
+    {
+        [SpacetimeDB.Unique]
+        public long? n;
+        public int data;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_unique_option_i64(ReducerContext ctx, long? n, int data)
+    {
+        ctx.Db.unique_option_i64.Insert(new UniqueOptionI64 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void update_unique_option_i64(ReducerContext ctx, long? n, int data)
+    {
+        ctx.Db.unique_option_i64.n.Delete(n);
+        ctx.Db.unique_option_i64.Insert(new UniqueOptionI64 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void delete_unique_option_i64(ReducerContext ctx, long? n)
+    {
+        ctx.Db.unique_option_i64.n.Delete(n);
+    }
+
+    [SpacetimeDB.Table(Accessor = "unique_option_i128", Public = true)]
+    public partial struct UniqueOptionI128
+    {
+        [SpacetimeDB.Unique]
+        public I128? n;
+        public int data;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_unique_option_i128(ReducerContext ctx, I128? n, int data)
+    {
+        ctx.Db.unique_option_i128.Insert(new UniqueOptionI128 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void update_unique_option_i128(ReducerContext ctx, I128? n, int data)
+    {
+        ctx.Db.unique_option_i128.n.Delete(n);
+        ctx.Db.unique_option_i128.Insert(new UniqueOptionI128 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void delete_unique_option_i128(ReducerContext ctx, I128? n)
+    {
+        ctx.Db.unique_option_i128.n.Delete(n);
+    }
+
+    [SpacetimeDB.Table(Accessor = "unique_option_i256", Public = true)]
+    public partial struct UniqueOptionI256
+    {
+        [SpacetimeDB.Unique]
+        public I256? n;
+        public int data;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_unique_option_i256(ReducerContext ctx, I256? n, int data)
+    {
+        ctx.Db.unique_option_i256.Insert(new UniqueOptionI256 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void update_unique_option_i256(ReducerContext ctx, I256? n, int data)
+    {
+        ctx.Db.unique_option_i256.n.Delete(n);
+        ctx.Db.unique_option_i256.Insert(new UniqueOptionI256 { n = n, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void delete_unique_option_i256(ReducerContext ctx, I256? n)
+    {
+        ctx.Db.unique_option_i256.n.Delete(n);
+    }
+
+    [SpacetimeDB.Table(Accessor = "unique_option_bool", Public = true)]
+    public partial struct UniqueOptionBool
+    {
+        [SpacetimeDB.Unique]
+        public bool? b;
+        public int data;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_unique_option_bool(ReducerContext ctx, bool? b, int data)
+    {
+        ctx.Db.unique_option_bool.Insert(new UniqueOptionBool { b = b, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void update_unique_option_bool(ReducerContext ctx, bool? b, int data)
+    {
+        ctx.Db.unique_option_bool.b.Delete(b);
+        ctx.Db.unique_option_bool.Insert(new UniqueOptionBool { b = b, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void delete_unique_option_bool(ReducerContext ctx, bool? b)
+    {
+        ctx.Db.unique_option_bool.b.Delete(b);
+    }
+
+    [SpacetimeDB.Table(Accessor = "unique_option_string", Public = true)]
+    public partial struct UniqueOptionString
+    {
+        [SpacetimeDB.Unique]
+        public string? s;
+        public int data;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_unique_option_string(ReducerContext ctx, string? s, int data)
+    {
+        ctx.Db.unique_option_string.Insert(new UniqueOptionString { s = s, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void update_unique_option_string(ReducerContext ctx, string? s, int data)
+    {
+        ctx.Db.unique_option_string.s.Delete(s);
+        ctx.Db.unique_option_string.Insert(new UniqueOptionString { s = s, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void delete_unique_option_string(ReducerContext ctx, string? s)
+    {
+        ctx.Db.unique_option_string.s.Delete(s);
+    }
+
+    [SpacetimeDB.Table(Accessor = "unique_option_identity", Public = true)]
+    public partial struct UniqueOptionIdentity
+    {
+        [SpacetimeDB.Unique]
+        public Identity? i;
+        public int data;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_unique_option_identity(ReducerContext ctx, Identity? i, int data)
+    {
+        ctx.Db.unique_option_identity.Insert(new UniqueOptionIdentity { i = i, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void update_unique_option_identity(ReducerContext ctx, Identity? i, int data)
+    {
+        ctx.Db.unique_option_identity.i.Delete(i);
+        ctx.Db.unique_option_identity.Insert(new UniqueOptionIdentity { i = i, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void delete_unique_option_identity(ReducerContext ctx, Identity? i)
+    {
+        ctx.Db.unique_option_identity.i.Delete(i);
+    }
+
+    [SpacetimeDB.Table(Accessor = "unique_option_connection_id", Public = true)]
+    public partial struct UniqueOptionConnectionId
+    {
+        [SpacetimeDB.Unique]
+        public ConnectionId? a;
+        public int data;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_unique_option_connection_id(ReducerContext ctx, ConnectionId? a, int data)
+    {
+        ctx.Db.unique_option_connection_id.Insert(new UniqueOptionConnectionId { a = a, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void update_unique_option_connection_id(ReducerContext ctx, ConnectionId? a, int data)
+    {
+        ctx.Db.unique_option_connection_id.a.Delete(a);
+        ctx.Db.unique_option_connection_id.Insert(new UniqueOptionConnectionId { a = a, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void delete_unique_option_connection_id(ReducerContext ctx, ConnectionId? a)
+    {
+        ctx.Db.unique_option_connection_id.a.Delete(a);
+    }
+
+    [SpacetimeDB.Table(Accessor = "unique_option_uuid", Public = true)]
+    public partial struct UniqueOptionUuid
+    {
+        [SpacetimeDB.Unique]
+        public Uuid? u;
+        public int data;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_unique_option_uuid(ReducerContext ctx, Uuid? u, int data)
+    {
+        ctx.Db.unique_option_uuid.Insert(new UniqueOptionUuid { u = u, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void update_unique_option_uuid(ReducerContext ctx, Uuid? u, int data)
+    {
+        ctx.Db.unique_option_uuid.u.Delete(u);
+        ctx.Db.unique_option_uuid.Insert(new UniqueOptionUuid { u = u, data = data });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void delete_unique_option_uuid(ReducerContext ctx, Uuid? u)
+    {
+        ctx.Db.unique_option_uuid.u.Delete(u);
+    }
+
     [SpacetimeDB.Table(Accessor = "pk_u8", Public = true)]
     public partial struct PkU8
     {

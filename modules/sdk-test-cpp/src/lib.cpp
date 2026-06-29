@@ -491,6 +491,95 @@ SPACETIMEDB_TABLE(UniqueConnectionId, unique_connection_id, Public)
 FIELD_Unique(unique_connection_id, a);
 
 // =============================================================================
+// UNIQUE OPTIONAL CONSTRAINT TABLES - Matching Rust's UniqueOptionXXX pattern
+// =============================================================================
+
+struct UniqueOptionU8 { std::optional<uint8_t> n; int32_t data; };
+SPACETIMEDB_STRUCT(UniqueOptionU8, n, data)
+SPACETIMEDB_TABLE(UniqueOptionU8, unique_option_u8, Public)
+FIELD_Unique(unique_option_u8, n);
+
+struct UniqueOptionU16 { std::optional<uint16_t> n; int32_t data; };
+SPACETIMEDB_STRUCT(UniqueOptionU16, n, data)
+SPACETIMEDB_TABLE(UniqueOptionU16, unique_option_u16, Public)
+FIELD_Unique(unique_option_u16, n);
+
+struct UniqueOptionU32 { std::optional<uint32_t> n; int32_t data; };
+SPACETIMEDB_STRUCT(UniqueOptionU32, n, data)
+SPACETIMEDB_TABLE(UniqueOptionU32, unique_option_u32, Public)
+FIELD_Unique(unique_option_u32, n);
+
+struct UniqueOptionU64 { std::optional<uint64_t> n; int32_t data; };
+SPACETIMEDB_STRUCT(UniqueOptionU64, n, data)
+SPACETIMEDB_TABLE(UniqueOptionU64, unique_option_u64, Public)
+FIELD_Unique(unique_option_u64, n);
+
+struct UniqueOptionU128 { std::optional<u128> n; int32_t data; };
+SPACETIMEDB_STRUCT(UniqueOptionU128, n, data)
+SPACETIMEDB_TABLE(UniqueOptionU128, unique_option_u128, Public)
+FIELD_Unique(unique_option_u128, n);
+
+struct UniqueOptionU256 { std::optional<u256> n; int32_t data; };
+SPACETIMEDB_STRUCT(UniqueOptionU256, n, data)
+SPACETIMEDB_TABLE(UniqueOptionU256, unique_option_u256, Public)
+FIELD_Unique(unique_option_u256, n);
+
+struct UniqueOptionI8 { std::optional<int8_t> n; int32_t data; };
+SPACETIMEDB_STRUCT(UniqueOptionI8, n, data)
+SPACETIMEDB_TABLE(UniqueOptionI8, unique_option_i8, Public)
+FIELD_Unique(unique_option_i8, n);
+
+struct UniqueOptionI16 { std::optional<int16_t> n; int32_t data; };
+SPACETIMEDB_STRUCT(UniqueOptionI16, n, data)
+SPACETIMEDB_TABLE(UniqueOptionI16, unique_option_i16, Public)
+FIELD_Unique(unique_option_i16, n);
+
+struct UniqueOptionI32 { std::optional<int32_t> n; int32_t data; };
+SPACETIMEDB_STRUCT(UniqueOptionI32, n, data)
+SPACETIMEDB_TABLE(UniqueOptionI32, unique_option_i32, Public)
+FIELD_Unique(unique_option_i32, n);
+
+struct UniqueOptionI64 { std::optional<int64_t> n; int32_t data; };
+SPACETIMEDB_STRUCT(UniqueOptionI64, n, data)
+SPACETIMEDB_TABLE(UniqueOptionI64, unique_option_i64, Public)
+FIELD_Unique(unique_option_i64, n);
+
+struct UniqueOptionI128 { std::optional<i128> n; int32_t data; };
+SPACETIMEDB_STRUCT(UniqueOptionI128, n, data)
+SPACETIMEDB_TABLE(UniqueOptionI128, unique_option_i128, Public)
+FIELD_Unique(unique_option_i128, n);
+
+struct UniqueOptionI256 { std::optional<i256> n; int32_t data; };
+SPACETIMEDB_STRUCT(UniqueOptionI256, n, data)
+SPACETIMEDB_TABLE(UniqueOptionI256, unique_option_i256, Public)
+FIELD_Unique(unique_option_i256, n);
+
+struct UniqueOptionBool { std::optional<bool> b; int32_t data; };
+SPACETIMEDB_STRUCT(UniqueOptionBool, b, data)
+SPACETIMEDB_TABLE(UniqueOptionBool, unique_option_bool, Public)
+FIELD_Unique(unique_option_bool, b);
+
+struct UniqueOptionString { std::optional<std::string> s; int32_t data; };
+SPACETIMEDB_STRUCT(UniqueOptionString, s, data)
+SPACETIMEDB_TABLE(UniqueOptionString, unique_option_string, Public)
+FIELD_Unique(unique_option_string, s);
+
+struct UniqueOptionIdentity { std::optional<Identity> i; int32_t data; };
+SPACETIMEDB_STRUCT(UniqueOptionIdentity, i, data)
+SPACETIMEDB_TABLE(UniqueOptionIdentity, unique_option_identity, Public)
+FIELD_Unique(unique_option_identity, i);
+
+struct UniqueOptionConnectionId { std::optional<ConnectionId> a; int32_t data; };
+SPACETIMEDB_STRUCT(UniqueOptionConnectionId, a, data)
+SPACETIMEDB_TABLE(UniqueOptionConnectionId, unique_option_connection_id, Public)
+FIELD_Unique(unique_option_connection_id, a);
+
+struct UniqueOptionUuid { std::optional<Uuid> u; int32_t data; };
+SPACETIMEDB_STRUCT(UniqueOptionUuid, u, data)
+SPACETIMEDB_TABLE(UniqueOptionUuid, unique_option_uuid, Public)
+FIELD_Unique(unique_option_uuid, u);
+
+// =============================================================================
 // PRIMARY KEY TABLES - Matching Rust's PkXXX pattern
 // =============================================================================
 
@@ -1209,6 +1298,108 @@ SPACETIMEDB_REDUCER(insert_unique_connection_id, ReducerContext ctx, ConnectionI
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(insert_unique_option_u8, ReducerContext ctx, std::optional<uint8_t> n, int32_t data)
+{
+    ctx.db[unique_option_u8].insert(UniqueOptionU8{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_unique_option_u16, ReducerContext ctx, std::optional<uint16_t> n, int32_t data)
+{
+    ctx.db[unique_option_u16].insert(UniqueOptionU16{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_unique_option_u32, ReducerContext ctx, std::optional<uint32_t> n, int32_t data)
+{
+    ctx.db[unique_option_u32].insert(UniqueOptionU32{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_unique_option_u64, ReducerContext ctx, std::optional<uint64_t> n, int32_t data)
+{
+    ctx.db[unique_option_u64].insert(UniqueOptionU64{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_unique_option_u128, ReducerContext ctx, std::optional<u128> n, int32_t data)
+{
+    ctx.db[unique_option_u128].insert(UniqueOptionU128{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_unique_option_u256, ReducerContext ctx, std::optional<u256> n, int32_t data)
+{
+    ctx.db[unique_option_u256].insert(UniqueOptionU256{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_unique_option_i8, ReducerContext ctx, std::optional<int8_t> n, int32_t data)
+{
+    ctx.db[unique_option_i8].insert(UniqueOptionI8{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_unique_option_i16, ReducerContext ctx, std::optional<int16_t> n, int32_t data)
+{
+    ctx.db[unique_option_i16].insert(UniqueOptionI16{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_unique_option_i32, ReducerContext ctx, std::optional<int32_t> n, int32_t data)
+{
+    ctx.db[unique_option_i32].insert(UniqueOptionI32{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_unique_option_i64, ReducerContext ctx, std::optional<int64_t> n, int32_t data)
+{
+    ctx.db[unique_option_i64].insert(UniqueOptionI64{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_unique_option_i128, ReducerContext ctx, std::optional<i128> n, int32_t data)
+{
+    ctx.db[unique_option_i128].insert(UniqueOptionI128{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_unique_option_i256, ReducerContext ctx, std::optional<i256> n, int32_t data)
+{
+    ctx.db[unique_option_i256].insert(UniqueOptionI256{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_unique_option_bool, ReducerContext ctx, std::optional<bool> b, int32_t data)
+{
+    ctx.db[unique_option_bool].insert(UniqueOptionBool{b, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_unique_option_string, ReducerContext ctx, std::optional<std::string> s, int32_t data)
+{
+    ctx.db[unique_option_string].insert(UniqueOptionString{s, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_unique_option_identity, ReducerContext ctx, std::optional<Identity> i, int32_t data)
+{
+    ctx.db[unique_option_identity].insert(UniqueOptionIdentity{i, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_unique_option_connection_id, ReducerContext ctx, std::optional<ConnectionId> a, int32_t data)
+{
+    ctx.db[unique_option_connection_id].insert(UniqueOptionConnectionId{a, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_unique_option_uuid, ReducerContext ctx, std::optional<Uuid> u, int32_t data)
+{
+    ctx.db[unique_option_uuid].insert(UniqueOptionUuid{u, data});
+    return Ok();
+}
+
 // =============================================================================
 // PRIMARY KEY TABLE REDUCERS
 // =============================================================================
@@ -1580,6 +1771,108 @@ SPACETIMEDB_REDUCER(delete_unique_connection_id, ReducerContext ctx, ConnectionI
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_unique_option_u8, ReducerContext ctx, std::optional<uint8_t> n)
+{
+    ctx.db[unique_option_u8_n].delete_by_value(n);
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_unique_option_u16, ReducerContext ctx, std::optional<uint16_t> n)
+{
+    ctx.db[unique_option_u16_n].delete_by_value(n);
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_unique_option_u32, ReducerContext ctx, std::optional<uint32_t> n)
+{
+    ctx.db[unique_option_u32_n].delete_by_value(n);
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_unique_option_u64, ReducerContext ctx, std::optional<uint64_t> n)
+{
+    ctx.db[unique_option_u64_n].delete_by_value(n);
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_unique_option_u128, ReducerContext ctx, std::optional<u128> n)
+{
+    ctx.db[unique_option_u128_n].delete_by_value(n);
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_unique_option_u256, ReducerContext ctx, std::optional<u256> n)
+{
+    ctx.db[unique_option_u256_n].delete_by_value(n);
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_unique_option_i8, ReducerContext ctx, std::optional<int8_t> n)
+{
+    ctx.db[unique_option_i8_n].delete_by_value(n);
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_unique_option_i16, ReducerContext ctx, std::optional<int16_t> n)
+{
+    ctx.db[unique_option_i16_n].delete_by_value(n);
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_unique_option_i32, ReducerContext ctx, std::optional<int32_t> n)
+{
+    ctx.db[unique_option_i32_n].delete_by_value(n);
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_unique_option_i64, ReducerContext ctx, std::optional<int64_t> n)
+{
+    ctx.db[unique_option_i64_n].delete_by_value(n);
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_unique_option_i128, ReducerContext ctx, std::optional<i128> n)
+{
+    ctx.db[unique_option_i128_n].delete_by_value(n);
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_unique_option_i256, ReducerContext ctx, std::optional<i256> n)
+{
+    ctx.db[unique_option_i256_n].delete_by_value(n);
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_unique_option_bool, ReducerContext ctx, std::optional<bool> b)
+{
+    ctx.db[unique_option_bool_b].delete_by_value(b);
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_unique_option_string, ReducerContext ctx, std::optional<std::string> s)
+{
+    ctx.db[unique_option_string_s].delete_by_value(s);
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_unique_option_identity, ReducerContext ctx, std::optional<Identity> i)
+{
+    ctx.db[unique_option_identity_i].delete_by_value(i);
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_unique_option_connection_id, ReducerContext ctx, std::optional<ConnectionId> a)
+{
+    ctx.db[unique_option_connection_id_a].delete_by_value(a);
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_unique_option_uuid, ReducerContext ctx, std::optional<Uuid> u)
+{
+    ctx.db[unique_option_uuid_u].delete_by_value(u);
+    return Ok();
+}
+
 // =============================================================================
 // UPDATE OPERATIONS - PRIMARY KEY
 // =============================================================================
@@ -1837,6 +2130,108 @@ SPACETIMEDB_REDUCER(update_unique_connection_id, ReducerContext ctx, ConnectionI
 {
     // Use optimized field accessor for direct index-based update
     ctx.db[unique_connection_id_a].update(UniqueConnectionId{a, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(update_unique_option_u8, ReducerContext ctx, std::optional<uint8_t> n, int32_t data)
+{
+    ctx.db[unique_option_u8_n].update(UniqueOptionU8{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(update_unique_option_u16, ReducerContext ctx, std::optional<uint16_t> n, int32_t data)
+{
+    ctx.db[unique_option_u16_n].update(UniqueOptionU16{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(update_unique_option_u32, ReducerContext ctx, std::optional<uint32_t> n, int32_t data)
+{
+    ctx.db[unique_option_u32_n].update(UniqueOptionU32{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(update_unique_option_u64, ReducerContext ctx, std::optional<uint64_t> n, int32_t data)
+{
+    ctx.db[unique_option_u64_n].update(UniqueOptionU64{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(update_unique_option_u128, ReducerContext ctx, std::optional<u128> n, int32_t data)
+{
+    ctx.db[unique_option_u128_n].update(UniqueOptionU128{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(update_unique_option_u256, ReducerContext ctx, std::optional<u256> n, int32_t data)
+{
+    ctx.db[unique_option_u256_n].update(UniqueOptionU256{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(update_unique_option_i8, ReducerContext ctx, std::optional<int8_t> n, int32_t data)
+{
+    ctx.db[unique_option_i8_n].update(UniqueOptionI8{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(update_unique_option_i16, ReducerContext ctx, std::optional<int16_t> n, int32_t data)
+{
+    ctx.db[unique_option_i16_n].update(UniqueOptionI16{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(update_unique_option_i32, ReducerContext ctx, std::optional<int32_t> n, int32_t data)
+{
+    ctx.db[unique_option_i32_n].update(UniqueOptionI32{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(update_unique_option_i64, ReducerContext ctx, std::optional<int64_t> n, int32_t data)
+{
+    ctx.db[unique_option_i64_n].update(UniqueOptionI64{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(update_unique_option_i128, ReducerContext ctx, std::optional<i128> n, int32_t data)
+{
+    ctx.db[unique_option_i128_n].update(UniqueOptionI128{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(update_unique_option_i256, ReducerContext ctx, std::optional<i256> n, int32_t data)
+{
+    ctx.db[unique_option_i256_n].update(UniqueOptionI256{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(update_unique_option_bool, ReducerContext ctx, std::optional<bool> b, int32_t data)
+{
+    ctx.db[unique_option_bool_b].update(UniqueOptionBool{b, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(update_unique_option_string, ReducerContext ctx, std::optional<std::string> s, int32_t data)
+{
+    ctx.db[unique_option_string_s].update(UniqueOptionString{s, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(update_unique_option_identity, ReducerContext ctx, std::optional<Identity> i, int32_t data)
+{
+    ctx.db[unique_option_identity_i].update(UniqueOptionIdentity{i, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(update_unique_option_connection_id, ReducerContext ctx, std::optional<ConnectionId> a, int32_t data)
+{
+    ctx.db[unique_option_connection_id_a].update(UniqueOptionConnectionId{a, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(update_unique_option_uuid, ReducerContext ctx, std::optional<Uuid> u, int32_t data)
+{
+    ctx.db[unique_option_uuid_u].update(UniqueOptionUuid{u, data});
     return Ok();
 }
 
