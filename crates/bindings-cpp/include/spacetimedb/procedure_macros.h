@@ -2,7 +2,7 @@
 
 #include "spacetimedb/procedure_context.h"
 #include "spacetimedb/internal/Module.h"
-#include "spacetimedb/internal/v9_builder.h"
+#include "spacetimedb/internal/v10_builder.h"
 #include "spacetimedb/macros.h"  // For CONCAT
 #include "spacetimedb/error_handling.h"
 #include <string>
@@ -98,11 +98,26 @@ struct is_valid_procedure_return_type : std::integral_constant<bool, bsatn::Seri
         std::vector<std::string> param_names = \
             SpacetimeDB::Internal::parseParameterNames(param_list); \
         \
-        /* Register the procedure with the V9Builder system */ \
+        /* Register the procedure with the V10Builder system */ \
         /* Note: Procedures are always public (no is_public parameter) */ \
-        ::SpacetimeDB::Internal::getV9Builder().RegisterProcedure( \
+        ::SpacetimeDB::Internal::getV10Builder().RegisterProcedure( \
             #procedure_name, procedure_name, param_names); \
     } \
     \
     /* The actual procedure function definition */ \
+    return_type procedure_name(ctx_param __VA_OPT__(,) __VA_ARGS__)
+
+#define SPACETIMEDB_PROCEDURE_NAMED(return_type, procedure_name, canonical_name, ctx_param, ...) \
+    static_assert(::SpacetimeDB::Internal::is_valid_procedure_return_type<return_type>::value, \
+        "Procedure return type must be a SpacetimeType (implement Serializable trait)"); \
+    return_type procedure_name(ctx_param __VA_OPT__(,) __VA_ARGS__); \
+    __attribute__((export_name("__preinit__50_proc_" #procedure_name))) \
+    extern "C" void CONCAT(_spacetimedb_preinit_register_proc_, procedure_name)() { \
+        std::string param_list = #__VA_ARGS__; \
+        std::vector<std::string> param_names = \
+            SpacetimeDB::Internal::parseParameterNames(param_list); \
+        ::SpacetimeDB::Internal::getV10Builder().RegisterProcedure( \
+            #procedure_name, procedure_name, param_names); \
+        SpacetimeDB::Module::RegisterExplicitFunctionName(#procedure_name, canonical_name); \
+    } \
     return_type procedure_name(ctx_param __VA_OPT__(,) __VA_ARGS__)

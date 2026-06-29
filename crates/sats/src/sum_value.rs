@@ -1,4 +1,5 @@
 use crate::algebraic_value::AlgebraicValue;
+use crate::impl_deserialize;
 use crate::sum_type::SumType;
 
 /// A value of a sum type choosing a specific variant of the type.
@@ -33,6 +34,8 @@ impl SumValue {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
 pub struct SumTag(pub u8);
+
+impl_deserialize!([] SumTag, de => <_>::deserialize(de).map(SumTag));
 
 #[cfg(feature = "memory-usage")]
 impl spacetimedb_memory_usage::MemoryUsage for SumTag {}

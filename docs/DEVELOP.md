@@ -1,4 +1,4 @@
-﻿# DEVELOP.md
+# DEVELOP.md
 
 This document explains how to configure the environment, run the LLM benchmark tool, and work with the benchmark suite.
 
@@ -6,11 +6,20 @@ This document explains how to configure the environment, run the LLM benchmark t
 
 ## Table of Contents
 
-1. [Quick Checks & Fixes](#quick-checks-fixes)
-2. [Environment Variables](#environment-variables)
-3. [Benchmark Suite](#benchmark-suite)
-4. [Context Construction](#context-construction)
-5. [Troubleshooting](#troubleshooting)
+1. [Prerequisites](#prerequisites)
+2. [Quick Checks & Fixes](#quick-checks-fixes)
+3. [Environment Variables](#environment-variables)
+4. [Benchmark Suite](#benchmark-suite)
+5. [Context Construction](#context-construction)
+6. [Troubleshooting](#troubleshooting)
+---
+
+## Prerequisites
+
+- **Run from repo root** — `cargo llm` and related commands must be run from the workspace root (this repo).
+- **TypeScript benchmarks** — Run `pnpm build` in `crates/bindings-typescript` first. Rust and C# use local crates that are built as part of the workspace.
+- **Windows (nvm4w)** — If `pnpm` is not found when running TypeScript benchmarks, set `NODEJS_DIR` to your Node.js bin directory (e.g. `C:\nvm\v20.10.0`).
+
 ---
 
 ## Quick Checks & Fixes
@@ -117,21 +126,9 @@ $env:LLM_BENCH_ROUTE_CONCURRENCY="4"
 
 Results directory: `docs/llms`
 
-### Result Files
+### Results Storage
 
-There are two sets of result files, each serving a different purpose:
-
-| Files | Purpose | Updated By |
-|-------|---------|------------|
-| `docs-benchmark-details.json`<br>`docs-benchmark-summary.json` | Test documentation quality with a single reference model (GPT-5) | `cargo llm ci-quickfix` |
-| `llm-comparison-details.json`<br>`llm-comparison-summary.json` | Compare all LLMs against the same documentation | `cargo llm run` |
-
-- **docs-benchmark**: Used by CI to ensure documentation quality. Contains only GPT-5 results.
-- **llm-comparison**: Used for manual benchmark runs to compare LLM performance. Contains results from all configured models.
-
-> Results writes are lock-safe and atomic. The tool takes an exclusive lock and writes via a temp file, then renames it, so concurrent runs won't corrupt results.
-
-Open `llm_benchmark_stats_viewer.html` in a browser to inspect merged results locally.
+Benchmark results are stored in a remote PostgreSQL database via the spacetime-web API. Results are uploaded automatically after each benchmark batch when `LLM_BENCHMARK_UPLOAD_URL` and `LLM_BENCHMARK_API_KEY` environment variables are set. Use `--dry-run` to skip uploading.
 ### Current Benchmarks
 
 **basics**

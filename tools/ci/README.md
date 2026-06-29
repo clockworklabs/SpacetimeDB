@@ -19,7 +19,7 @@ Usage: cargo ci [OPTIONS] [COMMAND]
 
 **Options:**
 
-- `--skip`: Skip specified subcommands when running all
+- `--skip <SKIP>`: Skip specified subcommands when running all
 
 When no subcommand is specified, all subcommands are run in sequence. This option allows specifying subcommands to skip when running all. For example, to skip the `unreal-tests` subcommand, use `--skip unreal-tests`.
 
@@ -44,7 +44,7 @@ Usage: test
 
 Lints the codebase
 
-Runs rustfmt, clippy, csharpier and generates rust docs to ensure there are no warnings.
+Runs rustfmt, clippy, csharpier, TypeScript lint, and generates rust docs to ensure there are no warnings.
 
 **Usage:**
 ```bash
@@ -72,9 +72,9 @@ Usage: wasm-bindings
 
 ### `dlls`
 
-Builds and packs C# DLLs and NuGet packages for local Unity workflows
+Deprecated; use `cargo regen csharp dlls`.
 
-Packs the in-repo C# NuGet packages and restores the C# SDK to populate `sdks/csharp/packages/**`. Then overlays Unity `.meta` skeleton files from `sdks/csharp/unity-meta-skeleton~/**` onto the restored versioned package directory, so Unity can associate stable meta files with the most recently built package.
+Builds and packs C# DLLs and NuGet packages for local Unity workflows.
 
 **Usage:**
 ```bash
@@ -98,12 +98,12 @@ Usage: smoketests [OPTIONS] [ARGS]... [COMMAND]
 
 **Options:**
 
-- `--server`: Run tests against a remote server instead of spawning local servers.
+- `--server <SERVER>`: Run tests against a remote server instead of spawning local servers.
 
 When specified, tests will connect to the given URL instead of starting local server instances. Tests that require local server control (like restart tests) will be skipped.
 
-- `--dotnet`: 
-- `args`: 
+- `--dotnet <DOTNET>`:
+- `args <ARGS>`: Additional arguments to pass to the test runner
 - `--help`: Print help (see a summary with '-h')
 
 #### `prepare`
@@ -121,6 +121,17 @@ Usage: prepare
 
 - `--help`: Print help (see a summary with '-h')
 
+#### `check-mod-list`
+
+**Usage:**
+```bash
+Usage: check-mod-list
+```
+
+**Options:**
+
+- `--help`: Print help
+
 #### `help`
 
 **Usage:**
@@ -130,7 +141,22 @@ Usage: help [COMMAND]...
 
 **Options:**
 
-- `subcommand`: 
+- `subcommand <COMMAND>`: Print help for the subcommand(s)
+
+### `keynote-bench`
+
+Runs the keynote benchmark as a CI performance regression gate.
+
+Assumes release SpacetimeDB binaries and the TypeScript SDK are already built, runs the keynote SpacetimeDB benchmark for 60 seconds against the TypeScript and Rust modules, and fails if throughput is below 275K TPS for TypeScript or 300K TPS for Rust.
+
+**Usage:**
+```bash
+Usage: keynote-bench
+```
+
+**Options:**
+
+- `--help`: Print help (see a summary with '-h')
 
 ### `update-flow`
 
@@ -145,7 +171,7 @@ Usage: update-flow [OPTIONS]
 
 **Options:**
 
-- `--target`: Target triple to build for, by default the current target. Used by github workflows to check the update flow on multiple platforms.
+- `--target <TARGET>`: Target triple to build for, by default the current target. Used by github workflows to check the update flow on multiple platforms.
 - `--github-token-auth`: Whether to enable github token authentication feature when building the update binary. By default this is disabled.
 - `--help`: Print help (see a summary with '-h')
 
@@ -158,7 +184,7 @@ Usage: cli-docs [OPTIONS]
 
 **Options:**
 
-- `--spacetime-path`: specify a custom path to the SpacetimeDB repository root (where the main Cargo.toml is located)
+- `--spacetime-path <SPACETIME_PATH>`: specify a custom path to the SpacetimeDB repository root (where the main Cargo.toml is located)
 - `--help`: Print help (see a summary with '-h')
 
 ### `self-docs`
@@ -182,7 +208,100 @@ Usage: global-json-policy
 
 **Options:**
 
-- `--help`: 
+- `--help`: Print help
+
+### `publish-checks`
+
+**Usage:**
+```bash
+Usage: publish-checks
+```
+
+**Options:**
+
+- `--help`: Print help
+
+### `typescript-test`
+
+**Usage:**
+```bash
+Usage: typescript-test
+```
+
+**Options:**
+
+- `--help`: Print help
+
+### `version-upgrade-check`
+
+**Usage:**
+```bash
+Usage: version-upgrade-check
+```
+
+**Options:**
+
+- `--help`: Print help
+
+### `docs`
+
+**Usage:**
+```bash
+Usage: docs
+```
+
+**Options:**
+
+- `--help`: Print help
+
+### `cla-assistant`
+
+**Usage:**
+```bash
+Usage: cla-assistant <COMMAND>
+```
+
+**Options:**
+
+- `--help`: Print help
+
+#### `retry`
+
+**Usage:**
+```bash
+Usage: retry [OPTIONS] --pr-number <PR_NUMBER>
+```
+
+**Options:**
+
+- `--pr-number <PR_NUMBER>`: Pull request number to check
+- `--repo <REPO>`: Repository in `owner/name` form. Defaults to GITHUB_REPOSITORY
+- `--help`: Print help
+
+#### `status`
+
+**Usage:**
+```bash
+Usage: status [OPTIONS] <--pr <PR>|--sha <SHA>>
+```
+
+**Options:**
+
+- `--pr <PR>`: Pull request number whose head commit should be checked
+- `--sha <SHA>`: Commit SHA to check
+- `--repo <REPO>`: Repository in `owner/name` form. Defaults to GITHUB_REPOSITORY
+- `--help`: Print help
+
+#### `help`
+
+**Usage:**
+```bash
+Usage: help [COMMAND]...
+```
+
+**Options:**
+
+- `subcommand <COMMAND>`: Print help for the subcommand(s)
 
 ### `help`
 
@@ -193,7 +312,7 @@ Usage: help [COMMAND]...
 
 **Options:**
 
-- `subcommand`: 
+- `subcommand <COMMAND>`: Print help for the subcommand(s)
 
 
 ---

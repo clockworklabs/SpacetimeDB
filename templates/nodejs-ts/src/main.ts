@@ -1,6 +1,5 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import * as readline from 'readline';
 import { fileURLToPath } from 'url';
 import { Identity } from 'spacetimedb';
 import {
@@ -56,7 +55,7 @@ function onConnect(
         }
       }
 
-      setupCLI(conn);
+      console.log('\nPress Ctrl+C to exit');
     })
     .onError((_ctx, err) => {
       console.error('Subscription error:', err);
@@ -84,52 +83,6 @@ function onDisconnect(_ctx: ErrorContext, error?: Error): void {
 function onConnectError(_ctx: ErrorContext, error: Error): void {
   console.error('Connection error:', error);
   process.exit(1);
-}
-
-function setupCLI(conn: DbConnection): void {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  console.log('\nCommands:');
-  console.log('  <name>  - Add a person with that name');
-  console.log('  list    - Show all people');
-  console.log('  hello   - Greet everyone (check server logs)');
-  console.log('  Ctrl+C  - Quit\n');
-
-  rl.on('line', input => {
-    const text = input.trim();
-    if (!text) return;
-
-    if (text.toLowerCase() === 'list') {
-      console.log('\nPeople in database:');
-      let count = 0;
-      for (const person of conn.db.person.iter()) {
-        console.log(`  - ${person.name}`);
-        count++;
-      }
-      if (count === 0) {
-        console.log('  (none)');
-      }
-      console.log();
-    } else if (text.toLowerCase() === 'hello') {
-      conn.reducers.sayHello({});
-      console.log('Called say_hello reducer (check server logs)\n');
-    } else {
-      conn.reducers.add({ name: text });
-    }
-  });
-
-  const shutdown = (): void => {
-    console.log('\nShutting down...');
-    conn.disconnect();
-    process.exit(0);
-  };
-
-  rl.on('close', shutdown);
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
 }
 
 // Token persistence (file-based for Node.js instead of localStorage)

@@ -10,6 +10,7 @@ use spacetimedb_data_structures::map::{HashMap, HashSet};
 use spacetimedb_lib::db::default_element_ordering::{product_type_has_default_ordering, sum_type_has_default_ordering};
 use spacetimedb_lib::db::raw_def::v10::{reducer_default_err_return_type, reducer_default_ok_return_type};
 use spacetimedb_lib::db::raw_def::v9::RawViewDefV9;
+use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
 use spacetimedb_lib::ProductType;
 use spacetimedb_primitives::col_list;
 use spacetimedb_sats::{bsatn::de::Deserializer, de::DeserializeSeed, WithTypespace};
@@ -164,6 +165,8 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         row_level_security_raw,
         lifecycle_reducers,
         procedures,
+        http_handlers: IndexMap::new(),
+        http_routes: Vec::new(),
         raw_module_def_version: RawModuleDefVersion::V9OrEarlier,
     })
 }
@@ -200,8 +203,13 @@ impl ModuleValidatorV9<'_> {
                 })
             })?;
 
-        let mut table_in_progress =
-            TableValidator::new(raw_table_name.clone(), product_type_ref, product_type, &mut self.core)?;
+        let mut table_in_progress = TableValidator::new(
+            raw_table_name.clone(),
+            product_type_ref,
+            product_type,
+            &mut self.core,
+            CoreValidator::resolve_table_ident,
+        )?;
 
         let table_ident = table_in_progress.table_ident.clone();
 
@@ -438,21 +446,12 @@ impl ModuleValidatorV9<'_> {
             })
         };
 
-        // The possible return types of a view are `Vec<T>` or `Option<T>`,
+        // The possible return types of a view are `Vec<T>`, `Option<T>`, or `Query<T>`,
         // where `T` is a `ProductType` in the `Typespace`.
         // Here we extract the inner product type ref `T`.
         // We exit early for errors since this breaks all the other checks.
-        let product_type_ref = return_type
-            .as_option()
-            .and_then(AlgebraicType::as_ref)
-            .or_else(|| {
-                return_type
-                    .as_array()
-                    .map(|array_type| array_type.elem_ty.as_ref())
-                    .and_then(AlgebraicType::as_ref)
-            })
-            .cloned()
-            .ok_or_else(invalid_return_type)?;
+        let (product_type_ref, return_kind) =
+            extract_view_return_product_type_ref(&return_type).ok_or_else(invalid_return_type)?;
 
         let product_type = self
             .core
@@ -474,11 +473,18 @@ impl ModuleValidatorV9<'_> {
                     arg_name,
                 })?;
 
+        let return_type_for_generate_input = match return_kind {
+            ViewKind::Procedural => return_type.clone(),
+            // Query-builder views still return rows from the client's perspective.
+            // For codegen purposes we model this as `Vec<T>`.
+            ViewKind::Query => AlgebraicType::array(product_type_ref.into()),
+        };
+
         let return_type_for_generate = self.core.validate_for_type_use(
             || TypeLocation::ViewReturn {
                 view_name: name.clone(),
             },
-            &return_type,
+            &return_type_for_generate_input,
         );
 
         let mut view_in_progress = ViewValidator::new(
@@ -525,6 +531,7 @@ impl ModuleValidatorV9<'_> {
             return_type,
             return_type_for_generate,
             product_type_ref,
+            primary_key: None,
             return_columns,
             param_columns,
             accessor_name: name,
@@ -928,6 +935,7 @@ impl CoreValidator<'_> {
 /// 2. Insert view names into the global namespace.
 pub(crate) struct ViewValidator<'a, 'b> {
     inner: TableValidator<'a, 'b>,
+    view_name: Identifier,
     params: &'a ProductType,
     params_for_generate: &'a [(Identifier, AlgebraicTypeUse)],
 }
@@ -941,8 +949,12 @@ impl<'a, 'b> ViewValidator<'a, 'b> {
         params_for_generate: &'a [(Identifier, AlgebraicTypeUse)],
         module_validator: &'a mut CoreValidator<'b>,
     ) -> Result<Self> {
+        let view_name = module_validator.resolve_function_ident(raw_name.clone())?;
         Ok(Self {
-            inner: TableValidator::new(raw_name, product_type_ref, product_type, module_validator)?,
+            inner: TableValidator::new(raw_name, product_type_ref, product_type, module_validator, |_, _| {
+                Ok(view_name.clone())
+            })?,
+            view_name,
             params,
             params_for_generate,
         })
@@ -967,25 +979,14 @@ impl<'a, 'b> ViewValidator<'a, 'b> {
                 .unwrap_or_else(|| RawIdentifier::new(format!("param_{}", col_id))),
         );
 
-        // This error will be created multiple times if the view name is invalid,
-        // but we sort and deduplicate the error stream afterwards,
-        // so it isn't a huge deal.
-        //
-        // This is necessary because we require `ErrorStream` to be nonempty.
-        // We need to put something in there if the view name is invalid.
-        let view_name = self
-            .inner
-            .module_validator
-            .resolve_identifier_with_case(self.inner.raw_name.clone());
-
-        let (name, view_name) = (name, view_name).combine_errors()?;
+        let name = name?;
 
         Ok(ViewParamDef {
             name,
             ty: column.algebraic_type.clone(),
             ty_for_generate: ty_for_generate.clone(),
             col_id,
-            view_name,
+            view_name: self.view_name.clone(),
         })
     }
 
@@ -1004,7 +1005,11 @@ impl<'a, 'b> ViewValidator<'a, 'b> {
     }
 }
 
-/// A partially validated table.
+/// A partially validated table-shaped definition.
+///
+/// This is also used by [`ViewValidator`]. Tables and views do not resolve
+/// their source names in the same namespace, so callers provide the
+/// appropriate name resolver.
 pub(crate) struct TableValidator<'a, 'b> {
     pub(crate) module_validator: &'a mut CoreValidator<'b>,
     raw_name: RawIdentifier,
@@ -1020,8 +1025,9 @@ impl<'a, 'b> TableValidator<'a, 'b> {
         product_type_ref: AlgebraicTypeRef,
         product_type: &'a ProductType,
         module_validator: &'a mut CoreValidator<'b>,
+        resolve_name: impl FnOnce(&CoreValidator<'b>, RawIdentifier) -> Result<Identifier>,
     ) -> Result<Self> {
-        let table_ident = module_validator.resolve_table_ident(raw_name.clone())?;
+        let table_ident = resolve_name(module_validator, raw_name.clone())?;
         Ok(Self {
             raw_name,
             product_type_ref,

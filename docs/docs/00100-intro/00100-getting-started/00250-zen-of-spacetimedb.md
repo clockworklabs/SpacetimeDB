@@ -11,7 +11,7 @@ Your entire application state lives in tables. Users, messages, game entities, s
 
 This simplifies your mental model dramatically and it makes the impossible possible. SpacetimeDB can hot-swap server code without disconnecting clients!
 
-When you need to store something, you define a table. When you need to query something, you query a table. When you need to update something, you update a table. When you want to restrict who can read data, you create [a table](../../00200-core-concepts/00200-functions/00500-views.md). 
+When you need to store something, you define a table. When you need to query something, you query a table. When you need to update something, you update a table. When you want to restrict who can read data, you create [a view](../../00200-core-concepts/00200-functions/00500-views.md) over a table. 
 
 ```
 Traditional stack:        SpacetimeDB:
@@ -80,7 +80,7 @@ Perfect consistency, always.
 
 ## Everything is Programmable
 
-SpacetimeDB doesn't limit you to declarative rules or configuration files. Your module is real code (Rust, C#, or TypeScript) running inside the database. You have the full power of a procedural, normal programming language at your disposal.
+SpacetimeDB doesn't limit you to declarative rules or configuration files. Your module is real code (Rust, C#, TypeScript, or C++) running inside the database. You have the full power of a procedural, normal programming language at your disposal.
 
 Need custom authorization logic? Write a function. Need to validate complex business rules? Write a function. Need to transform data before storing it? Write a function.
 

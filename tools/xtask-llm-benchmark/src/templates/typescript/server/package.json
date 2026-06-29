@@ -4,7 +4,7 @@
   "type": "module",
   "main": "src/lib.ts",
   "dependencies": {
-    "spacetimedb": "^1.11.0"
+    "spacetimedb": "{SPACETIME_TS_SDK_REF}"
   },
   "devDependencies": {
     "typescript": "^5.0.0"

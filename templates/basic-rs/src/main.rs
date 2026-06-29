@@ -1,7 +1,6 @@
 mod module_bindings;
 use module_bindings::*;
 use std::env;
-use std::io::{self, Read};
 
 use spacetimedb_sdk::{DbContext, Table};
 
@@ -40,7 +39,8 @@ fn main() {
         println!("New person: {}", person.name);
     });
 
-    println!("Press any key to exit...");
-
-    let _ = io::stdin().read(&mut [0u8]).unwrap();
+    // Keep the main thread alive so the connection stays open
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
 }

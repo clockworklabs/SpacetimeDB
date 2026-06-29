@@ -1,15 +1,15 @@
 import { table, schema, t } from 'spacetimedb/server';
 
-export const entity = table(
+const entity = table(
   {
     name: 'entity',
   },
   {
-    id: t.i32().primaryKey(),
+    id: t.u64().primaryKey().autoInc(),
   }
 );
 
-export const position = table(
+const position = table(
   {
     name: 'position',
   },
@@ -20,7 +20,7 @@ export const position = table(
   }
 );
 
-export const velocity = table(
+const velocity = table(
   {
     name: 'velocity',
   },
@@ -31,9 +31,9 @@ export const velocity = table(
   }
 );
 
-export const nextPosition = table(
+const nextPosition = table(
   {
-    name: 'nextPosition',
+    name: 'next_position',
   },
   {
     entityId: t.i32().primaryKey(),
@@ -46,10 +46,10 @@ const spacetimedb = schema({ entity, position, velocity, nextPosition });
 export default spacetimedb;
 
 export const seed = spacetimedb.reducer(ctx => {
-  ctx.db.entity.insert({ id: 1 });
-  ctx.db.entity.insert({ id: 2 });
+  ctx.db.entity.insert({ id: 0n });
+  ctx.db.entity.insert({ id: 0n });
 
-  ctx.db.position.insert({ entityId: 1, x: 1, y: 0 });
+  ctx.db.position.insert({ entityId: 1, x: 0, y: 0 });
   ctx.db.position.insert({ entityId: 2, x: 10, y: 0 });
 
   ctx.db.velocity.insert({ entityId: 1, vx: 1, vy: 0 });

@@ -1,5 +1,15 @@
 {
   "description": "Remix with TypeScript server",
+  "client_framework": "Remix",
   "client_lang": "typescript",
-  "server_lang": "typescript"
+  "server_lang": "typescript",
+  "builtWith": [
+    "remix-run",
+    "isbot",
+    "react",
+    "react-dom",
+    "typescript",
+    "vite",
+    "spacetimedb"
+  ]
 }

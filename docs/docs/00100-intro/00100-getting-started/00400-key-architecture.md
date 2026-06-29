@@ -316,8 +316,6 @@ Procedures can perform additional operations not possible in reducers, including
 However, procedures don't automatically run in database transactions,
 and must manually open and commit a transaction in order to read from or modify the database state.
 
-Procedures are currently in beta, and their API may change in upcoming SpacetimeDB releases.
-
 <Tabs groupId="syntax" queryString>
 <TabItem value="typescript" label="TypeScript">
 
@@ -497,10 +495,10 @@ A view can be written in a TypeScript module like so:
 ```typescript
 export const my_player = spacetimedb.view(
   { name: 'my_player', public: true },
-  t.option(players.row()),
+  t.option(players.rowType),
   (ctx) => {
     const row = ctx.db.players.identity.find(ctx.sender);
-    return row ?? null;
+    return row ?? undefined;
   }
 );
 ```
@@ -537,7 +535,7 @@ A view can be written in C++ like so:
 
 ```cpp
 SPACETIMEDB_VIEW(std::optional<Player>, my_player, Public, ViewContext ctx) {
-   return ctx.db[player_identity].find(ctx.sender);
+   return ctx.db[player_identity].find(ctx.sender());
 }
 ```
 
@@ -556,7 +554,7 @@ See [Views](../../00200-core-concepts/00200-functions/00500-views.md) for more d
 
 A **client** is an application that connects to a [database](#database). A client logs in using an [identity](#identity) and receives an [connection id](#connectionid) to identify the connection. After that, it can call [reducers](#reducer) and query public [tables](#table).
 
-Clients are written using the [client-side SDKs](../../00200-core-concepts/00600-clients.md). The `spacetime` CLI tool allows automatically generating code that works with the client-side SDKs to talk to a particular database.
+Clients are written using the [client-side SDKs](../../00200-core-concepts/00600-clients.md). The `spacetime` CLI tool allows automatically generating code that works with the client-side SDKs to talk to a particular database. The client SDKs internally maintain a long-lived streaming connection to SpacetimeDB, allowing high-performance real-time interactions.
 
 Clients are regular software applications that developers can choose how to deploy (through Steam, app stores, package managers, or any other software deployment method, depending on the needs of the application.)
 

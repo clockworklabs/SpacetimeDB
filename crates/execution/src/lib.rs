@@ -1,17 +1,51 @@
 use anyhow::Result;
 use core::hash::{Hash, Hasher};
 use core::ops::RangeBounds;
-use spacetimedb_lib::query::Delta;
-use spacetimedb_physical_plan::plan::{ProjectField, TupleField};
+use spacetimedb_lib::{hash_sender_view_args, identity::AuthCtx, query::Delta, AlgebraicType, Identity};
+use spacetimedb_physical_plan::plan::{
+    ParamResolver, ParamSlot, ProjectField, TupleField, PARAM_SENDER, PARAM_VIEW_ARG_HASH,
+};
 use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::bsatn::{BufReservedFill, EncodeError, ToBsatn};
 use spacetimedb_sats::buffer::BufWriter;
 use spacetimedb_sats::product_value::InvalidFieldError;
-use spacetimedb_sats::{impl_serialize, AlgebraicValue, ProductValue};
+use spacetimedb_sats::{impl_serialize, u256, AlgebraicValue, ProductValue};
 use spacetimedb_table::{static_assert_size, table::RowRef};
 
 pub mod dml;
 pub mod pipelined;
+
+#[derive(Debug, Clone, Copy)]
+pub struct ExecutionParams {
+    sender: Identity,
+    view_arg_hash: u256,
+}
+
+impl ExecutionParams {
+    pub fn from_sender(sender: Identity) -> Self {
+        Self {
+            sender,
+            view_arg_hash: hash_sender_view_args(sender).to_u256(),
+        }
+    }
+
+    pub fn from_auth(auth: &AuthCtx) -> Self {
+        Self::from_sender(auth.caller())
+    }
+}
+
+impl ParamResolver for ExecutionParams {
+    fn resolve_param(&self, param: ParamSlot, ty: &AlgebraicType) -> AlgebraicValue {
+        match param {
+            PARAM_SENDER if ty.is_identity() => self.sender.into(),
+            PARAM_SENDER if ty.is_bytes() => AlgebraicValue::Bytes(self.sender.to_be_byte_array().into()),
+            PARAM_SENDER => panic!("unsupported type for :sender: {ty:?}"),
+            PARAM_VIEW_ARG_HASH if matches!(ty, AlgebraicType::U256) => AlgebraicValue::U256(self.view_arg_hash.into()),
+            PARAM_VIEW_ARG_HASH => panic!("unsupported type for view arg hash: {ty:?}"),
+            ParamSlot(slot) => panic!("unknown physical plan parameter slot: {slot}"),
+        }
+    }
+}
 
 pub trait Datastore {
     /// Iterator type for table scans
@@ -95,7 +129,7 @@ pub trait DeltaStore {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Row<'a> {
     Ptr(RowRef<'a>),
     Ref(&'a ProductValue),
@@ -163,6 +197,73 @@ impl ToBsatn for Row<'_> {
         match self {
             Self::Ptr(ptr) => ptr.to_bsatn_vec(),
             Self::Ref(val) => val.to_bsatn_vec(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum RelValue<'a> {
+    Row(Row<'a>),
+    Projection(ProductValue),
+}
+
+impl<'a> From<Row<'a>> for RelValue<'a> {
+    fn from(value: Row<'a>) -> Self {
+        Self::Row(value)
+    }
+}
+
+impl From<ProductValue> for RelValue<'_> {
+    fn from(value: ProductValue) -> Self {
+        Self::Projection(value)
+    }
+}
+
+impl PartialEq for RelValue<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Row(x), Self::Row(y)) => x == y,
+            (Self::Projection(x), Self::Projection(y)) => x == y,
+            (Self::Row(x), Self::Projection(y)) | (Self::Projection(y), Self::Row(x)) => x.to_product_value() == *y,
+        }
+    }
+}
+
+impl Eq for RelValue<'_> {}
+
+impl Hash for RelValue<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Row(x) => x.hash(state),
+            Self::Projection(x) => x.hash(state),
+        }
+    }
+}
+
+impl_serialize!(['a] RelValue<'a>, (self, ser) => match self {
+    Self::Row(row) => row.serialize(ser),
+    Self::Projection(row) => row.serialize(ser),
+});
+
+impl ToBsatn for RelValue<'_> {
+    fn static_bsatn_size(&self) -> Option<u16> {
+        match self {
+            Self::Row(row) => row.static_bsatn_size(),
+            Self::Projection(row) => row.static_bsatn_size(),
+        }
+    }
+
+    fn to_bsatn_extend(&self, buf: &mut (impl BufWriter + BufReservedFill)) -> std::result::Result<(), EncodeError> {
+        match self {
+            Self::Row(row) => row.to_bsatn_extend(buf),
+            Self::Projection(row) => row.to_bsatn_extend(buf),
+        }
+    }
+
+    fn to_bsatn_vec(&self) -> std::result::Result<Vec<u8>, EncodeError> {
+        match self {
+            Self::Row(row) => row.to_bsatn_vec(),
+            Self::Projection(row) => row.to_bsatn_vec(),
         }
     }
 }

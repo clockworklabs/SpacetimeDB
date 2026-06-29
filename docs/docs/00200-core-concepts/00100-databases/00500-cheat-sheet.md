@@ -8,7 +8,7 @@ import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNot
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-Quick reference for SpacetimeDB module syntax across Rust, C#, and TypeScript.
+Quick reference for SpacetimeDB module syntax across Rust, C#, TypeScript, and C++.
 
 ## Project Setup
 
@@ -102,7 +102,7 @@ const status = t.enum('Status', ['Active', 'Inactive']);
 using SpacetimeDB;
 
 // Basic table
-[SpacetimeDB.Table(Public = true)]
+[SpacetimeDB.Table(Accessor = "Player", Public = true)]
 public partial struct Player
 {
     [SpacetimeDB.PrimaryKey]
@@ -116,26 +116,26 @@ public partial struct Player
     public int Score;
 }
 
-// Multi-column index
-[SpacetimeDB.Table]
-[SpacetimeDB.Index.BTree(Accessor = "idx", Columns = ["PlayerId", "Level"])]
+// Multi-column index (use new[] for attribute params — collection expressions invalid in attributes)
+[SpacetimeDB.Table(Accessor = "Score")]
+[SpacetimeDB.Index.BTree(Accessor = "idx", Columns = new[] { "PlayerId", "Level" })]
 public partial struct Score
 {
     public ulong PlayerId;
     public uint Level;
 }
 
-// Custom types
+// Sum types: TaggedEnum with partial record (not partial class)
 [SpacetimeDB.Type]
-public enum Status
-{
-    Active,
-    Inactive,
-}
+public partial record Status : TaggedEnum<(Unit Active, Unit Inactive)> { }
 ```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
+
+:::tip Table access
+Table accessors use **snake_case**. Use `ctx.db.player()` not `ctx.db.Player`.
+:::
 
 ```rust
 use spacetimedb::{table, SpacetimeType};
@@ -145,21 +145,21 @@ use spacetimedb::{table, SpacetimeType};
 pub struct Player {
     #[primary_key]
     #[auto_inc]
-    id: u64,
+    pub id: u64,
     #[unique]
-    username: String,
+    pub username: String,
     #[index(btree)]
-    score: i32,
+    pub score: i32,
 }
 
 // Multi-column index
 #[table(accessor = score, index(accessor = idx, btree(columns = [player_id, level])))]
 pub struct Score {
-    player_id: u64,
-    level: u32,
+    pub player_id: u64,
+    pub level: u32,
 }
 
-// Custom types
+// Custom types (product types need #[derive(SpacetimeType)])
 #[derive(SpacetimeType)]
 pub enum Status {
     Active,
@@ -230,9 +230,10 @@ export const update_score = spacetimedb.reducer({ id: t.u64(), points: t.i32() }
 
 // Query examples
 const player = ctx.db.player.id.find(123n);           // Find by primary key
-const players = ctx.db.player.username.filter('Alice'); // Filter by index
-const all = ctx.db.player.iter();                      // Iterate all
-ctx.db.player.id.delete(123n);                         // Delete by primary key
+const players = ctx.db.player.username.find('Alice'); // Find by unique index
+const players = ctx.db.player.score.filter(100);      // Filter by BTree index
+const all = ctx.db.player.iter();                     // Iterate all
+ctx.db.player.id.delete(123n);                        // Delete by primary key
 ```
 
 </TabItem>
@@ -260,7 +261,8 @@ public static void UpdateScore(ReducerContext ctx, ulong id, int points)
 
 // Query examples
 var player = ctx.Db.Player.Id.Find(123);           // Find by primary key
-var players = ctx.Db.Player.Username.Filter("Alice"); // Filter by index
+var player = ctx.Db.Player.Username.Find("Alice"); // Find by unique index
+var players = ctx.Db.Player.Score.Filter(100);     // Filter by BTree index
 var all = ctx.Db.Player.Iter();                    // Iterate all
 ctx.Db.Player.Id.Delete(123);                      // Delete by primary key
 ```
@@ -268,8 +270,12 @@ ctx.Db.Player.Id.Delete(123);                      // Delete by primary key
 </TabItem>
 <TabItem value="rust" label="Rust">
 
+:::warning Required for Reducers
+Include `Table` in imports when using `ctx.db.*.insert()`, `.iter()`, `.get_by_id()`, etc. Without it: `no method named 'insert' found`. Use `use spacetimedb::{..., Table};`
+:::
+
 ```rust
-use spacetimedb::{reducer, ReducerContext};
+use spacetimedb::{reducer, ReducerContext, Table};
 
 // Basic reducer
 #[reducer]
@@ -289,7 +295,8 @@ pub fn update_score(ctx: &ReducerContext, id: u64, points: i32) -> Result<(), St
 
 // Query examples
 let player = ctx.db.player().id().find(123);           // Find by primary key
-let players = ctx.db.player().username().filter("Alice"); // Filter by index
+let player = ctx.db.player().username().find("Alice"); // Find by unique index
+let players = ctx.db.player().score().filter(100)      // Filter by BTree index
 let all = ctx.db.player().iter();                      // Iterate all
 ctx.db.player().id().delete(123);                      // Delete by primary key
 ```
@@ -321,7 +328,8 @@ SPACETIMEDB_REDUCER(update_score, ReducerContext ctx, uint64_t id, int32_t point
 
 // Query examples
 auto player = ctx.db[player_id].find((uint64_t)123);            // Find by primary key
-auto player_by_name = ctx.db[player_username].find(std::string("Alice")); // Filter by unique index
+auto player_by_name = ctx.db[player_username].find(std::string("Alice")); // Find by unique index
+auto players_by_score = ctx.db[player_score].filter((int32_t)100); // Filter by BTree index.
 for (const auto& p : ctx.db[player]) { /* iterate all */ }      // Iterate all
 ctx.db[player_id].delete_by_key((uint64_t)123);                 // Delete by primary key
 ```
@@ -350,10 +358,10 @@ export const onDisconnect = spacetimedb.clientDisconnected(ctx => { /* ... */ })
 public static void Init(ReducerContext ctx) { /* ... */ }
 
 [SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
-public static void OnConnect(ReducerContext ctx) { /* ... */ }
+public static void ClientConnect(ReducerContext ctx) { /* ... */ }
 
 [SpacetimeDB.Reducer(ReducerKind.ClientDisconnected)]
-public static void OnDisconnect(ReducerContext ctx) { /* ... */ }
+public static void ClientDisconnect(ReducerContext ctx) { /* ... */ }
 ```
 
 </TabItem>
@@ -387,6 +395,10 @@ SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect, ReducerContext ctx) { /* ... */ }
 </Tabs>
 
 ## Schedule Tables
+
+:::important TypeScript: ScheduleAt import
+`ScheduleAt` is imported from `'spacetimedb'`, **not** from `'spacetimedb/server'`. Use: `import { ScheduleAt } from 'spacetimedb';`
+:::
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -435,15 +447,17 @@ public static void SendReminder(ReducerContext ctx, Reminder reminder)
 pub struct Reminder {
     #[primary_key]
     #[auto_inc]
-    id: u64,
-    message: String,
-    scheduled_at: ScheduleAt,
+    pub id: u64,
+    pub message: String,
+    pub scheduled_at: ScheduleAt,
 }
 
 #[reducer]
-fn send_reminder(ctx: &ReducerContext, reminder: Reminder) {
+pub fn send_reminder(ctx: &ReducerContext, reminder: Reminder) {
     log::info!("Reminder: {}", reminder.message);
 }
+
+// To schedule: Duration::from_millis(50).into() for ScheduleAt
 ```
 
 </TabItem>
@@ -521,6 +535,7 @@ public static string FetchData(ProcedureContext ctx, string url)
 
 ```rust
 // In Cargo.toml: spacetimedb = { version = "1.*", features = ["unstable"] }
+use spacetimedb::Table;
 
 #[spacetimedb::procedure]
 fn fetch_data(ctx: &mut ProcedureContext, url: String) -> String {
@@ -585,19 +600,32 @@ SPACETIMEDB_PROCEDURE(std::string, fetch_data, ProcedureContext ctx, std::string
 
 ```typescript
 // Return single row
-export const my_player = spacetimedb.view({ name: 'my_player' }, {}, t.option(player.rowType), ctx => {
+export const my_player = spacetimedb.view({ name: 'my_player', public: true }, t.option(player.rowType), ctx => {
   return ctx.db.player.identity.find(ctx.sender);
 });
 
 // Return potentially multiple rows
-export const top_players = spacetimedb.view({ name: 'top_players' }, {}, t.array(player.rowType), ctx => {
+export const top_players = spacetimedb.view({ name: 'top_players', public: true }, t.array(player.rowType), ctx => {
+  return ctx.db.player.score.filter(1000);
+});
+
+// Procedural view with update callbacks.
+// The returned row type has exactly one `.primaryKey()` column.
+export const top_players_with_updates = spacetimedb.view({ name: 'top_players_with_updates', public: true }, t.array(player.rowType), ctx => {
   return ctx.db.player.score.filter(1000);
 });
 
 // Perform a generic filter using the query builder.
 // Equivalent to `SELECT * FROM player WHERE score < 1000`.
-export const bottom_players = spacetimedb.view({ name: 'bottom_players' }, {}, t.array(player.rowType), ctx => {
+export const bottom_players = spacetimedb.view({ name: 'bottom_players', public: true }, t.array(player.rowType), ctx => {
   return ctx.from.player.where(p => p.score.lt(1000))
+});
+
+// Count rows in a table.
+export const player_count = spacetimedb.anonymousView({ name: 'player_count', public: true }, t.array(t.row('PlayerCount', {
+  count: t.u64(),
+})), ctx => {
+  return [{ count: ctx.db.player.count() }];
 });
 ```
 
@@ -608,25 +636,45 @@ export const bottom_players = spacetimedb.view({ name: 'bottom_players' }, {}, t
 using SpacetimeDB;
 
 // Return single row
-[SpacetimeDB.View(Public = true)]
+[SpacetimeDB.View(Accessor = "MyPlayer", Public = true)]
 public static Player? MyPlayer(ViewContext ctx)
 {
     return ctx.Db.Player.Identity.Find(ctx.Sender);
 }
 
 // Return potentially multiple rows
-[SpacetimeDB.View(Public = true)]
+[SpacetimeDB.View(Accessor = "TopPlayers", Public = true)]
 public static IEnumerable<Player> TopPlayers(ViewContext ctx)
+{
+    return ctx.Db.Player.Score.Filter(1000);
+}
+
+// Procedural view with update callbacks.
+[SpacetimeDB.View(Accessor = "TopPlayersWithUpdates", Public = true, PrimaryKey = "Id")]
+public static IEnumerable<Player> TopPlayersWithUpdates(ViewContext ctx)
 {
     return ctx.Db.Player.Score.Filter(1000);
 }
 
 // Perform a generic filter using the query builder.
 // Equivalent to `SELECT * FROM player WHERE score < 1000`.
-[SpacetimeDB.View(Public = true)]
+[SpacetimeDB.View(Accessor = "BottomPlayers", Public = true)]
 public static IQuery<Player> BottomPlayers(ViewContext ctx)
 {
-    return ctx.From.Player.Where(p => p.Score.Lt(1000));
+    return ctx.From.Player().Where(p => p.Score.Lt(1000));
+}
+
+// Count rows in a table.
+[SpacetimeDB.Type]
+public partial struct PlayerCount
+{
+    public ulong Count;
+}
+
+[SpacetimeDB.View(Accessor = "PlayerCount", Public = true)]
+public static List<PlayerCount> PlayerCountView(AnonymousViewContext ctx)
+{
+    return new List<PlayerCount> { new PlayerCount { Count = ctx.Db.Player.Count } };
 }
 ```
 
@@ -634,7 +682,7 @@ public static IQuery<Player> BottomPlayers(ViewContext ctx)
 <TabItem value="rust" label="Rust">
 
 ```rust
-use spacetimedb::{view, Query, ViewContext};
+use spacetimedb::{view, AnonymousViewContext, Query, SpacetimeType, ViewContext};
 
 // Return single row
 #[view(accessor = my_player, public)]
@@ -648,11 +696,30 @@ fn top_players(ctx: &ViewContext) -> Vec<Player> {
     ctx.db.player().score().filter(1000).collect()
 }
 
+// Procedural view with update callbacks.
+#[view(accessor = top_players_with_updates, public, primary_key = id)]
+fn top_players_with_updates(ctx: &ViewContext) -> Vec<Player> {
+    ctx.db.player().score().filter(1000).collect()
+}
+
 // Perform a generic filter using the query builder.
 // Equivalent to `SELECT * FROM player WHERE score < 1000`.
 #[view(accessor = bottom_players, public)]
 fn bottom_players(ctx: &ViewContext) -> impl Query<Player> {
     ctx.from.player().r#where(|p| p.score.lt(1000))
+}
+
+#[derive(SpacetimeType)]
+struct PlayerCount {
+    count: u64,
+}
+
+// Count rows in a table.
+#[view(accessor = player_count, public)]
+fn player_count(ctx: &AnonymousViewContext) -> Vec<PlayerCount> {
+    vec![PlayerCount {
+        count: ctx.db.player().count(),
+    }]
 }
 ```
 
@@ -664,12 +731,36 @@ using namespace SpacetimeDB;
 
 // Return single row using unique indexed field
 SPACETIMEDB_VIEW(std::optional<Player>, my_player, Public, ViewContext ctx) {
-    return ctx.db[player_identity].find(ctx.sender);
+    return ctx.db[player_identity].find(ctx.sender());
 }
 
 // Return multiple rows using indexed field
 SPACETIMEDB_VIEW(std::vector<Player>, top_players, Public, ViewContext ctx) {
     return ctx.db[player_score].filter(range_from(int32_t(1000))).collect();
+}
+
+// Procedural view with update callbacks.
+SPACETIMEDB_VIEW(std::vector<Player>, top_players_with_updates, Public, ViewContext ctx) {
+    return ctx.db[player_score].filter(range_from(int32_t(1000))).collect();
+}
+VIEW_PrimaryKey(top_players_with_updates, id)
+
+// Perform a generic filter using the query builder.
+// Equivalent to `SELECT * FROM player WHERE score < 1000`.
+SPACETIMEDB_VIEW(Query<Player>, bottom_players, Public, ViewContext ctx) {
+    return ctx.from[player].where([](const auto& p) {
+        return p.score.lt(int32_t(1000));
+    });
+}
+
+struct PlayerCount {
+    uint64_t count;
+};
+SPACETIMEDB_STRUCT(PlayerCount, count)
+
+// Count rows in a table.
+SPACETIMEDB_VIEW(std::optional<PlayerCount>, player_count, Public, AnonymousViewContext ctx) {
+    return std::optional<PlayerCount>(PlayerCount{ctx.db[player].count()});
 }
 ```
 
@@ -686,7 +777,7 @@ ctx.db                  // Database access
 ctx.sender              // Identity of caller
 ctx.connectionId        // ConnectionId | undefined
 ctx.timestamp           // Timestamp
-ctx.identity            // Module's identity
+ctx.databaseIdentity    // Module's identity
 ```
 
 </TabItem>
@@ -697,7 +788,7 @@ ctx.Db                  // Database access
 ctx.Sender              // Identity of caller
 ctx.ConnectionId        // ConnectionId?
 ctx.Timestamp           // Timestamp
-ctx.Identity            // Module's identity
+ctx.DatabaseIdentity    // Module's identity
 ctx.Rng                 // Random number generator
 ```
 
@@ -709,7 +800,7 @@ ctx.db                  // Database access
 ctx.sender()            // Identity of caller
 ctx.connection_id()     // Option<ConnectionId>
 ctx.timestamp           // Timestamp
-ctx.identity()          // Module's identity
+ctx.database_identity() // Module's identity
 ctx.rng()               // Random number generator
 ```
 
@@ -718,10 +809,10 @@ ctx.rng()               // Random number generator
 
 ```cpp
 ctx.db                  // Database access (Table accessor)
-ctx.sender              // Identity of caller (Identity type)
+ctx.sender()            // Identity of caller (Identity type)
 ctx.connection_id       // std::optional<ConnectionId>
 ctx.timestamp           // Timestamp of current transaction (Timestamp type)
-ctx.identity()          // Module's own identity (Identity type)
+ctx.database_identity() // Module's own identity (Identity type)
 ctx.rng()               // Random number generator (for seeded randomness)
 ```
 
@@ -769,6 +860,44 @@ LOG_WARN("Warning: " + msg);
 LOG_INFO("Info: " + msg);
 LOG_DEBUG("Debug: " + msg);
 ```
+
+</TabItem>
+</Tabs>
+
+## Common Mistakes
+
+<Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+1. **ScheduleAt import** — Import `ScheduleAt` from `'spacetimedb'`, not `'spacetimedb/server'`.
+2. **Schema-first** — Create `const spacetimedb = schema({...})` before reducers/init/clientConnected.
+3. **`schema()` shape** — Use `schema({ table })` or `schema({ a, b })`, not `schema(table)` or `schema(a, b)`.
+4. **Reducer naming** — Reducer names come from exports: `export const doThing = spacetimedb.reducer(...)`. Do not pass a string name.
+5. **No `ReducerContext` import** — Use the `ctx` parameter; do not import `ReducerContext`.
+6. **Export rules** — Only export schema, reducers, init, clientConnected, clientDisconnected, views. Keep helpers local.
+7. **Use `spacetimedb/server`** — For modules, use `spacetimedb/server` (builder API), not `spacetimedb-sdk` (client decorators).
+8. **`t.object` not `t.struct`** — Use `t.object('Name', {...})` for product types.
+9. **`autoInc` not `autoIncrement`** — Use `.autoInc()` on column builders.
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+_See Rust tab for module-specific tips._
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+1. **Missing Table import** — Add `use spacetimedb::Table` when using `insert`, `iter`, `get_by_id`, or `update`.
+2. **Wrong table access** — Use `ctx.db.user()` not `ctx.db.User` (accessor is snake_case).
+3. **Wrong scheduled table syntax** — Use `#[table(..., scheduled(reducer_name))]` (reducer name in parentheses). Not `schedule(reducer = ..., column = ...)` or `scheduled = tick`.
+4. **Missing `pub` on fields** — Struct and enum fields in tables must be `pub`.
+5. **Wrong reducer attribute** — Use `#[reducer]` or `#[spacetimedb::reducer]`, not `#[spacetime::reducer]`.
+6. **Product types** — Structs used in table columns need `#[derive(SpacetimeType)]`.
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+_See Rust tab for module-specific tips._
 
 </TabItem>
 </Tabs>

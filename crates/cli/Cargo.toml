@@ -58,7 +58,7 @@ regex.workspace = true
 reqwest.workspace = true
 rustyline.workspace = true
 serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true, features = ["raw_value", "preserve_order"] }
+serde_json = { workspace = true, features = ["raw_value", "preserve_order", "arbitrary_precision"] }
 serde_with = { workspace = true, features = ["chrono_0_4"] }
 slab.workspace = true
 syntect.workspace = true
@@ -88,6 +88,7 @@ xmltree.workspace = true
 quick-xml.workspace = true
 names.workspace = true
 notify.workspace = true
+path-clean = "1.0.1"
 
 [dev-dependencies]
 pretty_assertions.workspace = true

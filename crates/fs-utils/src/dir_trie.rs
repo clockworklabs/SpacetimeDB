@@ -167,11 +167,11 @@ impl DirTrie {
             return Ok(());
         }
 
-        if let Some(src_repo) = src_repo {
-            if self.try_hardlink_from(src_repo, file_id)? {
-                counter.objects_hardlinked += 1;
-                return Ok(());
-            }
+        if let Some(src_repo) = src_repo
+            && self.try_hardlink_from(src_repo, file_id)?
+        {
+            counter.objects_hardlinked += 1;
+            return Ok(());
         }
 
         let mut file = self.open_entry_writer(file_id)?;

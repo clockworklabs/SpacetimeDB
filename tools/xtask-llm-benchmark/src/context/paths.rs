@@ -1,6 +1,7 @@
-use crate::context::constants::docs_dir;
+use crate::context::constants::{docs_dir, is_empty_context_mode, skills_dir};
 use crate::context::hashing::gather_docs_files;
 use crate::context::{rustdoc_crate_root, rustdoc_readme_path};
+use crate::eval::lang::Lang;
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::Value;
 use std::path::PathBuf;
@@ -15,19 +16,59 @@ const PINNED_NIGHTLY: &str = "nightly-2026-01-15";
 pub fn resolve_mode_paths(mode: &str) -> Result<Vec<PathBuf>> {
     match mode {
         "docs" => gather_docs_files(),
-        "llms.md" => Ok(vec![docs_dir().join("llms.md")]),
-        "cursor_rules" => Ok(vec![docs_dir().join(".cursor/rules/spacetimedb.md")]),
+        "llms.md" => Ok(vec![docs_dir().join("static/llms.md")]),
+        "guidelines" => gather_skills_files(None),
         "rustdoc_json" => resolve_rustdoc_json_paths_always(),
-        other => bail!("unknown mode `{other}` (expected: docs | llms.md | cursor_rules | rustdoc_json)"),
+        m if is_empty_context_mode(m) => Ok(Vec::new()),
+        other => {
+            bail!("unknown mode `{other}` (expected: docs | llms.md | guidelines | rustdoc_json | no_context | search)")
+        }
     }
 }
 
-// --- hashing resolver stays as you wrote it ---
+/// Gather SKILL.md files from the skills/ directory.
+/// Always includes `concepts/SKILL.md`. When a language is specified,
+/// also includes the matching `{lang}-server/SKILL.md`.
+/// Without a language filter, includes all server skills.
+pub fn gather_skills_files(lang: Option<Lang>) -> Result<Vec<PathBuf>> {
+    let root = skills_dir();
+    if !root.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    let mut out = Vec::new();
+
+    // Always include concepts
+    let concepts = root.join("concepts/SKILL.md");
+    if concepts.is_file() {
+        out.push(concepts);
+    }
+
+    // Language-specific server skills
+    let server_dirs: Vec<&str> = match lang {
+        Some(Lang::Rust) => vec!["rust-server"],
+        Some(Lang::CSharp) => vec!["csharp-server"],
+        Some(Lang::TypeScript) => vec!["typescript-server"],
+        None => vec!["rust-server", "csharp-server", "typescript-server"],
+    };
+
+    for dir in server_dirs {
+        let skill = root.join(dir).join("SKILL.md");
+        if skill.is_file() {
+            out.push(skill);
+        }
+    }
+
+    out.sort();
+    Ok(out)
+}
+
 pub fn resolve_mode_paths_hashing(mode: &str) -> Result<Vec<PathBuf>> {
     match mode {
         "docs" => gather_docs_files(),
-        "llms.md" => Ok(vec![docs_dir().join("llms.md")]),
-        "cursor_rules" => Ok(vec![docs_dir().join(".cursor/rules/spacetimedb.md")]),
+        "llms.md" => Ok(vec![docs_dir().join("static/llms.md")]),
+        "guidelines" => gather_skills_files(None),
+        m if is_empty_context_mode(m) => Ok(Vec::new()),
         "rustdoc_json" => {
             if let Some(p) = rustdoc_readme_path() {
                 Ok(vec![p])
@@ -35,7 +76,9 @@ pub fn resolve_mode_paths_hashing(mode: &str) -> Result<Vec<PathBuf>> {
                 bail!("README not found under {}", rustdoc_crate_root().display())
             }
         }
-        other => bail!("unknown mode `{other}` (expected: docs | llms.md | cursor_rules | rustdoc_json)"),
+        other => {
+            bail!("unknown mode `{other}` (expected: docs | llms.md | guidelines | rustdoc_json | no_context | search)")
+        }
     }
 }
 

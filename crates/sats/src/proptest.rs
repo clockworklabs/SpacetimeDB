@@ -212,7 +212,7 @@ fn generate_array_value(ty: AlgebraicType) -> BoxedStrategy<ArrayValue> {
     }
 }
 
-fn gen_with<T: Clone + Debug, US: Strategy>(
+pub fn gen_with<T: Clone + Debug, US: Strategy>(
     with: impl Strategy<Value = T>,
     then: impl Fn(T) -> US,
 ) -> impl Strategy<Value = (T, US::Value)> {

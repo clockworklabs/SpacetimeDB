@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SpacetimeDB.Runtime" Version="1.6" />
+    <PackageReference Include="SpacetimeDB.Runtime" Version="{SPACETIME_CSHARP_RUNTIME_VERSION}" />
   </ItemGroup>
 
 </Project>

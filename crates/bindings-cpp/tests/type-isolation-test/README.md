@@ -5,11 +5,17 @@ Comprehensive test framework for systematically testing individual C++ types wit
 ## Quick Start
 
 ```bash
-# Run all tests with default parallelism (16 builds)
+# Run default V10 regression checks (16-way parallel build)
 ./run_type_isolation_test.sh
 
 # Run with custom parallelism
 ./run_type_isolation_test.sh 8
+
+# Explicit V10 regression mode (same as default)
+./run_type_isolation_test.sh --v10-regression
+
+# Run broader legacy/full suite (V9 check path)
+./run_type_isolation_test.sh --v9
 
 # Monitor progress in real-time (separate terminal)
 watch -n 1 cat test_summary_live.txt

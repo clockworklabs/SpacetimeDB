@@ -1,5 +1,12 @@
 {
   "description": "Nuxt web app with TypeScript server",
+  "client_framework": "Nuxt",
   "client_lang": "typescript",
-  "server_lang": "typescript"
+  "server_lang": "typescript",
+  "builtWith": [
+    "nuxt",
+    "vue",
+    "typescript",
+    "spacetimedb"
+  ]
 }

@@ -41,11 +41,13 @@ fn will_panic(_ctx: &mut ProcedureContext) {
 }
 
 #[procedure]
-fn read_my_schema(ctx: &mut ProcedureContext) -> String {
-    let module_identity = ctx.identity();
-    match ctx.http.get(format!(
-        "http://localhost:3000/v1/database/{module_identity}/schema?version=9"
-    )) {
+fn read_my_schema(ctx: &mut ProcedureContext, server_url: String) -> String {
+    let module_identity = ctx.database_identity();
+    let server_url = server_url.trim_end_matches('/');
+    match ctx
+        .http
+        .get(format!("{server_url}/v1/database/{module_identity}/schema?version=9"))
+    {
         Ok(result) => result.into_body().into_string_lossy(),
         Err(e) => panic!("{e}"),
     }
@@ -168,10 +170,10 @@ fn sorted_uuids_insert(ctx: &mut ProcedureContext) {
         // Verify UUIDs are sorted
         let mut last_uuid = None;
         for row in ctx.db.pk_uuid().iter() {
-            if let Some(last) = last_uuid {
-                if last >= row.u {
-                    panic!("UUIDs are not sorted correctly");
-                }
+            if let Some(last) = last_uuid
+                && last >= row.u
+            {
+                panic!("UUIDs are not sorted correctly");
             }
             last_uuid = Some(row.u);
         }

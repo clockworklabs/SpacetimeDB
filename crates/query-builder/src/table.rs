@@ -149,11 +149,12 @@ impl<T: HasCols> Table<T> {
         RawQuery::new(format!(r#"SELECT * FROM "{}""#, self.table_name))
     }
 
-    pub fn r#where<F>(self, f: F) -> FromWhere<T>
+    pub fn r#where<F, E>(self, f: F) -> FromWhere<T>
     where
-        F: Fn(&T::Cols) -> BoolExpr<T>,
+        F: Fn(&T::Cols) -> E,
+        E: Into<BoolExpr<T>>,
     {
-        let expr = f(&T::cols(self.table_name));
+        let expr = f(&T::cols(self.table_name)).into();
         FromWhere {
             table_name: self.table_name,
             expr,
@@ -161,20 +162,22 @@ impl<T: HasCols> Table<T> {
     }
 
     // Filter is an alias for where
-    pub fn filter<F>(self, f: F) -> FromWhere<T>
+    pub fn filter<F, E>(self, f: F) -> FromWhere<T>
     where
-        F: Fn(&T::Cols) -> BoolExpr<T>,
+        F: Fn(&T::Cols) -> E,
+        E: Into<BoolExpr<T>>,
     {
         self.r#where(f)
     }
 }
 
 impl<T: HasCols> FromWhere<T> {
-    pub fn r#where<F>(self, f: F) -> Self
+    pub fn r#where<F, E>(self, f: F) -> Self
     where
-        F: Fn(&T::Cols) -> BoolExpr<T>,
+        F: Fn(&T::Cols) -> E,
+        E: Into<BoolExpr<T>>,
     {
-        let extra = f(&T::cols(self.table_name));
+        let extra = f(&T::cols(self.table_name)).into();
         Self {
             table_name: self.table_name,
             expr: self.expr.and(extra),
@@ -182,9 +185,10 @@ impl<T: HasCols> FromWhere<T> {
     }
 
     // Filter is an alias for where
-    pub fn filter<F>(self, f: F) -> Self
+    pub fn filter<F, E>(self, f: F) -> Self
     where
-        F: Fn(&T::Cols) -> BoolExpr<T>,
+        F: Fn(&T::Cols) -> E,
+        E: Into<BoolExpr<T>>,
     {
         self.r#where(f)
     }

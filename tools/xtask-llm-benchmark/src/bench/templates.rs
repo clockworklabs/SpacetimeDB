@@ -43,6 +43,31 @@ fn tmpl_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src").join("templates")
 }
 
+/// Workspace root (public/) for local SDK paths.
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("xtask-llm-benchmark is under public/tools/xtask-llm-benchmark")
+        .to_path_buf()
+}
+
+/// Relative path from materialized root to a workspace subpath (e.g. "crates/bindings").
+/// Avoids Windows canonical paths (//?/D:/...) which can break Cargo/MSBuild/pnpm.
+fn relative_to_workspace(root: &Path, ws_subpath: &str) -> Result<String> {
+    let ws = workspace_root()
+        .canonicalize()
+        .with_context(|| "workspace root not found")?;
+    let root_canon = root
+        .canonicalize()
+        .with_context(|| format!("materialized root not found: {}", root.display()))?;
+    let root_rel = root_canon
+        .strip_prefix(&ws)
+        .with_context(|| format!("materialized dir {:?} not under workspace {:?}", root_canon, ws))?;
+    let ups = root_rel.components().count();
+    Ok(std::iter::repeat_n("..", ups).collect::<Vec<_>>().join("/") + "/" + ws_subpath)
+}
+
 fn copy_tree_with_templates(src: &Path, dst: &Path) -> Result<()> {
     fn recurse(from: &Path, to: &Path) -> Result<()> {
         fs::create_dir_all(to)?;
@@ -51,7 +76,8 @@ fn copy_tree_with_templates(src: &Path, dst: &Path) -> Result<()> {
             let p = entry.path();
             let rel = p.strip_prefix(from)?;
             let out_path = to.join(rel);
-            if entry.file_type()?.is_dir() {
+            // Use p.metadata() (follows symlinks) so directory symlinks recurse correctly.
+            if p.metadata().map(|m| m.is_dir()).unwrap_or(false) {
                 recurse(&p, &out_path)?;
             } else if out_path.extension().and_then(|e| e.to_str()) == Some("tmpl") {
                 let rendered_path = out_path.with_extension("");
@@ -98,7 +124,22 @@ fn inject_rust(root: &Path, llm_code: &str) -> anyhow::Result<()> {
         }
         contents.push_str(&cleaned);
     }
-    fs::write(&lib, contents).with_context(|| format!("write {}", lib.display()))
+    fs::write(&lib, contents).with_context(|| format!("write {}", lib.display()))?;
+
+    let relative = relative_to_workspace(root, "crates/bindings")?;
+    let sdk_path = workspace_root().join("crates/bindings");
+    if !sdk_path.is_dir() {
+        bail!("local Rust SDK not found at {}", sdk_path.display());
+    }
+    let replacement = format!(r#"spacetimedb = {{ path = "{}" }}"#, relative);
+    let cargo_toml = root.join("Cargo.toml");
+    let mut toml = fs::read_to_string(&cargo_toml).with_context(|| format!("read {}", cargo_toml.display()))?;
+    toml = toml.replace(
+        "spacetimedb = { path = \"../../../../../../sdks/rust/\" }",
+        &replacement,
+    );
+    fs::write(&cargo_toml, toml).with_context(|| format!("write {}", cargo_toml.display()))?;
+    Ok(())
 }
 
 fn inject_csharp(root: &Path, llm_code: &str) -> anyhow::Result<()> {
@@ -116,7 +157,107 @@ fn inject_csharp(root: &Path, llm_code: &str) -> anyhow::Result<()> {
         }
         contents.push_str(&cleaned);
     }
-    fs::write(&prog, contents).with_context(|| format!("write {}", prog.display()))
+    fs::write(&prog, contents).with_context(|| format!("write {}", prog.display()))?;
+
+    let runtime_csproj = workspace_root().join("crates/bindings-csharp/Runtime/Runtime.csproj");
+    if !runtime_csproj.is_file() {
+        bail!("local C# Runtime not found at {}", runtime_csproj.display());
+    }
+    let runtime_version = read_csharp_package_version(&runtime_csproj)?;
+    let csproj_path = root.join("StdbModule.csproj");
+    let mut csproj = fs::read_to_string(&csproj_path).with_context(|| format!("read {}", csproj_path.display()))?;
+    csproj = csproj.replace("{SPACETIME_CSHARP_RUNTIME_VERSION}", &runtime_version);
+    fs::write(&csproj_path, csproj).with_context(|| format!("write {}", csproj_path.display()))?;
+
+    write_csharp_nuget_config(root)?;
+    Ok(())
+}
+
+fn read_csharp_package_version(csproj_path: &Path) -> Result<String> {
+    let contents = fs::read_to_string(csproj_path).with_context(|| format!("read {}", csproj_path.display()))?;
+    let version = contents
+        .split("<Version>")
+        .nth(1)
+        .and_then(|rest| rest.split("</Version>").next())
+        .map(str::trim)
+        .filter(|version| !version.is_empty())
+        .with_context(|| format!("missing <Version> in {}", csproj_path.display()))?;
+    Ok(version.to_owned())
+}
+
+fn normalize_nuget_path(path: &Path) -> String {
+    path.display()
+        .to_string()
+        .replace('\\', "/")
+        .trim_end_matches('/')
+        .to_string()
+}
+
+fn ensure_csharp_package_source(path: &Path, package_id: &str) -> Result<()> {
+    let has_package = fs::read_dir(path).ok().into_iter().flatten().flatten().any(|entry| {
+        entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| name.starts_with(package_id) && name.ends_with(".nupkg"))
+    });
+    if !has_package {
+        bail!(
+            "local C# package {} not found in {}. Run: dotnet pack -c Release crates/bindings-csharp/{}",
+            package_id,
+            path.display(),
+            package_id.strip_prefix("SpacetimeDB.").unwrap_or(package_id)
+        );
+    }
+    Ok(())
+}
+
+fn write_csharp_nuget_config(root: &Path) -> Result<()> {
+    let workspace = workspace_root();
+    let runtime_source = workspace.join("crates/bindings-csharp/Runtime/bin/Release");
+    let bsatn_source = workspace.join("crates/bindings-csharp/BSATN.Runtime/bin/Release");
+
+    ensure_csharp_package_source(&runtime_source, "SpacetimeDB.Runtime")?;
+    ensure_csharp_package_source(&bsatn_source, "SpacetimeDB.BSATN.Runtime")?;
+
+    let package_cache = root.join(".nuget/packages");
+    if package_cache.exists() {
+        fs::remove_dir_all(&package_cache).with_context(|| format!("remove {}", package_cache.display()))?;
+    }
+    fs::create_dir_all(&package_cache).with_context(|| format!("create {}", package_cache.display()))?;
+
+    let nuget_config = format!(
+        r#"<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <config>
+    <add key="globalPackagesFolder" value="{}" />
+  </config>
+  <packageSources>
+    <clear />
+    <add key="spacetimedb-runtime" value="{}" />
+    <add key="spacetimedb-bsatn-runtime" value="{}" />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+  <packageSourceMapping>
+    <packageSource key="spacetimedb-runtime">
+      <package pattern="SpacetimeDB.Runtime" />
+    </packageSource>
+    <packageSource key="spacetimedb-bsatn-runtime">
+      <package pattern="SpacetimeDB.BSATN.Runtime" />
+    </packageSource>
+    <packageSource key="nuget.org">
+      <package pattern="*" />
+    </packageSource>
+  </packageSourceMapping>
+</configuration>
+"#,
+        normalize_nuget_path(&package_cache),
+        normalize_nuget_path(&runtime_source),
+        normalize_nuget_path(&bsatn_source),
+    );
+
+    fs::write(root.join("nuget.config"), nuget_config)
+        .with_context(|| format!("write {}", root.join("nuget.config").display()))?;
+    Ok(())
 }
 
 fn inject_typescript(root: &Path, llm_code: &str) -> anyhow::Result<()> {
@@ -134,7 +275,26 @@ fn inject_typescript(root: &Path, llm_code: &str) -> anyhow::Result<()> {
         }
         contents.push_str(&cleaned);
     }
-    fs::write(&lib, contents).with_context(|| format!("write {}", lib.display()))
+    fs::write(&lib, contents).with_context(|| format!("write {}", lib.display()))?;
+
+    let relative = relative_to_workspace(root, "crates/bindings-typescript")?;
+    let sdk_path = workspace_root().join("crates/bindings-typescript");
+    if !sdk_path.is_dir() {
+        bail!("local TypeScript SDK not found at {}", sdk_path.display());
+    }
+    let dist_server = sdk_path.join("dist/server/index.mjs");
+    if !dist_server.is_file() {
+        bail!(
+            "local TypeScript SDK at {} is not built (missing dist/server). Run: pnpm build (in crates/bindings-typescript)",
+            sdk_path.display()
+        );
+    }
+    let replacement = format!("file:{}", relative);
+    let package_json = root.join("package.json");
+    let mut pkg = fs::read_to_string(&package_json).with_context(|| format!("read {}", package_json.display()))?;
+    pkg = pkg.replace("{SPACETIME_TS_SDK_REF}", &replacement);
+    fs::write(&package_json, pkg).with_context(|| format!("write {}", package_json.display()))?;
+    Ok(())
 }
 
 /// Remove leading/trailing Markdown fences like ```rust ... ``` or ~~~

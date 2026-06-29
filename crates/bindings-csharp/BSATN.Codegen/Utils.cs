@@ -33,11 +33,24 @@ public static class Utils
         .AddMemberOptions(SymbolDisplayMemberOptions.IncludeContainingType)
         .AddMiscellaneousOptions(
             SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier
+                | SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers
         );
 
     public static string SymbolToName(ISymbol symbol)
     {
         return symbol.ToDisplayString(SymbolFormat);
+    }
+
+    public static string EscapeIdentifier(string name)
+    {
+        if (name.Length > 0 && name[0] == '@')
+        {
+            return name;
+        }
+
+        var kind = SyntaxFacts.GetKeywordKind(name);
+        var contextualKind = SyntaxFacts.GetContextualKeywordKind(name);
+        return kind != SyntaxKind.None || contextualKind != SyntaxKind.None ? $"@{name}" : name;
     }
 
     public static void RegisterSourceOutputs(
@@ -162,6 +175,7 @@ public static class Utils
                 "SpacetimeDB.I256" => "SpacetimeDB.BSATN.I256",
                 "SpacetimeDB.U256" => "SpacetimeDB.BSATN.U256",
                 "System.Collections.Generic.List<T>" => $"SpacetimeDB.BSATN.List",
+                "System.Collections.Generic.IEnumerable<T>" => $"SpacetimeDB.BSATN.List",
                 // If we're here, then this is nullable *value* type like `int?`.
                 "System.Nullable<T>" => $"SpacetimeDB.BSATN.ValueOption",
                 var name when name.StartsWith("System.") => throw new InvalidOperationException(

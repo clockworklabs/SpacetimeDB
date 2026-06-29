@@ -1,7 +1,5 @@
 use crate::eval::defaults::{
-    default_schema_parity_scorers,
-    make_reducer_sql_count_scorer,
-    make_sql_exec_both_scorer,
+    default_schema_parity_scorers, make_reducer_call_both_scorer, make_reducer_sql_count_scorer,
 };
 use crate::eval::{casing_for_lang, ident, table_name, BenchmarkSpec, ReducerSqlCountConfig, SqlBuilder};
 use serde_json::Value;
@@ -14,29 +12,33 @@ pub fn spec() -> BenchmarkSpec {
         let casing = casing_for_lang(lang);
         let sb = SqlBuilder::new(casing);
         let user_table = table_name("user", lang);
-        let seed = sb.insert_values(&user_table, &["id","name","age","active"], &["1","'Alice'","30","true"]);
         let count = sb.count_by_id(&user_table, "id", 1);
-        let reducer_name = ident("DeleteUser", casing);
+        let insert_reducer = ident("InsertUser", crate::eval::Casing::Snake);
+        let delete_reducer = ident("DeleteUser", crate::eval::Casing::Snake);
 
-        v.push(make_sql_exec_both_scorer(
+        // Seed a user row via reducer on both DBs (auto-inc assigns id=1)
+        v.push(make_reducer_call_both_scorer(
             host_url,
             file!(),
             route_tag,
-            &seed,
-            "seed_users_row",
-            time::Duration::from_secs(10),
+            &insert_reducer,
+            vec![Value::from("Alice"), Value::from(30), Value::from(true)],
+            "seed_user_via_reducer",
         ));
 
-        v.push(make_reducer_sql_count_scorer(host_url, ReducerSqlCountConfig {
-            src_file: file!(),
-            route_tag,
-            reducer: reducer_name.into(),
-            args: vec![Value::from(1)],
-            sql_count_query: count.clone(),
-            expected_count: 0,
-            id_str: "delete_user_count_zero",
-            timeout: time::Duration::from_secs(10),
-        }));
+        v.push(make_reducer_sql_count_scorer(
+            host_url,
+            ReducerSqlCountConfig {
+                src_file: file!(),
+                route_tag,
+                reducer: delete_reducer.into(),
+                args: vec![Value::from(1)],
+                sql_count_query: count.clone(),
+                expected_count: 0,
+                id_str: "delete_user_count_zero",
+                timeout: time::Duration::from_secs(10),
+            },
+        ));
 
         v
     })

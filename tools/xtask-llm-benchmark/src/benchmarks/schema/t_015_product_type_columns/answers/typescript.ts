@@ -1,21 +1,21 @@
 import { table, schema, t } from 'spacetimedb/server';
 
-export const Address = t.object('Address', {
+const Address = t.object('Address', {
   street: t.string(),
   zip: t.i32(),
 });
 
-export const Position = t.object('Position', {
+const Position = t.object('Position', {
   x: t.i32(),
   y: t.i32(),
 });
 
-export const profile = table(
+const profile = table(
   {
     name: 'profile',
   },
   {
-    id: t.i32().primaryKey(),
+    id: t.u64().primaryKey().autoInc(),
     home: Address,
     work: Address,
     pos: Position,
@@ -27,7 +27,7 @@ export default spacetimedb;
 
 export const seed = spacetimedb.reducer(ctx => {
   ctx.db.profile.insert({
-    id: 1,
+    id: 0n,
     home: { street: '1 Main', zip: 11111 },
     work: { street: '2 Broad', zip: 22222 },
     pos: { x: 7, y: 9 },

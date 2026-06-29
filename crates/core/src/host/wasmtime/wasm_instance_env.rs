@@ -13,13 +13,16 @@ use crate::host::wasm_common::module_host_actor::{
 };
 use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, RowIters, TimingSpan, TimingSpanIdx, TimingSpanSet};
 use crate::host::AbiCall;
+use crate::resource::ModuleInstanceMemoryTracker;
 use crate::subscription::module_subscription_manager::TransactionOffset;
+use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, Context as _};
+use prometheus::IntGauge;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
-use spacetimedb_lib::{bsatn, ConnectionId, Timestamp};
+use spacetimedb_lib::{bsatn, ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
-use spacetimedb_primitives::{errno, ColId};
+use spacetimedb_primitives::{errno, ColId, ViewFnPtr};
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::identifier::Identifier;
 use std::future::Future;
@@ -115,8 +118,11 @@ pub(super) struct WasmInstanceEnv {
     /// Recall that zero is [`BytesSourceId::INVALID`], so we have to start at 1.
     next_bytes_source_id: NonZeroU32,
 
-    /// The standard sink used for [`Self::bytes_sink_write`].
-    standard_bytes_sink: Option<Vec<u8>>,
+    /// `File`-like byte sinks which guest code can write via [`Self::bytes_sink_write`].
+    bytes_sinks: IntMap<u32, Vec<u8>>,
+
+    /// Counter as a source of sink IDs.
+    next_bytes_sink_id: NonZeroU32,
 
     /// The slab of `BufferIters` created for this instance.
     iters: RowIters,
@@ -133,9 +139,66 @@ pub(super) struct WasmInstanceEnv {
     /// A pool of unused allocated chunks that can be reused.
     // TODO(Centril): consider using this pool for `console_timer_start` and `bytes_sink_write`.
     chunk_pool: ChunkPool,
+
+    linear_memory_size_metric: WasmMemoryBytesMetric,
 }
 
-const STANDARD_BYTES_SINK: u32 = 1;
+pub(in crate::host) struct WasmMemoryBytesMetric {
+    wasm_memory_bytes: IntGauge,
+    tracker: ModuleInstanceMemoryTracker,
+
+    /// Previous value observed by this intance.
+    ///
+    /// In [`Self::observe`], we use this to compute a delta against the instance's new memory usage,
+    /// then increment/decrement the metric value by that delta.
+    /// We do this rather than `set`ting the metric value as multiple instances may coexist
+    /// and share the same metric label value.
+    /// This happens when a database has procedures and reducers running concurrently,
+    /// and may also happen during a module update, as there may be a period when
+    /// the new version has already been instantiated but the old version has not yet shut down.
+    last_observed: i64,
+}
+
+impl WasmMemoryBytesMetric {
+    fn new(database_identity: Identity, tracker: ModuleInstanceMemoryTracker) -> Self {
+        Self {
+            wasm_memory_bytes: WORKER_METRICS.wasm_memory_bytes.with_label_values(&database_identity),
+            tracker,
+            last_observed: 0,
+        }
+    }
+
+    fn observe(&mut self, memory_usage: usize) {
+        let memory_usage = memory_usage as i64;
+
+        let delta = memory_usage - self.last_observed;
+
+        if delta > 0 {
+            self.wasm_memory_bytes.add(delta);
+        } else {
+            self.wasm_memory_bytes.sub(-delta);
+        }
+
+        // Each WASM instance reports only its own delta.
+        // The shared tracker folds those deltas into a database-wide aggregate
+        // used for memory-limit enforcement.
+        self.tracker.adjust_wasm_linear(delta);
+        self.last_observed = memory_usage;
+    }
+
+    pub(in crate::host) fn remove_all_metric_label_values_for_database(database_identity: &Identity) {
+        let _ = WORKER_METRICS.wasm_memory_bytes.remove_label_values(database_identity);
+    }
+}
+
+impl Drop for WasmMemoryBytesMetric {
+    fn drop(&mut self) {
+        // Clean up this instance's metric value by subtracting its part of the usage.
+        self.wasm_memory_bytes.sub(self.last_observed);
+        // Remove this instance's contribution from the database-wide aggregate.
+        self.tracker.adjust_wasm_linear(-self.last_observed);
+    }
+}
 
 type WasmResult<T> = Result<T, WasmError>;
 type RtResult<T> = anyhow::Result<T>;
@@ -145,6 +208,8 @@ type RtResult<T> = anyhow::Result<T>;
 impl WasmInstanceEnv {
     /// Create a new `WasmEnstanceEnv` from the given `InstanceEnv`.
     pub fn new(instance_env: InstanceEnv) -> Self {
+        let database_identity = *instance_env.database_identity();
+        let instance_memory_tracker = instance_env.replica_ctx.module_instance_memory_tracker.clone();
         Self {
             instance_env,
             module_def: None,
@@ -153,11 +218,13 @@ impl WasmInstanceEnv {
             mem: None,
             bytes_sources: IntMap::default(),
             next_bytes_source_id: NonZeroU32::new(1).unwrap(),
-            standard_bytes_sink: None,
+            bytes_sinks: IntMap::default(),
+            next_bytes_sink_id: NonZeroU32::new(1).unwrap(),
             iters: Default::default(),
             timing_spans: Default::default(),
             call_times: CallTimes::new(),
             chunk_pool: <_>::default(),
+            linear_memory_size_metric: WasmMemoryBytesMetric::new(database_identity, instance_memory_tracker),
         }
     }
 
@@ -167,6 +234,15 @@ impl WasmInstanceEnv {
             .checked_add(1)
             .context("Allocating next `BytesSourceId` overflowed `u32`")?;
         Ok(BytesSourceId(id.into()))
+    }
+
+    fn alloc_bytes_sink_id(&mut self) -> u32 {
+        let id = self.next_bytes_sink_id.get();
+        self.next_bytes_sink_id = self
+            .next_bytes_sink_id
+            .checked_add(1)
+            .expect("allocating next `BytesSink` overflowed `u32`");
+        id
     }
 
     /// Binds `bytes` to the environment and assigns it an ID.
@@ -195,6 +271,10 @@ impl WasmInstanceEnv {
         }
     }
 
+    pub fn create_extra_bytes_source(&mut self, bytes: bytes::Bytes) -> RtResult<BytesSourceId> {
+        self.create_bytes_source(bytes)
+    }
+
     fn free_bytes_source(&mut self, id: BytesSourceId) {
         if self.bytes_sources.remove(&id).is_none() {
             log::warn!("`free_bytes_source` on non-existent source {id:?}");
@@ -216,6 +296,11 @@ impl WasmInstanceEnv {
         self.call_view_anon = call_view_anon;
     }
 
+    /// Record an observation in [`Self::linear_memory_size_metric`].
+    pub fn record_memory_size(&mut self, memory_size: usize) {
+        self.linear_memory_size_metric.observe(memory_size);
+    }
+
     /// Returns a reference to the memory, assumed to be initialized.
     pub fn get_mem(&self) -> Mem {
         self.mem.expect("Initialized memory")
@@ -232,16 +317,14 @@ impl WasmInstanceEnv {
         &self.instance_env
     }
 
-    /// Setup the standard bytes sink and return a handle to it for writing.
-    pub fn setup_standard_bytes_sink(&mut self) -> u32 {
-        self.standard_bytes_sink = Some(Vec::new());
-        STANDARD_BYTES_SINK
+    pub fn create_bytes_sink(&mut self) -> u32 {
+        let id = self.alloc_bytes_sink_id();
+        self.bytes_sinks.insert(id, Vec::new());
+        id
     }
 
-    /// Extract all the bytes written to the standard bytes sink
-    /// and prevent further writes to it.
-    pub fn take_standard_bytes_sink(&mut self) -> Vec<u8> {
-        self.standard_bytes_sink.take().unwrap_or_default()
+    pub fn take_bytes_sink(&mut self, sink: u32) -> Vec<u8> {
+        self.bytes_sinks.remove(&sink).unwrap_or_default()
     }
 
     /// Signal to this `WasmInstanceEnv` that a reducer or procedure call is beginning.
@@ -258,13 +341,13 @@ impl WasmInstanceEnv {
         // Create the output sink.
         // Reducers which fail will write their error message here.
         // Procedures will write their result here.
-        let errors = self.setup_standard_bytes_sink();
+        let result_sink = self.create_bytes_sink();
 
         let args = self.create_bytes_source(args).unwrap();
 
         self.instance_env.start_funcall(name, ts, func_type);
 
-        (args, errors)
+        (args, result_sink)
     }
 
     /// Returns the name of the most recent reducer or procedure to be run in this environment,
@@ -284,7 +367,7 @@ impl WasmInstanceEnv {
     /// and the errors written by the WASM code to the standard error sink.
     ///
     /// This resets the call times and clears the arguments source and error sink.
-    pub fn finish_funcall(&mut self) -> (ExecutionTimings, Vec<u8>) {
+    pub fn finish_funcall(&mut self, result_sink: u32) -> (ExecutionTimings, Vec<u8>) {
         // For the moment,
         // we only explicitly clear the source/sink buffers and the "syscall" times.
         // TODO: should we be clearing `iters` and/or `timing_spans`?
@@ -303,8 +386,11 @@ impl WasmInstanceEnv {
         // so that we don't leak either the IDs or the buffers themselves.
         self.bytes_sources = IntMap::default();
         self.next_bytes_source_id = NonZeroU32::new(1).unwrap();
+        let result_bytes = self.take_bytes_sink(result_sink);
+        self.bytes_sinks = IntMap::default();
+        self.next_bytes_sink_id = NonZeroU32::new(1).unwrap();
 
-        (timings, self.take_standard_bytes_sink())
+        (timings, result_bytes)
     }
 
     /// After a procedure has finished, take its known last tx offset, if any.
@@ -1153,6 +1239,29 @@ impl WasmInstanceEnv {
         })
     }
 
+    /// Deletes all rows in the table identified by `table_id`.
+    ///
+    /// The number of rows deleted is written to the WASM pointer `out`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `out` is NULL or `out[..size_of::<u64>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn datastore_clear(caller: Caller<'_, Self>, table_id: u32, out: WasmPtr<u64>) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::DatastoreClear, out, |caller| {
+            let (_, env) = Self::mem_env(caller);
+            Ok(env.instance_env.clear(table_id.into())?)
+        })
+    }
+
     pub fn volatile_nonatomic_schedule_immediate(
         caller: Caller<'_, Self>,
         name: WasmPtr<u8>,
@@ -1353,8 +1462,7 @@ impl WasmInstanceEnv {
         Self::cvt_custom(caller, AbiCall::BytesSinkWrite, |caller| {
             let (mem, env) = Self::mem_env(caller);
 
-            // Retrieve the reducer args if available and requested, or error.
-            let Some(sink) = env.standard_bytes_sink.as_mut().filter(|_| sink == STANDARD_BYTES_SINK) else {
+            let Some(sink) = env.bytes_sinks.get_mut(&sink) else {
                 return Ok(errno::NO_SUCH_BYTES.get().into());
             };
 
@@ -1659,13 +1767,20 @@ impl WasmInstanceEnv {
 
         for view_call in views_for_refresh {
             let res: anyhow::Result<()> = (|| {
-                let view_def = module_def
-                    .get_view_by_id(view_call.fn_ptr, view_call.sender.is_none())
-                    .ok_or_else(|| anyhow!("view with fn_ptr `{}` not found", view_call.fn_ptr))?;
+                let resolved = crate::host::module_host::resolve_view_for_refresh(
+                    tx.as_ref().expect("procedure tx missing during view refresh"),
+                    &module_def,
+                    &view_call,
+                )?;
+
+                let table_id = resolved.table_id;
+                let view_def = resolved.view_def;
+                let view_name = &view_def.name;
+                let fn_ptr = view_def.fn_ptr;
 
                 let current_tx = tx.take().expect("procedure tx missing during view refresh");
                 let (next_tx, call_result) =
-                    tx_slot.set(current_tx, || Self::call_view(caller, &view_call, &view_def.name));
+                    tx_slot.set(current_tx, || Self::call_view(caller, &view_call, view_name, fn_ptr));
                 tx = Some(next_tx);
                 let return_data = call_result?;
 
@@ -1689,21 +1804,13 @@ impl WasmInstanceEnv {
                 };
 
                 let stdb = caller.data().instance_env.relational_db().clone();
-                match view_call.sender {
-                    Some(sender) => stdb.materialize_view(
-                        tx.as_mut()
-                            .expect("procedure tx missing while materializing authenticated view"),
-                        view_call.table_id,
-                        sender,
-                        rows,
-                    )?,
-                    None => stdb.materialize_anonymous_view(
-                        tx.as_mut()
-                            .expect("procedure tx missing while materializing anonymous view"),
-                        view_call.table_id,
-                        rows,
-                    )?,
-                }
+                stdb.materialize_view_call(
+                    tx.as_mut()
+                        .expect("procedure tx missing while materializing refreshed view"),
+                    table_id,
+                    view_call.clone(),
+                    rows,
+                )?;
 
                 Ok(())
             })();
@@ -1728,25 +1835,22 @@ impl WasmInstanceEnv {
         caller: &mut Caller<'a, Self>,
         view_call: &ViewCallInfo,
         view_name: &Identifier,
+        fn_ptr: ViewFnPtr,
     ) -> anyhow::Result<ViewReturnData> {
-        // Preserve the procedure's result/error sink so this view does not overwrite it.
-        let previous_standard_sink = {
-            let env = caller.data_mut();
-            env.standard_bytes_sink.take()
-        };
-
         let prev_func_type = caller
             .data_mut()
             .instance_env
             .swap_func_type(FuncCallType::View(view_call.clone()));
 
+        let mut nested_result_sink = None;
         let call_result = (|| -> anyhow::Result<i32> {
             let (args_source, result_sink) = {
                 let env = caller.data_mut();
                 let args_source = env.create_bytes_source(bytes::Bytes::new())?;
-                let result_sink = env.setup_standard_bytes_sink();
+                let result_sink = env.create_bytes_sink();
                 (args_source, result_sink)
             };
+            nested_result_sink = Some(result_sink);
 
             let (call_view, call_view_anon) = {
                 let env = caller.data();
@@ -1758,10 +1862,11 @@ impl WasmInstanceEnv {
                 call_view,
                 call_view_anon,
                 view_name,
-                view_call.fn_ptr.0,
+                fn_ptr.0,
                 view_call.sender,
                 args_source.0,
                 result_sink,
+                true,
             )?;
 
             Ok(code)
@@ -1771,10 +1876,7 @@ impl WasmInstanceEnv {
 
         let result_bytes = {
             let env = caller.data_mut();
-            // Restore the outer sink of the procedure before propagating any trap/user error from the call.
-            let result = env.take_standard_bytes_sink();
-            env.standard_bytes_sink = previous_standard_sink;
-            result
+            env.take_bytes_sink(nested_result_sink.expect("nested view result sink missing"))
         };
         let code = call_result?;
 

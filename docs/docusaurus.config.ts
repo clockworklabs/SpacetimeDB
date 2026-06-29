@@ -74,6 +74,32 @@ const config: Config = {
     {
       tagName: 'link',
       attributes: {
+        rel: 'alternate',
+        type: 'text/markdown',
+        title: 'SpacetimeDB docs for agents',
+        href: '/docs/llms.txt',
+      },
+    },
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'alternate',
+        type: 'text/markdown',
+        title: 'Full SpacetimeDB docs for agents',
+        href: '/docs/llms-full.txt',
+      },
+    },
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'sitemap',
+        type: 'application/xml',
+        href: '/docs/sitemap.xml',
+      },
+    },
+    {
+      tagName: 'link',
+      attributes: {
         rel: 'preload',
         as: 'font',
         type: 'font/woff2',
@@ -104,12 +130,12 @@ const config: Config = {
           sidebarPath: './sidebars.ts',
           sidebarCollapsed: false,
           includeCurrentVersion: true,
-          lastVersion: '1.12.0',
+          lastVersion: 'current',
           versions: {
             current: {
-              label: '2.0.0-rc1',
-              path: '2.0.0-rc1',
-              banner: 'unreleased',
+              label: '2.0.0',
+              path: '',
+              banner: 'none',
             },
             '1.12.0': {
               label: '1.12.0',
@@ -156,9 +182,11 @@ const config: Config = {
     navbar: {
       logo: {
         alt: 'SpacetimeDB Logo',
-        src: 'https://spacetimedb.com/images/brand.svg',
+        src: '/images/brand.svg',
         href: 'https://spacetimedb.com',
         target: '_self',
+        width: 152,
+        height: 32,
       },
       hideOnScroll: false,
       items: [
@@ -185,8 +213,8 @@ const config: Config = {
           position: 'right',
         },
         {
-          href: 'https://spacetimedb.com/spacerace',
-          label: 'Spacerace',
+          href: 'https://spacetimedb.com/space-race',
+          label: 'Referrals',
           position: 'right',
         },
         {
@@ -197,7 +225,6 @@ const config: Config = {
         },
       ],
     },
-    footer: {},
     prism: {},
     colorMode: {
       disableSwitch: true,
@@ -214,6 +241,20 @@ const config: Config = {
         },
         ChatButton: {
           ...inkeepConfig,
+        },
+      },
+    ],
+    [
+      '@signalwire/docusaurus-plugin-llms-txt',
+      {
+        siteTitle: 'SpacetimeDB',
+        siteDescription:
+          'SpacetimeDB is a database that lets you write your entire application as a database module. Server logic runs inside the database as WebAssembly. Clients subscribe to queries and get real-time updates over WebSocket. No separate server needed.',
+        depth: 2,
+        content: {
+          enableLlmsFullTxt: true,
+          enableMarkdownFiles: false,
+          includeVersionedDocs: false,
         },
       },
     ],

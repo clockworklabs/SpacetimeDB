@@ -60,7 +60,7 @@ public:
 
     void PostInitialize();
 
-    /** Update function for unique_u8 table*/
+    /** Update function for unique_u_8 table*/
     FTableAppliedDiff<FUniqueU8Type> Update(TArray<FWithBsatn<FUniqueU8Type>> InsertsRef, TArray<FWithBsatn<FUniqueU8Type>> DeletesRef);
 
     /** Number of subscribed rows currently in the cache */
@@ -98,7 +98,7 @@ public:
     FOnUniqueU8Delete OnDelete;
 
 private:
-    const FString TableName = TEXT("unique_u8");
+    const FString TableName = TEXT("unique_u_8");
 
     TSharedPtr<UClientCache<FUniqueU8Type>> Data;
 };

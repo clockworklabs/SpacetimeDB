@@ -16,7 +16,7 @@ struct TESTCLIENT_API FTestClientOptionalEveryPrimitiveStruct
     bool bHasValue = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB", meta = (EditCondition = "bHasValue"))
-    FEveryPrimitiveStructType Value;
+    FEveryPrimitiveStructType Value = {};
 
     FTestClientOptionalEveryPrimitiveStruct() = default;
 

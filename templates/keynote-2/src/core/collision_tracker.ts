@@ -1,4 +1,4 @@
-﻿export interface CollisionStats {
+export interface CollisionStats {
   total: number; // total begin() calls
   collisions: number; // how many times begin() found inflight > 0
   collisionRate: number; // collisions / total

@@ -42,8 +42,8 @@ fn init(ctx: &ReducerContext) {
     let db = ctx.db();
     let mut rng = ctx.rng();
     for id in 0..1_000_000 {
-        let (x, y, z) = rng.gen();
-        let (dx, dy, dz) = rng.gen();
+        let (x, y, z) = rng.r#gen();
+        let (dx, dy, dz) = rng.r#gen();
         db.position().insert(Position { id, x, y, z });
         db.velocity().insert(Velocity { id, dx, dy, dz });
     }

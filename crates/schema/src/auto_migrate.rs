@@ -131,14 +131,25 @@ impl MigrationPolicy {
         new_module_def: &'def ModuleDef,
     ) -> anyhow::Result<MigratePlan<'def>, MigrationPolicyError> {
         let plan = ponder_migrate(old_module_def, new_module_def).map_err(MigrationPolicyError::AutoMigrateFailure)?;
+        self.permits_migrate_plan(database_identity, old_module_hash, new_module_hash, &plan)?;
+        Ok(plan)
+    }
 
+    /// Validate an already-generated migration plan under this policy.
+    pub fn permits_migrate_plan(
+        &self,
+        database_identity: Identity,
+        old_module_hash: spacetimedb_lib::Hash,
+        new_module_hash: spacetimedb_lib::Hash,
+        plan: &MigratePlan<'_>,
+    ) -> anyhow::Result<(), MigrationPolicyError> {
         let token = MigrationToken {
             database_identity,
             old_module_hash,
             new_module_hash,
         };
-        self.permits_plan(&plan, &token)?;
-        Ok(plan)
+        self.permits_plan(plan, &token)?;
+        Ok(())
     }
 }
 
@@ -211,6 +222,14 @@ impl AutoMigratePlan<'_> {
     fn disconnects_all_users(&self) -> bool {
         self.any_step(|step| matches!(step, AutoMigrateStep::DisconnectAllUsers))
     }
+
+    /// Ensures that `DisconnectAllUsers` is present in the plan.
+    /// If it's already there, this is a no-op.
+    fn ensure_disconnect_all_users(&mut self) {
+        if !self.disconnects_all_users() {
+            self.steps.push(AutoMigrateStep::DisconnectAllUsers);
+        }
+    }
 }
 
 /// Checks that must be performed before performing an automatic migration.
@@ -255,11 +274,18 @@ pub enum AutoMigrateStep<'def> {
     RemoveView(<ViewDef as ModuleDefLookup>::Key<'def>),
     /// Remove a row-level security query.
     RemoveRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
+    /// Remove an empty table and all its sub-objects (indexes, constraints, sequences).
+    /// Validated at execution time: fails if the table contains data.
+    RemoveTable(<TableDef as ModuleDefLookup>::Key<'def>),
 
     /// Change the column types of a table, in a layout compatible way.
     ///
     /// This should be done before any new indices are added.
     ChangeColumns(<TableDef as ModuleDefLookup>::Key<'def>),
+
+    /// Change the column types of an event table, in a way that may not be layout-compatible.
+    ReschemaEventTable(<TableDef as ModuleDefLookup>::Key<'def>),
+
     /// Add columns to a table, in a layout-INCOMPATIBLE way.
     ///
     /// This is a destructive operation that requires first running a `DisconnectAllUsers`.
@@ -277,6 +303,8 @@ pub enum AutoMigrateStep<'def> {
     AddTable(<TableDef as ModuleDefLookup>::Key<'def>),
     /// Add an index.
     AddIndex(<IndexDef as ModuleDefLookup>::Key<'def>),
+    /// Add a constraint to an existing table (with data validation precheck).
+    AddConstraint(<ConstraintDef as ModuleDefLookup>::Key<'def>),
     /// Add a sequence.
     AddSequence(<SequenceDef as ModuleDefLookup>::Key<'def>),
     /// Add a schedule annotation to a table.
@@ -288,6 +316,15 @@ pub enum AutoMigrateStep<'def> {
 
     /// Change the access of a table.
     ChangeAccess(<TableDef as ModuleDefLookup>::Key<'def>),
+
+    /// Change the primary key of a table.
+    ///
+    /// This updates the `table_primary_key` field in `st_table`
+    /// to match the new module definition.
+    /// Without this step, a stale primary key in the stored schema
+    /// causes `check_compatible` to fail on the next publish.
+    /// See: <https://github.com/clockworklabs/SpacetimeDB/issues/3934>
+    ChangePrimaryKey(<TableDef as ModuleDefLookup>::Key<'def>),
 
     /// Recompute a view, update its backing table, and push updates to clients
     UpdateView(<ViewDef as ModuleDefLookup>::Key<'def>),
@@ -406,9 +443,6 @@ pub enum AutoMigrateError {
     #[error("Changing a unique constraint {constraint} requires a manual migration")]
     ChangeUniqueConstraint { constraint: RawIdentifier },
 
-    #[error("Removing the table {table} requires a manual migration")]
-    RemoveTable { table: Identifier },
-
     #[error("Changing the table type of table {table} from {type1:?} to {type2:?} requires a manual migration")]
     ChangeTableType {
         table: Identifier,
@@ -452,17 +486,26 @@ pub fn ponder_auto_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> 
     let views_ok = auto_migrate_views(&mut plan);
     let tables_ok = auto_migrate_tables(&mut plan);
 
-    // Our diffing algorithm will detect added constraints / indexes / sequences in new tables, we use this to filter those out.
-    // They're handled by adding the root table.
-    let new_tables: HashSet<&Identifier> = diff(plan.old, plan.new, ModuleDef::tables)
-        .filter_map(|diff| match diff {
-            Diff::Add { new } => Some(&new.name),
-            _ => None,
-        })
-        .collect();
-    let indexes_ok = auto_migrate_indexes(&mut plan, &new_tables);
-    let sequences_ok = auto_migrate_sequences(&mut plan, &new_tables);
-    let constraints_ok = auto_migrate_constraints(&mut plan, &new_tables);
+    // Filter out sub-objects of added/removed tables — they're handled by `AddTable`/`RemoveTable`.
+    let (new_tables, removed_tables): (HashSet<&Identifier>, HashSet<&Identifier>) =
+        diff(plan.old, plan.new, ModuleDef::tables).fold(
+            (HashSet::new(), HashSet::new()),
+            |(mut added, mut removed), diff| {
+                match diff {
+                    Diff::Add { new } => {
+                        added.insert(&new.name);
+                    }
+                    Diff::Remove { old } => {
+                        removed.insert(&old.name);
+                    }
+                    Diff::MaybeChange { .. } => {}
+                }
+                (added, removed)
+            },
+        );
+    let indexes_ok = auto_migrate_indexes(&mut plan, &new_tables, &removed_tables);
+    let sequences_ok = auto_migrate_sequences(&mut plan, &new_tables, &removed_tables);
+    let constraints_ok = auto_migrate_constraints(&mut plan, &new_tables, &removed_tables);
     // IMPORTANT: RLS auto-migrate steps must come last,
     // since they assume that any schema changes, like adding or dropping tables,
     // have already been reflected in the database state.
@@ -522,13 +565,9 @@ fn auto_migrate_views(plan: &mut AutoMigratePlan<'_>) -> Result<()> {
                 }
                 // From the user's perspective, views do not have persistent state.
                 // Hence removal does not require a manual migration - just disconnecting clients.
-                Diff::Remove { old } if plan.disconnects_all_users() => {
-                    plan.steps.push(AutoMigrateStep::RemoveView(old.key()));
-                    Ok(())
-                }
                 Diff::Remove { old } => {
                     plan.steps.push(AutoMigrateStep::RemoveView(old.key()));
-                    plan.steps.push(AutoMigrateStep::DisconnectAllUsers);
+                    plan.ensure_disconnect_all_users();
                     Ok(())
                 }
                 Diff::MaybeChange { old, new } => auto_migrate_view(plan, old, new),
@@ -608,13 +647,15 @@ fn auto_migrate_view<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def ViewDef,
     })
     .collect();
 
-    if old.is_anonymous != new.is_anonymous || incompatible_return_type || incompatible_param_types {
+    if old.is_anonymous != new.is_anonymous
+        || old.primary_key != new.primary_key
+        || incompatible_return_type
+        || incompatible_param_types
+    {
         plan.steps.push(AutoMigrateStep::AddView(new.key()));
         plan.steps.push(AutoMigrateStep::RemoveView(old.key()));
 
-        if !plan.disconnects_all_users() {
-            plan.steps.push(AutoMigrateStep::DisconnectAllUsers);
-        }
+        plan.ensure_disconnect_all_users();
     } else {
         plan.steps.push(AutoMigrateStep::UpdateView(new.key()));
     }
@@ -630,11 +671,11 @@ fn auto_migrate_tables(plan: &mut AutoMigratePlan<'_>) -> Result<()> {
                     plan.steps.push(AutoMigrateStep::AddTable(new.key()));
                     Ok(())
                 }
-                // TODO: When we remove tables, we should also remove their dependencies, including row-level security.
-                Diff::Remove { old } => Err(AutoMigrateError::RemoveTable {
-                    table: old.name.clone(),
+                Diff::Remove { old } => {
+                    plan.steps.push(AutoMigrateStep::RemoveTable(old.key()));
+                    plan.ensure_disconnect_all_users();
+                    Ok(())
                 }
-                .into()),
                 Diff::MaybeChange { old, new } => auto_migrate_table(plan, old, new),
             }
         })
@@ -661,8 +702,15 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
         }
         .into())
     };
+
+    // Combined with our validation of `event_ok`, `old.is_event` is sufficient to identify this as an event table.
+    let is_event = old.is_event;
+
     if old.table_access != new.table_access {
         plan.steps.push(AutoMigrateStep::ChangeAccess(key));
+    }
+    if old.primary_key != new.primary_key {
+        plan.steps.push(AutoMigrateStep::ChangePrimaryKey(key));
     }
     if old.schedule != new.schedule {
         // Note: this handles the case where there's an altered ScheduleDef for some reason.
@@ -680,9 +728,16 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
     .map(|col_diff| -> Result<_> {
         match col_diff {
             Diff::Add { new } => {
-                if new.default_value.is_some() {
-                    // `row_type_changed`, `columns_added`
-                    Ok(ProductMonoid(Any(false), Any(true)))
+                if is_event {
+                    // Event tables never have any resident rows.
+                    // As such, this is not a data migration; the table doesn't have any data in it to migrate.
+                    // However, changing the schema of an event table will break clients.
+
+                    // `row_type_changed`, `columns_added`, `event_schema_changed`
+                    Ok(ArrayMonoid([Any(false), Any(false), Any(true)]))
+                } else if new.default_value.is_some() {
+                    // `row_type_changed`, `columns_added`, `event_schema_changed`
+                    Ok(ArrayMonoid([Any(false), Any(true), Any(false)]))
                 } else {
                     Err(AutoMigrateError::AddColumn {
                         table: new.table_name.clone(),
@@ -691,11 +746,22 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
                     .into())
                 }
             }
-            Diff::Remove { old } => Err(AutoMigrateError::RemoveColumn {
-                table: old.table_name.clone(),
-                column: old.name.clone(),
+            Diff::Remove { old } => {
+                if is_event {
+                    // Event tables never have any resident rows.
+                    // As such, this is not a data migration; the table doesn't have any data in it to migrate.
+                    // However, changing the schema of an event table will break clients.
+
+                    // `row_type_changed`, `columns_added`, `event_schema_changed`
+                    Ok(ArrayMonoid([Any(false), Any(false), Any(true)]))
+                } else {
+                    Err(AutoMigrateError::RemoveColumn {
+                        table: old.table_name.clone(),
+                        column: old.name.clone(),
+                    }
+                    .into())
+                }
             }
-            .into()),
             Diff::MaybeChange { old, new } => {
                 // Check column type upgradability.
                 let old_ty = WithTypespace::new(plan.old.typespace(), &old.ty)
@@ -710,7 +776,16 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
                     &|| old.name.clone(),
                     &old_ty,
                     &new_ty,
-                );
+                )
+                .or_else(|err| {
+                    if is_event {
+                        // If this is an event table, it's fine to layout-incompatibly non-upgradably change the layout,
+                        // 'cause there can't be any rows to break.
+                        Ok(Any(true))
+                    } else {
+                        Err(err)
+                    }
+                });
 
                 // Note that the diff algorithm relies on `ModuleDefLookup` for `ColumnDef`,
                 // which looks up columns by NAME, NOT position: precisely to allow this step to work!
@@ -719,7 +794,9 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
                 // it must be in the same place in the new version of the table.
                 // This guarantees that any added columns live at the end of the table.
                 let positions_ok = if old.col_id == new.col_id {
-                    Ok(())
+                    Ok(Any(false))
+                } else if is_event {
+                    Ok(Any(true))
                 } else {
                     Err(AutoMigrateError::ReorderTable {
                         table: old.table_name.clone(),
@@ -729,22 +806,34 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
 
                 (types_ok, positions_ok)
                     .combine_errors()
-                    // row_type_changed, column_added
-                    .map(|(x, _)| ProductMonoid(x, Any(false)))
+                    // `row_type_changed`, `column_added`, `event_schema_changed`
+                    .map(|(types_changed, positions_changed)| {
+                        if is_event {
+                            // Event tables get a different auto-migrate step when their schema changes,
+                            // as they don't have any rows to rewrite. So we track a different element in the array of change types.
+                            ArrayMonoid([Any(false), Any(false), types_changed | positions_changed])
+                        } else {
+                            assert!(!positions_changed.0);
+                            ArrayMonoid([types_changed, Any(false), Any(false)])
+                        }
+                    })
             }
         }
     })
-    .collect_all_errors::<ProductMonoid<Any, Any>>();
+    .collect_all_errors::<ArrayMonoid<Any, 3>>();
 
-    let ((), (), ProductMonoid(Any(row_type_changed), Any(columns_added))) =
+    let ((), (), ArrayMonoid([Any(row_type_changed), Any(columns_added), Any(event_schema_changed)])) =
         (type_ok, event_ok, columns_ok).combine_errors()?;
 
-    // If we're adding a column, we'll rewrite the whole table.
-    // That makes any `ChangeColumns` moot, so we can skip it.
-    if columns_added {
-        if !plan.disconnects_all_users() {
-            plan.steps.push(AutoMigrateStep::DisconnectAllUsers);
-        }
+    if event_schema_changed {
+        // If we're rewriting an event table, there's no data migration to do.
+        // But incompatibly changing the schema can break clients.
+        plan.ensure_disconnect_all_users();
+        plan.steps.push(AutoMigrateStep::ReschemaEventTable(key));
+    } else if columns_added {
+        // If we're adding a column, we'll rewrite the whole table.
+        // That makes any `ChangeColumns` moot, so we can skip it.
+        plan.ensure_disconnect_all_users();
         plan.steps.push(AutoMigrateStep::AddColumns(key));
     } else if row_type_changed {
         plan.steps.push(AutoMigrateStep::ChangeColumns(key));
@@ -754,7 +843,7 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
 }
 
 /// An "any" monoid with `false` as identity and `|` as the operator.
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
 struct Any(bool);
 
 impl FromIterator<Any> for Any {
@@ -770,22 +859,35 @@ impl BitOr for Any {
     }
 }
 
-/// A monoid that allows running two `Any`s in parallel.
-#[derive(Default)]
-struct ProductMonoid<M1, M2>(M1, M2);
+/// A monoid that allows running a number of `Any`s in parallel.
+struct ArrayMonoid<Monoid, const N: usize>([Monoid; N]);
 
-impl<M1: BitOr<Output = M1>, M2: BitOr<Output = M2>> BitOr for ProductMonoid<M1, M2> {
-    type Output = Self;
-
-    fn bitor(self, rhs: Self) -> Self::Output {
-        Self(self.0 | rhs.0, self.1 | rhs.1)
+impl<Monoid, const N: usize> Default for ArrayMonoid<Monoid, N>
+where
+    [Monoid; N]: Default,
+{
+    fn default() -> Self {
+        Self(Default::default())
     }
 }
 
-impl<M1: BitOr<Output = M1> + Default, M2: BitOr<Output = M2> + Default> FromIterator<ProductMonoid<M1, M2>>
-    for ProductMonoid<M1, M2>
+impl<Monoid: BitOr<Output = Monoid> + Copy, const N: usize> BitOr for ArrayMonoid<Monoid, N> {
+    type Output = Self;
+
+    fn bitor(mut self, rhs: Self) -> Self::Output {
+        for n in 0..N {
+            self.0[n] = self.0[n] | rhs.0[n]
+        }
+        self
+    }
+}
+
+impl<Monoid: BitOr<Output = Monoid> + Copy, const N: usize> FromIterator<ArrayMonoid<Monoid, N>>
+    for ArrayMonoid<Monoid, N>
+where
+    ArrayMonoid<Monoid, N>: Default,
 {
-    fn from_iter<T: IntoIterator<Item = ProductMonoid<M1, M2>>>(iter: T) -> Self {
+    fn from_iter<T: IntoIterator<Item = ArrayMonoid<Monoid, N>>>(iter: T) -> Self {
         iter.into_iter().reduce(|p1, p2| p1 | p2).unwrap_or_default()
     }
 }
@@ -927,7 +1029,11 @@ fn ensure_old_ty_upgradable_to_new(
     }
 }
 
-fn auto_migrate_indexes(plan: &mut AutoMigratePlan<'_>, new_tables: &HashSet<&Identifier>) -> Result<()> {
+fn auto_migrate_indexes(
+    plan: &mut AutoMigratePlan<'_>,
+    new_tables: &HashSet<&Identifier>,
+    removed_tables: &HashSet<&Identifier>,
+) -> Result<()> {
     diff(plan.old, plan.new, ModuleDef::indexes)
         .map(|index_diff| -> Result<()> {
             match index_diff {
@@ -938,7 +1044,9 @@ fn auto_migrate_indexes(plan: &mut AutoMigratePlan<'_>, new_tables: &HashSet<&Id
                     Ok(())
                 }
                 Diff::Remove { old } => {
-                    plan.steps.push(AutoMigrateStep::RemoveIndex(old.key()));
+                    if !removed_tables.contains(&plan.old.stored_in_table_def(&old.name).unwrap().name) {
+                        plan.steps.push(AutoMigrateStep::RemoveIndex(old.key()));
+                    }
                     Ok(())
                 }
                 Diff::MaybeChange { old, new } => {
@@ -962,7 +1070,11 @@ fn auto_migrate_indexes(plan: &mut AutoMigratePlan<'_>, new_tables: &HashSet<&Id
         .collect_all_errors()
 }
 
-fn auto_migrate_sequences(plan: &mut AutoMigratePlan, new_tables: &HashSet<&Identifier>) -> Result<()> {
+fn auto_migrate_sequences(
+    plan: &mut AutoMigratePlan,
+    new_tables: &HashSet<&Identifier>,
+    removed_tables: &HashSet<&Identifier>,
+) -> Result<()> {
     diff(plan.old, plan.new, ModuleDef::sequences)
         .map(|sequence_diff| -> Result<()> {
             match sequence_diff {
@@ -975,7 +1087,9 @@ fn auto_migrate_sequences(plan: &mut AutoMigratePlan, new_tables: &HashSet<&Iden
                     Ok(())
                 }
                 Diff::Remove { old } => {
-                    plan.steps.push(AutoMigrateStep::RemoveSequence(old.key()));
+                    if !removed_tables.contains(&plan.old.stored_in_table_def(&old.name).unwrap().name) {
+                        plan.steps.push(AutoMigrateStep::RemoveSequence(old.key()));
+                    }
                     Ok(())
                 }
                 Diff::MaybeChange { old, new } => {
@@ -993,7 +1107,11 @@ fn auto_migrate_sequences(plan: &mut AutoMigratePlan, new_tables: &HashSet<&Iden
         .collect_all_errors()
 }
 
-fn auto_migrate_constraints(plan: &mut AutoMigratePlan, new_tables: &HashSet<&Identifier>) -> Result<()> {
+fn auto_migrate_constraints(
+    plan: &mut AutoMigratePlan,
+    new_tables: &HashSet<&Identifier>,
+    removed_tables: &HashSet<&Identifier>,
+) -> Result<()> {
     diff(plan.old, plan.new, ModuleDef::constraints)
         .map(|constraint_diff| -> Result<()> {
             match constraint_diff {
@@ -1002,15 +1120,15 @@ fn auto_migrate_constraints(plan: &mut AutoMigratePlan, new_tables: &HashSet<&Id
                         // it's okay to add a constraint in a new table.
                         Ok(())
                     } else {
-                        // it's not okay to add a new constraint to an existing table.
-                        Err(AutoMigrateError::AddUniqueConstraint {
-                            constraint: new.name.clone(),
-                        }
-                        .into())
+                        // existing table — duplicate detection happens inside create_constraint
+                        plan.steps.push(AutoMigrateStep::AddConstraint(new.key()));
+                        Ok(())
                     }
                 }
                 Diff::Remove { old } => {
-                    plan.steps.push(AutoMigrateStep::RemoveConstraint(old.key()));
+                    if !removed_tables.contains(&plan.old.stored_in_table_def(&old.name).unwrap().name) {
+                        plan.steps.push(AutoMigrateStep::RemoveConstraint(old.key()));
+                    }
                     Ok(())
                 }
                 Diff::MaybeChange { old, new } => {
@@ -1045,8 +1163,8 @@ fn auto_migrate_row_level_security(plan: &mut AutoMigratePlan) -> Result<()> {
     }
 
     // We can force flush the cache by force disconnecting all clients if an RLS rule has been added, removed, or updated.
-    if old_rls != new_rls && !plan.disconnects_all_users() {
-        plan.steps.push(AutoMigrateStep::DisconnectAllUsers);
+    if old_rls != new_rls {
+        plan.ensure_disconnect_all_users();
     }
 
     Ok(())
@@ -1061,11 +1179,21 @@ mod tests {
         AlgebraicType, AlgebraicValue, ProductType, ScheduleAt,
     };
     use spacetimedb_primitives::ColId;
+    use v10::{ExplicitNames, RawModuleDefV10Builder};
     use v9::{RawModuleDefV9Builder, TableAccess};
     use validate::tests::expect_identifier;
 
     fn create_module_def(build_module: impl Fn(&mut RawModuleDefV9Builder)) -> ModuleDef {
         let mut builder = RawModuleDefV9Builder::new();
+        build_module(&mut builder);
+        builder
+            .finish()
+            .try_into()
+            .expect("new_def should be a valid database definition")
+    }
+
+    fn create_module_def_v10(build_module: impl Fn(&mut RawModuleDefV10Builder)) -> ModuleDef {
+        let mut builder = RawModuleDefV10Builder::new();
         build_module(&mut builder);
         builder
             .finish()
@@ -1503,9 +1631,7 @@ mod tests {
         let result = ponder_auto_migrate(&old_def, &new_def);
 
         let apples = expect_identifier("Apples");
-        let bananas = expect_identifier("Bananas");
-
-        let apples_name_unique_constraint = "Apples_name_key";
+        let _bananas = expect_identifier("Bananas");
 
         let weight = expect_identifier("weight");
         let count = expect_identifier("count");
@@ -1701,20 +1827,16 @@ mod tests {
             && type1.0 == prod1_ty && type2.0 == new_prod1_ty
         );
 
-        expect_error_matching!(
-            result,
-            AutoMigrateError::AddUniqueConstraint { constraint } => &constraint[..] == apples_name_unique_constraint
-        );
+        // Note: `AddUniqueConstraint` is no longer an error — adding unique constraints
+        // to existing tables is now allowed; duplicate detection happens inside create_constraint.
 
         expect_error_matching!(
             result,
             AutoMigrateError::ChangeTableType { table, type1, type2 } => table == &apples && type1 == &TableType::User && type2 == &TableType::System
         );
 
-        expect_error_matching!(
-            result,
-            AutoMigrateError::RemoveTable { table } => table == &bananas
-        );
+        // Note: RemoveTable is no longer an error — removing tables is now allowed
+        // for empty tables; the emptiness check happens at execution time in update.rs.
 
         let apples_id_index = "Apples_id_idx_btree";
         let accessor_old = expect_identifier("id_index");
@@ -1942,6 +2064,53 @@ mod tests {
                 "{name}, steps: {steps:?}"
             );
         }
+    }
+
+    #[test]
+    fn migrate_view_with_explicit_name() {
+        fn module_def() -> ModuleDef {
+            create_module_def_v10(|builder| {
+                let return_type_ref = builder.add_algebraic_type(
+                    [],
+                    "Person",
+                    AlgebraicType::product([("PersonId", AlgebraicType::U64)]),
+                    true,
+                );
+                builder.add_view(
+                    "PersonAtLevel2",
+                    0,
+                    true,
+                    true,
+                    ProductType::from([("Level", AlgebraicType::U32)]),
+                    AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+                );
+
+                let mut explicit = ExplicitNames::default();
+                explicit.insert_function("PersonAtLevel2", "Level2Person");
+                builder.add_explicit_names(explicit);
+            })
+        }
+
+        let old_def = module_def();
+        let new_def = module_def();
+        let level_2_person = expect_identifier("Level2Person");
+
+        let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
+        let steps = &plan.steps[..];
+
+        assert!(!plan.disconnects_all_users(), "{plan:#?}");
+        assert!(
+            steps.contains(&AutoMigrateStep::UpdateView(&level_2_person)),
+            "steps: {steps:?}"
+        );
+        assert!(
+            !steps.contains(&AutoMigrateStep::AddView(&level_2_person)),
+            "steps: {steps:?}"
+        );
+        assert!(
+            !steps.contains(&AutoMigrateStep::RemoveView(&level_2_person)),
+            "steps: {steps:?}"
+        );
     }
 
     #[test]
@@ -2398,5 +2567,59 @@ mod tests {
         });
 
         ponder_auto_migrate(&old, &new).expect("same event flag should succeed");
+    }
+
+    #[test]
+    fn remove_table_produces_step() {
+        let old = create_module_def(|builder| {
+            builder
+                .build_table_with_new_type("Keep", ProductType::from([("id", AlgebraicType::U64)]), true)
+                .with_access(TableAccess::Public)
+                .finish();
+            builder
+                .build_table_with_new_type("Drop", ProductType::from([("id", AlgebraicType::U64)]), true)
+                .with_access(TableAccess::Public)
+                .finish();
+        });
+        let new = create_module_def(|builder| {
+            builder
+                .build_table_with_new_type("Keep", ProductType::from([("id", AlgebraicType::U64)]), true)
+                .with_access(TableAccess::Public)
+                .finish();
+        });
+
+        let drop_table = expect_identifier("Drop");
+        let plan = ponder_auto_migrate(&old, &new).expect("removing a table should produce a valid plan");
+        assert_eq!(
+            plan.steps,
+            &[
+                AutoMigrateStep::RemoveTable(&drop_table),
+                AutoMigrateStep::DisconnectAllUsers,
+            ],
+        );
+    }
+
+    #[test]
+    fn remove_table_does_not_produce_orphan_sub_object_steps() {
+        let old = create_module_def(|builder| {
+            builder
+                .build_table_with_new_type("Drop", ProductType::from([("id", AlgebraicType::U64)]), true)
+                .with_unique_constraint(0)
+                .with_index(btree(0), "Drop_id_idx")
+                .with_access(TableAccess::Public)
+                .finish();
+        });
+        let new = create_module_def(|_builder| {});
+
+        let drop_table = expect_identifier("Drop");
+        let plan = ponder_auto_migrate(&old, &new).expect("removing a table should produce a valid plan");
+        assert_eq!(
+            plan.steps,
+            &[
+                AutoMigrateStep::RemoveTable(&drop_table),
+                AutoMigrateStep::DisconnectAllUsers,
+            ],
+            "plan should only contain RemoveTable + DisconnectAllUsers, no orphan sub-object steps"
+        );
     }
 }

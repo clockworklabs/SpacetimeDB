@@ -2,10 +2,12 @@ use std::io::Write;
 use std::{fmt, io};
 
 use spacetimedb_lib::{db::raw_def::v9::TableAccess, AlgebraicType};
+use spacetimedb_primitives::ColId;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use termcolor::{Buffer, Color, ColorChoice, ColorSpec, WriteColor};
 
 use crate::auto_migrate::formatter::ViewInfo;
+use crate::identifier::Identifier;
 
 use super::formatter::{
     AccessChangeInfo, Action, ColumnChange, ColumnChanges, ConstraintInfo, IndexInfo, MigrationFormatter, NewColumns,
@@ -229,6 +231,14 @@ impl MigrationFormatter for TermColorFormatter {
         self.write_line("")
     }
 
+    fn format_remove_table(&mut self, table_name: &Identifier) -> io::Result<()> {
+        self.write_action_prefix(&Action::Removed)?;
+        self.buffer.write_all(b" table: ")?;
+        self.write_colored(table_name, Some(self.colors.table_name), true)?;
+        self.buffer.write_all(b"\n")?;
+        self.write_line("")
+    }
+
     fn format_view(&mut self, view: &ViewInfo, action: Action) -> io::Result<()> {
         self.write_indent()?;
         self.buffer.write_all("▸ ".to_string().as_bytes())?;
@@ -315,6 +325,24 @@ impl MigrationFormatter for TermColorFormatter {
         self.buffer.write_all(b")\n")
     }
 
+    fn format_change_primary_key(
+        &mut self,
+        table_name: &str,
+        old_pk: Option<ColId>,
+        new_pk: Option<ColId>,
+    ) -> io::Result<()> {
+        let description = match (old_pk, new_pk) {
+            (Some(_), None) => "removed".to_string(),
+            (None, Some(col)) => format!("added on column {col}"),
+            (Some(_), Some(col)) => format!("changed to column {col}"),
+            (None, None) => return Ok(()),
+        };
+        self.write_action_prefix(&Action::Changed)?;
+        self.buffer.write_all(b" primary key on table ")?;
+        self.write_colored(table_name, Some(self.colors.table_name), true)?;
+        self.buffer.write_all(format!(" ({description})\n").as_bytes())
+    }
+
     fn format_schedule(&mut self, s: &ScheduleInfo, action: Action) -> io::Result<()> {
         self.write_action_prefix(&action)?;
         self.buffer.write_all(b" schedule for table ")?;
@@ -397,6 +425,18 @@ impl MigrationFormatter for TermColorFormatter {
             true,
         )?;
         self.buffer.write_all(b"\n")
+    }
+
+    fn format_event_table_reschema(&mut self, table_name: &Identifier) -> io::Result<()> {
+        // TODO(format-event-table-reschema): I (pgoldman 2026-06-10) didn't have time to meaningfully format event table reschemas,
+        // so for now we're just printing the table name.
+
+        self.write_action_prefix(&Action::Changed)?;
+        self.buffer.write_all(b" schema of event table ")?;
+        self.write_colored(table_name, Some(self.colors.table_name), true)?;
+        self.buffer.write_all(b"\n")?;
+
+        Ok(())
     }
 }
 

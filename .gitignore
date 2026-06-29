@@ -264,3 +264,6 @@ nul
 # AI agent config
 .codex
 .claude
+
+# Any local file
+*.local

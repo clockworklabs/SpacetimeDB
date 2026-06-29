@@ -191,7 +191,7 @@ SPACETIMEDB_INIT(init, ReducerContext ctx) {
 // Called when a client connects
 SPACETIMEDB_CLIENT_CONNECTED(on_connect, ReducerContext ctx) {
     LOG_INFO("Client connected");
-    // ctx.sender contains the client's Identity
+    // ctx.sender() contains the client's Identity
     return Ok();
 }
 
@@ -213,7 +213,7 @@ SPACETIMEDB_REDUCER(example, ReducerContext ctx, /* params */) {
     ctx.db[table_name].insert(record);
     
     // Client identity
-    Identity client = ctx.sender;
+    Identity client = ctx.sender();
     
     // Current timestamp
     Timestamp now = ctx.timestamp;
@@ -893,7 +893,7 @@ SPACETIMEDB_TABLE(User, user, Public);
 FIELD_PrimaryKey(user, id);
 
 SPACETIMEDB_REDUCER(create_user, ReducerContext ctx, std::string name) {
-    User user{ctx.sender, name};  // ctx.sender is the calling client's identity
+    User user{ctx.sender(), name};  // ctx.sender() is the calling client's identity
     ctx.db[user_id].insert(user);
     return Ok();
 }
@@ -1138,12 +1138,12 @@ FIELD_Index(user, active);
 // Register new user
 SPACETIMEDB_REDUCER(register_user, ReducerContext ctx, std::string username, std::string email) {
     // Check if user already exists
-    auto user_opt = ctx.db[user_identity].find(ctx.sender);
+    auto user_opt = ctx.db[user_identity].find(ctx.sender());
     if (user_opt && user_opt->active) {
         return Err("User already registered");
     }
     
-    User new_user{0, ctx.sender, username, email, ctx.timestamp, true};
+    User new_user{0, ctx.sender(), username, email, ctx.timestamp, true};
     ctx.db[user].insert(new_user);
     LOG_INFO("User registered: " + username);
     return Ok();
@@ -1151,7 +1151,7 @@ SPACETIMEDB_REDUCER(register_user, ReducerContext ctx, std::string username, std
 
 // Update user profile
 SPACETIMEDB_REDUCER(update_profile, ReducerContext ctx, std::string new_username) {
-    auto user_opt = ctx.db[user_identity].find(ctx.sender);
+    auto user_opt = ctx.db[user_identity].find(ctx.sender());
     if (user_opt && user_opt->active) {
         User updated_user = *user_opt;
         updated_user.username = new_username;
@@ -1164,7 +1164,7 @@ SPACETIMEDB_REDUCER(update_profile, ReducerContext ctx, std::string new_username
 
 // Deactivate user
 SPACETIMEDB_REDUCER(deactivate_user, ReducerContext ctx) {
-    auto user_opt = ctx.db[user_identity].find(ctx.sender);
+    auto user_opt = ctx.db[user_identity].find(ctx.sender());
     if (user_opt && user_opt->active) {
         User updated_user = *user_opt;
         updated_user.active = false;
@@ -1227,7 +1227,7 @@ FIELD_Index(messages, sender);
 
 // Create channel
 SPACETIMEDB_REDUCER(create_channel, ReducerContext ctx, std::string name, std::string description, bool is_public) {
-    Channel channel{0, name, description, ctx.sender, is_public};
+    Channel channel{0, name, description, ctx.sender(), is_public};
     ctx.db[channels].insert(channel);
     LOG_INFO("Channel created: " + name);
     return Ok();
@@ -1249,7 +1249,7 @@ SPACETIMEDB_REDUCER(send_message, ReducerContext ctx, uint32_t channel_id, std::
         return Err("Channel not found");
     }
     
-    Message message{0, channel_id, ctx.sender, content, ctx.timestamp};
+    Message message{0, channel_id, ctx.sender(), content, ctx.timestamp};
     ctx.db[messages].insert(message);
     return Ok();
 }

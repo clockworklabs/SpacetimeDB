@@ -5,14 +5,12 @@
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
-#include "Types/UnitType.h"
 #include "ProcedureStatusType.g.generated.h"
 
 UENUM(BlueprintType)
 enum class EProcedureStatusTag : uint8
 {
     Returned,
-    OutOfEnergy,
     InternalError
 };
 
@@ -24,9 +22,9 @@ struct SPACETIMEDBSDK_API FProcedureStatusType
 public:
     FProcedureStatusType() = default;
 
-    TVariant<FSpacetimeDBUnit, FString, TArray<uint8>> MessageData;
+    TVariant<FString, TArray<uint8>> MessageData;
 
-    UPROPERTY(BlueprintReadOnly, Category = "SpacetimeDB")
+    UPROPERTY(BlueprintReadOnly)
     EProcedureStatusTag Tag = static_cast<EProcedureStatusTag>(0);
 
     static FProcedureStatusType Returned(const TArray<uint8>& Value)
@@ -34,14 +32,6 @@ public:
         FProcedureStatusType Obj;
         Obj.Tag = EProcedureStatusTag::Returned;
         Obj.MessageData.Set<TArray<uint8>>(Value);
-        return Obj;
-    }
-
-    static FProcedureStatusType OutOfEnergy(const FSpacetimeDBUnit& Value)
-    {
-        FProcedureStatusType Obj;
-        Obj.Tag = EProcedureStatusTag::OutOfEnergy;
-        Obj.MessageData.Set<FSpacetimeDBUnit>(Value);
         return Obj;
     }
 
@@ -61,14 +51,6 @@ public:
         return MessageData.Get<TArray<uint8>>();
     }
 
-    FORCEINLINE bool IsOutOfEnergy() const { return Tag == EProcedureStatusTag::OutOfEnergy; }
-
-    FORCEINLINE FSpacetimeDBUnit GetAsOutOfEnergy() const
-    {
-        ensureMsgf(IsOutOfEnergy(), TEXT("MessageData does not hold OutOfEnergy!"));
-        return MessageData.Get<FSpacetimeDBUnit>();
-    }
-
     FORCEINLINE bool IsInternalError() const { return Tag == EProcedureStatusTag::InternalError; }
 
     FORCEINLINE FString GetAsInternalError() const
@@ -86,8 +68,6 @@ public:
         {
             case EProcedureStatusTag::Returned:
                 return GetAsReturned() == Other.GetAsReturned();
-            case EProcedureStatusTag::OutOfEnergy:
-                return GetAsOutOfEnergy() == Other.GetAsOutOfEnergy();
             case EProcedureStatusTag::InternalError:
                 return GetAsInternalError() == Other.GetAsInternalError();
             default:
@@ -113,7 +93,6 @@ FORCEINLINE uint32 GetTypeHash(const FProcedureStatusType& ProcedureStatus)
     switch (ProcedureStatus.Tag)
     {
         case EProcedureStatusTag::Returned: return HashCombine(TagHash, ::GetTypeHash(ProcedureStatus.GetAsReturned()));
-        case EProcedureStatusTag::OutOfEnergy: return HashCombine(TagHash, ::GetTypeHash(ProcedureStatus.GetAsOutOfEnergy()));
         case EProcedureStatusTag::InternalError: return HashCombine(TagHash, GetTypeHash(ProcedureStatus.GetAsInternalError()));
         default: return TagHash;
     }
@@ -128,8 +107,44 @@ namespace UE::SpacetimeDB
         EProcedureStatusTag,
         MessageData,
         Returned, TArray<uint8>,
-        OutOfEnergy, FSpacetimeDBUnit,
         InternalError, FString
     );
 }
 
+UCLASS()
+class SPACETIMEDBSDK_API UProcedureStatusBpLib : public UBlueprintFunctionLibrary
+{
+    GENERATED_BODY()
+
+private:
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ProcedureStatus")
+    static FProcedureStatusType Returned(const TArray<uint8>& InValue)
+    {
+        return FProcedureStatusType::Returned(InValue);
+    }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ProcedureStatus")
+    static bool IsReturned(const FProcedureStatusType& InValue) { return InValue.IsReturned(); }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ProcedureStatus")
+    static TArray<uint8> GetAsReturned(const FProcedureStatusType& InValue)
+    {
+        return InValue.GetAsReturned();
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ProcedureStatus")
+    static FProcedureStatusType InternalError(const FString& InValue)
+    {
+        return FProcedureStatusType::InternalError(InValue);
+    }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ProcedureStatus")
+    static bool IsInternalError(const FProcedureStatusType& InValue) { return InValue.IsInternalError(); }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ProcedureStatus")
+    static FString GetAsInternalError(const FProcedureStatusType& InValue)
+    {
+        return InValue.GetAsInternalError();
+    }
+
+};

@@ -15,7 +15,7 @@ Each run:
 Run a quick performance comparison:
 
 ```bash
-npm run demo
+pnpm run demo
 ```
 
 The script will:
@@ -27,19 +27,24 @@ The script will:
 
 **Options:**
 
-- `--seconds N` - Benchmark duration (default: 10)
-- `--concurrency N` - Concurrent connections (default: 50)
+- `--seconds N` - Benchmark duration (default: 300)
+- `--concurrency N` - Concurrent connections (default: 64)
 - `--alpha N` - Contention level (default: 1.5)
 - `--systems a,b,c` - Systems to compare (default: convex,spacetimedb)
+- `--stdb-compression none|gzip` - SpacetimeDB client compression mode (default: none)
 - `--skip-prep` - Skip database seeding
 - `--no-animation` - Disable animated output
+
+`demo` always runs the built-in `test-1` scenario. Use `bench` if you need to choose a test explicitly.
+`demo` uses `--systems`; `bench` uses `--connectors`.
 
 ---
 
 ## Prerequisites
 
-- **Node.js** ≥ 20.x
+- **Node.js** ≥ 22.x
 - **pnpm** installed globally
+- **Rust** (required for SpacetimeDB benchmarks) -- [install](https://rust-lang.org/tools/install/)
 - **Docker** for local Postgres / Cockroach / Supabase
 - Local/Cloud Convex
 
@@ -70,7 +75,8 @@ Copy `.env.example` to `.env` and adjust.
 - `SKIP_SQLITE` – `1` = don't init SQLite in prep
 - `SKIP_SUPABASE` – `1` = don't init Supabase in prep
 - `SKIP_CONVEX` – `1` = don't init Convex in prep
-- `USE_SPACETIME_METRICS_ENDPOINT` – `1` = read committed transfer counts from the SpacetimeDB metrics endpoint; otherwise only local counters are used
+
+Throughput is counted from successful operations that the benchmark client observes completing inside the configured test window for every connector, including SpacetimeDB.
 
 **PostgreSQL / CockroachDB:**
 
@@ -87,7 +93,8 @@ Copy `.env.example` to `.env` and adjust.
 - `STDB_URL` – WebSocket URL for SpacetimeDB
 - `STDB_MODULE` – module name to load (e.g. `test-1`)
 - `STDB_MODULE_PATH` – filesystem path to the module source (for local dev)
-- `STDB_METRICS_URL` – HTTP URL for the SpacetimeDB metrics endpoint
+- `STDB_COMPRESSION` – SpacetimeDB benchmark client compression (`none` or `gzip`)
+- `STDB_CONFIRMED_READS` – `1` = force confirmed reads on, `0` = force them off
 
 **Supabase:**
 
@@ -102,6 +109,12 @@ Copy `.env.example` to `.env` and adjust.
 - `CLEAR_CONVEX_ON_PREP` – Convex prep flag (clears data when enabled)
 - `CONVEX_USE_SHARDED_COUNTER` – flag for using the sharded-counter implementation
 
+**PlanetScale:**
+
+- `PLANETSCALE_PG_URL` – Postgres connection string
+- `PLANETSCALE_RPC_URL` – PlanetScale RPC server URL (default: `http://127.0.0.1:4104`)
+- `SKIP_PLANETSCALE_PG` – `1` = skip PlanetScale in prep
+
 **Bun / RPC helpers:**
 
 - `BUN_URL` – Bun HTTP benchmark server URL
@@ -115,6 +128,12 @@ Copy `.env.example` to `.env` and adjust.
 
 ---
 
+## PlanetScale configuration
+
+Create a Postgres database on PlanetScale and set `PLANETSCALE_PG_URL` (and `PLANETSCALE_RPC_URL` if the RPC server runs elsewhere) in `.env`. Reported results used PS-2560 (32 vCPUs, 256 GB RAM).
+
+---
+
 ## Setup
 
 ### Generate bindings (first time after clone)
@@ -123,9 +142,11 @@ Copy `.env.example` to `.env` and adjust.
 
 ```bash
 cd spacetimedb
-spacetimedb generate --lang typescript --out-dir ../module_bindings
+cargo run -p spacetimedb-cli -- generate --lang typescript --out-dir ../module_bindings --module-path . -y
 cd ..
 ```
+
+(Or use `spacetime generate ...` if the CLI is installed.)
 
 **Convex generated files:**
 
@@ -138,44 +159,52 @@ cd ..
 
 ### Start services
 
-1. Start SpacetimeDB (`spacetimedb start`)
+1. Start SpacetimeDB (`cargo run -p spacetimedb-cli -- start` or `spacetime start`)
 2. Start Convex (inside convex-app run `npx convex dev`)
 3. Init Supabase (run `supabase init`) inside project root.
-4. `npm run prep` to seed the databases.
-5. `npm run bench` to run the test against all connectors.
+4. `pnpm run prep` to seed the databases.
+5. `pnpm run bench` to run the test against all connectors.
 
 ## Commands & Examples
 
-### 1. Run a test
+### Run a test
 
 ```bash
-npm run bench [test-name] [--seconds N] [--concurrency N] [--alpha A] [--connectors list]
+pnpm run bench [test-name] [--seconds N] [--concurrency N] [--alpha A] [--connectors list] [--stdb-compression none|gzip]
 ```
 
 Examples:
 
 ```bash
-# Default test (test-1), default args (note: only 1 test right now, and it's embedded)
-npm run bench
+# Default test (test-1), default args
+pnpm run bench
 
 # Explicit test name
-npm run bench test-1
+pnpm run bench test-1
 
 # Short run, 100 concurrent workers
-npm run bench test-1 --seconds 10 --concurrency 100
+pnpm run bench test-1 --seconds 10 --concurrency 100
 
 # Heavier skew on hot accounts
-npm run bench test-1 --alpha 2.0
+pnpm run bench test-1 --alpha 2.0
+
+# Enable gzip for the SpacetimeDB benchmark client
+pnpm run bench test-1 --connectors spacetimedb --stdb-compression gzip
 
 # Only run selected connectors
-npm run bench test-1 --connectors spacetimedb,sqlite
+pnpm run bench test-1 --connectors spacetimedb,sqlite_rpc
+
+# Sweep alpha values for a connector set
+pnpm run bench test-1 --alpha 0,1.5 --connectors postgres_rpc,bun --seconds 300
+
+# Sweep contention (alpha) for a single connector: start,end,step,concurrency
+pnpm run bench test-1 --connectors cockroach_rpc --contention-tests 0,1.5,0.5,64
+
+# Sweep concurrency for a single connector: start,end,factor,alpha
+pnpm run bench test-1 --connectors cockroach_rpc --concurrency-tests 16,512,2,1.5
 ```
 
----
-
 ## CLI Arguments
-
-From `src/cli.ts`:
 
 - **`test-name`** (positional)
   - Name of the test folder under `src/tests/`
@@ -183,36 +212,56 @@ From `src/cli.ts`:
 
 - **`--seconds N`**
   - Duration of the benchmark in seconds
-  - Default: `1`
+  - Default: `300`
 
 - **`--concurrency N`**
   - Number of workers / in-flight operations
-  - Default: `10`
+  - Default: `64`
 
 - **`--alpha A`**
-  - Zipf α parameter for account selection (hot vs cold distribution)
-  - Default: `0.5`
+  - Zipf alpha parameter for account selection (hot vs cold distribution)
+  - Default: `1.5`
 
 - **`--connectors list`**
   - Optional, comma-separated list of connector `system` names
   - Example:
 
     ```bash
-    --connectors spacetimedb,sqlite,postgres
+    --connectors spacetimedb,sqlite_rpc,postgres_rpc
     ```
 
   - If omitted, all connectors for that test are run
   - The valid names come from `tc.system` in the test modules and the keys in `CONNECTORS`
+  - Valid names: `convex`, `spacetimedb`, `bun`, `postgres_rpc`, `cockroach_rpc`, `sqlite_rpc`, `supabase_rpc`, `planetscale_pg_rpc`
 
-- **`--contention-tests startAlpha endAlpha step concurrency`**
-  - Runs a sweep over Zipf α values for a single connector
-  - Uses `startAlpha`, `endAlpha`, and `step` to choose the α values
-  - Uses the provided `concurrency` for all runs
+- **`--systems list`**
+  - Alias for `--connectors` in bench mode
 
-- **`--concurrency-tests startConc endConc step alpha`**
-  - Runs a sweep over concurrency levels for a single connector
-  - Uses `startConc`, `endConc`, and `step` to choose the concurrency values
-  - Uses the provided `alpha` for all runs
+- **`--runs N`**
+  - Repeat each `(connector, alpha)` combination `N` times
+  - Default: `1`
+
+- **`--prep-between-alphas`**
+  - Run `pnpm run prep` before each `(connector, alpha)` combination
+
+- **`--contention-tests start,end,step,concurrency`**
+  - Sweep Zipf alpha values for one connector
+
+- **`--concurrency-tests start,end,factor,alpha`**
+  - Sweep concurrency values for one connector
+
+- **`--bench-pipelined` / `--no-bench-pipelined`**
+  - Force pipelining on or off across connectors
+
+- **`--max-inflight-per-worker N`**
+  - Max in-flight requests per worker when pipelining is enabled
+  - Required when `--bench-pipelined` is enabled
+
+- **`--log-errors`**
+  - Log per-operation errors during runs
+
+- **`--verify-transactions`**
+  - Run connector verification at end of run
 
 ---
 
@@ -221,21 +270,20 @@ From `src/cli.ts`:
 You can also run the benchmark via Docker instead of Node directly:
 
 ```bash
-docker compose run --rm bench \
-  --seconds 5 \
-  --concurrency 50 \
-  --alpha 1 \
-  --connectors convex
+docker compose run --rm bench -- --seconds 5 --concurrency 64 --alpha 1 --connectors convex
 ```
 
-If using Docker, make sure to set `USE_DOCKER=1` in `.env`, verify docker-compose env variables, verify you've run supabase init, and run `npm prep` before running bench.
+If using Docker, make sure to set `USE_DOCKER=1` in `.env`, verify docker-compose env variables, verify you've run supabase init, and run `pnpm run prep` before running bench.
 
 ## Output
 
 Every run writes a JSON file into `./runs/`:
 
 - Directory: `./runs/`
-- Filename: `<test-name>-<timestamp>.json`
-  - Example: `test-1-2025-11-17T16-45-12-345Z.json`
+- Filename: `<test-name>-<connector>-a<alpha>-<timestamp>.json`
+  - Example: `test-1-postgres_rpc-a1.5-2025-11-17T16-45-12-345Z.json`
 
-Point your visualizations / CSV exports at `./runs/` and you’re good.
+For rollup tables, compute steady-state stats after a 30-second warmup window (`tSec >= 30`). The `scripts/bench-stats.py` default matches this (`--warmup-sec 30`).
+
+Point your visualizations / CSV exports at `./runs/` and you're good.
+

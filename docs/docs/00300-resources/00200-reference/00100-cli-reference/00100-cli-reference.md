@@ -16,8 +16,6 @@ This document contains the help content for the `spacetime` command-line program
 * [`spacetime call`↴](#spacetime-call)
 * [`spacetime describe`↴](#spacetime-describe)
 * [`spacetime dev`↴](#spacetime-dev)
-* [`spacetime energy`↴](#spacetime-energy)
-* [`spacetime energy balance`↴](#spacetime-energy-balance)
 * [`spacetime sql`↴](#spacetime-sql)
 * [`spacetime rename`↴](#spacetime-rename)
 * [`spacetime generate`↴](#spacetime-generate)
@@ -38,6 +36,8 @@ This document contains the help content for the `spacetime` command-line program
 * [`spacetime server clear`↴](#spacetime-server-clear)
 * [`spacetime subscribe`↴](#spacetime-subscribe)
 * [`spacetime start`↴](#spacetime-start)
+* [`spacetime lock`↴](#spacetime-lock)
+* [`spacetime unlock`↴](#spacetime-unlock)
 * [`spacetime version`↴](#spacetime-version)
 
 ## `spacetime`
@@ -52,18 +52,19 @@ This document contains the help content for the `spacetime` command-line program
 * `call` — Invokes a function (reducer or procedure) in a database. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `describe` — Describe the structure of a database or entities within it. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `dev` — Start development mode with auto-regenerate client module bindings, auto-rebuild, and auto-publish on file changes.
-* `energy` — Invokes commands related to database budgets. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `sql` — Runs a SQL query on the database. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `rename` — Rename a database
 * `generate` — Generate client files for a spacetime module.
 * `list` — Lists the databases attached to an identity. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `login` — Manage your login to the SpacetimeDB CLI
 * `logout` — 
-* `init` — Initializes a new spacetime project. WARNING: This command is UNSTABLE and subject to breaking changes.
+* `init` — Initializes a new spacetime project.
 * `build` — Builds a spacetime module.
 * `server` — Manage the connection to the SpacetimeDB server. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `subscribe` — Subscribe to SQL queries on the database. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `start` — Start a local SpacetimeDB instance
+* `lock` — Lock a database to prevent accidental deletion
+* `unlock` — Unlock a database to allow deletion
 * `version` — Manage installed spacetime versions
 
 ###### **Options:**
@@ -100,7 +101,7 @@ Run `spacetime help publish` for more detailed information.
 * `-p`, `--module-path <MODULE_PATH>` — The system path (absolute or relative) to the module project. Defaults to spacetimedb/ subdirectory, then current directory.
 * `-b`, `--bin-path <WASM_FILE>` — The system path (absolute or relative) to the compiled wasm binary we should publish, instead of building the project.
 * `-j`, `--js-path <JS_FILE>` — UNSTABLE: The system path (absolute or relative) to the javascript file we should publish, instead of building the project.
-* `--break-clients` — Allow breaking changes when publishing to an existing database identity. This will force publish even if it will break existing clients, but will NOT force publish if it would cause deletion of any data in the database. See --yes and --delete-data for details.
+* `--break-clients` — Allow breaking changes when publishing to an existing database identity. Equivalent to --yes=break-clients: skips the "this will BREAK existing clients" prompt, but will NOT force publish if it would cause deletion of any data in the database. See --yes and --delete-data for details.
 * `--anonymous` — Perform this action with an anonymous identity
 * `--parent <PARENT>` — A valid domain or identity of an existing database that should be the parent of this database.
 
@@ -111,9 +112,25 @@ Run `spacetime help publish` for more detailed information.
    If an organization is given, the organization member's permissions apply to the new database.
    An organization can only be set when a database is created, not when it is updated.
 * `-s`, `--server <SERVER>` — The nickname, domain name or URL of the server to host the database.
-* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
+* `-y`, `--yes <YES>` — Skip confirmation prompts. With no value, defaults to 'all' (equivalent to --yes=all). To skip specific prompts, pass one or more of: all, remote, migrate, break-clients, skip-login, delete-data. Multiple values can be comma-separated (--yes=migrate,break-clients) or given via repeated flags (--yes=migrate --yes=break-clients). The value must be attached with '=' (so `--yes my-db` treats `my-db` as the database name).
+
+  Possible values:
+  - `all`:
+    Equivalent to passing every other option. This is the default when `--yes` is given without a value
+  - `remote`:
+    Skip the "publish to a non-local server?" confirmation
+  - `migrate`:
+    Skip migration confirmations (e.g. major version upgrade)
+  - `break-clients`:
+    Skip the "this will BREAK existing clients" confirmation
+  - `skip-login`:
+    Don't prompt the user to log in; act non-interactively for auth
+  - `delete-data`:
+    Skip the destructive "this will DESTROY ... ALL corresponding data" confirmation
+
 * `--no-config` — Ignore spacetime.json configuration
 * `--env <ENV>` — Environment name for config file layering (e.g., dev, staging)
+* `--native-aot` — Use NativeAOT-LLVM compilation for C# modules (experimental, Windows only)
 
 
 
@@ -162,6 +179,11 @@ Run `spacetime help logs` for more detailed information.
 
   Possible values: `text`, `json`
 
+* `-l`, `--level <LEVEL>` — Filter logs by severity level. Only messages at the specified level or higher will be shown. Levels from least to most severe: trace, debug, info, warn, error, panic.
+
+  Possible values: `trace`, `debug`, `info`, `warn`, `error`, `panic`
+
+* `--level-exact` — When combined with --level, show only logs at exactly the specified level instead of that level and above.
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
 * `--no-config` — Ignore spacetime.json configuration
 
@@ -231,7 +253,7 @@ Start development mode with auto-regenerate client module bindings, auto-rebuild
 
   Default value: `src/module_bindings`
 * `--module-path <MODULE-PATH>` — Path to the SpacetimeDB server module, relative to current directory. Defaults to `<project-path>/spacetimedb`.
-* `--client-lang <CLIENT-LANG>` — The programming language for the generated client module bindings (e.g., typescript, csharp, python). If not specified, it will be detected from the project.
+* `--client-lang <CLIENT-LANG>` — The programming language for the generated client module bindings (e.g., typescript, csharp, rust, unrealcpp). If not specified, it will be detected from the project.
 
   Possible values: `csharp`, `typescript`, `rust`, `unrealcpp`
 
@@ -251,33 +273,6 @@ Start development mode with auto-regenerate client module bindings, auto-rebuild
 
 
 
-## `spacetime energy`
-
-Invokes commands related to database budgets. WARNING: This command is UNSTABLE and subject to breaking changes.
-
-**Usage:** `spacetime energy
-       energy \<COMMAND\>`
-
-###### **Subcommands:**
-
-* `balance` — Show current energy balance for an identity
-
-
-
-## `spacetime energy balance`
-
-Show current energy balance for an identity
-
-**Usage:** `spacetime energy balance [OPTIONS]`
-
-###### **Options:**
-
-* `-i`, `--identity <IDENTITY>` — The identity to check the balance for. If no identity is provided, the default one will be used.
-* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server from which to request balance information
-* `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
-
-
-
 ## `spacetime sql`
 
 Runs a SQL query on the database. WARNING: This command is UNSTABLE and subject to breaking changes.
@@ -291,7 +286,10 @@ Runs a SQL query on the database. WARNING: This command is UNSTABLE and subject 
 ###### **Options:**
 
 * `--interactive` — Instead of using a query, run an interactive command prompt for `SQL` expressions
-* `--confirmed` — Instruct the server to deliver only updates of confirmed transactions
+* `--confirmed <CONFIRMED>` — Instruct the server to deliver only updates of confirmed transactions
+
+  Possible values: `true`, `false`
+
 * `--anonymous` — Perform this action with an anonymous identity
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
@@ -324,7 +322,7 @@ Run `spacetime rename --help` for more detailed information.
 
 Generate client files for a spacetime module.
 
-**Usage:** `spacetime generate [DATABASE] --lang <LANG> --out-dir <DIR> [--module-path <DIR> | --bin-path <PATH> | --unreal-module-name <MODULE_NAME> | --uproject-dir <DIR> | --include-private]`
+**Usage:** `spacetime generate [DATABASE] --lang <LANG> [--module-path <DIR> | --bin-path <PATH> | --js-path <PATH>] [--out-dir <DIR> | --uproject-dir <DIR>] [--unreal-module-name <MODULE_NAME>] [OPTIONS]`
 
 Run `spacetime help generate` for more detailed information.
 
@@ -343,6 +341,7 @@ Run `spacetime help generate` for more detailed information.
 
   Default value: `SpacetimeDB.Types`
 * `--unreal-module-name <UNREAL_MODULE_NAME>` — The module name that should be used for DLL export macros (required for lang unrealcpp)
+* `--module-prefix <MODULE_PREFIX>` — The module prefix to use for generated types (only used with --lang unrealcpp)
 * `-l`, `--lang <LANG>` — The language to generate
 
   Possible values: `csharp`, `typescript`, `rust`, `unrealcpp`
@@ -388,7 +387,6 @@ Manage your login to the SpacetimeDB CLI
 * `--auth-host <AUTH-HOST>` — Fetch login token from a different host
 
   Default value: `https://spacetimedb.com`
-* `--server-issued-login <SERVER>` — Log in to a SpacetimeDB server directly, without going through a global auth server
 * `--token <SPACETIMEDB-TOKEN>` — Bypass the login flow and use a login token directly
 * `--no-browser` — Do not open a browser window
 
@@ -420,7 +418,7 @@ Show the current login info
 
 ## `spacetime init`
 
-Initializes a new spacetime project. WARNING: This command is UNSTABLE and subject to breaking changes.
+Initializes a new spacetime project.
 
 **Usage:** `spacetime init [OPTIONS] [PROJECT_NAME]`
 
@@ -436,6 +434,7 @@ Initializes a new spacetime project. WARNING: This command is UNSTABLE and subje
 * `-t`, `--template <TEMPLATE>` — Template ID or GitHub repository (owner/repo or URL)
 * `--local` — Use local deployment instead of Maincloud
 * `--non-interactive` — Run in non-interactive mode
+* `--native-aot` — Configure C# project for NativeAOT-LLVM compilation (experimental, Windows only)
 
 
 
@@ -602,10 +601,12 @@ Subscribe to SQL queries on the database. WARNING: This command is UNSTABLE and 
 ###### **Options:**
 
 * `-n`, `--num-updates <NUM-UPDATES>` — The number of subscription updates to receive before exiting
-* `-t`, `--timeout <TIMEOUT>` — The timeout, in seconds, after which to disconnect and stop receiving subscription messages. If `-n` is specified, it will stop after whichever
-                     one comes first.
+* `-t`, `--timeout <TIMEOUT>` — The timeout, in seconds, after which to disconnect and stop receiving subscription messages. If `-n` is specified, it will stop after whichever one comes first. Timing out before receiving `-n` updates is an error.
 * `--print-initial-update` — Print the initial update for the queries.
-* `--confirmed` — Instruct the server to deliver only updates of confirmed transactions
+* `--confirmed <CONFIRMED>` — Instruct the server to deliver only updates of confirmed transactions
+
+  Possible values: `true`, `false`
+
 * `--anonymous` — Perform this action with an anonymous identity
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
 * `--no-config` — Ignore spacetime.json configuration
@@ -616,6 +617,11 @@ Subscribe to SQL queries on the database. WARNING: This command is UNSTABLE and 
 ## `spacetime start`
 
 Start a local SpacetimeDB instance
+
+Set a persistent default listen address in cli.toml with:
+    listen_addr = "0.0.0.0:4000"
+
+When present, `listen_addr` is used unless `--listen-addr` is passed explicitly.
 
 Run `spacetime start --help` to see all options.
 
@@ -633,6 +639,51 @@ Run `spacetime start --help` to see all options.
 
   Possible values: `standalone`, `cloud`
 
+
+
+
+## `spacetime lock`
+
+Lock a database to prevent it from being deleted.
+
+A locked database cannot be deleted until it is unlocked with `spacetime unlock`.
+This is a safety mechanism to protect production databases from accidental deletion.
+
+**Usage:** `spacetime lock [OPTIONS] [database]`
+
+Run `spacetime help lock` for more detailed information.
+
+
+###### **Arguments:**
+
+* `<DATABASE>` — The name or identity of the database to lock
+
+###### **Options:**
+
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
+* `--no-config` — Ignore spacetime.json configuration
+
+
+
+## `spacetime unlock`
+
+Unlock a database that was previously locked with `spacetime lock`.
+
+After unlocking, the database can be deleted normally with `spacetime delete`.
+
+**Usage:** `spacetime unlock [OPTIONS] [database]`
+
+Run `spacetime help unlock` for more detailed information.
+
+
+###### **Arguments:**
+
+* `<DATABASE>` — The name or identity of the database to unlock
+
+###### **Options:**
+
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
+* `--no-config` — Ignore spacetime.json configuration
 
 
 

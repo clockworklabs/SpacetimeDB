@@ -11,15 +11,15 @@ struct SPACETIMEDBSDK_API FOneOffQueryType
 {
     GENERATED_BODY()
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    TArray<uint8> MessageId;
+    // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
+    uint32 RequestId = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     FString QueryString;
 
     FORCEINLINE bool operator==(const FOneOffQueryType& Other) const
     {
-        return MessageId == Other.MessageId && QueryString == Other.QueryString;
+        return RequestId == Other.RequestId && QueryString == Other.QueryString;
     }
 
     FORCEINLINE bool operator!=(const FOneOffQueryType& Other) const
@@ -36,7 +36,7 @@ struct SPACETIMEDBSDK_API FOneOffQueryType
  */
 FORCEINLINE uint32 GetTypeHash(const FOneOffQueryType& OneOffQueryType)
 {
-    uint32 Hash = GetTypeHash(OneOffQueryType.MessageId);
+    uint32 Hash = GetTypeHash(OneOffQueryType.RequestId);
     Hash = HashCombine(Hash, GetTypeHash(OneOffQueryType.QueryString));
     return Hash;
 }
@@ -45,5 +45,5 @@ namespace UE::SpacetimeDB
 {
     UE_SPACETIMEDB_ENABLE_TARRAY(FOneOffQueryType);
 
-    UE_SPACETIMEDB_STRUCT(FOneOffQueryType, MessageId, QueryString);
+    UE_SPACETIMEDB_STRUCT(FOneOffQueryType, RequestId, QueryString);
 }

@@ -5,6 +5,7 @@ slug: /tables/event-tables
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
+import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNotice";
 
 In many applications, particularly games and real-time systems, modules need to notify clients about things that happened without storing that information permanently. A combat system might need to tell clients "entity X took 50 damage" so they can display a floating damage number, but there is no reason to keep that record in the database after the moment has passed.
 
@@ -61,6 +62,21 @@ pub struct DamageEvent {
 ```
 
 </TabItem>
+<TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
+
+```cpp
+struct DamageEvent {
+    Identity entity_id;
+    uint32_t damage;
+    std::string source;
+};
+SPACETIMEDB_STRUCT(DamageEvent, entity_id, damage, source)
+SPACETIMEDB_TABLE(DamageEvent, damage_event, Public, true)
+```
+
+</TabItem>
 </Tabs>
 
 :::note Changing the event flag
@@ -113,6 +129,8 @@ public static void Attack(ReducerContext ctx, Identity targetId, uint damage)
 <TabItem value="rust" label="Rust">
 
 ```rust
+use spacetimedb::{ReducerContext, Identity, Table};
+
 #[spacetimedb::reducer]
 fn attack(ctx: &ReducerContext, target_id: Identity, damage: u32) {
     // Game logic...
@@ -123,6 +141,21 @@ fn attack(ctx: &ReducerContext, target_id: Identity, damage: u32) {
         damage,
         source: "melee_attack".to_string(),
     });
+}
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+<CppModuleVersionNotice />
+
+```cpp
+SPACETIMEDB_REDUCER(attack, ReducerContext ctx, Identity target_id, uint32_t damage) {
+    // Game logic...
+
+    // Publish the event
+    ctx.db[damage_event].insert(DamageEvent{target_id, damage, "melee_attack"});
+    return Ok();
 }
 ```
 

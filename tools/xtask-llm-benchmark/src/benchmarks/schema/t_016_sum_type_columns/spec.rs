@@ -1,7 +1,7 @@
 use crate::eval::defaults::{
     default_schema_parity_scorers, make_reducer_data_parity_scorer, make_sql_count_only_scorer,
 };
-use crate::eval::{casing_for_lang, ident, BenchmarkSpec, ReducerDataParityConfig, SqlBuilder};
+use crate::eval::{casing_for_lang, ident, table_name, BenchmarkSpec, ReducerDataParityConfig, SqlBuilder};
 use std::time::Duration;
 
 pub fn spec() -> BenchmarkSpec {
@@ -9,9 +9,10 @@ pub fn spec() -> BenchmarkSpec {
         let mut v = default_schema_parity_scorers(host_url, file!(), route_tag);
         let casing = casing_for_lang(lang);
         let sb = SqlBuilder::new(casing);
-        let reducer = ident("Seed", casing);
+        let reducer = ident("Seed", crate::eval::Casing::Snake);
+        let drawing_table = table_name("drawing", lang);
 
-        let select = sb.select_by_id("drawing", &["id", "a", "b"], "id", 1);
+        let select = sb.select_by_id(&drawing_table, &["id", "a", "b"], "id", 1);
 
         v.push(make_reducer_data_parity_scorer(
             host_url,
@@ -27,7 +28,7 @@ pub fn spec() -> BenchmarkSpec {
             },
         ));
 
-        let count = sb.count_by_id("drawing", "id", 1);
+        let count = sb.count_by_id(&drawing_table, "id", 1);
         v.push(make_sql_count_only_scorer(
             host_url,
             file!(),

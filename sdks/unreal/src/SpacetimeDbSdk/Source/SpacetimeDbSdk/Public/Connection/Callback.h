@@ -1,11 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "ModuleBindings/Types/ServerMessageType.g.h"
-#include "ModuleBindings/Types/TransactionUpdateType.g.h"
-#include "ModuleBindings/Types/ReducerCallInfoType.g.h"
-#include "ModuleBindings/Types/UpdateStatusType.g.h"
-#include "ModuleBindings/Types/EnergyQuantaType.g.h"
+#include "ModuleBindings/Types/ProcedureStatusType.g.h"
 #include "Types/Builtins.h"
 #include "Types/UnitType.h"
 #include <atomic>
@@ -18,6 +14,61 @@
 
 //Forward declare
 class UDbConnectionBase;
+
+/** Local reducer call metadata correlated by request_id for generated client dispatch. */
+USTRUCT(BlueprintType)
+struct SPACETIMEDBSDK_API FReducerCallInfoType
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
+	FString ReducerName;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
+	TArray<uint8> Args;
+
+	FORCEINLINE bool operator==(const FReducerCallInfoType& Other) const
+	{
+		return ReducerName == Other.ReducerName && Args == Other.Args;
+	}
+
+	FORCEINLINE bool operator!=(const FReducerCallInfoType& Other) const
+	{
+		return !(*this == Other);
+	}
+};
+
+FORCEINLINE uint32 GetTypeHash(const FReducerCallInfoType& ReducerCallInfo)
+{
+	uint32 Hash = GetTypeHash(ReducerCallInfo.ReducerName);
+	Hash = HashCombine(Hash, GetTypeHash(ReducerCallInfo.Args));
+	return Hash;
+}
+
+/** Local energy field used by generated reducer-event wrappers. */
+USTRUCT(BlueprintType)
+struct SPACETIMEDBSDK_API FEnergyQuantaType
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
+	int64 Value = 0;
+
+	FORCEINLINE bool operator==(const FEnergyQuantaType& Other) const
+	{
+		return Value == Other.Value;
+	}
+
+	FORCEINLINE bool operator!=(const FEnergyQuantaType& Other) const
+	{
+		return !(*this == Other);
+	}
+};
+
+FORCEINLINE uint32 GetTypeHash(const FEnergyQuantaType& EnergyQuanta)
+{
+	return GetTypeHash(EnergyQuanta.Value);
+}
 
 
 /** Termination status for a reducer event. */
@@ -194,6 +245,9 @@ struct SPACETIMEDBSDK_API FReducerEvent
 {
 	GENERATED_BODY()
 
+	/** Request id correlated to the originating reducer call (not Blueprint-exposed). */
+	uint32 RequestId = 0;
+
 	/** Timestamp for when the reducer executed */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
 	FSpacetimeDBTimestamp Timestamp;
@@ -220,7 +274,7 @@ struct SPACETIMEDBSDK_API FReducerEvent
 
 	FORCEINLINE bool operator==(const FReducerEvent& Other) const
 	{
-		return Status == Other.Status && Timestamp == Other.Timestamp && CallerIdentity == Other.CallerIdentity &&
+		return RequestId == Other.RequestId && Status == Other.Status && Timestamp == Other.Timestamp && CallerIdentity == Other.CallerIdentity &&
 			CallerConnectionId == Other.CallerConnectionId && EnergyConsumed == Other.EnergyConsumed &&
 			ReducerCall == Other.ReducerCall;
 	}
@@ -232,7 +286,8 @@ struct SPACETIMEDBSDK_API FReducerEvent
 
 FORCEINLINE uint32 GetTypeHash(const FReducerEvent& ReducerEvent)
 {
-	uint32 Hash = GetTypeHash(ReducerEvent.Status);
+	uint32 Hash = GetTypeHash(ReducerEvent.RequestId);
+	Hash = HashCombine(Hash, GetTypeHash(ReducerEvent.Status));
 	Hash = HashCombine(Hash, GetTypeHash(ReducerEvent.Timestamp));
 	Hash = HashCombine(Hash, GetTypeHash(ReducerEvent.CallerIdentity));
 	Hash = HashCombine(Hash, GetTypeHash(ReducerEvent.CallerConnectionId));
@@ -289,6 +344,8 @@ enum class ESpacetimeDBEventTag : uint8
 	UnsubscribeApplied,
 	/** Connection lost */
 	Disconnected,
+	/** Non-reducer transaction update */
+	Transaction,
 	/** Subscription error */
 	SubscribeError,
 	/** Unknown transaction type */
@@ -348,6 +405,14 @@ public:
 		return Obj;
 	}
 
+	static FSpacetimeDBEvent Transaction(const FSpacetimeDBUnit& Value)
+	{
+		FSpacetimeDBEvent Obj;
+		Obj.Tag = ESpacetimeDBEventTag::Transaction;
+		Obj.MessageData.Set<FSpacetimeDBUnit>(Value);
+		return Obj;
+	}
+
 	static FSpacetimeDBEvent SubscribeError(const FString& InError)
 	{
 		FSpacetimeDBEvent Obj;
@@ -402,6 +467,13 @@ public:
 		return MessageData.Get<FSpacetimeDBUnit>();
 	}
 
+	FORCEINLINE bool IsTransaction() const { return Tag == ESpacetimeDBEventTag::Transaction; }
+	FORCEINLINE FSpacetimeDBUnit GetAsTransaction() const
+	{
+		ensureMsgf(IsTransaction(), TEXT("MessageData does not hold Transaction!"));
+		return MessageData.Get<FSpacetimeDBUnit>();
+	}
+
 	FORCEINLINE bool IsSubscribeError() const { return Tag == ESpacetimeDBEventTag::SubscribeError; }
 	FORCEINLINE FString GetAsSubscribeError() const
 	{
@@ -437,6 +509,8 @@ public:
 			return GetAsUnsubscribeApplied() == Other.GetAsUnsubscribeApplied();
 		case ESpacetimeDBEventTag::Disconnected:
 			return GetAsDisconnected() == Other.GetAsDisconnected();
+		case ESpacetimeDBEventTag::Transaction:
+			return GetAsTransaction() == Other.GetAsTransaction();
 		case ESpacetimeDBEventTag::SubscribeError:
 			return GetAsSubscribeError() == Other.GetAsSubscribeError();
 		case ESpacetimeDBEventTag::UnknownTransaction:
@@ -464,6 +538,7 @@ FORCEINLINE uint32 GetTypeHash(const FSpacetimeDBEvent& Event)
 	case ESpacetimeDBEventTag::SubscribeApplied: return HashCombine(TagHash, ::GetTypeHash(Event.GetAsSubscribeApplied()));
 	case ESpacetimeDBEventTag::UnsubscribeApplied: return HashCombine(TagHash, ::GetTypeHash(Event.GetAsUnsubscribeApplied()));
 	case ESpacetimeDBEventTag::Disconnected: return HashCombine(TagHash, ::GetTypeHash(Event.GetAsDisconnected()));
+	case ESpacetimeDBEventTag::Transaction: return HashCombine(TagHash, ::GetTypeHash(Event.GetAsTransaction()));
 	case ESpacetimeDBEventTag::SubscribeError: return HashCombine(TagHash, GetTypeHash(Event.GetAsSubscribeError()));
 	case ESpacetimeDBEventTag::UnknownTransaction: return HashCombine(TagHash, ::GetTypeHash(Event.GetAsUnknownTransaction()));
 	case ESpacetimeDBEventTag::Procedure: return HashCombine(TagHash, ::GetTypeHash(Event.GetAsProcedure()));
@@ -558,10 +633,8 @@ struct SPACETIMEDBSDK_API FSpacetimeDBProcedureStatus
 public:
 	FSpacetimeDBProcedureStatus() = default;
 
-	// NOTE: order matches ESpacetimeDBStatusTag: Committed, Failed, OutOfEnergy
 	// Payloads:
 	//   Returned      -> FSpacetimeDBUnit
-	//   OutOfEnergy   -> FSpacetimeDBUnit
 	//   InternalError -> FString
 	TVariant<FSpacetimeDBUnit, FString> MessageData;
 
@@ -585,22 +658,12 @@ public:
 		return Obj;
 	}
 
-	static FSpacetimeDBProcedureStatus OutOfEnergy(const FSpacetimeDBUnit& Value)
-	{
-		FSpacetimeDBProcedureStatus Obj;
-		Obj.Tag = EProcedureStatusTag::OutOfEnergy;
-		Obj.MessageData.Set<FSpacetimeDBUnit>(Value);
-		return Obj;
-	}
-
 	static FSpacetimeDBProcedureStatus FromStatus(const FProcedureStatusType& Value)
 	{
 		switch (Value.Tag)
 		{
 		case EProcedureStatusTag::Returned:
 			return Returned(FSpacetimeDBUnit());
-		case EProcedureStatusTag::OutOfEnergy:
-			return OutOfEnergy(Value.GetAsOutOfEnergy());
 		case EProcedureStatusTag::InternalError:
 			return InternalError(Value.GetAsInternalError());
 		default:
@@ -609,18 +672,11 @@ public:
 	}
 	// -- Query helpers ----------------------
 	FORCEINLINE bool IsReturned() const { return Tag == EProcedureStatusTag::Returned; }
-	FORCEINLINE bool IsOutOfEnergy() const { return Tag == EProcedureStatusTag::OutOfEnergy; }
 	FORCEINLINE bool IsInternalError() const { return Tag == EProcedureStatusTag::InternalError; }
 
 	FORCEINLINE FSpacetimeDBUnit GetAsReturned() const
 	{
 		ensureMsgf(IsReturned(), TEXT("MessageData does not hold Returned!"));
-		return MessageData.Get<FSpacetimeDBUnit>();
-	}
-
-	FORCEINLINE FSpacetimeDBUnit GetAsOutOfEnergy() const
-	{
-		ensureMsgf(IsOutOfEnergy(), TEXT("MessageData does not hold OutOfEnergy!"));
 		return MessageData.Get<FSpacetimeDBUnit>();
 	}
 
@@ -639,8 +695,6 @@ public:
 		{
 		case EProcedureStatusTag::Returned:
 			return GetAsReturned() == Other.GetAsReturned();
-		case EProcedureStatusTag::OutOfEnergy:
-			return GetAsOutOfEnergy() == Other.GetAsOutOfEnergy();
 		case EProcedureStatusTag::InternalError:
 			return GetAsInternalError() == Other.GetAsInternalError();
 		default:
@@ -658,8 +712,6 @@ FORCEINLINE uint32 GetTypeHash(const FSpacetimeDBProcedureStatus& Status)
 	{
 	case EProcedureStatusTag::Returned:
 		return HashCombine(TagHash, ::GetTypeHash(Status.GetAsReturned()));
-	case EProcedureStatusTag::OutOfEnergy:
-		return HashCombine(TagHash, ::GetTypeHash(Status.GetAsOutOfEnergy()));
 	case EProcedureStatusTag::InternalError:
 		return HashCombine(TagHash, GetTypeHash(Status.GetAsInternalError()));
 	default:
@@ -683,21 +735,6 @@ private:
 	static bool IsReturned(const FSpacetimeDBProcedureStatus& InValue) { return InValue.IsReturned(); }
 
 	// We don't allow the raw value to be exported as GetAsReturned() from the ProcedureEventContext.
-
-	UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ProcedureStatus")
-	static FSpacetimeDBProcedureStatus OutOfEnergy(const FSpacetimeDBUnit& InValue)
-	{
-		return FSpacetimeDBProcedureStatus::OutOfEnergy(InValue);
-	}
-
-	UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ProcedureStatus")
-	static bool IsOutOfEnergy(const FSpacetimeDBProcedureStatus& InValue) { return InValue.IsOutOfEnergy(); }
-
-	UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ProcedureStatus")
-	static FSpacetimeDBUnit GetAsOutOfEnergy(const FSpacetimeDBProcedureStatus& InValue)
-	{
-		return InValue.GetAsOutOfEnergy();
-	}
 
 	UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ProcedureStatus")
 	static FSpacetimeDBProcedureStatus InternalError(const FString& InValue)

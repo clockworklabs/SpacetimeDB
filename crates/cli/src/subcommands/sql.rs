@@ -22,14 +22,12 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("sql_parts")
                 .num_args(0..)
-                .conflicts_with("interactive")
                 .help("SQL arguments: [DATABASE] <QUERY>"),
         )
         .arg(
             Arg::new("interactive")
                 .long("interactive")
                 .action(ArgAction::SetTrue)
-                .conflicts_with("sql_parts")
                 .help("Instead of using a query, run an interactive command prompt for `SQL` expressions"),
         )
         .arg(common_args::confirmed())
@@ -237,12 +235,12 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             }
         })?;
         let query = resolved.remaining_args.join(" ");
-        let confirmed = args.get_flag("confirmed");
+        let confirmed = args.get_one::<bool>("confirmed").copied();
 
         let con = parse_req(config, args, &resolved.database, resolved.server.as_deref()).await?;
         let mut api = ClientApi::new(con).sql();
-        if confirmed {
-            api = api.query(&[("confirmed", "true")]);
+        if let Some(confirmed) = confirmed {
+            api = api.query(&[("confirmed", if confirmed { "true" } else { "false" })]);
         }
 
         run_sql(api, &query, false).await?;

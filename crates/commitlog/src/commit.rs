@@ -67,9 +67,9 @@ impl Header {
         match &mut hdr.as_slice() {
             [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] => Ok(None),
             buf => {
-                let min_tx_offset = buf.get_u64().map_err(decode_error)?;
-                let n = buf.get_u16().map_err(decode_error)?;
-                let len = buf.get_u32().map_err(decode_error)?;
+                let min_tx_offset = buf.get_u64().map_err(|e| decode_header_error(e, "min_tx_offset"))?;
+                let n = buf.get_u16().map_err(|e| decode_header_error(e, "n"))?;
+                let len = buf.get_u32().map_err(|e| decode_header_error(e, "len"))?;
 
                 Ok(Some(Self {
                     min_tx_offset,
@@ -88,15 +88,15 @@ impl Header {
                 return Ok(None);
             }
 
-            return Err(e);
+            return Err(io::Error::new(e.kind(), format!("error reading commit header: {e}")));
         }
         match &mut hdr.as_slice() {
             [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] => Ok(None),
             buf => {
-                let min_tx_offset = buf.get_u64().map_err(decode_error)?;
-                let epoch = buf.get_u64().map_err(decode_error)?;
-                let n = buf.get_u16().map_err(decode_error)?;
-                let len = buf.get_u32().map_err(decode_error)?;
+                let min_tx_offset = buf.get_u64().map_err(|e| decode_header_error(e, "min_tx_offset"))?;
+                let epoch = buf.get_u64().map_err(|e| decode_header_error(e, "epoch"))?;
+                let n = buf.get_u16().map_err(|e| decode_header_error(e, "n"))?;
+                let len = buf.get_u32().map_err(|e| decode_header_error(e, "len"))?;
 
                 Ok(Some(Self {
                     min_tx_offset,
@@ -310,10 +310,16 @@ impl StoredCommit {
             return Ok(None);
         };
         let mut records = vec![0; hdr.len as usize];
-        reader.read_exact(&mut records)?;
+        reader.read_exact(&mut records).map_err(|e| {
+            io::Error::new(
+                e.kind(),
+                format!("failed to read {} bytes of commit payload: {}", hdr.len, e),
+            )
+        })?;
 
         let chk = reader.crc32c();
-        let crc = decode_u32(reader.into_inner())?;
+        let crc = decode_u32(reader.into_inner())
+            .map_err(|e| io::Error::new(e.kind(), format!("failed to read checksum: {e}")))?;
 
         if chk != crc {
             return Err(invalid_data(ChecksumMismatch));
@@ -342,30 +348,39 @@ impl StoredCommit {
     }
 }
 
-/// Numbers needed to compute [`crate::segment::Header`].
+/// A [`StoredCommit`] sans the records payload.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Metadata {
     pub tx_range: Range<u64>,
     pub size_in_bytes: u64,
     pub epoch: u64,
+    pub checksum: u32,
 }
 
 impl Metadata {
-    /// Extract the [`Metadata`] of a single [`Commit`] from the given reader.
+    /// Extract the [`Metadata`] of a single [`StoredCommit`] from the given
+    /// reader.
     ///
     /// Note that this decodes the commit due to checksum verification.
-    /// Like [`Commit::decode`], returns `None` if the reader is at EOF already.
+    /// Like [`StoredCommit::decode`], this method returns `None` if the reader
+    /// is at EOF already.
     pub fn extract<R: io::Read>(reader: R) -> io::Result<Option<Self>> {
-        Commit::decode(reader).map(|maybe_commit| maybe_commit.map(Self::from))
+        StoredCommit::decode(reader).map(|maybe_commit| maybe_commit.map(Self::from))
     }
 }
 
-impl From<Commit> for Metadata {
-    fn from(commit: Commit) -> Self {
+impl From<StoredCommit> for Metadata {
+    fn from(commit: StoredCommit) -> Self {
+        let tx_range = commit.tx_range();
+        let epoch = commit.epoch;
+        let checksum = commit.checksum;
+        let size_in_bytes = Commit::from(commit).encoded_len() as u64;
+
         Self {
-            tx_range: commit.tx_range(),
-            size_in_bytes: commit.encoded_len() as u64,
-            epoch: commit.epoch,
+            tx_range,
+            size_in_bytes,
+            epoch,
+            checksum,
         }
     }
 }
@@ -376,8 +391,8 @@ fn decode_u32<R: Read>(mut read: R) -> io::Result<u32> {
     Ok(u32::from_le_bytes(buf))
 }
 
-fn decode_error(e: DecodeError) -> io::Error {
-    invalid_data(e)
+fn decode_header_error(e: DecodeError, field: &str) -> io::Error {
+    invalid_data(format!("failed to decode commit header field '{field}': {e}"))
 }
 
 fn invalid_data<E>(e: E) -> io::Error

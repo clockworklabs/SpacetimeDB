@@ -135,7 +135,7 @@ async function setupCLI(conn: DbConnection): Promise<void> {
       console.log();
     } else if (text.toLowerCase() === 'hello') {
       conn.reducers.sayHello({});
-      console.log('Called say_hello reducer (check server logs)\n');
+      console.log('Called sayHello reducer (check server logs)\n');
     } else {
       conn.reducers.add({ name: text });
     }

@@ -1,4 +1,4 @@
-﻿import 'dotenv/config';
+import 'dotenv/config';
 
 export async function initBun(url?: string) {
   const bunUrl = url ?? process.env.BUN_URL;

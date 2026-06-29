@@ -959,7 +959,20 @@ impl<'de> ProductVisitor<'de> for ProductTypeLayoutView<'_> {
         Ok(elems.into())
     }
 
+    fn validate_seq_product<A: SeqProductAccess<'de>>(self, mut tup: A) -> Result<(), A::Error> {
+        for (i, elem_ty) in self.elements.iter().enumerate() {
+            if tup.validate_next_element_seed(&elem_ty.ty)?.is_none() {
+                return Err(A::Error::invalid_product_length(i, &self));
+            }
+        }
+        Ok(())
+    }
+
     fn visit_named_product<A: NamedProductAccess<'de>>(self, _: A) -> Result<Self::Output, A::Error> {
+        unreachable!()
+    }
+
+    fn validate_named_product<A: NamedProductAccess<'de>>(self, _: A) -> Result<(), A::Error> {
         unreachable!()
     }
 }
@@ -999,6 +1012,14 @@ impl<'de> SumVisitor<'de> for &SumTypeLayout {
 
         let value = data.deserialize_seed(variant_ty)?;
         Ok(SumValue::new(tag, value))
+    }
+
+    fn validate_sum<A: SumAccess<'de>>(self, data: A) -> Result<(), A::Error> {
+        let (tag, data) = data.variant(self)?;
+        // Find the variant type by `tag`.
+        let variant_ty = &self.variants[tag as usize].ty;
+
+        data.validate_seed(variant_ty)
     }
 }
 

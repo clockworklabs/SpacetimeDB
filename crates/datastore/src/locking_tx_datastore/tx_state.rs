@@ -1,17 +1,16 @@
 use super::{delete_table::DeleteTable, sequence::Sequence};
-use core::ops::RangeBounds;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
-use spacetimedb_sats::{memory_usage::MemoryUsage, AlgebraicValue};
+use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
     pointer_map::PointerMap,
     static_assert_size,
-    table::{IndexScanPointIter, IndexScanRangeIter, RowRef, Table, TableAndIndex},
-    table_index::{IndexSeekRangeResult, TableIndex},
+    table::{RowRef, Table, TableAndIndex},
+    table_index::TableIndex,
 };
 use std::collections::{btree_map, BTreeMap};
 use thin_vec::ThinVec;
@@ -77,7 +76,7 @@ pub(super) struct TxState {
     pub(super) pending_schema_changes: ThinVec<PendingSchemaChange>,
 }
 
-static_assert_size!(TxState, 88);
+static_assert_size!(TxState, 96);
 
 impl MemoryUsage for TxState {
     fn heap_usage(&self) -> usize {
@@ -124,10 +123,21 @@ pub enum PendingSchemaChange {
     /// Only non-representational row-type changes are allowed here,
     /// so existing rows in the table will be compatible with the new row type.
     TableAlterRowType(TableId, Vec<ColumnSchema>),
-    /// The constraint with [`ConstraintSchema`] was added to the table with [`TableId`].
-    ConstraintRemoved(TableId, ConstraintSchema),
+    /// The row type of the event table with [`TableId`] was changed.
+    /// The old column schemas was stored.
+    ///
+    /// As event tables never have rows resident across transactions or during automigrations,
+    /// we're fine to allow representational/layout-incompatible changes here.
+    ReschemaEventTable(TableId, Vec<ColumnSchema>),
+    /// The primary key of the table with [`TableId`] was changed.
+    /// The old primary key was stored.
+    TableAlterPrimaryKey(TableId, Option<ColList>),
+    /// The constraint with [`ConstraintSchema`] was removed from the table with [`TableId`].
+    /// If indices were made non-unique, their [`IndexId`]s are stored.
+    ConstraintRemoved(TableId, ConstraintSchema, Vec<IndexId>),
     /// The constraint with [`ConstraintId`] was added to the table with [`TableId`].
-    ConstraintAdded(TableId, ConstraintId),
+    /// If indices were made unique, their [`IndexId`]s and the taken [`PointerMap`] are stored.
+    ConstraintAdded(TableId, ConstraintId, Vec<IndexId>, Option<PointerMap>),
     /// The [`Sequence`] with [`SequenceSchema`] was added to the table with [`TableId`].
     SequenceRemoved(TableId, Sequence, SequenceSchema),
     /// The sequence with [`SequenceId`] was added to the table with [`TableId`].
@@ -147,14 +157,18 @@ impl MemoryUsage for PendingSchemaChange {
             Self::TableAdded(table_id) => table_id.heap_usage(),
             Self::TableAlterAccess(table_id, st_access) => table_id.heap_usage() + st_access.heap_usage(),
             Self::TableAlterRowType(table_id, column_schemas) => table_id.heap_usage() + column_schemas.heap_usage(),
-            Self::ConstraintRemoved(table_id, constraint_schema) => {
-                table_id.heap_usage() + constraint_schema.heap_usage()
+            Self::TableAlterPrimaryKey(table_id, pk) => table_id.heap_usage() + pk.heap_usage(),
+            Self::ConstraintRemoved(table_id, constraint_schema, index_ids) => {
+                table_id.heap_usage() + constraint_schema.heap_usage() + index_ids.heap_usage()
             }
-            Self::ConstraintAdded(table_id, constraint_id) => table_id.heap_usage() + constraint_id.heap_usage(),
+            Self::ConstraintAdded(table_id, constraint_id, index_ids, pointer_map) => {
+                table_id.heap_usage() + constraint_id.heap_usage() + index_ids.heap_usage() + pointer_map.heap_usage()
+            }
             Self::SequenceRemoved(table_id, sequence, sequence_schema) => {
                 table_id.heap_usage() + sequence.heap_usage() + sequence_schema.heap_usage()
             }
             Self::SequenceAdded(table_id, sequence_id) => table_id.heap_usage() + sequence_id.heap_usage(),
+            Self::ReschemaEventTable(table_id, column_schemas) => table_id.heap_usage() + column_schemas.heap_usage(),
         }
     }
 }
@@ -168,45 +182,11 @@ impl TxState {
         (ins_count, del_count)
     }
 
-    /// When there's an index on `cols`,
-    /// returns an iterator over the `TableIndex` that yields all the [`RowRef`]s
-    /// that match the specified `range` in the indexed column.
-    ///
-    /// Matching is defined by `Ord for AlgebraicValue`.
-    ///
-    /// For a unique index this will always yield at most one `RowRef`
-    /// when `range` is a point.
-    /// When there is no index this returns `None`.
-    pub(super) fn index_seek_range_by_cols<'a>(
-        &'a self,
-        table_id: TableId,
-        cols: &ColList,
-        range: &impl RangeBounds<AlgebraicValue>,
-    ) -> Option<IndexSeekRangeResult<IndexScanRangeIter<'a>>> {
+    /// Returns an index for `table_id` on `cols`, if any.
+    pub(super) fn get_index_by_cols(&self, table_id: TableId, cols: &ColList) -> Option<TableAndIndex<'_>> {
         self.insert_tables
             .get(&table_id)?
             .get_index_by_cols_with_table(&self.blob_store, cols)
-            .map(|i| i.seek_range(range))
-    }
-
-    /// When there's an index on `cols`,
-    /// returns an iterator over the `TableIndex` that yields all the [`RowRef`]s
-    /// that match the specified `range` in the indexed column.
-    ///
-    /// Matching is defined by `Eq for AlgebraicValue`.
-    ///
-    /// For a unique index this will always yield at most one `RowRef`.
-    /// When there is no index this returns `None`.
-    pub(super) fn index_seek_point_by_cols<'a>(
-        &'a self,
-        table_id: TableId,
-        cols: &ColList,
-        point: &AlgebraicValue,
-    ) -> Option<IndexScanPointIter<'a>> {
-        self.insert_tables
-            .get(&table_id)?
-            .get_index_by_cols_with_table(&self.blob_store, cols)
-            .map(|i| i.seek_point(point))
     }
 
     /// Returns the table for `table_id` combined with the index for `index_id`, if both exist.

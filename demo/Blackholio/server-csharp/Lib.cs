@@ -101,6 +101,13 @@ public static partial class Module
 		public ScheduleAt scheduled_at;
 		public int player_id;
 	}
+    
+    [Table(Accessor = "consume_entity_event", Public = true, Event = true)]
+    public partial struct ConsumeEntityEvent
+    {
+        public int consumed_entity_id;
+        public int consumer_entity_id;
+    }
 
 	[Table(Accessor = "consume_entity_timer", Scheduled = nameof(ConsumeEntity), ScheduledAt = nameof(scheduled_at))]
 	public partial struct ConsumeEntityTimer
@@ -433,6 +440,12 @@ public static partial class Module
 	{
 		var consumed_entity = ctx.Db.entity.entity_id.Find(request.consumed_entity_id) ?? throw new Exception("Consumed entity doesn't exist");
 		var consumer_entity = ctx.Db.entity.entity_id.Find(request.consumer_entity_id) ?? throw new Exception("Consumer entity doesn't exist");
+        
+        ctx.Db.consume_entity_event.Insert(new ConsumeEntityEvent
+        {
+            consumed_entity_id = consumed_entity.entity_id,
+            consumer_entity_id = consumer_entity.entity_id
+        });
 
 		consumer_entity.mass += consumed_entity.mass;
 		DestroyEntity(ctx, consumed_entity.entity_id);

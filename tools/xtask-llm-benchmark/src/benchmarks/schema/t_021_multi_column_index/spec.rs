@@ -1,8 +1,5 @@
-use crate::eval::defaults::{
-    default_schema_parity_scorers,
-    make_reducer_sql_count_scorer,
-};
-use crate::eval::{casing_for_lang, ident, table_name, BenchmarkSpec, ReducerSqlCountConfig, SqlBuilder};
+use crate::eval::defaults::{default_schema_parity_scorers, make_reducer_call_both_scorer, make_sql_count_only_scorer};
+use crate::eval::{casing_for_lang, ident, table_name, BenchmarkSpec, SqlBuilder};
 use std::time::Duration;
 
 pub fn spec() -> BenchmarkSpec {
@@ -10,51 +7,62 @@ pub fn spec() -> BenchmarkSpec {
         let mut v = default_schema_parity_scorers(host_url, file!(), route_tag);
 
         let case = casing_for_lang(lang);
-        let sb   = SqlBuilder::new(case);
+        let sb = SqlBuilder::new(case);
 
-        let seed = ident("Seed", case);
+        let seed = ident("Seed", crate::eval::Casing::Snake);
         let log_table = table_name("log", lang);
 
         let user_id = ident("user_id", sb.case);
-        let day     = ident("day", sb.case);
+        let day = ident("day", sb.case);
 
-        let base = |reducer: &str| ReducerSqlCountConfig {
-            src_file: file!(),
+        // Seed once via reducer on both DBs
+        v.push(make_reducer_call_both_scorer(
+            host_url,
+            file!(),
             route_tag,
-            reducer: reducer.to_string(),
-            args: vec![],
-            sql_count_query: String::new(), // override per case
-            expected_count: 0,              // override per case
-            id_str: "",
-            timeout: Duration::from_secs(10),
-        };
+            &seed,
+            vec![],
+            "mcindex_seed",
+        ));
 
-        v.push(make_reducer_sql_count_scorer(host_url, ReducerSqlCountConfig {
-            sql_count_query: format!("SELECT COUNT(*) AS n FROM {log_table}"),
-            expected_count: 3,
-            id_str: "mcindex_seed_count",
-            ..base(&seed)
-        }));
+        // Then just query — don't call seed again
+        v.push(make_sql_count_only_scorer(
+            host_url,
+            file!(),
+            route_tag,
+            format!("SELECT COUNT(*) AS n FROM {log_table}"),
+            3,
+            "mcindex_seed_count",
+            Duration::from_secs(10),
+        ));
 
-        v.push(make_reducer_sql_count_scorer(host_url, ReducerSqlCountConfig {
-            sql_count_query: format!(
+        v.push(make_sql_count_only_scorer(
+            host_url,
+            file!(),
+            route_tag,
+            format!(
                 "SELECT COUNT(*) AS n FROM {log_table} WHERE {u}=7 AND {d}=1",
-                u = user_id, d = day
+                u = user_id,
+                d = day
             ),
-            expected_count: 1,
-            id_str: "mcindex_lookup_u7_d1",
-            ..base(&seed)
-        }));
+            1,
+            "mcindex_lookup_u7_d1",
+            Duration::from_secs(10),
+        ));
 
-        v.push(make_reducer_sql_count_scorer(host_url, ReducerSqlCountConfig {
-            sql_count_query: format!(
+        v.push(make_sql_count_only_scorer(
+            host_url,
+            file!(),
+            route_tag,
+            format!(
                 "SELECT COUNT(*) AS n FROM {log_table} WHERE {u}=7 AND {d}=2",
-                u = user_id, d = day
+                u = user_id,
+                d = day
             ),
-            expected_count: 1,
-            id_str: "mcindex_lookup_u7_d2",
-            ..base(&seed)
-        }));
+            1,
+            "mcindex_lookup_u7_d2",
+            Duration::from_secs(10),
+        ));
 
         v
     })

@@ -1,4 +1,4 @@
-﻿Write a SpacetimeDB backend module in C# that defines a scheduled table and seeds one schedule entry.
+Write a SpacetimeDB backend module in C# that defines a scheduled table and seeds one schedule entry.
 
 TABLE
 - TickTimer

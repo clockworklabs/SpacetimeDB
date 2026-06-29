@@ -1,4 +1,4 @@
-﻿import { query } from "./_generated/server";
+import { query } from "./_generated/server";
 import { v } from 'convex/values';
 
 export const get_account = query(async ({ db }, { id }: { id: number }) => {

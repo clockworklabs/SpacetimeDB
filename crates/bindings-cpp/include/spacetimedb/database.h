@@ -21,7 +21,6 @@
 namespace SpacetimeDB {
 namespace Internal {
     class Module;
-    struct RawModuleDef;
 }
 
 // Field constraint flags - must match Rust's ColumnAttribute bits  
@@ -52,7 +51,7 @@ struct TableTag;
 
 
 // Forward declaration for field tags
-template<typename TableType, typename FieldType, FieldConstraint Constraint>
+template<typename TableType, typename FieldType, FieldConstraint Constraint, bool IsEventTable>
 struct FieldTag;
 
 // Forward declarations for typed field accessors
@@ -147,7 +146,12 @@ public:
     uint64_t count() const {
         return get_table().count();
     }
-    
+
+    // Clear all rows in the table and return the number removed
+    uint64_t clear() const {
+        return get_table().clear();
+    }
+
     // Delete rows matching a value
     uint32_t delete_by_value(const T& value) const {
         return get_table().delete_by_value(value);
@@ -237,23 +241,23 @@ public:
     
     // Field tag accessor - NEW: ctx.db[simple_table.id] syntax
     // Overloaded for each field constraint type
-    template<typename TableType, typename FieldType>
-    TypedPrimaryKeyAccessor<TableType, FieldType> operator[](const FieldTag<TableType, FieldType, FieldConstraint::PrimaryKey>& field_tag) const {
+    template<typename TableType, typename FieldType, bool IsEventTable>
+    TypedPrimaryKeyAccessor<TableType, FieldType> operator[](const FieldTag<TableType, FieldType, FieldConstraint::PrimaryKey, IsEventTable>& field_tag) const {
         return TypedPrimaryKeyAccessor<TableType, FieldType>(field_tag.table_name, field_tag.field_name, field_tag.member_ptr);
     }
     
-    template<typename TableType, typename FieldType>
-    TypedUniqueAccessor<TableType, FieldType> operator[](const FieldTag<TableType, FieldType, FieldConstraint::Unique>& field_tag) const {
+    template<typename TableType, typename FieldType, bool IsEventTable>
+    TypedUniqueAccessor<TableType, FieldType> operator[](const FieldTag<TableType, FieldType, FieldConstraint::Unique, IsEventTable>& field_tag) const {
         return TypedUniqueAccessor<TableType, FieldType>(field_tag.table_name, field_tag.field_name, field_tag.member_ptr);
     }
     
-    template<typename TableType, typename FieldType>
-    TypedIndexedAccessor<TableType, FieldType> operator[](const FieldTag<TableType, FieldType, FieldConstraint::Indexed>& field_tag) const {
+    template<typename TableType, typename FieldType, bool IsEventTable>
+    TypedIndexedAccessor<TableType, FieldType> operator[](const FieldTag<TableType, FieldType, FieldConstraint::Indexed, IsEventTable>& field_tag) const {
         return TypedIndexedAccessor<TableType, FieldType>(field_tag.table_name, field_tag.field_name, field_tag.member_ptr);
     }
     
-    template<typename TableType, typename FieldType>
-    TypedRegularAccessor<TableType, FieldType> operator[](const FieldTag<TableType, FieldType, FieldConstraint::None>& field_tag) const {
+    template<typename TableType, typename FieldType, bool IsEventTable>
+    TypedRegularAccessor<TableType, FieldType> operator[](const FieldTag<TableType, FieldType, FieldConstraint::None, IsEventTable>& field_tag) const {
         return TypedRegularAccessor<TableType, FieldType>(field_tag.table_name, field_tag.field_name, field_tag.member_ptr);
     }
     

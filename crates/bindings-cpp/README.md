@@ -102,7 +102,7 @@ SPACETIMEDB_NAMESPACE(UserRole, "Auth")  // Will be "Auth.UserRole" in client co
 
 // User-defined reducer
 SPACETIMEDB_REDUCER(add_user, ReducerContext ctx, std::string name, std::string email) {
-    User user{ctx.sender, name, email}; // id will be auto-generated
+    User user{ctx.sender(), name, email}; // id will be auto-generated
     ctx.db[users].insert(user);
     LOG_INFO("Added user: " + name);
     return Ok();
@@ -110,7 +110,7 @@ SPACETIMEDB_REDUCER(add_user, ReducerContext ctx, std::string name, std::string 
 
 // Delete user by id (using primary key)
 SPACETIMEDB_REDUCER(delete_user, ReducerContext ctx) {
-    ctx.db[users_identity].delete_by_key(ctx.sender);
+    ctx.db[users_identity].delete_by_key(ctx.sender());
     return Ok();
 }
 
@@ -121,19 +121,19 @@ SPACETIMEDB_INIT(init, ReducerContext ctx) {
 }
 
 SPACETIMEDB_CLIENT_CONNECTED(on_connect, ReducerContext ctx) {
-    LOG_INFO("Client connected: " + ctx.sender.to_hex_string());
+    LOG_INFO("Client connected: " + ctx.sender().to_hex_string());
     return Ok();
 }
 
 SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect, ReducerContext ctx) {
-    LOG_INFO("Client disconnected: " + ctx.sender.to_hex_string());
+    LOG_INFO("Client disconnected: " + ctx.sender().to_hex_string());
     return Ok();
 }
 
 // Define a view for querying data (finds the calling user)
 SPACETIMEDB_VIEW(std::optional<User>, find_my_user, Public, ViewContext ctx) {
     // Use indexed field to find user by their identity
-    return ctx.db[users_identity].find(ctx.sender);
+    return ctx.db[users_identity].find(ctx.sender());
 }
 
 // Define a procedure (pure function with return value)
@@ -234,7 +234,7 @@ LOG_PANIC("Fatal error message");
 The library uses a sophisticated hybrid compile-time/runtime architecture:
 
 - **Compile-Time Validation** (`table_with_constraints.h`): C++20 concepts and static assertions for constraint validation
-- **V9 Type Registration System** (`internal/v9_type_registration.h`): Unified type registration with error detection and circular reference prevention
+- **Module Type Registration System** (`internal/module_type_registration.h`): Unified type registration with error detection and circular reference prevention
 - **Priority-Ordered Initialization** (`internal/Module.cpp`): __preinit__ functions with numbered priorities ensure correct registration order
 - **Error Detection System** (`internal/Module.cpp`): Multi-layer validation with error module replacement for clear diagnostics
 - **BSATN Serialization** (`bsatn/`): Binary serialization system with algebraic type support for all data types
@@ -274,3 +274,4 @@ See the `modules/*-cpp/src/` directory for example modules:
 ## Contributing
 
 This library is part of the SpacetimeDB project. Please see the main repository for contribution guidelines.
+

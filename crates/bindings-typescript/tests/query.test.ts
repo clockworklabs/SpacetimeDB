@@ -19,6 +19,7 @@ const personTable = table(
 
     indexes: [
       {
+        accessor: 'id_name_idx',
         name: 'id_name_idx',
         algorithm: 'btree',
         columns: ['id', 'name'] as const,
@@ -29,6 +30,8 @@ const personTable = table(
     id: t.identity(),
     name: t.string(),
     age: t.u32(),
+    active: t.bool(),
+    createdAt: t.timestamp(),
   }
 );
 
@@ -37,6 +40,7 @@ const ordersTable = table(
     name: 'orders',
     indexes: [
       {
+        accessor: 'orders_person_id_idx',
         name: 'orders_person_id_idx',
         algorithm: 'btree',
         columns: ['person_id'],
@@ -51,9 +55,20 @@ const ordersTable = table(
   }
 );
 
+const renamedColumnsTable = table(
+  {
+    name: 'renamed_columns',
+  },
+  {
+    displayName: t.string().name('display_name'),
+    ageYears: t.u32().name('age_years'),
+  }
+);
+
 const schemaDef = tablesToSchema(new ModuleContext(), {
   person: personTable,
   orders: ordersTable,
+  renamedColumns: renamedColumnsTable,
 });
 
 describe('Timestamp thing', () => {
@@ -139,6 +154,13 @@ describe('TableScan.toSql', () => {
     );
   });
 
+  it('accepts boolean columns directly as where predicates', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = toSql(qb.person.where(row => row.active).build());
+
+    expect(sql).toBe(`SELECT * FROM "person" WHERE "person"."active" = TRUE`);
+  });
+
   it('renders Identity literals using their hex form', () => {
     const qb = makeQueryBuilder(schemaDef);
     const identity = new Identity(
@@ -148,6 +170,26 @@ describe('TableScan.toSql', () => {
 
     expect(sql).toBe(
       `SELECT * FROM "person" WHERE "person"."id" = 0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`
+    );
+  });
+
+  it('renders Timestamp literals as RFC3339 strings', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const timestamp = Timestamp.fromDate(new Date('2024-01-01T00:00:00.123Z'));
+    const sql = toSql(qb.person.where(row => row.createdAt.eq(timestamp)));
+
+    expect(sql).toBe(
+      `SELECT * FROM "person" WHERE "person"."createdAt" = '2024-01-01T00:00:00.123000Z'`
+    );
+  });
+
+  it('supports Timestamp comparisons in where predicates', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const timestamp = Timestamp.fromDate(new Date('2024-01-01T00:00:00.123Z'));
+    const sql = toSql(qb.person.where(row => row.createdAt.gt(timestamp)));
+
+    expect(sql).toBe(
+      `SELECT * FROM "person" WHERE "person"."createdAt" > '2024-01-01T00:00:00.123000Z'`
     );
   });
 
@@ -336,5 +378,18 @@ describe('TableScan.toSql', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = toSql(qb.person);
     expect(sql).toBe('SELECT * FROM "person"');
+  });
+
+  it('uses DB column names for accessors with explicit DB names', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = toSql(
+      qb.renamedColumns
+        .where(row => row.displayName.eq('Alice').and(row.ageYears.gt(30)))
+        .build()
+    );
+
+    expect(sql).toBe(
+      `SELECT * FROM "renamed_columns" WHERE ("renamed_columns"."display_name" = 'Alice') AND ("renamed_columns"."age_years" > 30)`
+    );
   });
 });

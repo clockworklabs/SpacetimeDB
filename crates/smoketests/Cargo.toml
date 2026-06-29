@@ -12,14 +12,18 @@ serde_json.workspace = true
 toml.workspace = true
 regex.workspace = true
 anyhow.workspace = true
+fs_extra.workspace = true
+reqwest = { workspace = true, features = ["blocking"] }
 which = "8.0.0"
 
 [dev-dependencies]
+spacetimedb-core.workspace = true
 cargo_metadata.workspace = true
 assert_cmd = "2"
 predicates = "3"
 tokio.workspace = true
 tokio-postgres.workspace = true
+xmltree.workspace = true
 
 [lints]
 workspace = true

@@ -162,6 +162,8 @@ mod utils;
 
 #[doc(hidden)]
 pub use serde as __serde;
+#[doc(hidden)]
+pub use tempfile as __tempfile;
 
 /// Implemented for path types. Use `from_path_unchecked()` to construct a strongly-typed
 /// path directly from a `PathBuf`.
@@ -282,9 +284,11 @@ mod tests {
         }
         fn maybe_set_var(var: &str, val: Option<impl AsRef<OsStr>>) {
             if let Some(val) = val {
-                std::env::set_var(var, val);
+                // TODO: Audit that the environment access only happens in single-threaded code.
+                unsafe { std::env::set_var(var, val) };
             } else {
-                std::env::remove_var(var);
+                // TODO: Audit that the environment access only happens in single-threaded code.
+                unsafe { std::env::remove_var(var) };
             }
         }
         pub(super) fn with_vars<const N: usize, R>(vars: [(&str, Option<&str>); N], f: impl FnOnce() -> R) -> R {

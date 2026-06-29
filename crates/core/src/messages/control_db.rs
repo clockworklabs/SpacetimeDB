@@ -99,11 +99,21 @@ pub enum HostType {
     Js = 1,
 }
 
-impl From<crate::messages::control_db::HostType> for ModuleKind {
-    fn from(host_type: crate::messages::control_db::HostType) -> Self {
+impl From<HostType> for ModuleKind {
+    fn from(host_type: HostType) -> Self {
         match host_type {
-            crate::messages::control_db::HostType::Wasm => Self::WASM,
-            crate::messages::control_db::HostType::Js => Self::JS,
+            HostType::Wasm => Self::WASM,
+            HostType::Js => Self::JS,
+        }
+    }
+}
+
+impl From<ModuleKind> for HostType {
+    fn from(kind: ModuleKind) -> Self {
+        match kind {
+            ModuleKind::WASM => Self::Wasm,
+            ModuleKind::JS => Self::Js,
+            x => unreachable!("missing mapping from module kind {x:?} to host type"),
         }
     }
 }

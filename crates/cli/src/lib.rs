@@ -27,7 +27,6 @@ pub fn get_subcommands() -> Vec<Command> {
         call::cli(),
         describe::cli(),
         dev::cli(),
-        energy::cli(),
         sql::cli(),
         dns::cli(),
         generate::cli(),
@@ -39,6 +38,8 @@ pub fn get_subcommands() -> Vec<Command> {
         server::cli(),
         subscribe::cli(),
         start::cli(),
+        lock::cli(),
+        unlock::cli(),
         subcommands::version::cli(),
     ]
 }
@@ -54,7 +55,6 @@ pub async fn exec_subcommand(
         "call" => call::exec(config, args).await,
         "describe" => describe::exec(config, args).await,
         "dev" => dev::exec(config, args).await,
-        "energy" => energy::exec(config, args).await,
         "publish" => publish::exec(config, args).await,
         "delete" => delete::exec(config, args).await,
         "logs" => logs::exec(config, args).await,
@@ -66,9 +66,11 @@ pub async fn exec_subcommand(
         "build" => build::exec(config, args).await.map(drop),
         "server" => server::exec(config, paths, args).await,
         "subscribe" => subscribe::exec(config, args).await,
-        "start" => return start::exec(paths, args).await,
+        "start" => return start::exec(config, paths, args).await,
         "login" => login::exec(config, args).await,
         "logout" => logout::exec(config, args).await,
+        "lock" => lock::exec(config, args).await,
+        "unlock" => unlock::exec(config, args).await,
         "version" => return subcommands::version::exec(paths, root_dir, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {unknown}")),
     }

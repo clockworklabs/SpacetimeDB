@@ -9,6 +9,8 @@ license-file = "LICENSE"
 [dependencies]
 spacetimedb-data-structures.workspace = true
 anyhow.workspace = true
+futures.workspace = true
+gloo-timers = { version = "0.3.0", features = ["futures"] }
 
 [lints]
 workspace = true

@@ -12,8 +12,41 @@ use crate::util::{check_duplicate_msg, match_meta};
 pub(crate) struct ViewArgs {
     name: Option<LitStr>,
     accessor: Ident,
+    primary_key: Option<ViewPrimaryKeyArg>,
     #[allow(unused)]
     public: bool,
+}
+
+/// Argument accepted by `#[view(primary_key = ...)]`.
+///
+/// Both identifier and string literal syntax is supported.
+enum ViewPrimaryKeyArg {
+    Ident(Ident),
+    Literal(LitStr),
+}
+
+impl ViewPrimaryKeyArg {
+    fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
+        if input.peek(LitStr) {
+            input.parse().map(Self::Literal)
+        } else {
+            input.parse().map(Self::Ident)
+        }
+    }
+
+    fn name(&self) -> String {
+        match self {
+            Self::Ident(ident) => ident.unraw().to_string(),
+            Self::Literal(lit) => lit.value(),
+        }
+    }
+
+    fn ident(&self) -> Option<&Ident> {
+        match self {
+            Self::Ident(ident) => Some(ident),
+            Self::Literal(_) => None,
+        }
+    }
 }
 
 impl ViewArgs {
@@ -21,6 +54,7 @@ impl ViewArgs {
     pub(crate) fn parse(input: TokenStream, func_ident: &Ident) -> syn::Result<Self> {
         let mut name = None;
         let mut accessor = None;
+        let mut primary_key = None;
         let mut public = None;
         syn::meta::parser(|meta| {
             match_meta!(match meta {
@@ -35,6 +69,10 @@ impl ViewArgs {
                 sym::accessor => {
                     check_duplicate_msg(&accessor, &meta, "`accessor` already specified")?;
                     accessor = Some(meta.value()?.parse()?);
+                }
+                sym::primary_key => {
+                    check_duplicate_msg(&primary_key, &meta, "`primary_key` already specified")?;
+                    primary_key = Some(ViewPrimaryKeyArg::parse(meta.value()?)?);
                 }
             });
             Ok(())
@@ -51,6 +89,7 @@ impl ViewArgs {
             .ok_or_else(|| syn::Error::new(Span::call_site(), "views must be `public`, e.g. `#[view(public)]`"))?;
         Ok(Self {
             name,
+            primary_key,
             public: true,
             accessor,
         })
@@ -61,20 +100,40 @@ impl ViewArgs {
 fn extract_impl_query_inner(ty: &syn::Type) -> Option<&syn::Type> {
     if let syn::Type::ImplTrait(impl_trait) = ty {
         for bound in &impl_trait.bounds {
-            if let syn::TypeParamBound::Trait(trait_bound) = bound {
-                if let Some(seg) = trait_bound.path.segments.last() {
-                    if seg.ident == "Query" {
-                        if let syn::PathArguments::AngleBracketed(args) = &seg.arguments {
-                            if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
-                                return Some(inner);
-                            }
-                        }
-                    }
-                }
+            if let syn::TypeParamBound::Trait(trait_bound) = bound
+                && let Some(seg) = trait_bound.path.segments.last()
+                && seg.ident == "Query"
+                && let syn::PathArguments::AngleBracketed(args) = &seg.arguments
+                && let Some(syn::GenericArgument::Type(inner)) = args.args.first()
+            {
+                return Some(inner);
             }
         }
     }
     None
+}
+
+/// If `ty` is a supported view return type, returns the row type `T`.
+fn extract_view_return_row_type(ty: &syn::Type) -> Option<&syn::Type> {
+    if let Some(inner) = extract_impl_query_inner(ty) {
+        return Some(inner);
+    }
+
+    let syn::Type::Path(path) = ty else {
+        return None;
+    };
+
+    let seg = path.path.segments.last()?;
+    if !matches!(seg.ident.to_string().as_str(), "Vec" | "Option" | "RawQuery") {
+        return None;
+    }
+    let syn::PathArguments::AngleBracketed(args) = &seg.arguments else {
+        return None;
+    };
+    let Some(syn::GenericArgument::Type(inner)) = args.args.first() else {
+        return None;
+    };
+    Some(inner)
 }
 
 pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Result<TokenStream> {
@@ -162,7 +221,7 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
     let lt_where_clause = &lt_params.where_clause;
 
     let generated_describe_function = quote! {
-        #[export_name = #register_describer_symbol]
+        #[unsafe(export_name = #register_describer_symbol)]
         pub extern "C" fn __register_describer() {
             spacetimedb::rt::ViewRegistrar::<#ctx_ty>::register::<_, #func_name, _, _>(#func_name)
         }
@@ -224,6 +283,25 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
     };
 
     let eff_ret_ty = &effective_ret_ty;
+    let primary_key_column_name = args.primary_key.as_ref().map(ViewPrimaryKeyArg::name);
+    let primary_key_field_check = args
+        .primary_key
+        .as_ref()
+        .and_then(ViewPrimaryKeyArg::ident)
+        .zip(extract_view_return_row_type(ret_ty))
+        .map(|(primary_key, row_ty)| {
+            quote! {
+                const _: () = {
+                    fn _assert_view_primary_key_column #lt_params (__row: &#row_ty) #lt_where_clause {
+                        fn _assert_view_primary_key_column_type<T: spacetimedb::ViewPrimaryKeyColumn>(_: &T) {}
+                        _assert_view_primary_key_column_type(&__row.#primary_key);
+                    }
+                };
+            }
+        });
+    let primary_key_column_const = primary_key_column_name
+        .as_ref()
+        .map(|primary_key| quote! { const VIEW_PRIMARY_KEY_COLUMNS: &'static [&'static str] = &[#primary_key]; });
 
     Ok(quote! {
         #emitted_fn
@@ -245,6 +323,8 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
                 #(let _ = <#arg_tys as spacetimedb::rt::ViewArg>::_ITEM;)*
             }
         };
+
+        #primary_key_field_check
 
         impl #func_name {
             fn invoke(__ctx: #ctx_ty, __args: &[u8]) -> Vec<u8> {
@@ -268,6 +348,8 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
 
             /// The pointer for invoking this function
             const INVOKE: Self::Invoke = #func_name::invoke;
+
+            #primary_key_column_const
 
             /// The return type of this function
             fn return_type(

@@ -3,6 +3,7 @@
 
 #include <spacetimedb/bsatn/types.h> // For Identity
 #include <spacetimedb/bsatn/timestamp.h> // For Timestamp
+#include <spacetimedb/query_builder.h>
 #include <spacetimedb/readonly_database_context.h> // For ReadOnlyDatabaseContext
 #include <array>
 
@@ -25,7 +26,7 @@ namespace SpacetimeDB {
  * SPACETIMEDB_VIEW(std::vector<Item>, get_my_items, Public, ViewContext ctx) {
  *     std::vector<Item> my_items;
  *     // Filter by caller's identity using indexed field
- *     for (const auto& item : ctx.db[item_owner].filter(ctx.sender)) {
+ *     for (const auto& item : ctx.db[item_owner].filter(ctx.sender())) {
  *         my_items.push_back(item);
  *     }
  *     return Ok(my_items);
@@ -33,17 +34,22 @@ namespace SpacetimeDB {
  * @endcode
  */
 struct ViewContext {
+private:
     // Caller's identity - who invoked this view
-    Identity sender;
-    
+    Identity sender_;
+
+public:
     // Read-only database access - no mutations allowed
     ReadOnlyDatabaseContext db;
+    QueryBuilder from;
     
     // Constructors
     ViewContext() = default;
     
     explicit ViewContext(Identity s)
-        : sender(s) {}
+        : sender_(s) {}
+
+    Identity sender() const { return sender_; }
 };
 
 /**
@@ -70,6 +76,7 @@ struct ViewContext {
 struct AnonymousViewContext {
     // Read-only database access - no mutations allowed
     ReadOnlyDatabaseContext db;
+    QueryBuilder from;
     
     // Constructors
     AnonymousViewContext() = default;

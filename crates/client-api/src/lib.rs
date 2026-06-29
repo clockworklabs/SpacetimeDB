@@ -27,6 +27,11 @@ pub mod auth;
 pub mod routes;
 pub mod util;
 
+/// The default value for the `confirmed` reads parameter when the client does
+/// not specify it explicitly. When `true`, the server waits for durability
+/// confirmation before sending subscription updates and SQL results.
+pub const DEFAULT_CONFIRMED_READS: bool = true;
+
 /// Defines the state / environment of a SpacetimeDB node from the PoV of the
 /// client API.
 ///
@@ -102,6 +107,29 @@ impl Host {
         self.host_controller.get_module_host(self.replica_id).await
     }
 
+    /// Wait for the module host to become available, retrying with backoff.
+    ///
+    /// This is useful for routes like `/schema` that may be called while the
+    /// database is still loading. Instead of returning an immediate 500, we
+    /// poll for up to `timeout` before giving up.
+    pub async fn wait_for_module(&self, timeout: std::time::Duration) -> Result<ModuleHost, NoSuchModule> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        let mut interval = tokio::time::Duration::from_millis(100);
+        loop {
+            match self.host_controller.get_module_host(self.replica_id).await {
+                Ok(module) => return Ok(module),
+                Err(NoSuchModule) => {
+                    if tokio::time::Instant::now() >= deadline {
+                        return Err(NoSuchModule);
+                    }
+                    tokio::time::sleep(interval).await;
+                    // Exponential backoff: 100ms, 200ms, 400ms, 800ms, 1s, 1s, ...
+                    interval = (interval * 2).min(tokio::time::Duration::from_secs(1));
+                }
+            }
+        }
+    }
+
     pub async fn module_watcher(&self) -> Result<watch::Receiver<ModuleHost>, NoSuchModule> {
         self.host_controller.watch_module_host(self.replica_id).await
     }
@@ -109,7 +137,7 @@ impl Host {
     pub async fn exec_sql(
         &self,
         auth: AuthCtx,
-        database: Database,
+        _database: Database,
         confirmed_read: bool,
         body: String,
     ) -> axum::response::Result<Vec<SqlStmtResult<ProductValue>>> {
@@ -118,61 +146,48 @@ impl Host {
             .await
             .map_err(|_| (StatusCode::NOT_FOUND, "module not found".to_string()))?;
 
-        let (tx_offset, durable_offset, json) = self
-            .host_controller
-            .using_database(database, self.replica_id, move |db| async move {
-                tracing::info!(sql = body);
-                let mut header = vec![];
-                let sql_start = std::time::Instant::now();
-                let sql_span = tracing::trace_span!("execute_sql", total_duration = tracing::field::Empty,);
-                let _guard = sql_span.enter();
+        tracing::info!(sql = body);
+        let mut header = vec![];
+        let sql_start = std::time::Instant::now();
+        let sql_span = tracing::trace_span!("execute_sql", total_duration = tracing::field::Empty,);
+        let _guard = sql_span.enter();
+        let db = module_host.relational_db().clone();
+        let durable_offset = db.durable_tx_offset();
 
-                let result = sql::execute::run(
-                    db.clone(),
-                    body,
-                    auth,
-                    Some(module_host.info.subscriptions.clone()),
-                    Some(module_host),
-                    &mut header,
-                )
-                .await
-                .map_err(|e| {
-                    log::warn!("{e}");
-                    if let Some(auth_err) = e.get_auth_error() {
-                        (StatusCode::UNAUTHORIZED, auth_err.to_string())
-                    } else {
-                        (StatusCode::BAD_REQUEST, e.to_string())
-                    }
-                })?;
+        let result = sql::execute::run(
+            db,
+            body,
+            auth,
+            Some(module_host.info.subscriptions.clone()),
+            Some(module_host),
+            &mut header,
+        )
+        .await
+        .map_err(|e| {
+            log::warn!("{e}");
+            (StatusCode::BAD_REQUEST, e.to_string())
+        })?;
 
-                let total_duration = sql_start.elapsed();
-                drop(_guard);
-                sql_span.record("total_duration", tracing::field::debug(total_duration));
+        let total_duration = sql_start.elapsed();
+        drop(_guard);
+        sql_span.record("total_duration", tracing::field::debug(total_duration));
 
-                let schema = header
-                    .into_iter()
-                    .map(|(col_name, col_type)| ProductTypeElement::new(col_type, Some(col_name)))
-                    .collect();
+        let schema = header
+            .into_iter()
+            .map(|(col_name, col_type)| ProductTypeElement::new(col_type, Some(col_name)))
+            .collect();
 
-                Ok::<_, (StatusCode, String)>((
-                    result.tx_offset,
-                    db.durable_tx_offset(),
-                    vec![SqlStmtResult {
-                        schema,
-                        rows: result.rows,
-                        total_duration_micros: total_duration.as_micros() as u64,
-                        stats: SqlStmtStats::from_metrics(&result.metrics),
-                    }],
-                ))
-            })
-            .await
-            .map_err(log_and_500)??;
+        let tx_offset = result.tx_offset;
+        let json = vec![SqlStmtResult {
+            schema,
+            rows: result.rows,
+            total_duration_micros: total_duration.as_micros() as u64,
+            stats: SqlStmtStats::from_metrics(&result.metrics),
+        }];
 
-        if confirmed_read {
-            if let Some(mut durable_offset) = durable_offset {
-                let tx_offset = tx_offset.await.map_err(|_| log_and_500("transaction aborted"))?;
-                durable_offset.wait_for(tx_offset).await.map_err(log_and_500)?;
-            }
+        if confirmed_read && let Some(mut durable_offset) = durable_offset {
+            let tx_offset = tx_offset.await.map_err(|_| log_and_500("transaction aborted"))?;
+            durable_offset.wait_for(tx_offset).await.map_err(log_and_500)?;
         }
 
         Ok(json)
@@ -266,6 +281,9 @@ pub trait ControlStateReadAccess {
     async fn lookup_database_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>>;
     async fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>>;
     async fn lookup_namespace_owner(&self, name: &str) -> anyhow::Result<Option<Identity>>;
+
+    // Locks
+    async fn is_database_locked(&self, database_identity: &Identity) -> anyhow::Result<bool>;
 }
 
 /// Write operations on the SpacetimeDB control plane.
@@ -322,6 +340,14 @@ pub trait ControlStateWriteAccess: Send + Sync {
         owner_identity: &Identity,
         domain_names: &[DomainName],
     ) -> anyhow::Result<SetDomainsResult>;
+
+    // Locks
+    async fn set_database_lock(
+        &self,
+        caller_identity: &Identity,
+        database_identity: &Identity,
+        locked: bool,
+    ) -> anyhow::Result<()>;
 }
 
 #[async_trait]
@@ -377,6 +403,10 @@ impl<T: ControlStateReadAccess + Send + Sync + Sync + ?Sized> ControlStateReadAc
     async fn lookup_namespace_owner(&self, name: &str) -> anyhow::Result<Option<Identity>> {
         (**self).lookup_namespace_owner(name).await
     }
+
+    async fn is_database_locked(&self, database_identity: &Identity) -> anyhow::Result<bool> {
+        (**self).is_database_locked(database_identity).await
+    }
 }
 
 #[async_trait]
@@ -430,6 +460,17 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
     ) -> anyhow::Result<SetDomainsResult> {
         (**self)
             .replace_dns_records(database_identity, owner_identity, domain_names)
+            .await
+    }
+
+    async fn set_database_lock(
+        &self,
+        caller_identity: &Identity,
+        database_identity: &Identity,
+        locked: bool,
+    ) -> anyhow::Result<()> {
+        (**self)
+            .set_database_lock(caller_identity, database_identity, locked)
             .await
     }
 }

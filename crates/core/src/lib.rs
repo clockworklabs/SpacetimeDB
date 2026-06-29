@@ -5,6 +5,7 @@ pub mod sql;
 
 pub mod auth;
 pub mod db;
+pub use spacetimedb_engine::metrics;
 pub mod messages;
 pub use spacetimedb_lib::Identity;
 pub mod error;
@@ -18,8 +19,8 @@ pub mod estimation;
 pub mod host;
 pub mod module_host_context;
 pub mod replica_context;
+pub use spacetimedb_engine::resource;
 pub mod startup;
 pub mod subscription;
 pub mod util;
-pub mod vm;
 pub mod worker_metrics;

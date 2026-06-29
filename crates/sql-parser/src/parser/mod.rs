@@ -207,19 +207,16 @@ pub(crate) fn parse_proj(expr: Expr) -> SqlParseResult<ProjectExpr> {
     }
 }
 
-// These types determine the size of [`parse_expr`]'s stack frame.
+// These types determine the size of [`parse_expr`]'s stack frame on 64-bit targets.
 // Changing their sizes will require updating the recursion limit to avoid stack overflows.
+// wasm32 has different type layouts, so this guard does not apply there.
+#[cfg(target_pointer_width = "64")]
 const _: () = assert!(size_of::<Expr>() == 168);
+#[cfg(target_pointer_width = "64")]
 const _: () = assert!(size_of::<SqlParseResult<SqlExpr>>() == 40);
 
 /// Parse a scalar expression
 fn parse_expr(expr: Expr, depth: usize) -> SqlParseResult<SqlExpr> {
-    fn signed_num(sign: impl Into<String>, expr: Expr) -> Result<SqlExpr, Box<SqlUnsupported>> {
-        match expr {
-            Expr::Value(Value::Number(n, _)) => Ok(SqlExpr::Lit(SqlLiteral::Num((sign.into() + &n).into_boxed_str()))),
-            expr => Err(SqlUnsupported::Expr(expr).into()),
-        }
-    }
     recursion::guard(depth, recursion::MAX_RECURSION_EXPR, "sql-parser::parse_expr")?;
     match expr {
         Expr::Nested(expr) => parse_expr(*expr, depth + 1),
@@ -228,15 +225,19 @@ fn parse_expr(expr: Expr, depth: usize) -> SqlParseResult<SqlExpr> {
         Expr::UnaryOp {
             op: UnaryOperator::Plus,
             expr,
-        } if matches!(&*expr, Expr::Value(Value::Number(..))) => {
-            signed_num("+", *expr).map_err(SqlParseError::SqlUnsupported)
-        }
+        } => Ok(SqlExpr::Lit(parse_signed_literal_expr(
+            UnaryOperator::Plus,
+            *expr,
+            SqlUnsupported::Expr,
+        )?)),
         Expr::UnaryOp {
             op: UnaryOperator::Minus,
             expr,
-        } if matches!(&*expr, Expr::Value(Value::Number(..))) => {
-            signed_num("-", *expr).map_err(SqlParseError::SqlUnsupported)
-        }
+        } => Ok(SqlExpr::Lit(parse_signed_literal_expr(
+            UnaryOperator::Minus,
+            *expr,
+            SqlUnsupported::Expr,
+        )?)),
         Expr::Identifier(ident) => Ok(SqlExpr::Var(ident.into())),
         Expr::CompoundIdentifier(mut idents) if idents.len() == 2 => {
             let table = idents.swap_remove(0).into();
@@ -267,6 +268,44 @@ fn parse_expr(expr: Expr, depth: usize) -> SqlParseResult<SqlExpr> {
             Ok(SqlExpr::Bin(Box::new(l), Box::new(r), parse_binop(op)?))
         }
         _ => Err(SqlUnsupported::Expr(expr).into()),
+    }
+}
+
+fn parse_signed_literal_expr(
+    op: UnaryOperator,
+    expr: Expr,
+    unsupported: fn(Expr) -> SqlUnsupported,
+) -> SqlParseResult<SqlLiteral> {
+    match expr {
+        Expr::Value(Value::Number(n, _)) => {
+            let sign = match op {
+                UnaryOperator::Plus => "+",
+                UnaryOperator::Minus => "-",
+                _ => unreachable!("caller only passes unary plus/minus"),
+            };
+            Ok(SqlLiteral::Num(format!("{sign}{n}").into_boxed_str()))
+        }
+        expr => Err(unsupported(Expr::UnaryOp {
+            op,
+            expr: Box::new(expr),
+        })
+        .into()),
+    }
+}
+
+/// Parse a literal expression.
+pub(crate) fn parse_literal_expr(expr: Expr, unsupported: fn(Expr) -> SqlUnsupported) -> SqlParseResult<SqlLiteral> {
+    match expr {
+        Expr::Value(value) => parse_literal(value),
+        Expr::UnaryOp {
+            op: UnaryOperator::Plus,
+            expr,
+        } => parse_signed_literal_expr(UnaryOperator::Plus, *expr, unsupported),
+        Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            expr,
+        } => parse_signed_literal_expr(UnaryOperator::Minus, *expr, unsupported),
+        expr => Err(unsupported(expr).into()),
     }
 }
 

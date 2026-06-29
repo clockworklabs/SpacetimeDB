@@ -109,7 +109,7 @@ SPACETIMEDB_REDUCER(set_name, ReducerContext ctx, std::string name) {
     }
     
     // Find and update the user by identity (primary key)
-    auto user_row = ctx.db[user_identity].find(ctx.sender);
+    auto user_row = ctx.db[user_identity].find(ctx.sender());
     if (user_row.has_value()) {
         auto user = user_row.value();
         user.name = validated.value();
@@ -127,7 +127,7 @@ SPACETIMEDB_REDUCER(send_message, ReducerContext ctx, std::string text) {
         return Err(validated.error());
     }
     
-    Message msg{ctx.sender, ctx.timestamp, validated.value()};
+    Message msg{ctx.sender(), ctx.timestamp, validated.value()};
     ctx.db[message].insert(msg);
     return Ok();
 }
@@ -140,13 +140,13 @@ Lifecycle reducers are special functions called automatically by SpacetimeDB:
 ```cpp
 // Called when a client connects
 SPACETIMEDB_CLIENT_CONNECTED(client_connected, ReducerContext ctx) {
-    auto user_row = ctx.db[user_identity].find(ctx.sender);
+    auto user_row = ctx.db[user_identity].find(ctx.sender());
     if (user_row.has_value()) {
         auto user = user_row.value();
         user.online = true;
         ctx.db[user_identity].update(user);
     } else {
-        User new_user{ctx.sender, std::nullopt, true};
+        User new_user{ctx.sender(), std::nullopt, true};
         ctx.db[user].insert(new_user);
     }
     return Ok();
@@ -154,7 +154,7 @@ SPACETIMEDB_CLIENT_CONNECTED(client_connected, ReducerContext ctx) {
 
 // Called when a client disconnects  
 SPACETIMEDB_CLIENT_DISCONNECTED(client_disconnected, ReducerContext ctx) {
-    auto user_row = ctx.db[user_identity].find(ctx.sender);
+    auto user_row = ctx.db[user_identity].find(ctx.sender());
     if (user_row.has_value()) {
         auto user = user_row.value();
         user.online = false;

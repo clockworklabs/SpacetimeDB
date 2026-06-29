@@ -4,33 +4,27 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
-#include "ModuleBindings/Types/SubscribeMultiAppliedType.g.h"
-#include "ModuleBindings/Types/TransactionUpdateLightType.g.h"
-#include "ModuleBindings/Types/TransactionUpdateType.g.h"
-#include "ModuleBindings/Types/InitialSubscriptionType.g.h"
-#include "ModuleBindings/Types/UnsubscribeAppliedType.g.h"
-#include "ModuleBindings/Types/SubscriptionErrorType.g.h"
-#include "ModuleBindings/Types/OneOffQueryResponseType.g.h"
 #include "ModuleBindings/Types/SubscribeAppliedType.g.h"
-#include "ModuleBindings/Types/IdentityTokenType.g.h"
-#include "ModuleBindings/Types/UnsubscribeMultiAppliedType.g.h"
-#include "ModuleBindings/Types/ProcedureResultType.g.h"
+#include "ModuleBindings/Types/SubscriptionErrorType.g.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
+#include "ModuleBindings/Types/ReducerResultType.g.h"
+#include "ModuleBindings/Types/TransactionUpdateType.g.h"
+#include "ModuleBindings/Types/UnsubscribeAppliedType.g.h"
+#include "ModuleBindings/Types/ProcedureResultType.g.h"
+#include "ModuleBindings/Types/InitialConnectionType.g.h"
+#include "ModuleBindings/Types/OneOffQueryResultType.g.h"
 #include "ServerMessageType.g.generated.h"
 
 UENUM(BlueprintType)
 enum class EServerMessageTag : uint8
 {
-    InitialSubscription,
-    TransactionUpdate,
-    TransactionUpdateLight,
-    IdentityToken,
-    OneOffQueryResponse,
+    InitialConnection,
     SubscribeApplied,
     UnsubscribeApplied,
     SubscriptionError,
-    SubscribeMultiApplied,
-    UnsubscribeMultiApplied,
+    TransactionUpdate,
+    OneOffQueryResult,
+    ReducerResult,
     ProcedureResult
 };
 
@@ -42,48 +36,16 @@ struct SPACETIMEDBSDK_API FServerMessageType
 public:
     FServerMessageType() = default;
 
-    TVariant<FInitialSubscriptionType, FOneOffQueryResponseType, FSubscribeMultiAppliedType, FUnsubscribeAppliedType, FTransactionUpdateType, FIdentityTokenType, FSubscribeAppliedType, FSubscriptionErrorType, FTransactionUpdateLightType, FUnsubscribeMultiAppliedType, FProcedureResultType> MessageData;
+    TVariant<FReducerResultType, FSubscribeAppliedType, FSubscriptionErrorType, FInitialConnectionType, FOneOffQueryResultType, FUnsubscribeAppliedType, FProcedureResultType, FTransactionUpdateType> MessageData;
 
-    UPROPERTY(BlueprintReadOnly, Category = "SpacetimeDB")
+    UPROPERTY(BlueprintReadOnly)
     EServerMessageTag Tag = static_cast<EServerMessageTag>(0);
 
-    static FServerMessageType InitialSubscription(const FInitialSubscriptionType& Value)
+    static FServerMessageType InitialConnection(const FInitialConnectionType& Value)
     {
         FServerMessageType Obj;
-        Obj.Tag = EServerMessageTag::InitialSubscription;
-        Obj.MessageData.Set<FInitialSubscriptionType>(Value);
-        return Obj;
-    }
-
-    static FServerMessageType TransactionUpdate(const FTransactionUpdateType& Value)
-    {
-        FServerMessageType Obj;
-        Obj.Tag = EServerMessageTag::TransactionUpdate;
-        Obj.MessageData.Set<FTransactionUpdateType>(Value);
-        return Obj;
-    }
-
-    static FServerMessageType TransactionUpdateLight(const FTransactionUpdateLightType& Value)
-    {
-        FServerMessageType Obj;
-        Obj.Tag = EServerMessageTag::TransactionUpdateLight;
-        Obj.MessageData.Set<FTransactionUpdateLightType>(Value);
-        return Obj;
-    }
-
-    static FServerMessageType IdentityToken(const FIdentityTokenType& Value)
-    {
-        FServerMessageType Obj;
-        Obj.Tag = EServerMessageTag::IdentityToken;
-        Obj.MessageData.Set<FIdentityTokenType>(Value);
-        return Obj;
-    }
-
-    static FServerMessageType OneOffQueryResponse(const FOneOffQueryResponseType& Value)
-    {
-        FServerMessageType Obj;
-        Obj.Tag = EServerMessageTag::OneOffQueryResponse;
-        Obj.MessageData.Set<FOneOffQueryResponseType>(Value);
+        Obj.Tag = EServerMessageTag::InitialConnection;
+        Obj.MessageData.Set<FInitialConnectionType>(Value);
         return Obj;
     }
 
@@ -111,19 +73,27 @@ public:
         return Obj;
     }
 
-    static FServerMessageType SubscribeMultiApplied(const FSubscribeMultiAppliedType& Value)
+    static FServerMessageType TransactionUpdate(const FTransactionUpdateType& Value)
     {
         FServerMessageType Obj;
-        Obj.Tag = EServerMessageTag::SubscribeMultiApplied;
-        Obj.MessageData.Set<FSubscribeMultiAppliedType>(Value);
+        Obj.Tag = EServerMessageTag::TransactionUpdate;
+        Obj.MessageData.Set<FTransactionUpdateType>(Value);
         return Obj;
     }
 
-    static FServerMessageType UnsubscribeMultiApplied(const FUnsubscribeMultiAppliedType& Value)
+    static FServerMessageType OneOffQueryResult(const FOneOffQueryResultType& Value)
     {
         FServerMessageType Obj;
-        Obj.Tag = EServerMessageTag::UnsubscribeMultiApplied;
-        Obj.MessageData.Set<FUnsubscribeMultiAppliedType>(Value);
+        Obj.Tag = EServerMessageTag::OneOffQueryResult;
+        Obj.MessageData.Set<FOneOffQueryResultType>(Value);
+        return Obj;
+    }
+
+    static FServerMessageType ReducerResult(const FReducerResultType& Value)
+    {
+        FServerMessageType Obj;
+        Obj.Tag = EServerMessageTag::ReducerResult;
+        Obj.MessageData.Set<FReducerResultType>(Value);
         return Obj;
     }
 
@@ -135,44 +105,12 @@ public:
         return Obj;
     }
 
-    FORCEINLINE bool IsInitialSubscription() const { return Tag == EServerMessageTag::InitialSubscription; }
+    FORCEINLINE bool IsInitialConnection() const { return Tag == EServerMessageTag::InitialConnection; }
 
-    FORCEINLINE FInitialSubscriptionType GetAsInitialSubscription() const
+    FORCEINLINE FInitialConnectionType GetAsInitialConnection() const
     {
-        ensureMsgf(IsInitialSubscription(), TEXT("MessageData does not hold InitialSubscription!"));
-        return MessageData.Get<FInitialSubscriptionType>();
-    }
-
-    FORCEINLINE bool IsTransactionUpdate() const { return Tag == EServerMessageTag::TransactionUpdate; }
-
-    FORCEINLINE FTransactionUpdateType GetAsTransactionUpdate() const
-    {
-        ensureMsgf(IsTransactionUpdate(), TEXT("MessageData does not hold TransactionUpdate!"));
-        return MessageData.Get<FTransactionUpdateType>();
-    }
-
-    FORCEINLINE bool IsTransactionUpdateLight() const { return Tag == EServerMessageTag::TransactionUpdateLight; }
-
-    FORCEINLINE FTransactionUpdateLightType GetAsTransactionUpdateLight() const
-    {
-        ensureMsgf(IsTransactionUpdateLight(), TEXT("MessageData does not hold TransactionUpdateLight!"));
-        return MessageData.Get<FTransactionUpdateLightType>();
-    }
-
-    FORCEINLINE bool IsIdentityToken() const { return Tag == EServerMessageTag::IdentityToken; }
-
-    FORCEINLINE FIdentityTokenType GetAsIdentityToken() const
-    {
-        ensureMsgf(IsIdentityToken(), TEXT("MessageData does not hold IdentityToken!"));
-        return MessageData.Get<FIdentityTokenType>();
-    }
-
-    FORCEINLINE bool IsOneOffQueryResponse() const { return Tag == EServerMessageTag::OneOffQueryResponse; }
-
-    FORCEINLINE FOneOffQueryResponseType GetAsOneOffQueryResponse() const
-    {
-        ensureMsgf(IsOneOffQueryResponse(), TEXT("MessageData does not hold OneOffQueryResponse!"));
-        return MessageData.Get<FOneOffQueryResponseType>();
+        ensureMsgf(IsInitialConnection(), TEXT("MessageData does not hold InitialConnection!"));
+        return MessageData.Get<FInitialConnectionType>();
     }
 
     FORCEINLINE bool IsSubscribeApplied() const { return Tag == EServerMessageTag::SubscribeApplied; }
@@ -199,20 +137,28 @@ public:
         return MessageData.Get<FSubscriptionErrorType>();
     }
 
-    FORCEINLINE bool IsSubscribeMultiApplied() const { return Tag == EServerMessageTag::SubscribeMultiApplied; }
+    FORCEINLINE bool IsTransactionUpdate() const { return Tag == EServerMessageTag::TransactionUpdate; }
 
-    FORCEINLINE FSubscribeMultiAppliedType GetAsSubscribeMultiApplied() const
+    FORCEINLINE FTransactionUpdateType GetAsTransactionUpdate() const
     {
-        ensureMsgf(IsSubscribeMultiApplied(), TEXT("MessageData does not hold SubscribeMultiApplied!"));
-        return MessageData.Get<FSubscribeMultiAppliedType>();
+        ensureMsgf(IsTransactionUpdate(), TEXT("MessageData does not hold TransactionUpdate!"));
+        return MessageData.Get<FTransactionUpdateType>();
     }
 
-    FORCEINLINE bool IsUnsubscribeMultiApplied() const { return Tag == EServerMessageTag::UnsubscribeMultiApplied; }
+    FORCEINLINE bool IsOneOffQueryResult() const { return Tag == EServerMessageTag::OneOffQueryResult; }
 
-    FORCEINLINE FUnsubscribeMultiAppliedType GetAsUnsubscribeMultiApplied() const
+    FORCEINLINE FOneOffQueryResultType GetAsOneOffQueryResult() const
     {
-        ensureMsgf(IsUnsubscribeMultiApplied(), TEXT("MessageData does not hold UnsubscribeMultiApplied!"));
-        return MessageData.Get<FUnsubscribeMultiAppliedType>();
+        ensureMsgf(IsOneOffQueryResult(), TEXT("MessageData does not hold OneOffQueryResult!"));
+        return MessageData.Get<FOneOffQueryResultType>();
+    }
+
+    FORCEINLINE bool IsReducerResult() const { return Tag == EServerMessageTag::ReducerResult; }
+
+    FORCEINLINE FReducerResultType GetAsReducerResult() const
+    {
+        ensureMsgf(IsReducerResult(), TEXT("MessageData does not hold ReducerResult!"));
+        return MessageData.Get<FReducerResultType>();
     }
 
     FORCEINLINE bool IsProcedureResult() const { return Tag == EServerMessageTag::ProcedureResult; }
@@ -230,26 +176,20 @@ public:
 
         switch (Tag)
         {
-            case EServerMessageTag::InitialSubscription:
-                return GetAsInitialSubscription() == Other.GetAsInitialSubscription();
-            case EServerMessageTag::TransactionUpdate:
-                return GetAsTransactionUpdate() == Other.GetAsTransactionUpdate();
-            case EServerMessageTag::TransactionUpdateLight:
-                return GetAsTransactionUpdateLight() == Other.GetAsTransactionUpdateLight();
-            case EServerMessageTag::IdentityToken:
-                return GetAsIdentityToken() == Other.GetAsIdentityToken();
-            case EServerMessageTag::OneOffQueryResponse:
-                return GetAsOneOffQueryResponse() == Other.GetAsOneOffQueryResponse();
+            case EServerMessageTag::InitialConnection:
+                return GetAsInitialConnection() == Other.GetAsInitialConnection();
             case EServerMessageTag::SubscribeApplied:
                 return GetAsSubscribeApplied() == Other.GetAsSubscribeApplied();
             case EServerMessageTag::UnsubscribeApplied:
                 return GetAsUnsubscribeApplied() == Other.GetAsUnsubscribeApplied();
             case EServerMessageTag::SubscriptionError:
                 return GetAsSubscriptionError() == Other.GetAsSubscriptionError();
-            case EServerMessageTag::SubscribeMultiApplied:
-                return GetAsSubscribeMultiApplied() == Other.GetAsSubscribeMultiApplied();
-            case EServerMessageTag::UnsubscribeMultiApplied:
-                return GetAsUnsubscribeMultiApplied() == Other.GetAsUnsubscribeMultiApplied();
+            case EServerMessageTag::TransactionUpdate:
+                return GetAsTransactionUpdate() == Other.GetAsTransactionUpdate();
+            case EServerMessageTag::OneOffQueryResult:
+                return GetAsOneOffQueryResult() == Other.GetAsOneOffQueryResult();
+            case EServerMessageTag::ReducerResult:
+                return GetAsReducerResult() == Other.GetAsReducerResult();
             case EServerMessageTag::ProcedureResult:
                 return GetAsProcedureResult() == Other.GetAsProcedureResult();
             default:
@@ -274,16 +214,13 @@ FORCEINLINE uint32 GetTypeHash(const FServerMessageType& ServerMessage)
     const uint32 TagHash = GetTypeHash(static_cast<uint8>(ServerMessage.Tag));
     switch (ServerMessage.Tag)
     {
-        case EServerMessageTag::InitialSubscription: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsInitialSubscription()));
-        case EServerMessageTag::TransactionUpdate: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsTransactionUpdate()));
-        case EServerMessageTag::TransactionUpdateLight: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsTransactionUpdateLight()));
-        case EServerMessageTag::IdentityToken: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsIdentityToken()));
-        case EServerMessageTag::OneOffQueryResponse: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsOneOffQueryResponse()));
+        case EServerMessageTag::InitialConnection: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsInitialConnection()));
         case EServerMessageTag::SubscribeApplied: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsSubscribeApplied()));
         case EServerMessageTag::UnsubscribeApplied: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsUnsubscribeApplied()));
         case EServerMessageTag::SubscriptionError: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsSubscriptionError()));
-        case EServerMessageTag::SubscribeMultiApplied: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsSubscribeMultiApplied()));
-        case EServerMessageTag::UnsubscribeMultiApplied: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsUnsubscribeMultiApplied()));
+        case EServerMessageTag::TransactionUpdate: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsTransactionUpdate()));
+        case EServerMessageTag::OneOffQueryResult: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsOneOffQueryResult()));
+        case EServerMessageTag::ReducerResult: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsReducerResult()));
         case EServerMessageTag::ProcedureResult: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsProcedureResult()));
         default: return TagHash;
     }
@@ -297,16 +234,13 @@ namespace UE::SpacetimeDB
         FServerMessageType,
         EServerMessageTag,
         MessageData,
-        InitialSubscription, FInitialSubscriptionType,
-        TransactionUpdate, FTransactionUpdateType,
-        TransactionUpdateLight, FTransactionUpdateLightType,
-        IdentityToken, FIdentityTokenType,
-        OneOffQueryResponse, FOneOffQueryResponseType,
+        InitialConnection, FInitialConnectionType,
         SubscribeApplied, FSubscribeAppliedType,
         UnsubscribeApplied, FUnsubscribeAppliedType,
         SubscriptionError, FSubscriptionErrorType,
-        SubscribeMultiApplied, FSubscribeMultiAppliedType,
-        UnsubscribeMultiApplied, FUnsubscribeMultiAppliedType,
+        TransactionUpdate, FTransactionUpdateType,
+        OneOffQueryResult, FOneOffQueryResultType,
+        ReducerResult, FReducerResultType,
         ProcedureResult, FProcedureResultType
     );
 }
@@ -318,78 +252,18 @@ class SPACETIMEDBSDK_API UServerMessageBpLib : public UBlueprintFunctionLibrary
 
 private:
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ServerMessage")
-    static FServerMessageType InitialSubscription(const FInitialSubscriptionType& InValue)
+    static FServerMessageType InitialConnection(const FInitialConnectionType& InValue)
     {
-        return FServerMessageType::InitialSubscription(InValue);
+        return FServerMessageType::InitialConnection(InValue);
     }
 
     UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ServerMessage")
-    static bool IsInitialSubscription(const FServerMessageType& InValue) { return InValue.IsInitialSubscription(); }
+    static bool IsInitialConnection(const FServerMessageType& InValue) { return InValue.IsInitialConnection(); }
 
     UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ServerMessage")
-    static FInitialSubscriptionType GetAsInitialSubscription(const FServerMessageType& InValue)
+    static FInitialConnectionType GetAsInitialConnection(const FServerMessageType& InValue)
     {
-        return InValue.GetAsInitialSubscription();
-    }
-
-    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ServerMessage")
-    static FServerMessageType TransactionUpdate(const FTransactionUpdateType& InValue)
-    {
-        return FServerMessageType::TransactionUpdate(InValue);
-    }
-
-    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ServerMessage")
-    static bool IsTransactionUpdate(const FServerMessageType& InValue) { return InValue.IsTransactionUpdate(); }
-
-    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ServerMessage")
-    static FTransactionUpdateType GetAsTransactionUpdate(const FServerMessageType& InValue)
-    {
-        return InValue.GetAsTransactionUpdate();
-    }
-
-    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ServerMessage")
-    static FServerMessageType TransactionUpdateLight(const FTransactionUpdateLightType& InValue)
-    {
-        return FServerMessageType::TransactionUpdateLight(InValue);
-    }
-
-    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ServerMessage")
-    static bool IsTransactionUpdateLight(const FServerMessageType& InValue) { return InValue.IsTransactionUpdateLight(); }
-
-    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ServerMessage")
-    static FTransactionUpdateLightType GetAsTransactionUpdateLight(const FServerMessageType& InValue)
-    {
-        return InValue.GetAsTransactionUpdateLight();
-    }
-
-    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ServerMessage")
-    static FServerMessageType IdentityToken(const FIdentityTokenType& InValue)
-    {
-        return FServerMessageType::IdentityToken(InValue);
-    }
-
-    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ServerMessage")
-    static bool IsIdentityToken(const FServerMessageType& InValue) { return InValue.IsIdentityToken(); }
-
-    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ServerMessage")
-    static FIdentityTokenType GetAsIdentityToken(const FServerMessageType& InValue)
-    {
-        return InValue.GetAsIdentityToken();
-    }
-
-    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ServerMessage")
-    static FServerMessageType OneOffQueryResponse(const FOneOffQueryResponseType& InValue)
-    {
-        return FServerMessageType::OneOffQueryResponse(InValue);
-    }
-
-    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ServerMessage")
-    static bool IsOneOffQueryResponse(const FServerMessageType& InValue) { return InValue.IsOneOffQueryResponse(); }
-
-    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ServerMessage")
-    static FOneOffQueryResponseType GetAsOneOffQueryResponse(const FServerMessageType& InValue)
-    {
-        return InValue.GetAsOneOffQueryResponse();
+        return InValue.GetAsInitialConnection();
     }
 
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ServerMessage")
@@ -438,33 +312,48 @@ private:
     }
 
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ServerMessage")
-    static FServerMessageType SubscribeMultiApplied(const FSubscribeMultiAppliedType& InValue)
+    static FServerMessageType TransactionUpdate(const FTransactionUpdateType& InValue)
     {
-        return FServerMessageType::SubscribeMultiApplied(InValue);
+        return FServerMessageType::TransactionUpdate(InValue);
     }
 
     UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ServerMessage")
-    static bool IsSubscribeMultiApplied(const FServerMessageType& InValue) { return InValue.IsSubscribeMultiApplied(); }
+    static bool IsTransactionUpdate(const FServerMessageType& InValue) { return InValue.IsTransactionUpdate(); }
 
     UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ServerMessage")
-    static FSubscribeMultiAppliedType GetAsSubscribeMultiApplied(const FServerMessageType& InValue)
+    static FTransactionUpdateType GetAsTransactionUpdate(const FServerMessageType& InValue)
     {
-        return InValue.GetAsSubscribeMultiApplied();
+        return InValue.GetAsTransactionUpdate();
     }
 
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ServerMessage")
-    static FServerMessageType UnsubscribeMultiApplied(const FUnsubscribeMultiAppliedType& InValue)
+    static FServerMessageType OneOffQueryResult(const FOneOffQueryResultType& InValue)
     {
-        return FServerMessageType::UnsubscribeMultiApplied(InValue);
+        return FServerMessageType::OneOffQueryResult(InValue);
     }
 
     UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ServerMessage")
-    static bool IsUnsubscribeMultiApplied(const FServerMessageType& InValue) { return InValue.IsUnsubscribeMultiApplied(); }
+    static bool IsOneOffQueryResult(const FServerMessageType& InValue) { return InValue.IsOneOffQueryResult(); }
 
     UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ServerMessage")
-    static FUnsubscribeMultiAppliedType GetAsUnsubscribeMultiApplied(const FServerMessageType& InValue)
+    static FOneOffQueryResultType GetAsOneOffQueryResult(const FServerMessageType& InValue)
     {
-        return InValue.GetAsUnsubscribeMultiApplied();
+        return InValue.GetAsOneOffQueryResult();
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ServerMessage")
+    static FServerMessageType ReducerResult(const FReducerResultType& InValue)
+    {
+        return FServerMessageType::ReducerResult(InValue);
+    }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ServerMessage")
+    static bool IsReducerResult(const FServerMessageType& InValue) { return InValue.IsReducerResult(); }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ServerMessage")
+    static FReducerResultType GetAsReducerResult(const FServerMessageType& InValue)
+    {
+        return InValue.GetAsReducerResult();
     }
 
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ServerMessage")

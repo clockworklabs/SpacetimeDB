@@ -1,14 +1,52 @@
 # Notes for maintainers
 
-The directory `sdk-unreal/src/SpacetimeDbSdk/Source/SpacetimeDbSdk/Public/ModuleBindings` is generated from [the SpacetimeDB client-api-messages](https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/client-api-messages).
-This is not automated.
-Whenever the `client-api-messages` crate changes, you'll have to manually re-generate the definitions. 
-See that crate's DEVELOP.md for how to do this.
+The generated Unreal bindings under:
 
-**⚠️ IMPORTANT:** The following files/folders needs to be deleted everytime we re-generate:  
-- `crates/sdk-unreal/src/SpacetimeDbSdk/Source/SpacetimeDbSdk/Private/ModuleBindings`
-- `crates/sdk-unreal/src/SpacetimeDbSdk/Source/SpacetimeDbSdk/Public/ModuleBindings/ReducerBase.g.h`
-- `crates/sdk-unreal/src/SpacetimeDbSdk/Source/SpacetimeDbSdk/Public/ModuleBindings/SpacetimeDBClient.g.h`
+- `sdks/unreal/src/SpacetimeDbSdk/Source/SpacetimeDbSdk/Public/ModuleBindings`
+- `sdks/unreal/src/SpacetimeDbSdk/Source/SpacetimeDbSdk/Private/ModuleBindings`
+
+come from SpacetimeDB codegen (`--lang unrealcpp`) and websocket schema definitions in `crates/client-api-messages`.
+
+This is not automated; regenerate manually whenever websocket message schemas or Unreal codegen behavior changes.
+
+## WS v2 websocket schema regeneration workflow
+
+Run from repo root:
+
+```powershell
+# 1) Produce WS v2 schema JSON from canonical source
+cargo run -p spacetimedb-client-api-messages --example get_ws_schema_v2 > crates/client-api-messages/ws_schema_v2.json
+
+# 2) Regenerate Unreal bindings from WS v2 schema
+cargo run -p spacetimedb-cli -- generate --lang unrealcpp `
+  --module-def crates/client-api-messages/ws_schema_v2.json `
+  --uproject-dir sdks/unreal/src/SpacetimeDbSdk `
+  --unreal-module-name SpacetimeDbSdk `
+  --yes
+```
+
+## Cleanup before regeneration
+
+Delete these generated paths before rerunning generation when schema/model changes are significant:
+
+- `sdks/unreal/src/SpacetimeDbSdk/Source/SpacetimeDbSdk/Private/ModuleBindings`
+- `sdks/unreal/src/SpacetimeDbSdk/Source/SpacetimeDbSdk/Public/ModuleBindings/ReducerBase.g.h`
+- `sdks/unreal/src/SpacetimeDbSdk/Source/SpacetimeDbSdk/Public/ModuleBindings/SpacetimeDBClient.g.h`
+- `sdks/unreal/src/SpacetimeDbSdk/Source/SpacetimeDbSdk/Private/ModuleBindings/SpacetimeDBClient.g.cpp`
+
+This avoids UnrealHeaderTool duplicate symbol/header conflicts with the `sdks/unreal/tests/TestClient` generated module bindings.
+
+## Fast validation loop
+
+For rapid iteration, run a single Unreal harness test instead of the full suite:
+
+```powershell
+cargo test -p sdk-unreal-test-harness --test test insert_primitive -- --nocapture
+```
+
+Prerequisite:
+
+- `UE_ROOT_PATH` must point to the Unreal Engine install root (for example `C:/Program Files/Epic Games/UE_5.6`).
 
 # How to use AdditionalPluginDirectories
 

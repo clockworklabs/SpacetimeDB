@@ -4,16 +4,16 @@ slug: /http/database
 
 # `/v1/database`
 
-The HTTP endpoints in `/v1/database` allow clients to interact with Spacetime databases in a variety of ways, including retrieving information, creating and deleting databases, invoking reducers and evaluating SQL queries.
+The HTTP endpoints in `/v1/database` allow clients to interact with Spacetime databases in a variety of ways, including retrieving information, creating and deleting databases, invoking reducers and evaluating SQL queries. These APIs are intended primarily for management, debugging and interactive developer use, and have not been optimized for performance to the same extent as the WebSocket API used by [the SpacetimeDB client SDKs](../../../00200-core-concepts/00600-clients.md).
 
 ## At a glance
 
 | Route                                                                                              | Description                                       |
-| -------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+|----------------------------------------------------------------------------------------------------|---------------------------------------------------|
 | [`POST /v1/database`](#post-v1database)                                                            | Publish a new database given its module code.     |
-| [`POST /v1/database/:name_or_identity`](#post-v1databasename_or_identity)                          | Publish to a database given its module code.      |
+| [`PUT /v1/database/:name_or_identity`](#put-v1databasename_or_identity)                            | Publish to a database given its module code.      |
 | [`GET /v1/database/:name_or_identity`](#get-v1databasename_or_identity)                            | Get a JSON description of a database.             |
-| [`DELETE /v1/database/:name_or_identity`](#post-v1databasename_or_identity)                        | Delete a database.                                |
+| [`DELETE /v1/database/:name_or_identity`](#delete-v1databasename_or_identity)                      | Delete a database.                                |
 | [`GET /v1/database/:name_or_identity/names`](#get-v1databasename_or_identitynames)                 | Get the names this database can be identified by. |
 | [`POST /v1/database/:name_or_identity/names`](#post-v1databasename_or_identitynames)               | Add a new name for this database.                 |
 | [`PUT /v1/database/:name_or_identity/names`](#put-v1databasename_or_identitynames)                 | Set the list of names for this database.          |
@@ -23,6 +23,7 @@ The HTTP endpoints in `/v1/database` allow clients to interact with Spacetime da
 | [`GET /v1/database/:name_or_identity/schema`](#get-v1databasename_or_identityschema)               | Get the schema for a database.                    |
 | [`GET /v1/database/:name_or_identity/logs`](#get-v1databasename_or_identitylogs)                   | Retrieve logs from a database.                    |
 | [`POST /v1/database/:name_or_identity/sql`](#post-v1databasename_or_identitysql)                   | Run a SQL query against a database.               |
+| [`ANY /v1/database/:name_or_identity/route/{*path}`](#any-v1databasename_or_identityroutepath)     | Access database-defined HTTP APIs.                |
 
 ## `POST /v1/database`
 
@@ -30,11 +31,13 @@ Publish a new database with no name.
 
 Accessible through the CLI as `spacetime publish`.
 
-#### Required Headers
+#### Optional Headers
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
+
+If no `Authorization` header is provided, a new anonymous identity will be created and will own the new database. This is generally not what you want.
 
 #### Data
 
@@ -51,9 +54,9 @@ If the database was successfully published, returns JSON in the form:
 } }
 ```
 
-## `POST /v1/database/:name_or_identity`
+## `PUT /v1/database/:name_or_identity`
 
-Publish to a database with the specified name or identity. If the name doesn't exist, creates a new database.
+Publish to a database with the specified name or identity. If the name does not exist, creates a new database.
 
 Accessible through the CLI as `spacetime publish`.
 
@@ -63,11 +66,13 @@ Accessible through the CLI as `spacetime publish`.
 | ------- | --------------------------------------------------------------------------------- |
 | `clear` | A boolean; whether to clear any existing data when updating an existing database. |
 
-#### Required Headers
+#### Optional Headers
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
+
+If no `Authorization` header is provided, a new anonymous identity will be created. When updating an existing database, the token must correspond to the database's owner, or the request will be rejected.
 
 #### Data
 
@@ -123,11 +128,13 @@ Delete a database.
 
 Accessible through the CLI as `spacetime delete <identity>`.
 
-#### Required Headers
+#### Optional Headers
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
+
+Deleting a database requires ownership. If no `Authorization` header is provided, the request will be treated as anonymous and will be rejected.
 
 ## `GET /v1/database/:name_or_identity/names`
 
@@ -147,11 +154,13 @@ where `<names>` is a JSON array of strings, each of which is a name which refers
 
 Add a new name for this database.
 
-#### Required Headers
+#### Optional Headers
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
+
+If no `Authorization` header is provided, the request will be treated as anonymous.
 
 #### Data
 
@@ -180,11 +189,13 @@ If the new name already exists but the identity provided in the `Authorization` 
 
 Set the list of names for this database.
 
-#### Required Headers
+#### Optional Headers
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
+
+Setting names requires ownership of the database. If no `Authorization` header is provided, the request will be treated as anonymous and will be rejected.
 
 #### Data
 
@@ -223,7 +234,7 @@ For more information about WebSocket headers, see [RFC 6455](https://datatracker
 | Name                     | Value                                                                 |
 | ------------------------ | --------------------------------------------------------------------- |
 | `Sec-WebSocket-Protocol` | `v1.bsatn.spacetimedb` or `v1.json.spacetimedb`                       |
-| `Connection`             | `Updgrade`                                                            |
+| `Connection`             | `Upgrade`                                                             |
 | `Upgrade`                | `websocket`                                                           |
 | `Sec-WebSocket-Version`  | `13`                                                                  |
 | `Sec-WebSocket-Key`      | A 16-byte value, generated randomly by the client, encoded as Base64. |
@@ -249,11 +260,13 @@ Invoke a reducer in a database.
 | ---------- | ------------------------------------- |
 | `:reducer` | The name of the reducer OR procedure. |
 
-#### Required Headers
+#### Optional Headers
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
+
+If no `Authorization` header is provided, the request will be treated as anonymous. The caller's identity is passed to the reducer via its `ReducerContext`, and the module may accept or reject the call based on that identity.
 
 #### Data
 
@@ -270,6 +283,14 @@ Accessible through the CLI as `spacetime describe <name_or_identity>`.
 | Name      | Value                                            |
 | --------- | ------------------------------------------------ |
 | `version` | The version of `RawModuleDef` to return, e.g. 9. |
+
+#### Optional Headers
+
+| Name            | Value                                                                               |
+| --------------- | ----------------------------------------------------------------------------------- |
+| `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
+
+No authorization is required to fetch a database's schema. If an `Authorization` header is provided, the response will include `spacetime-identity` and `spacetime-identity-token` headers echoing the caller's identity. If omitted, a new anonymous identity will be allocated for this purpose.
 
 #### Returns
 
@@ -409,11 +430,13 @@ Accessible through the CLI as `spacetime logs <name_or_identity>`.
 | `num_lines` | Number of most-recent log lines to retrieve.                    |
 | `follow`    | A boolean; whether to continue receiving new logs via a stream. |
 
-#### Required Headers
+#### Optional Headers
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
+
+Viewing logs requires ownership of the database. If no `Authorization` header is provided, the request will be treated as anonymous and will be rejected.
 
 #### Returns
 
@@ -425,11 +448,13 @@ Run a SQL query against a database.
 
 Accessible through the CLI as `spacetime sql <name_or_identity> <query>`.
 
-#### Required Headers
+#### Optional Headers
 
 | Name            | Value                                                                               |
 | --------------- | ----------------------------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [as Bearer auth](./00100-authorization.md#authorization-headers). |
+
+If no `Authorization` header is provided, the request will be treated as anonymous and will only have access to public tables. The caller's identity is used to enforce row-level security policies.
 
 #### Data
 
@@ -449,3 +474,7 @@ Returns a JSON array of statement results, each of which takes the form:
 The `schema` will be a [JSON-encoded `ProductType`](../00300-internals/00200-sats-json.md) describing the type of the returned rows.
 
 The `rows` will be an array of [JSON-encoded `ProductValue`s](../00300-internals/00200-sats-json.md), each of which conforms to the `schema`.
+
+## `ANY /v1/database/:name_or_identity/route/{*path}`
+
+Access routes defined by a database using [HTTP handlers](../../../00200-core-concepts/00200-functions/00600-HTTP-handlers.md).

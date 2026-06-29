@@ -22,7 +22,7 @@ pub async fn get_energy_balance<S: ControlStateDelegate>(
     Path(IdentityParams { identity }): Path<IdentityParams>,
 ) -> axum::response::Result<impl IntoResponse> {
     let identity = Identity::from(identity);
-    get_budget_inner(ctx, &identity).await
+    get_budget_inner(ctx, identity).await
 }
 
 #[serde_with::serde_as]
@@ -66,10 +66,10 @@ pub async fn add_energy<S: ControlStateDelegate>(
 
 async fn get_budget_inner(
     ctx: impl ControlStateDelegate,
-    identity: &Identity,
+    identity: Identity,
 ) -> axum::response::Result<impl IntoResponse> {
     let balance = ctx
-        .get_energy_balance(identity)
+        .get_energy_balance(&identity)
         .await
         .map_err(log_and_500)?
         .map_or(0, |quanta| quanta.get());

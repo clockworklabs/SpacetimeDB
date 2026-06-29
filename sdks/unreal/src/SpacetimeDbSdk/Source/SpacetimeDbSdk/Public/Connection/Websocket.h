@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 #include "IWebSocket.h"
 #include "ModuleBindings/Types/ServerMessageType.g.h"
-#include "ModuleBindings/Types/CompressableQueryUpdateType.g.h"
 #include "JsonObjectConverter.h" // for JSON debugging helpers
 #include "Async/Async.h"
 #include "HAL/CriticalSection.h"
@@ -110,13 +109,6 @@ private:
 	void HandleBinaryMessageReceived(const void* Data, SIZE_T Size, bool bIsLastFragment);
 	/** Handler for socket close */
 	void HandleClosed(int32 StatusCode, const FString& Reason, bool bWasClean);
-
-	/** Decompresses a payload based on compression variant */
-	bool DecompressPayload(ECompressableQueryUpdateTag Variant, const TArray<uint8>& In, TArray<uint8>& Out);
-	/** GZip decompression helper */
-	bool DecompressGzip(const TArray<uint8>& InData, TArray<uint8>& OutData);
-	/** Brotli decompression helper */
-	bool DecompressBrotli(const TArray<uint8>& InData, TArray<uint8>& OutData);
 
 	FString InitToken;
 

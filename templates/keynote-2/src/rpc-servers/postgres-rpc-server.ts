@@ -1,16 +1,18 @@
-﻿import 'dotenv/config';
+import 'dotenv/config';
 import http from 'node:http';
 import { Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { pgTable, integer, bigint as pgBigint } from 'drizzle-orm/pg-core';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { RpcRequest, RpcResponse } from '../connectors/rpc/rpc_common.ts';
-import { poolMaxFromEnv } from '../helpers.ts';
-
+import { getSharedRuntimeDefaults } from '../config.ts';
+import { withTxnRetry } from './retry.ts';
 const PG_URL = process.env.PG_URL;
 if (!PG_URL) {
   throw new Error('PG_URL not set');
 }
+
+const { poolMax } = getSharedRuntimeDefaults();
 
 const accounts = pgTable('accounts', {
   id: integer('id').primaryKey(),
@@ -20,7 +22,7 @@ const accounts = pgTable('accounts', {
 const pool = new Pool({
   connectionString: PG_URL,
   application_name: 'pg-rpc-drizzle',
-  max: poolMaxFromEnv(),
+  max: poolMax,
 });
 
 const db = drizzle(pool, { schema: { accounts } });
@@ -41,36 +43,38 @@ async function rpcTransfer(args: Record<string, unknown>) {
 
   const delta = BigInt(amount);
 
-  await db.transaction(async (tx) => {
-    const rows = await tx
-      .select()
-      .from(accounts)
-      .where(inArray(accounts.id, [fromId, toId]))
-      .for('update')
-      .orderBy(accounts.id);
+  await withTxnRetry(() =>
+    db.transaction(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(accounts)
+        .where(inArray(accounts.id, [fromId, toId]))
+        .for('update')
+        .orderBy(accounts.id);
 
-    if (rows.length !== 2) {
-      throw new Error('account_missing');
-    }
+      if (rows.length !== 2) {
+        throw new Error('account_missing');
+      }
 
-    const [first, second] = rows;
-    const fromRow = first.id === fromId ? first : second;
-    const toRow = first.id === fromId ? second : first;
+      const [first, second] = rows;
+      const fromRow = first.id === fromId ? first : second;
+      const toRow = first.id === fromId ? second : first;
 
-    if (fromRow.balance < delta) {
-      return;
-    }
+      if (fromRow.balance < delta) {
+        return;
+      }
 
-    await tx
-      .update(accounts)
-      .set({ balance: fromRow.balance - delta })
-      .where(eq(accounts.id, fromId));
+      await tx
+        .update(accounts)
+        .set({ balance: fromRow.balance - delta })
+        .where(eq(accounts.id, fromId));
 
-    await tx
-      .update(accounts)
-      .set({ balance: toRow.balance + delta })
-      .where(eq(accounts.id, toId));
-  });
+      await tx
+        .update(accounts)
+        .set({ balance: toRow.balance + delta })
+        .where(eq(accounts.id, toId));
+    }),
+  );
 }
 
 async function rpcGetAccount(args: Record<string, unknown>) {

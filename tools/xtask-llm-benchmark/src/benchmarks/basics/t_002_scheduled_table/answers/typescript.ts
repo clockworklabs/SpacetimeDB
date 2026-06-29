@@ -1,8 +1,8 @@
 import { ScheduleAt } from 'spacetimedb';
 import { table, schema, t } from 'spacetimedb/server';
 
-export const tickTimer = table({
-  name: 'tickTimer',
+const tickTimer = table({
+  name: 'tick_timer',
   scheduled: (): any => tick,
 }, {
   scheduledId: t.u64().primaryKey().autoInc(),

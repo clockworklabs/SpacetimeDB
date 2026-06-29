@@ -1,19 +1,19 @@
 import { table, schema, t } from 'spacetimedb/server';
 
-export const Rect = t.object('Rect', {
+const Rect = t.object('Rect', {
   width: t.i32(),
   height: t.i32(),
 });
 
-export const Shape = t.enum('Shape', {
+const Shape = t.enum('Shape', {
   circle: t.i32(),
   rectangle: Rect,
 });
 
-export const drawing = table({
+const drawing = table({
   name: 'drawing',
 }, {
-  id: t.i32().primaryKey(),
+  id: t.u64().primaryKey().autoInc(),
   a: Shape,
   b: Shape,
 });
@@ -24,9 +24,9 @@ export default spacetimedb;
 export const seed = spacetimedb.reducer(
   ctx => {
     ctx.db.drawing.insert({
-      id: 1,
-      a: { circle: 10 },
-      b: { rectangle: { width: 4, height: 6 } },
+      id: 0n,
+      a: { tag: 'circle', value: 10 },
+      b: { tag: 'rectangle', value: { width: 4, height: 6 } },
     });
   }
 );

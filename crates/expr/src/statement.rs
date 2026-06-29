@@ -263,12 +263,9 @@ pub struct InvalidVar {
 }
 
 const VAR_ROW_LIMIT: &str = "row_limit";
-const VAR_SLOW_QUERY: &str = "slow_ad_hoc_query_ms";
-const VAR_SLOW_UPDATE: &str = "slow_tx_update_ms";
-const VAR_SLOW_SUB: &str = "slow_subscription_query_ms";
 
 fn is_var_valid(var: &str) -> bool {
-    var == VAR_ROW_LIMIT || var == VAR_SLOW_QUERY || var == VAR_SLOW_UPDATE || var == VAR_SLOW_SUB
+    var == VAR_ROW_LIMIT
 }
 
 const ST_VAR_NAME: &str = "st_var";
@@ -453,8 +450,8 @@ impl TypeChecker for SqlChecker {
     }
 }
 
-pub fn parse_and_type_sql(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> TypingResult<Statement> {
-    match parse_sql(sql)?.resolve_sender(auth.caller()) {
+pub fn parse_and_type_sql(sql: &str, tx: &impl SchemaView, _auth: &AuthCtx) -> TypingResult<Statement> {
+    match parse_sql(sql)? {
         SqlAst::Select(ast) => Ok(Statement::Select(SqlChecker::type_ast(ast, tx)?)),
         SqlAst::Insert(insert) => Ok(Statement::DML(DML::Insert(type_insert(insert, tx)?))),
         SqlAst::Delete(delete) => Ok(Statement::DML(DML::Delete(type_delete(delete, tx)?))),

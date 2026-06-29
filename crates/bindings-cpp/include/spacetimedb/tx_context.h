@@ -53,9 +53,9 @@ private:
 public:
     // Public references to ReducerContext fields for consistent API with Rust
     // In Rust, Deref makes tx.db work the same as ctx.db
-    // In C++, we explicitly expose references to achieve the same ergonomics
+    // In C++, we explicitly expose references where possible and provide
+    // accessors for fields exposed as methods on ReducerContext.
     DatabaseContext& db;
-    const Identity& sender;
     const Timestamp& timestamp;
     const std::optional<ConnectionId>& connection_id;
     
@@ -63,13 +63,15 @@ public:
     explicit TxContext(ReducerContext& ctx) 
         : ctx_(ctx), 
           db(ctx.db),
-          sender(ctx.sender),
           timestamp(ctx.timestamp),
           connection_id(ctx.connection_id) {}
     
     // Access to ReducerContext methods
+    Identity sender() const { return ctx_.sender(); }
     const AuthCtx& sender_auth() const { return ctx_.sender_auth(); }
-    Identity identity() const { return ctx_.identity(); }
+    Identity database_identity() const { return ctx_.database_identity(); }
+    [[deprecated("Use database_identity() instead.")]]
+    Identity identity() const { return database_identity(); }
     StdbRng& rng() const { return ctx_.rng(); }
     
     /**

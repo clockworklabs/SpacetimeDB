@@ -7,6 +7,7 @@ const person = table(
     name: 'person',
     indexes: [
       {
+        accessor: 'name_id_idx',
         name: 'name_id_idx',
         algorithm: 'btree',
         columns: ['name', 'id'] as const,
@@ -48,6 +49,7 @@ const order = table(
     name: 'order',
     indexes: [
       {
+        accessor: 'id_person_id',
         name: 'id_person_id', // We are adding this to make sure `person_id` still isn't considered indexed.
         algorithm: 'btree',
         columns: ['id', 'person_id'] as const,
@@ -71,10 +73,32 @@ const spacetime = schema({
 
 const arrayRetValue = t.array(person.rowType);
 const optionalPerson = t.option(person.rowType);
+const multiplePrimaryKeyRows = t.array(
+  t.row('MultiplePrimaryKeyRows', {
+    id: t.u32().primaryKey(),
+    name: t.string().primaryKey(),
+  })
+);
 
 spacetime.anonymousView({ name: 'v1', public: true }, arrayRetValue, ctx => {
   return ctx.from.person.build();
 });
+
+// @ts-expect-error views can have at most one primaryKey column on the returned row type.
+spacetime.anonymousView(
+  { name: 'multiplePrimaryRows', public: true },
+  multiplePrimaryKeyRows,
+  () => []
+);
+
+// @ts-expect-error the same multiple-primary-key check also applies to query-builder views.
+spacetime.anonymousView(
+  { name: 'multiplePrimaryRowsQuery', public: true },
+  multiplePrimaryKeyRows,
+  ctx => {
+    return ctx.from.person;
+  }
+);
 
 spacetime.anonymousView(
   { name: 'optionalPerson', public: true },
@@ -158,6 +182,10 @@ spacetime.anonymousView({ name: 'v5', public: true }, arrayRetValue, ctx => {
   const _fromCompositeIndex = ctx.from.person
     .where(row => row.id.eq(5))
     .leftSemijoin(ctx.from.order, (p, o) => p.name.eq(o.person_name))
+    .build();
+  const _mixedScopeAndInJoinPredicate = ctx.from.person
+    // @ts-expect-error semijoin on(...) only supports one table scope for and/or clauses.
+    .leftSemijoin(ctx.from.order, (p, o) => p.id.eq(o.id).and(o.id.eq(5)))
     .build();
   return ctx.from.person
     .where(row => row.id.eq(5))

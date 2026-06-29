@@ -112,1210 +112,18 @@
 #include "ModuleBindings/Tables/VecUnitStructTable.g.h"
 #include "ModuleBindings/Tables/VecUuidTable.g.h"
 
-static FReducer DecodeReducer(const FReducerEvent& Event)
-{
-    const FString& ReducerName = Event.ReducerCall.ReducerName;
-
-    if (ReducerName == TEXT("delete_from_btree_u32"))
-    {
-        FDeleteFromBtreeU32Args Args = UE::SpacetimeDB::Deserialize<FDeleteFromBtreeU32Args>(Event.ReducerCall.Args);
-        return FReducer::DeleteFromBtreeU32(Args);
-    }
-
-    if (ReducerName == TEXT("delete_large_table"))
-    {
-        FDeleteLargeTableArgs Args = UE::SpacetimeDB::Deserialize<FDeleteLargeTableArgs>(Event.ReducerCall.Args);
-        return FReducer::DeleteLargeTable(Args);
-    }
-
-    if (ReducerName == TEXT("delete_pk_bool"))
-    {
-        FDeletePkBoolArgs Args = UE::SpacetimeDB::Deserialize<FDeletePkBoolArgs>(Event.ReducerCall.Args);
-        return FReducer::DeletePkBool(Args);
-    }
-
-    if (ReducerName == TEXT("delete_pk_connection_id"))
-    {
-        FDeletePkConnectionIdArgs Args = UE::SpacetimeDB::Deserialize<FDeletePkConnectionIdArgs>(Event.ReducerCall.Args);
-        return FReducer::DeletePkConnectionId(Args);
-    }
-
-    if (ReducerName == TEXT("delete_pk_i128"))
-    {
-        FDeletePkI128Args Args = UE::SpacetimeDB::Deserialize<FDeletePkI128Args>(Event.ReducerCall.Args);
-        return FReducer::DeletePkI128(Args);
-    }
-
-    if (ReducerName == TEXT("delete_pk_i16"))
-    {
-        FDeletePkI16Args Args = UE::SpacetimeDB::Deserialize<FDeletePkI16Args>(Event.ReducerCall.Args);
-        return FReducer::DeletePkI16(Args);
-    }
-
-    if (ReducerName == TEXT("delete_pk_i256"))
-    {
-        FDeletePkI256Args Args = UE::SpacetimeDB::Deserialize<FDeletePkI256Args>(Event.ReducerCall.Args);
-        return FReducer::DeletePkI256(Args);
-    }
-
-    if (ReducerName == TEXT("delete_pk_i32"))
-    {
-        FDeletePkI32Args Args = UE::SpacetimeDB::Deserialize<FDeletePkI32Args>(Event.ReducerCall.Args);
-        return FReducer::DeletePkI32(Args);
-    }
-
-    if (ReducerName == TEXT("delete_pk_i64"))
-    {
-        FDeletePkI64Args Args = UE::SpacetimeDB::Deserialize<FDeletePkI64Args>(Event.ReducerCall.Args);
-        return FReducer::DeletePkI64(Args);
-    }
-
-    if (ReducerName == TEXT("delete_pk_i8"))
-    {
-        FDeletePkI8Args Args = UE::SpacetimeDB::Deserialize<FDeletePkI8Args>(Event.ReducerCall.Args);
-        return FReducer::DeletePkI8(Args);
-    }
-
-    if (ReducerName == TEXT("delete_pk_identity"))
-    {
-        FDeletePkIdentityArgs Args = UE::SpacetimeDB::Deserialize<FDeletePkIdentityArgs>(Event.ReducerCall.Args);
-        return FReducer::DeletePkIdentity(Args);
-    }
-
-    if (ReducerName == TEXT("delete_pk_string"))
-    {
-        FDeletePkStringArgs Args = UE::SpacetimeDB::Deserialize<FDeletePkStringArgs>(Event.ReducerCall.Args);
-        return FReducer::DeletePkString(Args);
-    }
-
-    if (ReducerName == TEXT("delete_pk_u128"))
-    {
-        FDeletePkU128Args Args = UE::SpacetimeDB::Deserialize<FDeletePkU128Args>(Event.ReducerCall.Args);
-        return FReducer::DeletePkU128(Args);
-    }
-
-    if (ReducerName == TEXT("delete_pk_u16"))
-    {
-        FDeletePkU16Args Args = UE::SpacetimeDB::Deserialize<FDeletePkU16Args>(Event.ReducerCall.Args);
-        return FReducer::DeletePkU16(Args);
-    }
-
-    if (ReducerName == TEXT("delete_pk_u256"))
-    {
-        FDeletePkU256Args Args = UE::SpacetimeDB::Deserialize<FDeletePkU256Args>(Event.ReducerCall.Args);
-        return FReducer::DeletePkU256(Args);
-    }
-
-    if (ReducerName == TEXT("delete_pk_u32"))
-    {
-        FDeletePkU32Args Args = UE::SpacetimeDB::Deserialize<FDeletePkU32Args>(Event.ReducerCall.Args);
-        return FReducer::DeletePkU32(Args);
-    }
-
-    if (ReducerName == TEXT("delete_pk_u32_insert_pk_u32_two"))
-    {
-        FDeletePkU32InsertPkU32TwoArgs Args = UE::SpacetimeDB::Deserialize<FDeletePkU32InsertPkU32TwoArgs>(Event.ReducerCall.Args);
-        return FReducer::DeletePkU32InsertPkU32Two(Args);
-    }
-
-    if (ReducerName == TEXT("delete_pk_u32_two"))
-    {
-        FDeletePkU32TwoArgs Args = UE::SpacetimeDB::Deserialize<FDeletePkU32TwoArgs>(Event.ReducerCall.Args);
-        return FReducer::DeletePkU32Two(Args);
-    }
-
-    if (ReducerName == TEXT("delete_pk_u64"))
-    {
-        FDeletePkU64Args Args = UE::SpacetimeDB::Deserialize<FDeletePkU64Args>(Event.ReducerCall.Args);
-        return FReducer::DeletePkU64(Args);
-    }
-
-    if (ReducerName == TEXT("delete_pk_u8"))
-    {
-        FDeletePkU8Args Args = UE::SpacetimeDB::Deserialize<FDeletePkU8Args>(Event.ReducerCall.Args);
-        return FReducer::DeletePkU8(Args);
-    }
-
-    if (ReducerName == TEXT("delete_pk_uuid"))
-    {
-        FDeletePkUuidArgs Args = UE::SpacetimeDB::Deserialize<FDeletePkUuidArgs>(Event.ReducerCall.Args);
-        return FReducer::DeletePkUuid(Args);
-    }
-
-    if (ReducerName == TEXT("delete_unique_bool"))
-    {
-        FDeleteUniqueBoolArgs Args = UE::SpacetimeDB::Deserialize<FDeleteUniqueBoolArgs>(Event.ReducerCall.Args);
-        return FReducer::DeleteUniqueBool(Args);
-    }
-
-    if (ReducerName == TEXT("delete_unique_connection_id"))
-    {
-        FDeleteUniqueConnectionIdArgs Args = UE::SpacetimeDB::Deserialize<FDeleteUniqueConnectionIdArgs>(Event.ReducerCall.Args);
-        return FReducer::DeleteUniqueConnectionId(Args);
-    }
-
-    if (ReducerName == TEXT("delete_unique_i128"))
-    {
-        FDeleteUniqueI128Args Args = UE::SpacetimeDB::Deserialize<FDeleteUniqueI128Args>(Event.ReducerCall.Args);
-        return FReducer::DeleteUniqueI128(Args);
-    }
-
-    if (ReducerName == TEXT("delete_unique_i16"))
-    {
-        FDeleteUniqueI16Args Args = UE::SpacetimeDB::Deserialize<FDeleteUniqueI16Args>(Event.ReducerCall.Args);
-        return FReducer::DeleteUniqueI16(Args);
-    }
-
-    if (ReducerName == TEXT("delete_unique_i256"))
-    {
-        FDeleteUniqueI256Args Args = UE::SpacetimeDB::Deserialize<FDeleteUniqueI256Args>(Event.ReducerCall.Args);
-        return FReducer::DeleteUniqueI256(Args);
-    }
-
-    if (ReducerName == TEXT("delete_unique_i32"))
-    {
-        FDeleteUniqueI32Args Args = UE::SpacetimeDB::Deserialize<FDeleteUniqueI32Args>(Event.ReducerCall.Args);
-        return FReducer::DeleteUniqueI32(Args);
-    }
-
-    if (ReducerName == TEXT("delete_unique_i64"))
-    {
-        FDeleteUniqueI64Args Args = UE::SpacetimeDB::Deserialize<FDeleteUniqueI64Args>(Event.ReducerCall.Args);
-        return FReducer::DeleteUniqueI64(Args);
-    }
-
-    if (ReducerName == TEXT("delete_unique_i8"))
-    {
-        FDeleteUniqueI8Args Args = UE::SpacetimeDB::Deserialize<FDeleteUniqueI8Args>(Event.ReducerCall.Args);
-        return FReducer::DeleteUniqueI8(Args);
-    }
-
-    if (ReducerName == TEXT("delete_unique_identity"))
-    {
-        FDeleteUniqueIdentityArgs Args = UE::SpacetimeDB::Deserialize<FDeleteUniqueIdentityArgs>(Event.ReducerCall.Args);
-        return FReducer::DeleteUniqueIdentity(Args);
-    }
-
-    if (ReducerName == TEXT("delete_unique_string"))
-    {
-        FDeleteUniqueStringArgs Args = UE::SpacetimeDB::Deserialize<FDeleteUniqueStringArgs>(Event.ReducerCall.Args);
-        return FReducer::DeleteUniqueString(Args);
-    }
-
-    if (ReducerName == TEXT("delete_unique_u128"))
-    {
-        FDeleteUniqueU128Args Args = UE::SpacetimeDB::Deserialize<FDeleteUniqueU128Args>(Event.ReducerCall.Args);
-        return FReducer::DeleteUniqueU128(Args);
-    }
-
-    if (ReducerName == TEXT("delete_unique_u16"))
-    {
-        FDeleteUniqueU16Args Args = UE::SpacetimeDB::Deserialize<FDeleteUniqueU16Args>(Event.ReducerCall.Args);
-        return FReducer::DeleteUniqueU16(Args);
-    }
-
-    if (ReducerName == TEXT("delete_unique_u256"))
-    {
-        FDeleteUniqueU256Args Args = UE::SpacetimeDB::Deserialize<FDeleteUniqueU256Args>(Event.ReducerCall.Args);
-        return FReducer::DeleteUniqueU256(Args);
-    }
-
-    if (ReducerName == TEXT("delete_unique_u32"))
-    {
-        FDeleteUniqueU32Args Args = UE::SpacetimeDB::Deserialize<FDeleteUniqueU32Args>(Event.ReducerCall.Args);
-        return FReducer::DeleteUniqueU32(Args);
-    }
-
-    if (ReducerName == TEXT("delete_unique_u64"))
-    {
-        FDeleteUniqueU64Args Args = UE::SpacetimeDB::Deserialize<FDeleteUniqueU64Args>(Event.ReducerCall.Args);
-        return FReducer::DeleteUniqueU64(Args);
-    }
-
-    if (ReducerName == TEXT("delete_unique_u8"))
-    {
-        FDeleteUniqueU8Args Args = UE::SpacetimeDB::Deserialize<FDeleteUniqueU8Args>(Event.ReducerCall.Args);
-        return FReducer::DeleteUniqueU8(Args);
-    }
-
-    if (ReducerName == TEXT("delete_unique_uuid"))
-    {
-        FDeleteUniqueUuidArgs Args = UE::SpacetimeDB::Deserialize<FDeleteUniqueUuidArgs>(Event.ReducerCall.Args);
-        return FReducer::DeleteUniqueUuid(Args);
-    }
-
-    if (ReducerName == TEXT("insert_call_timestamp"))
-    {
-        FInsertCallTimestampArgs Args = UE::SpacetimeDB::Deserialize<FInsertCallTimestampArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertCallTimestamp(Args);
-    }
-
-    if (ReducerName == TEXT("insert_call_uuid_v4"))
-    {
-        FInsertCallUuidV4Args Args = UE::SpacetimeDB::Deserialize<FInsertCallUuidV4Args>(Event.ReducerCall.Args);
-        return FReducer::InsertCallUuidV4(Args);
-    }
-
-    if (ReducerName == TEXT("insert_call_uuid_v7"))
-    {
-        FInsertCallUuidV7Args Args = UE::SpacetimeDB::Deserialize<FInsertCallUuidV7Args>(Event.ReducerCall.Args);
-        return FReducer::InsertCallUuidV7(Args);
-    }
-
-    if (ReducerName == TEXT("insert_caller_one_connection_id"))
-    {
-        FInsertCallerOneConnectionIdArgs Args = UE::SpacetimeDB::Deserialize<FInsertCallerOneConnectionIdArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertCallerOneConnectionId(Args);
-    }
-
-    if (ReducerName == TEXT("insert_caller_one_identity"))
-    {
-        FInsertCallerOneIdentityArgs Args = UE::SpacetimeDB::Deserialize<FInsertCallerOneIdentityArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertCallerOneIdentity(Args);
-    }
-
-    if (ReducerName == TEXT("insert_caller_pk_connection_id"))
-    {
-        FInsertCallerPkConnectionIdArgs Args = UE::SpacetimeDB::Deserialize<FInsertCallerPkConnectionIdArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertCallerPkConnectionId(Args);
-    }
-
-    if (ReducerName == TEXT("insert_caller_pk_identity"))
-    {
-        FInsertCallerPkIdentityArgs Args = UE::SpacetimeDB::Deserialize<FInsertCallerPkIdentityArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertCallerPkIdentity(Args);
-    }
-
-    if (ReducerName == TEXT("insert_caller_unique_connection_id"))
-    {
-        FInsertCallerUniqueConnectionIdArgs Args = UE::SpacetimeDB::Deserialize<FInsertCallerUniqueConnectionIdArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertCallerUniqueConnectionId(Args);
-    }
-
-    if (ReducerName == TEXT("insert_caller_unique_identity"))
-    {
-        FInsertCallerUniqueIdentityArgs Args = UE::SpacetimeDB::Deserialize<FInsertCallerUniqueIdentityArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertCallerUniqueIdentity(Args);
-    }
-
-    if (ReducerName == TEXT("insert_caller_vec_connection_id"))
-    {
-        FInsertCallerVecConnectionIdArgs Args = UE::SpacetimeDB::Deserialize<FInsertCallerVecConnectionIdArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertCallerVecConnectionId(Args);
-    }
-
-    if (ReducerName == TEXT("insert_caller_vec_identity"))
-    {
-        FInsertCallerVecIdentityArgs Args = UE::SpacetimeDB::Deserialize<FInsertCallerVecIdentityArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertCallerVecIdentity(Args);
-    }
-
-    if (ReducerName == TEXT("insert_into_btree_u32"))
-    {
-        FInsertIntoBtreeU32Args Args = UE::SpacetimeDB::Deserialize<FInsertIntoBtreeU32Args>(Event.ReducerCall.Args);
-        return FReducer::InsertIntoBtreeU32(Args);
-    }
-
-    if (ReducerName == TEXT("insert_into_indexed_simple_enum"))
-    {
-        FInsertIntoIndexedSimpleEnumArgs Args = UE::SpacetimeDB::Deserialize<FInsertIntoIndexedSimpleEnumArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertIntoIndexedSimpleEnum(Args);
-    }
-
-    if (ReducerName == TEXT("insert_into_pk_btree_u32"))
-    {
-        FInsertIntoPkBtreeU32Args Args = UE::SpacetimeDB::Deserialize<FInsertIntoPkBtreeU32Args>(Event.ReducerCall.Args);
-        return FReducer::InsertIntoPkBtreeU32(Args);
-    }
-
-    if (ReducerName == TEXT("insert_large_table"))
-    {
-        FInsertLargeTableArgs Args = UE::SpacetimeDB::Deserialize<FInsertLargeTableArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertLargeTable(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_bool"))
-    {
-        FInsertOneBoolArgs Args = UE::SpacetimeDB::Deserialize<FInsertOneBoolArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertOneBool(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_byte_struct"))
-    {
-        FInsertOneByteStructArgs Args = UE::SpacetimeDB::Deserialize<FInsertOneByteStructArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertOneByteStruct(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_connection_id"))
-    {
-        FInsertOneConnectionIdArgs Args = UE::SpacetimeDB::Deserialize<FInsertOneConnectionIdArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertOneConnectionId(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_enum_with_payload"))
-    {
-        FInsertOneEnumWithPayloadArgs Args = UE::SpacetimeDB::Deserialize<FInsertOneEnumWithPayloadArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertOneEnumWithPayload(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_every_primitive_struct"))
-    {
-        FInsertOneEveryPrimitiveStructArgs Args = UE::SpacetimeDB::Deserialize<FInsertOneEveryPrimitiveStructArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertOneEveryPrimitiveStruct(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_every_vec_struct"))
-    {
-        FInsertOneEveryVecStructArgs Args = UE::SpacetimeDB::Deserialize<FInsertOneEveryVecStructArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertOneEveryVecStruct(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_f32"))
-    {
-        FInsertOneF32Args Args = UE::SpacetimeDB::Deserialize<FInsertOneF32Args>(Event.ReducerCall.Args);
-        return FReducer::InsertOneF32(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_f64"))
-    {
-        FInsertOneF64Args Args = UE::SpacetimeDB::Deserialize<FInsertOneF64Args>(Event.ReducerCall.Args);
-        return FReducer::InsertOneF64(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_i128"))
-    {
-        FInsertOneI128Args Args = UE::SpacetimeDB::Deserialize<FInsertOneI128Args>(Event.ReducerCall.Args);
-        return FReducer::InsertOneI128(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_i16"))
-    {
-        FInsertOneI16Args Args = UE::SpacetimeDB::Deserialize<FInsertOneI16Args>(Event.ReducerCall.Args);
-        return FReducer::InsertOneI16(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_i256"))
-    {
-        FInsertOneI256Args Args = UE::SpacetimeDB::Deserialize<FInsertOneI256Args>(Event.ReducerCall.Args);
-        return FReducer::InsertOneI256(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_i32"))
-    {
-        FInsertOneI32Args Args = UE::SpacetimeDB::Deserialize<FInsertOneI32Args>(Event.ReducerCall.Args);
-        return FReducer::InsertOneI32(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_i64"))
-    {
-        FInsertOneI64Args Args = UE::SpacetimeDB::Deserialize<FInsertOneI64Args>(Event.ReducerCall.Args);
-        return FReducer::InsertOneI64(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_i8"))
-    {
-        FInsertOneI8Args Args = UE::SpacetimeDB::Deserialize<FInsertOneI8Args>(Event.ReducerCall.Args);
-        return FReducer::InsertOneI8(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_identity"))
-    {
-        FInsertOneIdentityArgs Args = UE::SpacetimeDB::Deserialize<FInsertOneIdentityArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertOneIdentity(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_simple_enum"))
-    {
-        FInsertOneSimpleEnumArgs Args = UE::SpacetimeDB::Deserialize<FInsertOneSimpleEnumArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertOneSimpleEnum(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_string"))
-    {
-        FInsertOneStringArgs Args = UE::SpacetimeDB::Deserialize<FInsertOneStringArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertOneString(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_timestamp"))
-    {
-        FInsertOneTimestampArgs Args = UE::SpacetimeDB::Deserialize<FInsertOneTimestampArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertOneTimestamp(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_u128"))
-    {
-        FInsertOneU128Args Args = UE::SpacetimeDB::Deserialize<FInsertOneU128Args>(Event.ReducerCall.Args);
-        return FReducer::InsertOneU128(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_u16"))
-    {
-        FInsertOneU16Args Args = UE::SpacetimeDB::Deserialize<FInsertOneU16Args>(Event.ReducerCall.Args);
-        return FReducer::InsertOneU16(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_u256"))
-    {
-        FInsertOneU256Args Args = UE::SpacetimeDB::Deserialize<FInsertOneU256Args>(Event.ReducerCall.Args);
-        return FReducer::InsertOneU256(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_u32"))
-    {
-        FInsertOneU32Args Args = UE::SpacetimeDB::Deserialize<FInsertOneU32Args>(Event.ReducerCall.Args);
-        return FReducer::InsertOneU32(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_u64"))
-    {
-        FInsertOneU64Args Args = UE::SpacetimeDB::Deserialize<FInsertOneU64Args>(Event.ReducerCall.Args);
-        return FReducer::InsertOneU64(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_u8"))
-    {
-        FInsertOneU8Args Args = UE::SpacetimeDB::Deserialize<FInsertOneU8Args>(Event.ReducerCall.Args);
-        return FReducer::InsertOneU8(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_unit_struct"))
-    {
-        FInsertOneUnitStructArgs Args = UE::SpacetimeDB::Deserialize<FInsertOneUnitStructArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertOneUnitStruct(Args);
-    }
-
-    if (ReducerName == TEXT("insert_one_uuid"))
-    {
-        FInsertOneUuidArgs Args = UE::SpacetimeDB::Deserialize<FInsertOneUuidArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertOneUuid(Args);
-    }
-
-    if (ReducerName == TEXT("insert_option_every_primitive_struct"))
-    {
-        FInsertOptionEveryPrimitiveStructArgs Args = UE::SpacetimeDB::Deserialize<FInsertOptionEveryPrimitiveStructArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertOptionEveryPrimitiveStruct(Args);
-    }
-
-    if (ReducerName == TEXT("insert_option_i32"))
-    {
-        FInsertOptionI32Args Args = UE::SpacetimeDB::Deserialize<FInsertOptionI32Args>(Event.ReducerCall.Args);
-        return FReducer::InsertOptionI32(Args);
-    }
-
-    if (ReducerName == TEXT("insert_option_identity"))
-    {
-        FInsertOptionIdentityArgs Args = UE::SpacetimeDB::Deserialize<FInsertOptionIdentityArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertOptionIdentity(Args);
-    }
-
-    if (ReducerName == TEXT("insert_option_simple_enum"))
-    {
-        FInsertOptionSimpleEnumArgs Args = UE::SpacetimeDB::Deserialize<FInsertOptionSimpleEnumArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertOptionSimpleEnum(Args);
-    }
-
-    if (ReducerName == TEXT("insert_option_string"))
-    {
-        FInsertOptionStringArgs Args = UE::SpacetimeDB::Deserialize<FInsertOptionStringArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertOptionString(Args);
-    }
-
-    if (ReducerName == TEXT("insert_option_uuid"))
-    {
-        FInsertOptionUuidArgs Args = UE::SpacetimeDB::Deserialize<FInsertOptionUuidArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertOptionUuid(Args);
-    }
-
-    if (ReducerName == TEXT("insert_option_vec_option_i32"))
-    {
-        FInsertOptionVecOptionI32Args Args = UE::SpacetimeDB::Deserialize<FInsertOptionVecOptionI32Args>(Event.ReducerCall.Args);
-        return FReducer::InsertOptionVecOptionI32(Args);
-    }
-
-    if (ReducerName == TEXT("insert_pk_bool"))
-    {
-        FInsertPkBoolArgs Args = UE::SpacetimeDB::Deserialize<FInsertPkBoolArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertPkBool(Args);
-    }
-
-    if (ReducerName == TEXT("insert_pk_connection_id"))
-    {
-        FInsertPkConnectionIdArgs Args = UE::SpacetimeDB::Deserialize<FInsertPkConnectionIdArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertPkConnectionId(Args);
-    }
-
-    if (ReducerName == TEXT("insert_pk_i128"))
-    {
-        FInsertPkI128Args Args = UE::SpacetimeDB::Deserialize<FInsertPkI128Args>(Event.ReducerCall.Args);
-        return FReducer::InsertPkI128(Args);
-    }
-
-    if (ReducerName == TEXT("insert_pk_i16"))
-    {
-        FInsertPkI16Args Args = UE::SpacetimeDB::Deserialize<FInsertPkI16Args>(Event.ReducerCall.Args);
-        return FReducer::InsertPkI16(Args);
-    }
-
-    if (ReducerName == TEXT("insert_pk_i256"))
-    {
-        FInsertPkI256Args Args = UE::SpacetimeDB::Deserialize<FInsertPkI256Args>(Event.ReducerCall.Args);
-        return FReducer::InsertPkI256(Args);
-    }
-
-    if (ReducerName == TEXT("insert_pk_i32"))
-    {
-        FInsertPkI32Args Args = UE::SpacetimeDB::Deserialize<FInsertPkI32Args>(Event.ReducerCall.Args);
-        return FReducer::InsertPkI32(Args);
-    }
-
-    if (ReducerName == TEXT("insert_pk_i64"))
-    {
-        FInsertPkI64Args Args = UE::SpacetimeDB::Deserialize<FInsertPkI64Args>(Event.ReducerCall.Args);
-        return FReducer::InsertPkI64(Args);
-    }
-
-    if (ReducerName == TEXT("insert_pk_i8"))
-    {
-        FInsertPkI8Args Args = UE::SpacetimeDB::Deserialize<FInsertPkI8Args>(Event.ReducerCall.Args);
-        return FReducer::InsertPkI8(Args);
-    }
-
-    if (ReducerName == TEXT("insert_pk_identity"))
-    {
-        FInsertPkIdentityArgs Args = UE::SpacetimeDB::Deserialize<FInsertPkIdentityArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertPkIdentity(Args);
-    }
-
-    if (ReducerName == TEXT("insert_pk_simple_enum"))
-    {
-        FInsertPkSimpleEnumArgs Args = UE::SpacetimeDB::Deserialize<FInsertPkSimpleEnumArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertPkSimpleEnum(Args);
-    }
-
-    if (ReducerName == TEXT("insert_pk_string"))
-    {
-        FInsertPkStringArgs Args = UE::SpacetimeDB::Deserialize<FInsertPkStringArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertPkString(Args);
-    }
-
-    if (ReducerName == TEXT("insert_pk_u128"))
-    {
-        FInsertPkU128Args Args = UE::SpacetimeDB::Deserialize<FInsertPkU128Args>(Event.ReducerCall.Args);
-        return FReducer::InsertPkU128(Args);
-    }
-
-    if (ReducerName == TEXT("insert_pk_u16"))
-    {
-        FInsertPkU16Args Args = UE::SpacetimeDB::Deserialize<FInsertPkU16Args>(Event.ReducerCall.Args);
-        return FReducer::InsertPkU16(Args);
-    }
-
-    if (ReducerName == TEXT("insert_pk_u256"))
-    {
-        FInsertPkU256Args Args = UE::SpacetimeDB::Deserialize<FInsertPkU256Args>(Event.ReducerCall.Args);
-        return FReducer::InsertPkU256(Args);
-    }
-
-    if (ReducerName == TEXT("insert_pk_u32"))
-    {
-        FInsertPkU32Args Args = UE::SpacetimeDB::Deserialize<FInsertPkU32Args>(Event.ReducerCall.Args);
-        return FReducer::InsertPkU32(Args);
-    }
-
-    if (ReducerName == TEXT("insert_pk_u32_two"))
-    {
-        FInsertPkU32TwoArgs Args = UE::SpacetimeDB::Deserialize<FInsertPkU32TwoArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertPkU32Two(Args);
-    }
-
-    if (ReducerName == TEXT("insert_pk_u64"))
-    {
-        FInsertPkU64Args Args = UE::SpacetimeDB::Deserialize<FInsertPkU64Args>(Event.ReducerCall.Args);
-        return FReducer::InsertPkU64(Args);
-    }
-
-    if (ReducerName == TEXT("insert_pk_u8"))
-    {
-        FInsertPkU8Args Args = UE::SpacetimeDB::Deserialize<FInsertPkU8Args>(Event.ReducerCall.Args);
-        return FReducer::InsertPkU8(Args);
-    }
-
-    if (ReducerName == TEXT("insert_pk_uuid"))
-    {
-        FInsertPkUuidArgs Args = UE::SpacetimeDB::Deserialize<FInsertPkUuidArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertPkUuid(Args);
-    }
-
-    if (ReducerName == TEXT("insert_primitives_as_strings"))
-    {
-        FInsertPrimitivesAsStringsArgs Args = UE::SpacetimeDB::Deserialize<FInsertPrimitivesAsStringsArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertPrimitivesAsStrings(Args);
-    }
-
-    if (ReducerName == TEXT("insert_result_every_primitive_struct_string"))
-    {
-        FInsertResultEveryPrimitiveStructStringArgs Args = UE::SpacetimeDB::Deserialize<FInsertResultEveryPrimitiveStructStringArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertResultEveryPrimitiveStructString(Args);
-    }
-
-    if (ReducerName == TEXT("insert_result_i32_string"))
-    {
-        FInsertResultI32StringArgs Args = UE::SpacetimeDB::Deserialize<FInsertResultI32StringArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertResultI32String(Args);
-    }
-
-    if (ReducerName == TEXT("insert_result_identity_string"))
-    {
-        FInsertResultIdentityStringArgs Args = UE::SpacetimeDB::Deserialize<FInsertResultIdentityStringArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertResultIdentityString(Args);
-    }
-
-    if (ReducerName == TEXT("insert_result_simple_enum_i32"))
-    {
-        FInsertResultSimpleEnumI32Args Args = UE::SpacetimeDB::Deserialize<FInsertResultSimpleEnumI32Args>(Event.ReducerCall.Args);
-        return FReducer::InsertResultSimpleEnumI32(Args);
-    }
-
-    if (ReducerName == TEXT("insert_result_string_i32"))
-    {
-        FInsertResultStringI32Args Args = UE::SpacetimeDB::Deserialize<FInsertResultStringI32Args>(Event.ReducerCall.Args);
-        return FReducer::InsertResultStringI32(Args);
-    }
-
-    if (ReducerName == TEXT("insert_result_vec_i32_string"))
-    {
-        FInsertResultVecI32StringArgs Args = UE::SpacetimeDB::Deserialize<FInsertResultVecI32StringArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertResultVecI32String(Args);
-    }
-
-    if (ReducerName == TEXT("insert_table_holds_table"))
-    {
-        FInsertTableHoldsTableArgs Args = UE::SpacetimeDB::Deserialize<FInsertTableHoldsTableArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertTableHoldsTable(Args);
-    }
-
-    if (ReducerName == TEXT("insert_unique_bool"))
-    {
-        FInsertUniqueBoolArgs Args = UE::SpacetimeDB::Deserialize<FInsertUniqueBoolArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertUniqueBool(Args);
-    }
-
-    if (ReducerName == TEXT("insert_unique_connection_id"))
-    {
-        FInsertUniqueConnectionIdArgs Args = UE::SpacetimeDB::Deserialize<FInsertUniqueConnectionIdArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertUniqueConnectionId(Args);
-    }
-
-    if (ReducerName == TEXT("insert_unique_i128"))
-    {
-        FInsertUniqueI128Args Args = UE::SpacetimeDB::Deserialize<FInsertUniqueI128Args>(Event.ReducerCall.Args);
-        return FReducer::InsertUniqueI128(Args);
-    }
-
-    if (ReducerName == TEXT("insert_unique_i16"))
-    {
-        FInsertUniqueI16Args Args = UE::SpacetimeDB::Deserialize<FInsertUniqueI16Args>(Event.ReducerCall.Args);
-        return FReducer::InsertUniqueI16(Args);
-    }
-
-    if (ReducerName == TEXT("insert_unique_i256"))
-    {
-        FInsertUniqueI256Args Args = UE::SpacetimeDB::Deserialize<FInsertUniqueI256Args>(Event.ReducerCall.Args);
-        return FReducer::InsertUniqueI256(Args);
-    }
-
-    if (ReducerName == TEXT("insert_unique_i32"))
-    {
-        FInsertUniqueI32Args Args = UE::SpacetimeDB::Deserialize<FInsertUniqueI32Args>(Event.ReducerCall.Args);
-        return FReducer::InsertUniqueI32(Args);
-    }
-
-    if (ReducerName == TEXT("insert_unique_i64"))
-    {
-        FInsertUniqueI64Args Args = UE::SpacetimeDB::Deserialize<FInsertUniqueI64Args>(Event.ReducerCall.Args);
-        return FReducer::InsertUniqueI64(Args);
-    }
-
-    if (ReducerName == TEXT("insert_unique_i8"))
-    {
-        FInsertUniqueI8Args Args = UE::SpacetimeDB::Deserialize<FInsertUniqueI8Args>(Event.ReducerCall.Args);
-        return FReducer::InsertUniqueI8(Args);
-    }
-
-    if (ReducerName == TEXT("insert_unique_identity"))
-    {
-        FInsertUniqueIdentityArgs Args = UE::SpacetimeDB::Deserialize<FInsertUniqueIdentityArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertUniqueIdentity(Args);
-    }
-
-    if (ReducerName == TEXT("insert_unique_string"))
-    {
-        FInsertUniqueStringArgs Args = UE::SpacetimeDB::Deserialize<FInsertUniqueStringArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertUniqueString(Args);
-    }
-
-    if (ReducerName == TEXT("insert_unique_u128"))
-    {
-        FInsertUniqueU128Args Args = UE::SpacetimeDB::Deserialize<FInsertUniqueU128Args>(Event.ReducerCall.Args);
-        return FReducer::InsertUniqueU128(Args);
-    }
-
-    if (ReducerName == TEXT("insert_unique_u16"))
-    {
-        FInsertUniqueU16Args Args = UE::SpacetimeDB::Deserialize<FInsertUniqueU16Args>(Event.ReducerCall.Args);
-        return FReducer::InsertUniqueU16(Args);
-    }
-
-    if (ReducerName == TEXT("insert_unique_u256"))
-    {
-        FInsertUniqueU256Args Args = UE::SpacetimeDB::Deserialize<FInsertUniqueU256Args>(Event.ReducerCall.Args);
-        return FReducer::InsertUniqueU256(Args);
-    }
-
-    if (ReducerName == TEXT("insert_unique_u32"))
-    {
-        FInsertUniqueU32Args Args = UE::SpacetimeDB::Deserialize<FInsertUniqueU32Args>(Event.ReducerCall.Args);
-        return FReducer::InsertUniqueU32(Args);
-    }
-
-    if (ReducerName == TEXT("insert_unique_u32_update_pk_u32"))
-    {
-        FInsertUniqueU32UpdatePkU32Args Args = UE::SpacetimeDB::Deserialize<FInsertUniqueU32UpdatePkU32Args>(Event.ReducerCall.Args);
-        return FReducer::InsertUniqueU32UpdatePkU32(Args);
-    }
-
-    if (ReducerName == TEXT("insert_unique_u64"))
-    {
-        FInsertUniqueU64Args Args = UE::SpacetimeDB::Deserialize<FInsertUniqueU64Args>(Event.ReducerCall.Args);
-        return FReducer::InsertUniqueU64(Args);
-    }
-
-    if (ReducerName == TEXT("insert_unique_u8"))
-    {
-        FInsertUniqueU8Args Args = UE::SpacetimeDB::Deserialize<FInsertUniqueU8Args>(Event.ReducerCall.Args);
-        return FReducer::InsertUniqueU8(Args);
-    }
-
-    if (ReducerName == TEXT("insert_unique_uuid"))
-    {
-        FInsertUniqueUuidArgs Args = UE::SpacetimeDB::Deserialize<FInsertUniqueUuidArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertUniqueUuid(Args);
-    }
-
-    if (ReducerName == TEXT("insert_user"))
-    {
-        FInsertUserArgs Args = UE::SpacetimeDB::Deserialize<FInsertUserArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertUser(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_bool"))
-    {
-        FInsertVecBoolArgs Args = UE::SpacetimeDB::Deserialize<FInsertVecBoolArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertVecBool(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_byte_struct"))
-    {
-        FInsertVecByteStructArgs Args = UE::SpacetimeDB::Deserialize<FInsertVecByteStructArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertVecByteStruct(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_connection_id"))
-    {
-        FInsertVecConnectionIdArgs Args = UE::SpacetimeDB::Deserialize<FInsertVecConnectionIdArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertVecConnectionId(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_enum_with_payload"))
-    {
-        FInsertVecEnumWithPayloadArgs Args = UE::SpacetimeDB::Deserialize<FInsertVecEnumWithPayloadArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertVecEnumWithPayload(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_every_primitive_struct"))
-    {
-        FInsertVecEveryPrimitiveStructArgs Args = UE::SpacetimeDB::Deserialize<FInsertVecEveryPrimitiveStructArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertVecEveryPrimitiveStruct(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_every_vec_struct"))
-    {
-        FInsertVecEveryVecStructArgs Args = UE::SpacetimeDB::Deserialize<FInsertVecEveryVecStructArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertVecEveryVecStruct(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_f32"))
-    {
-        FInsertVecF32Args Args = UE::SpacetimeDB::Deserialize<FInsertVecF32Args>(Event.ReducerCall.Args);
-        return FReducer::InsertVecF32(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_f64"))
-    {
-        FInsertVecF64Args Args = UE::SpacetimeDB::Deserialize<FInsertVecF64Args>(Event.ReducerCall.Args);
-        return FReducer::InsertVecF64(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_i128"))
-    {
-        FInsertVecI128Args Args = UE::SpacetimeDB::Deserialize<FInsertVecI128Args>(Event.ReducerCall.Args);
-        return FReducer::InsertVecI128(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_i16"))
-    {
-        FInsertVecI16Args Args = UE::SpacetimeDB::Deserialize<FInsertVecI16Args>(Event.ReducerCall.Args);
-        return FReducer::InsertVecI16(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_i256"))
-    {
-        FInsertVecI256Args Args = UE::SpacetimeDB::Deserialize<FInsertVecI256Args>(Event.ReducerCall.Args);
-        return FReducer::InsertVecI256(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_i32"))
-    {
-        FInsertVecI32Args Args = UE::SpacetimeDB::Deserialize<FInsertVecI32Args>(Event.ReducerCall.Args);
-        return FReducer::InsertVecI32(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_i64"))
-    {
-        FInsertVecI64Args Args = UE::SpacetimeDB::Deserialize<FInsertVecI64Args>(Event.ReducerCall.Args);
-        return FReducer::InsertVecI64(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_i8"))
-    {
-        FInsertVecI8Args Args = UE::SpacetimeDB::Deserialize<FInsertVecI8Args>(Event.ReducerCall.Args);
-        return FReducer::InsertVecI8(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_identity"))
-    {
-        FInsertVecIdentityArgs Args = UE::SpacetimeDB::Deserialize<FInsertVecIdentityArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertVecIdentity(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_simple_enum"))
-    {
-        FInsertVecSimpleEnumArgs Args = UE::SpacetimeDB::Deserialize<FInsertVecSimpleEnumArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertVecSimpleEnum(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_string"))
-    {
-        FInsertVecStringArgs Args = UE::SpacetimeDB::Deserialize<FInsertVecStringArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertVecString(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_timestamp"))
-    {
-        FInsertVecTimestampArgs Args = UE::SpacetimeDB::Deserialize<FInsertVecTimestampArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertVecTimestamp(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_u128"))
-    {
-        FInsertVecU128Args Args = UE::SpacetimeDB::Deserialize<FInsertVecU128Args>(Event.ReducerCall.Args);
-        return FReducer::InsertVecU128(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_u16"))
-    {
-        FInsertVecU16Args Args = UE::SpacetimeDB::Deserialize<FInsertVecU16Args>(Event.ReducerCall.Args);
-        return FReducer::InsertVecU16(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_u256"))
-    {
-        FInsertVecU256Args Args = UE::SpacetimeDB::Deserialize<FInsertVecU256Args>(Event.ReducerCall.Args);
-        return FReducer::InsertVecU256(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_u32"))
-    {
-        FInsertVecU32Args Args = UE::SpacetimeDB::Deserialize<FInsertVecU32Args>(Event.ReducerCall.Args);
-        return FReducer::InsertVecU32(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_u64"))
-    {
-        FInsertVecU64Args Args = UE::SpacetimeDB::Deserialize<FInsertVecU64Args>(Event.ReducerCall.Args);
-        return FReducer::InsertVecU64(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_u8"))
-    {
-        FInsertVecU8Args Args = UE::SpacetimeDB::Deserialize<FInsertVecU8Args>(Event.ReducerCall.Args);
-        return FReducer::InsertVecU8(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_unit_struct"))
-    {
-        FInsertVecUnitStructArgs Args = UE::SpacetimeDB::Deserialize<FInsertVecUnitStructArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertVecUnitStruct(Args);
-    }
-
-    if (ReducerName == TEXT("insert_vec_uuid"))
-    {
-        FInsertVecUuidArgs Args = UE::SpacetimeDB::Deserialize<FInsertVecUuidArgs>(Event.ReducerCall.Args);
-        return FReducer::InsertVecUuid(Args);
-    }
-
-    if (ReducerName == TEXT("no_op_succeeds"))
-    {
-        FNoOpSucceedsArgs Args = UE::SpacetimeDB::Deserialize<FNoOpSucceedsArgs>(Event.ReducerCall.Args);
-        return FReducer::NoOpSucceeds(Args);
-    }
-
-    if (ReducerName == TEXT("sorted_uuids_insert"))
-    {
-        FSortedUuidsInsertArgs Args = UE::SpacetimeDB::Deserialize<FSortedUuidsInsertArgs>(Event.ReducerCall.Args);
-        return FReducer::SortedUuidsInsert(Args);
-    }
-
-    if (ReducerName == TEXT("update_indexed_simple_enum"))
-    {
-        FUpdateIndexedSimpleEnumArgs Args = UE::SpacetimeDB::Deserialize<FUpdateIndexedSimpleEnumArgs>(Event.ReducerCall.Args);
-        return FReducer::UpdateIndexedSimpleEnum(Args);
-    }
-
-    if (ReducerName == TEXT("update_pk_bool"))
-    {
-        FUpdatePkBoolArgs Args = UE::SpacetimeDB::Deserialize<FUpdatePkBoolArgs>(Event.ReducerCall.Args);
-        return FReducer::UpdatePkBool(Args);
-    }
-
-    if (ReducerName == TEXT("update_pk_connection_id"))
-    {
-        FUpdatePkConnectionIdArgs Args = UE::SpacetimeDB::Deserialize<FUpdatePkConnectionIdArgs>(Event.ReducerCall.Args);
-        return FReducer::UpdatePkConnectionId(Args);
-    }
-
-    if (ReducerName == TEXT("update_pk_i128"))
-    {
-        FUpdatePkI128Args Args = UE::SpacetimeDB::Deserialize<FUpdatePkI128Args>(Event.ReducerCall.Args);
-        return FReducer::UpdatePkI128(Args);
-    }
-
-    if (ReducerName == TEXT("update_pk_i16"))
-    {
-        FUpdatePkI16Args Args = UE::SpacetimeDB::Deserialize<FUpdatePkI16Args>(Event.ReducerCall.Args);
-        return FReducer::UpdatePkI16(Args);
-    }
-
-    if (ReducerName == TEXT("update_pk_i256"))
-    {
-        FUpdatePkI256Args Args = UE::SpacetimeDB::Deserialize<FUpdatePkI256Args>(Event.ReducerCall.Args);
-        return FReducer::UpdatePkI256(Args);
-    }
-
-    if (ReducerName == TEXT("update_pk_i32"))
-    {
-        FUpdatePkI32Args Args = UE::SpacetimeDB::Deserialize<FUpdatePkI32Args>(Event.ReducerCall.Args);
-        return FReducer::UpdatePkI32(Args);
-    }
-
-    if (ReducerName == TEXT("update_pk_i64"))
-    {
-        FUpdatePkI64Args Args = UE::SpacetimeDB::Deserialize<FUpdatePkI64Args>(Event.ReducerCall.Args);
-        return FReducer::UpdatePkI64(Args);
-    }
-
-    if (ReducerName == TEXT("update_pk_i8"))
-    {
-        FUpdatePkI8Args Args = UE::SpacetimeDB::Deserialize<FUpdatePkI8Args>(Event.ReducerCall.Args);
-        return FReducer::UpdatePkI8(Args);
-    }
-
-    if (ReducerName == TEXT("update_pk_identity"))
-    {
-        FUpdatePkIdentityArgs Args = UE::SpacetimeDB::Deserialize<FUpdatePkIdentityArgs>(Event.ReducerCall.Args);
-        return FReducer::UpdatePkIdentity(Args);
-    }
-
-    if (ReducerName == TEXT("update_pk_simple_enum"))
-    {
-        FUpdatePkSimpleEnumArgs Args = UE::SpacetimeDB::Deserialize<FUpdatePkSimpleEnumArgs>(Event.ReducerCall.Args);
-        return FReducer::UpdatePkSimpleEnum(Args);
-    }
-
-    if (ReducerName == TEXT("update_pk_string"))
-    {
-        FUpdatePkStringArgs Args = UE::SpacetimeDB::Deserialize<FUpdatePkStringArgs>(Event.ReducerCall.Args);
-        return FReducer::UpdatePkString(Args);
-    }
-
-    if (ReducerName == TEXT("update_pk_u128"))
-    {
-        FUpdatePkU128Args Args = UE::SpacetimeDB::Deserialize<FUpdatePkU128Args>(Event.ReducerCall.Args);
-        return FReducer::UpdatePkU128(Args);
-    }
-
-    if (ReducerName == TEXT("update_pk_u16"))
-    {
-        FUpdatePkU16Args Args = UE::SpacetimeDB::Deserialize<FUpdatePkU16Args>(Event.ReducerCall.Args);
-        return FReducer::UpdatePkU16(Args);
-    }
-
-    if (ReducerName == TEXT("update_pk_u256"))
-    {
-        FUpdatePkU256Args Args = UE::SpacetimeDB::Deserialize<FUpdatePkU256Args>(Event.ReducerCall.Args);
-        return FReducer::UpdatePkU256(Args);
-    }
-
-    if (ReducerName == TEXT("update_pk_u32"))
-    {
-        FUpdatePkU32Args Args = UE::SpacetimeDB::Deserialize<FUpdatePkU32Args>(Event.ReducerCall.Args);
-        return FReducer::UpdatePkU32(Args);
-    }
-
-    if (ReducerName == TEXT("update_pk_u32_two"))
-    {
-        FUpdatePkU32TwoArgs Args = UE::SpacetimeDB::Deserialize<FUpdatePkU32TwoArgs>(Event.ReducerCall.Args);
-        return FReducer::UpdatePkU32Two(Args);
-    }
-
-    if (ReducerName == TEXT("update_pk_u64"))
-    {
-        FUpdatePkU64Args Args = UE::SpacetimeDB::Deserialize<FUpdatePkU64Args>(Event.ReducerCall.Args);
-        return FReducer::UpdatePkU64(Args);
-    }
-
-    if (ReducerName == TEXT("update_pk_u8"))
-    {
-        FUpdatePkU8Args Args = UE::SpacetimeDB::Deserialize<FUpdatePkU8Args>(Event.ReducerCall.Args);
-        return FReducer::UpdatePkU8(Args);
-    }
-
-    if (ReducerName == TEXT("update_pk_uuid"))
-    {
-        FUpdatePkUuidArgs Args = UE::SpacetimeDB::Deserialize<FUpdatePkUuidArgs>(Event.ReducerCall.Args);
-        return FReducer::UpdatePkUuid(Args);
-    }
-
-    if (ReducerName == TEXT("update_unique_bool"))
-    {
-        FUpdateUniqueBoolArgs Args = UE::SpacetimeDB::Deserialize<FUpdateUniqueBoolArgs>(Event.ReducerCall.Args);
-        return FReducer::UpdateUniqueBool(Args);
-    }
-
-    if (ReducerName == TEXT("update_unique_connection_id"))
-    {
-        FUpdateUniqueConnectionIdArgs Args = UE::SpacetimeDB::Deserialize<FUpdateUniqueConnectionIdArgs>(Event.ReducerCall.Args);
-        return FReducer::UpdateUniqueConnectionId(Args);
-    }
-
-    if (ReducerName == TEXT("update_unique_i128"))
-    {
-        FUpdateUniqueI128Args Args = UE::SpacetimeDB::Deserialize<FUpdateUniqueI128Args>(Event.ReducerCall.Args);
-        return FReducer::UpdateUniqueI128(Args);
-    }
-
-    if (ReducerName == TEXT("update_unique_i16"))
-    {
-        FUpdateUniqueI16Args Args = UE::SpacetimeDB::Deserialize<FUpdateUniqueI16Args>(Event.ReducerCall.Args);
-        return FReducer::UpdateUniqueI16(Args);
-    }
-
-    if (ReducerName == TEXT("update_unique_i256"))
-    {
-        FUpdateUniqueI256Args Args = UE::SpacetimeDB::Deserialize<FUpdateUniqueI256Args>(Event.ReducerCall.Args);
-        return FReducer::UpdateUniqueI256(Args);
-    }
-
-    if (ReducerName == TEXT("update_unique_i32"))
-    {
-        FUpdateUniqueI32Args Args = UE::SpacetimeDB::Deserialize<FUpdateUniqueI32Args>(Event.ReducerCall.Args);
-        return FReducer::UpdateUniqueI32(Args);
-    }
-
-    if (ReducerName == TEXT("update_unique_i64"))
-    {
-        FUpdateUniqueI64Args Args = UE::SpacetimeDB::Deserialize<FUpdateUniqueI64Args>(Event.ReducerCall.Args);
-        return FReducer::UpdateUniqueI64(Args);
-    }
-
-    if (ReducerName == TEXT("update_unique_i8"))
-    {
-        FUpdateUniqueI8Args Args = UE::SpacetimeDB::Deserialize<FUpdateUniqueI8Args>(Event.ReducerCall.Args);
-        return FReducer::UpdateUniqueI8(Args);
-    }
-
-    if (ReducerName == TEXT("update_unique_identity"))
-    {
-        FUpdateUniqueIdentityArgs Args = UE::SpacetimeDB::Deserialize<FUpdateUniqueIdentityArgs>(Event.ReducerCall.Args);
-        return FReducer::UpdateUniqueIdentity(Args);
-    }
-
-    if (ReducerName == TEXT("update_unique_string"))
-    {
-        FUpdateUniqueStringArgs Args = UE::SpacetimeDB::Deserialize<FUpdateUniqueStringArgs>(Event.ReducerCall.Args);
-        return FReducer::UpdateUniqueString(Args);
-    }
-
-    if (ReducerName == TEXT("update_unique_u128"))
-    {
-        FUpdateUniqueU128Args Args = UE::SpacetimeDB::Deserialize<FUpdateUniqueU128Args>(Event.ReducerCall.Args);
-        return FReducer::UpdateUniqueU128(Args);
-    }
-
-    if (ReducerName == TEXT("update_unique_u16"))
-    {
-        FUpdateUniqueU16Args Args = UE::SpacetimeDB::Deserialize<FUpdateUniqueU16Args>(Event.ReducerCall.Args);
-        return FReducer::UpdateUniqueU16(Args);
-    }
-
-    if (ReducerName == TEXT("update_unique_u256"))
-    {
-        FUpdateUniqueU256Args Args = UE::SpacetimeDB::Deserialize<FUpdateUniqueU256Args>(Event.ReducerCall.Args);
-        return FReducer::UpdateUniqueU256(Args);
-    }
-
-    if (ReducerName == TEXT("update_unique_u32"))
-    {
-        FUpdateUniqueU32Args Args = UE::SpacetimeDB::Deserialize<FUpdateUniqueU32Args>(Event.ReducerCall.Args);
-        return FReducer::UpdateUniqueU32(Args);
-    }
-
-    if (ReducerName == TEXT("update_unique_u64"))
-    {
-        FUpdateUniqueU64Args Args = UE::SpacetimeDB::Deserialize<FUpdateUniqueU64Args>(Event.ReducerCall.Args);
-        return FReducer::UpdateUniqueU64(Args);
-    }
-
-    if (ReducerName == TEXT("update_unique_u8"))
-    {
-        FUpdateUniqueU8Args Args = UE::SpacetimeDB::Deserialize<FUpdateUniqueU8Args>(Event.ReducerCall.Args);
-        return FReducer::UpdateUniqueU8(Args);
-    }
-
-    if (ReducerName == TEXT("update_unique_uuid"))
-    {
-        FUpdateUniqueUuidArgs Args = UE::SpacetimeDB::Deserialize<FUpdateUniqueUuidArgs>(Event.ReducerCall.Args);
-        return FReducer::UpdateUniqueUuid(Args);
-    }
-
-    return FReducer();
-}
-
 UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {
-	SetReducerFlags = ObjectInitializer.CreateDefaultSubobject<USetReducerFlags>(this, TEXT("SetReducerFlags"));
-
 	Db = ObjectInitializer.CreateDefaultSubobject<URemoteTables>(this, TEXT("RemoteTables"));
 	Db->Initialize();
 	
 	Reducers = ObjectInitializer.CreateDefaultSubobject<URemoteReducers>(this, TEXT("RemoteReducers"));
-	Reducers->SetCallReducerFlags = SetReducerFlags;
 	Reducers->Conn = this;
 
 	Procedures = ObjectInitializer.CreateDefaultSubobject<URemoteProcedures>(this, TEXT("RemoteProcedures"));
 	Procedures->Conn = this;
 
-	RegisterTable<FBTreeU32Type, UBtreeU32Table, FEventContext>(TEXT("btree_u32"), Db->BtreeU32);
+	RegisterTable<FBTreeU32Type, UBtreeU32Table, FEventContext>(TEXT("btree_u_32"), Db->BtreeU32);
 	RegisterTable<FIndexedSimpleEnumType, UIndexedSimpleEnumTable, FEventContext>(TEXT("indexed_simple_enum"), Db->IndexedSimpleEnum);
 	RegisterTable<FLargeTableType, ULargeTableTable, FEventContext>(TEXT("large_table"), Db->LargeTable);
 	RegisterTable<FOneBoolType, UOneBoolTable, FEventContext>(TEXT("one_bool"), Db->OneBool);
@@ -1324,76 +132,76 @@ UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Supe
 	RegisterTable<FOneEnumWithPayloadType, UOneEnumWithPayloadTable, FEventContext>(TEXT("one_enum_with_payload"), Db->OneEnumWithPayload);
 	RegisterTable<FOneEveryPrimitiveStructType, UOneEveryPrimitiveStructTable, FEventContext>(TEXT("one_every_primitive_struct"), Db->OneEveryPrimitiveStruct);
 	RegisterTable<FOneEveryVecStructType, UOneEveryVecStructTable, FEventContext>(TEXT("one_every_vec_struct"), Db->OneEveryVecStruct);
-	RegisterTable<FOneF32Type, UOneF32Table, FEventContext>(TEXT("one_f32"), Db->OneF32);
-	RegisterTable<FOneF64Type, UOneF64Table, FEventContext>(TEXT("one_f64"), Db->OneF64);
-	RegisterTable<FOneI128Type, UOneI128Table, FEventContext>(TEXT("one_i128"), Db->OneI128);
-	RegisterTable<FOneI16Type, UOneI16Table, FEventContext>(TEXT("one_i16"), Db->OneI16);
-	RegisterTable<FOneI256Type, UOneI256Table, FEventContext>(TEXT("one_i256"), Db->OneI256);
-	RegisterTable<FOneI32Type, UOneI32Table, FEventContext>(TEXT("one_i32"), Db->OneI32);
-	RegisterTable<FOneI64Type, UOneI64Table, FEventContext>(TEXT("one_i64"), Db->OneI64);
-	RegisterTable<FOneI8Type, UOneI8Table, FEventContext>(TEXT("one_i8"), Db->OneI8);
+	RegisterTable<FOneF32Type, UOneF32Table, FEventContext>(TEXT("one_f_32"), Db->OneF32);
+	RegisterTable<FOneF64Type, UOneF64Table, FEventContext>(TEXT("one_f_64"), Db->OneF64);
+	RegisterTable<FOneI128Type, UOneI128Table, FEventContext>(TEXT("one_i_128"), Db->OneI128);
+	RegisterTable<FOneI16Type, UOneI16Table, FEventContext>(TEXT("one_i_16"), Db->OneI16);
+	RegisterTable<FOneI256Type, UOneI256Table, FEventContext>(TEXT("one_i_256"), Db->OneI256);
+	RegisterTable<FOneI32Type, UOneI32Table, FEventContext>(TEXT("one_i_32"), Db->OneI32);
+	RegisterTable<FOneI64Type, UOneI64Table, FEventContext>(TEXT("one_i_64"), Db->OneI64);
+	RegisterTable<FOneI8Type, UOneI8Table, FEventContext>(TEXT("one_i_8"), Db->OneI8);
 	RegisterTable<FOneIdentityType, UOneIdentityTable, FEventContext>(TEXT("one_identity"), Db->OneIdentity);
 	RegisterTable<FOneSimpleEnumType, UOneSimpleEnumTable, FEventContext>(TEXT("one_simple_enum"), Db->OneSimpleEnum);
 	RegisterTable<FOneStringType, UOneStringTable, FEventContext>(TEXT("one_string"), Db->OneString);
 	RegisterTable<FOneTimestampType, UOneTimestampTable, FEventContext>(TEXT("one_timestamp"), Db->OneTimestamp);
-	RegisterTable<FOneU128Type, UOneU128Table, FEventContext>(TEXT("one_u128"), Db->OneU128);
-	RegisterTable<FOneU16Type, UOneU16Table, FEventContext>(TEXT("one_u16"), Db->OneU16);
-	RegisterTable<FOneU256Type, UOneU256Table, FEventContext>(TEXT("one_u256"), Db->OneU256);
-	RegisterTable<FOneU32Type, UOneU32Table, FEventContext>(TEXT("one_u32"), Db->OneU32);
-	RegisterTable<FOneU64Type, UOneU64Table, FEventContext>(TEXT("one_u64"), Db->OneU64);
-	RegisterTable<FOneU8Type, UOneU8Table, FEventContext>(TEXT("one_u8"), Db->OneU8);
+	RegisterTable<FOneU128Type, UOneU128Table, FEventContext>(TEXT("one_u_128"), Db->OneU128);
+	RegisterTable<FOneU16Type, UOneU16Table, FEventContext>(TEXT("one_u_16"), Db->OneU16);
+	RegisterTable<FOneU256Type, UOneU256Table, FEventContext>(TEXT("one_u_256"), Db->OneU256);
+	RegisterTable<FOneU32Type, UOneU32Table, FEventContext>(TEXT("one_u_32"), Db->OneU32);
+	RegisterTable<FOneU64Type, UOneU64Table, FEventContext>(TEXT("one_u_64"), Db->OneU64);
+	RegisterTable<FOneU8Type, UOneU8Table, FEventContext>(TEXT("one_u_8"), Db->OneU8);
 	RegisterTable<FOneUnitStructType, UOneUnitStructTable, FEventContext>(TEXT("one_unit_struct"), Db->OneUnitStruct);
 	RegisterTable<FOneUuidType, UOneUuidTable, FEventContext>(TEXT("one_uuid"), Db->OneUuid);
 	RegisterTable<FOptionEveryPrimitiveStructType, UOptionEveryPrimitiveStructTable, FEventContext>(TEXT("option_every_primitive_struct"), Db->OptionEveryPrimitiveStruct);
-	RegisterTable<FOptionI32Type, UOptionI32Table, FEventContext>(TEXT("option_i32"), Db->OptionI32);
+	RegisterTable<FOptionI32Type, UOptionI32Table, FEventContext>(TEXT("option_i_32"), Db->OptionI32);
 	RegisterTable<FOptionIdentityType, UOptionIdentityTable, FEventContext>(TEXT("option_identity"), Db->OptionIdentity);
 	RegisterTable<FOptionSimpleEnumType, UOptionSimpleEnumTable, FEventContext>(TEXT("option_simple_enum"), Db->OptionSimpleEnum);
 	RegisterTable<FOptionStringType, UOptionStringTable, FEventContext>(TEXT("option_string"), Db->OptionString);
 	RegisterTable<FOptionUuidType, UOptionUuidTable, FEventContext>(TEXT("option_uuid"), Db->OptionUuid);
-	RegisterTable<FOptionVecOptionI32Type, UOptionVecOptionI32Table, FEventContext>(TEXT("option_vec_option_i32"), Db->OptionVecOptionI32);
+	RegisterTable<FOptionVecOptionI32Type, UOptionVecOptionI32Table, FEventContext>(TEXT("option_vec_option_i_32"), Db->OptionVecOptionI32);
 	RegisterTable<FPkBoolType, UPkBoolTable, FEventContext>(TEXT("pk_bool"), Db->PkBool);
 	RegisterTable<FPkConnectionIdType, UPkConnectionIdTable, FEventContext>(TEXT("pk_connection_id"), Db->PkConnectionId);
-	RegisterTable<FPkI128Type, UPkI128Table, FEventContext>(TEXT("pk_i128"), Db->PkI128);
-	RegisterTable<FPkI16Type, UPkI16Table, FEventContext>(TEXT("pk_i16"), Db->PkI16);
-	RegisterTable<FPkI256Type, UPkI256Table, FEventContext>(TEXT("pk_i256"), Db->PkI256);
-	RegisterTable<FPkI32Type, UPkI32Table, FEventContext>(TEXT("pk_i32"), Db->PkI32);
-	RegisterTable<FPkI64Type, UPkI64Table, FEventContext>(TEXT("pk_i64"), Db->PkI64);
-	RegisterTable<FPkI8Type, UPkI8Table, FEventContext>(TEXT("pk_i8"), Db->PkI8);
+	RegisterTable<FPkI128Type, UPkI128Table, FEventContext>(TEXT("pk_i_128"), Db->PkI128);
+	RegisterTable<FPkI16Type, UPkI16Table, FEventContext>(TEXT("pk_i_16"), Db->PkI16);
+	RegisterTable<FPkI256Type, UPkI256Table, FEventContext>(TEXT("pk_i_256"), Db->PkI256);
+	RegisterTable<FPkI32Type, UPkI32Table, FEventContext>(TEXT("pk_i_32"), Db->PkI32);
+	RegisterTable<FPkI64Type, UPkI64Table, FEventContext>(TEXT("pk_i_64"), Db->PkI64);
+	RegisterTable<FPkI8Type, UPkI8Table, FEventContext>(TEXT("pk_i_8"), Db->PkI8);
 	RegisterTable<FPkIdentityType, UPkIdentityTable, FEventContext>(TEXT("pk_identity"), Db->PkIdentity);
 	RegisterTable<FPkSimpleEnumType, UPkSimpleEnumTable, FEventContext>(TEXT("pk_simple_enum"), Db->PkSimpleEnum);
 	RegisterTable<FPkStringType, UPkStringTable, FEventContext>(TEXT("pk_string"), Db->PkString);
-	RegisterTable<FPkU128Type, UPkU128Table, FEventContext>(TEXT("pk_u128"), Db->PkU128);
-	RegisterTable<FPkU16Type, UPkU16Table, FEventContext>(TEXT("pk_u16"), Db->PkU16);
-	RegisterTable<FPkU256Type, UPkU256Table, FEventContext>(TEXT("pk_u256"), Db->PkU256);
-	RegisterTable<FPkU32Type, UPkU32Table, FEventContext>(TEXT("pk_u32"), Db->PkU32);
-	RegisterTable<FPkU32TwoType, UPkU32TwoTable, FEventContext>(TEXT("pk_u32_two"), Db->PkU32Two);
-	RegisterTable<FPkU64Type, UPkU64Table, FEventContext>(TEXT("pk_u64"), Db->PkU64);
-	RegisterTable<FPkU8Type, UPkU8Table, FEventContext>(TEXT("pk_u8"), Db->PkU8);
+	RegisterTable<FPkU128Type, UPkU128Table, FEventContext>(TEXT("pk_u_128"), Db->PkU128);
+	RegisterTable<FPkU16Type, UPkU16Table, FEventContext>(TEXT("pk_u_16"), Db->PkU16);
+	RegisterTable<FPkU256Type, UPkU256Table, FEventContext>(TEXT("pk_u_256"), Db->PkU256);
+	RegisterTable<FPkU32Type, UPkU32Table, FEventContext>(TEXT("pk_u_32"), Db->PkU32);
+	RegisterTable<FPkU32TwoType, UPkU32TwoTable, FEventContext>(TEXT("pk_u_32_two"), Db->PkU32Two);
+	RegisterTable<FPkU64Type, UPkU64Table, FEventContext>(TEXT("pk_u_64"), Db->PkU64);
+	RegisterTable<FPkU8Type, UPkU8Table, FEventContext>(TEXT("pk_u_8"), Db->PkU8);
 	RegisterTable<FPkUuidType, UPkUuidTable, FEventContext>(TEXT("pk_uuid"), Db->PkUuid);
 	RegisterTable<FResultEveryPrimitiveStructStringType, UResultEveryPrimitiveStructStringTable, FEventContext>(TEXT("result_every_primitive_struct_string"), Db->ResultEveryPrimitiveStructString);
-	RegisterTable<FResultI32StringType, UResultI32StringTable, FEventContext>(TEXT("result_i32_string"), Db->ResultI32String);
+	RegisterTable<FResultI32StringType, UResultI32StringTable, FEventContext>(TEXT("result_i_32_string"), Db->ResultI32String);
 	RegisterTable<FResultIdentityStringType, UResultIdentityStringTable, FEventContext>(TEXT("result_identity_string"), Db->ResultIdentityString);
-	RegisterTable<FResultSimpleEnumI32Type, UResultSimpleEnumI32Table, FEventContext>(TEXT("result_simple_enum_i32"), Db->ResultSimpleEnumI32);
-	RegisterTable<FResultStringI32Type, UResultStringI32Table, FEventContext>(TEXT("result_string_i32"), Db->ResultStringI32);
-	RegisterTable<FResultVecI32StringType, UResultVecI32StringTable, FEventContext>(TEXT("result_vec_i32_string"), Db->ResultVecI32String);
+	RegisterTable<FResultSimpleEnumI32Type, UResultSimpleEnumI32Table, FEventContext>(TEXT("result_simple_enum_i_32"), Db->ResultSimpleEnumI32);
+	RegisterTable<FResultStringI32Type, UResultStringI32Table, FEventContext>(TEXT("result_string_i_32"), Db->ResultStringI32);
+	RegisterTable<FResultVecI32StringType, UResultVecI32StringTable, FEventContext>(TEXT("result_vec_i_32_string"), Db->ResultVecI32String);
 	RegisterTable<FScheduledTableType, UScheduledTableTable, FEventContext>(TEXT("scheduled_table"), Db->ScheduledTable);
 	RegisterTable<FTableHoldsTableType, UTableHoldsTableTable, FEventContext>(TEXT("table_holds_table"), Db->TableHoldsTable);
 	RegisterTable<FUniqueBoolType, UUniqueBoolTable, FEventContext>(TEXT("unique_bool"), Db->UniqueBool);
 	RegisterTable<FUniqueConnectionIdType, UUniqueConnectionIdTable, FEventContext>(TEXT("unique_connection_id"), Db->UniqueConnectionId);
-	RegisterTable<FUniqueI128Type, UUniqueI128Table, FEventContext>(TEXT("unique_i128"), Db->UniqueI128);
-	RegisterTable<FUniqueI16Type, UUniqueI16Table, FEventContext>(TEXT("unique_i16"), Db->UniqueI16);
-	RegisterTable<FUniqueI256Type, UUniqueI256Table, FEventContext>(TEXT("unique_i256"), Db->UniqueI256);
-	RegisterTable<FUniqueI32Type, UUniqueI32Table, FEventContext>(TEXT("unique_i32"), Db->UniqueI32);
-	RegisterTable<FUniqueI64Type, UUniqueI64Table, FEventContext>(TEXT("unique_i64"), Db->UniqueI64);
-	RegisterTable<FUniqueI8Type, UUniqueI8Table, FEventContext>(TEXT("unique_i8"), Db->UniqueI8);
+	RegisterTable<FUniqueI128Type, UUniqueI128Table, FEventContext>(TEXT("unique_i_128"), Db->UniqueI128);
+	RegisterTable<FUniqueI16Type, UUniqueI16Table, FEventContext>(TEXT("unique_i_16"), Db->UniqueI16);
+	RegisterTable<FUniqueI256Type, UUniqueI256Table, FEventContext>(TEXT("unique_i_256"), Db->UniqueI256);
+	RegisterTable<FUniqueI32Type, UUniqueI32Table, FEventContext>(TEXT("unique_i_32"), Db->UniqueI32);
+	RegisterTable<FUniqueI64Type, UUniqueI64Table, FEventContext>(TEXT("unique_i_64"), Db->UniqueI64);
+	RegisterTable<FUniqueI8Type, UUniqueI8Table, FEventContext>(TEXT("unique_i_8"), Db->UniqueI8);
 	RegisterTable<FUniqueIdentityType, UUniqueIdentityTable, FEventContext>(TEXT("unique_identity"), Db->UniqueIdentity);
 	RegisterTable<FUniqueStringType, UUniqueStringTable, FEventContext>(TEXT("unique_string"), Db->UniqueString);
-	RegisterTable<FUniqueU128Type, UUniqueU128Table, FEventContext>(TEXT("unique_u128"), Db->UniqueU128);
-	RegisterTable<FUniqueU16Type, UUniqueU16Table, FEventContext>(TEXT("unique_u16"), Db->UniqueU16);
-	RegisterTable<FUniqueU256Type, UUniqueU256Table, FEventContext>(TEXT("unique_u256"), Db->UniqueU256);
-	RegisterTable<FUniqueU32Type, UUniqueU32Table, FEventContext>(TEXT("unique_u32"), Db->UniqueU32);
-	RegisterTable<FUniqueU64Type, UUniqueU64Table, FEventContext>(TEXT("unique_u64"), Db->UniqueU64);
-	RegisterTable<FUniqueU8Type, UUniqueU8Table, FEventContext>(TEXT("unique_u8"), Db->UniqueU8);
+	RegisterTable<FUniqueU128Type, UUniqueU128Table, FEventContext>(TEXT("unique_u_128"), Db->UniqueU128);
+	RegisterTable<FUniqueU16Type, UUniqueU16Table, FEventContext>(TEXT("unique_u_16"), Db->UniqueU16);
+	RegisterTable<FUniqueU256Type, UUniqueU256Table, FEventContext>(TEXT("unique_u_256"), Db->UniqueU256);
+	RegisterTable<FUniqueU32Type, UUniqueU32Table, FEventContext>(TEXT("unique_u_32"), Db->UniqueU32);
+	RegisterTable<FUniqueU64Type, UUniqueU64Table, FEventContext>(TEXT("unique_u_64"), Db->UniqueU64);
+	RegisterTable<FUniqueU8Type, UUniqueU8Table, FEventContext>(TEXT("unique_u_8"), Db->UniqueU8);
 	RegisterTable<FUniqueUuidType, UUniqueUuidTable, FEventContext>(TEXT("unique_uuid"), Db->UniqueUuid);
 	RegisterTable<FUsersType, UUsersTable, FEventContext>(TEXT("users"), Db->Users);
 	RegisterTable<FVecBoolType, UVecBoolTable, FEventContext>(TEXT("vec_bool"), Db->VecBool);
@@ -1402,24 +210,24 @@ UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Supe
 	RegisterTable<FVecEnumWithPayloadType, UVecEnumWithPayloadTable, FEventContext>(TEXT("vec_enum_with_payload"), Db->VecEnumWithPayload);
 	RegisterTable<FVecEveryPrimitiveStructType, UVecEveryPrimitiveStructTable, FEventContext>(TEXT("vec_every_primitive_struct"), Db->VecEveryPrimitiveStruct);
 	RegisterTable<FVecEveryVecStructType, UVecEveryVecStructTable, FEventContext>(TEXT("vec_every_vec_struct"), Db->VecEveryVecStruct);
-	RegisterTable<FVecF32Type, UVecF32Table, FEventContext>(TEXT("vec_f32"), Db->VecF32);
-	RegisterTable<FVecF64Type, UVecF64Table, FEventContext>(TEXT("vec_f64"), Db->VecF64);
-	RegisterTable<FVecI128Type, UVecI128Table, FEventContext>(TEXT("vec_i128"), Db->VecI128);
-	RegisterTable<FVecI16Type, UVecI16Table, FEventContext>(TEXT("vec_i16"), Db->VecI16);
-	RegisterTable<FVecI256Type, UVecI256Table, FEventContext>(TEXT("vec_i256"), Db->VecI256);
-	RegisterTable<FVecI32Type, UVecI32Table, FEventContext>(TEXT("vec_i32"), Db->VecI32);
-	RegisterTable<FVecI64Type, UVecI64Table, FEventContext>(TEXT("vec_i64"), Db->VecI64);
-	RegisterTable<FVecI8Type, UVecI8Table, FEventContext>(TEXT("vec_i8"), Db->VecI8);
+	RegisterTable<FVecF32Type, UVecF32Table, FEventContext>(TEXT("vec_f_32"), Db->VecF32);
+	RegisterTable<FVecF64Type, UVecF64Table, FEventContext>(TEXT("vec_f_64"), Db->VecF64);
+	RegisterTable<FVecI128Type, UVecI128Table, FEventContext>(TEXT("vec_i_128"), Db->VecI128);
+	RegisterTable<FVecI16Type, UVecI16Table, FEventContext>(TEXT("vec_i_16"), Db->VecI16);
+	RegisterTable<FVecI256Type, UVecI256Table, FEventContext>(TEXT("vec_i_256"), Db->VecI256);
+	RegisterTable<FVecI32Type, UVecI32Table, FEventContext>(TEXT("vec_i_32"), Db->VecI32);
+	RegisterTable<FVecI64Type, UVecI64Table, FEventContext>(TEXT("vec_i_64"), Db->VecI64);
+	RegisterTable<FVecI8Type, UVecI8Table, FEventContext>(TEXT("vec_i_8"), Db->VecI8);
 	RegisterTable<FVecIdentityType, UVecIdentityTable, FEventContext>(TEXT("vec_identity"), Db->VecIdentity);
 	RegisterTable<FVecSimpleEnumType, UVecSimpleEnumTable, FEventContext>(TEXT("vec_simple_enum"), Db->VecSimpleEnum);
 	RegisterTable<FVecStringType, UVecStringTable, FEventContext>(TEXT("vec_string"), Db->VecString);
 	RegisterTable<FVecTimestampType, UVecTimestampTable, FEventContext>(TEXT("vec_timestamp"), Db->VecTimestamp);
-	RegisterTable<FVecU128Type, UVecU128Table, FEventContext>(TEXT("vec_u128"), Db->VecU128);
-	RegisterTable<FVecU16Type, UVecU16Table, FEventContext>(TEXT("vec_u16"), Db->VecU16);
-	RegisterTable<FVecU256Type, UVecU256Table, FEventContext>(TEXT("vec_u256"), Db->VecU256);
-	RegisterTable<FVecU32Type, UVecU32Table, FEventContext>(TEXT("vec_u32"), Db->VecU32);
-	RegisterTable<FVecU64Type, UVecU64Table, FEventContext>(TEXT("vec_u64"), Db->VecU64);
-	RegisterTable<FVecU8Type, UVecU8Table, FEventContext>(TEXT("vec_u8"), Db->VecU8);
+	RegisterTable<FVecU128Type, UVecU128Table, FEventContext>(TEXT("vec_u_128"), Db->VecU128);
+	RegisterTable<FVecU16Type, UVecU16Table, FEventContext>(TEXT("vec_u_16"), Db->VecU16);
+	RegisterTable<FVecU256Type, UVecU256Table, FEventContext>(TEXT("vec_u_256"), Db->VecU256);
+	RegisterTable<FVecU32Type, UVecU32Table, FEventContext>(TEXT("vec_u_32"), Db->VecU32);
+	RegisterTable<FVecU64Type, UVecU64Table, FEventContext>(TEXT("vec_u_64"), Db->VecU64);
+	RegisterTable<FVecU8Type, UVecU8Table, FEventContext>(TEXT("vec_u_8"), Db->VecU8);
 	RegisterTable<FVecUnitStructType, UVecUnitStructTable, FEventContext>(TEXT("vec_unit_struct"), Db->VecUnitStruct);
 	RegisterTable<FVecUuidType, UVecUuidTable, FEventContext>(TEXT("vec_uuid"), Db->VecUuid);
 }
@@ -1428,7 +236,6 @@ FContextBase::FContextBase(UDbConnection* InConn)
 {
 	Db = InConn->Db;
 	Reducers = InConn->Reducers;
-	SetReducerFlags = InConn->SetReducerFlags;
 	Procedures = InConn->Procedures;
 	Conn = InConn;
 }
@@ -1677,793 +484,4236 @@ void URemoteTables::Initialize()
 	/**/
 }
 
-void USetReducerFlags::DeleteFromBtreeU32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeleteFromBtreeU32", Flag);
-}
-void USetReducerFlags::DeleteLargeTable(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeleteLargeTable", Flag);
-}
-void USetReducerFlags::DeletePkBool(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeletePkBool", Flag);
-}
-void USetReducerFlags::DeletePkConnectionId(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeletePkConnectionId", Flag);
-}
-void USetReducerFlags::DeletePkI128(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeletePkI128", Flag);
-}
-void USetReducerFlags::DeletePkI16(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeletePkI16", Flag);
-}
-void USetReducerFlags::DeletePkI256(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeletePkI256", Flag);
-}
-void USetReducerFlags::DeletePkI32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeletePkI32", Flag);
-}
-void USetReducerFlags::DeletePkI64(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeletePkI64", Flag);
-}
-void USetReducerFlags::DeletePkI8(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeletePkI8", Flag);
-}
-void USetReducerFlags::DeletePkIdentity(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeletePkIdentity", Flag);
-}
-void USetReducerFlags::DeletePkString(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeletePkString", Flag);
-}
-void USetReducerFlags::DeletePkU128(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeletePkU128", Flag);
-}
-void USetReducerFlags::DeletePkU16(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeletePkU16", Flag);
-}
-void USetReducerFlags::DeletePkU256(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeletePkU256", Flag);
-}
-void USetReducerFlags::DeletePkU32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeletePkU32", Flag);
-}
-void USetReducerFlags::DeletePkU32InsertPkU32Two(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeletePkU32InsertPkU32Two", Flag);
-}
-void USetReducerFlags::DeletePkU32Two(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeletePkU32Two", Flag);
-}
-void USetReducerFlags::DeletePkU64(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeletePkU64", Flag);
-}
-void USetReducerFlags::DeletePkU8(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeletePkU8", Flag);
-}
-void USetReducerFlags::DeletePkUuid(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeletePkUuid", Flag);
-}
-void USetReducerFlags::DeleteUniqueBool(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeleteUniqueBool", Flag);
-}
-void USetReducerFlags::DeleteUniqueConnectionId(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeleteUniqueConnectionId", Flag);
-}
-void USetReducerFlags::DeleteUniqueI128(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeleteUniqueI128", Flag);
-}
-void USetReducerFlags::DeleteUniqueI16(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeleteUniqueI16", Flag);
-}
-void USetReducerFlags::DeleteUniqueI256(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeleteUniqueI256", Flag);
-}
-void USetReducerFlags::DeleteUniqueI32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeleteUniqueI32", Flag);
-}
-void USetReducerFlags::DeleteUniqueI64(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeleteUniqueI64", Flag);
-}
-void USetReducerFlags::DeleteUniqueI8(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeleteUniqueI8", Flag);
-}
-void USetReducerFlags::DeleteUniqueIdentity(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeleteUniqueIdentity", Flag);
-}
-void USetReducerFlags::DeleteUniqueString(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeleteUniqueString", Flag);
-}
-void USetReducerFlags::DeleteUniqueU128(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeleteUniqueU128", Flag);
-}
-void USetReducerFlags::DeleteUniqueU16(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeleteUniqueU16", Flag);
-}
-void USetReducerFlags::DeleteUniqueU256(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeleteUniqueU256", Flag);
-}
-void USetReducerFlags::DeleteUniqueU32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeleteUniqueU32", Flag);
-}
-void USetReducerFlags::DeleteUniqueU64(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeleteUniqueU64", Flag);
-}
-void USetReducerFlags::DeleteUniqueU8(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeleteUniqueU8", Flag);
-}
-void USetReducerFlags::DeleteUniqueUuid(ECallReducerFlags Flag)
-{
-	FlagMap.Add("DeleteUniqueUuid", Flag);
-}
-void USetReducerFlags::InsertCallTimestamp(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertCallTimestamp", Flag);
-}
-void USetReducerFlags::InsertCallUuidV4(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertCallUuidV4", Flag);
-}
-void USetReducerFlags::InsertCallUuidV7(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertCallUuidV7", Flag);
-}
-void USetReducerFlags::InsertCallerOneConnectionId(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertCallerOneConnectionId", Flag);
-}
-void USetReducerFlags::InsertCallerOneIdentity(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertCallerOneIdentity", Flag);
-}
-void USetReducerFlags::InsertCallerPkConnectionId(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertCallerPkConnectionId", Flag);
-}
-void USetReducerFlags::InsertCallerPkIdentity(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertCallerPkIdentity", Flag);
-}
-void USetReducerFlags::InsertCallerUniqueConnectionId(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertCallerUniqueConnectionId", Flag);
-}
-void USetReducerFlags::InsertCallerUniqueIdentity(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertCallerUniqueIdentity", Flag);
-}
-void USetReducerFlags::InsertCallerVecConnectionId(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertCallerVecConnectionId", Flag);
-}
-void USetReducerFlags::InsertCallerVecIdentity(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertCallerVecIdentity", Flag);
-}
-void USetReducerFlags::InsertIntoBtreeU32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertIntoBtreeU32", Flag);
-}
-void USetReducerFlags::InsertIntoIndexedSimpleEnum(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertIntoIndexedSimpleEnum", Flag);
-}
-void USetReducerFlags::InsertIntoPkBtreeU32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertIntoPkBtreeU32", Flag);
-}
-void USetReducerFlags::InsertLargeTable(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertLargeTable", Flag);
-}
-void USetReducerFlags::InsertOneBool(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneBool", Flag);
-}
-void USetReducerFlags::InsertOneByteStruct(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneByteStruct", Flag);
-}
-void USetReducerFlags::InsertOneConnectionId(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneConnectionId", Flag);
-}
-void USetReducerFlags::InsertOneEnumWithPayload(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneEnumWithPayload", Flag);
-}
-void USetReducerFlags::InsertOneEveryPrimitiveStruct(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneEveryPrimitiveStruct", Flag);
-}
-void USetReducerFlags::InsertOneEveryVecStruct(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneEveryVecStruct", Flag);
-}
-void USetReducerFlags::InsertOneF32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneF32", Flag);
-}
-void USetReducerFlags::InsertOneF64(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneF64", Flag);
-}
-void USetReducerFlags::InsertOneI128(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneI128", Flag);
-}
-void USetReducerFlags::InsertOneI16(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneI16", Flag);
-}
-void USetReducerFlags::InsertOneI256(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneI256", Flag);
-}
-void USetReducerFlags::InsertOneI32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneI32", Flag);
-}
-void USetReducerFlags::InsertOneI64(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneI64", Flag);
-}
-void USetReducerFlags::InsertOneI8(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneI8", Flag);
-}
-void USetReducerFlags::InsertOneIdentity(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneIdentity", Flag);
-}
-void USetReducerFlags::InsertOneSimpleEnum(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneSimpleEnum", Flag);
-}
-void USetReducerFlags::InsertOneString(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneString", Flag);
-}
-void USetReducerFlags::InsertOneTimestamp(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneTimestamp", Flag);
-}
-void USetReducerFlags::InsertOneU128(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneU128", Flag);
-}
-void USetReducerFlags::InsertOneU16(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneU16", Flag);
-}
-void USetReducerFlags::InsertOneU256(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneU256", Flag);
-}
-void USetReducerFlags::InsertOneU32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneU32", Flag);
-}
-void USetReducerFlags::InsertOneU64(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneU64", Flag);
-}
-void USetReducerFlags::InsertOneU8(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneU8", Flag);
-}
-void USetReducerFlags::InsertOneUnitStruct(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneUnitStruct", Flag);
-}
-void USetReducerFlags::InsertOneUuid(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOneUuid", Flag);
-}
-void USetReducerFlags::InsertOptionEveryPrimitiveStruct(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOptionEveryPrimitiveStruct", Flag);
-}
-void USetReducerFlags::InsertOptionI32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOptionI32", Flag);
-}
-void USetReducerFlags::InsertOptionIdentity(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOptionIdentity", Flag);
-}
-void USetReducerFlags::InsertOptionSimpleEnum(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOptionSimpleEnum", Flag);
-}
-void USetReducerFlags::InsertOptionString(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOptionString", Flag);
-}
-void USetReducerFlags::InsertOptionUuid(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOptionUuid", Flag);
-}
-void USetReducerFlags::InsertOptionVecOptionI32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertOptionVecOptionI32", Flag);
-}
-void USetReducerFlags::InsertPkBool(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertPkBool", Flag);
-}
-void USetReducerFlags::InsertPkConnectionId(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertPkConnectionId", Flag);
-}
-void USetReducerFlags::InsertPkI128(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertPkI128", Flag);
-}
-void USetReducerFlags::InsertPkI16(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertPkI16", Flag);
-}
-void USetReducerFlags::InsertPkI256(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertPkI256", Flag);
-}
-void USetReducerFlags::InsertPkI32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertPkI32", Flag);
-}
-void USetReducerFlags::InsertPkI64(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertPkI64", Flag);
-}
-void USetReducerFlags::InsertPkI8(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertPkI8", Flag);
-}
-void USetReducerFlags::InsertPkIdentity(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertPkIdentity", Flag);
-}
-void USetReducerFlags::InsertPkSimpleEnum(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertPkSimpleEnum", Flag);
-}
-void USetReducerFlags::InsertPkString(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertPkString", Flag);
-}
-void USetReducerFlags::InsertPkU128(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertPkU128", Flag);
-}
-void USetReducerFlags::InsertPkU16(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertPkU16", Flag);
-}
-void USetReducerFlags::InsertPkU256(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertPkU256", Flag);
-}
-void USetReducerFlags::InsertPkU32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertPkU32", Flag);
-}
-void USetReducerFlags::InsertPkU32Two(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertPkU32Two", Flag);
-}
-void USetReducerFlags::InsertPkU64(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertPkU64", Flag);
-}
-void USetReducerFlags::InsertPkU8(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertPkU8", Flag);
-}
-void USetReducerFlags::InsertPkUuid(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertPkUuid", Flag);
-}
-void USetReducerFlags::InsertPrimitivesAsStrings(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertPrimitivesAsStrings", Flag);
-}
-void USetReducerFlags::InsertResultEveryPrimitiveStructString(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertResultEveryPrimitiveStructString", Flag);
-}
-void USetReducerFlags::InsertResultI32String(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertResultI32String", Flag);
-}
-void USetReducerFlags::InsertResultIdentityString(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertResultIdentityString", Flag);
-}
-void USetReducerFlags::InsertResultSimpleEnumI32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertResultSimpleEnumI32", Flag);
-}
-void USetReducerFlags::InsertResultStringI32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertResultStringI32", Flag);
-}
-void USetReducerFlags::InsertResultVecI32String(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertResultVecI32String", Flag);
-}
-void USetReducerFlags::InsertTableHoldsTable(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertTableHoldsTable", Flag);
-}
-void USetReducerFlags::InsertUniqueBool(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertUniqueBool", Flag);
-}
-void USetReducerFlags::InsertUniqueConnectionId(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertUniqueConnectionId", Flag);
-}
-void USetReducerFlags::InsertUniqueI128(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertUniqueI128", Flag);
-}
-void USetReducerFlags::InsertUniqueI16(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertUniqueI16", Flag);
-}
-void USetReducerFlags::InsertUniqueI256(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertUniqueI256", Flag);
-}
-void USetReducerFlags::InsertUniqueI32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertUniqueI32", Flag);
-}
-void USetReducerFlags::InsertUniqueI64(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertUniqueI64", Flag);
-}
-void USetReducerFlags::InsertUniqueI8(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertUniqueI8", Flag);
-}
-void USetReducerFlags::InsertUniqueIdentity(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertUniqueIdentity", Flag);
-}
-void USetReducerFlags::InsertUniqueString(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertUniqueString", Flag);
-}
-void USetReducerFlags::InsertUniqueU128(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertUniqueU128", Flag);
-}
-void USetReducerFlags::InsertUniqueU16(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertUniqueU16", Flag);
-}
-void USetReducerFlags::InsertUniqueU256(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertUniqueU256", Flag);
-}
-void USetReducerFlags::InsertUniqueU32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertUniqueU32", Flag);
-}
-void USetReducerFlags::InsertUniqueU32UpdatePkU32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertUniqueU32UpdatePkU32", Flag);
-}
-void USetReducerFlags::InsertUniqueU64(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertUniqueU64", Flag);
-}
-void USetReducerFlags::InsertUniqueU8(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertUniqueU8", Flag);
-}
-void USetReducerFlags::InsertUniqueUuid(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertUniqueUuid", Flag);
-}
-void USetReducerFlags::InsertUser(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertUser", Flag);
-}
-void USetReducerFlags::InsertVecBool(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecBool", Flag);
-}
-void USetReducerFlags::InsertVecByteStruct(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecByteStruct", Flag);
-}
-void USetReducerFlags::InsertVecConnectionId(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecConnectionId", Flag);
-}
-void USetReducerFlags::InsertVecEnumWithPayload(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecEnumWithPayload", Flag);
-}
-void USetReducerFlags::InsertVecEveryPrimitiveStruct(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecEveryPrimitiveStruct", Flag);
-}
-void USetReducerFlags::InsertVecEveryVecStruct(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecEveryVecStruct", Flag);
-}
-void USetReducerFlags::InsertVecF32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecF32", Flag);
-}
-void USetReducerFlags::InsertVecF64(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecF64", Flag);
-}
-void USetReducerFlags::InsertVecI128(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecI128", Flag);
-}
-void USetReducerFlags::InsertVecI16(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecI16", Flag);
-}
-void USetReducerFlags::InsertVecI256(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecI256", Flag);
-}
-void USetReducerFlags::InsertVecI32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecI32", Flag);
-}
-void USetReducerFlags::InsertVecI64(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecI64", Flag);
-}
-void USetReducerFlags::InsertVecI8(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecI8", Flag);
-}
-void USetReducerFlags::InsertVecIdentity(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecIdentity", Flag);
-}
-void USetReducerFlags::InsertVecSimpleEnum(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecSimpleEnum", Flag);
-}
-void USetReducerFlags::InsertVecString(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecString", Flag);
-}
-void USetReducerFlags::InsertVecTimestamp(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecTimestamp", Flag);
-}
-void USetReducerFlags::InsertVecU128(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecU128", Flag);
-}
-void USetReducerFlags::InsertVecU16(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecU16", Flag);
-}
-void USetReducerFlags::InsertVecU256(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecU256", Flag);
-}
-void USetReducerFlags::InsertVecU32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecU32", Flag);
-}
-void USetReducerFlags::InsertVecU64(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecU64", Flag);
-}
-void USetReducerFlags::InsertVecU8(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecU8", Flag);
-}
-void USetReducerFlags::InsertVecUnitStruct(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecUnitStruct", Flag);
-}
-void USetReducerFlags::InsertVecUuid(ECallReducerFlags Flag)
-{
-	FlagMap.Add("InsertVecUuid", Flag);
-}
-void USetReducerFlags::NoOpSucceeds(ECallReducerFlags Flag)
-{
-	FlagMap.Add("NoOpSucceeds", Flag);
-}
-void USetReducerFlags::SortedUuidsInsert(ECallReducerFlags Flag)
-{
-	FlagMap.Add("SortedUuidsInsert", Flag);
-}
-void USetReducerFlags::UpdateIndexedSimpleEnum(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdateIndexedSimpleEnum", Flag);
-}
-void USetReducerFlags::UpdatePkBool(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdatePkBool", Flag);
-}
-void USetReducerFlags::UpdatePkConnectionId(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdatePkConnectionId", Flag);
-}
-void USetReducerFlags::UpdatePkI128(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdatePkI128", Flag);
-}
-void USetReducerFlags::UpdatePkI16(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdatePkI16", Flag);
-}
-void USetReducerFlags::UpdatePkI256(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdatePkI256", Flag);
-}
-void USetReducerFlags::UpdatePkI32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdatePkI32", Flag);
-}
-void USetReducerFlags::UpdatePkI64(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdatePkI64", Flag);
-}
-void USetReducerFlags::UpdatePkI8(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdatePkI8", Flag);
-}
-void USetReducerFlags::UpdatePkIdentity(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdatePkIdentity", Flag);
-}
-void USetReducerFlags::UpdatePkSimpleEnum(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdatePkSimpleEnum", Flag);
-}
-void USetReducerFlags::UpdatePkString(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdatePkString", Flag);
-}
-void USetReducerFlags::UpdatePkU128(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdatePkU128", Flag);
-}
-void USetReducerFlags::UpdatePkU16(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdatePkU16", Flag);
-}
-void USetReducerFlags::UpdatePkU256(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdatePkU256", Flag);
-}
-void USetReducerFlags::UpdatePkU32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdatePkU32", Flag);
-}
-void USetReducerFlags::UpdatePkU32Two(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdatePkU32Two", Flag);
-}
-void USetReducerFlags::UpdatePkU64(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdatePkU64", Flag);
-}
-void USetReducerFlags::UpdatePkU8(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdatePkU8", Flag);
-}
-void USetReducerFlags::UpdatePkUuid(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdatePkUuid", Flag);
-}
-void USetReducerFlags::UpdateUniqueBool(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdateUniqueBool", Flag);
-}
-void USetReducerFlags::UpdateUniqueConnectionId(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdateUniqueConnectionId", Flag);
-}
-void USetReducerFlags::UpdateUniqueI128(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdateUniqueI128", Flag);
-}
-void USetReducerFlags::UpdateUniqueI16(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdateUniqueI16", Flag);
-}
-void USetReducerFlags::UpdateUniqueI256(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdateUniqueI256", Flag);
-}
-void USetReducerFlags::UpdateUniqueI32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdateUniqueI32", Flag);
-}
-void USetReducerFlags::UpdateUniqueI64(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdateUniqueI64", Flag);
-}
-void USetReducerFlags::UpdateUniqueI8(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdateUniqueI8", Flag);
-}
-void USetReducerFlags::UpdateUniqueIdentity(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdateUniqueIdentity", Flag);
-}
-void USetReducerFlags::UpdateUniqueString(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdateUniqueString", Flag);
-}
-void USetReducerFlags::UpdateUniqueU128(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdateUniqueU128", Flag);
-}
-void USetReducerFlags::UpdateUniqueU16(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdateUniqueU16", Flag);
-}
-void USetReducerFlags::UpdateUniqueU256(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdateUniqueU256", Flag);
-}
-void USetReducerFlags::UpdateUniqueU32(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdateUniqueU32", Flag);
-}
-void USetReducerFlags::UpdateUniqueU64(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdateUniqueU64", Flag);
-}
-void USetReducerFlags::UpdateUniqueU8(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdateUniqueU8", Flag);
-}
-void USetReducerFlags::UpdateUniqueUuid(ECallReducerFlags Flag)
-{
-	FlagMap.Add("UpdateUniqueUuid", Flag);
+void URemoteReducers::DeleteAllOneBool(const bool B)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneBoolArgs ReducerArgs(B);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_bool"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneBool(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneBool(const FReducerEventContext& Context, const UDeleteAllOneBoolReducer* Args)
+{
+    if (!OnDeleteAllOneBool.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneBool"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneBool.Broadcast(Context, Args->B);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneBoolWithArgs(const FReducerEventContext& Context, const FDeleteAllOneBoolArgs& Args)
+{
+    if (!OnDeleteAllOneBool.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneBool"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneBool.Broadcast(Context, Args.B);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneByteStruct(const FByteStructType& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneByteStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_byte_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneByteStruct(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneByteStruct(const FReducerEventContext& Context, const UDeleteAllOneByteStructReducer* Args)
+{
+    if (!OnDeleteAllOneByteStruct.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneByteStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneByteStruct.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneByteStructWithArgs(const FReducerEventContext& Context, const FDeleteAllOneByteStructArgs& Args)
+{
+    if (!OnDeleteAllOneByteStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneByteStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneByteStruct.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneEnumWithPayload(const FEnumWithPayloadType& E)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneEnumWithPayloadArgs ReducerArgs(E);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_enum_with_payload"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneEnumWithPayload(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneEnumWithPayload(const FReducerEventContext& Context, const UDeleteAllOneEnumWithPayloadReducer* Args)
+{
+    if (!OnDeleteAllOneEnumWithPayload.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneEnumWithPayload"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneEnumWithPayload.Broadcast(Context, Args->E);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneEnumWithPayloadWithArgs(const FReducerEventContext& Context, const FDeleteAllOneEnumWithPayloadArgs& Args)
+{
+    if (!OnDeleteAllOneEnumWithPayload.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneEnumWithPayload"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneEnumWithPayload.Broadcast(Context, Args.E);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneEveryPrimitiveStruct(const FEveryPrimitiveStructType& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneEveryPrimitiveStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_every_primitive_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneEveryPrimitiveStruct(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneEveryPrimitiveStruct(const FReducerEventContext& Context, const UDeleteAllOneEveryPrimitiveStructReducer* Args)
+{
+    if (!OnDeleteAllOneEveryPrimitiveStruct.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneEveryPrimitiveStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneEveryPrimitiveStruct.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneEveryPrimitiveStructWithArgs(const FReducerEventContext& Context, const FDeleteAllOneEveryPrimitiveStructArgs& Args)
+{
+    if (!OnDeleteAllOneEveryPrimitiveStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneEveryPrimitiveStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneEveryPrimitiveStruct.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneEveryVecStruct(const FEveryVecStructType& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneEveryVecStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_every_vec_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneEveryVecStruct(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneEveryVecStruct(const FReducerEventContext& Context, const UDeleteAllOneEveryVecStructReducer* Args)
+{
+    if (!OnDeleteAllOneEveryVecStruct.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneEveryVecStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneEveryVecStruct.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneEveryVecStructWithArgs(const FReducerEventContext& Context, const FDeleteAllOneEveryVecStructArgs& Args)
+{
+    if (!OnDeleteAllOneEveryVecStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneEveryVecStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneEveryVecStruct.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneF32(const float F)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneF32Args ReducerArgs(F);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_f_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneF32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneF32(const FReducerEventContext& Context, const UDeleteAllOneF32Reducer* Args)
+{
+    if (!OnDeleteAllOneF32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneF32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneF32.Broadcast(Context, Args->F);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneF32WithArgs(const FReducerEventContext& Context, const FDeleteAllOneF32Args& Args)
+{
+    if (!OnDeleteAllOneF32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneF32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneF32.Broadcast(Context, Args.F);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneF64(const double F)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneF64Args ReducerArgs(F);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_f_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneF64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneF64(const FReducerEventContext& Context, const UDeleteAllOneF64Reducer* Args)
+{
+    if (!OnDeleteAllOneF64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneF64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneF64.Broadcast(Context, Args->F);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneF64WithArgs(const FReducerEventContext& Context, const FDeleteAllOneF64Args& Args)
+{
+    if (!OnDeleteAllOneF64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneF64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneF64.Broadcast(Context, Args.F);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneI128(const FSpacetimeDBInt128& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneI128Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_i_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneI128(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneI128(const FReducerEventContext& Context, const UDeleteAllOneI128Reducer* Args)
+{
+    if (!OnDeleteAllOneI128.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneI128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneI128.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneI128WithArgs(const FReducerEventContext& Context, const FDeleteAllOneI128Args& Args)
+{
+    if (!OnDeleteAllOneI128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneI128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneI128.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneI16(const int16 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneI16Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_i_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneI16(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneI16(const FReducerEventContext& Context, const UDeleteAllOneI16Reducer* Args)
+{
+    if (!OnDeleteAllOneI16.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneI16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneI16.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneI16WithArgs(const FReducerEventContext& Context, const FDeleteAllOneI16Args& Args)
+{
+    if (!OnDeleteAllOneI16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneI16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneI16.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneI256(const FSpacetimeDBInt256& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneI256Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_i_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneI256(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneI256(const FReducerEventContext& Context, const UDeleteAllOneI256Reducer* Args)
+{
+    if (!OnDeleteAllOneI256.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneI256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneI256.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneI256WithArgs(const FReducerEventContext& Context, const FDeleteAllOneI256Args& Args)
+{
+    if (!OnDeleteAllOneI256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneI256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneI256.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneI32(const int32 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneI32Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneI32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneI32(const FReducerEventContext& Context, const UDeleteAllOneI32Reducer* Args)
+{
+    if (!OnDeleteAllOneI32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneI32.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneI32WithArgs(const FReducerEventContext& Context, const FDeleteAllOneI32Args& Args)
+{
+    if (!OnDeleteAllOneI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneI32.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneI64(const int64 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneI64Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_i_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneI64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneI64(const FReducerEventContext& Context, const UDeleteAllOneI64Reducer* Args)
+{
+    if (!OnDeleteAllOneI64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneI64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneI64.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneI64WithArgs(const FReducerEventContext& Context, const FDeleteAllOneI64Args& Args)
+{
+    if (!OnDeleteAllOneI64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneI64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneI64.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneI8(const int8 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneI8Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_i_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneI8(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneI8(const FReducerEventContext& Context, const UDeleteAllOneI8Reducer* Args)
+{
+    if (!OnDeleteAllOneI8.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneI8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneI8.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneI8WithArgs(const FReducerEventContext& Context, const FDeleteAllOneI8Args& Args)
+{
+    if (!OnDeleteAllOneI8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneI8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneI8.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneIdentity(const FSpacetimeDBIdentity& I)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneIdentityArgs ReducerArgs(I);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneIdentity(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneIdentity(const FReducerEventContext& Context, const UDeleteAllOneIdentityReducer* Args)
+{
+    if (!OnDeleteAllOneIdentity.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneIdentity.Broadcast(Context, Args->I);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneIdentityWithArgs(const FReducerEventContext& Context, const FDeleteAllOneIdentityArgs& Args)
+{
+    if (!OnDeleteAllOneIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneIdentity.Broadcast(Context, Args.I);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneSimpleEnum(const ESimpleEnumType& E)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneSimpleEnumArgs ReducerArgs(E);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_simple_enum"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneSimpleEnum(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneSimpleEnum(const FReducerEventContext& Context, const UDeleteAllOneSimpleEnumReducer* Args)
+{
+    if (!OnDeleteAllOneSimpleEnum.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneSimpleEnum"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneSimpleEnum.Broadcast(Context, Args->E);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneSimpleEnumWithArgs(const FReducerEventContext& Context, const FDeleteAllOneSimpleEnumArgs& Args)
+{
+    if (!OnDeleteAllOneSimpleEnum.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneSimpleEnum"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneSimpleEnum.Broadcast(Context, Args.E);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneString(const FString& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneStringArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneString(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneString(const FReducerEventContext& Context, const UDeleteAllOneStringReducer* Args)
+{
+    if (!OnDeleteAllOneString.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneString"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneString.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneStringWithArgs(const FReducerEventContext& Context, const FDeleteAllOneStringArgs& Args)
+{
+    if (!OnDeleteAllOneString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneString"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneString.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneTimestamp(const FSpacetimeDBTimestamp& T)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneTimestampArgs ReducerArgs(T);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_timestamp"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneTimestamp(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneTimestamp(const FReducerEventContext& Context, const UDeleteAllOneTimestampReducer* Args)
+{
+    if (!OnDeleteAllOneTimestamp.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneTimestamp"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneTimestamp.Broadcast(Context, Args->T);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneTimestampWithArgs(const FReducerEventContext& Context, const FDeleteAllOneTimestampArgs& Args)
+{
+    if (!OnDeleteAllOneTimestamp.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneTimestamp"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneTimestamp.Broadcast(Context, Args.T);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneU128(const FSpacetimeDBUInt128& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneU128Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_u_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneU128(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneU128(const FReducerEventContext& Context, const UDeleteAllOneU128Reducer* Args)
+{
+    if (!OnDeleteAllOneU128.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneU128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneU128.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneU128WithArgs(const FReducerEventContext& Context, const FDeleteAllOneU128Args& Args)
+{
+    if (!OnDeleteAllOneU128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneU128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneU128.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneU16(const uint16 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneU16Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_u_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneU16(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneU16(const FReducerEventContext& Context, const UDeleteAllOneU16Reducer* Args)
+{
+    if (!OnDeleteAllOneU16.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneU16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneU16.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneU16WithArgs(const FReducerEventContext& Context, const FDeleteAllOneU16Args& Args)
+{
+    if (!OnDeleteAllOneU16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneU16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneU16.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneU256(const FSpacetimeDBUInt256& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneU256Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_u_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneU256(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneU256(const FReducerEventContext& Context, const UDeleteAllOneU256Reducer* Args)
+{
+    if (!OnDeleteAllOneU256.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneU256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneU256.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneU256WithArgs(const FReducerEventContext& Context, const FDeleteAllOneU256Args& Args)
+{
+    if (!OnDeleteAllOneU256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneU256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneU256.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneU32(const uint32 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneU32Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_u_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneU32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneU32(const FReducerEventContext& Context, const UDeleteAllOneU32Reducer* Args)
+{
+    if (!OnDeleteAllOneU32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneU32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneU32.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneU32WithArgs(const FReducerEventContext& Context, const FDeleteAllOneU32Args& Args)
+{
+    if (!OnDeleteAllOneU32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneU32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneU32.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneU64(const uint64 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneU64Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_u_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneU64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneU64(const FReducerEventContext& Context, const UDeleteAllOneU64Reducer* Args)
+{
+    if (!OnDeleteAllOneU64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneU64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneU64.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneU64WithArgs(const FReducerEventContext& Context, const FDeleteAllOneU64Args& Args)
+{
+    if (!OnDeleteAllOneU64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneU64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneU64.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneU8(const uint8 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneU8Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_u_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneU8(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneU8(const FReducerEventContext& Context, const UDeleteAllOneU8Reducer* Args)
+{
+    if (!OnDeleteAllOneU8.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneU8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneU8.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneU8WithArgs(const FReducerEventContext& Context, const FDeleteAllOneU8Args& Args)
+{
+    if (!OnDeleteAllOneU8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneU8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneU8.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneUnitStruct(const FUnitStructType& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneUnitStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_unit_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneUnitStruct(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneUnitStruct(const FReducerEventContext& Context, const UDeleteAllOneUnitStructReducer* Args)
+{
+    if (!OnDeleteAllOneUnitStruct.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneUnitStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneUnitStruct.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneUnitStructWithArgs(const FReducerEventContext& Context, const FDeleteAllOneUnitStructArgs& Args)
+{
+    if (!OnDeleteAllOneUnitStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneUnitStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneUnitStruct.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOneUuid(const FSpacetimeDBUuid& U)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOneUuidArgs ReducerArgs(U);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_one_uuid"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOneUuid(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOneUuid(const FReducerEventContext& Context, const UDeleteAllOneUuidReducer* Args)
+{
+    if (!OnDeleteAllOneUuid.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneUuid.Broadcast(Context, Args->U);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOneUuidWithArgs(const FReducerEventContext& Context, const FDeleteAllOneUuidArgs& Args)
+{
+    if (!OnDeleteAllOneUuid.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOneUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOneUuid.Broadcast(Context, Args.U);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOptionEveryPrimitiveStruct(const FTestClientOptionalEveryPrimitiveStruct& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOptionEveryPrimitiveStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_option_every_primitive_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOptionEveryPrimitiveStruct(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionEveryPrimitiveStruct(const FReducerEventContext& Context, const UDeleteAllOptionEveryPrimitiveStructReducer* Args)
+{
+    if (!OnDeleteAllOptionEveryPrimitiveStruct.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionEveryPrimitiveStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionEveryPrimitiveStruct.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionEveryPrimitiveStructWithArgs(const FReducerEventContext& Context, const FDeleteAllOptionEveryPrimitiveStructArgs& Args)
+{
+    if (!OnDeleteAllOptionEveryPrimitiveStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionEveryPrimitiveStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionEveryPrimitiveStruct.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOptionI32(const FTestClientOptionalInt32 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOptionI32Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_option_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOptionI32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionI32(const FReducerEventContext& Context, const UDeleteAllOptionI32Reducer* Args)
+{
+    if (!OnDeleteAllOptionI32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionI32.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionI32WithArgs(const FReducerEventContext& Context, const FDeleteAllOptionI32Args& Args)
+{
+    if (!OnDeleteAllOptionI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionI32.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOptionIdentity(const FTestClientOptionalIdentity& I)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOptionIdentityArgs ReducerArgs(I);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_option_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOptionIdentity(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionIdentity(const FReducerEventContext& Context, const UDeleteAllOptionIdentityReducer* Args)
+{
+    if (!OnDeleteAllOptionIdentity.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionIdentity.Broadcast(Context, Args->I);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionIdentityWithArgs(const FReducerEventContext& Context, const FDeleteAllOptionIdentityArgs& Args)
+{
+    if (!OnDeleteAllOptionIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionIdentity.Broadcast(Context, Args.I);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOptionSimpleEnum(const FTestClientOptionalSimpleEnum& E)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOptionSimpleEnumArgs ReducerArgs(E);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_option_simple_enum"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOptionSimpleEnum(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionSimpleEnum(const FReducerEventContext& Context, const UDeleteAllOptionSimpleEnumReducer* Args)
+{
+    if (!OnDeleteAllOptionSimpleEnum.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionSimpleEnum"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionSimpleEnum.Broadcast(Context, Args->E);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionSimpleEnumWithArgs(const FReducerEventContext& Context, const FDeleteAllOptionSimpleEnumArgs& Args)
+{
+    if (!OnDeleteAllOptionSimpleEnum.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionSimpleEnum"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionSimpleEnum.Broadcast(Context, Args.E);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOptionString(const FTestClientOptionalString& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOptionStringArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_option_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOptionString(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionString(const FReducerEventContext& Context, const UDeleteAllOptionStringReducer* Args)
+{
+    if (!OnDeleteAllOptionString.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionString"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionString.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionStringWithArgs(const FReducerEventContext& Context, const FDeleteAllOptionStringArgs& Args)
+{
+    if (!OnDeleteAllOptionString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionString"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionString.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOptionUuid(const FTestClientOptionalUuid& U)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOptionUuidArgs ReducerArgs(U);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_option_uuid"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOptionUuid(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionUuid(const FReducerEventContext& Context, const UDeleteAllOptionUuidReducer* Args)
+{
+    if (!OnDeleteAllOptionUuid.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionUuid.Broadcast(Context, Args->U);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionUuidWithArgs(const FReducerEventContext& Context, const FDeleteAllOptionUuidArgs& Args)
+{
+    if (!OnDeleteAllOptionUuid.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionUuid.Broadcast(Context, Args.U);
+    return true;
+}
+
+void URemoteReducers::DeleteAllOptionVecOptionI32(const FTestClientOptionalVecOptionalInt32& V)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllOptionVecOptionI32Args ReducerArgs(V);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_option_vec_option_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllOptionVecOptionI32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionVecOptionI32(const FReducerEventContext& Context, const UDeleteAllOptionVecOptionI32Reducer* Args)
+{
+    if (!OnDeleteAllOptionVecOptionI32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionVecOptionI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionVecOptionI32.Broadcast(Context, Args->V);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllOptionVecOptionI32WithArgs(const FReducerEventContext& Context, const FDeleteAllOptionVecOptionI32Args& Args)
+{
+    if (!OnDeleteAllOptionVecOptionI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllOptionVecOptionI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllOptionVecOptionI32.Broadcast(Context, Args.V);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkBool(const bool B, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkBoolArgs ReducerArgs(B, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_bool"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkBool(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkBool(const FReducerEventContext& Context, const UDeleteAllPkBoolReducer* Args)
+{
+    if (!OnDeleteAllPkBool.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkBool"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkBool.Broadcast(Context, Args->B, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkBoolWithArgs(const FReducerEventContext& Context, const FDeleteAllPkBoolArgs& Args)
+{
+    if (!OnDeleteAllPkBool.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkBool"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkBool.Broadcast(Context, Args.B, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkConnectionId(const FSpacetimeDBConnectionId& A, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkConnectionIdArgs ReducerArgs(A, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_connection_id"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkConnectionId(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkConnectionId(const FReducerEventContext& Context, const UDeleteAllPkConnectionIdReducer* Args)
+{
+    if (!OnDeleteAllPkConnectionId.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkConnectionId"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkConnectionId.Broadcast(Context, Args->A, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkConnectionIdWithArgs(const FReducerEventContext& Context, const FDeleteAllPkConnectionIdArgs& Args)
+{
+    if (!OnDeleteAllPkConnectionId.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkConnectionId"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkConnectionId.Broadcast(Context, Args.A, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkI128(const FSpacetimeDBInt128& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkI128Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_i_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkI128(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkI128(const FReducerEventContext& Context, const UDeleteAllPkI128Reducer* Args)
+{
+    if (!OnDeleteAllPkI128.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkI128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkI128.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkI128WithArgs(const FReducerEventContext& Context, const FDeleteAllPkI128Args& Args)
+{
+    if (!OnDeleteAllPkI128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkI128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkI128.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkI16(const int16 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkI16Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_i_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkI16(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkI16(const FReducerEventContext& Context, const UDeleteAllPkI16Reducer* Args)
+{
+    if (!OnDeleteAllPkI16.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkI16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkI16.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkI16WithArgs(const FReducerEventContext& Context, const FDeleteAllPkI16Args& Args)
+{
+    if (!OnDeleteAllPkI16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkI16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkI16.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkI256(const FSpacetimeDBInt256& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkI256Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_i_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkI256(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkI256(const FReducerEventContext& Context, const UDeleteAllPkI256Reducer* Args)
+{
+    if (!OnDeleteAllPkI256.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkI256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkI256.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkI256WithArgs(const FReducerEventContext& Context, const FDeleteAllPkI256Args& Args)
+{
+    if (!OnDeleteAllPkI256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkI256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkI256.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkI32(const int32 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkI32Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkI32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkI32(const FReducerEventContext& Context, const UDeleteAllPkI32Reducer* Args)
+{
+    if (!OnDeleteAllPkI32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkI32.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkI32WithArgs(const FReducerEventContext& Context, const FDeleteAllPkI32Args& Args)
+{
+    if (!OnDeleteAllPkI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkI32.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkI64(const int64 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkI64Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_i_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkI64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkI64(const FReducerEventContext& Context, const UDeleteAllPkI64Reducer* Args)
+{
+    if (!OnDeleteAllPkI64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkI64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkI64.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkI64WithArgs(const FReducerEventContext& Context, const FDeleteAllPkI64Args& Args)
+{
+    if (!OnDeleteAllPkI64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkI64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkI64.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkI8(const int8 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkI8Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_i_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkI8(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkI8(const FReducerEventContext& Context, const UDeleteAllPkI8Reducer* Args)
+{
+    if (!OnDeleteAllPkI8.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkI8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkI8.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkI8WithArgs(const FReducerEventContext& Context, const FDeleteAllPkI8Args& Args)
+{
+    if (!OnDeleteAllPkI8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkI8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkI8.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkIdentity(const FSpacetimeDBIdentity& I, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkIdentityArgs ReducerArgs(I, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkIdentity(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkIdentity(const FReducerEventContext& Context, const UDeleteAllPkIdentityReducer* Args)
+{
+    if (!OnDeleteAllPkIdentity.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkIdentity.Broadcast(Context, Args->I, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkIdentityWithArgs(const FReducerEventContext& Context, const FDeleteAllPkIdentityArgs& Args)
+{
+    if (!OnDeleteAllPkIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkIdentity.Broadcast(Context, Args.I, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkString(const FString& S, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkStringArgs ReducerArgs(S, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkString(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkString(const FReducerEventContext& Context, const UDeleteAllPkStringReducer* Args)
+{
+    if (!OnDeleteAllPkString.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkString"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkString.Broadcast(Context, Args->S, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkStringWithArgs(const FReducerEventContext& Context, const FDeleteAllPkStringArgs& Args)
+{
+    if (!OnDeleteAllPkString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkString"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkString.Broadcast(Context, Args.S, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkU128(const FSpacetimeDBUInt128& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkU128Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_u_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkU128(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU128(const FReducerEventContext& Context, const UDeleteAllPkU128Reducer* Args)
+{
+    if (!OnDeleteAllPkU128.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU128.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU128WithArgs(const FReducerEventContext& Context, const FDeleteAllPkU128Args& Args)
+{
+    if (!OnDeleteAllPkU128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU128.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkU16(const uint16 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkU16Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_u_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkU16(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU16(const FReducerEventContext& Context, const UDeleteAllPkU16Reducer* Args)
+{
+    if (!OnDeleteAllPkU16.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU16.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU16WithArgs(const FReducerEventContext& Context, const FDeleteAllPkU16Args& Args)
+{
+    if (!OnDeleteAllPkU16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU16.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkU256(const FSpacetimeDBUInt256& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkU256Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_u_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkU256(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU256(const FReducerEventContext& Context, const UDeleteAllPkU256Reducer* Args)
+{
+    if (!OnDeleteAllPkU256.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU256.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU256WithArgs(const FReducerEventContext& Context, const FDeleteAllPkU256Args& Args)
+{
+    if (!OnDeleteAllPkU256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU256.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkU32(const uint32 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkU32Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_u_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkU32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU32(const FReducerEventContext& Context, const UDeleteAllPkU32Reducer* Args)
+{
+    if (!OnDeleteAllPkU32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU32.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU32WithArgs(const FReducerEventContext& Context, const FDeleteAllPkU32Args& Args)
+{
+    if (!OnDeleteAllPkU32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU32.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkU32Two(const uint32 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkU32TwoArgs ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_u_32_two"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkU32Two(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU32Two(const FReducerEventContext& Context, const UDeleteAllPkU32TwoReducer* Args)
+{
+    if (!OnDeleteAllPkU32Two.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU32Two"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU32Two.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU32TwoWithArgs(const FReducerEventContext& Context, const FDeleteAllPkU32TwoArgs& Args)
+{
+    if (!OnDeleteAllPkU32Two.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU32Two"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU32Two.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkU64(const uint64 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkU64Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_u_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkU64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU64(const FReducerEventContext& Context, const UDeleteAllPkU64Reducer* Args)
+{
+    if (!OnDeleteAllPkU64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU64.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU64WithArgs(const FReducerEventContext& Context, const FDeleteAllPkU64Args& Args)
+{
+    if (!OnDeleteAllPkU64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU64.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkU8(const uint8 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkU8Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_u_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkU8(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU8(const FReducerEventContext& Context, const UDeleteAllPkU8Reducer* Args)
+{
+    if (!OnDeleteAllPkU8.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU8.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkU8WithArgs(const FReducerEventContext& Context, const FDeleteAllPkU8Args& Args)
+{
+    if (!OnDeleteAllPkU8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkU8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkU8.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllPkUuid(const FSpacetimeDBUuid& U, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllPkUuidArgs ReducerArgs(U, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_pk_uuid"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllPkUuid(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllPkUuid(const FReducerEventContext& Context, const UDeleteAllPkUuidReducer* Args)
+{
+    if (!OnDeleteAllPkUuid.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkUuid.Broadcast(Context, Args->U, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllPkUuidWithArgs(const FReducerEventContext& Context, const FDeleteAllPkUuidArgs& Args)
+{
+    if (!OnDeleteAllPkUuid.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllPkUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteAllPkUuid.Broadcast(Context, Args.U, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueBool(const bool B, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueBoolArgs ReducerArgs(B, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_bool"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueBool(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueBool(const FReducerEventContext& Context, const UDeleteAllUniqueBoolReducer* Args)
+{
+    if (!OnDeleteAllUniqueBool.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueBool"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueBool.Broadcast(Context, Args->B, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueBoolWithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueBoolArgs& Args)
+{
+    if (!OnDeleteAllUniqueBool.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueBool"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueBool.Broadcast(Context, Args.B, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueConnectionId(const FSpacetimeDBConnectionId& A, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueConnectionIdArgs ReducerArgs(A, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_connection_id"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueConnectionId(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueConnectionId(const FReducerEventContext& Context, const UDeleteAllUniqueConnectionIdReducer* Args)
+{
+    if (!OnDeleteAllUniqueConnectionId.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueConnectionId"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueConnectionId.Broadcast(Context, Args->A, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueConnectionIdWithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueConnectionIdArgs& Args)
+{
+    if (!OnDeleteAllUniqueConnectionId.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueConnectionId"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueConnectionId.Broadcast(Context, Args.A, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueI128(const FSpacetimeDBInt128& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueI128Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_i_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueI128(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueI128(const FReducerEventContext& Context, const UDeleteAllUniqueI128Reducer* Args)
+{
+    if (!OnDeleteAllUniqueI128.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueI128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueI128.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueI128WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueI128Args& Args)
+{
+    if (!OnDeleteAllUniqueI128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueI128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueI128.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueI16(const int16 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueI16Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_i_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueI16(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueI16(const FReducerEventContext& Context, const UDeleteAllUniqueI16Reducer* Args)
+{
+    if (!OnDeleteAllUniqueI16.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueI16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueI16.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueI16WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueI16Args& Args)
+{
+    if (!OnDeleteAllUniqueI16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueI16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueI16.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueI256(const FSpacetimeDBInt256& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueI256Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_i_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueI256(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueI256(const FReducerEventContext& Context, const UDeleteAllUniqueI256Reducer* Args)
+{
+    if (!OnDeleteAllUniqueI256.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueI256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueI256.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueI256WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueI256Args& Args)
+{
+    if (!OnDeleteAllUniqueI256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueI256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueI256.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueI32(const int32 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueI32Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueI32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueI32(const FReducerEventContext& Context, const UDeleteAllUniqueI32Reducer* Args)
+{
+    if (!OnDeleteAllUniqueI32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueI32.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueI32WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueI32Args& Args)
+{
+    if (!OnDeleteAllUniqueI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueI32.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueI64(const int64 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueI64Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_i_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueI64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueI64(const FReducerEventContext& Context, const UDeleteAllUniqueI64Reducer* Args)
+{
+    if (!OnDeleteAllUniqueI64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueI64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueI64.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueI64WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueI64Args& Args)
+{
+    if (!OnDeleteAllUniqueI64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueI64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueI64.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueI8(const int8 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueI8Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_i_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueI8(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueI8(const FReducerEventContext& Context, const UDeleteAllUniqueI8Reducer* Args)
+{
+    if (!OnDeleteAllUniqueI8.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueI8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueI8.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueI8WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueI8Args& Args)
+{
+    if (!OnDeleteAllUniqueI8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueI8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueI8.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueIdentity(const FSpacetimeDBIdentity& I, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueIdentityArgs ReducerArgs(I, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueIdentity(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueIdentity(const FReducerEventContext& Context, const UDeleteAllUniqueIdentityReducer* Args)
+{
+    if (!OnDeleteAllUniqueIdentity.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueIdentity.Broadcast(Context, Args->I, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueIdentityWithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueIdentityArgs& Args)
+{
+    if (!OnDeleteAllUniqueIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueIdentity.Broadcast(Context, Args.I, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueString(const FString& S, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueStringArgs ReducerArgs(S, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueString(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueString(const FReducerEventContext& Context, const UDeleteAllUniqueStringReducer* Args)
+{
+    if (!OnDeleteAllUniqueString.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueString"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueString.Broadcast(Context, Args->S, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueStringWithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueStringArgs& Args)
+{
+    if (!OnDeleteAllUniqueString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueString"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueString.Broadcast(Context, Args.S, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueU128(const FSpacetimeDBUInt128& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueU128Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_u_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueU128(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueU128(const FReducerEventContext& Context, const UDeleteAllUniqueU128Reducer* Args)
+{
+    if (!OnDeleteAllUniqueU128.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueU128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueU128.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueU128WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueU128Args& Args)
+{
+    if (!OnDeleteAllUniqueU128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueU128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueU128.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueU16(const uint16 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueU16Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_u_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueU16(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueU16(const FReducerEventContext& Context, const UDeleteAllUniqueU16Reducer* Args)
+{
+    if (!OnDeleteAllUniqueU16.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueU16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueU16.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueU16WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueU16Args& Args)
+{
+    if (!OnDeleteAllUniqueU16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueU16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueU16.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueU256(const FSpacetimeDBUInt256& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueU256Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_u_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueU256(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueU256(const FReducerEventContext& Context, const UDeleteAllUniqueU256Reducer* Args)
+{
+    if (!OnDeleteAllUniqueU256.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueU256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueU256.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueU256WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueU256Args& Args)
+{
+    if (!OnDeleteAllUniqueU256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueU256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueU256.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueU32(const uint32 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueU32Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_u_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueU32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueU32(const FReducerEventContext& Context, const UDeleteAllUniqueU32Reducer* Args)
+{
+    if (!OnDeleteAllUniqueU32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueU32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueU32.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueU32WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueU32Args& Args)
+{
+    if (!OnDeleteAllUniqueU32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueU32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueU32.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueU64(const uint64 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueU64Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_u_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueU64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueU64(const FReducerEventContext& Context, const UDeleteAllUniqueU64Reducer* Args)
+{
+    if (!OnDeleteAllUniqueU64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueU64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueU64.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueU64WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueU64Args& Args)
+{
+    if (!OnDeleteAllUniqueU64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueU64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueU64.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueU8(const uint8 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueU8Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_u_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueU8(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueU8(const FReducerEventContext& Context, const UDeleteAllUniqueU8Reducer* Args)
+{
+    if (!OnDeleteAllUniqueU8.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueU8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueU8.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueU8WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueU8Args& Args)
+{
+    if (!OnDeleteAllUniqueU8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueU8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueU8.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueUuid(const FSpacetimeDBUuid& U, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueUuidArgs ReducerArgs(U, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_uuid"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueUuid(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueUuid(const FReducerEventContext& Context, const UDeleteAllUniqueUuidReducer* Args)
+{
+    if (!OnDeleteAllUniqueUuid.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueUuid.Broadcast(Context, Args->U, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueUuidWithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueUuidArgs& Args)
+{
+    if (!OnDeleteAllUniqueUuid.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueUuid.Broadcast(Context, Args.U, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecBool(const TArray<bool>& B)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecBoolArgs ReducerArgs(B);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_bool"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecBool(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecBool(const FReducerEventContext& Context, const UDeleteAllVecBoolReducer* Args)
+{
+    if (!OnDeleteAllVecBool.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecBool"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecBool.Broadcast(Context, Args->B);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecBoolWithArgs(const FReducerEventContext& Context, const FDeleteAllVecBoolArgs& Args)
+{
+    if (!OnDeleteAllVecBool.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecBool"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecBool.Broadcast(Context, Args.B);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecByteStruct(const TArray<FByteStructType>& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecByteStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_byte_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecByteStruct(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecByteStruct(const FReducerEventContext& Context, const UDeleteAllVecByteStructReducer* Args)
+{
+    if (!OnDeleteAllVecByteStruct.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecByteStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecByteStruct.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecByteStructWithArgs(const FReducerEventContext& Context, const FDeleteAllVecByteStructArgs& Args)
+{
+    if (!OnDeleteAllVecByteStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecByteStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecByteStruct.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecEnumWithPayload(const TArray<FEnumWithPayloadType>& E)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecEnumWithPayloadArgs ReducerArgs(E);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_enum_with_payload"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecEnumWithPayload(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecEnumWithPayload(const FReducerEventContext& Context, const UDeleteAllVecEnumWithPayloadReducer* Args)
+{
+    if (!OnDeleteAllVecEnumWithPayload.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecEnumWithPayload"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecEnumWithPayload.Broadcast(Context, Args->E);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecEnumWithPayloadWithArgs(const FReducerEventContext& Context, const FDeleteAllVecEnumWithPayloadArgs& Args)
+{
+    if (!OnDeleteAllVecEnumWithPayload.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecEnumWithPayload"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecEnumWithPayload.Broadcast(Context, Args.E);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecEveryPrimitiveStruct(const TArray<FEveryPrimitiveStructType>& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecEveryPrimitiveStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_every_primitive_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecEveryPrimitiveStruct(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecEveryPrimitiveStruct(const FReducerEventContext& Context, const UDeleteAllVecEveryPrimitiveStructReducer* Args)
+{
+    if (!OnDeleteAllVecEveryPrimitiveStruct.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecEveryPrimitiveStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecEveryPrimitiveStruct.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecEveryPrimitiveStructWithArgs(const FReducerEventContext& Context, const FDeleteAllVecEveryPrimitiveStructArgs& Args)
+{
+    if (!OnDeleteAllVecEveryPrimitiveStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecEveryPrimitiveStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecEveryPrimitiveStruct.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecEveryVecStruct(const TArray<FEveryVecStructType>& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecEveryVecStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_every_vec_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecEveryVecStruct(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecEveryVecStruct(const FReducerEventContext& Context, const UDeleteAllVecEveryVecStructReducer* Args)
+{
+    if (!OnDeleteAllVecEveryVecStruct.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecEveryVecStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecEveryVecStruct.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecEveryVecStructWithArgs(const FReducerEventContext& Context, const FDeleteAllVecEveryVecStructArgs& Args)
+{
+    if (!OnDeleteAllVecEveryVecStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecEveryVecStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecEveryVecStruct.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecF32(const TArray<float>& F)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecF32Args ReducerArgs(F);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_f_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecF32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecF32(const FReducerEventContext& Context, const UDeleteAllVecF32Reducer* Args)
+{
+    if (!OnDeleteAllVecF32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecF32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecF32.Broadcast(Context, Args->F);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecF32WithArgs(const FReducerEventContext& Context, const FDeleteAllVecF32Args& Args)
+{
+    if (!OnDeleteAllVecF32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecF32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecF32.Broadcast(Context, Args.F);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecF64(const TArray<double>& F)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecF64Args ReducerArgs(F);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_f_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecF64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecF64(const FReducerEventContext& Context, const UDeleteAllVecF64Reducer* Args)
+{
+    if (!OnDeleteAllVecF64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecF64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecF64.Broadcast(Context, Args->F);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecF64WithArgs(const FReducerEventContext& Context, const FDeleteAllVecF64Args& Args)
+{
+    if (!OnDeleteAllVecF64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecF64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecF64.Broadcast(Context, Args.F);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecI128(const TArray<FSpacetimeDBInt128>& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecI128Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_i_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecI128(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecI128(const FReducerEventContext& Context, const UDeleteAllVecI128Reducer* Args)
+{
+    if (!OnDeleteAllVecI128.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecI128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecI128.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecI128WithArgs(const FReducerEventContext& Context, const FDeleteAllVecI128Args& Args)
+{
+    if (!OnDeleteAllVecI128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecI128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecI128.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecI16(const TArray<int16>& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecI16Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_i_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecI16(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecI16(const FReducerEventContext& Context, const UDeleteAllVecI16Reducer* Args)
+{
+    if (!OnDeleteAllVecI16.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecI16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecI16.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecI16WithArgs(const FReducerEventContext& Context, const FDeleteAllVecI16Args& Args)
+{
+    if (!OnDeleteAllVecI16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecI16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecI16.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecI256(const TArray<FSpacetimeDBInt256>& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecI256Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_i_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecI256(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecI256(const FReducerEventContext& Context, const UDeleteAllVecI256Reducer* Args)
+{
+    if (!OnDeleteAllVecI256.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecI256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecI256.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecI256WithArgs(const FReducerEventContext& Context, const FDeleteAllVecI256Args& Args)
+{
+    if (!OnDeleteAllVecI256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecI256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecI256.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecI32(const TArray<int32>& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecI32Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecI32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecI32(const FReducerEventContext& Context, const UDeleteAllVecI32Reducer* Args)
+{
+    if (!OnDeleteAllVecI32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecI32.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecI32WithArgs(const FReducerEventContext& Context, const FDeleteAllVecI32Args& Args)
+{
+    if (!OnDeleteAllVecI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecI32.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecI64(const TArray<int64>& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecI64Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_i_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecI64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecI64(const FReducerEventContext& Context, const UDeleteAllVecI64Reducer* Args)
+{
+    if (!OnDeleteAllVecI64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecI64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecI64.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecI64WithArgs(const FReducerEventContext& Context, const FDeleteAllVecI64Args& Args)
+{
+    if (!OnDeleteAllVecI64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecI64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecI64.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecI8(const TArray<int8>& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecI8Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_i_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecI8(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecI8(const FReducerEventContext& Context, const UDeleteAllVecI8Reducer* Args)
+{
+    if (!OnDeleteAllVecI8.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecI8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecI8.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecI8WithArgs(const FReducerEventContext& Context, const FDeleteAllVecI8Args& Args)
+{
+    if (!OnDeleteAllVecI8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecI8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecI8.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecIdentity(const TArray<FSpacetimeDBIdentity>& I)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecIdentityArgs ReducerArgs(I);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecIdentity(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecIdentity(const FReducerEventContext& Context, const UDeleteAllVecIdentityReducer* Args)
+{
+    if (!OnDeleteAllVecIdentity.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecIdentity.Broadcast(Context, Args->I);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecIdentityWithArgs(const FReducerEventContext& Context, const FDeleteAllVecIdentityArgs& Args)
+{
+    if (!OnDeleteAllVecIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecIdentity.Broadcast(Context, Args.I);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecSimpleEnum(const TArray<ESimpleEnumType>& E)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecSimpleEnumArgs ReducerArgs(E);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_simple_enum"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecSimpleEnum(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecSimpleEnum(const FReducerEventContext& Context, const UDeleteAllVecSimpleEnumReducer* Args)
+{
+    if (!OnDeleteAllVecSimpleEnum.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecSimpleEnum"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecSimpleEnum.Broadcast(Context, Args->E);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecSimpleEnumWithArgs(const FReducerEventContext& Context, const FDeleteAllVecSimpleEnumArgs& Args)
+{
+    if (!OnDeleteAllVecSimpleEnum.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecSimpleEnum"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecSimpleEnum.Broadcast(Context, Args.E);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecString(const TArray<FString>& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecStringArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecString(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecString(const FReducerEventContext& Context, const UDeleteAllVecStringReducer* Args)
+{
+    if (!OnDeleteAllVecString.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecString"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecString.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecStringWithArgs(const FReducerEventContext& Context, const FDeleteAllVecStringArgs& Args)
+{
+    if (!OnDeleteAllVecString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecString"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecString.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecTimestamp(const TArray<FSpacetimeDBTimestamp>& T)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecTimestampArgs ReducerArgs(T);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_timestamp"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecTimestamp(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecTimestamp(const FReducerEventContext& Context, const UDeleteAllVecTimestampReducer* Args)
+{
+    if (!OnDeleteAllVecTimestamp.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecTimestamp"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecTimestamp.Broadcast(Context, Args->T);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecTimestampWithArgs(const FReducerEventContext& Context, const FDeleteAllVecTimestampArgs& Args)
+{
+    if (!OnDeleteAllVecTimestamp.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecTimestamp"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecTimestamp.Broadcast(Context, Args.T);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecU128(const TArray<FSpacetimeDBUInt128>& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecU128Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_u_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecU128(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecU128(const FReducerEventContext& Context, const UDeleteAllVecU128Reducer* Args)
+{
+    if (!OnDeleteAllVecU128.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecU128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecU128.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecU128WithArgs(const FReducerEventContext& Context, const FDeleteAllVecU128Args& Args)
+{
+    if (!OnDeleteAllVecU128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecU128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecU128.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecU16(const TArray<uint16>& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecU16Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_u_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecU16(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecU16(const FReducerEventContext& Context, const UDeleteAllVecU16Reducer* Args)
+{
+    if (!OnDeleteAllVecU16.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecU16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecU16.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecU16WithArgs(const FReducerEventContext& Context, const FDeleteAllVecU16Args& Args)
+{
+    if (!OnDeleteAllVecU16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecU16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecU16.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecU256(const TArray<FSpacetimeDBUInt256>& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecU256Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_u_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecU256(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecU256(const FReducerEventContext& Context, const UDeleteAllVecU256Reducer* Args)
+{
+    if (!OnDeleteAllVecU256.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecU256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecU256.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecU256WithArgs(const FReducerEventContext& Context, const FDeleteAllVecU256Args& Args)
+{
+    if (!OnDeleteAllVecU256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecU256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecU256.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecU32(const TArray<uint32>& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecU32Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_u_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecU32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecU32(const FReducerEventContext& Context, const UDeleteAllVecU32Reducer* Args)
+{
+    if (!OnDeleteAllVecU32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecU32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecU32.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecU32WithArgs(const FReducerEventContext& Context, const FDeleteAllVecU32Args& Args)
+{
+    if (!OnDeleteAllVecU32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecU32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecU32.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecU64(const TArray<uint64>& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecU64Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_u_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecU64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecU64(const FReducerEventContext& Context, const UDeleteAllVecU64Reducer* Args)
+{
+    if (!OnDeleteAllVecU64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecU64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecU64.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecU64WithArgs(const FReducerEventContext& Context, const FDeleteAllVecU64Args& Args)
+{
+    if (!OnDeleteAllVecU64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecU64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecU64.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecU8(const TArray<uint8>& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecU8Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_u_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecU8(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecU8(const FReducerEventContext& Context, const UDeleteAllVecU8Reducer* Args)
+{
+    if (!OnDeleteAllVecU8.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecU8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecU8.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecU8WithArgs(const FReducerEventContext& Context, const FDeleteAllVecU8Args& Args)
+{
+    if (!OnDeleteAllVecU8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecU8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecU8.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecUnitStruct(const TArray<FUnitStructType>& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecUnitStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_unit_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecUnitStruct(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecUnitStruct(const FReducerEventContext& Context, const UDeleteAllVecUnitStructReducer* Args)
+{
+    if (!OnDeleteAllVecUnitStruct.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecUnitStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecUnitStruct.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecUnitStructWithArgs(const FReducerEventContext& Context, const FDeleteAllVecUnitStructArgs& Args)
+{
+    if (!OnDeleteAllVecUnitStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecUnitStruct"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecUnitStruct.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteAllVecUuid(const TArray<FSpacetimeDBUuid>& U)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllVecUuidArgs ReducerArgs(U);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_vec_uuid"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllVecUuid(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllVecUuid(const FReducerEventContext& Context, const UDeleteAllVecUuidReducer* Args)
+{
+    if (!OnDeleteAllVecUuid.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecUuid.Broadcast(Context, Args->U);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllVecUuidWithArgs(const FReducerEventContext& Context, const FDeleteAllVecUuidArgs& Args)
+{
+    if (!OnDeleteAllVecUuid.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllVecUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteAllVecUuid.Broadcast(Context, Args.U);
+    return true;
 }
 
 void URemoteReducers::DeleteFromBtreeU32(const TArray<FBTreeU32Type>& Rows)
@@ -2474,7 +4724,9 @@ void URemoteReducers::DeleteFromBtreeU32(const TArray<FBTreeU32Type>& Rows)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_from_btree_u32"), FDeleteFromBtreeU32Args(Rows), SetCallReducerFlags);
+	FDeleteFromBtreeU32Args ReducerArgs(Rows);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_from_btree_u_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteFromBtreeU32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeleteFromBtreeU32(const FReducerEventContext& Context, const UDeleteFromBtreeU32Reducer* Args)
@@ -2518,7 +4770,9 @@ void URemoteReducers::DeleteLargeTable(const uint8 A, const uint16 B, const uint
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_large_table"), FDeleteLargeTableArgs(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V), SetCallReducerFlags);
+	FDeleteLargeTableArgs ReducerArgs(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_large_table"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteLargeTable(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeleteLargeTable(const FReducerEventContext& Context, const UDeleteLargeTableReducer* Args)
@@ -2585,7 +4839,9 @@ void URemoteReducers::DeletePkBool(const bool B)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_pk_bool"), FDeletePkBoolArgs(B), SetCallReducerFlags);
+	FDeletePkBoolArgs ReducerArgs(B);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_pk_bool"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeletePkBool(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeletePkBool(const FReducerEventContext& Context, const UDeletePkBoolReducer* Args)
@@ -2629,7 +4885,9 @@ void URemoteReducers::DeletePkConnectionId(const FSpacetimeDBConnectionId& A)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_pk_connection_id"), FDeletePkConnectionIdArgs(A), SetCallReducerFlags);
+	FDeletePkConnectionIdArgs ReducerArgs(A);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_pk_connection_id"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeletePkConnectionId(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeletePkConnectionId(const FReducerEventContext& Context, const UDeletePkConnectionIdReducer* Args)
@@ -2673,7 +4931,9 @@ void URemoteReducers::DeletePkI128(const FSpacetimeDBInt128& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_pk_i128"), FDeletePkI128Args(N), SetCallReducerFlags);
+	FDeletePkI128Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_pk_i_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeletePkI128(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeletePkI128(const FReducerEventContext& Context, const UDeletePkI128Reducer* Args)
@@ -2717,7 +4977,9 @@ void URemoteReducers::DeletePkI16(const int16 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_pk_i16"), FDeletePkI16Args(N), SetCallReducerFlags);
+	FDeletePkI16Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_pk_i_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeletePkI16(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeletePkI16(const FReducerEventContext& Context, const UDeletePkI16Reducer* Args)
@@ -2761,7 +5023,9 @@ void URemoteReducers::DeletePkI256(const FSpacetimeDBInt256& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_pk_i256"), FDeletePkI256Args(N), SetCallReducerFlags);
+	FDeletePkI256Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_pk_i_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeletePkI256(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeletePkI256(const FReducerEventContext& Context, const UDeletePkI256Reducer* Args)
@@ -2805,7 +5069,9 @@ void URemoteReducers::DeletePkI32(const int32 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_pk_i32"), FDeletePkI32Args(N), SetCallReducerFlags);
+	FDeletePkI32Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_pk_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeletePkI32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeletePkI32(const FReducerEventContext& Context, const UDeletePkI32Reducer* Args)
@@ -2849,7 +5115,9 @@ void URemoteReducers::DeletePkI64(const int64 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_pk_i64"), FDeletePkI64Args(N), SetCallReducerFlags);
+	FDeletePkI64Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_pk_i_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeletePkI64(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeletePkI64(const FReducerEventContext& Context, const UDeletePkI64Reducer* Args)
@@ -2893,7 +5161,9 @@ void URemoteReducers::DeletePkI8(const int8 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_pk_i8"), FDeletePkI8Args(N), SetCallReducerFlags);
+	FDeletePkI8Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_pk_i_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeletePkI8(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeletePkI8(const FReducerEventContext& Context, const UDeletePkI8Reducer* Args)
@@ -2937,7 +5207,9 @@ void URemoteReducers::DeletePkIdentity(const FSpacetimeDBIdentity& I)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_pk_identity"), FDeletePkIdentityArgs(I), SetCallReducerFlags);
+	FDeletePkIdentityArgs ReducerArgs(I);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_pk_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeletePkIdentity(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeletePkIdentity(const FReducerEventContext& Context, const UDeletePkIdentityReducer* Args)
@@ -2981,7 +5253,9 @@ void URemoteReducers::DeletePkString(const FString& S)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_pk_string"), FDeletePkStringArgs(S), SetCallReducerFlags);
+	FDeletePkStringArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_pk_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeletePkString(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeletePkString(const FReducerEventContext& Context, const UDeletePkStringReducer* Args)
@@ -3025,7 +5299,9 @@ void URemoteReducers::DeletePkU128(const FSpacetimeDBUInt128& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_pk_u128"), FDeletePkU128Args(N), SetCallReducerFlags);
+	FDeletePkU128Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_pk_u_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeletePkU128(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeletePkU128(const FReducerEventContext& Context, const UDeletePkU128Reducer* Args)
@@ -3069,7 +5345,9 @@ void URemoteReducers::DeletePkU16(const uint16 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_pk_u16"), FDeletePkU16Args(N), SetCallReducerFlags);
+	FDeletePkU16Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_pk_u_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeletePkU16(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeletePkU16(const FReducerEventContext& Context, const UDeletePkU16Reducer* Args)
@@ -3113,7 +5391,9 @@ void URemoteReducers::DeletePkU256(const FSpacetimeDBUInt256& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_pk_u256"), FDeletePkU256Args(N), SetCallReducerFlags);
+	FDeletePkU256Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_pk_u_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeletePkU256(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeletePkU256(const FReducerEventContext& Context, const UDeletePkU256Reducer* Args)
@@ -3157,7 +5437,9 @@ void URemoteReducers::DeletePkU32(const uint32 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_pk_u32"), FDeletePkU32Args(N), SetCallReducerFlags);
+	FDeletePkU32Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_pk_u_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeletePkU32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeletePkU32(const FReducerEventContext& Context, const UDeletePkU32Reducer* Args)
@@ -3201,7 +5483,9 @@ void URemoteReducers::DeletePkU32InsertPkU32Two(const uint32 N, const int32 Data
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_pk_u32_insert_pk_u32_two"), FDeletePkU32InsertPkU32TwoArgs(N, Data), SetCallReducerFlags);
+	FDeletePkU32InsertPkU32TwoArgs ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_pk_u_32_insert_pk_u_32_two"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeletePkU32InsertPkU32Two(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeletePkU32InsertPkU32Two(const FReducerEventContext& Context, const UDeletePkU32InsertPkU32TwoReducer* Args)
@@ -3245,7 +5529,9 @@ void URemoteReducers::DeletePkU32Two(const uint32 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_pk_u32_two"), FDeletePkU32TwoArgs(N), SetCallReducerFlags);
+	FDeletePkU32TwoArgs ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_pk_u_32_two"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeletePkU32Two(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeletePkU32Two(const FReducerEventContext& Context, const UDeletePkU32TwoReducer* Args)
@@ -3289,7 +5575,9 @@ void URemoteReducers::DeletePkU64(const uint64 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_pk_u64"), FDeletePkU64Args(N), SetCallReducerFlags);
+	FDeletePkU64Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_pk_u_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeletePkU64(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeletePkU64(const FReducerEventContext& Context, const UDeletePkU64Reducer* Args)
@@ -3333,7 +5621,9 @@ void URemoteReducers::DeletePkU8(const uint8 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_pk_u8"), FDeletePkU8Args(N), SetCallReducerFlags);
+	FDeletePkU8Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_pk_u_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeletePkU8(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeletePkU8(const FReducerEventContext& Context, const UDeletePkU8Reducer* Args)
@@ -3377,7 +5667,9 @@ void URemoteReducers::DeletePkUuid(const FSpacetimeDBUuid& U)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_pk_uuid"), FDeletePkUuidArgs(U), SetCallReducerFlags);
+	FDeletePkUuidArgs ReducerArgs(U);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_pk_uuid"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeletePkUuid(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeletePkUuid(const FReducerEventContext& Context, const UDeletePkUuidReducer* Args)
@@ -3421,7 +5713,9 @@ void URemoteReducers::DeleteUniqueBool(const bool B)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_unique_bool"), FDeleteUniqueBoolArgs(B), SetCallReducerFlags);
+	FDeleteUniqueBoolArgs ReducerArgs(B);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_bool"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueBool(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeleteUniqueBool(const FReducerEventContext& Context, const UDeleteUniqueBoolReducer* Args)
@@ -3465,7 +5759,9 @@ void URemoteReducers::DeleteUniqueConnectionId(const FSpacetimeDBConnectionId& A
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_unique_connection_id"), FDeleteUniqueConnectionIdArgs(A), SetCallReducerFlags);
+	FDeleteUniqueConnectionIdArgs ReducerArgs(A);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_connection_id"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueConnectionId(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeleteUniqueConnectionId(const FReducerEventContext& Context, const UDeleteUniqueConnectionIdReducer* Args)
@@ -3509,7 +5805,9 @@ void URemoteReducers::DeleteUniqueI128(const FSpacetimeDBInt128& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_unique_i128"), FDeleteUniqueI128Args(N), SetCallReducerFlags);
+	FDeleteUniqueI128Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_i_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueI128(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeleteUniqueI128(const FReducerEventContext& Context, const UDeleteUniqueI128Reducer* Args)
@@ -3553,7 +5851,9 @@ void URemoteReducers::DeleteUniqueI16(const int16 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_unique_i16"), FDeleteUniqueI16Args(N), SetCallReducerFlags);
+	FDeleteUniqueI16Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_i_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueI16(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeleteUniqueI16(const FReducerEventContext& Context, const UDeleteUniqueI16Reducer* Args)
@@ -3597,7 +5897,9 @@ void URemoteReducers::DeleteUniqueI256(const FSpacetimeDBInt256& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_unique_i256"), FDeleteUniqueI256Args(N), SetCallReducerFlags);
+	FDeleteUniqueI256Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_i_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueI256(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeleteUniqueI256(const FReducerEventContext& Context, const UDeleteUniqueI256Reducer* Args)
@@ -3641,7 +5943,9 @@ void URemoteReducers::DeleteUniqueI32(const int32 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_unique_i32"), FDeleteUniqueI32Args(N), SetCallReducerFlags);
+	FDeleteUniqueI32Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueI32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeleteUniqueI32(const FReducerEventContext& Context, const UDeleteUniqueI32Reducer* Args)
@@ -3685,7 +5989,9 @@ void URemoteReducers::DeleteUniqueI64(const int64 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_unique_i64"), FDeleteUniqueI64Args(N), SetCallReducerFlags);
+	FDeleteUniqueI64Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_i_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueI64(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeleteUniqueI64(const FReducerEventContext& Context, const UDeleteUniqueI64Reducer* Args)
@@ -3729,7 +6035,9 @@ void URemoteReducers::DeleteUniqueI8(const int8 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_unique_i8"), FDeleteUniqueI8Args(N), SetCallReducerFlags);
+	FDeleteUniqueI8Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_i_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueI8(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeleteUniqueI8(const FReducerEventContext& Context, const UDeleteUniqueI8Reducer* Args)
@@ -3773,7 +6081,9 @@ void URemoteReducers::DeleteUniqueIdentity(const FSpacetimeDBIdentity& I)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_unique_identity"), FDeleteUniqueIdentityArgs(I), SetCallReducerFlags);
+	FDeleteUniqueIdentityArgs ReducerArgs(I);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueIdentity(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeleteUniqueIdentity(const FReducerEventContext& Context, const UDeleteUniqueIdentityReducer* Args)
@@ -3817,7 +6127,9 @@ void URemoteReducers::DeleteUniqueString(const FString& S)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_unique_string"), FDeleteUniqueStringArgs(S), SetCallReducerFlags);
+	FDeleteUniqueStringArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueString(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeleteUniqueString(const FReducerEventContext& Context, const UDeleteUniqueStringReducer* Args)
@@ -3861,7 +6173,9 @@ void URemoteReducers::DeleteUniqueU128(const FSpacetimeDBUInt128& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_unique_u128"), FDeleteUniqueU128Args(N), SetCallReducerFlags);
+	FDeleteUniqueU128Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_u_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueU128(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeleteUniqueU128(const FReducerEventContext& Context, const UDeleteUniqueU128Reducer* Args)
@@ -3905,7 +6219,9 @@ void URemoteReducers::DeleteUniqueU16(const uint16 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_unique_u16"), FDeleteUniqueU16Args(N), SetCallReducerFlags);
+	FDeleteUniqueU16Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_u_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueU16(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeleteUniqueU16(const FReducerEventContext& Context, const UDeleteUniqueU16Reducer* Args)
@@ -3949,7 +6265,9 @@ void URemoteReducers::DeleteUniqueU256(const FSpacetimeDBUInt256& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_unique_u256"), FDeleteUniqueU256Args(N), SetCallReducerFlags);
+	FDeleteUniqueU256Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_u_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueU256(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeleteUniqueU256(const FReducerEventContext& Context, const UDeleteUniqueU256Reducer* Args)
@@ -3993,7 +6311,9 @@ void URemoteReducers::DeleteUniqueU32(const uint32 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_unique_u32"), FDeleteUniqueU32Args(N), SetCallReducerFlags);
+	FDeleteUniqueU32Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_u_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueU32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeleteUniqueU32(const FReducerEventContext& Context, const UDeleteUniqueU32Reducer* Args)
@@ -4037,7 +6357,9 @@ void URemoteReducers::DeleteUniqueU64(const uint64 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_unique_u64"), FDeleteUniqueU64Args(N), SetCallReducerFlags);
+	FDeleteUniqueU64Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_u_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueU64(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeleteUniqueU64(const FReducerEventContext& Context, const UDeleteUniqueU64Reducer* Args)
@@ -4081,7 +6403,9 @@ void URemoteReducers::DeleteUniqueU8(const uint8 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_unique_u8"), FDeleteUniqueU8Args(N), SetCallReducerFlags);
+	FDeleteUniqueU8Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_u_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueU8(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeleteUniqueU8(const FReducerEventContext& Context, const UDeleteUniqueU8Reducer* Args)
@@ -4125,7 +6449,9 @@ void URemoteReducers::DeleteUniqueUuid(const FSpacetimeDBUuid& U)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("delete_unique_uuid"), FDeleteUniqueUuidArgs(U), SetCallReducerFlags);
+	FDeleteUniqueUuidArgs ReducerArgs(U);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_uuid"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueUuid(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeDeleteUniqueUuid(const FReducerEventContext& Context, const UDeleteUniqueUuidReducer* Args)
@@ -4169,7 +6495,9 @@ void URemoteReducers::InsertCallTimestamp()
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_call_timestamp"), FInsertCallTimestampArgs(), SetCallReducerFlags);
+	FInsertCallTimestampArgs ReducerArgs;
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_call_timestamp"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertCallTimestamp(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertCallTimestamp(const FReducerEventContext& Context, const UInsertCallTimestampReducer* Args)
@@ -4213,7 +6541,9 @@ void URemoteReducers::InsertCallUuidV4()
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_call_uuid_v4"), FInsertCallUuidV4Args(), SetCallReducerFlags);
+	FInsertCallUuidV4Args ReducerArgs;
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_call_uuid_v_4"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertCallUuidV4(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertCallUuidV4(const FReducerEventContext& Context, const UInsertCallUuidV4Reducer* Args)
@@ -4257,7 +6587,9 @@ void URemoteReducers::InsertCallUuidV7()
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_call_uuid_v7"), FInsertCallUuidV7Args(), SetCallReducerFlags);
+	FInsertCallUuidV7Args ReducerArgs;
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_call_uuid_v_7"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertCallUuidV7(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertCallUuidV7(const FReducerEventContext& Context, const UInsertCallUuidV7Reducer* Args)
@@ -4301,7 +6633,9 @@ void URemoteReducers::InsertCallerOneConnectionId()
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_caller_one_connection_id"), FInsertCallerOneConnectionIdArgs(), SetCallReducerFlags);
+	FInsertCallerOneConnectionIdArgs ReducerArgs;
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_caller_one_connection_id"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertCallerOneConnectionId(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertCallerOneConnectionId(const FReducerEventContext& Context, const UInsertCallerOneConnectionIdReducer* Args)
@@ -4345,7 +6679,9 @@ void URemoteReducers::InsertCallerOneIdentity()
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_caller_one_identity"), FInsertCallerOneIdentityArgs(), SetCallReducerFlags);
+	FInsertCallerOneIdentityArgs ReducerArgs;
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_caller_one_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertCallerOneIdentity(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertCallerOneIdentity(const FReducerEventContext& Context, const UInsertCallerOneIdentityReducer* Args)
@@ -4389,7 +6725,9 @@ void URemoteReducers::InsertCallerPkConnectionId(const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_caller_pk_connection_id"), FInsertCallerPkConnectionIdArgs(Data), SetCallReducerFlags);
+	FInsertCallerPkConnectionIdArgs ReducerArgs(Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_caller_pk_connection_id"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertCallerPkConnectionId(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertCallerPkConnectionId(const FReducerEventContext& Context, const UInsertCallerPkConnectionIdReducer* Args)
@@ -4433,7 +6771,9 @@ void URemoteReducers::InsertCallerPkIdentity(const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_caller_pk_identity"), FInsertCallerPkIdentityArgs(Data), SetCallReducerFlags);
+	FInsertCallerPkIdentityArgs ReducerArgs(Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_caller_pk_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertCallerPkIdentity(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertCallerPkIdentity(const FReducerEventContext& Context, const UInsertCallerPkIdentityReducer* Args)
@@ -4477,7 +6817,9 @@ void URemoteReducers::InsertCallerUniqueConnectionId(const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_caller_unique_connection_id"), FInsertCallerUniqueConnectionIdArgs(Data), SetCallReducerFlags);
+	FInsertCallerUniqueConnectionIdArgs ReducerArgs(Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_caller_unique_connection_id"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertCallerUniqueConnectionId(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertCallerUniqueConnectionId(const FReducerEventContext& Context, const UInsertCallerUniqueConnectionIdReducer* Args)
@@ -4521,7 +6863,9 @@ void URemoteReducers::InsertCallerUniqueIdentity(const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_caller_unique_identity"), FInsertCallerUniqueIdentityArgs(Data), SetCallReducerFlags);
+	FInsertCallerUniqueIdentityArgs ReducerArgs(Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_caller_unique_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertCallerUniqueIdentity(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertCallerUniqueIdentity(const FReducerEventContext& Context, const UInsertCallerUniqueIdentityReducer* Args)
@@ -4565,7 +6909,9 @@ void URemoteReducers::InsertCallerVecConnectionId()
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_caller_vec_connection_id"), FInsertCallerVecConnectionIdArgs(), SetCallReducerFlags);
+	FInsertCallerVecConnectionIdArgs ReducerArgs;
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_caller_vec_connection_id"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertCallerVecConnectionId(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertCallerVecConnectionId(const FReducerEventContext& Context, const UInsertCallerVecConnectionIdReducer* Args)
@@ -4609,7 +6955,9 @@ void URemoteReducers::InsertCallerVecIdentity()
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_caller_vec_identity"), FInsertCallerVecIdentityArgs(), SetCallReducerFlags);
+	FInsertCallerVecIdentityArgs ReducerArgs;
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_caller_vec_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertCallerVecIdentity(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertCallerVecIdentity(const FReducerEventContext& Context, const UInsertCallerVecIdentityReducer* Args)
@@ -4653,7 +7001,9 @@ void URemoteReducers::InsertIntoBtreeU32(const TArray<FBTreeU32Type>& Rows)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_into_btree_u32"), FInsertIntoBtreeU32Args(Rows), SetCallReducerFlags);
+	FInsertIntoBtreeU32Args ReducerArgs(Rows);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_into_btree_u_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertIntoBtreeU32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertIntoBtreeU32(const FReducerEventContext& Context, const UInsertIntoBtreeU32Reducer* Args)
@@ -4697,7 +7047,9 @@ void URemoteReducers::InsertIntoIndexedSimpleEnum(const ESimpleEnumType& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_into_indexed_simple_enum"), FInsertIntoIndexedSimpleEnumArgs(N), SetCallReducerFlags);
+	FInsertIntoIndexedSimpleEnumArgs ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_into_indexed_simple_enum"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertIntoIndexedSimpleEnum(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertIntoIndexedSimpleEnum(const FReducerEventContext& Context, const UInsertIntoIndexedSimpleEnumReducer* Args)
@@ -4741,7 +7093,9 @@ void URemoteReducers::InsertIntoPkBtreeU32(const TArray<FPkU32Type>& PkU32, cons
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_into_pk_btree_u32"), FInsertIntoPkBtreeU32Args(PkU32, BtU32), SetCallReducerFlags);
+	FInsertIntoPkBtreeU32Args ReducerArgs(PkU32, BtU32);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_into_pk_btree_u_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertIntoPkBtreeU32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertIntoPkBtreeU32(const FReducerEventContext& Context, const UInsertIntoPkBtreeU32Reducer* Args)
@@ -4785,7 +7139,9 @@ void URemoteReducers::InsertLargeTable(const uint8 A, const uint16 B, const uint
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_large_table"), FInsertLargeTableArgs(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V), SetCallReducerFlags);
+	FInsertLargeTableArgs ReducerArgs(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_large_table"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertLargeTable(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertLargeTable(const FReducerEventContext& Context, const UInsertLargeTableReducer* Args)
@@ -4852,7 +7208,9 @@ void URemoteReducers::InsertOneBool(const bool B)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_bool"), FInsertOneBoolArgs(B), SetCallReducerFlags);
+	FInsertOneBoolArgs ReducerArgs(B);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_bool"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneBool(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneBool(const FReducerEventContext& Context, const UInsertOneBoolReducer* Args)
@@ -4896,7 +7254,9 @@ void URemoteReducers::InsertOneByteStruct(const FByteStructType& S)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_byte_struct"), FInsertOneByteStructArgs(S), SetCallReducerFlags);
+	FInsertOneByteStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_byte_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneByteStruct(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneByteStruct(const FReducerEventContext& Context, const UInsertOneByteStructReducer* Args)
@@ -4940,7 +7300,9 @@ void URemoteReducers::InsertOneConnectionId(const FSpacetimeDBConnectionId& A)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_connection_id"), FInsertOneConnectionIdArgs(A), SetCallReducerFlags);
+	FInsertOneConnectionIdArgs ReducerArgs(A);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_connection_id"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneConnectionId(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneConnectionId(const FReducerEventContext& Context, const UInsertOneConnectionIdReducer* Args)
@@ -4984,7 +7346,9 @@ void URemoteReducers::InsertOneEnumWithPayload(const FEnumWithPayloadType& E)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_enum_with_payload"), FInsertOneEnumWithPayloadArgs(E), SetCallReducerFlags);
+	FInsertOneEnumWithPayloadArgs ReducerArgs(E);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_enum_with_payload"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneEnumWithPayload(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneEnumWithPayload(const FReducerEventContext& Context, const UInsertOneEnumWithPayloadReducer* Args)
@@ -5028,7 +7392,9 @@ void URemoteReducers::InsertOneEveryPrimitiveStruct(const FEveryPrimitiveStructT
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_every_primitive_struct"), FInsertOneEveryPrimitiveStructArgs(S), SetCallReducerFlags);
+	FInsertOneEveryPrimitiveStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_every_primitive_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneEveryPrimitiveStruct(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneEveryPrimitiveStruct(const FReducerEventContext& Context, const UInsertOneEveryPrimitiveStructReducer* Args)
@@ -5072,7 +7438,9 @@ void URemoteReducers::InsertOneEveryVecStruct(const FEveryVecStructType& S)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_every_vec_struct"), FInsertOneEveryVecStructArgs(S), SetCallReducerFlags);
+	FInsertOneEveryVecStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_every_vec_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneEveryVecStruct(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneEveryVecStruct(const FReducerEventContext& Context, const UInsertOneEveryVecStructReducer* Args)
@@ -5116,7 +7484,9 @@ void URemoteReducers::InsertOneF32(const float F)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_f32"), FInsertOneF32Args(F), SetCallReducerFlags);
+	FInsertOneF32Args ReducerArgs(F);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_f_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneF32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneF32(const FReducerEventContext& Context, const UInsertOneF32Reducer* Args)
@@ -5160,7 +7530,9 @@ void URemoteReducers::InsertOneF64(const double F)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_f64"), FInsertOneF64Args(F), SetCallReducerFlags);
+	FInsertOneF64Args ReducerArgs(F);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_f_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneF64(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneF64(const FReducerEventContext& Context, const UInsertOneF64Reducer* Args)
@@ -5204,7 +7576,9 @@ void URemoteReducers::InsertOneI128(const FSpacetimeDBInt128& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_i128"), FInsertOneI128Args(N), SetCallReducerFlags);
+	FInsertOneI128Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_i_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneI128(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneI128(const FReducerEventContext& Context, const UInsertOneI128Reducer* Args)
@@ -5248,7 +7622,9 @@ void URemoteReducers::InsertOneI16(const int16 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_i16"), FInsertOneI16Args(N), SetCallReducerFlags);
+	FInsertOneI16Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_i_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneI16(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneI16(const FReducerEventContext& Context, const UInsertOneI16Reducer* Args)
@@ -5292,7 +7668,9 @@ void URemoteReducers::InsertOneI256(const FSpacetimeDBInt256& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_i256"), FInsertOneI256Args(N), SetCallReducerFlags);
+	FInsertOneI256Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_i_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneI256(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneI256(const FReducerEventContext& Context, const UInsertOneI256Reducer* Args)
@@ -5336,7 +7714,9 @@ void URemoteReducers::InsertOneI32(const int32 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_i32"), FInsertOneI32Args(N), SetCallReducerFlags);
+	FInsertOneI32Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneI32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneI32(const FReducerEventContext& Context, const UInsertOneI32Reducer* Args)
@@ -5380,7 +7760,9 @@ void URemoteReducers::InsertOneI64(const int64 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_i64"), FInsertOneI64Args(N), SetCallReducerFlags);
+	FInsertOneI64Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_i_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneI64(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneI64(const FReducerEventContext& Context, const UInsertOneI64Reducer* Args)
@@ -5424,7 +7806,9 @@ void URemoteReducers::InsertOneI8(const int8 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_i8"), FInsertOneI8Args(N), SetCallReducerFlags);
+	FInsertOneI8Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_i_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneI8(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneI8(const FReducerEventContext& Context, const UInsertOneI8Reducer* Args)
@@ -5468,7 +7852,9 @@ void URemoteReducers::InsertOneIdentity(const FSpacetimeDBIdentity& I)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_identity"), FInsertOneIdentityArgs(I), SetCallReducerFlags);
+	FInsertOneIdentityArgs ReducerArgs(I);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneIdentity(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneIdentity(const FReducerEventContext& Context, const UInsertOneIdentityReducer* Args)
@@ -5512,7 +7898,9 @@ void URemoteReducers::InsertOneSimpleEnum(const ESimpleEnumType& E)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_simple_enum"), FInsertOneSimpleEnumArgs(E), SetCallReducerFlags);
+	FInsertOneSimpleEnumArgs ReducerArgs(E);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_simple_enum"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneSimpleEnum(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneSimpleEnum(const FReducerEventContext& Context, const UInsertOneSimpleEnumReducer* Args)
@@ -5556,7 +7944,9 @@ void URemoteReducers::InsertOneString(const FString& S)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_string"), FInsertOneStringArgs(S), SetCallReducerFlags);
+	FInsertOneStringArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneString(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneString(const FReducerEventContext& Context, const UInsertOneStringReducer* Args)
@@ -5600,7 +7990,9 @@ void URemoteReducers::InsertOneTimestamp(const FSpacetimeDBTimestamp& T)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_timestamp"), FInsertOneTimestampArgs(T), SetCallReducerFlags);
+	FInsertOneTimestampArgs ReducerArgs(T);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_timestamp"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneTimestamp(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneTimestamp(const FReducerEventContext& Context, const UInsertOneTimestampReducer* Args)
@@ -5644,7 +8036,9 @@ void URemoteReducers::InsertOneU128(const FSpacetimeDBUInt128& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_u128"), FInsertOneU128Args(N), SetCallReducerFlags);
+	FInsertOneU128Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_u_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneU128(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneU128(const FReducerEventContext& Context, const UInsertOneU128Reducer* Args)
@@ -5688,7 +8082,9 @@ void URemoteReducers::InsertOneU16(const uint16 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_u16"), FInsertOneU16Args(N), SetCallReducerFlags);
+	FInsertOneU16Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_u_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneU16(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneU16(const FReducerEventContext& Context, const UInsertOneU16Reducer* Args)
@@ -5732,7 +8128,9 @@ void URemoteReducers::InsertOneU256(const FSpacetimeDBUInt256& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_u256"), FInsertOneU256Args(N), SetCallReducerFlags);
+	FInsertOneU256Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_u_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneU256(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneU256(const FReducerEventContext& Context, const UInsertOneU256Reducer* Args)
@@ -5776,7 +8174,9 @@ void URemoteReducers::InsertOneU32(const uint32 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_u32"), FInsertOneU32Args(N), SetCallReducerFlags);
+	FInsertOneU32Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_u_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneU32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneU32(const FReducerEventContext& Context, const UInsertOneU32Reducer* Args)
@@ -5820,7 +8220,9 @@ void URemoteReducers::InsertOneU64(const uint64 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_u64"), FInsertOneU64Args(N), SetCallReducerFlags);
+	FInsertOneU64Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_u_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneU64(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneU64(const FReducerEventContext& Context, const UInsertOneU64Reducer* Args)
@@ -5864,7 +8266,9 @@ void URemoteReducers::InsertOneU8(const uint8 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_u8"), FInsertOneU8Args(N), SetCallReducerFlags);
+	FInsertOneU8Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_u_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneU8(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneU8(const FReducerEventContext& Context, const UInsertOneU8Reducer* Args)
@@ -5908,7 +8312,9 @@ void URemoteReducers::InsertOneUnitStruct(const FUnitStructType& S)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_unit_struct"), FInsertOneUnitStructArgs(S), SetCallReducerFlags);
+	FInsertOneUnitStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_unit_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneUnitStruct(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneUnitStruct(const FReducerEventContext& Context, const UInsertOneUnitStructReducer* Args)
@@ -5952,7 +8358,9 @@ void URemoteReducers::InsertOneUuid(const FSpacetimeDBUuid& U)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_one_uuid"), FInsertOneUuidArgs(U), SetCallReducerFlags);
+	FInsertOneUuidArgs ReducerArgs(U);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_one_uuid"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOneUuid(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOneUuid(const FReducerEventContext& Context, const UInsertOneUuidReducer* Args)
@@ -5996,7 +8404,9 @@ void URemoteReducers::InsertOptionEveryPrimitiveStruct(const FTestClientOptional
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_option_every_primitive_struct"), FInsertOptionEveryPrimitiveStructArgs(S), SetCallReducerFlags);
+	FInsertOptionEveryPrimitiveStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_option_every_primitive_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOptionEveryPrimitiveStruct(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOptionEveryPrimitiveStruct(const FReducerEventContext& Context, const UInsertOptionEveryPrimitiveStructReducer* Args)
@@ -6040,7 +8450,9 @@ void URemoteReducers::InsertOptionI32(const FTestClientOptionalInt32 N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_option_i32"), FInsertOptionI32Args(N), SetCallReducerFlags);
+	FInsertOptionI32Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_option_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOptionI32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOptionI32(const FReducerEventContext& Context, const UInsertOptionI32Reducer* Args)
@@ -6084,7 +8496,9 @@ void URemoteReducers::InsertOptionIdentity(const FTestClientOptionalIdentity& I)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_option_identity"), FInsertOptionIdentityArgs(I), SetCallReducerFlags);
+	FInsertOptionIdentityArgs ReducerArgs(I);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_option_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOptionIdentity(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOptionIdentity(const FReducerEventContext& Context, const UInsertOptionIdentityReducer* Args)
@@ -6128,7 +8542,9 @@ void URemoteReducers::InsertOptionSimpleEnum(const FTestClientOptionalSimpleEnum
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_option_simple_enum"), FInsertOptionSimpleEnumArgs(E), SetCallReducerFlags);
+	FInsertOptionSimpleEnumArgs ReducerArgs(E);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_option_simple_enum"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOptionSimpleEnum(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOptionSimpleEnum(const FReducerEventContext& Context, const UInsertOptionSimpleEnumReducer* Args)
@@ -6172,7 +8588,9 @@ void URemoteReducers::InsertOptionString(const FTestClientOptionalString& S)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_option_string"), FInsertOptionStringArgs(S), SetCallReducerFlags);
+	FInsertOptionStringArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_option_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOptionString(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOptionString(const FReducerEventContext& Context, const UInsertOptionStringReducer* Args)
@@ -6216,7 +8634,9 @@ void URemoteReducers::InsertOptionUuid(const FTestClientOptionalUuid& U)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_option_uuid"), FInsertOptionUuidArgs(U), SetCallReducerFlags);
+	FInsertOptionUuidArgs ReducerArgs(U);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_option_uuid"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOptionUuid(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOptionUuid(const FReducerEventContext& Context, const UInsertOptionUuidReducer* Args)
@@ -6260,7 +8680,9 @@ void URemoteReducers::InsertOptionVecOptionI32(const FTestClientOptionalVecOptio
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_option_vec_option_i32"), FInsertOptionVecOptionI32Args(V), SetCallReducerFlags);
+	FInsertOptionVecOptionI32Args ReducerArgs(V);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_option_vec_option_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertOptionVecOptionI32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertOptionVecOptionI32(const FReducerEventContext& Context, const UInsertOptionVecOptionI32Reducer* Args)
@@ -6304,7 +8726,9 @@ void URemoteReducers::InsertPkBool(const bool B, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_pk_bool"), FInsertPkBoolArgs(B, Data), SetCallReducerFlags);
+	FInsertPkBoolArgs ReducerArgs(B, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_pk_bool"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertPkBool(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertPkBool(const FReducerEventContext& Context, const UInsertPkBoolReducer* Args)
@@ -6348,7 +8772,9 @@ void URemoteReducers::InsertPkConnectionId(const FSpacetimeDBConnectionId& A, co
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_pk_connection_id"), FInsertPkConnectionIdArgs(A, Data), SetCallReducerFlags);
+	FInsertPkConnectionIdArgs ReducerArgs(A, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_pk_connection_id"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertPkConnectionId(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertPkConnectionId(const FReducerEventContext& Context, const UInsertPkConnectionIdReducer* Args)
@@ -6392,7 +8818,9 @@ void URemoteReducers::InsertPkI128(const FSpacetimeDBInt128& N, const int32 Data
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_pk_i128"), FInsertPkI128Args(N, Data), SetCallReducerFlags);
+	FInsertPkI128Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_pk_i_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertPkI128(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertPkI128(const FReducerEventContext& Context, const UInsertPkI128Reducer* Args)
@@ -6436,7 +8864,9 @@ void URemoteReducers::InsertPkI16(const int16 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_pk_i16"), FInsertPkI16Args(N, Data), SetCallReducerFlags);
+	FInsertPkI16Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_pk_i_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertPkI16(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertPkI16(const FReducerEventContext& Context, const UInsertPkI16Reducer* Args)
@@ -6480,7 +8910,9 @@ void URemoteReducers::InsertPkI256(const FSpacetimeDBInt256& N, const int32 Data
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_pk_i256"), FInsertPkI256Args(N, Data), SetCallReducerFlags);
+	FInsertPkI256Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_pk_i_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertPkI256(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertPkI256(const FReducerEventContext& Context, const UInsertPkI256Reducer* Args)
@@ -6524,7 +8956,9 @@ void URemoteReducers::InsertPkI32(const int32 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_pk_i32"), FInsertPkI32Args(N, Data), SetCallReducerFlags);
+	FInsertPkI32Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_pk_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertPkI32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertPkI32(const FReducerEventContext& Context, const UInsertPkI32Reducer* Args)
@@ -6568,7 +9002,9 @@ void URemoteReducers::InsertPkI64(const int64 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_pk_i64"), FInsertPkI64Args(N, Data), SetCallReducerFlags);
+	FInsertPkI64Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_pk_i_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertPkI64(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertPkI64(const FReducerEventContext& Context, const UInsertPkI64Reducer* Args)
@@ -6612,7 +9048,9 @@ void URemoteReducers::InsertPkI8(const int8 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_pk_i8"), FInsertPkI8Args(N, Data), SetCallReducerFlags);
+	FInsertPkI8Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_pk_i_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertPkI8(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertPkI8(const FReducerEventContext& Context, const UInsertPkI8Reducer* Args)
@@ -6656,7 +9094,9 @@ void URemoteReducers::InsertPkIdentity(const FSpacetimeDBIdentity& I, const int3
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_pk_identity"), FInsertPkIdentityArgs(I, Data), SetCallReducerFlags);
+	FInsertPkIdentityArgs ReducerArgs(I, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_pk_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertPkIdentity(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertPkIdentity(const FReducerEventContext& Context, const UInsertPkIdentityReducer* Args)
@@ -6700,7 +9140,9 @@ void URemoteReducers::InsertPkSimpleEnum(const ESimpleEnumType& A, const int32 D
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_pk_simple_enum"), FInsertPkSimpleEnumArgs(A, Data), SetCallReducerFlags);
+	FInsertPkSimpleEnumArgs ReducerArgs(A, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_pk_simple_enum"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertPkSimpleEnum(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertPkSimpleEnum(const FReducerEventContext& Context, const UInsertPkSimpleEnumReducer* Args)
@@ -6744,7 +9186,9 @@ void URemoteReducers::InsertPkString(const FString& S, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_pk_string"), FInsertPkStringArgs(S, Data), SetCallReducerFlags);
+	FInsertPkStringArgs ReducerArgs(S, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_pk_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertPkString(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertPkString(const FReducerEventContext& Context, const UInsertPkStringReducer* Args)
@@ -6788,7 +9232,9 @@ void URemoteReducers::InsertPkU128(const FSpacetimeDBUInt128& N, const int32 Dat
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_pk_u128"), FInsertPkU128Args(N, Data), SetCallReducerFlags);
+	FInsertPkU128Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_pk_u_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertPkU128(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertPkU128(const FReducerEventContext& Context, const UInsertPkU128Reducer* Args)
@@ -6832,7 +9278,9 @@ void URemoteReducers::InsertPkU16(const uint16 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_pk_u16"), FInsertPkU16Args(N, Data), SetCallReducerFlags);
+	FInsertPkU16Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_pk_u_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertPkU16(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertPkU16(const FReducerEventContext& Context, const UInsertPkU16Reducer* Args)
@@ -6876,7 +9324,9 @@ void URemoteReducers::InsertPkU256(const FSpacetimeDBUInt256& N, const int32 Dat
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_pk_u256"), FInsertPkU256Args(N, Data), SetCallReducerFlags);
+	FInsertPkU256Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_pk_u_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertPkU256(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertPkU256(const FReducerEventContext& Context, const UInsertPkU256Reducer* Args)
@@ -6920,7 +9370,9 @@ void URemoteReducers::InsertPkU32(const uint32 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_pk_u32"), FInsertPkU32Args(N, Data), SetCallReducerFlags);
+	FInsertPkU32Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_pk_u_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertPkU32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertPkU32(const FReducerEventContext& Context, const UInsertPkU32Reducer* Args)
@@ -6964,7 +9416,9 @@ void URemoteReducers::InsertPkU32Two(const uint32 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_pk_u32_two"), FInsertPkU32TwoArgs(N, Data), SetCallReducerFlags);
+	FInsertPkU32TwoArgs ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_pk_u_32_two"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertPkU32Two(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertPkU32Two(const FReducerEventContext& Context, const UInsertPkU32TwoReducer* Args)
@@ -7008,7 +9462,9 @@ void URemoteReducers::InsertPkU64(const uint64 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_pk_u64"), FInsertPkU64Args(N, Data), SetCallReducerFlags);
+	FInsertPkU64Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_pk_u_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertPkU64(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertPkU64(const FReducerEventContext& Context, const UInsertPkU64Reducer* Args)
@@ -7052,7 +9508,9 @@ void URemoteReducers::InsertPkU8(const uint8 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_pk_u8"), FInsertPkU8Args(N, Data), SetCallReducerFlags);
+	FInsertPkU8Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_pk_u_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertPkU8(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertPkU8(const FReducerEventContext& Context, const UInsertPkU8Reducer* Args)
@@ -7096,7 +9554,9 @@ void URemoteReducers::InsertPkUuid(const FSpacetimeDBUuid& U, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_pk_uuid"), FInsertPkUuidArgs(U, Data), SetCallReducerFlags);
+	FInsertPkUuidArgs ReducerArgs(U, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_pk_uuid"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertPkUuid(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertPkUuid(const FReducerEventContext& Context, const UInsertPkUuidReducer* Args)
@@ -7140,7 +9600,9 @@ void URemoteReducers::InsertPrimitivesAsStrings(const FEveryPrimitiveStructType&
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_primitives_as_strings"), FInsertPrimitivesAsStringsArgs(S), SetCallReducerFlags);
+	FInsertPrimitivesAsStringsArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_primitives_as_strings"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertPrimitivesAsStrings(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertPrimitivesAsStrings(const FReducerEventContext& Context, const UInsertPrimitivesAsStringsReducer* Args)
@@ -7184,7 +9646,9 @@ void URemoteReducers::InsertResultEveryPrimitiveStructString(const FTestClientRe
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_result_every_primitive_struct_string"), FInsertResultEveryPrimitiveStructStringArgs(R), SetCallReducerFlags);
+	FInsertResultEveryPrimitiveStructStringArgs ReducerArgs(R);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_result_every_primitive_struct_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertResultEveryPrimitiveStructString(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertResultEveryPrimitiveStructString(const FReducerEventContext& Context, const UInsertResultEveryPrimitiveStructStringReducer* Args)
@@ -7228,7 +9692,9 @@ void URemoteReducers::InsertResultI32String(const FTestClientResultInt32String& 
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_result_i32_string"), FInsertResultI32StringArgs(R), SetCallReducerFlags);
+	FInsertResultI32StringArgs ReducerArgs(R);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_result_i_32_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertResultI32String(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertResultI32String(const FReducerEventContext& Context, const UInsertResultI32StringReducer* Args)
@@ -7272,7 +9738,9 @@ void URemoteReducers::InsertResultIdentityString(const FTestClientResultIdentity
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_result_identity_string"), FInsertResultIdentityStringArgs(R), SetCallReducerFlags);
+	FInsertResultIdentityStringArgs ReducerArgs(R);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_result_identity_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertResultIdentityString(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertResultIdentityString(const FReducerEventContext& Context, const UInsertResultIdentityStringReducer* Args)
@@ -7316,7 +9784,9 @@ void URemoteReducers::InsertResultSimpleEnumI32(const FTestClientResultSimpleEnu
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_result_simple_enum_i32"), FInsertResultSimpleEnumI32Args(R), SetCallReducerFlags);
+	FInsertResultSimpleEnumI32Args ReducerArgs(R);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_result_simple_enum_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertResultSimpleEnumI32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertResultSimpleEnumI32(const FReducerEventContext& Context, const UInsertResultSimpleEnumI32Reducer* Args)
@@ -7360,7 +9830,9 @@ void URemoteReducers::InsertResultStringI32(const FTestClientResultStringInt32& 
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_result_string_i32"), FInsertResultStringI32Args(R), SetCallReducerFlags);
+	FInsertResultStringI32Args ReducerArgs(R);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_result_string_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertResultStringI32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertResultStringI32(const FReducerEventContext& Context, const UInsertResultStringI32Reducer* Args)
@@ -7404,7 +9876,9 @@ void URemoteReducers::InsertResultVecI32String(const FTestClientResultVecInt32St
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_result_vec_i32_string"), FInsertResultVecI32StringArgs(R), SetCallReducerFlags);
+	FInsertResultVecI32StringArgs ReducerArgs(R);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_result_vec_i_32_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertResultVecI32String(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertResultVecI32String(const FReducerEventContext& Context, const UInsertResultVecI32StringReducer* Args)
@@ -7448,7 +9922,9 @@ void URemoteReducers::InsertTableHoldsTable(const FOneU8Type& A, const FVecU8Typ
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_table_holds_table"), FInsertTableHoldsTableArgs(A, B), SetCallReducerFlags);
+	FInsertTableHoldsTableArgs ReducerArgs(A, B);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_table_holds_table"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertTableHoldsTable(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertTableHoldsTable(const FReducerEventContext& Context, const UInsertTableHoldsTableReducer* Args)
@@ -7492,7 +9968,9 @@ void URemoteReducers::InsertUniqueBool(const bool B, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_unique_bool"), FInsertUniqueBoolArgs(B, Data), SetCallReducerFlags);
+	FInsertUniqueBoolArgs ReducerArgs(B, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_bool"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueBool(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertUniqueBool(const FReducerEventContext& Context, const UInsertUniqueBoolReducer* Args)
@@ -7536,7 +10014,9 @@ void URemoteReducers::InsertUniqueConnectionId(const FSpacetimeDBConnectionId& A
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_unique_connection_id"), FInsertUniqueConnectionIdArgs(A, Data), SetCallReducerFlags);
+	FInsertUniqueConnectionIdArgs ReducerArgs(A, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_connection_id"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueConnectionId(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertUniqueConnectionId(const FReducerEventContext& Context, const UInsertUniqueConnectionIdReducer* Args)
@@ -7580,7 +10060,9 @@ void URemoteReducers::InsertUniqueI128(const FSpacetimeDBInt128& N, const int32 
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_unique_i128"), FInsertUniqueI128Args(N, Data), SetCallReducerFlags);
+	FInsertUniqueI128Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_i_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueI128(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertUniqueI128(const FReducerEventContext& Context, const UInsertUniqueI128Reducer* Args)
@@ -7624,7 +10106,9 @@ void URemoteReducers::InsertUniqueI16(const int16 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_unique_i16"), FInsertUniqueI16Args(N, Data), SetCallReducerFlags);
+	FInsertUniqueI16Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_i_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueI16(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertUniqueI16(const FReducerEventContext& Context, const UInsertUniqueI16Reducer* Args)
@@ -7668,7 +10152,9 @@ void URemoteReducers::InsertUniqueI256(const FSpacetimeDBInt256& N, const int32 
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_unique_i256"), FInsertUniqueI256Args(N, Data), SetCallReducerFlags);
+	FInsertUniqueI256Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_i_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueI256(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertUniqueI256(const FReducerEventContext& Context, const UInsertUniqueI256Reducer* Args)
@@ -7712,7 +10198,9 @@ void URemoteReducers::InsertUniqueI32(const int32 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_unique_i32"), FInsertUniqueI32Args(N, Data), SetCallReducerFlags);
+	FInsertUniqueI32Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueI32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertUniqueI32(const FReducerEventContext& Context, const UInsertUniqueI32Reducer* Args)
@@ -7756,7 +10244,9 @@ void URemoteReducers::InsertUniqueI64(const int64 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_unique_i64"), FInsertUniqueI64Args(N, Data), SetCallReducerFlags);
+	FInsertUniqueI64Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_i_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueI64(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertUniqueI64(const FReducerEventContext& Context, const UInsertUniqueI64Reducer* Args)
@@ -7800,7 +10290,9 @@ void URemoteReducers::InsertUniqueI8(const int8 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_unique_i8"), FInsertUniqueI8Args(N, Data), SetCallReducerFlags);
+	FInsertUniqueI8Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_i_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueI8(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertUniqueI8(const FReducerEventContext& Context, const UInsertUniqueI8Reducer* Args)
@@ -7844,7 +10336,9 @@ void URemoteReducers::InsertUniqueIdentity(const FSpacetimeDBIdentity& I, const 
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_unique_identity"), FInsertUniqueIdentityArgs(I, Data), SetCallReducerFlags);
+	FInsertUniqueIdentityArgs ReducerArgs(I, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueIdentity(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertUniqueIdentity(const FReducerEventContext& Context, const UInsertUniqueIdentityReducer* Args)
@@ -7888,7 +10382,9 @@ void URemoteReducers::InsertUniqueString(const FString& S, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_unique_string"), FInsertUniqueStringArgs(S, Data), SetCallReducerFlags);
+	FInsertUniqueStringArgs ReducerArgs(S, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueString(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertUniqueString(const FReducerEventContext& Context, const UInsertUniqueStringReducer* Args)
@@ -7932,7 +10428,9 @@ void URemoteReducers::InsertUniqueU128(const FSpacetimeDBUInt128& N, const int32
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_unique_u128"), FInsertUniqueU128Args(N, Data), SetCallReducerFlags);
+	FInsertUniqueU128Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_u_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueU128(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertUniqueU128(const FReducerEventContext& Context, const UInsertUniqueU128Reducer* Args)
@@ -7976,7 +10474,9 @@ void URemoteReducers::InsertUniqueU16(const uint16 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_unique_u16"), FInsertUniqueU16Args(N, Data), SetCallReducerFlags);
+	FInsertUniqueU16Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_u_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueU16(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertUniqueU16(const FReducerEventContext& Context, const UInsertUniqueU16Reducer* Args)
@@ -8020,7 +10520,9 @@ void URemoteReducers::InsertUniqueU256(const FSpacetimeDBUInt256& N, const int32
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_unique_u256"), FInsertUniqueU256Args(N, Data), SetCallReducerFlags);
+	FInsertUniqueU256Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_u_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueU256(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertUniqueU256(const FReducerEventContext& Context, const UInsertUniqueU256Reducer* Args)
@@ -8064,7 +10566,9 @@ void URemoteReducers::InsertUniqueU32(const uint32 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_unique_u32"), FInsertUniqueU32Args(N, Data), SetCallReducerFlags);
+	FInsertUniqueU32Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_u_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueU32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertUniqueU32(const FReducerEventContext& Context, const UInsertUniqueU32Reducer* Args)
@@ -8108,7 +10612,9 @@ void URemoteReducers::InsertUniqueU32UpdatePkU32(const uint32 N, const int32 DUn
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_unique_u32_update_pk_u32"), FInsertUniqueU32UpdatePkU32Args(N, DUnique, DPk), SetCallReducerFlags);
+	FInsertUniqueU32UpdatePkU32Args ReducerArgs(N, DUnique, DPk);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_u_32_update_pk_u_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueU32UpdatePkU32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertUniqueU32UpdatePkU32(const FReducerEventContext& Context, const UInsertUniqueU32UpdatePkU32Reducer* Args)
@@ -8152,7 +10658,9 @@ void URemoteReducers::InsertUniqueU64(const uint64 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_unique_u64"), FInsertUniqueU64Args(N, Data), SetCallReducerFlags);
+	FInsertUniqueU64Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_u_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueU64(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertUniqueU64(const FReducerEventContext& Context, const UInsertUniqueU64Reducer* Args)
@@ -8196,7 +10704,9 @@ void URemoteReducers::InsertUniqueU8(const uint8 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_unique_u8"), FInsertUniqueU8Args(N, Data), SetCallReducerFlags);
+	FInsertUniqueU8Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_u_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueU8(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertUniqueU8(const FReducerEventContext& Context, const UInsertUniqueU8Reducer* Args)
@@ -8240,7 +10750,9 @@ void URemoteReducers::InsertUniqueUuid(const FSpacetimeDBUuid& U, const int32 Da
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_unique_uuid"), FInsertUniqueUuidArgs(U, Data), SetCallReducerFlags);
+	FInsertUniqueUuidArgs ReducerArgs(U, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_uuid"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueUuid(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertUniqueUuid(const FReducerEventContext& Context, const UInsertUniqueUuidReducer* Args)
@@ -8284,7 +10796,9 @@ void URemoteReducers::InsertUser(const FString& Name, const FSpacetimeDBIdentity
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_user"), FInsertUserArgs(Name, Identity), SetCallReducerFlags);
+	FInsertUserArgs ReducerArgs(Name, Identity);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_user"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUser(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertUser(const FReducerEventContext& Context, const UInsertUserReducer* Args)
@@ -8328,7 +10842,9 @@ void URemoteReducers::InsertVecBool(const TArray<bool>& B)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_bool"), FInsertVecBoolArgs(B), SetCallReducerFlags);
+	FInsertVecBoolArgs ReducerArgs(B);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_bool"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecBool(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecBool(const FReducerEventContext& Context, const UInsertVecBoolReducer* Args)
@@ -8372,7 +10888,9 @@ void URemoteReducers::InsertVecByteStruct(const TArray<FByteStructType>& S)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_byte_struct"), FInsertVecByteStructArgs(S), SetCallReducerFlags);
+	FInsertVecByteStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_byte_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecByteStruct(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecByteStruct(const FReducerEventContext& Context, const UInsertVecByteStructReducer* Args)
@@ -8416,7 +10934,9 @@ void URemoteReducers::InsertVecConnectionId(const TArray<FSpacetimeDBConnectionI
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_connection_id"), FInsertVecConnectionIdArgs(A), SetCallReducerFlags);
+	FInsertVecConnectionIdArgs ReducerArgs(A);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_connection_id"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecConnectionId(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecConnectionId(const FReducerEventContext& Context, const UInsertVecConnectionIdReducer* Args)
@@ -8460,7 +10980,9 @@ void URemoteReducers::InsertVecEnumWithPayload(const TArray<FEnumWithPayloadType
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_enum_with_payload"), FInsertVecEnumWithPayloadArgs(E), SetCallReducerFlags);
+	FInsertVecEnumWithPayloadArgs ReducerArgs(E);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_enum_with_payload"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecEnumWithPayload(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecEnumWithPayload(const FReducerEventContext& Context, const UInsertVecEnumWithPayloadReducer* Args)
@@ -8504,7 +11026,9 @@ void URemoteReducers::InsertVecEveryPrimitiveStruct(const TArray<FEveryPrimitive
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_every_primitive_struct"), FInsertVecEveryPrimitiveStructArgs(S), SetCallReducerFlags);
+	FInsertVecEveryPrimitiveStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_every_primitive_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecEveryPrimitiveStruct(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecEveryPrimitiveStruct(const FReducerEventContext& Context, const UInsertVecEveryPrimitiveStructReducer* Args)
@@ -8548,7 +11072,9 @@ void URemoteReducers::InsertVecEveryVecStruct(const TArray<FEveryVecStructType>&
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_every_vec_struct"), FInsertVecEveryVecStructArgs(S), SetCallReducerFlags);
+	FInsertVecEveryVecStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_every_vec_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecEveryVecStruct(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecEveryVecStruct(const FReducerEventContext& Context, const UInsertVecEveryVecStructReducer* Args)
@@ -8592,7 +11118,9 @@ void URemoteReducers::InsertVecF32(const TArray<float>& F)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_f32"), FInsertVecF32Args(F), SetCallReducerFlags);
+	FInsertVecF32Args ReducerArgs(F);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_f_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecF32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecF32(const FReducerEventContext& Context, const UInsertVecF32Reducer* Args)
@@ -8636,7 +11164,9 @@ void URemoteReducers::InsertVecF64(const TArray<double>& F)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_f64"), FInsertVecF64Args(F), SetCallReducerFlags);
+	FInsertVecF64Args ReducerArgs(F);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_f_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecF64(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecF64(const FReducerEventContext& Context, const UInsertVecF64Reducer* Args)
@@ -8680,7 +11210,9 @@ void URemoteReducers::InsertVecI128(const TArray<FSpacetimeDBInt128>& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_i128"), FInsertVecI128Args(N), SetCallReducerFlags);
+	FInsertVecI128Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_i_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecI128(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecI128(const FReducerEventContext& Context, const UInsertVecI128Reducer* Args)
@@ -8724,7 +11256,9 @@ void URemoteReducers::InsertVecI16(const TArray<int16>& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_i16"), FInsertVecI16Args(N), SetCallReducerFlags);
+	FInsertVecI16Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_i_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecI16(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecI16(const FReducerEventContext& Context, const UInsertVecI16Reducer* Args)
@@ -8768,7 +11302,9 @@ void URemoteReducers::InsertVecI256(const TArray<FSpacetimeDBInt256>& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_i256"), FInsertVecI256Args(N), SetCallReducerFlags);
+	FInsertVecI256Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_i_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecI256(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecI256(const FReducerEventContext& Context, const UInsertVecI256Reducer* Args)
@@ -8812,7 +11348,9 @@ void URemoteReducers::InsertVecI32(const TArray<int32>& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_i32"), FInsertVecI32Args(N), SetCallReducerFlags);
+	FInsertVecI32Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecI32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecI32(const FReducerEventContext& Context, const UInsertVecI32Reducer* Args)
@@ -8856,7 +11394,9 @@ void URemoteReducers::InsertVecI64(const TArray<int64>& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_i64"), FInsertVecI64Args(N), SetCallReducerFlags);
+	FInsertVecI64Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_i_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecI64(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecI64(const FReducerEventContext& Context, const UInsertVecI64Reducer* Args)
@@ -8900,7 +11440,9 @@ void URemoteReducers::InsertVecI8(const TArray<int8>& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_i8"), FInsertVecI8Args(N), SetCallReducerFlags);
+	FInsertVecI8Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_i_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecI8(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecI8(const FReducerEventContext& Context, const UInsertVecI8Reducer* Args)
@@ -8944,7 +11486,9 @@ void URemoteReducers::InsertVecIdentity(const TArray<FSpacetimeDBIdentity>& I)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_identity"), FInsertVecIdentityArgs(I), SetCallReducerFlags);
+	FInsertVecIdentityArgs ReducerArgs(I);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecIdentity(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecIdentity(const FReducerEventContext& Context, const UInsertVecIdentityReducer* Args)
@@ -8988,7 +11532,9 @@ void URemoteReducers::InsertVecSimpleEnum(const TArray<ESimpleEnumType>& E)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_simple_enum"), FInsertVecSimpleEnumArgs(E), SetCallReducerFlags);
+	FInsertVecSimpleEnumArgs ReducerArgs(E);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_simple_enum"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecSimpleEnum(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecSimpleEnum(const FReducerEventContext& Context, const UInsertVecSimpleEnumReducer* Args)
@@ -9032,7 +11578,9 @@ void URemoteReducers::InsertVecString(const TArray<FString>& S)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_string"), FInsertVecStringArgs(S), SetCallReducerFlags);
+	FInsertVecStringArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecString(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecString(const FReducerEventContext& Context, const UInsertVecStringReducer* Args)
@@ -9076,7 +11624,9 @@ void URemoteReducers::InsertVecTimestamp(const TArray<FSpacetimeDBTimestamp>& T)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_timestamp"), FInsertVecTimestampArgs(T), SetCallReducerFlags);
+	FInsertVecTimestampArgs ReducerArgs(T);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_timestamp"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecTimestamp(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecTimestamp(const FReducerEventContext& Context, const UInsertVecTimestampReducer* Args)
@@ -9120,7 +11670,9 @@ void URemoteReducers::InsertVecU128(const TArray<FSpacetimeDBUInt128>& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_u128"), FInsertVecU128Args(N), SetCallReducerFlags);
+	FInsertVecU128Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_u_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecU128(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecU128(const FReducerEventContext& Context, const UInsertVecU128Reducer* Args)
@@ -9164,7 +11716,9 @@ void URemoteReducers::InsertVecU16(const TArray<uint16>& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_u16"), FInsertVecU16Args(N), SetCallReducerFlags);
+	FInsertVecU16Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_u_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecU16(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecU16(const FReducerEventContext& Context, const UInsertVecU16Reducer* Args)
@@ -9208,7 +11762,9 @@ void URemoteReducers::InsertVecU256(const TArray<FSpacetimeDBUInt256>& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_u256"), FInsertVecU256Args(N), SetCallReducerFlags);
+	FInsertVecU256Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_u_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecU256(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecU256(const FReducerEventContext& Context, const UInsertVecU256Reducer* Args)
@@ -9252,7 +11808,9 @@ void URemoteReducers::InsertVecU32(const TArray<uint32>& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_u32"), FInsertVecU32Args(N), SetCallReducerFlags);
+	FInsertVecU32Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_u_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecU32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecU32(const FReducerEventContext& Context, const UInsertVecU32Reducer* Args)
@@ -9296,7 +11854,9 @@ void URemoteReducers::InsertVecU64(const TArray<uint64>& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_u64"), FInsertVecU64Args(N), SetCallReducerFlags);
+	FInsertVecU64Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_u_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecU64(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecU64(const FReducerEventContext& Context, const UInsertVecU64Reducer* Args)
@@ -9340,7 +11900,9 @@ void URemoteReducers::InsertVecU8(const TArray<uint8>& N)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_u8"), FInsertVecU8Args(N), SetCallReducerFlags);
+	FInsertVecU8Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_u_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecU8(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecU8(const FReducerEventContext& Context, const UInsertVecU8Reducer* Args)
@@ -9384,7 +11946,9 @@ void URemoteReducers::InsertVecUnitStruct(const TArray<FUnitStructType>& S)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_unit_struct"), FInsertVecUnitStructArgs(S), SetCallReducerFlags);
+	FInsertVecUnitStructArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_unit_struct"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecUnitStruct(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecUnitStruct(const FReducerEventContext& Context, const UInsertVecUnitStructReducer* Args)
@@ -9428,7 +11992,9 @@ void URemoteReducers::InsertVecUuid(const TArray<FSpacetimeDBUuid>& U)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("insert_vec_uuid"), FInsertVecUuidArgs(U), SetCallReducerFlags);
+	FInsertVecUuidArgs ReducerArgs(U);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_vec_uuid"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertVecUuid(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeInsertVecUuid(const FReducerEventContext& Context, const UInsertVecUuidReducer* Args)
@@ -9472,7 +12038,9 @@ void URemoteReducers::NoOpSucceeds()
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("no_op_succeeds"), FNoOpSucceedsArgs(), SetCallReducerFlags);
+	FNoOpSucceedsArgs ReducerArgs;
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("no_op_succeeds"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::NoOpSucceeds(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeNoOpSucceeds(const FReducerEventContext& Context, const UNoOpSucceedsReducer* Args)
@@ -9516,7 +12084,9 @@ void URemoteReducers::SortedUuidsInsert()
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("sorted_uuids_insert"), FSortedUuidsInsertArgs(), SetCallReducerFlags);
+	FSortedUuidsInsertArgs ReducerArgs;
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("sorted_uuids_insert"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::SortedUuidsInsert(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeSortedUuidsInsert(const FReducerEventContext& Context, const USortedUuidsInsertReducer* Args)
@@ -9560,7 +12130,9 @@ void URemoteReducers::UpdateIndexedSimpleEnum(const ESimpleEnumType& A, const ES
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_indexed_simple_enum"), FUpdateIndexedSimpleEnumArgs(A, B), SetCallReducerFlags);
+	FUpdateIndexedSimpleEnumArgs ReducerArgs(A, B);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_indexed_simple_enum"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateIndexedSimpleEnum(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdateIndexedSimpleEnum(const FReducerEventContext& Context, const UUpdateIndexedSimpleEnumReducer* Args)
@@ -9604,7 +12176,9 @@ void URemoteReducers::UpdatePkBool(const bool B, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_pk_bool"), FUpdatePkBoolArgs(B, Data), SetCallReducerFlags);
+	FUpdatePkBoolArgs ReducerArgs(B, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_pk_bool"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdatePkBool(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdatePkBool(const FReducerEventContext& Context, const UUpdatePkBoolReducer* Args)
@@ -9648,7 +12222,9 @@ void URemoteReducers::UpdatePkConnectionId(const FSpacetimeDBConnectionId& A, co
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_pk_connection_id"), FUpdatePkConnectionIdArgs(A, Data), SetCallReducerFlags);
+	FUpdatePkConnectionIdArgs ReducerArgs(A, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_pk_connection_id"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdatePkConnectionId(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdatePkConnectionId(const FReducerEventContext& Context, const UUpdatePkConnectionIdReducer* Args)
@@ -9692,7 +12268,9 @@ void URemoteReducers::UpdatePkI128(const FSpacetimeDBInt128& N, const int32 Data
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_pk_i128"), FUpdatePkI128Args(N, Data), SetCallReducerFlags);
+	FUpdatePkI128Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_pk_i_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdatePkI128(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdatePkI128(const FReducerEventContext& Context, const UUpdatePkI128Reducer* Args)
@@ -9736,7 +12314,9 @@ void URemoteReducers::UpdatePkI16(const int16 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_pk_i16"), FUpdatePkI16Args(N, Data), SetCallReducerFlags);
+	FUpdatePkI16Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_pk_i_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdatePkI16(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdatePkI16(const FReducerEventContext& Context, const UUpdatePkI16Reducer* Args)
@@ -9780,7 +12360,9 @@ void URemoteReducers::UpdatePkI256(const FSpacetimeDBInt256& N, const int32 Data
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_pk_i256"), FUpdatePkI256Args(N, Data), SetCallReducerFlags);
+	FUpdatePkI256Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_pk_i_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdatePkI256(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdatePkI256(const FReducerEventContext& Context, const UUpdatePkI256Reducer* Args)
@@ -9824,7 +12406,9 @@ void URemoteReducers::UpdatePkI32(const int32 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_pk_i32"), FUpdatePkI32Args(N, Data), SetCallReducerFlags);
+	FUpdatePkI32Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_pk_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdatePkI32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdatePkI32(const FReducerEventContext& Context, const UUpdatePkI32Reducer* Args)
@@ -9868,7 +12452,9 @@ void URemoteReducers::UpdatePkI64(const int64 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_pk_i64"), FUpdatePkI64Args(N, Data), SetCallReducerFlags);
+	FUpdatePkI64Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_pk_i_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdatePkI64(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdatePkI64(const FReducerEventContext& Context, const UUpdatePkI64Reducer* Args)
@@ -9912,7 +12498,9 @@ void URemoteReducers::UpdatePkI8(const int8 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_pk_i8"), FUpdatePkI8Args(N, Data), SetCallReducerFlags);
+	FUpdatePkI8Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_pk_i_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdatePkI8(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdatePkI8(const FReducerEventContext& Context, const UUpdatePkI8Reducer* Args)
@@ -9956,7 +12544,9 @@ void URemoteReducers::UpdatePkIdentity(const FSpacetimeDBIdentity& I, const int3
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_pk_identity"), FUpdatePkIdentityArgs(I, Data), SetCallReducerFlags);
+	FUpdatePkIdentityArgs ReducerArgs(I, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_pk_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdatePkIdentity(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdatePkIdentity(const FReducerEventContext& Context, const UUpdatePkIdentityReducer* Args)
@@ -10000,7 +12590,9 @@ void URemoteReducers::UpdatePkSimpleEnum(const ESimpleEnumType& A, const int32 D
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_pk_simple_enum"), FUpdatePkSimpleEnumArgs(A, Data), SetCallReducerFlags);
+	FUpdatePkSimpleEnumArgs ReducerArgs(A, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_pk_simple_enum"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdatePkSimpleEnum(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdatePkSimpleEnum(const FReducerEventContext& Context, const UUpdatePkSimpleEnumReducer* Args)
@@ -10044,7 +12636,9 @@ void URemoteReducers::UpdatePkString(const FString& S, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_pk_string"), FUpdatePkStringArgs(S, Data), SetCallReducerFlags);
+	FUpdatePkStringArgs ReducerArgs(S, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_pk_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdatePkString(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdatePkString(const FReducerEventContext& Context, const UUpdatePkStringReducer* Args)
@@ -10088,7 +12682,9 @@ void URemoteReducers::UpdatePkU128(const FSpacetimeDBUInt128& N, const int32 Dat
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_pk_u128"), FUpdatePkU128Args(N, Data), SetCallReducerFlags);
+	FUpdatePkU128Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_pk_u_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdatePkU128(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdatePkU128(const FReducerEventContext& Context, const UUpdatePkU128Reducer* Args)
@@ -10132,7 +12728,9 @@ void URemoteReducers::UpdatePkU16(const uint16 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_pk_u16"), FUpdatePkU16Args(N, Data), SetCallReducerFlags);
+	FUpdatePkU16Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_pk_u_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdatePkU16(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdatePkU16(const FReducerEventContext& Context, const UUpdatePkU16Reducer* Args)
@@ -10176,7 +12774,9 @@ void URemoteReducers::UpdatePkU256(const FSpacetimeDBUInt256& N, const int32 Dat
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_pk_u256"), FUpdatePkU256Args(N, Data), SetCallReducerFlags);
+	FUpdatePkU256Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_pk_u_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdatePkU256(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdatePkU256(const FReducerEventContext& Context, const UUpdatePkU256Reducer* Args)
@@ -10220,7 +12820,9 @@ void URemoteReducers::UpdatePkU32(const uint32 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_pk_u32"), FUpdatePkU32Args(N, Data), SetCallReducerFlags);
+	FUpdatePkU32Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_pk_u_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdatePkU32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdatePkU32(const FReducerEventContext& Context, const UUpdatePkU32Reducer* Args)
@@ -10264,7 +12866,9 @@ void URemoteReducers::UpdatePkU32Two(const uint32 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_pk_u32_two"), FUpdatePkU32TwoArgs(N, Data), SetCallReducerFlags);
+	FUpdatePkU32TwoArgs ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_pk_u_32_two"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdatePkU32Two(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdatePkU32Two(const FReducerEventContext& Context, const UUpdatePkU32TwoReducer* Args)
@@ -10308,7 +12912,9 @@ void URemoteReducers::UpdatePkU64(const uint64 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_pk_u64"), FUpdatePkU64Args(N, Data), SetCallReducerFlags);
+	FUpdatePkU64Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_pk_u_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdatePkU64(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdatePkU64(const FReducerEventContext& Context, const UUpdatePkU64Reducer* Args)
@@ -10352,7 +12958,9 @@ void URemoteReducers::UpdatePkU8(const uint8 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_pk_u8"), FUpdatePkU8Args(N, Data), SetCallReducerFlags);
+	FUpdatePkU8Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_pk_u_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdatePkU8(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdatePkU8(const FReducerEventContext& Context, const UUpdatePkU8Reducer* Args)
@@ -10396,7 +13004,9 @@ void URemoteReducers::UpdatePkUuid(const FSpacetimeDBUuid& U, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_pk_uuid"), FUpdatePkUuidArgs(U, Data), SetCallReducerFlags);
+	FUpdatePkUuidArgs ReducerArgs(U, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_pk_uuid"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdatePkUuid(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdatePkUuid(const FReducerEventContext& Context, const UUpdatePkUuidReducer* Args)
@@ -10440,7 +13050,9 @@ void URemoteReducers::UpdateUniqueBool(const bool B, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_unique_bool"), FUpdateUniqueBoolArgs(B, Data), SetCallReducerFlags);
+	FUpdateUniqueBoolArgs ReducerArgs(B, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_bool"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueBool(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdateUniqueBool(const FReducerEventContext& Context, const UUpdateUniqueBoolReducer* Args)
@@ -10484,7 +13096,9 @@ void URemoteReducers::UpdateUniqueConnectionId(const FSpacetimeDBConnectionId& A
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_unique_connection_id"), FUpdateUniqueConnectionIdArgs(A, Data), SetCallReducerFlags);
+	FUpdateUniqueConnectionIdArgs ReducerArgs(A, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_connection_id"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueConnectionId(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdateUniqueConnectionId(const FReducerEventContext& Context, const UUpdateUniqueConnectionIdReducer* Args)
@@ -10528,7 +13142,9 @@ void URemoteReducers::UpdateUniqueI128(const FSpacetimeDBInt128& N, const int32 
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_unique_i128"), FUpdateUniqueI128Args(N, Data), SetCallReducerFlags);
+	FUpdateUniqueI128Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_i_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueI128(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdateUniqueI128(const FReducerEventContext& Context, const UUpdateUniqueI128Reducer* Args)
@@ -10572,7 +13188,9 @@ void URemoteReducers::UpdateUniqueI16(const int16 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_unique_i16"), FUpdateUniqueI16Args(N, Data), SetCallReducerFlags);
+	FUpdateUniqueI16Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_i_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueI16(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdateUniqueI16(const FReducerEventContext& Context, const UUpdateUniqueI16Reducer* Args)
@@ -10616,7 +13234,9 @@ void URemoteReducers::UpdateUniqueI256(const FSpacetimeDBInt256& N, const int32 
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_unique_i256"), FUpdateUniqueI256Args(N, Data), SetCallReducerFlags);
+	FUpdateUniqueI256Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_i_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueI256(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdateUniqueI256(const FReducerEventContext& Context, const UUpdateUniqueI256Reducer* Args)
@@ -10660,7 +13280,9 @@ void URemoteReducers::UpdateUniqueI32(const int32 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_unique_i32"), FUpdateUniqueI32Args(N, Data), SetCallReducerFlags);
+	FUpdateUniqueI32Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueI32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdateUniqueI32(const FReducerEventContext& Context, const UUpdateUniqueI32Reducer* Args)
@@ -10704,7 +13326,9 @@ void URemoteReducers::UpdateUniqueI64(const int64 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_unique_i64"), FUpdateUniqueI64Args(N, Data), SetCallReducerFlags);
+	FUpdateUniqueI64Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_i_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueI64(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdateUniqueI64(const FReducerEventContext& Context, const UUpdateUniqueI64Reducer* Args)
@@ -10748,7 +13372,9 @@ void URemoteReducers::UpdateUniqueI8(const int8 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_unique_i8"), FUpdateUniqueI8Args(N, Data), SetCallReducerFlags);
+	FUpdateUniqueI8Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_i_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueI8(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdateUniqueI8(const FReducerEventContext& Context, const UUpdateUniqueI8Reducer* Args)
@@ -10792,7 +13418,9 @@ void URemoteReducers::UpdateUniqueIdentity(const FSpacetimeDBIdentity& I, const 
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_unique_identity"), FUpdateUniqueIdentityArgs(I, Data), SetCallReducerFlags);
+	FUpdateUniqueIdentityArgs ReducerArgs(I, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueIdentity(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdateUniqueIdentity(const FReducerEventContext& Context, const UUpdateUniqueIdentityReducer* Args)
@@ -10836,7 +13464,9 @@ void URemoteReducers::UpdateUniqueString(const FString& S, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_unique_string"), FUpdateUniqueStringArgs(S, Data), SetCallReducerFlags);
+	FUpdateUniqueStringArgs ReducerArgs(S, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueString(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdateUniqueString(const FReducerEventContext& Context, const UUpdateUniqueStringReducer* Args)
@@ -10880,7 +13510,9 @@ void URemoteReducers::UpdateUniqueU128(const FSpacetimeDBUInt128& N, const int32
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_unique_u128"), FUpdateUniqueU128Args(N, Data), SetCallReducerFlags);
+	FUpdateUniqueU128Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_u_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueU128(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdateUniqueU128(const FReducerEventContext& Context, const UUpdateUniqueU128Reducer* Args)
@@ -10924,7 +13556,9 @@ void URemoteReducers::UpdateUniqueU16(const uint16 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_unique_u16"), FUpdateUniqueU16Args(N, Data), SetCallReducerFlags);
+	FUpdateUniqueU16Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_u_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueU16(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdateUniqueU16(const FReducerEventContext& Context, const UUpdateUniqueU16Reducer* Args)
@@ -10968,7 +13602,9 @@ void URemoteReducers::UpdateUniqueU256(const FSpacetimeDBUInt256& N, const int32
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_unique_u256"), FUpdateUniqueU256Args(N, Data), SetCallReducerFlags);
+	FUpdateUniqueU256Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_u_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueU256(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdateUniqueU256(const FReducerEventContext& Context, const UUpdateUniqueU256Reducer* Args)
@@ -11012,7 +13648,9 @@ void URemoteReducers::UpdateUniqueU32(const uint32 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_unique_u32"), FUpdateUniqueU32Args(N, Data), SetCallReducerFlags);
+	FUpdateUniqueU32Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_u_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueU32(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdateUniqueU32(const FReducerEventContext& Context, const UUpdateUniqueU32Reducer* Args)
@@ -11056,7 +13694,9 @@ void URemoteReducers::UpdateUniqueU64(const uint64 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_unique_u64"), FUpdateUniqueU64Args(N, Data), SetCallReducerFlags);
+	FUpdateUniqueU64Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_u_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueU64(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdateUniqueU64(const FReducerEventContext& Context, const UUpdateUniqueU64Reducer* Args)
@@ -11100,7 +13740,9 @@ void URemoteReducers::UpdateUniqueU8(const uint8 N, const int32 Data)
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_unique_u8"), FUpdateUniqueU8Args(N, Data), SetCallReducerFlags);
+	FUpdateUniqueU8Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_u_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueU8(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdateUniqueU8(const FReducerEventContext& Context, const UUpdateUniqueU8Reducer* Args)
@@ -11144,7 +13786,9 @@ void URemoteReducers::UpdateUniqueUuid(const FSpacetimeDBUuid& U, const int32 Da
         return;
     }
 
-	Conn->CallReducerTyped(TEXT("update_unique_uuid"), FUpdateUniqueUuidArgs(U, Data), SetCallReducerFlags);
+	FUpdateUniqueUuidArgs ReducerArgs(U, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_uuid"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueUuid(ReducerArgs)); }
 }
 
 bool URemoteReducers::InvokeUpdateUniqueUuid(const FReducerEventContext& Context, const UUpdateUniqueUuidReducer* Args)
@@ -11215,11 +13859,44 @@ void UDbConnection::OnUnhandledProcedureErrorHandler(const FProcedureEventContex
     }
 }
 
+void UDbConnection::RegisterPendingTypedReducer(uint32 RequestId, FReducer Reducer)
+{
+    Reducer.RequestId = RequestId;
+    PendingTypedReducers.Add(RequestId, MoveTemp(Reducer));
+}
+
+bool UDbConnection::TryGetPendingTypedReducer(uint32 RequestId, FReducer& OutReducer) const
+{
+    if (const FReducer* Found = PendingTypedReducers.Find(RequestId))
+    {
+        OutReducer = *Found;
+        return true;
+    }
+    return false;
+}
+
+bool UDbConnection::TryTakePendingTypedReducer(uint32 RequestId, FReducer& OutReducer)
+{
+    if (FReducer* Found = PendingTypedReducers.Find(RequestId))
+    {
+        OutReducer = *Found;
+        PendingTypedReducers.Remove(RequestId);
+        return true;
+    }
+    return false;
+}
+
 void UDbConnection::ReducerEvent(const FReducerEvent& Event)
 {
     if (!Reducers) { return; }
 
-    FReducer DecodedReducer = DecodeReducer(Event);
+    FReducer DecodedReducer;
+    if (!TryTakePendingTypedReducer(Event.RequestId, DecodedReducer))
+    {
+        const FString ErrorMessage = FString::Printf(TEXT("Reducer result for unknown request_id %u"), Event.RequestId);
+        HandleProtocolViolation(ErrorMessage);
+        return;
+    }
 
     FTestClientReducerEvent ReducerEvent;
     ReducerEvent.CallerConnectionId = Event.CallerConnectionId;
@@ -11231,10 +13908,562 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
 
     FReducerEventContext Context(this, ReducerEvent);
 
-    // Use hardcoded string matching for reducer dispatching
-    const FString& ReducerName = Event.ReducerCall.ReducerName;
+    // Dispatch by typed reducer metadata
+    const FString& ReducerName = ReducerEvent.Reducer.ReducerName;
 
-    if (ReducerName == TEXT("delete_from_btree_u32"))
+    if (ReducerName == TEXT("delete_all_one_bool"))
+    {
+        FDeleteAllOneBoolArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOneBool();
+        Reducers->InvokeDeleteAllOneBoolWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_byte_struct"))
+    {
+        FDeleteAllOneByteStructArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOneByteStruct();
+        Reducers->InvokeDeleteAllOneByteStructWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_enum_with_payload"))
+    {
+        FDeleteAllOneEnumWithPayloadArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOneEnumWithPayload();
+        Reducers->InvokeDeleteAllOneEnumWithPayloadWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_every_primitive_struct"))
+    {
+        FDeleteAllOneEveryPrimitiveStructArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOneEveryPrimitiveStruct();
+        Reducers->InvokeDeleteAllOneEveryPrimitiveStructWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_every_vec_struct"))
+    {
+        FDeleteAllOneEveryVecStructArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOneEveryVecStruct();
+        Reducers->InvokeDeleteAllOneEveryVecStructWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_f_32"))
+    {
+        FDeleteAllOneF32Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneF32();
+        Reducers->InvokeDeleteAllOneF32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_f_64"))
+    {
+        FDeleteAllOneF64Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneF64();
+        Reducers->InvokeDeleteAllOneF64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_i_128"))
+    {
+        FDeleteAllOneI128Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneI128();
+        Reducers->InvokeDeleteAllOneI128WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_i_16"))
+    {
+        FDeleteAllOneI16Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneI16();
+        Reducers->InvokeDeleteAllOneI16WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_i_256"))
+    {
+        FDeleteAllOneI256Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneI256();
+        Reducers->InvokeDeleteAllOneI256WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_i_32"))
+    {
+        FDeleteAllOneI32Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneI32();
+        Reducers->InvokeDeleteAllOneI32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_i_64"))
+    {
+        FDeleteAllOneI64Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneI64();
+        Reducers->InvokeDeleteAllOneI64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_i_8"))
+    {
+        FDeleteAllOneI8Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneI8();
+        Reducers->InvokeDeleteAllOneI8WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_identity"))
+    {
+        FDeleteAllOneIdentityArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOneIdentity();
+        Reducers->InvokeDeleteAllOneIdentityWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_simple_enum"))
+    {
+        FDeleteAllOneSimpleEnumArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOneSimpleEnum();
+        Reducers->InvokeDeleteAllOneSimpleEnumWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_string"))
+    {
+        FDeleteAllOneStringArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOneString();
+        Reducers->InvokeDeleteAllOneStringWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_timestamp"))
+    {
+        FDeleteAllOneTimestampArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOneTimestamp();
+        Reducers->InvokeDeleteAllOneTimestampWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_u_128"))
+    {
+        FDeleteAllOneU128Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneU128();
+        Reducers->InvokeDeleteAllOneU128WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_u_16"))
+    {
+        FDeleteAllOneU16Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneU16();
+        Reducers->InvokeDeleteAllOneU16WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_u_256"))
+    {
+        FDeleteAllOneU256Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneU256();
+        Reducers->InvokeDeleteAllOneU256WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_u_32"))
+    {
+        FDeleteAllOneU32Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneU32();
+        Reducers->InvokeDeleteAllOneU32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_u_64"))
+    {
+        FDeleteAllOneU64Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneU64();
+        Reducers->InvokeDeleteAllOneU64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_u_8"))
+    {
+        FDeleteAllOneU8Args Args = ReducerEvent.Reducer.GetAsDeleteAllOneU8();
+        Reducers->InvokeDeleteAllOneU8WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_unit_struct"))
+    {
+        FDeleteAllOneUnitStructArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOneUnitStruct();
+        Reducers->InvokeDeleteAllOneUnitStructWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_one_uuid"))
+    {
+        FDeleteAllOneUuidArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOneUuid();
+        Reducers->InvokeDeleteAllOneUuidWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_option_every_primitive_struct"))
+    {
+        FDeleteAllOptionEveryPrimitiveStructArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOptionEveryPrimitiveStruct();
+        Reducers->InvokeDeleteAllOptionEveryPrimitiveStructWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_option_i_32"))
+    {
+        FDeleteAllOptionI32Args Args = ReducerEvent.Reducer.GetAsDeleteAllOptionI32();
+        Reducers->InvokeDeleteAllOptionI32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_option_identity"))
+    {
+        FDeleteAllOptionIdentityArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOptionIdentity();
+        Reducers->InvokeDeleteAllOptionIdentityWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_option_simple_enum"))
+    {
+        FDeleteAllOptionSimpleEnumArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOptionSimpleEnum();
+        Reducers->InvokeDeleteAllOptionSimpleEnumWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_option_string"))
+    {
+        FDeleteAllOptionStringArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOptionString();
+        Reducers->InvokeDeleteAllOptionStringWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_option_uuid"))
+    {
+        FDeleteAllOptionUuidArgs Args = ReducerEvent.Reducer.GetAsDeleteAllOptionUuid();
+        Reducers->InvokeDeleteAllOptionUuidWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_option_vec_option_i_32"))
+    {
+        FDeleteAllOptionVecOptionI32Args Args = ReducerEvent.Reducer.GetAsDeleteAllOptionVecOptionI32();
+        Reducers->InvokeDeleteAllOptionVecOptionI32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_bool"))
+    {
+        FDeleteAllPkBoolArgs Args = ReducerEvent.Reducer.GetAsDeleteAllPkBool();
+        Reducers->InvokeDeleteAllPkBoolWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_connection_id"))
+    {
+        FDeleteAllPkConnectionIdArgs Args = ReducerEvent.Reducer.GetAsDeleteAllPkConnectionId();
+        Reducers->InvokeDeleteAllPkConnectionIdWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_i_128"))
+    {
+        FDeleteAllPkI128Args Args = ReducerEvent.Reducer.GetAsDeleteAllPkI128();
+        Reducers->InvokeDeleteAllPkI128WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_i_16"))
+    {
+        FDeleteAllPkI16Args Args = ReducerEvent.Reducer.GetAsDeleteAllPkI16();
+        Reducers->InvokeDeleteAllPkI16WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_i_256"))
+    {
+        FDeleteAllPkI256Args Args = ReducerEvent.Reducer.GetAsDeleteAllPkI256();
+        Reducers->InvokeDeleteAllPkI256WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_i_32"))
+    {
+        FDeleteAllPkI32Args Args = ReducerEvent.Reducer.GetAsDeleteAllPkI32();
+        Reducers->InvokeDeleteAllPkI32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_i_64"))
+    {
+        FDeleteAllPkI64Args Args = ReducerEvent.Reducer.GetAsDeleteAllPkI64();
+        Reducers->InvokeDeleteAllPkI64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_i_8"))
+    {
+        FDeleteAllPkI8Args Args = ReducerEvent.Reducer.GetAsDeleteAllPkI8();
+        Reducers->InvokeDeleteAllPkI8WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_identity"))
+    {
+        FDeleteAllPkIdentityArgs Args = ReducerEvent.Reducer.GetAsDeleteAllPkIdentity();
+        Reducers->InvokeDeleteAllPkIdentityWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_string"))
+    {
+        FDeleteAllPkStringArgs Args = ReducerEvent.Reducer.GetAsDeleteAllPkString();
+        Reducers->InvokeDeleteAllPkStringWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_u_128"))
+    {
+        FDeleteAllPkU128Args Args = ReducerEvent.Reducer.GetAsDeleteAllPkU128();
+        Reducers->InvokeDeleteAllPkU128WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_u_16"))
+    {
+        FDeleteAllPkU16Args Args = ReducerEvent.Reducer.GetAsDeleteAllPkU16();
+        Reducers->InvokeDeleteAllPkU16WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_u_256"))
+    {
+        FDeleteAllPkU256Args Args = ReducerEvent.Reducer.GetAsDeleteAllPkU256();
+        Reducers->InvokeDeleteAllPkU256WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_u_32"))
+    {
+        FDeleteAllPkU32Args Args = ReducerEvent.Reducer.GetAsDeleteAllPkU32();
+        Reducers->InvokeDeleteAllPkU32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_u_32_two"))
+    {
+        FDeleteAllPkU32TwoArgs Args = ReducerEvent.Reducer.GetAsDeleteAllPkU32Two();
+        Reducers->InvokeDeleteAllPkU32TwoWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_u_64"))
+    {
+        FDeleteAllPkU64Args Args = ReducerEvent.Reducer.GetAsDeleteAllPkU64();
+        Reducers->InvokeDeleteAllPkU64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_u_8"))
+    {
+        FDeleteAllPkU8Args Args = ReducerEvent.Reducer.GetAsDeleteAllPkU8();
+        Reducers->InvokeDeleteAllPkU8WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_pk_uuid"))
+    {
+        FDeleteAllPkUuidArgs Args = ReducerEvent.Reducer.GetAsDeleteAllPkUuid();
+        Reducers->InvokeDeleteAllPkUuidWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_bool"))
+    {
+        FDeleteAllUniqueBoolArgs Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueBool();
+        Reducers->InvokeDeleteAllUniqueBoolWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_connection_id"))
+    {
+        FDeleteAllUniqueConnectionIdArgs Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueConnectionId();
+        Reducers->InvokeDeleteAllUniqueConnectionIdWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_i_128"))
+    {
+        FDeleteAllUniqueI128Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueI128();
+        Reducers->InvokeDeleteAllUniqueI128WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_i_16"))
+    {
+        FDeleteAllUniqueI16Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueI16();
+        Reducers->InvokeDeleteAllUniqueI16WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_i_256"))
+    {
+        FDeleteAllUniqueI256Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueI256();
+        Reducers->InvokeDeleteAllUniqueI256WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_i_32"))
+    {
+        FDeleteAllUniqueI32Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueI32();
+        Reducers->InvokeDeleteAllUniqueI32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_i_64"))
+    {
+        FDeleteAllUniqueI64Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueI64();
+        Reducers->InvokeDeleteAllUniqueI64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_i_8"))
+    {
+        FDeleteAllUniqueI8Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueI8();
+        Reducers->InvokeDeleteAllUniqueI8WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_identity"))
+    {
+        FDeleteAllUniqueIdentityArgs Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueIdentity();
+        Reducers->InvokeDeleteAllUniqueIdentityWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_string"))
+    {
+        FDeleteAllUniqueStringArgs Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueString();
+        Reducers->InvokeDeleteAllUniqueStringWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_u_128"))
+    {
+        FDeleteAllUniqueU128Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueU128();
+        Reducers->InvokeDeleteAllUniqueU128WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_u_16"))
+    {
+        FDeleteAllUniqueU16Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueU16();
+        Reducers->InvokeDeleteAllUniqueU16WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_u_256"))
+    {
+        FDeleteAllUniqueU256Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueU256();
+        Reducers->InvokeDeleteAllUniqueU256WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_u_32"))
+    {
+        FDeleteAllUniqueU32Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueU32();
+        Reducers->InvokeDeleteAllUniqueU32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_u_64"))
+    {
+        FDeleteAllUniqueU64Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueU64();
+        Reducers->InvokeDeleteAllUniqueU64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_u_8"))
+    {
+        FDeleteAllUniqueU8Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueU8();
+        Reducers->InvokeDeleteAllUniqueU8WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_uuid"))
+    {
+        FDeleteAllUniqueUuidArgs Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueUuid();
+        Reducers->InvokeDeleteAllUniqueUuidWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_bool"))
+    {
+        FDeleteAllVecBoolArgs Args = ReducerEvent.Reducer.GetAsDeleteAllVecBool();
+        Reducers->InvokeDeleteAllVecBoolWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_byte_struct"))
+    {
+        FDeleteAllVecByteStructArgs Args = ReducerEvent.Reducer.GetAsDeleteAllVecByteStruct();
+        Reducers->InvokeDeleteAllVecByteStructWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_enum_with_payload"))
+    {
+        FDeleteAllVecEnumWithPayloadArgs Args = ReducerEvent.Reducer.GetAsDeleteAllVecEnumWithPayload();
+        Reducers->InvokeDeleteAllVecEnumWithPayloadWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_every_primitive_struct"))
+    {
+        FDeleteAllVecEveryPrimitiveStructArgs Args = ReducerEvent.Reducer.GetAsDeleteAllVecEveryPrimitiveStruct();
+        Reducers->InvokeDeleteAllVecEveryPrimitiveStructWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_every_vec_struct"))
+    {
+        FDeleteAllVecEveryVecStructArgs Args = ReducerEvent.Reducer.GetAsDeleteAllVecEveryVecStruct();
+        Reducers->InvokeDeleteAllVecEveryVecStructWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_f_32"))
+    {
+        FDeleteAllVecF32Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecF32();
+        Reducers->InvokeDeleteAllVecF32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_f_64"))
+    {
+        FDeleteAllVecF64Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecF64();
+        Reducers->InvokeDeleteAllVecF64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_i_128"))
+    {
+        FDeleteAllVecI128Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecI128();
+        Reducers->InvokeDeleteAllVecI128WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_i_16"))
+    {
+        FDeleteAllVecI16Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecI16();
+        Reducers->InvokeDeleteAllVecI16WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_i_256"))
+    {
+        FDeleteAllVecI256Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecI256();
+        Reducers->InvokeDeleteAllVecI256WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_i_32"))
+    {
+        FDeleteAllVecI32Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecI32();
+        Reducers->InvokeDeleteAllVecI32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_i_64"))
+    {
+        FDeleteAllVecI64Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecI64();
+        Reducers->InvokeDeleteAllVecI64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_i_8"))
+    {
+        FDeleteAllVecI8Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecI8();
+        Reducers->InvokeDeleteAllVecI8WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_identity"))
+    {
+        FDeleteAllVecIdentityArgs Args = ReducerEvent.Reducer.GetAsDeleteAllVecIdentity();
+        Reducers->InvokeDeleteAllVecIdentityWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_simple_enum"))
+    {
+        FDeleteAllVecSimpleEnumArgs Args = ReducerEvent.Reducer.GetAsDeleteAllVecSimpleEnum();
+        Reducers->InvokeDeleteAllVecSimpleEnumWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_string"))
+    {
+        FDeleteAllVecStringArgs Args = ReducerEvent.Reducer.GetAsDeleteAllVecString();
+        Reducers->InvokeDeleteAllVecStringWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_timestamp"))
+    {
+        FDeleteAllVecTimestampArgs Args = ReducerEvent.Reducer.GetAsDeleteAllVecTimestamp();
+        Reducers->InvokeDeleteAllVecTimestampWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_u_128"))
+    {
+        FDeleteAllVecU128Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecU128();
+        Reducers->InvokeDeleteAllVecU128WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_u_16"))
+    {
+        FDeleteAllVecU16Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecU16();
+        Reducers->InvokeDeleteAllVecU16WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_u_256"))
+    {
+        FDeleteAllVecU256Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecU256();
+        Reducers->InvokeDeleteAllVecU256WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_u_32"))
+    {
+        FDeleteAllVecU32Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecU32();
+        Reducers->InvokeDeleteAllVecU32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_u_64"))
+    {
+        FDeleteAllVecU64Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecU64();
+        Reducers->InvokeDeleteAllVecU64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_u_8"))
+    {
+        FDeleteAllVecU8Args Args = ReducerEvent.Reducer.GetAsDeleteAllVecU8();
+        Reducers->InvokeDeleteAllVecU8WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_unit_struct"))
+    {
+        FDeleteAllVecUnitStructArgs Args = ReducerEvent.Reducer.GetAsDeleteAllVecUnitStruct();
+        Reducers->InvokeDeleteAllVecUnitStructWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_vec_uuid"))
+    {
+        FDeleteAllVecUuidArgs Args = ReducerEvent.Reducer.GetAsDeleteAllVecUuid();
+        Reducers->InvokeDeleteAllVecUuidWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_from_btree_u_32"))
     {
         FDeleteFromBtreeU32Args Args = ReducerEvent.Reducer.GetAsDeleteFromBtreeU32();
         Reducers->InvokeDeleteFromBtreeU32WithArgs(Context, Args);
@@ -11258,37 +14487,37 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeDeletePkConnectionIdWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_pk_i128"))
+    if (ReducerName == TEXT("delete_pk_i_128"))
     {
         FDeletePkI128Args Args = ReducerEvent.Reducer.GetAsDeletePkI128();
         Reducers->InvokeDeletePkI128WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_pk_i16"))
+    if (ReducerName == TEXT("delete_pk_i_16"))
     {
         FDeletePkI16Args Args = ReducerEvent.Reducer.GetAsDeletePkI16();
         Reducers->InvokeDeletePkI16WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_pk_i256"))
+    if (ReducerName == TEXT("delete_pk_i_256"))
     {
         FDeletePkI256Args Args = ReducerEvent.Reducer.GetAsDeletePkI256();
         Reducers->InvokeDeletePkI256WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_pk_i32"))
+    if (ReducerName == TEXT("delete_pk_i_32"))
     {
         FDeletePkI32Args Args = ReducerEvent.Reducer.GetAsDeletePkI32();
         Reducers->InvokeDeletePkI32WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_pk_i64"))
+    if (ReducerName == TEXT("delete_pk_i_64"))
     {
         FDeletePkI64Args Args = ReducerEvent.Reducer.GetAsDeletePkI64();
         Reducers->InvokeDeletePkI64WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_pk_i8"))
+    if (ReducerName == TEXT("delete_pk_i_8"))
     {
         FDeletePkI8Args Args = ReducerEvent.Reducer.GetAsDeletePkI8();
         Reducers->InvokeDeletePkI8WithArgs(Context, Args);
@@ -11306,49 +14535,49 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeDeletePkStringWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_pk_u128"))
+    if (ReducerName == TEXT("delete_pk_u_128"))
     {
         FDeletePkU128Args Args = ReducerEvent.Reducer.GetAsDeletePkU128();
         Reducers->InvokeDeletePkU128WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_pk_u16"))
+    if (ReducerName == TEXT("delete_pk_u_16"))
     {
         FDeletePkU16Args Args = ReducerEvent.Reducer.GetAsDeletePkU16();
         Reducers->InvokeDeletePkU16WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_pk_u256"))
+    if (ReducerName == TEXT("delete_pk_u_256"))
     {
         FDeletePkU256Args Args = ReducerEvent.Reducer.GetAsDeletePkU256();
         Reducers->InvokeDeletePkU256WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_pk_u32"))
+    if (ReducerName == TEXT("delete_pk_u_32"))
     {
         FDeletePkU32Args Args = ReducerEvent.Reducer.GetAsDeletePkU32();
         Reducers->InvokeDeletePkU32WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_pk_u32_insert_pk_u32_two"))
+    if (ReducerName == TEXT("delete_pk_u_32_insert_pk_u_32_two"))
     {
         FDeletePkU32InsertPkU32TwoArgs Args = ReducerEvent.Reducer.GetAsDeletePkU32InsertPkU32Two();
         Reducers->InvokeDeletePkU32InsertPkU32TwoWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_pk_u32_two"))
+    if (ReducerName == TEXT("delete_pk_u_32_two"))
     {
         FDeletePkU32TwoArgs Args = ReducerEvent.Reducer.GetAsDeletePkU32Two();
         Reducers->InvokeDeletePkU32TwoWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_pk_u64"))
+    if (ReducerName == TEXT("delete_pk_u_64"))
     {
         FDeletePkU64Args Args = ReducerEvent.Reducer.GetAsDeletePkU64();
         Reducers->InvokeDeletePkU64WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_pk_u8"))
+    if (ReducerName == TEXT("delete_pk_u_8"))
     {
         FDeletePkU8Args Args = ReducerEvent.Reducer.GetAsDeletePkU8();
         Reducers->InvokeDeletePkU8WithArgs(Context, Args);
@@ -11372,37 +14601,37 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeDeleteUniqueConnectionIdWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_unique_i128"))
+    if (ReducerName == TEXT("delete_unique_i_128"))
     {
         FDeleteUniqueI128Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueI128();
         Reducers->InvokeDeleteUniqueI128WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_unique_i16"))
+    if (ReducerName == TEXT("delete_unique_i_16"))
     {
         FDeleteUniqueI16Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueI16();
         Reducers->InvokeDeleteUniqueI16WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_unique_i256"))
+    if (ReducerName == TEXT("delete_unique_i_256"))
     {
         FDeleteUniqueI256Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueI256();
         Reducers->InvokeDeleteUniqueI256WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_unique_i32"))
+    if (ReducerName == TEXT("delete_unique_i_32"))
     {
         FDeleteUniqueI32Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueI32();
         Reducers->InvokeDeleteUniqueI32WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_unique_i64"))
+    if (ReducerName == TEXT("delete_unique_i_64"))
     {
         FDeleteUniqueI64Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueI64();
         Reducers->InvokeDeleteUniqueI64WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_unique_i8"))
+    if (ReducerName == TEXT("delete_unique_i_8"))
     {
         FDeleteUniqueI8Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueI8();
         Reducers->InvokeDeleteUniqueI8WithArgs(Context, Args);
@@ -11420,37 +14649,37 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeDeleteUniqueStringWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_unique_u128"))
+    if (ReducerName == TEXT("delete_unique_u_128"))
     {
         FDeleteUniqueU128Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueU128();
         Reducers->InvokeDeleteUniqueU128WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_unique_u16"))
+    if (ReducerName == TEXT("delete_unique_u_16"))
     {
         FDeleteUniqueU16Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueU16();
         Reducers->InvokeDeleteUniqueU16WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_unique_u256"))
+    if (ReducerName == TEXT("delete_unique_u_256"))
     {
         FDeleteUniqueU256Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueU256();
         Reducers->InvokeDeleteUniqueU256WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_unique_u32"))
+    if (ReducerName == TEXT("delete_unique_u_32"))
     {
         FDeleteUniqueU32Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueU32();
         Reducers->InvokeDeleteUniqueU32WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_unique_u64"))
+    if (ReducerName == TEXT("delete_unique_u_64"))
     {
         FDeleteUniqueU64Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueU64();
         Reducers->InvokeDeleteUniqueU64WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("delete_unique_u8"))
+    if (ReducerName == TEXT("delete_unique_u_8"))
     {
         FDeleteUniqueU8Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueU8();
         Reducers->InvokeDeleteUniqueU8WithArgs(Context, Args);
@@ -11468,13 +14697,13 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeInsertCallTimestampWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_call_uuid_v4"))
+    if (ReducerName == TEXT("insert_call_uuid_v_4"))
     {
         FInsertCallUuidV4Args Args = ReducerEvent.Reducer.GetAsInsertCallUuidV4();
         Reducers->InvokeInsertCallUuidV4WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_call_uuid_v7"))
+    if (ReducerName == TEXT("insert_call_uuid_v_7"))
     {
         FInsertCallUuidV7Args Args = ReducerEvent.Reducer.GetAsInsertCallUuidV7();
         Reducers->InvokeInsertCallUuidV7WithArgs(Context, Args);
@@ -11528,7 +14757,7 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeInsertCallerVecIdentityWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_into_btree_u32"))
+    if (ReducerName == TEXT("insert_into_btree_u_32"))
     {
         FInsertIntoBtreeU32Args Args = ReducerEvent.Reducer.GetAsInsertIntoBtreeU32();
         Reducers->InvokeInsertIntoBtreeU32WithArgs(Context, Args);
@@ -11540,7 +14769,7 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeInsertIntoIndexedSimpleEnumWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_into_pk_btree_u32"))
+    if (ReducerName == TEXT("insert_into_pk_btree_u_32"))
     {
         FInsertIntoPkBtreeU32Args Args = ReducerEvent.Reducer.GetAsInsertIntoPkBtreeU32();
         Reducers->InvokeInsertIntoPkBtreeU32WithArgs(Context, Args);
@@ -11588,49 +14817,49 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeInsertOneEveryVecStructWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_one_f32"))
+    if (ReducerName == TEXT("insert_one_f_32"))
     {
         FInsertOneF32Args Args = ReducerEvent.Reducer.GetAsInsertOneF32();
         Reducers->InvokeInsertOneF32WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_one_f64"))
+    if (ReducerName == TEXT("insert_one_f_64"))
     {
         FInsertOneF64Args Args = ReducerEvent.Reducer.GetAsInsertOneF64();
         Reducers->InvokeInsertOneF64WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_one_i128"))
+    if (ReducerName == TEXT("insert_one_i_128"))
     {
         FInsertOneI128Args Args = ReducerEvent.Reducer.GetAsInsertOneI128();
         Reducers->InvokeInsertOneI128WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_one_i16"))
+    if (ReducerName == TEXT("insert_one_i_16"))
     {
         FInsertOneI16Args Args = ReducerEvent.Reducer.GetAsInsertOneI16();
         Reducers->InvokeInsertOneI16WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_one_i256"))
+    if (ReducerName == TEXT("insert_one_i_256"))
     {
         FInsertOneI256Args Args = ReducerEvent.Reducer.GetAsInsertOneI256();
         Reducers->InvokeInsertOneI256WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_one_i32"))
+    if (ReducerName == TEXT("insert_one_i_32"))
     {
         FInsertOneI32Args Args = ReducerEvent.Reducer.GetAsInsertOneI32();
         Reducers->InvokeInsertOneI32WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_one_i64"))
+    if (ReducerName == TEXT("insert_one_i_64"))
     {
         FInsertOneI64Args Args = ReducerEvent.Reducer.GetAsInsertOneI64();
         Reducers->InvokeInsertOneI64WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_one_i8"))
+    if (ReducerName == TEXT("insert_one_i_8"))
     {
         FInsertOneI8Args Args = ReducerEvent.Reducer.GetAsInsertOneI8();
         Reducers->InvokeInsertOneI8WithArgs(Context, Args);
@@ -11660,37 +14889,37 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeInsertOneTimestampWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_one_u128"))
+    if (ReducerName == TEXT("insert_one_u_128"))
     {
         FInsertOneU128Args Args = ReducerEvent.Reducer.GetAsInsertOneU128();
         Reducers->InvokeInsertOneU128WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_one_u16"))
+    if (ReducerName == TEXT("insert_one_u_16"))
     {
         FInsertOneU16Args Args = ReducerEvent.Reducer.GetAsInsertOneU16();
         Reducers->InvokeInsertOneU16WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_one_u256"))
+    if (ReducerName == TEXT("insert_one_u_256"))
     {
         FInsertOneU256Args Args = ReducerEvent.Reducer.GetAsInsertOneU256();
         Reducers->InvokeInsertOneU256WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_one_u32"))
+    if (ReducerName == TEXT("insert_one_u_32"))
     {
         FInsertOneU32Args Args = ReducerEvent.Reducer.GetAsInsertOneU32();
         Reducers->InvokeInsertOneU32WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_one_u64"))
+    if (ReducerName == TEXT("insert_one_u_64"))
     {
         FInsertOneU64Args Args = ReducerEvent.Reducer.GetAsInsertOneU64();
         Reducers->InvokeInsertOneU64WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_one_u8"))
+    if (ReducerName == TEXT("insert_one_u_8"))
     {
         FInsertOneU8Args Args = ReducerEvent.Reducer.GetAsInsertOneU8();
         Reducers->InvokeInsertOneU8WithArgs(Context, Args);
@@ -11714,7 +14943,7 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeInsertOptionEveryPrimitiveStructWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_option_i32"))
+    if (ReducerName == TEXT("insert_option_i_32"))
     {
         FInsertOptionI32Args Args = ReducerEvent.Reducer.GetAsInsertOptionI32();
         Reducers->InvokeInsertOptionI32WithArgs(Context, Args);
@@ -11744,7 +14973,7 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeInsertOptionUuidWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_option_vec_option_i32"))
+    if (ReducerName == TEXT("insert_option_vec_option_i_32"))
     {
         FInsertOptionVecOptionI32Args Args = ReducerEvent.Reducer.GetAsInsertOptionVecOptionI32();
         Reducers->InvokeInsertOptionVecOptionI32WithArgs(Context, Args);
@@ -11762,37 +14991,37 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeInsertPkConnectionIdWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_pk_i128"))
+    if (ReducerName == TEXT("insert_pk_i_128"))
     {
         FInsertPkI128Args Args = ReducerEvent.Reducer.GetAsInsertPkI128();
         Reducers->InvokeInsertPkI128WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_pk_i16"))
+    if (ReducerName == TEXT("insert_pk_i_16"))
     {
         FInsertPkI16Args Args = ReducerEvent.Reducer.GetAsInsertPkI16();
         Reducers->InvokeInsertPkI16WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_pk_i256"))
+    if (ReducerName == TEXT("insert_pk_i_256"))
     {
         FInsertPkI256Args Args = ReducerEvent.Reducer.GetAsInsertPkI256();
         Reducers->InvokeInsertPkI256WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_pk_i32"))
+    if (ReducerName == TEXT("insert_pk_i_32"))
     {
         FInsertPkI32Args Args = ReducerEvent.Reducer.GetAsInsertPkI32();
         Reducers->InvokeInsertPkI32WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_pk_i64"))
+    if (ReducerName == TEXT("insert_pk_i_64"))
     {
         FInsertPkI64Args Args = ReducerEvent.Reducer.GetAsInsertPkI64();
         Reducers->InvokeInsertPkI64WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_pk_i8"))
+    if (ReducerName == TEXT("insert_pk_i_8"))
     {
         FInsertPkI8Args Args = ReducerEvent.Reducer.GetAsInsertPkI8();
         Reducers->InvokeInsertPkI8WithArgs(Context, Args);
@@ -11816,43 +15045,43 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeInsertPkStringWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_pk_u128"))
+    if (ReducerName == TEXT("insert_pk_u_128"))
     {
         FInsertPkU128Args Args = ReducerEvent.Reducer.GetAsInsertPkU128();
         Reducers->InvokeInsertPkU128WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_pk_u16"))
+    if (ReducerName == TEXT("insert_pk_u_16"))
     {
         FInsertPkU16Args Args = ReducerEvent.Reducer.GetAsInsertPkU16();
         Reducers->InvokeInsertPkU16WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_pk_u256"))
+    if (ReducerName == TEXT("insert_pk_u_256"))
     {
         FInsertPkU256Args Args = ReducerEvent.Reducer.GetAsInsertPkU256();
         Reducers->InvokeInsertPkU256WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_pk_u32"))
+    if (ReducerName == TEXT("insert_pk_u_32"))
     {
         FInsertPkU32Args Args = ReducerEvent.Reducer.GetAsInsertPkU32();
         Reducers->InvokeInsertPkU32WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_pk_u32_two"))
+    if (ReducerName == TEXT("insert_pk_u_32_two"))
     {
         FInsertPkU32TwoArgs Args = ReducerEvent.Reducer.GetAsInsertPkU32Two();
         Reducers->InvokeInsertPkU32TwoWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_pk_u64"))
+    if (ReducerName == TEXT("insert_pk_u_64"))
     {
         FInsertPkU64Args Args = ReducerEvent.Reducer.GetAsInsertPkU64();
         Reducers->InvokeInsertPkU64WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_pk_u8"))
+    if (ReducerName == TEXT("insert_pk_u_8"))
     {
         FInsertPkU8Args Args = ReducerEvent.Reducer.GetAsInsertPkU8();
         Reducers->InvokeInsertPkU8WithArgs(Context, Args);
@@ -11876,7 +15105,7 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeInsertResultEveryPrimitiveStructStringWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_result_i32_string"))
+    if (ReducerName == TEXT("insert_result_i_32_string"))
     {
         FInsertResultI32StringArgs Args = ReducerEvent.Reducer.GetAsInsertResultI32String();
         Reducers->InvokeInsertResultI32StringWithArgs(Context, Args);
@@ -11888,19 +15117,19 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeInsertResultIdentityStringWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_result_simple_enum_i32"))
+    if (ReducerName == TEXT("insert_result_simple_enum_i_32"))
     {
         FInsertResultSimpleEnumI32Args Args = ReducerEvent.Reducer.GetAsInsertResultSimpleEnumI32();
         Reducers->InvokeInsertResultSimpleEnumI32WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_result_string_i32"))
+    if (ReducerName == TEXT("insert_result_string_i_32"))
     {
         FInsertResultStringI32Args Args = ReducerEvent.Reducer.GetAsInsertResultStringI32();
         Reducers->InvokeInsertResultStringI32WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_result_vec_i32_string"))
+    if (ReducerName == TEXT("insert_result_vec_i_32_string"))
     {
         FInsertResultVecI32StringArgs Args = ReducerEvent.Reducer.GetAsInsertResultVecI32String();
         Reducers->InvokeInsertResultVecI32StringWithArgs(Context, Args);
@@ -11924,37 +15153,37 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeInsertUniqueConnectionIdWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_unique_i128"))
+    if (ReducerName == TEXT("insert_unique_i_128"))
     {
         FInsertUniqueI128Args Args = ReducerEvent.Reducer.GetAsInsertUniqueI128();
         Reducers->InvokeInsertUniqueI128WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_unique_i16"))
+    if (ReducerName == TEXT("insert_unique_i_16"))
     {
         FInsertUniqueI16Args Args = ReducerEvent.Reducer.GetAsInsertUniqueI16();
         Reducers->InvokeInsertUniqueI16WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_unique_i256"))
+    if (ReducerName == TEXT("insert_unique_i_256"))
     {
         FInsertUniqueI256Args Args = ReducerEvent.Reducer.GetAsInsertUniqueI256();
         Reducers->InvokeInsertUniqueI256WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_unique_i32"))
+    if (ReducerName == TEXT("insert_unique_i_32"))
     {
         FInsertUniqueI32Args Args = ReducerEvent.Reducer.GetAsInsertUniqueI32();
         Reducers->InvokeInsertUniqueI32WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_unique_i64"))
+    if (ReducerName == TEXT("insert_unique_i_64"))
     {
         FInsertUniqueI64Args Args = ReducerEvent.Reducer.GetAsInsertUniqueI64();
         Reducers->InvokeInsertUniqueI64WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_unique_i8"))
+    if (ReducerName == TEXT("insert_unique_i_8"))
     {
         FInsertUniqueI8Args Args = ReducerEvent.Reducer.GetAsInsertUniqueI8();
         Reducers->InvokeInsertUniqueI8WithArgs(Context, Args);
@@ -11972,43 +15201,43 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeInsertUniqueStringWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_unique_u128"))
+    if (ReducerName == TEXT("insert_unique_u_128"))
     {
         FInsertUniqueU128Args Args = ReducerEvent.Reducer.GetAsInsertUniqueU128();
         Reducers->InvokeInsertUniqueU128WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_unique_u16"))
+    if (ReducerName == TEXT("insert_unique_u_16"))
     {
         FInsertUniqueU16Args Args = ReducerEvent.Reducer.GetAsInsertUniqueU16();
         Reducers->InvokeInsertUniqueU16WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_unique_u256"))
+    if (ReducerName == TEXT("insert_unique_u_256"))
     {
         FInsertUniqueU256Args Args = ReducerEvent.Reducer.GetAsInsertUniqueU256();
         Reducers->InvokeInsertUniqueU256WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_unique_u32"))
+    if (ReducerName == TEXT("insert_unique_u_32"))
     {
         FInsertUniqueU32Args Args = ReducerEvent.Reducer.GetAsInsertUniqueU32();
         Reducers->InvokeInsertUniqueU32WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_unique_u32_update_pk_u32"))
+    if (ReducerName == TEXT("insert_unique_u_32_update_pk_u_32"))
     {
         FInsertUniqueU32UpdatePkU32Args Args = ReducerEvent.Reducer.GetAsInsertUniqueU32UpdatePkU32();
         Reducers->InvokeInsertUniqueU32UpdatePkU32WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_unique_u64"))
+    if (ReducerName == TEXT("insert_unique_u_64"))
     {
         FInsertUniqueU64Args Args = ReducerEvent.Reducer.GetAsInsertUniqueU64();
         Reducers->InvokeInsertUniqueU64WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_unique_u8"))
+    if (ReducerName == TEXT("insert_unique_u_8"))
     {
         FInsertUniqueU8Args Args = ReducerEvent.Reducer.GetAsInsertUniqueU8();
         Reducers->InvokeInsertUniqueU8WithArgs(Context, Args);
@@ -12062,49 +15291,49 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeInsertVecEveryVecStructWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_vec_f32"))
+    if (ReducerName == TEXT("insert_vec_f_32"))
     {
         FInsertVecF32Args Args = ReducerEvent.Reducer.GetAsInsertVecF32();
         Reducers->InvokeInsertVecF32WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_vec_f64"))
+    if (ReducerName == TEXT("insert_vec_f_64"))
     {
         FInsertVecF64Args Args = ReducerEvent.Reducer.GetAsInsertVecF64();
         Reducers->InvokeInsertVecF64WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_vec_i128"))
+    if (ReducerName == TEXT("insert_vec_i_128"))
     {
         FInsertVecI128Args Args = ReducerEvent.Reducer.GetAsInsertVecI128();
         Reducers->InvokeInsertVecI128WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_vec_i16"))
+    if (ReducerName == TEXT("insert_vec_i_16"))
     {
         FInsertVecI16Args Args = ReducerEvent.Reducer.GetAsInsertVecI16();
         Reducers->InvokeInsertVecI16WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_vec_i256"))
+    if (ReducerName == TEXT("insert_vec_i_256"))
     {
         FInsertVecI256Args Args = ReducerEvent.Reducer.GetAsInsertVecI256();
         Reducers->InvokeInsertVecI256WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_vec_i32"))
+    if (ReducerName == TEXT("insert_vec_i_32"))
     {
         FInsertVecI32Args Args = ReducerEvent.Reducer.GetAsInsertVecI32();
         Reducers->InvokeInsertVecI32WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_vec_i64"))
+    if (ReducerName == TEXT("insert_vec_i_64"))
     {
         FInsertVecI64Args Args = ReducerEvent.Reducer.GetAsInsertVecI64();
         Reducers->InvokeInsertVecI64WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_vec_i8"))
+    if (ReducerName == TEXT("insert_vec_i_8"))
     {
         FInsertVecI8Args Args = ReducerEvent.Reducer.GetAsInsertVecI8();
         Reducers->InvokeInsertVecI8WithArgs(Context, Args);
@@ -12134,37 +15363,37 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeInsertVecTimestampWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_vec_u128"))
+    if (ReducerName == TEXT("insert_vec_u_128"))
     {
         FInsertVecU128Args Args = ReducerEvent.Reducer.GetAsInsertVecU128();
         Reducers->InvokeInsertVecU128WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_vec_u16"))
+    if (ReducerName == TEXT("insert_vec_u_16"))
     {
         FInsertVecU16Args Args = ReducerEvent.Reducer.GetAsInsertVecU16();
         Reducers->InvokeInsertVecU16WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_vec_u256"))
+    if (ReducerName == TEXT("insert_vec_u_256"))
     {
         FInsertVecU256Args Args = ReducerEvent.Reducer.GetAsInsertVecU256();
         Reducers->InvokeInsertVecU256WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_vec_u32"))
+    if (ReducerName == TEXT("insert_vec_u_32"))
     {
         FInsertVecU32Args Args = ReducerEvent.Reducer.GetAsInsertVecU32();
         Reducers->InvokeInsertVecU32WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_vec_u64"))
+    if (ReducerName == TEXT("insert_vec_u_64"))
     {
         FInsertVecU64Args Args = ReducerEvent.Reducer.GetAsInsertVecU64();
         Reducers->InvokeInsertVecU64WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("insert_vec_u8"))
+    if (ReducerName == TEXT("insert_vec_u_8"))
     {
         FInsertVecU8Args Args = ReducerEvent.Reducer.GetAsInsertVecU8();
         Reducers->InvokeInsertVecU8WithArgs(Context, Args);
@@ -12212,37 +15441,37 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeUpdatePkConnectionIdWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_pk_i128"))
+    if (ReducerName == TEXT("update_pk_i_128"))
     {
         FUpdatePkI128Args Args = ReducerEvent.Reducer.GetAsUpdatePkI128();
         Reducers->InvokeUpdatePkI128WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_pk_i16"))
+    if (ReducerName == TEXT("update_pk_i_16"))
     {
         FUpdatePkI16Args Args = ReducerEvent.Reducer.GetAsUpdatePkI16();
         Reducers->InvokeUpdatePkI16WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_pk_i256"))
+    if (ReducerName == TEXT("update_pk_i_256"))
     {
         FUpdatePkI256Args Args = ReducerEvent.Reducer.GetAsUpdatePkI256();
         Reducers->InvokeUpdatePkI256WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_pk_i32"))
+    if (ReducerName == TEXT("update_pk_i_32"))
     {
         FUpdatePkI32Args Args = ReducerEvent.Reducer.GetAsUpdatePkI32();
         Reducers->InvokeUpdatePkI32WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_pk_i64"))
+    if (ReducerName == TEXT("update_pk_i_64"))
     {
         FUpdatePkI64Args Args = ReducerEvent.Reducer.GetAsUpdatePkI64();
         Reducers->InvokeUpdatePkI64WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_pk_i8"))
+    if (ReducerName == TEXT("update_pk_i_8"))
     {
         FUpdatePkI8Args Args = ReducerEvent.Reducer.GetAsUpdatePkI8();
         Reducers->InvokeUpdatePkI8WithArgs(Context, Args);
@@ -12266,43 +15495,43 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeUpdatePkStringWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_pk_u128"))
+    if (ReducerName == TEXT("update_pk_u_128"))
     {
         FUpdatePkU128Args Args = ReducerEvent.Reducer.GetAsUpdatePkU128();
         Reducers->InvokeUpdatePkU128WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_pk_u16"))
+    if (ReducerName == TEXT("update_pk_u_16"))
     {
         FUpdatePkU16Args Args = ReducerEvent.Reducer.GetAsUpdatePkU16();
         Reducers->InvokeUpdatePkU16WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_pk_u256"))
+    if (ReducerName == TEXT("update_pk_u_256"))
     {
         FUpdatePkU256Args Args = ReducerEvent.Reducer.GetAsUpdatePkU256();
         Reducers->InvokeUpdatePkU256WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_pk_u32"))
+    if (ReducerName == TEXT("update_pk_u_32"))
     {
         FUpdatePkU32Args Args = ReducerEvent.Reducer.GetAsUpdatePkU32();
         Reducers->InvokeUpdatePkU32WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_pk_u32_two"))
+    if (ReducerName == TEXT("update_pk_u_32_two"))
     {
         FUpdatePkU32TwoArgs Args = ReducerEvent.Reducer.GetAsUpdatePkU32Two();
         Reducers->InvokeUpdatePkU32TwoWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_pk_u64"))
+    if (ReducerName == TEXT("update_pk_u_64"))
     {
         FUpdatePkU64Args Args = ReducerEvent.Reducer.GetAsUpdatePkU64();
         Reducers->InvokeUpdatePkU64WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_pk_u8"))
+    if (ReducerName == TEXT("update_pk_u_8"))
     {
         FUpdatePkU8Args Args = ReducerEvent.Reducer.GetAsUpdatePkU8();
         Reducers->InvokeUpdatePkU8WithArgs(Context, Args);
@@ -12326,37 +15555,37 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeUpdateUniqueConnectionIdWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_unique_i128"))
+    if (ReducerName == TEXT("update_unique_i_128"))
     {
         FUpdateUniqueI128Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueI128();
         Reducers->InvokeUpdateUniqueI128WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_unique_i16"))
+    if (ReducerName == TEXT("update_unique_i_16"))
     {
         FUpdateUniqueI16Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueI16();
         Reducers->InvokeUpdateUniqueI16WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_unique_i256"))
+    if (ReducerName == TEXT("update_unique_i_256"))
     {
         FUpdateUniqueI256Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueI256();
         Reducers->InvokeUpdateUniqueI256WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_unique_i32"))
+    if (ReducerName == TEXT("update_unique_i_32"))
     {
         FUpdateUniqueI32Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueI32();
         Reducers->InvokeUpdateUniqueI32WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_unique_i64"))
+    if (ReducerName == TEXT("update_unique_i_64"))
     {
         FUpdateUniqueI64Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueI64();
         Reducers->InvokeUpdateUniqueI64WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_unique_i8"))
+    if (ReducerName == TEXT("update_unique_i_8"))
     {
         FUpdateUniqueI8Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueI8();
         Reducers->InvokeUpdateUniqueI8WithArgs(Context, Args);
@@ -12374,37 +15603,37 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeUpdateUniqueStringWithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_unique_u128"))
+    if (ReducerName == TEXT("update_unique_u_128"))
     {
         FUpdateUniqueU128Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueU128();
         Reducers->InvokeUpdateUniqueU128WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_unique_u16"))
+    if (ReducerName == TEXT("update_unique_u_16"))
     {
         FUpdateUniqueU16Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueU16();
         Reducers->InvokeUpdateUniqueU16WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_unique_u256"))
+    if (ReducerName == TEXT("update_unique_u_256"))
     {
         FUpdateUniqueU256Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueU256();
         Reducers->InvokeUpdateUniqueU256WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_unique_u32"))
+    if (ReducerName == TEXT("update_unique_u_32"))
     {
         FUpdateUniqueU32Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueU32();
         Reducers->InvokeUpdateUniqueU32WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_unique_u64"))
+    if (ReducerName == TEXT("update_unique_u_64"))
     {
         FUpdateUniqueU64Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueU64();
         Reducers->InvokeUpdateUniqueU64WithArgs(Context, Args);
         return;
     }
-    if (ReducerName == TEXT("update_unique_u8"))
+    if (ReducerName == TEXT("update_unique_u_8"))
     {
         FUpdateUniqueU8Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueU8();
         Reducers->InvokeUpdateUniqueU8WithArgs(Context, Args);
@@ -12476,6 +15705,12 @@ USubscriptionBuilder* USubscriptionBuilder::OnError(FOnSubscriptionError Callbac
 	OnErrorDelegateInternal = Callback;
 	return this;
 }
+USubscriptionHandle* USubscriptionBuilder::Subscribe()
+{
+	const TArray<FString> SqlQueries = PendingSqlQueries;
+	PendingSqlQueries.Empty();
+	return Subscribe(SqlQueries);
+}
 USubscriptionHandle* USubscriptionBuilder::Subscribe(const TArray<FString>& SQL)
 {
 	USubscriptionHandle* Handle = NewObject<USubscriptionHandle>();
@@ -12503,7 +15738,869 @@ USubscriptionHandle* USubscriptionBuilder::Subscribe(const TArray<FString>& SQL)
 }
 USubscriptionHandle* USubscriptionBuilder::SubscribeToAllTables()
 {
-	return Subscribe({ "SELECT * FROM * " });
+	return Subscribe(FQueryBuilder::AllTablesSqlQueries());
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddBlueprintQuery(const FBlueprintQuery& Query)
+{
+	PendingSqlQueries.Add(Query.Sql);
+	return this;
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddBtreeU32Query(const FBtreeU32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddIndexedSimpleEnumQuery(const FIndexedSimpleEnumQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddLargeTableQuery(const FLargeTableQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneBoolQuery(const FOneBoolQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneByteStructQuery(const FOneByteStructQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneConnectionIdQuery(const FOneConnectionIdQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneEnumWithPayloadQuery(const FOneEnumWithPayloadQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneEveryPrimitiveStructQuery(const FOneEveryPrimitiveStructQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneEveryVecStructQuery(const FOneEveryVecStructQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneF32Query(const FOneF32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneF64Query(const FOneF64Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneI128Query(const FOneI128Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneI16Query(const FOneI16Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneI256Query(const FOneI256Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneI32Query(const FOneI32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneI64Query(const FOneI64Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneI8Query(const FOneI8Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneIdentityQuery(const FOneIdentityQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneSimpleEnumQuery(const FOneSimpleEnumQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneStringQuery(const FOneStringQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneTimestampQuery(const FOneTimestampQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneU128Query(const FOneU128Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneU16Query(const FOneU16Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneU256Query(const FOneU256Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneU32Query(const FOneU32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneU64Query(const FOneU64Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneU8Query(const FOneU8Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneUnitStructQuery(const FOneUnitStructQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOneUuidQuery(const FOneUuidQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOptionEveryPrimitiveStructQuery(const FOptionEveryPrimitiveStructQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOptionI32Query(const FOptionI32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOptionIdentityQuery(const FOptionIdentityQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOptionSimpleEnumQuery(const FOptionSimpleEnumQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOptionStringQuery(const FOptionStringQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOptionUuidQuery(const FOptionUuidQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddOptionVecOptionI32Query(const FOptionVecOptionI32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkBoolQuery(const FPkBoolQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkConnectionIdQuery(const FPkConnectionIdQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkI128Query(const FPkI128Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkI16Query(const FPkI16Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkI256Query(const FPkI256Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkI32Query(const FPkI32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkI64Query(const FPkI64Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkI8Query(const FPkI8Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkIdentityQuery(const FPkIdentityQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkSimpleEnumQuery(const FPkSimpleEnumQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkStringQuery(const FPkStringQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkU128Query(const FPkU128Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkU16Query(const FPkU16Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkU256Query(const FPkU256Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkU32Query(const FPkU32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkU32TwoQuery(const FPkU32TwoQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkU64Query(const FPkU64Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkU8Query(const FPkU8Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddPkUuidQuery(const FPkUuidQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddResultEveryPrimitiveStructStringQuery(const FResultEveryPrimitiveStructStringQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddResultI32StringQuery(const FResultI32StringQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddResultIdentityStringQuery(const FResultIdentityStringQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddResultSimpleEnumI32Query(const FResultSimpleEnumI32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddResultStringI32Query(const FResultStringI32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddResultVecI32StringQuery(const FResultVecI32StringQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddScheduledTableQuery(const FScheduledTableQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddTableHoldsTableQuery(const FTableHoldsTableQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueBoolQuery(const FUniqueBoolQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueConnectionIdQuery(const FUniqueConnectionIdQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueI128Query(const FUniqueI128Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueI16Query(const FUniqueI16Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueI256Query(const FUniqueI256Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueI32Query(const FUniqueI32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueI64Query(const FUniqueI64Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueI8Query(const FUniqueI8Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueIdentityQuery(const FUniqueIdentityQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueStringQuery(const FUniqueStringQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueU128Query(const FUniqueU128Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueU16Query(const FUniqueU16Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueU256Query(const FUniqueU256Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueU32Query(const FUniqueU32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueU64Query(const FUniqueU64Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueU8Query(const FUniqueU8Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueUuidQuery(const FUniqueUuidQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUsersQuery(const FUsersQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecBoolQuery(const FVecBoolQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecByteStructQuery(const FVecByteStructQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecConnectionIdQuery(const FVecConnectionIdQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecEnumWithPayloadQuery(const FVecEnumWithPayloadQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecEveryPrimitiveStructQuery(const FVecEveryPrimitiveStructQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecEveryVecStructQuery(const FVecEveryVecStructQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecF32Query(const FVecF32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecF64Query(const FVecF64Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecI128Query(const FVecI128Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecI16Query(const FVecI16Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecI256Query(const FVecI256Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecI32Query(const FVecI32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecI64Query(const FVecI64Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecI8Query(const FVecI8Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecIdentityQuery(const FVecIdentityQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecSimpleEnumQuery(const FVecSimpleEnumQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecStringQuery(const FVecStringQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecTimestampQuery(const FVecTimestampQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecU128Query(const FVecU128Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecU16Query(const FVecU16Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecU256Query(const FVecU256Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecU32Query(const FVecU32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecU64Query(const FVecU64Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecU8Query(const FVecU8Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecUnitStructQuery(const FVecUnitStructQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddVecUuidQuery(const FVecUuidQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
 }
 
 USubscriptionHandle::USubscriptionHandle(UDbConnection* InConn)
@@ -12586,11 +16683,12 @@ void UDbConnection::ForwardOnConnect(UDbConnectionBase* BaseConnection, FSpaceti
 {
 	if (OnConnectDelegate.IsBound())
 	{
-		OnConnectDelegate.Execute(this, Identity, Token);
+		OnConnectDelegate.Execute(this, InIdentity, InToken);
 	}
 }
 void UDbConnection::ForwardOnDisconnect(UDbConnectionBase* BaseConnection, const FString& Error)
 {
+	PendingTypedReducers.Empty();
 	if (OnDisconnectDelegate.IsBound())
 	{
 		OnDisconnectDelegate.Execute(this, Error);
@@ -12608,7 +16706,13 @@ void UDbConnection::DbUpdate(const FDatabaseUpdateType& Update, const FSpacetime
     case ESpacetimeDBEventTag::Reducer:
     {
         FReducerEvent ReducerEvent = Event.GetAsReducer();
-        FReducer Reducer = DecodeReducer(ReducerEvent);
+        FReducer Reducer;
+        if (!TryGetPendingTypedReducer(ReducerEvent.RequestId, Reducer))
+        {
+            const FString ErrorMessage = FString::Printf(TEXT("Reducer result for unknown request_id %u"), ReducerEvent.RequestId);
+            HandleProtocolViolation(ErrorMessage);
+            return;
+        }
         BaseEvent = FTestClientEvent::Reducer(Reducer);
         break;
     }
@@ -12623,6 +16727,10 @@ void UDbConnection::DbUpdate(const FDatabaseUpdateType& Update, const FSpacetime
 
     case ESpacetimeDBEventTag::Disconnected:
         BaseEvent = FTestClientEvent::Disconnected(Event.GetAsDisconnected());
+        break;
+
+    case ESpacetimeDBEventTag::Transaction:
+        BaseEvent = FTestClientEvent::Transaction(Event.GetAsTransaction());
         break;
 
     case ESpacetimeDBEventTag::SubscribeError:

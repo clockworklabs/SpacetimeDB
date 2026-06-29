@@ -136,9 +136,9 @@ Reducers receive a `ReducerContext` which provides full read-write access to all
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-export const example = spacetimedb.reducer({}, (ctx) => {
+export const example = spacetimedb.reducer((ctx) => {
   // Insert
-  ctx.db.user.insert({ id: 0, name: 'Alice', email: 'alice@example.com' });
+  ctx.db.user.insert({ id: 0n, name: 'Alice', email: 'alice@example.com' });
 
   // Read: iterate all rows
   for (const user of ctx.db.user.iter()) {
@@ -191,6 +191,8 @@ public static void Example(ReducerContext ctx)
 <TabItem value="rust" label="Rust">
 
 ```rust
+use spacetimedb::{ReducerContext, Table};
+
 #[spacetimedb::reducer]
 fn example(ctx: &ReducerContext) -> Result<(), String> {
     // Insert
@@ -541,8 +543,8 @@ FIELD_Index(message, recipient)
 // Public view that only returns messages the caller can see
 SPACETIMEDB_VIEW(std::vector<Message>, my_messages, Public, ViewContext ctx) {
     // Look up messages by index where caller is sender or recipient
-    auto sent = ctx.db[message_sender].filter(ctx.sender).collect();
-    auto received = ctx.db[message_recipient].filter(ctx.sender).collect();
+    auto sent = ctx.db[message_sender].filter(ctx.sender()).collect();
+    auto received = ctx.db[message_recipient].filter(ctx.sender()).collect();
     
     // Combine both vectors
     sent.insert(sent.end(), received.begin(), received.end());
@@ -732,7 +734,7 @@ SPACETIMEDB_STRUCT(PublicUserProfile, id, username, created_at)
 // Public view that returns the caller's profile without sensitive data
 SPACETIMEDB_VIEW(std::optional<PublicUserProfile>, my_profile, Public, ViewContext ctx) {
     // Look up the caller's account by their identity (unique index)
-    auto user_opt = ctx.db[user_account_identity].find(ctx.sender);
+    auto user_opt = ctx.db[user_account_identity].find(ctx.sender());
     if (!user_opt.has_value()) {
         return std::nullopt;
     }
@@ -935,7 +937,7 @@ SPACETIMEDB_STRUCT(Colleague, id, name, department)
 // View that returns colleagues in the caller's department, without salary info
 SPACETIMEDB_VIEW(std::vector<Colleague>, my_colleagues, Public, ViewContext ctx) {
     // Find the caller's employee record by identity (unique index)
-    auto me_opt = ctx.db[employee_identity].find(ctx.sender);
+    auto me_opt = ctx.db[employee_identity].find(ctx.sender());
     if (!me_opt.has_value()) {
         return std::vector<Colleague>();
     }

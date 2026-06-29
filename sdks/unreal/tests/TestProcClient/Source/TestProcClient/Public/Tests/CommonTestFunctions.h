@@ -83,9 +83,9 @@ public:
 	UFUNCTION()
 	void HandleConnect(UDbConnection* Conn, FSpacetimeDBIdentity Identity, const FString& Token);
 
-	TFunction<void(UDbConnection*, const FString&)> OnConnectError;
+	TFunction<void(const FString&)> OnConnectError;
 	UFUNCTION()
-	void HandleConnectError(UDbConnection* Conn, const FString& Error);
+	void HandleConnectError(const FString& Error);
 
 	TFunction<void(UDbConnection*, const FString&)> OnDisconnect;
 	UFUNCTION()
@@ -139,6 +139,9 @@ bool AssertAllTablesEmpty(FAutomationTestBase* Test,
 
 // Get the Database name from environment variables.
 bool GetDbName(FString& DBName, FString& Error);
+
+// Get the SpacetimeDB server URL from environment variables.
+FString GetServerUrl();
 
 //Validate that the test parameters are configured correctly.
 bool ValidateParameterConfig(FAutomationTestBase* Test);

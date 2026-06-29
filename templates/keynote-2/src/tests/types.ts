@@ -1,4 +1,4 @@
-﻿import type { ConnectorKey } from '../connectors';
+import type { ConnectorKey } from '../config.ts';
 
 export type TestCase = {
   system: ConnectorKey;

@@ -1,6 +1,6 @@
 import { table, schema, t } from 'spacetimedb/server';
 
-export const user = table({
+const user = table({
   name: 'user',
 }, {
   id: t.i32().primaryKey(),
@@ -9,7 +9,7 @@ export const user = table({
   active: t.bool(),
 });
 
-export const product = table({
+const product = table({
   name: 'product',
 }, {
   id: t.i32().primaryKey(),
@@ -18,7 +18,7 @@ export const product = table({
   inStock: t.bool(),
 });
 
-export const note = table({
+const note = table({
   name: 'note',
 }, {
   id: t.i32().primaryKey(),

@@ -56,10 +56,7 @@ fn get_manifest_dir() -> PathBuf {
 //   * `get_templates_json` - returns contents of the JSON file with the list of templates
 //   * `get_template_files` - returns a HashMap with templates contents based on the
 //                            templates list at templates/templates-list.json
-//   * `get_ai_rules_base` - returns base AI rules for all languages
-//   * `get_ai_rules_typescript` - returns TypeScript-specific AI rules
-//   * `get_ai_rules_rust` - returns Rust-specific AI rules
-//   * `get_ai_rules_csharp` - returns C#-specific AI rules
+//   * `get_skill` - returns the content of a skill file by name
 fn generate_template_files() {
     let manifest_dir = get_manifest_dir();
     let repo_root = get_repo_root();
@@ -111,64 +108,24 @@ fn generate_template_files() {
     let ts_bindings_version =
         extract_ts_bindings_version(&ts_bindings_package).expect("Failed to read TypeScript bindings version");
 
-    // Embed AI rules files from docs/static/ai-rules/
-    let ai_rules_dir = repo_root.join("docs/static/ai-rules");
+    // Embed skill files from skills/*/SKILL.md
+    let skills_dir = repo_root.join("skills");
+    let skill_names = discover_skill_names(&skills_dir);
 
-    // Base rules (all languages)
-    let base_rules_path = ai_rules_dir.join("spacetimedb.mdc");
-    if base_rules_path.exists() {
-        generated_code.push_str("pub fn get_ai_rules_base() -> &'static str {\n");
+    generated_code.push_str("pub fn get_skill(name: &str) -> Option<&'static str> {\n");
+    generated_code.push_str("    match name {\n");
+    for skill_name in &skill_names {
+        let skill_path = skills_dir.join(skill_name).join("SKILL.md");
         generated_code.push_str(&format!(
-            "    include_str!(\"{}\")\n",
-            base_rules_path.to_str().unwrap().replace('\\', "\\\\")
+            "        \"{}\" => Some(include_str!(\"{}\")),\n",
+            skill_name,
+            skill_path.to_str().unwrap().replace('\\', "\\\\")
         ));
-        generated_code.push_str("}\n\n");
-        println!("cargo:rerun-if-changed={}", base_rules_path.display());
-    } else {
-        panic!("Could not find \"docs/static/ai-rules/spacetimedb.mdc\" file.");
+        println!("cargo:rerun-if-changed={}", skill_path.display());
     }
-
-    // TypeScript-specific rules
-    let ts_rules_path = ai_rules_dir.join("spacetimedb-typescript.mdc");
-    if ts_rules_path.exists() {
-        generated_code.push_str("pub fn get_ai_rules_typescript() -> &'static str {\n");
-        generated_code.push_str(&format!(
-            "    include_str!(\"{}\")\n",
-            ts_rules_path.to_str().unwrap().replace('\\', "\\\\")
-        ));
-        generated_code.push_str("}\n\n");
-        println!("cargo:rerun-if-changed={}", ts_rules_path.display());
-    } else {
-        panic!("Could not find \"docs/static/ai-rules/spacetimedb-typescript.mdc\" file.");
-    }
-
-    // Rust-specific rules
-    let rust_rules_path = ai_rules_dir.join("spacetimedb-rust.mdc");
-    if rust_rules_path.exists() {
-        generated_code.push_str("pub fn get_ai_rules_rust() -> &'static str {\n");
-        generated_code.push_str(&format!(
-            "    include_str!(\"{}\")\n",
-            rust_rules_path.to_str().unwrap().replace('\\', "\\\\")
-        ));
-        generated_code.push_str("}\n\n");
-        println!("cargo:rerun-if-changed={}", rust_rules_path.display());
-    } else {
-        panic!("Could not find \"docs/static/ai-rules/spacetimedb-rust.mdc\" file.");
-    }
-
-    // C#-specific rules
-    let csharp_rules_path = ai_rules_dir.join("spacetimedb-csharp.mdc");
-    if csharp_rules_path.exists() {
-        generated_code.push_str("pub fn get_ai_rules_csharp() -> &'static str {\n");
-        generated_code.push_str(&format!(
-            "    include_str!(\"{}\")\n",
-            csharp_rules_path.to_str().unwrap().replace('\\', "\\\\")
-        ));
-        generated_code.push_str("}\n\n");
-        println!("cargo:rerun-if-changed={}", csharp_rules_path.display());
-    } else {
-        panic!("Could not find \"docs/static/ai-rules/spacetimedb-csharp.mdc\" file.");
-    }
+    generated_code.push_str("        _ => None,\n");
+    generated_code.push_str("    }\n");
+    generated_code.push_str("}\n\n");
 
     // Expose workspace metadata so `spacetime init` can rewrite template manifests without hardcoding versions.
     generated_code.push_str("pub fn get_workspace_edition() -> &'static str {\n");
@@ -196,20 +153,29 @@ fn generate_template_files() {
     write_if_changed(&dest_path, generated_code.as_bytes()).expect("Failed to write embedded_templates.rs");
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize)]
 struct TemplateInfo {
     id: String,
     description: String,
+    #[serde(serialize_with = "serialize_option_string_as_empty")]
     server_source: Option<String>,
+    #[serde(serialize_with = "serialize_option_string_as_empty")]
     client_source: Option<String>,
     server_lang: Option<String>,
     client_lang: Option<String>,
+    client_framework: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct TemplatesJson<'a> {
+    templates: &'a [TemplateInfo],
 }
 
 #[derive(serde::Deserialize)]
 struct TemplateMetadata {
     description: String,
     client_lang: Option<String>,
+    client_framework: Option<String>,
     server_lang: Option<String>,
 }
 
@@ -267,6 +233,7 @@ fn discover_templates(templates_dir: &Path) -> Vec<TemplateInfo> {
                 client_source,
                 server_lang: metadata.server_lang,
                 client_lang: metadata.client_lang,
+                client_framework: metadata.client_framework,
             });
         }
     }
@@ -276,57 +243,15 @@ fn discover_templates(templates_dir: &Path) -> Vec<TemplateInfo> {
 }
 
 fn generate_templates_json(templates: &[TemplateInfo]) -> String {
-    let mut json = String::from("{\n  \"highlights\": [\n");
+    let payload = TemplatesJson { templates };
+    serde_json::to_string_pretty(&payload).expect("Failed to serialize templates JSON")
+}
 
-    for template in templates {
-        if template.id.contains("react") {
-            json.push_str("    { \"name\": \"React\", \"template_id\": \"");
-            json.push_str(&template.id);
-            json.push_str("\" }\n");
-            break;
-        }
-    }
-
-    json.push_str("  ],\n  \"templates\": [\n");
-
-    for (i, template) in templates.iter().enumerate() {
-        json.push_str("    {\n");
-        json.push_str(&format!("      \"id\": \"{}\",\n", template.id));
-        json.push_str(&format!("      \"description\": \"{}\",\n", template.description));
-
-        if let Some(ref server_source) = template.server_source {
-            json.push_str(&format!("      \"server_source\": \"{}\",\n", server_source));
-        } else {
-            json.push_str("      \"server_source\": \"\",\n");
-        }
-
-        if let Some(ref client_source) = template.client_source {
-            json.push_str(&format!("      \"client_source\": \"{}\",\n", client_source));
-        } else {
-            json.push_str("      \"client_source\": \"\",\n");
-        }
-
-        if let Some(ref server_lang) = template.server_lang {
-            json.push_str(&format!("      \"server_lang\": \"{}\",\n", server_lang));
-        } else {
-            json.push_str("      \"server_lang\": \"\",\n");
-        }
-
-        if let Some(ref client_lang) = template.client_lang {
-            json.push_str(&format!("      \"client_lang\": \"{}\"", client_lang));
-        } else {
-            json.push_str("      \"client_lang\": \"\"");
-        }
-
-        json.push_str("\n    }");
-        if i < templates.len() - 1 {
-            json.push(',');
-        }
-        json.push('\n');
-    }
-
-    json.push_str("  ]\n}");
-    json
+fn serialize_option_string_as_empty<S>(value: &Option<String>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str(value.as_deref().unwrap_or(""))
 }
 
 fn generate_template_entry(code: &mut String, template_path: &Path, source: &str, manifest_dir: &Path) {
@@ -638,10 +563,10 @@ fn write_if_changed(path: &Path, contents: &[u8]) -> io::Result<()> {
 
 fn copy_if_changed(src: &Path, dst: &Path) -> io::Result<()> {
     let src_bytes = fs::read(src)?;
-    if let Ok(existing) = fs::read(dst) {
-        if existing == src_bytes {
-            return Ok(());
-        }
+    if let Ok(existing) = fs::read(dst)
+        && existing == src_bytes
+    {
+        return Ok(());
     }
 
     if let Some(parent) = dst.parent() {
@@ -650,4 +575,33 @@ fn copy_if_changed(src: &Path, dst: &Path) -> io::Result<()> {
 
     let mut file = fs::File::create(dst)?;
     file.write_all(&src_bytes)
+}
+
+/// Discover skill directories under skills/. Each directory containing a SKILL.md
+/// file is considered a skill. Returns sorted skill names.
+fn discover_skill_names(skills_dir: &Path) -> Vec<String> {
+    let mut names = Vec::new();
+
+    let entries = match fs::read_dir(skills_dir) {
+        Ok(entries) => entries,
+        Err(_) => {
+            panic!(
+                "Could not read skills directory at {}. Ensure skills/ exists at the repo root.",
+                skills_dir.display()
+            );
+        }
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir()
+            && path.join("SKILL.md").exists()
+            && let Some(name) = path.file_name().and_then(|n| n.to_str())
+        {
+            names.push(name.to_string());
+        }
+    }
+
+    names.sort();
+    names
 }

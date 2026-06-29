@@ -11,6 +11,8 @@ import type {
   TypeBuilder,
 } from './type_builders';
 import type { Values } from './type_util';
+import type { Bool as SatsBool } from './algebraic_type_variants';
+import { Uuid } from './uuid';
 
 /**
  * Helper to get the set of table names.
@@ -65,7 +67,7 @@ type From<TableDef extends TypedTableDef> = RowTypedQuery<
   Readonly<{
     toSql(): string;
     where(
-      predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
+      predicate: (row: RowExpr<TableDef>) => PredicateExpr<TableDef>
     ): From<TableDef>;
     rightSemijoin<RightTable extends TypedTableDef>(
       other: TableRef<RightTable>,
@@ -93,7 +95,7 @@ type SemijoinBuilder<TableDef extends TypedTableDef> = RowTypedQuery<
   Readonly<{
     toSql(): string;
     where(
-      predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
+      predicate: (row: RowExpr<TableDef>) => PredicateExpr<TableDef>
     ): SemijoinBuilder<TableDef>;
     /** @deprecated No longer needed — builder is already a valid query. */
     build(): Query<TableDef>;
@@ -120,7 +122,7 @@ class SemijoinImpl<TableDef extends TypedTableDef>
   }
 
   where(
-    predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
+    predicate: (row: RowExpr<TableDef>) => PredicateExpr<TableDef>
   ): SemijoinImpl<TableDef> {
     const nextSourceQuery = this.sourceQuery.where(predicate);
     return new SemijoinImpl<TableDef>(
@@ -167,9 +169,9 @@ class FromBuilder<TableDef extends TypedTableDef>
   ) {}
 
   where(
-    predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
+    predicate: (row: RowExpr<TableDef>) => PredicateExpr<TableDef>
   ): FromBuilder<TableDef> {
-    const newCondition = predicate(this.table.cols);
+    const newCondition = normalizePredicateExpr(predicate(this.table.cols));
     const nextWhere = this.whereClause
       ? this.whereClause.and(newCondition)
       : newCondition;
@@ -308,7 +310,7 @@ class TableRefImpl<TableDef extends TypedTableDef>
   }
 
   where(
-    predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
+    predicate: (row: RowExpr<TableDef>) => PredicateExpr<TableDef>
   ): FromBuilder<TableDef> {
     return this.asFrom().where(predicate);
   }
@@ -347,7 +349,8 @@ function createRowExpr<TableDef extends TypedTableDef>(
       columnBuilder.typeBuilder.algebraicType as InferSpacetimeTypeOfColumn<
         TableDef,
         typeof columnName
-      >
+      >,
+      columnBuilder.columnMetadata.name
     );
     row[columnName] = Object.freeze(column);
   }
@@ -437,7 +440,10 @@ export class ColumnExpression<
   ColumnName extends ColumnNames<TableDef>,
 > {
   readonly type = 'column' as const;
+  // This is the column accessor
   readonly column: ColumnName;
+  // The name of the column in the database.
+  readonly columnName: string;
   readonly table: TableDef['sourceName'];
   // phantom: actual runtime value is undefined
   readonly tsValueType?: RowType<TableDef>[ColumnName];
@@ -446,10 +452,12 @@ export class ColumnExpression<
   constructor(
     table: TableDef['sourceName'],
     column: ColumnName,
-    spacetimeType: InferSpacetimeTypeOfColumn<TableDef, ColumnName>
+    spacetimeType: InferSpacetimeTypeOfColumn<TableDef, ColumnName>,
+    columnName?: string
   ) {
     this.table = table;
     this.column = column;
+    this.columnName = columnName || column;
     this.spacetimeType = spacetimeType;
   }
 
@@ -616,6 +624,7 @@ type LiteralValue =
   | bigint
   | boolean
   | Identity
+  | Uuid
   | Timestamp
   | ConnectionId;
 
@@ -627,6 +636,11 @@ type ValueInput<TableDef extends TypedTableDef> =
 export type ValueExpr<TableDef extends TypedTableDef, Value> =
   | LiteralExpr<Value & LiteralValue>
   | ColumnExprForValue<TableDef, Value>;
+
+type PredicateExpr<TableDef extends TypedTableDef> =
+  | BooleanExpr<TableDef>
+  | ColumnExprForValue<TableDef, SatsBool>
+  | boolean;
 
 type LiteralExpr<Value> = {
   type: 'literal';
@@ -652,6 +666,24 @@ function normalizeValue(val: ValueInput<any>): ValueExpr<any, any> {
     return val as ColumnExpr<any, any>;
   }
   return literal(val as LiteralValue);
+}
+
+function normalizePredicateExpr<TableDef extends TypedTableDef>(
+  value: PredicateExpr<TableDef>
+): BooleanExpr<TableDef> {
+  if (value instanceof BooleanExpr) return value;
+  if (typeof value === 'boolean') {
+    return new BooleanExpr({
+      type: 'eq',
+      left: literal(value),
+      right: literal(true),
+    });
+  }
+  return new BooleanExpr({
+    type: 'eq',
+    left: value as ValueExpr<TableDef, any>,
+    right: literal(true),
+  });
 }
 
 type EqExpr<Table extends TypedTableDef = any> = BooleanExpr<Table>;
@@ -686,15 +718,38 @@ type BooleanExprData<Table extends TypedTableDef> = (
   _tableType?: Table;
 };
 
+type AndOrMixedTableScopeError = {
+  readonly 'Cannot combine predicates from different table scopes with and/or. In semijoin on(...), keep only the join equality and move extra predicates to .where(...).': never;
+};
+
+type RequireSameAndOrTable<
+  Expected extends TypedTableDef,
+  Actual extends TypedTableDef,
+> = [Expected] extends [Actual]
+  ? [Actual] extends [Expected]
+    ? unknown
+    : AndOrMixedTableScopeError
+  : AndOrMixedTableScopeError;
+
 export class BooleanExpr<Table extends TypedTableDef> {
   constructor(readonly data: BooleanExprData<Table>) {}
 
-  and(other: BooleanExpr<Table>): BooleanExpr<Table> {
-    return new BooleanExpr({ type: 'and', clauses: [this.data, other.data] });
+  and<OtherTable extends TypedTableDef>(
+    other: BooleanExpr<OtherTable> & RequireSameAndOrTable<Table, OtherTable>
+  ): BooleanExpr<Table> {
+    return new BooleanExpr({
+      type: 'and',
+      clauses: [this.data, other.data as BooleanExprData<Table>],
+    });
   }
 
-  or(other: BooleanExpr<Table>): BooleanExpr<Table> {
-    return new BooleanExpr({ type: 'or', clauses: [this.data, other.data] });
+  or<OtherTable extends TypedTableDef>(
+    other: BooleanExpr<OtherTable> & RequireSameAndOrTable<Table, OtherTable>
+  ): BooleanExpr<Table> {
+    return new BooleanExpr({
+      type: 'or',
+      clauses: [this.data, other.data as BooleanExprData<Table>],
+    });
   }
 
   not(): BooleanExpr<Table> {
@@ -708,28 +763,40 @@ export function not<T extends TypedTableDef>(
   return new BooleanExpr({ type: 'not', clause: clause.data });
 }
 
-export function and<T extends TypedTableDef>(
-  ...clauses: readonly [BooleanExpr<T>, BooleanExpr<T>, ...BooleanExpr<T>[]]
-): BooleanExpr<T> {
+export function and<
+  Table extends TypedTableDef,
+  OtherTable extends TypedTableDef,
+>(
+  first: BooleanExpr<Table>,
+  second: BooleanExpr<OtherTable> & RequireSameAndOrTable<Table, OtherTable>,
+  ...rest: readonly BooleanExpr<Table>[]
+): BooleanExpr<Table> {
+  const clauses = [first, second, ...rest];
   return new BooleanExpr({
     type: 'and',
     clauses: clauses.map(c => c.data) as [
-      BooleanExprData<T>,
-      BooleanExprData<T>,
-      ...BooleanExprData<T>[],
+      BooleanExprData<Table>,
+      BooleanExprData<Table>,
+      ...BooleanExprData<Table>[],
     ],
   });
 }
 
-export function or<T extends TypedTableDef>(
-  ...clauses: readonly [BooleanExpr<T>, BooleanExpr<T>, ...BooleanExpr<T>[]]
-): BooleanExpr<T> {
+export function or<
+  Table extends TypedTableDef,
+  OtherTable extends TypedTableDef,
+>(
+  first: BooleanExpr<Table>,
+  second: BooleanExpr<OtherTable> & RequireSameAndOrTable<Table, OtherTable>,
+  ...rest: readonly BooleanExpr<Table>[]
+): BooleanExpr<Table> {
+  const clauses = [first, second, ...rest];
   return new BooleanExpr({
     type: 'or',
     clauses: clauses.map(c => c.data) as [
-      BooleanExprData<T>,
-      BooleanExprData<T>,
-      ...BooleanExprData<T>[],
+      BooleanExprData<Table>,
+      BooleanExprData<Table>,
+      ...BooleanExprData<Table>[],
     ],
   });
 }
@@ -779,14 +846,18 @@ function valueExprToSql<Table extends TypedTableDef>(
     return literalValueToSql(expr.value);
   }
   const table = tableAlias ?? expr.table;
-  return `${quoteIdentifier(table)}.${quoteIdentifier(expr.column)}`;
+  return `${quoteIdentifier(table)}.${quoteIdentifier(expr.columnName)}`;
 }
 
 function literalValueToSql(value: unknown): string {
   if (value === null || value === undefined) {
     return 'NULL';
   }
-  if (value instanceof Identity || value instanceof ConnectionId) {
+  if (
+    value instanceof Identity ||
+    value instanceof ConnectionId ||
+    value instanceof Uuid
+  ) {
     // We use this hex string syntax.
     return `0x${value.toHexString()}`;
   }

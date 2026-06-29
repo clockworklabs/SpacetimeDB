@@ -3,7 +3,7 @@ use spacetimedb_lib::{query::Delta, AlgebraicType, AlgebraicValue};
 use spacetimedb_primitives::{TableId, ViewId};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::{identifier::Identifier, schema::TableOrViewSchema};
-use spacetimedb_sql_parser::ast::{BinOp, LogOp};
+use spacetimedb_sql_parser::ast::{BinOp, LogOp, Parameter};
 use std::sync::Arc;
 
 pub trait CollectViews {
@@ -264,10 +264,10 @@ pub struct Relvar {
 impl CollectViews for RelExpr {
     fn collect_views(&self, views: &mut HashSet<ViewId>) {
         self.visit(&mut |expr| {
-            if let Self::RelVar(Relvar { schema, .. }) = expr {
-                if let Some(info) = &schema.view_info {
-                    views.insert(info.view_id);
-                }
+            if let Self::RelVar(Relvar { schema, .. }) = expr
+                && let Some(info) = &schema.view_info
+            {
+                views.insert(info.view_id);
             }
         });
     }
@@ -383,6 +383,8 @@ pub enum Expr {
     LogOp(LogOp, Box<Expr>, Box<Expr>),
     /// A typed literal expression
     Value(AlgebraicValue, AlgebraicType),
+    /// A typed runtime parameter.
+    Param(Parameter, AlgebraicType),
     /// A field projection
     Field(FieldProject),
 }
@@ -396,7 +398,7 @@ impl Expr {
                 a.visit(f);
                 b.visit(f);
             }
-            Self::Value(..) | Self::Field(..) => {}
+            Self::Value(..) | Self::Param(..) | Self::Field(..) => {}
         }
     }
 
@@ -408,7 +410,7 @@ impl Expr {
                 a.visit_mut(f);
                 b.visit_mut(f);
             }
-            Self::Value(..) | Self::Field(..) => {}
+            Self::Value(..) | Self::Param(..) | Self::Field(..) => {}
         }
     }
 
@@ -426,7 +428,7 @@ impl Expr {
     pub fn ty(&self) -> &AlgebraicType {
         match self {
             Self::BinOp(..) | Self::LogOp(..) => &AlgebraicType::Bool,
-            Self::Value(_, ty) | Self::Field(FieldProject { ty, .. }) => ty,
+            Self::Value(_, ty) | Self::Param(_, ty) | Self::Field(FieldProject { ty, .. }) => ty,
         }
     }
 }

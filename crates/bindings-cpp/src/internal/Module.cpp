@@ -4,17 +4,24 @@
 #include "spacetimedb.h"
 #include "spacetimedb/internal/Module.h"
 #include "spacetimedb/internal/buffer_pool.h"
-#include "spacetimedb/internal/autogen/RawModuleDefV9.g.h"
-#include "spacetimedb/internal/bsatn_adapters.h"
-#include "spacetimedb/internal/v9_type_registration.h"
+#include "spacetimedb/internal/autogen/RawModuleDef.g.h"
+#include "spacetimedb/internal/autogen/RawModuleDefV10.g.h"
+#include "spacetimedb/internal/autogen/RawTypeDefV10.g.h"
+#include "spacetimedb/internal/v9_builder.h"
+#include "spacetimedb/internal/v10_builder.h"
+#include "spacetimedb/internal/module_type_registration.h"
 #include "spacetimedb/abi/FFI.h"
 #include "spacetimedb/bsatn/bsatn.h"
 #include "spacetimedb/bsatn/writer.h"
 #include "spacetimedb/reducer_error.h"
 #include "spacetimedb/view_context.h"
 #include "spacetimedb/procedure_context.h"
+#include "spacetimedb/handler_context.h"
+#include "spacetimedb/http_convert.h"
+#include "spacetimedb/http_wire.h"
+#include <algorithm>
+#include <cstdlib>
 #include <cstring>
-#include <iostream>
 #include <vector>
 #include <functional>
 #include <cctype>
@@ -26,9 +33,6 @@ namespace Internal {
     // Thread-local reducer error message storage
     thread_local std::optional<std::string> g_reducer_error_message = std::nullopt;
 
-    // The global V9 module that preinit functions will populate directly
-    static RawModuleDefV9 g_v9_module;
-    
     // Global reducer handler storage for runtime dispatch
     struct ReducerHandler {
         std::string name;
@@ -56,23 +60,22 @@ namespace Internal {
         std::function<std::vector<uint8_t>(ProcedureContext&, BytesSource)> handler;
     };
     static std::vector<ProcedureHandler> g_procedure_handlers;
-    
-    /**
-     * @brief View result header for serializing view return values
-     * 
-     * This enum is serialized before the actual view data to indicate
-     * the type of result being returned.
-     */
-    enum class ViewResultHeader : uint8_t {
-        RowData = 0,  // Followed by BSATN-encoded Vec<RowType>
-        RawSql = 1,   // Followed by SQL string (future use)
+
+    struct HttpHandler {
+        std::string name;
+        HttpHandlerSymbol symbol;
+        std::function<HttpResponse(HandlerContext&, HttpRequest)> handler;
     };
+    static std::vector<HttpHandler> g_http_handlers;
     
     // Global error flag for multiple primary key detection
     static bool g_multiple_primary_key_error = false;
     static std::string g_multiple_primary_key_table_name = "";
+    static bool g_constraint_registration_error = false;
+    static std::string g_constraint_registration_error_code = "";
+    static std::string g_constraint_registration_error_details = "";
     
-    // External global flags for circular reference detection (defined in v9_type_registration.cpp)
+    // External global flags for circular reference detection (defined in module_type_registration.cpp)
     extern bool g_circular_ref_error;
     extern std::string g_circular_ref_type_name;
     
@@ -81,6 +84,13 @@ namespace Internal {
         g_multiple_primary_key_error = true;
         g_multiple_primary_key_table_name = table_name;
         fprintf(stderr, "ERROR: Multiple primary keys detected in table '%s'\n", table_name.c_str());
+    }
+
+    void SetConstraintRegistrationError(const std::string& code, const std::string& details) {
+        g_constraint_registration_error = true;
+        g_constraint_registration_error_code = code;
+        g_constraint_registration_error_details = details;
+        fprintf(stderr, "ERROR: Constraint registration failed [%s] %s\n", code.c_str(), details.c_str());
     }
     
     // Register a reducer handler (called by V9Builder during registration)
@@ -107,6 +117,23 @@ namespace Internal {
                                   std::function<std::vector<uint8_t>(ProcedureContext&, BytesSource)> handler) {
         g_procedure_handlers.push_back({name, handler});
     }
+
+    void RegisterHttpHandlerHandler(const std::string& name,
+                                    HttpHandlerSymbol handler_symbol,
+                                    std::function<HttpResponse(HandlerContext&, HttpRequest)> handler) {
+        g_http_handlers.push_back({name, handler_symbol, handler});
+    }
+
+    std::string LookupHttpHandlerName(HttpHandlerSymbol handler_symbol) {
+        auto it = std::find_if(g_http_handlers.begin(), g_http_handlers.end(), [&](const auto& existing) {
+            return existing.symbol == handler_symbol;
+        });
+        if (it == g_http_handlers.end()) {
+            fprintf(stderr, "ERROR: HTTP handler must be registered before it is referenced by a router\n");
+            std::abort();
+        }
+        return it->name;
+    }
     
     // Get the number of registered view handlers
     size_t GetViewHandlerCount() {
@@ -121,21 +148,33 @@ namespace Internal {
     size_t GetProcedureHandlerCount() {
         return g_procedure_handlers.size();
     }
-    
-    // Get the global V9 module
-    RawModuleDefV9& GetV9Module() {
-        return g_v9_module;
+
+    size_t GetHttpHandlerCount() {
+        return g_http_handlers.size();
     }
     
-    // Clear the global V9 module state - called at module initialization
-    void ClearV9Module() {
-        g_v9_module = RawModuleDefV9{};  // Reset to default state
+    void SetTableIsEventFlag(const std::string& table_name, bool is_event) {
+        getV10Builder().SetTableIsEventFlag(table_name, is_event);
+    }
+
+    bool GetTableIsEventFlag(const std::string& table_name) {
+        return getV10Builder().GetTableIsEventFlag(table_name);
+    }
+    
+    // Clear registration state - called at module initialization.
+    void ClearModuleRegistrationState() {
+        ClearV9CompatModuleState();
         g_reducer_handlers.clear();  // Also clear reducer handlers
         g_view_handlers.clear();  // Clear view handlers
         g_view_anon_handlers.clear();  // Clear anonymous view handlers
         g_procedure_handlers.clear();  // Clear procedure handlers
+        g_http_handlers.clear();  // Clear http handlers
         g_multiple_primary_key_error = false;  // Reset error flag
         g_multiple_primary_key_table_name = "";  // Reset error table name
+        g_constraint_registration_error = false;
+        g_constraint_registration_error_code = "";
+        g_constraint_registration_error_details = "";
+        getV10Builder().Clear();
     }
     
     
@@ -145,9 +184,9 @@ namespace Internal {
 // The number 01 ensures this runs first to clear any leftover state
 extern "C" __attribute__((export_name("__preinit__01_clear_global_state")))
 void __preinit__01_clear_global_state() {
-    ClearV9Module();
-    // Also clear the V9 type registration state
-    auto& type_reg = getV9TypeRegistration();
+    ClearModuleRegistrationState();
+    // Also clear module type registration state
+    auto& type_reg = getModuleTypeRegistration();
     type_reg.clear();
 }
 
@@ -166,16 +205,11 @@ void __preinit__99_validate_types() {
     if (g_circular_ref_error) {
         // Circular reference error detected - create a special error module
         
-        // Clear the entire V9 module to start fresh
-        RawModuleDefV9& v9_module = GetV9Module();
-        v9_module.typespace.types.clear();
-        v9_module.types.clear();
-        v9_module.tables.clear();
-        v9_module.reducers.clear();
-        v9_module.misc_exports.clear();
+        // Clear the module state to start fresh.
+        getV10Builder().Clear();
         
         // Also clear the V9 type registration to remove any partial registrations
-        auto& type_reg = getV9TypeRegistration();
+        auto& type_reg = getModuleTypeRegistration();
         type_reg.clear();
         
         // Create the error type name that indicates the circular reference
@@ -183,13 +217,13 @@ void __preinit__99_validate_types() {
         
         // Add a single named type export that points to a non-existent typespace index
         // This will cause SpacetimeDB to error when it tries to resolve the type
-        RawTypeDefV9 error_type;
-        error_type.name.scope = {};
-        error_type.name.name = error_type_name;
+        RawTypeDefV10 error_type;
+        error_type.source_name.scope = {};
+        error_type.source_name.source_name = error_type_name;
         error_type.ty = 999999; // Invalid typespace index - will cause an error
         error_type.custom_ordering = false;
         
-        v9_module.types.push_back(error_type);
+        getV10Builder().GetTypeDefs().push_back(error_type);
         
         // Don't add anything to the typespace - this ensures the reference is invalid
         // The server will fail with an error message that includes our error type name
@@ -205,26 +239,21 @@ void __preinit__99_validate_types() {
     if (g_multiple_primary_key_error) {
         // Multiple primary key error detected - create a special error module
         
-        // Clear the entire V9 module to start fresh
-        RawModuleDefV9& v9_module = GetV9Module();
-        v9_module.typespace.types.clear();
-        v9_module.types.clear();
-        v9_module.tables.clear();
-        v9_module.reducers.clear();
-        v9_module.misc_exports.clear();
+        // Clear the module state to start fresh.
+        getV10Builder().Clear();
         
         // Create the error type name
         std::string error_type_name = "ERROR_MULTIPLE_PRIMARY_KEYS_" + g_multiple_primary_key_table_name;
         
         // Add a single named type export that points to a non-existent typespace index
         // This will cause SpacetimeDB to error when it tries to resolve the type
-        RawTypeDefV9 error_type;
-        error_type.name.scope = {};
-        error_type.name.name = error_type_name;
+        RawTypeDefV10 error_type;
+        error_type.source_name.scope = {};
+        error_type.source_name.source_name = error_type_name;
         error_type.ty = 999999; // Invalid typespace index - will cause an error
         error_type.custom_ordering = false;
         
-        v9_module.types.push_back(error_type);
+        getV10Builder().GetTypeDefs().push_back(error_type);
         
         // Don't add anything to the typespace - this ensures the reference is invalid
         // The server will fail with an error message that includes our error type name
@@ -236,20 +265,38 @@ void __preinit__99_validate_types() {
         
         return; // Exit early, don't check type registration errors
     }
+
+    if (g_constraint_registration_error) {
+        getV10Builder().Clear();
+
+        std::string error_type_name = "ERROR_CONSTRAINT_REGISTRATION_" + g_constraint_registration_error_code;
+        for (char& c : error_type_name) {
+            if (!std::isalnum(c) && c != '_') {
+                c = '_';
+            }
+        }
+
+        RawTypeDefV10 error_type;
+        error_type.source_name.scope = {};
+        error_type.source_name.source_name = error_type_name;
+        error_type.ty = 999999;
+        error_type.custom_ordering = false;
+        getV10Builder().GetTypeDefs().push_back(error_type);
+
+        fprintf(stderr, "\n[CONSTRAINT REGISTRATION ERROR] Module cleared and replaced with error type: %s\n", error_type_name.c_str());
+        fprintf(stderr, "Original error: %s\n\n", g_constraint_registration_error_details.c_str());
+        fflush(stderr);
+        return;
+    }
     
     // Check if any errors occurred during type registration
-    auto& type_reg = getV9TypeRegistration();
+    auto& type_reg = getModuleTypeRegistration();
     if (type_reg.hasError()) {
         // Type registration detected an error - create a special error module
         const std::string& error = type_reg.getErrorMessage();
         
-        // Clear the entire V9 module to start fresh
-        RawModuleDefV9& v9_module = GetV9Module();
-        v9_module.typespace.types.clear();
-        v9_module.types.clear();
-        v9_module.tables.clear();
-        v9_module.reducers.clear();
-        v9_module.misc_exports.clear();
+        // Clear the module state to start fresh.
+        getV10Builder().Clear();
         
         // Create an error type name that embeds the error message and type structure
         std::string error_type_name;
@@ -285,13 +332,13 @@ void __preinit__99_validate_types() {
         
         // Add a single named type export that points to a non-existent typespace index
         // This will cause SpacetimeDB to error when it tries to resolve the type
-        RawTypeDefV9 error_type;
-        error_type.name.scope = {};
-        error_type.name.name = error_type_name;
+        RawTypeDefV10 error_type;
+        error_type.source_name.scope = {};
+        error_type.source_name.source_name = error_type_name;
         error_type.ty = 999999; // Invalid typespace index - will cause an error
         error_type.custom_ordering = false;
         
-        v9_module.types.push_back(error_type);
+        getV10Builder().GetTypeDefs().push_back(error_type);
         
         // Don't add anything to the typespace - this ensures the reference is invalid
         // The server will fail with an error message that includes our error type name
@@ -305,35 +352,32 @@ void __preinit__99_validate_types() {
     // Type validation passed - log statistics only in debug mode
     #ifdef DEBUG_TYPE_REGISTRATION
     else {
-        RawModuleDefV9& v9_module = GetV9Module();
-        fprintf(stderr, "[Type Validation] OK - %zu types, %zu tables, %zu reducers %zu misc_exports\n",
-                v9_module.typespace.types.size(),
-                v9_module.tables.size(), 
-                v9_module.reducers.size(),
-                v9_module.misc_exports.size());
+        fprintf(stderr, "[Type Validation] OK - %zu types, %zu tables, %zu reducers\n",
+                getV10Builder().GetTypespace().types.size(),
+                getV10Builder().GetTables().size(),
+                getV10Builder().GetReducers().size());
     }
     #endif
 }
 
 
-// FFI export - V9 serialization
+std::vector<uint8_t> Internal::Module::SerializeModuleDef() {
+    RawModuleDefV10 v10_module = getV10Builder().BuildModuleDef();
+    RawModuleDef versioned_module;
+    versioned_module.set<2>(std::move(v10_module));
+
+    std::vector<uint8_t> buffer;
+    bsatn::Writer writer(buffer);
+    versioned_module.bsatn_serialize(writer);
+    return buffer;
+}
+
+// FFI export - V10 serialization
 void Internal::Module::__describe_module__(BytesSink sink) {
     // The preinit functions should have already been called by SpacetimeDB
     // Including our validation preinit which checks for recursive types
+    std::vector<uint8_t> buffer = SerializeModuleDef();
 
-    // Get the global V9 module
-    RawModuleDefV9& v9_module = GetV9Module();
-    
-    
-    // Create a buffer and writer
-    std::vector<uint8_t> buffer;
-    bsatn::Writer writer(buffer); 
-    // Write version byte
-    writer.write_u8(1);
-    
-    // Serialize the V9 module with our manually added table
-    v9_module.bsatn_serialize(writer);
-    
     // Now try to write using FFI directly
     if (!buffer.empty()) {
         size_t bytes_to_write = buffer.size();
@@ -500,22 +544,9 @@ int16_t Module::__call_view__(
     // Get the handler
     const auto& handler_info = g_view_handlers[id];
     
-    // Call the view handler - returns serialized result data
+    // Call the view handler - returns fully serialized result data, including the header byte.
     std::vector<uint8_t> result_data = handler_info.handler(ctx, args_source);
-    
-    // Serialize ViewResultHeader::RowData followed by the result
-    std::vector<uint8_t> full_result;
-    
-    // Write the header (RowData = 0)
-    ViewResultHeader header = ViewResultHeader::RowData;
-    bsatn::Writer header_writer(full_result);
-    header_writer.write_u8(static_cast<uint8_t>(header));
-    
-    // Append the actual result data
-    full_result.insert(full_result.end(), result_data.begin(), result_data.end());
-    
-    // Write to the result sink
-    WriteBytes(result_sink, full_result);
+    WriteBytes(result_sink, result_data);
     
     return 2;  // Success with data
 }
@@ -539,22 +570,9 @@ int16_t Module::__call_view_anon__(
     // Get the handler
     const auto& handler_info = g_view_anon_handlers[id];
     
-    // Call the view handler - returns serialized result data
+    // Call the view handler - returns fully serialized result data, including the header byte.
     std::vector<uint8_t> result_data = handler_info.handler(ctx, args_source);
-    
-    // Serialize ViewResultHeader::RowData followed by the result
-    std::vector<uint8_t> full_result;
-    
-    // Write the header (RowData = 0)
-    ViewResultHeader header = ViewResultHeader::RowData;
-    bsatn::Writer header_writer(full_result);
-    header_writer.write_u8(static_cast<uint8_t>(header));
-    
-    // Append the actual result data
-    full_result.insert(full_result.end(), result_data.begin(), result_data.end());
-    
-    // Write to the result sink
-    WriteBytes(result_sink, full_result);
+    WriteBytes(result_sink, result_data);
     
     return 2;  // Success with data
 }
@@ -607,6 +625,75 @@ int16_t Module::__call_procedure__(
     WriteBytes(result_sink, result_data);
     
     return 0;  // Success (StatusCode::OK)
+}
+
+int16_t Module::__call_http_handler__(
+    uint32_t id,
+    uint64_t timestamp_microseconds,
+    BytesSource request_source,
+    BytesSource request_body_source,
+    BytesSink response_sink,
+    BytesSink response_body_sink
+) {
+    if (id >= g_http_handlers.size()) {
+        fprintf(stderr, "ERROR: Invalid http handler ID %u (have %zu handlers)\n",
+                id, g_http_handlers.size());
+        return -1;
+    }
+
+    Timestamp timestamp = Timestamp::from_micros_since_epoch(static_cast<int64_t>(timestamp_microseconds));
+    HandlerContext ctx(timestamp);
+
+    std::vector<uint8_t> request_bytes = ConsumeBytes(request_source);
+    bsatn::Reader request_reader(request_bytes.data(), request_bytes.size());
+    wire::HttpRequest wire_request = bsatn::deserialize<wire::HttpRequest>(request_reader);
+    HttpRequest request = convert::from_wire(wire_request, ConsumeBytes(request_body_source));
+
+    HttpResponse response = g_http_handlers[id].handler(ctx, std::move(request));
+    auto [wire_response, response_body] = convert::to_wire_split(response);
+
+    std::vector<uint8_t> response_metadata;
+    {
+        bsatn::Writer writer(response_metadata);
+        bsatn::serialize(writer, wire_response);
+    }
+    WriteBytes(response_sink, response_metadata);
+    WriteBytes(response_body_sink, response_body);
+    return 0;
+}
+
+void Module::SetCaseConversionPolicy(CaseConversionPolicy policy) {
+    getV10Builder().SetCaseConversionPolicy(policy);
+}
+
+void Module::RegisterClientVisibilityFilter(const char* sql) {
+    if (sql == nullptr || sql[0] == '\0') {
+        return;
+    }
+    getV10Builder().RegisterRowLevelSecurity(sql);
+}
+
+void Module::RegisterClientVisibilityFilter(const std::string& sql) {
+    if (sql.empty()) {
+        return;
+    }
+    getV10Builder().RegisterRowLevelSecurity(sql.c_str());
+}
+
+void Module::RegisterExplicitTableName(const std::string& source_name, const std::string& canonical_name) {
+    getV10Builder().RegisterExplicitTableName(source_name, canonical_name);
+}
+
+void Module::RegisterExplicitFunctionName(const std::string& source_name, const std::string& canonical_name) {
+    getV10Builder().RegisterExplicitFunctionName(source_name, canonical_name);
+}
+
+void Module::RegisterExplicitIndexName(const std::string& source_name, const std::string& canonical_name) {
+    getV10Builder().RegisterExplicitIndexName(source_name, canonical_name);
+}
+
+void Module::RegisterViewPrimaryKey(const std::string& view_source_name, std::vector<std::string> columns) {
+    getV10Builder().RegisterViewPrimaryKey(view_source_name, std::move(columns));
 }
 }
 }

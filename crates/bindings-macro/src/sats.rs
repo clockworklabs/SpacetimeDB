@@ -1,3 +1,7 @@
+//! When editing generated code in this module, use `__`-prefixed reserved names
+//! for macro-emitted local bindings and helper items to avoid collisions with
+//! user-defined items at the expansion site.
+
 extern crate core;
 extern crate proc_macro;
 
@@ -252,11 +256,13 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>) -> TokenStream {
 
         #[automatically_derived]
         impl #impl_generics #krate::SpacetimeType for #name #ty_generics #where_clause {
+            // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
             fn make_type<S: #krate::sats::typespace::TypespaceBuilder>(__typespace: &mut S) -> #krate::sats::AlgebraicType {
                 #krate::sats::typespace::TypespaceBuilder::add(
                     __typespace,
                     core::any::TypeId::of::<#name #typeid_ty_generics>(),
                     Some(#ty_name),
+                    // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                     |__typespace| #typ,
                 )
             }
@@ -347,7 +353,8 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
     de_generics.params.insert(0, de_lt_param.into());
     let (de_impl_generics, _, de_where_clause) = de_generics.split_for_impl();
 
-    let (iter_n, iter_n2, iter_n3, iter_n4) = (0usize.., 0usize.., 0usize.., 0usize..);
+    let (iter_n, iter_n2, iter_n3, iter_n4, iter_n5, iter_n6, iter_n7) =
+        (0usize.., 0usize.., 0usize.., 0usize.., 0usize.., 0usize.., 0usize..);
 
     match &ty.data {
         SatsTypeData::Product(fields) => {
@@ -382,8 +389,10 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
 
             let field_names = fields.iter().map(|f| f.ident.unwrap()).collect::<Vec<_>>();
             let field_strings = fields.iter().map(|f| f.name.as_deref().unwrap()).collect::<Vec<_>>();
-            let field_types = fields.iter().map(|f| &f.ty);
+            let field_types = fields.iter().map(|f| f.ty);
             let field_types2 = field_types.clone();
+            let field_types3 = field_types.clone();
+            let field_types4 = field_types.clone();
             quote! {
                 #[allow(non_camel_case_types)]
                 #[allow(clippy::all)]
@@ -396,8 +405,15 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                                 _marker: std::marker::PhantomData::<fn() -> #name #ty_generics>,
                             })
                         }
+
+                        fn validate<D: #spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<(), D::Error> {
+                            deserializer.validate_product(__ProductVisitor {
+                                _marker: std::marker::PhantomData::<fn() -> #name #ty_generics>,
+                            })
+                        }
                     }
 
+                    // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                     struct __ProductVisitor #impl_generics #where_clause {
                         _marker: std::marker::PhantomData<fn() -> #name #ty_generics>,
                     }
@@ -419,24 +435,57 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                                         .ok_or_else(|| #spacetimedb_lib::de::Error::invalid_product_length(#iter_n, &self))?,)*
                             })
                         }
+                        fn validate_seq_product<A: #spacetimedb_lib::de::SeqProductAccess<'de>>(self, mut tup: A) -> Result<(), A::Error> {
+                            #(
+                                tup.validate_next_element::<#field_types2>()?
+                                    .ok_or_else(|| #spacetimedb_lib::de::Error::invalid_product_length(#iter_n2, &self))?;
+                            )*
+                            Ok(())
+                        }
+                        // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                         fn visit_named_product<A: #spacetimedb_lib::de::NamedProductAccess<'de>>(self, mut __prod: A) -> Result<Self::Output, A::Error> {
                             #(let mut #field_names = None;)*
+                            // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                             while let Some(__field) = #spacetimedb_lib::de::NamedProductAccess::get_field_ident(&mut __prod, Self {
                                 _marker: std::marker::PhantomData,
                             })? {
                                 match __field {
                                     #(__ProductFieldIdent::#field_names => {
                                         if #field_names.is_some() {
-                                            return Err(#spacetimedb_lib::de::Error::duplicate_field(#iter_n2, Some(#field_strings), &self))
+                                            return Err(#spacetimedb_lib::de::Error::duplicate_field(#iter_n3, Some(#field_strings), &self))
                                         }
-                                        #field_names = Some(#spacetimedb_lib::de::NamedProductAccess::get_field_value::<#field_types2>(&mut __prod)?)
+                                        #field_names = Some(#spacetimedb_lib::de::NamedProductAccess::get_field_value::<#field_types3>(&mut __prod)?)
                                     })*
                                 }
                             }
                             Ok(#name {
                                 #(#field_names:
-                                    #field_names.ok_or_else(|| #spacetimedb_lib::de::Error::missing_field(#iter_n3, Some(#field_strings), &self))?,)*
+                                    #field_names.ok_or_else(|| #spacetimedb_lib::de::Error::missing_field(#iter_n4, Some(#field_strings), &self))?,)*
                             })
+                        }
+                        // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
+                        fn validate_named_product<A: #spacetimedb_lib::de::NamedProductAccess<'de>>(self, mut __prod: A) -> Result<(), A::Error> {
+                            #(let mut #field_names = false;)*
+                            // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
+                            while let Some(__field) = #spacetimedb_lib::de::NamedProductAccess::get_field_ident(&mut __prod, Self {
+                                _marker: std::marker::PhantomData,
+                            })? {
+                                match __field {
+                                    #(__ProductFieldIdent::#field_names => {
+                                        if #field_names {
+                                            return Err(#spacetimedb_lib::de::Error::duplicate_field(#iter_n5, Some(#field_strings), &self))
+                                        }
+                                        #spacetimedb_lib::de::NamedProductAccess::validate_field_value::<#field_types4>(&mut __prod)?;
+                                        #field_names = true;
+                                    })*
+                                }
+                            }
+                            #(
+                                if !#field_names {
+                                    return Err(#spacetimedb_lib::de::Error::missing_field(#iter_n6, Some(#field_strings), &self));
+                                }
+                            )*
+                            Ok(())
                         }
                     }
 
@@ -447,22 +496,26 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                             [#(#field_strings),*].into_iter().map(Some)
                         }
 
-                        fn visit<__E: #spacetimedb_lib::de::Error>(self, name: &str) -> Result<Self::Output, __E> {
-                            match name {
+                        // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
+                        // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
+                        fn visit<__E: #spacetimedb_lib::de::Error>(self, __name: &str) -> Result<Self::Output, __E> {
+                            match __name {
                                 #(#field_strings => Ok(__ProductFieldIdent::#field_names),)*
-                                _ => Err(#spacetimedb_lib::de::Error::unknown_field_name(name, &self)),
+                                _ => Err(#spacetimedb_lib::de::Error::unknown_field_name(__name, &self)),
                             }
                         }
 
-                        fn visit_seq(self, index: usize) -> Self::Output {
-                            match index {
-                                #(#iter_n4 => __ProductFieldIdent::#field_names,)*
+                        // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
+                        fn visit_seq(self, __index: usize) -> Self::Output {
+                            match __index {
+                                #(#iter_n7 => __ProductFieldIdent::#field_names,)*
                                 _ => core::unreachable!(),
                             }
                         }
                     }
 
                     #[allow(non_camel_case_types)]
+                    // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                     enum __ProductFieldIdent {
                         #(#field_names,)*
                     }
@@ -488,6 +541,18 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                     }
                 }
             });
+            let arms_validate = variants.iter().map(|var| {
+                let ident = var.ident;
+                if let Some(ty) = var.ty {
+                    quote! {
+                        __Variant::#ident => #spacetimedb_lib::de::VariantAccess::validate::<#ty>(__access)?,
+                    }
+                } else {
+                    quote! {
+                        __Variant::#ident => #spacetimedb_lib::de::VariantAccess::validate::<()>(__access)?,
+                    }
+                }
+            });
             quote! {
                 #[allow(clippy::all)]
                 const _: () = {
@@ -497,8 +562,15 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                                 _marker: std::marker::PhantomData::<fn() -> #name #ty_generics>,
                             })
                         }
+
+                        fn validate<D: #spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<(), D::Error> {
+                            deserializer.validate_sum(__SumVisitor {
+                                _marker: std::marker::PhantomData::<fn() -> #name #ty_generics>,
+                            })
+                        }
                     }
 
+                    // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                     struct __SumVisitor #impl_generics #where_clause {
                         _marker: std::marker::PhantomData<fn() -> #name #ty_generics>,
                     }
@@ -510,15 +582,28 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                             Some(#tuple_name)
                         }
 
+                        // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                         fn visit_sum<A: #spacetimedb_lib::de::SumAccess<'de>>(self, __data: A) -> Result<Self::Output, A::Error> {
+                            // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                             let (__variant, __access) = __data.variant(self)?;
                             match __variant {
                                 #(#arms)*
                             }
                         }
+
+                        // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
+                        fn validate_sum<A: #spacetimedb_lib::de::SumAccess<'de>>(self, __data: A) -> Result<(), A::Error> {
+                            // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
+                            let (__variant, __access) = __data.variant(self)?;
+                            match __variant {
+                                #(#arms_validate)*
+                            }
+                            Ok(())
+                        }
                     }
 
                     #[allow(non_camel_case_types)]
+                    // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                     enum __Variant {
                         #(#variant_idents,)*
                     }
@@ -530,12 +615,14 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                             [#(#variant_names,)*].into_iter()
                         }
 
+                        // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                         fn visit_tag<E: #spacetimedb_lib::de::Error>(self, __tag: u8) -> Result<Self::Output, E> {
                             match __tag {
                                 #(#tags => Ok(__Variant::#variant_idents),)*
                                 _ => Err(#spacetimedb_lib::de::Error::unknown_variant_tag(__tag, &self)),
                             }
                         }
+                        // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                         fn visit_name<E: #spacetimedb_lib::de::Error>(self, __name: &str) -> Result<Self::Output, E> {
                             match __name {
                                 #(#variant_names => Ok(__Variant::#variant_idents),)*
@@ -600,6 +687,7 @@ pub(crate) fn derive_serialize(ty: &SatsType) -> TokenStream {
             let fieldnamestrings = fields.iter().map(|field| field.name.as_ref().unwrap());
             let nfields = fields.len();
             quote! {
+                // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                 let mut __prod = __serializer.serialize_named_product(#nfields)?;
                 #(#spacetimedb_lib::ser::SerializeNamedProduct::serialize_element::<#tys>(&mut __prod, Some(#fieldnamestrings), &self.#fieldnames)?;)*
                 #spacetimedb_lib::ser::SerializeNamedProduct::end(__prod)
@@ -611,6 +699,7 @@ pub(crate) fn derive_serialize(ty: &SatsType) -> TokenStream {
                 let tag = i as u8;
                 if let (Some(member), Some(ty)) = (&var.member, var.ty) {
                     quote_spanned! {ty.span()=>
+                        // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
                         Self::#name { #member: __variant } => __serializer.serialize_variant::<#ty>(#tag, Some(#name_str), __variant),
                     }
                 } else {
@@ -628,6 +717,7 @@ pub(crate) fn derive_serialize(ty: &SatsType) -> TokenStream {
     quote! {
         impl #impl_generics #spacetimedb_lib::ser::Serialize for #name #ty_generics #where_clause {
             #fast_body
+            // __ reserved name for binding to prevent name conflicts. See module-level doc comment.
             fn serialize<S: #spacetimedb_lib::ser::Serializer>(&self, __serializer: S) -> Result<S::Ok, S::Error> {
                 #body
             }

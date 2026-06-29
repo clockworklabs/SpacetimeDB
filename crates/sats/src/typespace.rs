@@ -300,7 +300,7 @@ pub trait GroundSpacetimeType {
 /// (Storing collections in rows of a database table is a form of [denormalization](https://en.wikipedia.org/wiki/Denormalization).)
 ///
 /// Do not manually implement this trait unless you are VERY sure you know what you're doing.
-/// Implementations must be consistent with `Deerialize<'de> for T`, `Serialize for T` and `Serialize, Deserialize for AlgebraicValue`.
+/// Implementations must be consistent with `Deserialize<'de> for T`, `Serialize for T` and `Serialize, Deserialize for AlgebraicValue`.
 /// Implementations that are inconsistent across these traits may result in data loss.
 ///
 /// N.B.: It's `SpacetimeType`, not `SpaceTimeType`.

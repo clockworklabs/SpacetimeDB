@@ -45,6 +45,20 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let force = args.get_flag("force");
 
     let identity = database_identity(&config, &resolved.database, server).await?;
+    let delete_target = if resolved.database == identity.to_string() {
+        identity.to_string()
+    } else {
+        format!("{} ({identity})", resolved.database)
+    };
+
+    if !y_or_n(
+        force,
+        &format!("Are you sure you want to delete database {delete_target}? This action cannot be undone."),
+    )? {
+        println!("Aborting");
+        return Ok(());
+    }
+
     let host_url = config.get_host_url(server)?;
     let request_path = format!("{host_url}/v1/database/{identity}");
     let auth_header = get_auth_header(&mut config, false, server, !force).await?;
@@ -58,7 +72,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             if !force {
                 print_database_tree_info(&confirm.database_tree).await?;
             }
-            if y_or_n(force, "Do you want to proceed deleting above databases?")? {
+            if force || y_or_n(false, "Do you want to proceed deleting above databases?")? {
                 send_request(&client, &request_path, &auth_header, Some(confirm.confirmation_token))
                     .await?
                     .error_for_status()?;

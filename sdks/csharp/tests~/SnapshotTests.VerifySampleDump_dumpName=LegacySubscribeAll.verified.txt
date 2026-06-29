@@ -18,8 +18,8 @@
         ConnectionId: Guid_1
       },
       user: {
-        Identity: Identity_1,
-        Online: true
+        identity: Identity_1,
+        online: true
       }
     },
     OnInsertUser: {
@@ -35,8 +35,8 @@
         ConnectionId: Guid_1
       },
       user: {
-        Identity: Identity_2,
-        Online: true
+        identity: Identity_2,
+        online: true
       }
     },
     OnInsertUser: {
@@ -52,8 +52,8 @@
         ConnectionId: Guid_1
       },
       user: {
-        Identity: Identity_3,
-        Online: true
+        identity: Identity_3,
+        online: true
       }
     },
     OnUpdateUser: {
@@ -81,13 +81,13 @@
         ConnectionId: Guid_1
       },
       oldUser: {
-        Identity: Identity_1,
-        Online: true
+        identity: Identity_1,
+        online: true
       },
       newUser: {
-        Identity: Identity_1,
-        Name: A,
-        Online: true
+        identity: Identity_1,
+        name: A,
+        online: true
       }
     },
     OnSetName: {
@@ -109,7 +109,7 @@
             Count: 4
           },
           User: {
-            UserIdentityIdxBtree: {},
+            Identity: {},
             Count: 3
           }
         },
@@ -141,7 +141,7 @@
             Count: 4
           },
           User: {
-            UserIdentityIdxBtree: {},
+            Identity: {},
             Count: 3
           }
         },
@@ -173,7 +173,7 @@
             Count: 4
           },
           User: {
-            UserIdentityIdxBtree: {},
+            Identity: {},
             Count: 3
           }
         },
@@ -198,13 +198,13 @@
         ConnectionId: Guid_1
       },
       oldUser: {
-        Identity: Identity_3,
-        Online: true
+        identity: Identity_3,
+        online: true
       },
       newUser: {
-        Identity: Identity_3,
-        Name: B,
-        Online: true
+        identity: Identity_3,
+        name: B,
+        online: true
       }
     },
     OnInsertMessage: {
@@ -220,9 +220,9 @@
         ConnectionId: Guid_1
       },
       message: {
-        Sender: Identity_3,
-        Sent: 1718487775346381,
-        Text: Hello, A!
+        sender: Identity_3,
+        sent: 1718487775346381,
+        text: Hello, A!
       }
     },
     OnInsertMessage: {
@@ -238,9 +238,9 @@
         ConnectionId: Guid_1
       },
       message: {
-        Sender: Identity_1,
-        Sent: 1718487783175083,
-        Text: Hello, B!
+        sender: Identity_1,
+        sent: 1718487783175083,
+        text: Hello, B!
       }
     },
     OnInsertMessage: {
@@ -256,9 +256,9 @@
         ConnectionId: Guid_1
       },
       message: {
-        Sender: Identity_3,
-        Sent: 1718487787645364,
-        Text: Goodbye!
+        sender: Identity_3,
+        sent: 1718487787645364,
+        text: Goodbye!
       }
     },
     OnUpdateUser: {
@@ -274,14 +274,14 @@
         ConnectionId: Guid_1
       },
       oldUser: {
-        Identity: Identity_3,
-        Name: B,
-        Online: true
+        identity: Identity_3,
+        name: B,
+        online: true
       },
       newUser: {
-        Identity: Identity_3,
-        Name: B,
-        Online: false
+        identity: Identity_3,
+        name: B,
+        online: false
       }
     },
     OnInsertMessage: {
@@ -297,49 +297,49 @@
         ConnectionId: Guid_1
       },
       message: {
-        Sender: Identity_1,
-        Sent: 1718487794937841,
-        Text: Goodbye!
+        sender: Identity_1,
+        sent: 1718487794937841,
+        text: Goodbye!
       }
     }
   },
   FinalSnapshot: {
     User: [
       {
-        Identity: Identity_1,
-        Name: A,
-        Online: true
+        identity: Identity_1,
+        name: A,
+        online: true
       },
       {
-        Identity: Identity_2,
-        Online: true
+        identity: Identity_2,
+        online: true
       },
       {
-        Identity: Identity_3,
-        Name: B,
-        Online: false
+        identity: Identity_3,
+        name: B,
+        online: false
       }
     ],
     Message: [
       {
-        Sender: Identity_3,
-        Sent: 1718487775346381,
-        Text: Hello, A!
+        sender: Identity_3,
+        sent: 1718487775346381,
+        text: Hello, A!
       },
       {
-        Sender: Identity_1,
-        Sent: 1718487783175083,
-        Text: Hello, B!
+        sender: Identity_1,
+        sent: 1718487783175083,
+        text: Hello, B!
       },
       {
-        Sender: Identity_3,
-        Sent: 1718487787645364,
-        Text: Goodbye!
+        sender: Identity_3,
+        sent: 1718487787645364,
+        text: Goodbye!
       },
       {
-        Sender: Identity_1,
-        Sent: 1718487794937841,
-        Text: Goodbye!
+        sender: Identity_1,
+        sent: 1718487794937841,
+        text: Goodbye!
       }
     ]
   },

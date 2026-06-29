@@ -277,7 +277,7 @@ pub trait Serializer: Sized {
 /// See the documentation of `serde::Serialize` for more information of the data model.
 ///
 /// Do not manually implement this trait unless you know what you are doing.
-/// Implementations must be consistent with `Deerialize<'de> for T`, `SpacetimeType for T` and `Serialize, Deserialize for AlgebraicValue`.
+/// Implementations must be consistent with `Deserialize<'de> for T`, `SpacetimeType for T` and `Serialize, Deserialize for AlgebraicValue`.
 /// Implementations that are inconsistent across these traits may result in data loss.
 ///
 /// [`serde`]: https://crates.io/crates/serde

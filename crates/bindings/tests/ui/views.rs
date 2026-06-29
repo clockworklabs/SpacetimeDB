@@ -1,4 +1,6 @@
-use spacetimedb::{reducer, table, view, AnonymousViewContext, Identity, Query, ReducerContext, ViewContext};
+use spacetimedb::{
+    reducer, table, view, AnonymousViewContext, Identity, Query, ReducerContext, SpacetimeType, ViewContext,
+};
 
 #[table(accessor = test)]
 struct Test {
@@ -13,13 +15,6 @@ fn view_handle_no_iter(ctx: &ReducerContext) {
     let read_only = ctx.as_read_only();
     // Should not compile: ViewHandle does not expose `iter()`
     for _ in read_only.db.test().iter() {}
-}
-
-#[reducer]
-fn view_handle_no_count(ctx: &ReducerContext) {
-    let read_only = ctx.as_read_only();
-    // Should not compile: ViewHandle does not expose `count()`
-    let _ = read_only.db.test().count();
 }
 
 #[reducer]
@@ -144,7 +139,6 @@ fn sched_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<PlayerInfo> {
     vec![]
 }
 
-
 #[table(accessor = player_info)]
 struct PlayerInfo {
     #[unique]
@@ -201,6 +195,40 @@ fn view_right_join_wrong_return_type(ctx: &ViewContext) -> impl Query<Player> {
 #[view(accessor = view_nonexistent_table, public)]
 fn view_nonexistent_table(ctx: &ViewContext) -> impl Query<T> {
     ctx.from.xyz().build()
+}
+
+/// The declared view primary key must refer to a column in the returned row type.
+#[view(accessor = view_primary_key_missing_column, public, primary_key = missing_identity)]
+fn view_primary_key_missing_column(_: &ViewContext) -> Vec<Player> {
+    vec![]
+}
+
+#[derive(SpacetimeType)]
+struct CustomAccessorViewRow {
+    #[sats(name = "identity")]
+    renamed_identity: Identity,
+}
+
+/// The declared view primary key must use the Rust accessor/source name, not the canonical column name.
+#[view(accessor = view_primary_key_uses_canonical_name, public, primary_key = identity)]
+fn view_primary_key_uses_canonical_name(_: &ViewContext) -> Vec<CustomAccessorViewRow> {
+    vec![]
+}
+
+#[derive(SpacetimeType)]
+struct NonFilterableViewPrimaryKey {
+    value: u32,
+}
+
+#[derive(SpacetimeType)]
+struct NonFilterableViewPrimaryKeyRow {
+    identity: NonFilterableViewPrimaryKey,
+}
+
+/// The declared view primary key column type must be filterable.
+#[view(accessor = view_primary_key_non_filterable_column, public, primary_key = identity)]
+fn view_primary_key_non_filterable_column(_: &ViewContext) -> Vec<NonFilterableViewPrimaryKeyRow> {
+    vec![]
 }
 
 fn main() {}

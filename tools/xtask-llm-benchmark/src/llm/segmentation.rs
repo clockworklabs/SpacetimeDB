@@ -88,14 +88,30 @@ pub fn build_anthropic_messages(
 }
 
 // Provider-specific context limits
-pub fn anthropic_ctx_limit_tokens(_model: &str) -> usize {
-    200_000 - 2000 // extra space
+pub fn anthropic_ctx_limit_tokens(model: &str) -> usize {
+    let m = model.to_ascii_lowercase();
+
+    // Newer Claude 4.6+ models expose a 1M context window.
+    if m.contains("4-6")
+        || m.contains("4.6")
+        || m.contains("4-7")
+        || m.contains("4.7")
+        || m.contains("4-8")
+        || m.contains("4.8")
+    {
+        return 1_000_000;
+    }
+
+    // Older Anthropic models are 200k; reserve ~15k for tokenizer variance + system/segments.
+    185_000
 }
 
 pub fn openai_ctx_limit_tokens(model: &str) -> usize {
     let m = model.to_ascii_lowercase();
-    if m.contains("gpt-5") || m.contains("gpt-4.1") {
-        300_000
+    if m.contains("gpt-5.5") {
+        1_050_000
+    } else if m.contains("gpt-5") || m.contains("gpt-4.1") {
+        400_000
     } else {
         128_000
     }
@@ -104,6 +120,13 @@ pub fn openai_ctx_limit_tokens(model: &str) -> usize {
 pub fn deepseek_ctx_limit_tokens(model: &str) -> usize {
     let m = model.to_ascii_lowercase();
 
+    if m.starts_with("deepseek-v4") {
+        return 1_000_000;
+    }
+    if m.starts_with("deepseek-v3.2") {
+        return 128_000;
+    }
+    // API limit 128K for deepseek-chat and deepseek-reasoner compatibility aliases.
     if m.starts_with("deepseek-reasoner") || m.starts_with("deepseek-r1") {
         return 128_000;
     }
@@ -121,8 +144,8 @@ pub fn deepseek_ctx_limit_tokens(model: &str) -> usize {
 pub fn gemini_ctx_limit_tokens(model: &str) -> usize {
     let m = model.to_ascii_lowercase();
 
-    // Gemini 2.5 series (very large)
-    if m.contains("2.5") && (m.contains("pro") || m.contains("flash")) {
+    // Gemini 3.x and 2.5 series (very large)
+    if (m.contains("3.") || m.contains("2.5")) && (m.contains("pro") || m.contains("flash")) {
         return 1_000_000;
     }
 
@@ -142,14 +165,28 @@ pub fn gemini_ctx_limit_tokens(model: &str) -> usize {
 
 pub fn meta_ctx_limit_tokens(model: &str) -> usize {
     let m = model.to_ascii_lowercase();
-    if m.contains("405b") || m.contains("70b") || m.contains("chat") {
-        return 120_000; //8k headroom
+    // Llama 4: Maverick 1M, Scout 328K context
+    if m.contains("maverick") {
+        return 992_000; // 1M - 8k headroom
     }
-    120_000 //8k headroom
+    if m.contains("scout") {
+        return 320_000; // 328K - 8k headroom
+    }
+    // Llama 3.x
+    if m.contains("405b") || m.contains("70b") || m.contains("8b") || m.contains("chat") {
+        return 120_000; // 8k headroom
+    }
+    120_000 // 8k headroom
 }
 
 pub fn xai_ctx_limit_tokens(model: &str) -> usize {
     let m = model.to_ascii_lowercase();
+    if m.contains("grok-build-0.1") || m.contains("grok-code-fast-1") {
+        return 256_000;
+    }
+    if m.contains("grok-4.3") {
+        return 1_000_000;
+    }
     if m.contains("grok-4") || m.contains("grok-3") {
         return 128_000;
     }
@@ -178,6 +215,7 @@ pub fn headroom_tokens_env(vendor: Vendor) -> usize {
         Vendor::Xai => std::env::var("XAI_HEADROOM_TOKENS").ok(),
         Vendor::DeepSeek => std::env::var("DEEPSEEK_HEADROOM_TOKENS").ok(),
         Vendor::Meta => std::env::var("META_HEADROOM_TOKENS").ok(),
+        Vendor::OpenRouter => std::env::var("OPENROUTER_HEADROOM_TOKENS").ok(),
     };
 
     let raw = per_vendor
@@ -193,7 +231,7 @@ pub fn headroom_tokens_env(vendor: Vendor) -> usize {
 fn default_headroom(vendor: Vendor) -> usize {
     match vendor {
         // Conservative floors tuned for typical max-context models
-        Vendor::OpenAi | Vendor::Xai | Vendor::DeepSeek | Vendor::Meta => 3_000,
+        Vendor::OpenAi | Vendor::Xai | Vendor::DeepSeek | Vendor::Meta | Vendor::OpenRouter => 3_000,
         Vendor::Anthropic => 5_000,
         Vendor::Google => 10_000,
     }
@@ -242,17 +280,18 @@ pub fn non_context_reserve_tokens_env(vendor: Vendor) -> usize {
         Vendor::Xai => "XAI_RESERVE_TOKENS",
         Vendor::DeepSeek => "DEEPSEEK_RESERVE_TOKENS",
         Vendor::Meta => "META_RESERVE_TOKENS",
+        Vendor::OpenRouter => "OPENROUTER_RESERVE_TOKENS",
     };
-    if let Ok(v) = std::env::var(key) {
-        if let Ok(n) = v.parse::<usize>() {
-            return round_500(n.max(2_000));
-        }
+    if let Ok(v) = std::env::var(key)
+        && let Ok(n) = v.parse::<usize>()
+    {
+        return round_500(n.max(2_000));
     }
     // global override
-    if let Ok(v) = std::env::var("LLM_RESERVE_TOKENS") {
-        if let Ok(n) = v.parse::<usize>() {
-            return round_500(n.max(2_000));
-        }
+    if let Ok(v) = std::env::var("LLM_RESERVE_TOKENS")
+        && let Ok(n) = v.parse::<usize>()
+    {
+        return round_500(n.max(2_000));
     }
 
     // defaults (conservative)
@@ -263,6 +302,7 @@ pub fn non_context_reserve_tokens_env(vendor: Vendor) -> usize {
         Vendor::Xai => 12_000,
         Vendor::DeepSeek => 12_000,
         Vendor::Meta => 12_000,
+        Vendor::OpenRouter => 12_000,
     };
     round_500(def)
 }

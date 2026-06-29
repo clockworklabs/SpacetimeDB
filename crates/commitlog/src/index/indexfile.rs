@@ -161,7 +161,7 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
     /// Errors
     /// - `IndexError::InvalidInput`: Either Key or Value is 0
     /// - `IndexError::OutOfMemory`: Append after index file is already full.
-    pub fn append(&mut self, key: Key, value: u64) -> Result<(), IndexError> {
+    pub fn append(&mut self, key: Key, value: u64) -> Result<usize, IndexError> {
         let key = key.into();
         let last_key = self.last_key()?;
         if last_key >= key {
@@ -179,7 +179,7 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
         self.inner[start..start + KEY_SIZE].copy_from_slice(&key_bytes);
         self.inner[start + KEY_SIZE..start + ENTRY_SIZE].copy_from_slice(&value_bytes);
         self.num_entries += 1;
-        Ok(())
+        Ok(start)
     }
 
     /// Asynchronously flushes any pending changes to the index file
@@ -190,6 +190,21 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
         self.inner.flush_async()
     }
 
+    /// Asynchronously flushes the index entry starting at `offset` to the index file.
+    ///
+    /// On linux, the underlying `msync` is a documented no-op since the kernel already
+    /// tracks dirty pages and flushes them as needed.
+    ///
+    /// See https://man7.org/linux/man-pages/man2/msync.2.html for details.
+    ///
+    /// On macOS, it is not a documented no-op, and it explicitly states that `msync`
+    /// will only examine pages covered by the provided address range. Hence this should
+    /// be preferred over [`Self::async_flush`] when only flushing a single entry at a
+    /// time, since it may avoid examining pages across the whole mapping.
+    pub fn async_flush_entry(&self, offset: usize) -> io::Result<()> {
+        self.inner.flush_async_range(offset, ENTRY_SIZE)
+    }
+
     /// Truncates the index file starting from the entry with a key greater than
     /// or equal to the given key.
     ///
@@ -198,7 +213,14 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
         let key = key.into();
         let (found_key, index) = self
             .find_index(Key::from(key))
-            .map(|(found, index)| (found.into(), index))?;
+            .map(|(found, index)| (found.into(), index))
+            .or_else(|e| {
+                match e {
+                    // If key is smaller than first entry, truncate all entries
+                    IndexError::KeyNotFound => Ok((key, 0)),
+                    _ => Err(e),
+                }
+            })?;
 
         // If returned key is smaller than asked key, truncate from next entry
         self.num_entries = if found_key == key {
@@ -501,6 +523,27 @@ mod tests {
         // Truncating from bigger key than already present must be no-op
         index.truncate(9)?;
         assert_eq!(index.num_entries, 4);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_truncate_eddge_cases() -> Result<(), IndexError> {
+        // index file with no entries
+        let mut index = create_and_fill_index(10, 0)?;
+
+        // Truncate from key smaller than first entry should truncate all entries
+        index.truncate(1)?;
+        assert_eq!(index.num_entries, 0);
+
+        // first entry will be with key 2
+        let mut index = create_and_fill_index(10, 5)?;
+        assert_eq!(index.num_entries, 4);
+        index.truncate(1)?;
+        assert_eq!(index.num_entries, 0);
+
+        index.truncate(0)?;
+        assert_eq!(index.num_entries, 0);
 
         Ok(())
     }

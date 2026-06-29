@@ -30,14 +30,14 @@ export const create_user = spacetimedb.reducer({ name: t.string(), email: t.stri
   
   // Modify tables
   ctx.db.user.insert({
-    id: 0,  // auto-increment will assign
+    id: 0n,  // auto-increment will assign
     name,
     email
   });
 });
 ```
 
-The first argument is the reducer name, the second defines argument types, and the third is the handler function taking `(ctx, args)`.
+The exported const name becomes the reducer name. Pass an argument type object followed by a handler function taking `(ctx, args)`. For reducers with no arguments, pass only the handler function.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -127,8 +127,8 @@ SPACETIMEDB_REDUCER(create_user, ReducerContext ctx, std::string name, std::stri
     }
     
     // Modify tables
-    User user{0, name, email};  // 0 for id - auto-increment will assign
-    ctx.db[user].insert(user);
+    User new_user{0, name, email};  // 0 for id - auto-increment will assign
+    ctx.db[user].insert(new_user);
     
     return Ok();
 }
@@ -160,7 +160,7 @@ Reducers have full read-write access to all tables (both public and private) thr
 
 ```typescript
 ctx.db.user.insert({
-  id: 0,  // auto-increment will assign
+  id: 0n,  // auto-increment will assign
   name: 'Alice',
   email: 'alice@example.com'
 });
@@ -542,7 +542,8 @@ Reducers cannot call procedures directly (procedures may have side effects incom
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-import { schema, t, table, SenderError } from 'spacetimedb/server';
+import { ScheduleAt } from 'spacetimedb';
+import { schema, t, table } from 'spacetimedb/server';
 
 // Define a schedule table for the procedure
 const fetchSchedule = table(
@@ -558,8 +559,7 @@ const spacetimedb = schema({ fetchSchedule });
 export default spacetimedb;
 
 // The procedure to be scheduled
-const fetchExternalData = spacetimedb.procedure(
-  'fetch_external_data',
+export const fetch_external_data = spacetimedb.procedure(
   { arg: fetchSchedule.rowType },
   t.unit(),
   (ctx, { arg }) => {
@@ -570,7 +570,7 @@ const fetchExternalData = spacetimedb.procedure(
 );
 
 // From a reducer, schedule the procedure by inserting into the schedule table
-const queueFetch = spacetimedb.reducer('queue_fetch', { url: t.string() }, (ctx, { url }) => {
+export const queueFetch = spacetimedb.reducer({ url: t.string() }, (ctx, { url }) => {
   ctx.db.fetchSchedule.insert({
     scheduled_id: 0n,
     scheduled_at: ScheduleAt.interval(0n), // Run immediately

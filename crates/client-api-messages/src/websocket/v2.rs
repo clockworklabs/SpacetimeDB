@@ -354,7 +354,7 @@ pub struct EventTableRows {
     pub events: BsatnRowList,
 }
 
-/// Response to [`Subscribe`] containing the initial matching rows.
+/// Response to [`OneOffQuery`] containing the matching rows or error.
 #[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct OneOffQueryResult {

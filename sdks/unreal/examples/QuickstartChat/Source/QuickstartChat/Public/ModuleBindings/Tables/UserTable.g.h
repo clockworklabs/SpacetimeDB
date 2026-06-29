@@ -25,7 +25,7 @@ private:
 public:
     UUserIdentityUniqueIndex()
         // Initialize the helper with the specific unique index name
-        : IdentityIndexHelper("Identity") {
+        : IdentityIndexHelper("identity") {
     }
 
     /**

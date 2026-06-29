@@ -1,7 +1,7 @@
-#![allow(clippy::disallowed_macros)]
+#![allow(clippy::disallowed_macros, clippy::type_complexity, clippy::enum_variant_names)]
 
-use anyhow::{bail, Context, Result};
-use clap::{Args, Parser, Subcommand};
+use anyhow::{Context, Result};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use futures::{StreamExt, TryStreamExt};
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, HashSet};
 use spacetimedb_guard::SpacetimeDbGuard;
@@ -10,21 +10,17 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
+use xtask_llm_benchmark::api::ApiClient;
 use xtask_llm_benchmark::bench::bench_route_concurrency;
 use xtask_llm_benchmark::bench::runner::{
     build_goldens_only_for_lang, ensure_goldens_built_once, run_selected_or_all_for_model_async_for_lang,
 };
-use xtask_llm_benchmark::bench::types::{BenchRunContext, RouteRun, RunConfig};
-use xtask_llm_benchmark::context::constants::{
-    docs_benchmark_comment, docs_benchmark_details, docs_benchmark_summary, llm_comparison_details,
-    llm_comparison_summary, ALL_MODES,
-};
-use xtask_llm_benchmark::context::{build_context, compute_processed_context_hash, docs_dir};
+use xtask_llm_benchmark::bench::types::{BenchRunContext, RouteRun, RunConfig, RunOutcome};
+use xtask_llm_benchmark::context::constants::ALL_MODES;
+use xtask_llm_benchmark::context::{build_context, compute_processed_context_hash};
 use xtask_llm_benchmark::eval::Lang;
 use xtask_llm_benchmark::llm::types::Vendor;
 use xtask_llm_benchmark::llm::{default_model_routes, make_provider_from_env, LlmProvider, ModelRoute};
-use xtask_llm_benchmark::results::io::{update_golden_answers_on_disk, write_summary_from_details_file};
-use xtask_llm_benchmark::results::{load_summary, Summary};
 
 #[derive(Clone, Debug)]
 struct ModelGroup {
@@ -75,24 +71,18 @@ struct Cli {
     command: Commands,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum ModelSource {
+    Static,
+    Remote,
+}
+
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Run benchmarks / build goldens / compute hashes.
     Run(RunArgs),
 
-    /// Check-only: ensure required mode exists per language and hashes match saved run.
-    CiCheck(CiCheckArgs),
-
-    /// Quickfix CI by running a minimal OpenAI model set.
-    CiQuickfix,
-
-    /// Generate markdown comment for GitHub PR (compares against master baseline).
-    CiComment(CiCommentArgs),
-
-    /// Regenerate summary.json from details.json (optionally custom paths).
-    Summary(SummaryArgs),
-
-    /// Analyze benchmark failures and generate a human-readable markdown report.
+    /// Run AI analysis on existing benchmark failures from the database.
     Analyze(AnalyzeArgs),
 }
 
@@ -139,48 +129,44 @@ struct RunArgs {
     ///   --models "anthropic:Claude 4.5 Sonnet" --models openai:gpt-5
     #[arg(long, num_args = 1..)]
     models: Option<Vec<ModelGroup>>,
-}
 
-#[derive(Args, Debug, Clone)]
-struct CiCheckArgs {
-    /// Optional: one or more languages (default: rust,csharp)
-    #[arg(long, num_args = 1.., value_delimiter = ',')]
-    lang: Option<Vec<Lang>>,
-}
+    /// Where to resolve models when --models is not provided
+    #[arg(long, value_enum, default_value_t = ModelSource::Static)]
+    model_source: ModelSource,
 
-#[derive(Args, Debug, Clone)]
-struct SummaryArgs {
-    /// Optional input details.json (default: results_path_details())
-    details: Option<PathBuf>,
+    /// Run benchmarks without uploading results
+    #[arg(long)]
+    dry_run: bool,
 
-    /// Optional output summary.json (default: results_path_summary())
-    summary: Option<PathBuf>,
+    /// When used with --dry-run, also generate local markdown analysis files
+    #[arg(long, requires = "dry_run")]
+    local_analysis: bool,
+
+    #[arg(skip)]
+    route_overrides: Option<Vec<ModelRoute>>,
 }
 
 #[derive(Args, Debug, Clone)]
 struct AnalyzeArgs {
-    /// Input details.json file (default: docs-benchmark-details.json)
+    /// Filter by language (e.g. rust, csharp, typescript)
     #[arg(long)]
-    details: Option<PathBuf>,
+    lang: Option<String>,
 
-    /// Output markdown file (default: docs-benchmark-analysis.md)
-    #[arg(long, short)]
-    output: Option<PathBuf>,
-
-    /// Only analyze failures for a specific language (rust, csharp)
+    /// Filter by mode (e.g. guidelines, no_context, docs)
     #[arg(long)]
-    lang: Option<Lang>,
-}
+    mode: Option<String>,
 
-#[derive(Args, Debug, Clone)]
-struct CiCommentArgs {
-    /// Output markdown file (default: docs-benchmark-comment.md)
-    #[arg(long, short)]
-    output: Option<PathBuf>,
+    /// Filter by model name (e.g. "Claude Sonnet 4.6")
+    #[arg(long)]
+    model: Option<String>,
 
-    /// Git ref to compare against for baseline (default: origin/master)
-    #[arg(long, default_value = "origin/master")]
-    baseline_ref: String,
+    /// Run date (YYYY-MM-DD). If omitted, lists available dates.
+    #[arg(long)]
+    date: Option<String>,
+
+    /// Print analysis to stdout instead of uploading
+    #[arg(long)]
+    dry_run: bool,
 }
 
 /// Local wrapper so we can parse Vendor without orphan-rule issues.
@@ -197,15 +183,38 @@ impl FromStr for VendorArg {
     }
 }
 
+/// Load `.env` from workspace root (repo) first, then current directory.
+/// Uses from_path_override so .env always wins over existing env vars.
+/// Runs once at startup; each new process loads .env fresh (no in-process reload).
+fn load_dotenv() {
+    let workspace_env = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .map(|p| p.join(".env"))
+        .filter(|p| p.is_file());
+    let cwd_env = std::env::current_dir()
+        .ok()
+        .map(|c| c.join(".env"))
+        .filter(|p| p.is_file());
+    let path = workspace_env.or(cwd_env);
+    if let Some(p) = path {
+        match dotenvy::from_path_override(&p) {
+            Ok(()) => eprintln!("[env] loaded .env from {}", p.display()),
+            Err(e) => eprintln!("[env] failed to load .env from {}: {}", p.display(), e),
+        }
+    } else {
+        eprintln!("[env] no .env found (tried workspace root and cwd)");
+    }
+}
+
 fn main() -> Result<()> {
+    // Load .env from current directory or workspace root so API keys and settings are available.
+    load_dotenv();
+
     let cli = Cli::parse();
 
     match cli.command {
         Commands::Run(args) => cmd_run(args),
-        Commands::CiCheck(args) => cmd_ci_check(args),
-        Commands::CiQuickfix => cmd_ci_quickfix(),
-        Commands::CiComment(args) => cmd_ci_comment(args),
-        Commands::Summary(args) => cmd_summary(args),
         Commands::Analyze(args) => cmd_analyze(args),
     }
 }
@@ -213,15 +222,29 @@ fn main() -> Result<()> {
 /* ------------------------------ run ------------------------------ */
 
 fn cmd_run(args: RunArgs) -> Result<()> {
-    // Run command writes to llm-comparison files (for comparing LLM performance)
-    let details_path = llm_comparison_details();
-    let summary_path = llm_comparison_summary();
-
-    run_benchmarks(args, &details_path, &summary_path)
+    run_benchmarks(args)?;
+    Ok(())
 }
 
 /// Core benchmark runner used by both `run` and `ci-quickfix`
-fn run_benchmarks(args: RunArgs, details_path: &Path, summary_path: &Path) -> Result<()> {
+fn run_benchmarks(args: RunArgs) -> Result<()> {
+    let dry_run = args.dry_run;
+    let local_analysis = args.local_analysis;
+    let dry_run_id = dry_run.then(|| chrono::Utc::now().format("%Y-%m-%d_%H%M%S").to_string());
+    let should_fetch_remote_routes = should_fetch_remote_routes(&args);
+
+    let needs_api_client = should_fetch_remote_routes || !dry_run;
+    let api_client = if needs_api_client {
+        ApiClient::from_env().context("failed to initialize API client")?
+    } else {
+        None
+    };
+    let upload_client = if dry_run { None } else { api_client.clone() };
+
+    if upload_client.is_none() && !dry_run {
+        eprintln!("[warn] LLM_BENCHMARK_UPLOAD_URL not set; results will not be uploaded");
+    }
+
     let mut config = RunConfig {
         modes: args.modes,
         hash_only: args.hash_only,
@@ -233,21 +256,30 @@ fn run_benchmarks(args: RunArgs, details_path: &Path, summary_path: &Path) -> Re
         categories: categories_to_set(args.categories),
         model_filter: model_filter_from_groups(args.models),
         host: None,
-        details_path: details_path.to_path_buf(),
+        api_client: upload_client.clone(),
+        dry_run,
+        local_analysis,
+        dry_run_id: dry_run_id.clone(),
+        route_overrides: args.route_overrides,
     };
+
+    if should_fetch_remote_routes {
+        let api = api_client
+            .as_ref()
+            .context("LLM_BENCHMARK_UPLOAD_URL required when --model-source remote is used")?;
+        config.route_overrides = Some(api.fetch_model_routes()?);
+    }
 
     let bench_root = find_bench_root();
 
-    let modes = config
-        .modes
-        .clone()
-        .unwrap_or_else(|| ALL_MODES.iter().map(|s| s.to_string()).collect());
+    // Upload task catalog before running benchmarks
+    if let Some(ref api) = upload_client
+        && let Err(e) = api.upload_task_catalog(&bench_root)
+    {
+        eprintln!("[warn] failed to upload task catalog: {e}");
+    }
 
-    let RuntimeInit {
-        runtime,
-        provider: llm_provider,
-        guard,
-    } = initialize_runtime_and_provider(config.hash_only, config.goldens_only)?;
+    let RuntimeInit { runtime, guard } = initialize_runtime(config.hash_only)?;
 
     config.host = guard.as_ref().map(|g| g.host_url.clone());
 
@@ -256,7 +288,24 @@ fn run_benchmarks(args: RunArgs, details_path: &Path, summary_path: &Path) -> Re
     let selectors: Option<Vec<String>> = config.selectors.clone();
     let selectors_ref: Option<&[String]> = selectors.as_deref();
 
-    if !config.goldens_only && !config.hash_only {
+    let modes = config
+        .modes
+        .clone()
+        .unwrap_or_else(|| ALL_MODES.iter().map(|s| s.to_string()).collect());
+
+    if config.goldens_only {
+        let rt = runtime.as_ref().expect("runtime required for --goldens-only");
+        rt.block_on(build_goldens_only_for_lang(
+            config.host.clone(),
+            &bench_root,
+            config.lang,
+            selectors_ref,
+        ))?;
+        println!("[{}] goldens-only build complete", config.lang.as_str());
+        return Ok(());
+    }
+
+    let llm_provider = if !config.goldens_only && !config.hash_only {
         let rt = runtime.as_ref().expect("failed to initialize runtime for goldens");
         rt.block_on(ensure_goldens_built_once(
             config.host.clone(),
@@ -264,10 +313,20 @@ fn run_benchmarks(args: RunArgs, details_path: &Path, summary_path: &Path) -> Re
             config.lang,
             selectors_ref,
         ))?;
-    }
+
+        let provider = make_provider_from_env()?;
+        let rt = runtime.as_ref().expect("failed to initialize runtime for preflight");
+        let routes = filter_routes(&config);
+        preflight_llm_routes(rt, provider.as_ref(), &routes, &modes)?;
+        Some(provider)
+    } else {
+        None
+    };
+
+    let mut all_outcomes: Vec<RunOutcome> = Vec::new();
 
     for mode in modes {
-        run_mode_benchmarks(
+        let outcomes = run_mode_benchmarks(
             &mode,
             config.lang,
             &config,
@@ -275,123 +334,211 @@ fn run_benchmarks(args: RunArgs, details_path: &Path, summary_path: &Path) -> Re
             runtime.as_ref(),
             llm_provider.as_ref(),
         )?;
+        all_outcomes.extend(outcomes);
     }
 
-    if !config.goldens_only && !config.hash_only {
-        fs::create_dir_all(docs_dir().join("llms"))?;
-
-        update_golden_answers_on_disk(details_path, &bench_root, /*all=*/ true, /*overwrite=*/ true)?;
-
-        write_summary_from_details_file(details_path, summary_path)?;
-        println!("Results written to:");
-        println!("  Details: {}", details_path.display());
-        println!("  Summary: {}", summary_path.display());
+    // Write local run log on --dry-run so results aren't lost
+    if dry_run && !all_outcomes.is_empty() {
+        let runs_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("runs");
+        let _ = fs::create_dir_all(&runs_dir);
+        let run_id = dry_run_id.as_deref().unwrap_or("dry-run");
+        let log_path = runs_dir.join(format!("run-{run_id}.json"));
+        match serde_json::to_string_pretty(&all_outcomes) {
+            Ok(json) => {
+                if let Err(e) = fs::write(&log_path, json) {
+                    eprintln!("[warn] failed to write run log: {e}");
+                } else {
+                    println!("Run log: {}", log_path.display());
+                }
+            }
+            Err(e) => eprintln!("[warn] failed to serialize run log: {e}"),
+        }
     }
 
     Ok(())
 }
 
-/* --------------------------- ci-check --------------------------- */
+/* ------------------------------ analyze ------------------------------ */
 
-fn cmd_ci_check(args: CiCheckArgs) -> Result<()> {
-    // Check-only:
-    //  - Verifies the required modes exist for each language
-    //  - Computes the current context hash and compares against the saved summary hash
-    //  - Does NOT run any providers/models or build goldens
-    //
-    // Required mode/lang combinations:
-    //   Rust   → "rustdoc_json"
-    //   Rust   → "docs"
-    //   CSharp → "docs"
+fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
+    let api = ApiClient::from_env()
+        .context("failed to initialize API client")?
+        .context("LLM_BENCHMARK_UPLOAD_URL required for analyze")?;
 
-    let langs = args.lang.unwrap_or_else(|| vec![Lang::Rust, Lang::CSharp]);
-
-    // Build the list of (lang, mode) combinations to check
-    let mut checks: Vec<(Lang, &'static str)> = Vec::new();
-    for lang in &langs {
-        match lang {
-            Lang::Rust => {
-                checks.push((Lang::Rust, "rustdoc_json"));
-                checks.push((Lang::Rust, "docs"));
+    // If no date specified, list available dates and exit
+    if args.date.is_none() {
+        let dates = api.fetch_run_dates(args.lang.as_deref(), args.mode.as_deref())?;
+        if dates.is_empty() {
+            println!("No run dates found.");
+        } else {
+            println!("Available run dates:");
+            for d in &dates {
+                println!("  {}", d);
             }
-            Lang::CSharp => {
-                checks.push((Lang::CSharp, "docs"));
-            }
-            Lang::TypeScript => {
-                checks.push((Lang::TypeScript, "docs"));
-            }
+            println!("\nUse --date YYYY-MM-DD to analyze a specific run.");
         }
+        return Ok(());
     }
 
-    // De-dupe, preserve order
-    let mut seen = HashSet::new();
-    checks.retain(|(lang, mode)| seen.insert((lang.as_str().to_string(), mode.to_string())));
+    let date = args.date.as_deref().unwrap();
 
-    // Debug hint for how to (re)generate entries
-    let hint_for = |_lang: Lang| -> &'static str { "Check DEVELOP.md for instructions on how to proceed." };
+    // Fetch failures from the API
+    let (failures, run_date) = api.fetch_failures(
+        args.lang.as_deref(),
+        args.mode.as_deref(),
+        args.model.as_deref(),
+        Some(date),
+    )?;
 
-    // Load docs-benchmark summary to compare hashes against
-    let summary_path = docs_benchmark_summary();
-    let summary: Summary =
-        load_summary(&summary_path).with_context(|| format!("load summary file at {:?}", summary_path))?;
+    let run_date = run_date.unwrap_or_else(|| date.to_string());
 
-    for (lang, mode) in checks {
-        let lang_str = lang.as_str();
+    if failures.is_empty() {
+        println!("No failures found for date {}.", run_date);
+        return Ok(());
+    }
 
-        // Ensure mode exists (non-empty paths)
-        match xtask_llm_benchmark::context::resolve_mode_paths(mode) {
-            Ok(paths) if !paths.is_empty() => {}
-            Ok(_) => bail!(
-                "CI check FAILED: {}/{} resolved to 0 paths.\n→ {}",
-                mode,
-                lang_str,
-                hint_for(lang)
-            ),
-            Err(e) => bail!(
-                "CI check FAILED: {}/{} not available: {}.\n→ {}",
-                mode,
-                lang_str,
-                e,
-                hint_for(lang)
-            ),
-        }
+    // Group failures by (lang, mode, model)
+    let mut groups: std::collections::BTreeMap<(String, String, String), Vec<&serde_json::Value>> =
+        std::collections::BTreeMap::new();
+    for f in &failures {
+        let lang = f["lang"].as_str().unwrap_or("unknown").to_string();
+        let mode = f["mode"].as_str().unwrap_or("unknown").to_string();
+        let model = f["modelName"].as_str().unwrap_or("unknown").to_string();
+        groups.entry((lang, mode, model)).or_default().push(f);
+    }
 
-        // Compute current context hash (using processed context for lang-specific hash)
-        let current_hash = compute_processed_context_hash(mode, lang)
-            .with_context(|| format!("compute processed context hash for `{mode}`/{lang_str}"))?;
+    println!(
+        "Found {} failures across {} (lang, mode, model) groups for date {}",
+        failures.len(),
+        groups.len(),
+        run_date
+    );
 
-        // Find saved hash in summary
-        let saved_hash = summary
-            .by_language
-            .get(lang_str)
-            .and_then(|lang_sum| lang_sum.modes.get(mode))
-            .map(|mode_sum| &mode_sum.hash);
+    // Initialize LLM provider for analysis
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+    let provider = make_provider_from_env()?;
 
-        let saved_hash = match saved_hash {
-            Some(h) => h,
-            None => bail!(
-                "CI check FAILED: no saved entry for {}/{}.\n→ Generate it with: {}",
-                mode,
-                lang_str,
-                hint_for(lang)
-            ),
+    let analysis_route = ModelRoute::new(
+        "gpt-5.4-mini",
+        xtask_llm_benchmark::llm::types::Vendor::OpenAi,
+        "gpt-5.4-mini",
+        Some("openai/gpt-5.4-mini"),
+    );
+
+    for ((lang, mode, model), group_failures) in &groups {
+        println!(
+            "\nAnalyzing {}/{}/{} ({} failures)...",
+            lang,
+            mode,
+            model,
+            group_failures.len()
+        );
+
+        // Build prompt from the JSON failure data
+        let prompt = build_analysis_prompt_from_json(lang, mode, model, group_failures);
+
+        let built = xtask_llm_benchmark::llm::prompt::BuiltPrompt {
+            system: Some(xtask_llm_benchmark::bench::analysis::system_prompt()),
+            static_prefix: None,
+            segments: vec![xtask_llm_benchmark::llm::segmentation::Segment::new("user", prompt)],
+            search_enabled: false,
         };
 
-        if *saved_hash != current_hash {
-            bail!(
-                "CI check FAILED: hash mismatch for {}/{}: saved={} current={}.\n→ Re-run to refresh: {}",
-                mode,
-                lang_str,
-                short_hash(saved_hash.as_str()),
-                short_hash(&current_hash),
-                hint_for(lang)
-            );
-        }
+        let analysis = runtime.block_on(provider.generate(&analysis_route, &built))?.text;
 
-        println!("CI check OK: {}/{} hash {}", mode, lang_str, short_hash(&current_hash));
+        if args.dry_run {
+            // Save locally
+            let runs_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("runs");
+            let _ = fs::create_dir_all(&runs_dir);
+            let safe_model = model.replace([' ', '/'], "_");
+            let path = runs_dir.join(format!("analysis-{lang}-{mode}-{safe_model}-{run_date}.md"));
+            if let Err(e) = fs::write(&path, &analysis) {
+                eprintln!("[warn] failed to write analysis: {e}");
+            } else {
+                println!("Analysis written to: {}", path.display());
+            }
+        } else {
+            api.upload_analysis(lang, mode, model, &analysis, &run_date)?;
+        }
     }
 
+    println!("\nDone.");
     Ok(())
+}
+
+fn build_analysis_prompt_from_json(lang: &str, mode: &str, model: &str, failures: &[&serde_json::Value]) -> String {
+    // Reuse the shared prompt builder for the intro + instructions,
+    // but we need to build the failure list from JSON values instead of RunOutcome.
+    use xtask_llm_benchmark::bench::analysis::analysis_instructions;
+
+    // Reuse the same context description logic as bench::analysis
+    let lang_display = match lang {
+        "rust" => "Rust",
+        "csharp" => "C#",
+        "typescript" => "TypeScript",
+        _ => lang,
+    };
+
+    let ctx_desc = match mode {
+        "guidelines" => "the SpacetimeDB AI guidelines (concise cheat-sheets for code generation)",
+        "docs" => "SpacetimeDB markdown documentation",
+        "rustdoc_json" => "SpacetimeDB rustdoc JSON (auto-generated API reference)",
+        "llms.md" => "the SpacetimeDB llms.md file",
+        "no_context" | "none" | "no_guidelines" => "no documentation (testing base model knowledge only)",
+        "search" => "web search results (no local docs)",
+        _ => "unspecified context",
+    };
+
+    let mut prompt = format!(
+        "{model} was given {ctx_desc} and asked to generate {lang_display} SpacetimeDB modules. \
+         It failed {count} tasks.\n\n",
+        count = failures.len(),
+    );
+
+    for f in failures.iter().take(15) {
+        let task_id = f["taskId"].as_str().unwrap_or("?");
+        let passed = f["passedTests"].as_u64().unwrap_or(0);
+        let total = f["totalTests"].as_u64().unwrap_or(0);
+
+        prompt.push_str(&format!("### {} ({}/{})\n", task_id, passed, total));
+
+        if let Some(details) = f["scorerDetails"].as_object() {
+            let reasons: Vec<String> = details
+                .iter()
+                .filter_map(|(name, score)| {
+                    if score["pass"].as_bool() == Some(true) {
+                        return None;
+                    }
+                    let notes = &score["notes"];
+                    let error = notes["error"]
+                        .as_str()
+                        .or_else(|| notes["stderr"].as_str())
+                        .or_else(|| notes["diff"].as_str())
+                        .unwrap_or("failed");
+                    Some(format!("{}: {}", name, &error[..error.len().min(150)]))
+                })
+                .collect();
+            if !reasons.is_empty() {
+                prompt.push_str(&format!("Error: {}\n", reasons.join("; ")));
+            }
+        }
+
+        if let Some(output) = f["llmOutput"].as_str() {
+            let truncated = match output.char_indices().nth(1500) {
+                Some((i, _)) => &output[..i],
+                None => output,
+            };
+            prompt.push_str(&format!("```{}\n{}\n```\n", lang, truncated));
+        }
+        prompt.push('\n');
+    }
+
+    if failures.len() > 15 {
+        prompt.push_str(&format!("({} more failures not shown)\n\n", failures.len() - 15));
+    }
+
+    prompt.push_str(&analysis_instructions(mode));
+    prompt
 }
 
 fn model_filter_from_groups(groups: Option<Vec<ModelGroup>>) -> Option<HashMap<Vendor, HashSet<String>>> {
@@ -404,390 +551,66 @@ fn model_filter_from_groups(groups: Option<Vec<ModelGroup>>) -> Option<HashMap<V
     Some(out)
 }
 
-fn cmd_ci_quickfix() -> Result<()> {
-    // CI quickfix writes to docs-benchmark files (for testing documentation quality)
-    let details_path = docs_benchmark_details();
-    let summary_path = docs_benchmark_summary();
-
-    println!("Running CI quickfix (GPT-5 only) for docs-benchmark...");
-
-    // Run Rust benchmarks with rustdoc_json mode
-    let rust_rustdoc_args = RunArgs {
-        modes: Some(vec!["rustdoc_json".to_string()]),
-        lang: Lang::Rust,
-        hash_only: false,
-        goldens_only: false,
-        force: true,
-        categories: None,
-        tasks: None,
-        providers: Some(vec![VendorArg(Vendor::OpenAi)]),
-        models: Some(vec![ModelGroup {
-            vendor: Vendor::OpenAi,
-            models: vec!["gpt-5".to_string()],
-        }]),
-    };
-    run_benchmarks(rust_rustdoc_args, &details_path, &summary_path)?;
-
-    // Run Rust benchmarks with docs mode (markdown documentation)
-    let rust_docs_args = RunArgs {
-        modes: Some(vec!["docs".to_string()]),
-        lang: Lang::Rust,
-        hash_only: false,
-        goldens_only: false,
-        force: true,
-        categories: None,
-        tasks: None,
-        providers: Some(vec![VendorArg(Vendor::OpenAi)]),
-        models: Some(vec![ModelGroup {
-            vendor: Vendor::OpenAi,
-            models: vec!["gpt-5".to_string()],
-        }]),
-    };
-    run_benchmarks(rust_docs_args, &details_path, &summary_path)?;
-
-    // Run C# benchmarks with docs mode
-    let csharp_args = RunArgs {
-        modes: Some(vec!["docs".to_string()]),
-        lang: Lang::CSharp,
-        hash_only: false,
-        goldens_only: false,
-        force: true,
-        categories: None,
-        tasks: None,
-        providers: Some(vec![VendorArg(Vendor::OpenAi)]),
-        models: Some(vec![ModelGroup {
-            vendor: Vendor::OpenAi,
-            models: vec!["gpt-5".to_string()],
-        }]),
-    };
-    run_benchmarks(csharp_args, &details_path, &summary_path)?;
-
-    // Run TypeScript benchmarks with docs mode
-    let typescript_args = RunArgs {
-        modes: Some(vec!["docs".to_string()]),
-        lang: Lang::TypeScript,
-        hash_only: false,
-        goldens_only: false,
-        force: true,
-        categories: None,
-        tasks: None,
-        providers: Some(vec![VendorArg(Vendor::OpenAi)]),
-        models: Some(vec![ModelGroup {
-            vendor: Vendor::OpenAi,
-            models: vec!["gpt-5".to_string()],
-        }]),
-    };
-    run_benchmarks(typescript_args, &details_path, &summary_path)?;
-
-    println!("CI quickfix complete. Results written to:");
-    println!("  Details: {}", details_path.display());
-    println!("  Summary: {}", summary_path.display());
-
-    Ok(())
-}
-
-/* --------------------------- ci-comment --------------------------- */
-
-fn cmd_ci_comment(args: CiCommentArgs) -> Result<()> {
-    use std::process::Command;
-
-    let summary_path = docs_benchmark_summary();
-    let output_path = args.output.unwrap_or_else(docs_benchmark_comment);
-
-    // Load current summary
-    let summary: Summary =
-        load_summary(&summary_path).with_context(|| format!("load summary file at {:?}", summary_path))?;
-
-    // Try to load baseline from git ref
-    let baseline: Option<Summary> = {
-        let relative_path = "docs/llms/docs-benchmark-summary.json";
-        let output = Command::new("git")
-            .args(["show", &format!("{}:{}", args.baseline_ref, relative_path)])
-            .output();
-
-        match output {
-            Ok(out) if out.status.success() => {
-                let json = String::from_utf8_lossy(&out.stdout);
-                match serde_json::from_str(&json) {
-                    Ok(s) => {
-                        println!("Loaded baseline from {}", args.baseline_ref);
-                        Some(s)
-                    }
-                    Err(e) => {
-                        println!("Warning: Could not parse baseline JSON: {}", e);
-                        None
-                    }
-                }
-            }
-            Ok(out) => {
-                let stderr = String::from_utf8_lossy(&out.stderr);
-                println!(
-                    "Note: Could not load baseline from {} (file may not exist yet): {}",
-                    args.baseline_ref,
-                    stderr.trim()
-                );
-                None
-            }
-            Err(e) => {
-                println!("Warning: git command failed: {}", e);
-                None
-            }
-        }
-    };
-
-    // Generate markdown
-    let markdown = generate_comment_markdown(&summary, baseline.as_ref());
-
-    // Write to file
-    if let Some(parent) = output_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(&output_path, &markdown)?;
-    println!("Comment markdown written to: {}", output_path.display());
-
-    Ok(())
-}
-
-/// Generate the markdown comment for GitHub PR.
-fn generate_comment_markdown(summary: &Summary, baseline: Option<&Summary>) -> String {
-    // Rust with rustdoc_json mode
-    let rust_rustdoc_results = summary
-        .by_language
-        .get("rust")
-        .and_then(|l| l.modes.get("rustdoc_json"))
-        .and_then(|m| m.models.get("GPT-5"));
-    // Rust with docs mode (markdown documentation)
-    let rust_docs_results = summary
-        .by_language
-        .get("rust")
-        .and_then(|l| l.modes.get("docs"))
-        .and_then(|m| m.models.get("GPT-5"));
-    // C# with docs mode
-    let csharp_results = summary
-        .by_language
-        .get("csharp")
-        .and_then(|l| l.modes.get("docs"))
-        .and_then(|m| m.models.get("GPT-5"));
-    // TypeScript with docs mode
-    let typescript_results = summary
-        .by_language
-        .get("typescript")
-        .and_then(|l| l.modes.get("docs"))
-        .and_then(|m| m.models.get("GPT-5"));
-
-    let rust_rustdoc_baseline = baseline
-        .and_then(|b| b.by_language.get("rust"))
-        .and_then(|l| l.modes.get("rustdoc_json"))
-        .and_then(|m| m.models.get("GPT-5"));
-    let rust_docs_baseline = baseline
-        .and_then(|b| b.by_language.get("rust"))
-        .and_then(|l| l.modes.get("docs"))
-        .and_then(|m| m.models.get("GPT-5"));
-    let csharp_baseline = baseline
-        .and_then(|b| b.by_language.get("csharp"))
-        .and_then(|l| l.modes.get("docs"))
-        .and_then(|m| m.models.get("GPT-5"));
-    let typescript_baseline = baseline
-        .and_then(|b| b.by_language.get("typescript"))
-        .and_then(|l| l.modes.get("docs"))
-        .and_then(|m| m.models.get("GPT-5"));
-
-    fn format_pct(val: f32) -> String {
-        format!("{:.1}%", val)
-    }
-
-    fn format_diff(current: f32, baseline: Option<f32>) -> String {
-        match baseline {
-            Some(b) => {
-                let diff = current - b;
-                if diff.abs() < 0.1 {
-                    String::new()
-                } else {
-                    let sign = if diff > 0.0 { "+" } else { "" };
-                    let arrow = if diff > 0.0 { "⬆️" } else { "⬇️" };
-                    format!(" {} {}{:.1}%", arrow, sign, diff)
-                }
-            }
-            None => String::new(),
-        }
-    }
-
-    let mut md = String::new();
-    md.push_str("## LLM Benchmark Results (ci-quickfix)\n\n");
-    md.push_str("| Language | Mode | Category | Tests Passed | Task Pass % |\n");
-    md.push_str("|----------|------|----------|--------------|-------------|\n");
-
-    // Rust with rustdoc_json mode
-    if let Some(results) = rust_rustdoc_results {
-        let base_cats = rust_rustdoc_baseline.map(|b| &b.categories);
-
-        if let Some(c) = results.categories.get("basics") {
-            let b = base_cats.and_then(|cats| cats.get("basics"));
-            let diff = format_diff(c.task_pass_pct, b.map(|x| x.task_pass_pct));
-            md.push_str(&format!(
-                "| Rust | rustdoc_json | basics | {}/{} | {}{} |\n",
-                c.passed_tests,
-                c.total_tests,
-                format_pct(c.task_pass_pct),
-                diff
-            ));
-        }
-        if let Some(c) = results.categories.get("schema") {
-            let b = base_cats.and_then(|cats| cats.get("schema"));
-            let diff = format_diff(c.task_pass_pct, b.map(|x| x.task_pass_pct));
-            md.push_str(&format!(
-                "| Rust | rustdoc_json | schema | {}/{} | {}{} |\n",
-                c.passed_tests,
-                c.total_tests,
-                format_pct(c.task_pass_pct),
-                diff
-            ));
-        }
-        let diff = format_diff(
-            results.totals.task_pass_pct,
-            rust_rustdoc_baseline.map(|b| b.totals.task_pass_pct),
-        );
-        md.push_str(&format!(
-            "| Rust | rustdoc_json | **total** | {}/{} | **{}**{} |\n",
-            results.totals.passed_tests,
-            results.totals.total_tests,
-            format_pct(results.totals.task_pass_pct),
-            diff
-        ));
-    }
-
-    // Rust with docs mode
-    if let Some(results) = rust_docs_results {
-        let base_cats = rust_docs_baseline.map(|b| &b.categories);
-
-        if let Some(c) = results.categories.get("basics") {
-            let b = base_cats.and_then(|cats| cats.get("basics"));
-            let diff = format_diff(c.task_pass_pct, b.map(|x| x.task_pass_pct));
-            md.push_str(&format!(
-                "| Rust | docs | basics | {}/{} | {}{} |\n",
-                c.passed_tests,
-                c.total_tests,
-                format_pct(c.task_pass_pct),
-                diff
-            ));
-        }
-        if let Some(c) = results.categories.get("schema") {
-            let b = base_cats.and_then(|cats| cats.get("schema"));
-            let diff = format_diff(c.task_pass_pct, b.map(|x| x.task_pass_pct));
-            md.push_str(&format!(
-                "| Rust | docs | schema | {}/{} | {}{} |\n",
-                c.passed_tests,
-                c.total_tests,
-                format_pct(c.task_pass_pct),
-                diff
-            ));
-        }
-        let diff = format_diff(
-            results.totals.task_pass_pct,
-            rust_docs_baseline.map(|b| b.totals.task_pass_pct),
-        );
-        md.push_str(&format!(
-            "| Rust | docs | **total** | {}/{} | **{}**{} |\n",
-            results.totals.passed_tests,
-            results.totals.total_tests,
-            format_pct(results.totals.task_pass_pct),
-            diff
-        ));
-    }
-
-    // C# with docs mode
-    if let Some(results) = csharp_results {
-        let base_cats = csharp_baseline.map(|b| &b.categories);
-
-        if let Some(c) = results.categories.get("basics") {
-            let b = base_cats.and_then(|cats| cats.get("basics"));
-            let diff = format_diff(c.task_pass_pct, b.map(|x| x.task_pass_pct));
-            md.push_str(&format!(
-                "| C# | docs | basics | {}/{} | {}{} |\n",
-                c.passed_tests,
-                c.total_tests,
-                format_pct(c.task_pass_pct),
-                diff
-            ));
-        }
-        if let Some(c) = results.categories.get("schema") {
-            let b = base_cats.and_then(|cats| cats.get("schema"));
-            let diff = format_diff(c.task_pass_pct, b.map(|x| x.task_pass_pct));
-            md.push_str(&format!(
-                "| C# | docs | schema | {}/{} | {}{} |\n",
-                c.passed_tests,
-                c.total_tests,
-                format_pct(c.task_pass_pct),
-                diff
-            ));
-        }
-        let diff = format_diff(
-            results.totals.task_pass_pct,
-            csharp_baseline.map(|b| b.totals.task_pass_pct),
-        );
-        md.push_str(&format!(
-            "| C# | docs | **total** | {}/{} | **{}**{} |\n",
-            results.totals.passed_tests,
-            results.totals.total_tests,
-            format_pct(results.totals.task_pass_pct),
-            diff
-        ));
-    }
-
-    // TypeScript with docs mode
-    if let Some(results) = typescript_results {
-        let base_cats = typescript_baseline.map(|b| &b.categories);
-
-        if let Some(c) = results.categories.get("basics") {
-            let b = base_cats.and_then(|cats| cats.get("basics"));
-            let diff = format_diff(c.task_pass_pct, b.map(|x| x.task_pass_pct));
-            md.push_str(&format!(
-                "| TypeScript | docs | basics | {}/{} | {}{} |\n",
-                c.passed_tests,
-                c.total_tests,
-                format_pct(c.task_pass_pct),
-                diff
-            ));
-        }
-        if let Some(c) = results.categories.get("schema") {
-            let b = base_cats.and_then(|cats| cats.get("schema"));
-            let diff = format_diff(c.task_pass_pct, b.map(|x| x.task_pass_pct));
-            md.push_str(&format!(
-                "| TypeScript | docs | schema | {}/{} | {}{} |\n",
-                c.passed_tests,
-                c.total_tests,
-                format_pct(c.task_pass_pct),
-                diff
-            ));
-        }
-        let diff = format_diff(
-            results.totals.task_pass_pct,
-            typescript_baseline.map(|b| b.totals.task_pass_pct),
-        );
-        md.push_str(&format!(
-            "| TypeScript | docs | **total** | {}/{} | **{}**{} |\n",
-            results.totals.passed_tests,
-            results.totals.total_tests,
-            format_pct(results.totals.task_pass_pct),
-            diff
-        ));
-    }
-
-    if baseline.is_some() {
-        md.push_str("\n_Compared against master branch baseline_\n");
-    }
-    md.push_str(&format!("\n<sub>Generated at: {}</sub>\n", summary.generated_at));
-
-    md
-}
-
 /* --------------------------- helpers --------------------------- */
 
 fn short_hash(s: &str) -> &str {
     &s[..s.len().min(12)]
 }
 
-/// Run benchmarks for a single mode. Results are merged into the details file.
+fn should_fetch_remote_routes(args: &RunArgs) -> bool {
+    args.model_source == ModelSource::Remote
+        && args.models.is_none()
+        && args.route_overrides.is_none()
+        && !args.hash_only
+        && !args.goldens_only
+}
+
+fn preflight_llm_routes(
+    runtime: &Runtime,
+    llm_provider: &dyn LlmProvider,
+    routes: &[ModelRoute],
+    modes: &[String],
+) -> Result<()> {
+    if routes.is_empty() {
+        return Ok(());
+    }
+
+    let mut search_flags = Vec::new();
+    if modes.iter().any(|mode| mode == "search") {
+        search_flags.push(true);
+    }
+    if modes.iter().any(|mode| mode != "search") {
+        search_flags.push(false);
+    }
+
+    let mut failures = Vec::new();
+    for route in routes {
+        for search_enabled in &search_flags {
+            let mode_label = if *search_enabled {
+                "search/OpenRouter online"
+            } else {
+                "standard"
+            };
+
+            if let Err(err) = runtime.block_on(llm_provider.preflight_route(route, *search_enabled)) {
+                let msg = format!("{} ({mode_label}): {err:#}", route.display_name);
+                eprintln!("[preflight] FAILED {msg}");
+                failures.push(msg);
+            }
+        }
+    }
+
+    if !failures.is_empty() {
+        anyhow::bail!(
+            "LLM provider preflight failed before benchmark run:\n  - {}",
+            failures.join("\n  - ")
+        );
+    }
+
+    Ok(())
+}
+
+/// Run benchmarks for a single mode.
 fn run_mode_benchmarks(
     mode: &str,
     lang: Lang,
@@ -795,7 +618,7 @@ fn run_mode_benchmarks(
     bench_root: &Path,
     runtime: Option<&Runtime>,
     llm_provider: Option<&Arc<dyn LlmProvider>>,
-) -> Result<()> {
+) -> Result<Vec<RunOutcome>> {
     let lang_str = lang.as_str();
     let context = build_context(mode, Some(lang))?;
     // Use processed context hash so each lang/mode combination has its own unique hash
@@ -805,16 +628,7 @@ fn run_mode_benchmarks(
     println!("{:<12} [{:<10}] hash: {}", mode, lang_str, short_hash(&hash));
 
     if config.hash_only {
-        return Ok(());
-    }
-
-    if config.goldens_only {
-        let rt = runtime.expect("runtime required for --goldens-only");
-        let sels = config.selectors.as_deref();
-
-        rt.block_on(build_goldens_only_for_lang(config.host.clone(), bench_root, lang, sels))?;
-        println!("{:<12} [{:<10}] goldens-only build complete", mode, lang_str);
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     // Run benchmarks for all matching routes
@@ -822,7 +636,7 @@ fn run_mode_benchmarks(
 
     if routes.is_empty() {
         println!("{:<12} [{:<10}] no matching models to run", mode, lang_str);
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     let runtime = runtime.expect("runtime required for normal runs");
@@ -839,37 +653,80 @@ fn run_mode_benchmarks(
         &routes,
     ))?;
 
-    // Print summary
-    for rr in &route_runs {
-        let total: u32 = rr.outcomes.iter().map(|o| o.total_tests).sum();
-        let passed: u32 = rr.outcomes.iter().map(|o| o.passed_tests).sum();
-        let pct = if total == 0 {
-            0.0
-        } else {
-            (passed as f32 / total as f32) * 100.0
-        };
-        println!("   ↳ {}: {}/{} passed ({:.1}%)", rr.route_name, passed, total, pct);
+    // Print summary sorted by pass rate descending
+    let mut summary: Vec<(&str, u32, u32, f32)> = route_runs
+        .iter()
+        .map(|rr| {
+            let total: u32 = rr.outcomes.iter().map(|o| o.total_tests).sum();
+            let passed: u32 = rr.outcomes.iter().map(|o| o.passed_tests).sum();
+            let pct = if total == 0 {
+                0.0
+            } else {
+                (passed as f32 / total as f32) * 100.0
+            };
+            (rr.route_name.as_str(), passed, total, pct)
+        })
+        .collect();
+    summary.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
+    for (name, passed, total, pct) in &summary {
+        println!("   ↳ {}: {}/{} passed ({:.1}%)", name, passed, total, pct);
     }
 
-    Ok(())
+    let all_outcomes: Vec<RunOutcome> = route_runs.into_iter().flat_map(|rr| rr.outcomes).collect();
+    Ok(all_outcomes)
 }
 
+/// Routes to run: when `model_filter` is set (from --models), only routes whose vendor and
+/// model are in that filter are included; vendors not in the filter are excluded.
+///
+/// When explicit `openrouter:vendor/model` entries are passed they won't appear in
+/// `default_model_routes`, so we synthesize ad-hoc routes for them here.
 fn filter_routes(config: &RunConfig) -> Vec<ModelRoute> {
-    default_model_routes()
+    let base_routes: Vec<ModelRoute> = config
+        .route_overrides
+        .clone()
+        .unwrap_or_else(|| default_model_routes().to_vec());
+
+    let mut routes: Vec<ModelRoute> = base_routes
         .iter()
         .filter(|r| config.providers_filter.as_ref().is_none_or(|f| f.contains(&r.vendor)))
-        .filter(|r| {
-            if let Some(map) = &config.model_filter {
-                if let Some(allowed) = map.get(&r.vendor) {
+        .filter(|r| match &config.model_filter {
+            None => true,
+            Some(allowed_by_vendor) => match allowed_by_vendor.get(&r.vendor) {
+                None => false,
+                Some(allowed) => {
                     let api = r.api_model.to_ascii_lowercase();
                     let dn = r.display_name.to_ascii_lowercase();
-                    return allowed.contains(&api) || allowed.contains(&dn);
+                    let or_id = r.openrouter_model.as_ref().map(|m| m.to_ascii_lowercase());
+                    allowed.contains(&api)
+                        || allowed.contains(&dn)
+                        || or_id.as_ref().map(|m| allowed.contains(m)).unwrap_or(false)
                 }
-            }
-            true
+            },
         })
         .cloned()
-        .collect()
+        .collect();
+
+    // Synthesize ad-hoc routes for any vendor:model that isn't in the static list.
+    // This lets callers pass arbitrary model IDs (e.g. new models, openrouter paths)
+    // without having to add them to default_model_routes() first.
+    if let Some(mf) = &config.model_filter {
+        for (vendor, model_ids) in mf {
+            for model_id in model_ids {
+                let already_matched = routes.iter().any(|r| {
+                    r.vendor == *vendor
+                        && (r.api_model == model_id.as_str()
+                            || r.display_name.to_ascii_lowercase() == model_id.as_str()
+                            || r.openrouter_model.as_deref() == Some(model_id.as_str()))
+                });
+                if !already_matched {
+                    routes.push(ModelRoute::new(model_id, *vendor, model_id, None));
+                }
+            }
+        }
+    }
+
+    routes
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -886,14 +743,18 @@ async fn run_many_routes_for_mode(
     let rbuf = bench_route_concurrency();
     let selectors = config.selectors.as_deref();
     let host = config.host.clone();
-    let details_path = config.details_path.clone();
+    let api_client = config.api_client.clone();
+    let dry_run = config.dry_run;
+    let local_analysis = config.local_analysis;
+    let dry_run_id = config.dry_run_id.clone();
 
     futures::stream::iter(routes.iter().map(|route| {
         let host = host.clone();
-        let details_path = details_path.clone();
+        let api_client = api_client.clone();
+        let dry_run_id = dry_run_id.clone();
 
         async move {
-            println!("→ running {}", route.display_name);
+            println!("\u{2192} running {}", route.display_name);
 
             let per = BenchRunContext {
                 bench_root,
@@ -905,7 +766,10 @@ async fn run_many_routes_for_mode(
                 lang,
                 selectors,
                 host,
-                details_path,
+                api_client,
+                dry_run,
+                local_analysis,
+                dry_run_id,
             };
 
             let outcomes = run_selected_or_all_for_model_async_for_lang(&per).await?;
@@ -934,35 +798,24 @@ fn categories_to_set(v: Option<Vec<String>>) -> Option<HashSet<String>> {
 
 pub struct RuntimeInit {
     pub runtime: Option<Runtime>,
-    pub provider: Option<Arc<dyn LlmProvider>>,
     pub guard: Option<SpacetimeDbGuard>,
 }
 
-fn initialize_runtime_and_provider(hash_only: bool, goldens_only: bool) -> Result<RuntimeInit> {
+fn initialize_runtime(hash_only: bool) -> Result<RuntimeInit> {
     if hash_only {
         return Ok(RuntimeInit {
             runtime: None,
-            provider: None,
             guard: None,
         });
     }
 
-    let spacetime = SpacetimeDbGuard::spawn_in_temp_data_dir_use_cli();
+    // Use locally built SpacetimeDB so server supports spacetime:sys@2.0 (required by local TypeScript SDK).
+    let spacetime = SpacetimeDbGuard::spawn_in_temp_data_dir();
 
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
 
-    if goldens_only {
-        return Ok(RuntimeInit {
-            runtime: Some(runtime),
-            provider: None,
-            guard: Some(spacetime),
-        });
-    }
-
-    let llm_provider = make_provider_from_env()?;
     Ok(RuntimeInit {
         runtime: Some(runtime),
-        provider: Some(llm_provider),
         guard: Some(spacetime),
     })
 }
@@ -978,8 +831,8 @@ fn find_bench_root() -> PathBuf {
     start.join("src").join("benchmarks")
 }
 
-fn collect_task_numbers_in_categories(bench_root: &Path, cats: &HashSet<String>) -> Result<HashSet<u32>> {
-    let mut nums = HashSet::new();
+fn collect_task_names_in_categories(bench_root: &Path, cats: &HashSet<String>) -> Result<HashSet<String>> {
+    let mut tasks = HashSet::new();
     for c in cats {
         let dir = bench_root.join(c);
         if !dir.is_dir() {
@@ -990,26 +843,38 @@ fn collect_task_numbers_in_categories(bench_root: &Path, cats: &HashSet<String>)
             if !entry.file_type()?.is_dir() {
                 continue;
             }
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if let Some(rest) = name.strip_prefix("t_") {
-                if let Some((num_str, _)) = rest.split_once('_') {
-                    if num_str.len() == 3 {
-                        if let Ok(n) = num_str.parse::<u32>() {
-                            nums.insert(n);
-                        }
-                    }
-                }
-            }
+            tasks.insert(entry.file_name().to_string_lossy().to_ascii_lowercase());
         }
     }
-    Ok(nums)
+    Ok(tasks)
 }
 
-fn normalize_numeric_selectors(raw: &[String]) -> Vec<u32> {
-    raw.iter()
-        .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()))
-        .filter_map(|s| s.parse::<u32>().ok())
-        .collect()
+fn task_selector_matches_any(selector: &str, allowed_tasks: &HashSet<String>) -> bool {
+    allowed_tasks.iter().any(|task| task.starts_with(selector))
+}
+
+fn normalize_task_filter_selector(raw: &str) -> Result<String> {
+    let s = raw.trim().to_ascii_lowercase();
+    if s.is_empty() {
+        anyhow::bail!("empty task selector");
+    }
+    if let Some(rest) = s.strip_prefix("t_") {
+        if rest.chars().all(|c| c.is_ascii_digit()) {
+            let n: u32 = rest.parse()?;
+            return Ok(format!("t_{:03}", n));
+        }
+        if rest.chars().next().is_some_and(|c| c.is_ascii_digit())
+            && rest.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            return Ok(s);
+        }
+        anyhow::bail!("invalid task selector: {raw}");
+    }
+    if s.chars().all(|c| c.is_ascii_digit()) {
+        let n: u32 = s.parse()?;
+        return Ok(format!("t_{:03}", n));
+    }
+    anyhow::bail!("invalid task selector: {raw}")
 }
 
 fn apply_category_filter(
@@ -1023,418 +888,148 @@ fn apply_category_filter(
             Ok(selectors.map(|s| s.to_vec()))
         }
         Some(cats) => {
-            let allowed = collect_task_numbers_in_categories(bench_root, cats)?;
-            let out_nums: Vec<u32> = match selectors {
+            let allowed = collect_task_names_in_categories(bench_root, cats)?;
+            let mut out: Vec<String> = match selectors {
                 Some(user) => {
-                    let nums = normalize_numeric_selectors(user);
-                    nums.into_iter().filter(|n| allowed.contains(n)).collect()
+                    let mut selected = Vec::new();
+                    for selector in user {
+                        let normalized = normalize_task_filter_selector(selector)?;
+                        if task_selector_matches_any(&normalized, &allowed) {
+                            selected.push(normalized);
+                        }
+                    }
+                    selected
                 }
                 None => {
-                    let mut v: Vec<u32> = allowed.into_iter().collect();
+                    let mut v: Vec<String> = allowed.into_iter().collect();
                     v.sort_unstable();
                     v
                 }
             };
-            if out_nums.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(out_nums.into_iter().map(|n| n.to_string()).collect()))
+            out.sort();
+            out.dedup();
+            if out.is_empty() {
+                anyhow::bail!("no tasks matched category/task filters");
             }
+            Ok(Some(out))
         }
     }
 }
 
-fn cmd_summary(args: SummaryArgs) -> Result<()> {
-    // Default to llm-comparison files (the full benchmark suite)
-    let in_path = args.details.unwrap_or_else(llm_comparison_details);
-    let out_path = args.summary.unwrap_or_else(llm_comparison_summary);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    if let Some(parent) = out_path.parent() {
-        fs::create_dir_all(parent).with_context(|| format!("create dir {}", parent.display()))?;
-    }
-
-    write_summary_from_details_file(&in_path, &out_path)?;
-    println!("Summary written to: {}", out_path.display());
-    Ok(())
-}
-
-fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
-    use xtask_llm_benchmark::results::schema::Results;
-
-    let details_path = args.details.unwrap_or_else(docs_benchmark_details);
-    let output_path = args.output.unwrap_or_else(|| {
-        details_path
-            .parent()
-            .unwrap_or(Path::new("."))
-            .join("docs-benchmark-analysis.md")
-    });
-
-    println!("Analyzing benchmark results from: {}", details_path.display());
-
-    // Load the details file
-    let content =
-        fs::read_to_string(&details_path).with_context(|| format!("Failed to read {}", details_path.display()))?;
-    let results: Results = serde_json::from_str(&content).with_context(|| "Failed to parse details.json")?;
-
-    // Collect failures
-    let mut failures: Vec<FailureInfo> = Vec::new();
-
-    for lang_entry in &results.languages {
-        // Skip if filtering by language
-        if let Some(filter_lang) = &args.lang {
-            if lang_entry.lang != filter_lang.as_str() {
-                continue;
-            }
-        }
-
-        let golden_answers = &lang_entry.golden_answers;
-
-        for mode_entry in &lang_entry.modes {
-            for model_entry in &mode_entry.models {
-                for (task_id, outcome) in &model_entry.tasks {
-                    if outcome.passed_tests < outcome.total_tests {
-                        // This task has failures
-                        let golden = golden_answers
-                            .get(task_id)
-                            .or_else(|| {
-                                // Try with category prefix stripped
-                                task_id.split('/').next_back().and_then(|t| golden_answers.get(t))
-                            })
-                            .map(|g| g.answer.clone());
-
-                        failures.push(FailureInfo {
-                            lang: lang_entry.lang.clone(),
-                            mode: mode_entry.mode.clone(),
-                            model: model_entry.name.clone(),
-                            task: task_id.clone(),
-                            passed: outcome.passed_tests,
-                            total: outcome.total_tests,
-                            llm_output: outcome.llm_output.clone(),
-                            golden_answer: golden,
-                            scorer_details: outcome.scorer_details.clone(),
-                        });
-                    }
-                }
-            }
+    fn base_run_args() -> RunArgs {
+        RunArgs {
+            modes: None,
+            lang: Lang::Rust,
+            hash_only: false,
+            goldens_only: false,
+            force: false,
+            categories: None,
+            tasks: None,
+            providers: None,
+            models: None,
+            model_source: ModelSource::Static,
+            dry_run: false,
+            local_analysis: false,
+            route_overrides: None,
         }
     }
 
-    if failures.is_empty() {
-        println!("No failures found!");
-        fs::write(
-            &output_path,
-            "# Benchmark Analysis\n\nNo failures found. All tests passed!",
-        )?;
-        println!("Analysis written to: {}", output_path.display());
-        return Ok(());
-    }
-
-    println!("Found {} failing test(s). Generating analysis...", failures.len());
-
-    // Build prompt for LLM
-    let prompt = build_analysis_prompt(&failures);
-
-    // Initialize runtime and LLM provider
-    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
-    let provider = make_provider_from_env()?;
-
-    // Use a fast model for analysis
-    let route = ModelRoute {
-        display_name: "gpt-4o-mini",
-        api_model: "gpt-4o-mini",
-        vendor: Vendor::OpenAi,
-    };
-
-    use xtask_llm_benchmark::llm::prompt::BuiltPrompt;
-
-    let built_prompt = BuiltPrompt {
-        system: Some(
-            "You are an expert at analyzing SpacetimeDB benchmark failures. \
-            Analyze the test failures and provide actionable insights in markdown format."
-                .to_string(),
-        ),
-        static_prefix: None,
-        segments: vec![xtask_llm_benchmark::llm::segmentation::Segment::new("user", prompt)],
-    };
-
-    let analysis = runtime.block_on(provider.generate(&route, &built_prompt))?;
-
-    // Write markdown output
-    let markdown = format!(
-        "# Benchmark Failure Analysis\n\n\
-        Generated from: `{}`\n\n\
-        ## Summary\n\n\
-        - **Total failures analyzed**: {}\n\n\
-        ---\n\n\
-        {}\n",
-        details_path.display(),
-        failures.len(),
-        analysis
-    );
-
-    fs::write(&output_path, markdown)?;
-    println!("Analysis written to: {}", output_path.display());
-
-    Ok(())
-}
-
-#[allow(dead_code)]
-struct FailureInfo {
-    lang: String,
-    mode: String,
-    model: String,
-    task: String,
-    passed: u32,
-    total: u32,
-    llm_output: Option<String>,
-    golden_answer: Option<String>,
-    scorer_details: Option<HashMap<String, xtask_llm_benchmark::eval::ScoreDetails>>,
-}
-
-/// Extract concise failure reasons from scorer_details using typed extraction.
-fn extract_failure_reasons(details: &HashMap<String, xtask_llm_benchmark::eval::ScoreDetails>) -> Vec<String> {
-    details
-        .iter()
-        .filter_map(|(scorer_name, score)| {
-            score
-                .failure_reason()
-                .map(|reason| format!("{}: {}", scorer_name, reason))
-        })
-        .collect()
-}
-
-/// Categorize a failure by its type based on scorer details.
-fn categorize_failure(f: &FailureInfo) -> &'static str {
-    let reasons = f
-        .scorer_details
-        .as_ref()
-        .map(extract_failure_reasons)
-        .unwrap_or_default();
-
-    let reasons_str = reasons.join(" ");
-    if reasons_str.contains("tables differ") {
-        "table_naming"
-    } else if reasons_str.contains("timed out") {
-        "timeout"
-    } else if reasons_str.contains("publish failed") || reasons_str.contains("compile") {
-        "compile"
-    } else {
-        "other"
-    }
-}
-
-/// Build the analysis section for failures of a specific language/mode combination.
-fn build_mode_section(lang: &str, mode: &str, failures: &[&FailureInfo], prompt: &mut String) {
-    let lang_display = match lang {
-        "rust" => "Rust",
-        "csharp" => "C#",
-        "typescript" => "TypeScript",
-        _ => lang,
-    };
-
-    prompt.push_str(&format!(
-        "# {} / {} Failures ({} total)\n\n",
-        lang_display,
-        mode,
-        failures.len()
-    ));
-
-    // Group by failure type
-    let table_naming: Vec<_> = failures
-        .iter()
-        .filter(|f| categorize_failure(f) == "table_naming")
-        .collect();
-    let compile: Vec<_> = failures.iter().filter(|f| categorize_failure(f) == "compile").collect();
-    let timeout: Vec<_> = failures.iter().filter(|f| categorize_failure(f) == "timeout").collect();
-    let other: Vec<_> = failures.iter().filter(|f| categorize_failure(f) == "other").collect();
-
-    // Table naming issues - show detailed examples
-    if !table_naming.is_empty() {
-        prompt.push_str(&format!("## Table Naming Issues ({} failures)\n\n", table_naming.len()));
-        prompt.push_str("The LLM is using incorrect table names. Examples:\n\n");
-
-        // Show up to 3 detailed examples
-        for f in table_naming.iter().take(3) {
-            let reasons = f
-                .scorer_details
-                .as_ref()
-                .map(extract_failure_reasons)
-                .unwrap_or_default();
-            prompt.push_str(&format!("### {}\n", f.task));
-            prompt.push_str(&format!("**Failure**: {}\n\n", reasons.join(", ")));
-
-            if let Some(llm_out) = &f.llm_output {
-                let truncated = truncate_str(llm_out, 1200);
-                prompt.push_str(&format!("**LLM Output**:\n```\n{}\n```\n\n", truncated));
-            }
-
-            if let Some(golden) = &f.golden_answer {
-                let truncated = truncate_str(golden, 1200);
-                prompt.push_str(&format!("**Expected**:\n```\n{}\n```\n\n", truncated));
-            }
-        }
-        if table_naming.len() > 3 {
-            prompt.push_str(&format!(
-                "**Additional similar failures**: {}\n\n",
-                table_naming
-                    .iter()
-                    .skip(3)
-                    .map(|f| f.task.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
+    fn base_config(route_overrides: Option<Vec<ModelRoute>>) -> RunConfig {
+        RunConfig {
+            modes: None,
+            hash_only: false,
+            goldens_only: false,
+            lang: Lang::Rust,
+            providers_filter: None,
+            selectors: None,
+            force: false,
+            categories: None,
+            model_filter: None,
+            host: None,
+            api_client: None,
+            dry_run: false,
+            local_analysis: false,
+            dry_run_id: None,
+            route_overrides,
         }
     }
 
-    // Compile/publish errors - show detailed examples with full error messages
-    if !compile.is_empty() {
-        prompt.push_str(&format!("## Compile/Publish Errors ({} failures)\n\n", compile.len()));
+    #[test]
+    fn explicit_models_bypass_remote_model_source() {
+        let mut args = base_run_args();
+        args.model_source = ModelSource::Remote;
+        assert!(should_fetch_remote_routes(&args));
 
-        for f in compile.iter().take(3) {
-            let reasons = f
-                .scorer_details
-                .as_ref()
-                .map(extract_failure_reasons)
-                .unwrap_or_default();
-            prompt.push_str(&format!("### {}\n", f.task));
-            prompt.push_str(&format!("**Error**: {}\n\n", reasons.join(", ")));
+        args.models = Some(vec![ModelGroup {
+            vendor: Vendor::OpenAi,
+            models: vec!["gpt-test".to_string()],
+        }]);
+        assert!(!should_fetch_remote_routes(&args));
 
-            if let Some(llm_out) = &f.llm_output {
-                let truncated = truncate_str(llm_out, 1500);
-                prompt.push_str(&format!("**LLM Output**:\n```\n{}\n```\n\n", truncated));
-            }
-
-            if let Some(golden) = &f.golden_answer {
-                let truncated = truncate_str(golden, 1500);
-                prompt.push_str(&format!("**Expected (golden)**:\n```\n{}\n```\n\n", truncated));
-            }
-        }
-        if compile.len() > 3 {
-            prompt.push_str(&format!(
-                "**Additional compile failures**: {}\n\n",
-                compile
-                    .iter()
-                    .skip(3)
-                    .map(|f| f.task.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
-        }
+        args.dry_run = true;
+        assert!(!should_fetch_remote_routes(&args));
     }
 
-    // Timeout issues
-    if !timeout.is_empty() {
-        prompt.push_str(&format!("## Timeout Issues ({} failures)\n\n", timeout.len()));
-        prompt.push_str("These tasks timed out during execution:\n");
-        for f in &timeout {
-            prompt.push_str(&format!("- {}\n", f.task));
-        }
-        prompt.push('\n');
+    #[test]
+    fn filter_routes_uses_remote_route_override() {
+        let remote_route = ModelRoute::new(
+            "Remote Model",
+            Vendor::OpenRouter,
+            "openai/remote-model",
+            Some("openai/remote-model"),
+        );
+        let config = base_config(Some(vec![remote_route]));
+
+        let routes = filter_routes(&config);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].display_name, "Remote Model");
+        assert_eq!(routes[0].api_model, "openai/remote-model");
     }
 
-    // Other failures - show detailed examples
-    if !other.is_empty() {
-        prompt.push_str(&format!("## Other Failures ({} failures)\n\n", other.len()));
+    #[test]
+    fn filter_routes_does_not_synthesize_duplicate_for_display_name_match() {
+        let remote_route = ModelRoute::new(
+            "DeepSeek V4 Flash",
+            Vendor::DeepSeek,
+            "deepseek-v4-flash",
+            Some("deepseek/deepseek-v4-flash"),
+        );
+        let mut config = base_config(Some(vec![remote_route]));
+        let mut allowed = HashSet::new();
+        allowed.insert("deepseek v4 flash".to_string());
+        let mut filter = HashMap::new();
+        filter.insert(Vendor::DeepSeek, allowed);
+        config.model_filter = Some(filter);
 
-        // Show up to 5 detailed examples for "other" since they're varied
-        for f in other.iter().take(5) {
-            let reasons = f
-                .scorer_details
-                .as_ref()
-                .map(extract_failure_reasons)
-                .unwrap_or_default();
-            prompt.push_str(&format!("### {} - {}/{} tests passed\n", f.task, f.passed, f.total));
-            prompt.push_str(&format!("**Failure reason**: {}\n\n", reasons.join(", ")));
-
-            if let Some(llm_out) = &f.llm_output {
-                let truncated = truncate_str(llm_out, 1200);
-                prompt.push_str(&format!("**LLM Output**:\n```\n{}\n```\n\n", truncated));
-            }
-
-            if let Some(golden) = &f.golden_answer {
-                let truncated = truncate_str(golden, 1200);
-                prompt.push_str(&format!("**Expected (golden)**:\n```\n{}\n```\n\n", truncated));
-            }
-        }
-        if other.len() > 5 {
-            prompt.push_str(&format!(
-                "**Additional failures**: {}\n\n",
-                other
-                    .iter()
-                    .skip(5)
-                    .map(|f| f.task.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
-        }
-    }
-}
-
-/// Truncate a string to max_len chars, adding "..." if truncated.
-fn truncate_str(s: &str, max_len: usize) -> String {
-    if s.len() > max_len {
-        format!("{}...", &s[..max_len])
-    } else {
-        s.to_string()
-    }
-}
-
-fn build_analysis_prompt(failures: &[FailureInfo]) -> String {
-    let mut prompt = String::from(
-        "Analyze the following SpacetimeDB benchmark test failures, organized by language and mode.\n\n\
-        IMPORTANT: For each failure you analyze, you MUST include the actual code examples inline to illustrate the problem.\n\
-        Show what the LLM generated vs what was expected, highlighting the specific differences.\n\n\
-        Focus on SPECIFIC, ACTIONABLE documentation changes.\n\n",
-    );
-
-    // Group failures by language AND mode
-    let rust_rustdoc_failures: Vec<_> = failures
-        .iter()
-        .filter(|f| f.lang == "rust" && f.mode == "rustdoc_json")
-        .collect();
-    let rust_docs_failures: Vec<_> = failures
-        .iter()
-        .filter(|f| f.lang == "rust" && f.mode == "docs")
-        .collect();
-    let csharp_failures: Vec<_> = failures
-        .iter()
-        .filter(|f| f.lang == "csharp" && f.mode == "docs")
-        .collect();
-    let typescript_failures: Vec<_> = failures
-        .iter()
-        .filter(|f| f.lang == "typescript" && f.mode == "docs")
-        .collect();
-
-    // Build sections for each language/mode combination
-    // Note: Rust rustdoc_json and Rust docs are separate sections because they use different context sources
-    if !rust_rustdoc_failures.is_empty() {
-        build_mode_section("rust", "rustdoc_json", &rust_rustdoc_failures, &mut prompt);
+        let routes = filter_routes(&config);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].display_name, "DeepSeek V4 Flash");
+        assert_eq!(routes[0].api_model, "deepseek-v4-flash");
     }
 
-    if !rust_docs_failures.is_empty() {
-        build_mode_section("rust", "docs", &rust_docs_failures, &mut prompt);
+    #[test]
+    fn category_filter_accepts_full_task_ids() {
+        let root = std::env::temp_dir().join(format!(
+            "llm-benchmark-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(root.join("basics").join("t_001_basic_tables")).unwrap();
+        fs::create_dir_all(root.join("schema").join("t_012_product_type")).unwrap();
+
+        let mut categories = HashSet::new();
+        categories.insert("basics".to_string());
+        let selectors = vec!["t_001_basic_tables".to_string(), "t_012_product_type".to_string()];
+
+        let filtered = apply_category_filter(&root, Some(&categories), Some(&selectors)).unwrap();
+        fs::remove_dir_all(&root).unwrap();
+
+        assert_eq!(filtered, Some(vec!["t_001_basic_tables".to_string()]));
     }
-
-    if !csharp_failures.is_empty() {
-        build_mode_section("csharp", "docs", &csharp_failures, &mut prompt);
-    }
-
-    if !typescript_failures.is_empty() {
-        build_mode_section("typescript", "docs", &typescript_failures, &mut prompt);
-    }
-
-    prompt.push_str(
-        "\n---\n\n## Instructions for your analysis:\n\n\
-        For EACH failure or group of similar failures:\n\n\
-        1. **The generated code**: The actual LLM-generated code\n\
-        2. **The golden example**: The expected golden answer\n\
-        3. **The error**: The error message or failure reason (if provided above)\n\
-        4. **Explain the difference**: What specific API/syntax was wrong and caused the failure?\n\
-        5. **Root cause**: What's missing or unclear in the documentation?\n\
-        6. **Recommendation**: Specific fix\n\n\
-        Group similar failures together (e.g., if multiple tests fail due to the same issue).\n\
-        Use code blocks with syntax highlighting (```rust, ```csharp, or ```typescript).\n",
-    );
-
-    prompt
 }

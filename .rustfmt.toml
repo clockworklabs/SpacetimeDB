@@ -1,2 +1,3 @@
 max_width = 120
-edition = "2021"
+style_edition = "2021"
+edition = "2024"

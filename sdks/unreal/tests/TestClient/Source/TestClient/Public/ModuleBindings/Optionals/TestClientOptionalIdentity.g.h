@@ -16,7 +16,7 @@ struct TESTCLIENT_API FTestClientOptionalIdentity
     bool bHasValue = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB", meta = (EditCondition = "bHasValue"))
-    FSpacetimeDBIdentity Value;
+    FSpacetimeDBIdentity Value = {};
 
     FTestClientOptionalIdentity() = default;
 

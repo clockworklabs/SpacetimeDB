@@ -1,5 +1,11 @@
 {
   "description": "Bun TypeScript client and server template",
+  "client_framework": "Bun",
   "client_lang": "typescript",
-  "server_lang": "typescript"
+  "server_lang": "typescript",
+  "builtWith": [
+    "bun",
+    "typescript",
+    "spacetimedb"
+  ]
 }

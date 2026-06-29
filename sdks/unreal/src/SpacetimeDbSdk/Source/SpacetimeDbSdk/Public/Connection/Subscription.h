@@ -70,7 +70,7 @@ private:
 	FSubscriptionEventDelegate EndDelegate;
 
 	/** Identifier for this subscription */
-	int32 QueryId = -1;
+	uint32 QuerySetId = 0;
 
 	friend class USubscriptionBuilderBase;
 	friend class UDbConnectionBase;

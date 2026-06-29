@@ -21,13 +21,12 @@
 
 // Then include the main headers
 #include "spacetimedb/internal/v9_builder.h"
-#include "spacetimedb/internal/v9_type_registration.h"
+#include "spacetimedb/internal/module_type_registration.h"
 #include "spacetimedb/internal/debug.h"
 #include "spacetimedb/bsatn/bsatn.h"
 #include "spacetimedb/internal/Module_impl.h"
 #include <functional>
 #include <cstdio>
-#include <cxxabi.h>
 #include <memory>
 #include <algorithm>
 #include <set>
@@ -35,10 +34,17 @@
 namespace SpacetimeDB {
 namespace Internal {
 
-// Forward declaration of the global V9 module accessor
-RawModuleDefV9& GetV9Module();
+static RawModuleDefV9 g_v9_compat_module;
 
-// demangle_cpp_type_name function removed - using global version from v9_type_registration.cpp
+RawModuleDefV9& GetV9Module() {
+    return g_v9_compat_module;
+}
+
+void ClearV9CompatModuleState() {
+    g_v9_compat_module = RawModuleDefV9{};
+}
+
+// demangle_cpp_type_name function removed - using global version from module_type_registration.cpp
 
 // Global V9Builder instance
 std::unique_ptr<V9Builder> g_v9_builder;
@@ -46,7 +52,7 @@ std::unique_ptr<V9Builder> g_v9_builder;
 void initializeV9Builder() {
     g_v9_builder = std::make_unique<V9Builder>();
     // Also initialize the type registration system
-    initializeV9TypeRegistration();
+    initializeModuleTypeRegistration();
 }
 
 V9Builder& getV9Builder() {
@@ -59,17 +65,17 @@ V9Builder& getV9Builder() {
 
 // Constructor
 V9Builder::V9Builder() {
-    // No TypeRegistry anymore - everything goes through V9TypeRegistration
+    // No TypeRegistry anymore - everything goes through ModuleTypeRegistration
 }
 
 /**
  * Register a type using the unified type registration system
- * This is now just a thin wrapper around the V9TypeRegistration system
+ * This is now just a thin wrapper around the ModuleTypeRegistration system
  */
 AlgebraicType V9Builder::registerType(const bsatn::AlgebraicType& bsatn_type,
                                       const std::string& explicit_name,
                                       const std::type_info* cpp_type) {
-    return getV9TypeRegistration().registerType(bsatn_type, explicit_name, cpp_type);
+    return getModuleTypeRegistration().registerType(bsatn_type, explicit_name, cpp_type);
 }
 
 void V9Builder::AddV9Table(const std::string& table_name,
@@ -354,3 +360,4 @@ RawConstraintDefV9 V9Builder::createUniqueConstraint(const std::string& table_na
 
 } // namespace Internal
 } // namespace SpacetimeDB
+

@@ -1,12 +1,13 @@
 use std::env;
 use std::future::Future;
+use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Instant;
 
 use bytes::{Bytes, BytesMut};
-use futures::TryStreamExt as _;
+use futures::{FutureExt as _, TryStreamExt as _};
 use spacetimedb::config::CertificateAuthority;
 use spacetimedb::messages::control_db::HostType;
 use spacetimedb::util::jobs::JobCores;
@@ -18,11 +19,17 @@ use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use spacetimedb_schema::def::ModuleDef;
 use tokio::runtime::{Builder, Runtime};
 
-use spacetimedb::client::{ClientActorId, ClientConfig, ClientConnection, DataMessage};
+use spacetimedb::client::messages::SerializableMessage;
+use spacetimedb::client::{
+    ClientActorId, ClientConfig, ClientConnection, ClientConnectionReceiver, DataMessage, OutboundMessage,
+};
 use spacetimedb::db::{Config, Storage};
+use spacetimedb::host::module_host::EventStatus;
 use spacetimedb::host::FunctionArgs;
+use spacetimedb::host::ReducerCallResult;
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
 use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
+use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::{bsatn, sats};
 
 pub use spacetimedb::database_logger::LogLevel;
@@ -47,28 +54,38 @@ pub(crate) fn module_path(name: &str) -> PathBuf {
     root.join("../../modules").join(name)
 }
 
-#[derive(Clone)]
 pub struct ModuleHandle {
-    // Needs to hold a reference to the standalone env.
-    _env: Arc<StandaloneEnv>,
+    // Keep the in-process standalone env alive for the lifetime of module.
+    // The teardown helper will use it to drive the same shutdown path a standalone server would use.
+    env: Arc<StandaloneEnv>,
     pub client: ClientConnection,
+    receiver: ClientConnectionReceiver,
     pub db_identity: Identity,
 }
 
 impl ModuleHandle {
-    async fn call_reducer(&self, reducer: &str, args: FunctionArgs) -> anyhow::Result<()> {
+    async fn call_reducer_result(&self, reducer: &str, args: FunctionArgs) -> anyhow::Result<ReducerCallResult> {
         let result = self
             .client
             .call_reducer(reducer, args, 0, Instant::now(), ws_v1::CallReducerFlags::FullUpdate)
             .await;
-        let result = match result {
-            Ok(result) => result.into(),
+        let result: anyhow::Result<ReducerCallResult> = match result {
+            Ok(result) => Ok(result),
             Err(err) => Err(err.into()),
         };
         match result {
-            Ok(()) => Ok(()),
+            Ok(result) if result.is_ok() => Ok(result),
+            Ok(result) => {
+                let err = Result::<(), anyhow::Error>::from(result)
+                    .expect_err("non-committed reducer outcome should produce an error");
+                Err(err.context(format!("Logs:\n{}", self.read_log(None).await)))
+            }
             Err(err) => Err(err.context(format!("Logs:\n{}", self.read_log(None).await))),
         }
+    }
+
+    async fn call_reducer(&self, reducer: &str, args: FunctionArgs) -> anyhow::Result<()> {
+        self.call_reducer_result(reducer, args).await.map(drop)
     }
 
     pub async fn call_reducer_json(&self, reducer: &str, args: &sats::ProductValue) -> anyhow::Result<()> {
@@ -81,9 +98,59 @@ impl ModuleHandle {
         self.call_reducer(reducer, FunctionArgs::Bsatn(args.into())).await
     }
 
+    pub async fn call_reducer_binary_result(
+        &self,
+        reducer: &str,
+        args: &sats::ProductValue,
+    ) -> anyhow::Result<ReducerCallResult> {
+        let args = bsatn::to_vec(&args).unwrap();
+        self.call_reducer_result(reducer, FunctionArgs::Bsatn(args.into()))
+            .await
+    }
+
     pub async fn send(&self, message: impl Into<DataMessage>) -> anyhow::Result<()> {
         let timer = Instant::now();
         self.client.handle_message(message, timer).await.map_err(Into::into)
+    }
+
+    pub async fn send_reducer_and_recv_update(
+        &mut self,
+        message: impl Into<DataMessage>,
+        request_id: RequestId,
+    ) -> anyhow::Result<()> {
+        self.send(message).await?;
+        self.recv_reducer_update(request_id).await
+    }
+
+    pub async fn recv_message(&mut self) -> Option<OutboundMessage> {
+        let mut buf = Vec::with_capacity(1);
+        (self.receiver.recv_many(&mut buf, 1).await != 0).then(|| buf.remove(0))
+    }
+
+    pub async fn recv_reducer_update(&mut self, request_id: RequestId) -> anyhow::Result<()> {
+        let message = self
+            .recv_message()
+            .await
+            .ok_or_else(|| anyhow::anyhow!("client receiver closed before reducer update {request_id}"))?;
+        let OutboundMessage::V1(SerializableMessage::TxUpdate(update)) = message else {
+            anyhow::bail!("expected reducer transaction update {request_id}, got {message:?}");
+        };
+        let Some(event) = update.event else {
+            anyhow::bail!("expected full reducer transaction update {request_id}, got light update");
+        };
+        if event.request_id != Some(request_id) {
+            anyhow::bail!(
+                "expected reducer transaction update {request_id}, got request id {:?}",
+                event.request_id
+            );
+        }
+        match &event.status {
+            EventStatus::Committed(_) => Ok(()),
+            EventStatus::FailedUser(err) | EventStatus::FailedInternal(err) => {
+                anyhow::bail!("reducer transaction update {request_id} failed: {err}")
+            }
+            EventStatus::OutOfEnergy => anyhow::bail!("reducer transaction update {request_id} ran out of energy"),
+        }
     }
 
     pub async fn read_log(&self, size: Option<u32>) -> String {
@@ -161,8 +228,10 @@ impl CompiledModule {
         with_runtime(move |runtime| {
             runtime.block_on(async {
                 let module = self.load_module(config, None).await;
-
-                routine(module).await;
+                let env = module.env.clone();
+                let db_identity = module.db_identity;
+                let routine_result = AssertUnwindSafe(routine(module)).catch_unwind().await.map(drop);
+                finish_module_test(&env, db_identity, routine_result).await;
             });
         });
     }
@@ -173,8 +242,12 @@ impl CompiledModule {
     {
         with_runtime(move |runtime| {
             let module = runtime.block_on(async { self.load_module(config, None).await });
+            let env = module.env.clone();
+            let db_identity = module.db_identity;
+            let func_result = std::panic::catch_unwind(AssertUnwindSafe(|| func(runtime, &module)));
+            drop(module);
 
-            func(runtime, &module);
+            runtime.block_on(async { finish_module_test(&env, db_identity, func_result).await });
         });
     }
 
@@ -200,7 +273,10 @@ impl CompiledModule {
         let env = spacetimedb_standalone::StandaloneEnv::init(
             spacetimedb_standalone::StandaloneOptions {
                 db_config: config,
+                durability: Default::default(),
                 websocket: WebSocketOptions::default(),
+                wasm: Default::default(),
+                v8: Default::default(),
             },
             &certs,
             paths.data_dir.into(),
@@ -244,10 +320,45 @@ impl CompiledModule {
         // it easier to interact with the database. For example it could include
         // the runtime on which a module was created and then we could add impl
         // for stuff like "get logs" or "get message log"
+        let (client, receiver) =
+            ClientConnection::dummy_with_receiver(client_id, ClientConfig::for_test(), instance.id, module_rx);
+
         ModuleHandle {
-            _env: env,
-            client: ClientConnection::dummy(client_id, ClientConfig::for_test(), instance.id, module_rx),
+            env,
+            client,
+            receiver,
             db_identity,
+        }
+    }
+}
+
+/// These standalone module tests run a `StandaloneEnv` in-process.
+/// That means [`CompiledModule::with_module_async`] and [`CompiledModule::with_module`]
+/// own the Tokio runtime, host controller, module host, scheduler, `RelationalDB`,
+/// JS worker threads, etc.
+///
+/// Some modules schedule repeating reducers during `init`.
+/// If these helpers return without explicitly shutting the database down,
+/// scheduled reducer calls can still be queued or running
+/// while the Tokio runtime and V8 worker state are being torn down.
+///
+/// [`StandaloneEnv::delete_database`] is the public standalone shutdown path.
+/// It removes the database and replica from standalone control state,
+/// asks the host controller to exit the module host, closes and waits for the scheduler,
+/// and then shuts down the `RelationalDB`.
+async fn finish_module_test(env: &StandaloneEnv, db_identity: Identity, test_result: std::thread::Result<()>) {
+    let cleanup_result = env.delete_database(&Identity::ZERO, &db_identity).await;
+
+    // Cleanup should not hide the result of the test body.
+    // If the test already panicked, resume that panic after attempting shutdown.
+    // If the test passed, make cleanup failure a test failure.
+    match (test_result, cleanup_result) {
+        (Ok(()), Ok(())) => {}
+        (Ok(()), Err(err)) => panic!("failed to delete test database {db_identity}: {err:#}"),
+        (Err(panic), Ok(())) => std::panic::resume_unwind(panic),
+        (Err(panic), Err(err)) => {
+            log::error!("failed to delete test database {db_identity} after test panic: {err:#}");
+            std::panic::resume_unwind(panic);
         }
     }
 }
@@ -262,10 +373,6 @@ pub static DEFAULT_CONFIG: Config = Config {
 /// For performance tests, do not persist to disk.
 pub static IN_MEMORY_CONFIG: Config = Config {
     storage: Storage::Disk,
-    // For some reason, a large page pool capacity causes `test_index_scans` to slow down,
-    // and makes the perf test for `chunk` go over 1ms.
-    // The threshold for failure on i7-7700K, 64GB RAM seems to be at 1 << 26.
-    // TODO(centril): investigate further why this size affects the benchmark.
     page_pool_max_size: Some(1 << 16),
 };
 

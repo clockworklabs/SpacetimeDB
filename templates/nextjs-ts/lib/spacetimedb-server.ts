@@ -20,7 +20,6 @@ export async function fetchPeople(): Promise<PersonData[]> {
       reject(new Error('SpacetimeDB connection timeout'));
     }, 10000);
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const connection = DbConnection.builder()
       .withUri(HOST)
       .withDatabaseName(DB_NAME)
@@ -35,10 +34,10 @@ export async function fetchPeople(): Promise<PersonData[]> {
             conn.disconnect();
             resolve(people);
           })
-          .onError((_ctx, error) => {
+          .onError((ctx) => {
             clearTimeout(timeoutId);
             conn.disconnect();
-            reject(error);
+            reject(ctx.event ?? new Error('Subscription error'));
           })
           .subscribe(tables.person);
       })

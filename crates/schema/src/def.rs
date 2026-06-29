@@ -32,9 +32,10 @@ use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors,
 use spacetimedb_data_structures::map::{Equivalent, HashMap};
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v10::{
-    ExplicitNames, RawConstraintDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawModuleDefV10,
-    RawModuleDefV10Section, RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10,
-    RawScopedTypeNameV10, RawSequenceDefV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10,
+    ExplicitNames, MethodOrAny, RawConstraintDefV10, RawHttpHandlerDefV10, RawHttpRouteDefV10, RawIndexDefV10,
+    RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section, RawProcedureDefV10, RawReducerDefV10,
+    RawRowLevelSecurityDefV10, RawScheduleDefV10, RawScopedTypeNameV10, RawSequenceDefV10, RawTableDefV10,
+    RawTypeDefV10, RawViewDefV10, RawViewPrimaryKeyDefV10,
 };
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIndexAlgorithm, RawIndexDefV9,
@@ -42,8 +43,11 @@ use spacetimedb_lib::db::raw_def::v9::{
     RawScheduleDefV9, RawScopedTypeNameV9, RawSequenceDefV9, RawSql, RawTableDefV9, RawTypeDefV9,
     RawUniqueConstraintDataV9, RawViewDefV9, TableAccess, TableType,
 };
+use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
 use spacetimedb_lib::{ProductType, RawModuleDef};
-use spacetimedb_primitives::{ColId, ColList, ColOrCols, ColSet, ProcedureId, ReducerId, TableId, ViewFnPtr};
+use spacetimedb_primitives::{
+    ColId, ColList, ColOrCols, ColSet, HttpHandlerId, ProcedureId, ReducerId, TableId, ViewFnPtr,
+};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, Typespace};
 
@@ -114,6 +118,15 @@ pub struct ModuleDef {
     /// Like `reducers`, this uses [`IndexMap`] to preserve order
     /// so that `__call_procedure__` receives stable integer IDs.
     procedures: IndexMap<Identifier, ProcedureDef>,
+
+    /// The HTTP handlers of the module definition.
+    ///
+    /// Uses [`IndexMap`] to preserve order so that `__call_http_handler__`
+    /// receives stable integer IDs.
+    http_handlers: IndexMap<Identifier, HttpHandlerDef>,
+
+    /// The HTTP routes of the module definition.
+    http_routes: Vec<HttpRouteDef>,
 
     /// The views of the module definition.
     ///
@@ -205,6 +218,61 @@ impl ModuleDef {
     /// The procedures of the module definition.
     pub fn procedures(&self) -> impl Iterator<Item = &ProcedureDef> {
         self.procedures.values()
+    }
+
+    /// The HTTP handlers of the module definition.
+    pub fn http_handlers(&self) -> impl Iterator<Item = &HttpHandlerDef> {
+        self.http_handlers.values()
+    }
+
+    /// The HTTP routes of the module definition.
+    pub fn http_routes(&self) -> &[HttpRouteDef] {
+        &self.http_routes
+    }
+
+    /// Returns an iterator over all HTTP handler ids and definitions.
+    pub fn http_handler_ids_and_defs(&self) -> impl ExactSizeIterator<Item = (HttpHandlerId, &HttpHandlerDef)> {
+        self.http_handlers
+            .values()
+            .enumerate()
+            .map(|(idx, def)| (idx.into(), def))
+    }
+
+    pub fn http_handler_by_id(&self, id: HttpHandlerId) -> &HttpHandlerDef {
+        &self.http_handlers[id.0 as usize]
+    }
+
+    pub fn get_http_handler_by_id(&self, id: HttpHandlerId) -> Option<&HttpHandlerDef> {
+        self.http_handlers.get_index(id.0 as usize).map(|(_, def)| def)
+    }
+
+    pub fn http_handler_full<K: ?Sized + Hash + Equivalent<Identifier>>(
+        &self,
+        name: &K,
+    ) -> Option<(HttpHandlerId, &HttpHandlerDef)> {
+        let (idx, _key, def) = self.http_handlers.get_full(name)?;
+        Some((HttpHandlerId(idx as u32), def))
+    }
+
+    pub fn match_http_route(
+        &self,
+        method: &spacetimedb_lib::http::Method,
+        path: &str,
+    ) -> Option<(HttpHandlerId, &HttpHandlerDef, &HttpRouteDef)> {
+        // TODO(perf): Replace this linear scan with a trie or other indexed routing structure.
+        for route in &self.http_routes {
+            if route.path.as_ref() != path {
+                continue;
+            }
+            let method_matches = matches!(route.method, MethodOrAny::Any)
+                || matches!(route.method, MethodOrAny::Method(ref route_method) if route_method == method);
+            if !method_matches {
+                continue;
+            }
+            let (handler_id, handler_def) = self.http_handler_full(&route.handler_name)?;
+            return Some((handler_id, handler_def, route));
+        }
+        None
     }
 
     /// The views of the module definition.
@@ -436,6 +504,8 @@ impl From<ModuleDef> for RawModuleDefV9 {
             refmap: _,
             row_level_security_raw,
             procedures,
+            http_handlers: _,
+            http_routes: _,
             raw_module_def_version: _,
         } = val;
 
@@ -492,6 +562,8 @@ impl From<ModuleDef> for RawModuleDefV10 {
             refmap: _,
             row_level_security_raw,
             procedures,
+            http_handlers,
+            http_routes,
             raw_module_def_version: _,
         } = val;
 
@@ -574,7 +646,30 @@ impl From<ModuleDef> for RawModuleDefV10 {
             sections.push(RawModuleDefV10Section::Procedures(raw_procedures));
         }
 
+        let raw_http_handlers: Vec<RawHttpHandlerDefV10> = http_handlers
+            .into_values()
+            .map(|hd| RawHttpHandlerDefV10 {
+                source_name: hd.accessor_name.into(),
+            })
+            .collect();
+        if !raw_http_handlers.is_empty() {
+            sections.push(RawModuleDefV10Section::HttpHandlers(raw_http_handlers));
+        }
+
+        if !http_routes.is_empty() {
+            let raw_http_routes: Vec<RawHttpRouteDefV10> = http_routes
+                .into_iter()
+                .map(|route| RawHttpRouteDefV10 {
+                    handler_function: route.handler_name.into(),
+                    method: route.method,
+                    path: RawIdentifier::new(route.path.as_ref()),
+                })
+                .collect();
+            sections.push(RawModuleDefV10Section::HttpRoutes(raw_http_routes));
+        }
+
         // Collect ExplicitNames for views: accessor_name → source_name, name → canonical_name.
+        let mut raw_view_primary_keys = Vec::new();
         let raw_views: Vec<RawViewDefV10> = views
             .into_values()
             .map(|vd| {
@@ -582,11 +677,34 @@ impl From<ModuleDef> for RawModuleDefV10 {
                     RawIdentifier::from(vd.accessor_name.clone()),
                     RawIdentifier::from(vd.name.clone()),
                 );
+                // Only explicit procedural-view primary keys are serialized into
+                // `ViewPrimaryKeys`. Primary keys for query builder views are
+                // inferred again during validation from the returned table type.
+                if vd.is_procedural()
+                    && let Some(primary_key) = vd.primary_key
+                    && let Some(column) = vd.return_columns.get(primary_key.idx())
+                {
+                    raw_view_primary_keys.push(RawViewPrimaryKeyDefV10 {
+                        view_source_name: RawIdentifier::from(vd.accessor_name.clone()),
+                        // Use the already canonicalized column name, because this raw
+                        // module def is being emitted from an already canonicalized
+                        // `ModuleDef`. The `Typespace` section we emit below contains
+                        // those canonical column names, and V10 has no column-level
+                        // `ExplicitNames` section to translate source column names
+                        // during the next validation pass. Therefore the serialized
+                        // primary-key column must match the canonical name present in
+                        // the emitted return type.
+                        columns: vec![RawIdentifier::from(column.name.clone())],
+                    });
+                }
                 vd.into()
             })
             .collect();
         if !raw_views.is_empty() {
             sections.push(RawModuleDefV10Section::Views(raw_views));
+        }
+        if !raw_view_primary_keys.is_empty() {
+            sections.push(RawModuleDefV10Section::ViewPrimaryKeys(raw_view_primary_keys));
         }
 
         if !schedules.is_empty() {
@@ -775,6 +893,7 @@ impl From<ViewDef> for TableDef {
             name,
             is_public,
             product_type_ref,
+            primary_key,
             return_columns,
             accessor_name,
             ..
@@ -782,7 +901,7 @@ impl From<ViewDef> for TableDef {
         Self {
             name,
             product_type_ref,
-            primary_key: None,
+            primary_key,
             columns: return_columns.into_iter().map(ColumnDef::from).collect(),
             indexes: <_>::default(),
             constraints: <_>::default(),
@@ -1507,12 +1626,13 @@ pub struct ViewDef {
     pub params_for_generate: ProductTypeDef,
 
     /// The return type of the view.
-    /// Either `Option<T>` or `Vec<T>` where:
+    /// Either `Option<T>`, `Vec<T>`, or `Query<T>` where:
     ///
-    /// 1. `T` is a [`ProductType`] containing the columns of the view,
-    /// 2. `T` is registered in the module's typespace,
-    /// 3. `Option<T>` refers to [`AlgebraicType::option()`], and
+    /// 1. `T` is a [`ProductType`] containing the columns of the view
+    /// 2. `T` is registered in the module's typespace
+    /// 3. `Option<T>` refers to [`AlgebraicType::option()`]
     /// 4. `Vec<T>` refers to [`AlgebraicType::array()`]
+    /// 5. `Query<T>` is a special [`ProductType`] `{ __query__: T }`
     pub return_type: AlgebraicType,
 
     /// The return type of the view, formatted for client codegen.
@@ -1520,10 +1640,16 @@ pub struct ViewDef {
 
     /// The single source of truth for the view's columns.
     ///
-    /// If a view can return only `Option<T>` or `Vec<T>`,
+    /// If a view can return only `Option<T>`, `Vec<T>`, or `Query<T>`,
     /// this is a reference to the inner product type `T`.
     /// All elements of `T` must have names.
     pub product_type_ref: AlgebraicTypeRef,
+
+    /// The primary key of the view.
+    ///
+    /// This is set for query-builder views when the underlying table has a primary key.
+    /// The database engine does not actually care about this, but client code generation does.
+    pub primary_key: Option<ColId>,
 
     /// The return columns of this view.
     /// The same information is stored in `product_type_ref`.
@@ -1545,6 +1671,12 @@ impl ViewDef {
     /// Get a parameter by the parameter's name.
     pub fn get_param_by_name(&self, name: &Identifier) -> Option<&ViewParamDef> {
         self.param_columns.iter().find(|c| &c.name == name)
+    }
+
+    /// Is this a procedural view or query builder view?
+    pub fn is_procedural(&self) -> bool {
+        use extract_view_return_product_type_ref as extract_kind;
+        matches!(extract_kind(&self.return_type), Some((_, ViewKind::Procedural)))
     }
 }
 
@@ -1732,6 +1864,24 @@ pub struct ProcedureDef {
 
     /// The visibility of this procedure.
     pub visibility: FunctionVisibility,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct HttpHandlerDef {
+    /// The canonical name of the handler.
+    pub name: Identifier,
+
+    /// The handler name as defined in the module source.
+    pub accessor_name: Identifier,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct HttpRouteDef {
+    pub handler_name: Identifier,
+    pub method: spacetimedb_lib::db::raw_def::v10::MethodOrAny,
+    pub path: Box<str>,
 }
 
 impl From<ProcedureDef> for RawProcedureDefV9 {

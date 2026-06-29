@@ -20,7 +20,7 @@ class TESTCLIENT_API UOptionVecOptionI32Table : public URemoteTable
 public:
     void PostInitialize();
 
-    /** Update function for option_vec_option_i32 table*/
+    /** Update function for option_vec_option_i_32 table*/
     FTableAppliedDiff<FOptionVecOptionI32Type> Update(TArray<FWithBsatn<FOptionVecOptionI32Type>> InsertsRef, TArray<FWithBsatn<FOptionVecOptionI32Type>> DeletesRef);
 
     /** Number of subscribed rows currently in the cache */
@@ -58,7 +58,7 @@ public:
     FOnOptionVecOptionI32Delete OnDelete;
 
 private:
-    const FString TableName = TEXT("option_vec_option_i32");
+    const FString TableName = TEXT("option_vec_option_i_32");
 
     TSharedPtr<UClientCache<FOptionVecOptionI32Type>> Data;
 };

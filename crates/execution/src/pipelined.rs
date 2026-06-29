@@ -8,10 +8,10 @@ use itertools::Either;
 use spacetimedb_expr::expr::AggType;
 use spacetimedb_lib::{metrics::ExecutionMetrics, query::Delta, sats::size_of::SizeOf, AlgebraicValue, ProductValue};
 use spacetimedb_physical_plan::plan::{
-    HashJoin, IxJoin, IxScan, PhysicalExpr, PhysicalPlan, ProjectField, ProjectListPlan, ProjectPlan, Sarg, Semi,
-    TableScan, TupleField,
+    HashJoin, IndexProbe, IxJoin, IxScan, ParamResolver, PhysicalExpr, PhysicalPlan, ProjectField, ProjectListPlan,
+    ProjectPlan, Semi, TableScan, TupleField,
 };
-use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
+use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::product;
 
 use crate::{Datastore, DeltaStore, Row, Tuple};
@@ -81,6 +81,7 @@ impl ProjectListExecutor {
     pub fn execute<Tx: Datastore + DeltaStore>(
         &self,
         tx: &Tx,
+        params: &impl ParamResolver,
         metrics: &mut ExecutionMetrics,
         f: &mut dyn FnMut(ProductValue) -> Result<()>,
     ) -> Result<()> {
@@ -89,7 +90,7 @@ impl ProjectListExecutor {
         match self {
             Self::Name(plans) => {
                 for plan in plans {
-                    plan.execute(tx, metrics, &mut |row| {
+                    plan.execute(tx, params, metrics, &mut |row| {
                         n += 1;
                         let row = row.to_product_value();
                         bytes_scanned += row.size_of();
@@ -99,7 +100,7 @@ impl ProjectListExecutor {
             }
             Self::View(plans) => {
                 for plan in plans {
-                    plan.execute(tx, metrics, &mut |row| {
+                    plan.execute(tx, params, metrics, &mut |row| {
                         n += 1;
                         f(row)
                     })?;
@@ -107,7 +108,7 @@ impl ProjectListExecutor {
             }
             Self::List(plans, fields) => {
                 for plan in plans {
-                    plan.execute(tx, metrics, &mut |t| {
+                    plan.execute(tx, params, metrics, &mut |t| {
                         n += 1;
                         let row = ProductValue::from_iter(fields.iter().map(|field| t.project(field)));
                         bytes_scanned += row.size_of();
@@ -116,7 +117,7 @@ impl ProjectListExecutor {
                 }
             }
             Self::Limit(plan, limit) => {
-                plan.execute(tx, metrics, &mut |row| {
+                plan.execute(tx, params, metrics, &mut |row| {
                     n += 1;
                     if n <= *limit as usize {
                         f(row)?;
@@ -136,7 +137,7 @@ impl ProjectListExecutor {
                             n += tx.row_count(table_scan.table) as usize;
                         }
                         _ => {
-                            plan.execute(tx, metrics, &mut |_| {
+                            plan.execute(tx, params, metrics, &mut |_| {
                                 n += 1;
                                 Ok(())
                             })?;
@@ -180,12 +181,13 @@ impl ViewProject {
     pub fn execute<Tx: Datastore + DeltaStore>(
         &self,
         tx: &Tx,
+        params: &impl ParamResolver,
         metrics: &mut ExecutionMetrics,
         f: &mut dyn FnMut(ProductValue) -> Result<()>,
     ) -> Result<()> {
         let mut n = 0;
         let mut bytes_scanned = 0;
-        self.inner.execute(tx, metrics, &mut |row| match row {
+        self.inner.execute(tx, params, metrics, &mut |row| match row {
             Row::Ptr(ptr) => {
                 n += 1;
                 let col_list = ColList::from_iter(self.num_private_cols..self.num_cols);
@@ -243,6 +245,7 @@ impl PipelinedProject {
     pub fn execute<'a, Tx: Datastore + DeltaStore>(
         &self,
         tx: &'a Tx,
+        params: &impl ParamResolver,
         metrics: &mut ExecutionMetrics,
         f: &mut dyn FnMut(Row<'a>) -> Result<()>,
     ) -> Result<()> {
@@ -252,7 +255,7 @@ impl PipelinedProject {
                 // No explicit projection.
                 // This means the input does not return tuples.
                 // It returns either row ids or product values.
-                plan.execute(tx, metrics, &mut |t| {
+                plan.execute(tx, params, metrics, &mut |t| {
                     n += 1;
                     if let Tuple::Row(row) = t {
                         f(row)?;
@@ -263,7 +266,7 @@ impl PipelinedProject {
             Self::Some(plan, i) => {
                 // The contrary is true for explicit projections.
                 // They return a tuple of row ids or product values.
-                plan.execute(tx, metrics, &mut |t| {
+                plan.execute(tx, params, metrics, &mut |t| {
                     n += 1;
                     if let Some(row) = t.select(*i) {
                         f(row)?;
@@ -284,12 +287,8 @@ impl PipelinedProject {
 #[derive(Debug)]
 pub enum PipelinedExecutor {
     TableScan(PipelinedScan),
-    IxScanEq(PipelinedIxScanEq),
-    IxScanRange(PipelinedIxScanRange),
+    IxScan(PipelinedIxScan),
     IxJoin(PipelinedIxJoin),
-    IxDeltaScanEq(PipelinedIxDeltaScanEq),
-    IxDeltaScanRange(PipelinedIxDeltaScanRange),
-    IxDeltaJoin(PipelinedIxDeltaJoin),
     HashJoin(BlockingHashJoin),
     NLJoin(BlockingNLJoin),
     Filter(PipelinedFilter),
@@ -304,47 +303,15 @@ impl From<PhysicalPlan> for PipelinedExecutor {
                 limit,
                 delta,
             }),
-            PhysicalPlan::IxScan(
-                scan @ IxScan {
-                    delta: None,
-                    arg: Sarg::Eq(..),
-                    ..
-                },
-                _,
-            ) => Self::IxScanEq(scan.into()),
-            PhysicalPlan::IxScan(
-                scan @ IxScan {
-                    delta: None,
-                    arg: Sarg::Range(..),
-                    ..
-                },
-                _,
-            ) => Self::IxScanRange(scan.into()),
-            PhysicalPlan::IxScan(
-                scan @ IxScan {
-                    delta: Some(_),
-                    arg: Sarg::Eq(..),
-                    ..
-                },
-                _,
-            ) => Self::IxDeltaScanEq(scan.into()),
-            PhysicalPlan::IxScan(
-                scan @ IxScan {
-                    delta: Some(_),
-                    arg: Sarg::Range(..),
-                    ..
-                },
-                _,
-            ) => Self::IxDeltaScanRange(scan.into()),
+            PhysicalPlan::IxScan(scan, _) => Self::IxScan(scan.into()),
             PhysicalPlan::IxJoin(
                 IxJoin {
                     lhs,
                     rhs,
                     rhs_index,
-                    rhs_field,
                     unique,
-                    lhs_field,
-                    rhs_delta: None,
+                    probe,
+                    rhs_delta,
                     ..
                 },
                 semijoin,
@@ -352,30 +319,8 @@ impl From<PhysicalPlan> for PipelinedExecutor {
                 lhs: Box::new(Self::from(*lhs)),
                 rhs_table: rhs.table_id,
                 rhs_index,
-                rhs_field,
-                lhs_field,
-                unique,
-                semijoin,
-            }),
-            PhysicalPlan::IxJoin(
-                IxJoin {
-                    lhs,
-                    rhs,
-                    rhs_index,
-                    rhs_field,
-                    unique,
-                    lhs_field,
-                    rhs_delta: Some(rhs_delta),
-                    ..
-                },
-                semijoin,
-            ) => Self::IxDeltaJoin(PipelinedIxDeltaJoin {
-                lhs: Box::new(Self::from(*lhs)),
-                rhs_table: rhs.table_id,
-                rhs_index,
-                rhs_field,
-                rhs_delta,
-                lhs_field,
+                source: IndexSource::from_delta(rhs_delta),
+                probe,
                 unique,
                 semijoin,
             }),
@@ -414,7 +359,6 @@ impl PipelinedExecutor {
         f(self);
         match self {
             Self::IxJoin(PipelinedIxJoin { lhs: input, .. })
-            | Self::IxDeltaJoin(PipelinedIxDeltaJoin { lhs: input, .. })
             | Self::Filter(PipelinedFilter { input, .. })
             | Self::Limit(PipelinedLimit { input, .. }) => {
                 input.visit(f);
@@ -423,11 +367,7 @@ impl PipelinedExecutor {
                 lhs.visit(f);
                 rhs.visit(f);
             }
-            Self::TableScan(..)
-            | Self::IxScanEq(..)
-            | Self::IxScanRange(..)
-            | Self::IxDeltaScanEq(..)
-            | Self::IxDeltaScanRange(..) => {}
+            Self::TableScan(..) | Self::IxScan(..) => {}
         }
     }
 
@@ -435,12 +375,8 @@ impl PipelinedExecutor {
     pub fn is_empty(&self, tx: &impl DeltaStore) -> bool {
         match self {
             Self::TableScan(scan) => scan.is_empty(tx),
-            Self::IxScanEq(scan) => scan.is_empty(tx),
-            Self::IxScanRange(scan) => scan.is_empty(tx),
-            Self::IxDeltaScanEq(scan) => scan.is_empty(tx),
-            Self::IxDeltaScanRange(scan) => scan.is_empty(tx),
+            Self::IxScan(scan) => scan.is_empty(tx),
             Self::IxJoin(join) => join.is_empty(tx),
-            Self::IxDeltaJoin(join) => join.is_empty(tx),
             Self::HashJoin(join) => join.is_empty(tx),
             Self::NLJoin(join) => join.is_empty(tx),
             Self::Filter(filter) => filter.is_empty(tx),
@@ -451,21 +387,18 @@ impl PipelinedExecutor {
     pub fn execute<'a, Tx: Datastore + DeltaStore>(
         &self,
         tx: &'a Tx,
+        params: &impl ParamResolver,
         metrics: &mut ExecutionMetrics,
         f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
     ) -> Result<()> {
         match self {
             Self::TableScan(scan) => scan.execute(tx, metrics, f),
-            Self::IxScanEq(scan) => scan.execute(tx, metrics, f),
-            Self::IxScanRange(scan) => scan.execute(tx, metrics, f),
-            Self::IxDeltaScanEq(scan) => scan.execute(tx, metrics, f),
-            Self::IxDeltaScanRange(scan) => scan.execute(tx, metrics, f),
-            Self::IxJoin(join) => join.execute(tx, metrics, f),
-            Self::IxDeltaJoin(join) => join.execute(tx, metrics, f),
-            Self::HashJoin(join) => join.execute(tx, metrics, f),
-            Self::NLJoin(join) => join.execute(tx, metrics, f),
-            Self::Filter(filter) => filter.execute(tx, metrics, f),
-            Self::Limit(limit) => limit.execute(tx, metrics, f),
+            Self::IxScan(scan) => scan.execute(tx, params, metrics, f),
+            Self::IxJoin(join) => join.execute(tx, params, metrics, f),
+            Self::HashJoin(join) => join.execute(tx, params, metrics, f),
+            Self::NLJoin(join) => join.execute(tx, params, metrics, f),
+            Self::Filter(filter) => filter.execute(tx, params, metrics, f),
+            Self::Limit(limit) => limit.execute(tx, params, metrics, f),
         }
     }
 }
@@ -544,416 +477,227 @@ impl PipelinedScan {
     }
 }
 
-/// A range index scan executor for a delta table.
-///
-/// TODO: There is much overlap between this executor and [PipelinedIxScanRange].
-/// But merging them requires merging the [Datastore] and [DeltaStore] traits,
-/// since the index scan interface is right now split between both.
+#[derive(Debug, Clone, Copy)]
+enum IndexSource {
+    Base,
+    Delta(Delta),
+}
+
+impl IndexSource {
+    fn from_delta(delta: Option<Delta>) -> Self {
+        match delta {
+            None => Self::Base,
+            Some(delta) => Self::Delta(delta),
+        }
+    }
+
+    fn is_empty(self, tx: &impl DeltaStore, table_id: TableId) -> bool {
+        match self {
+            Self::Base => false,
+            Self::Delta(Delta::Inserts) => !tx.has_inserts(table_id),
+            Self::Delta(Delta::Deletes) => !tx.has_deletes(table_id),
+        }
+    }
+}
+
 #[derive(Debug)]
-pub struct PipelinedIxDeltaScanRange {
-    /// The table id
-    pub table_id: TableId,
-    /// The index id
-    pub index_id: IndexId,
-    /// An equality prefix for multi-column scans
-    pub prefix: Vec<AlgebraicValue>,
-    /// The lower index bound
-    pub lower: Bound<AlgebraicValue>,
-    /// The upper index bound
-    pub upper: Bound<AlgebraicValue>,
-    /// Inserts or deletes?
-    pub delta: Delta,
+enum EvaluatedIndexProbe {
+    Point(AlgebraicValue),
+    Range(Bound<AlgebraicValue>, Bound<AlgebraicValue>),
 }
 
-impl From<IxScan> for PipelinedIxDeltaScanRange {
-    fn from(scan: IxScan) -> Self {
-        match scan {
-            IxScan {
-                schema,
-                index_id,
-                prefix,
-                arg: Sarg::Eq(_, v),
-                delta: Some(delta),
-                ..
-            } => Self {
-                table_id: schema.table_id,
-                index_id,
-                prefix: prefix.into_iter().map(|(_, v)| v).collect(),
-                lower: Bound::Included(v.clone()),
-                upper: Bound::Included(v),
-                delta,
-            },
-            IxScan {
-                schema,
-                index_id,
-                prefix,
-                arg: Sarg::Range(_, lower, upper),
-                delta: Some(delta),
-                ..
-            } => Self {
-                table_id: schema.table_id,
-                index_id,
-                prefix: prefix.into_iter().map(|(_, v)| v).collect(),
-                lower,
-                upper,
-                delta,
-            },
-            IxScan { delta: None, .. } => unreachable!(),
-        }
-    }
-}
-
-impl PipelinedIxDeltaScanRange {
-    /// Is the delta table empty?
-    pub fn is_empty(&self, tx: &impl DeltaStore) -> bool {
-        match self.delta {
-            Delta::Inserts => !tx.has_inserts(self.table_id),
-            Delta::Deletes => !tx.has_deletes(self.table_id),
-        }
-    }
-
-    pub fn execute<'a, Tx: Datastore + DeltaStore>(
-        &self,
-        tx: &'a Tx,
-        metrics: &mut ExecutionMetrics,
-        f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
-    ) -> Result<()> {
-        let mut n = 0;
-        let mut f = |t| {
-            n += 1;
-            f(t)
-        };
-        match self.prefix.as_slice() {
-            [] => {
-                for ptr in tx
-                    .index_scan_range_for_delta(
-                        self.table_id,
-                        self.index_id,
-                        self.delta,
-                        (self.lower.as_ref(), self.upper.as_ref()),
-                    )
-                    .map(Tuple::Row)
-                {
-                    f(ptr)?;
-                }
-            }
-            prefix => {
-                for ptr in tx
-                    .index_scan_range_for_delta(
-                        self.table_id,
-                        self.index_id,
-                        self.delta,
-                        (
-                            self.lower
-                                .as_ref()
-                                .map(std::iter::once)
-                                .map(|iter| prefix.iter().chain(iter))
-                                .map(|iter| iter.cloned())
-                                .map(ProductValue::from_iter)
-                                .map(AlgebraicValue::Product),
-                            self.upper
-                                .as_ref()
-                                .map(std::iter::once)
-                                .map(|iter| prefix.iter().chain(iter))
-                                .map(|iter| iter.cloned())
-                                .map(ProductValue::from_iter)
-                                .map(AlgebraicValue::Product),
-                        ),
-                    )
-                    .map(Tuple::Row)
-                {
-                    f(ptr)?;
-                }
-            }
-        }
-        metrics.index_seeks += 1;
-        metrics.rows_scanned += n;
-        Ok(())
-    }
-}
-
-/// An equality index scan executor for a delta table.
-///
-/// TODO: There is much overlap between this executor and [PipelinedIxScanEq].
-/// But merging them requires merging the [Datastore] and [DeltaStore] traits,
-/// since the index scan interface is right now split between both.
+/// A pipelined executor for scanning an index.
 #[derive(Debug)]
-pub struct PipelinedIxDeltaScanEq {
-    /// The table id
+pub struct PipelinedIxScan {
+    /// The table id.
     pub table_id: TableId,
-    /// The index id
-    pub index_id: IndexId,
-    /// The point to scan the index for.
-    pub point: AlgebraicValue,
-    /// Inserts or deletes?
-    pub delta: Delta,
-}
-
-impl From<IxScan> for PipelinedIxDeltaScanEq {
-    fn from(scan: IxScan) -> Self {
-        match scan {
-            IxScan {
-                schema,
-                index_id,
-                prefix,
-                arg: Sarg::Eq(_, last),
-                delta: Some(delta),
-                ..
-            } => Self {
-                table_id: schema.table_id,
-                index_id,
-                point: combine_prefix_and_last(prefix, last),
-                delta,
-            },
-            IxScan { .. } => unreachable!(),
-        }
-    }
-}
-
-impl PipelinedIxDeltaScanEq {
-    /// Is the delta table empty?
-    pub fn is_empty(&self, tx: &impl DeltaStore) -> bool {
-        match self.delta {
-            Delta::Inserts => !tx.has_inserts(self.table_id),
-            Delta::Deletes => !tx.has_deletes(self.table_id),
-        }
-    }
-
-    pub fn execute<'a, Tx: Datastore + DeltaStore>(
-        &self,
-        tx: &'a Tx,
-        metrics: &mut ExecutionMetrics,
-        f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
-    ) -> Result<()> {
-        let mut n = 0;
-        let mut f = |t| {
-            n += 1;
-            f(t)
-        };
-        for ptr in tx
-            .index_scan_point_for_delta(self.table_id, self.index_id, self.delta, &self.point)
-            .map(Tuple::Row)
-        {
-            f(ptr)?;
-        }
-
-        metrics.index_seeks += 1;
-        metrics.rows_scanned += n;
-        Ok(())
-    }
-}
-
-/// A pipelined executor for range scanning an index
-#[derive(Debug)]
-pub struct PipelinedIxScanRange {
-    /// The table id
-    pub table_id: TableId,
-    /// The index id
+    /// The index id.
     pub index_id: IndexId,
     pub limit: Option<u64>,
-    /// An equality prefix for multi-column scans
-    pub prefix: Vec<AlgebraicValue>,
-    /// The lower index bound
-    pub lower: Bound<AlgebraicValue>,
-    /// The upper index bound
-    pub upper: Bound<AlgebraicValue>,
+    source: IndexSource,
+    probe: IndexProbe,
 }
 
-impl From<IxScan> for PipelinedIxScanRange {
+impl From<IxScan> for PipelinedIxScan {
     fn from(scan: IxScan) -> Self {
-        match scan {
-            IxScan {
-                schema,
-                limit,
-                delta: None,
-                index_id,
-                prefix,
-                arg: Sarg::Eq(_, v),
-            } => Self {
-                table_id: schema.table_id,
-                index_id,
-                limit,
-                prefix: prefix.into_iter().map(|(_, v)| v).collect(),
-                lower: Bound::Included(v.clone()),
-                upper: Bound::Included(v),
-            },
-            IxScan {
-                schema,
-                limit,
-                delta: None,
-                index_id,
-                prefix,
-                arg: Sarg::Range(_, lower, upper),
-            } => Self {
-                table_id: schema.table_id,
-                index_id,
-                limit,
-                prefix: prefix.into_iter().map(|(_, v)| v).collect(),
-                lower,
-                upper,
-            },
-            IxScan { .. } => unreachable!(),
+        let IxScan {
+            schema,
+            index_id,
+            limit,
+            delta,
+            probe,
+        } = scan;
+        Self {
+            table_id: schema.table_id,
+            index_id,
+            limit,
+            source: IndexSource::from_delta(delta),
+            probe,
         }
     }
 }
 
-impl PipelinedIxScanRange {
-    /// We don't know statically if an index scan will return rows
-    pub fn is_empty(&self, _: &impl DeltaStore) -> bool {
-        false
-    }
+struct NoRow;
 
-    pub fn execute<'a, Tx: Datastore + DeltaStore>(
-        &self,
-        tx: &'a Tx,
-        metrics: &mut ExecutionMetrics,
-        f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
-    ) -> Result<()> {
-        // A single column index scan
-        let single_col_scan = || {
-            tx.index_scan_range(
-                self.table_id,
-                self.index_id,
-                &(self.lower.as_ref(), self.upper.as_ref()),
-            )
-        };
-        // A single column index scan with optional row limit
-        let single_col_limit_scan = |limit| match limit {
-            None => single_col_scan().map(Either::Left),
-            Some(n) => single_col_scan().map(|iter| iter.take(n)).map(Either::Right),
-        };
-        // A multi-column index scan
-        let multi_col_scan = |prefix: &[AlgebraicValue]| {
-            tx.index_scan_range(
-                self.table_id,
-                self.index_id,
-                &(
-                    self.lower
-                        .as_ref()
-                        .map(std::iter::once)
-                        .map(|iter| prefix.iter().chain(iter))
-                        .map(|iter| iter.cloned())
-                        .map(ProductValue::from_iter)
-                        .map(AlgebraicValue::Product),
-                    self.upper
-                        .as_ref()
-                        .map(std::iter::once)
-                        .map(|iter| prefix.iter().chain(iter))
-                        .map(|iter| iter.cloned())
-                        .map(ProductValue::from_iter)
-                        .map(AlgebraicValue::Product),
-                ),
-            )
-        };
-        // A multi-column index scan with optional row limit
-        let multi_col_limit_scan = |prefix, limit| match limit {
-            None => multi_col_scan(prefix).map(Either::Left),
-            Some(n) => multi_col_scan(prefix).map(|iter| iter.take(n)).map(Either::Right),
-        };
-        let mut n = 0;
-        let mut f = |t| {
-            n += 1;
-            f(t)
-        };
-        match self.prefix.as_slice() {
-            [] => {
-                for ptr in single_col_limit_scan(self.limit.map(|n| n as usize))?
-                    .map(Row::Ptr)
-                    .map(Tuple::Row)
-                {
-                    f(ptr)?;
+impl ProjectField for NoRow {
+    fn project(&self, _: &TupleField) -> AlgebraicValue {
+        panic!("field expression in standalone index scan probe")
+    }
+}
+
+fn eval_static_probe(expr: &PhysicalExpr, params: &impl ParamResolver) -> AlgebraicValue {
+    expr.eval_with_params(&NoRow, params, &mut 0).into_owned()
+}
+
+fn eval_static_bound(bound: &Bound<PhysicalExpr>, params: &impl ParamResolver) -> Bound<AlgebraicValue> {
+    match bound {
+        Bound::Included(expr) => Bound::Included(eval_static_probe(expr, params)),
+        Bound::Excluded(expr) => Bound::Excluded(eval_static_probe(expr, params)),
+        Bound::Unbounded => Bound::Unbounded,
+    }
+}
+
+fn eval_index_probe(probe: &IndexProbe, params: &impl ParamResolver) -> EvaluatedIndexProbe {
+    match probe {
+        IndexProbe::Point(point) => EvaluatedIndexProbe::Point(eval_static_probe(point, params)),
+        IndexProbe::Range(lower, upper) => {
+            EvaluatedIndexProbe::Range(eval_static_bound(lower, params), eval_static_bound(upper, params))
+        }
+    }
+}
+
+fn eval_probe(
+    expr: &PhysicalExpr,
+    row: &impl ProjectField,
+    params: &impl ParamResolver,
+    bytes_scanned: &mut usize,
+) -> AlgebraicValue {
+    expr.eval_with_params(row, params, bytes_scanned).into_owned()
+}
+
+fn for_each_index_scan_row<'a, Tx: Datastore + DeltaStore>(
+    tx: &'a Tx,
+    source: IndexSource,
+    table_id: TableId,
+    index_id: IndexId,
+    probe: &EvaluatedIndexProbe,
+    limit: Option<u64>,
+    f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
+) -> Result<usize> {
+    // Datastore and DeltaStore expose different index iterator item types, so
+    // normalize both into Tuple at this boundary while keeping the traits split.
+    let mut n = 0;
+    let mut emit = |tuple| {
+        n += 1;
+        f(tuple)
+    };
+
+    match (source, probe) {
+        (IndexSource::Base, EvaluatedIndexProbe::Point(point)) => {
+            let scan = tx.index_scan_point(table_id, index_id, point)?;
+            match limit {
+                None => {
+                    for row in scan {
+                        emit(Tuple::Row(Row::Ptr(row)))?;
+                    }
                 }
-            }
-            prefix => {
-                for ptr in multi_col_limit_scan(prefix, self.limit.map(|n| n as usize))?
-                    .map(Row::Ptr)
-                    .map(Tuple::Row)
-                {
-                    f(ptr)?;
+                Some(limit) => {
+                    for row in scan.take(limit as usize) {
+                        emit(Tuple::Row(Row::Ptr(row)))?;
+                    }
                 }
             }
         }
-        metrics.index_seeks += 1;
-        metrics.rows_scanned += n;
-        Ok(())
-    }
-}
-
-/// A pipelined executor for equality scanning an index
-#[derive(Debug)]
-pub struct PipelinedIxScanEq {
-    /// The table id
-    pub table_id: TableId,
-    /// The index id
-    pub index_id: IndexId,
-    pub limit: Option<u64>,
-    /// The point to scan the index for.
-    pub point: AlgebraicValue,
-}
-
-impl From<IxScan> for PipelinedIxScanEq {
-    fn from(scan: IxScan) -> Self {
-        match scan {
-            IxScan {
-                schema,
-                limit,
-                delta: None,
-                index_id,
-                prefix,
-                arg: Sarg::Eq(_, last),
-            } => Self {
-                table_id: schema.table_id,
-                index_id,
-                limit,
-                point: combine_prefix_and_last(prefix, last),
-            },
-            IxScan { .. } => unreachable!(),
+        (IndexSource::Base, EvaluatedIndexProbe::Range(lower, upper)) => {
+            let scan = tx.index_scan_range(table_id, index_id, &(lower.as_ref(), upper.as_ref()))?;
+            match limit {
+                None => {
+                    for row in scan {
+                        emit(Tuple::Row(Row::Ptr(row)))?;
+                    }
+                }
+                Some(limit) => {
+                    for row in scan.take(limit as usize) {
+                        emit(Tuple::Row(Row::Ptr(row)))?;
+                    }
+                }
+            }
+        }
+        (IndexSource::Delta(delta), EvaluatedIndexProbe::Point(point)) => {
+            // Delta index scans did not apply IxScan::limit before this refactor.
+            for row in tx.index_scan_point_for_delta(table_id, index_id, delta, point) {
+                emit(Tuple::Row(row))?;
+            }
+        }
+        (IndexSource::Delta(delta), EvaluatedIndexProbe::Range(lower, upper)) => {
+            // Delta index scans did not apply IxScan::limit before this refactor.
+            for row in tx.index_scan_range_for_delta(table_id, index_id, delta, (lower.as_ref(), upper.as_ref())) {
+                emit(Tuple::Row(row))?;
+            }
         }
     }
+
+    Ok(n)
 }
 
-fn combine_prefix_and_last(prefix: Vec<(ColId, AlgebraicValue)>, last: AlgebraicValue) -> AlgebraicValue {
-    if prefix.is_empty() {
-        last
-    } else {
-        let mut elems = Vec::with_capacity(prefix.len() + 1);
-        elems.extend(prefix.into_iter().map(|(_, v)| v));
-        elems.push(last);
-        AlgebraicValue::product(elems)
+fn for_each_index_point<'a, Tx: Datastore + DeltaStore>(
+    tx: &'a Tx,
+    source: IndexSource,
+    table_id: TableId,
+    index_id: IndexId,
+    point: &AlgebraicValue,
+    f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
+) -> Result<()> {
+    match source {
+        IndexSource::Base => {
+            for row in tx.index_scan_point(table_id, index_id, point)? {
+                f(Tuple::Row(Row::Ptr(row)))?;
+            }
+        }
+        IndexSource::Delta(delta) => {
+            for row in tx.index_scan_point_for_delta(table_id, index_id, delta, point) {
+                f(Tuple::Row(row))?;
+            }
+        }
     }
+    Ok(())
 }
 
-impl PipelinedIxScanEq {
-    /// We don't know statically if an index scan will return rows
-    pub fn is_empty(&self, _: &impl DeltaStore) -> bool {
-        false
-    }
-
-    pub fn execute<'a, Tx: Datastore + DeltaStore>(
-        &self,
-        tx: &'a Tx,
-        metrics: &mut ExecutionMetrics,
-        f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
-    ) -> Result<()> {
-        // Scan without a row limit.
-        let scan = || tx.index_scan_point(self.table_id, self.index_id, &self.point);
-        // Scan with an optional row limit.
-        let scan_opt_limit = |limit| match limit {
-            None => scan().map(Either::Left),
-            Some(n) => scan().map(|iter| iter.take(n)).map(Either::Right),
-        };
-        let mut n = 0;
-        let mut f = |t| {
-            n += 1;
-            f(t)
-        };
-        for ptr in scan_opt_limit(self.limit.map(|n| n as usize))?
+fn first_index_point<'a, Tx: Datastore + DeltaStore>(
+    tx: &'a Tx,
+    source: IndexSource,
+    table_id: TableId,
+    index_id: IndexId,
+    point: &AlgebraicValue,
+) -> Result<Option<Tuple<'a>>> {
+    Ok(match source {
+        IndexSource::Base => tx
+            .index_scan_point(table_id, index_id, point)?
+            .next()
             .map(Row::Ptr)
-            .map(Tuple::Row)
-        {
-            f(ptr)?;
-        }
+            .map(Tuple::Row),
+        IndexSource::Delta(delta) => tx
+            .index_scan_point_for_delta(table_id, index_id, delta, point)
+            .next()
+            .map(Tuple::Row),
+    })
+}
 
+impl PipelinedIxScan {
+    /// Does this operation contain an empty delta scan?
+    pub fn is_empty(&self, tx: &impl DeltaStore) -> bool {
+        self.source.is_empty(tx, self.table_id)
+    }
+
+    pub fn execute<'a, Tx: Datastore + DeltaStore>(
+        &self,
+        tx: &'a Tx,
+        params: &impl ParamResolver,
+        metrics: &mut ExecutionMetrics,
+        f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
+    ) -> Result<()> {
+        let probe = eval_index_probe(&self.probe, params);
+        let n = for_each_index_scan_row(tx, self.source, self.table_id, self.index_id, &probe, self.limit, f)?;
         metrics.index_seeks += 1;
         metrics.rows_scanned += n;
         Ok(())
@@ -969,10 +713,9 @@ pub struct PipelinedIxJoin {
     pub rhs_table: TableId,
     /// The rhs index
     pub rhs_index: IndexId,
-    /// The rhs join field
-    pub rhs_field: ColId,
-    /// The lhs join field
-    pub lhs_field: TupleField,
+    source: IndexSource,
+    /// The point probe evaluated against each lhs tuple.
+    pub probe: PhysicalExpr,
     /// Is the index unique?
     pub unique: bool,
     /// Is this a semijoin?
@@ -982,12 +725,13 @@ pub struct PipelinedIxJoin {
 impl PipelinedIxJoin {
     /// Does this operation contain an empty delta scan?
     pub fn is_empty(&self, tx: &impl DeltaStore) -> bool {
-        self.lhs.is_empty(tx)
+        self.lhs.is_empty(tx) || self.source.is_empty(tx, self.rhs_table)
     }
 
     pub fn execute<'a, Tx: Datastore + DeltaStore>(
         &self,
         tx: &'a Tx,
+        params: &impl ParamResolver,
         metrics: &mut ExecutionMetrics,
         f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
     ) -> Result<()> {
@@ -995,328 +739,77 @@ impl PipelinedIxJoin {
         let mut index_seeks = 0;
         let mut bytes_scanned = 0;
 
-        let iter_rhs = |u: &Tuple, lhs_field: &TupleField, bytes_scanned: &mut usize| -> Result<_> {
-            let key = project(u, lhs_field, bytes_scanned);
-            Ok(tx
-                .index_scan_point(self.rhs_table, self.rhs_index, &key)?
-                .map(Row::Ptr)
-                .map(Tuple::Row))
+        let iter_rhs =
+            |u: &Tuple, bytes_scanned: &mut usize, f: &mut dyn FnMut(Tuple<'a>) -> Result<()>| -> Result<()> {
+                let key = eval_probe(&self.probe, u, params, bytes_scanned);
+                for_each_index_point(tx, self.source, self.rhs_table, self.rhs_index, &key, f)
+            };
+
+        let probe_rhs = |u: &Tuple, bytes_scanned: &mut usize| -> Result<_> {
+            let key = eval_probe(&self.probe, u, params, bytes_scanned);
+            first_index_point(tx, self.source, self.rhs_table, self.rhs_index, &key)
         };
 
-        let probe_rhs = |u: &Tuple, lhs_field: &TupleField, bytes_scanned: &mut usize| -> Result<_> {
-            Ok(iter_rhs(u, lhs_field, bytes_scanned)?.next())
-        };
-
-        match self {
-            Self {
-                lhs,
-                lhs_field,
-                unique: true,
-                semijoin: Semi::Lhs,
-                ..
-            } => {
+        match (self.unique, self.semijoin) {
+            (true, Semi::Lhs) => {
                 // Should we evaluate the lhs tuple?
                 // Probe the index to see if there is a matching row.
-                lhs.execute(tx, metrics, &mut |u| {
+                self.lhs.execute(tx, params, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
-                    if probe_rhs(&u, lhs_field, &mut bytes_scanned)?.is_some() {
+                    if probe_rhs(&u, &mut bytes_scanned)?.is_some() {
                         f(u)?;
                     }
                     Ok(())
                 })?;
             }
-            Self {
-                lhs,
-                lhs_field,
-                unique: true,
-                semijoin: Semi::Rhs,
-                ..
-            } => {
+            (true, Semi::Rhs) => {
                 // Probe the index and evaluate the matching rhs row
-                lhs.execute(tx, metrics, &mut |u| {
+                self.lhs.execute(tx, params, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
-                    if let Some(v) = probe_rhs(&u, lhs_field, &mut bytes_scanned)? {
+                    if let Some(v) = probe_rhs(&u, &mut bytes_scanned)? {
                         f(v)?;
                     }
                     Ok(())
                 })?;
             }
-            Self {
-                lhs,
-                lhs_field,
-                unique: true,
-                semijoin: Semi::All,
-                ..
-            } => {
+            (true, Semi::All) => {
                 // Probe the index and evaluate the matching rhs row
-                lhs.execute(tx, metrics, &mut |u| {
+                self.lhs.execute(tx, params, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
-                    if let Some(v) = probe_rhs(&u, lhs_field, &mut bytes_scanned)? {
+                    if let Some(v) = probe_rhs(&u, &mut bytes_scanned)? {
                         f(u.join(v))?;
                     }
                     Ok(())
                 })?;
             }
-            Self {
-                lhs,
-                lhs_field,
-                unique: false,
-                semijoin: Semi::Lhs,
-                ..
-            } => {
+            (false, Semi::Lhs) => {
                 // How many times should we evaluate the lhs tuple?
                 // Probe the index for the number of matching rows.
-                lhs.execute(tx, metrics, &mut |u| {
+                self.lhs.execute(tx, params, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
-                    for _ in iter_rhs(&u, lhs_field, &mut bytes_scanned)? {
-                        f(u.clone())?;
-                    }
+                    iter_rhs(&u, &mut bytes_scanned, &mut |_| f(u.clone()))?;
                     Ok(())
                 })?;
             }
-            Self {
-                lhs,
-                lhs_field,
-                unique: false,
-                semijoin: Semi::Rhs,
-                ..
-            } => {
+            (false, Semi::Rhs) => {
                 // Probe the index and evaluate the matching rhs rows
-                lhs.execute(tx, metrics, &mut |u| {
+                self.lhs.execute(tx, params, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
-                    for v in iter_rhs(&u, lhs_field, &mut bytes_scanned)? {
-                        f(v)?;
-                    }
+                    iter_rhs(&u, &mut bytes_scanned, f)?;
                     Ok(())
                 })?;
             }
-            Self {
-                lhs,
-                lhs_field,
-                unique: false,
-                semijoin: Semi::All,
-                ..
-            } => {
+            (false, Semi::All) => {
                 // Probe the index and evaluate the matching rhs rows
-                lhs.execute(tx, metrics, &mut |u| {
+                self.lhs.execute(tx, params, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
-                    for v in iter_rhs(&u, lhs_field, &mut bytes_scanned)? {
-                        f(u.clone().join(v))?;
-                    }
-                    Ok(())
-                })?;
-            }
-        }
-        metrics.index_seeks += index_seeks;
-        metrics.rows_scanned += n;
-        metrics.bytes_scanned += bytes_scanned;
-        Ok(())
-    }
-}
-
-/// An index join executor where the index (rhs) side is a delta table.
-///
-/// TODO: There is much overlap between this executor and [PipelinedIxJoin].
-/// But merging them requires merging the [Datastore] and [DeltaStore] traits,
-/// since the index scan interface is right now split between both.
-#[derive(Debug)]
-pub struct PipelinedIxDeltaJoin {
-    /// The executor for the lhs of the join
-    pub lhs: Box<PipelinedExecutor>,
-    /// The rhs table
-    pub rhs_table: TableId,
-    /// Inserts or deletes?
-    pub rhs_delta: Delta,
-    /// The rhs index
-    pub rhs_index: IndexId,
-    /// The rhs join field
-    pub rhs_field: ColId,
-    /// The lhs join field
-    pub lhs_field: TupleField,
-    /// Is the index unique?
-    pub unique: bool,
-    /// Is this a semijoin?
-    pub semijoin: Semi,
-}
-
-impl PipelinedIxDeltaJoin {
-    /// Does this operation contain an empty delta scan?
-    pub fn is_empty(&self, tx: &impl DeltaStore) -> bool {
-        match self.rhs_delta {
-            Delta::Inserts => !tx.has_inserts(self.rhs_table) || self.lhs.is_empty(tx),
-            Delta::Deletes => !tx.has_deletes(self.rhs_table) || self.lhs.is_empty(tx),
-        }
-    }
-
-    pub fn execute<'a, Tx: Datastore + DeltaStore>(
-        &self,
-        tx: &'a Tx,
-        metrics: &mut ExecutionMetrics,
-        f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
-    ) -> Result<()> {
-        let mut n = 0;
-        let mut index_seeks = 0;
-        let mut bytes_scanned = 0;
-
-        match self {
-            Self {
-                lhs,
-                lhs_field,
-                unique: true,
-                semijoin: Semi::Lhs,
-                ..
-            } => {
-                // Should we evaluate the lhs tuple?
-                // Probe the index to see if there is a matching row.
-                lhs.execute(tx, metrics, &mut |u| {
-                    n += 1;
-                    index_seeks += 1;
-                    if tx
-                        .index_scan_point_for_delta(
-                            self.rhs_table,
-                            self.rhs_index,
-                            self.rhs_delta,
-                            &project(&u, lhs_field, &mut bytes_scanned),
-                        )
-                        .next()
-                        .is_some()
-                    {
-                        f(u)?;
-                    }
-                    Ok(())
-                })?;
-            }
-            Self {
-                lhs,
-                lhs_field,
-                unique: true,
-                semijoin: Semi::Rhs,
-                ..
-            } => {
-                // Probe the index and evaluate the matching rhs row
-                lhs.execute(tx, metrics, &mut |u| {
-                    n += 1;
-                    index_seeks += 1;
-                    if let Some(v) = tx
-                        .index_scan_point_for_delta(
-                            self.rhs_table,
-                            self.rhs_index,
-                            self.rhs_delta,
-                            &project(&u, lhs_field, &mut bytes_scanned),
-                        )
-                        .next()
-                        .map(Tuple::Row)
-                    {
-                        f(v)?;
-                    }
-                    Ok(())
-                })?;
-            }
-            Self {
-                lhs,
-                lhs_field,
-                unique: true,
-                semijoin: Semi::All,
-                ..
-            } => {
-                // Probe the index and evaluate the matching rhs row
-                lhs.execute(tx, metrics, &mut |u| {
-                    n += 1;
-                    index_seeks += 1;
-                    if let Some(v) = tx
-                        .index_scan_point_for_delta(
-                            self.rhs_table,
-                            self.rhs_index,
-                            self.rhs_delta,
-                            &project(&u, lhs_field, &mut bytes_scanned),
-                        )
-                        .next()
-                        .map(Tuple::Row)
-                    {
-                        f(u.join(v))?;
-                    }
-                    Ok(())
-                })?;
-            }
-            Self {
-                lhs,
-                lhs_field,
-                unique: false,
-                semijoin: Semi::Lhs,
-                ..
-            } => {
-                // How many times should we evaluate the lhs tuple?
-                // Probe the index for the number of matching rows.
-                lhs.execute(tx, metrics, &mut |u| {
-                    n += 1;
-                    index_seeks += 1;
-                    for _ in 0..tx
-                        .index_scan_point_for_delta(
-                            self.rhs_table,
-                            self.rhs_index,
-                            self.rhs_delta,
-                            &project(&u, lhs_field, &mut bytes_scanned),
-                        )
-                        .count()
-                    {
-                        f(u.clone())?;
-                    }
-                    Ok(())
-                })?;
-            }
-            Self {
-                lhs,
-                lhs_field,
-                unique: false,
-                semijoin: Semi::Rhs,
-                ..
-            } => {
-                // Probe the index and evaluate the matching rhs rows
-                lhs.execute(tx, metrics, &mut |u| {
-                    n += 1;
-                    index_seeks += 1;
-                    for v in tx
-                        .index_scan_point_for_delta(
-                            self.rhs_table,
-                            self.rhs_index,
-                            self.rhs_delta,
-                            &project(&u, lhs_field, &mut bytes_scanned),
-                        )
-                        .map(Tuple::Row)
-                    {
-                        f(v)?;
-                    }
-                    Ok(())
-                })?;
-            }
-            Self {
-                lhs,
-                lhs_field,
-                unique: false,
-                semijoin: Semi::All,
-                ..
-            } => {
-                // Probe the index and evaluate the matching rhs rows
-                lhs.execute(tx, metrics, &mut |u| {
-                    n += 1;
-                    index_seeks += 1;
-                    for v in tx
-                        .index_scan_point_for_delta(
-                            self.rhs_table,
-                            self.rhs_index,
-                            self.rhs_delta,
-                            &project(&u, lhs_field, &mut bytes_scanned),
-                        )
-                        .map(Tuple::Row)
-                    {
-                        f(u.clone().join(v.clone()))?;
-                    }
+                    iter_rhs(&u, &mut bytes_scanned, &mut |v| f(u.clone().join(v)))?;
                     Ok(())
                 })?;
             }
@@ -1350,6 +843,7 @@ impl BlockingHashJoin {
     pub fn execute<'a, Tx: Datastore + DeltaStore>(
         &self,
         tx: &'a Tx,
+        params: &impl ParamResolver,
         metrics: &mut ExecutionMetrics,
         f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
     ) -> Result<()> {
@@ -1365,7 +859,7 @@ impl BlockingHashJoin {
                 semijoin: Semi::Lhs,
             } => {
                 let mut rhs_table = HashSet::new();
-                rhs.execute(tx, metrics, &mut |v| {
+                rhs.execute(tx, params, metrics, &mut |v| {
                     rhs_table.insert(project(&v, rhs_field, &mut bytes_scanned));
                     Ok(())
                 })?;
@@ -1373,7 +867,7 @@ impl BlockingHashJoin {
                 // How many rows did we pull from the rhs?
                 n += rhs_table.len();
 
-                lhs.execute(tx, metrics, &mut |u| {
+                lhs.execute(tx, params, metrics, &mut |u| {
                     n += 1;
                     if rhs_table.contains(&project(&u, lhs_field, &mut bytes_scanned)) {
                         f(u)?;
@@ -1390,7 +884,7 @@ impl BlockingHashJoin {
                 semijoin: Semi::Rhs,
             } => {
                 let mut rhs_table = HashMap::new();
-                rhs.execute(tx, metrics, &mut |v| {
+                rhs.execute(tx, params, metrics, &mut |v| {
                     rhs_table.insert(project(&v, rhs_field, &mut bytes_scanned), v);
                     Ok(())
                 })?;
@@ -1398,7 +892,7 @@ impl BlockingHashJoin {
                 // How many rows did we pull from the rhs?
                 n += rhs_table.len();
 
-                lhs.execute(tx, metrics, &mut |u| {
+                lhs.execute(tx, params, metrics, &mut |u| {
                     n += 1;
                     if let Some(v) = rhs_table.get(&project(&u, lhs_field, &mut bytes_scanned)) {
                         f(v.clone())?;
@@ -1415,7 +909,7 @@ impl BlockingHashJoin {
                 semijoin: Semi::All,
             } => {
                 let mut rhs_table = HashMap::new();
-                rhs.execute(tx, metrics, &mut |v| {
+                rhs.execute(tx, params, metrics, &mut |v| {
                     rhs_table.insert(project(&v, rhs_field, &mut bytes_scanned), v);
                     Ok(())
                 })?;
@@ -1423,7 +917,7 @@ impl BlockingHashJoin {
                 // How many rows did we pull from the rhs?
                 n += rhs_table.len();
 
-                lhs.execute(tx, metrics, &mut |u| {
+                lhs.execute(tx, params, metrics, &mut |u| {
                     n += 1;
                     if let Some(v) = rhs_table.get(&project(&u, lhs_field, &mut bytes_scanned)) {
                         f(u.clone().join(v.clone()))?;
@@ -1440,7 +934,7 @@ impl BlockingHashJoin {
                 semijoin: Semi::Lhs,
             } => {
                 let mut rhs_table = HashMap::new();
-                rhs.execute(tx, metrics, &mut |v| {
+                rhs.execute(tx, params, metrics, &mut |v| {
                     n += 1;
                     rhs_table
                         .entry(project(&v, rhs_field, &mut bytes_scanned))
@@ -1448,7 +942,7 @@ impl BlockingHashJoin {
                         .or_insert(1);
                     Ok(())
                 })?;
-                lhs.execute(tx, metrics, &mut |u| {
+                lhs.execute(tx, params, metrics, &mut |u| {
                     n += 1;
                     if let Some(n) = rhs_table.get(&project(&u, lhs_field, &mut bytes_scanned)).copied() {
                         for _ in 0..n {
@@ -1467,7 +961,7 @@ impl BlockingHashJoin {
                 semijoin: Semi::Rhs,
             } => {
                 let mut rhs_table: HashMap<AlgebraicValue, Vec<_>> = HashMap::new();
-                rhs.execute(tx, metrics, &mut |v| {
+                rhs.execute(tx, params, metrics, &mut |v| {
                     n += 1;
                     let key = project(&v, rhs_field, &mut bytes_scanned);
                     if let Some(tuples) = rhs_table.get_mut(&key) {
@@ -1477,7 +971,7 @@ impl BlockingHashJoin {
                     }
                     Ok(())
                 })?;
-                lhs.execute(tx, metrics, &mut |u| {
+                lhs.execute(tx, params, metrics, &mut |u| {
                     n += 1;
                     if let Some(rhs_tuples) = rhs_table.get(&project(&u, lhs_field, &mut bytes_scanned)) {
                         for v in rhs_tuples {
@@ -1496,7 +990,7 @@ impl BlockingHashJoin {
                 semijoin: Semi::All,
             } => {
                 let mut rhs_table: HashMap<AlgebraicValue, Vec<_>> = HashMap::new();
-                rhs.execute(tx, metrics, &mut |v| {
+                rhs.execute(tx, params, metrics, &mut |v| {
                     n += 1;
                     let key = project(&v, rhs_field, &mut bytes_scanned);
                     if let Some(tuples) = rhs_table.get_mut(&key) {
@@ -1506,7 +1000,7 @@ impl BlockingHashJoin {
                     }
                     Ok(())
                 })?;
-                lhs.execute(tx, metrics, &mut |u| {
+                lhs.execute(tx, params, metrics, &mut |u| {
                     n += 1;
                     if let Some(rhs_tuples) = rhs_table.get(&project(&u, lhs_field, &mut bytes_scanned)) {
                         for v in rhs_tuples {
@@ -1541,11 +1035,12 @@ impl BlockingNLJoin {
     pub fn execute<'a, Tx: Datastore + DeltaStore>(
         &self,
         tx: &'a Tx,
+        params: &impl ParamResolver,
         metrics: &mut ExecutionMetrics,
         f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
     ) -> Result<()> {
         let mut rhs = vec![];
-        self.rhs.execute(tx, metrics, &mut |v| {
+        self.rhs.execute(tx, params, metrics, &mut |v| {
             rhs.push(v);
             Ok(())
         })?;
@@ -1553,7 +1048,7 @@ impl BlockingNLJoin {
         // How many rows did we pull from the rhs?
         let mut n = rhs.len();
 
-        self.lhs.execute(tx, metrics, &mut |u| {
+        self.lhs.execute(tx, params, metrics, &mut |u| {
             n += 1;
             for v in rhs.iter() {
                 f(u.clone().join(v.clone()))?;
@@ -1582,14 +1077,15 @@ impl PipelinedFilter {
     pub fn execute<'a, Tx: Datastore + DeltaStore>(
         &self,
         tx: &'a Tx,
+        params: &impl ParamResolver,
         metrics: &mut ExecutionMetrics,
         f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
     ) -> Result<()> {
         let mut n = 0;
         let mut bytes_scanned = 0;
-        self.input.execute(tx, metrics, &mut |t| {
+        self.input.execute(tx, params, metrics, &mut |t| {
             n += 1;
-            if self.expr.eval_bool_with_metrics(&t, &mut bytes_scanned) {
+            if self.expr.eval_bool_with_params(&t, params, &mut bytes_scanned) {
                 f(t)?;
             }
             Ok(())
@@ -1617,11 +1113,12 @@ impl PipelinedLimit {
     pub fn execute<'a, Tx: Datastore + DeltaStore>(
         &self,
         tx: &'a Tx,
+        params: &impl ParamResolver,
         metrics: &mut ExecutionMetrics,
         f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
     ) -> Result<()> {
         let mut n = 0;
-        self.input.execute(tx, metrics, &mut |t| {
+        self.input.execute(tx, params, metrics, &mut |t| {
             n += 1;
             if n <= self.limit as usize {
                 f(t)?;

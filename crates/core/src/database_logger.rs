@@ -526,7 +526,7 @@ impl<T: Logger + Send + 'static> DatabaseLoggerWorker<T> {
         }
     }
 
-    fn subscribe(&self) -> impl Stream<Item = Bytes> {
+    fn subscribe(&self) -> impl Stream<Item = Bytes> + use<T> {
         BroadcastStream::new(self.broadcast.subscribe()).filter_map(move |x| {
             future::ready(match x {
                 Ok(chunk) => Some(chunk),
@@ -671,6 +671,12 @@ impl SystemLogger {
 
     fn record(message: &str) -> Record<'_> {
         Record::injected(message)
+    }
+}
+
+impl spacetimedb_engine::update::UpdateLogger for SystemLogger {
+    fn info(&self, msg: &str) {
+        self.info(msg);
     }
 }
 

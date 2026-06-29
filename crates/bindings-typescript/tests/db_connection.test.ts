@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'vitest';
+import { assertType, beforeEach, describe, expect, test } from 'vitest';
 import {
   BinaryWriter,
   ConnectionId,
@@ -10,7 +10,10 @@ import {
 } from '../src';
 import { ServerMessage } from '../src/sdk/client_api/types';
 import WebsocketTestAdapter from '../src/sdk/websocket_test_adapter';
+import { V2_WS_PROTOCOL, V3_WS_PROTOCOL } from '../src/sdk/websocket_protocols';
+import { decodeClientMessagesV3 } from '../src/sdk/websocket_v3_frames.ts';
 import { DbConnection } from '../test-app/src/module_bindings';
+import MyUserProcedural from '../test-app/src/module_bindings/my_user_procedural_table';
 import User from '../test-app/src/module_bindings/user_table';
 import {
   anIdentity,
@@ -77,6 +80,22 @@ function getLastCallReducerRequestId(wsAdapter: WebsocketTestAdapter): number {
   throw new Error('No CallReducer message found in messageQueue.');
 }
 
+function getLastSubscribeMessageInfo(wsAdapter: WebsocketTestAdapter): {
+  requestId: number;
+  querySetId: number;
+} {
+  for (let i = wsAdapter.outgoingMessages.length - 1; i >= 0; i--) {
+    const message = wsAdapter.outgoingMessages[i];
+    if (message.tag === 'Subscribe') {
+      return {
+        requestId: message.value.requestId,
+        querySetId: message.value.querySetId.id,
+      };
+    }
+  }
+  throw new Error('No Subscribe message found in messageQueue.');
+}
+
 function makeReducerResult(
   requestId: number,
   reducerQuerySetUpdate: ReturnType<typeof makeQuerySetUpdate>
@@ -121,7 +140,28 @@ function makeReducerInternalErrorResult(requestId: number, error: string) {
   });
 }
 
+type MyUserViewRow = Infer<typeof MyUserProcedural>;
+
+function encodeMyUserProcedural(value: MyUserViewRow): Uint8Array {
+  const writer = new BinaryWriter(1024);
+  MyUserProcedural.serialize(writer, value);
+  return writer.getBuffer();
+}
+
 describe('DbConnection', () => {
+  test('keeps deprecated snake_case db aliases working', async () => {
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(() => Promise.reject(new Error('expected test failure')))
+      .build();
+
+    assertType<typeof client.db.unindexedPlayer>(client.db.unindexed_player);
+    expect(client.db.unindexed_player).toBe(client.db.unindexedPlayer);
+
+    await client['wsPromise'];
+  });
+
   test('call onConnectError callback after websocket connection failed to be established', async () => {
     const onConnectErrorPromise = new Deferred<void>();
 
@@ -148,6 +188,82 @@ describe('DbConnection', () => {
     expect(connectCalled).toBeFalsy();
   });
 
+  test('marks connection inactive before invoking onDisconnect callback', async () => {
+    const onDisconnectPromise = new Deferred<void>();
+    const wsAdapter = new WebsocketTestAdapter();
+    let callbackIsActive: boolean | undefined;
+
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.openWebSocket)
+      .onDisconnect(ctx => {
+        callbackIsActive = ctx.isActive;
+        onDisconnectPromise.resolve();
+      })
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.close();
+
+    await onDisconnectPromise.promise;
+
+    expect(callbackIsActive).toBe(false);
+    expect(client.isActive).toBe(false);
+  });
+
+  test('marks disconnect as requested when disconnect() is called', async () => {
+    const onDisconnectPromise = new Deferred<void>();
+    const wsAdapter = new WebsocketTestAdapter();
+
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.openWebSocket)
+      .onDisconnect(() => {
+        onDisconnectPromise.resolve();
+      })
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+
+    expect(client.isDisconnectRequested).toBe(false);
+    client.disconnect();
+    expect(client.isDisconnectRequested).toBe(true);
+
+    await onDisconnectPromise.promise;
+    expect(client.isActive).toBe(false);
+  });
+
+  test('marks connection inactive before invoking onConnectError callback from websocket error', async () => {
+    const onConnectErrorPromise = new Deferred<void>();
+    const wsAdapter = new WebsocketTestAdapter();
+    let callbackIsActive: boolean | undefined;
+    const error = new Error('websocket failed');
+
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.openWebSocket)
+      .onConnectError(ctx => {
+        callbackIsActive = ctx.isActive;
+        onConnectErrorPromise.resolve();
+      })
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    client.isActive = true;
+    wsAdapter.error(error);
+
+    await onConnectErrorPromise.promise;
+
+    expect(callbackIsActive).toBe(false);
+    expect(client.isActive).toBe(false);
+  });
+
   test('call onConnect callback after getting an identity', async () => {
     const onConnectPromise = new Deferred<void>();
 
@@ -156,7 +272,7 @@ describe('DbConnection', () => {
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withDatabaseName('db')
-      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .withWSFn(wsAdapter.openWebSocket)
       .onConnect(() => {
         called = true;
         onConnectPromise.resolve();
@@ -178,13 +294,138 @@ describe('DbConnection', () => {
     expect(called).toBeTruthy();
   });
 
+  test('batches same-tick reducer calls when v3 is negotiated', async () => {
+    const wsAdapter = new WebsocketTestAdapter();
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.openWebSocket)
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+
+    void client.reducers.createPlayer({
+      name: 'Player One',
+      location: { x: 1, y: 2 },
+    });
+    void client.reducers.createPlayer({
+      name: 'Player Two',
+      location: { x: 3, y: 4 },
+    });
+
+    await Promise.resolve();
+
+    expect(wsAdapter.protocol).toEqual(V3_WS_PROTOCOL);
+    expect(wsAdapter.messageQueue).toHaveLength(1);
+    expect(wsAdapter.outgoingMessages).toHaveLength(2);
+
+    expect(decodeClientMessagesV3(wsAdapter.messageQueue[0])).toHaveLength(2);
+  });
+
+  test('falls back to v2 and does not batch reducer calls when v3 is unavailable', async () => {
+    const wsAdapter = new WebsocketTestAdapter();
+    wsAdapter.supportedProtocols = [V2_WS_PROTOCOL];
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.openWebSocket)
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+
+    void client.reducers.createPlayer({
+      name: 'Player One',
+      location: { x: 1, y: 2 },
+    });
+    void client.reducers.createPlayer({
+      name: 'Player Two',
+      location: { x: 3, y: 4 },
+    });
+
+    await Promise.resolve();
+
+    expect(wsAdapter.protocol).toEqual(V2_WS_PROTOCOL);
+    expect(wsAdapter.messageQueue).toHaveLength(2);
+    expect(wsAdapter.outgoingMessages).toHaveLength(2);
+  });
+
+  test('disconnects when SubscriptionError has no requestId', async () => {
+    const onDisconnectPromise = new Deferred<void>();
+    const wsAdapter = new WebsocketTestAdapter();
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.openWebSocket)
+      .onDisconnect(() => {
+        onDisconnectPromise.resolve();
+      })
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.SubscriptionError({
+        requestId: undefined,
+        querySetId: { id: 9999 },
+        error: 'test subscription error',
+      })
+    );
+
+    await onDisconnectPromise.promise;
+
+    expect(wsAdapter.closed).toBeTruthy();
+  });
+
+  test('handles SubscriptionError with requestId via subscription error callback', async () => {
+    const wsAdapter = new WebsocketTestAdapter();
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.openWebSocket)
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.InitialConnection({
+        identity: anIdentity,
+        token: 'a-token',
+        connectionId: ConnectionId.random(),
+      })
+    );
+
+    const onErrorPromise = new Deferred<void>();
+    client
+      .subscriptionBuilder()
+      .onError(ctx => {
+        expect(ctx.event!.message).toEqual('test subscription error');
+        onErrorPromise.resolve();
+      })
+      .subscribe('SELECT * FROM user');
+
+    await Promise.resolve();
+    const { requestId, querySetId } = getLastSubscribeMessageInfo(wsAdapter);
+    wsAdapter.sendToClient(
+      ServerMessage.SubscriptionError({
+        requestId,
+        querySetId: { id: querySetId },
+        error: 'test subscription error',
+      })
+    );
+
+    await onErrorPromise.promise;
+    expect(wsAdapter.closed).toBeFalsy();
+  });
+
   test('fires row callbacks after reducer resolution in ReducerResult', async () => {
     const wsAdapter = new WebsocketTestAdapter();
     const onConnectPromise = new Deferred<void>();
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withDatabaseName('db')
-      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .withWSFn(wsAdapter.openWebSocket)
       .onConnect(() => {
         onConnectPromise.resolve();
       })
@@ -250,7 +491,7 @@ describe('DbConnection', () => {
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withDatabaseName('db')
-      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .withWSFn(wsAdapter.openWebSocket)
       .onConnect(() => {
         onConnectPromise.resolve();
       })
@@ -295,7 +536,7 @@ describe('DbConnection', () => {
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withDatabaseName('db')
-      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .withWSFn(wsAdapter.openWebSocket)
       .onConnect(() => {
         onConnectPromise.resolve();
       })
@@ -572,7 +813,7 @@ describe('DbConnection', () => {
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withDatabaseName('db')
-      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .withWSFn(wsAdapter.openWebSocket)
       .onConnect(() => {})
       .build();
 
@@ -658,14 +899,118 @@ describe('DbConnection', () => {
     expect(client.db.user.count()).toEqual(1n);
   });
 
+  test('it calls onUpdate for a primary-key procedural view', async () => {
+    const wsAdapter = new WebsocketTestAdapter();
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.openWebSocket)
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.InitialConnection({
+        identity: anIdentity,
+        token: 'a-token',
+        connectionId: ConnectionId.random(),
+      })
+    );
+
+    const initialRow: MyUserViewRow = {
+      id: 1,
+      userId: anIdentity,
+      name: 'originalName',
+      location: { x: 1, y: 2 },
+    };
+    const updatedRow: MyUserViewRow = {
+      ...initialRow,
+      name: 'newName',
+    };
+    const initialInsertPromise = new Deferred<void>();
+    const updatePromise = new Deferred<void>();
+    const updates: {
+      oldRow: MyUserViewRow;
+      newRow: MyUserViewRow;
+    }[] = [];
+
+    // `onUpdate` is only available when the generated view row binding carries
+    // primary-key metadata.
+    client.db.myUserProcedural.onInsert((_ctx, row) => {
+      expect(row).toEqual(initialRow);
+      initialInsertPromise.resolve();
+    });
+    client.db.myUserProcedural.onUpdate((_ctx, oldRow, newRow) => {
+      updates.push({
+        oldRow,
+        newRow,
+      });
+      updatePromise.resolve();
+    });
+
+    // Seed the underlying table and the view cache with the same row. This
+    // mirrors the table-like updates the client receives for generated views.
+    wsAdapter.sendToClient(
+      ServerMessage.TransactionUpdate({
+        querySets: [
+          makeQuerySetUpdate(0, 'player', encodePlayer(initialRow)),
+          makeQuerySetUpdate(
+            1,
+            'my_user_procedural',
+            encodeMyUserProcedural(initialRow)
+          ),
+        ],
+      })
+    );
+
+    await initialInsertPromise.promise;
+    expect(client.db.player.count()).toEqual(1n);
+    expect(client.db.myUserProcedural.count()).toEqual(1n);
+
+    // A delete and insert with the same primary key in one transaction should
+    // be coalesced by the client cache into `onUpdate`, not separate delete and
+    // insert callbacks. This is the behavior primary-key views need.
+    wsAdapter.sendToClient(
+      ServerMessage.TransactionUpdate({
+        querySets: [
+          makeQuerySetUpdate(
+            0,
+            'player',
+            encodePlayer(updatedRow),
+            encodePlayer(initialRow)
+          ),
+          makeQuerySetUpdate(
+            1,
+            'my_user_procedural',
+            encodeMyUserProcedural(updatedRow),
+            encodeMyUserProcedural(initialRow)
+          ),
+        ],
+      })
+    );
+
+    await updatePromise.promise;
+
+    expect(updates).toEqual([
+      {
+        oldRow: initialRow,
+        newRow: updatedRow,
+      },
+    ]);
+    expect(client.db.player.count()).toEqual(1n);
+    expect(client.db.myUserProcedural.count()).toEqual(1n);
+    expect([...client.db.myUserProcedural.iter()][0]).toEqual(updatedRow);
+  });
+
   test('Filtering works', async () => {
     const wsAdapter = new WebsocketTestAdapter();
     const client = DbConnection.builder()
       .withUri('ws://127.0.0.1:1234')
       .withDatabaseName('db')
-      .withWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter) as any)
+      .withWSFn(wsAdapter.openWebSocket)
       .build();
     await client['wsPromise'];
+    wsAdapter.acceptConnection();
     const user1 = { identity: bobIdentity, username: 'bob' };
     const user2 = {
       identity: sallyIdentity,

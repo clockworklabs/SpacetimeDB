@@ -170,16 +170,16 @@ pub(crate) fn resolve_database_arg(
 
     if config_targets.len() == 1 {
         let target = &config_targets[0];
-        if let Some(db) = raw_database {
-            if db != target.database {
-                // The database arg is unambiguous, so treat it as an ad-hoc database
-                // outside the project config (auto-fallthrough).
-                return Ok(ResolvedDbArgs {
-                    database: db.to_string(),
-                    server: None,
-                    remaining_args: vec![],
-                });
-            }
+        if let Some(db) = raw_database
+            && db != target.database
+        {
+            // The database arg is unambiguous, so treat it as an ad-hoc database
+            // outside the project config (auto-fallthrough).
+            return Ok(ResolvedDbArgs {
+                database: db.to_string(),
+                server: None,
+                remaining_args: vec![],
+            });
         }
         return Ok(ResolvedDbArgs {
             database: target.database.clone(),

@@ -71,28 +71,27 @@ impl __sdk::InModule for {type_name} {{
         // Do not implement query col types for nested types.
         // as querying is only supported on top-level table row types.
         let name = type_ref_name(module, typ.ty);
-        let implemented = if let Some(table) = module
+        let implemented = match module
             .tables()
             .find(|t| type_ref_name(module, t.product_type_ref) == name)
         {
-            implement_query_col_types_for_table_struct(module, out, table)
-                .expect("failed to implement query col types");
-            out.newline();
-            true
-        } else {
-            false
+            Some(table) => {
+                implement_query_col_types_for_table_struct(module, out, table)
+                    .expect("failed to implement query col types");
+                out.newline();
+                true
+            }
+            _ => false,
         };
 
-        if !implemented {
-            if let Some(type_ref) = module
+        if !implemented
+            && let Some(type_ref) = module
                 .views()
                 .map(|v| v.product_type_ref)
                 .find(|type_ref| type_ref_name(module, *type_ref) == name)
-            {
-                implement_query_col_types_for_struct(module, out, type_ref)
-                    .expect("failed to implement query col types");
-                out.newline();
-            }
+        {
+            implement_query_col_types_for_struct(module, out, type_ref).expect("failed to implement query col types");
+            out.newline();
         }
 
         vec![OutputFile {
@@ -671,7 +670,7 @@ pub struct {cols_struct} {{"
     )?;
 
     for element in &product_def.elements {
-        let field_name = &element.0;
+        let field_name = &element.0.deref().to_case(Case::Snake);
         let field_type = type_name(module, &element.1);
         writeln!(
             out,
@@ -690,7 +689,7 @@ impl __sdk::__query_builder::HasCols for {struct_name} {{
         {cols_struct} {{"
     )?;
     for element in &product_def.elements {
-        let field_name = &element.0;
+        let field_name = &element.0.deref().to_case(Case::Snake);
         writeln!(
             out,
             "            {field_name}: __sdk::__query_builder::Col::new(table_name, {field_name:?}),"
@@ -1309,7 +1308,7 @@ impl __sdk::InModule for Reducer {{
 }
 
 fn print_db_update_defn(module: &ModuleDef, visibility: CodegenVisibility, out: &mut Indenter) {
-    writeln!(out, "#[derive(Default)]");
+    writeln!(out, "#[derive(Default, Debug)]");
     writeln!(out, "#[allow(non_snake_case)]");
     writeln!(out, "#[doc(hidden)]");
     out.delimited_block(
@@ -1412,9 +1411,19 @@ impl __sdk::InModule for DbUpdate {{
                     }
                     for view in iter_views(module) {
                         let field_name = table_method_name(&view.accessor_name);
+                        let with_updates = view
+                            .primary_key
+                            .map(|col| {
+                                let pk_field = view.return_columns[col.idx()]
+                                    .accessor_name
+                                    .deref()
+                                    .to_case(Case::Snake);
+                                format!(".with_updates_by_pk(|row| &row.{pk_field})")
+                            })
+                            .unwrap_or_default();
                         writeln!(
                             out,
-                            "diff.{field_name} = cache.apply_diff_to_table::<{}>({:?}, &self.{field_name});",
+                            "diff.{field_name} = cache.apply_diff_to_table::<{}>({:?}, &self.{field_name}){with_updates};",
                             type_ref_name(module, view.product_type_ref),
                             view.name.deref(),
                         );
@@ -1607,6 +1616,7 @@ fn print_const_db_context_types(out: &mut Indenter) {
         out,
         "
 #[doc(hidden)]
+#[derive(Debug)]
 pub struct RemoteModule;
 
 impl __sdk::InModule for RemoteModule {{
@@ -1651,10 +1661,11 @@ impl __sdk::InModule for RemoteTables {{
 /// You must explicitly advance the connection by calling any one of:
 ///
 /// - [`DbConnection::frame_tick`].
-/// - [`DbConnection::run_threaded`].
+#[cfg_attr(not(target_arch = \"wasm32\"), doc = \"- [`DbConnection::run_threaded`].\")]
+#[cfg_attr(target_arch = \"wasm32\", doc = \"- [`DbConnection::run_background_task`].\")]
 /// - [`DbConnection::run_async`].
 /// - [`DbConnection::advance_one_message`].
-/// - [`DbConnection::advance_one_message_blocking`].
+#[cfg_attr(not(target_arch =  \"wasm32\"), doc = \"- [`DbConnection::advance_one_message_blocking`].\")]
 /// - [`DbConnection::advance_one_message_async`].
 ///
 /// Which of these methods you should call depends on the specific needs of your application,
@@ -1752,6 +1763,7 @@ impl DbConnection {{
     /// This is a low-level primitive exposed for power users who need significant control over scheduling.
     /// Most applications should call [`Self::run_threaded`] to spawn a thread
     /// which advances the connection automatically.
+    #[cfg(not(target_arch = \"wasm32\"))]
     pub fn advance_one_message_blocking(&self) -> __sdk::Result<()> {{
         self.imp.advance_one_message_blocking()
     }}
@@ -1777,8 +1789,15 @@ impl DbConnection {{
     }}
 
     /// Spawn a thread which processes WebSocket messages as they are received.
+    #[cfg(not(target_arch = \"wasm32\"))]
     pub fn run_threaded(&self) -> std::thread::JoinHandle<()> {{
         self.imp.run_threaded()
+    }}
+
+    /// Spawn a background task which processes WebSocket messages as they are received.
+    #[cfg(target_arch = \"wasm32\")]
+    pub fn run_background_task(&self) {{
+        self.imp.run_background_task()
     }}
 
     /// Run an `async` loop which processes WebSocket messages when polled.

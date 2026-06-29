@@ -19,6 +19,37 @@ pub struct Cpp<'opts> {
 }
 
 impl<'opts> Cpp<'opts> {
+    fn cpp_field_name<'a>(&self, field_name: &'a str) -> &'a str {
+        match field_name {
+            "alignas" | "alignof" | "and" | "and_eq" | "asm" | "atomic_cancel" | "atomic_commit"
+            | "atomic_noexcept" | "auto" | "bitand" | "bitor" | "bool" | "break" | "case" | "catch" | "char"
+            | "char8_t" | "char16_t" | "char32_t" | "class" | "compl" | "concept" | "const" | "consteval"
+            | "constexpr" | "constinit" | "const_cast" | "continue" | "co_await" | "co_return" | "co_yield"
+            | "decltype" | "default" | "delete" | "do" | "double" | "dynamic_cast" | "else" | "enum" | "explicit"
+            | "export" | "extern" | "false" | "float" | "for" | "friend" | "goto" | "if" | "inline" | "int"
+            | "long" | "mutable" | "namespace" | "new" | "noexcept" | "not" | "not_eq" | "nullptr" | "operator"
+            | "or" | "or_eq" | "private" | "protected" | "public" | "register" | "reinterpret_cast" | "requires"
+            | "return" | "short" | "signed" | "sizeof" | "static" | "static_assert" | "static_cast" | "struct"
+            | "switch" | "template" | "this" | "thread_local" | "throw" | "true" | "try" | "typedef" | "typeid"
+            | "typename" | "union" | "unsigned" | "using" | "virtual" | "void" | "volatile" | "wchar_t" | "while"
+            | "xor" | "xor_eq" => "",
+            _ => field_name,
+        }
+    }
+
+    fn write_cpp_field_name(&self, output: &mut String, field_name: &str) -> fmt::Result {
+        let escaped = self.cpp_field_name(field_name);
+        if escaped.is_empty() {
+            write!(output, "{}_", field_name)
+        } else {
+            write!(output, "{}", escaped)
+        }
+    }
+
+    fn is_recursive_mount_module_field(&self, type_name: &str, field_name: &str) -> bool {
+        type_name == "RawModuleMountV10" && field_name == "module"
+    }
+
     fn write_header_comment(&self, output: &mut String) {
         writeln!(
             output,
@@ -148,8 +179,16 @@ impl<'opts> Cpp<'opts> {
         // Write fields only
         for (field_name, field_type) in &product.elements {
             write!(output, "    ").unwrap();
-            self.write_algebraic_type(output, module, field_type).unwrap();
-            writeln!(output, " {};", field_name).unwrap();
+            if self.is_recursive_mount_module_field(type_name, field_name) {
+                // Temporary special-case to preserve the recursive RawModuleMountV10 ->
+                // RawModuleDefV10 shape while breaking the include cycle in generated C++.
+                write!(output, "std::shared_ptr<{}::RawModuleDefV10>", self.namespace).unwrap();
+            } else {
+                self.write_algebraic_type(output, module, field_type).unwrap();
+            }
+            write!(output, " ").unwrap();
+            self.write_cpp_field_name(output, field_name).unwrap();
+            writeln!(output, ";").unwrap();
         }
 
         writeln!(output).unwrap();
@@ -161,23 +200,30 @@ impl<'opts> Cpp<'opts> {
         )
         .unwrap();
         for (field_name, _) in &product.elements {
-            writeln!(
-                output,
-                "        ::SpacetimeDB::bsatn::serialize(writer, {});",
-                field_name
-            )
-            .unwrap();
+            if self.is_recursive_mount_module_field(type_name, field_name) {
+                write!(output, "        ::SpacetimeDB::bsatn::serialize(writer, *").unwrap();
+                self.write_cpp_field_name(output, field_name).unwrap();
+                writeln!(output, ");").unwrap();
+            } else {
+                write!(output, "        ::SpacetimeDB::bsatn::serialize(writer, ").unwrap();
+                self.write_cpp_field_name(output, field_name).unwrap();
+                writeln!(output, ");").unwrap();
+            }
         }
         writeln!(output, "    }}").unwrap();
 
         // Generate equality method
-        if !product.elements.is_empty() {
+        if type_name == "RawModuleMountV10" {
+            // Pointer equality is sufficient for this internal autogen type. Mounts are not
+            // emitted by the C++ module path yet; this exists to keep the schema shape aligned.
+            writeln!(output, "    SPACETIMEDB_PRODUCT_TYPE_EQUALITY(namespace_, module)").unwrap();
+        } else if !product.elements.is_empty() {
             write!(output, "    SPACETIMEDB_PRODUCT_TYPE_EQUALITY(").unwrap();
             for (i, (field_name, _)) in product.elements.iter().enumerate() {
                 if i > 0 {
                     write!(output, ", ").unwrap();
                 }
-                write!(output, "{}", field_name).unwrap();
+                self.write_cpp_field_name(output, field_name).unwrap();
             }
             writeln!(output, ")").unwrap();
         }
@@ -277,7 +323,22 @@ impl<'opts> Cpp<'opts> {
             if let Some(_idx) = duplicate_index {
                 // Found duplicate - create a wrapper struct to make it unique
                 let wrapper_name = format!("{}_{}_Wrapper", type_name, variant_name);
-                writeln!(output, "struct {} {{ {} value; }};", wrapper_name, type_str).unwrap();
+                let wrapper_macro = if self.namespace == "SpacetimeDB::Internal" {
+                    "SPACETIMEDB_INTERNAL_PRODUCT_TYPE"
+                } else {
+                    "SPACETIMEDB_PRODUCT_TYPE"
+                };
+                writeln!(output, "{}({}) {{", wrapper_macro, wrapper_name).unwrap();
+                writeln!(output, "    {} value;", type_str).unwrap();
+                writeln!(
+                    output,
+                    "    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {{"
+                )
+                .unwrap();
+                writeln!(output, "        ::SpacetimeDB::bsatn::serialize(writer, value);").unwrap();
+                writeln!(output, "    }}").unwrap();
+                writeln!(output, "    SPACETIMEDB_PRODUCT_TYPE_EQUALITY(value)").unwrap();
+                writeln!(output, "}};").unwrap();
                 variant_types.push(wrapper_name);
             } else {
                 // No duplicate, use the type directly
@@ -478,13 +539,20 @@ impl Lang for Cpp<'_> {
             None => HashSet::new(),
         };
 
+        let type_name = name.to_string();
         for dep in deps {
-            if dep != name.to_string() {
+            if dep != type_name && !(type_name == "RawModuleMountV10" && dep == "RawModuleDefV10") {
                 writeln!(output, "#include \"{}.g.h\"", dep).unwrap();
             }
         }
 
         writeln!(output).unwrap();
+        if type_name == "RawModuleMountV10" {
+            writeln!(output, "namespace {} {{", self.namespace).unwrap();
+            writeln!(output, "struct RawModuleDefV10;").unwrap();
+            writeln!(output, "}} // namespace {}", self.namespace).unwrap();
+            writeln!(output).unwrap();
+        }
         writeln!(output, "namespace {} {{", self.namespace).unwrap();
         writeln!(output).unwrap();
 

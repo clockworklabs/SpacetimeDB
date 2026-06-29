@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.ComponentModel;
 using SpacetimeDB;
 
@@ -440,10 +441,17 @@ public partial struct MyStruct
 [SpacetimeDB.Index.BTree(Accessor = "TestIndexWithoutColumns")]
 [SpacetimeDB.Index.BTree(Accessor = "TestIndexWithEmptyColumns", Columns = [])]
 [SpacetimeDB.Index.BTree(Accessor = "TestUnknownColumns", Columns = ["UnknownColumn"])]
+[SpacetimeDB.Index.BTree(Columns = ["SelfIndexingColumn"])]
+[SpacetimeDB.Index.BTree(
+    Name = "TestCanonicalNameWithoutAccessor",
+    Columns = ["SecondaryIndexingColumn"]
+)]
 public partial struct TestIndexIssues
 {
     [SpacetimeDB.Index.BTree(Accessor = "TestUnexpectedColumns", Columns = ["UnexpectedColumn"])]
     public int SelfIndexingColumn;
+
+    public int SecondaryIndexingColumn;
 }
 
 [SpacetimeDB.Table(
@@ -490,10 +498,42 @@ public partial struct Player
     public Identity Identity;
 }
 
+[SpacetimeDB.Type]
+public partial struct ViewPrimaryKeyRenamedRow
+{
+    public Identity RenamedIdentity;
+}
+
+[SpacetimeDB.Type]
+public partial class ViewPrimaryKeyPartialRow
+{
+    public Identity DeclaredIdentity;
+}
+
+public partial class ViewPrimaryKeyPartialRow
+{
+    public Identity ExtraPartialIdentity;
+}
+
+[SpacetimeDB.Type]
+public partial struct NonEquatableViewPrimaryKey
+{
+    public uint Value;
+}
+
+[SpacetimeDB.Type]
+public partial struct NonEquatableViewPrimaryKeyRow
+{
+    public NonEquatableViewPrimaryKey Identity;
+}
+
 public struct NotSpacetimeType { }
 
 public partial class Module
 {
+    [SpacetimeDB.Settings]
+    public const CaseConversionPolicy CASE_CONVERSION_POLICY = CaseConversionPolicy.SnakeCase;
+
 #pragma warning disable STDB_UNSTABLE // Enable ClientVisibilityFilter
 
     // Invalid: not public static readonly
@@ -554,18 +594,82 @@ public partial class Module
     }
 
     // TODO: Investigate why void return breaks the FFI generation
-    // // Invalid: Void return type is not Vec<T> or Option<T>
+    // // Invalid: Void return type is not List<T> or T?
     // [SpacetimeDB.View(Accessor = "view_def_no_return", Public = true)]
     // public static void ViewDefNoReturn(ViewContext ctx)
     // {
     //     return;
     // }
 
-    // Invalid: Wrong return type is not Vec<T> or Option<T>
+    // Invalid: Wrong return type is not List<T> or T?
     [SpacetimeDB.View(Accessor = "view_def_wrong_return", Public = true)]
     public static Player ViewDefWrongReturn(ViewContext ctx)
     {
         return new Player { Identity = new() };
+    }
+
+    // Valid: IEnumerable<T> return type (from Iter()) is supported
+    [SpacetimeDB.View(Accessor = "view_def_ienumerable_return_from_iter", Public = true)]
+    public static IEnumerable<Player> ViewDefIEnumerableReturnFromIter(ViewContext ctx)
+    {
+        return ctx.Db.Player.Iter();
+    }
+
+    // Valid: IEnumerable<T> return type (from Filter()) is supported
+    [SpacetimeDB.View(Accessor = "view_def_ienumerable_return_from_filter", Public = true)]
+    public static IEnumerable<TestScheduleIssues> ViewDefIEnumerableReturnFromFilter(
+        ViewContext ctx
+    )
+    {
+        return ctx.Db.TestIndexIssues.TestUnexpectedColumns.Filter(0);
+    }
+
+    // Invalid: PrimaryKey must refer to a field in the returned row type.
+    [SpacetimeDB.View(
+        Accessor = "view_primary_key_missing_column",
+        Public = true,
+        PrimaryKey = "MissingIdentity"
+    )]
+    public static List<Player> ViewPrimaryKeyMissingColumn(ViewContext ctx)
+    {
+        return new List<Player>();
+    }
+
+    // Invalid: PrimaryKey must use the C# source field name, not the canonicalized name.
+    [SpacetimeDB.View(
+        Accessor = "view_primary_key_uses_wrong_source_name",
+        Public = true,
+        PrimaryKey = "renamed_identity"
+    )]
+    public static List<ViewPrimaryKeyRenamedRow> ViewPrimaryKeyUsesWrongSourceName(ViewContext ctx)
+    {
+        return new List<ViewPrimaryKeyRenamedRow>();
+    }
+
+    // Invalid: PrimaryKey must refer to a field declared in the SpacetimeDB.Type partial.
+    [SpacetimeDB.View(
+        Accessor = "view_primary_key_uses_non_bsatn_partial_field",
+        Public = true,
+        PrimaryKey = "ExtraPartialIdentity"
+    )]
+    public static List<ViewPrimaryKeyPartialRow> ViewPrimaryKeyUsesNonBsatnPartialField(
+        ViewContext ctx
+    )
+    {
+        return new List<ViewPrimaryKeyPartialRow>();
+    }
+
+    // Invalid: PrimaryKey column type must match table primary-key validation.
+    [SpacetimeDB.View(
+        Accessor = "view_primary_key_non_equatable_column",
+        Public = true,
+        PrimaryKey = "Identity"
+    )]
+    public static List<NonEquatableViewPrimaryKeyRow> ViewPrimaryKeyNonEquatableColumn(
+        ViewContext ctx
+    )
+    {
+        return new List<NonEquatableViewPrimaryKeyRow>();
     }
 
     // Invalid: Returns type that is not a SpacetimeType

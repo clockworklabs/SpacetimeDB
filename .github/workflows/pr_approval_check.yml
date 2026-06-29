@@ -1,0 +1,123 @@
+name: Review Checks
+
+# SECURITY: This workflow uses pull_request_target so that it has write access to
+# set commit statuses on external (fork) PRs. pull_request_target runs in the
+# context of the base branch, which grants the GITHUB_TOKEN write permissions
+# that a regular pull_request event on a fork would not have.
+#
+# IMPORTANT: This workflow must NEVER check out, build, or execute code from the
+# PR branch. Doing so would allow a malicious fork to run arbitrary code with
+# write access to the repository. This workflow only reads PR metadata via the
+# GitHub API, which is safe.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+  pull_request_review:
+    types: [submitted, dismissed]
+  merge_group:
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: pr-approval-check-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  publish-approval-status:
+    name: Set approval status
+    runs-on: ubuntu-latest
+    # Disabled until we can spend some more focus on making this work consistently.
+    # See https://github.com/clockworklabs/SpacetimeDB/pull/4673.
+    if: false
+
+    # SECURITY: Do not add a checkout step to this job. See comment at the top of this file.
+    steps:
+      - name: Evaluate and publish approval status
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const contextName = "PR approval check";
+
+            let targetSha;
+            let state;
+            let description;
+
+            if (context.eventName === "merge_group") {
+              targetSha = process.env.GITHUB_SHA;
+              state = "success";
+              description = "Merge group entry; approvals already satisfied";
+            } else {
+              const pr = context.payload.pull_request;
+              targetSha = pr.head.sha;
+
+              if (pr.head.repo.fork) {
+                state = "success";
+                description = "Skipped for external PR";
+              } else if (pr.user.login !== "clockwork-labs-bot") {
+                state = "success";
+                description = "PR author is not clockwork-labs-bot";
+              } else {
+                const result = await github.graphql(
+                  `
+                  query($owner: String!, $repo: String!, $number: Int!) {
+                    repository(owner: $owner, name: $repo) {
+                      pullRequest(number: $number) {
+                        latestOpinionatedReviews(first: 100, writersOnly: true) {
+                          nodes {
+                            state
+                            author {
+                              login
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                  `,
+                  {
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    number: pr.number,
+                  }
+                );
+
+                const effectiveApprovers =
+                  result.repository.pullRequest.latestOpinionatedReviews.nodes
+                    .filter((review) => review.state === "APPROVED")
+                    .map((review) => review.author?.login)
+                    .filter(Boolean);
+
+                core.info(
+                  `Latest effective approvers (${effectiveApprovers.length}): ${effectiveApprovers.join(", ")}`
+                );
+
+                if (effectiveApprovers.length < 2) {
+                  state = "failure";
+                  description = "PRs from clockwork-labs-bot require at least 2 approvals";
+                } else {
+                  state = "success";
+                  description = "PR has the required number of approvals";
+                }
+              }
+            }
+
+            core.info(`Publishing status ${state} for ${targetSha}: ${description}`);
+
+            // We need to set a separate commit status for this, because it runs on both
+            // pull_request and pull_request_review events. If we don't set an explicit context,
+            // what happens is that there are sometimes two separate statuses on the same commit -
+            // one from each event type. This leads to weird cases where one copy of the check is failed,
+            // and the other is successful, and the failed one blocks the PR from merging.
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: targetSha,
+              state,
+              context: contextName,
+              description,
+            });

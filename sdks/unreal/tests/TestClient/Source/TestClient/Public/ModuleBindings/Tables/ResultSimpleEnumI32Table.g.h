@@ -20,7 +20,7 @@ class TESTCLIENT_API UResultSimpleEnumI32Table : public URemoteTable
 public:
     void PostInitialize();
 
-    /** Update function for result_simple_enum_i32 table*/
+    /** Update function for result_simple_enum_i_32 table*/
     FTableAppliedDiff<FResultSimpleEnumI32Type> Update(TArray<FWithBsatn<FResultSimpleEnumI32Type>> InsertsRef, TArray<FWithBsatn<FResultSimpleEnumI32Type>> DeletesRef);
 
     /** Number of subscribed rows currently in the cache */
@@ -58,7 +58,7 @@ public:
     FOnResultSimpleEnumI32Delete OnDelete;
 
 private:
-    const FString TableName = TEXT("result_simple_enum_i32");
+    const FString TableName = TEXT("result_simple_enum_i_32");
 
     TSharedPtr<UClientCache<FResultSimpleEnumI32Type>> Data;
 };

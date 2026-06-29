@@ -1,5 +1,9 @@
 import type { ParamsObj } from '../lib/reducers';
-import type { Infer, InferTypeOfRow, TypeBuilder } from '../lib/type_builders';
+import type {
+  Infer,
+  InferTypeOfParams,
+  TypeBuilder,
+} from '../lib/type_builders';
 import type { CamelCase } from '../lib/type_util';
 import { coerceParams, toCamelCase, type CoerceParams } from '../lib/util';
 import type { UntypedRemoteModule } from './spacetime_module';
@@ -19,10 +23,8 @@ export type ProceduresView<RemoteModule> = IfAny<
   RemoteModule extends UntypedRemoteModule
     ? // x: camelCase(name)
       {
-        [K in RemoteModule['procedures'][number] as CamelCase<
-          K['accessorName']
-        >]: (
-          params: InferTypeOfRow<K['params']>
+        [K in RemoteModule['procedures'][number] as K['accessorName']]: (
+          params: InferTypeOfParams<K['params']>
         ) => Promise<Infer<K['returnType']>>;
       }
     : never

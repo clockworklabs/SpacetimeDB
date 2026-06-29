@@ -7,6 +7,23 @@ slug: /clients/c-sharp
 
 The SpacetimeDB client for C# contains all the tools you need to build native clients for SpacetimeDB modules using C#.
 
+## Server module quick reference
+
+If you are **writing a SpacetimeDB module** (tables and reducers), use these patterns:
+
+- **Module class**: `public static partial class Module`
+- **Tables**: `[SpacetimeDB.Table(Accessor = "TableName", Public = true)]` on `partial struct` (or `partial class`) — `Accessor` controls generated API names, and canonical SQL names are derived unless `Name` is explicitly set
+- **Primary key**: Define `[SpacetimeDB.PrimaryKey]` on one column when you need key-based lookups or updates
+- **Reducers**: `[SpacetimeDB.Reducer]` on static methods with `ReducerContext ctx` as first parameter
+- **Required**: `using SpacetimeDB;` and `partial` on all table structs and the Module class
+- **Index**: Always use `SpacetimeDB.Index.BTree` (never bare `Index`). Bare `Index` is ambiguous with `System.Index`. For multi-column: `Columns = new[] { nameof(Col1), nameof(Col2) }`, not collection expressions `[nameof(X)]`
+- **Sum types**: Use `TaggedEnum<(VariantA A, VariantB B)>` with `partial record`, not `partial class`
+- **Scheduled tables**: `ScheduledAt` should reference a field of type `ScheduleAt` in the schedule table
+
+See [Tables](/tables), [Reducers](/functions/reducers), and [Column Types](/tables/column-types) for full server-side documentation. The rest of this page covers the **client SDK** (connections, subscriptions, callbacks).
+
+---
+
 Before diving into the reference, you may want to review:
 
 - [Generating Client Bindings](./00200-codegen.md) - How to generate C# bindings from your module
@@ -22,7 +39,7 @@ Before diving into the reference, you may want to review:
 | [`EventContext` type](#type-eventcontext)                         | Implements [`IDbContext`](#interface-idbcontext) for [row callbacks](#callback-oninsert).               |
 | [`ReducerEventContext` type](#type-reducereventcontext)           | Implements [`IDbContext`](#interface-idbcontext) for [reducer callbacks](#observe-and-invoke-reducers). |
 | [`SubscriptionEventContext` type](#type-subscriptioneventcontext) | Implements [`IDbContext`](#interface-idbcontext) for [subscription callbacks](#subscribe-to-queries).   |
-| [`ErrorContext` type](#type-errorcontext)                         | Implements [`IDbContext`](#interface-idbcontext) for error-related callbacks.                           |
+| [`ErrorContext` type](#type-errorcontext)                         | Implements [`IDbContext`](#interface-idbcontext) for subscription error callbacks.                      |
 | [Query Builder API](#query-builder-api)                           | Type-safe query builder for typed subscription queries.                                                  |
 | [Access the client cache](#access-the-client-cache)               | Access to your local view of the database.                                                              |
 | [Observe and invoke reducers](#observe-and-invoke-reducers)       | Send requests to the database to run reducers, and register callbacks to run when notified of reducers. |
@@ -56,7 +73,7 @@ Each SpacetimeDB client depends on some bindings specific to your module. Create
 
 ```bash
 mkdir -p module_bindings
-spacetime generate --lang cs --out-dir module_bindings --module-path PATH-TO-MODULE-DIRECTORY
+spacetime generate --lang csharp --out-dir module_bindings --module-path PATH-TO-MODULE-DIRECTORY
 ```
 
 Replace `PATH-TO-MODULE-DIRECTORY` with the path to your SpacetimeDB module.
@@ -98,7 +115,7 @@ Construct a `DbConnection` by calling `DbConnection.Builder()`, chaining configu
 ```csharp
 class DbConnectionBuilder<DbConnection>
 {
-    public DbConnectionBuilder<DbConnection> WithUri(Uri uri);
+    public DbConnectionBuilder<DbConnection> WithUri(string uri);
 }
 ```
 
@@ -146,20 +163,18 @@ Chain a call to `.OnConnect(callback)` to your builder to register a callback to
 ```csharp
 class DbConnectionBuilder<DbConnection>
 {
-    public DbConnectionBuilder<DbConnection> OnConnectError(Action<ErrorContext, SpacetimeDbException> callback);
+    public DbConnectionBuilder<DbConnection> OnConnectError(Action<Exception> callback);
 }
 ```
 
 Chain a call to `.OnConnectError(callback)` to your builder to register a callback to run when your connection fails.
-
-A known bug in the SpacetimeDB Rust client SDK currently causes this callback never to be invoked. [`OnDisconnect`](#callback-ondisconnect) callbacks are invoked instead.
 
 #### Callback `OnDisconnect`
 
 ```csharp
 class DbConnectionBuilder<DbConnection>
 {
-    public DbConnectionBuilder<DbConnection> OnDisconnect(Action<ErrorContext, SpacetimeDbException> callback);
+    public DbConnectionBuilder<DbConnection> OnDisconnect(Action<DbConnection, Exception?> callback);
 }
 ```
 
@@ -170,11 +185,11 @@ Chain a call to `.OnDisconnect(callback)` to your builder to register a callback
 ```csharp
 class DbConnectionBuilder<DbConnection>
 {
-    public DbConnectionBuilder<DbConnection> WithToken(string token = null);
+    public DbConnectionBuilder<DbConnection> WithToken(string? token);
 }
 ```
 
-Chain a call to `.WithToken(token)` to your builder to provide an OpenID Connect compliant JSON Web Token to authenticate with, or to explicitly select an anonymous connection. If this method is not called or `None` is passed, SpacetimeDB will generate a new `Identity` and sign a new private access token for the connection.
+Chain a call to `.WithToken(token)` to your builder to provide an OpenID Connect compliant JSON Web Token to authenticate with, or to explicitly select an anonymous connection. If this method is not called or `null` is passed, SpacetimeDB will generate a new `Identity` and sign a new private access token for the connection.
 
 #### Method `Build`
 
@@ -877,7 +892,7 @@ The `Reducers` property of the context provides access to reducers exposed by th
 
 ## Type `ErrorContext`
 
-An `ErrorContext` is an [`IDbContext`](#interface-idbcontext) augmented with an `Event` property. `ErrorContext`s are to connections' [`OnDisconnect`](#callback-ondisconnect) and [`OnConnectError`](#callback-onconnecterror) callbacks, and to subscriptions' [`OnError`](#callback-onerror) callbacks.
+An `ErrorContext` is an [`IDbContext`](#interface-idbcontext) augmented with an `Event` property. `ErrorContext`s are passed to subscriptions' [`OnError`](#callback-onerror) callbacks.
 
 | Name                                      | Description                                            |
 | ----------------------------------------- | ------------------------------------------------------ |
@@ -920,7 +935,7 @@ The `Reducers` property of the context provides access to reducers exposed by th
 
 All [`IDbContext`](#interface-idbcontext) implementors, including [`DbConnection`](#type-dbconnection) and [`EventContext`](#type-eventcontext), have `.Db` properties, which in turn have methods for accessing tables in the client cache.
 
-Each table defined by a module has an accessor method, whose name is the table name converted to `snake_case`, on this `.Db` property. The table accessor methods return table handles which inherit from [`RemoteTableHandle`](#type-remotetablehandle) and have methods for searching by index.
+Each table defined by a module has an accessor method on this `.Db` property, generated from the table accessor name using C# naming conventions (for example, `player_score` becomes `PlayerScore`). The table accessor methods return table handles which inherit from [`RemoteTableHandle`](#type-remotetablehandle) and have methods for searching by index.
 
 | Name                                                              | Description                                                                     |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -1012,7 +1027,7 @@ class RemoteTableHandle
 }
 ```
 
-The `OnUpdate` callback runs whenever an already-resident row in the client cache is updated, i.e. replaced with a new row that has the same primary key. The table must have a primary key for callbacks to be triggered. Newly registered or canceled callbacks do not take effect until the following event.
+The `OnUpdate` callback runs whenever an already-resident row in the client cache is updated, i.e. replaced with a new row that has the same primary key. The handle must have a known primary key for callbacks to be triggered. This includes tables with primary keys, query builder views with inferred primary keys, and procedural views declared with `PrimaryKey`. Newly registered or canceled callbacks do not take effect until the following event.
 
 See [the quickstart](../../00100-intro/00200-quickstarts/00600-c-sharp.md) for examples of registering and unregistering row callbacks.
 
@@ -1055,7 +1070,7 @@ public partial class Player
     [PrimaryKey]
     public Identity id;
 
-    [Index.BTree(Accessor = "Level")]
+    [SpacetimeDB.Index.BTree(Accessor = "Level")]
     public uint level;
     ..
 }
@@ -1096,5 +1111,5 @@ See the [module docs](../00300-tables/00200-column-types.md) for more details.
 
 ### Type `TaggedEnum`
 
-A [tagged union](https://en.wikipedia.org/wiki/Tagged_union) type.
+A [tagged union](https://en.wikipedia.org/wiki/Tagged_union) type. When defining TaggedEnum types in a module, use `partial record`, not `partial class`.
 See the [module docs](../00300-tables/00200-column-types.md) for more details.

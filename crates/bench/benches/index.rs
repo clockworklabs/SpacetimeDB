@@ -1,4 +1,6 @@
-use core::{any::type_name, hash::BuildHasherDefault, hint::black_box, iter::repeat_with, mem, time::Duration};
+use core::{
+    any::type_name, hash::BuildHasherDefault, hash::Hash, hint::black_box, iter::repeat_with, mem, time::Duration,
+};
 use criterion::{
     criterion_group, criterion_main,
     measurement::{Measurement as _, WallTime},
@@ -14,13 +16,9 @@ use rand::{
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_sats::{layout::Size, product, u256};
 use spacetimedb_table::indexes::{PageIndex, PageOffset, RowPointer, SquashedOffset};
-use spacetimedb_table::table_index::uniquemap::UniqueMap;
-use spacetimedb_table::table_index::Index as _;
-use spacetimedb_table::table_index::{
-    unique_direct_index::{ToFromUsize, UniqueDirectIndex},
-    KeySize,
-};
-use std::hash::Hash;
+use spacetimedb_table::table_index::unique_btree_index::UniqueBTreeIndex;
+use spacetimedb_table::table_index::unique_direct_index::{ToFromUsize, UniqueDirectIndex};
+use spacetimedb_table::table_index::{Index as _, KeySize};
 
 fn time<R>(body: impl FnOnce() -> R) -> Duration {
     let start = WallTime.start();
@@ -201,7 +199,7 @@ trait Index: Clone {
 }
 
 #[derive(Clone)]
-struct IBTree<K: KeySize<MemoStorage: Clone + Default>>(UniqueMap<K>);
+struct IBTree<K: KeySize<MemoStorage: Clone + Default>>(UniqueBTreeIndex<K>);
 impl<K: KeySize<MemoStorage: Clone + Default> + Clone + Eq + Hash + Ord> Index for IBTree<K> {
     type K = K;
     fn new() -> Self {

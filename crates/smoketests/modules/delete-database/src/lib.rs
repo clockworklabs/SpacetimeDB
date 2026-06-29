@@ -1,10 +1,10 @@
-use spacetimedb::{ReducerContext, Table, duration};
+use spacetimedb::{duration, ReducerContext, Table};
 
 #[spacetimedb::table(accessor = counter, public)]
 pub struct Counter {
     #[primary_key]
     id: u64,
-    val: u64
+    val: u64,
 }
 
 #[spacetimedb::table(accessor = scheduled_counter, public, scheduled(inc, at = sched_at))]

@@ -40,7 +40,10 @@ pub struct SpacetimeIdentityClaims {
     /// The unix timestamp the token was issued at
     #[serde_as(as = "serde_with::TimestampSeconds")]
     pub iat: SystemTime,
+    // Older no-expiration tokens were serialized as `"exp": null`.
+    // Keep accepting those during validation, but omit the claim for new no-expiration tokens.
     #[serde_as(as = "Option<serde_with::TimestampSeconds>")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub exp: Option<SystemTime>,
 
     #[serde(flatten)]
@@ -86,7 +89,9 @@ pub struct IncomingClaims {
     /// The unix timestamp the token was issued at
     #[serde_as(as = "serde_with::TimestampSeconds")]
     pub iat: SystemTime,
+    // See `SpacetimeIdentityClaims::exp`: absent and null both mean no expiration.
     #[serde_as(as = "Option<serde_with::TimestampSeconds>")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub exp: Option<SystemTime>,
 
     /// All remaining claims from the JWT payload
@@ -115,12 +120,12 @@ impl TryInto<SpacetimeIdentityClaims> for IncomingClaims {
 
         let computed_identity = Identity::from_claims(&self.issuer, &self.subject);
         // If an identity is provided, it must match the computed identity.
-        if let Some(token_identity) = self.identity {
-            if token_identity != computed_identity {
-                return Err(anyhow::anyhow!(
+        if let Some(token_identity) = self.identity
+            && token_identity != computed_identity
+        {
+            return Err(anyhow::anyhow!(
                     "Identity mismatch: token identity {token_identity:?} does not match computed identity {computed_identity:?}",
                 ));
-            }
         }
 
         Ok(SpacetimeIdentityClaims {

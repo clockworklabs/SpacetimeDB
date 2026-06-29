@@ -126,6 +126,11 @@
 
 // Procedure context and macros
 #include "spacetimedb/procedure_macros.h"
+#ifdef SPACETIMEDB_UNSTABLE_FEATURES
+#include "spacetimedb/handler_context.h"
+#include "spacetimedb/router.h"
+#include "spacetimedb/http_handler_macros.h"
+#endif
 
 // =============================================================================
 // VIEW SYSTEM
@@ -133,6 +138,7 @@
 
 // View context and macros
 #include "spacetimedb/view_macros.h"
+#include "spacetimedb/query_builder.h"
 
 // =============================================================================
 // CONVENIENCE ALIASES AND COMPATIBILITY
@@ -168,8 +174,7 @@ namespace spacetimedb {
          * @return Serialized module definition
          */
         inline std::vector<uint8_t> serialize_module_def() {
-            auto& module_def = SpacetimeDB::Internal::Module::GetModuleDef();
-            return module_def.serialize();
+            return SpacetimeDB::Internal::Module::SerializeModuleDef();
         }
     }
 

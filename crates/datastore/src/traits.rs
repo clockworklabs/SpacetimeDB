@@ -15,7 +15,7 @@ use spacetimedb_primitives::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::reducer_name::ReducerName;
-use spacetimedb_schema::schema::{IndexSchema, SequenceSchema, TableSchema};
+use spacetimedb_schema::schema::{ConstraintSchema, IndexSchema, SequenceSchema, TableSchema};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_table::static_assert_size;
 use spacetimedb_table::table::RowRef;
@@ -500,11 +500,14 @@ pub struct Metadata {
 }
 
 /// Program associated with a database.
+#[derive(Clone)]
 pub struct Program {
     /// Hash over the program's bytes.
     pub hash: Hash,
     /// The raw bytes of the program.
     pub bytes: Box<[u8]>,
+    /// The kind (host type) of the program.
+    pub kind: ModuleKind,
 }
 
 impl Program {
@@ -512,15 +515,15 @@ impl Program {
     ///
     /// This computes the hash over `bytes`, so prefer constructing [`Program`]
     /// directly if the hash is already known.
-    pub fn from_bytes(bytes: impl Into<Box<[u8]>>) -> Self {
+    pub fn from_bytes(kind: ModuleKind, bytes: impl Into<Box<[u8]>>) -> Self {
         let bytes = bytes.into();
         let hash = hash_bytes(&bytes);
-        Self { hash, bytes }
+        Self { hash, bytes, kind }
     }
 
     /// Create a [`Program`] with no bytes.
-    pub fn empty() -> Self {
-        Self::from_bytes([])
+    pub fn empty(kind: ModuleKind) -> Self {
+        Self::from_bytes(kind, [])
     }
 }
 
@@ -638,6 +641,11 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn sequence_id_from_name_mut_tx(&self, tx: &Self::MutTx, sequence_name: &str) -> super::Result<Option<SequenceId>>;
 
     // Constraints
+    fn create_constraint_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        constraint: ConstraintSchema,
+    ) -> super::Result<ConstraintId>;
     fn drop_constraint_mut_tx(&self, tx: &mut Self::MutTx, constraint_id: ConstraintId) -> super::Result<()>;
     fn constraint_id_from_name(&self, tx: &Self::MutTx, constraint_name: &str) -> super::Result<Option<ConstraintId>>;
 
@@ -714,5 +722,5 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn metadata_mut_tx(&self, tx: &Self::MutTx) -> Result<Option<Metadata>>;
 
     /// Update the datastore with the supplied binary program.
-    fn update_program(&self, tx: &mut Self::MutTx, program_kind: ModuleKind, program: Program) -> Result<()>;
+    fn update_program(&self, tx: &mut Self::MutTx, program: Program) -> Result<()>;
 }
