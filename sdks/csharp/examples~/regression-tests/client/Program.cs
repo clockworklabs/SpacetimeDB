@@ -50,6 +50,7 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         .AddQuery(qb => qb.From.MyTable())
         .AddQuery(qb => qb.From.NullStringNonnullable())
         .AddQuery(qb => qb.From.NullStringNullable())
+        .AddQuery(qb => qb.From.NullableUniqueLookup())
         .AddQuery(qb => qb.From.MyLog())
         .AddQuery(qb => qb.From.TestEvent())
         .AddQuery(qb => qb.From.Admins())
@@ -192,6 +193,83 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         Debug.Assert(
             ctx.Db.NullStringNullable.Iter().Any(r => r.Name == null),
             "Expected a row inserted into null_string_nullable with Name == null"
+        );
+    };
+
+    conn.Reducers.OnInsertNullableUniqueLookupRows += (ReducerEventContext ctx) =>
+    {
+        Log.Info("Got InsertNullableUniqueLookupRows callback");
+        waiting--;
+        Debug.Assert(
+            ctx.Event.Status is Status.Committed,
+            $"InsertNullableUniqueLookupRows should commit, got {ctx.Event.Status}"
+        );
+        ValidateNullableUniqueLookupRows(ctx);
+
+        Log.Debug("Calling DeleteNullableUniqueLookupByNumber(null)");
+        waiting++;
+        conn.Reducers.DeleteNullableUniqueLookupByNumber(null);
+
+        Log.Debug("Calling DeleteNullableUniqueLookupByString(null)");
+        waiting++;
+        conn.Reducers.DeleteNullableUniqueLookupByString(null);
+
+        Log.Debug("Calling DeleteNullableUniqueLookupByUuid(null)");
+        waiting++;
+        conn.Reducers.DeleteNullableUniqueLookupByUuid(null);
+    };
+
+    conn.Reducers.OnDeleteNullableUniqueLookupByNumber += (
+        ReducerEventContext ctx,
+        uint? optionalNumber
+    ) =>
+    {
+        Log.Info("Got DeleteNullableUniqueLookupByNumber callback");
+        waiting--;
+        Debug.Assert(
+            ctx.Event.Status is Status.Committed,
+            $"DeleteNullableUniqueLookupByNumber should commit, got {ctx.Event.Status}"
+        );
+        Debug.Assert(optionalNumber is null, $"Expected null optionalNumber, got {optionalNumber}");
+        Debug.Assert(
+            ctx.Db.NullableUniqueLookup.OptionalNumber.Find((uint?)null) is null,
+            "Expected OptionalNumber.Find(null) to be absent after delete"
+        );
+    };
+
+    conn.Reducers.OnDeleteNullableUniqueLookupByString += (
+        ReducerEventContext ctx,
+        string? optionalString
+    ) =>
+    {
+        Log.Info("Got DeleteNullableUniqueLookupByString callback");
+        waiting--;
+        Debug.Assert(
+            ctx.Event.Status is Status.Committed,
+            $"DeleteNullableUniqueLookupByString should commit, got {ctx.Event.Status}"
+        );
+        Debug.Assert(optionalString is null, $"Expected null optionalString, got {optionalString}");
+        Debug.Assert(
+            ctx.Db.NullableUniqueLookup.OptionalString.Find(null) is null,
+            "Expected OptionalString.Find(null) to be absent after delete"
+        );
+    };
+
+    conn.Reducers.OnDeleteNullableUniqueLookupByUuid += (
+        ReducerEventContext ctx,
+        Uuid? optionalUuid
+    ) =>
+    {
+        Log.Info("Got DeleteNullableUniqueLookupByUuid callback");
+        waiting--;
+        Debug.Assert(
+            ctx.Event.Status is Status.Committed,
+            $"DeleteNullableUniqueLookupByUuid should commit, got {ctx.Event.Status}"
+        );
+        Debug.Assert(optionalUuid is null, $"Expected null optionalUuid, got {optionalUuid}");
+        Debug.Assert(
+            ctx.Db.NullableUniqueLookup.OptionalUuid.Find(null) is null,
+            "Expected OptionalUuid.Find(null) to be absent after delete"
         );
     };
 
@@ -461,6 +539,35 @@ void ValidateNullableVecView(
             );
         }
     }
+}
+
+void ValidateNullableUniqueLookupRows(IRemoteDbContext conn)
+{
+    Log.Debug("Checking nullable unique lookup indexes...");
+
+    var numberNull = conn.Db.NullableUniqueLookup.OptionalNumber.Find((uint?)null);
+    Debug.Assert(numberNull is not null, "Expected OptionalNumber.Find(null) to find row 1");
+    Debug.Assert(numberNull.Id == 1, $"Expected OptionalNumber null row id 1, got {numberNull.Id}");
+
+    var numberValue = conn.Db.NullableUniqueLookup.OptionalNumber.Find(7);
+    Debug.Assert(numberValue is not null, "Expected OptionalNumber.Find(7) to find row 2");
+    Debug.Assert(numberValue.Id == 2, $"Expected OptionalNumber 7 row id 2, got {numberValue.Id}");
+
+    var stringNull = conn.Db.NullableUniqueLookup.OptionalString.Find(null);
+    Debug.Assert(stringNull is not null, "Expected OptionalString.Find(null) to find row 2");
+    Debug.Assert(stringNull.Id == 2, $"Expected OptionalString null row id 2, got {stringNull.Id}");
+
+    var stringValue = conn.Db.NullableUniqueLookup.OptionalString.Find("alpha");
+    Debug.Assert(stringValue is not null, "Expected OptionalString.Find(\"alpha\") to find row 1");
+    Debug.Assert(stringValue.Id == 1, $"Expected OptionalString alpha row id 1, got {stringValue.Id}");
+
+    var uuidNull = conn.Db.NullableUniqueLookup.OptionalUuid.Find(null);
+    Debug.Assert(uuidNull is not null, "Expected OptionalUuid.Find(null) to find row 3");
+    Debug.Assert(uuidNull.Id == 3, $"Expected OptionalUuid null row id 3, got {uuidNull.Id}");
+
+    var uuidValue = conn.Db.NullableUniqueLookup.OptionalUuid.Find(Uuid.NIL);
+    Debug.Assert(uuidValue is not null, "Expected OptionalUuid.Find(Uuid.NIL) to find row 1");
+    Debug.Assert(uuidValue.Id == 1, $"Expected OptionalUuid NIL row id 1, got {uuidValue.Id}");
 }
 
 void ValidateReducerErrorDoesNotContainStackTrace(Exception exception)
@@ -1302,6 +1409,10 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     Log.Debug("Calling InsertNullStringIntoNullable");
     waiting++;
     context.Reducers.InsertNullStringIntoNullable();
+
+    Log.Debug("Calling InsertNullableUniqueLookupRows");
+    waiting++;
+    context.Reducers.InsertNullableUniqueLookupRows();
 
     Log.Debug("Calling EmitTestEvent");
     waiting++;

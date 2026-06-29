@@ -65,6 +65,10 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FInsertVecTest, "SpacetimeDB.TestClient.InsertV
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FInsertOptionSomeTest, "SpacetimeDB.TestClient.InsertOptionSomeTest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 /** Tests inserting none optional types. */
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FInsertOptionNoneTest, "SpacetimeDB.TestClient.InsertOptionNoneTest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+/** Tests deleting unique option rows with Some values. */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDeleteOptionSomeTest, "SpacetimeDB.TestClient.DeleteOptionSomeTest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+/** Tests deleting unique option rows with None values. */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FDeleteOptionNoneTest, "SpacetimeDB.TestClient.DeleteOptionNoneTest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 /** Tests inserting Result Ok types. */
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FInsertResultOkTest, "SpacetimeDB.TestClient.InsertResultOkTest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
