@@ -30,11 +30,10 @@ pub struct SmoketestsArgs {
 
     /// Use a SpacetimeAuth-issued login for remote-server tests.
     ///
-    /// This is required for maincloud and maincloud staging, which reject
-    /// direct server-issued logins for privileged operations.
+    /// This is required for servers that reject direct server-issued logins for privileged operations.
     ///
     /// Optionally accepts an auth host to pass through to `spacetime login`,
-    /// for example `--spacetime-login=https://maincloud.staging.spacetimedb.com`.
+    /// for example `--spacetime-login=https://spacetimedb.com`.
     #[arg(long, num_args = 0..=1, require_equals = true, default_missing_value = "")]
     spacetime_login: Option<String>,
 
