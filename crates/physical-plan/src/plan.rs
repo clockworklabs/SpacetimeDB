@@ -6,9 +6,7 @@ use spacetimedb_expr::{
     expr::{AggType, CollectViews},
     StatementSource,
 };
-use spacetimedb_lib::{
-    empty_view_arg_hash_value, query::Delta, sats::size_of::SizeOf, AlgebraicType, AlgebraicValue, ProductValue,
-};
+use spacetimedb_lib::{query::Delta, sats::size_of::SizeOf, AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{ColId, ColOrCols, ColSet, IndexId, TableId, ViewId};
 use spacetimedb_schema::schema::{IndexSchema, TableSchema, VIEW_ARG_HASH_COL};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
@@ -42,7 +40,8 @@ pub trait ParamResolver {
 pub struct ParamSlot(pub u16);
 
 pub const PARAM_SENDER: ParamSlot = ParamSlot(0);
-pub const PARAM_VIEW_ARG_HASH: ParamSlot = ParamSlot(1);
+pub const PARAM_VIEW_ARG_HASH_EMPTY: ParamSlot = ParamSlot(1);
+pub const PARAM_VIEW_ARG_HASH_SENDER: ParamSlot = ParamSlot(2);
 
 /// Physical plans always terminate with a projection.
 /// This type of projection returns row ids.
@@ -553,9 +552,10 @@ impl PhysicalPlan {
     /// If a view has private arguments, its backing table has an `arg_hash` column.
     /// This column tracks which rows belong to which argument tuple.
     ///
-    /// As a result, queries over such views cannot read the entire backing table.
-    /// They must only select the rows corresponding to the caller of the query.
-    /// Hence we must add an implicit selection over these types of views.
+    /// As a result, queries over views cannot read the entire backing table.
+    /// They must only select the rows corresponding to the view arguments used
+    /// by each view reference. Hence we must add an implicit selection over
+    /// these types of views.
     ///
     /// Ex.
     /// ```sql
@@ -569,11 +569,12 @@ impl PhysicalPlan {
     fn expand_views(self) -> Self {
         match self {
             Self::TableScan(scan, label) if scan.schema.is_view() => {
-                let arg_hash = if scan.schema.is_anonymous_view() {
-                    PhysicalExpr::Value(empty_view_arg_hash_value())
+                let param = if scan.schema.is_anonymous_view() {
+                    PARAM_VIEW_ARG_HASH_EMPTY
                 } else {
-                    PhysicalExpr::Param(PARAM_VIEW_ARG_HASH, AlgebraicType::U256)
+                    PARAM_VIEW_ARG_HASH_SENDER
                 };
+                let arg_hash = PhysicalExpr::Param(param, AlgebraicType::U256);
                 Self::Filter(
                     Box::new(Self::TableScan(scan, label)),
                     PhysicalExpr::BinOp(
