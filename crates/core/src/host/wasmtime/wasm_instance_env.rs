@@ -1777,10 +1777,22 @@ impl WasmInstanceEnv {
                 let view_def = resolved.view_def;
                 let view_name = &view_def.name;
                 let fn_ptr = view_def.fn_ptr;
+                let sender = tx
+                    .as_ref()
+                    .expect("procedure tx missing while looking up refreshed view args")
+                    .view_instance_args(&view_call)
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "failed to look up materialized view args for view {}",
+                            view_call.view_id
+                        )
+                    })?
+                    .sender();
 
                 let current_tx = tx.take().expect("procedure tx missing during view refresh");
-                let (next_tx, call_result) =
-                    tx_slot.set(current_tx, || Self::call_view(caller, &view_call, view_name, fn_ptr));
+                let (next_tx, call_result) = tx_slot.set(current_tx, || {
+                    Self::call_view(caller, &view_call, view_name, fn_ptr, sender)
+                });
                 tx = Some(next_tx);
                 let return_data = call_result?;
 
@@ -1836,6 +1848,7 @@ impl WasmInstanceEnv {
         view_call: &ViewCallInfo,
         view_name: &Identifier,
         fn_ptr: ViewFnPtr,
+        sender: Option<Identity>,
     ) -> anyhow::Result<ViewReturnData> {
         let prev_func_type = caller
             .data_mut()
@@ -1863,7 +1876,7 @@ impl WasmInstanceEnv {
                 call_view_anon,
                 view_name,
                 fn_ptr.0,
-                view_call.sender,
+                sender,
                 args_source.0,
                 result_sink,
                 true,
