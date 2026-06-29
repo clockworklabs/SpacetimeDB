@@ -765,7 +765,7 @@ log = "0.4"
         main_code.push_str(self.config.extra_code);
 
         // Replace server address
-        let host = self.test.server_host();
+        let host = self.test.server_host()?;
         let protocol = "http"; // The smoketest server uses http
         main_code = main_code.replace("http://localhost:3000", &format!("{}://{}", protocol, host));
 

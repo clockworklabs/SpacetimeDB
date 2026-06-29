@@ -975,11 +975,8 @@ impl Smoketest {
     }
 
     /// Returns the server host (without protocol), e.g., "127.0.0.1:3000".
-    pub fn server_host(&self) -> &str {
-        self.server_url
-            .strip_prefix("http://")
-            .or_else(|| self.server_url.strip_prefix("https://"))
-            .unwrap_or(&self.server_url)
+    pub fn server_host(&self) -> Result<String> {
+        split_server_url(&self.server_url).map(|(_, host)| host)
     }
 
     /// Returns the PostgreSQL wire protocol port, if enabled.
@@ -1026,7 +1023,8 @@ impl Smoketest {
         let pg_port = self.pg_port().context("PostgreSQL wire protocol not enabled")?;
 
         // Extract just the host part (without port)
-        let host = self.server_host().split(':').next().unwrap_or("127.0.0.1");
+        let server_host = self.server_host()?;
+        let host = server_host.split(':').next().unwrap_or("127.0.0.1");
 
         let output = Command::new("psql")
             .args([
