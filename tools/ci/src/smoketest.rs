@@ -208,20 +208,10 @@ fn prepare_base_config(server: Option<&str>, spacetime_login: bool) -> Result<Te
     let config_path_str = config_path.to_str().context("invalid temp config path")?;
 
     let status = Command::new("target/release/spacetime")
-        .args([
-            "--config-path",
-            config_path_str,
-            "server",
-            "add",
-            "--url",
-            "http://127.0.0.1:3000",
-            "--no-fingerprint",
-            "--default",
-            "localhost",
-        ])
+        .args(["--config-path", config_path_str, "server", "set-default", "local"])
         .status()
         .context("failed to initialize smoketest server config")?;
-    ensure!(status.success(), "spacetime server add failed");
+    ensure!(status.success(), "spacetime server set-default failed");
 
     if let Some(server) = server {
         let status = Command::new("target/release/spacetime")
@@ -230,7 +220,7 @@ fn prepare_base_config(server: Option<&str>, spacetime_login: bool) -> Result<Te
                 config_path_str,
                 "server",
                 "edit",
-                "localhost",
+                "local",
                 "--url",
                 server,
                 "--yes",
@@ -254,7 +244,7 @@ fn prepare_base_config(server: Option<&str>, spacetime_login: bool) -> Result<Te
                 config_path_str,
                 "login",
                 "--server-issued-login",
-                "localhost",
+                "local",
             ])
             .status()
             .context("failed to create server-issued smoketest identity")?;
@@ -275,7 +265,10 @@ fn set_env(cmd: &mut Command, server: Option<String>, dotnet: bool, spacetime_lo
         cmd.env("SPACETIME_REMOTE_SERVER", server_url);
     }
     cmd.env("SPACETIME_SMOKETEST_BASE_CONFIG_PATH", base_config_path);
-    cmd.env("SPACETIME_SMOKETEST_SPACETIME_LOGIN", if spacetime_login { "1" } else { "0" });
+    cmd.env(
+        "SPACETIME_SMOKETEST_SPACETIME_LOGIN",
+        if spacetime_login { "1" } else { "0" },
+    );
     cmd.env("SMOKETESTS_DOTNET", if dotnet { "1" } else { "0" });
 }
 

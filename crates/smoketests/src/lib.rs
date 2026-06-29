@@ -1668,13 +1668,9 @@ log = "0.4"
             .output();
 
         // Login with server-issued identity
-        // Remote smoketest configs edit the "localhost" server alias to point at the
-        // remote URL, matching the old Python smoketest runner.
-        let login_server = if is_remote_server() {
-            "localhost"
-        } else {
-            &self.server_url
-        };
+        // Remote smoketest configs edit the default "local" server alias to point at the
+        // remote URL, matching the old Python smoketest runner's named-server flow.
+        let login_server = if is_remote_server() { "local" } else { &self.server_url };
         let output = Command::new(&cli_path)
             .args([
                 "--config-path",
