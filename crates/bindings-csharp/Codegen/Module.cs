@@ -167,9 +167,8 @@ static class ColumnTypeValidation
             {
                 OriginalDefinition.SpecialType: SpecialType.System_Nullable_T
             } nullable => nullable.TypeArguments[0],
-            _ when type.NullableAnnotation == NullableAnnotation.Annotated => type.WithNullableAnnotation(
-                NullableAnnotation.None
-            ),
+            _ when type.NullableAnnotation == NullableAnnotation.Annotated =>
+                type.WithNullableAnnotation(NullableAnnotation.None),
             _ => type,
         };
 
