@@ -102,9 +102,11 @@ Usage: smoketests [OPTIONS] [ARGS]... [COMMAND]
 
 When specified, tests will connect to the given URL instead of starting local server instances. Tests that require local server control (like restart tests) will be skipped.
 
-- `--spacetime-login`: Use a SpacetimeAuth-issued login for remote-server tests.
+- `--spacetime-login <SPACETIME_LOGIN>`: Use a SpacetimeAuth-issued login for remote-server tests.
 
 This is required for maincloud and maincloud staging, which reject direct server-issued logins for privileged operations.
+
+Optionally accepts an auth host to pass through to `spacetime login`, for example `--spacetime-login=https://maincloud.staging.spacetimedb.com`.
 
 - `--dotnet <DOTNET>`:
 - `args <ARGS>`: Additional arguments to pass to the test runner

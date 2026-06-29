@@ -32,8 +32,11 @@ pub struct SmoketestsArgs {
     ///
     /// This is required for maincloud and maincloud staging, which reject
     /// direct server-issued logins for privileged operations.
-    #[arg(long)]
-    spacetime_login: bool,
+    ///
+    /// Optionally accepts an auth host to pass through to `spacetime login`,
+    /// for example `--spacetime-login=https://maincloud.staging.spacetimedb.com`.
+    #[arg(long, num_args = 0..=1, require_equals = true, default_missing_value = "")]
+    spacetime_login: Option<String>,
 
     #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
     dotnet: bool,
@@ -64,7 +67,7 @@ pub fn run(args: SmoketestsArgs) -> Result<()> {
             eprintln!("smoketests/mod.rs is up to date.");
             Ok(())
         }
-        None => run_smoketest(args.server, args.dotnet, args.spacetime_login, args.args),
+        None => run_smoketest(args.server, args.dotnet, args.spacetime_login.as_deref(), args.args),
     }
 }
 
@@ -135,7 +138,12 @@ fn build_precompiled_modules() -> Result<()> {
 /// 16 was found to be optimal - higher values cause OS scheduler overhead.
 const DEFAULT_PARALLELISM: &str = "16";
 
-fn run_smoketest(server: Option<String>, dotnet: bool, spacetime_login: bool, args: Vec<String>) -> Result<()> {
+fn run_smoketest(
+    server: Option<String>,
+    dotnet: bool,
+    spacetime_login_auth_host: Option<&str>,
+    args: Vec<String>,
+) -> Result<()> {
     // 1. Build binaries first (single process, no race)
     build_binaries()?;
 
@@ -143,7 +151,7 @@ fn run_smoketest(server: Option<String>, dotnet: bool, spacetime_login: bool, ar
     build_precompiled_modules()?;
 
     let cli_path = ensure_binaries_built();
-    let base_config_dir = prepare_base_config(&cli_path, server.as_deref(), spacetime_login)?;
+    let base_config_dir = prepare_base_config(&cli_path, server.as_deref(), spacetime_login_auth_host)?;
     let base_config_path = base_config_dir.path().join("config.toml");
 
     // 4. Detect whether to use nextest or cargo test
@@ -163,7 +171,13 @@ fn run_smoketest(server: Option<String>, dotnet: bool, spacetime_login: bool, ar
     let mut cmd = if use_nextest {
         eprintln!("Running smoketests with cargo nextest...\n");
         let mut cmd = Command::new("cargo");
-        set_env(&mut cmd, server, dotnet, spacetime_login, &base_config_path);
+        set_env(
+            &mut cmd,
+            server,
+            dotnet,
+            spacetime_login_auth_host.is_some(),
+            &base_config_path,
+        );
         cmd.args([
             "nextest",
             "run",
@@ -185,7 +199,13 @@ fn run_smoketest(server: Option<String>, dotnet: bool, spacetime_login: bool, ar
     } else {
         eprintln!("Running smoketests with cargo test...\n");
         let mut cmd = Command::new("cargo");
-        set_env(&mut cmd, server, dotnet, spacetime_login, &base_config_path);
+        set_env(
+            &mut cmd,
+            server,
+            dotnet,
+            spacetime_login_auth_host.is_some(),
+            &base_config_path,
+        );
         cmd.args(["test", "--release", "-p", "spacetimedb-smoketests"]);
         cmd
     };
@@ -200,8 +220,12 @@ fn run_smoketest(server: Option<String>, dotnet: bool, spacetime_login: bool, ar
     Ok(())
 }
 
-fn prepare_base_config(cli_path: &Path, server: Option<&str>, spacetime_login: bool) -> Result<TempDir> {
-    if server.is_none() && spacetime_login {
+fn prepare_base_config(
+    cli_path: &Path,
+    server: Option<&str>,
+    spacetime_login_auth_host: Option<&str>,
+) -> Result<TempDir> {
+    if server.is_none() && spacetime_login_auth_host.is_some() {
         bail!("--spacetime-login requires --server");
     }
 
@@ -233,12 +257,14 @@ fn prepare_base_config(cli_path: &Path, server: Option<&str>, spacetime_login: b
         ensure!(status.success(), "spacetime server edit failed");
     }
 
-    if spacetime_login {
+    if let Some(auth_host) = spacetime_login_auth_host {
         eprintln!("Logging in with SpacetimeAuth for remote smoketests...");
-        let status = Command::new(cli_path)
-            .args(["--config-path", config_path_str, "login"])
-            .status()
-            .context("failed to run spacetime login")?;
+        let mut login = Command::new(cli_path);
+        login.args(["--config-path", config_path_str, "login"]);
+        if !auth_host.is_empty() {
+            login.args(["--auth-host", auth_host]);
+        }
+        let status = login.status().context("failed to run spacetime login")?;
         ensure!(status.success(), "spacetime login failed");
     } else if server.is_some() {
         let status = Command::new(cli_path)
