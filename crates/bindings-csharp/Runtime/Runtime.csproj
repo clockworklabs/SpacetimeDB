@@ -21,13 +21,13 @@
 
   <ItemGroup>
     <!-- Note: BSATN.Codegen is included in the BSATN.Runtime NuGet package. -->
-    <ProjectReference Include="../BSATN.Runtime/BSATN.Runtime.csproj" />
+    <ProjectReference Include="../BSATN.Runtime/BSATN.Runtime.csproj" SetTargetFramework="TargetFramework=$(TargetFramework)" SkipGetTargetFrameworkProperties="true" />
     <!-- ...But we also need BSATN.Codegen to transform `[SpacetimeDB.Type]` usages in source of Runtime itself. -->
     <!-- For that, it has to be included as an explicit private dependency. -->
-    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" SetTargetFramework="TargetFramework=netstandard2.0" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained" SkipGetTargetFrameworkProperties="true" />
     <!-- Codegen package must be built before this one so that it's included in NuGet Runtime package, but we don't depend on it. -->
     <!-- (*not* with OutputItemType=analyzer because we don't want to use that source generator on source of Runtime itself) -->
-    <ProjectReference Include="../Codegen/Codegen.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../Codegen/Codegen.csproj" ReferenceOutputAssembly="false" SetTargetFramework="TargetFramework=netstandard2.0" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
 
   <!-- These must be explicit package dependencies so NuGet consumers can resolve the LLVM toolchain. -->
