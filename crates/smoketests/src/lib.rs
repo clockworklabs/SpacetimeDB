@@ -998,10 +998,8 @@ impl Smoketest {
 
     /// Returns the server host (without protocol), e.g., "127.0.0.1:3000".
     pub fn server_host(&self) -> &str {
-        self.server_url
-            .strip_prefix("http://")
-            .or_else(|| self.server_url.strip_prefix("https://"))
-            .unwrap_or(&self.server_url)
+        let (_, host) = split_server_url(&self.server_url);
+        host
     }
 
     /// Returns the PostgreSQL wire protocol port, if enabled.
@@ -1027,7 +1025,7 @@ impl Smoketest {
     }
 
     pub fn login_with_token(&self, token: &str) -> Result<()> {
-        let (protocol, host) = split_server_url(&self.server_url)?;
+        let (protocol, host) = split_server_url(&self.server_url);
         let config_str = format!(
             "default_server = \"localhost\"\n\nspacetimedb_token = \"{}\"\n\n[[server_configs]]\nnickname = \"localhost\"\nhost = \"{}\"\nprotocol = \"{}\"\n",
             token, host, protocol
@@ -1923,18 +1921,13 @@ impl Drop for SubscriptionHandle {
     }
 }
 
-fn split_server_url(server_url: &str) -> Result<(String, String)> {
-    match reqwest::Url::parse(server_url) {
-        Ok(url) => {
-            let protocol = url.scheme().to_string();
-            let host = url.host_str().context("server URL missing host")?;
-            let host = match url.port() {
-                Some(port) => format!("{host}:{port}"),
-                None => host.to_string(),
-            };
-            Ok((protocol, host))
-        }
-        Err(_) => Ok(("http".to_string(), server_url.to_string())),
+fn split_server_url(server_url: &str) -> (&str, &str) {
+    if let Some(host) = server_url.strip_prefix("http://") {
+        ("http", host)
+    } else if let Some(host) = server_url.strip_prefix("https://") {
+        ("https", host)
+    } else {
+        ("http", server_url)
     }
 }
 
