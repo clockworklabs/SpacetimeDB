@@ -567,7 +567,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         }
     }
 
-    if !module_bindings_dir.exists() {
+    let should_prepare_module_bindings_dir =
+        should_prepare_default_module_bindings_dir(skip_generate, using_spacetime_config);
+    if should_prepare_module_bindings_dir && !module_bindings_dir.exists() {
         // Create the module bindings directory if it doesn't exist
         std::fs::create_dir_all(&module_bindings_dir).with_context(|| {
             format!(
@@ -575,7 +577,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 module_bindings_dir.display()
             )
         })?;
-    } else if !module_bindings_dir.is_dir() {
+    } else if should_prepare_module_bindings_dir && !module_bindings_dir.is_dir() {
         anyhow::bail!(
             "Module bindings path {} exists but is not a directory.",
             module_bindings_path.display()
@@ -1617,6 +1619,10 @@ fn create_default_spacetime_config_if_missing(project_dir: &Path) -> anyhow::Res
     Ok(Some(config.save_to_dir(project_dir)?))
 }
 
+fn should_prepare_default_module_bindings_dir(skip_generate: bool, using_spacetime_config: bool) -> bool {
+    !skip_generate && !using_spacetime_config
+}
+
 fn create_local_spacetime_config_if_missing(
     project_dir: &Path,
     database_name: &str,
@@ -1630,12 +1636,22 @@ fn create_local_spacetime_config_if_missing(
     if local_config_path.exists() {
         let mut local_config = SpacetimeConfig::load(&local_config_path)
             .with_context(|| format!("Failed to load {}", local_config_path.display()))?;
-        if local_config.additional_fields.contains_key("database") {
+        let mut changed = false;
+        if !local_config.additional_fields.contains_key("database") {
+            local_config
+                .additional_fields
+                .insert("database".to_string(), json!(database_name));
+            changed = true;
+        }
+        if !local_config.additional_fields.contains_key("server") {
+            local_config
+                .additional_fields
+                .insert("server".to_string(), json!("local"));
+            changed = true;
+        }
+        if !changed {
             return Ok(None);
         }
-        local_config
-            .additional_fields
-            .insert("database".to_string(), json!(database_name));
         local_config.save(&local_config_path)?;
         return Ok(Some(local_config_path));
     }
@@ -1644,6 +1660,9 @@ fn create_local_spacetime_config_if_missing(
     local_config
         .additional_fields
         .insert("database".to_string(), json!(database_name));
+    local_config
+        .additional_fields
+        .insert("server".to_string(), json!("local"));
     local_config.save(&local_config_path)?;
 
     Ok(Some(local_config_path))
@@ -1986,6 +2005,14 @@ mod tests {
     }
 
     #[test]
+    fn test_default_module_bindings_dir_is_only_prepared_for_cli_generation() {
+        assert!(should_prepare_default_module_bindings_dir(false, false));
+        assert!(!should_prepare_default_module_bindings_dir(false, true));
+        assert!(!should_prepare_default_module_bindings_dir(true, false));
+        assert!(!should_prepare_default_module_bindings_dir(true, true));
+    }
+
+    #[test]
     fn test_create_local_spacetime_config_if_missing_creates_database_override() {
         let temp = TempDir::new().unwrap();
         let project_path = temp.path();
@@ -2005,9 +2032,7 @@ mod tests {
             .expect("database should be present");
 
         assert_eq!(db, "my-app-123456");
-
-        let obj = parsed.as_object().expect("local config should be a JSON object");
-        assert_eq!(obj.len(), 1, "local config should only contain database");
+        assert_eq!(parsed.get("server").and_then(|v| v.as_str()), Some("local"));
     }
 
     #[test]
@@ -2017,6 +2042,29 @@ mod tests {
 
         std::fs::write(project_path.join("spacetime.json"), "{}").unwrap();
         std::fs::write(project_path.join("spacetime.local.json"), r#"{ "server": "local" }"#).unwrap();
+
+        let updated = create_local_spacetime_config_if_missing(project_path, "my-cli-db")
+            .unwrap()
+            .expect("expected local config to be updated");
+        assert_eq!(updated, project_path.join("spacetime.local.json"));
+
+        let content = std::fs::read_to_string(project_path.join("spacetime.local.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed.get("server").and_then(|v| v.as_str()), Some("local"));
+        assert_eq!(parsed.get("database").and_then(|v| v.as_str()), Some("my-cli-db"));
+    }
+
+    #[test]
+    fn test_create_local_spacetime_config_if_missing_upserts_missing_server() {
+        let temp = TempDir::new().unwrap();
+        let project_path = temp.path();
+
+        std::fs::write(project_path.join("spacetime.json"), "{}").unwrap();
+        std::fs::write(
+            project_path.join("spacetime.local.json"),
+            r#"{ "database": "my-cli-db" }"#,
+        )
+        .unwrap();
 
         let updated = create_local_spacetime_config_if_missing(project_path, "my-cli-db")
             .unwrap()

@@ -685,6 +685,9 @@ fn create_local_spacetime_config_if_missing(
     local_config
         .additional_fields
         .insert("database".to_string(), json!(database_name));
+    local_config
+        .additional_fields
+        .insert("server".to_string(), json!("local"));
     local_config.save(&local_config_path)?;
 
     Ok(Some(local_config_path))
@@ -2390,9 +2393,7 @@ bytes.workspace = true
             .expect("database should be present");
 
         assert_eq!(db, "my-app-abc12");
-
-        let obj = parsed.as_object().expect("local config should be a JSON object");
-        assert_eq!(obj.len(), 1, "local config should only contain database");
+        assert_eq!(parsed.get("server").and_then(|v| v.as_str()), Some("local"));
     }
 
     #[test]
