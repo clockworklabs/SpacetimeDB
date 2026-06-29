@@ -1668,6 +1668,7 @@ log = "0.4"
             .output();
 
         // Login with server-issued identity
+        // Format: login --server-issued-login <server>
         let output = Command::new(&cli_path)
             .args([
                 "--config-path",
