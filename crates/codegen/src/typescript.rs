@@ -15,7 +15,7 @@ use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_primitives::ColId;
-use spacetimedb_schema::def::{ConstraintDef, IndexDef, ModuleDef, ReducerDef, TableDef, TypeDef};
+use spacetimedb_schema::def::{ColumnDef, ConstraintDef, IndexDef, ModuleDef, ReducerDef, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::TableSchema;
@@ -85,7 +85,15 @@ impl Lang for TypeScript {
 
         writeln!(out, "export default __t.row({{");
         out.indent(1);
-        write_object_type_builder_fields(module, out, &product_def.elements, table.primary_key, true, true).unwrap();
+        write_object_type_builder_fields(
+            module,
+            out,
+            &product_def.elements,
+            table.primary_key,
+            true,
+            Some(&table.columns),
+        )
+        .unwrap();
         out.dedent(1);
         writeln!(out, "}});");
         OutputFile {
@@ -143,7 +151,7 @@ impl Lang for TypeScript {
 
         writeln!(out, "export const params = {{");
         out.with_indent(|out| {
-            write_object_type_builder_fields(module, out, &procedure.params_for_generate.elements, None, true, false)
+            write_object_type_builder_fields(module, out, &procedure.params_for_generate.elements, None, true, None)
                 .unwrap()
         });
         writeln!(out, "}};");
@@ -815,7 +823,7 @@ fn define_body_for_reducer(module: &ModuleDef, out: &mut Indenter, params: &[(Id
         writeln!(out, "}};");
     } else {
         writeln!(out);
-        out.with_indent(|out| write_object_type_builder_fields(module, out, params, None, true, false).unwrap());
+        out.with_indent(|out| write_object_type_builder_fields(module, out, params, None, true, None).unwrap());
         writeln!(out, "}};");
     }
 }
@@ -840,7 +848,7 @@ fn define_body_for_product(
         writeln!(out, "}});");
     } else {
         writeln!(out);
-        out.with_indent(|out| write_object_type_builder_fields(module, out, elements, None, true, false).unwrap());
+        out.with_indent(|out| write_object_type_builder_fields(module, out, elements, None, true, None).unwrap());
         writeln!(out, "}});");
     }
     writeln!(out, "export type {name} = __Infer<typeof {name}>;");
@@ -932,7 +940,7 @@ fn write_object_type_builder_fields(
     elements: &[(Identifier, AlgebraicTypeUse)],
     primary_key: Option<ColId>,
     convert_case: bool,
-    write_original_name: bool,
+    columns: Option<&[ColumnDef]>,
 ) -> anyhow::Result<()> {
     for (i, (ident, ty)) in elements.iter().enumerate() {
         let name = if convert_case {
@@ -945,7 +953,14 @@ fn write_object_type_builder_fields(
             Some(pk) => pk.idx() == i,
             None => false,
         };
-        let original_name = (write_original_name && convert_case && *name != **ident).then_some(&**ident);
+        // The `.name(..)` value is the in-database (canonical) column name, which may
+        // differ from the generated camelCase accessor key. Emit it only when the
+        // canonical name differs, so the client maps to the correct wire/column name
+        // regardless of the source identifier's casing.
+        let original_name = columns
+            .and_then(|columns| columns.get(i))
+            .map(|column| column.name.deref())
+            .filter(|canonical| convert_case && *canonical != name.as_str());
         write_type_builder_field(module, out, &name, original_name, ty, is_primary_key)?;
     }
 
@@ -1083,7 +1098,7 @@ fn define_body_for_sum(
             (Identifier::for_test(pascal), ty.clone())
         })
         .collect();
-    out.with_indent(|out| write_object_type_builder_fields(module, out, &pascal_variants, None, false, false).unwrap());
+    out.with_indent(|out| write_object_type_builder_fields(module, out, &pascal_variants, None, false, None).unwrap());
     writeln!(out, "}});");
     writeln!(out, "export type {name} = __Infer<typeof {name}>;");
     out.newline();
