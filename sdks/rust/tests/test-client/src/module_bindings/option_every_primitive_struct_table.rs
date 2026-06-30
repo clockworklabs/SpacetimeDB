@@ -43,6 +43,18 @@ impl OptionEveryPrimitiveStructTableAccess for super::RemoteTables {
 pub struct OptionEveryPrimitiveStructInsertCallbackId(__sdk::CallbackId);
 pub struct OptionEveryPrimitiveStructDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for OptionEveryPrimitiveStructTableHandle<'ctx> {
+    type Row = OptionEveryPrimitiveStruct;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = OptionEveryPrimitiveStruct> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for OptionEveryPrimitiveStructTableHandle<'ctx> {
     type Row = OptionEveryPrimitiveStruct;
     type EventContext = super::EventContext;
@@ -67,6 +79,36 @@ impl<'ctx> __sdk::Table for OptionEveryPrimitiveStructTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = OptionEveryPrimitiveStructDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OptionEveryPrimitiveStructDeleteCallbackId {
+        OptionEveryPrimitiveStructDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: OptionEveryPrimitiveStructDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for OptionEveryPrimitiveStructTableHandle<'ctx> {
+    type InsertCallbackId = OptionEveryPrimitiveStructInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OptionEveryPrimitiveStructInsertCallbackId {
+        OptionEveryPrimitiveStructInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: OptionEveryPrimitiveStructInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for OptionEveryPrimitiveStructTableHandle<'ctx> {
     type DeleteCallbackId = OptionEveryPrimitiveStructDeleteCallbackId;
 
     fn on_delete(

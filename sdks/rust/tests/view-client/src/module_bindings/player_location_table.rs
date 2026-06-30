@@ -40,6 +40,18 @@ impl PlayerLocationTableAccess for super::RemoteTables {
 pub struct PlayerLocationInsertCallbackId(__sdk::CallbackId);
 pub struct PlayerLocationDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for PlayerLocationTableHandle<'ctx> {
+    type Row = PlayerLocation;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = PlayerLocation> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for PlayerLocationTableHandle<'ctx> {
     type Row = PlayerLocation;
     type EventContext = super::EventContext;
@@ -64,6 +76,36 @@ impl<'ctx> __sdk::Table for PlayerLocationTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = PlayerLocationDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PlayerLocationDeleteCallbackId {
+        PlayerLocationDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: PlayerLocationDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for PlayerLocationTableHandle<'ctx> {
+    type InsertCallbackId = PlayerLocationInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PlayerLocationInsertCallbackId {
+        PlayerLocationInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: PlayerLocationInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for PlayerLocationTableHandle<'ctx> {
     type DeleteCallbackId = PlayerLocationDeleteCallbackId;
 
     fn on_delete(
