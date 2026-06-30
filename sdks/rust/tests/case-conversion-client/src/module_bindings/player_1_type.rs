@@ -8,31 +8,31 @@ use super::player_2_status_type::Player2Status;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
-pub struct PlayerRow {
+pub struct Player1 {
     pub player_1_id: u32,
     pub player_name: String,
     pub current_level_2: u32,
     pub status_3_field: Player2Status,
 }
 
-impl __sdk::InModule for PlayerRow {
+impl __sdk::InModule for Player1 {
     type Module = super::RemoteModule;
 }
 
-/// Column accessor struct for the table `PlayerRow`.
+/// Column accessor struct for the table `Player1`.
 ///
 /// Provides typed access to columns for query building.
-pub struct PlayerRowCols {
-    pub player_1_id: __sdk::__query_builder::Col<PlayerRow, u32>,
-    pub player_name: __sdk::__query_builder::Col<PlayerRow, String>,
-    pub current_level_2: __sdk::__query_builder::Col<PlayerRow, u32>,
-    pub status_3_field: __sdk::__query_builder::Col<PlayerRow, Player2Status>,
+pub struct Player1Cols {
+    pub player_1_id: __sdk::__query_builder::Col<Player1, u32>,
+    pub player_name: __sdk::__query_builder::Col<Player1, String>,
+    pub current_level_2: __sdk::__query_builder::Col<Player1, u32>,
+    pub status_3_field: __sdk::__query_builder::Col<Player1, Player2Status>,
 }
 
-impl __sdk::__query_builder::HasCols for PlayerRow {
-    type Cols = PlayerRowCols;
+impl __sdk::__query_builder::HasCols for Player1 {
+    type Cols = Player1Cols;
     fn cols(table_name: &'static str) -> Self::Cols {
-        PlayerRowCols {
+        Player1Cols {
             player_1_id: __sdk::__query_builder::Col::new(table_name, "player_1_id"),
             player_name: __sdk::__query_builder::Col::new(table_name, "player_name"),
             current_level_2: __sdk::__query_builder::Col::new(table_name, "current_level_2"),
@@ -41,20 +41,20 @@ impl __sdk::__query_builder::HasCols for PlayerRow {
     }
 }
 
-/// Indexed column accessor struct for the table `PlayerRow`.
+/// Indexed column accessor struct for the table `Player1`.
 ///
 /// Provides typed access to indexed columns for query building.
-pub struct PlayerRowIxCols {
-    pub player_1_id: __sdk::__query_builder::IxCol<PlayerRow, u32>,
+pub struct Player1IxCols {
+    pub player_1_id: __sdk::__query_builder::IxCol<Player1, u32>,
 }
 
-impl __sdk::__query_builder::HasIxCols for PlayerRow {
-    type IxCols = PlayerRowIxCols;
+impl __sdk::__query_builder::HasIxCols for Player1 {
+    type IxCols = Player1IxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
-        PlayerRowIxCols {
+        Player1IxCols {
             player_1_id: __sdk::__query_builder::IxCol::new(table_name, "player_1_id"),
         }
     }
 }
 
-impl __sdk::__query_builder::CanBeLookupTable for PlayerRow {}
+impl __sdk::__query_builder::CanBeLookupTable for Player1 {}
