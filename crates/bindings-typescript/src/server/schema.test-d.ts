@@ -1,4 +1,5 @@
-import { schema } from './schema';
+import { registerExport, schema } from './schema';
+import type { ProcedureExport } from './procedures';
 import { table } from '../lib/table';
 import t from '../lib/type_builders';
 
@@ -98,74 +99,101 @@ spacetimedbIndexSplit.init(ctx => {
   const _nickname = ctx.db.account.nickname;
 });
 
-const scheduledMessages = table(
+const manuallyTypedProcedureExport: ProcedureExport<
+  any,
   {},
-  {
-    scheduledId: t.u64().primaryKey().autoInc(),
-    scheduledAt: t.scheduleAt(),
-    text: t.string(),
-  }
-);
+  ReturnType<typeof t.unit>
+> = Object.assign((_ctx: any, _args: {}) => ({}), {
+  [registerExport]: () => {},
+});
+void manuallyTypedProcedureExport;
 
-const spacetimedbSchedules = schema({ scheduledMessages });
+// Scheduled reducer/procedure type coverage. Each valid scheduled function uses
+// its own table handle because runtime allows at most one scheduled function per
+// schedule table.
+const scheduledMessageRow = {
+  scheduledId: t.u64().primaryKey().autoInc(),
+  scheduledAt: t.scheduleAt(),
+  text: t.string(),
+};
 
-const processScheduledMessage = spacetimedbSchedules.reducer(
+const scheduledTable = () => table({}, scheduledMessageRow);
+
+{
+  // Positive reducer case: onSchedule accepts a table whose row matches the
+  // reducer's single scheduled payload field.
+  const scheduledReducerMessages = scheduledTable();
+  const spacetimedb = schema({ scheduledReducerMessages });
+  const processScheduledMessage = spacetimedb.reducer(
+    { onSchedule: scheduledReducerMessages },
+    {
+      scheduledMessage: scheduledReducerMessages.rowType,
+    },
+    (_ctx, { scheduledMessage }) => {
+      void scheduledMessage.text;
+    }
+  );
+  void processScheduledMessage;
+}
+
+{
+  // Positive procedure case: scheduled procedures follow the same payload rule
+  // as reducers and must return unit.
+  const scheduledProcedureMessages = scheduledTable();
+  const spacetimedb = schema({ scheduledProcedureMessages });
+  const processScheduledProcedure = spacetimedb.procedure(
+    { onSchedule: scheduledProcedureMessages },
+    {
+      scheduledMessage: scheduledProcedureMessages.rowType,
+    },
+    t.unit(),
+    (_ctx, { scheduledMessage }) => {
+      void scheduledMessage.text;
+      return {};
+    }
+  );
+  void processScheduledProcedure;
+}
+
+const legacyScheduledMessages = table(
   {
-    scheduledMessage: scheduledMessages.rowType,
+    scheduled: (): any => undefined,
   },
-  (_ctx, { scheduledMessage }) => {
-    void scheduledMessage.text;
-  }
+  scheduledMessageRow
 );
+const legacyScheduleAtCol: number | undefined =
+  legacyScheduledMessages.schedule?.scheduleAtCol;
+void legacyScheduleAtCol;
 
-spacetimedbSchedules.schedule(scheduledMessages, processScheduledMessage);
+{
+  // Negative reducer case: onSchedule rejects a reducer whose payload does not
+  // use the scheduled table row type.
+  const wrongPayloadMessages = scheduledTable();
+  const spacetimedb = schema({ wrongPayloadMessages });
+  const processWrongPayload = spacetimedb.reducer(
+    // @ts-expect-error scheduled reducers must take the scheduled table row type.
+    { onSchedule: wrongPayloadMessages },
+    {
+      text: t.string(),
+    },
+    () => {}
+  );
+  void processWrongPayload;
+}
 
-const processWrongPayload = spacetimedbSchedules.reducer(
-  {
-    text: t.string(),
-  },
-  () => {}
-);
-
-// @ts-expect-error scheduled reducers must take the scheduled table row type.
-spacetimedbSchedules.schedule(scheduledMessages, processWrongPayload);
-
-const processNoPayload = spacetimedbSchedules.reducer({}, () => {});
-
-// @ts-expect-error scheduled reducers must take exactly one payload field.
-spacetimedbSchedules.schedule(scheduledMessages, processNoPayload);
-
-const processMultiplePayloadFields = spacetimedbSchedules.reducer(
-  {
-    first: scheduledMessages.rowType,
-    second: scheduledMessages.rowType,
-  },
-  () => {}
-);
-
-// @ts-expect-error scheduled reducers must take exactly one payload field.
-spacetimedbSchedules.schedule(scheduledMessages, processMultiplePayloadFields);
-
-const processScheduledProcedure = spacetimedbSchedules.procedure(
-  {
-    scheduledMessage: scheduledMessages.rowType,
-  },
-  t.unit(),
-  (_ctx, { scheduledMessage }) => {
-    void scheduledMessage.text;
-    return {};
-  }
-);
-
-spacetimedbSchedules.schedule(scheduledMessages, processScheduledProcedure);
-
-const processWrongReturnProcedure = spacetimedbSchedules.procedure(
-  {
-    scheduledMessage: scheduledMessages.rowType,
-  },
-  t.string(),
-  () => ''
-);
-
-// @ts-expect-error scheduled procedures must return unit.
-spacetimedbSchedules.schedule(scheduledMessages, processWrongReturnProcedure);
+{
+  // Negative procedure case: onSchedule rejects procedures that do not return
+  // unit.
+  const wrongReturnProcedureMessages = scheduledTable();
+  const spacetimedb = schema({ wrongReturnProcedureMessages });
+  const processWrongReturnProcedure = spacetimedb.procedure(
+    // @ts-expect-error scheduled procedures must return unit.
+    { onSchedule: wrongReturnProcedureMessages },
+    {
+      scheduledMessage: wrongReturnProcedureMessages.rowType,
+    },
+    t.string(),
+    () => ''
+  );
+  void processWrongReturnProcedure;
+}

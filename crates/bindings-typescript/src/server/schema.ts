@@ -16,11 +16,8 @@ import {
   type TablesToSchema,
   type UntypedSchemaDef,
 } from '../lib/schema';
-import type { IndexOpts } from '../lib/indexes';
-import type { TableSchema, UntypedTableSchema } from '../lib/table_schema';
-import { ColumnBuilder, RowBuilder, TypeBuilder } from '../lib/type_builders';
-import type { t } from '../lib/type_builders';
-import type { HasExactlyOneKnownKey } from '../lib/type_util';
+import type { UntypedTableSchema } from '../lib/table_schema';
+import { TypeBuilder, type ColumnBuilder } from '../lib/type_builders';
 import {
   Router,
   type HandlerFn,
@@ -34,12 +31,14 @@ import {
   type ProcedureExport,
   type ProcedureFn,
   type ProcedureOpts,
+  type ProcedureOptsWithOptionalName,
   type Procedures,
 } from './procedures';
 import {
   makeReducerExport,
   type ReducerExport,
   type ReducerOpts,
+  type ReducerOptsWithOptionalName,
   type Reducers,
 } from './reducers';
 import { makeHooks } from './runtime';
@@ -58,26 +57,12 @@ import {
 } from './views';
 import type { UntypedTableDef } from '../lib/table';
 
-type ScheduledReducerOrProcedure<
-  Params extends Record<string, RowBuilder<any>>,
-> =
-  | ReducerExport<any, Params>
-  | ProcedureExport<any, Params, ReturnType<typeof t.unit>>;
-
-export type ScheduledFunctionExport<
-  Row extends Record<string, ColumnBuilder<any, any, any>>,
-  Params extends Record<string, RowBuilder<Row>>,
-> =
-  HasExactlyOneKnownKey<Params> extends true
-    ? ScheduledReducerOrProcedure<Params>
-    : never;
-
 /**
  * Internal erased form of a scheduled reducer/procedure export.
  *
- * The public `Schema.schedule(...)` API preserves row/return-type checks before
- * values enter `pendingSchedules`. From this point on, schedule resolution only
- * needs the export object identity to look up its registered function name.
+ * Public reducer/procedure schedule options preserve row/return-type checks
+ * before values enter `pendingSchedules`. Legacy table schedules still resolve
+ * through export object identity.
  */
 type UntypedScheduledFunctionExport =
   | ReducerExport<any, any>
@@ -99,7 +84,7 @@ export class SchemaInner<
    * Used for resolving scheduled table targets.
    */
   functionExports: Map<UntypedScheduledFunctionExport, string> = new Map();
-  tableSourceNames: Map<UntypedTableSchema, string> = new Map();
+  tableSourceNames: Map<UntypedTableSchema, string[]> = new Map();
   httpHandlerExports: Map<HttpHandlerExport<UntypedSchemaDef>, string> =
     new Map();
   pendingSchedules: PendingSchedule[] = [];
@@ -129,26 +114,59 @@ export class SchemaInner<
   }
 
   resolveSchedules() {
-    for (const { reducer, table } of this.pendingSchedules) {
-      const tableName = this.tableSourceNames.get(table);
+    // Pending schedules come from two API paths:
+    // - legacy table({ scheduled }) schedules already know their tableName and
+    //   scheduleAtCol because schema() resolves them while iterating table keys
+    // - reducer/procedure({ onSchedule }) schedules only know the table handle,
+    //   so resolve them through tableSourceNames and reject duplicate table
+    //   handle registrations because the target table name is ambiguous
+    const scheduledTables = new Map<string, string>();
+    for (const {
+      functionName: knownFunctionName,
+      reducer,
+      table,
+      tableName: knownTableName,
+      scheduleAtCol: knownScheduleAtCol,
+    } of this.pendingSchedules) {
+      let tableName = knownTableName;
+      if (tableName === undefined) {
+        const tableNames = this.tableSourceNames.get(table);
+        if (tableNames !== undefined && tableNames.length > 1) {
+          throw new TypeError(
+            'Schedule target table is registered more than once in this schema. Use a distinct table handle for each scheduled table.'
+          );
+        }
+        tableName = tableNames?.[0];
+      }
       if (tableName === undefined) {
         throw new TypeError(
           'Schedule target table is not part of this schema.'
         );
       }
 
-      const { scheduleAtCol } = table;
+      const scheduleAtCol = knownScheduleAtCol ?? table.scheduleAtCol;
       if (scheduleAtCol === undefined) {
         throw new TypeError(
           `Table ${tableName} defines a schedule, but it does not have a ScheduleAt column.`
         );
       }
 
-      const functionName = this.functionExports.get(reducer());
+      const functionName =
+        knownFunctionName ??
+        (reducer === undefined
+          ? undefined
+          : this.functionExports.get(reducer()));
       if (functionName === undefined) {
         const msg = `Table ${tableName} defines a schedule, but it seems like the associated function was not exported.`;
         throw new TypeError(msg);
       }
+      const existingFunctionName = scheduledTables.get(tableName);
+      if (existingFunctionName !== undefined) {
+        throw new TypeError(
+          `Table ${tableName} defines multiple schedules: ${existingFunctionName} and ${functionName}. A schedule table can only be used by one reducer or procedure.`
+        );
+      }
+      scheduledTables.set(tableName, functionName);
       this.moduleDef.schedules.push({
         sourceName: undefined,
         tableName,
@@ -177,7 +195,10 @@ export class SchemaInner<
 
 type PendingSchedule = {
   table: UntypedTableSchema;
-  reducer: () => UntypedScheduledFunctionExport;
+  tableName?: string;
+  scheduleAtCol?: number;
+  reducer?: () => UntypedScheduledFunctionExport;
+  functionName?: string;
 };
 type PendingHttpRoute = {
   handler: HttpHandlerExport<UntypedSchemaDef>;
@@ -298,19 +319,19 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
   ): ReducerExport<S, Params>;
   reducer(fn: Reducer<S, {}>): ReducerExport<S, {}>;
   reducer<Params extends ParamsObj>(
-    opts: ReducerOpts,
+    opts: ReducerOptsWithOptionalName<Params>,
     params: Params,
     fn: Reducer<S, Params>
   ): ReducerExport<S, Params>;
-  reducer(opts: ReducerOpts, fn: Reducer<S, {}>): ReducerExport<S, {}>;
+  reducer(opts: ReducerOpts<{}>, fn: Reducer<S, {}>): ReducerExport<S, {}>;
   reducer<Params extends ParamsObj>(
     ...args:
       | [Params, Reducer<S, Params>]
       | [Reducer<S, {}>]
-      | [ReducerOpts, Params, Reducer<S, Params>]
-      | [ReducerOpts, Reducer<S, {}>]
+      | [ReducerOptsWithOptionalName<Params>, Params, Reducer<S, Params>]
+      | [ReducerOpts<{}>, Reducer<S, {}>]
   ): ReducerExport<S, Params> {
-    let opts: ReducerOpts | undefined,
+    let opts: ReducerOptsWithOptionalName<Params> | undefined,
       params: Params = {} as Params,
       fn: Reducer<S, Params>;
     switch (args.length) {
@@ -320,7 +341,8 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
       case 2: {
         let arg1;
         [arg1, fn] = args;
-        if (typeof arg1.name === 'string') opts = arg1 as ReducerOpts;
+        if (typeof arg1.name === 'string')
+          opts = arg1 as ReducerOptsWithOptionalName<Params>;
         else params = arg1 as Params;
         break;
       }
@@ -349,7 +371,7 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
    * ```
    */
   init(fn: Reducer<S, {}>): ReducerExport<S, {}>;
-  init(opts: ReducerOpts, fn: Reducer<S, {}>): ReducerExport<S, {}>;
+  init(opts: ReducerOpts<{}>, fn: Reducer<S, {}>): ReducerExport<S, {}>;
   init(
     ...args: [Reducer<S, {}>] | [ReducerOpts, Reducer<S, {}>]
   ): ReducerExport<S, {}> {
@@ -382,7 +404,10 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
    * );
    */
   clientConnected(fn: Reducer<S, {}>): ReducerExport<S, {}>;
-  clientConnected(opts: ReducerOpts, fn: Reducer<S, {}>): ReducerExport<S, {}>;
+  clientConnected(
+    opts: ReducerOpts<{}>,
+    fn: Reducer<S, {}>
+  ): ReducerExport<S, {}>;
   clientConnected(
     ...args: [Reducer<S, {}>] | [ReducerOpts, Reducer<S, {}>]
   ): ReducerExport<S, {}> {
@@ -417,7 +442,7 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
    */
   clientDisconnected(fn: Reducer<S, {}>): ReducerExport<S, {}>;
   clientDisconnected(
-    opts: ReducerOpts,
+    opts: ReducerOpts<{}>,
     fn: Reducer<S, {}>
   ): ReducerExport<S, {}>;
   clientDisconnected(
@@ -522,13 +547,13 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
     fn: ProcedureFn<S, {}, Ret>
   ): ProcedureExport<S, {}, Ret>;
   procedure<Params extends ParamsObj, Ret extends TypeBuilder<any, any>>(
-    opts: ProcedureOpts,
+    opts: ProcedureOptsWithOptionalName<Params, Ret>,
     params: Params,
     ret: Ret,
     fn: ProcedureFn<S, Params, Ret>
   ): ProcedureExport<S, Params, Ret>;
   procedure<Ret extends TypeBuilder<any, any>>(
-    opts: ProcedureOpts,
+    opts: ProcedureOpts<{}, Ret>,
     ret: Ret,
     fn: ProcedureFn<S, {}, Ret>
   ): ProcedureExport<S, {}, Ret>;
@@ -536,10 +561,15 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
     ...args:
       | [Params, Ret, ProcedureFn<S, Params, Ret>]
       | [Ret, ProcedureFn<S, Params, Ret>]
-      | [ProcedureOpts, Params, Ret, ProcedureFn<S, Params, Ret>]
-      | [ProcedureOpts, Ret, ProcedureFn<S, Params, Ret>]
+      | [
+          ProcedureOptsWithOptionalName<Params, Ret>,
+          Params,
+          Ret,
+          ProcedureFn<S, Params, Ret>,
+        ]
+      | [ProcedureOpts<{}, Ret>, Ret, ProcedureFn<S, Params, Ret>]
   ): ProcedureExport<S, Params, Ret> {
-    let opts: ProcedureOpts | undefined,
+    let opts: ProcedureOptsWithOptionalName<Params, Ret> | undefined,
       params: Params = {} as Params,
       ret: Ret,
       fn: ProcedureFn<S, Params, Ret>;
@@ -550,7 +580,8 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
       case 3: {
         let arg1;
         [arg1, ret, fn] = args;
-        if (typeof arg1.name === 'string') opts = arg1 as ProcedureOpts;
+        if (typeof arg1.name === 'string')
+          opts = arg1 as ProcedureOptsWithOptionalName<Params, Ret>;
         else params = arg1 as Params;
         break;
       }
@@ -559,31 +590,6 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
         break;
     }
     return makeProcedureExport(this.#ctx, opts, params, ret, fn);
-  }
-
-  /**
-   * Registers a table as the schedule table for a reducer or procedure.
-   *
-   * Prefer this over `table({ scheduled })` when table definitions and
-   * reducer/procedure definitions live in separate modules.
-   */
-  schedule<
-    Row extends Record<string, ColumnBuilder<any, any, any>>,
-    Idx extends readonly IndexOpts<keyof Row & string>[],
-    Params extends Record<string, RowBuilder<Row>>,
-  >(
-    table: TableSchema<Row, Idx>,
-    reducerOrProcedure: ScheduledFunctionExport<Row, Params>
-  ): ModuleExport {
-    return {
-      [exportContext]: this.#ctx,
-      [registerExport](ctx, _exportName) {
-        ctx.pendingSchedules.push({
-          table,
-          reducer: () => reducerOrProcedure,
-        });
-      },
-    };
   }
 
   httpHandler(fn: HandlerFn<S>): HttpHandlerExport<S>;
@@ -706,11 +712,18 @@ export function schema<const H extends Record<string, UntypedTableSchema>>(
     for (const [accName, table] of Object.entries(tables)) {
       const tableDef = table.tableDef(ctx, accName);
       tableSchemas[accName] = tableToSchema(accName, table, tableDef);
-      ctx.tableSourceNames.set(table, tableDef.sourceName);
+      const tableSourceNames = ctx.tableSourceNames.get(table);
+      if (tableSourceNames === undefined) {
+        ctx.tableSourceNames.set(table, [tableDef.sourceName]);
+      } else {
+        tableSourceNames.push(tableDef.sourceName);
+      }
       ctx.moduleDef.tables.push(tableDef);
       if (table.schedule) {
         ctx.pendingSchedules.push({
           table,
+          tableName: tableDef.sourceName,
+          scheduleAtCol: table.schedule.scheduleAtCol,
           reducer: table.schedule.reducer,
         });
       }

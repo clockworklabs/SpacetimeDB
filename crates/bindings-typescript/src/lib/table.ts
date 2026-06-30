@@ -195,8 +195,9 @@ export type TableOpts<Row extends RowObj> = {
   indexes?: IndexOpts<keyof Row & string>[]; // declarative multi‑column indexes
   constraints?: ConstraintOpts<keyof Row & string>[];
   /**
-   * @deprecated Prefer `spacetime.schedule(table, reducerOrProcedure)` so table
-   * definitions can live in a separate module from reducer/procedure definitions.
+   * @deprecated Prefer `spacetime.reducer({ onSchedule: table }, ...)` or
+   * `spacetime.procedure({ onSchedule: table }, ...)` so table definitions can
+   * live in a separate module from reducer/procedure definitions.
    */
   scheduled?: () =>
     | ReducerExport<any, { [k: string]: RowBuilder<RowObj> }>
@@ -496,7 +497,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
 
   const schedule: TableSchedule | undefined =
     scheduled && scheduleAtCol !== undefined
-      ? { reducer: scheduled }
+      ? { scheduleAtCol, reducer: scheduled }
       : undefined;
 
   return {

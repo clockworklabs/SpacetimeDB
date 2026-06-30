@@ -3,6 +3,7 @@ import type { RawScheduleDefV10, RawTableDefV10 } from './autogen/types';
 import type { IndexOpts } from './indexes';
 import type { ModuleContext } from './schema';
 import type { ColumnBuilder, RowBuilder } from './type_builders';
+import type { HasExactlyOneKnownKey } from './type_util';
 import type { ProcedureExport, ReducerExport } from '../server';
 
 /**
@@ -17,8 +18,18 @@ export type UntypedScheduledFunctionExport =
   | ProcedureExport<any, any, any>;
 
 export type TableSchedule = {
+  scheduleAtCol: number;
   reducer: () => UntypedScheduledFunctionExport;
 };
+
+export type ScheduleTableForParams<Params extends Record<string, any>> =
+  HasExactlyOneKnownKey<Params> extends true
+    ? Params[keyof Params] extends RowBuilder<
+        infer Row extends Record<string, ColumnBuilder<any, any, any>>
+      >
+      ? TableSchema<Row, readonly IndexOpts<keyof Row & string>[]>
+      : never
+    : never;
 
 /**
  * Represents a handle to a database table, including its name, row type, and row spacetime type.
@@ -72,8 +83,9 @@ export type TableSchema<
   /**
    * The legacy schedule defined on the table, if any.
    *
-   * @deprecated Prefer `spacetime.schedule(table, reducerOrProcedure)` so table
-   * definitions can live in a separate module from reducer/procedure definitions.
+   * @deprecated Prefer `spacetime.reducer({ onSchedule: table }, ...)` or
+   * `spacetime.procedure({ onSchedule: table }, ...)` so table definitions can
+   * live in a separate module from reducer/procedure definitions.
    */
   readonly schedule?: TableSchedule;
 };
