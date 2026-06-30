@@ -467,6 +467,8 @@ pub struct Smoketest {
     module_name: String,
     /// Path to pre-compiled WASM file (if using precompiled_module).
     precompiled_wasm_path: Option<PathBuf>,
+    /// Optional path to a specific CLI binary to run for this test.
+    cli_path: Option<PathBuf>,
 }
 
 /// Response from an HTTP API call.
@@ -726,6 +728,7 @@ pub struct SmoketestBuilder {
     autopublish: bool,
     pg_port: Option<u16>,
     server_url_override: Option<String>,
+    cli_path: Option<PathBuf>,
 }
 
 struct DataDirFixture {
@@ -751,11 +754,18 @@ impl SmoketestBuilder {
             autopublish: true,
             pg_port: None,
             server_url_override: None,
+            cli_path: None,
         }
     }
 
     pub fn server_url(mut self, url: &str) -> Self {
         self.server_url_override = Some(url.to_string());
+        self
+    }
+
+    /// Uses a specific CLI binary instead of the pre-built CLI for this test.
+    pub fn cli_path(mut self, path: impl AsRef<Path>) -> Self {
+        self.cli_path = Some(path.as_ref().to_path_buf());
         self
     }
 
@@ -840,7 +850,9 @@ impl SmoketestBuilder {
     /// Run `cargo smoketest prepare` to build binaries before running tests.
     pub fn build(self) -> Smoketest {
         // Check binaries first - this will panic with a helpful message if missing/stale
-        let _ = ensure_binaries_built();
+        if self.cli_path.is_none() {
+            let _ = ensure_binaries_built();
+        }
         let build_start = Instant::now();
 
         let fixture_identity = self
@@ -921,6 +933,7 @@ impl SmoketestBuilder {
             config_path,
             module_name,
             precompiled_wasm_path: precompiled_wasm_path.clone(),
+            cli_path: self.cli_path.clone(),
             bindings_features: self.bindings_features.clone(),
             extra_deps: self.extra_deps.clone(),
         };
@@ -950,6 +963,10 @@ pub fn noop(_ctx: &ReducerContext) {}
 }
 
 impl Smoketest {
+    fn cli_path(&self) -> PathBuf {
+        self.cli_path.clone().unwrap_or_else(ensure_binaries_built)
+    }
+
     /// Creates a new builder for configuring a smoketest.
     pub fn builder() -> SmoketestBuilder {
         SmoketestBuilder::new()
@@ -1071,7 +1088,7 @@ impl Smoketest {
     /// Callers should pass `--server` explicitly when the command needs it.
     pub fn spacetime_cmd(&self, args: &[&str]) -> Output {
         let start = Instant::now();
-        let cli_path = ensure_binaries_built();
+        let cli_path = self.cli_path();
         let output = Command::new(&cli_path)
             .arg("--config-path")
             .arg(&self.config_path)
@@ -1092,7 +1109,7 @@ impl Smoketest {
     /// Callers should pass `--server` explicitly when the command needs it.
     pub fn spacetime_cmd_with_stdin(&self, args: &[&str], stdin_input: &str) -> Output {
         let start = Instant::now();
-        let cli_path = ensure_binaries_built();
+        let cli_path = self.cli_path();
         let mut child = Command::new(&cli_path)
             .arg("--config-path")
             .arg(&self.config_path)
@@ -1383,7 +1400,7 @@ log = "0.4"
     pub fn spacetime_build(&self) -> Output {
         let start = Instant::now();
         let project_path = self.project_dir.path().to_str().unwrap();
-        let cli_path = ensure_binaries_built();
+        let cli_path = self.cli_path();
 
         let mut cmd = Command::new(&cli_path);
         cmd.args(["build", "--module-path", project_path])
@@ -1430,7 +1447,7 @@ log = "0.4"
             // Build the WASM module from source
             let project_path = self.project_dir.path().to_str().unwrap().to_string();
             let build_start = Instant::now();
-            let cli_path = ensure_binaries_built();
+            let cli_path = self.cli_path();
             let target_dir = shared_target_dir();
 
             let mut build_cmd = Command::new(&cli_path);
@@ -1637,7 +1654,7 @@ log = "0.4"
     ///
     /// This is useful for tests that need to test with multiple identities.
     pub fn new_identity(&self) -> Result<()> {
-        let cli_path = ensure_binaries_built();
+        let cli_path = self.cli_path();
         let config_path_str = self.config_path.to_str().unwrap();
 
         // Logout first (ignore errors - may not be logged in)
@@ -1736,7 +1753,7 @@ log = "0.4"
     ) -> Result<Vec<serde_json::Value>> {
         let config_path_str = self.config_path.to_str().unwrap();
 
-        let cli_path = ensure_binaries_built();
+        let cli_path = self.cli_path();
         let mut cmd = Command::new(&cli_path);
         let mut args = vec![
             "--config-path".to_string(),
@@ -1786,7 +1803,7 @@ log = "0.4"
         n: Option<usize>,
         confirmed: Option<bool>,
     ) -> Result<SubscriptionHandle> {
-        let cli_path = ensure_binaries_built();
+        let cli_path = self.cli_path();
         let mut cmd = Command::new(&cli_path);
         // Use --print-initial-update so we know when subscription is established
         let config_path_str = self.config_path.to_str().unwrap().to_string();
