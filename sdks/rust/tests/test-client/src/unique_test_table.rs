@@ -3,7 +3,7 @@ use spacetimedb_sdk::{i256, u256, ConnectionId, Event, Identity, Table, Uuid};
 use std::sync::Arc;
 use test_counter::TestCounter;
 
-pub trait UniqueTestTable: std::fmt::Debug {
+pub trait UniqueTestTable: std::fmt::Debug + Sized {
     type Key: Clone + Send + Sync + PartialEq + std::fmt::Debug + 'static;
 
     fn as_key(&self) -> &Self::Key;
@@ -17,6 +17,8 @@ pub trait UniqueTestTable: std::fmt::Debug {
 
     fn on_insert(ctx: &impl RemoteDbContext, callback: impl FnMut(&EventContext, &Self) + Send + 'static);
     fn on_delete(ctx: &impl RemoteDbContext, callback: impl FnMut(&EventContext, &Self) + Send + 'static);
+
+    fn find(ctx: &impl RemoteDbContext, key: &Self::Key) -> Option<Self>;
 }
 
 pub fn insert_then_delete_one<T: UniqueTestTable>(
@@ -44,6 +46,11 @@ pub fn insert_then_delete_one<T: UniqueTestTable>(
                         "Unexpected Reducer variant {:?}",
                         reducer_event.reducer,
                     );
+                    anyhow::ensure!(
+                        T::find(ctx, row.as_key()).is_none(),
+                        "Expected row not to be present in client cache during delete event",
+                    );
+
                     Ok(())
                 };
 
@@ -68,6 +75,16 @@ pub fn insert_then_delete_one<T: UniqueTestTable>(
                     "Unexpected Reducer variant {:?}",
                     reducer_event.reducer,
                 );
+
+                let Some(row_from_ctx) = T::find(ctx, row.as_key()) else {
+                    anyhow::bail!("Expected row to be present in client cache during insert event");
+                };
+
+                anyhow::ensure!(
+                    row.as_value() == row_from_ctx.as_value(),
+                    "Expected version of row in client cache to match version passed to on_insert callback"
+                );
+
                 Ok(())
             };
 
@@ -133,6 +150,10 @@ macro_rules! impl_unique_test_table {
             }
             fn on_delete(ctx: &impl RemoteDbContext, callback: impl FnMut(&EventContext, &$table) + Send + 'static) {
                 ctx.db().$accessor_method().on_delete(callback);
+            }
+
+            fn find(ctx: &impl RemoteDbContext, key: &Self::Key) -> Option<Self> {
+                ctx.db().$accessor_method().$field_name().find(key)
             }
         }
     };
@@ -300,5 +321,167 @@ impl_unique_test_table! {
         delete_then = delete_unique_uuid_then;
         delete_reducer_event = DeleteUniqueUuid;
         accessor_method = unique_uuid;
+    }
+}
+
+impl_unique_test_table! {
+    UniqueOptionU8 {
+        Key = Option<u8>;
+        key_field_name = n;
+        insert_then = insert_unique_option_u_8_then;
+        insert_reducer_event = InsertUniqueOptionU8;
+        delete_then = delete_unique_option_u_8_then;
+        delete_reducer_event = DeleteUniqueOptionU8;
+        accessor_method = unique_option_u_8;
+    }
+    UniqueOptionU16 {
+        Key = Option<u16>;
+        key_field_name = n;
+        insert_then = insert_unique_option_u_16_then;
+        insert_reducer_event = InsertUniqueOptionU16;
+        delete_then = delete_unique_option_u_16_then;
+        delete_reducer_event = DeleteUniqueOptionU16;
+        accessor_method = unique_option_u_16;
+    }
+    UniqueOptionU32 {
+        Key = Option<u32>;
+        key_field_name = n;
+        insert_then = insert_unique_option_u_32_then;
+        insert_reducer_event = InsertUniqueOptionU32;
+        delete_then = delete_unique_option_u_32_then;
+        delete_reducer_event = DeleteUniqueOptionU32;
+        accessor_method = unique_option_u_32;
+    }
+    UniqueOptionU64 {
+        Key = Option<u64>;
+        key_field_name = n;
+        insert_then = insert_unique_option_u_64_then;
+        insert_reducer_event = InsertUniqueOptionU64;
+        delete_then = delete_unique_option_u_64_then;
+        delete_reducer_event = DeleteUniqueOptionU64;
+        accessor_method = unique_option_u_64;
+    }
+    UniqueOptionU128 {
+        Key = Option<u128>;
+        key_field_name = n;
+        insert_then = insert_unique_option_u_128_then;
+        insert_reducer_event = InsertUniqueOptionU128;
+        delete_then = delete_unique_option_u_128_then;
+        delete_reducer_event = DeleteUniqueOptionU128;
+        accessor_method = unique_option_u_128;
+    }
+    UniqueOptionU256 {
+        Key = Option<u256>;
+        key_field_name = n;
+        insert_then = insert_unique_option_u_256_then;
+        insert_reducer_event = InsertUniqueOptionU256;
+        delete_then = delete_unique_option_u_256_then;
+        delete_reducer_event = DeleteUniqueOptionU256;
+        accessor_method = unique_option_u_256;
+    }
+
+    UniqueOptionI8 {
+        Key = Option<i8>;
+        key_field_name = n;
+        insert_then = insert_unique_option_i_8_then;
+        insert_reducer_event = InsertUniqueOptionI8;
+        delete_then = delete_unique_option_i_8_then;
+        delete_reducer_event = DeleteUniqueOptionI8;
+        accessor_method = unique_option_i_8;
+    }
+    UniqueOptionI16 {
+        Key = Option<i16>;
+        key_field_name = n;
+        insert_then = insert_unique_option_i_16_then;
+        insert_reducer_event = InsertUniqueOptionI16;
+        delete_then = delete_unique_option_i_16_then;
+        delete_reducer_event = DeleteUniqueOptionI16;
+        accessor_method = unique_option_i_16;
+    }
+    UniqueOptionI32 {
+        Key = Option<i32>;
+        key_field_name = n;
+        insert_then = insert_unique_option_i_32_then;
+        insert_reducer_event = InsertUniqueOptionI32;
+        delete_then = delete_unique_option_i_32_then;
+        delete_reducer_event = DeleteUniqueOptionI32;
+        accessor_method = unique_option_i_32;
+    }
+    UniqueOptionI64 {
+        Key = Option<i64>;
+        key_field_name = n;
+        insert_then = insert_unique_option_i_64_then;
+        insert_reducer_event = InsertUniqueOptionI64;
+        delete_then = delete_unique_option_i_64_then;
+        delete_reducer_event = DeleteUniqueOptionI64;
+        accessor_method = unique_option_i_64;
+    }
+    UniqueOptionI128 {
+        Key = Option<i128>;
+        key_field_name = n;
+        insert_then = insert_unique_option_i_128_then;
+        insert_reducer_event = InsertUniqueOptionI128;
+        delete_then = delete_unique_option_i_128_then;
+        delete_reducer_event = DeleteUniqueOptionI128;
+        accessor_method = unique_option_i_128;
+    }
+    UniqueOptionI256 {
+        Key = Option<i256>;
+        key_field_name = n;
+        insert_then = insert_unique_option_i_256_then;
+        insert_reducer_event = InsertUniqueOptionI256;
+        delete_then = delete_unique_option_i_256_then;
+        delete_reducer_event = DeleteUniqueOptionI256;
+        accessor_method = unique_option_i_256;
+    }
+
+    UniqueOptionBool {
+        Key = Option<bool>;
+        key_field_name = b;
+        insert_then = insert_unique_option_bool_then;
+        insert_reducer_event = InsertUniqueOptionBool;
+        delete_then = delete_unique_option_bool_then;
+        delete_reducer_event = DeleteUniqueOptionBool;
+        accessor_method = unique_option_bool;
+    }
+
+    UniqueOptionString {
+        Key = Option<String>;
+        key_field_name = s;
+        insert_then = insert_unique_option_string_then;
+        insert_reducer_event = InsertUniqueOptionString;
+        delete_then = delete_unique_option_string_then;
+        delete_reducer_event = DeleteUniqueOptionString;
+        accessor_method = unique_option_string;
+    }
+
+    UniqueOptionIdentity {
+        Key = Option<Identity>;
+        key_field_name = i;
+        insert_then = insert_unique_option_identity_then;
+        insert_reducer_event = InsertUniqueOptionIdentity;
+        delete_then = delete_unique_option_identity_then;
+        delete_reducer_event = DeleteUniqueOptionIdentity;
+        accessor_method = unique_option_identity;
+    }
+
+    UniqueOptionConnectionId {
+        Key = Option<ConnectionId>;
+        key_field_name = a;
+        insert_then = insert_unique_option_connection_id_then;
+        insert_reducer_event = InsertUniqueOptionConnectionId;
+        delete_then = delete_unique_option_connection_id_then;
+        delete_reducer_event = DeleteUniqueOptionConnectionId;
+        accessor_method = unique_option_connection_id;
+    }
+
+    UniqueOptionUuid {
+        Key = Option<Uuid>;
+        key_field_name = u;
+        insert_then = insert_unique_option_uuid_then;
+        insert_reducer_event = InsertUniqueOptionUuid;
+        delete_then = delete_unique_option_uuid_then;
+        delete_reducer_event = DeleteUniqueOptionUuid;
+        accessor_method = unique_option_uuid;
     }
 }

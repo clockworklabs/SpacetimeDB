@@ -85,11 +85,18 @@ pub(super) fn type_ref_name(module: &ModuleDef, typeref: AlgebraicTypeRef) -> St
 pub(super) fn is_type_filterable(typespace: &TypespaceForGenerate, ty: &AlgebraicTypeUse) -> bool {
     match ty {
         AlgebraicTypeUse::Primitive(prim) => !matches!(prim, PrimitiveType::F32 | PrimitiveType::F64),
-        AlgebraicTypeUse::String | AlgebraicTypeUse::Identity | AlgebraicTypeUse::ConnectionId => true,
+        AlgebraicTypeUse::String
+        | AlgebraicTypeUse::Identity
+        | AlgebraicTypeUse::ConnectionId
+        | AlgebraicTypeUse::Uuid => true,
         // Sum types with all unit variants:
         AlgebraicTypeUse::Never => true,
-        AlgebraicTypeUse::Option(inner) => matches!(&**inner, AlgebraicTypeUse::Unit),
+        // At the top level, the only case where a ref can appear that should be filterable is a simple enum.
         AlgebraicTypeUse::Ref(r) => typespace[r].is_plain_enum(),
+
+        // Options of filterable types:
+        AlgebraicTypeUse::Option(inner) => is_type_filterable(typespace, inner),
+
         _ => false,
     }
 }
