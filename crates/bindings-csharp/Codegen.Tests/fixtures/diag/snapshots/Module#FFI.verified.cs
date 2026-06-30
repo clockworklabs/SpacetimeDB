@@ -1194,6 +1194,25 @@ namespace SpacetimeDB.Internal.TableHandles
                 TestDefaultFieldValues,
                 global::TestDefaultFieldValues
             >.DoClear();
+
+        public sealed class UniqueFieldUniqueIndex
+            : UniqueIndex<
+                TestDefaultFieldValues,
+                global::TestDefaultFieldValues,
+                int?,
+                SpacetimeDB.BSATN.ValueOption<int, SpacetimeDB.BSATN.I32>
+            >
+        {
+            internal UniqueFieldUniqueIndex()
+                : base("TestDefaultFieldValues_UniqueField_idx_btree") { }
+
+            // Important: don't move this to the base class.
+            // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+            // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+            public global::TestDefaultFieldValues? Find(int? key) => FindSingle(key);
+        }
+
+        public UniqueFieldUniqueIndex UniqueField => new();
     }
 
     public readonly struct TestDuplicateTableName
@@ -2058,6 +2077,25 @@ namespace SpacetimeDB.Internal.TableHandles
                 global::TestUniqueNotEquatable
             >.DoClear();
 
+        public sealed class UniqueFieldUniqueIndex
+            : UniqueIndex<
+                TestUniqueNotEquatable,
+                global::TestUniqueNotEquatable,
+                int?,
+                SpacetimeDB.BSATN.ValueOption<int, SpacetimeDB.BSATN.I32>
+            >
+        {
+            internal UniqueFieldUniqueIndex()
+                : base("TestUniqueNotEquatable_UniqueField_idx_btree") { }
+
+            // Important: don't move this to the base class.
+            // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+            // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+            public global::TestUniqueNotEquatable? Find(int? key) => FindSingle(key);
+        }
+
+        public UniqueFieldUniqueIndex UniqueField => new();
+
         public sealed class PrimaryKeyFieldUniqueIndex
             : UniqueIndex<
                 TestUniqueNotEquatable,
@@ -2890,6 +2928,22 @@ namespace SpacetimeDB.Internal.ViewHandles
         /// It also takes into account modifications by the current transaction.
         /// </summary>
         public ulong Count => DoCount();
+
+        public sealed class UniqueFieldIndex
+            : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
+                global::SpacetimeDB.Internal.ViewHandles.TestDefaultFieldValuesReadOnly,
+                global::TestDefaultFieldValues,
+                int?,
+                SpacetimeDB.BSATN.ValueOption<int, SpacetimeDB.BSATN.I32>
+            >
+        {
+            internal UniqueFieldIndex()
+                : base("TestDefaultFieldValues_UniqueField_idx_btree") { }
+
+            public global::TestDefaultFieldValues? Find(int? key) => FindSingle(key);
+        }
+
+        public UniqueFieldIndex UniqueField => new();
     }
 
     public sealed class TestDuplicateTableNameReadOnly
@@ -3160,6 +3214,22 @@ namespace SpacetimeDB.Internal.ViewHandles
         /// It also takes into account modifications by the current transaction.
         /// </summary>
         public ulong Count => DoCount();
+
+        public sealed class UniqueFieldIndex
+            : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
+                global::SpacetimeDB.Internal.ViewHandles.TestUniqueNotEquatableReadOnly,
+                global::TestUniqueNotEquatable,
+                int?,
+                SpacetimeDB.BSATN.ValueOption<int, SpacetimeDB.BSATN.I32>
+            >
+        {
+            internal UniqueFieldIndex()
+                : base("TestUniqueNotEquatable_UniqueField_idx_btree") { }
+
+            public global::TestUniqueNotEquatable? Find(int? key) => FindSingle(key);
+        }
+
+        public UniqueFieldIndex UniqueField => new();
 
         public sealed class PrimaryKeyFieldIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
