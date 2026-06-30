@@ -115,7 +115,7 @@ fn get_command() -> Command {
 │            888                                                                                        │
 │            888                                                                                        │
 │            888                                                                                        │
-│                                  "Multiplayer at the speed of light"                                  │
+│                                  "Development at the speed of light"                                  │
 │                                                                                                       │
 ├───────────────────────────────────────────────────────────────────────────────────────────────────────┤
 │ SpacetimeDB Command Line Tool                                                                         │
