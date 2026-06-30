@@ -782,9 +782,21 @@ SPACETIMEDB_REDUCER(insert_one_u8, ReducerContext ctx, uint8_t n)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_one_u8, ReducerContext ctx, uint8_t n)
+{
+    ctx.db[one_u8].delete_by_value(OneU8{.n = n});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_one_u16, ReducerContext ctx, uint16_t n)
 {
     ctx.db[one_u16].insert(OneU16{.n = n});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_one_u16, ReducerContext ctx, uint16_t n)
+{
+    ctx.db[one_u16].delete_by_value(OneU16{.n = n});
     return Ok();
 }
 
@@ -794,9 +806,21 @@ SPACETIMEDB_REDUCER(insert_one_u32, ReducerContext ctx, uint32_t n)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_one_u32, ReducerContext ctx, uint32_t n)
+{
+    ctx.db[one_u32].delete_by_value(OneU32{.n = n});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_one_u64, ReducerContext ctx, uint64_t n)
 {
     ctx.db[one_u64].insert(OneU64{.n = n});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_one_u64, ReducerContext ctx, uint64_t n)
+{
+    ctx.db[one_u64].delete_by_value(OneU64{.n = n});
     return Ok();
 }
 
@@ -806,9 +830,21 @@ SPACETIMEDB_REDUCER(insert_one_u128, ReducerContext ctx, u128 n)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_one_u128, ReducerContext ctx, u128 n)
+{
+    ctx.db[one_u128].delete_by_value(OneU128{.n = n});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_one_u256, ReducerContext ctx, u256 n)
 {
     ctx.db[one_u256].insert(OneU256{.n = n});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_one_u256, ReducerContext ctx, u256 n)
+{
+    ctx.db[one_u256].delete_by_value(OneU256{.n = n});
     return Ok();
 }
 
@@ -818,9 +854,21 @@ SPACETIMEDB_REDUCER(insert_one_i8, ReducerContext ctx, int8_t n)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_one_i8, ReducerContext ctx, int8_t n)
+{
+    ctx.db[one_i8].delete_by_value(OneI8{.n = n});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_one_i16, ReducerContext ctx, int16_t n)
 {
     ctx.db[one_i16].insert(OneI16{.n = n});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_one_i16, ReducerContext ctx, int16_t n)
+{
+    ctx.db[one_i16].delete_by_value(OneI16{.n = n});
     return Ok();
 }
 
@@ -830,9 +878,21 @@ SPACETIMEDB_REDUCER(insert_one_i32, ReducerContext ctx, int32_t n)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_one_i32, ReducerContext ctx, int32_t n)
+{
+    ctx.db[one_i32].delete_by_value(OneI32{.n = n});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_one_i64, ReducerContext ctx, int64_t n)
 {
     ctx.db[one_i64].insert(OneI64{.n = n});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_one_i64, ReducerContext ctx, int64_t n)
+{
+    ctx.db[one_i64].delete_by_value(OneI64{.n = n});
     return Ok();
 }
 
@@ -842,9 +902,21 @@ SPACETIMEDB_REDUCER(insert_one_i128, ReducerContext ctx, i128 n)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_one_i128, ReducerContext ctx, i128 n)
+{
+    ctx.db[one_i128].delete_by_value(OneI128{.n = n});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_one_i256, ReducerContext ctx, i256 n)
 {
     ctx.db[one_i256].insert(OneI256{.n = n});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_one_i256, ReducerContext ctx, i256 n)
+{
+    ctx.db[one_i256].delete_by_value(OneI256{.n = n});
     return Ok();
 }
 
@@ -854,9 +926,21 @@ SPACETIMEDB_REDUCER(insert_one_bool, ReducerContext ctx, bool b)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_one_bool, ReducerContext ctx, bool b)
+{
+    ctx.db[one_bool].delete_by_value(OneBool{.b = b});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_one_f32, ReducerContext ctx, float f)
 {
     ctx.db[one_f32].insert(OneF32{.f = f});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_one_f32, ReducerContext ctx, float f)
+{
+    ctx.db[one_f32].delete_by_value(OneF32{.f = f});
     return Ok();
 }
 
@@ -866,15 +950,33 @@ SPACETIMEDB_REDUCER(insert_one_f64, ReducerContext ctx, double f)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_one_f64, ReducerContext ctx, double f)
+{
+    ctx.db[one_f64].delete_by_value(OneF64{.f = f});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_one_string, ReducerContext ctx, std::string s)
 {
     ctx.db[one_string].insert(OneString{.s = s});
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_one_string, ReducerContext ctx, std::string s)
+{
+    ctx.db[one_string].delete_by_value(OneString{.s = s});
+    return Ok();
+}
+
  SPACETIMEDB_REDUCER(insert_one_identity, ReducerContext ctx, Identity i)
 {
     ctx.db[one_identity].insert(OneIdentity{.i = i});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_one_identity, ReducerContext ctx, Identity i)
+{
+    ctx.db[one_identity].delete_by_value(OneIdentity{.i = i});
     return Ok();
 } 
 
@@ -888,11 +990,23 @@ SPACETIMEDB_REDUCER(insert_one_string, ReducerContext ctx, std::string s)
 {
     ctx.db[one_timestamp].insert(OneTimestamp{.t = t});
     return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_one_timestamp, ReducerContext ctx, Timestamp t)
+{
+    ctx.db[one_timestamp].delete_by_value(OneTimestamp{.t = t});
+    return Ok();
 } 
 
 SPACETIMEDB_REDUCER(insert_one_uuid, ReducerContext ctx, Uuid u)
 {
     ctx.db[one_uuid].insert(OneUuid{.u = u});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_one_uuid, ReducerContext ctx, Uuid u)
+{
+    ctx.db[one_uuid].delete_by_value(OneUuid{.u = u});
     return Ok();
 }
 
@@ -914,9 +1028,21 @@ SPACETIMEDB_REDUCER(insert_one_simple_enum, ReducerContext ctx, SimpleEnum e)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_one_simple_enum, ReducerContext ctx, SimpleEnum e)
+{
+    ctx.db[one_simple_enum].delete_by_value(OneSimpleEnum{.e = e});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_one_enum_with_payload, ReducerContext ctx, EnumWithPayload e)
 {
     ctx.db[one_enum_with_payload].insert(OneEnumWithPayload{e});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_one_enum_with_payload, ReducerContext ctx, EnumWithPayload e)
+{
+    ctx.db[one_enum_with_payload].delete_by_value(OneEnumWithPayload{e});
     return Ok();
 }
 
@@ -927,9 +1053,21 @@ SPACETIMEDB_REDUCER(insert_one_unit_struct, ReducerContext ctx, UnitStruct s)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_one_unit_struct, ReducerContext ctx, UnitStruct s)
+{
+    ctx.db[one_unit_struct].delete_by_value(OneUnitStruct{s});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_one_byte_struct, ReducerContext ctx, ByteStruct s)
 {
     ctx.db[one_byte_struct].insert(OneByteStruct{s});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_one_byte_struct, ReducerContext ctx, ByteStruct s)
+{
+    ctx.db[one_byte_struct].delete_by_value(OneByteStruct{s});
     return Ok();
 }
 
@@ -939,9 +1077,21 @@ SPACETIMEDB_REDUCER(insert_one_every_primitive_struct, ReducerContext ctx, Every
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_one_every_primitive_struct, ReducerContext ctx, EveryPrimitiveStruct s)
+{
+    ctx.db[one_every_primitive_struct].delete_by_value(OneEveryPrimitiveStruct{s});
+    return Ok();
+}
+
  SPACETIMEDB_REDUCER(insert_one_every_vec_struct, ReducerContext ctx, EveryVecStruct s)
 {
     ctx.db[one_every_vec_struct].insert(OneEveryVecStruct{s});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_one_every_vec_struct, ReducerContext ctx, EveryVecStruct s)
+{
+    ctx.db[one_every_vec_struct].delete_by_value(OneEveryVecStruct{s});
     return Ok();
 } 
 
@@ -955,9 +1105,21 @@ SPACETIMEDB_REDUCER(insert_vec_u8, ReducerContext ctx, std::vector<uint8_t> n)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_vec_u8, ReducerContext ctx, std::vector<uint8_t> n)
+{
+    ctx.db[vec_u8].delete_by_value(VecU8{n});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_vec_u16, ReducerContext ctx, std::vector<uint16_t> n)
 {
     ctx.db[vec_u16].insert(VecU16{n});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_vec_u16, ReducerContext ctx, std::vector<uint16_t> n)
+{
+    ctx.db[vec_u16].delete_by_value(VecU16{n});
     return Ok();
 }
 
@@ -967,9 +1129,21 @@ SPACETIMEDB_REDUCER(insert_vec_u32, ReducerContext ctx, std::vector<uint32_t> n)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_vec_u32, ReducerContext ctx, std::vector<uint32_t> n)
+{
+    ctx.db[vec_u32].delete_by_value(VecU32{n});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_vec_u64, ReducerContext ctx, std::vector<uint64_t> n)
 {
     ctx.db[vec_u64].insert(VecU64{n});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_vec_u64, ReducerContext ctx, std::vector<uint64_t> n)
+{
+    ctx.db[vec_u64].delete_by_value(VecU64{n});
     return Ok();
 }
 
@@ -979,9 +1153,21 @@ SPACETIMEDB_REDUCER(insert_vec_u128, ReducerContext ctx, std::vector<u128> n)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_vec_u128, ReducerContext ctx, std::vector<u128> n)
+{
+    ctx.db[vec_u128].delete_by_value(VecU128{n});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_vec_u256, ReducerContext ctx, std::vector<u256> n)
 {
     ctx.db[vec_u256].insert(VecU256{n});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_vec_u256, ReducerContext ctx, std::vector<u256> n)
+{
+    ctx.db[vec_u256].delete_by_value(VecU256{n});
     return Ok();
 }
 
@@ -991,9 +1177,21 @@ SPACETIMEDB_REDUCER(insert_vec_i8, ReducerContext ctx, std::vector<int8_t> n)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_vec_i8, ReducerContext ctx, std::vector<int8_t> n)
+{
+    ctx.db[vec_i8].delete_by_value(VecI8{n});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_vec_i16, ReducerContext ctx, std::vector<int16_t> n)
 {
     ctx.db[vec_i16].insert(VecI16{n});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_vec_i16, ReducerContext ctx, std::vector<int16_t> n)
+{
+    ctx.db[vec_i16].delete_by_value(VecI16{n});
     return Ok();
 }
 
@@ -1003,9 +1201,21 @@ SPACETIMEDB_REDUCER(insert_vec_i32, ReducerContext ctx, std::vector<int32_t> n)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_vec_i32, ReducerContext ctx, std::vector<int32_t> n)
+{
+    ctx.db[vec_i32].delete_by_value(VecI32{n});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_vec_i64, ReducerContext ctx, std::vector<int64_t> n)
 {
     ctx.db[vec_i64].insert(VecI64{n});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_vec_i64, ReducerContext ctx, std::vector<int64_t> n)
+{
+    ctx.db[vec_i64].delete_by_value(VecI64{n});
     return Ok();
 }
 
@@ -1015,9 +1225,21 @@ SPACETIMEDB_REDUCER(insert_vec_i128, ReducerContext ctx, std::vector<i128> n)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_vec_i128, ReducerContext ctx, std::vector<i128> n)
+{
+    ctx.db[vec_i128].delete_by_value(VecI128{n});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_vec_i256, ReducerContext ctx, std::vector<i256> n)
 {
     ctx.db[vec_i256].insert(VecI256{n});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_vec_i256, ReducerContext ctx, std::vector<i256> n)
+{
+    ctx.db[vec_i256].delete_by_value(VecI256{n});
     return Ok();
 }
 
@@ -1027,9 +1249,21 @@ SPACETIMEDB_REDUCER(insert_vec_bool, ReducerContext ctx, std::vector<bool> b)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_vec_bool, ReducerContext ctx, std::vector<bool> b)
+{
+    ctx.db[vec_bool].delete_by_value(VecBool{b});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_vec_f32, ReducerContext ctx, std::vector<float> f)
 {
     ctx.db[vec_f32].insert(VecF32{f});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_vec_f32, ReducerContext ctx, std::vector<float> f)
+{
+    ctx.db[vec_f32].delete_by_value(VecF32{f});
     return Ok();
 }
 
@@ -1039,15 +1273,33 @@ SPACETIMEDB_REDUCER(insert_vec_f64, ReducerContext ctx, std::vector<double> f)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_vec_f64, ReducerContext ctx, std::vector<double> f)
+{
+    ctx.db[vec_f64].delete_by_value(VecF64{f});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_vec_string, ReducerContext ctx, std::vector<std::string> s)
 {
     ctx.db[vec_string].insert(VecString{s});
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_vec_string, ReducerContext ctx, std::vector<std::string> s)
+{
+    ctx.db[vec_string].delete_by_value(VecString{s});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_vec_identity, ReducerContext ctx, std::vector<Identity> i)
 {
     ctx.db[vec_identity].insert(VecIdentity{i});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_vec_identity, ReducerContext ctx, std::vector<Identity> i)
+{
+    ctx.db[vec_identity].delete_by_value(VecIdentity{i});
     return Ok();
 }
 
@@ -1063,9 +1315,21 @@ SPACETIMEDB_REDUCER(insert_vec_timestamp, ReducerContext ctx, std::vector<Timest
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_vec_timestamp, ReducerContext ctx, std::vector<Timestamp> t)
+{
+    ctx.db[vec_timestamp].delete_by_value(VecTimestamp{t});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_vec_uuid, ReducerContext ctx, std::vector<Uuid> u)
 {
     ctx.db[vec_uuid].insert(VecUuid{u});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_vec_uuid, ReducerContext ctx, std::vector<Uuid> u)
+{
+    ctx.db[vec_uuid].delete_by_value(VecUuid{u});
     return Ok();
 }
 
@@ -1075,9 +1339,21 @@ SPACETIMEDB_REDUCER(insert_vec_simple_enum, ReducerContext ctx, std::vector<Simp
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_vec_simple_enum, ReducerContext ctx, std::vector<SimpleEnum> e)
+{
+    ctx.db[vec_simple_enum].delete_by_value(VecSimpleEnum{e});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_vec_enum_with_payload, ReducerContext ctx, std::vector<EnumWithPayload> e)
 {
     ctx.db[vec_enum_with_payload].insert(VecEnumWithPayload{e});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_vec_enum_with_payload, ReducerContext ctx, std::vector<EnumWithPayload> e)
+{
+    ctx.db[vec_enum_with_payload].delete_by_value(VecEnumWithPayload{e});
     return Ok();
 }
 
@@ -1087,9 +1363,21 @@ SPACETIMEDB_REDUCER(insert_vec_unit_struct, ReducerContext ctx, std::vector<Unit
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_vec_unit_struct, ReducerContext ctx, std::vector<UnitStruct> s)
+{
+    ctx.db[vec_unit_struct].delete_by_value(VecUnitStruct{s});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_vec_byte_struct, ReducerContext ctx, std::vector<ByteStruct> s)
 {
     ctx.db[vec_byte_struct].insert(VecByteStruct{s});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_vec_byte_struct, ReducerContext ctx, std::vector<ByteStruct> s)
+{
+    ctx.db[vec_byte_struct].delete_by_value(VecByteStruct{s});
     return Ok();
 }
 
@@ -1099,9 +1387,21 @@ SPACETIMEDB_REDUCER(insert_vec_every_primitive_struct, ReducerContext ctx, std::
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_vec_every_primitive_struct, ReducerContext ctx, std::vector<EveryPrimitiveStruct> s)
+{
+    ctx.db[vec_every_primitive_struct].delete_by_value(VecEveryPrimitiveStruct{s});
+    return Ok();
+}
+
  SPACETIMEDB_REDUCER(insert_vec_every_vec_struct, ReducerContext ctx, std::vector<EveryVecStruct> s)
 {
     ctx.db[vec_every_vec_struct].insert(VecEveryVecStruct{s});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_vec_every_vec_struct, ReducerContext ctx, std::vector<EveryVecStruct> s)
+{
+    ctx.db[vec_every_vec_struct].delete_by_value(VecEveryVecStruct{s});
     return Ok();
 } 
 
@@ -1115,9 +1415,21 @@ SPACETIMEDB_REDUCER(insert_option_i32, ReducerContext ctx, std::optional<int32_t
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_option_i32, ReducerContext ctx, std::optional<int32_t> n)
+{
+    ctx.db[option_i32].delete_by_value(OptionI32{n});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_option_string, ReducerContext ctx, std::optional<std::string> s)
 {
     ctx.db[option_string].insert(OptionString{s});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_option_string, ReducerContext ctx, std::optional<std::string> s)
+{
+    ctx.db[option_string].delete_by_value(OptionString{s});
     return Ok();
 }
 
@@ -1127,9 +1439,21 @@ SPACETIMEDB_REDUCER(insert_option_uuid, ReducerContext ctx, std::optional<Uuid> 
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_option_uuid, ReducerContext ctx, std::optional<Uuid> u)
+{
+    ctx.db[option_uuid].delete_by_value(OptionUuid{u});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_option_identity, ReducerContext ctx, std::optional<Identity> i)
 {
     ctx.db[option_identity].insert(OptionIdentity{i});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_option_identity, ReducerContext ctx, std::optional<Identity> i)
+{
+    ctx.db[option_identity].delete_by_value(OptionIdentity{i});
     return Ok();
 }
 
@@ -1139,9 +1463,21 @@ SPACETIMEDB_REDUCER(insert_option_simple_enum, ReducerContext ctx, std::optional
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_option_simple_enum, ReducerContext ctx, std::optional<SimpleEnum> e)
+{
+    ctx.db[option_simple_enum].delete_by_value(OptionSimpleEnum{e});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_option_every_primitive_struct, ReducerContext ctx, std::optional<EveryPrimitiveStruct> s)
 {
     ctx.db[option_every_primitive_struct].insert(OptionEveryPrimitiveStruct{s});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_option_every_primitive_struct, ReducerContext ctx, std::optional<EveryPrimitiveStruct> s)
+{
+    ctx.db[option_every_primitive_struct].delete_by_value(OptionEveryPrimitiveStruct{s});
     return Ok();
 }
 
@@ -1149,6 +1485,12 @@ SPACETIMEDB_REDUCER(insert_option_every_primitive_struct, ReducerContext ctx, st
  SPACETIMEDB_REDUCER(insert_option_vec_option_i32, ReducerContext ctx, std::optional<std::vector<std::optional<int32_t>>> v)
 {
     ctx.db[option_vec_option_i32].insert(OptionVecOptionI32{v});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_option_vec_option_i32, ReducerContext ctx, std::optional<std::vector<std::optional<int32_t>>> v)
+{
+    ctx.db[option_vec_option_i32].delete_by_value(OptionVecOptionI32{v});
     return Ok();
 }
 
@@ -1202,9 +1544,21 @@ SPACETIMEDB_REDUCER(insert_unique_u8, ReducerContext ctx, uint8_t n, int32_t dat
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_unique_u8, ReducerContext ctx, uint8_t n, int32_t data)
+{
+    ctx.db[unique_u8].delete_by_value(UniqueU8{n, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_unique_u16, ReducerContext ctx, uint16_t n, int32_t data)
 {
     ctx.db[unique_u16].insert(UniqueU16{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_unique_u16, ReducerContext ctx, uint16_t n, int32_t data)
+{
+    ctx.db[unique_u16].delete_by_value(UniqueU16{n, data});
     return Ok();
 }
 
@@ -1214,9 +1568,21 @@ SPACETIMEDB_REDUCER(insert_unique_u32, ReducerContext ctx, uint32_t n, int32_t d
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_unique_u32, ReducerContext ctx, uint32_t n, int32_t data)
+{
+    ctx.db[unique_u32].delete_by_value(UniqueU32{n, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_unique_u64, ReducerContext ctx, uint64_t n, int32_t data)
 {
     ctx.db[unique_u64].insert(UniqueU64{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_unique_u64, ReducerContext ctx, uint64_t n, int32_t data)
+{
+    ctx.db[unique_u64].delete_by_value(UniqueU64{n, data});
     return Ok();
 }
 
@@ -1226,9 +1592,21 @@ SPACETIMEDB_REDUCER(insert_unique_u128, ReducerContext ctx, u128 n, int32_t data
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_unique_u128, ReducerContext ctx, u128 n, int32_t data)
+{
+    ctx.db[unique_u128].delete_by_value(UniqueU128{n, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_unique_u256, ReducerContext ctx, u256 n, int32_t data)
 {
     ctx.db[unique_u256].insert(UniqueU256{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_unique_u256, ReducerContext ctx, u256 n, int32_t data)
+{
+    ctx.db[unique_u256].delete_by_value(UniqueU256{n, data});
     return Ok();
 }
 
@@ -1238,9 +1616,21 @@ SPACETIMEDB_REDUCER(insert_unique_i8, ReducerContext ctx, int8_t n, int32_t data
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_unique_i8, ReducerContext ctx, int8_t n, int32_t data)
+{
+    ctx.db[unique_i8].delete_by_value(UniqueI8{n, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_unique_i16, ReducerContext ctx, int16_t n, int32_t data)
 {
     ctx.db[unique_i16].insert(UniqueI16{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_unique_i16, ReducerContext ctx, int16_t n, int32_t data)
+{
+    ctx.db[unique_i16].delete_by_value(UniqueI16{n, data});
     return Ok();
 }
 
@@ -1250,9 +1640,21 @@ SPACETIMEDB_REDUCER(insert_unique_i32, ReducerContext ctx, int32_t n, int32_t da
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_unique_i32, ReducerContext ctx, int32_t n, int32_t data)
+{
+    ctx.db[unique_i32].delete_by_value(UniqueI32{n, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_unique_i64, ReducerContext ctx, int64_t n, int32_t data)
 {
     ctx.db[unique_i64].insert(UniqueI64{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_unique_i64, ReducerContext ctx, int64_t n, int32_t data)
+{
+    ctx.db[unique_i64].delete_by_value(UniqueI64{n, data});
     return Ok();
 }
 
@@ -1262,9 +1664,21 @@ SPACETIMEDB_REDUCER(insert_unique_i128, ReducerContext ctx, i128 n, int32_t data
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_unique_i128, ReducerContext ctx, i128 n, int32_t data)
+{
+    ctx.db[unique_i128].delete_by_value(UniqueI128{n, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_unique_i256, ReducerContext ctx, i256 n, int32_t data)
 {
     ctx.db[unique_i256].insert(UniqueI256{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_unique_i256, ReducerContext ctx, i256 n, int32_t data)
+{
+    ctx.db[unique_i256].delete_by_value(UniqueI256{n, data});
     return Ok();
 }
 
@@ -1274,9 +1688,21 @@ SPACETIMEDB_REDUCER(insert_unique_bool, ReducerContext ctx, bool b, int32_t data
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_unique_bool, ReducerContext ctx, bool b, int32_t data)
+{
+    ctx.db[unique_bool].delete_by_value(UniqueBool{b, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_unique_string, ReducerContext ctx, std::string s, int32_t data)
 {
     ctx.db[unique_string].insert(UniqueString{s, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_unique_string, ReducerContext ctx, std::string s, int32_t data)
+{
+    ctx.db[unique_string].delete_by_value(UniqueString{s, data});
     return Ok();
 }
 
@@ -1286,9 +1712,21 @@ SPACETIMEDB_REDUCER(insert_unique_uuid, ReducerContext ctx, Uuid u, int32_t data
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_unique_uuid, ReducerContext ctx, Uuid u, int32_t data)
+{
+    ctx.db[unique_uuid].delete_by_value(UniqueUuid{u, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_unique_identity, ReducerContext ctx, Identity i, int32_t data)
 {
     ctx.db[unique_identity].insert(UniqueIdentity{i, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_unique_identity, ReducerContext ctx, Identity i, int32_t data)
+{
+    ctx.db[unique_identity].delete_by_value(UniqueIdentity{i, data});
     return Ok();
 }
 
@@ -1298,9 +1736,21 @@ SPACETIMEDB_REDUCER(insert_unique_connection_id, ReducerContext ctx, ConnectionI
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_unique_connection_id, ReducerContext ctx, ConnectionId a, int32_t data)
+{
+    ctx.db[unique_connection_id].delete_by_value(UniqueConnectionId{a, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_unique_option_u8, ReducerContext ctx, std::optional<uint8_t> n, int32_t data)
 {
     ctx.db[unique_option_u8].insert(UniqueOptionU8{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_unique_option_u8, ReducerContext ctx, std::optional<uint8_t> n, int32_t data)
+{
+    ctx.db[unique_option_u8].delete_by_value(UniqueOptionU8{n, data});
     return Ok();
 }
 
@@ -1310,9 +1760,21 @@ SPACETIMEDB_REDUCER(insert_unique_option_u16, ReducerContext ctx, std::optional<
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_unique_option_u16, ReducerContext ctx, std::optional<uint16_t> n, int32_t data)
+{
+    ctx.db[unique_option_u16].delete_by_value(UniqueOptionU16{n, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_unique_option_u32, ReducerContext ctx, std::optional<uint32_t> n, int32_t data)
 {
     ctx.db[unique_option_u32].insert(UniqueOptionU32{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_unique_option_u32, ReducerContext ctx, std::optional<uint32_t> n, int32_t data)
+{
+    ctx.db[unique_option_u32].delete_by_value(UniqueOptionU32{n, data});
     return Ok();
 }
 
@@ -1322,9 +1784,21 @@ SPACETIMEDB_REDUCER(insert_unique_option_u64, ReducerContext ctx, std::optional<
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_unique_option_u64, ReducerContext ctx, std::optional<uint64_t> n, int32_t data)
+{
+    ctx.db[unique_option_u64].delete_by_value(UniqueOptionU64{n, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_unique_option_u128, ReducerContext ctx, std::optional<u128> n, int32_t data)
 {
     ctx.db[unique_option_u128].insert(UniqueOptionU128{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_unique_option_u128, ReducerContext ctx, std::optional<u128> n, int32_t data)
+{
+    ctx.db[unique_option_u128].delete_by_value(UniqueOptionU128{n, data});
     return Ok();
 }
 
@@ -1334,9 +1808,21 @@ SPACETIMEDB_REDUCER(insert_unique_option_u256, ReducerContext ctx, std::optional
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_unique_option_u256, ReducerContext ctx, std::optional<u256> n, int32_t data)
+{
+    ctx.db[unique_option_u256].delete_by_value(UniqueOptionU256{n, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_unique_option_i8, ReducerContext ctx, std::optional<int8_t> n, int32_t data)
 {
     ctx.db[unique_option_i8].insert(UniqueOptionI8{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_unique_option_i8, ReducerContext ctx, std::optional<int8_t> n, int32_t data)
+{
+    ctx.db[unique_option_i8].delete_by_value(UniqueOptionI8{n, data});
     return Ok();
 }
 
@@ -1346,9 +1832,21 @@ SPACETIMEDB_REDUCER(insert_unique_option_i16, ReducerContext ctx, std::optional<
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_unique_option_i16, ReducerContext ctx, std::optional<int16_t> n, int32_t data)
+{
+    ctx.db[unique_option_i16].delete_by_value(UniqueOptionI16{n, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_unique_option_i32, ReducerContext ctx, std::optional<int32_t> n, int32_t data)
 {
     ctx.db[unique_option_i32].insert(UniqueOptionI32{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_unique_option_i32, ReducerContext ctx, std::optional<int32_t> n, int32_t data)
+{
+    ctx.db[unique_option_i32].delete_by_value(UniqueOptionI32{n, data});
     return Ok();
 }
 
@@ -1358,9 +1856,21 @@ SPACETIMEDB_REDUCER(insert_unique_option_i64, ReducerContext ctx, std::optional<
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_unique_option_i64, ReducerContext ctx, std::optional<int64_t> n, int32_t data)
+{
+    ctx.db[unique_option_i64].delete_by_value(UniqueOptionI64{n, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_unique_option_i128, ReducerContext ctx, std::optional<i128> n, int32_t data)
 {
     ctx.db[unique_option_i128].insert(UniqueOptionI128{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_unique_option_i128, ReducerContext ctx, std::optional<i128> n, int32_t data)
+{
+    ctx.db[unique_option_i128].delete_by_value(UniqueOptionI128{n, data});
     return Ok();
 }
 
@@ -1370,9 +1880,21 @@ SPACETIMEDB_REDUCER(insert_unique_option_i256, ReducerContext ctx, std::optional
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_unique_option_i256, ReducerContext ctx, std::optional<i256> n, int32_t data)
+{
+    ctx.db[unique_option_i256].delete_by_value(UniqueOptionI256{n, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_unique_option_bool, ReducerContext ctx, std::optional<bool> b, int32_t data)
 {
     ctx.db[unique_option_bool].insert(UniqueOptionBool{b, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_unique_option_bool, ReducerContext ctx, std::optional<bool> b, int32_t data)
+{
+    ctx.db[unique_option_bool].delete_by_value(UniqueOptionBool{b, data});
     return Ok();
 }
 
@@ -1382,9 +1904,21 @@ SPACETIMEDB_REDUCER(insert_unique_option_string, ReducerContext ctx, std::option
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_unique_option_string, ReducerContext ctx, std::optional<std::string> s, int32_t data)
+{
+    ctx.db[unique_option_string].delete_by_value(UniqueOptionString{s, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_unique_option_identity, ReducerContext ctx, std::optional<Identity> i, int32_t data)
 {
     ctx.db[unique_option_identity].insert(UniqueOptionIdentity{i, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_unique_option_identity, ReducerContext ctx, std::optional<Identity> i, int32_t data)
+{
+    ctx.db[unique_option_identity].delete_by_value(UniqueOptionIdentity{i, data});
     return Ok();
 }
 
@@ -1394,9 +1928,21 @@ SPACETIMEDB_REDUCER(insert_unique_option_connection_id, ReducerContext ctx, std:
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_unique_option_connection_id, ReducerContext ctx, std::optional<ConnectionId> a, int32_t data)
+{
+    ctx.db[unique_option_connection_id].delete_by_value(UniqueOptionConnectionId{a, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_unique_option_uuid, ReducerContext ctx, std::optional<Uuid> u, int32_t data)
 {
     ctx.db[unique_option_uuid].insert(UniqueOptionUuid{u, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_unique_option_uuid, ReducerContext ctx, std::optional<Uuid> u, int32_t data)
+{
+    ctx.db[unique_option_uuid].delete_by_value(UniqueOptionUuid{u, data});
     return Ok();
 }
 
@@ -1410,9 +1956,21 @@ SPACETIMEDB_REDUCER(insert_pk_u8, ReducerContext ctx, uint8_t n, int32_t data)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_pk_u8, ReducerContext ctx, uint8_t n, int32_t data)
+{
+    ctx.db[pk_u8].delete_by_value(PkU8{n, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_pk_u16, ReducerContext ctx, uint16_t n, int32_t data)
 {
     ctx.db[pk_u16].insert(PkU16{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_pk_u16, ReducerContext ctx, uint16_t n, int32_t data)
+{
+    ctx.db[pk_u16].delete_by_value(PkU16{n, data});
     return Ok();
 }
 
@@ -1422,9 +1980,21 @@ SPACETIMEDB_REDUCER(insert_pk_u32, ReducerContext ctx, uint32_t n, int32_t data)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_pk_u32, ReducerContext ctx, uint32_t n, int32_t data)
+{
+    ctx.db[pk_u32].delete_by_value(PkU32{n, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_pk_u32_two, ReducerContext ctx, uint32_t n, int32_t data)
 {
     ctx.db[pk_u32_two].insert(PkU32Two{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_pk_u32_two, ReducerContext ctx, uint32_t n, int32_t data)
+{
+    ctx.db[pk_u32_two].delete_by_value(PkU32Two{n, data});
     return Ok();
 }
 
@@ -1434,9 +2004,21 @@ SPACETIMEDB_REDUCER(insert_pk_u64, ReducerContext ctx, uint64_t n, int32_t data)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_pk_u64, ReducerContext ctx, uint64_t n, int32_t data)
+{
+    ctx.db[pk_u64].delete_by_value(PkU64{n, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_pk_u128, ReducerContext ctx, u128 n, int32_t data)
 {
     ctx.db[pk_u128].insert(PkU128{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_pk_u128, ReducerContext ctx, u128 n, int32_t data)
+{
+    ctx.db[pk_u128].delete_by_value(PkU128{n, data});
     return Ok();
 }
 
@@ -1446,9 +2028,21 @@ SPACETIMEDB_REDUCER(insert_pk_u256, ReducerContext ctx, u256 n, int32_t data)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_pk_u256, ReducerContext ctx, u256 n, int32_t data)
+{
+    ctx.db[pk_u256].delete_by_value(PkU256{n, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_pk_i8, ReducerContext ctx, int8_t n, int32_t data)
 {
     ctx.db[pk_i8].insert(PkI8{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_pk_i8, ReducerContext ctx, int8_t n, int32_t data)
+{
+    ctx.db[pk_i8].delete_by_value(PkI8{n, data});
     return Ok();
 }
 
@@ -1458,9 +2052,21 @@ SPACETIMEDB_REDUCER(insert_pk_i16, ReducerContext ctx, int16_t n, int32_t data)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_pk_i16, ReducerContext ctx, int16_t n, int32_t data)
+{
+    ctx.db[pk_i16].delete_by_value(PkI16{n, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_pk_i32, ReducerContext ctx, int32_t n, int32_t data)
 {
     ctx.db[pk_i32].insert(PkI32{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_pk_i32, ReducerContext ctx, int32_t n, int32_t data)
+{
+    ctx.db[pk_i32].delete_by_value(PkI32{n, data});
     return Ok();
 }
 
@@ -1470,9 +2076,21 @@ SPACETIMEDB_REDUCER(insert_pk_i64, ReducerContext ctx, int64_t n, int32_t data)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_pk_i64, ReducerContext ctx, int64_t n, int32_t data)
+{
+    ctx.db[pk_i64].delete_by_value(PkI64{n, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_pk_i128, ReducerContext ctx, i128 n, int32_t data)
 {
     ctx.db[pk_i128].insert(PkI128{n, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_pk_i128, ReducerContext ctx, i128 n, int32_t data)
+{
+    ctx.db[pk_i128].delete_by_value(PkI128{n, data});
     return Ok();
 }
 
@@ -1482,9 +2100,21 @@ SPACETIMEDB_REDUCER(insert_pk_i256, ReducerContext ctx, i256 n, int32_t data)
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_pk_i256, ReducerContext ctx, i256 n, int32_t data)
+{
+    ctx.db[pk_i256].delete_by_value(PkI256{n, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_pk_bool, ReducerContext ctx, bool b, int32_t data)
 {
     ctx.db[pk_bool].insert(PkBool{b, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_pk_bool, ReducerContext ctx, bool b, int32_t data)
+{
+    ctx.db[pk_bool].delete_by_value(PkBool{b, data});
     return Ok();
 }
 
@@ -1494,9 +2124,21 @@ SPACETIMEDB_REDUCER(insert_pk_string, ReducerContext ctx, std::string s, int32_t
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_pk_string, ReducerContext ctx, std::string s, int32_t data)
+{
+    ctx.db[pk_string].delete_by_value(PkString{s, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_pk_identity, ReducerContext ctx, Identity i, int32_t data)
 {
     ctx.db[pk_identity].insert(PkIdentity{i, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_pk_identity, ReducerContext ctx, Identity i, int32_t data)
+{
+    ctx.db[pk_identity].delete_by_value(PkIdentity{i, data});
     return Ok();
 }
 
@@ -1506,9 +2148,21 @@ SPACETIMEDB_REDUCER(insert_pk_connection_id, ReducerContext ctx, ConnectionId a,
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(delete_all_pk_connection_id, ReducerContext ctx, ConnectionId a, int32_t data)
+{
+    ctx.db[pk_connection_id].delete_by_value(PkConnectionId{a, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_pk_uuid, ReducerContext ctx, Uuid u, int32_t data)
 {
     ctx.db[pk_uuid].insert(PkUuid{u, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_all_pk_uuid, ReducerContext ctx, Uuid u, int32_t data)
+{
+    ctx.db[pk_uuid].delete_by_value(PkUuid{u, data});
     return Ok();
 }
 
