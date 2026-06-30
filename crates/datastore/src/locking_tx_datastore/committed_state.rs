@@ -10,7 +10,11 @@ use crate::{
     db_metrics::DB_METRICS,
     error::TableError,
     execution_context::ExecutionContext,
-    locking_tx_datastore::{mut_tx::ViewReadSets, state_view::ScanOrIndex, IterByColRangeTx},
+    locking_tx_datastore::{
+        mut_tx::{ViewInstanceState, ViewInstanceTxState, ViewReadSets},
+        state_view::ScanOrIndex,
+        IterByColRangeTx,
+    },
     system_tables::{
         system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, SystemTable, ST_CLIENT_ID,
         ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX,
@@ -32,10 +36,10 @@ use crate::{
 };
 use anyhow::anyhow;
 use core::{convert::Infallible, ops::RangeBounds};
-use spacetimedb_data_structures::map::{IntMap, IntSet};
+use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap, IntSet};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StTableType, Identity};
-use spacetimedb_primitives::{ColList, IndexId, TableId, ViewId};
+use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
@@ -83,6 +87,9 @@ pub struct CommittedState {
     /// and its read set will be updated accordingly.
     read_sets: ViewReadSets,
 
+    /// Ephemeral materialized view lifecycle state keyed by `(view_id, arg_hash)`.
+    view_instances: HashMap<ViewCallInfo, ViewInstanceState>,
+
     /// Tables which do not need to be made persistent.
     /// These include:
     ///     - system tables: `st_view_sub`, `st_view_arg`
@@ -121,6 +128,7 @@ impl MemoryUsage for CommittedState {
             page_pool: _,
             datastore_page_bytes,
             read_sets,
+            view_instances,
             ephemeral_tables,
         } = self;
         // NOTE(centril): We do not want to include the heap usage of `page_pool` as it's a shared resource.
@@ -130,6 +138,7 @@ impl MemoryUsage for CommittedState {
             + index_id_map.heap_usage()
             + datastore_page_bytes.heap_usage()
             + read_sets.heap_usage()
+            + view_instances.heap_usage()
             + ephemeral_tables.heap_usage()
     }
 }
@@ -198,6 +207,7 @@ impl CommittedState {
             blob_store: <_>::default(),
             index_id_map: <_>::default(),
             read_sets: <_>::default(),
+            view_instances: <_>::default(),
             page_pool,
             datastore_page_bytes: 0,
             ephemeral_tables: <_>::default(),
@@ -506,11 +516,47 @@ impl CommittedState {
         tx_data.has_rows_or_connect_disconnect(ctx.reducer_context().map(|rcx| &rcx.name))
     }
 
-    pub(super) fn drop_view_from_read_sets(&mut self, view_id: ViewId, sender: Option<Identity>) {
-        self.read_sets.remove_view(view_id, sender)
+    pub(super) fn view_instance(&self, call: &ViewCallInfo) -> Option<&ViewInstanceState> {
+        self.view_instances.get(call)
     }
 
-    pub(super) fn merge(&mut self, tx_state: TxState, read_sets: ViewReadSets, ctx: &ExecutionContext) -> TxData {
+    pub(super) fn active_view_calls_for_subscriber(&self, subscriber: Identity) -> HashSet<ViewCallInfo> {
+        self.view_instances
+            .iter()
+            .filter(|(_, state)| {
+                state
+                    .active_subscribers
+                    .get(&subscriber)
+                    .is_some_and(|count| *count > 0)
+            })
+            .map(|(call, _)| call.clone())
+            .collect()
+    }
+
+    pub(super) fn view_instances(&self) -> impl Iterator<Item = (&ViewCallInfo, &ViewInstanceState)> {
+        self.view_instances.iter()
+    }
+
+    fn merge_view_instances(&mut self, view_instances: ViewInstanceTxState) {
+        for (call, state) in view_instances.into_changes() {
+            match state {
+                Some(state) => {
+                    self.view_instances.insert(call, state);
+                }
+                None => {
+                    self.view_instances.remove(&call);
+                }
+            }
+        }
+    }
+
+    pub(super) fn merge(
+        &mut self,
+        tx_state: TxState,
+        read_sets: ViewReadSets,
+        view_instances: ViewInstanceTxState,
+        ctx: &ExecutionContext,
+    ) -> TxData {
         let mut tx_data = TxData::default();
         let mut truncates = IntSet::default();
 
@@ -539,6 +585,7 @@ impl CommittedState {
         // which implies `tx_data` already contains inserts and deletes for view tables
         // so that we can pass updated set of table ids.
         self.merge_read_sets(read_sets);
+        self.merge_view_instances(view_instances);
 
         // Store in `tx_data` which of the updated tables are ephemeral.
         // NOTE: This must be called before `tx_consumes_offset`, so that
