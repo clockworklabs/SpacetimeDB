@@ -40,6 +40,18 @@ impl SenderViewPkPlayersBTableAccess for super::RemoteTables {
 pub struct SenderViewPkPlayersBInsertCallbackId(__sdk::CallbackId);
 pub struct SenderViewPkPlayersBDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for SenderViewPkPlayersBTableHandle<'ctx> {
+    type Row = ViewPkPlayer;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = ViewPkPlayer> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for SenderViewPkPlayersBTableHandle<'ctx> {
     type Row = ViewPkPlayer;
     type EventContext = super::EventContext;
@@ -78,9 +90,54 @@ impl<'ctx> __sdk::Table for SenderViewPkPlayersBTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithInsert for SenderViewPkPlayersBTableHandle<'ctx> {
+    type InsertCallbackId = SenderViewPkPlayersBInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> SenderViewPkPlayersBInsertCallbackId {
+        SenderViewPkPlayersBInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: SenderViewPkPlayersBInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for SenderViewPkPlayersBTableHandle<'ctx> {
+    type DeleteCallbackId = SenderViewPkPlayersBDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> SenderViewPkPlayersBDeleteCallbackId {
+        SenderViewPkPlayersBDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: SenderViewPkPlayersBDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
 pub struct SenderViewPkPlayersBUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for SenderViewPkPlayersBTableHandle<'ctx> {
+    type UpdateCallbackId = SenderViewPkPlayersBUpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> SenderViewPkPlayersBUpdateCallbackId {
+        SenderViewPkPlayersBUpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: SenderViewPkPlayersBUpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithUpdate for SenderViewPkPlayersBTableHandle<'ctx> {
     type UpdateCallbackId = SenderViewPkPlayersBUpdateCallbackId;
 
     fn on_update(

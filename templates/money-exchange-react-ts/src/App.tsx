@@ -118,9 +118,9 @@ function NameForm({
 
 function App() {
   const { identity, isActive: connected } = useSpacetimeDB();
-  const [accounts] = useTable(tables.my_account);
+  const [accounts] = useTable(tables.myAccount);
   const [directory] = useTable(tables.directory);
-  const [changes] = useTable(tables.my_account_changes);
+  const [changes] = useTable(tables.myAccountChanges);
   const setName = useReducer(reducers.setName);
   const sendTransfer = useReducer(reducers.transfer);
   const [editingName, setEditingName] = useState(false);

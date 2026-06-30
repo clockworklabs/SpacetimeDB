@@ -292,6 +292,12 @@ Runs a SQL query on the database. WARNING: This command is UNSTABLE and subject 
 
 * `--anonymous` — Perform this action with an anonymous identity
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
+* `--format <FORMAT>` — Output format for the SQL results
+
+  Default value: `text`
+
+  Possible values: `text`, `json`
+
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
 * `--no-config` — Ignore spacetime.json configuration
 

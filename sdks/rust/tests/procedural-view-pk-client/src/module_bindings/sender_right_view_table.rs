@@ -40,6 +40,18 @@ impl SenderRightViewTableAccess for super::RemoteTables {
 pub struct SenderRightViewInsertCallbackId(__sdk::CallbackId);
 pub struct SenderRightViewDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for SenderRightViewTableHandle<'ctx> {
+    type Row = RightSource;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = RightSource> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for SenderRightViewTableHandle<'ctx> {
     type Row = RightSource;
     type EventContext = super::EventContext;
@@ -78,9 +90,54 @@ impl<'ctx> __sdk::Table for SenderRightViewTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithInsert for SenderRightViewTableHandle<'ctx> {
+    type InsertCallbackId = SenderRightViewInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> SenderRightViewInsertCallbackId {
+        SenderRightViewInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: SenderRightViewInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for SenderRightViewTableHandle<'ctx> {
+    type DeleteCallbackId = SenderRightViewDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> SenderRightViewDeleteCallbackId {
+        SenderRightViewDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: SenderRightViewDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
 pub struct SenderRightViewUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for SenderRightViewTableHandle<'ctx> {
+    type UpdateCallbackId = SenderRightViewUpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> SenderRightViewUpdateCallbackId {
+        SenderRightViewUpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: SenderRightViewUpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithUpdate for SenderRightViewTableHandle<'ctx> {
     type UpdateCallbackId = SenderRightViewUpdateCallbackId;
 
     fn on_update(

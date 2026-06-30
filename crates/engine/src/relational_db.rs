@@ -1657,11 +1657,7 @@ impl RelationalDB {
         view_call: ViewCallInfo,
         rows: Vec<ProductValue>,
     ) -> Result<(), DBError> {
-        let arg_hash = match view_call.sender {
-            Some(sender) => MutTxId::view_arg_hash(sender),
-            None => MutTxId::anonymous_view_arg_hash(),
-        };
-        self.materialize_view_arg_hash(tx, table_id, arg_hash, rows)?;
+        self.materialize_view_arg_hash(tx, table_id, view_call.arg_hash.clone(), rows)?;
         tx.replace_view_read_set(view_call);
 
         Ok(())
@@ -2369,6 +2365,7 @@ mod tests {
     use spacetimedb_data_structures::map::IntMap;
     use spacetimedb_datastore::error::{DatastoreError, IndexError};
     use spacetimedb_datastore::execution_context::ReducerContext;
+    use spacetimedb_datastore::locking_tx_datastore::ViewInstanceArgs;
     use spacetimedb_datastore::system_tables::{
         system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINT_ID, ST_INDEX_ID,
         ST_SEQUENCE_ID, ST_TABLE_ID,
@@ -2524,7 +2521,8 @@ mod tests {
         let row_pv = |v: u8| product![v];
 
         let mut tx = begin_mut_tx(stdb);
-        tx.subscribe_view(view_id, ArgId::SENTINEL, sender)?;
+        let args = ViewInstanceArgs::Sender(sender);
+        tx.subscribe_view(ViewCallInfo::from_args(view_id, args), args, sender)?;
         stdb.materialize_view(&mut tx, table_id, sender, vec![row_pv(v)])?;
         stdb.commit_tx(tx)?;
 
@@ -2561,9 +2559,12 @@ mod tests {
             .collect()
     }
 
-    fn update_last_called(stdb: &TestDB, view_id: ViewId, sender: Identity, last_called: Timestamp) -> ResultTest<()> {
+    fn update_last_called(stdb: &TestDB, view_call: ViewCallInfo, last_called: Timestamp) -> ResultTest<()> {
         let mut tx = begin_mut_tx(stdb);
-        tx.update_view_timestamp_at(view_id, ArgId::SENTINEL, sender, last_called)?;
+        let args = tx
+            .view_instance_args(&view_call)
+            .expect("view instance should exist before updating last_called");
+        tx.update_view_timestamp_at(view_call, args, last_called)?;
         stdb.commit_tx(tx)?;
         Ok(())
     }
@@ -2593,10 +2594,10 @@ mod tests {
         );
 
         let tx = begin_mut_tx(&stdb);
-        let subs_rows = tx.lookup_st_view_subs(view_id)?;
+        let subscribers = tx.active_subscribers_for_view(view_id);
         assert!(
-            subs_rows.is_empty(),
-            "st_view_subs should be empty after reopening the database"
+            subscribers.is_empty(),
+            "view lifecycle subscribers should be empty after reopening the database"
         );
         Ok(())
     }
@@ -2618,7 +2619,8 @@ mod tests {
         };
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.subscribe_view(view_id, ArgId::SENTINEL, Identity::ONE)?;
+        let args = ViewInstanceArgs::Sender(Identity::ONE);
+        tx.subscribe_view(ViewCallInfo::from_args(view_id, args), args, Identity::ONE)?;
         stdb.materialize_view(&mut tx, table_id, Identity::ONE, vec![product![10u8]])?;
         let (tx_offset_2, tx_data, ..) = stdb.commit_tx(tx)?.unwrap();
 
@@ -2660,10 +2662,10 @@ mod tests {
         );
 
         let tx = begin_mut_tx(&stdb);
-        let subs_rows = tx.lookup_st_view_subs(view_id)?;
+        let subscribers = tx.active_subscribers_for_view(view_id);
         assert!(
-            subs_rows.is_empty(),
-            "st_view_subs should be empty after reopening the database"
+            subscribers.is_empty(),
+            "view lifecycle subscribers should be empty after reopening the database"
         );
         Ok(())
     }
@@ -2709,8 +2711,11 @@ mod tests {
         );
 
         let tx = begin_mut_tx(&stdb);
-        let st = tx.lookup_st_view_subs(view_id)?;
-        assert!(st.is_empty(), "st_view_subs should also be cleared after restart");
+        let subscribers = tx.active_subscribers_for_view(view_id);
+        assert!(
+            subscribers.is_empty(),
+            "view lifecycle subscribers should also be cleared after restart"
+        );
         stdb.commit_tx(tx)?;
 
         // Reinsert after restart
@@ -2740,11 +2745,11 @@ mod tests {
             "Sender 2 row should remain"
         );
 
-        // And st_view_subs must reflect only sender2
+        // And lifecycle state must reflect only sender2.
         let tx = begin_mut_tx(&stdb);
-        let st_after = tx.lookup_st_view_subs(view_id)?;
-        assert_eq!(st_after.len(), 1);
-        assert_eq!(st_after[0].identity.0, sender2);
+        let mut subscribers = tx.active_subscribers_for_view(view_id);
+        subscribers.sort_by_key(|(identity, _)| identity.to_u256());
+        assert_eq!(subscribers, vec![(sender2, 1)]);
 
         Ok(())
     }
@@ -2763,25 +2768,21 @@ mod tests {
         let live_sender = Identity::ZERO;
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.subscribe_view(view_id, ArgId::SENTINEL, stale_sender)?;
-        tx.subscribe_view(view_id, ArgId::SENTINEL, live_sender)?;
-        stdb.materialize_view_call(
-            &mut tx,
-            table_id,
-            ViewCallInfo { view_id, sender: None },
-            vec![product![42u8]],
-        )?;
+        let view_call = ViewCallInfo::anonymous(view_id);
+        tx.subscribe_view(view_call.clone(), ViewInstanceArgs::Anonymous, stale_sender)?;
+        tx.subscribe_view(view_call.clone(), ViewInstanceArgs::Anonymous, live_sender)?;
+        stdb.materialize_view_call(&mut tx, table_id, view_call, vec![product![42u8]])?;
         stdb.commit_tx(tx)?;
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.unsubscribe_view(view_id, ArgId::SENTINEL, stale_sender)?;
+        tx.unsubscribe_view(ViewCallInfo::anonymous(view_id), stale_sender)?;
         stdb.commit_tx(tx)?;
 
         // Make one row definitely expired without relying on wall-clock sleeps.
-        update_last_called(&stdb, view_id, stale_sender, Timestamp::UNIX_EPOCH)?;
+        update_last_called(&stdb, ViewCallInfo::anonymous(view_id), Timestamp::UNIX_EPOCH)?;
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.update_view_timestamp(view_id, ArgId::SENTINEL, live_sender)?;
+        tx.update_view_timestamp(ViewCallInfo::anonymous(view_id), ViewInstanceArgs::Anonymous)?;
         stdb.commit_tx(tx)?;
 
         // Cleanup should remove only the stale subscriber row and keep the shared
@@ -2797,11 +2798,9 @@ mod tests {
         );
 
         let tx = begin_mut_tx(&stdb);
-        let st_after = tx.lookup_st_view_subs(view_id)?;
-        assert_eq!(st_after.len(), 1);
-        assert_eq!(st_after[0].identity.0, live_sender);
-        assert!(st_after[0].has_subscribers);
-        assert_eq!(st_after[0].num_subscribers, 1);
+        let mut subscribers = tx.active_subscribers_for_view(view_id);
+        subscribers.sort_by_key(|(identity, _)| identity.to_u256());
+        assert_eq!(subscribers, vec![(live_sender, 1)]);
 
         Ok(())
     }
@@ -2818,21 +2817,17 @@ mod tests {
         let sender = Identity::ONE;
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.subscribe_view(view_id, ArgId::SENTINEL, sender)?;
-        stdb.materialize_view_call(
-            &mut tx,
-            table_id,
-            ViewCallInfo { view_id, sender: None },
-            vec![product![42u8]],
-        )?;
+        let view_call = ViewCallInfo::anonymous(view_id);
+        tx.subscribe_view(view_call.clone(), ViewInstanceArgs::Anonymous, sender)?;
+        stdb.materialize_view_call(&mut tx, table_id, view_call, vec![product![42u8]])?;
         stdb.commit_tx(tx)?;
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.unsubscribe_view(view_id, ArgId::SENTINEL, sender)?;
+        tx.unsubscribe_view(ViewCallInfo::anonymous(view_id), sender)?;
         stdb.commit_tx(tx)?;
 
         // Mark the unsubscribed row as expired so cleanup can process it immediately.
-        update_last_called(&stdb, view_id, sender, Timestamp::UNIX_EPOCH)?;
+        update_last_called(&stdb, ViewCallInfo::anonymous(view_id), Timestamp::UNIX_EPOCH)?;
 
         // With no remaining subscriber rows, cleanup should drop the shared
         // anonymous materialization and remove the bookkeeping row.
@@ -2846,8 +2841,8 @@ mod tests {
         );
 
         let tx = begin_mut_tx(&stdb);
-        let st_after = tx.lookup_st_view_subs(view_id)?;
-        assert!(st_after.is_empty());
+        let subscribers = tx.active_subscribers_for_view(view_id);
+        assert!(subscribers.is_empty());
 
         Ok(())
     }

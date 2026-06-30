@@ -41,6 +41,18 @@ impl OneEnumWithPayloadTableAccess for super::RemoteTables {
 pub struct OneEnumWithPayloadInsertCallbackId(__sdk::CallbackId);
 pub struct OneEnumWithPayloadDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for OneEnumWithPayloadTableHandle<'ctx> {
+    type Row = OneEnumWithPayload;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = OneEnumWithPayload> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for OneEnumWithPayloadTableHandle<'ctx> {
     type Row = OneEnumWithPayload;
     type EventContext = super::EventContext;
@@ -65,6 +77,36 @@ impl<'ctx> __sdk::Table for OneEnumWithPayloadTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = OneEnumWithPayloadDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OneEnumWithPayloadDeleteCallbackId {
+        OneEnumWithPayloadDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: OneEnumWithPayloadDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for OneEnumWithPayloadTableHandle<'ctx> {
+    type InsertCallbackId = OneEnumWithPayloadInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OneEnumWithPayloadInsertCallbackId {
+        OneEnumWithPayloadInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: OneEnumWithPayloadInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for OneEnumWithPayloadTableHandle<'ctx> {
     type DeleteCallbackId = OneEnumWithPayloadDeleteCallbackId;
 
     fn on_delete(
