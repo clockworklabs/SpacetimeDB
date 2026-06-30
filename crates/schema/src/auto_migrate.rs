@@ -131,14 +131,25 @@ impl MigrationPolicy {
         new_module_def: &'def ModuleDef,
     ) -> anyhow::Result<MigratePlan<'def>, MigrationPolicyError> {
         let plan = ponder_migrate(old_module_def, new_module_def).map_err(MigrationPolicyError::AutoMigrateFailure)?;
+        self.permits_migrate_plan(database_identity, old_module_hash, new_module_hash, &plan)?;
+        Ok(plan)
+    }
 
+    /// Validate an already-generated migration plan under this policy.
+    pub fn permits_migrate_plan(
+        &self,
+        database_identity: Identity,
+        old_module_hash: spacetimedb_lib::Hash,
+        new_module_hash: spacetimedb_lib::Hash,
+        plan: &MigratePlan<'_>,
+    ) -> anyhow::Result<(), MigrationPolicyError> {
         let token = MigrationToken {
             database_identity,
             old_module_hash,
             new_module_hash,
         };
-        self.permits_plan(&plan, &token)?;
-        Ok(plan)
+        self.permits_plan(plan, &token)?;
+        Ok(())
     }
 }
 
@@ -263,7 +274,6 @@ pub enum AutoMigrateStep<'def> {
     RemoveView(<ViewDef as ModuleDefLookup>::Key<'def>),
     /// Remove a row-level security query.
     RemoveRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
-
     /// Remove an empty table and all its sub-objects (indexes, constraints, sequences).
     /// Validated at execution time: fails if the table contains data.
     RemoveTable(<TableDef as ModuleDefLookup>::Key<'def>),
@@ -293,6 +303,8 @@ pub enum AutoMigrateStep<'def> {
     AddTable(<TableDef as ModuleDefLookup>::Key<'def>),
     /// Add an index.
     AddIndex(<IndexDef as ModuleDefLookup>::Key<'def>),
+    /// Add a constraint to an existing table (with data validation precheck).
+    AddConstraint(<ConstraintDef as ModuleDefLookup>::Key<'def>),
     /// Add a sequence.
     AddSequence(<SequenceDef as ModuleDefLookup>::Key<'def>),
     /// Add a schedule annotation to a table.
@@ -1108,11 +1120,9 @@ fn auto_migrate_constraints(
                         // it's okay to add a constraint in a new table.
                         Ok(())
                     } else {
-                        // it's not okay to add a new constraint to an existing table.
-                        Err(AutoMigrateError::AddUniqueConstraint {
-                            constraint: new.name.clone(),
-                        }
-                        .into())
+                        // existing table — duplicate detection happens inside create_constraint
+                        plan.steps.push(AutoMigrateStep::AddConstraint(new.key()));
+                        Ok(())
                     }
                 }
                 Diff::Remove { old } => {
@@ -1623,8 +1633,6 @@ mod tests {
         let apples = expect_identifier("Apples");
         let _bananas = expect_identifier("Bananas");
 
-        let apples_name_unique_constraint = "Apples_name_key";
-
         let weight = expect_identifier("weight");
         let count = expect_identifier("count");
         let name = expect_identifier("name");
@@ -1819,10 +1827,8 @@ mod tests {
             && type1.0 == prod1_ty && type2.0 == new_prod1_ty
         );
 
-        expect_error_matching!(
-            result,
-            AutoMigrateError::AddUniqueConstraint { constraint } => &constraint[..] == apples_name_unique_constraint
-        );
+        // Note: `AddUniqueConstraint` is no longer an error — adding unique constraints
+        // to existing tables is now allowed; duplicate detection happens inside create_constraint.
 
         expect_error_matching!(
             result,

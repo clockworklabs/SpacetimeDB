@@ -2,6 +2,7 @@ use crate::durability::{request_durability, spawn_close as spawn_durability_clos
 use crate::error::{DBError, RestoreSnapshotError};
 use crate::metrics::ExecutionCounters;
 use crate::metrics::ENGINE_METRICS;
+use crate::resource::{DatabaseMemoryType, MemoryObservation, MemoryObserver};
 use crate::util::asyncify;
 use crate::MetricsRecorderQueue;
 use anyhow::{anyhow, Context};
@@ -51,7 +52,8 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue}
 use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{
-    ColumnSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema, VIEW_ARG_HASH_COL,
+    ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
+    VIEW_ARG_HASH_COL,
 };
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_snapshot::{DynSnapshotRepo, ReconstructedSnapshot, SnapshotError, SnapshotRepository};
@@ -114,6 +116,9 @@ pub struct RelationalDB {
 
     /// An async queue for recording transaction metrics off the main thread
     metrics_recorder_queue: Option<MetricsRecorderQueue>,
+
+    /// An observer for memory usage changes in this database.
+    memory_observer: Arc<dyn MemoryObserver>,
 }
 
 /// Perform a snapshot every `SNAPSHOT_FREQUENCY` transactions.
@@ -169,7 +174,22 @@ impl RelationalDB {
 
             workload_type_to_exec_counters,
             metrics_recorder_queue,
+            memory_observer: Arc::new(()),
         }
+    }
+
+    pub fn with_memory_observer(mut self, memory_observer: Arc<dyn MemoryObserver>) -> Self {
+        self.memory_observer = memory_observer;
+        self.observe_datastore_memory(self.inner.datastore_memory_bytes());
+        self
+    }
+
+    fn observe_datastore_memory(&self, bytes: u64) {
+        self.memory_observer.memory_observed(MemoryObservation {
+            database_identity: self.database_identity,
+            kind: DatabaseMemoryType::Datastore,
+            bytes,
+        });
     }
 
     /// Open a database, which may or may not already exist.
@@ -486,6 +506,10 @@ impl RelationalDB {
             snapshot_offset: TxOffset,
             page_pool: &PagePool,
         ) -> Result<ReconstructedSnapshot, Box<SnapshotError>> {
+            fn u64_to_i64(value: u64) -> i64 {
+                value.min(i64::MAX as u64) as i64
+            }
+
             log::info!("[{database_identity}] DATABASE: restoring snapshot of tx_offset {snapshot_offset}");
             let start = std::time::Instant::now();
 
@@ -495,10 +519,24 @@ impl RelationalDB {
 
             let elapsed_time = start.elapsed();
 
-            ENGINE_METRICS
-                .replay_snapshot_read_time_seconds
-                .with_label_values(database_identity)
-                .set(elapsed_time.as_secs_f64());
+            for (kind, metrics) in snapshot.read_metrics.iter() {
+                ENGINE_METRICS
+                    .replay_snapshot_read_time_seconds
+                    .with_label_values(database_identity, kind)
+                    .set(metrics.read_time.as_secs_f64());
+                ENGINE_METRICS
+                    .replay_snapshot_num_objects_read
+                    .with_label_values(database_identity, kind)
+                    .set(u64_to_i64(metrics.files));
+                ENGINE_METRICS
+                    .replay_snapshot_bytes_read_from_disk
+                    .with_label_values(database_identity, kind)
+                    .set(u64_to_i64(metrics.disk_bytes));
+                ENGINE_METRICS
+                    .replay_snapshot_read_hash_seconds
+                    .with_label_values(database_identity, kind)
+                    .set(metrics.hash_time.as_secs_f64());
+            }
 
             log::info!(
                 "[{database_identity}] DATABASE: read snapshot of tx_offset {snapshot_offset} in {elapsed_time:?}",
@@ -822,14 +860,16 @@ impl RelationalDB {
 
         let reducer_context = tx.ctx.reducer_context().cloned();
         // TODO: Never returns `None` -- should it?
-        let Some((tx_offset, tx_data, tx_metrics, reducer)) = self.inner.commit_mut_tx_and_then(tx, |tx_data| {
-            self.request_durability(reducer_context, tx_data);
-        })?
+        let Some((tx_offset, tx_data, tx_metrics, reducer, datastore_memory_bytes)) =
+            self.inner.commit_mut_tx_and_then(tx, |tx_data| {
+                self.request_durability(reducer_context, tx_data);
+            })?
         else {
             return Ok(None);
         };
 
         self.maybe_do_snapshot(&tx_data);
+        self.observe_datastore_memory(datastore_memory_bytes);
 
         Ok(Some((tx_offset, tx_data, tx_metrics, reducer)))
     }
@@ -839,11 +879,13 @@ impl RelationalDB {
         log::trace!("COMMIT MUT TX");
 
         let reducer_context = tx.ctx.reducer_context().cloned();
-        let (tx_data, tx_metrics, tx) = self.inner.commit_mut_tx_downgrade_and_then(tx, workload, |tx_data| {
-            self.request_durability(reducer_context, tx_data);
-        });
+        let (tx_data, tx_metrics, tx, datastore_memory_bytes) =
+            self.inner.commit_mut_tx_downgrade_and_then(tx, workload, |tx_data| {
+                self.request_durability(reducer_context, tx_data);
+            });
 
         self.maybe_do_snapshot(&tx_data);
+        self.observe_datastore_memory(datastore_memory_bytes);
 
         (tx_data, tx_metrics, tx)
     }
@@ -1517,6 +1559,11 @@ impl RelationalDB {
         Ok(self.inner.drop_sequence_mut_tx(tx, seq_id)?)
     }
 
+    /// Creates a new constraint in the database instance.
+    pub fn create_constraint(&self, tx: &mut MutTx, constraint: ConstraintSchema) -> Result<ConstraintId, DBError> {
+        Ok(self.inner.create_constraint_mut_tx(tx, constraint)?)
+    }
+
     ///Removes the [Constraints] from database instance
     pub fn drop_constraint(&self, tx: &mut MutTx, constraint_id: ConstraintId) -> Result<(), DBError> {
         Ok(self.inner.drop_constraint_mut_tx(tx, constraint_id)?)
@@ -1610,11 +1657,7 @@ impl RelationalDB {
         view_call: ViewCallInfo,
         rows: Vec<ProductValue>,
     ) -> Result<(), DBError> {
-        let arg_hash = match view_call.sender {
-            Some(sender) => MutTxId::view_arg_hash(sender),
-            None => MutTxId::anonymous_view_arg_hash(),
-        };
-        self.materialize_view_arg_hash(tx, table_id, arg_hash, rows)?;
+        self.materialize_view_arg_hash(tx, table_id, view_call.arg_hash.clone(), rows)?;
         tx.replace_view_read_set(view_call);
 
         Ok(())
@@ -2322,6 +2365,7 @@ mod tests {
     use spacetimedb_data_structures::map::IntMap;
     use spacetimedb_datastore::error::{DatastoreError, IndexError};
     use spacetimedb_datastore::execution_context::ReducerContext;
+    use spacetimedb_datastore::locking_tx_datastore::ViewInstanceArgs;
     use spacetimedb_datastore::system_tables::{
         system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINT_ID, ST_INDEX_ID,
         ST_SEQUENCE_ID, ST_TABLE_ID,
@@ -2477,7 +2521,8 @@ mod tests {
         let row_pv = |v: u8| product![v];
 
         let mut tx = begin_mut_tx(stdb);
-        tx.subscribe_view(view_id, ArgId::SENTINEL, sender)?;
+        let args = ViewInstanceArgs::Sender(sender);
+        tx.subscribe_view(ViewCallInfo::from_args(view_id, args), args, sender)?;
         stdb.materialize_view(&mut tx, table_id, sender, vec![row_pv(v)])?;
         stdb.commit_tx(tx)?;
 
@@ -2514,9 +2559,12 @@ mod tests {
             .collect()
     }
 
-    fn update_last_called(stdb: &TestDB, view_id: ViewId, sender: Identity, last_called: Timestamp) -> ResultTest<()> {
+    fn update_last_called(stdb: &TestDB, view_call: ViewCallInfo, last_called: Timestamp) -> ResultTest<()> {
         let mut tx = begin_mut_tx(stdb);
-        tx.update_view_timestamp_at(view_id, ArgId::SENTINEL, sender, last_called)?;
+        let args = tx
+            .view_instance_args(&view_call)
+            .expect("view instance should exist before updating last_called");
+        tx.update_view_timestamp_at(view_call, args, last_called)?;
         stdb.commit_tx(tx)?;
         Ok(())
     }
@@ -2546,10 +2594,10 @@ mod tests {
         );
 
         let tx = begin_mut_tx(&stdb);
-        let subs_rows = tx.lookup_st_view_subs(view_id)?;
+        let subscribers = tx.active_subscribers_for_view(view_id);
         assert!(
-            subs_rows.is_empty(),
-            "st_view_subs should be empty after reopening the database"
+            subscribers.is_empty(),
+            "view lifecycle subscribers should be empty after reopening the database"
         );
         Ok(())
     }
@@ -2571,7 +2619,8 @@ mod tests {
         };
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.subscribe_view(view_id, ArgId::SENTINEL, Identity::ONE)?;
+        let args = ViewInstanceArgs::Sender(Identity::ONE);
+        tx.subscribe_view(ViewCallInfo::from_args(view_id, args), args, Identity::ONE)?;
         stdb.materialize_view(&mut tx, table_id, Identity::ONE, vec![product![10u8]])?;
         let (tx_offset_2, tx_data, ..) = stdb.commit_tx(tx)?.unwrap();
 
@@ -2613,10 +2662,10 @@ mod tests {
         );
 
         let tx = begin_mut_tx(&stdb);
-        let subs_rows = tx.lookup_st_view_subs(view_id)?;
+        let subscribers = tx.active_subscribers_for_view(view_id);
         assert!(
-            subs_rows.is_empty(),
-            "st_view_subs should be empty after reopening the database"
+            subscribers.is_empty(),
+            "view lifecycle subscribers should be empty after reopening the database"
         );
         Ok(())
     }
@@ -2662,8 +2711,11 @@ mod tests {
         );
 
         let tx = begin_mut_tx(&stdb);
-        let st = tx.lookup_st_view_subs(view_id)?;
-        assert!(st.is_empty(), "st_view_subs should also be cleared after restart");
+        let subscribers = tx.active_subscribers_for_view(view_id);
+        assert!(
+            subscribers.is_empty(),
+            "view lifecycle subscribers should also be cleared after restart"
+        );
         stdb.commit_tx(tx)?;
 
         // Reinsert after restart
@@ -2693,11 +2745,11 @@ mod tests {
             "Sender 2 row should remain"
         );
 
-        // And st_view_subs must reflect only sender2
+        // And lifecycle state must reflect only sender2.
         let tx = begin_mut_tx(&stdb);
-        let st_after = tx.lookup_st_view_subs(view_id)?;
-        assert_eq!(st_after.len(), 1);
-        assert_eq!(st_after[0].identity.0, sender2);
+        let mut subscribers = tx.active_subscribers_for_view(view_id);
+        subscribers.sort_by_key(|(identity, _)| identity.to_u256());
+        assert_eq!(subscribers, vec![(sender2, 1)]);
 
         Ok(())
     }
@@ -2716,25 +2768,21 @@ mod tests {
         let live_sender = Identity::ZERO;
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.subscribe_view(view_id, ArgId::SENTINEL, stale_sender)?;
-        tx.subscribe_view(view_id, ArgId::SENTINEL, live_sender)?;
-        stdb.materialize_view_call(
-            &mut tx,
-            table_id,
-            ViewCallInfo { view_id, sender: None },
-            vec![product![42u8]],
-        )?;
+        let view_call = ViewCallInfo::anonymous(view_id);
+        tx.subscribe_view(view_call.clone(), ViewInstanceArgs::Anonymous, stale_sender)?;
+        tx.subscribe_view(view_call.clone(), ViewInstanceArgs::Anonymous, live_sender)?;
+        stdb.materialize_view_call(&mut tx, table_id, view_call, vec![product![42u8]])?;
         stdb.commit_tx(tx)?;
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.unsubscribe_view(view_id, ArgId::SENTINEL, stale_sender)?;
+        tx.unsubscribe_view(ViewCallInfo::anonymous(view_id), stale_sender)?;
         stdb.commit_tx(tx)?;
 
         // Make one row definitely expired without relying on wall-clock sleeps.
-        update_last_called(&stdb, view_id, stale_sender, Timestamp::UNIX_EPOCH)?;
+        update_last_called(&stdb, ViewCallInfo::anonymous(view_id), Timestamp::UNIX_EPOCH)?;
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.update_view_timestamp(view_id, ArgId::SENTINEL, live_sender)?;
+        tx.update_view_timestamp(ViewCallInfo::anonymous(view_id), ViewInstanceArgs::Anonymous)?;
         stdb.commit_tx(tx)?;
 
         // Cleanup should remove only the stale subscriber row and keep the shared
@@ -2750,11 +2798,9 @@ mod tests {
         );
 
         let tx = begin_mut_tx(&stdb);
-        let st_after = tx.lookup_st_view_subs(view_id)?;
-        assert_eq!(st_after.len(), 1);
-        assert_eq!(st_after[0].identity.0, live_sender);
-        assert!(st_after[0].has_subscribers);
-        assert_eq!(st_after[0].num_subscribers, 1);
+        let mut subscribers = tx.active_subscribers_for_view(view_id);
+        subscribers.sort_by_key(|(identity, _)| identity.to_u256());
+        assert_eq!(subscribers, vec![(live_sender, 1)]);
 
         Ok(())
     }
@@ -2771,21 +2817,17 @@ mod tests {
         let sender = Identity::ONE;
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.subscribe_view(view_id, ArgId::SENTINEL, sender)?;
-        stdb.materialize_view_call(
-            &mut tx,
-            table_id,
-            ViewCallInfo { view_id, sender: None },
-            vec![product![42u8]],
-        )?;
+        let view_call = ViewCallInfo::anonymous(view_id);
+        tx.subscribe_view(view_call.clone(), ViewInstanceArgs::Anonymous, sender)?;
+        stdb.materialize_view_call(&mut tx, table_id, view_call, vec![product![42u8]])?;
         stdb.commit_tx(tx)?;
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.unsubscribe_view(view_id, ArgId::SENTINEL, sender)?;
+        tx.unsubscribe_view(ViewCallInfo::anonymous(view_id), sender)?;
         stdb.commit_tx(tx)?;
 
         // Mark the unsubscribed row as expired so cleanup can process it immediately.
-        update_last_called(&stdb, view_id, sender, Timestamp::UNIX_EPOCH)?;
+        update_last_called(&stdb, ViewCallInfo::anonymous(view_id), Timestamp::UNIX_EPOCH)?;
 
         // With no remaining subscriber rows, cleanup should drop the shared
         // anonymous materialization and remove the bookkeeping row.
@@ -2799,8 +2841,8 @@ mod tests {
         );
 
         let tx = begin_mut_tx(&stdb);
-        let st_after = tx.lookup_st_view_subs(view_id)?;
-        assert!(st_after.is_empty());
+        let subscribers = tx.active_subscribers_for_view(view_id);
+        assert!(subscribers.is_empty());
 
         Ok(())
     }

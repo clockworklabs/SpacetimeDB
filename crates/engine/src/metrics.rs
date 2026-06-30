@@ -19,9 +19,24 @@ metrics_group!(
         pub replay_total_time_seconds: GaugeVec,
 
         #[name = spacetime_replay_snapshot_read_time_seconds]
-        #[help = "Time spent reading a snapshot from disk before restoring the snapshot upon restart"]
-        #[labels(db: Identity)]
+        #[help = "Time spent reading, decoding, and verifying a snapshot from disk before restoring the snapshot upon restart"]
+        #[labels(db: Identity, kind: str)]
         pub replay_snapshot_read_time_seconds: GaugeVec,
+
+        #[name = spacetime_replay_snapshot_num_objects_read]
+        #[help = "Number of snapshot files read from disk during replay"]
+        #[labels(db: Identity, kind: str)]
+        pub replay_snapshot_num_objects_read: IntGaugeVec,
+
+        #[name = spacetime_replay_snapshot_bytes_read_from_disk]
+        #[help = "Number of snapshot bytes read from disk during replay"]
+        #[labels(db: Identity, kind: str)]
+        pub replay_snapshot_bytes_read_from_disk: IntGaugeVec,
+
+        #[name = spacetime_replay_snapshot_hash_time_seconds]
+        #[help = "Time spent hashing snapshot objects during replay"]
+        #[labels(db: Identity, kind: str)]
+        pub replay_snapshot_read_hash_seconds: GaugeVec,
 
         #[name = spacetime_replay_snapshot_restore_time_seconds]
         #[help = "Time spent restoring a database from a snapshot after reading the snapshot and before commitlog replay upon restart"]

@@ -3,7 +3,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { ScheduleAt } from 'spacetimedb';
 import {
+  Router,
   schema,
+  SyncResponse,
   table,
   t,
   type Infer,
@@ -520,3 +522,11 @@ export const getMySchemaViaHttp = spacetimedb.procedure(t.string(), ctx => {
     throw e;
   }
 });
+
+export const getSimple = spacetimedb.httpHandler(
+  (_ctx, _req) => new SyncResponse('ok')
+);
+
+export const router = spacetimedb.httpRouter(
+  new Router().get('/get', getSimple)
+);

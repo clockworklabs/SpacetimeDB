@@ -36,6 +36,11 @@ metrics_group!(
         #[labels(database_identity: Identity)]
         pub ws_clients_closed_connection: IntGaugeVec,
 
+        #[name = spacetime_worker_ws_clients_idle_timed_out_total]
+        #[help = "The cumulative number of ws client connections disconnected after becoming idle"]
+        #[labels(database_identity: Identity)]
+        pub ws_clients_idle_timed_out: IntCounterVec,
+
         #[name = spacetime_websocket_requests_total]
         #[help = "The cumulative number of websocket request messages"]
         #[labels(database_identity: Identity, protocol: str)]
@@ -369,6 +374,11 @@ metrics_group!(
         #[help = "The number of server -> client WebSocket messages waiting in any client's outgoing queue"]
         #[labels(db: Identity)]
         pub total_outgoing_queue_length: IntGaugeVec,
+
+        #[name = spacetime_client_outgoing_queue_disconnects_total]
+        #[help = "The number of clients disconnected because their outgoing WebSocket message queue filled up"]
+        #[labels(db: Identity)]
+        pub client_outgoing_queue_disconnects: IntCounterVec,
 
         #[name = spacetime_module_create_instance_time_seconds]
         #[help = "Time taken to construct a WASM instance or V8 isolate to run module code"]

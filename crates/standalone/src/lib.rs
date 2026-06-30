@@ -86,6 +86,7 @@ impl StandaloneEnv {
             HostRuntimeConfig::new(config.wasm, config.v8),
             program_store.clone(),
             energy_monitor,
+            Arc::new(()),
             persistence_provider,
             db_cores,
         );
