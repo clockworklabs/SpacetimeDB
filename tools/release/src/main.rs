@@ -5,8 +5,8 @@ mod crates_resolver;
 
 mod targets;
 use targets::{
-    cpp::CppRelease, crates::CratesRelease, csharp::CSharpRelease, docker::DockerRelease, npm::NpmRelease,
-    ReleaseTarget,
+    cpp::CppRelease, crates::CratesRelease, csharp::CSharpRelease, docker::DockerRelease,
+    github_release::GithubRelease, npm::NpmRelease, ReleaseTarget,
 };
 
 #[derive(Parser)]
@@ -64,6 +64,15 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+
+    /// Publish GitHub release after artifacts are available
+    #[command(name = "github-release")]
+    GithubRelease {
+        release_version: String,
+        #[arg(long, default_value = "clockworklabs/SpacetimeDB")]
+        repo: String,
+    },
+
     /// Perform a release for all targets
     #[command(name = "--all")]
     All {
@@ -116,6 +125,13 @@ fn main() {
             dry_run,
         } => {
             let target = DockerRelease::new(version.clone(), *dry_run);
+            target.release()
+        }
+        Commands::GithubRelease {
+            release_version: version,
+            repo,
+        } => {
+            let target = GithubRelease::new(version.clone(), repo.clone());
             target.release()
         }
         Commands::All {

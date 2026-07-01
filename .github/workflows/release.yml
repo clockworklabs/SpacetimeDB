@@ -416,73 +416,17 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      RELEASE_TAG: ${{ github.event.inputs.release_tag }}
     steps:
-      - name: Verify release exists
-        id: release
+      - name: Download cargo-release
+        uses: actions/download-artifact@v4
+        with:
+          name: cargo-release-bin
+          path: ./shared-bin
+
+      - name: Make binary executable and on PATH
         run: |
-          set -euo pipefail
+          chmod +x ./shared-bin/cargo-release
+          echo "$PWD/shared-bin" >> "$GITHUB_PATH"
 
-          echo "already_published=false" >> "$GITHUB_OUTPUT"
-
-          release_json="$(
-            gh release view "${RELEASE_TAG}" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --json isDraft,url
-          )"
-
-          is_draft="$(jq -r '.isDraft' <<<"${release_json}")"
-          url="$(jq -r '.url' <<<"${release_json}")"
-          if [ "${is_draft}" != "true" ]; then
-            echo "Release ${RELEASE_TAG} is already published: ${url}"
-            echo "already_published=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "Found draft release ${RELEASE_TAG}: ${url}"
-
-      - name: Attach release artifacts
-        if: ${{ steps.release.outputs.already_published != 'true' }}
-        run: |
-          set -euo pipefail
-
-          started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          gh workflow run attach-artifacts.yml \
-            --repo "${GITHUB_REPOSITORY}" \
-            --ref master \
-            -f "release_tag=${RELEASE_TAG}"
-
-          run_id=""
-          for _ in $(seq 1 60); do
-            run_id="$(
-              gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/attach-artifacts.yml/runs?event=workflow_dispatch&per_page=20" \
-                | jq -r --arg started_at "${started_at}" \
-                  '.workflow_runs
-                    | map(select(.created_at >= $started_at))
-                    | sort_by(.created_at)
-                    | reverse
-                    | .[0].id // empty'
-            )"
-            if [ -n "${run_id}" ]; then
-              break
-            fi
-            sleep 5
-          done
-
-          if [ -z "${run_id}" ]; then
-            echo "Timed out waiting for attach-artifacts.yml workflow run to start."
-            exit 1
-          fi
-
-          gh run watch "${run_id}" --repo "${GITHUB_REPOSITORY}" --exit-status
-
-      - name: Publish release
-        if: ${{ steps.release.outputs.already_published != 'true' }}
-        run: |
-          set -euo pipefail
-
-          release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq .id)"
-          gh api \
-            --method PATCH \
-            "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
-            -F draft=false
+      - name: Publish GitHub release
+        run: cargo-release release github-release ${{ github.event.inputs.release_tag }} --repo "$GITHUB_REPOSITORY"
