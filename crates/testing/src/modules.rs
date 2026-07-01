@@ -189,6 +189,7 @@ impl CompiledModule {
             mode == CompilationMode::Debug,
             None,
             false,
+            None,
         )
         .expect("Module compilation failed");
         Self {
