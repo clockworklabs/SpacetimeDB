@@ -64,9 +64,9 @@ use spacetimedb_primitives::{HttpHandlerId, ProcedureId, TableId, ViewFnPtr, Vie
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue};
-use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, ViewDef};
 use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::migrate::{AutoMigrateError, MigrationPolicy};
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::table_name::TableName;
 use std::collections::VecDeque;

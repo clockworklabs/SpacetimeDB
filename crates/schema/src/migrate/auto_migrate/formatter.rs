@@ -4,9 +4,9 @@ use std::io;
 
 use super::{AutoMigratePlan, ModuleDefLookup, TableDef};
 use crate::{
-    auto_migrate::AutoMigrateStep,
     def::{ConstraintData, FunctionKind, ModuleDef, ScheduleDef, ViewDef},
     identifier::Identifier,
+    migrate::auto_migrate::AutoMigrateStep,
 };
 use itertools::Itertools;
 use spacetimedb_lib::db::raw_def::v9::{RawRowLevelSecurityDefV9, TableAccess, TableType};

@@ -32,7 +32,7 @@ use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
-use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
+use spacetimedb_schema::migrate::{MigrationPolicy, PrettyPrintStyle};
 use spacetimedb_table::page_pool::PagePool;
 use std::sync::Arc;
 use std::time::Duration;
