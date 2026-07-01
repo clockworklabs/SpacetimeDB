@@ -408,6 +408,8 @@ class ModuleHooksImpl implements ModuleHooks {
   #consumerViewCount: number;
   /** Cache the `ReducerCtx` object to avoid allocating anew for every reducer call. */
   #reducerCtx_: InstanceType<typeof ReducerCtxImpl> | undefined;
+  /** Per-submodule alias ctx maps, cached lazily (parallel to #flatSubmodules). */
+  #submoduleAsViews_: (object | undefined)[] = [];
 
   constructor(schema: SchemaInner) {
     this.#schema = schema;
@@ -451,6 +453,14 @@ class ModuleHooksImpl implements ModuleHooks {
           makeTableView(m.typespace, tableDef, m.namePrefix),
         ])
       ) as DbView<any>
+    ));
+  }
+
+  #getSubmoduleAsViews(submoduleIdx: number): object {
+    return (this.#submoduleAsViews_[submoduleIdx] ??= buildAliasCtxMap(
+      this.#reducerCtx,
+      this.#flatSubmodules[submoduleIdx].subDispatches,
+      this.#flatSubmodules[submoduleIdx].namePrefix
     ));
   }
 
@@ -515,6 +525,7 @@ class ModuleHooksImpl implements ModuleHooks {
         if (reducerId < offset + m.reducerFns.length) {
           fn = m.reducerFns[reducerId - offset];
           dbView = this.#getSubmoduleDbView(i);
+          asViews = this.#getSubmoduleAsViews(i);
           break;
         }
         offset += m.reducerFns.length;
@@ -522,7 +533,6 @@ class ModuleHooksImpl implements ModuleHooks {
       if (fn === undefined) {
         throw new RangeError(`unknown reducerId ${reducerId}`);
       }
-      asViews = {};
     }
 
     const ctx = this.#reducerCtx;
@@ -668,7 +678,8 @@ class ModuleHooksImpl implements ModuleHooks {
           ts,
           args,
           () => this.#getSubmoduleDbView(i),
-          m.subDispatches
+          m.subDispatches,
+          m.namePrefix
         );
       }
       offset += m.procedureFns.length;
@@ -917,10 +928,11 @@ export function buildProcedureAliasCtxMap(
  *  Must be called while inside a transaction (after sys.procedure_start_mut_tx). */
 export function assignTxAliasViews(
   tx: InstanceType<typeof ReducerCtxImpl>,
-  dispatches: SubmoduleDispatchInfo[]
+  dispatches: SubmoduleDispatchInfo[],
+  parentPrefix = ''
 ): void {
   if (dispatches.length > 0) {
-    tx.as = buildAliasCtxMap(tx, dispatches, '') as any;
+    tx.as = buildAliasCtxMap(tx, dispatches, parentPrefix) as any;
   }
 }
 

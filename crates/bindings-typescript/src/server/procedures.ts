@@ -168,7 +168,8 @@ export function callProcedure(
   timestamp: Timestamp,
   argsBuf: Uint8Array,
   dbView: () => DbView<any>,
-  dispatches: SubmoduleDispatchInfo[] = []
+  dispatches: SubmoduleDispatchInfo[] = [],
+  parentPrefix = ''
 ): Uint8Array {
   const { fn, deserializeArgs, serializeReturn, returnTypeBaseSize } =
     procedures[id];
@@ -179,7 +180,8 @@ export function callProcedure(
     timestamp,
     connectionId,
     dbView,
-    dispatches
+    dispatches,
+    parentPrefix
   );
 
   const ret = callUserFunction(fn, ctx, args);
@@ -197,6 +199,7 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   #random: Random | undefined;
   #dbView: () => DbView<any>;
   #dispatches: SubmoduleDispatchInfo[];
+  #parentPrefix: string;
   #asViews: object | undefined;
 
   constructor(
@@ -204,10 +207,12 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
     readonly timestamp: Timestamp,
     readonly connectionId: ConnectionId | null,
     dbView: () => DbView<any>,
-    dispatches: SubmoduleDispatchInfo[] = []
+    dispatches: SubmoduleDispatchInfo[] = [],
+    parentPrefix = ''
   ) {
     this.#dbView = dbView;
     this.#dispatches = dispatches;
+    this.#parentPrefix = parentPrefix;
   }
 
   get databaseIdentity() {
@@ -227,11 +232,12 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   }
 
   get as() {
-    return (this.#asViews ??= buildProcedureAliasCtxMap(this, this.#dispatches, '')) as any;
+    return (this.#asViews ??= buildProcedureAliasCtxMap(this, this.#dispatches, this.#parentPrefix)) as any;
   }
 
   withTx<T>(body: (ctx: TransactionCtx<S>) => T): T {
     const dispatches = this.#dispatches;
+    const parentPrefix = this.#parentPrefix;
     return runWithTx(
       timestamp => {
         const tx = new TransactionCtxImpl(
@@ -240,7 +246,7 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
           this.connectionId,
           this.#dbView()
         );
-        assignTxAliasViews(tx, dispatches);
+        assignTxAliasViews(tx, dispatches, parentPrefix);
         return tx as unknown as TransactionCtx<S>;
       },
       body
