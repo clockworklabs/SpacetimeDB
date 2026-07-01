@@ -40,6 +40,18 @@ impl ScheduledReducerRowTableAccess for super::RemoteTables {
 pub struct ScheduledReducerRowInsertCallbackId(__sdk::CallbackId);
 pub struct ScheduledReducerRowDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for ScheduledReducerRowTableHandle<'ctx> {
+    type Row = ScheduledReducerRow;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = ScheduledReducerRow> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for ScheduledReducerRowTableHandle<'ctx> {
     type Row = ScheduledReducerRow;
     type EventContext = super::EventContext;
@@ -78,9 +90,54 @@ impl<'ctx> __sdk::Table for ScheduledReducerRowTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithInsert for ScheduledReducerRowTableHandle<'ctx> {
+    type InsertCallbackId = ScheduledReducerRowInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> ScheduledReducerRowInsertCallbackId {
+        ScheduledReducerRowInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: ScheduledReducerRowInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for ScheduledReducerRowTableHandle<'ctx> {
+    type DeleteCallbackId = ScheduledReducerRowDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> ScheduledReducerRowDeleteCallbackId {
+        ScheduledReducerRowDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: ScheduledReducerRowDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
 pub struct ScheduledReducerRowUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for ScheduledReducerRowTableHandle<'ctx> {
+    type UpdateCallbackId = ScheduledReducerRowUpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> ScheduledReducerRowUpdateCallbackId {
+        ScheduledReducerRowUpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: ScheduledReducerRowUpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithUpdate for ScheduledReducerRowTableHandle<'ctx> {
     type UpdateCallbackId = ScheduledReducerRowUpdateCallbackId;
 
     fn on_update(

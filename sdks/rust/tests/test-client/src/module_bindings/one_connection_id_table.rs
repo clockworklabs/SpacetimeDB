@@ -40,6 +40,18 @@ impl OneConnectionIdTableAccess for super::RemoteTables {
 pub struct OneConnectionIdInsertCallbackId(__sdk::CallbackId);
 pub struct OneConnectionIdDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for OneConnectionIdTableHandle<'ctx> {
+    type Row = OneConnectionId;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = OneConnectionId> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for OneConnectionIdTableHandle<'ctx> {
     type Row = OneConnectionId;
     type EventContext = super::EventContext;
@@ -64,6 +76,36 @@ impl<'ctx> __sdk::Table for OneConnectionIdTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = OneConnectionIdDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OneConnectionIdDeleteCallbackId {
+        OneConnectionIdDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: OneConnectionIdDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for OneConnectionIdTableHandle<'ctx> {
+    type InsertCallbackId = OneConnectionIdInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OneConnectionIdInsertCallbackId {
+        OneConnectionIdInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: OneConnectionIdInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for OneConnectionIdTableHandle<'ctx> {
     type DeleteCallbackId = OneConnectionIdDeleteCallbackId;
 
     fn on_delete(

@@ -40,6 +40,18 @@ impl NearbyPlayersTableAccess for super::RemoteTables {
 pub struct NearbyPlayersInsertCallbackId(__sdk::CallbackId);
 pub struct NearbyPlayersDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for NearbyPlayersTableHandle<'ctx> {
+    type Row = PlayerLocation;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = PlayerLocation> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for NearbyPlayersTableHandle<'ctx> {
     type Row = PlayerLocation;
     type EventContext = super::EventContext;
@@ -64,6 +76,36 @@ impl<'ctx> __sdk::Table for NearbyPlayersTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = NearbyPlayersDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> NearbyPlayersDeleteCallbackId {
+        NearbyPlayersDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: NearbyPlayersDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for NearbyPlayersTableHandle<'ctx> {
+    type InsertCallbackId = NearbyPlayersInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> NearbyPlayersInsertCallbackId {
+        NearbyPlayersInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: NearbyPlayersInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for NearbyPlayersTableHandle<'ctx> {
     type DeleteCallbackId = NearbyPlayersDeleteCallbackId;
 
     fn on_delete(
