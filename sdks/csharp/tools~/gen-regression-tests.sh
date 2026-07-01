@@ -9,6 +9,17 @@ DOTNET_VERSION="${1:-}"
 
 GLOBAL_JSON_BACKUPS=()
 
+expected_global_json_symlink_target() {
+    local path="$1"
+
+    case "$path" in
+        "$SDK_PATH/examples~/regression-tests/server/global.json") echo "../../../../../global.json" ;;
+        "$SDK_PATH/examples~/regression-tests/republishing/server-initial/global.json") echo "../../../../../../global.json" ;;
+        "$SDK_PATH/examples~/regression-tests/republishing/server-republish/global.json") echo "../../../../../../global.json" ;;
+        *) return 1 ;;
+    esac
+}
+
 backup_global_json_once() {
     local path="$1"
     local entry
@@ -25,6 +36,8 @@ backup_global_json_once() {
         backup="$(mktemp)"
         cp "$path" "$backup"
         GLOBAL_JSON_BACKUPS+=("$path|file:$backup")
+    elif target="$(expected_global_json_symlink_target "$path")"; then
+        GLOBAL_JSON_BACKUPS+=("$path|symlink:$target")
     else
         GLOBAL_JSON_BACKUPS+=("$path|missing:")
     fi
