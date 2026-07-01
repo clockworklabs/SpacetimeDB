@@ -1147,6 +1147,9 @@ pub struct StViewParamRow {
 
 /// System table [ST_VIEW_SUB_NAME]
 ///
+/// Legacy compatibility schema. Runtime view subscription state is maintained
+/// in committed state rather than inserted into this table.
+///
 /// | view_id | arg_id | identity | num_subscribers | has_subscribers | last_called |
 /// |---------|--------|----------|-----------------|-----------------|-------------|
 /// | 1       | 2      | 0x...    | 3               | true            | <timestamp> |
@@ -1170,6 +1173,9 @@ impl TryFrom<RowRef<'_>> for StViewSubRow {
 }
 
 /// System table [ST_VIEW_ARG_NAME]
+///
+/// Legacy compatibility schema. Runtime view arguments are identified by
+/// `arg_hash` and are not inserted into this table.
 ///
 /// | id | bytes   |
 /// |----|---------|

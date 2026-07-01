@@ -40,6 +40,18 @@ impl OneI256TableAccess for super::RemoteTables {
 pub struct OneI256InsertCallbackId(__sdk::CallbackId);
 pub struct OneI256DeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for OneI256TableHandle<'ctx> {
+    type Row = OneI256;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = OneI256> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for OneI256TableHandle<'ctx> {
     type Row = OneI256;
     type EventContext = super::EventContext;
@@ -64,6 +76,36 @@ impl<'ctx> __sdk::Table for OneI256TableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = OneI256DeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OneI256DeleteCallbackId {
+        OneI256DeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: OneI256DeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for OneI256TableHandle<'ctx> {
+    type InsertCallbackId = OneI256InsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OneI256InsertCallbackId {
+        OneI256InsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: OneI256InsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for OneI256TableHandle<'ctx> {
     type DeleteCallbackId = OneI256DeleteCallbackId;
 
     fn on_delete(

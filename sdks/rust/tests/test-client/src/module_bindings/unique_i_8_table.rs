@@ -40,6 +40,18 @@ impl UniqueI8TableAccess for super::RemoteTables {
 pub struct UniqueI8InsertCallbackId(__sdk::CallbackId);
 pub struct UniqueI8DeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for UniqueI8TableHandle<'ctx> {
+    type Row = UniqueI8;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = UniqueI8> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for UniqueI8TableHandle<'ctx> {
     type Row = UniqueI8;
     type EventContext = super::EventContext;
@@ -64,6 +76,36 @@ impl<'ctx> __sdk::Table for UniqueI8TableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = UniqueI8DeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> UniqueI8DeleteCallbackId {
+        UniqueI8DeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: UniqueI8DeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for UniqueI8TableHandle<'ctx> {
+    type InsertCallbackId = UniqueI8InsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> UniqueI8InsertCallbackId {
+        UniqueI8InsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: UniqueI8InsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for UniqueI8TableHandle<'ctx> {
     type DeleteCallbackId = UniqueI8DeleteCallbackId;
 
     fn on_delete(
