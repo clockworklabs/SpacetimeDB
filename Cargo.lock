@@ -8417,7 +8417,6 @@ name = "spacetimedb-dst"
 version = "2.7.0"
 dependencies = [
  "anyhow",
- "async-trait",
  "clap 4.5.50",
  "spacetimedb-commitlog",
  "spacetimedb-datastore",
