@@ -78,6 +78,11 @@ pub fn is_remote_server() -> bool {
     remote_server_url().is_some()
 }
 
+/// Returns true if remote smoketests are using a SpacetimeAuth-issued token.
+pub fn is_using_auth_host() -> bool {
+    std::env::var("SPACETIME_USE_AUTH_HOST").ok().as_deref() == Some("1")
+}
+
 /// Skip this test if running against a remote server.
 ///
 /// Use this macro at the start of tests that require a local server,
@@ -101,6 +106,19 @@ macro_rules! require_local_server {
             #[allow(clippy::disallowed_macros)]
             {
                 eprintln!("Skipping test: requires local server");
+            }
+            return;
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! require_server_issued_login {
+    () => {
+        if $crate::is_using_auth_host() {
+            #[allow(clippy::disallowed_macros)]
+            {
+                eprintln!("Skipping test: requires server-issued throwaway identities");
             }
             return;
         }
@@ -501,7 +519,7 @@ pub struct PublishBuilder<'a> {
     break_clients: bool,
     num_replicas: Option<u32>,
     organization: Option<String>,
-    force: bool,
+    force: Option<&'static str>,
     stdin_input: Option<String>,
     source: Option<ModuleSource>,
 }
@@ -528,7 +546,7 @@ impl<'a> PublishBuilder<'a> {
             break_clients: false,
             num_replicas: None,
             organization: None,
-            force: true,
+            force: Some("all"),
             stdin_input: None,
             source: None,
         }
@@ -559,13 +577,13 @@ impl<'a> PublishBuilder<'a> {
         self
     }
 
-    pub fn force(mut self, force: bool) -> Self {
+    pub fn force(mut self, force: Option<&'static str>) -> Self {
         self.force = force;
         self
     }
 
     pub fn stdin(mut self, stdin_input: impl Into<String>) -> Self {
-        self.force = false;
+        self.force = None;
         self.stdin_input = Some(stdin_input.into());
         self
     }
@@ -912,6 +930,10 @@ impl SmoketestBuilder {
         let module_name = format!("smoketest_module_{}", random_string());
 
         let config_path = project_dir.path().join("config.toml");
+        if let Ok(base_config_path) = std::env::var("SPACETIME_SMOKETEST_BASE_CONFIG_PATH") {
+            fs::copy(&base_config_path, &config_path)
+                .unwrap_or_else(|err| panic!("failed to copy base smoketest config from {base_config_path}: {err:#}"));
+        }
         let mut smoketest = Smoketest {
             guard,
             _data_dir_fixture: data_dir_fixture,
@@ -1416,7 +1438,7 @@ log = "0.4"
         break_clients: bool,
         num_replicas: Option<u32>,
         organization: Option<&str>,
-        force: bool,
+        force: Option<&str>,
         stdin_input: Option<&str>,
     ) -> Result<String> {
         let start = Instant::now();
@@ -1459,9 +1481,10 @@ log = "0.4"
         // Now publish with --bin-path to skip rebuild
         let publish_start = Instant::now();
         let mut args = vec!["publish", "--server", &self.server_url, "--bin-path", &wasm_path_str];
-
-        if force {
-            args.push("--yes");
+        let force_arg;
+        if let Some(force) = force {
+            force_arg = format!("--yes={force}");
+            args.push(&force_arg);
         }
 
         if clear {
