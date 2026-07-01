@@ -1060,7 +1060,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         })
     };
     match maybe_updated {
-        Some(UpdateDatabaseResult::AutoMigrateError(errs)) => {
+        Some(UpdateDatabaseResult::MigrationPlanningError(errs)) => {
             Err(bad_request(format!("Database update rejected: {errs}").into()))
         }
         Some(UpdateDatabaseResult::ErrorExecutingMigration(err)) => Err(bad_request(
@@ -1282,7 +1282,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
                 major_version_upgrade,
             }))
         }
-        MigratePlanResult::AutoMigrationError {
+        MigratePlanResult::PlanningError {
             error: e,
             major_version_upgrade,
         } => {

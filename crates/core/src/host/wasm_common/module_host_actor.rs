@@ -661,7 +661,9 @@ impl InstanceCommon {
             Ok(plan) => plan,
             Err(e) => {
                 return match e {
-                    MigrationPolicyError::AutoMigrateFailure(e) => Ok(UpdateDatabaseResult::AutoMigrateError(e.into())),
+                    MigrationPolicyError::PlanningFailure(e) => {
+                        Ok(UpdateDatabaseResult::MigrationPlanningError(e.into()))
+                    }
                     _ => Ok(UpdateDatabaseResult::ErrorExecutingMigration(e.into())),
                 }
             }

@@ -44,7 +44,7 @@ use spacetimedb_lib::db::raw_def::v9::{
     RawUniqueConstraintDataV9, RawViewDefV9, TableAccess, TableType,
 };
 use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
-use spacetimedb_lib::{ProductType, RawModuleDef};
+use spacetimedb_lib::{bsatn, ProductType, RawModuleDef};
 use spacetimedb_primitives::{
     ColId, ColList, ColOrCols, ColSet, HttpHandlerId, ProcedureId, ReducerId, TableId, ViewFnPtr,
 };
@@ -466,6 +466,24 @@ impl ModuleDef {
         } else {
             panic!("expected ModuleDef to contain {:?}, but it does not", def.key());
         }
+    }
+
+    pub fn manual_migration_function_for_previous_module_def_hash(
+        &self,
+        prev_hash: spacetimedb_lib::Hash,
+    ) -> Option<&ManualMigrationFunctionDef> {
+        self.manual_migration_functions.get(&prev_hash)
+    }
+
+    /// Compute the hash of this module def,
+    /// for use as an identifier a manual migration can use to reference its expected previous state.
+    ///
+    /// This takes the Blake3 hash of the BSATN bytes of the `RawModuleDefV10` representation of `self`.
+    pub fn manual_migration_hash(&self) -> Result<spacetimedb_lib::Hash, bsatn::EncodeError> {
+        let raw_def = RawModuleDefV10::from(self.clone());
+        let bsatn_bytes = bsatn::to_vec(&raw_def)?;
+        let hash = blake3::hash(&bsatn_bytes);
+        Ok(spacetimedb_lib::Hash::from_byte_array(*hash.as_bytes()))
     }
 }
 

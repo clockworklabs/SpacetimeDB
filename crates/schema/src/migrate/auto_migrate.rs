@@ -95,6 +95,8 @@ pub enum AutoMigrateStep<'def> {
     RemoveRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
     /// Remove an empty table and all its sub-objects (indexes, constraints, sequences).
     /// Validated at execution time: fails if the table contains data.
+    ///
+    /// Will never appear in a [`super::manual_migrate::ManualMigratePlan::auto_migrate_steps_before`].
     RemoveTable(<TableDef as ModuleDefLookup>::Key<'def>),
 
     /// Change the column types of a table, in a layout compatible way.

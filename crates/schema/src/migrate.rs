@@ -1,6 +1,7 @@
 use auto_migrate::{format_plan, ponder_auto_migrate, ColorScheme, TermColorFormatter};
+use manual_migrate::{ponder_manual_migrate, ManualMigrateError};
 use spacetimedb_data_structures::error_stream::ErrorStream;
-use spacetimedb_lib::{hash_bytes, Identity};
+use spacetimedb_lib::{bsatn, hash_bytes, Identity};
 use thiserror::Error;
 
 use crate::def::ModuleDef;
@@ -119,7 +120,7 @@ impl MigrationPolicy {
         new_module_hash: spacetimedb_lib::Hash,
         new_module_def: &'def ModuleDef,
     ) -> anyhow::Result<MigratePlan<'def>, MigrationPolicyError> {
-        let plan = ponder_migrate(old_module_def, new_module_def).map_err(MigrationPolicyError::AutoMigrateFailure)?;
+        let plan = ponder_migrate(old_module_def, new_module_def).map_err(MigrationPolicyError::PlanningFailure)?;
         self.permits_migrate_plan(database_identity, old_module_hash, new_module_hash, &plan)?;
         Ok(plan)
     }
@@ -144,8 +145,8 @@ impl MigrationPolicy {
 
 #[derive(Debug, Error)]
 pub enum MigrationPolicyError {
-    #[error("Automatic migration planning failed")]
-    AutoMigrateFailure(ErrorStream<AutoMigrateError>),
+    #[error("Migration planning failed: {0}")]
+    PlanningFailure(PonderMigrateError),
 
     #[error("Token provided is invalid or does not match expected hash")]
     InvalidToken,
@@ -180,14 +181,37 @@ impl MigrationToken {
     }
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum PonderMigrateError {
+    #[error("ModuleDef changes require a manual migration, but new `ModuleDef` does not specify a manual migration function from previous `ModuleDef` {old_hash}.\nManual migration is required because {errors}")]
+    AutoMigrate {
+        errors: ErrorStream<AutoMigrateError>,
+        old_hash: spacetimedb_lib::Hash,
+    },
+    #[error("Planning manual migration failed: ")]
+    ManualMigrate(#[from] ErrorStream<ManualMigrateError>),
+    #[error("Error while BSATN encoding old `ModuleDef` in order to compute its hash when pondering a manual migration: {0}")]
+    Bsatn(#[from] bsatn::EncodeError),
+}
+
 /// Construct a migration plan.
 /// If `new` has an `__update__` reducer, return a manual migration plan.
 /// Otherwise, try to plan an automatic migration. This may fail.
 pub fn ponder_migrate<'def>(
     old: &'def ModuleDef,
     new: &'def ModuleDef,
-) -> Result<MigratePlan<'def>, ErrorStream<AutoMigrateError>> {
-    // TODO(1.0): Implement this function.
-    // Currently we only can do automatic migrations.
-    ponder_auto_migrate(old, new).map(MigratePlan::Auto)
+) -> Result<MigratePlan<'def>, PonderMigrateError> {
+    let old_hash = old.manual_migration_hash()?;
+    if new
+        .manual_migration_function_for_previous_module_def_hash(old_hash)
+        .is_some()
+    {
+        ponder_manual_migrate(old, old_hash, new)
+            .map(MigratePlan::Manual)
+            .map_err(PonderMigrateError::ManualMigrate)
+    } else {
+        ponder_auto_migrate(old, new)
+            .map(MigratePlan::Auto)
+            .map_err(|errors| PonderMigrateError::AutoMigrate { errors, old_hash })
+    }
 }
