@@ -12,12 +12,19 @@ struct TESTPROCCLIENT_API FReadMySchemaArgs
 {
     GENERATED_BODY()
 
+    UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
+    FString ServerUrl;
+
     FReadMySchemaArgs() = default;
+
+    FReadMySchemaArgs(const FString& InServerUrl)
+        : ServerUrl(InServerUrl)
+    {}
 
 
     FORCEINLINE bool operator==(const FReadMySchemaArgs& Other) const
     {
-        return true;
+        return ServerUrl == Other.ServerUrl;
     }
     FORCEINLINE bool operator!=(const FReadMySchemaArgs& Other) const
     {
@@ -27,5 +34,5 @@ struct TESTPROCCLIENT_API FReadMySchemaArgs
 
 namespace UE::SpacetimeDB
 {
-    UE_SPACETIMEDB_STRUCT_EMPTY(FReadMySchemaArgs);
+    UE_SPACETIMEDB_STRUCT(FReadMySchemaArgs, ServerUrl);
 }

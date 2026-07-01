@@ -2,6 +2,7 @@ use super::instrumentation::CallTimes;
 use super::*;
 use crate::client::ClientActorId;
 use crate::database_logger;
+use crate::db::sql::ast::SchemaViewer;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
 use crate::error::DBError;
 use crate::host::host_controller::CallProcedureReturn;
@@ -15,14 +16,13 @@ use crate::host::module_host::{
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::{
-    ArgsTuple, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError, ReducerCallResult, ReducerId,
-    ReducerOutcome, Scheduler, UpdateDatabaseResult,
+    ArgsTuple, InitDatabaseResult, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError,
+    ReducerCallResult, ReducerCallResultWithTxOffset, ReducerId, ReducerOutcome, Scheduler, UpdateDatabaseResult,
 };
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
-use crate::sql::ast::SchemaViewer;
 use crate::sql::execute::run_with_instance;
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, CommitAndBroadcastEventSuccess};
 use crate::subscription::module_subscription_manager::TransactionOffset;
@@ -543,10 +543,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
-    pub fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
+    pub fn init_database(&mut self, program: Program) -> anyhow::Result<InitDatabaseResult> {
         let module_def = &self.common.info.clone().module_def;
         let replica_ctx = &self.instance.replica_ctx().clone();
-        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let call_reducer = |tx, params| self.call_reducer_with_tx_offset(tx, params);
         let (res, trapped) = init_database(replica_ctx, module_def, program, call_reducer);
         self.trapped = trapped;
         res
@@ -589,8 +589,18 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 impl<T: WasmInstance> WasmModuleInstance<T> {
     #[tracing::instrument(level = "trace", skip_all)]
     fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> (ReducerCallResult, bool) {
+        let (res, trapped) = self.call_reducer_with_tx_offset(tx, params);
+        (res.result, trapped)
+    }
+
+    #[tracing::instrument(level = "trace", skip_all)]
+    fn call_reducer_with_tx_offset(
+        &mut self,
+        tx: Option<MutTxId>,
+        params: CallReducerParams,
+    ) -> (ReducerCallResultWithTxOffset, bool) {
         crate::callgrind_flag::invoke_allowing_callgrind(|| {
-            self.common.call_reducer_with_tx(tx, params, &mut self.instance)
+            self.common.call_reducer_with_tx_offset(tx, params, &mut self.instance)
         })
     }
 
@@ -946,6 +956,16 @@ impl InstanceCommon {
         params: CallReducerParams,
         inst: &mut I,
     ) -> (ReducerCallResult, bool) {
+        let (res, trapped) = self.call_reducer_with_tx_offset(tx, params, inst);
+        (res.result, trapped)
+    }
+
+    pub(crate) fn call_reducer_with_tx_offset<I: WasmInstance>(
+        &mut self,
+        tx: Option<MutTxId>,
+        params: CallReducerParams,
+        inst: &mut I,
+    ) -> (ReducerCallResultWithTxOffset, bool) {
         let CallReducerParams {
             timestamp,
             caller_identity,
@@ -1083,7 +1103,8 @@ impl InstanceCommon {
             request_id,
             timer,
         };
-        let event = commit_and_broadcast_event(&info.subscriptions, client, event, out.tx).event;
+        let CommitAndBroadcastEventSuccess { event, tx_offset, .. } =
+            commit_and_broadcast_event(&info.subscriptions, client, event, out.tx);
 
         let res = ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),
@@ -1091,7 +1112,7 @@ impl InstanceCommon {
             execution_duration: total_duration,
         };
 
-        (res, trapped)
+        (ReducerCallResultWithTxOffset { result: res, tx_offset }, trapped)
     }
 
     fn handle_outer_error(&mut self, energy: &EnergyStats, reducer_name: &str) -> EventStatus {

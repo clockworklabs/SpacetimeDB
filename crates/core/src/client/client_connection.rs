@@ -313,6 +313,7 @@ pub struct ClientConnectionSender {
 pub struct ClientConnectionMetrics {
     pub websocket_request_msg_size: Histogram,
     pub websocket_requests: IntCounter,
+    pub outgoing_queue_disconnects: IntCounter,
 
     /// The `total_outgoing_queue_length` metric labeled with this database's `Identity`,
     /// which we'll increment whenever sending a message.
@@ -333,6 +334,9 @@ impl ClientConnectionMetrics {
         let websocket_requests = WORKER_METRICS
             .websocket_requests
             .with_label_values(&database_identity, message_kind);
+        let outgoing_queue_disconnects = WORKER_METRICS
+            .client_outgoing_queue_disconnects
+            .with_label_values(&database_identity);
         let sendtx_queue_size = WORKER_METRICS
             .total_outgoing_queue_length
             .with_label_values(&database_identity);
@@ -340,6 +344,7 @@ impl ClientConnectionMetrics {
         Self {
             websocket_request_msg_size,
             websocket_requests,
+            outgoing_queue_disconnects,
             sendtx_queue_size,
         }
     }
@@ -442,6 +447,9 @@ impl ClientConnectionSender {
                     self.id,
                     self.sendtx.capacity(),
                 );
+                if let Some(metrics) = &self.metrics {
+                    metrics.outgoing_queue_disconnects.inc();
+                }
                 self.abort_handle.abort();
                 self.cancelled.store(true, Ordering::Relaxed);
                 return Err(ClientSendError::Cancelled);

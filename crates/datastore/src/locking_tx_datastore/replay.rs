@@ -510,6 +510,7 @@ impl<'cs> ReplayCommittedState<'cs> {
         self.build_missing_tables()?;
         self.build_indexes()?;
         self.collect_ephemeral_tables()?;
+        self.rebuild_datastore_page_bytes();
 
         // Figure out where to pick up for each sequence.
         build_sequence_state(datastore, self)?;

@@ -1,11 +1,12 @@
 use super::{
-    ArgsTuple, FunctionArgs, InvalidProcedureArguments, InvalidReducerArguments, ReducerCallResult, ReducerId,
-    ReducerOutcome, Scheduler,
+    ArgsTuple, FunctionArgs, InvalidProcedureArguments, InvalidReducerArguments, ReducerCallResult,
+    ReducerCallResultWithTxOffset, ReducerId, ReducerOutcome, Scheduler,
 };
 use crate::client::messages::{OneOffQueryResponseMessage, ProcedureResultMessage, SerializableMessage};
 use crate::client::{ClientActorId, ClientConnectionSender, WsVersion};
 use crate::database_logger::{DatabaseLogger, LogLevel, Record};
 use crate::db::relational_db::{RelationalDB, Tx};
+use crate::db::sql::ast::SchemaViewer;
 use crate::error::DBError;
 use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::hash::Hash;
@@ -18,12 +19,10 @@ use crate::host::{InvalidFunctionArguments, InvalidViewArguments};
 use crate::identity::Identity;
 use crate::messages::control_db::{Database, HostType};
 use crate::replica_context::ReplicaContext;
-use crate::sql::ast::SchemaViewer;
 use crate::sql::execute::SqlResult;
-use crate::sql::parser::RowLevelExpr;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
-use crate::subscription::module_subscription_manager::BroadcastError;
 pub use crate::subscription::module_subscription_manager::TransactionOffset;
+use crate::subscription::module_subscription_manager::{from_tx_offset, BroadcastError};
 use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRowListBuilderFakePool};
 use crate::subscription::tx::DeltaTx;
 use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
@@ -51,6 +50,7 @@ use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 pub use spacetimedb_durability::{DurabilityExited, DurableOffset};
+use spacetimedb_engine::sql::rls::RowLevelExpr;
 use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_execution::ExecutionParams;
 use spacetimedb_execution::RelValue;
@@ -65,10 +65,9 @@ use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue};
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
-use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, ViewDef};
+use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, ViewDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::reducer_name::ReducerName;
-use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_schema::table_name::TableName;
 use std::collections::VecDeque;
 use std::fmt;
@@ -550,19 +549,6 @@ impl GenericModuleInstance for super::v8::JsProcedureInstance {
     }
 }
 
-/// Creates the table for `table_def` in `stdb`.
-pub fn create_table_from_def(
-    stdb: &RelationalDB,
-    tx: &mut MutTxId,
-    module_def: &ModuleDef,
-    table_def: &TableDef,
-) -> anyhow::Result<()> {
-    let schema = TableSchema::from_module_def(module_def, table_def, (), TableId::SENTINEL);
-    stdb.create_table(tx, schema)
-        .with_context(|| format!("failed to create table {}", &table_def.name))?;
-    Ok(())
-}
-
 /// Creates the table for `view_def` in `stdb`.
 pub fn create_table_from_view_def(
     stdb: &RelationalDB,
@@ -588,8 +574,8 @@ pub(crate) fn init_database(
     replica_ctx: &ReplicaContext,
     module_def: &ModuleDef,
     program: Program,
-    call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResult, bool),
-) -> (anyhow::Result<Option<ReducerCallResult>>, bool) {
+    call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResultWithTxOffset, bool),
+) -> (anyhow::Result<InitDatabaseResult>, bool) {
     extract_trapped(init_database_inner(replica_ctx, module_def, program, call_reducer))
 }
 
@@ -597,8 +583,8 @@ fn init_database_inner(
     replica_ctx: &ReplicaContext,
     module_def: &ModuleDef,
     program: Program,
-    call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResult, bool),
-) -> anyhow::Result<(Option<ReducerCallResult>, bool)> {
+    call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResultWithTxOffset, bool),
+) -> anyhow::Result<(InitDatabaseResult, bool)> {
     log::debug!("init database");
     let timestamp = Timestamp::now();
     let stdb = replica_ctx.relational_db();
@@ -615,7 +601,7 @@ fn init_database_inner(
             table_defs.sort_by_key(|x| &x.name);
             for def in table_defs {
                 logger.info(&format!("Creating table `{}`", &def.name));
-                create_table_from_def(stdb, tx, module_def, def)?;
+                spacetimedb_engine::update::create_table_from_def(stdb, tx, module_def, def)?;
             }
 
             // Create all in-memory views defined by the module.
@@ -646,22 +632,40 @@ fn init_database_inner(
 
     let rcr = match module_def.lifecycle_reducer(Lifecycle::Init) {
         None => {
-            if let Some((_tx_offset, tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
-                stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
-            }
-            (None, false)
+            let (tx_offset, tx_data, tx_metrics, reducer) = stdb
+                .commit_tx(tx)?
+                .context("database initialization did not commit a transaction")?;
+            stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
+            (
+                InitDatabaseResult {
+                    reducer: None,
+                    tx_offset: from_tx_offset(tx_offset),
+                },
+                false,
+            )
         }
 
         Some((reducer_id, _)) => {
             logger.info("Invoking `init` reducer");
             let params = CallReducerParams::from_system(timestamp, owner_identity, reducer_id, ArgsTuple::nullary());
             let (res, trapped) = call_reducer(Some(tx), params);
-            (Some(res), trapped)
+            (
+                InitDatabaseResult {
+                    reducer: Some(res.result),
+                    tx_offset: res.tx_offset,
+                },
+                trapped,
+            )
         }
     };
 
     logger.info("Database initialized");
     Ok(rcr)
+}
+
+pub struct InitDatabaseResult {
+    pub reducer: Option<ReducerCallResult>,
+    pub tx_offset: TransactionOffset,
 }
 
 pub fn call_identity_connected(
@@ -3077,7 +3081,7 @@ impl ModuleHost {
         instance.common.call_view_with_tx(tx, params, instance.instance)
     }
 
-    pub async fn init_database(&self, program: Program) -> Result<Option<ReducerCallResult>, InitDatabaseError> {
+    pub async fn init_database(&self, program: Program) -> Result<InitDatabaseResult, InitDatabaseError> {
         call_instance!(
             self,
             "<init_database>",

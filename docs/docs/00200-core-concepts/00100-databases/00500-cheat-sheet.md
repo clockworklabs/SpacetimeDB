@@ -739,6 +739,12 @@ SPACETIMEDB_VIEW(std::vector<Player>, top_players, Public, ViewContext ctx) {
     return ctx.db[player_score].filter(range_from(int32_t(1000))).collect();
 }
 
+// Procedural view with update callbacks.
+SPACETIMEDB_VIEW(std::vector<Player>, top_players_with_updates, Public, ViewContext ctx) {
+    return ctx.db[player_score].filter(range_from(int32_t(1000))).collect();
+}
+VIEW_PrimaryKey(top_players_with_updates, id)
+
 // Perform a generic filter using the query builder.
 // Equivalent to `SELECT * FROM player WHERE score < 1000`.
 SPACETIMEDB_VIEW(Query<Player>, bottom_players, Public, ViewContext ctx) {
@@ -771,7 +777,7 @@ ctx.db                  // Database access
 ctx.sender              // Identity of caller
 ctx.connectionId        // ConnectionId | undefined
 ctx.timestamp           // Timestamp
-ctx.identity            // Module's identity
+ctx.databaseIdentity    // Module's identity
 ```
 
 </TabItem>
@@ -782,7 +788,7 @@ ctx.Db                  // Database access
 ctx.Sender              // Identity of caller
 ctx.ConnectionId        // ConnectionId?
 ctx.Timestamp           // Timestamp
-ctx.Identity            // Module's identity
+ctx.DatabaseIdentity    // Module's identity
 ctx.Rng                 // Random number generator
 ```
 
@@ -794,7 +800,7 @@ ctx.db                  // Database access
 ctx.sender()            // Identity of caller
 ctx.connection_id()     // Option<ConnectionId>
 ctx.timestamp           // Timestamp
-ctx.identity()          // Module's identity
+ctx.database_identity() // Module's identity
 ctx.rng()               // Random number generator
 ```
 
@@ -806,7 +812,7 @@ ctx.db                  // Database access (Table accessor)
 ctx.sender()            // Identity of caller (Identity type)
 ctx.connection_id       // std::optional<ConnectionId>
 ctx.timestamp           // Timestamp of current transaction (Timestamp type)
-ctx.identity()          // Module's own identity (Identity type)
+ctx.database_identity() // Module's own identity (Identity type)
 ctx.rng()               // Random number generator (for seeded randomness)
 ```
 

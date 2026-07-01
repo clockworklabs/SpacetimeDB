@@ -272,6 +272,46 @@ The context provides access to a random number generator that is deterministic a
 Never use external random number generators (like `Random` in C# without using the context). These are non-deterministic and will cause different nodes to produce different results, breaking consensus.
 :::
 
+Use the context-provided random API for any reducer logic that needs random values:
+
+<Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+const fraction = ctx.random();                         // [0.0, 1.0)
+const roll = ctx.random.integerInRange(1, 6);          // inclusive
+const bytes = ctx.random.fill(new Uint8Array(16));
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+double fraction = ctx.Rng.NextDouble();  // [0.0, 1.0)
+int roll = ctx.Rng.Next(1, 7);           // [1, 7)
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+use spacetimedb::rand::Rng;
+
+let value: u32 = ctx.random();
+let roll: u32 = ctx.rng().gen_range(1..=6);
+```
+
+</TabItem>
+<TabItem value="cpp" label="C++">
+
+```cpp
+auto& rng = ctx.rng();
+int32_t roll = rng.gen_range(1, 6);  // inclusive
+```
+
+</TabItem>
+</Tabs>
+
 ## Module Identity
 
 The context provides access to the module's own identity, which is useful when a reducer needs to refer to the database itself.
@@ -400,7 +440,7 @@ SPACETIMEDB_REDUCER(send_reminder, ReducerContext _ctx, ScheduledTask task) {
 | `ConnectionId` | `ConnectionId?`       | Connection ID of the caller, if available       |
 | `Timestamp`    | `Timestamp`           | Time when the reducer was invoked               |
 | `Rng`          | `Random`              | Random number generator                         |
-| `Identity`     | `Identity`            | The module's identity                           |
+| `DatabaseIdentity` | `Identity`        | The module's identity                           |
 </TabItem>
 <TabItem value="rust" label="Rust">
 
@@ -413,7 +453,7 @@ SPACETIMEDB_REDUCER(send_reminder, ReducerContext _ctx, ScheduledTask task) {
 
 **Methods:**
 
-- `identity() -> Identity` - Get the module's identity
+- `database_identity() -> Identity` - Get the module's identity
 - `rng() -> &StdbRng` - Get the random number generator
 - `random<T>() -> T` - Generate a single random value
 - `sender_auth() -> &AuthCtx` - Get authorization context for the caller (includes JWT claims and internal call detection)
@@ -429,7 +469,7 @@ SPACETIMEDB_REDUCER(send_reminder, ReducerContext _ctx, ScheduledTask task) {
 
 **Methods:**
 
-- `identity() -> Identity` - Get the module's identity
+- `database_identity() -> Identity` - Get the module's identity
 - `rng() -> StdbRng&` - Get the random number generator (deterministic and reproducible)
 - `sender_auth() -> const AuthCtx&` - Get authorization context for the caller (includes JWT claims and internal call detection)
 
