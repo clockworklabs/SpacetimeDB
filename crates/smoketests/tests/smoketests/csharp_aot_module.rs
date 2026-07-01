@@ -64,6 +64,8 @@ fn test_build_csharp_module_aot() {
     cmd.arg("publish")
         .arg("-c")
         .arg("Release")
+        .arg("-f")
+        .arg(target_framework)
         .current_dir(workspace.join("modules/sdk-test-cs"))
         .env("EXPERIMENTAL_WASM_AOT", "1")
         .env("NUGET_PACKAGES", nuget_packages_dir.path());

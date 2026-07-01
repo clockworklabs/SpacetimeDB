@@ -1,5 +1,6 @@
 use anyhow::Context;
 use itertools::Itertools;
+use std::collections::HashSet;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -8,11 +9,73 @@ pub(crate) fn parse_major_version(version: &str) -> Option<u8> {
     version.split('.').next()?.parse::<u8>().ok()
 }
 
-/// Read the `<TargetFramework>` major version directly from the project's `.csproj` file.
-/// Returns `Some(8)` for `net8.0`, `Some(10)` for `net10.0`, etc., or `None` if unreadable.
-/// This is the most reliable project-level signal of intended .NET version and takes
-/// precedence over the system-default `dotnet --version`.
-fn read_tfm_major_from_csproj(project_path: &Path) -> Option<u8> {
+enum OriginalGlobalJson {
+    Missing,
+    File(String),
+    Symlink(PathBuf),
+}
+
+struct TemporaryGlobalJson {
+    path: PathBuf,
+    original: OriginalGlobalJson,
+}
+
+impl Drop for TemporaryGlobalJson {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+        match &self.original {
+            OriginalGlobalJson::Missing => {}
+            OriginalGlobalJson::File(content) => {
+                let _ = fs::write(&self.path, content);
+            }
+            OriginalGlobalJson::Symlink(target) => {
+                #[cfg(unix)]
+                let _ = std::os::unix::fs::symlink(target, &self.path);
+                #[cfg(windows)]
+                let _ = std::os::windows::fs::symlink_file(target, &self.path);
+            }
+        }
+    }
+}
+
+fn dotnet_global_json(major: u8) -> anyhow::Result<String> {
+    match major {
+        8 => Ok(r#"{"sdk":{"version":"8.0.100","rollForward":"latestFeature"}}"#.to_string()),
+        10 => Ok(r#"{"sdk":{"version":"10.0.100","rollForward":"latestMinor"}}"#.to_string()),
+        _ => anyhow::bail!("Unsupported .NET SDK version: {major}. SpacetimeDB requires .NET SDK 8.0 or 10.0."),
+    }
+}
+
+fn temporarily_pin_project_sdk(project_path: &Path, major: u8) -> anyhow::Result<TemporaryGlobalJson> {
+    let path = project_path.join("global.json");
+    let original = match fs::symlink_metadata(&path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => OriginalGlobalJson::Symlink(fs::read_link(&path)?),
+        Ok(_) => OriginalGlobalJson::File(fs::read_to_string(&path)?),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => OriginalGlobalJson::Missing,
+        Err(error) => return Err(error.into()),
+    };
+
+    fs::write(&path, dotnet_global_json(major)?)?;
+    Ok(TemporaryGlobalJson { path, original })
+}
+
+#[derive(Debug)]
+struct CsprojTargetFrameworks {
+    path: PathBuf,
+    majors: Vec<u8>,
+}
+
+impl CsprojTargetFrameworks {
+    fn single_major(&self) -> Option<u8> {
+        (self.majors.len() == 1).then_some(self.majors[0])
+    }
+}
+
+/// Read the target framework major versions directly from the project's `.csproj` file.
+/// Returns `net8.0`, `net10.0`, etc. from both `<TargetFramework>` and `<TargetFrameworks>`.
+/// Multi-target projects do not imply a single selected SDK version; callers should use a
+/// higher-priority signal or default policy in that case.
+fn read_tfms_from_csproj(project_path: &Path) -> Option<CsprojTargetFrameworks> {
     let entries: Vec<_> = match std::fs::read_dir(project_path) {
         Ok(rd) => rd.filter_map(|e| e.ok()).collect(),
         Err(e) => {
@@ -43,18 +106,105 @@ fn read_tfm_major_from_csproj(project_path: &Path) -> Option<u8> {
             return None;
         }
     };
-    let tag = "<TargetFramework>net";
-    let start = match content.find(tag) {
-        Some(s) => s + tag.len(),
-        None => {
-            eprintln!("read_tfm: no <TargetFramework>net tag found in {}", csproj.display());
-            return None;
+    let mut has_target_frameworks = false;
+    let mut majors = Vec::new();
+    for tag in ["TargetFramework", "TargetFrameworks"] {
+        let open = format!("<{tag}>");
+        let close = format!("</{tag}>");
+        let Some(start) = content.find(&open).map(|s| s + open.len()) else {
+            continue;
+        };
+        let Some(end) = content[start..].find(&close).map(|e| start + e) else {
+            continue;
+        };
+
+        has_target_frameworks |= tag == "TargetFrameworks";
+        for tfm in content[start..end].split(';') {
+            let Some(version) = tfm.trim().strip_prefix("net") else {
+                continue;
+            };
+            if let Some(major) = version.split('.').next().and_then(|v| v.parse::<u8>().ok())
+                && !majors.contains(&major)
+            {
+                majors.push(major);
+            }
         }
+    }
+
+    majors.sort();
+    eprintln!("read_tfm: parsed majors={majors:?}, has_target_frameworks={has_target_frameworks}");
+    Some(CsprojTargetFrameworks { path: csproj, majors })
+}
+
+fn find_global_json(start: &Path) -> Option<PathBuf> {
+    start
+        .ancestors()
+        .map(|path| path.join("global.json"))
+        .find(|path| path.exists())
+}
+
+fn remove_project_assets(project_dir: &Path) {
+    for obj_dir in ["obj", "obj~"] {
+        let assets = project_dir.join(obj_dir).join("project.assets.json");
+        if assets.exists() {
+            let _ = fs::remove_file(&assets);
+        }
+    }
+}
+
+fn project_reference_paths(csproj: &Path) -> Vec<PathBuf> {
+    let Ok(content) = fs::read_to_string(csproj) else {
+        return Vec::new();
     };
-    let version_str: String = content[start..].split(['.', '<']).next()?.to_string();
-    let result = version_str.parse::<u8>().ok();
-    eprintln!("read_tfm: parsed version_str={version_str:?} -> {result:?}");
-    result
+    let Some(project_dir) = csproj.parent() else {
+        return Vec::new();
+    };
+
+    content
+        .split("<ProjectReference")
+        .skip(1)
+        .filter_map(|entry| {
+            let include = entry.split('>').next()?;
+            let start = include.find("Include=\"")? + "Include=\"".len();
+            let end = include[start..].find('"')? + start;
+            Some(project_dir.join(&include[start..end]))
+        })
+        .collect()
+}
+
+fn remove_project_assets_recursive(csproj: &Path, visited: &mut HashSet<PathBuf>) {
+    let key = fs::canonicalize(csproj).unwrap_or_else(|_| csproj.to_path_buf());
+    if !visited.insert(key) {
+        return;
+    }
+
+    if let Some(project_dir) = csproj.parent() {
+        remove_project_assets(project_dir);
+    }
+    for reference in project_reference_paths(csproj) {
+        remove_project_assets_recursive(&reference, visited);
+    }
+}
+
+fn collect_project_references_recursive(csproj: &Path, visited: &mut HashSet<PathBuf>, references: &mut Vec<PathBuf>) {
+    let key = fs::canonicalize(csproj).unwrap_or_else(|_| csproj.to_path_buf());
+    if !visited.insert(key) {
+        return;
+    }
+
+    for reference in project_reference_paths(csproj) {
+        references.push(reference.clone());
+        collect_project_references_recursive(&reference, visited, references);
+    }
+}
+
+fn targets_netstandard20(csproj: &Path) -> bool {
+    fs::read_to_string(csproj)
+        .map(|content| {
+            content.contains("<TargetFramework>netstandard2.0</TargetFramework>")
+                || content.contains("<TargetFrameworks>netstandard2.0</TargetFrameworks>")
+        })
+        .unwrap_or(false)
 }
 
 /// Describes which C# build path to use.
@@ -68,7 +218,12 @@ enum CsharpBuildPath {
     Net10Aot,
 }
 
-pub(crate) fn build_csharp(project_path: &Path, build_debug: bool, native_aot: bool) -> anyhow::Result<PathBuf> {
+pub(crate) fn build_csharp(
+    project_path: &Path,
+    build_debug: bool,
+    native_aot: bool,
+    dotnet_version_override: Option<u8>,
+) -> anyhow::Result<PathBuf> {
     // All `dotnet` commands must execute in the project directory, otherwise
     // global.json won't have any effect and wrong .NET SDK might be picked.
     macro_rules! dotnet {
@@ -79,46 +234,43 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool, native_aot: b
 
     let native_aot_flag = native_aot;
 
-    // Check for explicit dotnet version override from CLI (--dotnet-version flag)
-    // This takes precedence over auto-detection.
-    let dotnet_version_override = std::env::var("SPACETIMEDB_DOTNET_VERSION").ok();
-
-    // Detect the system-default .NET SDK version as a last-resort fallback.
-    // Run from the project directory only if global.json exists there, so that
-    // any user-authored SDK pin is respected. Otherwise run from the current
-    // directory to avoid the .NET 10 SDK crash that occurs when it is invoked
-    // in a directory without a global.json.
-    let global_json_exists = project_path.join("global.json").exists();
-    let dotnet_version_result = if global_json_exists {
-        dotnet!("--version").read()
+    let project_global_json = find_global_json(project_path);
+    let cwd = std::env::current_dir()?;
+    let cwd_global_json = find_global_json(&cwd);
+    let dotnet_version_result = if project_global_json.is_some() {
+        Some(dotnet!("--version").read())
+    } else if cwd_global_json.is_some() {
+        Some(duct::cmd!("dotnet", "--version").read())
     } else {
-        duct::cmd!("dotnet", "--version").read()
+        None
     };
     let dotnet_version_str = match dotnet_version_result {
-        Ok(v) => v,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+        Some(Ok(v)) => Some(v),
+        Some(Err(error)) if error.kind() == std::io::ErrorKind::NotFound => {
             anyhow::bail!("dotnet not found in PATH. Please install .NET SDK 8.0 or 10.0.")
         }
-        Err(error) => anyhow::bail!("{error}"),
+        Some(Err(error)) => anyhow::bail!("{error}"),
+        None => None,
     };
 
     // Resolution order:
     //   1. --dotnet-version CLI flag (explicit user override)
-    //   2. <TargetFramework> in the project's .csproj (project author's intent)
-    //   3. dotnet --version system default (last resort fallback)
-    let tfm_major = read_tfm_major_from_csproj(project_path);
+    //   2. global.json-selected SDK, if one applies to the project or current directory
+    //   3. Single <TargetFramework> in the project's .csproj
+    //   4. .NET 10 default for missing or multi-target project context
+    let csproj_tfms = read_tfms_from_csproj(project_path);
     eprintln!(
-        "dotnet version detection: override={:?}, csproj_tfm={:?}, dotnet_version={:?}, project_path={}",
+        "dotnet version detection: override={:?}, global_json={:?}, csproj_tfms={:?}, dotnet_version={:?}, project_path={}",
         dotnet_version_override,
-        tfm_major,
+        project_global_json.as_ref().or(cwd_global_json.as_ref()),
+        csproj_tfms,
         dotnet_version_str,
         project_path.display()
     );
     let dotnet_major = dotnet_version_override
-        .as_deref()
-        .and_then(|v| v.parse().ok())
-        .or(tfm_major)
-        .or_else(|| parse_major_version(&dotnet_version_str));
+        .or_else(|| dotnet_version_str.as_deref().and_then(parse_major_version))
+        .or_else(|| csproj_tfms.as_ref().and_then(CsprojTargetFrameworks::single_major))
+        .or(Some(10));
 
     // Determine the build path based on SDK version and --native-aot flag.
     let build_path = match (dotnet_major, native_aot_flag) {
@@ -135,37 +287,36 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool, native_aot: b
         (Some(8), false) => CsharpBuildPath::Net8Jit,
         // Unsupported version.
         _ => {
+            let selected_version = dotnet_major
+                .map(|v| v.to_string())
+                .or_else(|| dotnet_version_str.clone())
+                .unwrap_or_else(|| "<unknown>".to_string());
             anyhow::bail!(
-                "Unsupported .NET SDK version: {dotnet_version_str}. SpacetimeDB requires .NET SDK 8.0 or 10.0.\n\
+                "Unsupported .NET SDK version: {}. SpacetimeDB requires .NET SDK 8.0 or 10.0.\n\
                  If you have multiple versions installed, configure your project using \
                  https://learn.microsoft.com/en-us/dotnet/core/tools/global-json, \
-                 or use --dotnet-version to specify the target version explicitly."
+                 or use --dotnet-version to specify the target version explicitly.",
+                selected_version
             );
         }
     };
 
-    // For the Net8Jit path the .NET 8 SDK must be active (wasi-experimental is .NET 8 only).
-    // If the active SDK is not .NET 8 and no global.json exists, auto-create one to pin .NET 8
-    // and inform the user — mirroring the auto-global.json behaviour used for Net10Aot.
-    if matches!(build_path, CsharpBuildPath::Net8Jit) {
-        let active_sdk_major = parse_major_version(&dotnet_version_str);
-        if active_sdk_major != Some(8) && !project_path.join("global.json").exists() {
-            let active = dotnet_version_str.trim();
-            let global_json_path = project_path.join("global.json");
-            fs::write(
-                &global_json_path,
-                r#"{"sdk":{"version":"8.0.100","rollForward":"latestMinor"}}"#,
-            )?;
-            // Only print the note when the user hasn't already declared intent via --dotnet-version 8.
-            if dotnet_version_override.is_none() {
-                println!(
-                    "Note: created {} to pin the .NET 8 SDK (active SDK is .NET {active}).\n\
-                     To suppress this message, add a global.json to your project or pass --dotnet-version 8.",
-                    global_json_path.display()
-                );
-            }
-        }
-    }
+    let desired_sdk_major = match build_path {
+        CsharpBuildPath::Net8Jit | CsharpBuildPath::Net8Aot => 8,
+        CsharpBuildPath::Net10Aot => 10,
+    };
+    let active_sdk_major = dotnet_version_str.as_deref().and_then(parse_major_version);
+    let temporary_global_json = if active_sdk_major != Some(desired_sdk_major) {
+        let active = dotnet_version_str.as_deref().map(str::trim).unwrap_or("<unknown>");
+        let global_json = temporarily_pin_project_sdk(project_path, desired_sdk_major)?;
+        println!(
+            "Note: temporarily pinned {} to the .NET {desired_sdk_major} SDK (active SDK was .NET {active}).",
+            project_path.join("global.json").display()
+        );
+        Some(global_json)
+    } else {
+        None
+    };
 
     // Manage the EXPERIMENTAL_WASM_AOT environment variable for MSBuild.
     // - Net8Aot / Net10Aot: must SET it — the ILCompiler.LLVM.targets import in
@@ -220,10 +371,12 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool, native_aot: b
 
     let config_name = if build_debug { "Debug" } else { "Release" };
 
-    // For Net8Aot, force a re-restore by deleting any cached project.assets.json.
+    // For .NET 8 builds, force a re-restore by deleting any cached project.assets.json.
     // If a prior `dotnet restore` ran without EXPERIMENTAL_WASM_AOT=1 (e.g. as part of a
     // solution restore), the cached assets won't include ILCompiler.LLVM, causing
     // `dotnet publish` to silently fall back to the net8.0 Mono wasi-experimental path.
+    // Conversely, if a prior restore ran with NativeAOT enabled, the JIT path can import
+    // ILCompiler targets from stale assets before restore has a chance to correct them.
     // Deleting the file makes dotnet re-restore with the correct environment.
     //
     // Net10Aot does NOT need this: the ILCompiler.LLVM dependency is unconditional for
@@ -231,12 +384,11 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool, native_aot: b
     // Deleting the assets file here would force an implicit re-restore that uses the
     // project's local NuGet.Config, which may have stale/invalid package source paths
     // (e.g. Windows-only paths in CI on Linux), breaking the build.
-    if matches!(build_path, CsharpBuildPath::Net8Aot) {
-        for obj_dir in ["obj", "obj~"] {
-            let assets = project_path.join(obj_dir).join("project.assets.json");
-            if assets.exists() {
-                let _ = fs::remove_file(&assets);
-            }
+    if matches!(build_path, CsharpBuildPath::Net8Aot | CsharpBuildPath::Net8Jit) {
+        if let Some(csproj_path) = csproj_tfms.as_ref().map(|tfms| &tfms.path) {
+            remove_project_assets_recursive(csproj_path, &mut HashSet::new());
+        } else {
+            remove_project_assets(project_path);
         }
     }
 
@@ -257,6 +409,37 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool, native_aot: b
         CsharpBuildPath::Net8Aot => ("net8.0", "native"),
         CsharpBuildPath::Net8Jit => ("net8.0", "AppBundle"),
     };
+    let target_frameworks_override = format!("TargetFrameworks={target_framework}");
+    let csproj_file_name = csproj_tfms.as_ref().map(|tfms| {
+        tfms.path
+            .file_name()
+            .map(OsString::from)
+            .unwrap_or_else(|| tfms.path.as_os_str().to_os_string())
+    });
+
+    if matches!(build_path, CsharpBuildPath::Net8Aot | CsharpBuildPath::Net8Jit) {
+        let mut restore_args: Vec<OsString> = vec!["restore".into()];
+        if let Some(csproj_file_name) = &csproj_file_name {
+            restore_args.push(csproj_file_name.clone());
+        }
+        restore_args.extend(["--force".into(), format!("-p:{target_frameworks_override}").into()]);
+        duct::cmd("dotnet", restore_args).dir(project_path).run()?;
+
+        if let Some(csproj_path) = csproj_tfms.as_ref().map(|tfms| &tfms.path) {
+            let mut references = Vec::new();
+            collect_project_references_recursive(csproj_path, &mut HashSet::new(), &mut references);
+            for reference in references
+                .into_iter()
+                .unique_by(|path| fs::canonicalize(path).unwrap_or_else(|_| path.clone()))
+                .filter(|path| targets_netstandard20(path))
+            {
+                let reference = fs::canonicalize(&reference).unwrap_or(reference);
+                duct::cmd("dotnet", ["restore".as_ref(), reference.as_os_str()])
+                    .dir(project_path)
+                    .run()?;
+            }
+        }
+    }
 
     // JIT and AOT builds use the same `dotnet publish` command.
     // Build-specific configuration (TFM, AOT settings, ILCompiler packages)
@@ -264,7 +447,24 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool, native_aot: b
     // We pass -f {target_framework} explicitly so that the correct TFM is used
     // even when the system-default SDK version differs from the csproj TFM
     // (e.g. system is .NET 10 but csproj says net8.0 → must publish as net8.0).
-    dotnet!("publish", "-c", config_name, "-f", target_framework, "-v", "quiet").run()?;
+    let mut publish_args: Vec<OsString> = vec!["publish".into()];
+    if let Some(csproj_file_name) = &csproj_file_name {
+        publish_args.push(csproj_file_name.clone());
+    }
+    publish_args.extend([
+        "-c".into(),
+        config_name.into(),
+        "-f".into(),
+        target_framework.into(),
+        "-v".into(),
+        "quiet".into(),
+    ]);
+    if matches!(build_path, CsharpBuildPath::Net8Aot | CsharpBuildPath::Net8Jit) {
+        publish_args.push("--no-restore".into());
+        publish_args.push("--force".into());
+        publish_args.push(format!("-p:{target_frameworks_override}").into());
+    }
+    duct::cmd("dotnet", publish_args).dir(project_path).run()?;
 
     // check for the old .NET 7 path for projects that haven't migrated yet
     let bad_output_paths = [
@@ -312,6 +512,7 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool, native_aot: b
     }
     for output_path in &possible_output_paths {
         if output_path.exists() {
+            drop(temporary_global_json);
             return Ok(output_path.clone());
         }
     }

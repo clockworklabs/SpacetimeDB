@@ -525,7 +525,7 @@ async fn execute_publish_configs<'a>(
         let org_opt = command_config.get_one::<String>("organization")?;
         let org = org_opt.as_deref();
         let native_aot = command_config.get_one::<bool>("native_aot")?.unwrap_or(false);
-        let dotnet_version = command_config.get_one::<String>("dotnet_version");
+        let dotnet_version = command_config.get_one::<String>("dotnet_version")?;
 
         // If the user didn't specify an identity and we didn't specify an anonymous identity, then
         // we want to use the default identity
@@ -553,14 +553,11 @@ async fn execute_publish_configs<'a>(
             println!("(JS) Skipping build. Instead we are publishing {}", path.display());
             (path.clone(), "Js")
         } else {
-            // Pass explicit dotnet version to C# build system if specified
-            if let Ok(Some(version)) = dotnet_version.as_ref() {
-                // SAFETY: We are single-threaded at this point and no other code is reading
-                // this environment variable concurrently.
-                unsafe {
-                    env::set_var("SPACETIMEDB_DOTNET_VERSION", version);
-                }
-            }
+            let build_options = match dotnet_version.as_deref() {
+                Some(version) if build_options.is_empty() => format!("--dotnet-version {version}"),
+                Some(version) => format!("{build_options} --dotnet-version {version}"),
+                None => build_options,
+            };
             build::exec_with_argstring(
                 path_to_project
                     .as_ref()

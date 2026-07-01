@@ -210,7 +210,7 @@ pub fn cli() -> clap::Command {
             Arg::new("dotnet-version")
                 .long("dotnet-version")
                 .value_name("VERSION")
-                .help("Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted."),
+                .help("Target .NET SDK major version for C# projects (e.g. 8 or 10). Defaults to 10 unless only .NET 8 is installed."),
         )
 }
 
@@ -557,9 +557,8 @@ pub async fn exec_with_options(config: &mut Config, options: &InitOptions) -> an
     template_config.use_local = use_local;
 
     // For C# projects, resolve the target .NET version before scaffolding.
-    // This may prompt the user interactively if multiple SDKs are installed.
     let dotnet_major = if template_config.server_lang == Some(ServerLanguage::Csharp) {
-        Some(resolve_dotnet_major(options, is_interactive)?)
+        Some(resolve_dotnet_major(options)?)
     } else {
         None
     };
@@ -1477,14 +1476,8 @@ fn init_builtin(
         None => {}
     }
 
-    // For C# projects targeting .NET 10, override the template global.json
-    // (the embedded template ships with 8.0.100 which is wrong for .NET 10).
-    if config.server_lang == Some(ServerLanguage::Csharp) && dotnet_major == Some(10) {
-        let global_json_path = server_dir.join("global.json");
-        let net10_global_json =
-            "{\n  \"sdk\": {\n    \"version\": \"10.0.100\",\n    \"rollForward\": \"latestMinor\"\n  }\n}\n";
-        std::fs::write(&global_json_path, net10_global_json)?;
-        println!("Updating global.json to use .NET 10 (NativeAOT-LLVM).");
+    if config.server_lang == Some(ServerLanguage::Csharp) {
+        configure_csharp_project_files(&server_dir, dotnet_major.unwrap_or_else(resolve_default_dotnet_major))?;
     }
 
     Ok(())
@@ -1670,30 +1663,13 @@ fn check_for_cargo() -> bool {
     false
 }
 
-/// Returns the set of major .NET SDK versions installed (e.g. {8, 10}).
-fn detect_installed_dotnet_majors() -> Vec<u8> {
-    let output = duct::cmd!("dotnet", "--list-sdks").read().unwrap_or_default();
-    let mut majors: Vec<u8> = output
-        .lines()
-        .filter_map(|line| {
-            // Each line looks like: "8.0.100 [C:\Program Files\dotnet\sdk]"
-            let version_str = line.split_whitespace().next()?;
-            crate::tasks::csharp::parse_major_version(version_str)
-        })
-        .collect();
-    majors.sort();
-    majors.dedup();
-    majors
-}
-
 /// Determine the target .NET major version for a C# project.
 ///
 /// Resolution order:
 ///   1. Explicit `--dotnet-version` flag
-///   2. Interactive prompt (if multiple supported versions are installed)
-///   3. Auto-detect from `dotnet --version` (single supported version or non-interactive)
-fn resolve_dotnet_major(options: &InitOptions, is_interactive: bool) -> anyhow::Result<u8> {
-    // 1. Explicit flag takes priority.
+///   2. .NET 8, if it is the only installed .NET SDK major version
+///   3. .NET 10 default
+fn resolve_dotnet_major(options: &InitOptions) -> anyhow::Result<u8> {
     if let Some(v) = options.dotnet_version {
         match v {
             8 | 10 => return Ok(v),
@@ -1701,50 +1677,43 @@ fn resolve_dotnet_major(options: &InitOptions, is_interactive: bool) -> anyhow::
         }
     }
 
-    // --native-aot is for .NET 8 AOT builds (NativeAOT-LLVM with net8.0 TFM).
-    // .NET 10 always uses NativeAOT-LLVM, no flag needed.
-    if options.native_aot {
-        return Ok(8);
+    Ok(resolve_default_dotnet_major())
+}
+
+fn resolve_default_dotnet_major() -> u8 {
+    if installed_dotnet_sdk_majors()
+        .as_deref()
+        .is_some_and(should_default_to_dotnet8)
+    {
+        return 8;
     }
 
-    let installed = detect_installed_dotnet_majors();
-    let supported: Vec<u8> = installed.iter().copied().filter(|&v| v == 8 || v == 10).collect();
+    10
+}
 
-    match supported.len() {
-        0 => {
-            // Fall back to whatever `dotnet --version` reports.
-            let ver = duct::cmd!("dotnet", "--version").read().unwrap_or_default();
-            crate::tasks::csharp::parse_major_version(&ver).ok_or_else(|| {
-                anyhow::anyhow!("Could not detect .NET SDK version. Please install .NET SDK 8.0 or 10.0.")
-            })
-        }
-        1 => Ok(supported[0]),
-        _ => {
-            // Multiple supported versions — prompt if interactive, else use highest.
-            if is_interactive {
-                let theme = ColorfulTheme::default();
-                let choices: Vec<String> = supported
-                    .iter()
-                    .map(|v| match v {
-                        8 => ".NET 8 (JIT — stable, uses wasi-experimental workload)".to_string(),
-                        10 => ".NET 10 (NativeAOT-LLVM — experimental, better performance)".to_string(),
-                        other => format!(".NET {other}"),
-                    })
-                    .collect();
+fn should_default_to_dotnet8(majors: &[u8]) -> bool {
+    majors == [8]
+}
 
-                let selection = Select::with_theme(&theme)
-                    .with_prompt("Multiple .NET SDKs found. Which version should this C# module target?")
-                    .items(&choices)
-                    .default(choices.len() - 1) // Default to highest (typically .NET 10)
-                    .interact()?;
-
-                Ok(supported[selection])
-            } else {
-                // Non-interactive: use the highest supported version.
-                Ok(*supported.last().unwrap())
-            }
-        }
+fn installed_dotnet_sdk_majors() -> Option<Vec<u8>> {
+    let dotnet = match std::env::consts::OS {
+        "windows" => find_executable("dotnet.exe").or_else(|| find_executable("dotnet"))?,
+        _ => find_executable("dotnet")?,
+    };
+    let output = std::process::Command::new(dotnet).arg("--list-sdks").output().ok()?;
+    if !output.status.success() {
+        return None;
     }
+
+    let stdout = String::from_utf8(output.stdout).ok()?;
+    let mut majors = stdout.lines().filter_map(parse_dotnet_sdk_major).collect::<Vec<_>>();
+    majors.sort_unstable();
+    majors.dedup();
+    Some(majors)
+}
+
+fn parse_dotnet_sdk_major(line: &str) -> Option<u8> {
+    line.split_whitespace().next()?.split('.').next()?.parse().ok()
 }
 
 fn check_for_dotnet() -> bool {
@@ -1902,26 +1871,24 @@ pub fn init_csharp_project(project_path: &Path, dotnet_major: Option<u8>) -> any
     check_for_dotnet();
     check_for_git();
 
-    let global_json = match dotnet_major {
-        Some(10) => {
-            println!("Configuring for .NET 10 (NativeAOT-LLVM).");
-            "{\n  \"sdk\": {\n    \"version\": \"10.0.100\",\n    \"rollForward\": \"latestMinor\"\n  }\n}\n"
-        }
-        _ => {
-            include_str!("../../../../templates/basic-cs/spacetimedb/global.json")
-        }
-    };
+    let dotnet_major = dotnet_major.unwrap_or_else(resolve_default_dotnet_major);
+    if dotnet_major == 10 {
+        println!("Configuring for .NET 10 (NativeAOT-LLVM).");
+    }
 
     let export_files = vec![
         (
-            include_str!("../../../../templates/basic-cs/spacetimedb/StdbModule.csproj"),
+            csharp_csproj_for_target(
+                include_str!("../../../../templates/basic-cs/spacetimedb/StdbModule.csproj"),
+                dotnet_major,
+            )?,
             "StdbModule.csproj",
         ),
         (
-            include_str!("../../../../templates/basic-cs/spacetimedb/Lib.cs"),
+            include_str!("../../../../templates/basic-cs/spacetimedb/Lib.cs").to_string(),
             "Lib.cs",
         ),
-        (global_json, "global.json"),
+        (csharp_global_json(dotnet_major).to_string(), "global.json"),
     ];
 
     for data_file in export_files {
@@ -1929,6 +1896,42 @@ pub fn init_csharp_project(project_path: &Path, dotnet_major: Option<u8>) -> any
         create_directory(path.parent().unwrap())?;
         std::fs::write(path, data_file.0)?;
     }
+
+    Ok(())
+}
+
+fn csharp_global_json(dotnet_major: u8) -> &'static str {
+    match dotnet_major {
+        8 => "{\n  \"sdk\": {\n    \"version\": \"8.0.100\",\n    \"rollForward\": \"latestFeature\"\n  }\n}\n",
+        10 => "{\n  \"sdk\": {\n    \"version\": \"10.0.100\",\n    \"rollForward\": \"latestMinor\"\n  }\n}\n",
+        _ => unreachable!("unsupported .NET version should have been validated before init"),
+    }
+}
+
+fn csharp_csproj_for_target(content: &str, dotnet_major: u8) -> anyhow::Result<String> {
+    let target_framework = match dotnet_major {
+        8 => "net8.0",
+        10 => "net10.0",
+        _ => unreachable!("unsupported .NET version should have been validated before init"),
+    };
+    let target_framework_property = format!("<TargetFramework>{target_framework}</TargetFramework>");
+    if content.contains("<TargetFrameworks>net8.0;net10.0</TargetFrameworks>") {
+        return Ok(content.replace(
+            "<TargetFrameworks>net8.0;net10.0</TargetFrameworks>",
+            &target_framework_property,
+        ));
+    }
+
+    anyhow::bail!("Invalid C# template: missing net8.0/net10.0 TargetFrameworks property")
+}
+
+fn configure_csharp_project_files(project_path: &Path, dotnet_major: u8) -> anyhow::Result<()> {
+    let global_json_path = project_path.join("global.json");
+    std::fs::write(&global_json_path, csharp_global_json(dotnet_major))?;
+
+    let csproj_path = project_path.join("StdbModule.csproj");
+    let csproj = std::fs::read_to_string(&csproj_path)?;
+    std::fs::write(&csproj_path, csharp_csproj_for_target(&csproj, dotnet_major)?)?;
 
     Ok(())
 }
@@ -2502,6 +2505,43 @@ bytes.workspace = true
         });
         assert_eq!(runtime_version, Some(cli_patch_wildcard().as_str()));
         assert!(!content.contains("ProjectReference"));
+    }
+
+    #[test]
+    fn test_parse_dotnet_sdk_major() {
+        assert_eq!(parse_dotnet_sdk_major("8.0.125 [/usr/lib64/dotnet/sdk]"), Some(8));
+        assert_eq!(parse_dotnet_sdk_major("10.0.108 [/usr/lib64/dotnet/sdk]"), Some(10));
+        assert_eq!(parse_dotnet_sdk_major("not-a-version [/usr/lib64/dotnet/sdk]"), None);
+        assert_eq!(parse_dotnet_sdk_major(""), None);
+    }
+
+    #[test]
+    fn test_dotnet_init_default_is_8_only_when_it_is_the_only_sdk_major() {
+        assert!(should_default_to_dotnet8(&[8]));
+        assert!(!should_default_to_dotnet8(&[]));
+        assert!(!should_default_to_dotnet8(&[10]));
+        assert!(!should_default_to_dotnet8(&[8, 10]));
+    }
+
+    #[test]
+    fn test_csharp_global_json_matches_selected_target() {
+        assert!(csharp_global_json(8).contains("\"version\": \"8.0.100\""));
+        assert!(csharp_global_json(8).contains("\"rollForward\": \"latestFeature\""));
+        assert!(csharp_global_json(10).contains("\"version\": \"10.0.100\""));
+        assert!(csharp_global_json(10).contains("\"rollForward\": \"latestMinor\""));
+    }
+
+    #[test]
+    fn test_csharp_csproj_for_target_uses_single_target_framework() {
+        let template = include_str!("../../../../templates/basic-cs/spacetimedb/StdbModule.csproj");
+
+        let net8 = csharp_csproj_for_target(template, 8).unwrap();
+        assert!(net8.contains("<TargetFramework>net8.0</TargetFramework>"));
+        assert!(!net8.contains("<TargetFrameworks"));
+
+        let net10 = csharp_csproj_for_target(template, 10).unwrap();
+        assert!(net10.contains("<TargetFramework>net10.0</TargetFramework>"));
+        assert!(!net10.contains("<TargetFrameworks"));
     }
 
     #[test]

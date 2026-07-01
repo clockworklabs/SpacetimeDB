@@ -1,7 +1,7 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <TargetName>StdbModule</TargetName>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -15,8 +15,13 @@
   <!-- Only needed when referencing local dependencies as projects. For published packages, these are imported automatically. -->
   <Import Project="../crates/bindings-csharp/Runtime/build/SpacetimeDB.Runtime.props" />
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
     <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" GeneratePathProperty="true" />
     <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0' And '$(EXPERIMENTAL_WASM_AOT)' == '1'">
+    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" GeneratePathProperty="true" />
+    <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
   </ItemGroup>
 </Project>

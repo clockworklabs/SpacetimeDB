@@ -50,6 +50,7 @@ fn build_generate_config_schema(command: &clap::Command) -> Result<CommandSchema
         .key(Key::new("unreal_module_name").generate_entry_specific())
         .key(Key::new("module_prefix").generate_entry_specific())
         .key(Key::new("build_options").module_specific())
+        .key(Key::new("dotnet_version").module_specific())
         .key(Key::new("include_private"))
         .exclude("json_module")
         .exclude("force")
@@ -256,6 +257,14 @@ pub fn cli() -> clap::Command {
                 .help("Options to pass to the build command, for example --build-options='--lint-dir='"),
         )
         .arg(
+            Arg::new("dotnet_version")
+                .long("dotnet-version")
+                .value_name("VERSION")
+                .conflicts_with("wasm_file")
+                .conflicts_with("js_file")
+                .help("Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.")
+        )
+        .arg(
             Arg::new("include_private")
                 .long("include-private")
                 .action(SetTrue)
@@ -293,6 +302,7 @@ pub struct GenerateRunConfig {
     pub module_name: Option<String>,
     pub module_prefix: Option<String>,
     pub build_options: String,
+    pub dotnet_version: Option<String>,
     pub out_dir: PathBuf,
     pub include_private: bool,
 }
@@ -324,6 +334,7 @@ fn prepare_generate_run_configs<'a>(
         let build_options = command_config
             .get_one::<String>("build_options")?
             .unwrap_or_else(String::new);
+        let dotnet_version = command_config.get_one::<String>("dotnet_version")?;
 
         // Validate Unreal-specific args first to preserve focused errors for this mode.
         if requested_lang == Some(Language::UnrealCpp) {
@@ -381,6 +392,7 @@ fn prepare_generate_run_configs<'a>(
             module_name,
             module_prefix,
             build_options,
+            dotnet_version,
             out_dir,
             include_private,
         });
@@ -486,7 +498,9 @@ pub async fn run_prepared_generate_configs(
                 println!("Skipping build. Instead we are inspecting {}", path.display());
                 path.clone()
             } else {
-                let (path, _) = build::exec_with_argstring(&run.project_path, &run.build_options, false).await?;
+                let build_options =
+                    build_options_with_dotnet_version(&run.build_options, run.dotnet_version.as_deref());
+                let (path, _) = build::exec_with_argstring(&run.project_path, &build_options, false).await?;
                 path
             };
             let spinner = indicatif::ProgressBar::new_spinner();
@@ -593,6 +607,14 @@ pub async fn run_prepared_generate_configs(
     }
 
     Ok(())
+}
+
+fn build_options_with_dotnet_version(build_options: &str, dotnet_version: Option<&str>) -> String {
+    match dotnet_version {
+        Some(version) if build_options.is_empty() => format!("--dotnet-version {version}"),
+        Some(version) => format!("{build_options} --dotnet-version {version}"),
+        None => build_options.to_string(),
+    }
 }
 
 /// Like `exec`, but lets you specify a custom a function to extract a schema from a file.

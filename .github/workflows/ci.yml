@@ -1134,7 +1134,7 @@ jobs:
           dotnet workload update --from-previous-sdk
           # Explicitly install wasi-experimental for .NET 8 SDK (needed for test_build_csharp_module)
           # Create temp global.json to target .NET 8 SDK for workload install
-          echo '{"sdk":{"version":"8.0.400","rollForward":"latestFeature"}}' > global.json
+          echo '{"sdk":{"version":"8.0.100","rollForward":"latestFeature"}}' > global.json
           dotnet workload install wasi-experimental
           rm global.json
           # Reinstall wasi-experimental for .NET 10 SDK: the .NET 8 install above triggers garbage
@@ -1160,7 +1160,8 @@ jobs:
           echo "WASI_SDK_PATH=$WASI_SDK_PATH" >> "$GITHUB_ENV"
           echo "Using WASI SDK at: $WASI_SDK_PATH"
 
-      # Ensure global.json files exist for regression tests (symlinks may not work in CI)
+      # Remove broken global.json symlinks before regression scripts temporarily pin
+      # each C# module directory to the SDK version under test.
       - name: Fix global.json symlinks
         run: |
           for dir in sdks/csharp/examples~/regression-tests/server \
@@ -1169,10 +1170,6 @@ jobs:
             if [ -L "$dir/global.json" ] && [ ! -f "$dir/global.json" ]; then
               echo "Fixing broken symlink at $dir/global.json"
               rm -f "$dir/global.json"
-            fi
-            if [ ! -f "$dir/global.json" ]; then
-              echo "Creating $dir/global.json"
-              echo '{"sdk":{"version":"10.0.100","rollForward":"latestMinor"}}' > "$dir/global.json"
             fi
           done
 
@@ -1249,9 +1246,11 @@ jobs:
 
       - name: Check quickstart-chat bindings are up to date
         run: |
-          bash sdks/csharp/tools~/gen-quickstart.sh
+          for dotnet_version in 8 10; do
+            bash sdks/csharp/tools~/gen-quickstart.sh "$dotnet_version"
+          done
           tools/check-diff.sh templates/chat-console-cs/module_bindings || {
-              echo 'Error: quickstart-chat bindings have changed. Please run `sdks/csharp/tools~/gen-quickstart.sh`.'
+              echo 'Error: quickstart-chat bindings have changed. Please run `sdks/csharp/tools~/gen-quickstart.sh 10`.'
               exit 1
           }
 

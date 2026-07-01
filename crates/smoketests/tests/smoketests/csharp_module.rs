@@ -39,17 +39,20 @@ fn test_build_csharp_module() {
         .expect("Failed to pack bindings");
     assert!(status.success(), "Failed to pack C# bindings");
 
+    // The non-AOT path is only supported on .NET 8. .NET 10 C# modules use NativeAOT-LLVM
+    // and are covered by csharp_aot_module.rs.
+    let dotnet_version = "8";
+
     // Create temp directory for the project
     let tmpdir = tempfile::tempdir().expect("Failed to create temp directory");
 
-    // Initialize C# project with explicit .NET 10 so Roslyn 5 analyzers can load.
     let output = Command::new(&cli_path)
         .args([
             "init",
             "--non-interactive",
             "--lang=csharp",
             "--dotnet-version",
-            "10",
+            dotnet_version,
             "--project-path",
             tmpdir.path().to_str().unwrap(),
             "csharp-project",
@@ -58,7 +61,8 @@ fn test_build_csharp_module() {
         .expect("Failed to run spacetime init");
     assert!(
         output.status.success(),
-        "spacetime init failed:\nstdout: {}\nstderr: {}",
+        "spacetime init --dotnet-version {} failed:\nstdout: {}\nstderr: {}",
+        dotnet_version,
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -109,7 +113,7 @@ fn test_build_csharp_module() {
 
     // Run dotnet publish
     let output = Command::new("dotnet")
-        .args(["publish", "-f", "net10.0"])
+        .args(["publish", "-f", "net8.0"])
         .current_dir(&server_path)
         .output()
         .expect("Failed to run dotnet publish");

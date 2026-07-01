@@ -66,18 +66,9 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(PathBuf, &'stat
     };
     let build_debug = args.get_flag("debug");
     let features = features.cloned();
-    let dotnet_version = args.get_one::<String>("dotnet_version");
+    let dotnet_version = parse_dotnet_version(args.get_one::<String>("dotnet_version"))?;
 
-    // Set dotnet version env var if explicitly specified
-    if let Some(version) = dotnet_version {
-        // SAFETY: We are single-threaded at this point and no other code is reading
-        // this environment variable concurrently.
-        unsafe {
-            std::env::set_var("SPACETIMEDB_DOTNET_VERSION", version);
-        }
-    }
-
-    run_build(module_path, lint_dir, build_debug, features, false)
+    run_build(module_path, lint_dir, build_debug, features, false, dotnet_version)
 }
 
 pub fn run_build(
@@ -86,6 +77,7 @@ pub fn run_build(
     build_debug: bool,
     features: Option<OsString>,
     native_aot: bool,
+    dotnet_version: Option<u8>,
 ) -> Result<(PathBuf, &'static str), anyhow::Error> {
     // Create the project path, or make sure the target project path is empty.
     if module_path.exists() {
@@ -108,6 +100,7 @@ pub fn run_build(
         build_debug,
         features.as_ref(),
         native_aot,
+        dotnet_version,
     )?;
     println!("Build finished successfully.");
 
@@ -134,8 +127,19 @@ pub async fn exec_with_argstring(
         Some(PathBuf::from(lint_dir))
     };
     let build_debug = arg_matches.get_flag("debug");
+    let dotnet_version = parse_dotnet_version(arg_matches.get_one::<String>("dotnet_version"))?;
 
-    run_build(module_path, lint_dir, build_debug, features, native_aot)
+    run_build(module_path, lint_dir, build_debug, features, native_aot, dotnet_version)
+}
+
+fn parse_dotnet_version(dotnet_version: Option<&String>) -> anyhow::Result<Option<u8>> {
+    dotnet_version
+        .map(|version| match version.parse::<u8>() {
+            Ok(version @ (8 | 10)) => Ok(version),
+            Ok(version) => anyhow::bail!("Unsupported --dotnet-version {version}. Supported values: 8, 10."),
+            Err(error) => anyhow::bail!("Invalid --dotnet-version: {error}"),
+        })
+        .transpose()
 }
 
 fn exec_with_argstring_argv(project_path: &Path, arg_string: &str) -> Vec<OsString> {
