@@ -394,7 +394,6 @@ jobs:
         run: aws s3 cp latest-version s3://spacetimedb-client-binaries/latest-version --acl public-read
 
   publish-github-release:
-    name: Publish GitHub release
     needs:
       - build-cargo-release
       - release-crates
