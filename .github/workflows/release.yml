@@ -38,6 +38,11 @@ on:
         required: true
         type: boolean
         default: false
+      release_github:
+        description: "Publish GitHub release (if nothing fails)"
+        required: true
+        type: boolean
+        default: false
       update_mirror_latest_version:
         description: "Update S3 mirror latest-version marker"
         required: true
@@ -403,6 +408,7 @@ jobs:
       ${{
         always()
         && !inputs.dry_run
+        && inputs.release_github
         && needs.build-cargo-release.result == 'success'
         && contains(fromJSON('["success", "skipped"]'), needs.release-crates.result)
         && contains(fromJSON('["success", "skipped"]'), needs.release-csharp.result)
