@@ -133,7 +133,7 @@ fn init_template_with_dotnet_version(
 }
 
 fn fake_dotnet_path(dir: &Path, sdk_list_output: &str) -> Result<PathBuf> {
-    let executable_name = if cfg!(windows) { "dotnet.cmd" } else { "dotnet" };
+    let executable_name = if cfg!(windows) { "dotnet.exe" } else { "dotnet" };
     let dotnet_path = dir.join(executable_name);
     let echo_lines = sdk_list_output
         .lines()
@@ -142,11 +142,36 @@ fn fake_dotnet_path(dir: &Path, sdk_list_output: &str) -> Result<PathBuf> {
         .join(if cfg!(windows) { "\r\n" } else { "\n" });
 
     if cfg!(windows) {
+        let source_path = dir.join("fake_dotnet.rs");
         fs::write(
-            &dotnet_path,
-            format!("@echo off\r\nif \"%1\"==\"--list-sdks\" (\r\n{echo_lines}\r\nexit /b 0\r\n)\r\nexit /b 1\r\n"),
+            &source_path,
+            format!(
+                r#"fn main() {{
+    if std::env::args().nth(1).as_deref() == Some("--list-sdks") {{
+        print!("{{}}", {sdk_list_output:?});
+        return;
+    }}
+
+    std::process::exit(1);
+}}
+"#
+            ),
         )
-        .with_context(|| format!("Failed to write fake dotnet executable {:?}", dotnet_path))?;
+        .with_context(|| format!("Failed to write fake dotnet source {:?}", source_path))?;
+
+        let output = Command::new("rustc")
+            .arg(&source_path)
+            .arg("-o")
+            .arg(&dotnet_path)
+            .output()
+            .context("Failed to spawn rustc for fake dotnet")?;
+        if !output.status.success() {
+            bail!(
+                "rustc failed to compile fake dotnet:\nstdout: {}\nstderr: {}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
     } else {
         fs::write(
             &dotnet_path,
