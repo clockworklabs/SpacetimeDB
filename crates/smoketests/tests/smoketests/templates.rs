@@ -759,14 +759,28 @@ fn setup_csharp_nuget(project_path: &Path) -> Result<PathBuf> {
         clear_cached_nuget_package(package)?;
     }
 
+    let bindings = workspace_root().join("crates/bindings-csharp");
+    let bsatn_runtime_output = bindings.join("BSATN.Runtime").join("bin").join("Release");
+    let runtime_output = bindings.join("Runtime").join("bin").join("Release");
+    let bsatn_codegen_output = bindings.join("BSATN.Codegen").join("bin").join("Release");
+    let codegen_output = bindings.join("Codegen").join("bin").join("Release");
+    let client_sdk = workspace_root().join("sdks/csharp");
+    let client_sdk_output = client_sdk.join("bin~").join("Release");
+
     let nuget_config = project_path.join("nuget.config");
     if !nuget_config.exists() {
         fs::write(
             &nuget_config,
-            r#"<?xml version="1.0" encoding="utf-8"?>
+            format!(
+                r#"<?xml version="1.0" encoding="utf-8"?>
 <configuration>
   <packageSources>
     <clear />
+    <add key="SpacetimeDB.BSATN.Runtime" value="{}" />
+    <add key="SpacetimeDB.Runtime" value="{}" />
+    <add key="SpacetimeDB.BSATN.Codegen" value="{}" />
+    <add key="SpacetimeDB.Codegen" value="{}" />
+    <add key="SpacetimeDB.ClientSDK" value="{}" />
     <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
     <add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />
   </packageSources>
@@ -796,31 +810,21 @@ fn setup_csharp_nuget(project_path: &Path) -> Result<PathBuf> {
   </packageSourceMapping>
 </configuration>
 "#,
+                normalize_dependency_path(&bsatn_runtime_output),
+                normalize_dependency_path(&runtime_output),
+                normalize_dependency_path(&bsatn_codegen_output),
+                normalize_dependency_path(&codegen_output),
+                normalize_dependency_path(&client_sdk_output),
+            ),
         )
         .context("Failed to write nuget.config")?;
     }
 
-    let bindings = workspace_root().join("crates/bindings-csharp");
     for pkg in &["BSATN.Runtime", "Runtime", "BSATN.Codegen", "Codegen"] {
         run_dotnet(&["pack", "-c", "Release"], &bindings.join(pkg))?;
-        let pkg_output = bindings.join(pkg).join("bin").join("Release");
-        run_dotnet(
-            &[
-                "nuget",
-                "add",
-                "source",
-                pkg_output.to_str().unwrap(),
-                "-n",
-                &format!("SpacetimeDB.{}", pkg),
-                "--configfile",
-                nuget_config.to_str().unwrap(),
-            ],
-            project_path,
-        )?;
     }
 
     // Pack and register the client SDK (needed by client templates).
-    let client_sdk = workspace_root().join("sdks/csharp");
     let client_sdk_proj = client_sdk.join("SpacetimeDB.ClientSDK.csproj");
     run_dotnet(
         &[
@@ -828,20 +832,6 @@ fn setup_csharp_nuget(project_path: &Path) -> Result<PathBuf> {
             client_sdk_proj.to_str().unwrap(),
             "-c",
             "Release",
-            "--configfile",
-            nuget_config.to_str().unwrap(),
-        ],
-        project_path,
-    )?;
-    let client_sdk_output = client_sdk.join("bin~").join("Release");
-    run_dotnet(
-        &[
-            "nuget",
-            "add",
-            "source",
-            client_sdk_output.to_str().unwrap(),
-            "-n",
-            "SpacetimeDB.ClientSDK",
             "--configfile",
             nuget_config.to_str().unwrap(),
         ],
