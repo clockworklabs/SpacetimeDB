@@ -968,9 +968,11 @@ fn test_csharp_template_for_dotnet_version(
     pin_csharp_server_runtime_package_version(&server_path)?;
     // Copy nuget.config into the server directory so `spacetime publish` (which runs
     // `dotnet publish` from the server dir) can find the local package sources.
+    // Overwrite any template-provided NuGet.Config; .NET 10 templates include one
+    // for the experimental feed, but this test needs the local packed packages too.
     let root_nuget = project_path.join("nuget.config");
     let server_nuget = server_path.join("nuget.config");
-    if root_nuget.exists() && !server_nuget.exists() {
+    if root_nuget.exists() {
         fs::copy(&root_nuget, &server_nuget).context("Failed to copy nuget.config to server dir")?;
     }
 
