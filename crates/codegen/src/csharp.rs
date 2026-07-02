@@ -563,10 +563,15 @@ impl Lang for Csharp<'_> {
 
                     let (row_to_key, key_type, nullable_single_column) = match columns.as_singleton() {
                         Some(col_pos) => {
-                            let (field_name, field_type) = get_csharp_field_name_and_type(col_pos);
-                            let field_type = field_type.to_string();
-                            let nullable_single_column = field_type.ends_with('?');
-                            (format!("row.{field_name}"), field_type, nullable_single_column)
+                            let (field_name, field_type) = &product_type.elements[col_pos.idx()];
+                            let csharp_field_name_pascal = field_name.deref().to_case(Case::Pascal);
+                            let csharp_field_type = ty_fmt(module, field_type).to_string();
+                            let nullable_single_column = matches!(field_type, AlgebraicTypeUse::Option(_));
+                            (
+                                format!("row.{csharp_field_name_pascal}"),
+                                csharp_field_type,
+                                nullable_single_column,
+                            )
                         }
                         None => {
                             let mut key_accessors = Vec::new();

@@ -406,6 +406,41 @@ public static class GeneratorSnapshotTests
                     _ = ctx.Db.NullableUniqueIndex.ExternalId.Find(SpacetimeDB.Uuid.NIL);
                 }
             }
+
+            [SpacetimeDB.Table]
+            public partial struct ExplicitNullableBTreeIndex
+            {
+                [SpacetimeDB.PrimaryKey]
+                public uint Id;
+
+                [SpacetimeDB.Index.BTree]
+                public System.Nullable<uint> AccountId;
+
+                [SpacetimeDB.Reducer]
+                public static void TestExplicitNullableBTreeIndex(ReducerContext ctx)
+                {
+                    _ = ctx.Db.ExplicitNullableBTreeIndex.AccountId.Filter((uint?)null);
+                    _ = ctx.Db.ExplicitNullableBTreeIndex.AccountId.Filter((uint?)55);
+                    _ = ctx.Db.ExplicitNullableBTreeIndex.AccountId.Filter(new Bound<uint?>(null, 99));
+                }
+            }
+
+            [SpacetimeDB.Table]
+            public partial struct ExplicitNullableUniqueIndex
+            {
+                [SpacetimeDB.PrimaryKey]
+                public uint Id;
+
+                [SpacetimeDB.Unique]
+                public System.Nullable<uint> AccountId;
+
+                [SpacetimeDB.Reducer]
+                public static void TestExplicitNullableUniqueIndex(ReducerContext ctx)
+                {
+                    _ = ctx.Db.ExplicitNullableUniqueIndex.AccountId.Find((uint?)null);
+                    _ = ctx.Db.ExplicitNullableUniqueIndex.AccountId.Find((uint?)55);
+                }
+            }
             """;
 
         var parseOptions = new CSharpParseOptions(fixture.SampleCompilation.LanguageVersion);
