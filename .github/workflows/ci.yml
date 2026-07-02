@@ -432,8 +432,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          save-if: false
+          shared-key: spacetimedb-index-scan
+          cache-on-failure: false
+          cache-all-crates: true
+          cache-workspace-crates: true
           prefix-key: v1
 
       - name: Run index scan benchmark regression check
