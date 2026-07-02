@@ -1685,6 +1685,11 @@ fn resolve_default_dotnet_major() -> u8 {
         .as_deref()
         .is_some_and(should_default_to_dotnet8)
     {
+        println!(
+            "{}",
+            "Warning: Only the .NET 8 SDK is installed, so this C# project will target .NET 8. .NET 8 support will be deprecated soon; install .NET 10 to create new C# modules targeting .NET 10."
+                .yellow()
+        );
         return 8;
     }
 
