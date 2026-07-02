@@ -1376,6 +1376,7 @@ mod test {
                     owner_identity: Identity::ZERO,
                     host_type: HostType::Wasm,
                     initial_program: Hash::ZERO,
+                    bootstrap_generation: 0,
                 },
                 replica_id: 0,
                 logger,

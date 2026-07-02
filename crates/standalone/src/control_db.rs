@@ -655,6 +655,7 @@ mod compat {
                 owner_identity,
                 host_type,
                 initial_program,
+                bootstrap_generation: 0,
             }
         }
     }
@@ -667,6 +668,7 @@ mod compat {
                 owner_identity,
                 host_type,
                 initial_program,
+                bootstrap_generation: _,
             }: CanonicalDatabase,
         ) -> Self {
             Self {
