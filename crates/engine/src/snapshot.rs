@@ -147,6 +147,28 @@ impl SnapshotWorker {
     pub fn subscribe(&self) -> watch::Receiver<TxOffset> {
         self.snapshot_created.subscribe()
     }
+
+    /// Request a snapshot if needed, and wait until one exists at or beyond `offset`.
+    pub async fn ensure_snapshot_at_least(&self, offset: TxOffset) -> anyhow::Result<TxOffset> {
+        if let Some(latest) = self.snapshot_repository.latest_snapshot()? {
+            if latest >= offset {
+                return Ok(latest);
+            }
+        }
+
+        let mut snapshot_created = self.subscribe();
+        self.request_snapshot();
+        loop {
+            snapshot_created
+                .changed()
+                .await
+                .context("snapshot worker closed before creating requested snapshot")?;
+            let latest = *snapshot_created.borrow_and_update();
+            if latest >= offset {
+                return Ok(latest);
+            }
+        }
+    }
 }
 
 struct SnapshotMetrics {

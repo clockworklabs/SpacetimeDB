@@ -31,11 +31,14 @@ use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
+use spacetimedb_paths::standalone::ControlDbDir;
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
+use spacetimedb_paths::FromPathUnchecked;
 use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
 use spacetimedb_table::page_pool::PagePool;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub use spacetimedb_client_api::routes::subscribe::{BIN_PROTOCOL, TEXT_PROTOCOL};
 
@@ -191,9 +194,52 @@ impl NodeDelegate for StandaloneEnv {
         Ok(Host::new(leader.id, self.host_controller.clone()))
     }
 
+    async fn create_hot_backup(
+        &self,
+        leader: Host,
+        output_dir: PathBuf,
+    ) -> anyhow::Result<db::relational_db::HotBackupManifest> {
+        let total_start = Instant::now();
+        let mut manifest = leader.create_hot_backup_without_control_db(&output_dir).await?;
+
+        let export_start = Instant::now();
+        self.control_db
+            .export_to_path(&ControlDbDir::from_path_unchecked(
+                output_dir.join("server").join("control-db"),
+            ))
+            .context("exporting control-db into backup")?;
+        manifest.copy_ms = manifest.copy_ms.saturating_add(elapsed_ms(export_start.elapsed()));
+        manifest.total_ms = elapsed_ms(total_start.elapsed());
+
+        let manifest_path = output_dir.join("manifest.json");
+        let _ = std::fs::remove_file(&manifest_path);
+        manifest.bytes = dir_size(&output_dir).context("measuring backup size")?;
+        std::fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest)?)
+            .with_context(|| format!("writing {}", manifest_path.display()))?;
+        Ok(manifest)
+    }
+
     fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir {
         self.data_dir().replica(replica_id).module_logs()
     }
+}
+
+fn elapsed_ms(duration: Duration) -> u64 {
+    duration.as_millis().try_into().unwrap_or(u64::MAX)
+}
+
+fn dir_size(path: &Path) -> std::io::Result<u64> {
+    let mut bytes = 0;
+    for entry in std::fs::read_dir(path)? {
+        let entry = entry?;
+        let meta = entry.metadata()?;
+        if meta.is_dir() {
+            bytes += dir_size(&entry.path())?;
+        } else {
+            bytes += meta.len();
+        }
+    }
+    Ok(bytes)
 }
 
 #[async_trait]

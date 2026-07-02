@@ -8472,6 +8472,7 @@ dependencies = [
  "pretty_assertions",
  "prometheus",
  "serde",
+ "serde_json",
  "sled",
  "spacetimedb-commitlog",
  "spacetimedb-data-structures",
@@ -8492,6 +8493,7 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 
@@ -8918,6 +8920,7 @@ dependencies = [
  "futures",
  "hostname",
  "http",
+ "humantime",
  "log",
  "netstat2",
  "once_cell",

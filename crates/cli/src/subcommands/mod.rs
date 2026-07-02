@@ -1,3 +1,4 @@
+pub mod backup;
 pub mod build;
 pub mod call;
 pub mod db_arg_resolution;

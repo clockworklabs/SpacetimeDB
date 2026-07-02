@@ -21,6 +21,7 @@ pub use tasks::build;
 
 pub fn get_subcommands() -> Vec<Command> {
     vec![
+        backup::cli(),
         publish::cli(),
         delete::cli(),
         logs::cli(),
@@ -52,6 +53,7 @@ pub async fn exec_subcommand(
     args: &ArgMatches,
 ) -> anyhow::Result<ExitCode> {
     match cmd {
+        "backup" => backup::exec(config, paths, args).await,
         "call" => call::exec(config, args).await,
         "describe" => describe::exec(config, args).await,
         "dev" => dev::exec(config, args).await,

@@ -1,9 +1,13 @@
 use netstat2::{get_sockets_info, AddressFamilyFlags, ProtocolFlags, ProtocolSocketInfo, TcpState};
 use spacetimedb_client_api::routes::identity::IdentityRoutes;
+use spacetimedb_client_api::util::NameOrIdentity;
+use spacetimedb_client_api::{ControlStateReadAccess, NodeDelegate};
 use spacetimedb_pg::pg_server;
 use std::io::{self, Write};
 use std::net::IpAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::{StandaloneEnv, StandaloneOptions};
 use anyhow::Context;
@@ -22,6 +26,7 @@ use spacetimedb_client_api::routes::subscribe::WebSocketOptions;
 use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::server::{ConfigToml, ServerDataDir};
 use tokio::net::TcpListener;
+use tokio::task::JoinHandle;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("start")
@@ -103,12 +108,120 @@ struct ConfigFile {
     commitlog: CommitlogConfig,
     #[serde(default)]
     websocket: WebSocketOptions,
+    #[serde(default, alias = "scheduled-backup")]
+    scheduled_backup: Option<ScheduledBackupConfig>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+struct ScheduledBackupConfig {
+    database: NameOrIdentity,
+    output_dir: PathBuf,
+    #[serde(deserialize_with = "deserialize_duration")]
+    interval: Duration,
+    keep_last: Option<usize>,
 }
 
 impl ConfigFile {
     fn read(path: &ConfigToml) -> anyhow::Result<Option<Self>> {
         parse_config(path.as_ref())
     }
+}
+
+fn deserialize_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum DurationValue {
+        String(String),
+        Seconds(u64),
+    }
+
+    match <DurationValue as serde::Deserialize>::deserialize(deserializer)? {
+        DurationValue::String(value) => humantime::parse_duration(&value).map_err(serde::de::Error::custom),
+        DurationValue::Seconds(value) => Ok(Duration::from_secs(value)),
+    }
+}
+
+fn backup_dir_name() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    format!("stdb-{nanos}")
+}
+
+fn validate_scheduled_backup_config(config: &ScheduledBackupConfig) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !config.interval.is_zero(),
+        "scheduled-backup interval must be greater than zero"
+    );
+    anyhow::ensure!(
+        config.output_dir.is_absolute(),
+        "scheduled-backup output-dir must be an absolute server path: {}",
+        config.output_dir.display()
+    );
+    if let Some(0) = config.keep_last {
+        anyhow::bail!("scheduled-backup keep-last must be greater than zero");
+    }
+    Ok(())
+}
+
+fn prune_scheduled_backups(config: &ScheduledBackupConfig) -> anyhow::Result<()> {
+    let Some(keep_last) = config.keep_last else {
+        return Ok(());
+    };
+    let mut dirs: Vec<_> = std::fs::read_dir(&config.output_dir)
+        .with_context(|| format!("reading scheduled-backup output-dir {}", config.output_dir.display()))?
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_ok_and(|ty| ty.is_dir()))
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with("stdb-"))
+        .collect();
+    dirs.sort_by_key(|entry| entry.file_name());
+    let remove_count = dirs.len().saturating_sub(keep_last);
+    for entry in dirs.into_iter().take(remove_count) {
+        std::fs::remove_dir_all(entry.path())
+            .with_context(|| format!("removing old backup {}", entry.path().display()))?;
+    }
+    Ok(())
+}
+
+async fn run_scheduled_backup(ctx: &Arc<StandaloneEnv>, config: &ScheduledBackupConfig) -> anyhow::Result<()> {
+    validate_scheduled_backup_config(config)?;
+    let database_identity = config
+        .database
+        .try_resolve(ctx)
+        .await?
+        .map_err(|name| anyhow::anyhow!("scheduled-backup database `{name}` not found"))?;
+    let database = ctx
+        .get_database_by_identity(&database_identity)
+        .await?
+        .with_context(|| format!("scheduled-backup database `{}` not found", config.database))?;
+    let output_dir = config.output_dir.join(backup_dir_name());
+    let leader = ctx.leader(database.id).await?;
+    ctx.create_hot_backup(leader, output_dir).await?;
+    prune_scheduled_backups(config)?;
+    Ok(())
+}
+
+fn spawn_scheduled_backup(ctx: Arc<StandaloneEnv>, config: ScheduledBackupConfig) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        log::info!(
+            "scheduled backup enabled for {} every {:?} into {}",
+            config.database,
+            config.interval,
+            config.output_dir.display()
+        );
+
+        loop {
+            tokio::time::sleep(config.interval).await;
+            if let Err(err) = run_scheduled_backup(&ctx, &config).await {
+                log::error!("scheduled backup failed: {err:#}");
+            }
+        }
+    })
 }
 
 pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
@@ -204,6 +317,19 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     );
     worker_metrics::spawn_page_pool_stats(listen_addr.clone(), ctx.page_pool().clone());
     worker_metrics::spawn_bsatn_rlb_pool_stats(listen_addr.clone(), ctx.bsatn_rlb_pool().clone());
+    let backup_task = if matches!(storage, Storage::Disk) {
+        if let Some(scheduled_backup) = config.scheduled_backup.clone() {
+            validate_scheduled_backup_config(&scheduled_backup)?;
+            Some(spawn_scheduled_backup(ctx.clone(), scheduled_backup))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    if config.scheduled_backup.is_some() && matches!(storage, Storage::Memory) {
+        log::warn!("scheduled backup disabled for --in-memory server");
+    }
     let mut db_routes = DatabaseRoutes::default();
     db_routes.root_post = db_routes.root_post.layer(DefaultBodyLimit::disable());
     db_routes.db_put = db_routes.db_put.layer(DefaultBodyLimit::disable());
@@ -288,6 +414,9 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
                 log::info!("Shutting down server...");
             })
             .await?;
+    }
+    if let Some(task) = backup_task {
+        task.abort();
     }
 
     Ok(())
@@ -539,6 +668,12 @@ mod tests {
             offset-index-require-segment-fsync = false
             preallocate-segments = true
             write-buffer-size = 131072
+
+            [scheduled-backup]
+            database = "mydb"
+            output-dir = "/var/backups/stdb"
+            interval = "1h"
+            keep-last = 2
 "#;
 
         let config: ConfigFile = toml::from_str(toml).unwrap();
@@ -581,6 +716,11 @@ mod tests {
                 ..<_>::default()
             }
         );
+        let scheduled_backup = config.scheduled_backup.unwrap();
+        assert_eq!(scheduled_backup.database.to_string(), "mydb");
+        assert_eq!(scheduled_backup.output_dir, PathBuf::from("/var/backups/stdb"));
+        assert_eq!(scheduled_backup.interval, Duration::from_secs(60 * 60));
+        assert_eq!(scheduled_backup.keep_last, Some(2));
     }
 
     #[test]

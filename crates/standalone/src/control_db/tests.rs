@@ -152,3 +152,31 @@ fn test_decode() -> ResultTest<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_export_to_path_can_be_opened() -> anyhow::Result<()> {
+    let src = TempDir::with_prefix("control-db-export-src")?;
+    let dst = TempDir::with_prefix("control-db-export-dst")?;
+    let cdb = ControlDb::at(src.path())?;
+    let database = Database {
+        id: 0,
+        database_identity: Identity::ZERO,
+        owner_identity: *ALICE,
+        host_type: HostType::Wasm,
+        initial_program: Hash::ZERO,
+    };
+    let database_id = cdb.insert_database(database)?;
+    cdb.insert_replica(Replica {
+        id: 0,
+        database_id,
+        node_id: 0,
+        leader: true,
+    })?;
+
+    cdb.export_to_path(&ControlDbDir(dst.path().to_path_buf()))?;
+    let exported = ControlDb::at(dst.path())?;
+
+    assert!(exported.get_database_by_id(database_id)?.is_some());
+    assert!(exported.get_leader_replica_by_database(database_id).is_some());
+    Ok(())
+}

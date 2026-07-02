@@ -1,6 +1,7 @@
 use std::fmt;
 use std::future::Future;
 use std::num::NonZeroU8;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::anyhow;
@@ -59,6 +60,13 @@ pub trait NodeDelegate: Send + Sync {
     ///
     /// The [`Host`] is spawned implicitly if not already running.
     async fn leader(&self, database_id: u64) -> Result<Host, Self::GetLeaderHostError>;
+    async fn create_hot_backup(
+        &self,
+        leader: Host,
+        output_dir: PathBuf,
+    ) -> anyhow::Result<spacetimedb::db::relational_db::HotBackupManifest> {
+        leader.create_hot_backup(output_dir).await
+    }
     fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir;
 }
 
@@ -105,6 +113,38 @@ impl Host {
 
     pub async fn module(&self) -> Result<ModuleHost, NoSuchModule> {
         self.host_controller.get_module_host(self.replica_id).await
+    }
+
+    pub async fn create_hot_backup(
+        &self,
+        output_dir: impl AsRef<Path>,
+    ) -> anyhow::Result<spacetimedb::db::relational_db::HotBackupManifest> {
+        let module = self.module().await?;
+        module
+            .relational_db()
+            .create_hot_backup(
+                &self.host_controller.data_dir.replica(self.replica_id),
+                Some(&self.host_controller.data_dir),
+                self.replica_id,
+                output_dir,
+            )
+            .await
+    }
+
+    pub async fn create_hot_backup_without_control_db(
+        &self,
+        output_dir: impl AsRef<Path>,
+    ) -> anyhow::Result<spacetimedb::db::relational_db::HotBackupManifest> {
+        let module = self.module().await?;
+        module
+            .relational_db()
+            .create_hot_backup_without_control_db(
+                &self.host_controller.data_dir.replica(self.replica_id),
+                Some(&self.host_controller.data_dir),
+                self.replica_id,
+                output_dir,
+            )
+            .await
     }
 
     /// Wait for the module host to become available, retrying with backoff.
@@ -494,6 +534,14 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
 
     async fn leader(&self, database_id: u64) -> Result<Host, Self::GetLeaderHostError> {
         (**self).leader(database_id).await
+    }
+
+    async fn create_hot_backup(
+        &self,
+        leader: Host,
+        output_dir: PathBuf,
+    ) -> anyhow::Result<spacetimedb::db::relational_db::HotBackupManifest> {
+        (**self).create_hot_backup(leader, output_dir).await
     }
 
     fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir {

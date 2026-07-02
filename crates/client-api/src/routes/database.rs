@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::future::Future;
 use std::num::NonZeroU8;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 use std::{env, io};
@@ -674,6 +675,38 @@ where
 
 fn mime_ndjson() -> mime::Mime {
     "application/x-ndjson".parse().unwrap()
+}
+
+#[derive(Deserialize)]
+pub struct BackupParams {
+    name_or_identity: NameOrIdentity,
+}
+
+#[derive(Deserialize)]
+pub struct BackupRequest {
+    #[serde(alias = "output_dir")]
+    server_output_dir: PathBuf,
+}
+
+pub async fn backup<S>(
+    State(worker_ctx): State<S>,
+    Path(BackupParams { name_or_identity }): Path<BackupParams>,
+    Extension(auth): Extension<SpacetimeAuth>,
+    axum::Json(BackupRequest { server_output_dir }): axum::Json<BackupRequest>,
+) -> axum::response::Result<impl IntoResponse>
+where
+    S: ControlStateDelegate + NodeDelegate + Authorization,
+{
+    let (leader, database) = find_leader_and_database(&worker_ctx, name_or_identity).await?;
+    worker_ctx
+        .authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
+        .await?;
+
+    let manifest = worker_ctx
+        .create_hot_backup(leader, server_output_dir)
+        .await
+        .map_err(log_and_500)?;
+    Ok(axum::Json(manifest))
 }
 
 pub(crate) async fn worker_ctx_find_database(
@@ -1561,6 +1594,8 @@ pub struct DatabaseRoutes<S> {
     pub schema_get: MethodRouter<S>,
     /// GET: /database/:name_or_identity/logs
     pub logs_get: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/backup
+    pub backup_post: MethodRouter<S>,
     /// POST: /database/:name_or_identity/sql
     pub sql_post: MethodRouter<S>,
     /// POST: /database/:name_or_identity/pre-publish
@@ -1600,6 +1635,7 @@ where
             call_reducer_procedure_post: post(call::<S>),
             schema_get: get(schema::<S>),
             logs_get: get(logs::<S>),
+            backup_post: post(backup::<S>),
             sql_post: post(sql::<S>),
             pre_publish: post(pre_publish::<S>),
             db_reset: put(reset::<S>),
@@ -1630,6 +1666,7 @@ where
             .route("/call/:reducer", self.call_reducer_procedure_post)
             .route("/schema", self.schema_get)
             .route("/logs", self.logs_get)
+            .route("/backup", self.backup_post)
             .route("/sql", self.sql_post)
             .route("/unstable/timestamp", self.timestamp_get)
             .route("/pre_publish", self.pre_publish)

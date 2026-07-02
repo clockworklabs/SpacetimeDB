@@ -64,4 +64,10 @@ directives = [
 # Size in bytes of the memory buffer holding commit data before flushing to storage.
 # write-buffer-size = 131072
 
+# [scheduled-backup]
+# database = "mydb"
+# output-dir = "/var/backups/stdb"
+# interval = "1h"
+# keep-last = 24
+
 # vim: set nowritebackup: << otherwise triggers cargo-watch

@@ -43,6 +43,7 @@ dirs.workspace = true
 futures.workspace = true
 hostname.workspace = true
 http.workspace = true
+humantime.workspace = true
 log.workspace = true
 netstat2.workspace = true
 openssl.workspace = true

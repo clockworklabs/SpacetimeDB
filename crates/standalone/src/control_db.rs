@@ -75,6 +75,33 @@ impl ControlDb {
         Ok(Self { db })
     }
 
+    pub fn export_to_path(&self, path: &ControlDbDir) -> Result<()> {
+        if path.is_dir() {
+            if path
+                .read_dir()
+                .with_context(|| format!("reading control db export dir {}", path.display()))?
+                .next()
+                .is_some()
+            {
+                return Err(anyhow::anyhow!("control db export directory must be empty: {}", path.display()).into());
+            }
+        } else {
+            path.create()
+                .with_context(|| format!("creating control db export dir {}", path.display()))?;
+        }
+
+        // ponytail: sled owns live files on Windows; export/import avoids copying locked files.
+        self.db.flush()?;
+        let dst = sled::Config::default()
+            .path(path)
+            .flush_every_ms(Some(50))
+            .mode(sled::Mode::HighThroughput)
+            .open()?;
+        dst.import(self.db.export());
+        dst.flush()?;
+        Ok(())
+    }
+
     #[cfg(test)]
     pub fn at(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let config = sled::Config::default()

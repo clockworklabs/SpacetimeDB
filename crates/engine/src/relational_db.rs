@@ -42,7 +42,9 @@ use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
 use spacetimedb_lib::st_var::StVarValue;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Identity;
-use spacetimedb_paths::server::{ReplicaDir, SnapshotsPath};
+use spacetimedb_paths::server::{CommitLogDir, ReplicaDir, ServerDataDir, SnapshotsPath};
+use spacetimedb_paths::standalone::StandaloneDataDirExt;
+use spacetimedb_paths::FromPathUnchecked;
 use spacetimedb_primitives::*;
 use spacetimedb_runtime::sync::watch;
 use spacetimedb_runtime::Handle;
@@ -62,9 +64,12 @@ use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::table::{RowRef, TableScanIter};
 use spacetimedb_table::table_index::IndexKey;
 use std::borrow::Cow;
+use std::ffi::OsString;
 use std::io;
 use std::ops::RangeBounds;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 pub use super::persistence::{DiskSizeFn, Durability, Persistence};
 pub use super::snapshot::SnapshotWorker;
@@ -129,6 +134,20 @@ pub struct RelationalDB {
 // this value, later introduction of dynamic configuration will allow the
 // compiler to find external dependencies.
 pub const SNAPSHOT_FREQUENCY: u64 = 1_000_000;
+
+#[derive(Debug, serde::Serialize)]
+pub struct HotBackupManifest {
+    pub version: u32,
+    pub database_identity: Identity,
+    pub replica_id: u64,
+    pub snapshot_offset: TxOffset,
+    pub durable_offset: TxOffset,
+    pub output_dir: PathBuf,
+    pub snapshot_ms: u64,
+    pub copy_ms: u64,
+    pub total_ms: u64,
+    pub bytes: u64,
+}
 
 impl std::fmt::Debug for RelationalDB {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -936,6 +955,129 @@ impl RelationalDB {
     /// was taken at.
     pub fn subscribe_to_snapshots(&self) -> Option<watch::Receiver<TxOffset>> {
         self.snapshot_worker.as_ref().map(|snap| snap.subscribe())
+    }
+
+    /// Create or reuse a snapshot that covers the current committed state, and wait until it is durable.
+    pub async fn request_hot_backup_snapshot(&self) -> Result<TxOffset, DBError> {
+        let snapshot_worker = self
+            .snapshot_worker
+            .as_ref()
+            .context("snapshots are not enabled for this database")?;
+        let mut durable_offset = self
+            .durable_tx_offset()
+            .context("durability is not enabled for this database")?;
+
+        let tx = self.begin_tx(Workload::Internal);
+        let (target_offset, _, _) = self.release_tx(tx);
+
+        let snapshot_offset = snapshot_worker.ensure_snapshot_at_least(target_offset).await?;
+        durable_offset.wait_for(snapshot_offset).await?;
+        Ok(snapshot_offset)
+    }
+
+    /// Export a point-in-time hot backup into `output_dir`.
+    pub async fn create_hot_backup(
+        &self,
+        replica_dir: &ReplicaDir,
+        server_data_dir: Option<&ServerDataDir>,
+        replica_id: u64,
+        output_dir: impl AsRef<Path>,
+    ) -> anyhow::Result<HotBackupManifest> {
+        self.create_hot_backup_inner(replica_dir, server_data_dir, replica_id, output_dir, true)
+            .await
+    }
+
+    /// Export a point-in-time hot backup into `output_dir`, leaving `server/control-db`
+    /// for the caller to provide.
+    pub async fn create_hot_backup_without_control_db(
+        &self,
+        replica_dir: &ReplicaDir,
+        server_data_dir: Option<&ServerDataDir>,
+        replica_id: u64,
+        output_dir: impl AsRef<Path>,
+    ) -> anyhow::Result<HotBackupManifest> {
+        self.create_hot_backup_inner(replica_dir, server_data_dir, replica_id, output_dir, false)
+            .await
+    }
+
+    async fn create_hot_backup_inner(
+        &self,
+        replica_dir: &ReplicaDir,
+        server_data_dir: Option<&ServerDataDir>,
+        replica_id: u64,
+        output_dir: impl AsRef<Path>,
+        copy_control_db: bool,
+    ) -> anyhow::Result<HotBackupManifest> {
+        let total_start = Instant::now();
+        let runtime = self
+            .durability_runtime
+            .as_ref()
+            .context("durability runtime is not enabled for this database")?
+            .clone();
+        let output_dir = output_dir.as_ref().to_path_buf();
+        ensure_backup_path(replica_dir, server_data_dir, &output_dir)?;
+
+        let snapshot_start = Instant::now();
+        let snapshot_offset = self.request_hot_backup_snapshot().await?;
+        let snapshot_ms = elapsed_ms(snapshot_start.elapsed());
+        let durable_offset = snapshot_offset;
+
+        let copy_start = Instant::now();
+        let snapshot_repo = open_snapshot_repo(replica_dir.snapshots(), self.database_identity(), replica_id)?;
+        let src_snapshot_dir = snapshot_repo.snapshot_dir_path(snapshot_offset);
+        let dst_snapshots = output_dir.join("snapshots");
+        let dst_snapshot_dir = dst_snapshots.join(
+            src_snapshot_dir
+                .0
+                .file_name()
+                .context("snapshot directory has no file name")?,
+        );
+        wait_for_dir(&src_snapshot_dir.0).await?;
+        let src_snapshot_file = src_snapshot_dir.snapshot_file(snapshot_offset);
+        wait_for_file(&src_snapshot_file.0).await?;
+        let snapshot_file_name: OsString = src_snapshot_file
+            .0
+            .file_name()
+            .context("snapshot file has no file name")?
+            .to_owned();
+
+        asyncify(&runtime, {
+            let output_dir = output_dir.clone();
+            let src_snapshot_dir = src_snapshot_dir.clone();
+            let snapshot_file_name = snapshot_file_name.clone();
+            move || -> anyhow::Result<()> {
+                ensure_empty_dir(&output_dir)?;
+                copy_dir_all_retry(&src_snapshot_dir.0, &dst_snapshot_dir, &snapshot_file_name)?;
+                Ok(())
+            }
+        })
+        .await?;
+
+        if let Some(server_data_dir) = server_data_dir {
+            copy_server_state(&runtime, server_data_dir, &output_dir, copy_control_db).await?;
+        }
+        copy_commitlog_range(replica_dir.commit_log(), output_dir.join("clog"), snapshot_offset).await?;
+        let copy_ms = elapsed_ms(copy_start.elapsed());
+
+        let mut manifest = HotBackupManifest {
+            version: 1,
+            database_identity: self.database_identity(),
+            replica_id,
+            snapshot_offset,
+            durable_offset,
+            output_dir: output_dir.clone(),
+            snapshot_ms,
+            copy_ms,
+            total_ms: elapsed_ms(total_start.elapsed()),
+            bytes: 0,
+        };
+        manifest.bytes = asyncify(&runtime, {
+            let output_dir = output_dir.clone();
+            move || dir_size(&output_dir)
+        })
+        .await?;
+        write_hot_backup_manifest(&runtime, &output_dir, &manifest).await?;
+        Ok(manifest)
     }
 
     /// Run a fallible function in a transaction.
@@ -1843,6 +1985,220 @@ pub fn open_snapshot_repo(
         .map_err(Box::new)
 }
 
+async fn copy_commitlog_range(src: CommitLogDir, dst: PathBuf, through: TxOffset) -> anyhow::Result<()> {
+    let src_repo = commitlog::repo::Fs::new(src, None)?;
+    let dst_repo = commitlog::repo::Fs::new(CommitLogDir::from_path_unchecked(dst), None)?;
+    let reader = tokio::io::BufReader::new(tokio_util::io::StreamReader::new(commitlog::stream::commits(
+        src_repo,
+        ..=through,
+    )));
+    tokio::pin!(reader);
+    let writer =
+        commitlog::stream::StreamWriter::create(dst_repo, <_>::default(), commitlog::stream::OnTrailingData::Error)?;
+    let mut writer = writer.append_all(reader, |_| ()).await?;
+    writer.sync_all().await?;
+    Ok(())
+}
+
+async fn write_hot_backup_manifest(
+    runtime: &Handle,
+    output_dir: &Path,
+    manifest: &HotBackupManifest,
+) -> anyhow::Result<()> {
+    let output_dir = output_dir.to_path_buf();
+    let json = serde_json::to_vec_pretty(manifest)?;
+    asyncify(runtime, move || std::fs::write(output_dir.join("manifest.json"), json)).await?;
+    Ok(())
+}
+
+fn ensure_empty_dir(path: &Path) -> anyhow::Result<()> {
+    if path.exists() {
+        anyhow::ensure!(
+            path.is_dir(),
+            "backup output path is not a directory: {}",
+            path.display()
+        );
+        anyhow::ensure!(
+            path.read_dir()?.next().is_none(),
+            "backup output directory must be empty: {}",
+            path.display()
+        );
+    } else {
+        std::fs::create_dir_all(path)?;
+    }
+    Ok(())
+}
+
+fn ensure_backup_path(
+    replica_dir: &ReplicaDir,
+    server_data_dir: Option<&ServerDataDir>,
+    output_dir: &Path,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        output_dir.is_absolute(),
+        "backup output directory must be an absolute server path: {}",
+        output_dir.display()
+    );
+    if let Some(server_data_dir) = server_data_dir {
+        anyhow::ensure!(
+            !output_dir.starts_with(&server_data_dir.0),
+            "backup output directory must not be inside the server data directory: {}",
+            output_dir.display()
+        );
+    }
+    anyhow::ensure!(
+        !output_dir.starts_with(&replica_dir.0),
+        "backup output directory must not be inside the replica directory: {}",
+        replica_dir.display()
+    );
+    Ok(())
+}
+
+async fn copy_server_state(
+    runtime: &Handle,
+    data_dir: &ServerDataDir,
+    output_dir: &Path,
+    copy_control_db: bool,
+) -> anyhow::Result<()> {
+    let data_dir = data_dir.clone();
+    let output_dir = output_dir.to_path_buf();
+    asyncify(runtime, move || -> anyhow::Result<()> {
+        let server_dir = output_dir.join("server");
+        std::fs::create_dir_all(&server_dir)?;
+
+        copy_required_file(&data_dir.config_toml().0, &server_dir.join("config.toml"))?;
+        copy_required_file(&data_dir.metadata_toml().0, &server_dir.join("metadata.toml"))?;
+        if copy_control_db {
+            copy_required_dir(&data_dir.control_db().0, &server_dir.join("control-db"))?;
+        }
+        copy_required_dir(&data_dir.program_bytes().0, &server_dir.join("program-bytes"))?;
+        Ok(())
+    })
+    .await?;
+    Ok(())
+}
+
+fn copy_required_file(src: &Path, dst: &Path) -> anyhow::Result<()> {
+    anyhow::ensure!(src.is_file(), "server state file is missing: {}", src.display());
+    if let Some(parent) = dst.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::copy(src, dst).with_context(|| format!("copying {} to {}", src.display(), dst.display()))?;
+    Ok(())
+}
+
+fn copy_required_dir(src: &Path, dst: &Path) -> anyhow::Result<()> {
+    anyhow::ensure!(src.is_dir(), "server state directory is missing: {}", src.display());
+    copy_dir_all(src, dst).with_context(|| format!("copying {} to {}", src.display(), dst.display()))
+}
+
+fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<()> {
+    let src = src.as_ref();
+    let dst = dst.as_ref();
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        let dst = dst.join(entry.file_name());
+        if ty.is_dir() {
+            copy_dir_all(entry.path(), dst)?;
+        } else {
+            std::fs::copy(entry.path(), dst)?;
+        }
+    }
+    Ok(())
+}
+
+fn copy_dir_all_retry(src: &Path, dst: &Path, required_file_name: &OsString) -> anyhow::Result<()> {
+    let start = Instant::now();
+    loop {
+        match copy_snapshot_dir(src, dst, required_file_name) {
+            Ok(()) => return Ok(()),
+            Err(err) if start.elapsed() < Duration::from_secs(30) => {
+                std::thread::sleep(Duration::from_millis(10));
+                drop(err);
+            }
+            Err(err) => {
+                return Err(err).with_context(|| format!("copying snapshot {} to {}", src.display(), dst.display()));
+            }
+        }
+    }
+}
+
+fn copy_snapshot_dir(src: &Path, dst: &Path, required_file_name: &OsString) -> anyhow::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    let src_required = src.join(required_file_name);
+    let dst_required = dst.join(required_file_name);
+    std::fs::copy(&src_required, &dst_required)
+        .with_context(|| format!("copying {} to {}", src_required.display(), dst_required.display()))?;
+
+    for entry in std::fs::read_dir(src).with_context(|| format!("reading {}", src.display()))? {
+        let entry = entry?;
+        if entry.file_name() == *required_file_name {
+            continue;
+        }
+        let ty = entry.file_type()?;
+        let dst = dst.join(entry.file_name());
+        if ty.is_dir() {
+            copy_dir_all(entry.path(), dst)?;
+        } else {
+            std::fs::copy(entry.path(), dst)?;
+        }
+    }
+    anyhow::ensure!(
+        dst_required.is_file(),
+        "copying snapshot {} to {} did not copy {}",
+        src.display(),
+        dst.display(),
+        required_file_name.to_string_lossy()
+    );
+    Ok(())
+}
+
+fn dir_size(path: &Path) -> io::Result<u64> {
+    let mut bytes = 0;
+    for entry in std::fs::read_dir(path)? {
+        let entry = entry?;
+        let meta = entry.metadata()?;
+        if meta.is_dir() {
+            bytes += dir_size(&entry.path())?;
+        } else {
+            bytes += meta.len();
+        }
+    }
+    Ok(bytes)
+}
+
+fn elapsed_ms(duration: Duration) -> u64 {
+    duration.as_millis().try_into().unwrap_or(u64::MAX)
+}
+
+async fn wait_for_dir(path: &Path) -> anyhow::Result<()> {
+    let start = Instant::now();
+    while !path.is_dir() {
+        anyhow::ensure!(
+            start.elapsed() < Duration::from_secs(5),
+            "directory did not appear: {}",
+            path.display()
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    Ok(())
+}
+
+async fn wait_for_file(path: &Path) -> anyhow::Result<()> {
+    let start = Instant::now();
+    while !path.is_file() {
+        anyhow::ensure!(
+            start.elapsed() < Duration::from_secs(5),
+            "file did not appear: {}",
+            path.display()
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    Ok(())
+}
+
 fn default_row_count_fn(db: Identity) -> RowCountFn {
     Arc::new(move |table_id, table_name| {
         DB_METRICS
@@ -2353,6 +2709,8 @@ mod tests {
     use std::path::PathBuf;
     use std::rc::Rc;
     use std::time::{Duration, Instant};
+
+    const HOT_BACKUP_TEST_TIMEOUT: Duration = Duration::from_secs(60);
 
     use super::tests_utils::begin_mut_tx;
     use super::*;
@@ -3778,6 +4136,133 @@ mod tests {
             0,
             PagePool::new_for_test(),
         )?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn hot_backup_snapshot_waits_until_snapshot_is_durable() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
+        stdb.commit_tx(tx)?;
+
+        let snapshot_offset = stdb.runtime().unwrap().block_on(async {
+            tokio::time::timeout(HOT_BACKUP_TEST_TIMEOUT, stdb.request_hot_backup_snapshot()).await
+        })??;
+
+        assert_eq!(Some(snapshot_offset), stdb.durable_tx_offset().unwrap().last_seen());
+        let repo = open_snapshot_repo(stdb.path().unwrap().snapshots(), stdb.database_identity(), 0)?;
+        assert_eq!(repo.latest_snapshot()?, Some(snapshot_offset));
+
+        Ok(())
+    }
+
+    #[test]
+    fn hot_backup_create_writes_manifest_snapshot_and_commitlog() -> anyhow::Result<()> {
+        let stdb = TestDB::durable()?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
+        stdb.commit_tx(tx)?;
+
+        let backup_dir = tempfile::tempdir()?;
+        let manifest = stdb.runtime().unwrap().block_on(async {
+            tokio::time::timeout(
+                HOT_BACKUP_TEST_TIMEOUT,
+                stdb.create_hot_backup(stdb.path().unwrap(), None, 0, backup_dir.path()),
+            )
+            .await
+        })??;
+
+        assert!(backup_dir.path().join("manifest.json").is_file());
+        assert!(manifest.bytes > 0);
+        assert_eq!(manifest.durable_offset, manifest.snapshot_offset);
+        let manifest_json: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(backup_dir.path().join("manifest.json"))?)?;
+        assert_eq!(
+            manifest_json["snapshot_offset"].as_u64(),
+            Some(manifest.snapshot_offset)
+        );
+        assert_eq!(manifest_json["durable_offset"].as_u64(), Some(manifest.snapshot_offset));
+        let repo = open_snapshot_repo(
+            SnapshotsPath::from_path_unchecked(backup_dir.path().join("snapshots")),
+            stdb.database_identity(),
+            0,
+        )?;
+        let snapshot = repo.read_snapshot(manifest.snapshot_offset, &PagePool::new_for_test())?;
+        assert_eq!(snapshot.database_identity, manifest.database_identity);
+        assert_eq!(snapshot.replica_id, manifest.replica_id);
+        assert_eq!(snapshot.tx_offset, manifest.snapshot_offset);
+        let clog = Commitlog::<Txdata>::open(
+            CommitLogDir::from_path_unchecked(backup_dir.path().join("clog")),
+            Default::default(),
+            None,
+        )?;
+        assert_eq!(clog.max_committed_offset(), Some(manifest.snapshot_offset));
+
+        Ok(())
+    }
+
+    #[test]
+    fn hot_backup_create_copies_server_state_when_provided() -> anyhow::Result<()> {
+        let stdb = TestDB::durable()?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
+        stdb.commit_tx(tx)?;
+
+        let data = tempfile::tempdir()?;
+        let data_dir = ServerDataDir::from_path_unchecked(data.path());
+        std::fs::write(data.path().join("config.toml"), b"config")?;
+        std::fs::write(data.path().join("metadata.toml"), b"metadata")?;
+        std::fs::create_dir_all(data.path().join("control-db"))?;
+        std::fs::write(data.path().join("control-db/control"), b"control")?;
+        std::fs::create_dir_all(data.path().join("program-bytes"))?;
+        std::fs::write(data.path().join("program-bytes/program"), b"program")?;
+
+        let backup_dir = tempfile::tempdir()?;
+        stdb.runtime().unwrap().block_on(async {
+            tokio::time::timeout(
+                HOT_BACKUP_TEST_TIMEOUT,
+                stdb.create_hot_backup(stdb.path().unwrap(), Some(&data_dir), 0, backup_dir.path()),
+            )
+            .await
+        })??;
+
+        assert_eq!(
+            std::fs::read_to_string(backup_dir.path().join("server/config.toml"))?,
+            "config"
+        );
+        assert_eq!(
+            std::fs::read_to_string(backup_dir.path().join("server/metadata.toml"))?,
+            "metadata"
+        );
+        assert!(backup_dir.path().join("server/control-db/control").is_file());
+        assert!(backup_dir.path().join("server/program-bytes/program").is_file());
+
+        Ok(())
+    }
+
+    #[test]
+    fn hot_backup_rejects_unsafe_output_dirs() -> anyhow::Result<()> {
+        let stdb = TestDB::durable()?;
+        let replica_dir = stdb.path().unwrap();
+
+        let err = stdb
+            .runtime()
+            .unwrap()
+            .block_on(stdb.create_hot_backup(replica_dir, None, 0, PathBuf::from("relative")))
+            .unwrap_err();
+        assert!(err.to_string().contains("absolute server path"));
+
+        let err = stdb
+            .runtime()
+            .unwrap()
+            .block_on(stdb.create_hot_backup(replica_dir, None, 0, replica_dir.0.join("backup")))
+            .unwrap_err();
+        assert!(err.to_string().contains("replica directory"));
 
         Ok(())
     }
