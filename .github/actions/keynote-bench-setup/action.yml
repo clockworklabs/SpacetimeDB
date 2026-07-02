@@ -23,8 +23,10 @@ runs:
       uses: Swatinem/rust-cache@v2
       with:
         workspaces: ${{ inputs.rust_cache_workspaces }}
-        shared-key: spacetimedb
-        save-if: false
+        shared-key: spacetimedb-keynote
+        cache-on-failure: false
+        cache-all-crates: true
+        cache-workspace-crates: true
         prefix-key: v1
 
     - name: Check v8 outputs
