@@ -6,6 +6,12 @@ compile_error!(
 #[cfg(not(any(feature = "tokio", feature = "simulation")))]
 compile_error!("spacetimedb-runtime requires exactly one runtime backend: enable either `tokio` or `simulation`");
 
+#[cfg(all(feature = "uring", not(feature = "tokio")))]
+compile_error!("spacetimedb-runtime `uring` support requires the `tokio` backend");
+
+#[cfg(all(feature = "uring", not(target_os = "linux")))]
+compile_error!("spacetimedb-runtime `uring` support is Linux-only");
+
 #[cfg(feature = "simulation")]
 extern crate alloc;
 
@@ -22,6 +28,8 @@ use core::{
 pub mod sim;
 #[cfg(feature = "simulation")]
 pub mod sim_std;
+#[cfg(all(feature = "uring", target_os = "linux"))]
+pub mod uring;
 
 pub type TokioHandle = tokio::runtime::Handle;
 pub type TokioRuntime = tokio::runtime::Runtime;

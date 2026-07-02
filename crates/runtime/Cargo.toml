@@ -21,4 +21,5 @@ futures.workspace = true
 [features]
 default = ["tokio"]
 tokio = []
+uring = ["tokio", "dep:libc"]
 simulation = ["dep:async-task", "dep:spin", "dep:libc"]
