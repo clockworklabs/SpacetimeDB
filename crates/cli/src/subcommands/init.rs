@@ -210,7 +210,7 @@ pub fn cli() -> clap::Command {
             Arg::new("dotnet-version")
                 .long("dotnet-version")
                 .value_name("VERSION")
-                .help("Target .NET SDK major version for C# projects (e.g. 8 or 10). Defaults to 10 unless only .NET 8 is installed."),
+                .help("Target .NET SDK major version for C# projects (e.g. 8 or 10). Defaults to 10 except on macOS or when only .NET 8 is installed."),
         )
 }
 
@@ -1667,8 +1667,9 @@ fn check_for_cargo() -> bool {
 ///
 /// Resolution order:
 ///   1. Explicit `--dotnet-version` flag
-///   2. .NET 8, if it is the only installed .NET SDK major version
-///   3. .NET 10 default
+///   2. .NET 8 on macOS, where NativeAOT-LLVM is not supported
+///   3. .NET 8, if it is the only installed .NET SDK major version
+///   4. .NET 10 default
 fn resolve_dotnet_major(options: &InitOptions) -> anyhow::Result<u8> {
     if let Some(v) = options.dotnet_version {
         match v {
@@ -1681,23 +1682,40 @@ fn resolve_dotnet_major(options: &InitOptions) -> anyhow::Result<u8> {
 }
 
 fn resolve_default_dotnet_major() -> u8 {
-    if installed_dotnet_sdk_majors()
-        .as_deref()
-        .is_some_and(should_default_to_dotnet8)
-    {
-        println!(
-            "{}",
-            "Warning: Only the .NET 8 SDK is installed, so this C# project will target .NET 8. .NET 8 support will be deprecated soon; install .NET 10 to create new C# modules targeting .NET 10."
-                .yellow()
-        );
+    let installed_majors = installed_dotnet_sdk_majors();
+    if let Some(reason) = dotnet8_default_reason(std::env::consts::OS, installed_majors.as_deref()) {
+        match reason {
+            Dotnet8DefaultReason::MacOsHost => println!(
+                "{}",
+                "Warning: NativeAOT-LLVM does not support macOS hosts, so this C# project will target .NET 8. .NET 8 support will be deprecated soon."
+                    .yellow()
+            ),
+            Dotnet8DefaultReason::OnlySdkInstalled => println!(
+                "{}",
+                "Warning: Only the .NET 8 SDK is installed, so this C# project will target .NET 8. .NET 8 support will be deprecated soon; install .NET 10 to create new C# modules targeting .NET 10."
+                    .yellow()
+            ),
+        }
         return 8;
     }
 
     10
 }
 
-fn should_default_to_dotnet8(majors: &[u8]) -> bool {
-    majors == [8]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Dotnet8DefaultReason {
+    MacOsHost,
+    OnlySdkInstalled,
+}
+
+fn dotnet8_default_reason(os: &str, majors: Option<&[u8]>) -> Option<Dotnet8DefaultReason> {
+    if os == "macos" {
+        return Some(Dotnet8DefaultReason::MacOsHost);
+    }
+
+    majors
+        .is_some_and(|majors| majors == [8])
+        .then_some(Dotnet8DefaultReason::OnlySdkInstalled)
 }
 
 fn installed_dotnet_sdk_majors() -> Option<Vec<u8>> {
@@ -2521,11 +2539,19 @@ bytes.workspace = true
     }
 
     #[test]
-    fn test_dotnet_init_default_is_8_only_when_it_is_the_only_sdk_major() {
-        assert!(should_default_to_dotnet8(&[8]));
-        assert!(!should_default_to_dotnet8(&[]));
-        assert!(!should_default_to_dotnet8(&[10]));
-        assert!(!should_default_to_dotnet8(&[8, 10]));
+    fn test_dotnet_init_default_is_8_on_macos_or_when_it_is_the_only_sdk_major() {
+        assert_eq!(
+            dotnet8_default_reason("macos", Some(&[8, 10])),
+            Some(Dotnet8DefaultReason::MacOsHost)
+        );
+        assert_eq!(
+            dotnet8_default_reason("linux", Some(&[8])),
+            Some(Dotnet8DefaultReason::OnlySdkInstalled)
+        );
+        assert_eq!(dotnet8_default_reason("linux", Some(&[])), None);
+        assert_eq!(dotnet8_default_reason("linux", Some(&[10])), None);
+        assert_eq!(dotnet8_default_reason("linux", Some(&[8, 10])), None);
+        assert_eq!(dotnet8_default_reason("linux", None), None);
     }
 
     #[test]

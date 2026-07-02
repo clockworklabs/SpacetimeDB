@@ -437,7 +437,7 @@ Initializes a new spacetime project.
 * `--local` — Use local deployment instead of Maincloud
 * `--non-interactive` — Run in non-interactive mode
 * `--native-aot` — Configure C# project for NativeAOT-LLVM compilation (experimental, Windows only)
-* `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Defaults to 10 unless only .NET 8 is installed.
+* `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Defaults to 10 except on macOS or when only .NET 8 is installed.
 
 
 
@@ -711,4 +711,3 @@ Run `spacetime version --help` to see all options.
     This document was generated automatically by
     <a href="https://crates.io/crates/clap-markdown"><code>clap-markdown</code></a>.
 </i></small>
-
