@@ -80,7 +80,7 @@ const score = table(
   {
     name: 'score',
     indexes: [{
-      name: 'idx',
+      accessor: 'idx',
       algorithm: 'btree',
       columns: ['player_id', 'level'],
     }],
