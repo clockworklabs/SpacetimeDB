@@ -77,7 +77,7 @@ members = [
   "crates/bindings-typescript/test-app/server",
   "crates/bindings-typescript/test-react-router-app/server",
   "crates/bindings-typescript/test-solid-router/server",
-  "crates/query-builder",
+  "crates/query-builder", "crates/dst",
 ]
 default-members = ["crates/cli", "crates/standalone", "crates/update"]
 # cargo feature graph resolver. v3 is default in edition2024 but workspace

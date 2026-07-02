@@ -338,9 +338,6 @@ jobs:
 
           wasm-bindgen --version
 
-      - name: Check engine simulation build
-        run: cargo check -p spacetimedb-engine --no-default-features --features simulation
-
         # Source emsdk environment to make emcc (Emscripten compiler) available in PATH.
       - name: Run tests
         run: |
