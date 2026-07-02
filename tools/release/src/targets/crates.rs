@@ -3,16 +3,21 @@ use anyhow::Result;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
+use std::thread;
+use std::time::{Duration, Instant};
 
 const CRATE_OWNERS: &[&str] = &["cloutiertyler", "jdetter", "bfops", "rekhoff", "spacetimedb-devops"];
+const CRATES_IO_POLL_INTERVAL: Duration = Duration::from_secs(15);
+const CRATES_IO_POLL_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 
 pub struct CratesRelease {
+    pub version: String,
     pub dry_run: bool,
 }
 
 impl CratesRelease {
-    pub fn new(dry_run: bool) -> Self {
-        Self { dry_run }
+    pub fn new(version: String, dry_run: bool) -> Self {
+        Self { version, dry_run }
     }
 
     /// Publishes a single crate to crates.io
@@ -59,6 +64,50 @@ impl CratesRelease {
             "Failed to publish crate: {}\n--- stdout ---\n{}\n--- stderr ---\n{}",
             crate_name, stdout, stderr
         ))
+    }
+
+    fn wait_for_crate_available(&self, crate_name: &str, version: &str) -> Result<(), String> {
+        let spec = format!("{}@{}", crate_name, version);
+        let deadline = Instant::now() + CRATES_IO_POLL_TIMEOUT;
+        let mut attempt = 1;
+
+        println!(
+            "Waiting for {} to be visible in the crates.io index before publishing dependent crates...",
+            spec
+        );
+
+        loop {
+            let mut cmd = Command::new("cargo");
+            cmd.args(["info", &spec]);
+            util::print_command(&cmd);
+
+            let output = cmd
+                .output()
+                .map_err(|e| format!("Failed to execute cargo info {}: {}", spec, e))?;
+
+            if output.status.success() {
+                println!("{} is visible in the crates.io index.", spec);
+                return Ok(());
+            }
+
+            if Instant::now() >= deadline {
+                return Err(format!(
+                    "Timed out waiting for {} to become visible in the crates.io index\n--- stdout ---\n{}\n--- stderr ---\n{}",
+                    spec,
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                ));
+            }
+
+            println!(
+                "{} is not visible yet; retrying in {}s (attempt {}).",
+                spec,
+                CRATES_IO_POLL_INTERVAL.as_secs(),
+                attempt
+            );
+            attempt += 1;
+            thread::sleep(CRATES_IO_POLL_INTERVAL);
+        }
     }
 
     fn add_crate_owners(&self, crate_name: &str) -> Result<(), String> {
@@ -126,8 +175,10 @@ impl ReleaseTarget for CratesRelease {
         }
 
         println!("\nStarting publish process...");
+        let crates_io_version = self.version.strip_prefix('v').unwrap_or(&self.version);
         for crate_name in &crates {
             self.publish_crate(crate_name, &manifest_map)?;
+            self.wait_for_crate_available(crate_name, crates_io_version)?;
             self.add_crate_owners(crate_name)?;
         }
 
