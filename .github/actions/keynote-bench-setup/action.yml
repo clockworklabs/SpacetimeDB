@@ -40,7 +40,7 @@ runs:
 
     - name: Build public keynote benchmark binaries
       shell: bash
-      run: cargo build --release -p spacetimedb-cli -p spacetimedb-standalone --features spacetimedb-standalone/allow_loopback_http_for_tests
+      run: cargo build --release -p spacetimedb-cli -p spacetimedb-standalone
       working-directory: ${{ inputs.public_root }}
 
     - name: Build TypeScript SDK
