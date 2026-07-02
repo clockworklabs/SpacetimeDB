@@ -100,14 +100,14 @@ pub struct ModuleHostWithBootstrap {
 /// The handle owns any wait state needed to prove that the database has a
 /// durable `st_module` row.
 pub struct BootstrapCompletion {
-    program_hash: Hash,
+    bootstrap_generation: u64,
     status: ProgramBootstrap,
 }
 
 /// Has the module been bootstrapped from the controldb?
 ///
 /// Once we have inserted into `st_module`, bootstrapping is no longer necessary,
-/// and the initial program bytes can be dropped fromt the controldb.
+/// and the initial program bytes can be dropped from the controldb.
 enum ProgramBootstrap {
     /// The module's program bytes have already been written to `st_module`
     Durable,
@@ -119,16 +119,16 @@ enum ProgramBootstrap {
 }
 
 impl BootstrapCompletion {
-    fn durable(program_hash: Hash) -> Self {
+    fn durable(bootstrap_generation: u64) -> Self {
         Self {
-            program_hash,
+            bootstrap_generation,
             status: ProgramBootstrap::Durable,
         }
     }
 
-    fn pending(program_hash: Hash, tx_offset: TransactionOffset, durable_offset: Option<DurableOffset>) -> Self {
+    fn pending(bootstrap_generation: u64, tx_offset: TransactionOffset, durable_offset: Option<DurableOffset>) -> Self {
         Self {
-            program_hash,
+            bootstrap_generation,
             status: ProgramBootstrap::Pending {
                 tx_offset,
                 durable_offset,
@@ -136,15 +136,15 @@ impl BootstrapCompletion {
         }
     }
 
-    pub fn program_hash(&self) -> Hash {
-        self.program_hash
+    pub fn bootstrap_generation(&self) -> u64 {
+        self.bootstrap_generation
     }
 
     /// Wait until it is safe to complete program bootstrap in controldb.
     /// That is, wait until the initial `st_module` insert becomes durable.
-    pub async fn wait(self) -> anyhow::Result<Hash> {
+    pub async fn wait(self) -> anyhow::Result<()> {
         match self.status {
-            ProgramBootstrap::Durable => Ok(self.program_hash),
+            ProgramBootstrap::Durable => Ok(()),
             ProgramBootstrap::Pending {
                 tx_offset,
                 durable_offset,
@@ -160,7 +160,7 @@ impl BootstrapCompletion {
                         .context("failed waiting for initialized program to become durable")?;
                 }
 
-                Ok(self.program_hash)
+                Ok(())
             }
         }
     }
@@ -1132,7 +1132,8 @@ impl Host {
                 (program, true)
             }
         };
-        let mut bootstrap_completion = Some(BootstrapCompletion::durable(program.hash));
+        let bootstrap_generation = database.bootstrap_generation;
+        let mut bootstrap_completion = Some(BootstrapCompletion::durable(bootstrap_generation));
 
         let relational_db = Arc::new(db);
         let (program, launched) = match HostType::from(program.kind) {
@@ -1222,13 +1223,12 @@ impl Host {
         };
 
         if program_needs_init {
-            let program_hash = program.hash;
             let InitDatabaseResult { reducer, tx_offset } = launched.module_host.init_database(program).await?;
             if let Some(call_result) = reducer {
                 Result::from(call_result)?;
             }
             bootstrap_completion = Some(BootstrapCompletion::pending(
-                program_hash,
+                bootstrap_generation,
                 tx_offset,
                 launched.module_host.durable_tx_offset(),
             ));
@@ -1540,6 +1540,7 @@ pub(crate) async fn extract_schema_with_pools(
         owner_identity,
         host_type,
         initial_program: program.hash,
+        bootstrap_generation: 0,
     };
 
     let core = AllocatedJobCore::default();
