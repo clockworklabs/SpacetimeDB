@@ -350,6 +350,7 @@ Run `spacetime help generate` for more detailed information.
 * `--build-options <BUILD_OPTIONS>` — Options to pass to the build command, for example --build-options='--lint-dir='
 
   Default value: ``
+* `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.
 * `--include-private` — Include private tables and functions in generated code (types are always included).
 
   Default value: `false`
@@ -436,7 +437,7 @@ Initializes a new spacetime project.
 * `--local` — Use local deployment instead of Maincloud
 * `--non-interactive` — Run in non-interactive mode
 * `--native-aot` — Configure C# project for NativeAOT-LLVM compilation (experimental, Windows only)
-* `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.
+* `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Defaults to 10 unless only .NET 8 is installed.
 
 
 
