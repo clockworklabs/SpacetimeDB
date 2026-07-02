@@ -437,7 +437,7 @@ jobs:
           prefix-key: v1
 
       - name: Run index scan benchmark regression check
-        run: cargo bench -p spacetimedb-bench --bench index_scan_gate
+        run: cargo bench -p spacetimedb-bench --bench index_scan_gate --profile release
 
   lints:
     needs: [merge_queue_noop]
