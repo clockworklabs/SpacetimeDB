@@ -33,7 +33,7 @@ runs:
       with:
         workspaces: ${{ inputs.rust_cache_workspaces }}
         shared-key: spacetimedb
-        cache-on-failure: false
+        save-if: false
         prefix-key: v1
 
     - name: Check v8 outputs

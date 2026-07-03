@@ -403,13 +403,6 @@ jobs:
       - name: Run keynote-2 benchmark regression check
         run: cargo ci keynote-bench
 
-      - name: Show sccache stats
-        if: always()
-        run: |
-          if test -n "${SCCACHE_PATH:-}"; then
-            "$SCCACHE_PATH" --show-stats
-          fi
-
   index_scan_bench:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
@@ -462,13 +455,6 @@ jobs:
 
       - name: Run index scan benchmark regression check
         run: cargo run --release -p spacetimedb-index-scan-gate
-
-      - name: Show sccache stats
-        if: always()
-        run: |
-          if test -n "${SCCACHE_PATH:-}"; then
-            "$SCCACHE_PATH" --show-stats
-          fi
 
   lints:
     needs: [merge_queue_noop]
