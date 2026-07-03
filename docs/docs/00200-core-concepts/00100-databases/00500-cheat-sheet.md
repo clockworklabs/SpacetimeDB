@@ -913,7 +913,7 @@ spacetime login                          # Authenticate
 # Module management
 spacetime build                          # Build module
 spacetime publish <NAME>                 # Publish module
-spacetime publish <NAME> --delete-data always  # Reset database
+spacetime publish <NAME> --delete-data=always  # Reset database
 spacetime delete <NAME>                  # Delete database
 
 # Database operations
