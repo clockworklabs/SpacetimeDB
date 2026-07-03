@@ -183,6 +183,14 @@ pub struct {insert_callback_id}(__sdk::CallbackId);
             write!(
                 out,
                 "
+impl<'ctx> __sdk::TableLike for {table_handle}<'ctx> {{
+    type Row = {row_type};
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {{ self.imp.count() }}
+    fn iter(&self) -> impl Iterator<Item = {row_type}> + '_ {{ self.imp.iter() }}
+}}
+
 impl<'ctx> __sdk::EventTable for {table_handle}<'ctx> {{
     type Row = {row_type};
     type EventContext = super::EventContext;
@@ -190,6 +198,21 @@ impl<'ctx> __sdk::EventTable for {table_handle}<'ctx> {{
     fn count(&self) -> u64 {{ self.imp.count() }}
     fn iter(&self) -> impl Iterator<Item = {row_type}> + '_ {{ self.imp.iter() }}
 
+    type InsertCallbackId = {insert_callback_id};
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> {insert_callback_id} {{
+        {insert_callback_id}(self.imp.on_insert(Box::new(callback)))
+    }}
+
+    fn remove_on_insert(&self, callback: {insert_callback_id}) {{
+        self.imp.remove_on_insert(callback.0)
+    }}
+}}
+
+impl<'ctx> __sdk::WithInsert for {table_handle}<'ctx> {{
     type InsertCallbackId = {insert_callback_id};
 
     fn on_insert(
@@ -212,6 +235,14 @@ impl<'ctx> __sdk::EventTable for {table_handle}<'ctx> {{
             write!(
                 out,
                 "pub struct {delete_callback_id}(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for {table_handle}<'ctx> {{
+    type Row = {row_type};
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {{ self.imp.count() }}
+    fn iter(&self) -> impl Iterator<Item = {row_type}> + '_ {{ self.imp.iter() }}
+}}
 
 impl<'ctx> __sdk::Table for {table_handle}<'ctx> {{
     type Row = {row_type};
@@ -246,6 +277,36 @@ impl<'ctx> __sdk::Table for {table_handle}<'ctx> {{
         self.imp.remove_on_delete(callback.0)
     }}
 }}
+
+impl<'ctx> __sdk::WithInsert for {table_handle}<'ctx> {{
+    type InsertCallbackId = {insert_callback_id};
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> {insert_callback_id} {{
+        {insert_callback_id}(self.imp.on_insert(Box::new(callback)))
+    }}
+
+    fn remove_on_insert(&self, callback: {insert_callback_id}) {{
+        self.imp.remove_on_insert(callback.0)
+    }}
+}}
+
+impl<'ctx> __sdk::WithDelete for {table_handle}<'ctx> {{
+    type DeleteCallbackId = {delete_callback_id};
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> {delete_callback_id} {{
+        {delete_callback_id}(self.imp.on_delete(Box::new(callback)))
+    }}
+
+    fn remove_on_delete(&self, callback: {delete_callback_id}) {{
+        self.imp.remove_on_delete(callback.0)
+    }}
+}}
 "
             );
 
@@ -259,6 +320,21 @@ impl<'ctx> __sdk::Table for {table_handle}<'ctx> {{
 pub struct {update_callback_id}(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for {table_handle}<'ctx> {{
+    type UpdateCallbackId = {update_callback_id};
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> {update_callback_id} {{
+        {update_callback_id}(self.imp.on_update(Box::new(callback)))
+    }}
+
+    fn remove_on_update(&self, callback: {update_callback_id}) {{
+        self.imp.remove_on_update(callback.0)
+    }}
+}}
+
+impl<'ctx> __sdk::WithUpdate for {table_handle}<'ctx> {{
     type UpdateCallbackId = {update_callback_id};
 
     fn on_update(

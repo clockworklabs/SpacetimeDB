@@ -40,6 +40,18 @@ impl PkI16TableAccess for super::RemoteTables {
 pub struct PkI16InsertCallbackId(__sdk::CallbackId);
 pub struct PkI16DeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for PkI16TableHandle<'ctx> {
+    type Row = PkI16;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = PkI16> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for PkI16TableHandle<'ctx> {
     type Row = PkI16;
     type EventContext = super::EventContext;
@@ -78,9 +90,54 @@ impl<'ctx> __sdk::Table for PkI16TableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithInsert for PkI16TableHandle<'ctx> {
+    type InsertCallbackId = PkI16InsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PkI16InsertCallbackId {
+        PkI16InsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: PkI16InsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for PkI16TableHandle<'ctx> {
+    type DeleteCallbackId = PkI16DeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PkI16DeleteCallbackId {
+        PkI16DeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: PkI16DeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
 pub struct PkI16UpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PkI16TableHandle<'ctx> {
+    type UpdateCallbackId = PkI16UpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> PkI16UpdateCallbackId {
+        PkI16UpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: PkI16UpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithUpdate for PkI16TableHandle<'ctx> {
     type UpdateCallbackId = PkI16UpdateCallbackId;
 
     fn on_update(

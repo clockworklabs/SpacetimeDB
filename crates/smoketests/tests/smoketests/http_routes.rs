@@ -1,6 +1,6 @@
 use regex::Regex;
 use spacetimedb_smoketests::{
-    require_dotnet, require_emscripten, require_pnpm, workspace_root, ModuleLanguage, Smoketest,
+    random_string, require_dotnet, require_emscripten, require_pnpm, workspace_root, ModuleLanguage, Smoketest,
 };
 use std::{fs, path::Path};
 
@@ -1109,9 +1109,10 @@ fn cpp_http_test(name: &str, module_code: &str) -> (Smoketest, String) {
 fn typescript_http_test(name: &str, module_code: &str) -> (Smoketest, String) {
     require_pnpm!();
     let mut test = Smoketest::builder().autopublish(false).build();
+    let database_name = format!("{name}-{}", random_string());
     let identity = test
         .publish()
-        .name(name)
+        .name(&database_name)
         .source(ModuleLanguage::TypeScript, name, module_code)
         .run()
         .unwrap();

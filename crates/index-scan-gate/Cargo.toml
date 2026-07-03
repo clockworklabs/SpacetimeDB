@@ -1,0 +1,17 @@
+[package]
+name = "spacetimedb-index-scan-gate"
+version.workspace = true
+edition.workspace = true
+license-file = "../../licenses/BSL.txt"
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+spacetimedb-sats.workspace = true
+spacetimedb-testing = { path = "../testing" }
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator.workspace = true
+
+[lints]
+workspace = true

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use serde_json::{json, Value};
 use spacetimedb_smoketests::{
-    require_dotnet, require_local_server, require_pnpm, workspace_root, ModuleLanguage, Smoketest,
+    random_string, require_dotnet, require_local_server, require_pnpm, workspace_root, ModuleLanguage, Smoketest,
 };
 
 const STALE_VIEW_BACKING_TABLE_FIXTURE_IDENTITY: &str =
@@ -881,8 +881,9 @@ fn test_procedure_triggers_subscription_updates() {
 fn test_typescript_procedure_triggers_subscription_updates() {
     require_pnpm!();
     let mut test = Smoketest::builder().autopublish(false).build();
+    let database_name = format!("views-subscribe-typescript-{}", random_string());
     test.publish()
-        .name("views-subscribe-typescript")
+        .name(&database_name)
         .source(
             ModuleLanguage::TypeScript,
             "views-subscribe-typescript",
@@ -933,8 +934,9 @@ fn test_typescript_count_view_subscription_refreshes() {
     require_pnpm!();
 
     let mut test = Smoketest::builder().autopublish(false).build();
+    let database_name = format!("views-count-typescript-{}", random_string());
     test.publish()
-        .name("views-count-typescript")
+        .name(&database_name)
         .source(
             ModuleLanguage::TypeScript,
             "views-count-typescript",
@@ -1031,8 +1033,9 @@ fn test_disconnect_does_not_break_anonymous_view() {
 fn test_typescript_query_builder_view_query() {
     require_pnpm!();
     let mut test = Smoketest::builder().autopublish(false).build();
+    let database_name = format!("views-query-builder-typescript-{}", random_string());
     test.publish()
-        .name("views-query-builder-typescript")
+        .name(&database_name)
         .source(
             ModuleLanguage::TypeScript,
             "views-query-builder-typescript",

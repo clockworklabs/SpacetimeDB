@@ -11,8 +11,8 @@ use super::{
 use crate::{
     error::ViewError,
     system_tables::{
-        system_tables, ConnectionIdViaU128, IdentityViaU256, StConnectionCredentialsFields, StConnectionCredentialsRow,
-        StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow, StViewSubFields, StViewSubRow,
+        system_tables, ConnectionIdViaU128, StConnectionCredentialsFields, StConnectionCredentialsRow,
+        StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow, StViewSubFields,
         ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID, ST_VIEW_SUB_ID,
     },
 };
@@ -48,7 +48,7 @@ use spacetimedb_lib::{
     sender_view_arg_hash_value, ConnectionId, Identity, Timestamp,
 };
 use spacetimedb_primitives::{
-    col_list, ArgId, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
+    col_list, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
 };
 use spacetimedb_sats::{
     bsatn::to_writer, memory_usage::MemoryUsage, raw_identifier::RawIdentifier, ser::Serialize, AlgebraicValue,
@@ -83,7 +83,143 @@ use std::{
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ViewCallInfo {
     pub view_id: ViewId,
-    pub sender: Option<Identity>,
+    pub arg_hash: AlgebraicValue,
+}
+
+impl ViewCallInfo {
+    pub fn anonymous(view_id: ViewId) -> Self {
+        Self {
+            view_id,
+            arg_hash: MutTxId::anonymous_view_arg_hash(),
+        }
+    }
+
+    pub fn sender(view_id: ViewId, sender: Identity) -> Self {
+        Self {
+            view_id,
+            arg_hash: MutTxId::view_arg_hash(sender),
+        }
+    }
+
+    pub fn from_args(view_id: ViewId, args: ViewInstanceArgs) -> Self {
+        match args {
+            ViewInstanceArgs::Anonymous => Self::anonymous(view_id),
+            ViewInstanceArgs::Sender(sender) => Self::sender(view_id, sender),
+        }
+    }
+}
+
+impl MemoryUsage for ViewCallInfo {
+    fn heap_usage(&self) -> usize {
+        self.arg_hash.heap_usage()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ViewInstanceArgs {
+    Anonymous,
+    Sender(Identity),
+}
+
+impl ViewInstanceArgs {
+    pub fn sender(self) -> Option<Identity> {
+        match self {
+            Self::Anonymous => None,
+            Self::Sender(sender) => Some(sender),
+        }
+    }
+}
+
+impl MemoryUsage for ViewInstanceArgs {}
+
+#[derive(Clone, Debug)]
+pub(super) struct ViewInstanceState {
+    pub(super) args: ViewInstanceArgs,
+    pub(super) active_subscribers: HashMap<Identity, u64>,
+    pub(super) last_used: Timestamp,
+}
+
+impl MemoryUsage for ViewInstanceState {
+    fn heap_usage(&self) -> usize {
+        self.active_subscribers.capacity() * std::mem::size_of::<(Identity, u64)>()
+    }
+}
+
+impl ViewInstanceState {
+    fn new(args: ViewInstanceArgs, last_used: Timestamp) -> Self {
+        Self {
+            args,
+            active_subscribers: HashMap::default(),
+            last_used,
+        }
+    }
+
+    fn has_subscribers(&self) -> bool {
+        !self.active_subscribers.is_empty()
+    }
+}
+
+/// Transaction-local overlay for materialized view lifecycle state.
+///
+/// The overlay stores a full post-image for each touched view instead of a delta.
+/// This keeps same-transaction reads, rollback, and commit simple.
+///
+/// TODO: This will clone the `active_subscribers` from the committed state,
+/// which for a highly subscribed-to view can be expensive.
+/// Look into optimizing this later.
+#[derive(Default)]
+pub(super) struct ViewInstanceTxState {
+    changes: HashMap<ViewCallInfo, Option<ViewInstanceState>>,
+}
+
+impl ViewInstanceTxState {
+    fn get<'a>(&'a self, committed_state: &'a CommittedState, call: &ViewCallInfo) -> Option<&'a ViewInstanceState> {
+        match self.changes.get(call) {
+            Some(Some(state)) => Some(state),
+            Some(None) => None,
+            None => committed_state.view_instance(call),
+        }
+    }
+
+    fn get_cloned(&self, committed_state: &CommittedState, call: &ViewCallInfo) -> Option<ViewInstanceState> {
+        self.get(committed_state, call).cloned()
+    }
+
+    fn set(&mut self, call: ViewCallInfo, state: ViewInstanceState) {
+        self.changes.insert(call, Some(state));
+    }
+
+    fn remove(&mut self, call: ViewCallInfo) {
+        self.changes.insert(call, None);
+    }
+
+    fn active_view_calls_for_subscriber(
+        &self,
+        committed_state: &CommittedState,
+        subscriber: Identity,
+    ) -> HashSet<ViewCallInfo> {
+        let mut calls = committed_state.active_view_calls_for_subscriber(subscriber);
+        for (call, state) in &self.changes {
+            match state {
+                Some(state)
+                    if state
+                        .active_subscribers
+                        .get(&subscriber)
+                        .is_some_and(|count| *count > 0) =>
+                {
+                    calls.insert(call.clone());
+                }
+                _ => {
+                    calls.remove(call);
+                }
+            }
+        }
+        calls
+    }
+
+    pub(super) fn into_changes(self) -> HashMap<ViewCallInfo, Option<ViewInstanceState>> {
+        self.changes
+    }
 }
 
 /// A data structure for tracking the database rows/keys that are read by views
@@ -91,6 +227,8 @@ pub struct ViewCallInfo {
 pub struct ViewReadSets {
     tables: IntMap<TableId, TableReadSet>,
     replacements: HashSet<ViewCallInfo>,
+    view_removals: HashSet<ViewId>,
+    removals: HashSet<ViewCallInfo>,
 }
 
 impl MemoryUsage for ViewReadSets {
@@ -102,7 +240,10 @@ impl MemoryUsage for ViewReadSets {
 impl ViewReadSets {
     /// Returns whether there are no read sets recorded.
     pub fn is_empty(&self) -> bool {
-        self.tables.is_empty() && self.replacements.is_empty()
+        self.tables.is_empty()
+            && self.replacements.is_empty()
+            && self.view_removals.is_empty()
+            && self.removals.is_empty()
     }
 
     /// Returns the views that perform a full scan of this table
@@ -126,12 +267,22 @@ impl ViewReadSets {
         self.replacements.insert(call);
     }
 
-    /// Removes keys for `view_id` from the read set
-    pub fn remove_view(&mut self, view_id: ViewId, sender: Option<Identity>) {
+    /// Removes keys for `view_id` from the read set.
+    pub fn remove_view(&mut self, view_id: ViewId) {
         self.tables.retain(|_, readset| {
-            readset.remove_view(view_id, sender);
+            readset.remove_view(view_id);
             !readset.is_empty()
         });
+    }
+
+    /// On commit, removes keys for `call` from the committed read set.
+    pub fn remove_view_on_commit(&mut self, call: ViewCallInfo) {
+        self.removals.insert(call);
+    }
+
+    /// On commit, removes all keys for `view_id` from the committed read set.
+    pub fn remove_view_id_on_commit(&mut self, view_id: ViewId) {
+        self.view_removals.insert(view_id);
     }
 
     /// Removes keys for exactly `call` from the read set.
@@ -144,6 +295,14 @@ impl ViewReadSets {
 
     /// Merge or union read sets together
     pub fn merge(&mut self, readset: Self) {
+        for view_id in readset.view_removals {
+            self.remove_view(view_id);
+        }
+
+        for call in readset.removals {
+            self.remove_view_call(&call);
+        }
+
         for call in readset.replacements {
             self.remove_view_call(&call);
         }
@@ -216,11 +375,9 @@ impl TableReadSet {
         self.table_scans.is_empty() && self.index_reads.is_empty()
     }
 
-    /// Removes keys for `view_id` from the read set, optionally filtering by `sender`
-    fn remove_view(&mut self, view_id: ViewId, sender: Option<Identity>) {
-        let matches_call = |call: &ViewCallInfo| {
-            call.view_id == view_id && sender.as_ref().is_none_or(|s| call.sender.as_ref() == Some(s))
-        };
+    /// Removes keys for `view_id` from the read set.
+    fn remove_view(&mut self, view_id: ViewId) {
+        let matches_call = |call: &ViewCallInfo| call.view_id == view_id;
 
         // Remove from table_scans
         self.table_scans.retain(|call| !matches_call(call));
@@ -282,6 +439,7 @@ pub struct MutTxId {
     pub(super) sequence_state_lock: SharedMutexGuard<SequencesState>,
     pub(super) lock_wait_time: Duration,
     pub(super) read_sets: ViewReadSets,
+    pub(super) view_instances: ViewInstanceTxState,
     // TODO(cloutiertyler): The below were made `pub` for the datastore split. We should
     // make these private again.
     pub timer: Instant,
@@ -291,7 +449,7 @@ pub struct MutTxId {
     pub(crate) _not_send: PhantomData<std::rc::Rc<()>>,
 }
 
-static_assert_size!(MutTxId, 464);
+static_assert_size!(MutTxId, 560);
 
 impl MutTxId {
     /// Record that a view performs a table scan in this transaction's read set
@@ -438,16 +596,15 @@ impl MutTxId {
         }
         Either::Right(res.into_iter())
     }
-    /// Removes keys for `view_id` from the committed read set.
+    /// Removes keys for `view_id` from the committed read set on commit.
     /// Used for dropping views in an auto-migration.
     pub fn drop_view_from_committed_read_set(&mut self, view_id: ViewId) {
-        self.committed_state_write_lock.drop_view_from_read_sets(view_id, None)
+        self.read_sets.remove_view_id_on_commit(view_id)
     }
 
-    /// Removes a specific view call from the committed read set.
-    pub fn drop_view_with_sender_from_committed_read_set(&mut self, view_id: ViewId, sender: Identity) {
-        self.committed_state_write_lock
-            .drop_view_from_read_sets(view_id, Some(sender))
+    /// Removes a specific view call from the committed read set on commit.
+    pub fn drop_view_call_from_committed_read_set(&mut self, call: ViewCallInfo) {
+        self.read_sets.remove_view_on_commit(call)
     }
 }
 
@@ -640,6 +797,9 @@ impl MutTxId {
         self.drop_st_view_param(view_id)?;
         self.drop_st_view_column(view_id)?;
         self.drop_st_view_sub(view_id)?;
+        for call in self.effective_view_instances_for_view(view_id).into_keys() {
+            self.view_instances.remove(call);
+        }
         self.drop_view_from_committed_read_set(view_id);
 
         // Drop the view's backing table if materialized
@@ -987,7 +1147,7 @@ impl MutTxId {
         self.delete_col_eq(ST_VIEW_COLUMN_ID, StViewColumnFields::ViewId.col_id(), &view_id.into())
     }
 
-    /// Drops the rows in `st_view_sub` for this `view_id`
+    /// Drops any legacy rows in `st_view_sub` for this `view_id`.
     fn drop_st_view_sub(&mut self, view_id: ViewId) -> Result<()> {
         self.delete_col_eq(ST_VIEW_SUB_ID, StViewSubFields::ViewId.col_id(), &view_id.into())
     }
@@ -2332,9 +2492,9 @@ impl MutTxId {
         before_release: impl FnOnce(&Arc<TxData>),
     ) -> (TxOffset, Arc<TxData>, TxMetrics, Option<ReducerName>, u64) {
         let tx_offset = self.committed_state_write_lock.next_tx_offset;
-        let tx_data = self
-            .committed_state_write_lock
-            .merge(self.tx_state, self.read_sets, &self.ctx);
+        let tx_data =
+            self.committed_state_write_lock
+                .merge(self.tx_state, self.read_sets, self.view_instances, &self.ctx);
 
         // Compute and keep enough info that we can
         // record metrics after the transaction has ended
@@ -2398,9 +2558,9 @@ impl MutTxId {
         workload: Workload,
         before_downgrade: impl FnOnce(&Arc<TxData>),
     ) -> (Arc<TxData>, TxMetrics, TxId, u64) {
-        let tx_data = self
-            .committed_state_write_lock
-            .merge(self.tx_state, self.read_sets, &self.ctx);
+        let tx_data =
+            self.committed_state_write_lock
+                .merge(self.tx_state, self.read_sets, self.view_instances, &self.ctx);
 
         // Compute and keep enough info that we can
         // record metrics after the transaction has ended
@@ -2603,281 +2763,182 @@ impl MutTxId {
         sender_view_arg_hash_value(sender)
     }
 
-    /// Does this caller have an entry for `view_id` in `st_view_sub`?
-    pub fn is_view_materialized(&self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<bool> {
-        use StViewSubFields::*;
-        let sender = IdentityViaU256(sender);
-        let cols = col_list![ViewId, ArgId, Identity];
-        let value = AlgebraicValue::product([view_id.into(), arg_id.into(), sender.into()]);
-        Ok(self.iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?.next().is_some())
+    fn get_view_instance(&self, call: &ViewCallInfo) -> Option<&ViewInstanceState> {
+        self.view_instances.get(&self.committed_state_write_lock, call)
     }
 
-    /// Does any `st_view_sub` row exist for this anonymous view?
-    pub fn is_anonymous_view_materialized(&self, view_id: ViewId) -> Result<bool> {
-        let cols = StViewSubFields::ViewId;
-        let value = view_id.into();
-        Ok(self.iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?.next().is_some())
+    fn get_view_instance_cloned(&self, call: &ViewCallInfo) -> Option<ViewInstanceState> {
+        self.view_instances.get_cloned(&self.committed_state_write_lock, call)
     }
 
-    /// Updates the `last_called` timestamp in `st_view_sub`.
-    /// Inserts a row into `st_view_sub` with no subscribers if the row does not exist.
+    fn effective_view_instances(&self) -> HashMap<ViewCallInfo, ViewInstanceState> {
+        let mut instances = self
+            .committed_state_write_lock
+            .view_instances()
+            .map(|(call, state)| (call.clone(), state.clone()))
+            .collect::<HashMap<_, _>>();
+
+        for (call, state) in &self.view_instances.changes {
+            match state {
+                Some(state) => {
+                    instances.insert(call.clone(), state.clone());
+                }
+                None => {
+                    instances.remove(call);
+                }
+            }
+        }
+
+        instances
+    }
+
+    fn effective_view_instances_for_view(&self, view_id: ViewId) -> HashMap<ViewCallInfo, ViewInstanceState> {
+        self.effective_view_instances()
+            .into_iter()
+            .filter(|(call, _)| call.view_id == view_id)
+            .collect()
+    }
+
+    /// Is this view argument currently materialized?
+    pub fn is_view_materialized(&self, call: &ViewCallInfo) -> Result<bool> {
+        Ok(self.get_view_instance(call).is_some())
+    }
+
+    /// Returns the stored arguments needed to execute this materialized view argument.
+    pub fn view_instance_args(&self, call: &ViewCallInfo) -> Option<ViewInstanceArgs> {
+        self.get_view_instance(call).map(|state| state.args)
+    }
+
+    /// Returns all materialized view instances for `view_id`.
+    pub fn materialized_view_instances_for_view(&self, view_id: ViewId) -> Vec<ViewInstanceArgs> {
+        self.effective_view_instances_for_view(view_id)
+            .into_values()
+            .map(|state| state.args)
+            .collect()
+    }
+
+    /// Returns active subscribers for a materialized view.
+    #[cfg(any(test, feature = "test"))]
+    pub fn active_subscribers_for_view(&self, view_id: ViewId) -> Vec<(Identity, u64)> {
+        self.effective_view_instances_for_view(view_id)
+            .into_values()
+            .flat_map(|state| state.active_subscribers.into_iter())
+            .collect()
+    }
+
+    /// Updates the `last_used` timestamp for a materialized view argument.
     ///
     /// This is invoked when calling a view, but not subscribing to it.
     /// Such is the case for the sql http api.
-    pub fn update_view_timestamp(&mut self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<()> {
-        self.update_view_timestamp_at(view_id, arg_id, sender, Timestamp::now())
+    pub fn update_view_timestamp(&mut self, call: ViewCallInfo, args: ViewInstanceArgs) -> Result<()> {
+        self.update_view_timestamp_at(call, args, Timestamp::now())
     }
 
-    /// Updates the `last_called` timestamp in `st_view_sub` to an explicit value.
+    /// Updates the `last_used` timestamp for a materialized view argument to an explicit value.
     pub fn update_view_timestamp_at(
         &mut self,
-        view_id: ViewId,
-        arg_id: ArgId,
-        sender: Identity,
-        last_called: Timestamp,
+        call: ViewCallInfo,
+        args: ViewInstanceArgs,
+        last_used: Timestamp,
     ) -> Result<()> {
-        use StViewSubFields::*;
-
-        let identity = IdentityViaU256(sender);
-        let cols = col_list![ViewId, ArgId, Identity];
-        let value = AlgebraicValue::product([view_id.into(), arg_id.into(), identity.into()]);
-        let last_called = last_called.into();
-
-        // Update `last_called` of `st_view_sub` row
-        if let Some((row, ptr)) = self
-            .iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
-            .next()
-            .map(|row_ref| StViewSubRow::try_from(row_ref).map(|row| (row, row_ref.pointer())))
-            .transpose()?
-        {
-            self.delete(ST_VIEW_SUB_ID, ptr)?;
-            self.insert_via_serialize_bsatn(ST_VIEW_SUB_ID, &StViewSubRow { last_called, ..row })?;
-            return Ok(());
-        }
-
-        // Insert `st_view_sub` row with 0 subscribers
-        self.insert_via_serialize_bsatn(
-            ST_VIEW_SUB_ID,
-            &StViewSubRow {
-                view_id,
-                arg_id,
-                identity,
-                num_subscribers: 0,
-                has_subscribers: false,
-                last_called,
-            },
-        )?;
+        let mut state = self
+            .get_view_instance_cloned(&call)
+            .unwrap_or_else(|| ViewInstanceState::new(args, last_used));
+        state.args = args;
+        state.last_used = last_used;
+        self.view_instances.set(call, state);
         Ok(())
     }
 
-    /// Increment `num_subscribers` in `st_view_sub` to effectively subscribe a caller to a view.
-    /// We insert a row if there are no current subscribers and the row does not exist.
-    pub fn subscribe_view(&mut self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<()> {
-        use StViewSubFields::*;
-
-        let identity = IdentityViaU256(sender);
-        let cols = col_list![ViewId, ArgId, Identity];
-        let value = AlgebraicValue::product([view_id.into(), arg_id.into(), identity.into()]);
-        let last_called = Timestamp::now().into();
-
-        // Update `last_called` of `st_view_sub` row
-        if let Some((row, ptr)) = self
-            .iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
-            .next()
-            .map(|row_ref| StViewSubRow::try_from(row_ref).map(|row| (row, row_ref.pointer())))
-            .transpose()?
-        {
-            self.delete(ST_VIEW_SUB_ID, ptr)?;
-            self.insert_via_serialize_bsatn(
-                ST_VIEW_SUB_ID,
-                &StViewSubRow {
-                    num_subscribers: row.num_subscribers + 1,
-                    has_subscribers: true,
-                    last_called,
-                    ..row
-                },
-            )?;
-            return Ok(());
-        }
-
-        // Insert `st_view_sub` row with 1 subscriber
-        self.insert_via_serialize_bsatn(
-            ST_VIEW_SUB_ID,
-            &StViewSubRow {
-                view_id,
-                arg_id,
-                identity,
-                num_subscribers: 1,
-                has_subscribers: true,
-                last_called,
-            },
-        )?;
+    /// Increment this subscriber's refcount for a materialized view argument.
+    pub fn subscribe_view(&mut self, call: ViewCallInfo, args: ViewInstanceArgs, subscriber: Identity) -> Result<()> {
+        let mut state = self
+            .get_view_instance_cloned(&call)
+            .unwrap_or_else(|| ViewInstanceState::new(args, Timestamp::now()));
+        state.args = args;
+        *state.active_subscribers.entry(subscriber).or_default() += 1;
+        state.last_used = Timestamp::now();
+        self.view_instances.set(call, state);
         Ok(())
     }
 
-    /// Clean up views that have no subscribers and haven’t been called recently.
-    ///
-    /// This function will scan for subscription entries in `st_view_sub` where:
-    /// - `has_subscribers == false`, `num_subscribers == 0`.
-    /// - `last_called` is older than `expiration_duration`.
-    ///
-    /// For each such expired row:
-    /// 1. It deletes the expired `st_view_sub` row.
-    /// 2. If that row was the last remaining materialization entry for the view,
-    ///    it clears the backing table and removes the view from the committed read set.
-    ///
-    /// The cleanup is bounded by a total `max_duration`. The function stops when either:
-    /// - all expired views have been processed, or
-    /// - the `max_duration` budget is reached.
+    /// Decrement this subscriber's refcount for a materialized view argument.
+    pub fn unsubscribe_view(&mut self, call: ViewCallInfo, subscriber: Identity) -> Result<()> {
+        let Some(mut state) = self.get_view_instance_cloned(&call) else {
+            return Ok(());
+        };
+
+        if let Some(count) = state.active_subscribers.get_mut(&subscriber) {
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                state.active_subscribers.remove(&subscriber);
+            }
+            state.last_used = Timestamp::now();
+            self.view_instances.set(call, state);
+        }
+
+        Ok(())
+    }
+
+    /// Decrement this subscriber's refcount for all of their subscribed view arguments.
+    pub fn unsubscribe_views(&mut self, subscriber: Identity) -> Result<()> {
+        let calls = self
+            .view_instances
+            .active_view_calls_for_subscriber(&self.committed_state_write_lock, subscriber);
+
+        for call in calls {
+            self.unsubscribe_view(call, subscriber)?;
+        }
+
+        Ok(())
+    }
+
+    /// Clean up materialized view arguments that have no subscribers and haven’t been used recently.
     ///
     /// Returns a tuple `(cleaned, total_expired)`:
-    /// - `cleaned`: Number of expired `st_view_sub` rows deleted in this run.
-    /// - `total_expired`: Total number of expired rows found (even if not all were cleaned due to time budget).
+    /// - `cleaned`: Number of expired materialized view arguments deleted in this run.
+    /// - `total_expired`: Total number of expired materialized view arguments found.
     pub fn clear_expired_views(
         &mut self,
         expiration_duration: Duration,
         max_duration: Duration,
     ) -> Result<(usize, usize)> {
         let start = std::time::Instant::now();
-        let now = Timestamp::now();
-        let expiration_threshold = now - expiration_duration;
+        let expiration_threshold = Timestamp::now() - expiration_duration;
         let mut cleaned_count = 0;
 
-        // Collect all expired views from st_view_sub
-        let expired_items: Vec<(ViewId, Identity, RowPointer)> = self
-            .iter_by_col_eq(
-                ST_VIEW_SUB_ID,
-                StViewSubFields::HasSubscribers,
-                &AlgebraicValue::from(false),
-            )?
-            .filter_map(|row_ref| {
-                let row = StViewSubRow::try_from(row_ref).expect("Failed to deserialize st_view_sub row");
-
-                if !row.has_subscribers && row.num_subscribers == 0 && row.last_called.0 < expiration_threshold {
-                    Some((row.view_id, row.identity.into(), row_ref.pointer()))
-                } else {
-                    None
-                }
+        let expired_items = self
+            .effective_view_instances()
+            .into_iter()
+            .filter_map(|(call, state)| {
+                (!state.has_subscribers() && state.last_used < expiration_threshold).then_some(call)
             })
-            .collect();
+            .collect::<Vec<_>>();
 
         let total_expired = expired_items.len();
 
-        // For each expired subscription row, clear the backing table only if that row
-        // was the last remaining entry for the shared materialization.
-        for (view_id, sender, sub_row_ptr) in expired_items {
-            // Check if we've exceeded our time budget
+        for call in expired_items {
             if start.elapsed() >= max_duration {
                 break;
             }
 
-            let StViewRow {
-                table_id, is_anonymous, ..
-            } = self.lookup_st_view(view_id)?;
+            let StViewRow { table_id, .. } = self.lookup_st_view(call.view_id)?;
             let table_id = table_id.expect("views have backing table");
+            let rows_to_delete = self
+                .iter_by_col_eq(table_id, VIEW_ARG_HASH_COL, &call.arg_hash)?
+                .map(|res| res.pointer())
+                .collect::<Vec<_>>();
 
-            let drop_materialization = !is_anonymous || !self.has_other_st_view_sub_entries(view_id, sub_row_ptr)?;
-            if drop_materialization {
-                let arg_hash = if is_anonymous {
-                    Self::anonymous_view_arg_hash()
-                } else {
-                    Self::view_arg_hash(sender)
-                };
-                let rows_to_delete = self
-                    .iter_by_col_eq(table_id, VIEW_ARG_HASH_COL, &arg_hash)?
-                    .map(|res| res.pointer())
-                    .collect::<Vec<_>>();
-
-                for row_ptr in rows_to_delete {
-                    self.delete(table_id, row_ptr)?;
-                }
-
-                if is_anonymous {
-                    self.drop_view_from_committed_read_set(view_id);
-                } else {
-                    self.drop_view_with_sender_from_committed_read_set(view_id, sender);
-                }
+            for row_ptr in rows_to_delete {
+                self.delete(table_id, row_ptr)?;
             }
 
-            // Finally, delete the subscription row
-            self.delete(ST_VIEW_SUB_ID, sub_row_ptr)?;
+            self.drop_view_call_from_committed_read_set(call.clone());
+            self.view_instances.remove(call);
             cleaned_count += 1;
         }
 
         Ok((cleaned_count, total_expired))
-    }
-
-    /// Decrement `num_subscribers` in `st_view_sub` to effectively unsubscribe a caller from a view.
-    pub fn unsubscribe_view(&mut self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<()> {
-        use StViewSubFields::*;
-
-        let identity = IdentityViaU256(sender);
-        let cols = col_list![ViewId, ArgId, Identity];
-        let value = AlgebraicValue::product([view_id.into(), arg_id.into(), identity.into()]);
-        let last_called = Timestamp::now().into();
-
-        // Update `last_called` of `st_view_sub` row
-        if let Some((row, ptr)) = self
-            .iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
-            .next()
-            .map(|row_ref| StViewSubRow::try_from(row_ref).map(|row| (row, row_ref.pointer())))
-            .transpose()?
-        {
-            self.delete(ST_VIEW_SUB_ID, ptr)?;
-            self.insert_via_serialize_bsatn(
-                ST_VIEW_SUB_ID,
-                &StViewSubRow {
-                    num_subscribers: row.num_subscribers - 1,
-                    has_subscribers: row.num_subscribers > 1,
-                    last_called,
-                    ..row
-                },
-            )?;
-        }
-        Ok(())
-    }
-
-    /// To effectively unsubscribe a caller from all of their subscribed views,
-    /// we decrement `num_subscribers` in `st_view_sub` for all of a caller's views.
-    pub fn unsubscribe_views(&mut self, sender: Identity) -> Result<()> {
-        let sender = IdentityViaU256(sender);
-        let cols = col_list![StViewSubFields::Identity];
-        let value = sender.into();
-
-        // Collect the rows for this identity.
-        // These are rows for which we will decrement the subscriber count.
-        let rows_to_delete = self
-            .iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
-            .map(|row_ref| StViewSubRow::try_from(row_ref).map(|row| (row, row_ref.pointer())))
-            .filter(|result| match result {
-                Ok((row, _)) => row.has_subscribers && row.num_subscribers > 0,
-                _ => true,
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        // Copy the rows to delete and decrement their subscriber count.
-        // These are the rows that we will insert.
-        let rows_to_insert = rows_to_delete
-            .iter()
-            .map(|(row, _)| row.clone())
-            .map(|row| StViewSubRow {
-                num_subscribers: row.num_subscribers - 1,
-                has_subscribers: row.num_subscribers > 1,
-                ..row
-            })
-            .collect::<Vec<_>>();
-
-        // Delete the old rows
-        for (_, ptr) in rows_to_delete {
-            self.delete(ST_VIEW_SUB_ID, ptr)?;
-        }
-
-        // Insert the new rows
-        for row in rows_to_insert {
-            self.insert_via_serialize_bsatn(ST_VIEW_SUB_ID, &row)?;
-        }
-
-        Ok(())
     }
 
     /// Clear all rows from all view tables without dropping them.
@@ -2892,25 +2953,6 @@ impl MutTxId {
             self.clear_table(table_id)?;
         }
         Ok(())
-    }
-
-    /// Get all view subscriptions for a given view.
-    pub fn lookup_st_view_subs(&self, view_id: ViewId) -> Result<Vec<StViewSubRow>> {
-        let cols = StViewSubFields::ViewId;
-        let value = view_id.into();
-        self.iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
-            .map(StViewSubRow::try_from)
-            .collect::<Result<Vec<_>>>()
-    }
-
-    /// Does this `view_id` have other entries in `st_view_sub` besides `current_ptr`?
-    /// Can be true for anonymous views with multiple subscribers.
-    fn has_other_st_view_sub_entries(&self, view_id: ViewId, current_ptr: RowPointer) -> Result<bool> {
-        let cols = StViewSubFields::ViewId;
-        let value = view_id.into();
-        Ok(self
-            .iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
-            .any(|row_ref| row_ref.pointer() != current_ptr))
     }
 
     /// Lookup a row in `st_view` by its primary key

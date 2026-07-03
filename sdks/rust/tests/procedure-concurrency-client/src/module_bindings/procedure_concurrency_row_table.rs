@@ -42,6 +42,18 @@ impl ProcedureConcurrencyRowTableAccess for super::RemoteTables {
 pub struct ProcedureConcurrencyRowInsertCallbackId(__sdk::CallbackId);
 pub struct ProcedureConcurrencyRowDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for ProcedureConcurrencyRowTableHandle<'ctx> {
+    type Row = ProcedureConcurrencyRow;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = ProcedureConcurrencyRow> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for ProcedureConcurrencyRowTableHandle<'ctx> {
     type Row = ProcedureConcurrencyRow;
     type EventContext = super::EventContext;
@@ -66,6 +78,36 @@ impl<'ctx> __sdk::Table for ProcedureConcurrencyRowTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = ProcedureConcurrencyRowDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> ProcedureConcurrencyRowDeleteCallbackId {
+        ProcedureConcurrencyRowDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: ProcedureConcurrencyRowDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for ProcedureConcurrencyRowTableHandle<'ctx> {
+    type InsertCallbackId = ProcedureConcurrencyRowInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> ProcedureConcurrencyRowInsertCallbackId {
+        ProcedureConcurrencyRowInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: ProcedureConcurrencyRowInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for ProcedureConcurrencyRowTableHandle<'ctx> {
     type DeleteCallbackId = ProcedureConcurrencyRowDeleteCallbackId;
 
     fn on_delete(

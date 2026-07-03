@@ -41,6 +41,18 @@ impl MyTableTableAccess for super::RemoteTables {
 pub struct MyTableInsertCallbackId(__sdk::CallbackId);
 pub struct MyTableDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for MyTableTableHandle<'ctx> {
+    type Row = MyTable;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = MyTable> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for MyTableTableHandle<'ctx> {
     type Row = MyTable;
     type EventContext = super::EventContext;
@@ -65,6 +77,36 @@ impl<'ctx> __sdk::Table for MyTableTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = MyTableDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> MyTableDeleteCallbackId {
+        MyTableDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: MyTableDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for MyTableTableHandle<'ctx> {
+    type InsertCallbackId = MyTableInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> MyTableInsertCallbackId {
+        MyTableInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: MyTableInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for MyTableTableHandle<'ctx> {
     type DeleteCallbackId = MyTableDeleteCallbackId;
 
     fn on_delete(

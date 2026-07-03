@@ -669,6 +669,10 @@ async fn ws_main_loop<HotswapWatcher>(
             // Exit if we haven't heard from the client for too long.
             _ = &mut idle_timer => {
                 log::warn!("Client {} timed out", state.client_id);
+                WORKER_METRICS
+                    .ws_clients_idle_timed_out
+                    .with_label_values(&state.database)
+                    .inc();
                 break;
             },
 
