@@ -901,7 +901,8 @@ export function makeTableView(
         // A complete key with a Range in the final position is still a range
         // scan over that column with equality over the preceding prefix.
         return (
-          range.length === numColumns && !(range[range.length - 1] instanceof Range)
+          range.length === numColumns &&
+          !(range[range.length - 1] instanceof Range)
         );
       };
 
