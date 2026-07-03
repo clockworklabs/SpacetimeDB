@@ -459,3 +459,49 @@ fn test_calling_bench_db_ia_loop_typescript() {
 fn test_calling_bench_db_ia_loop_cpp() {
     test_calling_bench_db_ia_loop::<Cpp>();
 }
+
+fn test_submodule_in_module(module_name: &'static str) {
+    init();
+
+    CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |mut module| async move {
+            // ── 1. Cross-namespace reducer call ──────────────────────────────────
+            // use_submodule calls lib_insert in the lib submodule.
+            let json =
+                r#"{"CallReducer": {"reducer": "use_submodule", "args": "[\"hello_submodule\"]", "request_id": 0, "flags": 0}}"#
+                    .to_string();
+            module.send_reducer_and_recv_update(json, 0).await.unwrap();
+
+            let logs = read_logs(&module).await;
+            let relevant: Vec<_> = logs
+                .into_iter()
+                .filter(|l| !is_scheduled_test_log(l))
+                .collect();
+            assert_eq!(relevant, ["lib_insert: hello_submodule"].map(String::from));
+
+            // ── 2. Cross-namespace procedure call ─────────────────────────────────
+            // use_submodule_procedure calls lib_count in the lib submodule.
+            // We inserted one row above, so the count should be 1.
+            let return_val = module
+                .call_procedure_with_args("use_submodule_procedure", "[]")
+                .await
+                .expect("use_submodule_procedure should succeed");
+            assert_eq!(return_val, AlgebraicValue::U64(1), "lib_count should return 1 after one insert");
+
+            // ── 3. Cross-namespace HTTP handler ───────────────────────────────────
+            // The root module's /lib-hello route delegates to lib_submodule's lib_hello handler.
+            let body = module
+                .call_http_route_get("/lib-hello")
+                .await
+                .expect("GET /lib-hello should succeed");
+            assert_eq!(body.as_ref(), b"Hello from lib submodule!");
+        },
+    );
+}
+
+#[test]
+#[serial]
+fn test_submodule_typescript() {
+    test_submodule_in_module("module-test-ts");
+}

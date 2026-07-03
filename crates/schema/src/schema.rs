@@ -983,7 +983,18 @@ impl Schema for TableSchema {
     }
 
     fn check_compatible(&self, module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
-        ensure_eq!(&self.table_name[..], &def.name[..], "Table name mismatch");
+        // Submodule tables are stored in the DB with a namespace prefix (e.g. "lib.library_table"),
+        // but the def's name is just the local name ("library_table"). Identifiers cannot contain
+        // dots, so the local name is the last dot-separated segment. Submodule tables are
+        // registered under their accessor name, so accept a match against either.
+        let self_local_name = self.table_name.rsplit('.').next().unwrap_or(&self.table_name[..]);
+        anyhow::ensure!(
+            self_local_name == &def.name[..] || self_local_name == &def.accessor_name[..],
+            "Table name mismatch: {} does not match def name {} or accessor {}",
+            self_local_name,
+            def.name,
+            def.accessor_name,
+        );
         ensure_eq!(self.primary_key, def.primary_key, "Primary key mismatch");
         let def_table_access: StAccess = (def.table_access).into();
         ensure_eq!(self.table_access, def_table_access, "Table access mismatch");
@@ -999,10 +1010,14 @@ impl Schema for TableSchema {
         }
         ensure_eq!(self.columns.len(), def.columns.len(), "Column count mismatch");
 
+        // Index names in the DB are prefixed for submodule tables (e.g. "lib.library_table_id_idx_btree"),
+        // but def.indexes is keyed by the bare name. Identifiers cannot contain dots, so the
+        // bare name is the last dot-separated segment.
         for index in &self.indexes {
+            let bare_name = index.index_name.rsplit('.').next().unwrap_or(&index.index_name);
             let index_def = def
                 .indexes
-                .get(&index.index_name)
+                .get(bare_name)
                 .ok_or_else(|| anyhow::anyhow!("Index {} not found in definition", index.index_id.0))?;
             index.check_compatible(module_def, index_def)?;
         }
@@ -1352,11 +1367,11 @@ impl Schema for ScheduleSchema {
 
     fn check_compatible(&self, _module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
         ensure_eq!(&self.schedule_name[..], &def.name[..], "Schedule name mismatch");
-        ensure_eq!(
-            &self.function_name[..],
-            &def.function_name[..],
-            "Schedule function name mismatch"
-        );
+        // For submodule tables, schedule function names in the DB are namespace-prefixed using '.'
+        // (e.g. "lib.library_scheduled_procedure") while def.function_name is the bare name.
+        // Identifiers cannot contain dots, so the bare name is the last dot-separated segment.
+        let bare_fn_name = self.function_name.rsplit('.').next().unwrap_or(&self.function_name);
+        ensure_eq!(bare_fn_name, &def.function_name[..], "Schedule function name mismatch");
         Ok(())
     }
 }
@@ -1421,7 +1436,11 @@ impl Schema for IndexSchema {
     }
 
     fn check_compatible(&self, _module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
-        ensure_eq!(&self.index_name[..], &def.name[..], "Index name mismatch");
+        // For submodule tables, the DB stores index names with a namespace prefix
+        // (e.g. "lib.library_table_id_idx_btree") while def.name is the bare name.
+        // Identifiers cannot contain dots, so the bare name is the last dot-separated segment.
+        let bare_index_name = self.index_name.rsplit('.').next().unwrap_or(&self.index_name);
+        ensure_eq!(bare_index_name, &def.name[..], "Index name mismatch");
         ensure_eq!(&self.index_algorithm, &def.algorithm, "Index algorithm mismatch");
         Ok(())
     }

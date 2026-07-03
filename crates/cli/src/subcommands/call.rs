@@ -45,14 +45,8 @@ enum CallDef<'a> {
 impl<'a> CallDef<'a> {
     fn params(&self) -> &'a sats::ProductType {
         match self {
-            CallDef::Reducer(reducer_def) => &reducer_def.params,
-            CallDef::Procedure(procedure_def) => &procedure_def.params,
-        }
-    }
-    fn name(&self) -> &str {
-        match self {
-            CallDef::Reducer(reducer_def) => &reducer_def.name,
-            CallDef::Procedure(procedure_def) => &procedure_def.name,
+            CallDef::Reducer(r) => &r.params,
+            CallDef::Procedure(p) => &p.params,
         }
     }
     fn kind(&self) -> &str {
@@ -103,10 +97,13 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
 
     let module_def: ModuleDef = api.module_def().await?.try_into()?;
 
-    let call_def = match module_def.reducer(&**reducer_procedure_name) {
-        Some(reducer_def) => CallDef::Reducer(reducer_def),
-        None => match module_def.procedure(&**reducer_procedure_name) {
-            Some(procedure_def) => CallDef::Procedure(procedure_def),
+    // Dot-qualified names (e.g. `lib.my_reducer`) route to submodules.
+    // Keep the owning module def around: type refs in the params must be
+    // resolved against the owning module's typespace, not the consumer's.
+    let (call_def, owning_def) = match module_def.reducer_by_name_with_module(reducer_procedure_name) {
+        Some((_, reducer_def, owning_def)) => (CallDef::Reducer(reducer_def), owning_def),
+        None => match module_def.procedure_by_name_with_module(reducer_procedure_name) {
+            Some((_, procedure_def, owning_def)) => (CallDef::Procedure(procedure_def), owning_def),
             None => {
                 return Err(anyhow::Error::msg(no_such_reducer_or_procedure(
                     &database_identity,
@@ -152,7 +149,14 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
             if response_text.starts_with("no such reducer") || response_text.starts_with("no such procedure") {
                 no_such_reducer_or_procedure(&database_identity, database, reducer_procedure_name, &module_def)
             } else if response_text.starts_with("invalid arguments") {
-                invalid_arguments(&database_identity, database, &response_text, &module_def, call_def)
+                invalid_arguments(
+                    &database_identity,
+                    database,
+                    &response_text,
+                    owning_def.typespace(),
+                    reducer_procedure_name,
+                    call_def,
+                )
             } else {
                 return error;
             };
@@ -169,11 +173,20 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
 }
 
 /// Returns an error message for when `reducer` is called with wrong arguments.
-fn invalid_arguments(identity: &Identity, db: &str, text: &str, module_def: &ModuleDef, call_def: CallDef) -> String {
+///
+/// `full_name` is the (possibly dot-qualified) name the user invoked.
+fn invalid_arguments(
+    identity: &Identity,
+    db: &str,
+    text: &str,
+    typespace: &Typespace,
+    full_name: &str,
+    call_def: CallDef,
+) -> String {
     let mut error = format!(
         "Invalid arguments provided for {} `{}` for database `{}` resolving to identity `{}`.",
         call_def.kind(),
-        call_def.name(),
+        full_name,
         db,
         identity
     );
@@ -190,7 +203,10 @@ fn invalid_arguments(identity: &Identity, db: &str, text: &str, module_def: &Mod
         error,
         "\n\nThe {} has the following signature:\n\t{}",
         call_def.kind(),
-        CallSignature(module_def.typespace().with_type(&call_def))
+        CallSignature {
+            name: full_name,
+            call: typespace.with_type(&call_def)
+        }
     )
     .unwrap();
 
@@ -218,13 +234,16 @@ fn split_at_first_substring<'t>(text: &'t str, substring: &str) -> Option<(&'t s
 
 /// Provided the `schema_json` for the database,
 /// returns the signature for a reducer OR procedure with `name`.
-struct CallSignature<'a>(sats::WithTypespace<'a, CallDef<'a>>);
+struct CallSignature<'a> {
+    name: &'a str,
+    call: sats::WithTypespace<'a, CallDef<'a>>,
+}
 impl std::fmt::Display for CallSignature<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let call_def = self.0.ty();
-        let typespace = self.0.typespace();
+        let call_def = self.call.ty();
+        let typespace = self.call.typespace();
 
-        write!(f, "{}(", call_def.name())?;
+        write!(f, "{}(", self.name)?;
 
         // Print the arguments to `args`.
         let mut comma = false;
@@ -258,17 +277,24 @@ const CALL_PRINT_LIMIT: usize = 10;
 
 /// Provided the schema for the database,
 /// decorate `error` with more helpful info about reducers and procedures.
+///
+/// Reducers and procedures from submodules are listed under their
+/// full dot-qualified names (e.g. `lib.my_reducer`).
 fn add_reducer_procedure_ctx_to_err(error: &mut String, module_def: &ModuleDef, reducer_name: &str) {
-    let reducers = module_def
-        .reducers()
-        .filter(|reducer| reducer.lifecycle.is_none())
-        .map(|reducer| &*reducer.name)
+    let reducer_names = module_def
+        .all_reducers_with_prefix()
+        .into_iter()
+        .filter(|(_, _, r)| r.lifecycle.is_none())
+        .map(|(prefix, _, r)| format!("{prefix}{}", &*r.name))
         .collect::<Vec<_>>();
+    let reducers = reducer_names.iter().map(String::as_str).collect::<Vec<_>>();
 
-    let procedures = module_def
-        .procedures()
-        .map(|reducer| &*reducer.name)
+    let procedure_names = module_def
+        .all_procedures_with_prefix()
+        .into_iter()
+        .map(|(prefix, _, p)| format!("{prefix}{}", &*p.name))
         .collect::<Vec<_>>();
+    let procedures = procedure_names.iter().map(String::as_str).collect::<Vec<_>>();
 
     if let Some(best) = find_best_match_for_name(&reducers, reducer_name, None) {
         write!(error, "\n\nA reducer with a similar name exists: `{best}`").unwrap();

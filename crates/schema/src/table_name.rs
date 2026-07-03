@@ -5,20 +5,26 @@ use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, raw_identifier
 
 /// The name of a table.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TableName(Identifier);
+pub struct TableName(RawIdentifier);
 
-impl_st!([] TableName, ts => Identifier::make_type(ts));
+impl_st!([] TableName, ts => RawIdentifier::make_type(ts));
 impl_serialize!([] TableName, (self, ser) => self.0.serialize(ser));
-impl_deserialize!([] TableName, de => Identifier::deserialize(de).map(Self));
+impl_deserialize!([] TableName, de => RawIdentifier::deserialize(de).map(Self));
 
 impl TableName {
+    /// Construct from a validated identifier (all user-defined tables).
     pub fn new(id: Identifier) -> Self {
-        Self(id)
+        Self(id.into())
+    }
+
+    /// Construct from an arbitrary raw string (e.g. submodule tables whose names contain `.`).
+    pub fn new_raw(name: RawIdentifier) -> Self {
+        Self(name)
     }
 
     #[cfg(any(test, feature = "test"))]
     pub fn for_test(name: &str) -> Self {
-        Self(Identifier::for_test(name))
+        Self(RawIdentifier::new(name))
     }
 }
 
@@ -36,15 +42,18 @@ impl AsRef<str> for TableName {
     }
 }
 
+/// Panics if the `TableName` is a namespaced submodule table name (contains `.`),
+/// since those are not valid identifiers. Use `RawIdentifier::from` for names that
+/// may be namespaced.
 impl From<TableName> for Identifier {
     fn from(id: TableName) -> Self {
-        id.0
+        Identifier::new(id.0).expect("TableName contains '.' or other non-identifier chars; use RawIdentifier instead")
     }
 }
 
 impl From<TableName> for RawIdentifier {
     fn from(id: TableName) -> Self {
-        Identifier::from(id).into()
+        id.0
     }
 }
 

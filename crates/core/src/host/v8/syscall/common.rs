@@ -27,8 +27,8 @@ use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCal
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_primitives::{ColId, IndexId, ProcedureId, TableId, ViewFnPtr};
 use spacetimedb_sats::bsatn;
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::def::ModuleDef;
-use spacetimedb_schema::identifier::Identifier;
 use v8::{FunctionCallbackArguments, Isolate, Local, PinScope, Value};
 
 /// Calls the `__call_procedure__` function `fun`.
@@ -761,8 +761,8 @@ fn refresh_views(
 
             let table_id = resolved.table_id;
             let view_def = resolved.view_def;
-            let view_name = &view_def.name;
-            let fn_ptr = view_def.fn_ptr;
+            let view_name = &resolved.view_name;
+            let fn_ptr = resolved.global_fn_ptr;
             let sender = tx
                 .as_ref()
                 .expect("procedure tx missing while looking up refreshed view args")
@@ -783,7 +783,7 @@ fn refresh_views(
             tx = Some(next_tx);
             let return_data = call_result?;
 
-            let typespace = module_def.typespace();
+            let typespace = resolved.owning_def.typespace();
             let row_product_type = typespace
                 .resolve(view_def.product_type_ref)
                 .resolve_refs()
@@ -860,7 +860,7 @@ fn call_view(
     scope: &mut PinScope<'_, '_>,
     hooks: &HookFunctions<'_>,
     view_call: &ViewCallInfo,
-    view_name: &Identifier,
+    view_name: &RawIdentifier,
     table_id: TableId,
     fn_ptr: ViewFnPtr,
     sender: Option<Identity>,
