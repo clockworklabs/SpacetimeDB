@@ -306,7 +306,7 @@ impl ScheduledFunctionParams {
     }
 
     fn kind(&self, module: &ModuleInfo) -> ScheduledFunctionKind {
-        if module.module_def.procedure_full(self.function_name()).is_some() {
+        if module.module_def.procedure_by_name(self.function_name()).is_some() {
             ScheduledFunctionKind::Procedure
         } else {
             ScheduledFunctionKind::Reducer
@@ -775,11 +775,14 @@ fn function_to_reducer_call_params(
 ) -> anyhow::Result<(Timestamp, Instant, CallReducerParams)> {
     let identity = module.database_identity;
 
+    // Find the reducer and deserialize the arguments.
+    // Use the owning module's typespace (not necessarily the root's) so that type-index
+    // references inside the def are resolved correctly for submodules.
     let module = &module.module_def;
-    let Some((id, def)) = module.reducer_full(name) else {
+    let Some((id, def, owning)) = module.reducer_by_name_with_module(name) else {
         return Err(anyhow!("Reducer `{name}` not found"));
     };
-    let args = args.into_tuple_for_def(module, def).map_err(InvalidReducerArguments)?;
+    let args = args.into_tuple_for_def(owning, def).map_err(InvalidReducerArguments)?;
 
     let (ts, instant) = scheduled_call_time(at);
     Ok((ts, instant, CallReducerParams::from_system(ts, identity, id, args)))
@@ -794,11 +797,11 @@ fn function_to_procedure_call_params(
     let identity = module.database_identity;
 
     let module = &module.module_def;
-    let Some((id, def)) = module.procedure_full(name) else {
+    let Some((id, def, owning)) = module.procedure_by_name_with_module(name) else {
         return Err(anyhow!("Procedure `{name}` not found"));
     };
     let args = args
-        .into_tuple_for_def(module, def)
+        .into_tuple_for_def(owning, def)
         .map_err(InvalidProcedureArguments)?;
 
     let (ts, instant) = scheduled_call_time(at);

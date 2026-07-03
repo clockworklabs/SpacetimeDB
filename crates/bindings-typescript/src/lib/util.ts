@@ -113,7 +113,7 @@ export function toPascalCase(s: string): string {
  */
 export function toCamelCase<T extends string>(s: T): CamelCase<T> {
   const str = s
-    .replace(/[-_]+/g, '_') // collapse runs to a single separator (no backtracking issue)
+    .replace(/[-_]+/g, '_')
     .replace(/_([a-zA-Z0-9])/g, (_, c) => c.toUpperCase());
   return (str.charAt(0).toLowerCase() + str.slice(1)) as CamelCase<T>;
 }

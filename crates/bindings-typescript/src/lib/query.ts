@@ -2,6 +2,7 @@ import { ConnectionId } from './connection_id';
 import { Identity } from './identity';
 import type { ColumnIndex, IndexColumns, IndexOpts } from './indexes';
 import type { UntypedSchemaDef } from './schema';
+import type { UntypedTableDef } from './table';
 import type { UntypedTableSchema } from './table_schema';
 import { Timestamp } from './timestamp';
 import type {
@@ -224,6 +225,25 @@ export type QueryBuilder<SchemaDef extends UntypedSchemaDef> = {
 } & {};
 
 /**
+ * The type of `q.from` in an `addQuery` callback.
+ *
+ * Root-level tables appear as direct properties (same as `QueryBuilder`).
+ * Declared namespaces appear as sub-objects — each is itself a `QueryBuilder` for that
+ * namespace's schema, so `q.from.<namespace>.<table>` is fully typed.
+ *
+ * When `SchemaDef['namespaces']` is absent or `{}`, no namespace properties appear —
+ * accessing an undeclared namespace is a compile error.
+ */
+export type SubscriptionFromBuilder<SchemaDef extends UntypedSchemaDef> =
+  QueryBuilder<SchemaDef> & {
+    readonly [NS in keyof NonNullable<SchemaDef['namespaces']>]: NonNullable<
+      SchemaDef['namespaces']
+    >[NS] extends UntypedSchemaDef
+      ? QueryBuilder<NonNullable<SchemaDef['namespaces']>[NS]>
+      : never;
+  };
+
+/**
  * A runtime reference to a table. This materializes the RowExpr for us.
  * TODO: Maybe add the full SchemaDef to the type signature depending on how joins will work.
  */
@@ -333,6 +353,42 @@ export function makeQueryBuilder<SchemaDef extends UntypedSchemaDef>(
     (qb as Record<string, TableRef<any>>)[table.accessorName] = ref;
   }
   return Object.freeze(qb) as QueryBuilder<SchemaDef>;
+}
+
+/**
+ * Builds the `q.from` object for use in `addQuery` callbacks.
+ *
+ * Tables whose `sourceName` contains no `.` are placed at the root.
+ * Tables with a dotted `sourceName` (e.g. `"namespace.table"`) are grouped under a
+ * sub-object keyed by the namespace alias, with the part after the dot as the
+ * property key within that namespace.
+ */
+export function makeFromBuilder<SchemaDef extends UntypedSchemaDef>(
+  tables: SchemaDef['tables']
+): SubscriptionFromBuilder<SchemaDef> {
+  const result: Record<string, unknown> = Object.create(null);
+  const namespaces: Record<string, Record<string, unknown>> = Object.create(
+    null
+  );
+
+  for (const table of Object.values(tables) as UntypedTableDef[]) {
+    const dotIdx = table.sourceName.indexOf('.');
+    if (dotIdx === -1) {
+      result[table.accessorName] = createTableRefFromDef(table as any);
+    } else {
+      const ns = table.sourceName.slice(0, dotIdx);
+      const key = table.sourceName.slice(dotIdx + 1);
+      (namespaces[ns] ??= Object.create(null))[key] = createTableRefFromDef(
+        table as any
+      );
+    }
+  }
+
+  for (const [ns, nsTables] of Object.entries(namespaces)) {
+    result[ns] = Object.freeze(nsTables);
+  }
+
+  return Object.freeze(result) as unknown as SubscriptionFromBuilder<SchemaDef>;
 }
 
 function createRowExpr<TableDef extends TypedTableDef>(
@@ -879,7 +935,10 @@ function literalValueToSql(value: unknown): string {
 }
 
 function quoteIdentifier(name: string): string {
-  return `"${name.replace(/"/g, '""')}"`;
+  return name
+    .split('.')
+    .map(part => `"${part.replace(/"/g, '""')}"`)
+    .join('.');
 }
 
 function isLiteralExpr<Value>(

@@ -2,9 +2,11 @@ use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::bsatn::Deserializer;
 use spacetimedb_lib::db::raw_def::v10::*;
+use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
 use spacetimedb_lib::de::DeserializeSeed as _;
 use spacetimedb_lib::http::character_is_acceptable_for_route_path;
+use spacetimedb_primitives::ReducerId;
 use spacetimedb_sats::{Typespace, WithTypespace};
 
 use crate::def::validate::v9::{
@@ -13,6 +15,7 @@ use crate::def::validate::v9::{
 };
 use crate::def::*;
 use crate::error::ValidationError;
+use crate::identifier::validate_identifier;
 use crate::type_for_generate::ProductTypeDef;
 use crate::{def::validate::Result, error::TypeLocation};
 // Utitility struct to look up canonical names for tables, functions, and indexes based on the
@@ -71,7 +74,7 @@ impl From<CaseConversionPolicy> for ValidationCase {
         }
     }
 }
-/// Validate a `RawModuleDefV9` and convert it into a `ModuleDef`,
+/// Validate a `RawModuleDefV10` and convert it into a `ModuleDef`,
 /// or return a stream of errors if the definition is invalid.
 pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
     let mut typespace = def.typespace().cloned().unwrap_or_else(|| Typespace::EMPTY.clone());
@@ -83,6 +86,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .map(ExplicitNamesLookup::new)
         .unwrap_or_default();
     let view_primary_keys = def.view_primary_keys().cloned().unwrap_or_default();
+    let submodules = validate_submodules(def.submodules().into_iter().flat_map(|s| s.iter().cloned()).collect());
 
     // Original `typespace` needs to be preserved to be assign `accesor_name`s to columns.
     let typespace_with_accessor_names = typespace.clone();
@@ -292,13 +296,9 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .map(|rls| (rls.sql.clone(), rls.to_owned()))
         .collect();
 
-    let (tables, types, reducers, procedures, views, http_handlers, http_routes) =
-        tables_types_reducers_procedures_views
-            .map(
-                |(tables, types, reducers, procedures, views, (http_handlers, http_routes))| {
-                    (tables, types, reducers, procedures, views, http_handlers, http_routes)
-                },
-            )
+    let ((tables, types, reducers, procedures, views, (http_handlers, http_routes)), submodules) =
+        (tables_types_reducers_procedures_views, submodules)
+            .combine_errors()
             .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
 
     let typespace_for_generate = typespace_for_generate.finish();
@@ -318,7 +318,53 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         http_handlers,
         http_routes,
         raw_module_def_version: RawModuleDefVersion::V10,
+        submodules,
     })
+}
+
+/// Validate that each submodule's namespace is a valid identifier of at most 63 characters,
+/// that no two submodules share the same namespace, and that no submodule declares lifecycle
+/// reducers (lifecycle reducers are only permitted in the root module).
+/// This function will inspect each sub-submodule and recursively collect errors.
+fn validate_submodules(submodules: Vec<RawSubmoduleV10>) -> Result<IndexMap<String, ModuleDef>> {
+    let mut errors = vec![];
+    let mut map = IndexMap::with_capacity(submodules.len());
+
+    for submodule in submodules {
+        if let Err(e) = validate_identifier(&submodule.namespace) {
+            errors.push(ValidationError::IdentifierError { error: e });
+        }
+
+        if submodule.namespace.len() > 63 {
+            errors.push(ValidationError::NamespaceTooLong {
+                namespace: submodule.namespace.clone().into(),
+                len: submodule.namespace.len(),
+            });
+        }
+
+        if map.contains_key(&submodule.namespace) {
+            errors.push(ValidationError::DuplicateName {
+                name: submodule.namespace.into(),
+            });
+        } else {
+            match validate(submodule.module) {
+                Ok(def) => {
+                    for (lifecycle, opt_id) in def.lifecycle_reducers_map() {
+                        if opt_id.is_some() {
+                            errors.push(ValidationError::LifecycleInSubmodule {
+                                lifecycle,
+                                namespace: submodule.namespace.clone(),
+                            });
+                        }
+                    }
+                    map.insert(submodule.namespace, def);
+                }
+                Err(e) => errors.extend(e.into_iter()),
+            }
+        }
+    }
+
+    ValidationErrors::add_extra_errors(Ok(map), errors)
 }
 
 /// Change the visibility of scheduled functions and lifecycle reducers to Internal.
@@ -1094,12 +1140,16 @@ mod tests {
 
     use itertools::Itertools;
     use spacetimedb_data_structures::expect_error_matching;
-    use spacetimedb_lib::db::raw_def::v10::{CaseConversionPolicy, MethodOrAny, RawModuleDefV10Builder};
+    use spacetimedb_lib::db::raw_def::v10::{
+        CaseConversionPolicy, MethodOrAny, RawModuleDefV10, RawModuleDefV10Builder, RawModuleDefV10Section,
+        RawSubmoduleV10,
+    };
     use spacetimedb_lib::db::raw_def::v9::{btree, direct, hash};
     use spacetimedb_lib::db::raw_def::*;
     use spacetimedb_lib::http::Method as HttpMethod;
     use spacetimedb_lib::ScheduleAt;
     use spacetimedb_primitives::{ColId, ColList, ColSet};
+    use spacetimedb_sats::raw_identifier::RawIdentifier;
     use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, SumValue};
     use v9::{Lifecycle, TableAccess, TableType};
 
@@ -1471,6 +1521,66 @@ mod tests {
             &table[..] == "Bananas" &&
             &def[..] == "bananas_b_col_55_idx_btree" &&
             column == &55.into()
+        });
+    }
+
+    #[test]
+    fn validates_submodules_recursively() {
+        let mut submodule_builder = RawModuleDefV10Builder::new();
+        submodule_builder
+            .build_table_with_new_type("Sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
+            .finish();
+
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "authlib".to_string(),
+                module: submodule_builder.finish(),
+            }])],
+        };
+
+        let def: ModuleDef = raw.try_into().expect("submodule should validate");
+        let submodules = def.submodules();
+
+        assert_eq!(submodules.len(), 1);
+        let submodule = submodules.get("authlib").expect("authlib submodule should exist");
+        assert!(submodule.table(&expect_identifier("sessions")).is_some());
+    }
+
+    #[test]
+    fn invalid_submodule_namespace() {
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "".to_string(),
+                module: RawModuleDefV10::default(),
+            }])],
+        };
+
+        let result: Result<ModuleDef> = raw.try_into();
+
+        expect_error_matching!(result, ValidationError::IdentifierError { error } => {
+            error == &IdentifierError::Empty {}
+        });
+    }
+
+    #[test]
+    fn duplicate_submodule_namespace() {
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![
+                RawSubmoduleV10 {
+                    namespace: "authlib".to_string(),
+                    module: RawModuleDefV10::default(),
+                },
+                RawSubmoduleV10 {
+                    namespace: "authlib".to_string(),
+                    module: RawModuleDefV10::default(),
+                },
+            ])],
+        };
+
+        let result: Result<ModuleDef> = raw.try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateName { name } => {
+            name == &RawIdentifier::from("authlib")
         });
     }
 
@@ -2515,5 +2625,95 @@ mod tests {
         assert_eq!(view.accessor_name, id("PersonAtLevel2"));
         assert_eq!(view.return_columns[0].view_name, id("Level2Person"));
         assert_eq!(view.param_columns[0].view_name, id("Level2Person"));
+    }
+
+    #[test]
+    fn namespace_exactly_63_chars_is_ok() {
+        let namespace = "a".repeat(63);
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace,
+                module: RawModuleDefV10::default(),
+            }])],
+        };
+        let result: Result<ModuleDef> = raw.try_into();
+        assert!(result.is_ok(), "63-char namespace should be valid");
+    }
+
+    #[test]
+    fn namespace_64_chars_is_rejected() {
+        let namespace = "a".repeat(64);
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: namespace.clone(),
+                module: RawModuleDefV10::default(),
+            }])],
+        };
+        let expected_ns = RawIdentifier::from(namespace.clone());
+        let result: Result<ModuleDef> = raw.try_into();
+        expect_error_matching!(result, ValidationError::NamespaceTooLong { namespace: ns, len } => {
+            ns == &expected_ns && len == &64usize
+        });
+    }
+
+    fn make_module_with_lifecycle(lifecycle: Lifecycle) -> RawModuleDefV10 {
+        let mut b = RawModuleDefV10Builder::new();
+        b.add_lifecycle_reducer(lifecycle, "lifecycle_fn", ProductType::unit());
+        b.finish()
+    }
+
+    #[test]
+    fn lifecycle_in_submodule_is_rejected() {
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "auth".to_string(),
+                module: make_module_with_lifecycle(Lifecycle::Init),
+            }])],
+        };
+
+        let result: Result<ModuleDef> = raw.try_into();
+        expect_error_matching!(result, ValidationError::LifecycleInSubmodule { lifecycle, namespace } => {
+            lifecycle == &Lifecycle::Init && namespace == "auth"
+        });
+    }
+
+    #[test]
+    fn lifecycle_in_root_with_submodule_is_ok() {
+        // Root declares Init; the submodule has no lifecycle — this is valid.
+        let consumer_raw = make_module_with_lifecycle(Lifecycle::Init);
+        let mut sections = consumer_raw.sections;
+        sections.push(RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+            namespace: "auth".to_string(),
+            module: RawModuleDefV10::default(),
+        }]));
+
+        let result: Result<ModuleDef> = RawModuleDefV10 { sections }.try_into();
+        assert!(
+            result.is_ok(),
+            "lifecycle in root with a lifecycle-free submodule should be valid"
+        );
+    }
+
+    #[test]
+    fn lifecycle_in_nested_submodule_is_rejected() {
+        // Root uses auth as submodule; auth uses baz as submodule; baz declares a lifecycle. Should be rejected.
+        let auth = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "baz".to_string(),
+                module: make_module_with_lifecycle(Lifecycle::Init),
+            }])],
+        };
+
+        let raw = RawModuleDefV10 {
+            sections: vec![RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "auth".to_string(),
+                module: auth,
+            }])],
+        };
+
+        let result: Result<ModuleDef> = raw.try_into();
+        expect_error_matching!(result, ValidationError::LifecycleInSubmodule { lifecycle, namespace } => {
+            lifecycle == &Lifecycle::Init && namespace == "baz"
+        });
     }
 }

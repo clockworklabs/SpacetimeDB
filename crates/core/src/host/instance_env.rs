@@ -21,12 +21,12 @@ use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, IndexScanPointOr
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::{http as st_http, ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
     buffer::CountWriter,
     AlgebraicValue, ProductValue,
 };
-use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::RowRef;
 use std::fmt::Display;
@@ -48,7 +48,7 @@ pub struct InstanceEnv {
     /// The type of the last, including current, function to be executed by this environment.
     pub func_type: FuncCallType,
     /// The name of the last, including current, function to be executed by this environment.
-    pub func_name: Option<Identifier>,
+    pub func_name: Option<RawIdentifier>,
     /// Are we in an anonymous tx context?
     in_anon_tx: bool,
     /// A procedure's last known transaction offset.
@@ -246,7 +246,7 @@ impl InstanceEnv {
     }
 
     /// Signal to this `InstanceEnv` that a function call is beginning.
-    pub fn start_funcall(&mut self, name: Identifier, ts: Timestamp, func_type: FuncCallType) {
+    pub fn start_funcall(&mut self, name: RawIdentifier, ts: Timestamp, func_type: FuncCallType) {
         self.start_time = ts;
         self.start_instant = Instant::now();
         self.func_type = func_type;
