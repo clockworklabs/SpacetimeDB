@@ -56,6 +56,32 @@ function tallyView() {
   return view.by_board_def;
 }
 
+function tallyCountView() {
+  const ctx = new ModuleContext();
+  const tally = table(
+    {
+      name: 'tally',
+      indexes: [
+        {
+          accessor: 'by_board_count',
+          algorithm: 'btree',
+          columns: ['boardId', 'count'] as const,
+        },
+      ] as const,
+    },
+    {
+      id: t.u64().primaryKey().autoInc(),
+      boardId: t.u64(),
+      defId: t.string(),
+      count: t.u64(),
+    }
+  );
+
+  const rawTableDef = tally.tableDef(ctx, 'tally');
+  const view = makeTableView(ctx.typespace, rawTableDef) as any;
+  return view.by_board_count;
+}
+
 describe('multi-column index one-column prefix scan', () => {
   it('full two-column key works (point scan)', () => {
     const index = tallyView();
@@ -81,9 +107,31 @@ describe('multi-column index one-column prefix scan', () => {
     expect([...index.filter(range)]).toEqual([]);
   });
 
+  it('full key with Range in final column works (range scan)', () => {
+    const index = tallyCountView();
+    const range = new Range<bigint>(
+      { tag: 'included', value: 10n },
+      { tag: 'included', value: 20n }
+    );
+
+    expect(() => [...index.filter([1n, range])]).not.toThrow();
+    expect([...index.filter([1n, range])]).toEqual([]);
+  });
+
   it('delete() accepts a bare-scalar one-column prefix', () => {
     const index = tallyView();
     expect(() => index.delete(1n)).not.toThrow();
     expect(index.delete(1n)).toBe(0);
+  });
+
+  it('delete() accepts a full key with Range in final column', () => {
+    const index = tallyCountView();
+    const range = new Range<bigint>(
+      { tag: 'included', value: 10n },
+      { tag: 'included', value: 20n }
+    );
+
+    expect(() => index.delete([1n, range])).not.toThrow();
+    expect(index.delete([1n, range])).toBe(0);
   });
 });

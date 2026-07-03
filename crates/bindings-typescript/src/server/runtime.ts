@@ -896,6 +896,15 @@ export function makeTableView(
       } as PointIndex<any, any>;
     } else {
       // numColumns != 1
+      const isCompleteScalarKey = (range: any[]): boolean => {
+        // Preserve the point-scan path only for complete scalar keys.
+        // A complete key with a Range in the final position is still a range
+        // scan over that column with equality over the preceding prefix.
+        return (
+          range.length === numColumns && !(range[range.length - 1] instanceof Range)
+        );
+      };
+
       const serializeRange = (
         buffer: ResizableBuffer,
         range: any[]
@@ -920,12 +929,12 @@ export function makeTableView(
           writeBound(term.from);
           const rstartLen = writer.offset - rstartOffset;
           writeBound(term.to);
-          const rendLen = writer.offset - rstartLen;
+          const rendLen = writer.offset - rstartOffset - rstartLen;
           return [rstartOffset, prefix_elems, rstartLen, rendLen];
         } else {
           writer.writeU8(0);
           serializeTerm(writer, term);
-          const rstartLen = writer.offset;
+          const rstartLen = writer.offset - rstartOffset;
           const rendLen = 0;
           return [rstartOffset, prefix_elems, rstartLen, rendLen];
         }
@@ -936,7 +945,7 @@ export function makeTableView(
           // one-column prefix scan; normalize it to a single-element array so
           // `.length` and `serializeRange` see a prefix rather than NaN.
           if (!Array.isArray(range)) range = [range];
-          if (range.length === numColumns) {
+          if (isCompleteScalarKey(range)) {
             const buf = LEAF_BUF;
             const point_len = serializePoint(buf, range);
             const iter_id = sys.datastore_index_scan_point_bsatn(
@@ -958,7 +967,7 @@ export function makeTableView(
         },
         delete: (range: any[]): u32 => {
           if (!Array.isArray(range)) range = [range];
-          if (range.length === numColumns) {
+          if (isCompleteScalarKey(range)) {
             const buf = LEAF_BUF;
             const point_len = serializePoint(buf, range);
             return sys.datastore_delete_by_index_scan_point_bsatn(
