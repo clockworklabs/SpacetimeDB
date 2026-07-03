@@ -32,7 +32,7 @@ runs:
       uses: Swatinem/rust-cache@v2
       with:
         workspaces: ${{ inputs.rust_cache_workspaces }}
-        shared-key: spacetimedb-keynote
+        shared-key: spacetimedb
         cache-on-failure: false
         prefix-key: v1
 
