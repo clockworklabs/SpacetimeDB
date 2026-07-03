@@ -19,14 +19,21 @@ runs:
       shell: bash
       run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
+    - name: Set up sccache
+      uses: mozilla-actions/sccache-action@v0.0.10
+
+    - name: Enable sccache
+      shell: bash
+      run: |
+        echo "SCCACHE_GHA_ENABLED=true" >>"$GITHUB_ENV"
+        echo "RUSTC_WRAPPER=sccache" >>"$GITHUB_ENV"
+
     - name: Cache Rust dependencies
       uses: Swatinem/rust-cache@v2
       with:
         workspaces: ${{ inputs.rust_cache_workspaces }}
         shared-key: spacetimedb-keynote
         cache-on-failure: false
-        cache-all-crates: true
-        cache-workspace-crates: true
         prefix-key: v1
 
     - name: Check v8 outputs
