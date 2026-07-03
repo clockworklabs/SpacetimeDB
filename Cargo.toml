@@ -19,6 +19,7 @@ members = [
   "crates/expr",
   "crates/guard",
   "crates/fs-utils",
+  "crates/index-scan-gate",
   "crates/lib",
   "crates/metrics",
   "crates/paths",
