@@ -1,5 +1,6 @@
 import { Timestamp } from './timestamp';
 import { AlgebraicType } from './algebraic_type.ts';
+import { u128ToHexString } from './util';
 
 export type UuidAlgebraicType = {
   tag: 'Product';
@@ -230,10 +231,14 @@ export class Uuid {
     return new Uuid(v);
   }
 
+  /** Convert to hex string without a 0x prefix. */
+  toHexString(): string {
+    return u128ToHexString(this.asBigInt());
+  }
+
   /** Convert to string (hyphenated form). */
   toString(): string {
-    const bytes = Uuid.bigIntToBytes(this.__uuid__);
-    const hex = [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
+    const hex = this.toHexString();
 
     // Format as 8-4-4-4-12
     return (

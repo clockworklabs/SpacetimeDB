@@ -136,9 +136,9 @@ Reducers receive a `ReducerContext` which provides full read-write access to all
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-export const example = spacetimedb.reducer({}, (ctx) => {
+export const example = spacetimedb.reducer((ctx) => {
   // Insert
-  ctx.db.user.insert({ id: 0, name: 'Alice', email: 'alice@example.com' });
+  ctx.db.user.insert({ id: 0n, name: 'Alice', email: 'alice@example.com' });
 
   // Read: iterate all rows
   for (const user of ctx.db.user.iter()) {

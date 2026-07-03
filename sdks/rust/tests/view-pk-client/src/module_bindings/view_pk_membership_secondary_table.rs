@@ -42,6 +42,18 @@ impl ViewPkMembershipSecondaryTableAccess for super::RemoteTables {
 pub struct ViewPkMembershipSecondaryInsertCallbackId(__sdk::CallbackId);
 pub struct ViewPkMembershipSecondaryDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for ViewPkMembershipSecondaryTableHandle<'ctx> {
+    type Row = ViewPkMembershipSecondary;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = ViewPkMembershipSecondary> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for ViewPkMembershipSecondaryTableHandle<'ctx> {
     type Row = ViewPkMembershipSecondary;
     type EventContext = super::EventContext;
@@ -80,9 +92,54 @@ impl<'ctx> __sdk::Table for ViewPkMembershipSecondaryTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithInsert for ViewPkMembershipSecondaryTableHandle<'ctx> {
+    type InsertCallbackId = ViewPkMembershipSecondaryInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> ViewPkMembershipSecondaryInsertCallbackId {
+        ViewPkMembershipSecondaryInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: ViewPkMembershipSecondaryInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for ViewPkMembershipSecondaryTableHandle<'ctx> {
+    type DeleteCallbackId = ViewPkMembershipSecondaryDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> ViewPkMembershipSecondaryDeleteCallbackId {
+        ViewPkMembershipSecondaryDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: ViewPkMembershipSecondaryDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
 pub struct ViewPkMembershipSecondaryUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for ViewPkMembershipSecondaryTableHandle<'ctx> {
+    type UpdateCallbackId = ViewPkMembershipSecondaryUpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> ViewPkMembershipSecondaryUpdateCallbackId {
+        ViewPkMembershipSecondaryUpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: ViewPkMembershipSecondaryUpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithUpdate for ViewPkMembershipSecondaryTableHandle<'ctx> {
     type UpdateCallbackId = ViewPkMembershipSecondaryUpdateCallbackId;
 
     fn on_update(

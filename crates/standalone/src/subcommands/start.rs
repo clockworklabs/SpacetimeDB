@@ -11,6 +11,7 @@ use axum::extract::DefaultBodyLimit;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
 use spacetimedb::config::{parse_config, CertificateAuthority};
+use spacetimedb::db::persistence::{CommitlogConfig, DurabilityConfig};
 use spacetimedb::db::{self, Storage};
 use spacetimedb::startup::{self, TracingOptions};
 use spacetimedb::util::jobs::JobCores;
@@ -99,6 +100,8 @@ struct ConfigFile {
     #[serde(flatten)]
     common: spacetimedb::config::ConfigFile,
     #[serde(default)]
+    commitlog: CommitlogConfig,
+    #[serde(default)]
     websocket: WebSocketOptions,
 }
 
@@ -181,6 +184,9 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     let ctx = StandaloneEnv::init(
         StandaloneOptions {
             db_config,
+            durability: DurabilityConfig {
+                commitlog: config.commitlog,
+            },
             websocket: config.websocket,
             wasm: config.common.wasm,
             v8: config.common.v8,
@@ -490,7 +496,7 @@ fn banner() {
 │            888                                                                                        │
 │            888                                                                                        │
 │            888                                                                                        │
-│                                  "Multiplayer at the speed of light"                                  │
+│                                  "Development at the speed of light"                                  │
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘
     "#
     )
@@ -525,6 +531,14 @@ mod tests {
             heap-gc-trigger-fraction = 0.6
             heap-retire-fraction = 0.8
             heap-limit-mb = 128
+
+            [commitlog]
+            log-format-version = 1
+            max-segment-size = 1048576
+            offset-index-interval-bytes = 8192
+            offset-index-require-segment-fsync = false
+            preallocate-segments = true
+            write-buffer-size = 131072
 "#;
 
         let config: ConfigFile = toml::from_str(toml).unwrap();
@@ -543,6 +557,21 @@ mod tests {
         assert_eq!(config.common.v8.heap_policy.heap_gc_trigger_fraction, 0.6);
         assert_eq!(config.common.v8.heap_policy.heap_retire_fraction, 0.8);
         assert_eq!(config.common.v8.heap_policy.heap_limit_bytes, 128 * 1024 * 1024);
+        assert_eq!(config.commitlog.log_format_version, Some(1));
+        assert_eq!(
+            config.commitlog.max_segment_size.map(|val| val.get()),
+            Some(1024 * 1024)
+        );
+        assert_eq!(
+            config.commitlog.offset_index_interval_bytes.map(|val| val.get()),
+            Some(8192)
+        );
+        assert_eq!(config.commitlog.offset_index_require_segment_fsync, Some(false));
+        assert_eq!(config.commitlog.preallocate_segments, Some(true));
+        assert_eq!(
+            config.commitlog.write_buffer_size.map(|val| val.get()),
+            Some(128 * 1024)
+        );
 
         assert_eq!(
             config.websocket,
@@ -552,5 +581,21 @@ mod tests {
                 ..<_>::default()
             }
         );
+    }
+
+    #[test]
+    fn commitlog_options_accept_aliases() {
+        let toml = r#"
+            [commitlog]
+            offset-interval-bytes = 16384
+            offset-index-require-fsync = true
+"#;
+
+        let config: ConfigFile = toml::from_str(toml).unwrap();
+        assert_eq!(
+            config.commitlog.offset_index_interval_bytes.map(|val| val.get()),
+            Some(16 * 1024)
+        );
+        assert_eq!(config.commitlog.offset_index_require_segment_fsync, Some(true));
     }
 }

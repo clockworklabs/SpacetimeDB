@@ -43,6 +43,18 @@ impl VecEveryPrimitiveStructTableAccess for super::RemoteTables {
 pub struct VecEveryPrimitiveStructInsertCallbackId(__sdk::CallbackId);
 pub struct VecEveryPrimitiveStructDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for VecEveryPrimitiveStructTableHandle<'ctx> {
+    type Row = VecEveryPrimitiveStruct;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = VecEveryPrimitiveStruct> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for VecEveryPrimitiveStructTableHandle<'ctx> {
     type Row = VecEveryPrimitiveStruct;
     type EventContext = super::EventContext;
@@ -67,6 +79,36 @@ impl<'ctx> __sdk::Table for VecEveryPrimitiveStructTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = VecEveryPrimitiveStructDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> VecEveryPrimitiveStructDeleteCallbackId {
+        VecEveryPrimitiveStructDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: VecEveryPrimitiveStructDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for VecEveryPrimitiveStructTableHandle<'ctx> {
+    type InsertCallbackId = VecEveryPrimitiveStructInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> VecEveryPrimitiveStructInsertCallbackId {
+        VecEveryPrimitiveStructInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: VecEveryPrimitiveStructInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for VecEveryPrimitiveStructTableHandle<'ctx> {
     type DeleteCallbackId = VecEveryPrimitiveStructDeleteCallbackId;
 
     fn on_delete(

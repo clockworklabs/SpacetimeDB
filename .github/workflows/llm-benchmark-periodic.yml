@@ -2,15 +2,23 @@ name: Periodic LLM benchmarks
 
 on:
   schedule:
-    # Daily at midnight UTC. Change to '0 */6 * * *' for every 6h,
-    # or '0 */4 * * *' for every 4h.
-    - cron: '0 0 * * *'
+    # Weekly on Monday at midnight UTC.
+    - cron: '0 0 * * 1'
   workflow_dispatch:
     inputs:
-      models:
-        description: 'Models to run (provider:model format, comma-separated, or "all")'
+      model_set:
+        description: 'Model set to run'
         required: false
-        default: 'all'
+        type: choice
+        options:
+          - website_active
+          - local_defaults
+          - explicit
+        default: website_active
+      models:
+        description: 'Space-separated provider:model groups. Required when model_set=explicit.'
+        required: false
+        default: ''
       languages:
         description: 'Languages to benchmark (comma-separated: rust,csharp,typescript)'
         required: false
@@ -19,33 +27,34 @@ on:
         description: 'Modes to run (comma-separated: guidelines,no_context,docs,...)'
         required: false
         default: 'guidelines,no_context'
+      categories:
+        description: 'Optional benchmark categories to run (comma-separated)'
+        required: false
+        default: ''
+      tasks:
+        description: 'Optional benchmark task ids/selectors to run (comma-separated)'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Run benchmarks without uploading results'
+        required: false
+        default: 'false'
 
 permissions:
   contents: read
 
 concurrency:
-  group: llm-benchmark-periodic
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   run-benchmarks:
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
-    timeout-minutes: 180
+    runs-on: spacetimedb-new-runner-2
 
     steps:
-      - name: Install spacetime CLI
-        run: |
-          curl -sSf https://install.spacetimedb.com | sh -s -- -y
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-
-      - name: Checkout master
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: master
           fetch-depth: 1
 
       - uses: dtolnay/rust-toolchain@stable
@@ -54,7 +63,7 @@ jobs:
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "8.0.x"
+          global-json-file: global.json
 
       - name: Install WASI workload
         env:
@@ -64,46 +73,125 @@ jobs:
         run: |
           dotnet workload install wasi-experimental --skip-manifest-update --disable-parallel
 
+      - name: Pack C# runtime packages
+        if: ${{ github.event_name != 'workflow_dispatch' || contains(inputs.languages || 'rust,csharp,typescript', 'csharp') }}
+        run: |
+          dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
+          dotnet pack -c Release crates/bindings-csharp/Runtime
+
       - name: Set up Node.js
+        if: ${{ github.event_name != 'workflow_dispatch' || contains(inputs.languages || 'rust,csharp,typescript', 'typescript') }}
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        if: ${{ github.event_name != 'workflow_dispatch' || contains(inputs.languages || 'rust,csharp,typescript', 'typescript') }}
+        uses: ./.github/actions/setup-pnpm
+        with:
+          run_install: true
+
+      - name: Build TypeScript SDK
+        if: ${{ github.event_name != 'workflow_dispatch' || contains(inputs.languages || 'rust,csharp,typescript', 'typescript') }}
+        run: pnpm build
+        working-directory: crates/bindings-typescript
 
       - name: Build llm-benchmark tool
         run: cargo install --path tools/xtask-llm-benchmark --locked
+
+      - name: Build SpacetimeDB server for benchmark harness
+        run: |
+          cargo ci smoketests prepare
+          mkdir -p "$HOME/.local/bin"
+          ln -sf "$GITHUB_WORKSPACE/target/release/spacetimedb-cli" "$HOME/.local/bin/spacetime"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Run benchmarks
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LLM_VENDOR: openrouter
           LLM_BENCHMARK_API_KEY: ${{ secrets.LLM_BENCHMARK_API_KEY }}
-          LLM_BENCHMARK_UPLOAD_URL: ${{ secrets.LLM_BENCHMARK_UPLOAD_URL }}
+          LLM_BENCHMARK_UPLOAD_URL: ${{ vars.LLM_BENCHMARK_UPLOAD_URL }}
+          DOTNET_MULTILEVEL_LOOKUP: "0"
+          DOTNET_CLI_HOME: ${{ runner.temp }}/dotnet-home
+          DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
           MSBUILDDISABLENODEREUSE: "1"
           DOTNET_CLI_USE_MSBUILD_SERVER: "0"
+          LLM_BENCH_CSHARP_CONCURRENCY: "1"
           INPUT_LANGUAGES: ${{ inputs.languages || 'rust,csharp,typescript' }}
-          INPUT_MODELS: ${{ inputs.models || 'all' }}
+          INPUT_MODEL_SET: ${{ inputs.model_set || 'website_active' }}
+          INPUT_MODELS: ${{ inputs.models || '' }}
           INPUT_MODES: ${{ inputs.modes || 'guidelines,no_context' }}
+          INPUT_CATEGORIES: ${{ inputs.categories || '' }}
+          INPUT_TASKS: ${{ inputs.tasks || '' }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run || 'false' }}
         run: |
           LANGS="$INPUT_LANGUAGES"
+          MODEL_SET="$INPUT_MODEL_SET"
           MODELS="$INPUT_MODELS"
           MODES="$INPUT_MODES"
+          CATEGORIES="$INPUT_CATEGORIES"
+          TASKS="$INPUT_TASKS"
+          DRY_RUN="$INPUT_DRY_RUN"
+
+          case "$MODEL_SET" in
+            website_active)
+              if [ -n "$MODELS" ]; then
+                echo "::error::models is only valid when model_set=explicit"
+                exit 1
+              fi
+              ;;
+            local_defaults)
+              if [ -n "$MODELS" ]; then
+                echo "::error::models is only valid when model_set=explicit"
+                exit 1
+              fi
+              ;;
+            explicit)
+              if [ -z "$MODELS" ]; then
+                echo "::error::models is required when model_set=explicit"
+                exit 1
+              fi
+              read -r -a MODEL_ARGS <<< "$MODELS"
+              ;;
+            *)
+              echo "::error::unknown model_set '$MODEL_SET' (expected website_active, local_defaults, or explicit)"
+              exit 1
+              ;;
+          esac
 
           SUCCEEDED=0
           FAILED=0
           for LANG in $(echo "$LANGS" | tr ',' ' '); do
-            if [ "$MODELS" = "all" ]; then
-              if llm_benchmark run --lang "$LANG" --modes "$MODES"; then
+            EXTRA_ARGS=()
+            if [ -n "$CATEGORIES" ]; then
+              EXTRA_ARGS+=(--categories "$CATEGORIES")
+            fi
+            if [ -n "$TASKS" ]; then
+              EXTRA_ARGS+=(--tasks "$TASKS")
+            fi
+            if [ "$DRY_RUN" = "true" ]; then
+              EXTRA_ARGS+=(--dry-run)
+            fi
+
+            if [ "$MODEL_SET" = "website_active" ]; then
+              if llm_benchmark run --lang "$LANG" --modes "$MODES" --model-source remote "${EXTRA_ARGS[@]}"; then
+                SUCCEEDED=$((SUCCEEDED + 1))
+              else
+                echo "::warning::Benchmark run failed for lang=$LANG"
+                FAILED=$((FAILED + 1))
+              fi
+            elif [ "$MODEL_SET" = "local_defaults" ]; then
+              if llm_benchmark run --lang "$LANG" --modes "$MODES" "${EXTRA_ARGS[@]}"; then
                 SUCCEEDED=$((SUCCEEDED + 1))
               else
                 echo "::warning::Benchmark run failed for lang=$LANG"
                 FAILED=$((FAILED + 1))
               fi
             else
-              if llm_benchmark run --lang "$LANG" --modes "$MODES" --models "$MODELS"; then
+              if llm_benchmark run --lang "$LANG" --modes "$MODES" --models "${MODEL_ARGS[@]}" "${EXTRA_ARGS[@]}"; then
                 SUCCEEDED=$((SUCCEEDED + 1))
               else
                 echo "::warning::Benchmark run failed for lang=$LANG models=$MODELS"
@@ -112,7 +200,7 @@ jobs:
             fi
           done
           echo "Benchmark runs: $SUCCEEDED succeeded, $FAILED failed"
-          if [ "$SUCCEEDED" -eq 0 ] && [ "$FAILED" -gt 0 ]; then
-            echo "::error::All benchmark runs failed"
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::$FAILED benchmark run(s) failed"
             exit 1
           fi

@@ -118,6 +118,16 @@ impl_filterable_value! {
     // &[u8] => Vec<u8>,
 }
 
+/// Marker trait for column types supported as procedural view primary keys.
+#[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "view primary key column type `{Self}` is not supported",
+    label = "view primary key columns must use an index-filterable key type",
+    note = "view primary keys must be integer, bool, string, Identity, Uuid, Timestamp, ConnectionId, Hash, or a no-payload enum which derives SpacetimeType"
+)]
+pub trait ViewPrimaryKeyColumn {}
+impl<T> ViewPrimaryKeyColumn for T where for<'a> &'a T: FilterableValue<Column = T> {}
+
 pub enum TermBound<T> {
     Single(ops::Bound<T>),
     Range(ops::Bound<T>, ops::Bound<T>),
