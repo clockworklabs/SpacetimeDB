@@ -7,6 +7,7 @@ import {
 } from './algebraic_type';
 import type {
   CaseConversionPolicy,
+  RawSubmoduleV10,
   RawModuleDefV10,
   RawModuleDefV10Section,
   RawScopedTypeNameV10,
@@ -42,6 +43,7 @@ export type TableNamesOf<S extends UntypedSchemaDef> = Values<
  */
 export type UntypedSchemaDef = {
   tables: Record<string, UntypedTableDef>;
+  namespaces?: Record<string, UntypedSchemaDef>;
 };
 
 /**
@@ -202,6 +204,7 @@ export class ModuleContext {
     explicitNames: {
       entries: [],
     },
+    submodules: [],
   };
 
   get moduleDef(): ModuleDef {
@@ -266,7 +269,17 @@ export class ModuleContext {
         value: module.caseConversionPolicy,
       }
     );
+    push(
+      module.submodules && {
+        tag: 'Submodules',
+        value: module.submodules,
+      }
+    );
     return { sections };
+  }
+
+  addSubmodule(submodule: RawSubmoduleV10) {
+    this.#moduleDef.submodules.push(submodule);
   }
 
   /**
