@@ -110,6 +110,15 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Enable sccache
+        shell: bash
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >>"$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >>"$GITHUB_ENV"
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
@@ -428,16 +437,24 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Enable sccache
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >>"$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >>"$GITHUB_ENV"
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          save-if: false
+          shared-key: spacetimedb-index-scan
+          cache-on-failure: false
           prefix-key: v1
 
       - name: Run index scan benchmark regression check
-        run: cargo bench -p spacetimedb-bench --bench index_scan_gate
+        run: cargo run --release -p spacetimedb-index-scan-gate
 
   lints:
     needs: [merge_queue_noop]
