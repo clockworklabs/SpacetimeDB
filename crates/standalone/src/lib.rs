@@ -23,6 +23,7 @@ use spacetimedb::util::jobs::JobCores;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api::auth::{self, LOCALHOST};
 use spacetimedb_client_api::routes::subscribe::{HasWebSocketOptions, WebSocketOptions};
+pub use spacetimedb_client_api::routes::subscribe::{BIN_PROTOCOL, TEXT_PROTOCOL};
 use spacetimedb_client_api::{ControlStateReadAccess, DatabaseResetDef, Host, NodeDelegate};
 use spacetimedb_client_api_messages::name::{
     DatabaseName, DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld,
@@ -30,25 +31,25 @@ use spacetimedb_client_api_messages::name::{
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::traits::Program;
+use spacetimedb_fs_utils::dir_size;
 use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
 use spacetimedb_paths::standalone::ControlDbDir;
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
 use spacetimedb_paths::FromPathUnchecked;
 use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
 use spacetimedb_table::page_pool::PagePool;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-pub use spacetimedb_client_api::routes::subscribe::{BIN_PROTOCOL, TEXT_PROTOCOL};
-
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct StandaloneOptions {
     pub db_config: db::Config,
     pub durability: DurabilityConfig,
     pub websocket: WebSocketOptions,
     pub wasm: WasmConfig,
     pub v8: V8Config,
+    pub hot_backup_root: Option<PathBuf>,
 }
 
 pub struct StandaloneEnv {
@@ -60,6 +61,7 @@ pub struct StandaloneEnv {
     _pid_file: PidFile,
     auth_provider: auth::DefaultJwtAuthProvider,
     websocket_options: WebSocketOptions,
+    hot_backup_root: Option<PathBuf>,
 }
 
 impl StandaloneEnv {
@@ -113,6 +115,7 @@ impl StandaloneEnv {
             _pid_file,
             auth_provider: auth_env,
             websocket_options: config.websocket,
+            hot_backup_root: config.hot_backup_root,
         }))
     }
 
@@ -199,47 +202,44 @@ impl NodeDelegate for StandaloneEnv {
         leader: Host,
         output_dir: PathBuf,
     ) -> anyhow::Result<db::relational_db::HotBackupManifest> {
+        use db::relational_db::HotBackupManifest;
+
         let total_start = Instant::now();
+        // Writes the snapshot, commitlog and server state, but leaves
+        // `server/control-db`, `bytes` and `manifest.json` to us.
         let mut manifest = leader.create_hot_backup_without_control_db(&output_dir).await?;
+        // Trust the normalized path used by the engine, not the raw request path.
+        let output_dir = manifest.output_dir.clone();
 
         let export_start = Instant::now();
-        self.control_db
-            .export_to_path(&ControlDbDir::from_path_unchecked(
-                output_dir.join("server").join("control-db"),
-            ))
-            .context("exporting control-db into backup")?;
-        manifest.copy_ms = manifest.copy_ms.saturating_add(elapsed_ms(export_start.elapsed()));
-        manifest.total_ms = elapsed_ms(total_start.elapsed());
+        let control_db = self.control_db.clone();
+        // sled export and the dir-size sweep are blocking; keep them off the async executor.
+        manifest.bytes = spacetimedb::util::asyncify(move || -> anyhow::Result<u64> {
+            control_db
+                .export_to_path(&ControlDbDir::from_path_unchecked(
+                    output_dir.join("server").join("control-db"),
+                ))
+                .context("exporting control-db into backup")?;
+            dir_size(&output_dir).context("measuring backup size")
+        })
+        .await?;
+        manifest.copy_ms = manifest
+            .copy_ms
+            .saturating_add(HotBackupManifest::elapsed_ms(export_start.elapsed()));
+        manifest.total_ms = HotBackupManifest::elapsed_ms(total_start.elapsed());
 
-        let manifest_path = output_dir.join("manifest.json");
-        let _ = std::fs::remove_file(&manifest_path);
-        manifest.bytes = dir_size(&output_dir).context("measuring backup size")?;
-        std::fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest)?)
-            .with_context(|| format!("writing {}", manifest_path.display()))?;
+        // Written last: a `manifest.json` marks a complete backup.
+        db::relational_db::finalize_hot_backup_manifest(&manifest.output_dir, &manifest).await?;
         Ok(manifest)
+    }
+
+    fn hot_backup_root(&self) -> Option<PathBuf> {
+        self.hot_backup_root.clone()
     }
 
     fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir {
         self.data_dir().replica(replica_id).module_logs()
     }
-}
-
-fn elapsed_ms(duration: Duration) -> u64 {
-    duration.as_millis().try_into().unwrap_or(u64::MAX)
-}
-
-fn dir_size(path: &Path) -> std::io::Result<u64> {
-    let mut bytes = 0;
-    for entry in std::fs::read_dir(path)? {
-        let entry = entry?;
-        let meta = entry.metadata()?;
-        if meta.is_dir() {
-            bytes += dir_size(&entry.path())?;
-        } else {
-            bytes += meta.len();
-        }
-    }
-    Ok(bytes)
 }
 
 #[async_trait]
@@ -722,9 +722,10 @@ mod tests {
             websocket: WebSocketOptions::default(),
             wasm: WasmConfig::default(),
             v8: V8Config::default(),
+            hot_backup_root: None,
         };
 
-        let _env = StandaloneEnv::init(config, &ca, data_dir.clone(), JobCores::without_pinned_cores()).await?;
+        let _env = StandaloneEnv::init(config.clone(), &ca, data_dir.clone(), JobCores::without_pinned_cores()).await?;
         // Ensure that we have a lock.
         assert!(
             StandaloneEnv::init(config, &ca, data_dir.clone(), JobCores::without_pinned_cores())

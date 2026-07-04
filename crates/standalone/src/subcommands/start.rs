@@ -5,7 +5,7 @@ use spacetimedb_client_api::{ControlStateReadAccess, NodeDelegate};
 use spacetimedb_pg::pg_server;
 use std::io::{self, Write};
 use std::net::IpAddr;
-use std::path::PathBuf;
+use std::path::{Component, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -110,6 +110,14 @@ struct ConfigFile {
     websocket: WebSocketOptions,
     #[serde(default, alias = "scheduled-backup")]
     scheduled_backup: Option<ScheduledBackupConfig>,
+    #[serde(default, alias = "hot-backup")]
+    hot_backup: HotBackupConfig,
+}
+
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+struct HotBackupConfig {
+    root_dir: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -163,25 +171,52 @@ fn validate_scheduled_backup_config(config: &ScheduledBackupConfig) -> anyhow::R
         "scheduled-backup output-dir must be an absolute server path: {}",
         config.output_dir.display()
     );
+    anyhow::ensure!(
+        !config
+            .output_dir
+            .components()
+            .any(|component| matches!(component, Component::ParentDir)),
+        "scheduled-backup output-dir must not contain `..` components: {}",
+        config.output_dir.display()
+    );
     if let Some(0) = config.keep_last {
         anyhow::bail!("scheduled-backup keep-last must be greater than zero");
     }
     Ok(())
 }
 
+/// Remove old scheduled backups, keeping the most recent `keep-last` complete ones.
+///
+/// A backup is complete iff it contains `manifest.json`, which is written as
+/// the final step of a backup. `stdb-*` directories without a manifest are
+/// leftovers of failed or interrupted backups: they are deleted outright and
+/// never occupy a `keep-last` slot, so they cannot crowd out good backups.
 fn prune_scheduled_backups(config: &ScheduledBackupConfig) -> anyhow::Result<()> {
+    let mut complete = Vec::new();
+    for entry in std::fs::read_dir(&config.output_dir)
+        .with_context(|| format!("reading scheduled-backup output-dir {}", config.output_dir.display()))?
+    {
+        let entry = entry.with_context(|| format!("reading entry in {}", config.output_dir.display()))?;
+        let file_type = entry
+            .file_type()
+            .with_context(|| format!("reading file type for {}", entry.path().display()))?;
+        if !file_type.is_dir() || !entry.file_name().to_string_lossy().starts_with("stdb-") {
+            continue;
+        }
+        if entry.path().join("manifest.json").is_file() {
+            complete.push(entry);
+        } else {
+            log::warn!("removing incomplete scheduled backup {}", entry.path().display());
+            std::fs::remove_dir_all(entry.path())
+                .with_context(|| format!("removing incomplete backup {}", entry.path().display()))?;
+        }
+    }
     let Some(keep_last) = config.keep_last else {
         return Ok(());
     };
-    let mut dirs: Vec<_> = std::fs::read_dir(&config.output_dir)
-        .with_context(|| format!("reading scheduled-backup output-dir {}", config.output_dir.display()))?
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_type().is_ok_and(|ty| ty.is_dir()))
-        .filter(|entry| entry.file_name().to_string_lossy().starts_with("stdb-"))
-        .collect();
-    dirs.sort_by_key(|entry| entry.file_name());
-    let remove_count = dirs.len().saturating_sub(keep_last);
-    for entry in dirs.into_iter().take(remove_count) {
+    complete.sort_by_key(|entry| entry.file_name());
+    let remove_count = complete.len().saturating_sub(keep_last);
+    for entry in complete.into_iter().take(remove_count) {
         std::fs::remove_dir_all(entry.path())
             .with_context(|| format!("removing old backup {}", entry.path().display()))?;
     }
@@ -201,9 +236,14 @@ async fn run_scheduled_backup(ctx: &Arc<StandaloneEnv>, config: &ScheduledBackup
         .with_context(|| format!("scheduled-backup database `{}` not found", config.database))?;
     let output_dir = config.output_dir.join(backup_dir_name());
     let leader = ctx.leader(database.id).await?;
-    ctx.create_hot_backup(leader, output_dir).await?;
-    prune_scheduled_backups(config)?;
-    Ok(())
+    let backup_result = ctx.create_hot_backup(leader, output_dir).await;
+    // Prune even if this run failed, so directories left behind by failed
+    // backups are cleaned up instead of accumulating; pruning is blocking
+    // filesystem work, so keep it off the async executor.
+    let prune_config = config.clone();
+    let prune_result = spacetimedb::util::asyncify(move || prune_scheduled_backups(&prune_config)).await;
+    backup_result?;
+    prune_result
 }
 
 fn spawn_scheduled_backup(ctx: Arc<StandaloneEnv>, config: ScheduledBackupConfig) -> JoinHandle<()> {
@@ -303,6 +343,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
             websocket: config.websocket,
             wasm: config.common.wasm,
             v8: config.common.v8,
+            hot_backup_root: config.hot_backup.root_dir.clone(),
         },
         &certs,
         data_dir,
@@ -636,6 +677,46 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
+    fn scheduled_backup_config(output_dir: PathBuf, keep_last: Option<usize>) -> ScheduledBackupConfig {
+        ScheduledBackupConfig {
+            database: NameOrIdentity::Name("mydb".parse().unwrap()),
+            output_dir,
+            interval: Duration::from_secs(60),
+            keep_last,
+        }
+    }
+
+    #[test]
+    fn prune_scheduled_backups_deletes_incomplete_backups_without_keep_last() {
+        let temp = tempfile::tempdir().unwrap();
+        let incomplete = temp.path().join("stdb-incomplete");
+        let complete = temp.path().join("stdb-complete");
+        let unrelated = temp.path().join("not-a-backup");
+
+        std::fs::create_dir(&incomplete).unwrap();
+        std::fs::write(incomplete.join("partial"), b"not done").unwrap();
+        std::fs::create_dir(&complete).unwrap();
+        std::fs::write(complete.join("manifest.json"), b"{}").unwrap();
+        std::fs::create_dir(&unrelated).unwrap();
+
+        prune_scheduled_backups(&scheduled_backup_config(temp.path().to_path_buf(), None)).unwrap();
+
+        assert!(!incomplete.exists());
+        assert!(complete.exists());
+        assert!(unrelated.exists());
+    }
+
+    #[test]
+    fn scheduled_backup_config_rejects_parent_components() {
+        let mut path = std::env::temp_dir();
+        path.push("..");
+        path.push("backups");
+
+        let err = validate_scheduled_backup_config(&scheduled_backup_config(path, Some(1))).unwrap_err();
+
+        assert!(err.to_string().contains("must not contain `..`"));
+    }
+
     #[test]
     fn options_from_partial_toml() {
         let toml = r#"
@@ -668,6 +749,9 @@ mod tests {
             offset-index-require-segment-fsync = false
             preallocate-segments = true
             write-buffer-size = 131072
+
+            [hot-backup]
+            root-dir = "/var/backups/stdb-http"
 
             [scheduled-backup]
             database = "mydb"
@@ -706,6 +790,10 @@ mod tests {
         assert_eq!(
             config.commitlog.write_buffer_size.map(|val| val.get()),
             Some(128 * 1024)
+        );
+        assert_eq!(
+            config.hot_backup.root_dir,
+            Some(PathBuf::from("/var/backups/stdb-http"))
         );
 
         assert_eq!(

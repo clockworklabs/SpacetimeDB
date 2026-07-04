@@ -25,10 +25,10 @@ pub fn cli() -> Command {
                 .arg(
                     Arg::new("output_dir")
                         .long("output-dir")
-                        .value_name("SERVER_OUTPUT_DIR")
+                        .value_name("ROOT_RELATIVE_OUTPUT_DIR")
                         .required(true)
                         .value_parser(clap::value_parser!(PathBuf))
-                        .help("Directory on the server where the backup will be written; it must be empty"),
+                        .help("Directory relative to the server's configured hot-backup root; it must be empty"),
                 )
                 .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
                 .arg(common_args::anonymous())
@@ -103,7 +103,7 @@ async fn exec_create(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
     let resolved = resolve_database_arg(
         database_arg,
         config_targets.as_deref(),
-        "spacetime backup create --database <database> --output-dir <server-output-dir> [--no-config]",
+        "spacetime backup create --database <database> --output-dir <root-relative-output-dir> [--no-config]",
     )?;
     let server = server_from_cli.or(resolved.server.as_deref());
 

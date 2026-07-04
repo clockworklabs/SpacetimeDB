@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::future::Future;
 use std::num::NonZeroU8;
-use std::path::PathBuf;
+use std::path::{Component, Path as StdPath, PathBuf};
 use std::str::FromStr;
 use std::time::Duration;
 use std::{env, io};
@@ -43,6 +43,7 @@ use spacetimedb_client_api_messages::name::{
     self, DatabaseName, DomainName, MigrationPolicy, PrePublishAutoMigrateResult, PrePublishManualMigrateResult,
     PrePublishResult, PrettyPrintStyle, PublishOp, PublishResult,
 };
+use spacetimedb_fs_utils::normalize_absolute_path;
 use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::{http as st_http, ConnectionId};
@@ -688,6 +689,45 @@ pub struct BackupRequest {
     server_output_dir: PathBuf,
 }
 
+fn bad_backup_request(message: impl Into<String>) -> ErrorResponse {
+    (StatusCode::BAD_REQUEST, message.into()).into()
+}
+
+fn resolve_hot_backup_output_dir(
+    hot_backup_root: Option<PathBuf>,
+    requested: &StdPath,
+) -> axum::response::Result<PathBuf> {
+    let root = hot_backup_root
+        .ok_or_else(|| ErrorResponse::from((StatusCode::NOT_FOUND, "hot backup endpoint is disabled")))?;
+
+    if requested.as_os_str().is_empty() {
+        return Err(bad_backup_request("backup output path must not be empty"));
+    }
+    if requested.is_absolute() {
+        return Err(bad_backup_request(
+            "backup output path must be relative to the configured hot backup root",
+        ));
+    }
+    if requested
+        .components()
+        .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return Err(bad_backup_request(
+            "backup output path must contain only normal relative path components",
+        ));
+    }
+
+    let root = normalize_absolute_path(&root).map_err(log_and_500)?;
+    let output_dir = normalize_absolute_path(&root.join(requested)).map_err(log_and_500)?;
+    if !output_dir.starts_with(&root) {
+        return Err(bad_backup_request(
+            "backup output path must remain within the configured hot backup root",
+        ));
+    }
+
+    Ok(output_dir)
+}
+
 pub async fn backup<S>(
     State(worker_ctx): State<S>,
     Path(BackupParams { name_or_identity }): Path<BackupParams>,
@@ -702,6 +742,7 @@ where
         .authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
         .await?;
 
+    let server_output_dir = resolve_hot_backup_output_dir(worker_ctx.hot_backup_root(), &server_output_dir)?;
     let manifest = worker_ctx
         .create_hot_backup(leader, server_output_dir)
         .await
@@ -1713,6 +1754,7 @@ mod tests {
     };
     use async_trait::async_trait;
     use axum::body::Body;
+    use axum::response::IntoResponse;
     use http::Request;
     use spacetimedb::auth::identity::{JwtError, JwtErrorKind, SpacetimeIdentityClaims};
     use spacetimedb::auth::token_validation::{TokenSigner, TokenValidationError, TokenValidator};
@@ -1726,6 +1768,7 @@ mod tests {
     use spacetimedb_paths::server::ModuleLogsDir;
     use spacetimedb_paths::FromPathUnchecked;
     use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
+    use std::path::Path as StdPath;
     use tower::util::ServiceExt;
     #[derive(Clone, Default)]
     struct DummyValidator;
@@ -1967,6 +2010,56 @@ mod tests {
         async fn authorize_sql(&self, _subject: Identity, _database: Identity) -> Result<AuthCtx, Unauthorized> {
             Err(Unauthorized::InternalError(anyhow::anyhow!("unused")))
         }
+    }
+
+    fn err_status(result: axum::response::Result<PathBuf>) -> StatusCode {
+        axum::response::Result::<()>::Err(result.unwrap_err())
+            .into_response()
+            .status()
+    }
+
+    #[test]
+    fn backup_output_dir_requires_configured_root() {
+        assert_eq!(
+            err_status(resolve_hot_backup_output_dir(None, StdPath::new("backup-1"))),
+            StatusCode::NOT_FOUND
+        );
+    }
+
+    #[test]
+    fn backup_output_dir_resolves_relative_path_under_root() {
+        let root = tempfile::tempdir().unwrap();
+
+        let output =
+            resolve_hot_backup_output_dir(Some(root.path().to_path_buf()), StdPath::new("db/backup-1")).unwrap();
+
+        assert_eq!(output, root.path().canonicalize().unwrap().join("db/backup-1"));
+    }
+
+    #[test]
+    fn backup_output_dir_rejects_absolute_path() {
+        let root = tempfile::tempdir().unwrap();
+
+        assert_eq!(
+            err_status(resolve_hot_backup_output_dir(
+                Some(root.path().to_path_buf()),
+                root.path()
+            )),
+            StatusCode::BAD_REQUEST
+        );
+    }
+
+    #[test]
+    fn backup_output_dir_rejects_parent_components() {
+        let root = tempfile::tempdir().unwrap();
+
+        assert_eq!(
+            err_status(resolve_hot_backup_output_dir(
+                Some(root.path().to_path_buf()),
+                StdPath::new("../escape")
+            )),
+            StatusCode::BAD_REQUEST
+        );
     }
 
     /// Tests that requests to user-defined routes under `/database/:name-or-identity/routes`

@@ -67,6 +67,14 @@ pub trait NodeDelegate: Send + Sync {
     ) -> anyhow::Result<spacetimedb::db::relational_db::HotBackupManifest> {
         leader.create_hot_backup(output_dir).await
     }
+    /// Root directory under which HTTP-initiated hot backups may be written.
+    ///
+    /// Requested backup output directories are resolved against and confined
+    /// to this directory. Returning `None` (the default) disables the HTTP
+    /// backup endpoints entirely.
+    fn hot_backup_root(&self) -> Option<PathBuf> {
+        None
+    }
     fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir;
 }
 
@@ -119,16 +127,8 @@ impl Host {
         &self,
         output_dir: impl AsRef<Path>,
     ) -> anyhow::Result<spacetimedb::db::relational_db::HotBackupManifest> {
-        let module = self.module().await?;
-        module
-            .relational_db()
-            .create_hot_backup(
-                &self.host_controller.data_dir.replica(self.replica_id),
-                Some(&self.host_controller.data_dir),
-                self.replica_id,
-                output_dir,
-            )
-            .await
+        let _ = output_dir;
+        anyhow::bail!("hot backup requires the node delegate to export control-db and finalize the backup manifest")
     }
 
     pub async fn create_hot_backup_without_control_db(
@@ -542,6 +542,10 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
         output_dir: PathBuf,
     ) -> anyhow::Result<spacetimedb::db::relational_db::HotBackupManifest> {
         (**self).create_hot_backup(leader, output_dir).await
+    }
+
+    fn hot_backup_root(&self) -> Option<PathBuf> {
+        (**self).hot_backup_root()
     }
 
     fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir {

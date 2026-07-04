@@ -277,6 +277,7 @@ impl CompiledModule {
                 websocket: WebSocketOptions::default(),
                 wasm: Default::default(),
                 v8: Default::default(),
+                hot_backup_root: None,
             },
             &certs,
             paths.data_dir.into(),

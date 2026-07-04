@@ -7,6 +7,7 @@ use crate::util::asyncify;
 use crate::MetricsRecorderQueue;
 use anyhow::{anyhow, Context};
 use enum_map::EnumMap;
+use parking_lot::Mutex;
 use spacetimedb_commitlog::repo::OnNewSegmentFn;
 use spacetimedb_commitlog::{self as commitlog, Commitlog, SizeOnDisk};
 use spacetimedb_data_structures::map::HashSet;
@@ -36,6 +37,7 @@ use spacetimedb_datastore::{
     traits::TxData,
 };
 use spacetimedb_durability::{self as durability, History};
+use spacetimedb_fs_utils::{copy_dir_all, dir_size, normalize_absolute_path};
 use spacetimedb_lib::bsatn::ToBsatn;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
@@ -64,6 +66,7 @@ use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::table::{RowRef, TableScanIter};
 use spacetimedb_table::table_index::IndexKey;
 use std::borrow::Cow;
+use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::io;
 use std::ops::RangeBounds;
@@ -147,6 +150,15 @@ pub struct HotBackupManifest {
     pub copy_ms: u64,
     pub total_ms: u64,
     pub bytes: u64,
+}
+
+impl HotBackupManifest {
+    /// Convert a [`Duration`] to whole milliseconds, saturating at `u64::MAX`.
+    ///
+    /// Used to fill in the `*_ms` timing fields of the manifest.
+    pub fn elapsed_ms(duration: Duration) -> u64 {
+        duration.as_millis().try_into().unwrap_or(u64::MAX)
+    }
 }
 
 impl std::fmt::Debug for RelationalDB {
@@ -989,6 +1001,13 @@ impl RelationalDB {
 
     /// Export a point-in-time hot backup into `output_dir`, leaving `server/control-db`
     /// for the caller to provide.
+    ///
+    /// Unlike [`Self::create_hot_backup`], this does **not** compute
+    /// [`HotBackupManifest::bytes`] (it is left at 0) and does **not** write
+    /// `manifest.json`: the caller is expected to add `server/control-db` and
+    /// then finalize the manifest itself. This both avoids traversing the
+    /// backup tree twice and makes `manifest.json` a reliable marker of a
+    /// fully-written backup.
     pub async fn create_hot_backup_without_control_db(
         &self,
         replica_dir: &ReplicaDir,
@@ -1014,12 +1033,18 @@ impl RelationalDB {
             .as_ref()
             .context("durability runtime is not enabled for this database")?
             .clone();
-        let output_dir = output_dir.as_ref().to_path_buf();
-        ensure_backup_path(replica_dir, server_data_dir, &output_dir)?;
+        let output_dir = ensure_backup_path(replica_dir, server_data_dir, output_dir.as_ref())?;
+        // Guard against two concurrent backups interleaving writes into the same
+        // directory after both passed the `ensure_empty_dir` check.
+        let _dir_guard = BackupDirGuard::acquire(&output_dir)?;
+        anyhow::ensure!(
+            !(copy_control_db && server_data_dir.is_some()),
+            "copying live server/control-db is not supported by hot backup; export control-db separately and finalize the manifest after the export"
+        );
 
         let snapshot_start = Instant::now();
         let snapshot_offset = self.request_hot_backup_snapshot().await?;
-        let snapshot_ms = elapsed_ms(snapshot_start.elapsed());
+        let snapshot_ms = HotBackupManifest::elapsed_ms(snapshot_start.elapsed());
         let durable_offset = snapshot_offset;
 
         let copy_start = Instant::now();
@@ -1032,9 +1057,20 @@ impl RelationalDB {
                 .file_name()
                 .context("snapshot directory has no file name")?,
         );
-        wait_for_dir(&src_snapshot_dir.0).await?;
+        // `request_hot_backup_snapshot` returns only after the snapshot worker has
+        // fsynced the snapshot to disk (see `SnapshotWorker::ensure_snapshot_at_least`),
+        // so both paths must already exist; a missing path is a bug, not a timing issue.
+        anyhow::ensure!(
+            src_snapshot_dir.0.is_dir(),
+            "snapshot directory does not exist: {}",
+            src_snapshot_dir.display()
+        );
         let src_snapshot_file = src_snapshot_dir.snapshot_file(snapshot_offset);
-        wait_for_file(&src_snapshot_file.0).await?;
+        anyhow::ensure!(
+            src_snapshot_file.0.is_file(),
+            "snapshot file does not exist: {}",
+            src_snapshot_file.display()
+        );
         let snapshot_file_name: OsString = src_snapshot_file
             .0
             .file_name()
@@ -1057,7 +1093,7 @@ impl RelationalDB {
             copy_server_state(&runtime, server_data_dir, &output_dir, copy_control_db).await?;
         }
         copy_commitlog_range(replica_dir.commit_log(), output_dir.join("clog"), snapshot_offset).await?;
-        let copy_ms = elapsed_ms(copy_start.elapsed());
+        let copy_ms = HotBackupManifest::elapsed_ms(copy_start.elapsed());
 
         let mut manifest = HotBackupManifest {
             version: 1,
@@ -1068,15 +1104,20 @@ impl RelationalDB {
             output_dir: output_dir.clone(),
             snapshot_ms,
             copy_ms,
-            total_ms: elapsed_ms(total_start.elapsed()),
+            total_ms: HotBackupManifest::elapsed_ms(total_start.elapsed()),
             bytes: 0,
         };
-        manifest.bytes = asyncify(&runtime, {
-            let output_dir = output_dir.clone();
-            move || dir_size(&output_dir)
-        })
-        .await?;
-        write_hot_backup_manifest(&runtime, &output_dir, &manifest).await?;
+        // When the caller provides `server/control-db` itself, leave `bytes`
+        // and `manifest.json` to it, so the backup tree is only traversed once
+        // and the manifest is written exactly once, after the backup is complete.
+        if copy_control_db {
+            manifest.bytes = asyncify(&runtime, {
+                let output_dir = output_dir.clone();
+                move || dir_size(&output_dir)
+            })
+            .await?;
+            write_hot_backup_manifest(&runtime, &output_dir, &manifest).await?;
+        }
         Ok(manifest)
     }
 
@@ -2011,6 +2052,77 @@ async fn write_hot_backup_manifest(
     Ok(())
 }
 
+/// Write `manifest` as `manifest.json` into `output_dir` on a blocking thread.
+///
+/// Exposed for callers of
+/// [`RelationalDB::create_hot_backup_without_control_db`], which finalize the
+/// manifest themselves after adding their own state to the backup.
+pub async fn finalize_hot_backup_manifest(output_dir: &Path, manifest: &HotBackupManifest) -> anyhow::Result<()> {
+    write_hot_backup_manifest(&Handle::tokio_current(), output_dir, manifest).await
+}
+
+/// Serializes concurrent hot backups into the same output directory within
+/// this process.
+///
+/// Two concurrent backups into the same (empty) directory would both pass the
+/// `ensure_empty_dir` check and interleave their writes, producing a corrupt
+/// backup. Registering the normalized output path in a process-wide set closes
+/// that race; the path is released when the guard drops.
+struct BackupDirGuard(PathBuf);
+
+static ACTIVE_BACKUP_DIRS: Mutex<BTreeSet<PathBuf>> = Mutex::new(BTreeSet::new());
+
+impl BackupDirGuard {
+    fn acquire(output_dir: &Path) -> anyhow::Result<Self> {
+        let mut active = ACTIVE_BACKUP_DIRS.lock();
+        if let Some(overlapping) = active
+            .iter()
+            .find(|active_dir| backup_paths_overlap(output_dir, active_dir))
+        {
+            anyhow::bail!(
+                "backup output path {} overlaps with in-progress backup {}",
+                output_dir.display(),
+                overlapping.display()
+            );
+        }
+        anyhow::ensure!(
+            active.insert(output_dir.to_path_buf()),
+            "a backup into {} is already in progress",
+            output_dir.display()
+        );
+        Ok(Self(output_dir.to_path_buf()))
+    }
+}
+
+#[cfg(windows)]
+fn backup_path_components(path: &Path) -> Vec<String> {
+    path.components()
+        .map(|component| component.as_os_str().to_string_lossy().to_ascii_lowercase())
+        .collect()
+}
+
+#[cfg(windows)]
+fn backup_path_starts_with(path: &Path, base: &Path) -> bool {
+    let path = backup_path_components(path);
+    let base = backup_path_components(base);
+    base.len() <= path.len() && path.iter().zip(&base).all(|(path, base)| path == base)
+}
+
+#[cfg(not(windows))]
+fn backup_path_starts_with(path: &Path, base: &Path) -> bool {
+    path.starts_with(base)
+}
+
+fn backup_paths_overlap(a: &Path, b: &Path) -> bool {
+    backup_path_starts_with(a, b) || backup_path_starts_with(b, a)
+}
+
+impl Drop for BackupDirGuard {
+    fn drop(&mut self) {
+        ACTIVE_BACKUP_DIRS.lock().remove(&self.0);
+    }
+}
+
 fn ensure_empty_dir(path: &Path) -> anyhow::Result<()> {
     if path.exists() {
         anyhow::ensure!(
@@ -2029,29 +2141,42 @@ fn ensure_empty_dir(path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Validate `output_dir` as a hot backup destination and return its
+/// normalized form.
+///
+/// The path must be absolute and, after resolving symlinks in its existing
+/// ancestors and rejecting `..` components (see
+/// [`spacetimedb_fs_utils::normalize_absolute_path`]), must not point inside
+/// the server data directory or the replica directory. All subsequent backup
+/// I/O must use the returned path, so the checks cannot be bypassed via
+/// symlinks or path traversal.
 fn ensure_backup_path(
     replica_dir: &ReplicaDir,
     server_data_dir: Option<&ServerDataDir>,
     output_dir: &Path,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<PathBuf> {
     anyhow::ensure!(
         output_dir.is_absolute(),
         "backup output directory must be an absolute server path: {}",
         output_dir.display()
     );
+    let output_dir = normalize_absolute_path(output_dir).context("normalizing the backup output directory path")?;
     if let Some(server_data_dir) = server_data_dir {
+        let data_dir = normalize_absolute_path(&server_data_dir.0).unwrap_or_else(|_| server_data_dir.0.to_path_buf());
         anyhow::ensure!(
-            !output_dir.starts_with(&server_data_dir.0),
+            !output_dir.starts_with(&data_dir),
             "backup output directory must not be inside the server data directory: {}",
             output_dir.display()
         );
     }
+    let replica_dir_normalized =
+        normalize_absolute_path(&replica_dir.0).unwrap_or_else(|_| replica_dir.0.to_path_buf());
     anyhow::ensure!(
-        !output_dir.starts_with(&replica_dir.0),
+        !output_dir.starts_with(&replica_dir_normalized),
         "backup output directory must not be inside the replica directory: {}",
         replica_dir.display()
     );
-    Ok(())
+    Ok(output_dir)
 }
 
 async fn copy_server_state(
@@ -2063,14 +2188,12 @@ async fn copy_server_state(
     let data_dir = data_dir.clone();
     let output_dir = output_dir.to_path_buf();
     asyncify(runtime, move || -> anyhow::Result<()> {
+        debug_assert!(!copy_control_db);
         let server_dir = output_dir.join("server");
         std::fs::create_dir_all(&server_dir)?;
 
         copy_required_file(&data_dir.config_toml().0, &server_dir.join("config.toml"))?;
         copy_required_file(&data_dir.metadata_toml().0, &server_dir.join("metadata.toml"))?;
-        if copy_control_db {
-            copy_required_dir(&data_dir.control_db().0, &server_dir.join("control-db"))?;
-        }
         copy_required_dir(&data_dir.program_bytes().0, &server_dir.join("program-bytes"))?;
         Ok(())
     })
@@ -2090,23 +2213,6 @@ fn copy_required_file(src: &Path, dst: &Path) -> anyhow::Result<()> {
 fn copy_required_dir(src: &Path, dst: &Path) -> anyhow::Result<()> {
     anyhow::ensure!(src.is_dir(), "server state directory is missing: {}", src.display());
     copy_dir_all(src, dst).with_context(|| format!("copying {} to {}", src.display(), dst.display()))
-}
-
-fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<()> {
-    let src = src.as_ref();
-    let dst = dst.as_ref();
-    std::fs::create_dir_all(dst)?;
-    for entry in std::fs::read_dir(src)? {
-        let entry = entry?;
-        let ty = entry.file_type()?;
-        let dst = dst.join(entry.file_name());
-        if ty.is_dir() {
-            copy_dir_all(entry.path(), dst)?;
-        } else {
-            std::fs::copy(entry.path(), dst)?;
-        }
-    }
-    Ok(())
 }
 
 fn copy_dir_all_retry(src: &Path, dst: &Path, required_file_name: &OsString) -> anyhow::Result<()> {
@@ -2152,50 +2258,6 @@ fn copy_snapshot_dir(src: &Path, dst: &Path, required_file_name: &OsString) -> a
         dst.display(),
         required_file_name.to_string_lossy()
     );
-    Ok(())
-}
-
-fn dir_size(path: &Path) -> io::Result<u64> {
-    let mut bytes = 0;
-    for entry in std::fs::read_dir(path)? {
-        let entry = entry?;
-        let meta = entry.metadata()?;
-        if meta.is_dir() {
-            bytes += dir_size(&entry.path())?;
-        } else {
-            bytes += meta.len();
-        }
-    }
-    Ok(bytes)
-}
-
-fn elapsed_ms(duration: Duration) -> u64 {
-    duration.as_millis().try_into().unwrap_or(u64::MAX)
-}
-
-async fn wait_for_dir(path: &Path) -> anyhow::Result<()> {
-    let start = Instant::now();
-    while !path.is_dir() {
-        anyhow::ensure!(
-            start.elapsed() < Duration::from_secs(5),
-            "directory did not appear: {}",
-            path.display()
-        );
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    Ok(())
-}
-
-async fn wait_for_file(path: &Path) -> anyhow::Result<()> {
-    let start = Instant::now();
-    while !path.is_file() {
-        anyhow::ensure!(
-            start.elapsed() < Duration::from_secs(5),
-            "file did not appear: {}",
-            path.display()
-        );
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
     Ok(())
 }
 
@@ -4160,6 +4222,36 @@ mod tests {
     }
 
     #[test]
+    fn hot_backup_concurrent_snapshot_requests_do_not_rewrite_same_offset_snapshot() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
+        stdb.commit_tx(tx)?;
+
+        let offsets = stdb.runtime().unwrap().block_on(async {
+            tokio::time::timeout(HOT_BACKUP_TEST_TIMEOUT, async {
+                futures::future::join_all((0..8).map(|_| stdb.request_hot_backup_snapshot()))
+                    .await
+                    .into_iter()
+                    .collect::<std::result::Result<Vec<_>, _>>()
+            })
+            .await
+        })??;
+        let snapshot_offset = offsets[0];
+        assert!(offsets.iter().all(|offset| *offset == snapshot_offset));
+        let repo = open_snapshot_repo(stdb.path().unwrap().snapshots(), stdb.database_identity(), 0)?;
+        let snapshot_dir = repo.snapshot_dir_path(snapshot_offset);
+        let sentinel = snapshot_dir.0.join("hot-backup-sentinel");
+        std::fs::write(&sentinel, b"keep")?;
+
+        std::thread::sleep(Duration::from_millis(250));
+
+        assert!(sentinel.is_file(), "same-offset snapshot was rewritten");
+        Ok(())
+    }
+
+    #[test]
     fn hot_backup_create_writes_manifest_snapshot_and_commitlog() -> anyhow::Result<()> {
         let stdb = TestDB::durable()?;
 
@@ -4206,7 +4298,7 @@ mod tests {
     }
 
     #[test]
-    fn hot_backup_create_copies_server_state_when_provided() -> anyhow::Result<()> {
+    fn hot_backup_create_without_control_db_copies_other_server_state() -> anyhow::Result<()> {
         let stdb = TestDB::durable()?;
 
         let mut tx = begin_mut_tx(&stdb);
@@ -4223,14 +4315,16 @@ mod tests {
         std::fs::write(data.path().join("program-bytes/program"), b"program")?;
 
         let backup_dir = tempfile::tempdir()?;
-        stdb.runtime().unwrap().block_on(async {
+        let manifest = stdb.runtime().unwrap().block_on(async {
             tokio::time::timeout(
                 HOT_BACKUP_TEST_TIMEOUT,
-                stdb.create_hot_backup(stdb.path().unwrap(), Some(&data_dir), 0, backup_dir.path()),
+                stdb.create_hot_backup_without_control_db(stdb.path().unwrap(), Some(&data_dir), 0, backup_dir.path()),
             )
             .await
         })??;
 
+        assert_eq!(manifest.bytes, 0);
+        assert!(!backup_dir.path().join("manifest.json").exists());
         assert_eq!(
             std::fs::read_to_string(backup_dir.path().join("server/config.toml"))?,
             "config"
@@ -4239,9 +4333,41 @@ mod tests {
             std::fs::read_to_string(backup_dir.path().join("server/metadata.toml"))?,
             "metadata"
         );
-        assert!(backup_dir.path().join("server/control-db/control").is_file());
+        assert!(!backup_dir.path().join("server/control-db").exists());
         assert!(backup_dir.path().join("server/program-bytes/program").is_file());
 
+        Ok(())
+    }
+
+    #[test]
+    fn hot_backup_rejects_raw_copy_of_live_control_db() -> anyhow::Result<()> {
+        let stdb = TestDB::durable()?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
+        stdb.commit_tx(tx)?;
+
+        let data = tempfile::tempdir()?;
+        let data_dir = ServerDataDir::from_path_unchecked(data.path());
+        std::fs::write(data.path().join("config.toml"), b"config")?;
+        std::fs::write(data.path().join("metadata.toml"), b"metadata")?;
+        std::fs::create_dir_all(data.path().join("control-db"))?;
+        std::fs::write(data.path().join("control-db/control"), b"control")?;
+        std::fs::create_dir_all(data.path().join("program-bytes"))?;
+        std::fs::write(data.path().join("program-bytes/program"), b"program")?;
+
+        let backup_dir = tempfile::tempdir()?;
+        let result = stdb.runtime().unwrap().block_on(async {
+            tokio::time::timeout(
+                HOT_BACKUP_TEST_TIMEOUT,
+                stdb.create_hot_backup(stdb.path().unwrap(), Some(&data_dir), 0, backup_dir.path()),
+            )
+            .await
+        })?;
+        let err = result.unwrap_err();
+
+        assert!(err.to_string().contains("control-db"));
+        assert!(!backup_dir.path().join("manifest.json").exists());
         Ok(())
     }
 
@@ -4263,6 +4389,29 @@ mod tests {
             .block_on(stdb.create_hot_backup(replica_dir, None, 0, replica_dir.0.join("backup")))
             .unwrap_err();
         assert!(err.to_string().contains("replica directory"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn hot_backup_dir_guard_rejects_parent_child_overlap() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let parent = temp.path().join("backup");
+        let child = parent.join("nested");
+
+        let parent_guard = BackupDirGuard::acquire(&parent)?;
+        let Err(err) = BackupDirGuard::acquire(&child) else {
+            panic!("child backup directory overlapped active parent");
+        };
+        assert!(err.to_string().contains("overlaps"));
+        drop(parent_guard);
+
+        let child_guard = BackupDirGuard::acquire(&child)?;
+        let Err(err) = BackupDirGuard::acquire(&parent) else {
+            panic!("parent backup directory overlapped active child");
+        };
+        assert!(err.to_string().contains("overlaps"));
+        drop(child_guard);
 
         Ok(())
     }

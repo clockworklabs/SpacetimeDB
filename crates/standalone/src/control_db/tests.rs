@@ -5,6 +5,7 @@ use spacetimedb::messages::control_db::HostType;
 use spacetimedb_client_api::auth::LOCALHOST;
 use spacetimedb_lib::error::ResultTest;
 use spacetimedb_lib::Hash;
+use spacetimedb_paths::FromPathUnchecked;
 use tempfile::TempDir;
 
 use super::*;
@@ -173,7 +174,7 @@ fn test_export_to_path_can_be_opened() -> anyhow::Result<()> {
         leader: true,
     })?;
 
-    cdb.export_to_path(&ControlDbDir(dst.path().to_path_buf()))?;
+    cdb.export_to_path(&ControlDbDir::from_path_unchecked(dst.path()))?;
     let exported = ControlDb::at(dst.path())?;
 
     assert!(exported.get_database_by_id(database_id)?.is_some());

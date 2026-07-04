@@ -64,6 +64,11 @@ directives = [
 # Size in bytes of the memory buffer holding commit data before flushing to storage.
 # write-buffer-size = 131072
 
+# [hot-backup]
+# HTTP/CLI-triggered backup output paths are relative to this server-side root.
+# Omit to disable POST /v1/database/:name/backup.
+# root-dir = "/var/backups/stdb"
+
 # [scheduled-backup]
 # database = "mydb"
 # output-dir = "/var/backups/stdb"

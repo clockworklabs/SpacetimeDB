@@ -127,7 +127,7 @@ impl SnapshotWorker {
     /// which is likely due to it having panicked.
     pub fn request_snapshot(&self) {
         self.request_snapshot
-            .unbounded_send(Request::TakeSnapshot)
+            .unbounded_send(Request::TakeSnapshot { min_offset: None })
             .expect("snapshot worker panicked");
     }
 
@@ -136,7 +136,9 @@ impl SnapshotWorker {
     /// Used by the durability to request snapshots on commitlog segment rotation,
     /// since the durability should continue writing queued TXes even if the snapshot worker panics.
     pub fn request_snapshot_ignore_closed(&self) {
-        let _ = self.request_snapshot.unbounded_send(Request::TakeSnapshot);
+        let _ = self
+            .request_snapshot
+            .unbounded_send(Request::TakeSnapshot { min_offset: None });
     }
 
     /// Subscribe to the [TxOffset]s of snapshots created by this worker.
@@ -157,7 +159,11 @@ impl SnapshotWorker {
         }
 
         let mut snapshot_created = self.subscribe();
-        self.request_snapshot();
+        self.request_snapshot
+            .unbounded_send(Request::TakeSnapshot {
+                min_offset: Some(offset),
+            })
+            .expect("snapshot worker panicked");
         loop {
             snapshot_created
                 .changed()
@@ -190,7 +196,7 @@ impl SnapshotMetrics {
 type WeakDatabaseState = Weak<RwLock<CommittedState>>;
 
 enum Request {
-    TakeSnapshot,
+    TakeSnapshot { min_offset: Option<TxOffset> },
     ReplaceState(SnapshotDatabaseState),
 }
 
@@ -223,13 +229,24 @@ impl SnapshotWorkerActor {
         let mut database_state: Option<WeakDatabaseState> = None;
         while let Some(req) = self.snapshot_requests.next().await {
             match req {
-                Request::TakeSnapshot => {
+                Request::TakeSnapshot { min_offset } => {
+                    if let Some(min_offset) = min_offset
+                        && let Ok(Some(latest)) = self.snapshot_repo.latest_snapshot()
+                        && latest >= min_offset
+                    {
+                        self.snapshot_created.send_replace(latest);
+                        continue;
+                    }
                     let res = self
                         .maybe_take_snapshot(database_state.as_ref())
                         .await
                         .inspect_err(|e| warn!("database={database_identity} SnapshotWorker: {e:#}"));
                     if let Ok(snapshot_offset) = res {
                         self.maybe_compress_snapshots(snapshot_offset).await;
+                        // INVARIANT: only signal `snapshot_created` after the snapshot
+                        // is fully durable on disk (`take_snapshot` returns post-fsync).
+                        // Hot backup relies on this to copy the snapshot directory as
+                        // soon as it observes the offset.
                         self.snapshot_created.send_replace(snapshot_offset);
                     }
                 }
