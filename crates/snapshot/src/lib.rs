@@ -1574,7 +1574,10 @@ impl FileOrDirPath<'_> {
     fn sync_all(&self) -> io::Result<()> {
         match self {
             #[cfg(target_os = "windows")]
-            Self::Dir(path) => Ok(()),
+            Self::Dir(path) => {
+                let _ = path;
+                Ok(())
+            }
             #[cfg(not(target_os = "windows"))]
             Self::Dir(path) => File::open(path)
                 .map_err(|e| {

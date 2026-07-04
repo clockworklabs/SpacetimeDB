@@ -37,7 +37,9 @@ use spacetimedb_datastore::{
     traits::TxData,
 };
 use spacetimedb_durability::{self as durability, History};
-use spacetimedb_fs_utils::{copy_dir_all, dir_size, normalize_absolute_path};
+use spacetimedb_fs_utils::{
+    atomic_write_bytes, copy_dir_all, copy_file_sync, create_dir_all_sync, dir_size, normalize_absolute_path, sync_dir,
+};
 use spacetimedb_lib::bsatn::ToBsatn;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
@@ -2048,7 +2050,10 @@ async fn write_hot_backup_manifest(
 ) -> anyhow::Result<()> {
     let output_dir = output_dir.to_path_buf();
     let json = serde_json::to_vec_pretty(manifest)?;
-    asyncify(runtime, move || std::fs::write(output_dir.join("manifest.json"), json)).await?;
+    asyncify(runtime, move || {
+        atomic_write_bytes(&output_dir.join("manifest.json"), &json)
+    })
+    .await?;
     Ok(())
 }
 
@@ -2136,7 +2141,7 @@ fn ensure_empty_dir(path: &Path) -> anyhow::Result<()> {
             path.display()
         );
     } else {
-        std::fs::create_dir_all(path)?;
+        create_dir_all_sync(path)?;
     }
     Ok(())
 }
@@ -2190,11 +2195,12 @@ async fn copy_server_state(
     asyncify(runtime, move || -> anyhow::Result<()> {
         debug_assert!(!copy_control_db);
         let server_dir = output_dir.join("server");
-        std::fs::create_dir_all(&server_dir)?;
+        create_dir_all_sync(&server_dir)?;
 
         copy_required_file(&data_dir.config_toml().0, &server_dir.join("config.toml"))?;
         copy_required_file(&data_dir.metadata_toml().0, &server_dir.join("metadata.toml"))?;
         copy_required_dir(&data_dir.program_bytes().0, &server_dir.join("program-bytes"))?;
+        sync_dir(&server_dir)?;
         Ok(())
     })
     .await?;
@@ -2204,9 +2210,9 @@ async fn copy_server_state(
 fn copy_required_file(src: &Path, dst: &Path) -> anyhow::Result<()> {
     anyhow::ensure!(src.is_file(), "server state file is missing: {}", src.display());
     if let Some(parent) = dst.parent() {
-        std::fs::create_dir_all(parent)?;
+        create_dir_all_sync(parent)?;
     }
-    std::fs::copy(src, dst).with_context(|| format!("copying {} to {}", src.display(), dst.display()))?;
+    copy_file_sync(src, dst).with_context(|| format!("copying {} to {}", src.display(), dst.display()))?;
     Ok(())
 }
 
@@ -2232,10 +2238,10 @@ fn copy_dir_all_retry(src: &Path, dst: &Path, required_file_name: &OsString) -> 
 }
 
 fn copy_snapshot_dir(src: &Path, dst: &Path, required_file_name: &OsString) -> anyhow::Result<()> {
-    std::fs::create_dir_all(dst)?;
+    create_dir_all_sync(dst)?;
     let src_required = src.join(required_file_name);
     let dst_required = dst.join(required_file_name);
-    std::fs::copy(&src_required, &dst_required)
+    copy_file_sync(&src_required, &dst_required)
         .with_context(|| format!("copying {} to {}", src_required.display(), dst_required.display()))?;
 
     for entry in std::fs::read_dir(src).with_context(|| format!("reading {}", src.display()))? {
@@ -2248,7 +2254,7 @@ fn copy_snapshot_dir(src: &Path, dst: &Path, required_file_name: &OsString) -> a
         if ty.is_dir() {
             copy_dir_all(entry.path(), dst)?;
         } else {
-            std::fs::copy(entry.path(), dst)?;
+            copy_file_sync(&entry.path(), &dst)?;
         }
     }
     anyhow::ensure!(

@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::common_args;
 use crate::config::Config;
@@ -8,6 +9,8 @@ use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
 use serde::{Deserialize, Serialize};
 use spacetimedb_paths::{server::ServerDataDir, SpacetimePaths};
+
+static RESTORE_TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub fn cli() -> Command {
     Command::new("backup")
@@ -155,12 +158,20 @@ fn restore_backup(input_dir: &Path, data_dir: &ServerDataDir, force: bool) -> an
     let _pid_file = data_dir
         .pid_file()
         .context("target data-dir must be offline before restore")?;
-    copy_missing_server_state(input_dir, data_dir)?;
-
     let replica_dir = data_dir.replica(manifest.replica_id);
-    let tmp_dir = replica_dir
-        .0
-        .with_file_name(format!("{}.restore_tmp_{}", manifest.replica_id, std::process::id()));
+    let restore_temp_id = RESTORE_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let tmp_dir = replica_dir.0.with_file_name(format!(
+        "{}.restore_tmp_{}_{}",
+        manifest.replica_id,
+        std::process::id(),
+        restore_temp_id
+    ));
+    let old_tmp_dir = replica_dir.0.with_file_name(format!(
+        "{}.restore_old_{}_{}",
+        manifest.replica_id,
+        std::process::id(),
+        restore_temp_id
+    ));
 
     anyhow::ensure!(
         force || !replica_dir.0.exists(),
@@ -172,28 +183,54 @@ fn restore_backup(input_dir: &Path, data_dir: &ServerDataDir, force: bool) -> an
         "temporary restore directory already exists: {}",
         tmp_dir.display()
     );
+    if force {
+        anyhow::ensure!(
+            !old_tmp_dir.exists(),
+            "temporary old replica directory already exists: {}",
+            old_tmp_dir.display()
+        );
+    }
 
     if let Some(parent) = tmp_dir.parent() {
         std::fs::create_dir_all(parent)?;
     }
 
+    copy_missing_server_state(input_dir, data_dir)?;
+
+    let mut old_tmp_moved = false;
+    let mut restore_old_tmp_on_error = false;
     let res = (|| -> anyhow::Result<()> {
         std::fs::create_dir_all(&tmp_dir)?;
         copy_dir_all(input_dir.join("snapshots"), tmp_dir.join("snapshots"))?;
         copy_dir_all(input_dir.join("clog"), tmp_dir.join("clog"))?;
         std::fs::create_dir_all(tmp_dir.join("module_logs"))?;
 
-        if replica_dir.0.exists() {
-            std::fs::remove_dir_all(&replica_dir.0)
-                .with_context(|| format!("removing existing target replica directory {}", replica_dir.display()))?;
+        if force && replica_dir.0.exists() {
+            std::fs::rename(&replica_dir.0, &old_tmp_dir)
+                .with_context(|| format!("moving existing target replica directory {}", replica_dir.display()))?;
+            old_tmp_moved = true;
+            restore_old_tmp_on_error = true;
         }
         std::fs::rename(&tmp_dir, &replica_dir.0)
             .with_context(|| format!("moving restored replica into {}", replica_dir.display()))?;
+        restore_old_tmp_on_error = false;
+        if old_tmp_moved {
+            if let Err(err) = std::fs::remove_dir_all(&old_tmp_dir) {
+                tracing::warn!(
+                    "restore completed, but failed to remove old replica directory {}: {err}",
+                    old_tmp_dir.display()
+                );
+            }
+            old_tmp_moved = false;
+        }
         Ok(())
     })();
 
     if res.is_err() {
         let _ = std::fs::remove_dir_all(&tmp_dir);
+        if restore_old_tmp_on_error && old_tmp_moved && old_tmp_dir.exists() && !replica_dir.0.exists() {
+            let _ = std::fs::rename(&old_tmp_dir, &replica_dir.0);
+        }
     }
     res?;
 
@@ -351,6 +388,88 @@ mod tests {
     }
 
     #[test]
+    fn backup_restore_requires_force_before_copying_missing_server_state() -> anyhow::Result<()> {
+        let backup = tempfile::tempdir()?;
+        make_backup_dir(backup.path(), 7, 42)?;
+        make_backup_server_state(backup.path())?;
+
+        let data = tempfile::tempdir()?;
+        std::fs::create_dir_all(data.path().join("replicas/7"))?;
+        let data_dir = ServerDataDir::from_path_unchecked(data.path());
+
+        let err = restore_backup(backup.path(), &data_dir, false).unwrap_err();
+        assert!(err.to_string().contains("--force"));
+        assert!(!data.path().join("control-db").exists());
+        assert!(!data.path().join("program-bytes").exists());
+        assert!(!data.path().join("config.toml").exists());
+        assert!(!data.path().join("metadata.toml").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn backup_restore_force_replaces_existing_replica_without_leaving_old_tmp() -> anyhow::Result<()> {
+        let backup = tempfile::tempdir()?;
+        make_backup_dir(backup.path(), 7, 42)?;
+
+        let data = tempfile::tempdir()?;
+        make_target_data_dir(data.path())?;
+        let replica_dir = data.path().join("replicas/7");
+        std::fs::create_dir_all(&replica_dir)?;
+        std::fs::write(replica_dir.join("old-marker"), b"old")?;
+        let data_dir = ServerDataDir::from_path_unchecked(data.path());
+
+        restore_backup(backup.path(), &data_dir, true)?;
+
+        assert!(!replica_dir.join("old-marker").exists());
+        assert!(replica_dir
+            .join("snapshots/00000000000000000042.snapshot_dir/snapshot")
+            .is_file());
+        assert!(replica_dir.join("clog/00000000000000000000.stdb.log").is_file());
+        assert!(replica_dir.join("module_logs").is_dir());
+
+        for entry in std::fs::read_dir(data.path().join("replicas"))? {
+            let entry = entry?;
+            assert!(!entry.file_name().to_string_lossy().contains(".restore_old_"));
+        }
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn backup_restore_force_commits_when_old_replica_cleanup_fails() -> anyhow::Result<()> {
+        let backup = tempfile::tempdir()?;
+        make_backup_dir(backup.path(), 7, 42)?;
+
+        let data = tempfile::tempdir()?;
+        make_target_data_dir(data.path())?;
+        let replica_dir = data.path().join("replicas/7");
+        std::fs::create_dir_all(&replica_dir)?;
+        let old_marker = replica_dir.join("old-marker");
+        std::fs::write(&old_marker, b"old")?;
+        let mut permissions = std::fs::metadata(&old_marker)?.permissions();
+        permissions.set_readonly(true);
+        std::fs::set_permissions(&old_marker, permissions)?;
+        let data_dir = ServerDataDir::from_path_unchecked(data.path());
+
+        restore_backup(backup.path(), &data_dir, true)?;
+        restore_backup(backup.path(), &data_dir, true)?;
+
+        assert!(replica_dir
+            .join("snapshots/00000000000000000042.snapshot_dir/snapshot")
+            .is_file());
+
+        for entry in std::fs::read_dir(data.path().join("replicas"))? {
+            let entry = entry?;
+            if !entry.file_name().to_string_lossy().contains(".restore_old_") {
+                continue;
+            }
+            clear_readonly_recursively(&entry.path())?;
+            std::fs::remove_dir_all(entry.path())?;
+        }
+        Ok(())
+    }
+
+    #[test]
     fn backup_restore_copies_server_state_into_empty_data_dir() -> anyhow::Result<()> {
         let backup = tempfile::tempdir()?;
         make_backup_dir(backup.path(), 7, 42)?;
@@ -395,6 +514,23 @@ mod tests {
         std::fs::write(path.join("server/program-bytes/program"), b"program")?;
         std::fs::write(path.join("server/config.toml"), b"config")?;
         std::fs::write(path.join("server/metadata.toml"), b"metadata")?;
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    #[allow(clippy::permissions_set_readonly_false)]
+    fn clear_readonly_recursively(path: &Path) -> anyhow::Result<()> {
+        let metadata = std::fs::symlink_metadata(path)?;
+        let mut permissions = metadata.permissions();
+        if permissions.readonly() {
+            permissions.set_readonly(false);
+            std::fs::set_permissions(path, permissions)?;
+        }
+        if metadata.is_dir() {
+            for entry in std::fs::read_dir(path)? {
+                clear_readonly_recursively(&entry?.path())?;
+            }
+        }
         Ok(())
     }
 

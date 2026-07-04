@@ -152,10 +152,10 @@ impl SnapshotWorker {
 
     /// Request a snapshot if needed, and wait until one exists at or beyond `offset`.
     pub async fn ensure_snapshot_at_least(&self, offset: TxOffset) -> anyhow::Result<TxOffset> {
-        if let Some(latest) = self.snapshot_repository.latest_snapshot()? {
-            if latest >= offset {
-                return Ok(latest);
-            }
+        if let Some(latest) = self.snapshot_repository.latest_snapshot()?
+            && latest >= offset
+        {
+            return Ok(latest);
         }
 
         let mut snapshot_created = self.subscribe();
