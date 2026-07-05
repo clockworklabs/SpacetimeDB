@@ -920,13 +920,13 @@ spacetime delete <NAME>                  # Delete database
 spacetime logs <NAME>                    # View logs
 spacetime logs --follow <NAME>           # Stream logs
 spacetime sql <NAME> "SELECT * FROM t"   # Run SQL query
-spacetime describe <NAME>                # Show schema
+spacetime describe <NAME> --json         # Show schema
 spacetime call <NAME> reducer arg1 arg2  # Call reducer
 
 # Code generation
-spacetime generate --lang rust <NAME>    # Generate Rust client
-spacetime generate --lang csharp <NAME>  # Generate C# client
-spacetime generate --lang typescript <NAME>  # Generate TypeScript client
+spacetime generate --lang rust --out-dir src/module_bindings --module-path spacetimedb
+spacetime generate --lang csharp --out-dir module_bindings --module-path spacetimedb
+spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb
 ```
 
 ## Common Types
