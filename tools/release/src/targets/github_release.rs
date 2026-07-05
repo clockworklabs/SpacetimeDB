@@ -58,9 +58,10 @@ impl GithubRelease {
         cmd.read()
             .map(|s| s.trim().to_owned())
             .map_err(|e| format!("Failed to execute dispatch attach-artifacts.yml: {e}"))
+            .and_then(|output| Self::run_id_from_output(&output).map(str::to_owned))
     }
 
-    fn run_id_from_output<'a>(&self, output: &'a str) -> Result<&'a str, String> {
+    fn run_id_from_output(output: &str) -> Result<&str, String> {
         let url = output
             .split_whitespace()
             .find(|word| word.starts_with("https://") && word.contains("/actions/runs/"))
@@ -78,26 +79,16 @@ impl GithubRelease {
             })
     }
 
-    fn wait_for_artifacts(&self, workflow_output: &str) -> Result<(), String> {
-        let run_id = self.run_id_from_output(workflow_output)?;
+    fn wait_for_workflow(&self, run_id: &str) -> Result<(), String> {
         let cmd = cmd!("gh", "run", "watch", run_id, "--repo", REPO, "--exit-status");
         println!("$> {:?}", cmd);
         cmd.run()
             .map(|_| ())
-            .map_err(|e| format!("Failed to execute watch attach-artifacts.yml: {e}"))
+            .map_err(|e| format!("Failed to execute watch workflow: {e}"))
     }
 
     fn publish_release(&self) -> Result<(), String> {
-        let release_endpoint = format!("repos/{}/releases/tags/{}", REPO, self.version);
-        let id_cmd = cmd!("gh", "api", &release_endpoint, "--jq", ".id");
-        println!("$> {:?}", id_cmd);
-        let release_id = id_cmd
-            .read()
-            .map(|s| s.trim().to_owned())
-            .map_err(|e| format!("Failed to execute get GitHub release id: {e}"))?;
-
-        let publish_endpoint = format!("repos/{}/releases/{}", REPO, release_id);
-        let publish_cmd = cmd!("gh", "api", "--method", "PATCH", &publish_endpoint, "-F", "draft=false");
+        let publish_cmd = cmd!("gh", "release", "edit", &self.version, "--repo", REPO, "--draft=false");
         println!("$> {:?}", publish_cmd);
         publish_cmd
             .run()
@@ -115,8 +106,8 @@ impl ReleaseTarget for GithubRelease {
         }
 
         println!("Found draft GitHub release {}: {}", self.version, release.url);
-        let run_url = self.dispatch_attach_artifacts()?;
-        self.wait_for_artifacts(&run_url)?;
+        let run_id = self.dispatch_attach_artifacts()?;
+        self.wait_for_workflow(&run_id)?;
         self.publish_release()?;
         println!("Published GitHub release {}.", self.version);
         Ok(())
