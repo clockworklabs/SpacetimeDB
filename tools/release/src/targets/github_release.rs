@@ -1,11 +1,61 @@
-use crate::targets::{util, ReleaseTarget};
+use crate::targets::ReleaseTarget;
+use duct::Expression;
 use serde::Deserialize;
-use std::process::Command;
+use std::ffi::OsString;
 
 const REPO: &str = "clockworklabs/SpacetimeDB";
 
-fn gh() -> Command {
-    Command::new("gh")
+fn gh(args: impl IntoIterator<Item = impl Into<OsString>>) -> Expression {
+    duct::cmd("gh", args)
+}
+
+fn run_output(cmd: Expression, label: &str) -> Result<String, String> {
+    println!("$> {:?}", cmd);
+
+    let output = cmd
+        .unchecked()
+        .stdout_capture()
+        .stderr_capture()
+        .run()
+        .map_err(|err| format!("Failed to execute {}: {}", label, err))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !stdout.is_empty() {
+            return Ok(stdout);
+        }
+        return Ok(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+
+    Err(format!(
+        "{} failed\n--- stdout ---\n{}\n--- stderr ---\n{}",
+        label,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    ))
+}
+
+fn run_status(cmd: Expression, label: &str) -> Result<(), String> {
+    println!("$> {:?}", cmd);
+
+    let output = cmd
+        .unchecked()
+        .stdout_capture()
+        .stderr_capture()
+        .run()
+        .map_err(|err| format!("Failed to execute {}: {}", label, err))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} failed with status {}\n--- stdout ---\n{}\n--- stderr ---\n{}",
+            label,
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ))
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -24,46 +74,8 @@ impl GithubRelease {
         Self { version }
     }
 
-    fn run_output(&self, mut cmd: Command, label: &str) -> Result<String, String> {
-        util::print_command(&cmd);
-
-        let output = cmd
-            .output()
-            .map_err(|err| format!("Failed to execute {}: {}", label, err))?;
-
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !stdout.is_empty() {
-                return Ok(stdout);
-            }
-            return Ok(String::from_utf8_lossy(&output.stderr).trim().to_string());
-        }
-
-        Err(format!(
-            "{} failed\n--- stdout ---\n{}\n--- stderr ---\n{}",
-            label,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        ))
-    }
-
-    fn run_status(&self, mut cmd: Command, label: &str) -> Result<(), String> {
-        util::print_command(&cmd);
-
-        let status = cmd
-            .status()
-            .map_err(|err| format!("Failed to execute {}: {}", label, err))?;
-
-        if status.success() {
-            Ok(())
-        } else {
-            Err(format!("{} failed with status {}", label, status))
-        }
-    }
-
     fn release(&self) -> Result<Release, String> {
-        let mut cmd = gh();
-        cmd.args([
+        let cmd = gh([
             "release",
             "view",
             &self.version,
@@ -73,13 +85,13 @@ impl GithubRelease {
             "isDraft,url",
         ]);
 
-        let output = self.run_output(cmd, "view GitHub release")?;
+        let output = run_output(cmd, "view GitHub release")?;
         serde_json::from_str(&output).map_err(|err| format!("Failed to parse GitHub release JSON: {}", err))
     }
 
     fn dispatch_attach_artifacts(&self) -> Result<String, String> {
-        let mut cmd = gh();
-        cmd.args([
+        let release_tag = format!("release_tag={}", self.version);
+        let cmd = gh([
             "workflow",
             "run",
             "attach-artifacts.yml",
@@ -88,10 +100,10 @@ impl GithubRelease {
             "--ref",
             "master",
             "-f",
-            &format!("release_tag={}", self.version),
+            &release_tag,
         ]);
 
-        self.run_output(cmd, "dispatch attach-artifacts.yml")
+        run_output(cmd, "dispatch attach-artifacts.yml")
     }
 
     fn run_id_from_output<'a>(&self, output: &'a str) -> Result<&'a str, String> {
@@ -114,31 +126,18 @@ impl GithubRelease {
 
     fn wait_for_artifacts(&self, workflow_output: &str) -> Result<(), String> {
         let run_id = self.run_id_from_output(workflow_output)?;
-        let mut cmd = gh();
-        cmd.args(["run", "watch", run_id, "--repo", REPO, "--exit-status"]);
-        self.run_status(cmd, "watch attach-artifacts.yml")
+        let cmd = gh(["run", "watch", run_id, "--repo", REPO, "--exit-status"]);
+        run_status(cmd, "watch attach-artifacts.yml")
     }
 
     fn publish_release(&self) -> Result<(), String> {
-        let mut id_cmd = gh();
-        id_cmd.args([
-            "api",
-            &format!("repos/{}/releases/tags/{}", REPO, self.version),
-            "--jq",
-            ".id",
-        ]);
-        let release_id = self.run_output(id_cmd, "get GitHub release id")?;
+        let release_endpoint = format!("repos/{}/releases/tags/{}", REPO, self.version);
+        let id_cmd = gh(["api", &release_endpoint, "--jq", ".id"]);
+        let release_id = run_output(id_cmd, "get GitHub release id")?;
 
-        let mut publish_cmd = gh();
-        publish_cmd.args([
-            "api",
-            "--method",
-            "PATCH",
-            &format!("repos/{}/releases/{}", REPO, release_id),
-            "-F",
-            "draft=false",
-        ]);
-        self.run_status(publish_cmd, "publish GitHub release")
+        let publish_endpoint = format!("repos/{}/releases/{}", REPO, release_id);
+        let publish_cmd = gh(["api", "--method", "PATCH", &publish_endpoint, "-F", "draft=false"]);
+        run_status(publish_cmd, "publish GitHub release")
     }
 }
 
