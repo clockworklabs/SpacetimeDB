@@ -58,25 +58,15 @@ impl GithubRelease {
         cmd.read()
             .map(|s| s.trim().to_owned())
             .map_err(|e| format!("Failed to execute dispatch attach-artifacts.yml: {e}"))
-            .and_then(|output| Self::run_id_from_output(&output).map(str::to_owned))
+            .and_then(|url| Self::run_id_from_url(&url).map(str::to_owned))
     }
 
-    fn run_id_from_output(output: &str) -> Result<&str, String> {
-        let url = output
-            .split_whitespace()
-            .find(|word| word.starts_with("https://") && word.contains("/actions/runs/"))
-            .unwrap_or(output);
-
+    fn run_id_from_url(url: &str) -> Result<&str, String> {
         url.trim_end_matches('/')
             .rsplit('/')
             .next()
             .filter(|segment| !segment.is_empty() && segment.chars().all(|ch| ch.is_ascii_digit()))
-            .ok_or_else(|| {
-                format!(
-                    "Could not parse workflow run id from gh workflow run output: {}",
-                    output
-                )
-            })
+            .ok_or_else(|| format!("Could not parse workflow run id from URL: {}", url))
     }
 
     fn wait_for_workflow(&self, run_id: &str) -> Result<(), String> {
