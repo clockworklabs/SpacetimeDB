@@ -54,7 +54,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: manual-release
+  group: manual-release-${{ inputs.release_tag }}${{ inputs.dry_run && format('-dry-run-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 jobs:
