@@ -67,11 +67,7 @@ enum Commands {
 
     /// Publish GitHub release after artifacts are available
     #[command(name = "github-release")]
-    GithubRelease {
-        release_version: String,
-        #[arg(long, default_value = "clockworklabs/SpacetimeDB")]
-        repo: String,
-    },
+    GithubRelease { release_version: String },
 
     /// Perform a release for all targets
     #[command(name = "--all")]
@@ -129,9 +125,8 @@ fn main() {
         }
         Commands::GithubRelease {
             release_version: version,
-            repo,
         } => {
-            let target = GithubRelease::new(version.clone(), repo.clone());
+            let target = GithubRelease::new(version.clone(), "clockworklabs/SpacetimeDB".to_string());
             target.release()
         }
         Commands::All {

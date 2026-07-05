@@ -434,4 +434,4 @@ jobs:
           echo "$PWD/shared-bin" >> "$GITHUB_PATH"
 
       - name: Publish GitHub release
-        run: cargo-release release github-release ${{ github.event.inputs.release_tag }} --repo "$GITHUB_REPOSITORY"
+        run: cargo-release release github-release ${{ github.event.inputs.release_tag }}
