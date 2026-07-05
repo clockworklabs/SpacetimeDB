@@ -2,6 +2,12 @@ use crate::targets::{util, ReleaseTarget};
 use serde::Deserialize;
 use std::process::Command;
 
+const REPO: &str = "clockworklabs/SpacetimeDB";
+
+fn gh() -> Command {
+    Command::new("gh")
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Release {
@@ -11,16 +17,11 @@ struct Release {
 
 pub struct GithubRelease {
     version: String,
-    repo: String,
 }
 
 impl GithubRelease {
-    pub fn new(version: String, repo: String) -> Self {
-        Self { version, repo }
-    }
-
-    fn gh(&self) -> Command {
-        Command::new("gh")
+    pub fn new(version: String) -> Self {
+        Self { version }
     }
 
     fn run_output(&self, mut cmd: Command, label: &str) -> Result<String, String> {
@@ -61,13 +62,13 @@ impl GithubRelease {
     }
 
     fn release(&self) -> Result<Release, String> {
-        let mut cmd = self.gh();
+        let mut cmd = gh();
         cmd.args([
             "release",
             "view",
             &self.version,
             "--repo",
-            &self.repo,
+            REPO,
             "--json",
             "isDraft,url",
         ]);
@@ -77,13 +78,13 @@ impl GithubRelease {
     }
 
     fn dispatch_attach_artifacts(&self) -> Result<String, String> {
-        let mut cmd = self.gh();
+        let mut cmd = gh();
         cmd.args([
             "workflow",
             "run",
             "attach-artifacts.yml",
             "--repo",
-            &self.repo,
+            REPO,
             "--ref",
             "master",
             "-f",
@@ -113,27 +114,27 @@ impl GithubRelease {
 
     fn wait_for_artifacts(&self, workflow_output: &str) -> Result<(), String> {
         let run_id = self.run_id_from_output(workflow_output)?;
-        let mut cmd = self.gh();
-        cmd.args(["run", "watch", run_id, "--repo", &self.repo, "--exit-status"]);
+        let mut cmd = gh();
+        cmd.args(["run", "watch", run_id, "--repo", REPO, "--exit-status"]);
         self.run_status(cmd, "watch attach-artifacts.yml")
     }
 
     fn publish_release(&self) -> Result<(), String> {
-        let mut id_cmd = self.gh();
+        let mut id_cmd = gh();
         id_cmd.args([
             "api",
-            &format!("repos/{}/releases/tags/{}", self.repo, self.version),
+            &format!("repos/{}/releases/tags/{}", REPO, self.version),
             "--jq",
             ".id",
         ]);
         let release_id = self.run_output(id_cmd, "get GitHub release id")?;
 
-        let mut publish_cmd = self.gh();
+        let mut publish_cmd = gh();
         publish_cmd.args([
             "api",
             "--method",
             "PATCH",
-            &format!("repos/{}/releases/{}", self.repo, release_id),
+            &format!("repos/{}/releases/{}", REPO, release_id),
             "-F",
             "draft=false",
         ]);

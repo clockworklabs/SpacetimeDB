@@ -126,7 +126,7 @@ fn main() {
         Commands::GithubRelease {
             release_version: version,
         } => {
-            let target = GithubRelease::new(version.clone(), "clockworklabs/SpacetimeDB".to_string());
+            let target = GithubRelease::new(version.clone());
             target.release()
         }
         Commands::All {
