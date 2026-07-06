@@ -116,7 +116,7 @@ The `hot-backup` section configures server-side backups created through `spaceti
 
 #### `hot-backup.root-dir`
 
-An absolute server path that acts as the root directory for CLI-triggered hot backups. Backup creation requests choose an output directory relative to this root. Omit `root-dir` to disable CLI-triggered hot backups.
+An absolute server path that acts as the root directory for CLI/HTTP-triggered hot backups. Backup creation requests choose an output directory relative to this root. Omit `root-dir` to disable CLI/HTTP-triggered hot backups.
 
 ### `scheduled-backup`
 
@@ -144,7 +144,7 @@ How often to create a backup. Values are strings of any format the [`humantime`]
 
 #### `scheduled-backup.keep-last`
 
-The number of complete scheduled backups to retain. Incomplete `stdb-*` directories left by failed, interrupted, or concurrent backups are ignored during pruning and do not count toward this limit. Omit `keep-last` to keep all complete scheduled backups.
+The number of complete scheduled backups to retain. Incomplete `stdb-*` directories are ignored during pruning and do not count toward this limit. A failed scheduled run removes its own incomplete output directory; other manifest-less directories are preserved because they may belong to a concurrent manual or HTTP-triggered backup. Omit `keep-last` to keep all complete scheduled backups.
 
 ### `websocket`
 

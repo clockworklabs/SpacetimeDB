@@ -5,7 +5,7 @@ use spacetimedb_client_api::{ControlStateReadAccess, NodeDelegate};
 use spacetimedb_pg::pg_server;
 use std::io::{self, Write};
 use std::net::IpAddr;
-use std::path::{Component, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -23,6 +23,7 @@ use spacetimedb::worker_metrics;
 use spacetimedb_client_api::routes::database::DatabaseRoutes;
 use spacetimedb_client_api::routes::router;
 use spacetimedb_client_api::routes::subscribe::WebSocketOptions;
+use spacetimedb_fs_utils::sync_dir;
 use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::server::{ConfigToml, ServerDataDir};
 use tokio::net::TcpListener;
@@ -190,9 +191,8 @@ fn validate_scheduled_backup_config(config: &ScheduledBackupConfig) -> anyhow::R
 /// A backup is complete iff it contains `manifest.json`, which is written as
 /// the final step of a backup. `stdb-*` directories without a manifest are
 /// ignored by pruning and never occupy a `keep-last` slot, so they cannot
-/// crowd out good backups. They are not deleted here because a concurrent
-/// manual backup may still be writing into a `stdb-*` directory in the same
-/// output root.
+/// crowd out good backups. They are not deleted here because another backup may
+/// still be writing into a `stdb-*` directory in the same output root.
 fn prune_scheduled_backups(config: &ScheduledBackupConfig) -> anyhow::Result<()> {
     let mut complete = Vec::new();
     for entry in std::fs::read_dir(&config.output_dir)
@@ -223,6 +223,17 @@ fn prune_scheduled_backups(config: &ScheduledBackupConfig) -> anyhow::Result<()>
     Ok(())
 }
 
+fn cleanup_failed_scheduled_backup_output(output_dir: &Path) -> anyhow::Result<()> {
+    if output_dir.exists() && !output_dir.join("manifest.json").is_file() {
+        std::fs::remove_dir_all(output_dir)
+            .with_context(|| format!("removing incomplete scheduled backup {}", output_dir.display()))?;
+        if let Some(parent) = output_dir.parent() {
+            sync_dir(parent).with_context(|| format!("syncing scheduled-backup output-dir {}", parent.display()))?;
+        }
+    }
+    Ok(())
+}
+
 async fn run_scheduled_backup(ctx: &Arc<StandaloneEnv>, config: &ScheduledBackupConfig) -> anyhow::Result<()> {
     validate_scheduled_backup_config(config)?;
     let database_identity = config
@@ -235,14 +246,27 @@ async fn run_scheduled_backup(ctx: &Arc<StandaloneEnv>, config: &ScheduledBackup
         .await?
         .with_context(|| format!("scheduled-backup database `{}` not found", config.database))?;
     let output_dir = config.output_dir.join(backup_dir_name());
+    let cleanup_output_dir = output_dir.clone();
     let leader = ctx.leader(database.id).await?;
     let backup_result = ctx.create_hot_backup(leader, output_dir).await;
-    // Prune even if this run failed, so directories left behind by failed
-    // backups are cleaned up instead of accumulating; pruning is blocking
-    // filesystem work, so keep it off the async executor.
+    // Remove only this scheduled run's incomplete output on failure. Pruning
+    // still ignores other manifest-less `stdb-*` dirs because they may belong
+    // to a concurrent manual or HTTP-triggered backup.
+    let cleanup_result = if backup_result.is_err() {
+        Some(spacetimedb::util::asyncify(move || cleanup_failed_scheduled_backup_output(&cleanup_output_dir)).await)
+    } else {
+        None
+    };
+    if let Some(Err(err)) = &cleanup_result {
+        log::warn!("failed to remove incomplete scheduled backup: {err:#}");
+    }
+    // Pruning is blocking filesystem work, so keep it off the async executor.
     let prune_config = config.clone();
     let prune_result = spacetimedb::util::asyncify(move || prune_scheduled_backups(&prune_config)).await;
     backup_result?;
+    if let Some(cleanup_result) = cleanup_result {
+        cleanup_result?;
+    }
     prune_result
 }
 
@@ -704,6 +728,30 @@ mod tests {
         assert!(incomplete.exists());
         assert!(complete.exists());
         assert!(unrelated.exists());
+    }
+
+    #[test]
+    fn cleanup_failed_scheduled_backup_output_removes_incomplete_dir() {
+        let temp = tempfile::tempdir().unwrap();
+        let incomplete = temp.path().join("stdb-incomplete");
+        std::fs::create_dir(&incomplete).unwrap();
+        std::fs::write(incomplete.join("partial"), b"not done").unwrap();
+
+        cleanup_failed_scheduled_backup_output(&incomplete).unwrap();
+
+        assert!(!incomplete.exists());
+    }
+
+    #[test]
+    fn cleanup_failed_scheduled_backup_output_preserves_complete_dir() {
+        let temp = tempfile::tempdir().unwrap();
+        let complete = temp.path().join("stdb-complete");
+        std::fs::create_dir(&complete).unwrap();
+        std::fs::write(complete.join("manifest.json"), b"{}").unwrap();
+
+        cleanup_failed_scheduled_backup_output(&complete).unwrap();
+
+        assert!(complete.exists());
     }
 
     #[test]

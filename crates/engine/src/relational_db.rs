@@ -1094,7 +1094,13 @@ impl RelationalDB {
         if let Some(server_data_dir) = server_data_dir {
             copy_server_state(&runtime, server_data_dir, &output_dir, copy_control_db).await?;
         }
-        copy_commitlog_range(replica_dir.commit_log(), output_dir.join("clog"), snapshot_offset).await?;
+        copy_commitlog_range(
+            &runtime,
+            replica_dir.commit_log(),
+            output_dir.join("clog"),
+            snapshot_offset,
+        )
+        .await?;
         let copy_ms = HotBackupManifest::elapsed_ms(copy_start.elapsed());
 
         let mut manifest = HotBackupManifest {
@@ -2028,9 +2034,14 @@ pub fn open_snapshot_repo(
         .map_err(Box::new)
 }
 
-async fn copy_commitlog_range(src: CommitLogDir, dst: PathBuf, through: TxOffset) -> anyhow::Result<()> {
+async fn copy_commitlog_range(
+    runtime: &Handle,
+    src: CommitLogDir,
+    dst: PathBuf,
+    through: TxOffset,
+) -> anyhow::Result<()> {
     let src_repo = commitlog::repo::Fs::new(src, None)?;
-    let dst_repo = commitlog::repo::Fs::new(CommitLogDir::from_path_unchecked(dst), None)?;
+    let dst_repo = commitlog::repo::Fs::new(CommitLogDir::from_path_unchecked(&dst), None)?;
     let reader = tokio::io::BufReader::new(tokio_util::io::StreamReader::new(commitlog::stream::commits(
         src_repo,
         ..=through,
@@ -2040,6 +2051,14 @@ async fn copy_commitlog_range(src: CommitLogDir, dst: PathBuf, through: TxOffset
         commitlog::stream::StreamWriter::create(dst_repo, <_>::default(), commitlog::stream::OnTrailingData::Error)?;
     let mut writer = writer.append_all(reader, |_| ()).await?;
     writer.sync_all().await?;
+    asyncify(runtime, move || -> anyhow::Result<()> {
+        sync_dir(&dst).with_context(|| format!("syncing backup commitlog dir {}", dst.display()))?;
+        if let Some(parent) = dst.parent() {
+            sync_dir(parent).with_context(|| format!("syncing backup commitlog parent {}", parent.display()))?;
+        }
+        Ok(())
+    })
+    .await?;
     Ok(())
 }
 

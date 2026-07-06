@@ -77,19 +77,7 @@ impl ControlDb {
     }
 
     pub fn export_to_path(&self, path: &ControlDbDir) -> Result<()> {
-        if path.is_dir() {
-            if path
-                .read_dir()
-                .with_context(|| format!("reading control db export dir {}", path.display()))?
-                .next()
-                .is_some()
-            {
-                return Err(anyhow::anyhow!("control db export directory must be empty: {}", path.display()).into());
-            }
-        } else {
-            path.create()
-                .with_context(|| format!("creating control db export dir {}", path.display()))?;
-        }
+        ensure_empty_control_db_export_dir(path)?;
 
         // Sled owns live files on Windows; export/import avoids copying locked files.
         self.db.flush()?;
@@ -100,8 +88,80 @@ impl ControlDb {
             .open()?;
         dst.import(self.db.export());
         dst.flush()?;
-        sync_dir(path).with_context(|| format!("syncing control db export dir {}", path.display()))?;
-        if let Some(parent) = path.parent() {
+        sync_dir(path.as_ref()).with_context(|| format!("syncing control db export dir {}", path.display()))?;
+        if let Some(parent) = path.as_ref().parent() {
+            sync_dir(parent).with_context(|| format!("syncing control db export parent {}", parent.display()))?;
+        }
+        Ok(())
+    }
+
+    pub fn export_database_to_path(
+        &self,
+        path: &ControlDbDir,
+        database_identity: &Identity,
+        replica_id: u64,
+    ) -> Result<()> {
+        ensure_empty_control_db_export_dir(path)?;
+        let database = self
+            .get_database_by_identity(database_identity)?
+            .with_context(|| format!("database {database_identity} not found in control-db"))?;
+        let replica = self
+            .get_replica_by_id(replica_id)?
+            .with_context(|| format!("replica {replica_id} not found in control-db"))?;
+        anyhow::ensure!(
+            replica.database_id == database.id,
+            "replica {} belongs to database {}, not {}",
+            replica.id,
+            replica.database_id,
+            database.id
+        );
+
+        self.db.flush()?;
+        let dst = sled::Config::default()
+            .path(path)
+            .flush_every_ms(Some(50))
+            .mode(sled::Mode::HighThroughput)
+            .open()?;
+
+        let database_buf = sled::IVec::from(compat::Database::from(database.clone()).to_vec()?);
+        let database_by_identity = dst.open_tree("database_by_identity")?;
+        database_by_identity.insert(database_identity.to_be_byte_array(), database_buf.clone())?;
+        database_by_identity.flush()?;
+
+        let databases = dst.open_tree("database")?;
+        databases.insert(database.id.to_be_bytes(), database_buf)?;
+        databases.flush()?;
+
+        let replicas = dst.open_tree("replica")?;
+        replicas.insert(replica.id.to_be_bytes(), bsatn::to_vec(&replica)?)?;
+        replicas.flush()?;
+
+        copy_optional_control_db_tree_entry(&self.db, &dst, "database_locks", &database_identity.to_be_byte_array())?;
+        copy_optional_control_db_tree_entry(
+            &self.db,
+            &dst,
+            "energy_budget",
+            &database.owner_identity.to_byte_array(),
+        )?;
+
+        let domains = self.spacetime_reverse_dns(database_identity)?;
+        if !domains.is_empty() {
+            let identity_bytes = database_identity.to_byte_array();
+            copy_optional_control_db_tree_entry(&self.db, &dst, "reverse_dns", &identity_bytes)?;
+            for domain in domains {
+                copy_optional_control_db_tree_entry(&self.db, &dst, "dns", domain.to_lowercase().as_bytes())?;
+                copy_optional_control_db_tree_entry(
+                    &self.db,
+                    &dst,
+                    "top_level_domains",
+                    domain.tld().to_string().to_lowercase().as_bytes(),
+                )?;
+            }
+        }
+
+        dst.flush()?;
+        sync_dir(path.as_ref()).with_context(|| format!("syncing control db export dir {}", path.display()))?;
+        if let Some(parent) = path.as_ref().parent() {
             sync_dir(parent).with_context(|| format!("syncing control db export parent {}", parent.display()))?;
         }
         Ok(())
@@ -116,6 +176,38 @@ impl ControlDb {
         let db = config.open()?;
         Ok(Self { db })
     }
+}
+
+fn ensure_empty_control_db_export_dir(path: &ControlDbDir) -> Result<()> {
+    if path.is_dir() {
+        if path
+            .read_dir()
+            .with_context(|| format!("reading control db export dir {}", path.display()))?
+            .next()
+            .is_some()
+        {
+            return Err(anyhow::anyhow!("control db export directory must be empty: {}", path.display()).into());
+        }
+    } else {
+        path.create()
+            .with_context(|| format!("creating control db export dir {}", path.display()))?;
+    }
+    Ok(())
+}
+
+fn copy_optional_control_db_tree_entry(
+    src: &sled::Db,
+    dst: &sled::Db,
+    tree_name: &str,
+    key: impl AsRef<[u8]>,
+) -> Result<()> {
+    let src_tree = src.open_tree(tree_name)?;
+    if let Some(value) = src_tree.get(key.as_ref())? {
+        let dst_tree = dst.open_tree(tree_name)?;
+        dst_tree.insert(key.as_ref(), value)?;
+        dst_tree.flush()?;
+    }
+    Ok(())
 }
 
 /// A helper to convert a `sled::IVec` into an `Identity`.

@@ -8069,6 +8069,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "slab",
+ "sled",
  "spacetimedb-auth",
  "spacetimedb-client-api-messages",
  "spacetimedb-codegen",

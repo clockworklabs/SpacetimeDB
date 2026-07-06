@@ -278,6 +278,8 @@ sudo -u spacetimedb /stdb/spacetime --root-dir=/stdb backup restore \
 sudo systemctl start spacetimedb
 ```
 
+Restore into an empty data directory when you want the backup's saved server state to be used. Restoring into an existing data directory requires that its `control-db` already contains the backed up database identity and replica id; otherwise the CLI rejects the restore instead of creating an orphaned replica.
+
 Keep the backup directory private. Backups contain the database snapshot, commitlog, and any server state needed to reopen the restored database.
 
 ## Step 7: Updating SpacetimeDB Version

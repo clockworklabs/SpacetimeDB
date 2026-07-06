@@ -181,3 +181,56 @@ fn test_export_to_path_can_be_opened() -> anyhow::Result<()> {
     assert!(exported.get_leader_replica_by_database(database_id).is_some());
     Ok(())
 }
+
+#[test]
+fn test_export_database_to_path_is_scoped_to_one_database() -> anyhow::Result<()> {
+    let src = TempDir::with_prefix("control-db-export-scoped-src")?;
+    let dst = TempDir::with_prefix("control-db-export-scoped-dst")?;
+    let cdb = ControlDb::at(src.path())?;
+    let first = Database {
+        id: 0,
+        database_identity: Identity::ZERO,
+        owner_identity: *ALICE,
+        host_type: HostType::Wasm,
+        initial_program: Hash::ZERO,
+    };
+    let first_database_id = cdb.insert_database(first)?;
+    let first_replica_id = cdb.insert_replica(Replica {
+        id: 0,
+        database_id: first_database_id,
+        node_id: 0,
+        leader: true,
+    })?;
+    let second_identity = Identity::from_claims(LOCALHOST, "second");
+    let second_database_id = cdb.insert_database(Database {
+        id: 0,
+        database_identity: second_identity,
+        owner_identity: *BOB,
+        host_type: HostType::Wasm,
+        initial_program: Hash::ZERO,
+    })?;
+    cdb.insert_replica(Replica {
+        id: 0,
+        database_id: second_database_id,
+        node_id: 0,
+        leader: true,
+    })?;
+    cdb.set_database_lock(&Identity::ZERO, true)?;
+    cdb.set_database_lock(&second_identity, true)?;
+
+    cdb.export_database_to_path(
+        &ControlDbDir::from_path_unchecked(dst.path()),
+        &Identity::ZERO,
+        first_replica_id,
+    )?;
+    let exported = ControlDb::at(dst.path())?;
+
+    assert!(exported.get_database_by_identity(&Identity::ZERO)?.is_some());
+    assert!(exported.get_database_by_identity(&second_identity)?.is_none());
+    assert_eq!(exported.get_databases()?.len(), 1);
+    assert!(exported.get_replica_by_id(first_replica_id)?.is_some());
+    assert_eq!(exported.get_replicas()?.len(), 1);
+    assert!(exported.is_database_locked(&Identity::ZERO)?);
+    assert!(!exported.is_database_locked(&second_identity)?);
+    Ok(())
+}

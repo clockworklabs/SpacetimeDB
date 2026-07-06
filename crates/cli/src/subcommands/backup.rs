@@ -7,10 +7,10 @@ use crate::subcommands::db_arg_resolution::{load_config_db_targets, resolve_data
 use crate::util::{add_auth_header_opt, database_identity, get_auth_header, ResponseExt};
 use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
-use serde::{Deserialize, Serialize};
-use spacetimedb_commitlog::{payload::Txdata, Commitlog};
+use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
+use spacetimedb_commitlog::{commits, committed_meta};
 use spacetimedb_fs_utils::{copy_dir_all, copy_file_sync, create_dir_all_sync, sync_dir};
-use spacetimedb_lib::{Identity, ProductValue};
+use spacetimedb_lib::{bsatn, de::Deserialize as BsatnDeserialize, ser::Serialize as BsatnSerialize, Identity};
 use spacetimedb_paths::{
     server::{CommitLogDir, ServerDataDir, SnapshotsPath},
     FromPathUnchecked, SpacetimePaths,
@@ -86,12 +86,12 @@ pub async fn exec(config: Config, paths: &SpacetimePaths, args: &ArgMatches) -> 
     }
 }
 
-#[derive(Serialize)]
+#[derive(SerdeSerialize)]
 struct BackupRequest {
     server_output_dir: PathBuf,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, SerdeDeserialize)]
 struct BackupManifest {
     version: u32,
     database_identity: String,
@@ -212,7 +212,8 @@ fn restore_backup_inner(
         create_dir_all_sync(parent)?;
     }
 
-    let staged_server_state = stage_missing_server_state(input_dir, data_dir, restore_temp_id)?;
+    let staged_server_state = stage_missing_server_state(input_dir, data_dir, restore_temp_id, &manifest)?;
+    validate_target_control_db(input_dir, data_dir, &manifest)?;
     anyhow::ensure!(
         !(force && replica_dir.0.exists() && !staged_server_state.is_empty()),
         "cannot restore over existing replica {} while target data-dir is missing server state; restore into an empty data-dir or complete the target server state first",
@@ -378,15 +379,21 @@ fn validate_backup(input_dir: &Path, manifest: &BackupManifest) -> anyhow::Resul
         "backup clog directory contains no segment files: {}",
         clog_dir.display()
     );
-    let clog = Commitlog::<Txdata<ProductValue>>::open(clog_dir, Default::default(), None)
-        .with_context(|| format!("opening backup commitlog {}", input_dir.join("clog").display()))?;
+    let commitlog_meta = committed_meta(clog_dir.clone())
+        .with_context(|| format!("reading backup commitlog metadata {}", clog_dir.display()))?;
+    let max_committed_offset = commitlog_meta.and_then(|meta| meta.metadata().tx_range.end.checked_sub(1));
     anyhow::ensure!(
-        clog.max_committed_offset() == Some(manifest.snapshot_offset),
+        max_committed_offset == Some(manifest.snapshot_offset),
         "backup commitlog max committed offset {:?} does not match manifest snapshot_offset {}",
-        clog.max_committed_offset(),
+        max_committed_offset,
         manifest.snapshot_offset
     );
-    for commit in clog.commits() {
+    for commit in commits(clog_dir).with_context(|| {
+        format!(
+            "opening backup commitlog for traversal {}",
+            input_dir.join("clog").display()
+        )
+    })? {
         commit.with_context(|| format!("reading backup commitlog {}", input_dir.join("clog").display()))?;
     }
     Ok(())
@@ -397,6 +404,166 @@ fn is_commitlog_segment_name(file_name: &str) -> bool {
         return false;
     };
     offset.len() == 20 && offset.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn validate_scoped_backup_control_db(
+    control_db_dir: &Path,
+    manifest: &BackupManifest,
+    database_identity: Identity,
+) -> anyhow::Result<()> {
+    if !control_db_dir.exists() {
+        return Ok(());
+    }
+    validate_control_db_records(
+        control_db_dir,
+        database_identity,
+        manifest.replica_id,
+        ControlDbValidationScope::ScopedBackup,
+    )
+    .with_context(|| format!("validating backup control-db {}", control_db_dir.display()))
+}
+
+fn validate_target_control_db(
+    input_dir: &Path,
+    data_dir: &ServerDataDir,
+    manifest: &BackupManifest,
+) -> anyhow::Result<()> {
+    let control_db_dir = data_dir.0.join("control-db");
+    if !control_db_dir.exists() {
+        return Ok(());
+    }
+    let database_identity: Identity = manifest
+        .database_identity
+        .parse()
+        .with_context(|| format!("parsing backup database identity {}", manifest.database_identity))?;
+    validate_control_db_records(
+        &control_db_dir,
+        database_identity,
+        manifest.replica_id,
+        ControlDbValidationScope::ExistingTarget,
+    )
+    .with_context(|| {
+        format!(
+            "target data-dir already has {}; restore into an empty data-dir or a data-dir whose control-db contains the backed up database from {}",
+            control_db_dir.display(),
+            input_dir.display()
+        )
+    })
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ControlDbValidationScope {
+    ScopedBackup,
+    ExistingTarget,
+}
+
+#[allow(dead_code)]
+#[derive(BsatnDeserialize, BsatnSerialize)]
+struct ControlDbReplica {
+    id: u64,
+    database_id: u64,
+    node_id: u64,
+    leader: bool,
+}
+
+fn validate_control_db_records(
+    control_db_dir: &Path,
+    database_identity: Identity,
+    replica_id: u64,
+    scope: ControlDbValidationScope,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        control_db_dir.is_dir(),
+        "control-db path is not a directory: {}",
+        control_db_dir.display()
+    );
+    let db = sled::Config::default()
+        .path(control_db_dir)
+        .flush_every_ms(Some(50))
+        .mode(sled::Mode::HighThroughput)
+        .open()
+        .with_context(|| format!("opening control-db {}", control_db_dir.display()))?;
+
+    let database_by_identity = open_existing_control_db_tree(&db, "database_by_identity")?;
+    let database_key = database_identity.to_be_byte_array();
+    let Some(database_record) = database_by_identity
+        .get(database_key)
+        .with_context(|| format!("reading database identity {database_identity} from control-db"))?
+    else {
+        anyhow::bail!("control-db is missing database identity {database_identity}");
+    };
+
+    let databases = open_existing_control_db_tree(&db, "database")?;
+    let mut database_count = 0usize;
+    let mut database_id = None;
+    for item in databases.iter() {
+        let (key, value) = item.with_context(|| format!("reading database records in {}", control_db_dir.display()))?;
+        database_count += 1;
+        if value == database_record {
+            database_id = Some(control_db_u64_key(&key, "database id")?);
+        }
+    }
+    let Some(database_id) = database_id else {
+        anyhow::bail!("control-db database table is missing database identity {database_identity}");
+    };
+
+    let replicas = open_existing_control_db_tree(&db, "replica")?;
+    let replica_key = replica_id.to_be_bytes();
+    let mut replica_count = 0usize;
+    let mut matching_replica = None;
+    for item in replicas.iter() {
+        let (key, value) = item.with_context(|| format!("reading replica records in {}", control_db_dir.display()))?;
+        replica_count += 1;
+        if key.as_ref() == replica_key.as_slice() {
+            let replica: ControlDbReplica =
+                bsatn::from_slice(&value).with_context(|| format!("decoding replica {replica_id} in control-db"))?;
+            matching_replica = Some(replica);
+        }
+    }
+    let Some(replica) = matching_replica else {
+        anyhow::bail!("control-db is missing replica {replica_id}");
+    };
+    anyhow::ensure!(
+        replica.id == replica_id,
+        "control-db replica record id {} does not match key {}",
+        replica.id,
+        replica_id
+    );
+    anyhow::ensure!(
+        replica.database_id == database_id,
+        "control-db replica {} belongs to database {}, not {}",
+        replica_id,
+        replica.database_id,
+        database_id
+    );
+
+    if matches!(scope, ControlDbValidationScope::ScopedBackup) {
+        anyhow::ensure!(
+            database_count == 1,
+            "backup control-db must contain exactly one database record, found {database_count}"
+        );
+        anyhow::ensure!(
+            replica_count == 1,
+            "backup control-db must contain exactly one replica record, found {replica_count}"
+        );
+    }
+    Ok(())
+}
+
+fn control_db_u64_key(key: &[u8], label: &str) -> anyhow::Result<u64> {
+    let bytes: [u8; 8] = key
+        .try_into()
+        .with_context(|| format!("invalid control-db {label} key length {}", key.len()))?;
+    Ok(u64::from_be_bytes(bytes))
+}
+
+fn open_existing_control_db_tree(db: &sled::Db, tree_name: &str) -> anyhow::Result<sled::Tree> {
+    anyhow::ensure!(
+        db.tree_names().iter().any(|name| name.as_ref() == tree_name.as_bytes()),
+        "control-db is missing `{tree_name}` tree"
+    );
+    db.open_tree(tree_name)
+        .with_context(|| format!("opening control-db `{tree_name}` tree"))
 }
 
 #[derive(Debug)]
@@ -497,6 +664,7 @@ fn stage_missing_server_state(
     input_dir: &Path,
     data_dir: &ServerDataDir,
     restore_temp_id: u64,
+    manifest: &BackupManifest,
 ) -> anyhow::Result<StagedServerState> {
     let server_dir = input_dir.join("server");
     let needs_required_dirs = ["control-db", "program-bytes"]
@@ -556,6 +724,17 @@ fn stage_missing_server_state(
         for (src, final_path, staged_path, is_dir) in entries {
             copy_staged_server_state_entry(&mut staged, &src, final_path, staged_path, is_dir)?;
         }
+        if let Some(entry) = staged
+            .entries
+            .iter()
+            .find(|entry| entry.final_path.ends_with("control-db"))
+        {
+            let database_identity: Identity = manifest
+                .database_identity
+                .parse()
+                .with_context(|| format!("parsing backup database identity {}", manifest.database_identity))?;
+            validate_scoped_backup_control_db(&entry.staged_path, manifest, database_identity)?;
+        }
         Ok(())
     })();
     if res.is_err() {
@@ -603,6 +782,8 @@ fn staged_server_state_path(path: &Path, restore_temp_id: u64) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spacetimedb_commitlog::{payload::Txdata, Commitlog};
+    use spacetimedb_lib::ProductValue;
     use spacetimedb_paths::FromPathUnchecked;
     use spacetimedb_table::{blob_store::HashMapBlobStore, table::Table};
 
@@ -612,7 +793,7 @@ mod tests {
         make_backup_dir(backup.path(), 7, 42)?;
 
         let data = tempfile::tempdir()?;
-        make_target_data_dir(data.path())?;
+        make_target_data_dir(data.path(), 7)?;
         let data_dir = ServerDataDir::from_path_unchecked(data.path());
 
         let manifest = restore_backup(backup.path(), &data_dir, false)?;
@@ -637,7 +818,7 @@ mod tests {
         make_backup_dir(backup.path(), 7, 42)?;
 
         let data = tempfile::tempdir()?;
-        make_target_data_dir(data.path())?;
+        make_target_data_dir(data.path(), 7)?;
         std::fs::create_dir_all(data.path().join("replicas/7"))?;
         let data_dir = ServerDataDir::from_path_unchecked(data.path());
 
@@ -672,7 +853,7 @@ mod tests {
         make_backup_dir(backup.path(), 7, 42)?;
 
         let data = tempfile::tempdir()?;
-        make_target_data_dir(data.path())?;
+        make_target_data_dir(data.path(), 7)?;
         let replica_dir = data.path().join("replicas/7");
         std::fs::create_dir_all(&replica_dir)?;
         std::fs::write(replica_dir.join("old-marker"), b"old")?;
@@ -701,7 +882,7 @@ mod tests {
         make_backup_dir(backup.path(), 7, 42)?;
 
         let data = tempfile::tempdir()?;
-        make_target_data_dir(data.path())?;
+        make_target_data_dir(data.path(), 7)?;
         let replica_dir = data.path().join("replicas/7");
         std::fs::create_dir_all(&replica_dir)?;
         let old_marker = replica_dir.join("old-marker");
@@ -740,7 +921,7 @@ mod tests {
 
         restore_backup(backup.path(), &data_dir, false)?;
 
-        assert!(data.path().join("control-db/control").is_file());
+        assert!(data.path().join("control-db").is_dir());
         assert!(data.path().join("program-bytes/program").is_file());
         assert_eq!(std::fs::read_to_string(data.path().join("config.toml"))?, "config");
         assert_eq!(std::fs::read_to_string(data.path().join("metadata.toml"))?, "metadata");
@@ -832,7 +1013,7 @@ mod tests {
         std::fs::write(backup.path().join("clog/bad.stdb.log"), b"log")?;
 
         let data = tempfile::tempdir()?;
-        make_target_data_dir(data.path())?;
+        make_target_data_dir(data.path(), 7)?;
         let data_dir = ServerDataDir::from_path_unchecked(data.path());
 
         let err = restore_backup(backup.path(), &data_dir, false).unwrap_err();
@@ -846,8 +1027,12 @@ mod tests {
     fn backup_restore_does_not_leave_partial_server_state_when_server_state_is_incomplete() -> anyhow::Result<()> {
         let backup = tempfile::tempdir()?;
         make_backup_dir(backup.path(), 7, 42)?;
-        std::fs::create_dir_all(backup.path().join("server/control-db"))?;
-        std::fs::write(backup.path().join("server/control-db/control"), b"control")?;
+        make_test_control_db(
+            &backup.path().join("server/control-db"),
+            test_database_identity()?,
+            7,
+            false,
+        )?;
 
         let data = tempfile::tempdir()?;
         let data_dir = ServerDataDir::from_path_unchecked(data.path());
@@ -864,6 +1049,48 @@ mod tests {
             let entry = entry?;
             assert!(!entry.file_name().to_string_lossy().contains(".restore_tmp_"));
         }
+        Ok(())
+    }
+
+    #[test]
+    fn backup_restore_rejects_unscoped_backup_control_db() -> anyhow::Result<()> {
+        let backup = tempfile::tempdir()?;
+        make_backup_dir(backup.path(), 7, 42)?;
+        make_test_control_db(
+            &backup.path().join("server/control-db"),
+            test_database_identity()?,
+            7,
+            true,
+        )?;
+        std::fs::create_dir_all(backup.path().join("server/program-bytes"))?;
+        std::fs::write(backup.path().join("server/program-bytes/program"), b"program")?;
+        std::fs::write(backup.path().join("server/config.toml"), b"config")?;
+        std::fs::write(backup.path().join("server/metadata.toml"), b"metadata")?;
+
+        let data = tempfile::tempdir()?;
+        let data_dir = ServerDataDir::from_path_unchecked(data.path());
+
+        let err = restore_backup(backup.path(), &data_dir, false).unwrap_err();
+
+        assert!(format!("{err:#}").contains("backup control-db must contain exactly one database record"));
+        assert!(!data.path().join("replicas/7").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn backup_restore_rejects_existing_control_db_without_database_metadata() -> anyhow::Result<()> {
+        let backup = tempfile::tempdir()?;
+        make_backup_dir(backup.path(), 7, 42)?;
+
+        let data = tempfile::tempdir()?;
+        std::fs::create_dir_all(data.path().join("control-db"))?;
+        std::fs::create_dir_all(data.path().join("program-bytes"))?;
+        let data_dir = ServerDataDir::from_path_unchecked(data.path());
+
+        let err = restore_backup(backup.path(), &data_dir, false).unwrap_err();
+
+        assert!(format!("{err:#}").contains("target data-dir already has"));
+        assert!(!data.path().join("replicas/7").exists());
         Ok(())
     }
 
@@ -909,20 +1136,72 @@ mod tests {
         Ok(())
     }
 
-    fn make_target_data_dir(path: &Path) -> anyhow::Result<()> {
-        std::fs::create_dir_all(path.join("control-db"))?;
+    fn make_target_data_dir(path: &Path, replica_id: u64) -> anyhow::Result<()> {
+        make_test_control_db(&path.join("control-db"), test_database_identity()?, replica_id, false)?;
         std::fs::create_dir_all(path.join("program-bytes"))?;
         Ok(())
     }
 
     fn make_backup_server_state(path: &Path) -> anyhow::Result<()> {
-        std::fs::create_dir_all(path.join("server/control-db"))?;
-        std::fs::write(path.join("server/control-db/control"), b"control")?;
+        make_test_control_db(&path.join("server/control-db"), test_database_identity()?, 7, false)?;
         std::fs::create_dir_all(path.join("server/program-bytes"))?;
         std::fs::write(path.join("server/program-bytes/program"), b"program")?;
         std::fs::write(path.join("server/config.toml"), b"config")?;
         std::fs::write(path.join("server/metadata.toml"), b"metadata")?;
         Ok(())
+    }
+
+    fn make_test_control_db(
+        path: &Path,
+        database_identity: Identity,
+        replica_id: u64,
+        include_extra_database: bool,
+    ) -> anyhow::Result<()> {
+        std::fs::create_dir_all(path)?;
+        let db = sled::Config::default()
+            .path(path)
+            .flush_every_ms(Some(50))
+            .mode(sled::Mode::HighThroughput)
+            .open()?;
+        let database_record = sled::IVec::from(vec![1, 2, 3]);
+        db.open_tree("database_by_identity")?
+            .insert(database_identity.to_be_byte_array(), database_record.clone())?;
+        db.open_tree("database")?
+            .insert(1u64.to_be_bytes(), database_record.clone())?;
+        db.open_tree("replica")?.insert(
+            replica_id.to_be_bytes(),
+            bsatn::to_vec(&ControlDbReplica {
+                id: replica_id,
+                database_id: 1,
+                node_id: 0,
+                leader: true,
+            })?,
+        )?;
+        if include_extra_database {
+            let extra_identity: Identity =
+                "c300000000000000000000000000000000000000000000000000000000000000".parse()?;
+            let extra_database_record = sled::IVec::from(vec![7, 8, 9]);
+            db.open_tree("database_by_identity")?
+                .insert(extra_identity.to_be_byte_array(), extra_database_record.clone())?;
+            db.open_tree("database")?
+                .insert(2u64.to_be_bytes(), extra_database_record)?;
+            db.open_tree("replica")?.insert(
+                (replica_id + 1).to_be_bytes(),
+                bsatn::to_vec(&ControlDbReplica {
+                    id: replica_id + 1,
+                    database_id: 2,
+                    node_id: 0,
+                    leader: true,
+                })?,
+            )?;
+        }
+        db.flush()?;
+        drop(db);
+        Ok(())
+    }
+
+    fn test_database_identity() -> anyhow::Result<Identity> {
+        Ok("c200000000000000000000000000000000000000000000000000000000000000".parse()?)
     }
 
     #[cfg(windows)]
@@ -943,7 +1222,7 @@ mod tests {
     }
 
     fn make_backup_dir(path: &Path, replica_id: u64, offset: u64) -> anyhow::Result<()> {
-        let database_identity: Identity = "c200000000000000000000000000000000000000000000000000000000000000".parse()?;
+        let database_identity: Identity = test_database_identity()?;
 
         let snapshots_path = SnapshotsPath::from_path_unchecked(path.join("snapshots"));
         std::fs::create_dir_all(&snapshots_path.0)?;

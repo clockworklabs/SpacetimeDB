@@ -7,7 +7,10 @@ use std::{
 };
 
 use anyhow::Context as _;
-use futures::{channel::mpsc, StreamExt as _};
+use futures::{
+    channel::{mpsc, oneshot},
+    StreamExt as _,
+};
 use log::{info, warn};
 use parking_lot::RwLock;
 use prometheus::{Histogram, IntGauge};
@@ -127,7 +130,10 @@ impl SnapshotWorker {
     /// which is likely due to it having panicked.
     pub fn request_snapshot(&self) {
         self.request_snapshot
-            .unbounded_send(Request::TakeSnapshot { min_offset: None })
+            .unbounded_send(Request::TakeSnapshot {
+                min_offset: None,
+                result: None,
+            })
             .expect("snapshot worker panicked");
     }
 
@@ -136,9 +142,10 @@ impl SnapshotWorker {
     /// Used by the durability to request snapshots on commitlog segment rotation,
     /// since the durability should continue writing queued TXes even if the snapshot worker panics.
     pub fn request_snapshot_ignore_closed(&self) {
-        let _ = self
-            .request_snapshot
-            .unbounded_send(Request::TakeSnapshot { min_offset: None });
+        let _ = self.request_snapshot.unbounded_send(Request::TakeSnapshot {
+            min_offset: None,
+            result: None,
+        });
     }
 
     /// Subscribe to the [TxOffset]s of snapshots created by this worker.
@@ -159,11 +166,19 @@ impl SnapshotWorker {
         }
 
         let mut snapshot_created = self.subscribe();
+        let (result_tx, result_rx) = oneshot::channel();
         self.request_snapshot
             .unbounded_send(Request::TakeSnapshot {
                 min_offset: Some(offset),
+                result: Some(result_tx),
             })
             .expect("snapshot worker panicked");
+        let snapshot_offset = result_rx
+            .await
+            .context("snapshot worker closed before creating requested snapshot")??;
+        if snapshot_offset >= offset {
+            return Ok(snapshot_offset);
+        }
         loop {
             snapshot_created
                 .changed()
@@ -196,7 +211,10 @@ impl SnapshotMetrics {
 type WeakDatabaseState = Weak<RwLock<CommittedState>>;
 
 enum Request {
-    TakeSnapshot { min_offset: Option<TxOffset> },
+    TakeSnapshot {
+        min_offset: Option<TxOffset>,
+        result: Option<oneshot::Sender<anyhow::Result<TxOffset>>>,
+    },
     ReplaceState(SnapshotDatabaseState),
 }
 
@@ -207,6 +225,15 @@ struct SnapshotWorkerActor {
     metrics: SnapshotMetrics,
     rt: Handle,
     compression: Option<Compressor>,
+}
+
+fn send_snapshot_request_result(
+    result: Option<oneshot::Sender<anyhow::Result<TxOffset>>>,
+    value: anyhow::Result<TxOffset>,
+) {
+    if let Some(result) = result {
+        let _ = result.send(value);
+    }
 }
 
 impl SnapshotWorkerActor {
@@ -229,25 +256,30 @@ impl SnapshotWorkerActor {
         let mut database_state: Option<WeakDatabaseState> = None;
         while let Some(req) = self.snapshot_requests.next().await {
             match req {
-                Request::TakeSnapshot { min_offset } => {
+                Request::TakeSnapshot { min_offset, result } => {
                     if let Some(min_offset) = min_offset
                         && let Ok(Some(latest)) = self.snapshot_repo.latest_snapshot()
                         && latest >= min_offset
                     {
                         self.snapshot_created.send_replace(latest);
+                        send_snapshot_request_result(result, Ok(latest));
                         continue;
                     }
-                    let res = self
-                        .maybe_take_snapshot(database_state.as_ref())
-                        .await
-                        .inspect_err(|e| warn!("database={database_identity} SnapshotWorker: {e:#}"));
-                    if let Ok(snapshot_offset) = res {
-                        self.maybe_compress_snapshots(snapshot_offset).await;
-                        // INVARIANT: only signal `snapshot_created` after the snapshot
-                        // is fully durable on disk (`take_snapshot` returns post-fsync).
-                        // Hot backup relies on this to copy the snapshot directory as
-                        // soon as it observes the offset.
-                        self.snapshot_created.send_replace(snapshot_offset);
+                    let res = self.maybe_take_snapshot(database_state.as_ref()).await;
+                    match res {
+                        Ok(snapshot_offset) => {
+                            self.maybe_compress_snapshots(snapshot_offset).await;
+                            // INVARIANT: only signal `snapshot_created` after the snapshot
+                            // is fully durable on disk (`take_snapshot` returns post-fsync).
+                            // Hot backup relies on this to copy the snapshot directory as
+                            // soon as it observes the offset.
+                            self.snapshot_created.send_replace(snapshot_offset);
+                            send_snapshot_request_result(result, Ok(snapshot_offset));
+                        }
+                        Err(err) => {
+                            warn!("database={database_identity} SnapshotWorker: {err:#}");
+                            send_snapshot_request_result(result, Err(err));
+                        }
                     }
                 }
                 Request::ReplaceState(new_state) => {
@@ -422,5 +454,32 @@ impl Compressor {
                 range, database_identity, elapsed
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spacetimedb_paths::{server::SnapshotsPath, FromPathUnchecked};
+    use spacetimedb_snapshot::SnapshotRepository;
+
+    #[test]
+    fn ensure_snapshot_at_least_returns_snapshot_errors() -> anyhow::Result<()> {
+        let rt = tokio::runtime::Runtime::new()?;
+        let temp = tempfile::tempdir()?;
+        std::fs::create_dir_all(temp.path().join("snapshots"))?;
+        let repo: Arc<DynSnapshotRepo> = Arc::new(SnapshotRepository::open(
+            SnapshotsPath::from_path_unchecked(temp.path().join("snapshots")),
+            Identity::ZERO,
+            0,
+        )?);
+        let worker = SnapshotWorker::new(repo, Compression::Disabled, Handle::tokio(rt.handle().clone()));
+
+        let err = rt
+            .block_on(async { tokio::time::timeout(Duration::from_secs(5), worker.ensure_snapshot_at_least(1)).await })?
+            .unwrap_err();
+
+        assert!(format!("{err:#}").contains("database state not set"));
+        Ok(())
     }
 }

@@ -213,12 +213,16 @@ impl NodeDelegate for StandaloneEnv {
 
         let export_start = Instant::now();
         let control_db = self.control_db.clone();
+        let database_identity = manifest.database_identity;
+        let replica_id = manifest.replica_id;
         // sled export and the dir-size sweep are blocking; keep them off the async executor.
         manifest.bytes = spacetimedb::util::asyncify(move || -> anyhow::Result<u64> {
             control_db
-                .export_to_path(&ControlDbDir::from_path_unchecked(
-                    output_dir.join("server").join("control-db"),
-                ))
+                .export_database_to_path(
+                    &ControlDbDir::from_path_unchecked(output_dir.join("server").join("control-db")),
+                    &database_identity,
+                    replica_id,
+                )
                 .context("exporting control-db into backup")?;
             dir_size(&output_dir).context("measuring backup size")
         })
