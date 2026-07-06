@@ -265,6 +265,7 @@ Start development mode with auto-regenerate client module bindings, auto-rebuild
   Possible values: `always`, `on-conflict`, `never`
 
 * `-t`, `--template <TEMPLATE>` — Template ID or GitHub repository (owner/repo or URL) for project initialization
+* `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.
 * `--run <COMMAND>` — Command to run the client development server (overrides spacetime.json config)
 * `--server-only` — Only run the server (module) without starting the client
 * `--no-config` — Ignore spacetime.json configuration
@@ -711,3 +712,4 @@ Run `spacetime version --help` to see all options.
     This document was generated automatically by
     <a href="https://crates.io/crates/clap-markdown"><code>clap-markdown</code></a>.
 </i></small>
+
