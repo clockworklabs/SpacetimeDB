@@ -400,6 +400,10 @@ impl FileLike for Segment {
 
         Ok(())
     }
+
+    fn fallocate(&mut self, _size: u64) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 pub struct ReadOnlySegment {
