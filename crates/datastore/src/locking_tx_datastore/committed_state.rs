@@ -14,7 +14,11 @@ use crate::traits::TxOffset;
 use crate::{
     error::TableError,
     execution_context::ExecutionContext,
-    locking_tx_datastore::{mut_tx::ViewReadSets, state_view::ScanOrIndex, IterByColRangeTx},
+    locking_tx_datastore::{
+        mut_tx::{ViewInstanceState, ViewInstanceTxState, ViewReadSets},
+        state_view::ScanOrIndex,
+        IterByColRangeTx,
+    },
     system_tables::{
         system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, SystemTable, ST_CLIENT_ID,
         ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX,
@@ -36,9 +40,9 @@ use crate::{
 };
 use anyhow::anyhow;
 use core::{convert::Infallible, ops::RangeBounds};
-use spacetimedb_data_structures::map::{IntMap, IntSet};
+use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap, IntSet};
 use spacetimedb_lib::{db::auth::StTableType, Identity};
-use spacetimedb_primitives::{ColList, IndexId, TableId, ViewId};
+use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
@@ -78,11 +82,16 @@ pub struct CommittedState {
     /// Pages are shared between all modules running on a particular host,
     /// not allocated per-module.
     pub(super) page_pool: PagePool,
+    /// Total bytes occupied by physical pages in committed tables.
+    datastore_page_bytes: u64,
     /// We track the read sets for each view in the committed state.
     /// We check each reducer's write set against these read sets.
     /// Any overlap will trigger a re-evaluation of the affected view,
     /// and its read set will be updated accordingly.
     read_sets: ViewReadSets,
+
+    /// Ephemeral materialized view lifecycle state keyed by `(view_id, arg_hash)`.
+    view_instances: HashMap<ViewCallInfo, ViewInstanceState>,
 
     /// Tables which do not need to be made persistent.
     /// These include:
@@ -120,7 +129,9 @@ impl MemoryUsage for CommittedState {
             blob_store,
             index_id_map,
             page_pool: _,
+            datastore_page_bytes,
             read_sets,
+            view_instances,
             ephemeral_tables,
         } = self;
         // NOTE(centril): We do not want to include the heap usage of `page_pool` as it's a shared resource.
@@ -128,7 +139,9 @@ impl MemoryUsage for CommittedState {
             + tables.heap_usage()
             + blob_store.heap_usage()
             + index_id_map.heap_usage()
+            + datastore_page_bytes.heap_usage()
             + read_sets.heap_usage()
+            + view_instances.heap_usage()
             + ephemeral_tables.heap_usage()
     }
 }
@@ -197,9 +210,44 @@ impl CommittedState {
             blob_store: <_>::default(),
             index_id_map: <_>::default(),
             read_sets: <_>::default(),
+            view_instances: <_>::default(),
             page_pool,
+            datastore_page_bytes: 0,
             ephemeral_tables: <_>::default(),
         }
+    }
+
+    /// Returns committed datastore table page bytes.
+    pub fn datastore_page_bytes(&self) -> u64 {
+        self.datastore_page_bytes
+    }
+
+    /// Returns committed datastore bytes.
+    ///
+    /// This currently includes the pages allocated by the datastore
+    /// and the objects stored in the [`BlobStore`].
+    ///
+    /// TODO: Eventually this should also include index bytes
+    /// once indexes are managed by the page cache.
+    pub fn datastore_memory_bytes(&self) -> u64 {
+        self.datastore_page_bytes + self.blob_store.physical_bytes_used_by_blobs()
+    }
+
+    /// Recomputes `datastore_page_bytes` from committed tables.
+    ///
+    /// This is only used for bootstrap, snapshot restore, and replay paths.
+    pub(super) fn rebuild_datastore_page_bytes(&mut self) {
+        self.datastore_page_bytes = self.tables.values().map(Table::page_bytes).sum();
+    }
+
+    /// Called when a new page is added to committed state.
+    fn add_datastore_page_bytes(&mut self, bytes: u64) {
+        self.datastore_page_bytes += bytes;
+    }
+
+    /// Called when a page is removed from committed state.
+    pub(super) fn sub_datastore_page_bytes(&mut self, bytes: u64) {
+        self.datastore_page_bytes -= bytes;
     }
 
     /// Extremely delicate function to bootstrap the system tables.
@@ -348,6 +396,7 @@ impl CommittedState {
 
         // This is purely a sanity check to ensure that we are setting the ids correctly.
         self.assert_system_table_schemas_match()?;
+        self.rebuild_datastore_page_bytes();
         Ok(())
     }
 
@@ -476,11 +525,47 @@ impl CommittedState {
         tx_data.has_rows_or_connect_disconnect(ctx.reducer_context().map(|rcx| &rcx.name))
     }
 
-    pub(super) fn drop_view_from_read_sets(&mut self, view_id: ViewId, sender: Option<Identity>) {
-        self.read_sets.remove_view(view_id, sender)
+    pub(super) fn view_instance(&self, call: &ViewCallInfo) -> Option<&ViewInstanceState> {
+        self.view_instances.get(call)
     }
 
-    pub(super) fn merge(&mut self, tx_state: TxState, read_sets: ViewReadSets, ctx: &ExecutionContext) -> TxData {
+    pub(super) fn active_view_calls_for_subscriber(&self, subscriber: Identity) -> HashSet<ViewCallInfo> {
+        self.view_instances
+            .iter()
+            .filter(|(_, state)| {
+                state
+                    .active_subscribers
+                    .get(&subscriber)
+                    .is_some_and(|count| *count > 0)
+            })
+            .map(|(call, _)| call.clone())
+            .collect()
+    }
+
+    pub(super) fn view_instances(&self) -> impl Iterator<Item = (&ViewCallInfo, &ViewInstanceState)> {
+        self.view_instances.iter()
+    }
+
+    fn merge_view_instances(&mut self, view_instances: ViewInstanceTxState) {
+        for (call, state) in view_instances.into_changes() {
+            match state {
+                Some(state) => {
+                    self.view_instances.insert(call, state);
+                }
+                None => {
+                    self.view_instances.remove(&call);
+                }
+            }
+        }
+    }
+
+    pub(super) fn merge(
+        &mut self,
+        tx_state: TxState,
+        read_sets: ViewReadSets,
+        view_instances: ViewInstanceTxState,
+        ctx: &ExecutionContext,
+    ) -> TxData {
         let mut tx_data = TxData::default();
         let mut truncates = IntSet::default();
 
@@ -509,6 +594,7 @@ impl CommittedState {
         // which implies `tx_data` already contains inserts and deletes for view tables
         // so that we can pass updated set of table ids.
         self.merge_read_sets(read_sets);
+        self.merge_view_instances(view_instances);
 
         // Store in `tx_data` which of the updated tables are ephemeral.
         // NOTE: This must be called before `tx_consumes_offset`, so that
@@ -630,13 +716,20 @@ impl CommittedState {
                 // we just want to include them in subscriptions and the commitlog.
                 Self::collect_inserts(page_pool, truncates, tx_data, &tx_bs, table_id, tx_table, |_| {});
             } else {
-                let (commit_table, commit_blob_store, page_pool) =
-                    self.get_table_and_blob_store_or_create(table_id, schema);
-                Self::collect_inserts(page_pool, truncates, tx_data, &tx_bs, table_id, tx_table, |row| {
-                    commit_table
-                        .insert(page_pool, commit_blob_store, row)
-                        .expect("Failed to insert when merging commit");
-                });
+                let page_bytes_added = {
+                    let (commit_table, commit_blob_store, page_pool) =
+                        self.get_table_and_blob_store_or_create(table_id, schema);
+                    let page_bytes_before = commit_table.page_bytes();
+                    Self::collect_inserts(page_pool, truncates, tx_data, &tx_bs, table_id, tx_table, |row| {
+                        commit_table
+                            .insert(page_pool, commit_blob_store, row)
+                            .expect("Failed to insert when merging commit");
+                    });
+                    let page_bytes_after = commit_table.page_bytes();
+                    debug_assert!(page_bytes_after >= page_bytes_before);
+                    page_bytes_after - page_bytes_before
+                };
+                self.add_datastore_page_bytes(page_bytes_added);
             }
         }
     }
@@ -722,6 +815,7 @@ impl CommittedState {
                 // We don't need to deal with sub-components.
                 // That is, we don't need to add back indices and such.
                 // Instead, there will be separate pending schema changes like `IndexRemoved`.
+                self.add_datastore_page_bytes(table.page_bytes());
                 self.tables.insert(table_id, table);
 
                 // Incase, the table was ephemeral, add it back to that set as well.
@@ -734,7 +828,9 @@ impl CommittedState {
                 // We don't need to deal with sub-components.
                 // That is, we don't need to remove indices and such.
                 // Instead, there will be separate pending schema changes like `IndexAdded`.
-                self.tables.remove(&table_id);
+                if let Some(table) = self.tables.remove(&table_id) {
+                    self.sub_datastore_page_bytes(table.page_bytes());
+                }
                 // Incase, the table was ephemeral, remove it from that set as well.
                 self.ephemeral_tables.remove(&table_id);
             }
@@ -766,15 +862,48 @@ impl CommittedState {
                 unsafe { table.change_columns_to_unchecked(column_schemas, |_, _, _| Ok::<_, Infallible>(())) }
                     .unwrap_or_else(|e| match e {});
             }
+            ReschemaEventTable(table_id, column_schemas) => {
+                let table = self.tables.get_mut(&table_id)?;
+                // SAFETY:
+                // Same argument as in `TableAlterRowType` applies,
+                // except that rather than knowing the types to be compatible, we know the commit table to be empty,
+                // so there are no rows or pages to have a conflicting type.
+                unsafe { table.change_columns_to_unchecked(column_schemas, |_, _, _| Ok::<_, Infallible>(())) }
+                    .unwrap_or_else(|e| match e {});
+            }
             // A constraint was removed. Add it back.
-            ConstraintRemoved(table_id, constraint_schema) => {
+            ConstraintRemoved(table_id, constraint_schema, index_ids) => {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.update_constraint(constraint_schema));
+                // If the constraint had unique indices, make them unique again.
+                for index_id in index_ids {
+                    if let Some(idx) = table.indexes.get_mut(&index_id) {
+                        idx.make_unique().expect("rollback: index should have no duplicates");
+                    }
+                }
+                // Forward `drop_constraint` calls `Table::make_index_non_unique`, which
+                // rebuilds the pointer map when no unique index remained. Whatever the
+                // forward path did, the table invariant "pointer map is present iff no
+                // unique index exists" (see `table.rs`) is about to be re-established
+                // by the `make_unique` calls above — drop any rebuilt map now.
+                // `take_pointer_map` is idempotent: it returns `None` when the map is
+                // already absent, so it is safe to call unconditionally.
+                table.take_pointer_map();
             }
             // A constraint was added. Remove it.
-            ConstraintAdded(table_id, constraint_id) => {
+            ConstraintAdded(table_id, constraint_id, index_ids, pointer_map) => {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.remove_constraint(constraint_id));
+                // If the constraint made indices unique, revert them to non-unique.
+                for index_id in index_ids {
+                    if let Some(idx) = table.indexes.get_mut(&index_id) {
+                        idx.make_non_unique();
+                    }
+                }
+                // Restore the pointer map if it was taken.
+                if let Some(pm) = pointer_map {
+                    table.restore_pointer_map(pm);
+                }
             }
             // A sequence was removed. Add it back.
             SequenceRemoved(table_id, seq, schema) => {

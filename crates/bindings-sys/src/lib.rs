@@ -647,7 +647,6 @@ pub mod raw {
         pub fn get_jwt(connection_id_ptr: *const u8, bytes_source_id: *mut BytesSource) -> u16;
     }
 
-    #[cfg(feature = "unstable")]
     #[link(wasm_import_module = "spacetime_10.3")]
     unsafe extern "C" {
         /// Suspends execution of this WASM instance until approximately `wake_at_micros_since_unix_epoch`.
@@ -778,7 +777,6 @@ pub mod raw {
         /// - `body_ptr` is NULL or `body_ptr[..body_len]` is not in bounds of WASM memory.
         /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
         /// - `request_ptr[..request_len]` does not contain a valid BSATN-serialized `spacetimedb_lib::http::Request` object.
-        #[cfg(feature = "unstable")]
         pub fn procedure_http_request(
             request_ptr: *const u8,
             request_len: u32,
@@ -1352,7 +1350,6 @@ unsafe fn call<T: Copy>(f: impl FnOnce(*mut T) -> u16) -> Result<T> {
 /// Assuming the call to `f` returns 0, `Ok(())` is returned,
 /// and otherwise `Err(err)` is returned.
 #[inline]
-#[cfg(feature = "unstable")]
 fn call_no_ret(f: impl FnOnce() -> u16) -> Result<()> {
     let f_code = f();
     cvt(f_code)?;
@@ -1828,7 +1825,6 @@ impl Drop for RowIter {
     }
 }
 
-#[cfg(feature = "unstable")]
 pub mod procedure {
     //! Side-effecting or asynchronous operations which only procedures are allowed to perform.
 
@@ -1846,7 +1842,7 @@ pub mod procedure {
     ///
     /// Once complete, returns `Ok(timestamp)` on success,
     /// enabling further calls that require a pending transaction,
-    /// or [`Errno`] otherwise.
+    /// or [`crate::Errno`] otherwise.
     ///
     /// # Errors
     ///
@@ -1862,7 +1858,7 @@ pub mod procedure {
     /// blocking until the transaction has been committed
     /// and subscription queries have been run and broadcast.
     ///
-    /// Once complete, returns `Ok(())` on success, or an [`Errno`] otherwise.
+    /// Once complete, returns `Ok(())` on success, or an [`crate::Errno`] otherwise.
     ///
     /// # Errors
     ///
@@ -1884,7 +1880,7 @@ pub mod procedure {
     /// Aborts a mutable transaction,
     /// blocking until the transaction has been rolled back.
     ///
-    /// Once complete, returns `Ok(())` on success, or an [`Errno`] otherwise.
+    /// Once complete, returns `Ok(())` on success, or an [`crate::Errno`] otherwise.
     ///
     /// # Errors
     ///
@@ -1904,7 +1900,6 @@ pub mod procedure {
     }
 
     #[inline]
-    #[cfg(feature = "unstable")]
     /// Perform an HTTP request as specified by `http_request_bsatn`,
     /// suspending execution until the request is complete,
     /// then return its response or error.

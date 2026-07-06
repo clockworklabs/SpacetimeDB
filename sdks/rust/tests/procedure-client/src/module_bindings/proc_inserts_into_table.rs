@@ -40,6 +40,18 @@ impl ProcInsertsIntoTableAccess for super::RemoteTables {
 pub struct ProcInsertsIntoInsertCallbackId(__sdk::CallbackId);
 pub struct ProcInsertsIntoDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for ProcInsertsIntoTableHandle<'ctx> {
+    type Row = ProcInsertsInto;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = ProcInsertsInto> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for ProcInsertsIntoTableHandle<'ctx> {
     type Row = ProcInsertsInto;
     type EventContext = super::EventContext;
@@ -64,6 +76,36 @@ impl<'ctx> __sdk::Table for ProcInsertsIntoTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = ProcInsertsIntoDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> ProcInsertsIntoDeleteCallbackId {
+        ProcInsertsIntoDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: ProcInsertsIntoDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for ProcInsertsIntoTableHandle<'ctx> {
+    type InsertCallbackId = ProcInsertsIntoInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> ProcInsertsIntoInsertCallbackId {
+        ProcInsertsIntoInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: ProcInsertsIntoInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for ProcInsertsIntoTableHandle<'ctx> {
     type DeleteCallbackId = ProcInsertsIntoDeleteCallbackId;
 
     fn on_delete(

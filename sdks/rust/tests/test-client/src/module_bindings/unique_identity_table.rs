@@ -40,6 +40,18 @@ impl UniqueIdentityTableAccess for super::RemoteTables {
 pub struct UniqueIdentityInsertCallbackId(__sdk::CallbackId);
 pub struct UniqueIdentityDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for UniqueIdentityTableHandle<'ctx> {
+    type Row = UniqueIdentity;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = UniqueIdentity> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for UniqueIdentityTableHandle<'ctx> {
     type Row = UniqueIdentity;
     type EventContext = super::EventContext;
@@ -64,6 +76,36 @@ impl<'ctx> __sdk::Table for UniqueIdentityTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = UniqueIdentityDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> UniqueIdentityDeleteCallbackId {
+        UniqueIdentityDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: UniqueIdentityDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for UniqueIdentityTableHandle<'ctx> {
+    type InsertCallbackId = UniqueIdentityInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> UniqueIdentityInsertCallbackId {
+        UniqueIdentityInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: UniqueIdentityInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for UniqueIdentityTableHandle<'ctx> {
     type DeleteCallbackId = UniqueIdentityDeleteCallbackId;
 
     fn on_delete(

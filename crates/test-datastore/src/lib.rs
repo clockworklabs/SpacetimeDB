@@ -7,9 +7,9 @@ use std::cell::RefCell;
 use std::sync::Arc;
 
 use spacetimedb_core::db::relational_db::{MutTx, RelationalDB, Tx};
+use spacetimedb_core::db::sql::ast::SchemaViewer;
 use spacetimedb_core::error::{DBError, DatastoreError, IndexError, SequenceError};
 use spacetimedb_core::estimation::{check_row_limit, estimate_rows_scanned};
-use spacetimedb_core::sql::ast::SchemaViewer;
 use spacetimedb_datastore::locking_tx_datastore::IndexScanPointOrRange;
 use spacetimedb_datastore::{execution_context::Workload, traits::IsolationLevel};
 use spacetimedb_expr::statement::Statement;

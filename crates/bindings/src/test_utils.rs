@@ -286,14 +286,14 @@ impl From<TestDatastoreError> for TestQueryError {
 }
 
 /// Hooks invoked at procedure transaction boundaries in native unit tests.
-#[cfg(all(feature = "unstable", not(target_arch = "wasm32")))]
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Default)]
 pub struct ProcedureTestHooks {
     after_tx_commit: Vec<Box<dyn FnMut(&TestContext) -> anyhow::Result<()>>>,
     on_sleep: Vec<Box<dyn FnMut(&TestContext, crate::Timestamp) -> anyhow::Result<()>>>,
 }
 
-#[cfg(all(feature = "unstable", not(target_arch = "wasm32")))]
+#[cfg(not(target_arch = "wasm32"))]
 impl ProcedureTestHooks {
     /// Create an empty hook set.
     pub fn new() -> Self {

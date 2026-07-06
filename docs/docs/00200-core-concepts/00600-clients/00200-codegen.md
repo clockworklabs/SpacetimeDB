@@ -45,7 +45,7 @@ Replace **PATH-TO-MODULE-DIRECTORY** with the path to your module's directory, w
 
 ```bash
 mkdir -p module_bindings
-spacetime generate --lang cs --out-dir module_bindings --module-path PATH-TO-MODULE-DIRECTORY
+spacetime generate --lang csharp --out-dir module_bindings --module-path PATH-TO-MODULE-DIRECTORY
 ```
 
 This generates C# files in `module_bindings/`. The generated files are automatically included in your project.
@@ -189,10 +189,10 @@ For example, a `create_user` reducer becomes:
 
 ```typescript
 // Call the reducer
-conn.reducers.createUser(name, email);
+conn.reducers.createUser({ name, email });
 
 // Register a callback to observe reducer invocations
-conn.reducers.onCreateUser((ctx, name, email) => {
+conn.reducers.onCreateUser((ctx, { name, email }) => {
   console.log(`User created: ${name}`);
 });
 ```
@@ -257,7 +257,7 @@ For each [procedure](../00200-functions/00400-procedures.md) in your module, cod
 - **Return value handling** for procedures that return results
 - **Type-safe parameters** matching the procedure's signature
 
-Procedures are currently in beta. For example, a `fetch_external_data` procedure becomes:
+For example, a `fetch_external_data` procedure becomes:
 
 <Tabs groupId="client-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -346,6 +346,7 @@ For each [view](../00200-functions/00500-views.md) in your module, codegen gener
 - **Type definitions** for the view's return type
 - **Subscription interfaces** for subscribing to view results
 - **Query methods** for accessing cached view results
+- **Update callbacks** when the view has a known primary key
 
 Views provide subscribable, computed queries over your data.
 

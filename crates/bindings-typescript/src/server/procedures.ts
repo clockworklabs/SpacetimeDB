@@ -77,6 +77,8 @@ export interface ProcedureOpts {
 
 export interface ProcedureCtx<S extends UntypedSchemaDef> {
   readonly sender: Identity;
+  readonly databaseIdentity: Identity;
+  /** @deprecated Use `databaseIdentity` instead. */
   readonly identity: Identity;
   readonly timestamp: Timestamp;
   readonly connectionId: ConnectionId | null;
@@ -210,8 +212,12 @@ export const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
     this.#childSeedRandom = childSeedRandom;
   }
 
-  get identity() {
+  get databaseIdentity() {
     return (this.#identity ??= new Identity(this.#backend.identity()));
+  }
+
+  get identity() {
+    return this.databaseIdentity;
   }
 
   get random() {
@@ -229,12 +235,12 @@ export const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   withTx<T>(body: (ctx: TransactionCtx<S>) => T): T {
     const txSeed = this.#childSeedRandom?.bigintInRange(0n, (1n << 64n) - 1n);
     const run = () => {
-      const timestamp = this.#backend.procedureStartMutTx();
+      const timestamp = new Timestamp(this.#backend.procedureStartMutTx());
 
       try {
         const ctx: ITransactionCtx<S> = new ReducerCtxImpl(
           this.sender,
-          new Timestamp(timestamp),
+          timestamp,
           this.connectionId,
           this.#dbView(),
           this.#backend,

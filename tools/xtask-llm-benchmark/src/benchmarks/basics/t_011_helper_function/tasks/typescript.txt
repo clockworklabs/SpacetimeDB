@@ -1,4 +1,4 @@
-Write a SpacetimeDB backend module in TypeScript that demonstrates helper functions called from reducers.
+Write a SpacetimeDB backend module in TypeScript that defines a table, a non-reducer helper function, and a reducer that uses the helper.
 
 TABLE
 - result

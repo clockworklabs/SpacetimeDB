@@ -59,33 +59,27 @@ impl<R: Repo, T> Generic<R, T> {
         if !tail.is_empty() {
             debug!("segments: {tail:?}");
         }
-        let head = if let Some(last) = tail.pop() {
-            debug!("resuming last segment: {last}");
-            // Resume the last segment for writing, or create a new segment
-            // starting from the last good commit + 1.
-            repo::resume_segment_writer(&repo, opts, last)?.or_else(|meta| {
-                // The first commit in the last segment being corrupt is an
-                // edge case: we'd try to start a new segment with an offset
-                // equal to the already existing one, which would fail.
-                //
-                // We cannot just skip it either, as we don't know the reason
-                // for the corruption (there could be more, potentially
-                // recoverable commits in the segment).
-                //
-                // Thus, provide some context about what is wrong and refuse to
-                // start.
-                if meta.tx_range.is_empty() {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        format!("repo {}: first commit in resumed segment {} is corrupt", repo, last),
-                    ));
+
+        // Resume the last segment for writing, or
+        // create a new segment starting from the last good commit + 1.
+        let head = loop {
+            if let Some(last) = tail.pop() {
+                info!("repo {}: resuming last segment: {}", repo, last);
+                match repo::resume_segment_writer(&repo, opts, last)? {
+                    repo::ResumedSegment::Empty => {
+                        repo.remove_segment(last)?;
+                        continue;
+                    }
+                    repo::ResumedSegment::Resumed(writer) => break writer,
+                    repo::ResumedSegment::Sealed(meta) | repo::ResumedSegment::Corrupted(meta) => {
+                        tail.push(meta.tx_range.start);
+                        break repo::create_segment_writer(&repo, opts, meta.max_epoch, meta.tx_range.end)?;
+                    }
                 }
-                tail.push(meta.tx_range.start);
-                repo::create_segment_writer(&repo, opts, meta.max_epoch, meta.tx_range.end)
-            })?
-        } else {
-            debug!("starting fresh log");
-            repo::create_segment_writer(&repo, opts, Commit::DEFAULT_EPOCH, 0)?
+            } else {
+                info!("repo {}: starting fresh log", repo);
+                break repo::create_segment_writer(&repo, opts, Commit::DEFAULT_EPOCH, 0)?;
+            }
         };
 
         Ok(Self {

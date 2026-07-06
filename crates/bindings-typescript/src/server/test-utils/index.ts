@@ -1,5 +1,4 @@
 import { moduleHooks } from 'spacetime:sys@2.0';
-import { headersToList } from 'headers-polyfill';
 
 import { AlgebraicType } from '../../lib/algebraic_type';
 import BinaryReader from '../../lib/binary_reader';
@@ -12,16 +11,20 @@ import type { TimeDuration } from '../../lib/time_duration';
 import {
   type HttpRequest,
   type HttpResponse,
-  type HttpMethod,
-} from '../../lib/http_types';
+} from '../../lib/autogen/types';
 import type { Table } from '../../lib/table';
 import type { DbView } from '../db_view';
 import {
   Headers,
-  SyncResponse,
   type HttpClient,
   type RequestOptions,
 } from '../http_internal';
+import {
+  deserializeHeaders,
+  serializeHeaders,
+  serializeMethod,
+  SyncResponse,
+} from '../http_shared';
 import { makeTableView, ReducerCtxImpl } from '../runtime';
 import type { ProcedureCtx } from '../procedures';
 import { ProcedureCtxImpl } from '../procedures';
@@ -528,19 +531,7 @@ function makeHttpClient<S extends UntypedSchemaDef>(
       ) => HttpResponse)
     | undefined
 ): HttpClient {
-  const methods = new Map<string, HttpMethod>([
-    ['GET', { tag: 'Get' }],
-    ['HEAD', { tag: 'Head' }],
-    ['POST', { tag: 'Post' }],
-    ['PUT', { tag: 'Put' }],
-    ['DELETE', { tag: 'Delete' }],
-    ['CONNECT', { tag: 'Connect' }],
-    ['OPTIONS', { tag: 'Options' }],
-    ['TRACE', { tag: 'Trace' }],
-    ['PATCH', { tag: 'Patch' }],
-  ]);
   const encoder = new TextEncoder();
-  const decoder = new TextDecoder();
   return freeze({
     fetch(url: URL | string, init: RequestOptions = {}) {
       if (!responder) {
@@ -548,20 +539,8 @@ function makeHttpClient<S extends UntypedSchemaDef>(
       }
       const headers = new Headers(init.headers as any);
       const request: HttpRequest = freeze({
-        method: methods.get(init.method?.toUpperCase() ?? 'GET') ?? {
-          tag: 'Extension' as const,
-          value: init.method!,
-        },
-        headers: {
-          entries: headersToList(headers as any)
-            .flatMap(([k, v]) =>
-              Array.isArray(v) ? v.map(v => [k, v]) : [[k, v]]
-            )
-            .map(([name, value]) => ({
-              name,
-              value: encoder.encode(value),
-            })),
-        },
+        method: serializeMethod(init.method),
+        headers: serializeHeaders(headers),
         timeout: init.timeout,
         uri: `${url}`,
         version: { tag: 'Http11' as const },
@@ -576,12 +555,8 @@ function makeHttpClient<S extends UntypedSchemaDef>(
       return new SyncResponse(null, {
         status: response.code,
         statusText: '',
-        headers: new Headers(
-          response.headers.entries.map(({ name, value }): [string, string] => [
-            name,
-            decoder.decode(value),
-          ])
-        ),
+        headers: deserializeHeaders(response.headers),
+        version: response.version,
       });
     },
   });

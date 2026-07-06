@@ -14,7 +14,7 @@ bench = false
 
 [dependencies]
 spacetimedb-lib.workspace = true
-spacetimedb-portable-datastore = { path = "../portable-datastore", version = "=2.1.0" }
+spacetimedb-portable-datastore = { path = "../portable-datastore", version = "=2.7.0" }
 spacetimedb-primitives.workspace = true
 
 js-sys = "0.3.81"

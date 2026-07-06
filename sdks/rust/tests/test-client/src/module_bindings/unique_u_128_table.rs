@@ -40,6 +40,18 @@ impl UniqueU128TableAccess for super::RemoteTables {
 pub struct UniqueU128InsertCallbackId(__sdk::CallbackId);
 pub struct UniqueU128DeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for UniqueU128TableHandle<'ctx> {
+    type Row = UniqueU128;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = UniqueU128> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for UniqueU128TableHandle<'ctx> {
     type Row = UniqueU128;
     type EventContext = super::EventContext;
@@ -64,6 +76,36 @@ impl<'ctx> __sdk::Table for UniqueU128TableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = UniqueU128DeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> UniqueU128DeleteCallbackId {
+        UniqueU128DeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: UniqueU128DeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for UniqueU128TableHandle<'ctx> {
+    type InsertCallbackId = UniqueU128InsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> UniqueU128InsertCallbackId {
+        UniqueU128InsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: UniqueU128InsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for UniqueU128TableHandle<'ctx> {
     type DeleteCallbackId = UniqueU128DeleteCallbackId;
 
     fn on_delete(

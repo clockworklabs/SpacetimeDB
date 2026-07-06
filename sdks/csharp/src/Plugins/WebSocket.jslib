@@ -1,4 +1,13 @@
 mergeInto(LibraryManager.library, {
+    $WebSocketDynCall: function(sig, ptr, args) {
+        if (typeof getWasmTableEntry !== 'undefined') {
+            getWasmTableEntry(ptr).apply(null, args);
+        } else {
+            dynCall(sig, ptr, args);
+        }
+    },
+
+    WebSocket_Init__deps: ['$WebSocketDynCall'],
     WebSocket_Init: function(openCallback, messageCallback, closeCallback, errorCallback) {
         this._webSocketManager = {
             instances: {},
@@ -54,7 +63,7 @@ mergeInto(LibraryManager.library, {
 
             socket.onopen = function() {
                 if (manager.callbacks.open) {
-                    dynCall('vi', manager.callbacks.open, [socketId]);
+                    WebSocketDynCall('vi', manager.callbacks.open, [socketId]);
                 }
             };
 
@@ -62,7 +71,7 @@ mergeInto(LibraryManager.library, {
                 if (manager.callbacks.message && event.data instanceof ArrayBuffer) {
                     var buffer = _malloc(event.data.byteLength);
                     HEAPU8.set(new Uint8Array(event.data), buffer);
-                    dynCall('viii', manager.callbacks.message, [socketId, buffer, event.data.byteLength]);
+                    WebSocketDynCall('viii', manager.callbacks.message, [socketId, buffer, event.data.byteLength]);
                     _free(buffer);
                 }
             };
@@ -72,7 +81,7 @@ mergeInto(LibraryManager.library, {
                     var reasonArray = intArrayFromString(reasonStr);
                     var reasonPtr = _malloc(reasonArray.length);
                     HEAP8.set(reasonArray, reasonPtr);
-                    dynCall('viii', manager.callbacks.close, [socketId, event.code, reasonPtr]);
+                    WebSocketDynCall('viii', manager.callbacks.close, [socketId, event.code, reasonPtr]);
                     _free(reasonPtr);
                 }
                 delete manager.instances[socketId];
@@ -80,14 +89,14 @@ mergeInto(LibraryManager.library, {
 
             socket.onerror = function(error) {
                 if (manager.callbacks.error) {
-                    dynCall('vi', manager.callbacks.error, [socketId]);
+                    WebSocketDynCall('vi', manager.callbacks.error, [socketId]);
                 }
             };
 
-            dynCall('vi', callbackPtr, [socketId]);
+            WebSocketDynCall('vi', callbackPtr, [socketId]);
         } catch (e) {
             console.error("WebSocket connection error:", e);
-            dynCall('vi', callbackPtr, [-1]);
+            WebSocketDynCall('vi', callbackPtr, [-1]);
         }
     },
 
