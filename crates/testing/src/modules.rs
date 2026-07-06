@@ -166,6 +166,33 @@ impl ModuleHandle {
             .expect("failed to collect log stream");
         String::from_utf8(bytes.into()).unwrap()
     }
+
+    /// Permanently delete this module's database - running its `stop` reducer,
+    /// if it has one - then return the module's log tail.
+    pub async fn delete_and_read_log(&self, size: Option<u32>) -> anyhow::Result<String> {
+        self.env.delete_database(&Identity::ZERO, &self.db_identity).await?;
+        Ok(self.read_log(size).await)
+    }
+
+    /// Publish new program bytes to this module's existing database identity,
+    /// exercising an ordinary hot-reload/update rather than a fresh publish.
+    pub async fn update(&self, program_bytes: Bytes, host_type: HostType) -> anyhow::Result<()> {
+        self.env
+            .publish_database(
+                &Identity::ZERO,
+                DatabaseDef {
+                    database_identity: self.db_identity,
+                    program_bytes,
+                    num_replicas: None,
+                    host_type,
+                    parent: None,
+                    organization: None,
+                },
+                MigrationPolicy::Compatible,
+            )
+            .await
+            .map(drop)
+    }
 }
 
 pub struct CompiledModule {
@@ -200,6 +227,10 @@ impl CompiledModule {
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    pub fn host_type(&self) -> HostType {
+        self.host_type
     }
 
     pub fn program_bytes(&self) -> Bytes {

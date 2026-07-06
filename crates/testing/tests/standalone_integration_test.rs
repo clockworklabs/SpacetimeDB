@@ -136,6 +136,48 @@ fn test_calling_a_reducer_with_private_table() {
     );
 }
 
+#[test]
+#[serial]
+fn test_stop_reducer_fires_only_on_deletion() {
+    init();
+
+    let compiled = CompiledModule::compile("module-test-stop", CompilationMode::Debug);
+    let program_bytes = compiled.program_bytes();
+    let host_type = compiled.host_type();
+
+    compiled.with_module_async(DEFAULT_CONFIG, move |module| async move {
+        module.call_reducer_binary("ping", &product![]).await.unwrap();
+
+        let log_before_update = module.read_log(None).await;
+        assert!(
+            log_before_update.contains("PING"),
+            "expected `ping` to have logged: {log_before_update}"
+        );
+        assert!(
+            !log_before_update.contains("STOP"),
+            "`stop` must not fire before deletion: {log_before_update}"
+        );
+
+        module.update(program_bytes, host_type).await.unwrap();
+        let log_after_update = module.read_log(None).await;
+        assert!(
+            !log_after_update.contains("STOP"),
+            "`stop` must not fire on an ordinary module update: {log_after_update}"
+        );
+
+        let log_after_delete = module.delete_and_read_log(None).await.unwrap();
+        assert_eq!(
+            log_after_delete.matches("STOP").count(),
+            1,
+            "`stop` must fire exactly once, on deletion: {log_after_delete}"
+        );
+        assert!(
+            log_after_delete.find("PING").unwrap() < log_after_delete.find("STOP").unwrap(),
+            "`stop` must fire after prior reducer activity, immediately before teardown: {log_after_delete}"
+        );
+    });
+}
+
 /// Returns `true` if `line` was produced by the `repeating_test` or `nonrepeating_test` scheduled reducers.
 fn is_scheduled_test_log(line: &str) -> bool {
     line.starts_with("Timestamp: ") || line.starts_with("This reducers runs only once")

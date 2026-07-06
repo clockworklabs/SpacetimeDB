@@ -1741,6 +1741,7 @@ mod tests {
         builder.add_reducer("init", ProductType::unit(), Some(Lifecycle::Init));
         builder.add_reducer("on_connect", ProductType::unit(), Some(Lifecycle::OnConnect));
         builder.add_reducer("on_disconnect", ProductType::unit(), Some(Lifecycle::OnDisconnect));
+        builder.add_reducer("stop", ProductType::unit(), Some(Lifecycle::Stop));
         builder.add_reducer("extra_reducer", ProductType::from([("a", AlgebraicType::U64)]), None);
         builder.add_reducer(
             "check_deliveries",
@@ -1908,6 +1909,10 @@ mod tests {
             def.reducers[&on_disconnect_name].lifecycle,
             Some(Lifecycle::OnDisconnect)
         );
+
+        let stop_name = expect_identifier("stop");
+        assert_eq!(&*def.reducers[&stop_name].name, &*stop_name);
+        assert_eq!(def.reducers[&stop_name].lifecycle, Some(Lifecycle::Stop));
 
         let extra_reducer_name = expect_identifier("extra_reducer");
         assert_eq!(&*def.reducers[&extra_reducer_name].name, &*extra_reducer_name);
@@ -2295,6 +2300,18 @@ mod tests {
 
         expect_error_matching!(result, ValidationError::DuplicateLifecycle { lifecycle } => {
             lifecycle == &Lifecycle::Init
+        });
+    }
+
+    #[test]
+    fn duplicate_stop_lifecycle() {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder.add_reducer("stop1", ProductType::unit(), Some(Lifecycle::Stop));
+        builder.add_reducer("stop2", ProductType::unit(), Some(Lifecycle::Stop));
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateLifecycle { lifecycle } => {
+            lifecycle == &Lifecycle::Stop
         });
     }
 

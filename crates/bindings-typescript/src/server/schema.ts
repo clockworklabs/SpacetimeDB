@@ -393,6 +393,38 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
     return makeReducerExport(this.#ctx, opts, {}, fn, Lifecycle.OnDisconnect);
   }
 
+  /**
+   * Registers a reducer to be invoked exactly once, immediately before the
+   * database is permanently destroyed (e.g. via `spacetime delete`, or a
+   * database reset). It is never invoked on an ordinary module
+   * update/hot-reload, since the database's data survives those.
+   *
+   * @template S - The inferred schema type of the SpacetimeDB module.
+   * @param {Reducer<S, {}>} fn - The stop reducer function.
+   * @example
+   * ```typescript
+   * export const stop = spacetime.stop((ctx) => {
+   *   console.log('Database is being deleted');
+   * });
+   * ```
+   */
+  stop(fn: Reducer<S, {}>): ReducerExport<S, {}>;
+  stop(opts: ReducerOpts, fn: Reducer<S, {}>): ReducerExport<S, {}>;
+  stop(
+    ...args: [Reducer<S, {}>] | [ReducerOpts, Reducer<S, {}>]
+  ): ReducerExport<S, {}> {
+    let opts: ReducerOpts | undefined, fn: Reducer<S, {}>;
+    switch (args.length) {
+      case 1:
+        [fn] = args;
+        break;
+      case 2:
+        [opts, fn] = args;
+        break;
+    }
+    return makeReducerExport(this.#ctx, opts, {}, fn, Lifecycle.Stop);
+  }
+
   view<Ret extends ViewReturnTypeBuilder, F extends ViewFn<S, {}, Ret>>(
     opts: ViewOpts,
     ret: Ret,

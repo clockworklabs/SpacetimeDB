@@ -567,6 +567,9 @@ pub enum Lifecycle {
     OnConnect,
     /// The reducer will be invoked when a client disconnects.
     OnDisconnect,
+    /// The reducer will be invoked once, immediately before the database is
+    /// permanently deleted (e.g. via `spacetime delete` or a database reset).
+    Stop,
 }
 
 /// A procedure definition.

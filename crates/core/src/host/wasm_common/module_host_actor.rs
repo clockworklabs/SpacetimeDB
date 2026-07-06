@@ -534,6 +534,14 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
+    pub fn call_module_stop(&mut self) {
+        let module = &self.common.info.clone();
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let mut trapped = false;
+        ModuleHost::call_module_stop_inner(module, call_reducer, &mut trapped);
+        self.trapped = trapped;
+    }
+
     pub fn disconnect_client(&mut self, client_id: ClientActorId) -> Result<(), ReducerCallError> {
         let module = &self.common.info.clone();
         let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);

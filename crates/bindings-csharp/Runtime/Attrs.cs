@@ -193,6 +193,14 @@ namespace SpacetimeDB
         Init,
         ClientConnected,
         ClientDisconnected,
+
+        /// <summary>
+        /// Invoked exactly once, immediately before the database is permanently
+        /// destroyed (e.g. via `spacetime delete`, or a database reset). Never
+        /// invoked on an ordinary module update/hot-reload, since the database's
+        /// data survives those.
+        /// </summary>
+        Stop,
     }
 
     [AttributeUsage(AttributeTargets.Method, Inherited = false)]

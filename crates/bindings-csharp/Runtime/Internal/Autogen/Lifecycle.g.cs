@@ -13,5 +13,6 @@ namespace SpacetimeDB.Internal
         Init,
         OnConnect,
         OnDisconnect,
+        Stop,
     }
 }

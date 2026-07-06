@@ -17,16 +17,21 @@ enum LifecycleReducer {
     ClientConnected(Span),
     ClientDisconnected(Span),
     Update(Span),
+    Stop(Span),
 }
 impl LifecycleReducer {
     fn to_lifecycle_value(&self) -> Option<TokenStream> {
-        let (Self::Init(span) | Self::ClientConnected(span) | Self::ClientDisconnected(span) | Self::Update(span)) =
-            *self;
+        let (Self::Init(span)
+        | Self::ClientConnected(span)
+        | Self::ClientDisconnected(span)
+        | Self::Update(span)
+        | Self::Stop(span)) = *self;
         let name = match self {
             Self::Init(_) => "Init",
             Self::ClientConnected(_) => "OnConnect",
             Self::ClientDisconnected(_) => "OnDisconnect",
             Self::Update(_) => return None,
+            Self::Stop(_) => "Stop",
         };
         let ident = Ident::new(name, span);
         Some(quote_spanned!(span => spacetimedb::rt::LifecycleReducer::#ident))
@@ -47,6 +52,7 @@ impl ReducerArgs {
                 sym::client_connected => set_lifecycle(LifecycleReducer::ClientConnected)?,
                 sym::client_disconnected => set_lifecycle(LifecycleReducer::ClientDisconnected)?,
                 sym::update => set_lifecycle(LifecycleReducer::Update)?,
+                sym::stop => set_lifecycle(LifecycleReducer::Stop)?,
                 sym::name => {
                     check_duplicate(&args.name, &meta)?;
                     args.name = Some(meta.value()?.parse()?);

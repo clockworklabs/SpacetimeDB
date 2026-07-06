@@ -147,6 +147,7 @@ mod sym {
     symbol!(repr);
     symbol!(sats);
     symbol!(scheduled);
+    symbol!(stop);
     symbol!(unique);
     symbol!(update);
     symbol!(default);

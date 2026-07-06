@@ -619,7 +619,12 @@ impl HostController {
     /// Release all resources of the [`ModuleHost`] identified by `replica_id`,
     /// and deregister it from the controller.
     #[tracing::instrument(level = "trace", skip_all)]
-    pub async fn exit_module_host(&self, replica_id: u64, timeout: Duration) -> Result<(), anyhow::Error> {
+    pub async fn exit_module_host(
+        &self,
+        replica_id: u64,
+        timeout: Duration,
+        is_final_teardown: bool,
+    ) -> Result<(), anyhow::Error> {
         let Some(lock) = self.hosts.lock().remove(&replica_id) else {
             return Ok(());
         };
@@ -653,6 +658,11 @@ impl HostController {
 
             // Ensure we clear the metrics even if the future is cancelled.
             defer!(remove_database_gauges(&database_identity, table_names));
+
+            if is_final_teardown {
+                info!("replica={replica_id} database={database_identity} invoking `stop` reducer");
+                let _ = module.call_module_stop().await;
+            }
 
             info!("replica={replica_id} database={database_identity} exiting module");
             module.exit().await;

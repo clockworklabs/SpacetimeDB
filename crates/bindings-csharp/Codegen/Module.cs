@@ -1583,6 +1583,7 @@ record ReducerDeclaration
             ReducerKind.Init => "SpacetimeDB.Internal.Lifecycle.Init",
             ReducerKind.ClientConnected => "SpacetimeDB.Internal.Lifecycle.OnConnect",
             ReducerKind.ClientDisconnected => "SpacetimeDB.Internal.Lifecycle.OnDisconnect",
+            ReducerKind.Stop => "SpacetimeDB.Internal.Lifecycle.Stop",
             _ => "null"
         }}};
 
