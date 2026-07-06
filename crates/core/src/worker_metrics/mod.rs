@@ -36,6 +36,11 @@ metrics_group!(
         #[labels(database_identity: Identity)]
         pub ws_clients_closed_connection: IntGaugeVec,
 
+        #[name = spacetime_worker_ws_clients_idle_timed_out_total]
+        #[help = "The cumulative number of ws client connections disconnected after becoming idle"]
+        #[labels(database_identity: Identity)]
+        pub ws_clients_idle_timed_out: IntCounterVec,
+
         #[name = spacetime_websocket_requests_total]
         #[help = "The cumulative number of websocket request messages"]
         #[labels(database_identity: Identity, protocol: str)]

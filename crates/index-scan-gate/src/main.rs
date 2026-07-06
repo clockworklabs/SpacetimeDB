@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_macros)]
+
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};

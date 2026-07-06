@@ -40,6 +40,18 @@ impl ScheduledProcedureRowTableAccess for super::RemoteTables {
 pub struct ScheduledProcedureRowInsertCallbackId(__sdk::CallbackId);
 pub struct ScheduledProcedureRowDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for ScheduledProcedureRowTableHandle<'ctx> {
+    type Row = ScheduledProcedureRow;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = ScheduledProcedureRow> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for ScheduledProcedureRowTableHandle<'ctx> {
     type Row = ScheduledProcedureRow;
     type EventContext = super::EventContext;
@@ -78,9 +90,54 @@ impl<'ctx> __sdk::Table for ScheduledProcedureRowTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithInsert for ScheduledProcedureRowTableHandle<'ctx> {
+    type InsertCallbackId = ScheduledProcedureRowInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> ScheduledProcedureRowInsertCallbackId {
+        ScheduledProcedureRowInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: ScheduledProcedureRowInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for ScheduledProcedureRowTableHandle<'ctx> {
+    type DeleteCallbackId = ScheduledProcedureRowDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> ScheduledProcedureRowDeleteCallbackId {
+        ScheduledProcedureRowDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: ScheduledProcedureRowDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
 pub struct ScheduledProcedureRowUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for ScheduledProcedureRowTableHandle<'ctx> {
+    type UpdateCallbackId = ScheduledProcedureRowUpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> ScheduledProcedureRowUpdateCallbackId {
+        ScheduledProcedureRowUpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: ScheduledProcedureRowUpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithUpdate for ScheduledProcedureRowTableHandle<'ctx> {
     type UpdateCallbackId = ScheduledProcedureRowUpdateCallbackId;
 
     fn on_update(

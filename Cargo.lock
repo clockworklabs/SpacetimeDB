@@ -8413,6 +8413,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-dst"
+version = "2.7.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "spacetimedb-commitlog",
+ "spacetimedb-datastore",
+ "spacetimedb-durability",
+ "spacetimedb-engine",
+ "spacetimedb-lib",
+ "spacetimedb-primitives",
+ "spacetimedb-runtime",
+ "spacetimedb-sats",
+ "spacetimedb-schema",
+ "spacetimedb-table",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "spacetimedb-durability"
 version = "2.7.0"
 dependencies = [
@@ -8533,6 +8553,16 @@ dependencies = [
  "portpicker",
  "reqwest",
  "tempfile",
+]
+
+[[package]]
+name = "spacetimedb-index-scan-gate"
+version = "2.7.0"
+dependencies = [
+ "anyhow",
+ "spacetimedb-sats",
+ "spacetimedb-testing",
+ "tikv-jemallocator",
 ]
 
 [[package]]
@@ -8675,6 +8705,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-release"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "serde",
+ "serde_json",
+ "toml 0.8.23",
+]
+
+[[package]]
 name = "spacetimedb-runtime"
 version = "2.7.0"
 dependencies = [
@@ -8804,6 +8845,7 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "cargo_metadata",
+ "fs_extra",
  "predicates",
  "regex",
  "reqwest",
