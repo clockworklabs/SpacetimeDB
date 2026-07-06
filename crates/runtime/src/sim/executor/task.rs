@@ -1,4 +1,4 @@
-use alloc::sync::Arc;
+use alloc::{sync::Arc, vec::Vec};
 use core::{
     fmt,
     future::Future,
@@ -9,7 +9,7 @@ use core::{
 
 use spin::Mutex;
 
-use super::NodeId;
+use super::{NodeId, TaskPanic};
 
 /// A spawned simulated task.
 ///
@@ -87,12 +87,24 @@ impl AbortHandle {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct JoinError;
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum JoinError {
+    Cancelled,
+    Panicked,
+}
 
 impl fmt::Display for JoinError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("task was cancelled")
+        match self {
+            Self::Cancelled => f.write_str("task was cancelled"),
+            Self::Panicked => f.write_str("task panicked"),
+        }
+    }
+}
+
+impl JoinError {
+    pub fn is_panic(&self) -> bool {
+        matches!(self, Self::Panicked)
     }
 }
 
@@ -124,11 +136,18 @@ impl AbortState {
 pub(crate) struct Abortable<F> {
     future: F,
     abort: AbortHandle,
+    node: NodeId,
+    task_panics: Arc<Mutex<Vec<TaskPanic>>>,
 }
 
 impl<F> Abortable<F> {
-    pub(crate) fn new(future: F, abort: AbortHandle) -> Self {
-        Self { future, abort }
+    pub(crate) fn new(future: F, abort: AbortHandle, node: NodeId, task_panics: Arc<Mutex<Vec<TaskPanic>>>) -> Self {
+        Self {
+            future,
+            abort,
+            node,
+            task_panics,
+        }
     }
 }
 
@@ -138,7 +157,7 @@ impl<F: Future> Future for Abortable<F> {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // Check cancellation before doing any work.
         if self.abort.state.aborted.load(Ordering::Relaxed) {
-            return Poll::Ready(Err(JoinError));
+            return Poll::Ready(Err(JoinError::Cancelled));
         }
 
         // Register the waker so abort() can wake this task.
@@ -153,7 +172,15 @@ impl<F: Future> Future for Abortable<F> {
         //      address of `future` relative to `self`.
         //   3. The caller guarantees `self` stays pinned for the lifetime of the
         //      future.
+        let node = self.node;
+        let task_panics = Arc::clone(&self.task_panics);
         let mut future = unsafe { self.map_unchecked_mut(|this| &mut this.future) };
-        future.as_mut().poll(cx).map(Ok)
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| future.as_mut().poll(cx))) {
+            Ok(poll) => poll.map(Ok),
+            Err(_) => {
+                task_panics.lock().push(TaskPanic { node });
+                Poll::Ready(Err(JoinError::Panicked))
+            }
+        }
     }
 }
