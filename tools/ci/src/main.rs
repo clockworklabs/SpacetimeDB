@@ -447,6 +447,7 @@ fn run_typescript_tests() -> Result<()> {
     if !diff_status.status.success() {
         bail!("Bindings are dirty. Please generate bindings again and commit them to this branch.");
     }
+    cmd!("pnpm", "build").dir("templates/chat-react-ts").run()?;
     cmd!("pnpm", "-r", "--filter", "./**", "run", "build")
         .dir("templates")
         .run()?;
