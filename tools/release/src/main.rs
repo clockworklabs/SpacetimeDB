@@ -33,6 +33,7 @@ struct ReleaseArgs {
 enum Commands {
     /// Release crates.io packages
     Crates {
+        release_version: String,
         #[arg(long)]
         dry_run: bool,
     },
@@ -82,8 +83,11 @@ fn main() {
     let CargoCli::Release(release_args) = cli.command;
 
     let result = match &release_args.command {
-        Commands::Crates { dry_run } => {
-            let target = CratesRelease::new(*dry_run);
+        Commands::Crates {
+            release_version: version,
+            dry_run,
+        } => {
+            let target = CratesRelease::new(version.clone(), *dry_run);
             target.release()
         }
         Commands::Csharp {
@@ -131,7 +135,7 @@ fn release_all(version: String, skip: Option<Vec<String>>, dry_run: bool) -> Res
     let skip_targets = skip.unwrap_or_default();
 
     let targets: Vec<Box<dyn ReleaseTarget>> = vec![
-        Box::new(CratesRelease::new(dry_run)),
+        Box::new(CratesRelease::new(version.clone(), dry_run)),
         Box::new(NpmRelease::new(version.clone(), dry_run)),
         Box::new(CSharpRelease::new(version.clone(), dry_run)),
         Box::new(CppRelease::new(version.clone(), dry_run)),

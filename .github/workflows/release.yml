@@ -49,7 +49,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: manual-release
+  group: manual-release-${{ inputs.release_tag }}${{ inputs.dry_run && format('-dry-run-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 jobs:
@@ -124,11 +124,11 @@ jobs:
       - name: Run release (dry-run)
         if: ${{ inputs.dry_run }}
         # NOTE: This will print a warning that `cargo-release release crates` dry runs are not supported
-        run: cargo-release release crates --dry-run
+        run: cargo-release release crates ${{ github.event.inputs.release_tag }} --dry-run
 
       - name: Run release
         if: ${{ !inputs.dry_run }}
-        run: cargo-release release crates
+        run: cargo-release release crates ${{ github.event.inputs.release_tag }}
 
   release-csharp:
     needs: build-cargo-release

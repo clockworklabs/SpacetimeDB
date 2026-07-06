@@ -8556,6 +8556,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-index-scan-gate"
+version = "2.7.0"
+dependencies = [
+ "anyhow",
+ "spacetimedb-sats",
+ "spacetimedb-testing",
+ "tikv-jemallocator",
+]
+
+[[package]]
 name = "spacetimedb-lib"
 version = "2.7.0"
 dependencies = [
