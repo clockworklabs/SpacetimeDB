@@ -12,10 +12,10 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>SpacetimeDB</RootNamespace>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
-    <RestoreAdditionalProjectSources Condition="'$(TargetFramework)' == 'net10.0' Or '$(EXPERIMENTAL_WASM_AOT)' == '1'">https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json;$(RestoreAdditionalProjectSources)</RestoreAdditionalProjectSources>
+    <RestoreAdditionalProjectSources Condition="$(TargetFramework.StartsWith('net10.')) Or '$(EXPERIMENTAL_WASM_AOT)' == '1'">https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json;$(RestoreAdditionalProjectSources)</RestoreAdditionalProjectSources>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0'">
+  <PropertyGroup Condition="$(TargetFramework.StartsWith('net10.'))">
     <DefineConstants>$(DefineConstants);EXPERIMENTAL_WASM_AOT</DefineConstants>
   </PropertyGroup>
 
@@ -31,11 +31,11 @@
   </ItemGroup>
 
   <!-- These must be explicit package dependencies so NuGet consumers can resolve the LLVM toolchain. -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0' And '$(EXPERIMENTAL_WASM_AOT)' == '1'">
+  <ItemGroup Condition="$(TargetFramework.StartsWith('net8.')) And '$(EXPERIMENTAL_WASM_AOT)' == '1'">
     <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" IncludeAssets="All" />
     <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" IncludeAssets="All" />
   </ItemGroup>
-  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+  <ItemGroup Condition="$(TargetFramework.StartsWith('net10.'))">
     <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" IncludeAssets="All" />
     <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" IncludeAssets="All" />
   </ItemGroup>

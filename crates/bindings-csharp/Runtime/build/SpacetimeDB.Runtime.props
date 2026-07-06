@@ -10,7 +10,7 @@
 
   <!-- Auto-detect NativeAOT-LLVM mode for .NET 10 (no env var needed), or use EXPERIMENTAL_WASM_AOT env var -->
   <PropertyGroup>
-    <_UseNativeAotLlvm Condition="'$(TargetFramework)' == 'net10.0' or $(TargetFramework.StartsWith('net10.'))">true</_UseNativeAotLlvm>
+    <_UseNativeAotLlvm Condition="$(TargetFramework.StartsWith('net10.'))">true</_UseNativeAotLlvm>
     <_UseNativeAotLlvm Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">true</_UseNativeAotLlvm>
   </PropertyGroup>
 

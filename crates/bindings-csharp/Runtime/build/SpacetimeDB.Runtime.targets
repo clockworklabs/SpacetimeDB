@@ -6,7 +6,7 @@
 
   <!-- Auto-detect NativeAOT-LLVM mode for .NET 10 (no env var needed), or use EXPERIMENTAL_WASM_AOT env var -->
   <PropertyGroup>
-    <_UseNativeAotLlvm Condition="'$(TargetFramework)' == 'net10.0' or $(TargetFramework.StartsWith('net10.'))">true</_UseNativeAotLlvm>
+    <_UseNativeAotLlvm Condition="$(TargetFramework.StartsWith('net10.'))">true</_UseNativeAotLlvm>
     <_UseNativeAotLlvm Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">true</_UseNativeAotLlvm>
   </PropertyGroup>
 
@@ -108,7 +108,8 @@
   <!-- Only runs when NativeAOT-LLVM is being used. -->
   <Target Name="ObtainWasiSdk" BeforeTargets="_SetupWasiSdk;CheckWasmSdks;_InitializeWasiSdk" Condition="'$(_UseNativeAotLlvm)' == 'true'">
     <PropertyGroup>
-      <WasiSdkVersion>29</WasiSdkVersion>
+      <WasiSdkVersion Condition="$(TargetFramework.StartsWith('net10.'))">29</WasiSdkVersion>
+      <WasiSdkVersion Condition="$(TargetFramework.StartsWith('net8.'))">24</WasiSdkVersion>
 
       <WasiSdkDownloadTempFile>$([System.IO.Path]::Combine($(IntermediateOutputPath), "wasi-sdk.$(WasiSdkVersion).tar.gz"))</WasiSdkDownloadTempFile>
 
