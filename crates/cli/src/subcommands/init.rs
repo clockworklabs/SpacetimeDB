@@ -6,6 +6,7 @@ use clap::{Arg, ArgMatches};
 use colored::Colorize;
 use convert_case::{Case, Casing};
 use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect, Input, Select};
+use regex::Regex;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -16,7 +17,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use toml_edit::{value, DocumentMut, Item};
-use xmltree::{Element, XMLNode};
 
 use crate::spacetime_config::{PackageManager, SpacetimeConfig, CONFIG_FILENAME};
 use crate::subcommands::login::{spacetimedb_login_and_save, DEFAULT_AUTH_HOST};
@@ -1170,17 +1170,12 @@ pub fn update_csproj_server_to_nuget(dir: &Path) -> anyhow::Result<()> {
     if let Some(csproj_path) = find_first_csproj(dir)? {
         let original =
             fs::read_to_string(&csproj_path).with_context(|| format!("reading {}", csproj_path.display()))?;
-        let mut root: Element =
-            Element::parse(original.as_bytes()).with_context(|| format!("parsing xml {}", csproj_path.display()))?;
-
-        upsert_packageref(
-            &mut root,
+        let updated = update_csproj_package_ref_to_nuget(
+            &original,
             "SpacetimeDB.Runtime",
             &get_spacetimedb_csharp_runtime_version(),
         );
-        remove_all_project_references(&mut root);
-
-        write_if_changed(csproj_path, original, root)?;
+        write_if_changed(csproj_path, original, updated)?;
     }
     Ok(())
 }
@@ -1189,28 +1184,19 @@ pub fn update_csproj_client_to_nuget(dir: &Path) -> anyhow::Result<()> {
     if let Some(csproj_path) = find_first_csproj(dir)? {
         let original =
             fs::read_to_string(&csproj_path).with_context(|| format!("reading {}", csproj_path.display()))?;
-        let mut root: Element =
-            Element::parse(original.as_bytes()).with_context(|| format!("parsing xml {}", csproj_path.display()))?;
-
-        upsert_packageref(
-            &mut root,
+        let updated = update_csproj_package_ref_to_nuget(
+            &original,
             "SpacetimeDB.ClientSDK",
             &get_spacetimedb_csharp_clientsdk_version(),
         );
-        remove_all_project_references(&mut root);
-
-        write_if_changed(csproj_path, original, root)?;
+        write_if_changed(csproj_path, original, updated)?;
     }
     Ok(())
 }
 
 // Helpers
 
-fn write_if_changed(path: PathBuf, original: String, root: Element) -> anyhow::Result<()> {
-    let mut out = Vec::new();
-    root.write(&mut out)?;
-    let compact = String::from_utf8(out)?;
-    let updated = pretty_format_xml(&compact)?;
+fn write_if_changed(path: PathBuf, original: String, updated: String) -> anyhow::Result<()> {
     if updated != original {
         fs::write(&path, updated).with_context(|| format!("writing {}", path.display()))?;
     }
@@ -1230,99 +1216,75 @@ fn find_first_csproj(dir: &Path) -> anyhow::Result<Option<PathBuf>> {
     Ok(None)
 }
 
-/// Remove every <ProjectReference/> under any <ItemGroup>
-fn remove_all_project_references(project: &mut Element) {
-    for node in project.children.iter_mut() {
-        if let XMLNode::Element(item_group) = node
-            && item_group.name == "ItemGroup"
-        {
-            item_group
-                .children
-                .retain(|n| !matches!(n, XMLNode::Element(el) if el.name == "ProjectReference"));
-        }
-    }
-    // Optional: prune empty ItemGroups
-    project.children.retain(|n| {
-        if let XMLNode::Element(el) = n
-            && el.name == "ItemGroup"
-        {
-            return el.children.iter().any(|c| matches!(c, XMLNode::Element(_)));
-        }
-        true
-    });
+fn update_csproj_package_ref_to_nuget(original: &str, include: &str, version: &str) -> String {
+    let updated = remove_project_reference_lines(original);
+    upsert_package_reference_text(&updated, include, version)
 }
 
-/// Insert or update <PackageReference Include="..." Version="..."/>
-fn upsert_packageref(project: &mut Element, include: &str, version: &str) {
-    // Try to find an existing PackageReference
-    for node in project.children.iter_mut() {
-        if let XMLNode::Element(item_group) = node
-            && item_group.name == "ItemGroup"
-            && let Some(XMLNode::Element(existing)) = item_group.children.iter_mut().find(|n| {
-                matches!(n,
-                    XMLNode::Element(e)
-                    if e.name == "PackageReference"
-                       && e.attributes.get("Include").map(|v| v == include).unwrap_or(false)
-                )
-            })
-        {
-            existing.attributes.insert("Version".to_string(), version.to_string());
-            return;
-        }
+fn remove_project_reference_lines(original: &str) -> String {
+    let mut updated = original
+        .lines()
+        .filter(|line| !line.contains("<ProjectReference"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if original.ends_with('\n') {
+        updated.push('\n');
     }
-    // Otherwise create one in (or create) an ItemGroup
-    let item_group = get_or_create_direct_child(project, "ItemGroup");
-    let mut pr = Element::new("PackageReference");
-    pr.attributes.insert("Include".into(), include.to_string());
-    pr.attributes.insert("Version".into(), version.to_string());
-    item_group.children.push(XMLNode::Element(pr));
+    updated
 }
 
-fn get_or_create_direct_child<'a>(parent: &'a mut Element, name: &str) -> &'a mut Element {
-    // First, scan IMMUTABLY to find the index of an existing child.
-    if let Some(idx) = parent.children.iter().enumerate().find_map(|(i, n)| match n {
-        XMLNode::Element(e) if e.name == name => Some(i),
-        _ => None,
-    }) {
-        // Now borrow MUTABLY by index.
-        if let XMLNode::Element(el) = &mut parent.children[idx] {
-            return el;
-        }
-        unreachable!("Matched non-element while checking by name");
+fn upsert_package_reference_text(original: &str, include: &str, version: &str) -> String {
+    let include_attr = format!(r#"Include="{include}""#);
+    let mut found = false;
+    let mut updated = original
+        .lines()
+        .map(|line| {
+            if line.contains("<PackageReference") && line.contains(&include_attr) {
+                found = true;
+                set_package_reference_version(line, version)
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if original.ends_with('\n') {
+        updated.push('\n');
     }
 
-    // Not found: create, then borrow by index.
-    parent.children.push(XMLNode::Element(Element::new(name)));
-    let idx = parent.children.len() - 1;
-    match &mut parent.children[idx] {
-        XMLNode::Element(el) => el,
-        _ => unreachable!("just pushed an Element"),
+    if found {
+        return updated;
+    }
+
+    let package_reference = format!(
+        r#"  <ItemGroup>
+    <PackageReference Include="{include}" Version="{version}" />
+  </ItemGroup>
+"#
+    );
+    if let Some(pos) = updated.rfind("</Project>") {
+        let (before, after) = updated.split_at(pos);
+        format!("{}{}{}", before.trim_end(), package_reference, after)
+    } else {
+        updated
     }
 }
 
-/// Pretty-print XML with indentation.
-/// Keeps UTF-8 declaration if present.
-fn pretty_format_xml(xml: &str) -> anyhow::Result<String> {
-    use quick_xml::events::Event;
-    use quick_xml::Reader;
-    use quick_xml::Writer;
-    use std::io::Cursor;
-
-    let mut reader = Reader::from_str(xml);
-    reader.trim_text(true);
-    let mut buf = Vec::new();
-    let mut writer = Writer::new_with_indent(Cursor::new(Vec::new()), b' ', 2);
-
-    loop {
-        match reader.read_event_into(&mut buf)? {
-            Event::Eof => break,
-            e => writer.write_event(e)?,
-        }
-        buf.clear();
+fn set_package_reference_version(line: &str, version: &str) -> String {
+    let version_attr = Regex::new(r#"Version="[^"]*""#).expect("valid regex");
+    if version_attr.is_match(line) {
+        return version_attr
+            .replace(line, format!(r#"Version="{version}""#).as_str())
+            .into_owned();
     }
 
-    let result = writer.into_inner().into_inner();
-    Ok(String::from_utf8(result)?)
+    if let Some(pos) = line.rfind("/>") {
+        return format!("{} Version=\"{}\" {}", line[..pos].trim_end(), version, &line[pos..]);
+    }
+    if let Some(pos) = line.rfind('>') {
+        return format!("{} Version=\"{}\"{}", &line[..pos], version, &line[pos..]);
+    }
+    line.to_string()
 }
 
 fn get_spacetimedb_csharp_runtime_version() -> String {
@@ -2496,6 +2458,9 @@ bytes.workspace = true
         std::fs::write(
             &csproj,
             r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup Condition="$(TargetFramework.StartsWith('net10.')) Or '$(EXPERIMENTAL_WASM_AOT)' == '1'">
+    <PublishTrimmed>true</PublishTrimmed>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="SpacetimeDB.Runtime" Version="workspace" />
     <ProjectReference Include="..\Runtime\Runtime.csproj" />
@@ -2508,13 +2473,16 @@ bytes.workspace = true
         update_csproj_server_to_nuget(temp.path()).unwrap();
 
         let content = std::fs::read_to_string(csproj).unwrap();
-        let root = Element::parse(content.as_bytes()).unwrap();
+        assert!(content
+            .contains("Condition=\"$(TargetFramework.StartsWith('net10.')) Or '$(EXPERIMENTAL_WASM_AOT)' == '1'\""));
+        assert!(!content.contains("&apos;"));
+        let root = xmltree::Element::parse(content.as_bytes()).unwrap();
         let runtime_version = root.children.iter().find_map(|node| {
-            let XMLNode::Element(item_group) = node else {
+            let xmltree::XMLNode::Element(item_group) = node else {
                 return None;
             };
             item_group.children.iter().find_map(|node| {
-                let XMLNode::Element(package_ref) = node else {
+                let xmltree::XMLNode::Element(package_ref) = node else {
                     return None;
                 };
                 if package_ref.name == "PackageReference"
