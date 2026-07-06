@@ -95,7 +95,7 @@ pub struct CallParams {
 pub const NO_SUCH_DATABASE: (StatusCode, &str) = (StatusCode::NOT_FOUND, "No such database.");
 const MISDIRECTED: (StatusCode, &str) = (StatusCode::NOT_FOUND, "Database is not scheduled on this host");
 
-fn map_reducer_error(e: ReducerCallError, reducer: &str) -> (StatusCode, String) {
+pub(crate) fn map_reducer_error(e: ReducerCallError, reducer: &str) -> (StatusCode, String) {
     let status_code = match e {
         ReducerCallError::Args(_) => {
             log::debug!("Attempt to call reducer {reducer} with invalid arguments");
@@ -438,7 +438,7 @@ fn reducer_outcome_response(
     }
 }
 
-fn client_connected_error_to_response(err: ClientConnectedError) -> ErrorResponse {
+pub(crate) fn client_connected_error_to_response(err: ClientConnectedError) -> ErrorResponse {
     match err {
         // If `call_identity_connected` returns `Err(Rejected)`, then the `client_connected` reducer errored,
         // meaning the connection was refused. Return 403 forbidden.
@@ -466,11 +466,11 @@ fn client_connected_error_to_response(err: ClientConnectedError) -> ErrorRespons
 ///
 /// Note that `call_identity_disconnected` swallows errors from the `client_disconnected` reducer.
 /// Slap a 500 on it and pray.
-fn client_disconnected_error_to_response(err: ReducerCallError) -> ErrorResponse {
+pub(crate) fn client_disconnected_error_to_response(err: ReducerCallError) -> ErrorResponse {
     (StatusCode::INTERNAL_SERVER_ERROR, format!("{:#}", anyhow::anyhow!(err))).into()
 }
 
-async fn find_leader_and_database<S: ControlStateDelegate + NodeDelegate>(
+pub(crate) async fn find_leader_and_database<S: ControlStateDelegate + NodeDelegate>(
     worker_ctx: &S,
     name_or_identity: NameOrIdentity,
 ) -> axum::response::Result<(Host, Database)> {
@@ -487,7 +487,7 @@ async fn find_leader_and_database<S: ControlStateDelegate + NodeDelegate>(
     Ok((leader, database))
 }
 
-async fn find_module_and_database<S: ControlStateDelegate + NodeDelegate>(
+pub(crate) async fn find_module_and_database<S: ControlStateDelegate + NodeDelegate>(
     worker_ctx: &S,
     name_or_identity: NameOrIdentity,
 ) -> axum::response::Result<(ModuleHost, Database)> {
@@ -1549,6 +1549,8 @@ pub struct DatabaseRoutes<S> {
     pub logs_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/sql
     pub sql_post: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/mcp
+    pub mcp_post: MethodRouter<S>,
     /// POST: /database/:name_or_identity/pre-publish
     pub pre_publish: MethodRouter<S>,
     /// PUT: /database/:name_or_identity/reset
@@ -1587,6 +1589,7 @@ where
             schema_get: get(schema::<S>),
             logs_get: get(logs::<S>),
             sql_post: post(sql::<S>),
+            mcp_post: post(crate::routes::mcp::mcp::<S>),
             pre_publish: post(pre_publish::<S>),
             db_reset: put(reset::<S>),
             timestamp_get: get(get_timestamp::<S>),
@@ -1617,6 +1620,7 @@ where
             .route("/schema", self.schema_get)
             .route("/logs", self.logs_get)
             .route("/sql", self.sql_post)
+            .route("/mcp", self.mcp_post)
             .route("/unstable/timestamp", self.timestamp_get)
             .route("/pre_publish", self.pre_publish)
             .route("/reset", self.db_reset)
