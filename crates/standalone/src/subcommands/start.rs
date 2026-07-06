@@ -731,6 +731,27 @@ mod tests {
     }
 
     #[test]
+    fn prune_scheduled_backups_keeps_latest_complete_and_ignores_incomplete_with_keep_last() {
+        let temp = tempfile::tempdir().unwrap();
+        let old_complete = temp.path().join("stdb-0001");
+        let new_complete = temp.path().join("stdb-0002");
+        let incomplete = temp.path().join("stdb-0003");
+
+        std::fs::create_dir(&old_complete).unwrap();
+        std::fs::write(old_complete.join("manifest.json"), b"{}").unwrap();
+        std::fs::create_dir(&new_complete).unwrap();
+        std::fs::write(new_complete.join("manifest.json"), b"{}").unwrap();
+        std::fs::create_dir(&incomplete).unwrap();
+        std::fs::write(incomplete.join("partial"), b"not done").unwrap();
+
+        prune_scheduled_backups(&scheduled_backup_config(temp.path().to_path_buf(), Some(1))).unwrap();
+
+        assert!(!old_complete.exists());
+        assert!(new_complete.exists());
+        assert!(incomplete.exists());
+    }
+
+    #[test]
     fn cleanup_failed_scheduled_backup_output_removes_incomplete_dir() {
         let temp = tempfile::tempdir().unwrap();
         let incomplete = temp.path().join("stdb-incomplete");

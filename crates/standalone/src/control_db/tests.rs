@@ -234,3 +234,52 @@ fn test_export_database_to_path_is_scoped_to_one_database() -> anyhow::Result<()
     assert!(!exported.is_database_locked(&second_identity)?);
     Ok(())
 }
+
+#[test]
+fn test_export_database_to_path_advances_control_id_counter() -> anyhow::Result<()> {
+    let src = TempDir::with_prefix("control-db-export-id-src")?;
+    let dst = TempDir::with_prefix("control-db-export-id-dst")?;
+    let cdb = ControlDb::at(src.path())?;
+    let first_database_id = cdb.insert_database(Database {
+        id: 0,
+        database_identity: Identity::ZERO,
+        owner_identity: *ALICE,
+        host_type: HostType::Wasm,
+        initial_program: Hash::ZERO,
+    })?;
+    let first_replica_id = cdb.insert_replica(Replica {
+        id: 0,
+        database_id: first_database_id,
+        node_id: 0,
+        leader: true,
+    })?;
+
+    cdb.export_database_to_path(
+        &ControlDbDir::from_path_unchecked(dst.path()),
+        &Identity::ZERO,
+        first_replica_id,
+    )?;
+    let exported = ControlDb::at(dst.path())?;
+    let second_identity = Identity::from_claims(LOCALHOST, "after-restore");
+    let second_database_id = exported.insert_database(Database {
+        id: 0,
+        database_identity: second_identity,
+        owner_identity: *BOB,
+        host_type: HostType::Wasm,
+        initial_program: Hash::ZERO,
+    })?;
+    let second_replica_id = exported.insert_replica(Replica {
+        id: 0,
+        database_id: second_database_id,
+        node_id: 0,
+        leader: true,
+    })?;
+
+    assert_ne!(second_database_id, first_database_id);
+    assert_ne!(second_replica_id, first_replica_id);
+    assert!(exported.get_database_by_identity(&Identity::ZERO)?.is_some());
+    assert!(exported.get_replica_by_id(first_replica_id)?.is_some());
+    assert_eq!(exported.get_databases()?.len(), 2);
+    assert_eq!(exported.get_replicas()?.len(), 2);
+    Ok(())
+}

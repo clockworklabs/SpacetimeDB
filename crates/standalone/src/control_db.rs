@@ -29,6 +29,9 @@ pub struct ControlDb {
 
 pub type Result<T> = core::result::Result<T, Error>;
 
+const CONTROL_ID_COUNTER_TREE: &str = "control_id_counter";
+const CONTROL_ID_COUNTER_KEY: &[u8] = b"next";
+
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("collection not found: {0}")]
@@ -136,7 +139,15 @@ impl ControlDb {
         replicas.insert(replica.id.to_be_bytes(), bsatn::to_vec(&replica)?)?;
         replicas.flush()?;
 
-        copy_optional_control_db_tree_entry(&self.db, &dst, "database_locks", &database_identity.to_be_byte_array())?;
+        let next_control_id = database
+            .id
+            .max(replica.id)
+            .max(replica.node_id)
+            .checked_add(1)
+            .context("control db id counter overflow")?;
+        set_control_id_counter_at_least(&dst, next_control_id)?;
+
+        copy_optional_control_db_tree_entry(&self.db, &dst, "database_locks", database_identity.to_byte_array())?;
         copy_optional_control_db_tree_entry(
             &self.db,
             &dst,
@@ -201,6 +212,9 @@ fn copy_optional_control_db_tree_entry(
     tree_name: &str,
     key: impl AsRef<[u8]>,
 ) -> Result<()> {
+    if !control_db_has_tree(src, tree_name) {
+        return Ok(());
+    }
     let src_tree = src.open_tree(tree_name)?;
     if let Some(value) = src_tree.get(key.as_ref())? {
         let dst_tree = dst.open_tree(tree_name)?;
@@ -208,6 +222,92 @@ fn copy_optional_control_db_tree_entry(
         dst_tree.flush()?;
     }
     Ok(())
+}
+
+fn control_db_has_tree(db: &sled::Db, tree_name: &str) -> bool {
+    db.tree_names().iter().any(|name| name.as_ref() == tree_name.as_bytes())
+}
+
+fn decode_control_id(value: &[u8]) -> anyhow::Result<u64> {
+    let bytes: [u8; 8] = value
+        .try_into()
+        .with_context(|| format!("invalid control db id counter length: {}", value.len()))?;
+    Ok(u64::from_be_bytes(bytes))
+}
+
+fn max_id_key_in_tree(db: &sled::Db, tree_name: &str) -> Result<Option<u64>> {
+    if !control_db_has_tree(db, tree_name) {
+        return Ok(None);
+    }
+    let tree = db.open_tree(tree_name)?;
+    let mut max_id = None;
+    for entry in tree.iter() {
+        let (key, _) = entry?;
+        let key = key.as_ref();
+        let id = decode_control_id(key).with_context(|| format!("invalid id key in control-db `{tree_name}` tree"))?;
+        max_id = Some(max_id.map_or(id, |max_id: u64| max_id.max(id)));
+    }
+    Ok(max_id)
+}
+
+fn next_control_id_seed(db: &sled::Db) -> Result<u64> {
+    let generated_id = db.generate_id()?;
+    let mut next_id = generated_id;
+    for tree_name in ["database", "replica", "node"] {
+        if let Some(id) = max_id_key_in_tree(db, tree_name)? {
+            next_id = next_id.max(id.checked_add(1).context("control db id counter overflow")?);
+        }
+    }
+    Ok(next_id)
+}
+
+fn set_control_id_counter_at_least(db: &sled::Db, next_id: u64) -> Result<()> {
+    let counter = db.open_tree(CONTROL_ID_COUNTER_TREE)?;
+    let result: TransactionResult<(), anyhow::Error> = (&counter).transaction(|counter_tx| {
+        let stored_next_id = match counter_tx.get(CONTROL_ID_COUNTER_KEY)? {
+            Some(value) => decode_control_id(&value).map_err(ConflictableTransactionError::Abort)?,
+            None => 0,
+        };
+        if stored_next_id < next_id {
+            counter_tx.insert(CONTROL_ID_COUNTER_KEY, next_id.to_be_bytes().to_vec())?;
+            counter_tx.flush();
+        }
+        Ok::<_, ConflictableTransactionError<anyhow::Error>>(())
+    });
+    match result {
+        Ok(()) => {
+            counter.flush()?;
+            Ok(())
+        }
+        Err(TransactionError::Storage(err)) => Err(err.into()),
+        Err(TransactionError::Abort(err)) => Err(err.into()),
+    }
+}
+
+fn reserve_control_id(db: &sled::Db) -> Result<u64> {
+    let seed = next_control_id_seed(db)?;
+    let counter = db.open_tree(CONTROL_ID_COUNTER_TREE)?;
+    let result: TransactionResult<u64, anyhow::Error> = (&counter).transaction(|counter_tx| {
+        let stored_next_id = match counter_tx.get(CONTROL_ID_COUNTER_KEY)? {
+            Some(value) => decode_control_id(&value).map_err(ConflictableTransactionError::Abort)?,
+            None => seed,
+        };
+        let id = stored_next_id.max(seed);
+        let next_id = id
+            .checked_add(1)
+            .ok_or_else(|| ConflictableTransactionError::Abort(anyhow::anyhow!("control db id counter overflow")))?;
+        counter_tx.insert(CONTROL_ID_COUNTER_KEY, next_id.to_be_bytes().to_vec())?;
+        counter_tx.flush();
+        Ok(id)
+    });
+    match result {
+        Ok(id) => {
+            counter.flush()?;
+            Ok(id)
+        }
+        Err(TransactionError::Storage(err)) => Err(err.into()),
+        Err(TransactionError::Abort(err)) => Err(err.into()),
+    }
 }
 
 /// A helper to convert a `sled::IVec` into an `Identity`.
@@ -490,7 +590,7 @@ impl ControlDb {
     }
 
     pub fn insert_database(&self, mut database: Database) -> Result<u64> {
-        let id = self.db.generate_id()?;
+        let id = reserve_control_id(&self.db)?;
         let tree = self.db.open_tree("database_by_identity")?;
 
         let key = database.database_identity.to_be_byte_array();
@@ -609,7 +709,7 @@ impl ControlDb {
     pub fn insert_replica(&self, mut replica: Replica) -> Result<u64> {
         let tree = self.db.open_tree("replica")?;
 
-        let id = self.db.generate_id()?;
+        let id = reserve_control_id(&self.db)?;
 
         replica.id = id;
         let buf = bsatn::to_vec(&replica).unwrap();
@@ -654,7 +754,7 @@ impl ControlDb {
     pub fn _insert_node(&self, mut node: Node) -> Result<u64> {
         let tree = self.db.open_tree("node")?;
 
-        let id = self.db.generate_id()?;
+        let id = reserve_control_id(&self.db)?;
 
         node.id = id;
         let buf = bsatn::to_vec(&node).unwrap();

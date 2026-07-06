@@ -10,7 +10,7 @@ use clap::{Arg, ArgMatches, Command};
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 use spacetimedb_commitlog::{commits, committed_meta};
 use spacetimedb_fs_utils::{copy_dir_all, copy_file_sync, create_dir_all_sync, sync_dir};
-use spacetimedb_lib::{bsatn, de::Deserialize as BsatnDeserialize, ser::Serialize as BsatnSerialize, Identity};
+use spacetimedb_lib::{bsatn, de::Deserialize as BsatnDeserialize, ser::Serialize as BsatnSerialize, Hash, Identity};
 use spacetimedb_paths::{
     server::{CommitLogDir, ServerDataDir, SnapshotsPath},
     FromPathUnchecked, SpacetimePaths,
@@ -222,6 +222,7 @@ fn restore_backup_inner(
 
     let mut old_tmp_moved = false;
     let mut restore_old_tmp_on_error = false;
+    let mut restored_replica_moved = false;
     let mut committed_server_state = None;
     let res = (|| -> anyhow::Result<()> {
         create_dir_all_sync(&tmp_dir)?;
@@ -235,12 +236,13 @@ fn restore_backup_inner(
         if force && replica_dir.0.exists() {
             std::fs::rename(&replica_dir.0, &old_tmp_dir)
                 .with_context(|| format!("moving existing target replica directory {}", replica_dir.display()))?;
-            sync_parent_dir(&replica_dir.0)?;
             old_tmp_moved = true;
             restore_old_tmp_on_error = true;
+            sync_parent_dir(&replica_dir.0)?;
         }
         std::fs::rename(&tmp_dir, &replica_dir.0)
             .with_context(|| format!("moving restored replica into {}", replica_dir.display()))?;
+        restored_replica_moved = true;
         sync_parent_dir(&replica_dir.0)?;
         restore_old_tmp_on_error = false;
 
@@ -265,6 +267,10 @@ fn restore_backup_inner(
     if res.is_err() {
         let _ = std::fs::remove_dir_all(&tmp_dir);
         let _ = sync_parent_dir(&tmp_dir);
+        if restored_replica_moved && replica_dir.0.exists() {
+            let _ = std::fs::remove_dir_all(&replica_dir.0);
+            let _ = sync_parent_dir(&replica_dir.0);
+        }
         if restore_old_tmp_on_error && old_tmp_moved && old_tmp_dir.exists() && !replica_dir.0.exists() {
             let _ = std::fs::rename(&old_tmp_dir, &replica_dir.0);
             let _ = sync_parent_dir(&replica_dir.0);
@@ -277,8 +283,27 @@ fn restore_backup_inner(
 
 fn sync_parent_dir(path: &Path) -> anyhow::Result<()> {
     if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+        #[cfg(test)]
+        maybe_fail_sync_parent_dir(parent)?;
         sync_dir(parent).with_context(|| format!("syncing parent directory {}", parent.display()))?;
     }
+    Ok(())
+}
+
+#[cfg(test)]
+fn maybe_fail_sync_parent_dir(parent: &Path) -> anyhow::Result<()> {
+    let marker = parent.join(".fail-next-restore-sync-parent");
+    if !marker.exists() {
+        return Ok(());
+    }
+    let remaining = std::fs::read_to_string(&marker)
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .unwrap_or(0);
+    if remaining == 0 {
+        anyhow::bail!("injected sync_parent_dir failure for {}", parent.display());
+    }
+    std::fs::write(marker, (remaining - 1).to_string())?;
     Ok(())
 }
 
@@ -459,6 +484,24 @@ enum ControlDbValidationScope {
 
 #[allow(dead_code)]
 #[derive(BsatnDeserialize, BsatnSerialize)]
+struct ControlDbDatabase {
+    id: u64,
+    database_identity: Identity,
+    owner_identity: Identity,
+    host_type: ControlDbHostType,
+    initial_program: Hash,
+}
+
+#[allow(dead_code)]
+#[derive(BsatnDeserialize, BsatnSerialize)]
+#[repr(i32)]
+enum ControlDbHostType {
+    Wasm = 0,
+    Js = 1,
+}
+
+#[allow(dead_code)]
+#[derive(BsatnDeserialize, BsatnSerialize)]
 struct ControlDbReplica {
     id: u64,
     database_id: u64,
@@ -492,20 +535,61 @@ fn validate_control_db_records(
     else {
         anyhow::bail!("control-db is missing database identity {database_identity}");
     };
+    let database_from_identity: ControlDbDatabase = bsatn::from_slice(&database_record)
+        .with_context(|| format!("decoding database identity {database_identity} in control-db"))?;
+    anyhow::ensure!(
+        database_from_identity.database_identity == database_identity,
+        "control-db database_by_identity record identity {} does not match key {}",
+        database_from_identity.database_identity,
+        database_identity
+    );
 
     let databases = open_existing_control_db_tree(&db, "database")?;
     let mut database_count = 0usize;
-    let mut database_id = None;
     for item in databases.iter() {
         let (key, value) = item.with_context(|| format!("reading database records in {}", control_db_dir.display()))?;
         database_count += 1;
-        if value == database_record {
-            database_id = Some(control_db_u64_key(&key, "database id")?);
-        }
+        let key_id = control_db_u64_key(&key, "database id")?;
+        let database: ControlDbDatabase =
+            bsatn::from_slice(&value).with_context(|| format!("decoding database {key_id} in control-db"))?;
+        anyhow::ensure!(
+            database.id == key_id,
+            "control-db database record id {} does not match key {}",
+            database.id,
+            key_id
+        );
     }
-    let Some(database_id) = database_id else {
+    let database_id = database_from_identity.id;
+    let Some(database_record_by_id) = databases
+        .get(database_id.to_be_bytes())
+        .with_context(|| format!("reading database {database_id} from control-db"))?
+    else {
         anyhow::bail!("control-db database table is missing database identity {database_identity}");
     };
+    anyhow::ensure!(
+        database_record_by_id == database_record,
+        "control-db database_by_identity record for {database_identity} does not match database table record {database_id}"
+    );
+
+    let mut database_by_identity_count = 0usize;
+    for item in database_by_identity.iter() {
+        let (key, value) =
+            item.with_context(|| format!("reading database_by_identity records in {}", control_db_dir.display()))?;
+        database_by_identity_count += 1;
+        let key_bytes: [u8; 32] = key
+            .as_ref()
+            .try_into()
+            .with_context(|| format!("invalid control-db database identity key length {}", key.len()))?;
+        let key_identity = Identity::from_be_byte_array(key_bytes);
+        let database: ControlDbDatabase = bsatn::from_slice(&value)
+            .with_context(|| format!("decoding database identity {key_identity} in control-db"))?;
+        anyhow::ensure!(
+            database.database_identity == key_identity,
+            "control-db database_by_identity record identity {} does not match key {}",
+            database.database_identity,
+            key_identity
+        );
+    }
 
     let replicas = open_existing_control_db_tree(&db, "replica")?;
     let replica_key = replica_id.to_be_bytes();
@@ -514,9 +598,16 @@ fn validate_control_db_records(
     for item in replicas.iter() {
         let (key, value) = item.with_context(|| format!("reading replica records in {}", control_db_dir.display()))?;
         replica_count += 1;
+        let key_id = control_db_u64_key(&key, "replica id")?;
+        let replica: ControlDbReplica =
+            bsatn::from_slice(&value).with_context(|| format!("decoding replica {key_id} in control-db"))?;
+        anyhow::ensure!(
+            replica.id == key_id,
+            "control-db replica record id {} does not match key {}",
+            replica.id,
+            key_id
+        );
         if key.as_ref() == replica_key.as_slice() {
-            let replica: ControlDbReplica =
-                bsatn::from_slice(&value).with_context(|| format!("decoding replica {replica_id} in control-db"))?;
             matching_replica = Some(replica);
         }
     }
@@ -538,6 +629,10 @@ fn validate_control_db_records(
     );
 
     if matches!(scope, ControlDbValidationScope::ScopedBackup) {
+        anyhow::ensure!(
+            database_by_identity_count == 1,
+            "backup control-db must contain exactly one database_by_identity record, found {database_by_identity_count}"
+        );
         anyhow::ensure!(
             database_count == 1,
             "backup control-db must contain exactly one database record, found {database_count}"
@@ -875,6 +970,50 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn backup_restore_force_restores_old_replica_when_sync_after_old_rename_fails() -> anyhow::Result<()> {
+        let backup = tempfile::tempdir()?;
+        make_backup_dir(backup.path(), 7, 42)?;
+
+        let data = tempfile::tempdir()?;
+        make_target_data_dir(data.path(), 7)?;
+        let replica_dir = data.path().join("replicas/7");
+        std::fs::create_dir_all(&replica_dir)?;
+        std::fs::write(replica_dir.join("old-marker"), b"old")?;
+        std::fs::write(data.path().join("replicas/.fail-next-restore-sync-parent"), b"1")?;
+        let data_dir = ServerDataDir::from_path_unchecked(data.path());
+
+        let err = restore_backup(backup.path(), &data_dir, true).unwrap_err();
+
+        assert!(err.to_string().contains("injected sync_parent_dir failure"));
+        assert_eq!(std::fs::read(replica_dir.join("old-marker"))?, b"old");
+        assert!(!replica_dir.join("snapshots").exists());
+        assert_no_restore_temps(data.path())?;
+        Ok(())
+    }
+
+    #[test]
+    fn backup_restore_force_restores_old_replica_when_sync_after_new_rename_fails() -> anyhow::Result<()> {
+        let backup = tempfile::tempdir()?;
+        make_backup_dir(backup.path(), 7, 42)?;
+
+        let data = tempfile::tempdir()?;
+        make_target_data_dir(data.path(), 7)?;
+        let replica_dir = data.path().join("replicas/7");
+        std::fs::create_dir_all(&replica_dir)?;
+        std::fs::write(replica_dir.join("old-marker"), b"old")?;
+        std::fs::write(data.path().join("replicas/.fail-next-restore-sync-parent"), b"2")?;
+        let data_dir = ServerDataDir::from_path_unchecked(data.path());
+
+        let err = restore_backup(backup.path(), &data_dir, true).unwrap_err();
+
+        assert!(err.to_string().contains("injected sync_parent_dir failure"));
+        assert_eq!(std::fs::read(replica_dir.join("old-marker"))?, b"old");
+        assert!(!replica_dir.join("snapshots").exists());
+        assert_no_restore_temps(data.path())?;
+        Ok(())
+    }
+
     #[cfg(windows)]
     #[test]
     fn backup_restore_force_commits_when_old_replica_cleanup_fails() -> anyhow::Result<()> {
@@ -1072,7 +1211,55 @@ mod tests {
 
         let err = restore_backup(backup.path(), &data_dir, false).unwrap_err();
 
-        assert!(format!("{err:#}").contains("backup control-db must contain exactly one database record"));
+        assert!(format!("{err:#}").contains("backup control-db must contain exactly one database"));
+        assert!(!data.path().join("replicas/7").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn backup_restore_rejects_control_db_database_record_identity_mismatch() -> anyhow::Result<()> {
+        let backup = tempfile::tempdir()?;
+        make_backup_dir(backup.path(), 7, 42)?;
+        let manifest_identity = test_database_identity()?;
+        let other_identity: Identity = "c300000000000000000000000000000000000000000000000000000000000000".parse()?;
+        std::fs::create_dir_all(backup.path().join("server/control-db"))?;
+        let db = sled::Config::default()
+            .path(backup.path().join("server/control-db"))
+            .flush_every_ms(Some(50))
+            .mode(sled::Mode::HighThroughput)
+            .open()?;
+        let database_record = sled::IVec::from(bsatn::to_vec(&ControlDbDatabase {
+            id: 1,
+            database_identity: other_identity,
+            owner_identity: Identity::ZERO,
+            host_type: ControlDbHostType::Wasm,
+            initial_program: Hash::ZERO,
+        })?);
+        db.open_tree("database_by_identity")?
+            .insert(manifest_identity.to_be_byte_array(), database_record.clone())?;
+        db.open_tree("database")?.insert(1u64.to_be_bytes(), database_record)?;
+        db.open_tree("replica")?.insert(
+            7u64.to_be_bytes(),
+            bsatn::to_vec(&ControlDbReplica {
+                id: 7,
+                database_id: 1,
+                node_id: 0,
+                leader: true,
+            })?,
+        )?;
+        db.flush()?;
+        drop(db);
+        std::fs::create_dir_all(backup.path().join("server/program-bytes"))?;
+        std::fs::write(backup.path().join("server/program-bytes/program"), b"program")?;
+        std::fs::write(backup.path().join("server/config.toml"), b"config")?;
+        std::fs::write(backup.path().join("server/metadata.toml"), b"metadata")?;
+
+        let data = tempfile::tempdir()?;
+        let data_dir = ServerDataDir::from_path_unchecked(data.path());
+
+        let err = restore_backup(backup.path(), &data_dir, false).unwrap_err();
+
+        assert!(format!("{err:#}").contains("database_by_identity record identity"));
         assert!(!data.path().join("replicas/7").exists());
         Ok(())
     }
@@ -1151,6 +1338,23 @@ mod tests {
         Ok(())
     }
 
+    fn assert_no_restore_temps(data_dir: &Path) -> anyhow::Result<()> {
+        for entry in std::fs::read_dir(data_dir.join("replicas"))? {
+            let entry = entry?;
+            let file_name = entry.file_name();
+            let file_name = file_name.to_string_lossy();
+            assert!(
+                !file_name.contains(".restore_tmp_"),
+                "unexpected restore tmp {file_name}"
+            );
+            assert!(
+                !file_name.contains(".restore_old_"),
+                "unexpected restore old tmp {file_name}"
+            );
+        }
+        Ok(())
+    }
+
     fn make_test_control_db(
         path: &Path,
         database_identity: Identity,
@@ -1163,7 +1367,13 @@ mod tests {
             .flush_every_ms(Some(50))
             .mode(sled::Mode::HighThroughput)
             .open()?;
-        let database_record = sled::IVec::from(vec![1, 2, 3]);
+        let database_record = sled::IVec::from(bsatn::to_vec(&ControlDbDatabase {
+            id: 1,
+            database_identity,
+            owner_identity: Identity::ZERO,
+            host_type: ControlDbHostType::Wasm,
+            initial_program: Hash::ZERO,
+        })?);
         db.open_tree("database_by_identity")?
             .insert(database_identity.to_be_byte_array(), database_record.clone())?;
         db.open_tree("database")?
@@ -1180,7 +1390,13 @@ mod tests {
         if include_extra_database {
             let extra_identity: Identity =
                 "c300000000000000000000000000000000000000000000000000000000000000".parse()?;
-            let extra_database_record = sled::IVec::from(vec![7, 8, 9]);
+            let extra_database_record = sled::IVec::from(bsatn::to_vec(&ControlDbDatabase {
+                id: 2,
+                database_identity: extra_identity,
+                owner_identity: Identity::ZERO,
+                host_type: ControlDbHostType::Wasm,
+                initial_program: Hash::ZERO,
+            })?);
             db.open_tree("database_by_identity")?
                 .insert(extra_identity.to_be_byte_array(), extra_database_record.clone())?;
             db.open_tree("database")?
