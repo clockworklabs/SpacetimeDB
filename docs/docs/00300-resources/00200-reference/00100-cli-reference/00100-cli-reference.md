@@ -10,6 +10,9 @@ This document contains the help content for the `spacetime` command-line program
 **Command Overview:**
 
 * [`spacetime`↴](#spacetime)
+* [`spacetime backup`↴](#spacetime-backup)
+* [`spacetime backup create`↴](#spacetime-backup-create)
+* [`spacetime backup restore`↴](#spacetime-backup-restore)
 * [`spacetime publish`↴](#spacetime-publish)
 * [`spacetime delete`↴](#spacetime-delete)
 * [`spacetime logs`↴](#spacetime-logs)
@@ -46,6 +49,7 @@ This document contains the help content for the `spacetime` command-line program
 
 ###### **Subcommands:**
 
+* `backup` — Create server-side database backups
 * `publish` — Create and update a SpacetimeDB database
 * `delete` — Deletes a SpacetimeDB database
 * `logs` — Prints logs from a SpacetimeDB database
@@ -71,6 +75,49 @@ This document contains the help content for the `spacetime` command-line program
 
 * `--root-dir <ROOT_DIR>` — The root directory to store all spacetime files in.
 * `--config-path <CONFIG_PATH>` — The path to the cli.toml config file
+
+
+
+## `spacetime backup`
+
+Create server-side database backups
+
+**Usage:** `spacetime backup <COMMAND>`
+
+###### **Subcommands:**
+
+* `create` — Create a hot backup of a running database
+* `restore` — Restore a hot backup into an offline server data directory
+
+
+
+## `spacetime backup create`
+
+Create a hot backup of a running database
+
+**Usage:** `spacetime backup create [OPTIONS] --output-dir <ROOT_RELATIVE_OUTPUT_DIR>`
+
+###### **Options:**
+
+* `--database <DATABASE>` — The name or identity of the database to back up
+* `--output-dir <ROOT_RELATIVE_OUTPUT_DIR>` — Directory relative to the server's configured hot-backup root; it must be empty
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
+* `--anonymous` — Perform this action with an anonymous identity
+* `--no-config` — Ignore spacetime.json configuration
+
+
+
+## `spacetime backup restore`
+
+Restore a hot backup into an offline server data directory
+
+**Usage:** `spacetime backup restore [OPTIONS] --input-dir <BACKUP_DIR>`
+
+###### **Options:**
+
+* `--input-dir <BACKUP_DIR>` — Directory containing manifest.json, snapshots/, and clog/
+* `--data-dir <SERVER_DATA_DIR>` — Offline server data directory whose matching replica will be restored; defaults to the CLI root data-dir
+* `--force` — Overwrite the existing target replica directory
 
 
 

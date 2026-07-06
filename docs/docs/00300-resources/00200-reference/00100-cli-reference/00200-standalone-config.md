@@ -20,6 +20,10 @@ On Linux and macOS, this directory is by default `~/.local/share/spacetime/data`
 
 - [`commitlog`](#commitlog)
 
+- [`hot-backup`](#hot-backup)
+
+- [`scheduled-backup`](#scheduled-backup)
+
 - [`websocket`](#websocket)
 
 ### `certificate-authority`
@@ -100,6 +104,47 @@ If `true`, preallocate disk space for commitlog segments up to `commitlog.max-se
 #### `commitlog.write-buffer-size`
 
 Size in bytes of the memory buffer holding commit data before flushing to storage.
+
+### `hot-backup`
+
+```toml
+[hot-backup]
+root-dir = "/var/backups/stdb"
+```
+
+The `hot-backup` section configures server-side backups created through `spacetime backup create` or the HTTP backup endpoint.
+
+#### `hot-backup.root-dir`
+
+An absolute server path that acts as the root directory for CLI-triggered hot backups. Backup creation requests choose an output directory relative to this root. Omit `root-dir` to disable CLI-triggered hot backups.
+
+### `scheduled-backup`
+
+```toml
+[scheduled-backup]
+database = "mydb"
+output-dir = "/var/backups/stdb"
+interval = "1h"
+keep-last = 24
+```
+
+The `scheduled-backup` section configures a background task that periodically backs up one local database.
+
+#### `scheduled-backup.database`
+
+The database name or identity to back up.
+
+#### `scheduled-backup.output-dir`
+
+An absolute server path where scheduled backups are created. Each backup is written into a timestamped `stdb-*` subdirectory.
+
+#### `scheduled-backup.interval`
+
+How often to create a backup. Values are strings of any format the [`humantime`] crate can parse, such as `"15m"`, `"1h"`, or `"1day"`.
+
+#### `scheduled-backup.keep-last`
+
+The number of complete scheduled backups to retain. Incomplete `stdb-*` directories left by failed, interrupted, or concurrent backups are ignored during pruning and do not count toward this limit. Omit `keep-last` to keep all complete scheduled backups.
 
 ### `websocket`
 

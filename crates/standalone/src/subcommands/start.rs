@@ -189,8 +189,10 @@ fn validate_scheduled_backup_config(config: &ScheduledBackupConfig) -> anyhow::R
 ///
 /// A backup is complete iff it contains `manifest.json`, which is written as
 /// the final step of a backup. `stdb-*` directories without a manifest are
-/// leftovers of failed or interrupted backups: they are deleted outright and
-/// never occupy a `keep-last` slot, so they cannot crowd out good backups.
+/// ignored by pruning and never occupy a `keep-last` slot, so they cannot
+/// crowd out good backups. They are not deleted here because a concurrent
+/// manual backup may still be writing into a `stdb-*` directory in the same
+/// output root.
 fn prune_scheduled_backups(config: &ScheduledBackupConfig) -> anyhow::Result<()> {
     let mut complete = Vec::new();
     for entry in std::fs::read_dir(&config.output_dir)
@@ -206,9 +208,7 @@ fn prune_scheduled_backups(config: &ScheduledBackupConfig) -> anyhow::Result<()>
         if entry.path().join("manifest.json").is_file() {
             complete.push(entry);
         } else {
-            log::warn!("removing incomplete scheduled backup {}", entry.path().display());
-            std::fs::remove_dir_all(entry.path())
-                .with_context(|| format!("removing incomplete backup {}", entry.path().display()))?;
+            log::warn!("ignoring incomplete scheduled backup {}", entry.path().display());
         }
     }
     let Some(keep_last) = config.keep_last else {
@@ -687,7 +687,7 @@ mod tests {
     }
 
     #[test]
-    fn prune_scheduled_backups_deletes_incomplete_backups_without_keep_last() {
+    fn prune_scheduled_backups_ignores_incomplete_backups_without_keep_last() {
         let temp = tempfile::tempdir().unwrap();
         let incomplete = temp.path().join("stdb-incomplete");
         let complete = temp.path().join("stdb-complete");
@@ -701,7 +701,7 @@ mod tests {
 
         prune_scheduled_backups(&scheduled_backup_config(temp.path().to_path_buf(), None)).unwrap();
 
-        assert!(!incomplete.exists());
+        assert!(incomplete.exists());
         assert!(complete.exists());
         assert!(unrelated.exists());
     }

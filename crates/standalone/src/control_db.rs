@@ -10,6 +10,7 @@ use spacetimedb::messages::control_db::{Database, EnergyBalance, Node, Replica};
 use spacetimedb_client_api_messages::name::{
     DomainName, DomainParsingError, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld, TldRef,
 };
+use spacetimedb_fs_utils::sync_dir;
 use spacetimedb_lib::bsatn;
 use spacetimedb_paths::standalone::ControlDbDir;
 
@@ -90,7 +91,7 @@ impl ControlDb {
                 .with_context(|| format!("creating control db export dir {}", path.display()))?;
         }
 
-        // ponytail: sled owns live files on Windows; export/import avoids copying locked files.
+        // Sled owns live files on Windows; export/import avoids copying locked files.
         self.db.flush()?;
         let dst = sled::Config::default()
             .path(path)
@@ -99,6 +100,10 @@ impl ControlDb {
             .open()?;
         dst.import(self.db.export());
         dst.flush()?;
+        sync_dir(path).with_context(|| format!("syncing control db export dir {}", path.display()))?;
+        if let Some(parent) = path.parent() {
+            sync_dir(parent).with_context(|| format!("syncing control db export parent {}", parent.display()))?;
+        }
         Ok(())
     }
 

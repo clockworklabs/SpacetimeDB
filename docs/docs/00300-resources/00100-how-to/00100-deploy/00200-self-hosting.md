@@ -223,7 +223,64 @@ ssh ubuntu@<host> spacetime publish -s local --bin-path spacetime_module.wasm <d
 
 You could put the above commands into a shell script to make publishing to your server easier and faster. It's also possible to integrate a script like this into Github Actions to publish on some event (like a PR merging into master).
 
-## Step 6: Updating SpacetimeDB Version
+## Step 6: Configure Backups and Restore
+
+Create a server-side backup directory owned by the `spacetimedb` user:
+
+```sh
+sudo mkdir -p /var/backups/stdb
+sudo chown spacetimedb:spacetimedb /var/backups/stdb
+sudo chmod 750 /var/backups/stdb
+```
+
+Edit the standalone config:
+
+```sh
+sudo -u spacetimedb nano /stdb/data/config.toml
+```
+
+To enable CLI-triggered hot backups and a scheduled backup for one database, add:
+
+```toml
+[hot-backup]
+root-dir = "/var/backups/stdb"
+
+[scheduled-backup]
+database = "<database-name>"
+output-dir = "/var/backups/stdb"
+interval = "1h"
+keep-last = 24
+```
+
+Restart the service after changing the config:
+
+```sh
+sudo systemctl restart spacetimedb
+```
+
+Create a backup from the server host. The `--output-dir` value is relative to `[hot-backup].root-dir` and must name an empty or non-existent directory:
+
+```sh
+sudo -u spacetimedb /stdb/spacetime --root-dir=/stdb backup create \
+  --server http://127.0.0.1:3000 \
+  --database <database-name> \
+  --output-dir manual/<backup-name>
+```
+
+Restore is an offline operation. Stop the service, restore into the server data directory, then start the service again:
+
+```sh
+sudo systemctl stop spacetimedb
+sudo -u spacetimedb /stdb/spacetime --root-dir=/stdb backup restore \
+  --input-dir /var/backups/stdb/manual/<backup-name> \
+  --data-dir /stdb/data \
+  --force
+sudo systemctl start spacetimedb
+```
+
+Keep the backup directory private. Backups contain the database snapshot, commitlog, and any server state needed to reopen the restored database.
+
+## Step 7: Updating SpacetimeDB Version
 
 To update SpacetimeDB to the latest version, first stop the service:
 
@@ -249,7 +306,7 @@ Finally, restart the service:
 sudo systemctl start spacetimedb
 ```
 
-## Step 7: Troubleshooting
+## Step 8: Troubleshooting
 
 ### SpacetimeDB Service Fails to Start
 
