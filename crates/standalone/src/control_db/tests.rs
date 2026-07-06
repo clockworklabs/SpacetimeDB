@@ -187,9 +187,10 @@ fn test_export_database_to_path_is_scoped_to_one_database() -> anyhow::Result<()
     let src = TempDir::with_prefix("control-db-export-scoped-src")?;
     let dst = TempDir::with_prefix("control-db-export-scoped-dst")?;
     let cdb = ControlDb::at(src.path())?;
+    let first_identity = Identity::from_claims(LOCALHOST, "first");
     let first = Database {
         id: 0,
-        database_identity: Identity::ZERO,
+        database_identity: first_identity,
         owner_identity: *ALICE,
         host_type: HostType::Wasm,
         initial_program: Hash::ZERO,
@@ -215,22 +216,22 @@ fn test_export_database_to_path_is_scoped_to_one_database() -> anyhow::Result<()
         node_id: 0,
         leader: true,
     })?;
-    cdb.set_database_lock(&Identity::ZERO, true)?;
+    cdb.set_database_lock(&first_identity, true)?;
     cdb.set_database_lock(&second_identity, true)?;
 
     cdb.export_database_to_path(
         &ControlDbDir::from_path_unchecked(dst.path()),
-        &Identity::ZERO,
+        &first_identity,
         first_replica_id,
     )?;
     let exported = ControlDb::at(dst.path())?;
 
-    assert!(exported.get_database_by_identity(&Identity::ZERO)?.is_some());
+    assert!(exported.get_database_by_identity(&first_identity)?.is_some());
     assert!(exported.get_database_by_identity(&second_identity)?.is_none());
     assert_eq!(exported.get_databases()?.len(), 1);
     assert!(exported.get_replica_by_id(first_replica_id)?.is_some());
     assert_eq!(exported.get_replicas()?.len(), 1);
-    assert!(exported.is_database_locked(&Identity::ZERO)?);
+    assert!(exported.is_database_locked(&first_identity)?);
     assert!(!exported.is_database_locked(&second_identity)?);
     Ok(())
 }

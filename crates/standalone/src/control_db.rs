@@ -147,7 +147,7 @@ impl ControlDb {
             .context("control db id counter overflow")?;
         set_control_id_counter_at_least(&dst, next_control_id)?;
 
-        copy_optional_control_db_tree_entry(&self.db, &dst, "database_locks", database_identity.to_byte_array())?;
+        copy_optional_control_db_tree_entry(&self.db, &dst, "database_locks", database_identity.to_be_byte_array())?;
         copy_optional_control_db_tree_entry(
             &self.db,
             &dst,

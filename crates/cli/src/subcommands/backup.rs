@@ -1014,6 +1014,29 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn backup_restore_rolls_back_staged_server_state_when_replica_commit_sync_fails() -> anyhow::Result<()> {
+        let backup = tempfile::tempdir()?;
+        make_backup_dir(backup.path(), 7, 42)?;
+        make_backup_server_state(backup.path())?;
+
+        let data = tempfile::tempdir()?;
+        std::fs::create_dir_all(data.path().join("replicas"))?;
+        std::fs::write(data.path().join("replicas/.fail-next-restore-sync-parent"), b"1")?;
+        let data_dir = ServerDataDir::from_path_unchecked(data.path());
+
+        let err = restore_backup(backup.path(), &data_dir, false).unwrap_err();
+
+        assert!(err.to_string().contains("injected sync_parent_dir failure"));
+        assert!(!data.path().join("control-db").exists());
+        assert!(!data.path().join("program-bytes").exists());
+        assert!(!data.path().join("config.toml").exists());
+        assert!(!data.path().join("metadata.toml").exists());
+        assert!(!data.path().join("replicas/7").exists());
+        assert_no_restore_temps(data.path())?;
+        Ok(())
+    }
+
     #[cfg(windows)]
     #[test]
     fn backup_restore_force_commits_when_old_replica_cleanup_fails() -> anyhow::Result<()> {
