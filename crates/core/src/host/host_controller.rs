@@ -1417,3 +1417,46 @@ where
 
     let _ = WORKER_METRICS.v8_request_queue_length.remove_label_values(db);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn exit_module_host_relaunch_overlap_registry_cell_can_be_recreated_before_old_cell_unlocks() {
+        let hosts = Hosts::default();
+        let replica_id = 42;
+        let old_cell = hosts.lock().entry(replica_id).or_default().clone();
+
+        let old_read_guard = old_cell.read().await;
+        let removed_cell = hosts
+            .lock()
+            .remove(&replica_id)
+            .expect("old host cell should be present");
+        assert!(Arc::ptr_eq(&old_cell, &removed_cell));
+        assert!(!hosts.lock().contains_key(&replica_id));
+
+        assert!(
+            timeout(Duration::from_millis(10), removed_cell.write()).await.is_err(),
+            "old cell should still be locked by the simulated in-flight user"
+        );
+
+        let new_cell = hosts.lock().entry(replica_id).or_default().clone();
+        assert!(
+            !Arc::ptr_eq(&old_cell, &new_cell),
+            "a relaunch after removal creates a new HostCell instead of waiting for the old one"
+        );
+        assert!(
+            timeout(Duration::from_millis(10), new_cell.write()).await.is_ok(),
+            "new cell should be independently lockable while old cell remains locked"
+        );
+
+        drop(old_read_guard);
+        assert!(
+            timeout(Duration::from_millis(10), removed_cell.write()).await.is_ok(),
+            "old cell should become lockable once the simulated in-flight user releases it"
+        );
+
+        println!("registry_cell_removed_before_old_cell_unlocked=true new_cell_created_while_old_cell_locked=true");
+    }
+}

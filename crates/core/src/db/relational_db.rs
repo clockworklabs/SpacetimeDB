@@ -2333,6 +2333,7 @@ mod tests {
 
     use std::cell::RefCell;
     use std::fs::OpenOptions;
+    use std::io::Write as _;
     use std::path::PathBuf;
     use std::rc::Rc;
     use std::time::{Duration, Instant};
@@ -2352,6 +2353,7 @@ mod tests {
         system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINT_ID, ST_INDEX_ID,
         ST_SEQUENCE_ID, ST_TABLE_ID,
     };
+    use spacetimedb_durability::Durability as _;
     use spacetimedb_fs_utils::compression::CompressType;
     use spacetimedb_lib::db::raw_def::v9::{btree, RawTableDefBuilder};
     use spacetimedb_lib::error::ResultTest;
@@ -2359,6 +2361,7 @@ mod tests {
     use spacetimedb_lib::Timestamp;
     use spacetimedb_paths::server::ReplicaDir;
     use spacetimedb_paths::FromPathUnchecked;
+    use spacetimedb_runtime::Handle;
     use spacetimedb_sats::buffer::BufReader;
     use spacetimedb_sats::product;
     use spacetimedb_schema::schema::RowLevelSecuritySchema;
@@ -3891,6 +3894,65 @@ mod tests {
         // Quick sanity check: we actually got different table IDs,
         // we didn't just fail to detect a unique constraint violation.
         assert!(table_1_id > table_0_id);
+    }
+
+    #[test]
+    fn local_history_opens_while_local_durability_lock_is_held() -> ResultTest<()> {
+        let stdb = TestDB::durable_without_snapshot_repo()?;
+        let runtime = stdb.runtime().expect("durable TestDB should have a runtime").clone();
+        let mut durable_offset = stdb
+            .durable_tx_offset()
+            .expect("durable TestDB should expose durable offset");
+        runtime.block_on(durable_offset.wait_for(0))?;
+
+        let (db, durability, rt, dir) = stdb.into_parts();
+        let durability = durability.expect("durable TestDB should return durability handle");
+        let rt = rt.expect("durable TestDB should return runtime");
+        let dir = dir.expect("durable TestDB should return replica dir");
+        let replica_dir = (*dir).clone();
+        let segment = replica_dir.commit_log().segment(0);
+        let before_len = segment.metadata()?.len();
+
+        {
+            let mut file = segment.open_file(OpenOptions::new().append(true))?;
+            file.write_all(b"trailing")?;
+            file.sync_data()?;
+        }
+        let with_trailing_len = segment.metadata()?.len();
+        assert_eq!(with_trailing_len, before_len + 8);
+
+        let history = rt.block_on(local_history(&replica_dir))?;
+        let range_hint = history.tx_range_hint();
+        let after_local_history_len = segment.metadata()?.len();
+        assert_eq!(
+            after_local_history_len, before_len,
+            "local_history should resume the segment and truncate trailing bytes"
+        );
+
+        let duplicate = rt.block_on(local_durability(
+            replica_dir.clone(),
+            Handle::tokio(rt.handle().clone()),
+            None,
+        ));
+        match duplicate {
+            Ok((duplicate, _)) => {
+                let duplicate_offset = rt.block_on(duplicate.close());
+                panic!(
+                    "second local durability open unexpectedly succeeded while first was live; duplicate closed at {duplicate_offset:?}"
+                );
+            }
+            Err(err) => {
+                println!(
+                    "local_history_opened_while_durability_live=true local_history_truncated_while_durability_live=true len_before={before_len} len_with_trailing={with_trailing_len} len_after={after_local_history_len} tx_range_hint={range_hint:?} duplicate_local_durability_error={err:#}"
+                );
+            }
+        }
+
+        drop(history);
+        drop(db);
+        rt.block_on(durability.close());
+
+        Ok(())
     }
 
     use crate::error::{DBError, DatabaseError};

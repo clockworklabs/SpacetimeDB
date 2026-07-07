@@ -1789,6 +1789,15 @@ impl ModuleHost {
         }
     }
 
+    fn zero_repro_maybe_panic(label: &str) {
+        let Ok(labels) = std::env::var("STDB_ZERO_REPRO_PANIC_LABELS") else {
+            return;
+        };
+        if labels.split(',').any(|candidate| candidate.trim() == label) {
+            panic!("STDB_ZERO_REPRO_PANIC_LABELS forced panic in module operation {label}");
+        }
+    }
+
     fn start_call_timer(&self, label: &str) -> CallTimerGuard {
         // Record the time until our function starts running.
         let queue_timer = WORKER_METRICS
@@ -1833,6 +1842,7 @@ impl ModuleHost {
             log::warn!("module operation {label} panicked");
             (self.on_panic)();
         });
+        Self::zero_repro_maybe_panic(label);
 
         Ok(match &*self.inner {
             ModuleHostInner::Wasm(host) => {

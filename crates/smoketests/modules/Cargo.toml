@@ -82,6 +82,7 @@ members = [
     "delete-database",
     "client-connection-reject",
     "client-connection-disconnect-panic",
+    "zeroed-commit-repro",
     "sql-connect-hook",
 
     # Log filtering tests
