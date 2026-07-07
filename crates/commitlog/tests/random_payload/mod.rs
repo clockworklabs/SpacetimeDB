@@ -78,6 +78,37 @@ fn resets() {
     }
 }
 
+#[test]
+fn reset_then_resume() {
+    enable_logging();
+
+    let root = tempdir().unwrap();
+    let mut clog = Commitlog::open(CommitLogDir::from_path_unchecked(root.path()), <_>::default(), None).unwrap();
+
+    let payload = gen_payload();
+    for i in 0..10 {
+        clog.commit([(i, payload)]).unwrap();
+    }
+    clog.flush_and_sync().unwrap();
+
+    clog = clog.reset_to(4).unwrap();
+
+    let payload2 = gen_payload();
+    for i in 5..10 {
+        clog.commit([(i, payload2)]).unwrap();
+    }
+    clog.flush_and_sync().unwrap();
+
+    let txs = clog
+        .transactions(&payload::ArrayDecoder)
+        .map(Result::unwrap)
+        .collect::<Vec<_>>();
+
+    assert_eq!(txs.len(), 10);
+    assert!(txs[..5].iter().all(|tx| tx.txdata == payload));
+    assert!(txs[5..].iter().all(|tx| tx.txdata == payload2));
+}
+
 /// Try to generate commitlogs that will be amenable to compression -
 /// random data doesn't compress well, so try and have there be repetition
 fn compressible_payloads() -> impl Iterator<Item = [u8; 256]> {
