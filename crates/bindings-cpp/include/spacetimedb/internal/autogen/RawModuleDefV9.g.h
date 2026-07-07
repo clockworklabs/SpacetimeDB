@@ -13,10 +13,10 @@
 #include "../autogen_base.h"
 #include "spacetimedb/bsatn/bsatn.h"
 #include "RawTableDefV9.g.h"
-#include "RawTypeDefV9.g.h"
-#include "RawMiscModuleExportV9.g.h"
-#include "Typespace.g.h"
 #include "RawReducerDefV9.g.h"
+#include "RawTypeDefV9.g.h"
+#include "Typespace.g.h"
+#include "RawMiscModuleExportV9.g.h"
 #include "RawRowLevelSecurityDefV9.g.h"
 
 namespace SpacetimeDB::Internal {

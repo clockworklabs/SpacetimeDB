@@ -1,6 +1,6 @@
 use spacetimedb::{
-    duration, procedure, reducer, table, DbContext, ProcedureContext, ReducerContext, ScheduleAt, SpacetimeType, Table,
-    Timestamp, TxContext, Uuid,
+    duration, procedure, reducer, table, ProcedureContext, ReducerContext, ScheduleAt, SpacetimeType, Table, Timestamp,
+    TxContext, Uuid,
 };
 
 #[derive(SpacetimeType)]
@@ -41,11 +41,13 @@ fn will_panic(_ctx: &mut ProcedureContext) {
 }
 
 #[procedure]
-fn read_my_schema(ctx: &mut ProcedureContext) -> String {
-    let module_identity = ctx.identity();
-    match ctx.http.get(format!(
-        "http://localhost:3000/v1/database/{module_identity}/schema?version=9"
-    )) {
+fn read_my_schema(ctx: &mut ProcedureContext, server_url: String) -> String {
+    let module_identity = ctx.database_identity();
+    let server_url = server_url.trim_end_matches('/');
+    match ctx
+        .http
+        .get(format!("{server_url}/v1/database/{module_identity}/schema?version=9"))
+    {
         Ok(result) => result.into_body().into_string_lossy(),
         Err(e) => panic!("{e}"),
     }
@@ -106,7 +108,7 @@ fn insert_with_tx_rollback(ctx: &mut ProcedureContext) {
 #[reducer]
 fn schedule_proc(ctx: &ReducerContext) {
     // Schedule the procedure to run in 1s.
-    ctx.db().scheduled_proc_table().insert(ScheduledProcTable {
+    ctx.db.scheduled_proc_table().insert(ScheduledProcTable {
         scheduled_id: 0,
         scheduled_at: duration!("1000ms").into(),
         // Store the timestamp at which this reducer was called.
@@ -134,7 +136,7 @@ fn scheduled_proc(ctx: &mut ProcedureContext, data: ScheduledProcTable) {
     let ScheduledProcTable { reducer_ts, x, y, .. } = data;
     let procedure_ts = ctx.timestamp;
     ctx.with_tx(|ctx| {
-        ctx.db().proc_inserts_into().insert(ProcInsertsInto {
+        ctx.db.proc_inserts_into().insert(ProcInsertsInto {
             reducer_ts,
             procedure_ts,
             x,

@@ -5,18 +5,18 @@ use crate::locking_tx_datastore::mut_tx::{IndexScanPoint, IndexScanRanged};
 use crate::system_tables::{
     ConnectionIdViaU128, StColumnAccessorFields, StColumnAccessorRow, StColumnFields, StColumnRow,
     StConnectionCredentialsFields, StConnectionCredentialsRow, StConstraintFields, StConstraintRow, StEventTableFields,
-    StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StScheduledFields, StScheduledRow,
-    StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow,
-    StViewFields, StViewParamFields, StViewRow, SystemTable, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID,
+    StEventTableRow, StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StScheduledFields,
+    StScheduledRow, StSequenceFields, StSequenceRow, StTableAccessorFields, StTableAccessorRow, StTableFields,
+    StTableRow, StViewFields, StViewRow, SystemTable, ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID,
     ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID,
-    ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID,
+    ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID, ST_VIEW_ID,
 };
 use anyhow::anyhow;
 use core::ops::RangeBounds;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::AlgebraicValue;
-use spacetimedb_schema::schema::{ColumnSchema, TableSchema, ViewDefInfo};
+use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, TableSchema, ViewDefInfo};
 use spacetimedb_table::table::IndexScanPointIter;
 use spacetimedb_table::{
     blob_store::HashMapBlobStore,
@@ -96,6 +96,14 @@ pub trait StateView {
         StTableRow::try_from(row_ref)
     }
 
+    fn find_st_event_table_row(&self, table_id: TableId) -> Result<StEventTableRow> {
+        let row_ref = self
+            .iter_by_col_eq(ST_EVENT_TABLE_ID, StEventTableFields::TableId, &table_id.into())?
+            .next()
+            .ok_or_else(|| TableError::IdNotFound(SystemTable::st_event_table, table_id.into()))?;
+        StEventTableRow::try_from(row_ref)
+    }
+
     /// Look up an `st_table_accessor` row by its accessor name
     fn find_st_table_accessor_row(&self, accessor_name: &str) -> Result<Option<StTableAccessorRow>> {
         self.iter_by_col_eq(
@@ -118,6 +126,22 @@ pub trait StateView {
         .next()
         .map(StIndexAccessorRow::try_from)
         .transpose()
+    }
+
+    /// Look up an `st_index_accessor` row by its canonical index name.
+    fn find_st_index_accessor_row_by_index_name(&self, index_name: &str) -> Result<Option<StIndexAccessorRow>> {
+        match self.iter_by_col_eq(
+            ST_INDEX_ACCESSOR_ID,
+            StIndexAccessorFields::IndexName,
+            &index_name.into(),
+        ) {
+            Ok(mut iter) => iter.next().map(StIndexAccessorRow::try_from).transpose(),
+            // `schema_for_table_raw` is called while restoring snapshots,
+            // before `migrate_system_tables` creates newer system tables.
+            // Treat a missing `st_index_accessor` as "no aliases yet" here.
+            Err(DatastoreError::Table(TableError::IdNotFound(..))) => Ok(None),
+            Err(e) => Err(e),
+        }
     }
 
     /// Look up an `st_column_accessor` row by its canonical table and column names
@@ -187,7 +211,14 @@ pub trait StateView {
         // Look up the indexes for the table in question.
         let indexes = self
             .iter_by_col_eq(ST_INDEX_ID, StIndexFields::TableId, value_eq)?
-            .map(|row| StIndexRow::try_from(row).map(Into::into))
+            .map(|row| {
+                let row = StIndexRow::try_from(row)?;
+                let mut index_schema = IndexSchema::from(row);
+                index_schema.alias = self
+                    .find_st_index_accessor_row_by_index_name(index_schema.index_name.as_ref())?
+                    .map(|row| row.accessor_name);
+                Ok(index_schema)
+            })
             .collect::<Result<Vec<_>>>()?;
 
         let schedule = self
@@ -209,14 +240,9 @@ pub trait StateView {
             .map(|mut iter| {
                 iter.next().map(|row| -> Result<_> {
                     let row = StViewRow::try_from(row)?;
-                    let has_args = self
-                        .iter_by_col_eq(ST_VIEW_PARAM_ID, StViewParamFields::ViewId, &row.view_id.into())?
-                        .next()
-                        .is_some();
 
                     Ok(ViewDefInfo {
                         view_id: row.view_id,
-                        has_args,
                         is_anonymous: row.is_anonymous,
                     })
                 })
@@ -493,6 +519,20 @@ pub enum ScanOrIndex<S, I> {
 
     /// When the column has an index.
     Index(I),
+}
+
+impl<R, I, Idx> ScanOrIndex<ApplyFilter<RangeOnColumn<R>, I>, Idx> {
+    /// Returns a scan that applies a `RangeOnColumn` filter to `iter`.
+    pub(super) fn scan_range(cols: ColList, range: R, iter: I) -> Self {
+        Self::Scan(ApplyFilter::new(RangeOnColumn { cols, range }, iter))
+    }
+}
+
+impl<'r, I, Idx> ScanOrIndex<ApplyFilter<EqOnColumn<'r>, I>, Idx> {
+    /// Returns a scan that applies a `EqOnColumn` filter to `iter`.
+    pub(super) fn scan_eq(cols: ColList, val: &'r AlgebraicValue, iter: I) -> Self {
+        Self::Scan(ApplyFilter::new(EqOnColumn { cols, val }, iter))
+    }
 }
 
 impl<'a, S, I> Iterator for ScanOrIndex<S, I>

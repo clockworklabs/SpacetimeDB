@@ -259,6 +259,17 @@ impl_deserialize!(
     de => Vec::<T>::validate(de)
 );
 
+/// The visitor merely valiates the slice.
+struct ValidatingSliceVisitor;
+
+impl<T: ToOwned + ?Sized> SliceVisitor<'_, T> for ValidatingSliceVisitor {
+    type Output = ();
+
+    fn visit<E: Error>(self, _: &T) -> Result<Self::Output, E> {
+        Ok(())
+    }
+}
+
 /// The visitor converts the slice to its owned version.
 struct OwnedSliceVisitor;
 
@@ -293,8 +304,16 @@ impl<const N: usize> SliceVisitor<'_, [u8]> for ByteArrayVisitor<N> {
     }
 }
 
-impl_deserialize!([] &'de str, de => de.deserialize_str(BorrowedSliceVisitor));
-impl_deserialize!([] &'de [u8], de => de.deserialize_bytes(BorrowedSliceVisitor));
+impl_deserialize!(
+    [] &'de str,
+    de => de.deserialize_str_slice(),
+    de => de.deserialize_str(ValidatingSliceVisitor)
+);
+impl_deserialize!(
+    [] &'de [u8],
+    de => de.deserialize_bytes(BorrowedSliceVisitor),
+    de => de.deserialize_bytes(ValidatingSliceVisitor)
+);
 
 /// The visitor returns the slice as-is and borrowed.
 pub(crate) struct BorrowedSliceVisitor;
@@ -477,6 +496,8 @@ impl<'de, T: Deserialize<'de>, U: Deserialize<'de>> VariantVisitor<'de> for Resu
     }
 }
 
+impl_deserialize!([T: Deserialize<'de>] Bound<T>, de => WithBound(PhantomData).deserialize(de));
+
 /// The visitor deserializes a `Bound<T>`.
 #[derive(Clone, Copy)]
 pub struct WithBound<S>(pub S);
@@ -608,7 +629,7 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, AlgebraicType> {
             AlgebraicType::U256 => u256::validate(de),
             AlgebraicType::F32 => f32::validate(de),
             AlgebraicType::F64 => f64::validate(de),
-            AlgebraicType::String => <Box<str>>::validate(de),
+            AlgebraicType::String => <&str>::validate(de),
         }
     }
 }

@@ -5,10 +5,10 @@ use spacetimedb_smoketests::Smoketest;
 fn test_set_name() {
     let mut test = Smoketest::builder().autopublish(false).build();
 
-    let orig_name = format!("test-db-{}", std::process::id());
-    test.publish_module_named(&orig_name, false).unwrap();
+    let orig_name = format!("domains-set-name-{}", std::process::id());
+    test.publish().name(&orig_name).run().unwrap();
 
-    let rand_name = format!("test-db-{}-renamed", std::process::id());
+    let rand_name = format!("domains-set-name-{}-renamed", std::process::id());
 
     // This should fail before there's a db with this name
     let result = test.spacetime(&["logs", "--server", &test.server_url, &rand_name]);
@@ -33,17 +33,17 @@ fn test_set_name() {
 fn test_subdomain_behavior() {
     let mut test = Smoketest::builder().autopublish(false).build();
 
-    let root_name = format!("test-db-{}", std::process::id());
-    test.publish_module_named(&root_name, false).unwrap();
+    let root_name = format!("domains-subdomain-behavior-{}", std::process::id());
+    test.publish().name(&root_name).run().unwrap();
 
     // Double slash should fail
     let double_slash_name = format!("{}//test", root_name);
-    let result = test.publish_module_named(&double_slash_name, false);
+    let result = test.publish().name(&double_slash_name).run();
     assert!(result.is_err(), "Expected publish to fail with double slash in name");
 
     // Trailing slash should fail
     let trailing_slash_name = format!("{}/test/", root_name);
-    let result = test.publish_module_named(&trailing_slash_name, false);
+    let result = test.publish().name(&trailing_slash_name).run();
     assert!(result.is_err(), "Expected publish to fail with trailing slash in name");
 }
 
@@ -53,12 +53,12 @@ fn test_set_to_existing_name() {
     let mut test = Smoketest::builder().autopublish(false).build();
 
     // Publish first database (no name)
-    test.publish_module().unwrap();
+    test.publish().run().unwrap();
     let id_to_rename = test.database_identity.clone().unwrap();
 
     // Publish second database with a name
-    let rename_to = format!("test-db-{}-target", std::process::id());
-    test.publish_module_named(&rename_to, false).unwrap();
+    let rename_to = format!("domains-set-existing-target-{}", std::process::id());
+    test.publish().name(&rename_to).run().unwrap();
 
     // Try to rename first db to the name of the second - should fail
     let result = test.spacetime(&[
@@ -80,10 +80,10 @@ fn test_set_to_existing_name() {
 fn test_replace_names() {
     let mut test = Smoketest::builder().autopublish(false).build();
 
-    let orig_name = format!("test-db-{}", std::process::id());
-    let alt_name1 = format!("test-db-{}-alt1", std::process::id());
-    let alt_name2 = format!("test-db-{}-alt2", std::process::id());
-    test.publish_module_named(&orig_name, false).unwrap();
+    let orig_name = format!("domains-replace-names-{}", std::process::id());
+    let alt_name1 = format!("domains-replace-names-{}-alt1", std::process::id());
+    let alt_name2 = format!("domains-replace-names-{}-alt2", std::process::id());
+    test.publish().name(&orig_name).run().unwrap();
 
     // Use the API to replace names
     let json_body = format!(r#"["{}","{}"]"#, alt_name1, alt_name2);

@@ -1,5 +1,9 @@
 import { moduleHooks, type ModuleDefaultExport } from 'spacetime:sys@2.0';
-import { CaseConversionPolicy, Lifecycle } from '../lib/autogen/types';
+import {
+  CaseConversionPolicy,
+  Lifecycle,
+  type MethodOrAny,
+} from '../lib/autogen/types';
 import {
   type ParamsAsObject,
   type ParamsObj,
@@ -14,6 +18,14 @@ import {
 } from '../lib/schema';
 import type { UntypedTableSchema } from '../lib/table_schema';
 import { ColumnBuilder, TypeBuilder } from '../lib/type_builders';
+import {
+  Router,
+  type HandlerFn,
+  type HttpHandlerExport,
+  type HttpHandlerOpts,
+  makeHttpHandlerExport,
+  makeHttpRouterExport,
+} from './http_handlers';
 import {
   makeProcedureExport,
   type ProcedureExport,
@@ -38,6 +50,7 @@ import {
   type ViewFn,
   type ViewOpts,
   type ViewReturnTypeBuilder,
+  type ValidateViewPrimaryKey,
   type Views,
 } from './views';
 import type { UntypedTableDef } from '../lib/table';
@@ -47,10 +60,12 @@ export class SchemaInner<
 > extends ModuleContext {
   schemaType: S;
   existingFunctions = new Set<string>();
+  existingHttpHandlers = new Set<string>();
   reducers: Reducers = [];
   procedures: Procedures = [];
   views: Views = [];
   anonViews: AnonViews = [];
+  httpHandlers: HandlerFn[] = [];
   /**
    * Maps ReducerExport objects to the name of the reducer.
    * Used for resolving the reducers of scheduled tables.
@@ -60,7 +75,10 @@ export class SchemaInner<
     | ProcedureExport<UntypedSchemaDef, any, any>,
     string
   > = new Map();
+  httpHandlerExports: Map<HttpHandlerExport<UntypedSchemaDef>, string> =
+    new Map();
   pendingSchedules: PendingSchedule[] = [];
+  pendingHttpRoutes: PendingHttpRoute[] = [];
 
   constructor(getSchemaType: (ctx: SchemaInner<S>) => S) {
     super();
@@ -70,10 +88,19 @@ export class SchemaInner<
   defineFunction(name: string) {
     if (this.existingFunctions.has(name)) {
       throw new TypeError(
-        `There is already a reducer or procedure with the name '${name}'`
+        `There is already a reducer, procedure, or view with the name '${name}'`
       );
     }
     this.existingFunctions.add(name);
+  }
+
+  defineHttpHandler(name: string) {
+    if (this.existingHttpHandlers.has(name)) {
+      throw new TypeError(
+        `There is already an HTTP handler with the name '${name}'`
+      );
+    }
+    this.existingHttpHandlers.add(name);
   }
 
   resolveSchedules() {
@@ -91,9 +118,30 @@ export class SchemaInner<
       });
     }
   }
+
+  resolveHttpRoutes() {
+    for (const route of this.pendingHttpRoutes) {
+      const handlerFunction = this.httpHandlerExports.get(route.handler);
+      if (handlerFunction === undefined) {
+        throw new TypeError(
+          `HTTP route for path '${route.path}' refers to a handler that was not exported.`
+        );
+      }
+      this.moduleDef.httpRoutes.push({
+        handlerFunction,
+        method: route.method,
+        path: route.path,
+      });
+    }
+  }
 }
 
 type PendingSchedule = UntypedTableSchema['schedule'] & { tableName: string };
+type PendingHttpRoute = {
+  handler: HttpHandlerExport<UntypedSchemaDef>;
+  method: MethodOrAny;
+  path: string;
+};
 
 /**
  * The Schema class represents the database schema for a SpacetimeDB application.
@@ -153,6 +201,7 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
       moduleExport[registerExport](registeredSchema, name);
     }
     registeredSchema.resolveSchedules();
+    registeredSchema.resolveHttpRoutes();
     return makeHooks(registeredSchema);
   }
 
@@ -347,7 +396,11 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
   view<Ret extends ViewReturnTypeBuilder, F extends ViewFn<S, {}, Ret>>(
     opts: ViewOpts,
     ret: Ret,
-    fn: F
+    fn: F,
+    // Compile-time-only guard: this rest parameter is `[]` for valid return
+    // builders, but becomes a required error tuple when a returned row builder
+    // marks more than one column with `.primaryKey()`.
+    ..._: ValidateViewPrimaryKey<Ret>
   ): ViewExport<F> {
     return makeViewExport<S, {}, Ret, F>(this.#ctx, opts, {}, ret, fn);
   }
@@ -380,7 +433,15 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
   anonymousView<
     Ret extends ViewReturnTypeBuilder,
     F extends AnonymousViewFn<S, {}, Ret>,
-  >(opts: ViewOpts, ret: Ret, fn: F): ViewExport<F> {
+  >(
+    opts: ViewOpts,
+    ret: Ret,
+    fn: F,
+    // Compile-time-only guard: this rest parameter is `[]` for valid return
+    // builders, but becomes a required error tuple when a returned row builder
+    // marks more than one column with `.primaryKey()`.
+    ..._: ValidateViewPrimaryKey<Ret>
+  ): ViewExport<F> {
     return makeAnonViewExport<S, {}, Ret, F>(this.#ctx, opts, {}, ret, fn);
   }
 
@@ -456,6 +517,27 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
         break;
     }
     return makeProcedureExport(this.#ctx, opts, params, ret, fn);
+  }
+
+  httpHandler(fn: HandlerFn<S>): HttpHandlerExport<S>;
+  httpHandler(opts: HttpHandlerOpts, fn: HandlerFn<S>): HttpHandlerExport<S>;
+  httpHandler(
+    ...args: [HandlerFn<S>] | [HttpHandlerOpts, HandlerFn<S>]
+  ): HttpHandlerExport<S> {
+    let opts: HttpHandlerOpts | undefined, fn: HandlerFn<S>;
+    switch (args.length) {
+      case 1:
+        [fn] = args;
+        break;
+      case 2:
+        [opts, fn] = args;
+        break;
+    }
+    return makeHttpHandlerExport(this.#ctx, opts, fn);
+  }
+
+  httpRouter(router: Router): ModuleExport {
+    return makeHttpRouterExport(this.#ctx, router);
   }
 
   /**

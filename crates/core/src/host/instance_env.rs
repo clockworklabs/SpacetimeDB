@@ -13,17 +13,17 @@ use core::mem;
 use futures::TryFutureExt;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
-use spacetimedb_client_api_messages::energy::EnergyQuanta;
+use spacetimedb_client_api_messages::energy::FunctionBudget;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
-use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId};
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, IndexScanPointOrRange, MutTxId};
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::{http as st_http, ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
-    buffer::{CountWriter, TeeWriter},
+    buffer::CountWriter,
     AlgebraicValue, ProductValue,
 };
 use spacetimedb_schema::identifier::Identifier;
@@ -343,16 +343,16 @@ impl InstanceEnv {
     fn project_cols_bsatn(buffer: &mut [u8], cols: ColList, row_ref: RowRef<'_>) -> usize {
         // We get back a col-list with the columns with generated values.
         // Write those back to `buffer` and then the encoded length to `row_len`.
-        let counter = CountWriter::default();
-        let mut writer = TeeWriter::new(counter, buffer);
-        for col in cols.iter() {
-            // Read the column value to AV and then serialize.
-            let val = row_ref
-                .read_col::<AlgebraicValue>(col)
-                .expect("reading col as AV never panics");
-            bsatn::to_writer(&mut writer, &val).unwrap();
-        }
-        writer.w1.finish()
+        let (_, count) = CountWriter::run(buffer, |writer| {
+            for col in cols.iter() {
+                // Read the column value to AV and then serialize.
+                let val = row_ref
+                    .read_col::<AlgebraicValue>(col)
+                    .expect("reading col as AV never panics");
+                bsatn::to_writer(writer, &val).unwrap();
+            }
+        });
+        count
     }
 
     pub fn insert(&self, table_id: TableId, buffer: &mut [u8]) -> Result<usize, NodesError> {
@@ -401,6 +401,14 @@ impl InstanceEnv {
         table_id: TableId,
         row_ptr: RowPointer,
     ) -> Result<(), NodesError> {
+        let function_name: Arc<str> = {
+            let table = stdb.schema_for_table_mut(tx, table_id)?;
+            let schedule = table
+                .schedule
+                .as_ref()
+                .expect("schedule_row should only be called for scheduled tables");
+            Arc::from(&schedule.function_name[..])
+        };
         let (id_column, at_column) = stdb
             .table_scheduled_id_and_at(tx, table_id)?
             .expect("schedule_row should only be called when we know its a scheduler table");
@@ -417,6 +425,7 @@ impl InstanceEnv {
                 schedule_at,
                 id_column,
                 at_column,
+                function_name,
                 self.start_time,
             )
             .map_err(NodesError::ScheduleError)?;
@@ -489,9 +498,12 @@ impl InstanceEnv {
         let tx = &mut *self.get_tx()?;
 
         // Find all rows in the table to delete.
-        let (table_id, _, _, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
+        let (table_id, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
         // Re. `SmallVec`, `delete_by_field` only cares about 1 element, so optimize for that.
-        let rows_to_delete = iter.map(|row_ref| row_ref.pointer()).collect::<SmallVec<[_; 1]>>();
+        let rows_to_delete = match iter {
+            IndexScanPointOrRange::Point(_, iter) => iter.map(|row_ref| row_ref.pointer()).collect(),
+            IndexScanPointOrRange::Range(iter) => iter.map(|row_ref| row_ref.pointer()).collect(),
+        };
 
         Ok(Self::datastore_delete_by_index_scan(stdb, tx, table_id, rows_to_delete))
     }
@@ -545,6 +557,20 @@ impl InstanceEnv {
 
         // Delete them and return how many we deleted.
         Ok(stdb.delete_by_rel(tx, table_id, relation))
+    }
+
+    /// Deletes all rows in the table identified by `table_id`.
+    pub fn clear(&self, table_id: TableId) -> Result<u64, NodesError> {
+        let stdb = self.relational_db();
+        let tx = &mut *self.get_tx()?;
+
+        let rows_deleted = stdb.clear_table(tx, table_id).map_err(NodesError::from)?;
+
+        // To clear a table, we must find all the row pointers,
+        // so we have scanned that many rows.
+        tx.metrics.rows_scanned += rows_deleted as usize;
+
+        Ok(rows_deleted)
     }
 
     /// Returns the `table_id` associated with the given `table_name`.
@@ -653,19 +679,22 @@ impl InstanceEnv {
         let tx = &mut *self.get_tx()?;
 
         // Open index iterator
-        let (table_id, lower, upper, iter) =
+        let (table_id, iter) =
             self.relational_db()
                 .index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
 
         // Scan the index and serialize rows to BSATN.
-        let (chunks, rows_scanned, bytes_scanned) = ChunkedWriter::collect_iter(pool, iter);
+        let (point, (chunks, rows_scanned, bytes_scanned)) = match iter {
+            IndexScanPointOrRange::Point(point, iter) => (Some(point), ChunkedWriter::collect_iter(pool, iter)),
+            IndexScanPointOrRange::Range(iter) => (None, ChunkedWriter::collect_iter(pool, iter)),
+        };
 
         // Record the number of rows and the number of bytes scanned by the iterator.
         tx.metrics.index_seeks += 1;
         tx.metrics.bytes_scanned += bytes_scanned;
         tx.metrics.rows_scanned += rows_scanned;
 
-        tx.record_index_scan_range(&self.func_type, table_id, index_id, lower, upper);
+        tx.record_index_scan_range(&self.func_type, table_id, index_id, point);
 
         Ok(chunks)
     }
@@ -764,7 +793,7 @@ impl InstanceEnv {
             request_id: None,
             timer: None,
             // The procedure will pick up the tab for the energy.
-            energy_quanta_used: EnergyQuanta { quanta: 0 },
+            execution_budget_used: FunctionBudget::ZERO,
             host_execution_duration: Duration::from_millis(0),
         };
         // Commit the tx and broadcast it.
@@ -1318,6 +1347,7 @@ mod test {
         host::Scheduler,
         messages::control_db::{Database, HostType},
         replica_context::ReplicaContext,
+        resource::ModuleInstanceMemoryTracker,
         subscription::module_subscription_actor::ModuleSubscriptions,
     };
     use anyhow::{anyhow, Result};
@@ -1347,10 +1377,12 @@ mod test {
                     owner_identity: Identity::ZERO,
                     host_type: HostType::Wasm,
                     initial_program: Hash::ZERO,
+                    bootstrap_generation: 0,
                 },
                 replica_id: 0,
                 logger,
                 subscriptions: subs,
+                module_instance_memory_tracker: ModuleInstanceMemoryTracker::new(Identity::ZERO, Arc::new(())),
             },
             runtime,
         ))

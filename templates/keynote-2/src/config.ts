@@ -1,7 +1,6 @@
 export const validConnectors = [
   'convex',
   'spacetimedb',
-  'spacetimedbRustClient',
   'bun',
   'postgres_rpc',
   'cockroach_rpc',
@@ -11,6 +10,10 @@ export const validConnectors = [
 ] as const;
 
 export type ConnectorKey = (typeof validConnectors)[number];
+
+export const validStdbCompressions = ['none', 'gzip'] as const;
+
+export type StdbCompression = (typeof validStdbCompressions)[number];
 
 export const defaultDemoSystems: readonly ConnectorKey[] = [
   'convex',
@@ -39,9 +42,9 @@ export interface SharedRuntimeConfig {
   stdbUrl: string;
   stdbModule: string;
   stdbModulePath: string;
+  stdbCompression: StdbCompression;
   stdbConfirmedReads: boolean;
   useDocker: boolean;
-  useSpacetimeMetricsEndpoint: boolean;
   poolMax: number;
   bunUrl: string;
   convexUrl: string;
@@ -69,7 +72,20 @@ export interface BenchOptions extends SharedRuntimeConfig {
   testName: string;
   seconds: number;
   concurrency: number;
-  alpha: number;
+  /**
+   * Alphas to sweep. The basic-bench code path writes one JSON per (connector,
+   * alpha, run) tuple. For backward compatibility, a single `--alpha N` argument
+   * resolves to a single-element array.
+   */
+  alphas: number[];
+  /** Number of times to repeat each (connector, alpha) combination. */
+  runs: number;
+  /**
+   * If true, runs `pnpm run prep` before each (connector, alpha) combination
+   * to reset DB state. Each repeat run within the same (connector, alpha) uses
+   * the same prepped state (so inter-run variance is meaningful).
+   */
+  prepBetweenAlphas: boolean;
   connectors: ConnectorKey[] | null;
   contentionTests: ContentionTests | null;
   concurrencyTests: ConcurrencyTests | null;
@@ -82,6 +98,7 @@ export type ConnectorRuntimeConfig = Pick<
   | 'bunUrl'
   | 'convexUrl'
   | 'initialBalance'
+  | 'stdbCompression'
   | 'stdbConfirmedReads'
   | 'stdbModule'
   | 'stdbUrl'
@@ -89,6 +106,7 @@ export type ConnectorRuntimeConfig = Pick<
 
 export interface SpacetimeConnectorConfig {
   initialBalance: number;
+  stdbCompression: StdbCompression;
   stdbConfirmedReads: boolean;
   stdbModule: string;
   stdbUrl: string;
@@ -101,10 +119,9 @@ export type RunnerRuntimeConfig = Pick<
   | 'maxInflightPerWorker'
   | 'minOpTimeoutMs'
   | 'opTimeoutMs'
+  | 'poolMax'
   | 'precomputedTransferPairs'
-  | 'stdbUrl'
   | 'tailSlackMs'
-  | 'useSpacetimeMetricsEndpoint'
   | 'verifyTransactions'
 >;
 
@@ -129,6 +146,19 @@ function parseBooleanLike(raw: string | boolean): boolean {
 
 export function normalizeStdbUrl(url: string): string {
   return url.replace(/^(http|ws)s?:\/\//, '');
+}
+
+export function parseStdbCompression(
+  raw: string,
+  label: string,
+): StdbCompression {
+  if (validStdbCompressions.includes(raw as StdbCompression)) {
+    return raw as StdbCompression;
+  }
+
+  throw new Error(
+    `invalid value for ${label}: ${raw} (expected one of: ${validStdbCompressions.join(', ')})`,
+  );
 }
 
 export function readNumberEnv(
@@ -177,6 +207,23 @@ export function readOptionalBooleanEnv(
   return parseBooleanLike(raw);
 }
 
+export function parseAlphaList(
+  raw: string | number | string[] | undefined,
+  label: string,
+): number[] | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw === 'number') return [raw];
+
+  const values = (Array.isArray(raw) ? raw : [raw])
+    .flatMap((value) => String(value).split(','))
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (values.length === 0) return undefined;
+
+  return values.map((value) => parseFiniteNumber(value, label));
+}
+
 export function parseConnectorList(
   raw: string | string[] | undefined,
   label: string,
@@ -206,18 +253,17 @@ export function getSharedRuntimeDefaults(
 ): SharedRuntimeConfig {
   return {
     accounts: readNumberEnv('SEED_ACCOUNTS', 100_000, env),
-    initialBalance: readNumberEnv('SEED_INITIAL_BALANCE', 10_000_000, env),
+    initialBalance: readNumberEnv('SEED_INITIAL_BALANCE', 1_000_000_000, env),
     stdbUrl: normalizeStdbUrl(readStringEnv('STDB_URL', '127.0.0.1:3000', env)),
     stdbModule: readStringEnv('STDB_MODULE', 'test-1', env),
     stdbModulePath: readStringEnv('STDB_MODULE_PATH', './spacetimedb', env),
+    stdbCompression: parseStdbCompression(
+      readStringEnv('STDB_COMPRESSION', 'none', env),
+      'STDB_COMPRESSION',
+    ),
     stdbConfirmedReads: readBooleanEnv('STDB_CONFIRMED_READS', true, env),
     useDocker: readBooleanEnv('USE_DOCKER', false, env),
-    useSpacetimeMetricsEndpoint: readBooleanEnv(
-      'SPACETIME_METRICS_ENDPOINT',
-      true,
-      env,
-    ),
-    poolMax: readNumberEnv('MAX_POOL', 1000, env),
+    poolMax: readNumberEnv('MAX_POOL', 64, env),
     bunUrl: readStringEnv('BUN_URL', 'http://127.0.0.1:4000', env),
     convexUrl: readStringEnv('CONVEX_URL', 'http://127.0.0.1:3210', env),
     convexDir: readStringEnv('CONVEX_DIR', './convex-app', env),

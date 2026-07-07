@@ -90,6 +90,14 @@ internal static partial class FFI
 #endif
     ;
 
+    const string StdbNamespace10_5 =
+#if EXPERIMENTAL_WASM_AOT
+        "spacetime_10.5"
+#else
+        "bindings"
+#endif
+    ;
+
     [NativeMarshalling(typeof(Marshaller))]
     public struct CheckedStatus
     {
@@ -279,6 +287,9 @@ internal static partial class FFI
         uint relation_len,
         out uint out_
     );
+
+    [LibraryImport(StdbNamespace10_5)]
+    public static partial CheckedStatus datastore_clear(TableId table_id, out ulong out_);
 
     [LibraryImport(StdbNamespace10_0)]
     public static partial Errno bytes_source_read(

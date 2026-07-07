@@ -1,6 +1,8 @@
 namespace SpacetimeDB.Tests;
 
 using System;
+using System.Globalization;
+using System.Threading;
 using Xunit;
 
 public sealed class QueryBuilderTests
@@ -17,6 +19,7 @@ public sealed class QueryBuilderTests
         public Col<Row, string> Weird { get; }
         public Col<Row, int> Age { get; }
         public Col<Row, bool> IsAdmin { get; }
+        public Col<Row, Timestamp> CreatedAt { get; }
 
         public RowCols(string tableName)
         {
@@ -24,16 +27,19 @@ public sealed class QueryBuilderTests
             Weird = new Col<Row, string>(tableName, "we\"ird");
             Age = new Col<Row, int>(tableName, "Age");
             IsAdmin = new Col<Row, bool>(tableName, "IsAdmin");
+            CreatedAt = new Col<Row, Timestamp>(tableName, "CreatedAt");
         }
     }
 
     private sealed class RowIxCols
     {
         public IxCol<Row, string> Name { get; }
+        public IxCol<Row, Timestamp> CreatedAt { get; }
 
         public RowIxCols(string tableName)
         {
             Name = new IxCol<Row, string>(tableName, "Name");
+            CreatedAt = new IxCol<Row, Timestamp>(tableName, "CreatedAt");
         }
     }
 
@@ -207,6 +213,48 @@ public sealed class QueryBuilderTests
     }
 
     [Fact]
+    public void FormatLiteral_Timestamp_UsesQuotedIsoString()
+    {
+        var table = MakeTable("T");
+        var timestamp = new Timestamp(1_737_582_793_990_639L);
+        const string expected = "2025-01-22T21:53:13.990639Z";
+
+        Assert.Equal(
+            $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" = '{expected}')",
+            table.Where(c => c.CreatedAt.Eq(timestamp)).ToSql()
+        );
+    }
+
+    [Fact]
+    public void Where_Timestamp_ComparisonOperators_FormatCorrectly()
+    {
+        var table = MakeTable("T");
+        var timestamp = new Timestamp(1_737_582_793_990_639L);
+        const string expected = "2025-01-22T21:53:13.990639Z";
+
+        Assert.Equal(
+            $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" <> '{expected}')",
+            table.Where(c => c.CreatedAt.Neq(timestamp)).ToSql()
+        );
+        Assert.Equal(
+            $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" < '{expected}')",
+            table.Where(c => c.CreatedAt.Lt(timestamp)).ToSql()
+        );
+        Assert.Equal(
+            $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" <= '{expected}')",
+            table.Where(c => c.CreatedAt.Lte(timestamp)).ToSql()
+        );
+        Assert.Equal(
+            $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" > '{expected}')",
+            table.Where(c => c.CreatedAt.Gt(timestamp)).ToSql()
+        );
+        Assert.Equal(
+            $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" >= '{expected}')",
+            table.Where(c => c.CreatedAt.Gte(timestamp)).ToSql()
+        );
+    }
+
+    [Fact]
     public void IxCol_EqNeq_FormatsCorrectly()
     {
         var ix = new IxCol<Row, string>("T", "Name");
@@ -219,6 +267,48 @@ public sealed class QueryBuilderTests
             "(\"T\".\"Name\" <> 'x')",
             ix.Neq("x").Sql
         );
+    }
+
+    [Fact]
+    public void IxCol_Timestamp_EqNeq_FormatsCorrectly()
+    {
+        var table = MakeTable("T");
+        var timestamp = new Timestamp(1_737_582_793_990_639L);
+        const string expected = "2025-01-22T21:53:13.990639Z";
+
+        Assert.Equal(
+            $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" = '{expected}')",
+            table.Where((_, ix) => ix.CreatedAt.Eq(timestamp)).ToSql()
+        );
+        Assert.Equal(
+            $"SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" <> '{expected}')",
+            table.Where((_, ix) => ix.CreatedAt.Neq(timestamp)).ToSql()
+        );
+    }
+
+    [Fact]
+    public void FormatLiteral_Timestamp_UsesInvariantCulture()
+    {
+        var table = MakeTable("T");
+        var timestamp = new Timestamp(1_737_582_793_990_639L);
+        const string expectedSql =
+            "SELECT * FROM \"T\" WHERE (\"T\".\"CreatedAt\" = '2025-01-22T21:53:13.990639Z')";
+        var originalCulture = Thread.CurrentThread.CurrentCulture;
+
+        try
+        {
+            // Ensure the format is agnostic to the culture. Using ar-SA because it's different than Gregorian, which is used in UTC.
+            Thread.CurrentThread.CurrentCulture = CultureInfo.GetCultureInfo("ar-SA");
+
+            Assert.Equal(
+                expectedSql,
+                table.Where(c => c.CreatedAt.Eq(timestamp)).ToSql()
+            );
+        }
+        finally
+        {
+            Thread.CurrentThread.CurrentCulture = originalCulture;
+        }
     }
 
     [Fact]

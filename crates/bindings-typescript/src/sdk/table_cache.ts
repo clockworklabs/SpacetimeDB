@@ -66,6 +66,7 @@ export class TableCacheImpl<
   TableName extends TableNamesOf<RemoteModule>,
 > implements ClientTableCoreImplementable<RemoteModule, TableName>
 {
+  private readonly hasPrimaryKey: boolean;
   private rows: Map<
     ComparablePrimitive,
     [RowType<TableDefForTableName<RemoteModule, TableName>>, number]
@@ -83,6 +84,9 @@ export class TableCacheImpl<
     this.tableDef = tableDef;
     this.rows = new Map();
     this.emitter = new EventEmitter();
+    this.hasPrimaryKey = Object.values(this.tableDef.columns).some(
+      col => col.columnMetadata.isPrimaryKey === true
+    );
     // Build index views from the resolved runtime index metadata.
     //
     // We intentionally use `resolvedIndexes` rather than `indexes`:
@@ -119,7 +123,8 @@ export class TableCacheImpl<
     const columns = idx.columns;
 
     // Extract the tuple key for this btree index (column order preserved)
-    const getKey = (row: Row): readonly unknown[] => columns.map(c => row[c]);
+    const getKey = (row: Row): readonly unknown[] =>
+      columns.map(c => (row as Record<string, unknown>)[c]);
 
     // The server’s ranged scan fixes all prefix cols to equality and applies
     // the bound only to the *last* term. We mirror that.
@@ -281,11 +286,7 @@ export class TableCacheImpl<
       return pendingCallbacks;
     }
 
-    // TODO: performance
-    const hasPrimaryKey = Object.values(this.tableDef.columns).some(
-      col => col.columnMetadata.isPrimaryKey === true
-    );
-    if (hasPrimaryKey) {
+    if (this.hasPrimaryKey) {
       const insertMap = new Map<
         ComparablePrimitive,
         [

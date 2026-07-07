@@ -18,14 +18,14 @@ jobs:
           # WARNING - do not upgrade this runner to 24.04 or the self hosted runners because it will break downloads for
           #   anyone who uses a linux distro that doesn't have glibc >= GLIBC_2.38
           - { name: x86_64 Linux, target: x86_64-unknown-linux-gnu, runner: ubuntu-22.04 }
-          - { name: aarch64 Linux, target: aarch64-unknown-linux-gnu, runner: arm-runner }
+          - { name: aarch64 Linux, target: aarch64-unknown-linux-gnu, runner: ubuntu-22.04 }
           # Disabled because musl builds weren't working and we didn't want to investigate. See https://github.com/clockworklabs/SpacetimeDB/pull/2964.
           # - { name: x86_64 Linux musl, target: x86_64-unknown-linux-musl, runner: bare-metal, container: alpine }
           # FIXME: arm musl build. "JavaScript Actions in Alpine containers are only supported on x64 Linux runners"
           # - { name: aarch64 Linux musl, target: aarch64-unknown-linux-musl, runner: arm-runner }
           - { name: aarch64 macOS, target: aarch64-apple-darwin, runner: macos-latest }
           - { name: x86_64 macOS, target: x86_64-apple-darwin, runner: macos-latest }
-          - { name: x86_64 Windows, target: x86_64-pc-windows-msvc, runner: windows-latest }
+          - { name: x86_64 Windows, target: x86_64-pc-windows-msvc, runner: spacetimedb-windows-runner }
 
     name: Build CLI for ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
@@ -41,6 +41,20 @@ jobs:
         # TODO: Should we use `matrix.container == 'alpine'` instead of the `endsWith` check?
         if: endsWith(matrix.target, '-musl')
         run: apk add gcc g++ bash curl linux-headers perl git make
+
+      - name: Install aarch64 cross-compilation toolchain
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Set aarch64 cross-compilation env vars
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc"                  >> $GITHUB_ENV
+          echo "CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++"                 >> $GITHUB_ENV
+          echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar"                   >> $GITHUB_ENV
 
       - name: Install Rust
         uses: dsherret/rust-toolchain-file@v1
@@ -66,41 +80,57 @@ jobs:
           $dir = Split-Path $signtool.FullName
           Add-Content -Path $env:GITHUB_PATH -Value $dir
 
-      - name: Write certificate file for signing
-        if: ${{ runner.os == 'Windows' }}
-        shell: powershell
+      - name: Decode DigiCert client auth certificate
+        if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
+        shell: bash
         env:
-          DIGICERT_CERT_B64: ${{ secrets.DIGICERT_CERT_B64 }}
+          SM_CLIENT_CERT_FILE_B64: ${{ secrets.SM_CLIENT_CERT_FILE_B64 }}
         run: |
-          [IO.File]::WriteAllBytes("digicert.pfx", [Convert]::FromBase64String($env:DIGICERT_CERT_B64))
+          echo "$SM_CLIENT_CERT_FILE_B64" | base64 --decode > "$RUNNER_TEMP/Certificate_pkcs12.p12"
+
+      - name: Setup DigiCert Software Trust Manager
+        if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
+        uses: digicert/code-signing-software-trust-action@v1
+        env:
+          SM_HOST: ${{ vars.SM_HOST }}
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: ${{ runner.temp }}\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
 
       - name: Compile
         run: |
           cargo build --release --target ${{ matrix.target }} -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
 
       - name: Sign binaries for Windows
-        # Disabled for now since the current flow isn't working.
-        if: false
-        #if: ${{ runner.os == 'Windows' }}
-        shell: powershell
+        if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
+        shell: pwsh
         env:
+          SM_HOST: ${{ vars.SM_HOST }}
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_FILE: ${{ runner.temp }}\Certificate_pkcs12.p12
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
           DIGICERT_KEYPAIR_ALIAS: ${{ secrets.DIGICERT_KEYPAIR_ALIAS }}
         run: |
           $ErrorActionPreference = 'Stop'
           $targetDir = Join-Path $env:GITHUB_WORKSPACE 'target\x86_64-pc-windows-msvc\release'
-          $certFile = Join-Path $env:GITHUB_WORKSPACE 'digicert.pfx'
+          foreach ($exe in @('spacetimedb-update.exe','spacetimedb-cli.exe','spacetimedb-standalone.exe')) {
+            $path = Join-Path $targetDir $exe
+            Write-Host "Signing $exe..."
+            & smctl sign --keypair-alias $env:DIGICERT_KEYPAIR_ALIAS --input $path
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed for $exe (exit code $LASTEXITCODE)" }
+            Write-Host "$exe signed successfully"
+          }
 
-          $signtool = Get-Command signtool.exe -ErrorAction Stop
-
-          $files = @(
-            (Join-Path $targetDir 'spacetimedb-update.exe'),
-            (Join-Path $targetDir 'spacetimedb-cli.exe'),
-            (Join-Path $targetDir 'spacetimedb-standalone.exe')
-          )
-
-          foreach ($file in $files) {
-            & $signtool.Path sign /f $certFile /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 $file
-            & $signtool.Path verify /v /pa $file
+      - name: Verify signatures
+        if: ${{ runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $targetDir = Join-Path $env:GITHUB_WORKSPACE 'target\x86_64-pc-windows-msvc\release'
+          foreach ($exe in @('spacetimedb-update.exe','spacetimedb-cli.exe','spacetimedb-standalone.exe')) {
+            $path = Join-Path $targetDir $exe
+            & signtool.exe verify /v /pa $path
+            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $exe" }
           }
 
       - name: Package (unix)
@@ -126,12 +156,11 @@ jobs:
         run: echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
         id: extract_branch
 
-      - name: Upload to DO Spaces
+      - name: Upload to AWS S3
         uses: shallwefootball/s3-upload-action@master
         with:
           aws_key_id: ${{ secrets.AWS_KEY_ID }}
           aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}
           aws_bucket: ${{ vars.AWS_BUCKET }}
           source_dir: build
-          endpoint: https://nyc3.digitaloceanspaces.com
           destination_dir: ${{ steps.extract_branch.outputs.branch }}

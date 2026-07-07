@@ -40,6 +40,18 @@ impl PkU256TableAccess for super::RemoteTables {
 pub struct PkU256InsertCallbackId(__sdk::CallbackId);
 pub struct PkU256DeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for PkU256TableHandle<'ctx> {
+    type Row = PkU256;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = PkU256> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for PkU256TableHandle<'ctx> {
     type Row = PkU256;
     type EventContext = super::EventContext;
@@ -78,9 +90,54 @@ impl<'ctx> __sdk::Table for PkU256TableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithInsert for PkU256TableHandle<'ctx> {
+    type InsertCallbackId = PkU256InsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PkU256InsertCallbackId {
+        PkU256InsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: PkU256InsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for PkU256TableHandle<'ctx> {
+    type DeleteCallbackId = PkU256DeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PkU256DeleteCallbackId {
+        PkU256DeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: PkU256DeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
 pub struct PkU256UpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PkU256TableHandle<'ctx> {
+    type UpdateCallbackId = PkU256UpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> PkU256UpdateCallbackId {
+        PkU256UpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: PkU256UpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithUpdate for PkU256TableHandle<'ctx> {
     type UpdateCallbackId = PkU256UpdateCallbackId;
 
     fn on_update(

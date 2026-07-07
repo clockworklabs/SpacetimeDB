@@ -1,7 +1,7 @@
 import { ConnectionId, ProductBuilder, ProductType } from '../';
 import { AlgebraicType, type ComparablePrimitive } from '../';
-import { BinaryReader } from '../';
-import { BinaryWriter } from '../';
+import BinaryReader from '../lib/binary_reader.ts';
+import BinaryWriter from '../lib/binary_writer.ts';
 import {
   BsatnRowList,
   ClientMessage,
@@ -23,7 +23,12 @@ import {
   type SubscriptionEventContextInterface,
 } from './event_context.ts';
 import { EventEmitter } from './event_emitter.ts';
-import type { Deserializer, Identity, InferTypeOfRow, Serializer } from '../';
+import type {
+  Deserializer,
+  Identity,
+  InferTypeOfParams,
+  Serializer,
+} from '../';
 import type {
   ProcedureResultMessage,
   ReducerResultMessage,
@@ -37,10 +42,6 @@ import {
   type PendingCallback,
   type TableUpdate as CacheTableUpdate,
 } from './table_cache.ts';
-import {
-  WebsocketDecompressAdapter,
-  type WebsocketAdapter,
-} from './websocket_decompress_adapter.ts';
 import {
   SubscriptionBuilderImpl,
   SubscriptionHandleImpl,
@@ -60,6 +61,19 @@ import type { ProceduresView } from './procedures.ts';
 import type { Values } from '../lib/type_util.ts';
 import type { TransactionUpdate } from './client_api/types.ts';
 import { InternalError, SenderError } from '../lib/errors.ts';
+import type { WebSocketAdapter, WebSocketFactory } from './ws.ts';
+import {
+  normalizeWsProtocol,
+  PREFERRED_WS_PROTOCOLS,
+  V2_WS_PROTOCOL,
+  V3_WS_PROTOCOL,
+  type NegotiatedWsProtocol,
+} from './websocket_protocols';
+import {
+  countClientMessagesForV3Frame,
+  encodeClientMessagesV3,
+  forEachServerMessageV3,
+} from './websocket_v3_frames.ts';
 
 export {
   DbConnectionBuilder,
@@ -89,14 +103,53 @@ export type DbConnectionConfig<RemoteModule extends UntypedRemoteModule> = {
   identity?: Identity;
   token?: string;
   emitter: EventEmitter<ConnectionEvent>;
-  createWSFn: typeof WebsocketDecompressAdapter.createWebSocketFn;
-  compression: 'gzip' | 'none';
+  createWSFn: WebSocketFactory;
+  compression: 'gzip' | 'brotli' | 'none';
   lightMode: boolean;
   confirmedReads?: boolean;
   remoteModule: RemoteModule;
 };
 
 type ProcedureCallback = (result: ProcedureResultMessage['result']) => void;
+
+type Deferred<T> = {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason?: unknown) => void;
+};
+
+const TEXT_ENCODER = new TextEncoder();
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve!: Deferred<T>['resolve'];
+  let reject!: Deferred<T>['reject'];
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+function getClientMessageVariantTag(name: string): number {
+  if (ClientMessage.algebraicType.tag !== 'Sum') {
+    throw new TypeError('ClientMessage must be a sum type');
+  }
+  const tag = ClientMessage.algebraicType.value.variants.findIndex(
+    variant => variant.name === name
+  );
+  if (tag === -1) {
+    throw new RangeError(`Unknown ClientMessage variant: ${name}`);
+  }
+  return tag;
+}
+
+const CLIENT_MESSAGE_CALL_REDUCER_TAG =
+  getClientMessageVariantTag('CallReducer');
+const CLIENT_MESSAGE_CALL_PROCEDURE_TAG =
+  getClientMessageVariantTag('CallProcedure');
+// Keep individual v3 frames bounded so one burst does not monopolize the send
+// path or create very large websocket writes.
+const MAX_V3_OUTBOUND_FRAME_BYTES = 256 * 1024;
 
 export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   implements DbContext<RemoteModule>
@@ -105,6 +158,14 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    * Whether or not the connection is active.
    */
   isActive = false;
+
+  /**
+   * Whether `disconnect()` has been called on this connection.
+   * Once requested, the connection will not be reused: managed environments
+   * (such as the React `SpacetimeDBProvider`) use this to avoid reconnecting
+   * after an intentional disconnect.
+   */
+  isDisconnectRequested = false;
 
   /**
    * This connection's public identity.
@@ -141,14 +202,19 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    * The `ConnectionId` of the connection to to the database.
    */
   connectionId: ConnectionId = ConnectionId.random();
+  #connectionIdHex = this.connectionId.toHexString();
 
   // These fields are meant to be strictly private.
   #queryId = 0;
   #requestId = 0;
   #eventId = 0;
   #emitter: EventEmitter<ConnectionEvent>;
-  #messageQueue = Promise.resolve();
-  #outboundQueue: Uint8Array[] = [];
+  #inboundQueue: Uint8Array[] = [];
+  #inboundQueueOffset = 0;
+  #isDrainingInboundQueue = false;
+  #outboundQueue: Uint8Array<ArrayBuffer>[] = [];
+  #isOutboundFlushScheduled = false;
+  #negotiatedWsProtocol: NegotiatedWsProtocol = V2_WS_PROTOCOL;
   #subscriptionManager = new SubscriptionManager<RemoteModule>();
   #remoteModule: RemoteModule;
   #reducerCallbacks = new Map<
@@ -158,6 +224,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #reducerCallInfo = new Map<number, { name: string; args: object }>();
   #procedureCallbacks = new Map<number, ProcedureCallback>();
   #rowDeserializers: Record<string, Deserializer<any>>;
+  #rowIdMetadata: Record<
+    string,
+    { primaryKeyColName?: string; primaryKeyColType?: AlgebraicType }
+  >;
   #reducerArgsSerializers: Record<
     string,
     { serialize: Serializer<any>; deserialize: Deserializer<any> }
@@ -166,15 +236,22 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     string,
     { serializeArgs: Serializer<any>; deserializeReturn: Deserializer<any> }
   >;
+  #reducerNameBytes: Record<string, Uint8Array>;
+  #procedureNameBytes: Record<string, Uint8Array>;
   #sourceNameToTableDef: Record<string, Values<RemoteModule['tables']>>;
+  #messageReader = new BinaryReader(new Uint8Array());
+  #rowListReader = new BinaryReader(new Uint8Array());
+  #clientFrameEncoder = new BinaryWriter(1024);
+  #boundSubscriptionBuilder!: () => SubscriptionBuilderImpl<RemoteModule>;
+  #boundDisconnect!: () => void;
 
   // These fields are not part of the public API, but in a pinch you
   // could use JavaScript to access them by bypassing TypeScript's
   // private fields.
   // We use them in testing.
   private clientCache: ClientCache<RemoteModule>;
-  private ws?: WebsocketAdapter;
-  private wsPromise: Promise<WebsocketAdapter | undefined>;
+  private ws?: WebSocketAdapter;
+  private wsPromise: Promise<WebSocketAdapter | undefined>;
 
   constructor({
     uri,
@@ -203,8 +280,11 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
     this.#remoteModule = remoteModule;
     this.#emitter = emitter;
+    this.#boundSubscriptionBuilder = this.subscriptionBuilder.bind(this);
+    this.#boundDisconnect = this.disconnect.bind(this);
 
     this.#rowDeserializers = Object.create(null);
+    this.#rowIdMetadata = Object.create(null);
     this.#sourceNameToTableDef = Object.create(null);
     for (const table of Object.values(remoteModule.tables)) {
       this.#rowDeserializers[table.sourceName] = ProductType.makeDeserializer(
@@ -213,17 +293,29 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       this.#sourceNameToTableDef[table.sourceName] = table as Values<
         RemoteModule['tables']
       >;
+      const primaryKeyColumn = Object.entries(table.columns).find(
+        ([, column]) => column.columnMetadata.isPrimaryKey
+      );
+      this.#rowIdMetadata[table.sourceName] = primaryKeyColumn
+        ? {
+            primaryKeyColName: primaryKeyColumn[0],
+            primaryKeyColType: primaryKeyColumn[1].typeBuilder.algebraicType,
+          }
+        : {};
     }
 
     this.#reducerArgsSerializers = Object.create(null);
+    this.#reducerNameBytes = Object.create(null);
     for (const reducer of remoteModule.reducers) {
       this.#reducerArgsSerializers[reducer.name] = {
         serialize: ProductType.makeSerializer(reducer.paramsType),
         deserialize: ProductType.makeDeserializer(reducer.paramsType),
       };
+      this.#reducerNameBytes[reducer.name] = TEXT_ENCODER.encode(reducer.name);
     }
 
     this.#procedureSerializers = Object.create(null);
+    this.#procedureNameBytes = Object.create(null);
     for (const procedure of remoteModule.procedures) {
       this.#procedureSerializers[procedure.name] = {
         serializeArgs: ProductType.makeSerializer(
@@ -233,10 +325,12 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           procedure.returnType.algebraicType
         ),
       };
+      this.#procedureNameBytes[procedure.name] = TEXT_ENCODER.encode(
+        procedure.name
+      );
     }
 
-    const connectionId = this.connectionId.toHexString();
-    url.searchParams.set('connection_id', connectionId);
+    url.searchParams.set('connection_id', this.#connectionIdHex);
 
     this.clientCache = new ClientCache<RemoteModule>();
     this.db = this.#makeDbView();
@@ -246,7 +340,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     this.wsPromise = createWSFn({
       url,
       nameOrAddress,
-      wsProtocol: 'v2.bsatn.spacetimedb',
+      wsProtocol: [...PREFERRED_WS_PROTOCOLS],
       authToken: token,
       compression: compression,
       lightMode: lightMode,
@@ -256,12 +350,12 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         this.ws = v;
 
         this.ws.onclose = () => {
-          this.#emitter.emit('disconnect', this);
           this.isActive = false;
+          this.#emitter.emit('disconnect', this);
         };
         this.ws.onerror = (e: ErrorEvent) => {
-          this.#emitter.emit('connectError', this, e);
           this.isActive = false;
+          this.#emitter.emit('connectError', this, e);
         };
         this.ws.onopen = this.#handleOnOpen.bind(this);
         this.ws.onmessage = this.#handleOnMessage.bind(this);
@@ -302,20 +396,27 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #makeReducers(def: RemoteModule): ReducersView<RemoteModule> {
     const out: Record<string, unknown> = {};
 
-    const writer = new BinaryWriter(1024);
-
     for (const reducer of def.reducers) {
       const reducerName = reducer.name;
+      const encodedReducerName = this.#reducerNameBytes[reducerName];
       const key = reducer.accessorName;
 
       const { serialize: serializeArgs } =
         this.#reducerArgsSerializers[reducerName];
 
-      (out as any)[key] = (params: InferTypeOfRow<typeof reducer.params>) => {
+      (out as any)[key] = (
+        params: InferTypeOfParams<typeof reducer.params>
+      ) => {
+        const writer = this.#reducerArgsEncoder;
         writer.clear();
         serializeArgs(writer, params);
         const argsBuffer = writer.getBuffer();
-        return this.callReducer(reducerName, argsBuffer, params);
+        return this.#callReducerWithEncodedName(
+          reducerName,
+          encodedReducerName,
+          argsBuffer,
+          params
+        );
       };
     }
 
@@ -329,18 +430,23 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
     for (const procedure of def.procedures) {
       const procedureName = procedure.name;
+      const encodedProcedureName = this.#procedureNameBytes[procedureName];
       const key = procedure.accessorName;
 
       const { serializeArgs, deserializeReturn } =
         this.#procedureSerializers[procedureName];
 
       (out as any)[key] = (
-        params: InferTypeOfRow<typeof procedure.params>
+        params: InferTypeOfParams<typeof procedure.params>
       ): Promise<any> => {
         writer.clear();
         serializeArgs(writer, params);
         const argsBuffer = writer.getBuffer();
-        return this.callProcedure(procedureName, argsBuffer).then(returnBuf => {
+        return this.#callProcedureWithEncodedName(
+          procedureName,
+          encodedProcedureName,
+          argsBuffer
+        ).then(returnBuf => {
           return deserializeReturn(new BinaryReader(returnBuf));
         });
       };
@@ -353,17 +459,16 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     event: Event<
       ReducerEventInfo<
         RemoteModule['reducers'][number]['name'],
-        InferTypeOfRow<RemoteModule['reducers'][number]['params']>
+        InferTypeOfParams<RemoteModule['reducers'][number]['params']>
       >
     >
   ): EventContextInterface<RemoteModule> {
-    // Bind methods to preserve `this` (#private fields safe)
     return {
       db: this.db,
       reducers: this.reducers,
       isActive: this.isActive,
-      subscriptionBuilder: this.subscriptionBuilder.bind(this),
-      disconnect: this.disconnect.bind(this),
+      subscriptionBuilder: this.#boundSubscriptionBuilder,
+      disconnect: this.#boundDisconnect,
       event,
     };
   }
@@ -424,24 +529,18 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     rowList: BsatnRowList
   ): Operation[] {
     const buffer = rowList.rowsData;
-    const reader = new BinaryReader(buffer);
+    const reader = this.#rowListReader;
+    reader.reset(buffer);
     const rows: Operation[] = [];
 
     const deserializeRow = this.#rowDeserializers[tableName];
-    const table = this.#sourceNameToTableDef[tableName];
-    // TODO: performance
-    const columnsArray = Object.entries(table.columns);
-    const primaryKeyColumnEntry = columnsArray.find(
-      col => col[1].columnMetadata.isPrimaryKey
-    );
+    const { primaryKeyColName, primaryKeyColType } =
+      this.#rowIdMetadata[tableName];
     let previousOffset = 0;
     while (reader.remaining > 0) {
       const row = deserializeRow(reader);
       let rowId: ComparablePrimitive | undefined = undefined;
-      if (primaryKeyColumnEntry !== undefined) {
-        const primaryKeyColName = primaryKeyColumnEntry[0];
-        const primaryKeyColType =
-          primaryKeyColumnEntry[1].typeBuilder.algebraicType;
+      if (primaryKeyColName !== undefined && primaryKeyColType !== undefined) {
         rowId = AlgebraicType.intoMapKey(
           primaryKeyColType,
           row[primaryKeyColName]
@@ -541,47 +640,175 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     return this.#mergeTableUpdates(updates);
   }
 
-  #flushOutboundQueue(wsResolved: WebsocketAdapter): void {
+  #flushOutboundQueue(wsResolved: WebSocketAdapter): void {
+    if (this.#negotiatedWsProtocol === V3_WS_PROTOCOL) {
+      this.#flushOutboundQueueV3(wsResolved);
+      return;
+    }
+    this.#flushOutboundQueueV2(wsResolved);
+  }
+
+  #flushOutboundQueueV2(wsResolved: WebSocketAdapter): void {
     const pending = this.#outboundQueue.splice(0);
     for (const message of pending) {
       wsResolved.send(message);
     }
   }
 
+  #flushOutboundQueueV3(wsResolved: WebSocketAdapter): void {
+    if (this.#outboundQueue.length === 0) {
+      return;
+    }
+
+    // Emit at most one bounded frame per flush. If more encoded v2 messages
+    // remain in the queue, they are sent by a later scheduled flush so inbound
+    // traffic and other tasks get a chance to run between websocket writes.
+    const batchSize = countClientMessagesForV3Frame(
+      this.#outboundQueue,
+      MAX_V3_OUTBOUND_FRAME_BYTES
+    );
+    wsResolved.send(
+      encodeClientMessagesV3(
+        this.#clientFrameEncoder,
+        this.#outboundQueue,
+        batchSize
+      )
+    );
+
+    if (batchSize === this.#outboundQueue.length) {
+      this.#outboundQueue.length = 0;
+      return;
+    }
+
+    this.#outboundQueue.copyWithin(0, batchSize);
+    this.#outboundQueue.length -= batchSize;
+    if (this.#outboundQueue.length > 0) {
+      this.#scheduleDeferredOutboundFlush();
+    }
+  }
+
+  #scheduleOutboundFlush(): void {
+    this.#scheduleOutboundFlushWith('microtask');
+  }
+
+  #scheduleDeferredOutboundFlush(): void {
+    this.#scheduleOutboundFlushWith('next-task');
+  }
+
+  #scheduleOutboundFlushWith(schedule: 'microtask' | 'next-task'): void {
+    if (this.#isOutboundFlushScheduled) {
+      return;
+    }
+
+    this.#isOutboundFlushScheduled = true;
+    const flush = () => {
+      this.#isOutboundFlushScheduled = false;
+      if (this.ws && this.isActive) {
+        this.#flushOutboundQueue(this.ws);
+      }
+    };
+
+    // The first v3 flush stays on the current turn so same-tick sends coalesce.
+    // Follow-up flushes after a size-capped frame yield to the next task so we
+    // do not sit in a tight send loop while inbound websocket work is waiting.
+    if (schedule === 'next-task') {
+      setTimeout(flush, 0);
+    } else {
+      queueMicrotask(flush);
+    }
+  }
+
+  #reducerArgsEncoder = new BinaryWriter(1024);
   #clientMessageEncoder = new BinaryWriter(1024);
+  #sendEncodedMessage(
+    encoded: Uint8Array<ArrayBuffer>,
+    describe: () => string
+  ): void {
+    stdbLogger('trace', describe);
+    if (this.ws && this.isActive) {
+      if (this.#negotiatedWsProtocol === V2_WS_PROTOCOL) {
+        if (this.#outboundQueue.length) this.#flushOutboundQueue(this.ws);
+        this.ws.send(encoded);
+        return;
+      }
+
+      this.#outboundQueue.push(encoded.slice());
+      this.#scheduleOutboundFlush();
+    } else {
+      // Use slice() to copy, in case the clientMessageEncoder's buffer gets reused
+      // before the connection opens or before a v3 microbatch flush runs.
+      this.#outboundQueue.push(encoded.slice());
+    }
+  }
+
   #sendMessage(message: ClientMessage): void {
     const writer = this.#clientMessageEncoder;
     writer.clear();
     ClientMessage.serialize(writer, message);
     const encoded = writer.getBuffer();
+    const isLive = !!(this.ws && this.isActive);
+    this.#sendEncodedMessage(encoded, () =>
+      isLive
+        ? `Sending message to server: ${stringify(message)}`
+        : `Queuing message to server: ${stringify(message)}`
+    );
+  }
 
-    if (this.ws && this.isActive) {
-      if (this.#outboundQueue.length) this.#flushOutboundQueue(this.ws);
+  #sendCallReducerMessage(
+    requestId: number,
+    reducerNameBytes: Uint8Array,
+    argsBuffer: Uint8Array
+  ): void {
+    const writer = this.#clientMessageEncoder;
+    writer.clear();
+    writer.writeByte(CLIENT_MESSAGE_CALL_REDUCER_TAG);
+    writer.writeU32(requestId);
+    writer.writeU8(0);
+    writer.writeUInt8Array(reducerNameBytes);
+    writer.writeUInt8Array(argsBuffer);
+    const encoded = writer.getBuffer();
+    this.#sendEncodedMessage(
+      encoded,
+      () => `Sending reducer call message to server: requestId=${requestId}`
+    );
+  }
 
-      stdbLogger(
-        'trace',
-        () => `Sending message to server: ${stringify(message)}`
-      );
-      this.ws.send(encoded);
-    } else {
-      stdbLogger(
-        'trace',
-        () => `Queuing message to server: ${stringify(message)}`
-      );
-      // use slice() to copy, in case the clientMessageEncoder's buffer gets used
-      this.#outboundQueue.push(encoded.slice());
-    }
+  #sendCallProcedureMessage(
+    requestId: number,
+    procedureNameBytes: Uint8Array,
+    argsBuffer: Uint8Array
+  ): void {
+    const writer = this.#clientMessageEncoder;
+    writer.clear();
+    writer.writeByte(CLIENT_MESSAGE_CALL_PROCEDURE_TAG);
+    writer.writeU32(requestId);
+    writer.writeU8(0);
+    writer.writeUInt8Array(procedureNameBytes);
+    writer.writeUInt8Array(argsBuffer);
+    const encoded = writer.getBuffer();
+    this.#sendEncodedMessage(
+      encoded,
+      () => `Sending procedure call message to server: requestId=${requestId}`
+    );
+  }
+
+  #setConnectionId(connectionId: ConnectionId): void {
+    this.connectionId = connectionId;
+    this.#connectionIdHex = connectionId.toHexString();
   }
 
   #nextEventId(): string {
     this.#eventId += 1;
-    return `${this.connectionId.toHexString()}:${this.#eventId}`;
+    return `${this.#connectionIdHex}:${this.#eventId}`;
   }
 
   /**
    * Handles WebSocket onOpen event.
    */
   #handleOnOpen(): void {
+    if (this.ws) {
+      this.#negotiatedWsProtocol = normalizeWsProtocol(this.ws.protocol);
+    }
     this.isActive = true;
     if (this.ws) {
       this.#flushOutboundQueue(this.ws);
@@ -629,8 +856,17 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     );
   }
 
-  async #processMessage(data: Uint8Array): Promise<void> {
-    const serverMessage = ServerMessage.deserialize(new BinaryReader(data));
+  #dispatchPendingCallbacks(callbacks: readonly PendingCallback[]): void {
+    stdbLogger(
+      'trace',
+      () => `Calling ${callbacks.length} triggered row callbacks`
+    );
+    for (const callback of callbacks) {
+      callback.cb();
+    }
+  }
+
+  #processServerMessage(serverMessage: ServerMessage): void {
     stdbLogger(
       'trace',
       () => `Processing server message: ${stringify(serverMessage)}`
@@ -641,7 +877,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         if (!this.token && serverMessage.value.token) {
           this.token = serverMessage.value.token;
         }
-        this.connectionId = serverMessage.value.connectionId;
+        this.#setConnectionId(serverMessage.value.connectionId);
         this.#emitter.emit('connect', this, this.identity, this.token);
         break;
       }
@@ -668,13 +904,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         const callbacks = this.#applyTableUpdates(tableUpdates, eventContext);
         const { event: _, ...subscriptionEventContext } = eventContext;
         subscription.emitter.emit('applied', subscriptionEventContext);
-        stdbLogger(
-          'trace',
-          () => `Calling ${callbacks.length} triggered row callbacks`
-        );
-        for (const callback of callbacks) {
-          callback.cb();
-        }
+        this.#dispatchPendingCallbacks(callbacks);
         break;
       }
       case 'UnsubscribeApplied': {
@@ -700,13 +930,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         const { event: _, ...subscriptionEventContext } = eventContext;
         subscription.emitter.emit('end', subscriptionEventContext);
         this.#subscriptionManager.subscriptions.delete(querySetId);
-        stdbLogger(
-          'trace',
-          () => `Calling ${callbacks.length} triggered row callbacks`
-        );
-        for (const callback of callbacks) {
-          callback.cb();
-        }
+        this.#dispatchPendingCallbacks(callbacks);
         break;
       }
       case 'SubscriptionError': {
@@ -760,13 +984,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           eventContext,
           serverMessage.value
         );
-        stdbLogger(
-          'trace',
-          () => `Calling ${callbacks.length} triggered row callbacks`
-        );
-        for (const callback of callbacks) {
-          callback.cb();
-        }
+        this.#dispatchPendingCallbacks(callbacks);
         break;
       }
       case 'ReducerResult': {
@@ -798,13 +1016,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
             eventContext,
             result.value.transactionUpdate
           );
-          stdbLogger(
-            'trace',
-            () => `Calling ${callbacks.length} triggered row callbacks`
-          );
-          for (const callback of callbacks) {
-            callback.cb();
-          }
+          this.#dispatchPendingCallbacks(callbacks);
         }
         this.#reducerCallInfo.delete(requestId);
         const cb = this.#reducerCallbacks.get(requestId);
@@ -833,18 +1045,65 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     }
   }
 
+  #processV2Message(data: Uint8Array): void {
+    const reader = this.#messageReader;
+    reader.reset(data);
+    this.#processServerMessage(ServerMessage.deserialize(reader));
+  }
+
+  #processMessage(data: Uint8Array): void {
+    if (this.#negotiatedWsProtocol !== V3_WS_PROTOCOL) {
+      this.#processV2Message(data);
+      return;
+    }
+
+    const messageCount = forEachServerMessageV3(
+      this.#messageReader,
+      data,
+      serverMessage => {
+        this.#processServerMessage(serverMessage);
+      }
+    );
+    stdbLogger(
+      'trace',
+      () => `Processing server v3 payload with ${messageCount} message(s)`
+    );
+  }
+
   /**
    * Handles WebSocket onMessage event.
    * @param wsMessage MessageEvent object.
    */
   #handleOnMessage(wsMessage: { data: Uint8Array }): void {
-    // Utilize promise chaining to ensure that we process messages in order
-    // even though we are processing them asyncronously. This will not begin
-    // processing the next message until we await the processing of the
-    // current message.
-    this.#messageQueue = this.#messageQueue.then(() => {
-      return this.#processMessage(wsMessage.data);
-    });
+    // Queue inbound messages so they are processed strictly in arrival order.
+    // We deliberately drain synchronously instead of promise-chaining each
+    // message, but this still guarantees that we do not begin processing the
+    // next message until the current message has been fully handled.
+    this.#inboundQueue.push(wsMessage.data);
+    if (this.#isDrainingInboundQueue) {
+      return;
+    }
+
+    this.#isDrainingInboundQueue = true;
+    try {
+      // TODO: If this loop starts monopolizing the event loop under sustained
+      // inbound traffic, switch to a chunked drain that periodically yields.
+      while (this.#inboundQueueOffset < this.#inboundQueue.length) {
+        const data = this.#inboundQueue[this.#inboundQueueOffset];
+        this.#inboundQueueOffset += 1;
+        if (data) {
+          this.#processMessage(data);
+        }
+      }
+    } finally {
+      if (this.#inboundQueueOffset >= this.#inboundQueue.length) {
+        this.#inboundQueue.length = 0;
+      } else if (this.#inboundQueueOffset > 0) {
+        this.#inboundQueue = this.#inboundQueue.slice(this.#inboundQueueOffset);
+      }
+      this.#inboundQueueOffset = 0;
+      this.#isDrainingInboundQueue = false;
+    }
   }
 
   /**
@@ -858,7 +1117,60 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     argsBuffer: Uint8Array,
     reducerArgs?: object
   ): Promise<void> {
-    const { promise, resolve, reject } = Promise.withResolvers<void>();
+    const encodedReducerName = this.#reducerNameBytes[reducerName];
+    if (encodedReducerName) {
+      return this.#callReducerWithEncodedName(
+        reducerName,
+        encodedReducerName,
+        argsBuffer,
+        reducerArgs
+      );
+    }
+    return this.#callReducerGeneric(reducerName, argsBuffer, reducerArgs);
+  }
+
+  #callReducerWithEncodedName(
+    reducerName: string,
+    encodedReducerName: Uint8Array,
+    argsBuffer: Uint8Array,
+    reducerArgs?: object
+  ): Promise<void> {
+    const { promise, resolve, reject } = createDeferred<void>();
+    const requestId = this.#getNextRequestId();
+    this.#sendCallReducerMessage(requestId, encodedReducerName, argsBuffer);
+    if (reducerArgs) {
+      this.#reducerCallInfo.set(requestId, {
+        name: reducerName,
+        args: reducerArgs,
+      });
+    }
+    this.#reducerCallbacks.set(requestId, result => {
+      if (result.tag === 'Ok' || result.tag === 'OkEmpty') {
+        resolve();
+      } else {
+        if (result.tag === 'Err') {
+          /// Interpret the user-returned error as a string.
+          const reader = new BinaryReader(result.value);
+          const errorString = reader.readString();
+          reject(new SenderError(errorString));
+        } else if (result.tag === 'InternalError') {
+          reject(new InternalError(result.value));
+        } else {
+          const unreachable: never = result;
+          reject(new Error('Unexpected reducer result'));
+          void unreachable;
+        }
+      }
+    });
+    return promise;
+  }
+
+  #callReducerGeneric(
+    reducerName: string,
+    argsBuffer: Uint8Array,
+    reducerArgs?: object
+  ): Promise<void> {
+    const { promise, resolve, reject } = createDeferred<void>();
     const requestId = this.#getNextRequestId();
     const message = ClientMessage.CallReducer({
       reducer: reducerName,
@@ -906,7 +1218,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     _paramsType: ProductType,
     params: object
   ): Promise<void> {
-    const writer = new BinaryWriter(1024);
+    const writer = this.#reducerArgsEncoder;
+    writer.clear();
     this.#reducerArgsSerializers[reducerName].serialize(writer, params);
     const argsBuffer = writer.getBuffer();
     return this.callReducer(reducerName, argsBuffer, params);
@@ -922,7 +1235,40 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     procedureName: string,
     argsBuffer: Uint8Array
   ): Promise<Uint8Array> {
-    const { promise, resolve, reject } = Promise.withResolvers<Uint8Array>();
+    const encodedProcedureName = this.#procedureNameBytes[procedureName];
+    if (encodedProcedureName) {
+      return this.#callProcedureWithEncodedName(
+        procedureName,
+        encodedProcedureName,
+        argsBuffer
+      );
+    }
+    return this.#callProcedureGeneric(procedureName, argsBuffer);
+  }
+
+  #callProcedureWithEncodedName(
+    procedureName: string,
+    encodedProcedureName: Uint8Array,
+    argsBuffer: Uint8Array
+  ): Promise<Uint8Array> {
+    const { promise, resolve, reject } = createDeferred<Uint8Array>();
+    const requestId = this.#getNextRequestId();
+    this.#sendCallProcedureMessage(requestId, encodedProcedureName, argsBuffer);
+    this.#procedureCallbacks.set(requestId, result => {
+      if (result.tag === 'Ok') {
+        resolve(result.value);
+      } else {
+        reject(result.value);
+      }
+    });
+    return promise;
+  }
+
+  #callProcedureGeneric(
+    procedureName: string,
+    argsBuffer: Uint8Array
+  ): Promise<Uint8Array> {
+    const { promise, resolve, reject } = createDeferred<Uint8Array>();
     const requestId = this.#getNextRequestId();
     const message = ClientMessage.CallProcedure({
       procedure: procedureName,
@@ -977,6 +1323,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    * ```
    */
   disconnect(): void {
+    this.isDisconnectRequested = true;
     this.wsPromise.then(ws => ws?.close());
   }
 

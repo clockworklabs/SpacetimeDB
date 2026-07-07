@@ -31,6 +31,36 @@ SpacetimeDB supports two index types:
 | B-tree | General purpose | Any | Yes |
 | Direct | Dense integer sequences | `u8`, `u16`, `u32`, `u64` | No |
 
+### Supported Column Types
+
+Not all column types can be used as index keys. The following types are supported for B-tree indexes:
+
+| Category | Types |
+|----------|-------|
+| Integers | `u8`, `u16`, `u32`, `u64`, `u128`, `u256`, `i8`, `i16`, `i32`, `i64`, `i128`, `i256` |
+| Boolean | `bool` |
+| Strings | `String` |
+| Identifiers | `Identity`, `ConnectionId`, `Uuid`, `Hash` |
+| Enums | No-payload (C-style) enums annotated with `#[derive(SpacetimeType)]` |
+
+The following types are **not** supported as index keys:
+
+| Type | Reason |
+|------|--------|
+| `f32`, `f64` | Floating-point values do not have a total ordering (`NaN` is not comparable) |
+| `ScheduleAt`, `TimeDuration`, `Timestamp` | Not yet supported ([#2650](https://github.com/clockworklabs/SpacetimeDB/issues/2650)) |
+| `Vec<T>`, arrays | Variable-length collections are not indexable |
+| Enums with payloads | Only no-payload (C-style) enums are supported |
+| Nested structs | Product types cannot be used as index keys |
+
+If you attempt to use an unsupported type as an index key, you will get a compile error. For multi-column indexes, every column in the index must use a supported type.
+
+:::tip Workaround for floating-point data
+If you need to index floating-point coordinates (for example, `x` and `y` positions), consider storing them as scaled integers. For instance, multiply by 1000 and store as `i32` to get three decimal places of precision while remaining indexable.
+:::
+
+Direct indexes have additional restrictions: only `u8`, `u16`, `u32`, `u64`, and no-payload enums are supported.
+
 ### B-tree Indexes
 
 B-trees maintain data in sorted order, enabling both equality lookups (`x = 5`) and range queries (`x > 5`, `x BETWEEN 1 AND 10`). The sorted structure also supports prefix matching on multi-column indexes. B-tree is the default and most commonly used index type.

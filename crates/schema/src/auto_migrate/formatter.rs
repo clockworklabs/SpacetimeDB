@@ -10,6 +10,7 @@ use crate::{
 };
 use itertools::Itertools;
 use spacetimedb_lib::db::raw_def::v9::{RawRowLevelSecurityDefV9, TableAccess, TableType};
+use spacetimedb_primitives::ColId;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, WithTypespace};
 use thiserror::Error;
@@ -42,6 +43,10 @@ fn format_step<F: MigrationFormatter>(
         // So we must recompute it and send any updates to clients.
         // No need to include this step in the formatted plan.
         AutoMigrateStep::UpdateView(_) => Ok(()),
+        AutoMigrateStep::RemoveTable(t) => {
+            let table_def: &TableDef = plan.old.expect_lookup(*t);
+            f.format_remove_table(&table_def.name)
+        }
         AutoMigrateStep::AddTable(t) => {
             let table_info = extract_table_info(*t, plan)?;
             f.format_add_table(&table_info)
@@ -58,6 +63,10 @@ fn format_step<F: MigrationFormatter>(
             let constraint_info = extract_constraint_info(*constraint, plan.old)?;
             f.format_constraint(&constraint_info, Action::Removed)
         }
+        AutoMigrateStep::AddConstraint(constraint) => {
+            let constraint_info = extract_constraint_info(*constraint, plan.new)?;
+            f.format_constraint(&constraint_info, Action::Created)
+        }
         AutoMigrateStep::AddSequence(sequence) => {
             let sequence_info = extract_sequence_info(*sequence, plan.new)?;
             f.format_sequence(&sequence_info, Action::Created)
@@ -69,6 +78,11 @@ fn format_step<F: MigrationFormatter>(
         AutoMigrateStep::ChangeAccess(table) => {
             let access_info = extract_access_change_info(*table, plan)?;
             f.format_change_access(&access_info)
+        }
+        AutoMigrateStep::ChangePrimaryKey(table) => {
+            let old_table = plan.old.lookup_expect::<TableDef>(*table);
+            let new_table = plan.new.lookup_expect::<TableDef>(*table);
+            f.format_change_primary_key(table, old_table.primary_key, new_table.primary_key)
         }
         AutoMigrateStep::AddSchedule(schedule) => {
             let schedule_info = extract_schedule_info(*schedule, plan.new)?;
@@ -95,10 +109,17 @@ fn format_step<F: MigrationFormatter>(
             f.format_change_columns(&column_changes)
         }
         AutoMigrateStep::AddColumns(table) => {
+            // FIXME: It looks (pgoldman 2026-06-10) like `super::auto_migrate_table` will emit only `AddColumns`
+            // in the case where a table has both new columns and changed columns.
+            // As such, we probably need to call `extract_column_changes` here too.
             let new_columns = extract_new_columns(*table, plan)?;
             f.format_add_columns(&new_columns)
         }
         AutoMigrateStep::DisconnectAllUsers => f.format_disconnect_warning(),
+
+        // TODO(format-event-table-reschema): I (pgoldman 2026-06-10) didn't have time to meaningfully format event table reschemas,
+        // so for now we're just printing the table name.
+        AutoMigrateStep::ReschemaEventTable(table) => f.format_event_table_reschema(table),
     }?;
 
     Ok(())
@@ -140,16 +161,26 @@ pub enum Action {
 pub trait MigrationFormatter {
     fn format_header(&mut self) -> io::Result<()>;
     fn format_add_table(&mut self, table_info: &TableInfo) -> io::Result<()>;
+    fn format_remove_table(&mut self, table_name: &Identifier) -> io::Result<()>;
     fn format_view(&mut self, view_info: &ViewInfo, action: Action) -> io::Result<()>;
     fn format_index(&mut self, index_info: &IndexInfo, action: Action) -> io::Result<()>;
     fn format_constraint(&mut self, constraint_info: &ConstraintInfo, action: Action) -> io::Result<()>;
     fn format_sequence(&mut self, sequence_info: &SequenceInfo, action: Action) -> io::Result<()>;
     fn format_change_access(&mut self, access_info: &AccessChangeInfo) -> io::Result<()>;
+    fn format_change_primary_key(
+        &mut self,
+        table_name: &str,
+        old_pk: Option<ColId>,
+        new_pk: Option<ColId>,
+    ) -> io::Result<()>;
     fn format_schedule(&mut self, schedule_info: &ScheduleInfo, action: Action) -> io::Result<()>;
     fn format_rls(&mut self, rls_info: &RlsInfo, action: Action) -> io::Result<()>;
     fn format_change_columns(&mut self, column_changes: &ColumnChanges) -> io::Result<()>;
     fn format_add_columns(&mut self, new_columns: &NewColumns) -> io::Result<()>;
     fn format_disconnect_warning(&mut self) -> io::Result<()>;
+    // TODO(format-event-table-reschema): I (pgoldman 2026-06-10) didn't have time to meaningfully format event table reschemas,
+    // so for now we're just printing the table name.
+    fn format_event_table_reschema(&mut self, table_name: &Identifier) -> io::Result<()>;
 }
 
 #[derive(Debug, Clone, PartialEq)]

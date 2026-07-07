@@ -1,4 +1,4 @@
-use spacetimedb_smoketests::Smoketest;
+use spacetimedb_smoketests::{require_local_server, Smoketest};
 
 const MODULE_CODE_SIMPLE: &str = r#"
 use spacetimedb::{log, ReducerContext, Table};
@@ -50,7 +50,7 @@ fn test_reject_schema_changes() {
 
     // Try to update with incompatible schema (adding column without default)
     test.write_module_code(MODULE_CODE_UPDATED_INCOMPATIBLE).unwrap();
-    let result = test.publish_module_clear(false);
+    let result = test.publish().current_database().unwrap().run();
 
     assert!(
         result.is_err(),
@@ -201,7 +201,11 @@ pub fn print_books(ctx: &ReducerContext, prefix: String) {
 fn test_add_table_auto_migration() {
     let mut test = Smoketest::builder().module_code(MODULE_CODE_INIT).build();
 
-    let sub = test.subscribe_background(&["select * from person"], 4).unwrap();
+    let sub = test
+        .subscribe(&["select * from person"])
+        .expect_rows(4)
+        .background()
+        .unwrap();
 
     // Add initial data
     test.call("add_person", &["Robert", "Student"]).unwrap();
@@ -228,7 +232,7 @@ fn test_add_table_auto_migration() {
 
     // Update module without clearing database
     test.write_module_code(MODULE_CODE_UPDATED).unwrap();
-    test.publish_module_clear(false).unwrap();
+    test.publish().current_database().unwrap().run().unwrap();
 
     // Add new data with updated schema
     test.call("add_person", &["Husserl", "Student"]).unwrap();
@@ -343,13 +347,8 @@ fn test_add_table_columns() {
     // Subscribe to person table changes multiple times to simulate active clients
     let mut subs = Vec::with_capacity(NUM_SUBSCRIBERS);
     for _ in 0..NUM_SUBSCRIBERS {
-        // We need unconfirmed reads for the updates to arrive properly.
-        // Otherwise, there's a race between module teardown in publish, vs subscribers
-        // getting the row deletion they expect.
-        subs.push(
-            test.subscribe_background_unconfirmed(&["select * from person"], 5)
-                .unwrap(),
-        );
+        // The migration below should disconnect all existing subscribers.
+        subs.push(test.subscribe(&["select * from person"]).background().unwrap());
     }
 
     // Insert under initial schema
@@ -358,7 +357,7 @@ fn test_add_table_columns() {
     // First upgrade: add age & mass columns
     test.write_module_code(MODULE_CODE_ADD_TABLE_COLUMNS_UPDATED).unwrap();
     let identity = test.database_identity.clone().unwrap();
-    test.publish_module_with_options(&identity, false, true).unwrap();
+    test.publish().name(&identity).break_clients(true).run().unwrap();
     test.call("print_persons", &["FIRST_UPDATE"]).unwrap();
 
     let logs1 = test.logs(100).unwrap();
@@ -388,16 +387,15 @@ fn test_add_table_columns() {
     // Insert new data under upgraded schema
     test.call("add_person", &["Robert2"]).unwrap();
 
-    // Validate all subscribers were disconnected after first upgrade
-    for (i, sub) in subs.into_iter().enumerate() {
-        let rows = sub.collect().unwrap();
-        assert_eq!(rows.len(), 2, "Subscriber {i} received unexpected rows: {rows:?}");
+    for sub in subs {
+        // Ensure the background cli subprocess observes the disconnect and exits cleanly
+        sub.collect().unwrap();
     }
 
     // Second upgrade
     test.write_module_code(MODULE_CODE_ADD_TABLE_COLUMNS_UPDATED_AGAIN)
         .unwrap();
-    test.publish_module_with_options(&identity, false, true).unwrap();
+    test.publish().name(&identity).break_clients(true).run().unwrap();
     test.call("print_persons", &["UPDATE_2"]).unwrap();
 
     let logs2 = test.logs(100).unwrap();
@@ -407,5 +405,246 @@ fn test_add_table_columns() {
             .any(|l| { l.contains("UPDATE_2: Person { name: \"Robert2\", age: 70, mass: 180, height: 160 }") }),
         "Expected updated schema with default height in logs: {:?}",
         logs2
+    );
+}
+
+// --- Issue #3934: Removing a primary key breaks subsequent publishes ---
+
+const MODULE_CODE_WITH_PK: &str = r#"
+use spacetimedb::{ReducerContext, Table};
+
+#[spacetimedb::table(accessor = person, public)]
+pub struct Person {
+    #[primary_key]
+    name: String,
+}
+
+#[spacetimedb::reducer]
+pub fn add(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { name });
+}
+"#;
+
+const MODULE_CODE_WITHOUT_PK: &str = r#"
+use spacetimedb::{ReducerContext, Table};
+
+#[spacetimedb::table(accessor = person, public)]
+pub struct Person {
+    name: String,
+}
+
+#[spacetimedb::reducer]
+pub fn add(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { name });
+}
+"#;
+
+const MODULE_CODE_WITHOUT_PK_V2: &str = r#"
+use spacetimedb::{ReducerContext, Table};
+
+#[spacetimedb::table(accessor = person, public)]
+pub struct Person {
+    name: String,
+}
+
+#[spacetimedb::reducer]
+pub fn add(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { name });
+}
+
+#[spacetimedb::reducer]
+pub fn noop(_ctx: &ReducerContext) {}
+"#;
+
+/// Regression test for <https://github.com/clockworklabs/SpacetimeDB/issues/3934>.
+///
+/// Removing a `#[primary_key]` annotation and re-publishing succeeds,
+/// but the stored schema retains the stale primary key. On the *next*
+/// publish, `check_compatible` sees the mismatch and fails with:
+///
+///   "Primary key mismatch: self.primary_key: Some(ColId(0)), def.primary_key: None"
+///
+/// The fix adds a `ChangePrimaryKey` auto-migration step that updates
+/// `table_primary_key` in `st_table`.
+#[test]
+fn test_remove_primary_key_issue_3934() {
+    let mut test = Smoketest::builder().module_code(MODULE_CODE_WITH_PK).build();
+
+    // Step 1: Publish with primary key.
+    let identity = test
+        .database_identity
+        .clone()
+        .expect("database should be published after build");
+
+    // Step 2: Remove primary key. Should succeed.
+    test.write_module_code(MODULE_CODE_WITHOUT_PK).unwrap();
+    test.publish()
+        .name(&identity)
+        .break_clients(true)
+        .run()
+        .expect("Removing primary key should succeed");
+
+    // Step 3: Trivial change (add a reducer). This is where #3934 crashes.
+    test.write_module_code(MODULE_CODE_WITHOUT_PK_V2).unwrap();
+    test.publish()
+        .name(&identity)
+        .break_clients(true)
+        .run()
+        .expect("Publish after PK removal should succeed (issue #3934)");
+}
+
+const MODULE_CODE_WITH_EVENT_TABLE_BEFORE: &str = r#"
+use spacetimedb::{table, SpacetimeType};
+
+#[derive(SpacetimeType)]
+struct SomeProduct {
+    a: u32,
+    b: u64,
+}
+
+#[table(accessor = some_event, public, event)]
+struct SomeEvent {
+    foo: String,
+    prod: SomeProduct,
+}
+"#;
+
+const MODULE_CODE_WITH_EVENT_TABLE_AFTER: &str = r#"
+use spacetimedb::{table, SpacetimeType};
+
+#[derive(SpacetimeType)]
+struct SomeProduct {
+    a: u32,
+    b: u64,
+    c: u128,
+}
+
+#[table(accessor = some_event, public, event)]
+struct SomeEvent {
+    prod: SomeProduct,
+}
+"#;
+
+#[test]
+fn automigrate_reschema_event_table_arbitrarily() {
+    let mut test = Smoketest::builder()
+        .module_code(MODULE_CODE_WITH_EVENT_TABLE_BEFORE)
+        .build();
+
+    // Step 1: publish with event table.
+    let identity = test
+        .database_identity
+        .clone()
+        .expect("database should be published after build");
+
+    // Step 2: Reschema event table. Should work fine, even though we'd reject this change for a non-event table.
+    test.write_module_code(MODULE_CODE_WITH_EVENT_TABLE_AFTER).unwrap();
+    test.publish()
+        .name(&identity)
+        .break_clients(true)
+        .run()
+        .expect("Changing schema of event table should succeed");
+
+    // Step 3: Reschema event table right back. Should still work fine.
+    test.write_module_code(MODULE_CODE_WITH_EVENT_TABLE_BEFORE).unwrap();
+    test.publish()
+        .name(&identity)
+        .break_clients(true)
+        .run()
+        .expect("Changing schema of event table should succeed");
+}
+
+const MODULE_CODE_DROP_EVENT_TABLE_BEFORE: &str = r#"
+use spacetimedb::{ReducerContext, Table};
+
+#[spacetimedb::table(accessor = person, public)]
+pub struct Person {
+    name: String,
+}
+
+#[spacetimedb::table(accessor = some_event, public, event)]
+pub struct SomeEvent {
+    account_id: u32,
+    name: String,
+}
+
+#[spacetimedb::reducer]
+pub fn add_person(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { name });
+}
+
+#[spacetimedb::reducer]
+pub fn emit_event(ctx: &ReducerContext) {
+    ctx.db.some_event().insert(SomeEvent { account_id: 7, name: "alpha".to_string() });
+}
+"#;
+
+const MODULE_CODE_DROP_EVENT_TABLE_AFTER: &str = r#"
+use spacetimedb::{ReducerContext, Table};
+
+#[spacetimedb::table(accessor = person, public)]
+pub struct Person {
+    name: String,
+}
+
+#[spacetimedb::reducer]
+pub fn add_person(ctx: &ReducerContext, name: String) {
+    ctx.db.person().insert(Person { name });
+}
+"#;
+
+/// Regression test: dropping an event table must not brick commitlog replay.
+///
+/// Dropping an event table deletes its `st_table`, `st_column` and `st_event_table` rows
+/// in a single transaction. Replay applies deletes in ascending table id order,
+/// so the `st_table` row is already gone when the `st_column` deletes are replayed,
+/// while the `st_event_table` row is still present.
+/// Replay therefore treated the dropped table as a live event table
+/// and tried to refresh its layout, failing with
+/// `Table with ID ... not found in st_table`
+/// and permanently preventing the database from starting.
+#[test]
+fn automigrate_drop_event_table_replays_after_restart() {
+    require_local_server!();
+    let mut test = Smoketest::builder()
+        .module_code(MODULE_CODE_DROP_EVENT_TABLE_BEFORE)
+        .build();
+
+    let identity = test
+        .database_identity
+        .clone()
+        .expect("database should be published after build");
+
+    // Write some history, including an event row.
+    test.call("add_person", &["Robert"]).unwrap();
+    test.call("emit_event", &[]).unwrap();
+
+    // Drop the event table.
+    test.write_module_code(MODULE_CODE_DROP_EVENT_TABLE_AFTER).unwrap();
+    test.publish()
+        .name(&identity)
+        .break_clients(true)
+        .run()
+        .expect("Dropping the event table should succeed");
+
+    // Wait until data written after the drop is durable,
+    // which implies the drop itself is durable too.
+    test.call("add_person", &["Julie"]).unwrap();
+    let output = test.sql_confirmed("SELECT * FROM person WHERE name = 'Julie'").unwrap();
+    assert!(output.contains("Julie"), "Data not confirmed before restart: {output}");
+
+    // Restarting forces a commitlog replay, which must replay the event table drop.
+    test.restart_server();
+
+    let output = test.sql("SELECT name FROM person").unwrap();
+    assert!(output.contains("Robert"), "Expected 'Robert' after restart: {output}");
+    assert!(output.contains("Julie"), "Expected 'Julie' after restart: {output}");
+
+    // The database should still accept writes after replay.
+    test.call("add_person", &["Samantha"]).unwrap();
+    let output = test.sql("SELECT name FROM person WHERE name = 'Samantha'").unwrap();
+    assert!(
+        output.contains("Samantha"),
+        "Expected 'Samantha' after restart: {output}"
     );
 }

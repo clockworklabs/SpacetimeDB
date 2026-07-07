@@ -40,6 +40,18 @@ impl OptionStringTableAccess for super::RemoteTables {
 pub struct OptionStringInsertCallbackId(__sdk::CallbackId);
 pub struct OptionStringDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for OptionStringTableHandle<'ctx> {
+    type Row = OptionString;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = OptionString> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for OptionStringTableHandle<'ctx> {
     type Row = OptionString;
     type EventContext = super::EventContext;
@@ -64,6 +76,36 @@ impl<'ctx> __sdk::Table for OptionStringTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = OptionStringDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OptionStringDeleteCallbackId {
+        OptionStringDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: OptionStringDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for OptionStringTableHandle<'ctx> {
+    type InsertCallbackId = OptionStringInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OptionStringInsertCallbackId {
+        OptionStringInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: OptionStringInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for OptionStringTableHandle<'ctx> {
     type DeleteCallbackId = OptionStringDeleteCallbackId;
 
     fn on_delete(

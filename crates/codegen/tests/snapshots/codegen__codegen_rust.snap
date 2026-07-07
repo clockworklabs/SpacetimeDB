@@ -1,5 +1,6 @@
 ---
 source: crates/codegen/tests/codegen.rs
+assertion_line: 37
 expression: outfiles
 ---
 "add_player_reducer.rs" = '''
@@ -833,6 +834,14 @@ impl LoggedOutPlayerTableAccess for super::RemoteTables {
 pub struct LoggedOutPlayerInsertCallbackId(__sdk::CallbackId);
 pub struct LoggedOutPlayerDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for LoggedOutPlayerTableHandle<'ctx> {
+    type Row = Player;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = Player> + '_ { self.imp.iter() }
+}
+
 impl<'ctx> __sdk::Table for LoggedOutPlayerTableHandle<'ctx> {
     type Row = Player;
     type EventContext = super::EventContext;
@@ -867,9 +876,54 @@ impl<'ctx> __sdk::Table for LoggedOutPlayerTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithInsert for LoggedOutPlayerTableHandle<'ctx> {
+    type InsertCallbackId = LoggedOutPlayerInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> LoggedOutPlayerInsertCallbackId {
+        LoggedOutPlayerInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: LoggedOutPlayerInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for LoggedOutPlayerTableHandle<'ctx> {
+    type DeleteCallbackId = LoggedOutPlayerDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> LoggedOutPlayerDeleteCallbackId {
+        LoggedOutPlayerDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: LoggedOutPlayerDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
 pub struct LoggedOutPlayerUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for LoggedOutPlayerTableHandle<'ctx> {
+    type UpdateCallbackId = LoggedOutPlayerUpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> LoggedOutPlayerUpdateCallbackId {
+        LoggedOutPlayerUpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: LoggedOutPlayerUpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithUpdate for LoggedOutPlayerTableHandle<'ctx> {
     type UpdateCallbackId = LoggedOutPlayerUpdateCallbackId;
 
     fn on_update(
@@ -1029,6 +1083,7 @@ use spacetimedb_sdk::__codegen::{
 pub mod baz_type;
 pub mod foobar_type;
 pub mod has_special_stuff_type;
+pub mod nonrepeating_test_arg_type;
 pub mod person_type;
 pub mod pk_multi_identity_type;
 pub mod player_type;
@@ -1069,6 +1124,7 @@ pub mod with_tx_procedure;
 pub use baz_type::Baz;
 pub use foobar_type::Foobar;
 pub use has_special_stuff_type::HasSpecialStuff;
+pub use nonrepeating_test_arg_type::NonrepeatingTestArg;
 pub use person_type::Person;
 pub use pk_multi_identity_type::PkMultiIdentity;
 pub use player_type::Player;
@@ -2057,6 +2113,14 @@ impl MyPlayerTableAccess for super::RemoteTables {
 pub struct MyPlayerInsertCallbackId(__sdk::CallbackId);
 pub struct MyPlayerDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for MyPlayerTableHandle<'ctx> {
+    type Row = Player;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = Player> + '_ { self.imp.iter() }
+}
+
 impl<'ctx> __sdk::Table for MyPlayerTableHandle<'ctx> {
     type Row = Player;
     type EventContext = super::EventContext;
@@ -2077,6 +2141,36 @@ impl<'ctx> __sdk::Table for MyPlayerTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = MyPlayerDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> MyPlayerDeleteCallbackId {
+        MyPlayerDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: MyPlayerDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for MyPlayerTableHandle<'ctx> {
+    type InsertCallbackId = MyPlayerInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> MyPlayerInsertCallbackId {
+        MyPlayerInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: MyPlayerInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for MyPlayerTableHandle<'ctx> {
     type DeleteCallbackId = MyPlayerDeleteCallbackId;
 
     fn on_delete(
@@ -2186,6 +2280,74 @@ impl __sdk::InModule for NamespaceTestF {
 }
 
 '''
+"nonrepeating_test_arg_type.rs" = '''
+// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
+// WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
+
+#![allow(unused, clippy::all)]
+use spacetimedb_sdk::__codegen::{
+	self as __sdk,
+	__lib,
+	__sats,
+	__ws,
+};
+
+
+#[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
+#[sats(crate = __lib)]
+pub struct NonrepeatingTestArg {
+    pub scheduled_id: u64,
+    pub scheduled_at: __sdk::ScheduleAt,
+    pub prev_time: __sdk::Timestamp,
+}
+
+
+impl __sdk::InModule for NonrepeatingTestArg {
+    type Module = super::RemoteModule;
+}
+
+
+/// Column accessor struct for the table `NonrepeatingTestArg`.
+///
+/// Provides typed access to columns for query building.
+pub struct NonrepeatingTestArgCols {
+    pub scheduled_id: __sdk::__query_builder::Col<NonrepeatingTestArg, u64>,
+    pub scheduled_at: __sdk::__query_builder::Col<NonrepeatingTestArg, __sdk::ScheduleAt>,
+    pub prev_time: __sdk::__query_builder::Col<NonrepeatingTestArg, __sdk::Timestamp>,
+}
+
+impl __sdk::__query_builder::HasCols for NonrepeatingTestArg {
+    type Cols = NonrepeatingTestArgCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        NonrepeatingTestArgCols {
+            scheduled_id: __sdk::__query_builder::Col::new(table_name, "scheduled_id"),
+            scheduled_at: __sdk::__query_builder::Col::new(table_name, "scheduled_at"),
+            prev_time: __sdk::__query_builder::Col::new(table_name, "prev_time"),
+
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `NonrepeatingTestArg`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct NonrepeatingTestArgIxCols {
+    pub scheduled_id: __sdk::__query_builder::IxCol<NonrepeatingTestArg, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for NonrepeatingTestArg {
+    type IxCols = NonrepeatingTestArgIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        NonrepeatingTestArgIxCols {
+            scheduled_id: __sdk::__query_builder::IxCol::new(table_name, "scheduled_id"),
+
+        }
+    }
+}
+
+impl __sdk::__query_builder::CanBeLookupTable for NonrepeatingTestArg {}
+
+'''
 "person_table.rs" = '''
 // THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
@@ -2234,6 +2396,14 @@ impl PersonTableAccess for super::RemoteTables {
 pub struct PersonInsertCallbackId(__sdk::CallbackId);
 pub struct PersonDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for PersonTableHandle<'ctx> {
+    type Row = Person;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = Person> + '_ { self.imp.iter() }
+}
+
 impl<'ctx> __sdk::Table for PersonTableHandle<'ctx> {
     type Row = Person;
     type EventContext = super::EventContext;
@@ -2268,9 +2438,54 @@ impl<'ctx> __sdk::Table for PersonTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithInsert for PersonTableHandle<'ctx> {
+    type InsertCallbackId = PersonInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PersonInsertCallbackId {
+        PersonInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: PersonInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for PersonTableHandle<'ctx> {
+    type DeleteCallbackId = PersonDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PersonDeleteCallbackId {
+        PersonDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: PersonDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
 pub struct PersonUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PersonTableHandle<'ctx> {
+    type UpdateCallbackId = PersonUpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> PersonUpdateCallbackId {
+        PersonUpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: PersonUpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithUpdate for PersonTableHandle<'ctx> {
     type UpdateCallbackId = PersonUpdateCallbackId;
 
     fn on_update(
@@ -2536,6 +2751,14 @@ impl PlayerTableAccess for super::RemoteTables {
 pub struct PlayerInsertCallbackId(__sdk::CallbackId);
 pub struct PlayerDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for PlayerTableHandle<'ctx> {
+    type Row = Player;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = Player> + '_ { self.imp.iter() }
+}
+
 impl<'ctx> __sdk::Table for PlayerTableHandle<'ctx> {
     type Row = Player;
     type EventContext = super::EventContext;
@@ -2570,9 +2793,54 @@ impl<'ctx> __sdk::Table for PlayerTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithInsert for PlayerTableHandle<'ctx> {
+    type InsertCallbackId = PlayerInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PlayerInsertCallbackId {
+        PlayerInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: PlayerInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for PlayerTableHandle<'ctx> {
+    type DeleteCallbackId = PlayerDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PlayerDeleteCallbackId {
+        PlayerDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: PlayerDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
 pub struct PlayerUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PlayerTableHandle<'ctx> {
+    type UpdateCallbackId = PlayerUpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> PlayerUpdateCallbackId {
+        PlayerUpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: PlayerUpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithUpdate for PlayerTableHandle<'ctx> {
     type UpdateCallbackId = PlayerUpdateCallbackId;
 
     fn on_update(
@@ -3506,6 +3774,14 @@ impl TestDTableAccess for super::RemoteTables {
 pub struct TestDInsertCallbackId(__sdk::CallbackId);
 pub struct TestDDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for TestDTableHandle<'ctx> {
+    type Row = TestD;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = TestD> + '_ { self.imp.iter() }
+}
+
 impl<'ctx> __sdk::Table for TestDTableHandle<'ctx> {
     type Row = TestD;
     type EventContext = super::EventContext;
@@ -3526,6 +3802,36 @@ impl<'ctx> __sdk::Table for TestDTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = TestDDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> TestDDeleteCallbackId {
+        TestDDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: TestDDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for TestDTableHandle<'ctx> {
+    type InsertCallbackId = TestDInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> TestDInsertCallbackId {
+        TestDInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: TestDInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for TestDTableHandle<'ctx> {
     type DeleteCallbackId = TestDDeleteCallbackId;
 
     fn on_delete(
@@ -3593,6 +3899,7 @@ use super::namespace_test_c_type::NamespaceTestC;
 #[sats(crate = __lib)]
 pub struct TestD {
     pub test_c: Option::<NamespaceTestC>,
+    pub test_c_nested: Option::<Vec::<NamespaceTestC>>,
 }
 
 
@@ -3606,6 +3913,7 @@ impl __sdk::InModule for TestD {
 /// Provides typed access to columns for query building.
 pub struct TestDCols {
     pub test_c: __sdk::__query_builder::Col<TestD, Option::<NamespaceTestC>>,
+    pub test_c_nested: __sdk::__query_builder::Col<TestD, Option::<Vec::<NamespaceTestC>>>,
 }
 
 impl __sdk::__query_builder::HasCols for TestD {
@@ -3613,6 +3921,7 @@ impl __sdk::__query_builder::HasCols for TestD {
     fn cols(table_name: &'static str) -> Self::Cols {
         TestDCols {
             test_c: __sdk::__query_builder::Col::new(table_name, "test_c"),
+            test_c_nested: __sdk::__query_builder::Col::new(table_name, "test_c_nested"),
 
         }
     }
@@ -3752,6 +4061,14 @@ impl TestFTableAccess for super::RemoteTables {
 pub struct TestFInsertCallbackId(__sdk::CallbackId);
 pub struct TestFDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for TestFTableHandle<'ctx> {
+    type Row = TestFoobar;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 { self.imp.count() }
+    fn iter(&self) -> impl Iterator<Item = TestFoobar> + '_ { self.imp.iter() }
+}
+
 impl<'ctx> __sdk::Table for TestFTableHandle<'ctx> {
     type Row = TestFoobar;
     type EventContext = super::EventContext;
@@ -3772,6 +4089,36 @@ impl<'ctx> __sdk::Table for TestFTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = TestFDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> TestFDeleteCallbackId {
+        TestFDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: TestFDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for TestFTableHandle<'ctx> {
+    type InsertCallbackId = TestFInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> TestFInsertCallbackId {
+        TestFInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: TestFInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for TestFTableHandle<'ctx> {
     type DeleteCallbackId = TestFDeleteCallbackId;
 
     fn on_delete(

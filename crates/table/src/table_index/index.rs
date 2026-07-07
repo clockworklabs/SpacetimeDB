@@ -123,6 +123,19 @@ pub trait Index {
     ///
     /// If the index is unique, this will at most return one element.
     fn seek_point(&self, point: &Self::Key) -> Self::PointIter<'_>;
+
+    type Iter<'a>: Iterator<Item = RowPointer>
+    where
+        Self: 'a;
+
+    /// Returns an iterator over all entries in this index.
+    ///
+    /// The trait imposes no particular order.
+    /// Implementations may provide a non-deterministic order.
+    fn iter(&self) -> Self::Iter<'_>;
+
+    /// Whether the index is ranged or not.
+    const IS_RANGED: bool;
 }
 
 pub trait RangedIndex: Index {

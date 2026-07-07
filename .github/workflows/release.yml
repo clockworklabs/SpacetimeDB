@@ -1,0 +1,389 @@
+name: Release
+
+run-name: ${{ format('Release {0} [{1}]', github.event.inputs.release_tag, github.event.inputs.dry_run == 'true' && 'dry-run' || 'live') }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag (e.g. v1.9.0)"
+        required: true
+      dry_run:
+        description: "Run in dry-run mode"
+        required: true
+        type: boolean
+        default: true
+      release_crates:
+        description: "Release crates.io packages"
+        required: true
+        type: boolean
+        default: false
+      release_csharp:
+        description: "Release C# SDK"
+        required: true
+        type: boolean
+        default: false
+      release_cpp:
+        description: "Release C++ bindings"
+        required: true
+        type: boolean
+        default: false
+      release_npm:
+        description: "Release NPM package"
+        required: true
+        type: boolean
+        default: false
+      release_docker:
+        description: "Release Docker container"
+        required: true
+        type: boolean
+        default: false
+      update_mirror_latest_version:
+        description: "Update S3 mirror latest-version marker"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: manual-release-${{ inputs.release_tag }}${{ inputs.dry_run && format('-dry-run-{0}', github.run_id) || '' }}
+  cancel-in-progress: true
+
+jobs:
+  # This job runs before all of our release jobs. If there is a release problem we should
+  # try to fail during this step to prevent partial releases.
+  build-cargo-release:
+    runs-on: spacetimedb-new-runner-2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Rust
+        uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Cache cargo
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./
+
+      - name: Install cargo-release
+        run: |
+          cargo install --path tools/release
+          # ensure the binary exists
+          which cargo-release
+          # copy it into a sharable directory
+          mkdir -p shared-bin
+          cp "$(which cargo-release)" shared-bin/
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-release-bin
+          path: shared-bin/
+
+  release-crates:
+    needs: build-cargo-release
+    runs-on: spacetimedb-new-runner-2
+    if: ${{ inputs.release_crates }}
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout specific tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.release_tag }}
+          submodules: recursive
+
+      - name: Set up Rust
+        uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Download cargo-release
+        uses: actions/download-artifact@v4
+        with:
+          name: cargo-release-bin
+          path: ./shared-bin
+
+      - name: Make binary executable and on PATH
+        run: |
+          chmod +x ./shared-bin/cargo-release
+          echo "$PWD/shared-bin" >> "$GITHUB_PATH"
+
+      # TODO: dry-run via publishing to a local registry: https://doc.rust-lang.org/cargo/reference/registries.html
+      - name: Run release (dry-run)
+        if: ${{ inputs.dry_run }}
+        # NOTE: This will print a warning that `cargo-release release crates` dry runs are not supported
+        run: cargo-release release crates ${{ github.event.inputs.release_tag }} --dry-run
+
+      - name: Run release
+        if: ${{ !inputs.dry_run }}
+        run: cargo-release release crates ${{ github.event.inputs.release_tag }}
+
+  release-csharp:
+    needs: build-cargo-release
+    runs-on: spacetimedb-new-runner-2
+    if: ${{ inputs.release_csharp }}
+    env:
+      CARGO_TERM_COLOR: always
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+
+    steps:
+      - name: Checkout specific tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.release_tag }}
+          submodules: recursive
+
+      - name: Set up Rust
+        uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Download cargo-release
+        uses: actions/download-artifact@v4
+        with:
+          name: cargo-release-bin
+          path: ./shared-bin
+
+      - name: Make binary executable and on PATH
+        run: |
+          chmod +x ./shared-bin/cargo-release
+          echo "$PWD/shared-bin" >> "$GITHUB_PATH"
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-path: global.json
+
+      - name: Install NuGet
+        shell: bash
+        run: |
+          sudo apt install -y mono-complete
+          mkdir bin
+          cd bin
+          wget https://dist.nuget.org/win-x86-commandline/latest/nuget.exe
+          # We're on linux, so we need to do a mono dance to make NuGet invocations look the same as they would on e.g. windows
+          mv nuget.exe nuget-mono.exe
+          cat <<'EOF' | sed 's/^ *//' >nuget
+            #!/bin/bash
+            DIR="$(dirname "$(readlink -f "$0")")"
+            mono "$DIR/nuget-mono.exe" "$@"
+          EOF
+          chmod +x nuget
+          echo "$PWD" >> $GITHUB_PATH
+
+      - name: Setup SSH key for Unity SDK repo
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.UNITY_SDK_DEPLOY_KEY }}
+
+      - name: Configure git
+        run: |
+          git config --global user.name "Release Bot"
+          git config --global user.email "no-reply@clockworklabs.io"
+          # Remove any HTTPS to SSH conversion set by checkout action
+          git config --global --unset-all url.https://github.com/.insteadOf || true
+          # Ensure SSH is used instead of HTTPS for GitHub
+          git config --global url."git@github.com:".insteadOf "https://github.com/"
+          # Verify configuration
+          echo "Git URL rewrite config:"
+          git config --global --get-regexp url
+
+      - name: Run C# SDK release (dry-run)
+        if: ${{ inputs.dry_run }}
+        run: cargo-release release csharp ${{ github.event.inputs.release_tag }} --dry-run
+
+      - name: Run C# SDK release
+        if: ${{ !inputs.dry_run }}
+        run: cargo-release release csharp ${{ github.event.inputs.release_tag }}
+
+  release-cpp:
+    needs: build-cargo-release
+    runs-on: spacetimedb-new-runner-2
+    if: ${{ inputs.release_cpp }}
+    env:
+      CARGO_TERM_COLOR: always
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout specific tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.release_tag }}
+          submodules: recursive
+
+      - name: Set up Rust
+        uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Download cargo-release
+        uses: actions/download-artifact@v4
+        with:
+          name: cargo-release-bin
+          path: ./shared-bin
+
+      - name: Make binary executable and on PATH
+        run: |
+          chmod +x ./shared-bin/cargo-release
+          echo "$PWD/shared-bin" >> "$GITHUB_PATH"
+
+      - name: Setup SSH key for C++ SDK repo
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.CPP_SDK_DEPLOY_KEY }}
+
+      - name: Configure git
+        run: |
+          git config --global user.name "Release Bot"
+          git config --global user.email "no-reply@clockworklabs.io"
+          # Remove any HTTPS to SSH conversion set by checkout action
+          git config --global --unset-all url.https://github.com/.insteadOf || true
+          # Ensure SSH is used instead of HTTPS for GitHub
+          git config --global url."git@github.com:".insteadOf "https://github.com/"
+          # Verify configuration
+          echo "Git URL rewrite config:"
+          git config --global --get-regexp url
+
+      - name: Run C++ SDK release (dry-run)
+        if: ${{ inputs.dry_run }}
+        run: cargo-release release cpp ${{ github.event.inputs.release_tag }} --dry-run
+
+      - name: Run C++ SDK release
+        if: ${{ !inputs.dry_run }}
+        run: cargo-release release cpp ${{ github.event.inputs.release_tag }}
+
+  release-npm:
+    needs: build-cargo-release
+    runs-on: ubuntu-latest
+    if: ${{ inputs.release_npm }}
+    env:
+      CARGO_TERM_COLOR: always
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    permissions:
+      id-token: write
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout specific tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.release_tag }}
+          submodules: recursive
+
+      - name: Download cargo-release
+        uses: actions/download-artifact@v4
+        with:
+          name: cargo-release-bin
+          path: ./shared-bin
+
+      - name: Make binary executable and on PATH
+        run: |
+          chmod +x ./shared-bin/cargo-release
+          echo "$PWD/shared-bin" >> "$GITHUB_PATH"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Run NPM release (dry-run)
+        if: ${{ inputs.dry_run }}
+        run: cargo-release release npm ${{ github.event.inputs.release_tag }} --dry-run
+
+      - name: Run NPM release
+        if: ${{ !inputs.dry_run }}
+        run: cargo-release release npm ${{ github.event.inputs.release_tag }}
+
+  release-docker:
+    needs: build-cargo-release
+    runs-on: spacetimedb-new-runner-2
+    env:
+      CARGO_TERM_COLOR: always
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    if: ${{ inputs.release_docker }}
+
+    steps:
+      - name: Checkout specific tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.release_tag }}
+          submodules: recursive
+
+      - name: Download cargo-release
+        uses: actions/download-artifact@v4
+        with:
+          name: cargo-release-bin
+          path: ./shared-bin
+
+      - name: Make binary executable and on PATH
+        run: |
+          chmod +x ./shared-bin/cargo-release
+          echo "$PWD/shared-bin" >> "$GITHUB_PATH"
+
+        # We need network=host during dry-runs but it's fine during non dry-runs as well
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        if: ${{ !inputs.dry_run }}
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          # Docker Hub access tokens are passed to docker/login-action via the password input.
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Run Docker release
+        run: cargo-release release docker ${{ github.event.inputs.release_tag }} ${{ inputs.dry_run && '--dry-run' || '' }}
+
+  update-mirror-latest-version:
+    runs-on: ubuntu-latest
+    if: ${{ !inputs.dry_run && inputs.update_mirror_latest_version }}
+
+    steps:
+      - name: Verify mirror tag prefix exists
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.release_tag }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          set -uo pipefail
+
+          PREFIX="refs/tags/$RELEASE_TAG/"
+          COUNT="$(aws s3api list-objects-v2 \
+            --bucket spacetimedb-client-binaries \
+            --prefix "$PREFIX" \
+            --max-keys 1 \
+            --query 'length(not_null(Contents, `[]`))')"
+          test "$COUNT" -gt 0
+
+      - name: Generate latest-version marker
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.release_tag }}
+        run: printf '%s\n' "$RELEASE_TAG" > latest-version
+
+      - name: Upload latest-version to S3 mirror
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+        run: aws s3 cp latest-version s3://spacetimedb-client-binaries/latest-version --acl public-read

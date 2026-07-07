@@ -101,15 +101,6 @@ IMPORT(void, volatile_nonatomic_schedule_immediate,
 IMPORT(void, identity, (void* id_ptr), (id_ptr));
 #undef SPACETIME_MODULE_VERSION
 
-#define SPACETIME_MODULE_VERSION "spacetime_10.4"
-IMPORT(Status, datastore_index_scan_point_bsatn,
-       (IndexId index_id, const uint8_t* point, uint32_t point_len, RowIter* iter),
-       (index_id, point, point_len, iter));
-IMPORT(Status, datastore_delete_by_index_scan_point_bsatn,
-       (IndexId index_id, const uint8_t* point, uint32_t point_len, uint32_t* num_deleted),
-       (index_id, point, point_len, num_deleted));
-#undef SPACETIME_MODULE_VERSION
-
 #define SPACETIME_MODULE_VERSION "spacetime_10.1"
 IMPORT(int16_t, bytes_source_remaining_length, (BytesSource source, uint32_t* out), (source, out));
 #undef SPACETIME_MODULE_VERSION
@@ -127,6 +118,21 @@ IMPORT(uint16_t, procedure_http_request,
         const uint8_t* body_ptr, uint32_t body_len,
         BytesSource* out),
        (request_ptr, request_len, body_ptr, body_len, out));
+#undef SPACETIME_MODULE_VERSION
+
+#define SPACETIME_MODULE_VERSION "spacetime_10.4"
+IMPORT(Status, datastore_index_scan_point_bsatn,
+       (IndexId index_id, const uint8_t* point, uint32_t point_len, RowIter* iter),
+       (index_id, point, point_len, iter));
+IMPORT(Status, datastore_delete_by_index_scan_point_bsatn,
+       (IndexId index_id, const uint8_t* point, uint32_t point_len, uint32_t* num_deleted),
+       (index_id, point, point_len, num_deleted));
+#undef SPACETIME_MODULE_VERSION
+
+#define SPACETIME_MODULE_VERSION "spacetime_10.5"
+IMPORT(Status, datastore_clear,
+       (TableId table_id, uint64_t* count),
+       (table_id, count));
 #undef SPACETIME_MODULE_VERSION
 
 #ifndef EXPERIMENTAL_WASM_AOT
@@ -190,6 +196,11 @@ EXPORT(int16_t, __call_procedure__,
        &sender_0, &sender_1, &sender_2, &sender_3,
        &conn_id_0, &conn_id_1,
        &timestamp, &args, &result_sink);
+
+EXPORT(int16_t, __call_http_handler__,
+       (uint32_t id, uint64_t timestamp, BytesSource request, BytesSource request_body,
+        BytesSink response_sink, BytesSink response_body_sink),
+       &id, &timestamp, &request, &request_body, &response_sink, &response_body_sink);
 
 EXPORT(int16_t, __call_view__,
        (uint32_t id,

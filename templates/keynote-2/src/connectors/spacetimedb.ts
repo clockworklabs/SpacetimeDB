@@ -3,15 +3,34 @@ import * as mod from '../../module_bindings';
 import { deriveWebsocketUrl } from '../core/stdbUrl';
 import type { SpacetimeConnectorConfig } from '../config.ts';
 
-export function spacetimedb(config: SpacetimeConnectorConfig): ReducerConnector {
+type Deferred<T> = {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason?: unknown) => void;
+};
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve!: Deferred<T>['resolve'];
+  let reject!: Deferred<T>['reject'];
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+export function spacetimedb(
+  config: SpacetimeConnectorConfig,
+): ReducerConnector {
   const {
     initialBalance,
+    stdbCompression,
     stdbConfirmedReads,
     stdbModule: moduleName,
     stdbUrl: url,
   } = config;
 
-  let ready: ReturnType<typeof Promise.withResolvers<void>>;
+  let ready: Deferred<void>;
   let conn: mod.DbConnection;
 
   async function connectWithBindings() {
@@ -20,19 +39,20 @@ export function spacetimedb(config: SpacetimeConnectorConfig): ReducerConnector 
 
     const Db = mod.DbConnection;
 
-    ready = Promise.withResolvers<void>();
+    ready = createDeferred<void>();
 
     const subscriptions: string[] = [];
     if (process.env.VERIFY === '1') {
       console.log('[spacetimedb] subscribing to accounts');
       subscriptions.push('SELECT * FROM accounts');
     }
-    const subscribed = Promise.withResolvers<void>();
+    const subscribed = createDeferred<void>();
     if (subscriptions.length === 0) subscribed.resolve();
 
     const builder = Db.builder()
       .withUri(deriveWebsocketUrl(url))
       .withDatabaseName(moduleName)
+      .withCompression(stdbCompression)
       .withConfirmedReads(stdbConfirmedReads)
       .onConnect((ctx) => {
         console.log('[stdb] connected');
@@ -76,7 +96,6 @@ export function spacetimedb(config: SpacetimeConnectorConfig): ReducerConnector 
 
   return {
     name: 'spacetimedb',
-    maxInflightPerWorker: 16384,
 
     async open() {
       try {

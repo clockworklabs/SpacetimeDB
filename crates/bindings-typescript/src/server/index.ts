@@ -8,7 +8,7 @@ export {
 export { CaseConversionPolicy } from '../lib/autogen/types';
 export { table } from '../lib/table';
 export { SenderError, SpacetimeHostError, errors } from './errors';
-export type { Reducer, ReducerCtx } from '../lib/reducers';
+export type { Reducer, ReducerCtx, JwtClaims, AuthCtx } from '../lib/reducers';
 export type { ReducerExport } from './reducers';
 export { type DbView } from './db_view';
 export * from './query';
@@ -22,5 +22,16 @@ export type { Uuid } from '../lib/uuid';
 export type { Random } from './rng';
 export type { ViewExport, ViewCtx, AnonymousViewCtx } from './views';
 export { Range, type Bound } from './range';
+export {
+  Headers,
+  Request,
+  SyncResponse,
+  Router,
+  type BodyInit,
+  type HeadersInit,
+  type RequestInit,
+  type ResponseInit,
+} from './http';
+export type { HandlerContext, HttpHandlerExport } from './http';
 
 import './polyfills'; // Ensure polyfills are loaded

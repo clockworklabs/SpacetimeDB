@@ -41,6 +41,18 @@ impl PkSimpleEnumTableAccess for super::RemoteTables {
 pub struct PkSimpleEnumInsertCallbackId(__sdk::CallbackId);
 pub struct PkSimpleEnumDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for PkSimpleEnumTableHandle<'ctx> {
+    type Row = PkSimpleEnum;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = PkSimpleEnum> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for PkSimpleEnumTableHandle<'ctx> {
     type Row = PkSimpleEnum;
     type EventContext = super::EventContext;
@@ -79,9 +91,54 @@ impl<'ctx> __sdk::Table for PkSimpleEnumTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithInsert for PkSimpleEnumTableHandle<'ctx> {
+    type InsertCallbackId = PkSimpleEnumInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PkSimpleEnumInsertCallbackId {
+        PkSimpleEnumInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: PkSimpleEnumInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for PkSimpleEnumTableHandle<'ctx> {
+    type DeleteCallbackId = PkSimpleEnumDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PkSimpleEnumDeleteCallbackId {
+        PkSimpleEnumDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: PkSimpleEnumDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
 pub struct PkSimpleEnumUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PkSimpleEnumTableHandle<'ctx> {
+    type UpdateCallbackId = PkSimpleEnumUpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> PkSimpleEnumUpdateCallbackId {
+        PkSimpleEnumUpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: PkSimpleEnumUpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithUpdate for PkSimpleEnumTableHandle<'ctx> {
     type UpdateCallbackId = PkSimpleEnumUpdateCallbackId;
 
     fn on_update(

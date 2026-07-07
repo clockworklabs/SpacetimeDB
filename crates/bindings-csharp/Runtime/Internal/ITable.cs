@@ -156,6 +156,8 @@ public interface ITableView<View, T>
 
     bool Delete(T row);
 
+    ulong Clear();
+
     protected static ulong DoCount()
     {
         FFI.datastore_table_row_count(tableId, out var count);
@@ -187,7 +189,7 @@ public interface ITableView<View, T>
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
         // `datastore_delete_all_by_eq_bsatn` expects an array-like BSATN.
-        // Write a length of 1 without actually wrapping the `row` into array
+        // Write a length of 1 without actually wrapping the `row` into an array
         // (annoyingly, that would require passing `TRW` through a bunch of APIs).
         writer.Write(1U);
         row.WriteFields(writer);
@@ -198,6 +200,12 @@ public interface ITableView<View, T>
             out var out_
         );
         return out_ > 0;
+    }
+
+    protected static ulong DoClear()
+    {
+        FFI.datastore_clear(tableId, out var count);
+        return count;
     }
 
     protected static RawScheduleDefV10 MakeSchedule(string reducerName, ushort colIndex) =>

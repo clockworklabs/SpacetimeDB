@@ -146,7 +146,12 @@ public:
     uint64_t count() const {
         return get_table().count();
     }
-    
+
+    // Clear all rows in the table and return the number removed
+    uint64_t clear() const {
+        return get_table().clear();
+    }
+
     // Delete rows matching a value
     uint32_t delete_by_value(const T& value) const {
         return get_table().delete_by_value(value);

@@ -40,6 +40,18 @@ impl PkStringTableAccess for super::RemoteTables {
 pub struct PkStringInsertCallbackId(__sdk::CallbackId);
 pub struct PkStringDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for PkStringTableHandle<'ctx> {
+    type Row = PkString;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = PkString> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for PkStringTableHandle<'ctx> {
     type Row = PkString;
     type EventContext = super::EventContext;
@@ -78,9 +90,54 @@ impl<'ctx> __sdk::Table for PkStringTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithInsert for PkStringTableHandle<'ctx> {
+    type InsertCallbackId = PkStringInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PkStringInsertCallbackId {
+        PkStringInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: PkStringInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for PkStringTableHandle<'ctx> {
+    type DeleteCallbackId = PkStringDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PkStringDeleteCallbackId {
+        PkStringDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: PkStringDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
 pub struct PkStringUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PkStringTableHandle<'ctx> {
+    type UpdateCallbackId = PkStringUpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> PkStringUpdateCallbackId {
+        PkStringUpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: PkStringUpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithUpdate for PkStringTableHandle<'ctx> {
     type UpdateCallbackId = PkStringUpdateCallbackId;
 
     fn on_update(

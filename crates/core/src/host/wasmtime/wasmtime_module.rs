@@ -22,8 +22,8 @@ use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::identifier::Identifier;
 use wasmtime::{
-    AsContext, AsContextMut, ExternType, Instance, InstancePre, Linker, Store, TypedFunc, WasmBacktrace, WasmParams,
-    WasmResults,
+    AsContext, AsContextMut, Caller, ExternType, Instance, InstancePre, Linker, Store, TypedFunc, WasmBacktrace,
+    WasmParams, WasmResults,
 };
 
 fn log_traceback(func_type: &str, func: &str, e: &wasmtime::Error) {
@@ -45,57 +45,133 @@ pub struct WasmtimeModule {
     module: InstancePre<WasmInstanceEnv>,
 }
 
+#[derive(Clone)]
+pub struct WasmtimeAsyncModule {
+    module: InstancePre<WasmInstanceEnv>,
+}
+
 impl WasmtimeModule {
     pub(super) fn new(module: InstancePre<WasmInstanceEnv>) -> Self {
         WasmtimeModule { module }
     }
 
-    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(10, 4);
+    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(10, 5);
 
     pub(super) fn link_imports(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::Result<()> {
-        const { assert!(WasmtimeModule::IMPLEMENTED_ABI.major == spacetimedb_lib::MODULE_ABI_MAJOR_VERSION) };
-        macro_rules! link_functions {
-            ($($module:literal :: $func:ident,)*) => {
-                #[allow(deprecated)]
-                linker$(.func_wrap($module, stringify!($func), WasmInstanceEnv::$func)?)*;
-            }
-        }
-        macro_rules! link_async_functions {
-            ($($module:literal :: $func:ident,)*) => {
-                #[allow(deprecated)]
-                linker$(.func_wrap_async($module, stringify!($func), WasmInstanceEnv::$func)?)*;
-            }
-        }
-        abi_funcs!(link_functions, link_async_functions);
-        Ok(())
+        link_imports(linker, AsyncImportMode::SyncStub)
     }
 }
 
-impl module_host_actor::WasmModule for WasmtimeModule {
-    type Instance = WasmtimeInstance;
-    type InstancePre = Self;
-
-    type ExternType = ExternType;
-
-    fn get_export(&self, s: &str) -> Option<Self::ExternType> {
-        self.module
-            .module()
-            .exports()
-            .find(|exp| exp.name() == s)
-            .map(|exp| exp.ty())
+impl WasmtimeAsyncModule {
+    pub(super) fn new(module: InstancePre<WasmInstanceEnv>) -> Self {
+        WasmtimeAsyncModule { module }
     }
 
-    fn for_each_export<E>(&self, mut f: impl FnMut(&str, &Self::ExternType) -> Result<(), E>) -> Result<(), E> {
-        self.module
-            .module()
-            .exports()
-            .try_for_each(|exp| f(exp.name(), &exp.ty()))
-    }
-
-    fn instantiate_pre(&self) -> Result<Self::InstancePre, InitializationError> {
-        Ok(self.clone())
+    pub(super) fn link_imports(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::Result<()> {
+        link_imports(linker, AsyncImportMode::Async)
     }
 }
+
+#[derive(Copy, Clone)]
+enum AsyncImportMode {
+    SyncStub,
+    Async,
+}
+
+fn link_imports(linker: &mut Linker<WasmInstanceEnv>, async_import_mode: AsyncImportMode) -> anyhow::Result<()> {
+    const { assert!(WasmtimeModule::IMPLEMENTED_ABI.major == spacetimedb_lib::MODULE_ABI_MAJOR_VERSION) };
+    // `abi_funcs!` separates the ABI into normal sync imports and async-only imports.
+    // Sync imports are linked the same way for both Wasmtime modules. Async-only imports
+    // are linked as real `func_wrap_async` imports for procedure instances, but as sync
+    // stubs for main-lane instances so accidental use fails with a clear module error.
+    macro_rules! link_functions {
+        ($($module:literal :: $func:ident,)*) => {
+            #[allow(deprecated)]
+            linker$(.func_wrap($module, stringify!($func), WasmInstanceEnv::$func)?)*;
+        }
+    }
+    macro_rules! link_async_functions {
+        ($($module:literal :: $func:ident,)*) => {
+            $(
+                match async_import_mode {
+                    AsyncImportMode::SyncStub => {
+                        link_sync_stub_for_async_function(linker, $module, stringify!($func))?;
+                    }
+                    AsyncImportMode::Async => {
+                        #[allow(deprecated)]
+                        linker.func_wrap_async($module, stringify!($func), WasmInstanceEnv::$func)?;
+                    }
+                }
+            )*
+        }
+    }
+    abi_funcs!(link_functions, link_async_functions);
+    Ok(())
+}
+
+fn link_sync_stub_for_async_function(
+    linker: &mut Linker<WasmInstanceEnv>,
+    module: &'static str,
+    name: &'static str,
+) -> anyhow::Result<()> {
+    match name {
+        "procedure_sleep_until" => {
+            linker.func_wrap(module, name, procedure_sleep_until_sync_stub)?;
+        }
+        "procedure_http_request" => {
+            linker.func_wrap(module, name, procedure_http_request_sync_stub)?;
+        }
+        _ => anyhow::bail!("missing sync Wasmtime stub for async ABI import `{module}::{name}`"),
+    }
+    Ok(())
+}
+
+fn procedure_sleep_until_sync_stub(_: Caller<'_, WasmInstanceEnv>, _: i64) -> anyhow::Result<i64> {
+    anyhow::bail!("procedure_sleep_until is only available in async instances")
+}
+
+fn procedure_http_request_sync_stub(
+    _: Caller<'_, WasmInstanceEnv>,
+    _: u32,
+    _: u32,
+    _: u32,
+    _: u32,
+    _: u32,
+) -> anyhow::Result<u32> {
+    anyhow::bail!("procedure_http_request is only available in async instances")
+}
+
+macro_rules! impl_wasmtime_module {
+    ($module:ty) => {
+        impl module_host_actor::WasmModule for $module {
+            type Instance = WasmtimeInstance;
+            type InstancePre = Self;
+            type ExternType = ExternType;
+
+            fn get_export(&self, s: &str) -> Option<Self::ExternType> {
+                self.module
+                    .module()
+                    .exports()
+                    .find(|exp| exp.name() == s)
+                    .map(|exp| exp.ty())
+            }
+
+            fn for_each_export<E>(&self, mut f: impl FnMut(&str, &Self::ExternType) -> Result<(), E>) -> Result<(), E> {
+                self.module
+                    .module()
+                    .exports()
+                    .try_for_each(|exp| f(exp.name(), &exp.ty()))
+            }
+
+            fn instantiate_pre(&self) -> Result<Self::InstancePre, InitializationError> {
+                Ok(self.clone())
+            }
+        }
+    };
+}
+
+impl_wasmtime_module!(WasmtimeModule);
+impl_wasmtime_module!(WasmtimeAsyncModule);
 
 fn handle_error_sink_code(code: i32, error: Vec<u8>) -> Result<(), ExecutionError> {
     handle_result_sink_code(code, error).map(drop)
@@ -140,23 +216,27 @@ const CALL_FAILURE: i32 = HOST_CALL_FAILURE.get() as i32;
 
 /// Invoke `typed_func` and assert that it doesn't yield.
 ///
-/// Our Wasmtime is configured for `async` execution, and will panic if we use the non-async [`TypedFunc::call`].
-/// The `async` config is necessary to allow procedures to suspend, e.g. when making HTTP calls or acquiring transactions.
-/// However, most of the WASM we execute, incl. reducers and startup functions, should never block/yield.
-/// Rather than crossing our fingers and trusting, we run [`TypedFunc::call_async`] in [`FutureExt::now_or_never`],
-/// an "async executor" which invokes [`std::task::Future::poll`] exactly once.
+/// Main-lane instances are created with sync Wasmtime support and use [`TypedFunc::call`].
+/// Procedure instances are created with async Wasmtime support, but some procedure-side helper
+/// calls still must complete without yielding while holding internal transaction state. Those use
+/// [`TypedFunc::call_async`] with [`FutureExt::now_or_never`] to enforce immediate completion.
 pub(super) fn call_sync_typed_func<Args, Ret>(
     typed_func: &TypedFunc<Args, Ret>,
     mut ctx: impl AsContextMut<Data = WasmInstanceEnv>,
     args: Args,
+    supports_async: bool,
 ) -> anyhow::Result<Ret>
 where
     Args: WasmParams + Sync,
     Ret: WasmResults + Sync,
 {
-    let fut = typed_func.call_async(ctx.as_context_mut(), args);
-    fut.now_or_never()
-        .expect("`call_async` of supposedly synchronous WASM function returned `Poll::Pending`")
+    if supports_async {
+        let fut = typed_func.call_async(ctx.as_context_mut(), args);
+        fut.now_or_never()
+            .expect("`call_async` of supposedly synchronous WASM function returned `Poll::Pending`")
+    } else {
+        typed_func.call(ctx.as_context_mut(), args)
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -169,6 +249,7 @@ pub(super) fn call_view_export(
     sender: Option<Identity>,
     args_source: u32,
     result_sink: u32,
+    supports_async: bool,
 ) -> anyhow::Result<i32> {
     if let Some(sender) = sender {
         let [sender_0, sender_1, sender_2, sender_3] = prepare_identity_for_call(sender);
@@ -184,6 +265,7 @@ pub(super) fn call_view_export(
             &call_view,
             ctx.as_context_mut(),
             (fn_ptr, sender_0, sender_1, sender_2, sender_3, args_source, result_sink),
+            supports_async,
         )
     } else {
         let call_view_anon = call_view_anon.ok_or_else(|| {
@@ -198,6 +280,7 @@ pub(super) fn call_view_export(
             &call_view_anon,
             ctx.as_context_mut(),
             (fn_ptr, args_source, result_sink),
+            supports_async,
         )
     }
 }
@@ -206,79 +289,133 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
     type Instance = WasmtimeInstance;
 
     fn instantiate(&self, env: InstanceEnv, func_names: &FuncNames) -> Result<Self::Instance, InitializationError> {
-        let env = WasmInstanceEnv::new(env);
-        let mut store = Store::new(self.module.module().engine(), env);
-        let instance_fut = self.module.instantiate_async(&mut store);
+        instantiate_wasmtime_instance(
+            &self.module,
+            env,
+            func_names,
+            false,
+            // Instantiate an async-disabled wasmtime instance
+            instantiate_sync,
+        )
+    }
+}
 
-        let instance = instance_fut
-            .now_or_never()
-            .expect("`instantiate_async` did not immediately return `Ready`")
-            .map_err(InitializationError::Instantiation)?;
+impl module_host_actor::WasmInstancePre for WasmtimeAsyncModule {
+    type Instance = WasmtimeInstance;
 
-        let mem = Mem::extract(&instance, &mut store).unwrap();
-        store.data_mut().instantiate(mem);
+    fn instantiate(&self, env: InstanceEnv, func_names: &FuncNames) -> Result<Self::Instance, InitializationError> {
+        instantiate_wasmtime_instance(
+            &self.module,
+            env,
+            func_names,
+            true,
+            // Instantiate an async-enabled wasmtime instance
+            instantiate_async,
+        )
+    }
+}
 
-        store.epoch_deadline_callback(|store| {
-            let env = store.data();
-            let database = env.instance_env().replica_ctx.database_identity;
-            let funcall = env.log_record_function().unwrap_or_default();
-            let dur = env.funcall_start().elapsed();
-            // TODO(procedure-timing): This measurement is not super meaningful for procedures,
-            // which may (will) suspend execution and therefore may not have been continuously running since `env.funcall_start`.
-            tracing::warn!(funcall, ?database, "Wasm has been running for {dur:?}");
-            Ok(wasmtime::UpdateDeadline::Continue(EPOCH_TICKS_PER_SECOND))
-        });
+fn instantiate_sync(
+    module: &InstancePre<WasmInstanceEnv>,
+    store: &mut Store<WasmInstanceEnv>,
+) -> Result<Instance, InitializationError> {
+    module.instantiate(store).map_err(InitializationError::Instantiation)
+}
 
-        // Note: this budget is just for initializers
-        set_store_fuel(&mut store, FunctionBudget::DEFAULT_BUDGET.into());
-        store.set_epoch_deadline(EPOCH_TICKS_PER_SECOND);
+fn instantiate_async(
+    module: &InstancePre<WasmInstanceEnv>,
+    store: &mut Store<WasmInstanceEnv>,
+) -> Result<Instance, InitializationError> {
+    let instance_fut = module.instantiate_async(store);
+    instance_fut
+        .now_or_never()
+        .expect("`instantiate_async` did not immediately return `Ready`")
+        .map_err(InitializationError::Instantiation)
+}
 
-        for preinit in &func_names.preinits {
-            let func = instance.get_typed_func::<(), ()>(&mut store, preinit).unwrap();
-            call_sync_typed_func(&func, &mut store, ()).map_err(|err| InitializationError::RuntimeError {
+fn instantiate_wasmtime_instance(
+    module: &InstancePre<WasmInstanceEnv>,
+    env: InstanceEnv,
+    func_names: &FuncNames,
+    supports_async: bool,
+    instantiate: impl FnOnce(
+        &InstancePre<WasmInstanceEnv>,
+        &mut Store<WasmInstanceEnv>,
+    ) -> Result<Instance, InitializationError>,
+) -> Result<WasmtimeInstance, InitializationError> {
+    let env = WasmInstanceEnv::new(env);
+    let mut store = Store::new(module.module().engine(), env);
+
+    let instance = instantiate(module, &mut store)?;
+
+    let mem = Mem::extract(&instance, &mut store).unwrap();
+    store.data_mut().instantiate(mem);
+
+    store.epoch_deadline_callback(|store| {
+        let env = store.data();
+        let database = env.instance_env().replica_ctx.database_identity;
+        let funcall = env.log_record_function().unwrap_or_default();
+        let dur = env.funcall_start().elapsed();
+        // TODO(procedure-timing): This measurement is not super meaningful for procedures,
+        // which may (will) suspend execution and therefore may not have been continuously running since `env.funcall_start`.
+        tracing::warn!(funcall, ?database, "Wasm has been running for {dur:?}");
+        Ok(wasmtime::UpdateDeadline::Continue(EPOCH_TICKS_PER_SECOND))
+    });
+
+    // Note: this budget is just for initializers
+    set_store_fuel(&mut store, FunctionBudget::DEFAULT_BUDGET.into());
+    store.set_epoch_deadline(EPOCH_TICKS_PER_SECOND);
+
+    for preinit in &func_names.preinits {
+        let func = instance.get_typed_func::<(), ()>(&mut store, preinit).unwrap();
+        call_sync_typed_func(&func, &mut store, (), supports_async).map_err(|err| {
+            InitializationError::RuntimeError {
                 err,
                 func: preinit.clone(),
-            })?;
-        }
-
-        if let Ok(init) = instance.get_typed_func::<u32, i32>(&mut store, SETUP_DUNDER) {
-            let setup_error = store.data_mut().setup_standard_bytes_sink();
-            let res = call_sync_typed_func(&init, &mut store, setup_error);
-            let error = store.data_mut().take_standard_bytes_sink();
-
-            let res = res
-                .map_err(ExecutionError::Trap)
-                .and_then(|code| handle_error_sink_code(code, error));
-
-            res.map_err(|e| match e {
-                ExecutionError::User(err) => InitializationError::Setup(err),
-                ExecutionError::Recoverable(err) | ExecutionError::Trap(err) => {
-                    let func = SETUP_DUNDER.to_owned();
-                    InitializationError::RuntimeError { err, func }
-                }
-            })?
-        }
-
-        let call_reducer = instance
-            .get_typed_func(&mut store, CALL_REDUCER_DUNDER)
-            .expect("no call_reducer");
-
-        let call_procedure = get_call_procedure(&mut store, &instance);
-        let call_view = get_call_view(&mut store, &instance);
-        let call_view_anon = get_call_view_anon(&mut store, &instance);
-        store
-            .data_mut()
-            .set_call_view_exports(call_view.clone(), call_view_anon.clone());
-
-        Ok(WasmtimeInstance {
-            store,
-            instance,
-            call_reducer,
-            call_procedure,
-            call_view,
-            call_view_anon,
-        })
+            }
+        })?;
     }
+
+    if let Ok(init) = instance.get_typed_func::<u32, i32>(&mut store, SETUP_DUNDER) {
+        let setup_error = store.data_mut().create_bytes_sink();
+        let res = call_sync_typed_func(&init, &mut store, setup_error, supports_async);
+        let error = store.data_mut().take_bytes_sink(setup_error);
+
+        let res = res
+            .map_err(ExecutionError::Trap)
+            .and_then(|code| handle_error_sink_code(code, error));
+
+        res.map_err(|e| match e {
+            ExecutionError::User(err) => InitializationError::Setup(err),
+            ExecutionError::Recoverable(err) | ExecutionError::Trap(err) => {
+                let func = SETUP_DUNDER.to_owned();
+                InitializationError::RuntimeError { err, func }
+            }
+        })?
+    }
+
+    let call_reducer = instance
+        .get_typed_func(&mut store, CALL_REDUCER_DUNDER)
+        .expect("no call_reducer");
+
+    let call_procedure = get_call_procedure(&mut store, &instance);
+    let call_view = get_call_view(&mut store, &instance);
+    let call_view_anon = get_call_view_anon(&mut store, &instance);
+    store
+        .data_mut()
+        .set_call_view_exports(call_view.clone(), call_view_anon.clone());
+    let call_http_handler = get_call_http_handler(&mut store, &instance);
+
+    Ok(WasmtimeInstance {
+        store,
+        instance,
+        call_reducer,
+        call_procedure,
+        call_view,
+        call_view_anon,
+        call_http_handler,
+        supports_async,
+    })
 }
 
 /// Look up the `instance`'s export named by [`CALL_PROCEDURE_DUNDER`].
@@ -334,6 +471,20 @@ fn get_call_view_anon(store: &mut Store<WasmInstanceEnv>, instance: &Instance) -
             .unwrap_or_else(|| panic!("{CALL_VIEW_ANON_DUNDER} export is not a function"))
             .typed(store)
             .unwrap_or_else(|err| panic!("{CALL_VIEW_ANON_DUNDER} export is a function with incorrect type: {err}")),
+    )
+}
+
+/// Look up the `instance`'s export named by [`CALL_HTTP_HANDLER_DUNDER`].
+///
+/// Similar to [`get_call_procedure`], but for HTTP handlers.
+fn get_call_http_handler(store: &mut Store<WasmInstanceEnv>, instance: &Instance) -> Option<CallHttpHandlerType> {
+    let export = instance.get_export(store.as_context_mut(), CALL_HTTP_HANDLER_DUNDER)?;
+    Some(
+        export
+            .into_func()
+            .unwrap_or_else(|| panic!("{CALL_HTTP_HANDLER_DUNDER} export is not a function"))
+            .typed(store)
+            .unwrap_or_else(|err| panic!("{CALL_HTTP_HANDLER_DUNDER} export is a function with incorrect type: {err}")),
     )
 }
 
@@ -401,6 +552,25 @@ pub(super) type CallViewAnonType = TypedFunc<
     i32,
 >;
 
+/// The function signature of `__call_http_handler__`
+pub(super) type CallHttpHandlerType = TypedFunc<
+    (
+        // HttpHandlerId
+        u32,
+        // timestamp
+        u64,
+        // byte source id for request metadata
+        u32,
+        // byte source id for request body
+        u32,
+        // byte sink id for response metadata
+        u32,
+        // byte sink id for response body
+        u32,
+    ),
+    i32,
+>;
+
 pub struct WasmtimeInstance {
     store: Store<WasmInstanceEnv>,
     instance: Instance,
@@ -408,6 +578,8 @@ pub struct WasmtimeInstance {
     call_procedure: Option<CallProcedureType>,
     call_view: Option<CallViewType>,
     call_view_anon: Option<CallViewAnonType>,
+    call_http_handler: Option<CallHttpHandlerType>,
+    supports_async: bool,
 }
 
 impl module_host_actor::WasmInstance for WasmtimeInstance {
@@ -419,14 +591,14 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             .get_typed_func::<u32, ()>(&mut self.store, describer_func_name)
             .map_err(DescribeError::Signature)?;
 
-        let sink = self.store.data_mut().setup_standard_bytes_sink();
+        let sink = self.store.data_mut().create_bytes_sink();
 
         run_describer(log_traceback, || {
-            call_sync_typed_func(&describer, &mut self.store, sink)
+            call_sync_typed_func(&describer, &mut self.store, sink, self.supports_async)
         })?;
 
         // Fetch the bsatn returned by the describer call.
-        let bytes = self.store.data_mut().take_standard_bytes_sink();
+        let bytes = self.store.data_mut().take_bytes_sink(sink);
 
         let desc: RawModuleDef = bsatn::from_slice(&bytes).map_err(DescribeError::Decode)?;
 
@@ -479,9 +651,10 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
                 args_source.0,
                 errors_sink,
             ),
+            self.supports_async,
         );
 
-        let (stats, error) = finish_opcall(store, budget);
+        let (stats, error) = finish_opcall(store, budget, errors_sink);
 
         let call_result = call_result
             .map_err(ExecutionError::Trap)
@@ -512,9 +685,10 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             Some(*op.sender),
             args_source.0,
             errors_sink,
+            self.supports_async,
         );
 
-        let (stats, result_bytes) = finish_opcall(store, budget);
+        let (stats, result_bytes) = finish_opcall(store, budget, errors_sink);
 
         let call_result = call_result
             .map_err(ExecutionError::Trap)
@@ -548,9 +722,10 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             None,
             args_source.0,
             errors_sink,
+            self.supports_async,
         );
 
-        let (stats, result_bytes) = finish_opcall(store, budget);
+        let (stats, result_bytes) = finish_opcall(store, budget, errors_sink);
 
         let call_result = call_result
             .map_err(ExecutionError::Trap)
@@ -570,6 +745,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         budget: FunctionBudget,
     ) -> (module_host_actor::ProcedureExecuteResult, Option<TransactionOffset>) {
         let store = &mut self.store;
+        assert!(self.supports_async, "procedures require an async Wasmtime instance");
+
         prepare_store_for_call(store, budget);
 
         // Prepare sender identity and connection ID, as LITTLE-ENDIAN byte arrays.
@@ -584,7 +761,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let Some(call_procedure) = self.call_procedure.as_ref() else {
             let res = module_host_actor::ProcedureExecuteResult {
-                stats: zero_execution_stats(store),
+                stats: ExecutionStats::default(),
                 call_result: Err(anyhow::anyhow!(
                     "Module defines procedure {} but does not export `{}`",
                     op.name,
@@ -616,7 +793,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         store.data_mut().terminate_dangling_anon_tx();
 
         // Close the timing span for this procedure and get the BSATN bytes of its result.
-        let (stats, result_bytes) = finish_opcall(store, budget);
+        let (stats, result_bytes) = finish_opcall(store, budget, result_sink);
 
         let call_result = call_result.and_then(|code| {
             (code == 0).then_some(result_bytes.into()).ok_or_else(|| {
@@ -630,6 +807,74 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         // Take the last tx offset.
         // Only commits for anonymous transactions currently cause this to advance.
+        let tx_offset = store.data_mut().take_procedure_tx_offset();
+
+        (res, tx_offset)
+    }
+
+    #[tracing::instrument(level = "trace", skip_all)]
+    async fn call_http_handler(
+        &mut self,
+        op: module_host_actor::HttpHandlerOp,
+        budget: FunctionBudget,
+    ) -> (module_host_actor::HttpHandlerExecuteResult, Option<TransactionOffset>) {
+        let store = &mut self.store;
+        prepare_store_for_call(store, budget);
+
+        let call_type = op.call_type();
+        let (request_source, response_sink) =
+            store
+                .data_mut()
+                .start_funcall(op.name.clone(), op.request_bytes, op.timestamp, call_type);
+        let request_body_source = store
+            .data_mut()
+            .create_extra_bytes_source(op.request_body_bytes)
+            .expect("failed to register http handler request body");
+        let response_body_sink = store.data_mut().create_bytes_sink();
+
+        let Some(call_http_handler) = self.call_http_handler.as_ref() else {
+            let res = module_host_actor::HttpHandlerExecuteResult {
+                stats: ExecutionStats::default(),
+                call_result: Err(anyhow::anyhow!(
+                    "Module defines http handler {} but does not export `{}`",
+                    op.name,
+                    CALL_HTTP_HANDLER_DUNDER,
+                )),
+            };
+            return (res, None);
+        };
+
+        let call_result = call_http_handler
+            .call_async(
+                &mut *store,
+                (
+                    op.id.0,
+                    op.timestamp.to_micros_since_unix_epoch() as u64,
+                    request_source.0,
+                    request_body_source.0,
+                    response_sink,
+                    response_body_sink,
+                ),
+            )
+            .await;
+
+        store.data_mut().terminate_dangling_anon_tx();
+
+        let (stats, result_bytes, response_body_bytes) =
+            finish_http_handler_opcall(store, budget, response_sink, response_body_sink);
+
+        let call_result = call_result.and_then(|code| {
+            (code == 0)
+                .then_some((result_bytes.into(), response_body_bytes.into()))
+                .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "{CALL_HTTP_HANDLER_DUNDER} returned unexpected code {code}. HTTP handlers should return code 0 or trap."
+                )
+                })
+        });
+
+        let res = module_host_actor::HttpHandlerExecuteResult { stats, call_result };
+
         let tx_offset = store.data_mut().take_procedure_tx_offset();
 
         (res, tx_offset)
@@ -683,11 +928,15 @@ fn prepare_connection_id_for_call(caller_connection_id: ConnectionId) -> [u64; 2
 }
 
 /// Finish the op call and calculate its [`ExecutionStats`].
-fn finish_opcall(store: &mut Store<WasmInstanceEnv>, initial_budget: FunctionBudget) -> (ExecutionStats, Vec<u8>) {
+fn finish_opcall(
+    store: &mut Store<WasmInstanceEnv>,
+    initial_budget: FunctionBudget,
+    result_sink: u32,
+) -> (ExecutionStats, Vec<u8>) {
     // Signal that this call is finished. This gets us the timings
     // associated with it, and clears all of the instance state
     // related to it.
-    let (timings, ret_bytes) = store.data_mut().finish_funcall();
+    let (timings, ret_bytes) = store.data_mut().finish_funcall(result_sink);
 
     let remaining_fuel = get_store_fuel(store);
     let remaining: FunctionBudget = remaining_fuel.into();
@@ -696,20 +945,26 @@ fn finish_opcall(store: &mut Store<WasmInstanceEnv>, initial_budget: FunctionBud
         remaining,
     };
 
-    let stats = ExecutionStats {
-        energy,
-        timings,
-        memory_allocation: get_memory_size(store),
-    };
+    record_memory_size(store);
+
+    let stats = ExecutionStats { energy, timings };
     (stats, ret_bytes)
 }
 
-fn zero_execution_stats(store: &Store<WasmInstanceEnv>) -> ExecutionStats {
-    ExecutionStats {
-        energy: module_host_actor::EnergyStats::ZERO,
-        timings: module_host_actor::ExecutionTimings::zero(),
-        memory_allocation: get_memory_size(store),
-    }
+fn record_memory_size(store: &mut Store<WasmInstanceEnv>) {
+    let memory_usage = get_memory_size(store);
+    store.data_mut().record_memory_size(memory_usage);
+}
+
+fn finish_http_handler_opcall(
+    store: &mut Store<WasmInstanceEnv>,
+    initial_budget: FunctionBudget,
+    response_sink: u32,
+    response_body_sink: u32,
+) -> (ExecutionStats, Vec<u8>, Vec<u8>) {
+    let response_body_bytes = store.data_mut().take_bytes_sink(response_body_sink);
+    let (stats, response_bytes) = finish_opcall(store, initial_budget, response_sink);
+    (stats, response_bytes, response_body_bytes)
 }
 
 fn get_memory_size(store: &Store<WasmInstanceEnv>) -> usize {
@@ -719,7 +974,6 @@ fn get_memory_size(store: &Store<WasmInstanceEnv>) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::energy::EnergyQuanta;
 
     #[test]
     fn test_fuel() {
@@ -730,8 +984,8 @@ mod tests {
         let budget = FunctionBudget::DEFAULT_BUDGET;
         set_store_fuel(&mut store, budget.into());
         store.set_fuel(store.get_fuel().unwrap() - 10).unwrap();
-        let remaining: EnergyQuanta = get_store_fuel(&store).into();
-        let used = EnergyQuanta::from(budget) - remaining;
-        assert_eq!(used, EnergyQuanta::new(10));
+        let remaining: FunctionBudget = get_store_fuel(&store).into();
+        let used = budget - remaining;
+        assert_eq!(used, FunctionBudget::new(10));
     }
 }

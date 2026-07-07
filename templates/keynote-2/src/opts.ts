@@ -4,6 +4,8 @@ import {
   defaultBenchTestName,
   defaultDemoSystems,
   getSharedRuntimeDefaults,
+  parseAlphaList,
+  parseStdbCompression,
   parseConnectorList,
   type BenchOptions,
   type ConcurrencyTests,
@@ -141,7 +143,11 @@ function addSharedRuntimeOptions(parser: CLIParser): CLIParser {
   return parser
     .option('--seconds <seconds>', 'Number of seconds to benchmark for', num())
     .option('--concurrency <concurrency>', 'Concurrent clients to run', num())
-    .option('--alpha <alpha>', 'Alpha value', num())
+    .option(
+      '--alpha <alpha>',
+      'Zipf alpha. Accepts a single value or a comma-separated list (e.g. `0,1.5`).',
+      str(),
+    )
     .option('--accounts <num>', 'Number of accounts to run with', num())
     .option(
       '--initial-balance <balance>',
@@ -151,9 +157,13 @@ function addSharedRuntimeOptions(parser: CLIParser): CLIParser {
     .option('--stdb-url <url>', 'SpacetimeDB url', str())
     .option('--stdb-module <name>', 'SpacetimeDB module name', str())
     .option('--stdb-module-path <dir>', 'SpacetimeDB module path', str())
+    .option(
+      '--stdb-compression <mode>',
+      'SpacetimeDB client compression mode (`none` or `gzip`)',
+      str(),
+    )
     .option('--no-stdb-confirmed-reads', 'Disable confirmed reads')
     .option('--use-docker', 'Use docker')
-    .option('--no-use-spacetime-metrics-endpoint', '')
     .option('--pool-max <num>', 'Max pool size for postgres', num())
     .option('--bun-url <url>', 'Bun server url', str())
     .option('--convex-url <url>', 'Convex server url', str())
@@ -187,12 +197,13 @@ function resolveRuntimeOptions(
     stdbUrl: normalizeStdbUrl(options.stdbUrl ?? defaults.stdbUrl),
     stdbModule: options.stdbModule ?? defaults.stdbModule,
     stdbModulePath: options.stdbModulePath ?? defaults.stdbModulePath,
+    stdbCompression: parseStdbCompression(
+      options.stdbCompression ?? defaults.stdbCompression,
+      '--stdb-compression',
+    ),
     stdbConfirmedReads:
       options.stdbConfirmedReads ?? defaults.stdbConfirmedReads,
     useDocker: options.useDocker ?? defaults.useDocker,
-    useSpacetimeMetricsEndpoint:
-      options.useSpacetimeMetricsEndpoint ??
-      defaults.useSpacetimeMetricsEndpoint,
     poolMax: options.poolMax ?? defaults.poolMax,
     bunUrl: options.bunUrl ?? defaults.bunUrl,
     convexUrl: options.convexUrl ?? defaults.convexUrl,
@@ -293,11 +304,16 @@ export function parseDemoOptions(argv: string[] = process.argv): DemoOptions {
 
   const runtimeOptions = resolveRuntimeOptions(options, runtimeDefaults);
 
+  const demoAlphas = parseAlphaList(
+    options.alpha as string | number | string[] | undefined,
+    '--alpha',
+  );
+
   return {
     ...runtimeOptions,
-    seconds: options.seconds ?? 10,
-    concurrency: options.concurrency ?? 10,
-    alpha: options.alpha ?? 1.5,
+    seconds: options.seconds ?? 300,
+    concurrency: options.concurrency ?? 64,
+    alpha: demoAlphas?.[0] ?? 1.5,
     systems:
       options.systems ?? options.connectors ?? [...defaultDemoSystems],
     skipPrep: options.skipPrep ?? false,
@@ -323,6 +339,15 @@ export function parseBenchOptions(argv: string[] = process.argv): BenchOptions {
       type: 'strings',
       possibleValues: validConnectors,
     })
+    .option(
+      '--runs <num>',
+      'Repeat each (connector, alpha) combination this many times. One JSON written per run.',
+      num(),
+    )
+    .option(
+      '--prep-between-alphas',
+      'Run `pnpm run prep` before each (connector, alpha) combination to reset DB state.',
+    )
     .option(
       '--contention-tests <spec>',
       'Run alpha sweep as start,end,step,concurrency',
@@ -365,13 +390,20 @@ export function parseBenchOptions(argv: string[] = process.argv): BenchOptions {
       }
     : null;
 
+  const parsedAlphas = parseAlphaList(
+    options.alpha as string | number | string[] | undefined,
+    '--alpha',
+  );
+
   return {
     ...runtimeOptions,
     testName: args[0] ?? defaultBenchTestName,
-    seconds: options.seconds ?? 1,
+    seconds: options.seconds ?? 300,
     concurrency:
-      contentionTests?.concurrency ?? options.concurrency ?? 10,
-    alpha: concurrencyTests?.alpha ?? options.alpha ?? 1.5,
+      contentionTests?.concurrency ?? options.concurrency ?? 64,
+    alphas: parsedAlphas ?? [concurrencyTests?.alpha ?? 1.5],
+    runs: options.runs ?? 1,
+    prepBetweenAlphas: options.prepBetweenAlphas ?? false,
     connectors: options.connectors ?? options.systems ?? null,
     contentionTests,
     concurrencyTests,
