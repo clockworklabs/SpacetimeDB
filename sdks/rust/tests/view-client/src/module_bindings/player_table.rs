@@ -40,6 +40,18 @@ impl PlayerTableAccess for super::RemoteTables {
 pub struct PlayerInsertCallbackId(__sdk::CallbackId);
 pub struct PlayerDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for PlayerTableHandle<'ctx> {
+    type Row = Player;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = Player> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for PlayerTableHandle<'ctx> {
     type Row = Player;
     type EventContext = super::EventContext;
@@ -78,9 +90,54 @@ impl<'ctx> __sdk::Table for PlayerTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithInsert for PlayerTableHandle<'ctx> {
+    type InsertCallbackId = PlayerInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PlayerInsertCallbackId {
+        PlayerInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: PlayerInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for PlayerTableHandle<'ctx> {
+    type DeleteCallbackId = PlayerDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> PlayerDeleteCallbackId {
+        PlayerDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: PlayerDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
 pub struct PlayerUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for PlayerTableHandle<'ctx> {
+    type UpdateCallbackId = PlayerUpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> PlayerUpdateCallbackId {
+        PlayerUpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: PlayerUpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithUpdate for PlayerTableHandle<'ctx> {
     type UpdateCallbackId = PlayerUpdateCallbackId;
 
     fn on_update(

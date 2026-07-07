@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class ProceduralViewPkPlayersHandle : RemoteTableHandle<EventContext, ViewPkPlayer>
         {
-            protected override string RemoteTableName => "procedural_view_pk_players";
+            public override string RemoteTableName => "procedural_view_pk_players";
 
             internal ProceduralViewPkPlayersHandle(DbConnection conn) : base(conn)
             {

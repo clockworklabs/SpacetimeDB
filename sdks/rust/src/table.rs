@@ -7,6 +7,79 @@
 //! which mediate access to tables in the client cache.
 //! Obtain a table handle by calling a method on `ctx.db`, where `ctx` is a `DbConnection` or `EventContext`.
 
+/// Supports common table handle operations.
+///
+/// This trait is implemented by generated handles for persistent tables,
+/// views, and event tables.
+pub trait TableLike {
+    /// The type of rows stored in this table.
+    type Row: 'static;
+
+    /// The `EventContext` type generated for the module which defines this table.
+    type EventContext;
+
+    /// The number of subscribed rows in the client cache.
+    fn count(&self) -> u64;
+
+    /// An iterator over all the subscribed rows in the client cache.
+    fn iter(&self) -> impl Iterator<Item = Self::Row> + '_;
+}
+
+/// Supports callbacks for inserted rows.
+pub trait WithInsert: TableLike {
+    type InsertCallbackId;
+
+    /// Register a callback to run whenever a subscribed row is inserted into the client cache.
+    ///
+    /// The returned [`Self::InsertCallbackId`] can be passed to [`Self::remove_on_insert`]
+    /// to cancel the callback.
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> Self::InsertCallbackId;
+
+    /// Cancel a callback previously registered by [`Self::on_insert`], causing it not to run in the future.
+    fn remove_on_insert(&self, callback: Self::InsertCallbackId);
+}
+
+/// Supports callbacks for deleted rows.
+pub trait WithDelete: TableLike {
+    type DeleteCallbackId;
+
+    /// Register a callback to run whenever a subscribed row is deleted from the client cache.
+    ///
+    /// The returned [`Self::DeleteCallbackId`] can be passed to [`Self::remove_on_delete`]
+    /// to cancel the callback.
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> Self::DeleteCallbackId;
+
+    /// Cancel a callback previously registered by [`Self::on_delete`], causing it not to run in the future.
+    fn remove_on_delete(&self, callback: Self::DeleteCallbackId);
+}
+
+/// Supports callbacks for updated rows.
+pub trait WithUpdate: TableLike {
+    type UpdateCallbackId;
+
+    /// Register a callback to run whenever a subscribed row is updated within a transaction,
+    /// with an old version deleted and a new version inserted with the same primary key.
+    ///
+    /// The callback's arguments are `(ctx, old, new)`,
+    /// where `old` is the deleted row, and `new` is the inserted row.
+    ///
+    /// The returned [`Self::UpdateCallbackId`] can be passed to [`Self::remove_on_update`]
+    /// to cancel the callback.
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> Self::UpdateCallbackId;
+
+    /// Cancel a callback previously registered by [`Self::on_update`], causing it not to run in the future.
+    fn remove_on_update(&self, callback: Self::UpdateCallbackId);
+}
+
 /// Trait implemented by table handles, which mediate access to tables in the client cache.
 ///
 /// Obtain a table handle by calling a method on `ctx.db`, where `ctx` is a `DbConnection` or `EventContext`.

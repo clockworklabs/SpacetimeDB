@@ -50,7 +50,6 @@ concurrency:
 jobs:
   run-benchmarks:
     runs-on: spacetimedb-new-runner-2
-    timeout-minutes: 180
 
     steps:
       - name: Checkout repository
@@ -114,7 +113,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           LLM_VENDOR: openrouter
           LLM_BENCHMARK_API_KEY: ${{ secrets.LLM_BENCHMARK_API_KEY }}
-          LLM_BENCHMARK_UPLOAD_URL: ${{ secrets.LLM_BENCHMARK_UPLOAD_URL }}
+          LLM_BENCHMARK_UPLOAD_URL: ${{ vars.LLM_BENCHMARK_UPLOAD_URL }}
           DOTNET_MULTILEVEL_LOOKUP: "0"
           DOTNET_CLI_HOME: ${{ runner.temp }}/dotnet-home
           DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"

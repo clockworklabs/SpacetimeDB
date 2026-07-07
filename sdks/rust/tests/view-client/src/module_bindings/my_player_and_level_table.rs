@@ -40,6 +40,18 @@ impl MyPlayerAndLevelTableAccess for super::RemoteTables {
 pub struct MyPlayerAndLevelInsertCallbackId(__sdk::CallbackId);
 pub struct MyPlayerAndLevelDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for MyPlayerAndLevelTableHandle<'ctx> {
+    type Row = PlayerAndLevel;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = PlayerAndLevel> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for MyPlayerAndLevelTableHandle<'ctx> {
     type Row = PlayerAndLevel;
     type EventContext = super::EventContext;
@@ -64,6 +76,36 @@ impl<'ctx> __sdk::Table for MyPlayerAndLevelTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = MyPlayerAndLevelDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> MyPlayerAndLevelDeleteCallbackId {
+        MyPlayerAndLevelDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: MyPlayerAndLevelDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for MyPlayerAndLevelTableHandle<'ctx> {
+    type InsertCallbackId = MyPlayerAndLevelInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> MyPlayerAndLevelInsertCallbackId {
+        MyPlayerAndLevelInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: MyPlayerAndLevelInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for MyPlayerAndLevelTableHandle<'ctx> {
     type DeleteCallbackId = MyPlayerAndLevelDeleteCallbackId;
 
     fn on_delete(

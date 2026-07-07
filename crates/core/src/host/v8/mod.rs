@@ -85,7 +85,7 @@ use crate::host::wasm_common::module_host_actor::{
     ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp, WasmInstance,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
-use crate::host::{ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
+use crate::host::{InitDatabaseResult, ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
@@ -535,7 +535,7 @@ impl JsMainInstance {
         self.request(DisconnectClientRequest { client_id }).await
     }
 
-    pub async fn init_database(&self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
+    pub async fn init_database(&self, program: Program) -> anyhow::Result<InitDatabaseResult> {
         self.request(InitDatabaseRequest { program }).await
     }
 
@@ -662,7 +662,7 @@ js_main_request! {
 js_main_request! {
     InitDatabaseRequest {
         program: Program,
-    } => "init_database", anyhow::Result<Option<ReducerCallResult>>, InitDatabase
+    } => "init_database", anyhow::Result<InitDatabaseResult>, InitDatabase
 }
 
 js_main_request! {
@@ -862,7 +862,7 @@ enum JsMainWorkerRequest {
     },
     /// See [`JsMainInstance::init_database`].
     InitDatabase {
-        reply_tx: JsReplyTx<anyhow::Result<Option<ReducerCallResult>>>,
+        reply_tx: JsReplyTx<anyhow::Result<InitDatabaseResult>>,
         program: Program,
     },
 }
@@ -1489,8 +1489,8 @@ fn handle_main_worker_request(
         }
         JsMainWorkerRequest::InitDatabase { reply_tx, program } => {
             handle_worker_request("init_database", reply_tx, || {
-                let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
-                let (res, trapped): (Result<Option<ReducerCallResult>, anyhow::Error>, bool) =
+                let call_reducer = |tx, params| instance_common.call_reducer_with_tx_offset(tx, params, inst);
+                let (res, trapped): (Result<InitDatabaseResult, anyhow::Error>, bool) =
                     init_database(replica_ctx, &info.module_def, program, call_reducer);
                 (res, trapped)
             })
