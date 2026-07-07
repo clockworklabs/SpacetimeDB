@@ -3,8 +3,8 @@ use std::future::Future;
 use std::num::NonZeroUsize;
 use std::panic;
 use std::pin::{pin, Pin};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
@@ -247,12 +247,103 @@ where
     Ok(res)
 }
 
+/// Why a websocket connection ended.
+///
+/// Recorded in the [`ActorState`] by whichever part of the actor decides to
+/// terminate the connection (or observes its termination), and reported via
+/// the `ws_clients_disconnected` metric and the final connection log line.
+///
+/// The first cause recorded wins: later causes are usually knock-on effects
+/// of the first (e.g. a close initiated due to idle timeout also ends the
+/// receive stream).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+enum DisconnectCause {
+    /// The connection ended without any part of the actor recording a cause.
+    Unknown = 0,
+    /// The client initiated a close handshake.
+    ClientClose = 1,
+    /// The server initiated a close because nothing was received from the
+    /// client and no send progress was made for [`WebSocketOptions::idle_timeout`].
+    IdleTimeout = 2,
+    /// The websocket stream yielded an error (e.g. the TCP connection was
+    /// reset or timed out).
+    RecvError = 3,
+    /// Sending on the websocket failed.
+    SendError = 4,
+    /// The client sent a message the server could not handle
+    /// (e.g. a malformed or unexpected message).
+    ClientError = 5,
+    /// The client sent requests faster than they could be processed for an
+    /// extended period ([`WebSocketOptions::incoming_queue_length`]).
+    IncomingBacklog = 6,
+    /// The module was shut down.
+    ModuleExit = 7,
+}
+
+impl DisconnectCause {
+    fn from_u8(value: u8) -> Self {
+        match value {
+            1 => Self::ClientClose,
+            2 => Self::IdleTimeout,
+            3 => Self::RecvError,
+            4 => Self::SendError,
+            5 => Self::ClientError,
+            6 => Self::IncomingBacklog,
+            7 => Self::ModuleExit,
+            _ => Self::Unknown,
+        }
+    }
+
+    /// Label value for the `ws_clients_disconnected` metric.
+    ///
+    /// Note: `capacity_kick` is a further value of this label,
+    /// recorded in `ClientConnectionSender::send`, which aborts the actor
+    /// and thus cannot be observed here.
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Unknown => "unknown",
+            Self::ClientClose => "client_close",
+            Self::IdleTimeout => "idle_timeout",
+            Self::RecvError => "recv_error",
+            Self::SendError => "send_error",
+            Self::ClientError => "client_error",
+            Self::IncomingBacklog => "incoming_backlog",
+            Self::ModuleExit => "module_exit",
+        }
+    }
+}
+
+/// Metadata about an outgoing message, attached to its first [`Frame`].
+struct MsgTag {
+    workload: Option<WorkloadType>,
+    encoded_len: usize,
+}
+
+/// An outgoing message currently being written to the socket, frame by frame.
+struct InFlightMessage {
+    workload: Option<WorkloadType>,
+    encoded_len: usize,
+    started: Instant,
+}
+
 struct ActorState {
     pub client_id: ClientActorId,
     pub database: Identity,
     config: WebSocketOptions,
     closed: AtomicBool,
     got_pong: AtomicBool,
+    /// See [`DisconnectCause`]. First write wins.
+    disconnect_cause: AtomicU8,
+    /// When the last `Ping` frame was written to the socket.
+    /// Taken when the corresponding `Pong` arrives, to observe the roundtrip time.
+    last_ping_sent: Mutex<Option<Instant>>,
+    /// The outgoing message whose frames are currently being written to the
+    /// socket, if any. Diagnostic: a connection that ends with a message in
+    /// flight for a long time was too slow to drain it, not dead.
+    in_flight_msg: Mutex<Option<InFlightMessage>>,
+    /// Total payload bytes of data frames written to the socket.
+    bytes_sent: AtomicU64,
 }
 
 impl ActorState {
@@ -263,6 +354,10 @@ impl ActorState {
             config,
             closed: AtomicBool::new(false),
             got_pong: AtomicBool::new(true),
+            disconnect_cause: AtomicU8::new(DisconnectCause::Unknown as u8),
+            last_ping_sent: Mutex::new(None),
+            in_flight_msg: Mutex::new(None),
+            bytes_sent: AtomicU64::new(0),
         }
     }
 
@@ -285,6 +380,83 @@ impl ActorState {
     pub fn next_idle_deadline(&self) -> Instant {
         Instant::now() + self.config.idle_timeout
     }
+
+    /// Record the cause of the disconnect, unless one was already recorded.
+    fn set_disconnect_cause(&self, cause: DisconnectCause) {
+        let _ = self.disconnect_cause.compare_exchange(
+            DisconnectCause::Unknown as u8,
+            cause as u8,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        );
+    }
+
+    fn disconnect_cause(&self) -> DisconnectCause {
+        DisconnectCause::from_u8(self.disconnect_cause.load(Ordering::Relaxed))
+    }
+
+    /// Record that a `Ping` frame was written to the socket.
+    fn record_ping_sent(&self) {
+        *self.last_ping_sent.lock().unwrap() = Some(Instant::now());
+    }
+
+    /// Record that the client's `Pong` was processed,
+    /// observing the ping-pong roundtrip time.
+    ///
+    /// This time includes any queueing of the `Ping` behind other outgoing
+    /// data in the TCP stream, which is exactly what makes its tail
+    /// interesting: it measures how far behind the client is.
+    fn record_pong(&self) {
+        if let Some(sent) = self.last_ping_sent.lock().unwrap().take() {
+            WORKER_METRICS
+                .websocket_pong_rtt
+                .with_label_values(&self.database)
+                .observe(sent.elapsed().as_secs_f64());
+        }
+    }
+
+    /// Record that the first frame of an outgoing message was written to the socket.
+    fn begin_message(&self, tag: MsgTag) {
+        *self.in_flight_msg.lock().unwrap() = Some(InFlightMessage {
+            workload: tag.workload,
+            encoded_len: tag.encoded_len,
+            started: Instant::now(),
+        });
+    }
+
+    /// Record that the final frame of the in-flight message was written to the
+    /// socket, observing the time it took to deliver all of its frames.
+    fn finish_message(&self) {
+        if let Some(msg) = self.in_flight_msg.lock().unwrap().take() {
+            if let Some(workload) = msg.workload {
+                WORKER_METRICS
+                    .websocket_message_send_secs
+                    .with_label_values(&self.database, &workload)
+                    .observe(msg.started.elapsed().as_secs_f64());
+            }
+        }
+    }
+
+    fn note_bytes_sent(&self, n: usize) {
+        self.bytes_sent.fetch_add(n as u64, Ordering::Relaxed);
+    }
+
+    fn bytes_sent(&self) -> u64 {
+        self.bytes_sent.load(Ordering::Relaxed)
+    }
+
+    /// Human-readable description of the in-flight message, for the final
+    /// connection log line.
+    fn describe_in_flight_msg(&self) -> Option<String> {
+        self.in_flight_msg.lock().unwrap().as_ref().map(|msg| {
+            format!(
+                "{} message of {} bytes, sending for {:?}",
+                msg.workload.as_ref().map(|w| w.as_ref()).unwrap_or("untyped"),
+                msg.encoded_len,
+                msg.started.elapsed()
+            )
+        })
+    }
 }
 
 /// Configuration for WebSocket connections.
@@ -302,8 +474,10 @@ pub struct WebSocketOptions {
     pub ping_interval: Duration,
     /// Amount of time after which an idle connection is closed.
     ///
-    /// A connection is considered idle if no data is received nor sent.
-    /// This includes `Ping`/`Pong` frames used for keep-alive.
+    /// A connection is considered idle if no data is received from the client
+    /// (including `Pong` frames answering our keep-alive `Ping`s) *and* no
+    /// send progress is made towards it. A slow client that keeps accepting
+    /// data is not idle, no matter how long it takes to drain a large message.
     ///
     /// Value must be greater than `ping_interval`.
     ///
@@ -311,6 +485,20 @@ pub struct WebSocketOptions {
     #[serde(with = "humantime_duration")]
     #[serde(default = "WebSocketOptions::default_idle_timeout")]
     pub idle_timeout: Duration,
+    /// `TCP_USER_TIMEOUT` to apply to the server's listening socket,
+    /// inherited by accepted connections. Linux only; ignored elsewhere.
+    ///
+    /// If data sent to a peer remains unacknowledged at the TCP level for this
+    /// long, the kernel closes the connection. This—not `idle-timeout`—is the
+    /// dead-peer detector: a peer whose TCP stack acknowledges data is alive,
+    /// however slowly its application reads.
+    ///
+    /// Set to `"0s"` to leave the OS default in place.
+    ///
+    /// Default: 2min
+    #[serde(with = "humantime_duration")]
+    #[serde(default = "WebSocketOptions::default_tcp_user_timeout")]
+    pub tcp_user_timeout: Duration,
     /// For how long to keep draining the incoming messages until a client close
     /// is received.
     ///
@@ -336,12 +524,14 @@ impl Default for WebSocketOptions {
 impl WebSocketOptions {
     const DEFAULT_PING_INTERVAL: Duration = Duration::from_secs(15);
     const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+    const DEFAULT_TCP_USER_TIMEOUT: Duration = Duration::from_secs(120);
     const DEFAULT_CLOSE_HANDSHAKE_TIMEOUT: Duration = Duration::from_millis(250);
     const DEFAULT_INCOMING_QUEUE_LENGTH: NonZeroUsize = NonZeroUsize::new(16384).expect("16384 > 0, qed");
 
     const DEFAULT: Self = Self {
         ping_interval: Self::DEFAULT_PING_INTERVAL,
         idle_timeout: Self::DEFAULT_IDLE_TIMEOUT,
+        tcp_user_timeout: Self::DEFAULT_TCP_USER_TIMEOUT,
         close_handshake_timeout: Self::DEFAULT_CLOSE_HANDSHAKE_TIMEOUT,
         incoming_queue_length: Self::DEFAULT_INCOMING_QUEUE_LENGTH,
     };
@@ -352,6 +542,10 @@ impl WebSocketOptions {
 
     const fn default_idle_timeout() -> Duration {
         Self::DEFAULT_IDLE_TIMEOUT
+    }
+
+    const fn default_tcp_user_timeout() -> Duration {
+        Self::DEFAULT_TCP_USER_TIMEOUT
     }
 
     const fn default_close_handshake_timeout() -> Duration {
@@ -389,6 +583,7 @@ async fn ws_client_actor_inner(
     let client_id = client.id;
     let client_closed_metric = WORKER_METRICS.ws_clients_closed_connection.with_label_values(&database);
     let state = Arc::new(ActorState::new(database, client_id, config));
+    let connected_at = Instant::now();
 
     // Channel for [`UnorderedWsMessage`]s.
     let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
@@ -397,7 +592,12 @@ async fn ws_client_actor_inner(
     let (ws_send, ws_recv) = ws.split();
 
     // Set up the idle timer.
+    //
+    // The deadline is extended by the receive task whenever data arrives from
+    // the client, and by the send task whenever it makes progress writing to
+    // the socket (a slow client that keeps accepting data is not idle).
     let (idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
+    let idle_tx = Arc::new(idle_tx);
     let idle_timer = ws_idle_timer(idle_rx);
 
     let bsatn_rlb_pool = client.module().subscriptions().bsatn_rlb_pool.clone();
@@ -411,6 +611,7 @@ async fn ws_client_actor_inner(
         sendrx,
         unordered_rx,
         bsatn_rlb_pool,
+        idle_tx.clone(),
     ));
     // Spawn a task to handle incoming messages.
     let recv_task = tokio::spawn(ws_recv_task(
@@ -435,11 +636,23 @@ async fn ws_client_actor_inner(
         }
     };
 
-    ws_main_loop(state, hotswap, idle_timer, send_task, recv_task, move |msg| {
+    ws_main_loop(state.clone(), hotswap, idle_timer, send_task, recv_task, move |msg| {
         let _ = unordered_tx.send(msg);
     })
     .await;
-    log::info!("Client connection ended: {client_id}");
+
+    let cause = state.disconnect_cause();
+    WORKER_METRICS
+        .ws_clients_disconnected
+        .with_label_values(&database, cause.as_str())
+        .inc();
+    log::info!(
+        "Client connection ended: {client_id} cause={} connected_for={:?} bytes_sent={} in_flight_message={}",
+        cause.as_str(),
+        connected_at.elapsed(),
+        state.bytes_sent(),
+        state.describe_in_flight_msg().as_deref().unwrap_or("none"),
+    );
 }
 
 /// The main `select!` loop of the websocket client actor.
@@ -453,8 +666,12 @@ async fn ws_client_actor_inner(
 /// - Drive the tasks handling the send and receive ends of the websockets to
 ///   completion, terminating when either of them completes.
 ///
-/// - Terminating if the connection is idle for longer than [`ActorConfig::idle_timeout`].
-///   The connection becomes idle if nothing is received from the socket.
+/// - Initiating a close handshake if the connection is idle for longer than
+///   [`ActorConfig::idle_timeout`]. The connection becomes idle if nothing is
+///   received from the socket and no send progress is made. The close carries
+///   an "idle timeout" reason so that clients can tell why they were
+///   disconnected; if the handshake does not complete within
+///   [`SERVER_CLOSE_GRACE`], the connection is torn down.
 ///
 /// - Periodically sending `Ping` frames to prevent the connection from becoming
 ///   idle (the client is supposed to respond with `Pong`, which resets the
@@ -545,6 +762,15 @@ async fn ws_client_actor_inner(
 ///
 ///
 /// [close handshake]: https://datatracker.ietf.org/doc/html/rfc6455#section-7
+/// How long to wait for the close handshake to complete after the server
+/// initiated a close due to idle timeout, before tearing down the connection.
+const SERVER_CLOSE_GRACE: Duration = Duration::from_secs(10);
+
+/// How often, at most, the send loop extends the idle deadline when it makes
+/// write progress. Purely to avoid hammering the idle timer's watch channel
+/// once per frame on fast connections.
+const WRITE_PROGRESS_INTERVAL: Duration = Duration::from_secs(1);
+
 async fn ws_main_loop<HotswapWatcher>(
     state: Arc<ActorState>,
     hotswap: impl Fn() -> HotswapWatcher,
@@ -566,9 +792,14 @@ async fn ws_main_loop<HotswapWatcher>(
     let mut ping_interval = tokio::time::interval(state.config.ping_interval);
     // Arm the first hotswap watcher.
     let watch_hotswap = hotswap();
+    // Deadline for the close handshake to complete after we initiated a close
+    // due to idle timeout. Armed if and when the idle timer fires.
+    let close_grace = sleep_until(Instant::now());
+    let mut timed_out = false;
 
     pin_mut!(watch_hotswap);
     pin_mut!(idle_timer);
+    pin_mut!(close_grace);
 
     loop {
         let closed = state.closed();
@@ -603,9 +834,28 @@ async fn ws_main_loop<HotswapWatcher>(
                 break;
             },
 
-            // Exit if we haven't heard from the client for too long.
-            _ = &mut idle_timer => {
-                log::warn!("Client {} timed out", state.client_id);
+            // If we haven't heard from the client for too long, initiate a
+            // close handshake carrying the reason, so well-behaved clients can
+            // report why they were disconnected. Give the handshake a grace
+            // period to complete before tearing the connection down.
+            _ = &mut idle_timer, if !timed_out => {
+                log::warn!("Client {} timed out, closing", state.client_id);
+                state.set_disconnect_cause(DisconnectCause::IdleTimeout);
+                unordered_tx(UnorderedWsMessage::Close(CloseFrame {
+                    code: CloseCode::Away,
+                    reason: "idle timeout".into(),
+                }));
+                timed_out = true;
+                close_grace.as_mut().reset(Instant::now() + SERVER_CLOSE_GRACE);
+            },
+
+            // The close handshake initiated on idle timeout did not complete
+            // in time; tear the connection down.
+            _ = &mut close_grace, if timed_out => {
+                log::warn!(
+                    "Client {} did not complete close handshake after idle timeout, aborting",
+                    state.client_id
+                );
                 break;
             },
 
@@ -615,6 +865,7 @@ async fn ws_main_loop<HotswapWatcher>(
             // Branch is disabled if we already sent a close frame.
             res = &mut watch_hotswap, if !closed => {
                 if let Err(NoSuchModule) = res {
+                    state.set_disconnect_cause(DisconnectCause::ModuleExit);
                     let close = CloseFrame {
                         code: CloseCode::Away,
                         reason: "module exited".into()
@@ -697,7 +948,7 @@ async fn ws_idle_timer(mut activity: watch::Receiver<Instant>) {
 /// such that we wouldn't be able to receive any more messages anyway.
 async fn ws_recv_task<MessageHandler>(
     state: Arc<ActorState>,
-    idle_tx: watch::Sender<Instant>,
+    idle_tx: Arc<watch::Sender<Instant>>,
     client_closed_metric: IntGauge,
     message_handler: impl Fn(DataMessage, Instant) -> MessageHandler,
     unordered_tx: mpsc::UnboundedSender<UnorderedWsMessage>,
@@ -725,6 +976,7 @@ async fn ws_recv_task<MessageHandler>(
                 continue;
             }
             log::debug!("Client caused error: {e}");
+            state.set_disconnect_cause(DisconnectCause::ClientError);
             let close = CloseFrame {
                 code: CloseCode::Error,
                 reason: format!("{e:#}").into(),
@@ -750,7 +1002,7 @@ async fn ws_recv_task<MessageHandler>(
 /// state are dropped.
 fn ws_recv_loop(
     state: Arc<ActorState>,
-    idle_tx: watch::Sender<Instant>,
+    idle_tx: Arc<watch::Sender<Instant>>,
     mut ws: impl Stream<Item = Result<WsMessage, WsError>> + Unpin,
 ) -> impl Stream<Item = ClientMessage> {
     // Get the next message from `ws`, or `None` if the stream is exhausted.
@@ -825,6 +1077,7 @@ fn ws_recv_loop(
                     | WsError::Http(_)
                     | WsError::HttpFormat(_)) => {
                         log::warn!("Websocket receive error: {e}");
+                        state.set_disconnect_cause(DisconnectCause::RecvError);
                         break;
                     }
                 },
@@ -876,6 +1129,7 @@ fn ws_recv_queue(
                     mpsc::error::TrySendError::Full(item) => {
                         let client_id = state.client_id;
                         log::warn!("Client {client_id} exceeded incoming_queue_length limit of {max_incoming_queue_length} requests");
+                        state.set_disconnect_cause(DisconnectCause::IncomingBacklog);
                         // If we can't send close (send task already terminated):
                         //
                         // - Let downstream handlers know that we're closing,
@@ -966,9 +1220,11 @@ fn ws_client_message_handler(
                 ClientMessage::Pong(_bytes) => {
                     log::trace!("Received pong from client {}", state.client_id);
                     state.set_ponged();
+                    state.record_pong();
                 },
                 ClientMessage::Close(close_frame) => {
                     log::trace!("Received Close frame from client {}: {:?}", state.client_id, close_frame);
+                    state.set_disconnect_cause(DisconnectCause::ClientClose);
                     let was_closed = state.close();
                     // This is the client telling us they want to close.
                     if !was_closed {
@@ -1043,6 +1299,7 @@ impl<T: Send> Receiver<T> for mpsc::Receiver<T> {
 /// This is so `ws_client_actor_inner` keeps polling the receive end of the
 /// socket until the close handshake completes -- it would otherwise exit early
 /// when sending to `unordered` fails.
+#[allow(clippy::too_many_arguments)]
 async fn ws_send_loop(
     state: Arc<ActorState>,
     config: ClientConfig,
@@ -1050,9 +1307,10 @@ async fn ws_send_loop(
     messages: impl Receiver<SerializableMessage>,
     unordered: mpsc::UnboundedReceiver<UnorderedWsMessage>,
     bsatn_rlb_pool: BsatnRowListBuilderPool,
+    idle_tx: Arc<watch::Sender<Instant>>,
 ) {
     let metrics = SendMetrics::new(state.database);
-    ws_send_loop_inner(state, ws, messages, unordered, move |encode_rx, frames_tx| {
+    ws_send_loop_inner(state, ws, messages, unordered, idle_tx, move |encode_rx, frames_tx| {
         ws_encode_task(metrics, config, encode_rx, frames_tx, bsatn_rlb_pool)
     })
     .await
@@ -1063,7 +1321,8 @@ async fn ws_send_loop_inner<T, U, Encoder>(
     mut ws: impl Sink<WsMessage, Error: Display> + Unpin,
     mut messages: impl Receiver<T>,
     mut unordered: mpsc::UnboundedReceiver<UnorderedWsMessage>,
-    encoder: impl FnOnce(mpsc::UnboundedReceiver<U>, mpsc::UnboundedSender<Frame>) -> Encoder,
+    idle_tx: Arc<watch::Sender<Instant>>,
+    encoder: impl FnOnce(mpsc::UnboundedReceiver<U>, mpsc::UnboundedSender<(Frame, Option<MsgTag>)>) -> Encoder,
 ) where
     T: Into<U>,
     U: From<MessageExecutionError>,
@@ -1083,6 +1342,16 @@ async fn ws_send_loop_inner<T, U, Encoder>(
     const FRAME_BATCH_SIZE: usize = 8;
     let mut frames_batch = Vec::with_capacity(FRAME_BATCH_SIZE);
     let (frames_tx, mut frames_rx) = mpsc::unbounded_channel();
+
+    // When we last extended the idle deadline due to write progress.
+    //
+    // The socket accepting bytes means the client's TCP stack has been
+    // acknowledging previously sent data: the peer is alive, just possibly
+    // slow. Counting this as activity prevents the idle timer from
+    // disconnecting clients that are actively (if slowly) downloading a large
+    // message — such clients may not see our `Ping` for a long time, as it is
+    // queued in the TCP stream behind the message data.
+    let mut last_write_progress = Instant::now();
 
     let (encode_tx, encode_rx) = mpsc::unbounded_channel();
     // Spawn the encode task.
@@ -1123,14 +1392,21 @@ async fn ws_send_loop_inner<T, U, Encoder>(
                         // bit set. Ensures the client won't receive partial
                         // messages before we shut down.
                         log::trace!("draining outgoing frames");
-                        while let Ok(frame) = frames_rx.try_recv() {
+                        while let Ok((frame, tag)) = frames_rx.try_recv() {
+                            if let Some(tag) = tag {
+                                state.begin_message(tag);
+                            }
                             let eof = frame.header().is_final;
+                            let payload_len = frame.payload().len();
                             if let Err(e) = ws.feed(WsMessage::Frame(frame)).await {
                                 log::warn!("error sending frame: {e:#}");
+                                state.set_disconnect_cause(DisconnectCause::SendError);
                                 break 'outer;
                             }
+                            state.note_bytes_sent(payload_len);
 
                             if eof {
+                                state.finish_message();
                                 break;
                             }
                         }
@@ -1138,6 +1414,7 @@ async fn ws_send_loop_inner<T, U, Encoder>(
                         log::trace!("sending close frame");
                         if let Err(e) = ws.send(WsMessage::Close(Some(close_frame))).await {
                             log::warn!("error sending close frame: {e:#}");
+                            state.set_disconnect_cause(DisconnectCause::SendError);
                             break;
                         }
 
@@ -1159,8 +1436,10 @@ async fn ws_send_loop_inner<T, U, Encoder>(
                         log::trace!("sending ping");
                         if let Err(e) = ws.feed(WsMessage::Ping(bytes)).await {
                             log::warn!("error sending ping: {e:#}");
+                            state.set_disconnect_cause(DisconnectCause::SendError);
                             break;
                         }
+                        state.record_ping_sent();
                     },
                     UnorderedWsMessage::Error(err) => {
                         log::trace!("encoding execution error");
@@ -1185,10 +1464,26 @@ async fn ws_send_loop_inner<T, U, Encoder>(
             // sending when the other side initiated the close.
             n = frames_rx.recv_many(&mut frames_batch, FRAME_BATCH_SIZE), if !closed => {
                 log::trace!("sending batch of {n} frames");
-                for frame in frames_batch.drain(..n) {
+                for (frame, tag) in frames_batch.drain(..n) {
+                    if let Some(tag) = tag {
+                        state.begin_message(tag);
+                    }
+                    let eof = frame.header().is_final;
+                    let payload_len = frame.payload().len();
                     if let Err(e) = ws.feed(WsMessage::Frame(frame)).await {
                         log::warn!("error sending frame: {e:#}");
+                        state.set_disconnect_cause(DisconnectCause::SendError);
                         break 'outer;
+                    }
+                    state.note_bytes_sent(payload_len);
+                    if eof {
+                        state.finish_message();
+                    }
+                    // Writing succeeded, so the client is making progress:
+                    // extend the idle deadline (rate-limited).
+                    if last_write_progress.elapsed() >= WRITE_PROGRESS_INTERVAL {
+                        last_write_progress = Instant::now();
+                        idle_tx.send(state.next_idle_deadline()).ok();
                     }
                 }
             },
@@ -1208,6 +1503,7 @@ async fn ws_send_loop_inner<T, U, Encoder>(
 
         if let Err(e) = ws.flush().await {
             log::warn!("error flushing websocket: {e}");
+            state.set_disconnect_cause(DisconnectCause::SendError);
             break;
         }
     }
@@ -1230,7 +1526,7 @@ async fn ws_encode_task(
     metrics: SendMetrics,
     config: ClientConfig,
     mut messages: mpsc::UnboundedReceiver<OutboundMessage>,
-    outgoing_frames: mpsc::UnboundedSender<Frame>,
+    outgoing_frames: mpsc::UnboundedSender<(Frame, Option<MsgTag>)>,
     bsatn_rlb_pool: BsatnRowListBuilderPool,
 ) {
     // Serialize buffers can be reclaimed once all frames of a message are
@@ -1251,8 +1547,17 @@ async fn ws_encode_task(
         let in_use_buf = match message {
             OutboundMessage::Error(message) => {
                 let (stats, in_use, mut frames) = ws_encode_message(config, buf, message, false, &bsatn_rlb_pool).await;
+                // Attached to the first frame of the message,
+                // so the send loop can track its delivery.
+                let mut tag = Some(MsgTag {
+                    workload: None,
+                    encoded_len: stats.encoded_len,
+                });
                 metrics.report(None, None, stats);
-                if frames.try_for_each(|frame| outgoing_frames.send(frame)).is_err() {
+                if frames
+                    .try_for_each(|frame| outgoing_frames.send((frame, tag.take())))
+                    .is_err()
+                {
                     break;
                 }
 
@@ -1265,8 +1570,17 @@ async fn ws_encode_task(
 
                 let (stats, in_use, mut frames) =
                     ws_encode_message(config, buf, message, is_large, &bsatn_rlb_pool).await;
+                // Attached to the first frame of the message,
+                // so the send loop can track its delivery.
+                let mut tag = Some(MsgTag {
+                    workload,
+                    encoded_len: stats.encoded_len,
+                });
                 metrics.report(workload, num_rows, stats);
-                if frames.try_for_each(|frame| outgoing_frames.send(frame)).is_err() {
+                if frames
+                    .try_for_each(|frame| outgoing_frames.send((frame, tag.take())))
+                    .is_err()
+                {
                     break;
                 }
 
@@ -1488,6 +1802,10 @@ mod tests {
         ActorState::new(Identity::ZERO, dummy_client_id(), config)
     }
 
+    fn dummy_idle_tx() -> Arc<watch::Sender<Instant>> {
+        Arc::new(watch::channel(Instant::now()).0)
+    }
+
     #[tokio::test(start_paused = true)] // see [NOTE: start_paused]
     async fn idle_timer_extends_sleep() {
         let timeout = Duration::from_millis(10);
@@ -1518,7 +1836,7 @@ mod tests {
         let input = stream::iter(vec![Ok(WsMessage::Ping(Bytes::new()))]);
         pin_mut!(input);
 
-        let recv_loop = ws_recv_loop(state, idle_tx, input);
+        let recv_loop = ws_recv_loop(state, Arc::new(idle_tx), input);
         pin_mut!(recv_loop);
 
         assert_matches!(recv_loop.next().await, Some(ClientMessage::Ping(_)));
@@ -1537,7 +1855,7 @@ mod tests {
         ]);
         pin_mut!(input);
 
-        let recv_loop = ws_recv_loop(state, idle_tx, input);
+        let recv_loop = ws_recv_loop(state, Arc::new(idle_tx), input);
         pin_mut!(recv_loop);
 
         assert_matches!(recv_loop.next().await, Some(ClientMessage::Ping(_)));
@@ -1555,7 +1873,7 @@ mod tests {
         ]);
         pin_mut!(input);
         {
-            let recv_loop = ws_recv_loop(state.clone(), idle_tx, &mut input);
+            let recv_loop = ws_recv_loop(state.clone(), Arc::new(idle_tx), &mut input);
             pin_mut!(recv_loop);
 
             state.close();
@@ -1576,7 +1894,7 @@ mod tests {
         ]);
         pin_mut!(input);
         {
-            let recv_loop = ws_recv_loop(state.clone(), idle_tx, &mut input);
+            let recv_loop = ws_recv_loop(state.clone(), Arc::new(idle_tx), &mut input);
             pin_mut!(recv_loop);
 
             state.close();
@@ -1595,7 +1913,7 @@ mod tests {
             Ok(WsMessage::Ping(Bytes::new())),
             Ok(WsMessage::Pong(Bytes::new())),
         ]);
-        let recv_loop = ws_recv_loop(state, idle_tx, input);
+        let recv_loop = ws_recv_loop(state, Arc::new(idle_tx), input);
         pin_mut!(recv_loop);
 
         let mut new_idle_deadline = *idle_rx.borrow();
@@ -1654,6 +1972,7 @@ mod tests {
             messages_rx,
             unordered_rx,
             BsatnRowListBuilderPool::new(),
+            dummy_idle_tx(),
         );
         pin_mut!(send_loop);
 
@@ -1678,6 +1997,7 @@ mod tests {
             messages_rx,
             unordered_rx,
             BsatnRowListBuilderPool::new(),
+            dummy_idle_tx(),
         );
         pin_mut!(send_loop);
 
@@ -1729,6 +2049,7 @@ mod tests {
                 messages_rx,
                 unordered_rx,
                 BsatnRowListBuilderPool::new(),
+                dummy_idle_tx(),
             );
             pin_mut!(send_loop);
 
@@ -1776,6 +2097,7 @@ mod tests {
                 messages_rx,
                 unordered_rx,
                 BsatnRowListBuilderPool::new(),
+                dummy_idle_tx(),
             );
             pin_mut!(send_loop);
 
@@ -1818,6 +2140,20 @@ mod tests {
         }));
         let (idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
 
+        // Record the `Close` frame the main loop sends when the idle timer
+        // fires. Since we never complete the close handshake (both tasks are
+        // pending forever), the loop should tear down the connection after
+        // `SERVER_CLOSE_GRACE`.
+        let close_sent = Arc::new(Mutex::new(None));
+        let unordered_tx = {
+            let close_sent = close_sent.clone();
+            move |m| {
+                if let UnorderedWsMessage::Close(frame) = m {
+                    *close_sent.lock().unwrap() = Some(frame);
+                }
+            }
+        };
+
         let start = Instant::now();
         let mut t = tokio::spawn({
             let state = state.clone();
@@ -1828,7 +2164,7 @@ mod tests {
                     ws_idle_timer(idle_rx),
                     tokio::spawn(future::pending()),
                     tokio::spawn(future::pending()),
-                    drop,
+                    unordered_tx,
                 )
                 .await
             }
@@ -1844,8 +2180,50 @@ mod tests {
 
         t.await.unwrap();
         let elapsed = start.elapsed();
-        assert!(elapsed >= timeout);
-        assert!(elapsed < timeout + Duration::from_millis(10));
+        assert!(elapsed >= timeout + SERVER_CLOSE_GRACE);
+        assert!(elapsed < timeout + SERVER_CLOSE_GRACE + Duration::from_millis(10));
+        assert!(close_sent.lock().unwrap().is_some());
+        assert_eq!(state.disconnect_cause(), DisconnectCause::IdleTimeout);
+    }
+
+    #[tokio::test(start_paused = true)] // see [NOTE: start_paused]
+    async fn main_loop_exits_promptly_when_close_handshake_completes_after_idle_timeout() {
+        let state = Arc::new(dummy_actor_state_with_config(WebSocketOptions {
+            idle_timeout: Duration::from_millis(10),
+            ..<_>::default()
+        }));
+        let (_idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
+
+        // Pretend the client acknowledges the close immediately:
+        // the recv task terminates as soon as the `Close` frame is sent.
+        let notify = Arc::new(tokio::sync::Notify::new());
+        let unordered_tx = {
+            let notify = notify.clone();
+            move |m| {
+                if let UnorderedWsMessage::Close(_) = m {
+                    notify.notify_one();
+                }
+            }
+        };
+
+        let start = Instant::now();
+        ws_main_loop(
+            state.clone(),
+            future::pending,
+            ws_idle_timer(idle_rx),
+            tokio::spawn(future::pending()),
+            tokio::spawn(async move { notify.notified().await }),
+            unordered_tx,
+        )
+        .await;
+
+        let elapsed = start.elapsed();
+        assert!(elapsed >= Duration::from_millis(10));
+        assert!(
+            elapsed < SERVER_CLOSE_GRACE,
+            "should not have waited for the close grace period: {elapsed:?}"
+        );
+        assert_eq!(state.disconnect_cause(), DisconnectCause::IdleTimeout);
     }
 
     #[tokio::test(start_paused = true)] // see [NOTE: start_paused]
@@ -1888,7 +2266,9 @@ mod tests {
             }
         });
 
-        let expected_timeout = (5 * state.config.ping_interval) + state.config.idle_timeout;
+        // After the pongs stop, the loop initiates a close handshake, which
+        // never completes here, so it exits after `SERVER_CLOSE_GRACE`.
+        let expected_timeout = (5 * state.config.ping_interval) + state.config.idle_timeout + SERVER_CLOSE_GRACE;
         let res = timeout(expected_timeout, t).await;
         let elapsed = start.elapsed();
 
@@ -2015,12 +2395,19 @@ mod tests {
             Bytes(Bytes),
         }
 
-        async fn encoder(mut rx: mpsc::UnboundedReceiver<OutgoingBytes>, tx: mpsc::UnboundedSender<Frame>) {
+        async fn encoder(
+            mut rx: mpsc::UnboundedReceiver<OutgoingBytes>,
+            tx: mpsc::UnboundedSender<(Frame, Option<MsgTag>)>,
+        ) {
             while let Some(data) = rx.recv().await {
                 if let OutgoingBytes::Bytes(data) = data {
+                    let mut tag = Some(MsgTag {
+                        workload: None,
+                        encoded_len: data.len(),
+                    });
                     let frames = fragment(data, Data::Binary, 4096);
                     for frame in frames {
-                        tx.send(frame).unwrap();
+                        tx.send((frame, tag.take())).unwrap();
                     }
                 }
             }
@@ -2031,7 +2418,7 @@ mod tests {
         const NUM_CONTROL_FRAMES: usize = 2;
 
         let send_loop = tokio::spawn(async move {
-            ws_send_loop_inner(state, &mut received, messages_rx, unordered_rx, encoder).await;
+            ws_send_loop_inner(state, &mut received, messages_rx, unordered_rx, dummy_idle_tx(), encoder).await;
             received
         });
         messages_tx.send(Bytes::from_static(&[1; MESSAGE_SIZE])).await.unwrap();

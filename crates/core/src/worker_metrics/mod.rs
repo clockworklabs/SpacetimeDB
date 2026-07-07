@@ -239,6 +239,29 @@ metrics_group!(
         #[buckets(0.001, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0)]
         pub websocket_serialize_secs: HistogramVec,
 
+        #[name = spacetime_websocket_clients_disconnected_total]
+        #[help = "Total number of websocket disconnects, labeled by the cause of the disconnect"]
+        #[labels(database_identity: Identity, cause: str)]
+        pub ws_clients_disconnected: IntCounterVec,
+
+        #[name = spacetime_websocket_pong_rtt_secs]
+        #[help = "Time from writing a Ping frame to the socket until the client's Pong is processed"]
+        #[labels(db: Identity)]
+        // The interesting signal is the tail: a pong that takes tens of seconds
+        // means the ping was queued behind a large amount of outgoing data on a
+        // slow connection (or the client stopped reading the socket).
+        #[buckets(0.005, 0.025, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0)]
+        pub websocket_pong_rtt: HistogramVec,
+
+        #[name = spacetime_websocket_message_send_secs]
+        #[help = "Time from feeding the first frame of an outgoing message until its final frame was fed to the socket"]
+        #[labels(db: Identity, workload: WorkloadType)]
+        // Measures delivery (write-side) duration, not encoding. Large initial
+        // subscription updates on slow connections can take minutes; that is
+        // precisely what this metric is here to make visible.
+        #[buckets(0.005, 0.05, 0.25, 1.0, 5.0, 15.0, 30.0, 60.0, 120.0, 300.0, 600.0)]
+        pub websocket_message_send_secs: HistogramVec,
+
         #[name = spacetime_worker_instance_operation_queue_length]
         #[help = "Length of the wait queue for access to a module instance."]
         #[labels(database_identity: Identity)]

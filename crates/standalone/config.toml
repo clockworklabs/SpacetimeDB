@@ -18,4 +18,16 @@ directives = [
     "axum::rejection=trace",
 ]
 
+# [websocket]
+# Interval at which keep-alive Ping frames are sent to clients.
+# ping-interval = "15s"
+# Close connections from which nothing was received, and to which no send
+# progress was made, for this long. Slow clients that keep accepting data are
+# not considered idle. Must be greater than ping-interval.
+# idle-timeout = "30s"
+# TCP_USER_TIMEOUT applied to the listening socket (Linux only): connections
+# whose peer does not acknowledge sent data at the TCP level for this long are
+# closed by the kernel. "0s" leaves the OS default in place.
+# tcp-user-timeout = "2min"
+
 # vim: set nowritebackup: << otherwise triggers cargo-watch

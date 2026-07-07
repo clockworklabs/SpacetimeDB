@@ -248,6 +248,13 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
         "failed to bind the SpacetimeDB server to '{listen_addr}', please check that the address is valid and not already in use"
     ))?;
     socket2::SockRef::from(&tcp).set_nodelay(true)?;
+    // Detect dead peers at the transport layer: if data sent to a peer remains
+    // unacknowledged for this long, the kernel closes the connection.
+    // Accepted sockets inherit the option from the listener.
+    #[cfg(target_os = "linux")]
+    if !config.websocket.tcp_user_timeout.is_zero() {
+        socket2::SockRef::from(&tcp).set_tcp_user_timeout(Some(config.websocket.tcp_user_timeout))?;
+    }
     log::info!("Starting SpacetimeDB listening on {}", tcp.local_addr()?);
 
     if let Some(pg_port) = pg_port {
