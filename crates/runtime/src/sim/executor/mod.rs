@@ -352,6 +352,11 @@ impl Handle {
         self.executor.time.timeout(duration, future).await
     }
 
+    /// Yield this task back to the simulation scheduler once.
+    pub async fn yield_now(&self) {
+        yield_now().await
+    }
+
     pub fn block_on<F: Future>(&self, future: F) -> F::Output {
         self.executor.block_on(future)
     }

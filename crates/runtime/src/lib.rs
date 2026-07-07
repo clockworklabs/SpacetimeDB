@@ -346,6 +346,22 @@ impl Handle {
         }
     }
 
+    pub async fn yield_now(&self) {
+        match self {
+            Self::Tokio(_) => tokio::task::yield_now().await,
+            #[cfg(feature = "simulation")]
+            Self::Simulation(handle) => handle.yield_now().await,
+        }
+    }
+
+    pub fn now(&self) -> Duration {
+        match self {
+            Self::Tokio(_) => panic!("Handle::now is only supported by the simulation runtime"),
+            #[cfg(feature = "simulation")]
+            Self::Simulation(handle) => handle.now(),
+        }
+    }
+
     pub fn block_on<F: Future>(&self, future: F) -> F::Output {
         match self {
             Self::Tokio(handle) => tokio::task::block_in_place(|| handle.block_on(future)),
@@ -381,10 +397,7 @@ mod tests {
             drop(jh);
 
             // Yield so the spawned task gets polled.
-            handle
-                .timeout(std::time::Duration::from_millis(50), async {})
-                .await
-                .ok();
+            handle.yield_now().await;
         });
 
         assert!(flag.load(Ordering::Acquire));
