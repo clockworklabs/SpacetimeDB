@@ -531,11 +531,7 @@ impl Lang for Csharp<'_> {
                 "public sealed class {csharp_table_class_name} : {base_class}<EventContext, {table_type}>"
             );
             indented_block(output, |output| {
-                writeln!(
-                    output,
-                    "public override string RemoteTableName => \"{}\";",
-                    table.name
-                );
+                writeln!(output, "public override string RemoteTableName => \"{}\";", table.name);
                 writeln!(output);
 
                 // If this is a table, we want to generate event accessor and indexes
