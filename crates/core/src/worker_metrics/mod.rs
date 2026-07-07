@@ -8,11 +8,158 @@ use spacetimedb_lib::Identity;
 use spacetimedb_metrics::metrics_group;
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_table::page_pool::PagePool;
-use std::{sync::Once, time::Duration};
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Once,
+    },
+    time::Duration,
+};
 use tokio::{spawn, time::sleep};
 
 // Used as a metrics label value, so private billing code needs access to it.
 pub use crate::host::v8::JsWorkerKind;
+
+/// Causes for websocket client connection endings.
+///
+/// These values are metric labels, so changes may require changes to dashboards and alerting rules.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum ClientDisconnectCause {
+    /// The client sent a websocket close frame.
+    ClientClose,
+    /// The accepted client stopped sending data, including keepalive pongs, until the idle timeout elapsed.
+    IdleTimeout,
+    /// The accepted client sent messages faster than the server could process and filled its incoming queue.
+    IncomingQueueFull,
+    /// The accepted client could not receive server messages quickly enough and filled its outgoing queue.
+    OutgoingQueueFull,
+    /// The database module exited and the server closed the websocket.
+    ModuleExited,
+    /// The accepted client sent a syntactically or semantically invalid websocket request.
+    ClientMessageError,
+    /// The websocket receive stream returned an error.
+    WebsocketReceiveError,
+    /// The server failed while sending or flushing websocket data.
+    WebsocketSendError,
+    /// The websocket receive stream ended without a more specific cause.
+    WebsocketStreamEnded,
+    /// The accepted websocket actor ended without a more specific recorded cause.
+    Unknown,
+}
+
+impl ClientDisconnectCause {
+    pub const ALL: [Self; 10] = [
+        Self::ClientClose,
+        Self::IdleTimeout,
+        Self::IncomingQueueFull,
+        Self::OutgoingQueueFull,
+        Self::ModuleExited,
+        Self::ClientMessageError,
+        Self::WebsocketReceiveError,
+        Self::WebsocketSendError,
+        Self::WebsocketStreamEnded,
+        Self::Unknown,
+    ];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ClientClose => "client_close",
+            Self::IdleTimeout => "idle_timeout",
+            Self::IncomingQueueFull => "incoming_queue_full",
+            Self::OutgoingQueueFull => "outgoing_queue_full",
+            Self::ModuleExited => "module_exited",
+            Self::ClientMessageError => "client_message_error",
+            Self::WebsocketReceiveError => "websocket_receive_error",
+            Self::WebsocketSendError => "websocket_send_error",
+            Self::WebsocketStreamEnded => "websocket_stream_ended",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// Causes for websocket client connection attempts rejected before being counted as connected.
+///
+/// These values are metric labels, so changes may require changes to dashboards and alerting rules.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum ClientRejectCause {
+    /// The subscribe request did not negotiate a supported websocket protocol.
+    InvalidProtocol,
+    /// SQL authorization failed after the request was associated with a database.
+    AuthorizationFailed,
+    /// The HTTP upgrade to a websocket failed after the request was associated with a database.
+    WebsocketUpgradeError,
+    /// The module's client-connected lifecycle reducer rejected the connection.
+    ClientConnectedRejected,
+    /// The module rejected the connection because the caller was out of energy.
+    OutOfEnergy,
+    /// The client-connected lifecycle reducer or module host failed while accepting the connection.
+    ClientConnectedError,
+}
+
+impl ClientRejectCause {
+    pub const ALL: [Self; 6] = [
+        Self::InvalidProtocol,
+        Self::AuthorizationFailed,
+        Self::WebsocketUpgradeError,
+        Self::ClientConnectedRejected,
+        Self::OutOfEnergy,
+        Self::ClientConnectedError,
+    ];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::InvalidProtocol => "invalid_protocol",
+            Self::AuthorizationFailed => "authorization_failed",
+            Self::WebsocketUpgradeError => "websocket_upgrade_error",
+            Self::ClientConnectedRejected => "client_connected_rejected",
+            Self::OutOfEnergy => "out_of_energy",
+            Self::ClientConnectedError => "client_connected_error",
+        }
+    }
+}
+
+pub fn record_client_disconnect(database_identity: Identity, cause: ClientDisconnectCause) {
+    WORKER_METRICS
+        .ws_client_disconnections
+        .with_label_values(&database_identity, cause.as_str())
+        .inc();
+}
+
+pub fn record_client_rejection(database_identity: Identity, cause: ClientRejectCause) {
+    WORKER_METRICS
+        .ws_client_rejections
+        .with_label_values(&database_identity, cause.as_str())
+        .inc();
+}
+
+/// Records at most one disconnect cause for a single accepted websocket client.
+#[derive(Clone, Debug)]
+pub struct ClientDisconnectRecorder {
+    database_identity: Identity,
+    recorded: Arc<AtomicBool>,
+}
+
+impl ClientDisconnectRecorder {
+    pub fn new(database_identity: Identity) -> Self {
+        Self {
+            database_identity,
+            recorded: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    pub fn record(&self, cause: ClientDisconnectCause) -> bool {
+        if self
+            .recorded
+            .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+        {
+            record_client_disconnect(self.database_identity, cause);
+            true
+        } else {
+            false
+        }
+    }
+}
 
 metrics_group!(
     pub struct WorkerMetrics {
@@ -40,6 +187,24 @@ metrics_group!(
         #[help = "The cumulative number of ws client connections disconnected after becoming idle"]
         #[labels(database_identity: Identity)]
         pub ws_clients_idle_timed_out: IntCounterVec,
+
+        // Compatibility counters above continue to be emitted for existing dashboards.
+        // Accepted-client disconnection `cause` label values are:
+        // client_close, idle_timeout, incoming_queue_full, outgoing_queue_full,
+        // module_exited, client_message_error, websocket_receive_error,
+        // websocket_send_error, websocket_stream_ended, actor_aborted.
+        #[name = spacetime_worker_ws_client_disconnections_total]
+        #[help = "The cumulative number of accepted websocket client disconnections by cause. Cause values are documented by ClientDisconnectCause::ALL."]
+        #[labels(database_identity: Identity, cause: str)]
+        pub ws_client_disconnections: IntCounterVec,
+
+        // Pre-connected rejection `cause` label values are:
+        // invalid_protocol, authorization_failed, websocket_upgrade_error,
+        // client_connected_rejected, out_of_energy, client_connected_error.
+        #[name = spacetime_worker_ws_client_rejections_total]
+        #[help = "The cumulative number of websocket client attempts rejected before being counted as connected. Cause values are documented by ClientRejectCause::ALL."]
+        #[labels(database_identity: Identity, cause: str)]
+        pub ws_client_rejections: IntCounterVec,
 
         #[name = spacetime_websocket_requests_total]
         #[help = "The cumulative number of websocket request messages"]
@@ -624,4 +789,17 @@ pub fn spawn_tokio_stats(node_id: String, rt_id: String, rt: tokio::runtime::Han
             }
         });
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn client_disconnect_recorder_records_only_first_cause() {
+        let recorder = ClientDisconnectRecorder::new(Identity::ZERO);
+
+        assert!(recorder.record(ClientDisconnectCause::ClientClose));
+        assert!(!recorder.record(ClientDisconnectCause::Unknown));
+    }
 }

@@ -14,7 +14,7 @@ use crate::host::module_host::{ClientConnectedError, ProcedureResultTarget};
 use crate::host::{FunctionArgs, ModuleHost, NoSuchModule, ReducerCallError};
 use crate::subscription::module_subscription_manager::BroadcastError;
 use crate::util::prometheus_handle::IntGaugeExt;
-use crate::worker_metrics::WORKER_METRICS;
+use crate::worker_metrics::{ClientDisconnectCause, ClientDisconnectRecorder, WORKER_METRICS};
 use bytes::Bytes;
 use bytestring::ByteString;
 use derive_more::From;
@@ -314,6 +314,7 @@ pub struct ClientConnectionMetrics {
     pub websocket_request_msg_size: Histogram,
     pub websocket_requests: IntCounter,
     pub outgoing_queue_disconnects: IntCounter,
+    pub disconnect_recorder: ClientDisconnectRecorder,
 
     /// The `total_outgoing_queue_length` metric labeled with this database's `Identity`,
     /// which we'll increment whenever sending a message.
@@ -340,11 +341,13 @@ impl ClientConnectionMetrics {
         let sendtx_queue_size = WORKER_METRICS
             .total_outgoing_queue_length
             .with_label_values(&database_identity);
+        let disconnect_recorder = ClientDisconnectRecorder::new(database_identity);
 
         Self {
             websocket_request_msg_size,
             websocket_requests,
             outgoing_queue_disconnects,
+            disconnect_recorder,
             sendtx_queue_size,
         }
     }
@@ -449,6 +452,9 @@ impl ClientConnectionSender {
                 );
                 if let Some(metrics) = &self.metrics {
                     metrics.outgoing_queue_disconnects.inc();
+                    metrics
+                        .disconnect_recorder
+                        .record(ClientDisconnectCause::OutgoingQueueFull);
                 }
                 self.abort_handle.abort();
                 self.cancelled.store(true, Ordering::Relaxed);
@@ -866,6 +872,8 @@ impl ClientConnection {
         let module_info = module.info.clone();
         let database_identity = module_info.database_identity;
         let client_identity = id.identity;
+        let metrics = ClientConnectionMetrics::new(database_identity, config.protocol);
+        let actor_disconnect_recorder = metrics.disconnect_recorder.clone();
         let abort_handle = tokio::spawn(async move {
             let Ok(fut) = fut_rx.await else { return };
 
@@ -875,13 +883,13 @@ impl ClientConnection {
                 let database_identity = module_info.database_identity;
                 log::warn!("websocket connection aborted for client identity `{client_identity}` and database identity `{database_identity}`");
                 module_info.metrics.ws_clients_aborted.inc();
+                actor_disconnect_recorder.record(ClientDisconnectCause::Unknown);
             };
 
             fut.await
         })
         .abort_handle();
 
-        let metrics = ClientConnectionMetrics::new(database_identity, config.protocol);
         let receiver = ClientConnectionReceiver::new(
             config.confirmed_reads,
             MeteredReceiver::with_gauge(sendrx, metrics.sendtx_queue_size.clone()),
@@ -941,6 +949,13 @@ impl ClientConnection {
 
     pub fn sender(&self) -> Arc<ClientConnectionSender> {
         self.sender.clone()
+    }
+
+    pub fn disconnect_recorder(&self) -> Option<ClientDisconnectRecorder> {
+        self.sender
+            .metrics
+            .as_ref()
+            .map(|metrics| metrics.disconnect_recorder.clone())
     }
 
     /// Get the [`ModuleHost`] for this connection.
@@ -1476,5 +1491,49 @@ mod tests {
         assert_pending(&mut pin!(receiver.recv())).await;
         offset.mark_durable_at(3);
         assert_received_update(receiver.recv()).await;
+    }
+
+    #[tokio::test]
+    async fn client_connection_sender_records_outgoing_queue_full_disconnect() {
+        let database_identity = Identity::from_be_byte_array([7; 32]);
+        let cause = ClientDisconnectCause::OutgoingQueueFull;
+        let before = WORKER_METRICS
+            .ws_client_disconnections
+            .with_label_values(&database_identity, cause.as_str())
+            .get();
+
+        let (sendtx, _rx) = mpsc::channel(1);
+        let abort_handle = tokio::spawn(std::future::pending::<()>()).abort_handle();
+        let sender = ClientConnectionSender {
+            id: ClientActorId::for_test(Identity::ZERO),
+            auth: ConnectionAuthCtx::try_from(SpacetimeIdentityClaims {
+                identity: Identity::ZERO,
+                subject: "".into(),
+                issuer: "".into(),
+                audience: [].into(),
+                iat: SystemTime::now(),
+                exp: None,
+                extra: None,
+            })
+            .unwrap(),
+            config: ClientConfig::for_test(),
+            sendtx,
+            abort_handle,
+            cancelled: AtomicBool::new(false),
+            metrics: Some(ClientConnectionMetrics::new(database_identity, Protocol::Binary)),
+        };
+
+        sender.send_message(None, empty_tx_update()).unwrap();
+        assert_matches!(
+            sender.send_message(None, empty_tx_update()),
+            Err(ClientSendError::Cancelled)
+        );
+        assert_eq!(
+            WORKER_METRICS
+                .ws_client_disconnections
+                .with_label_values(&database_identity, cause.as_str())
+                .get(),
+            before + 1
+        );
     }
 }
