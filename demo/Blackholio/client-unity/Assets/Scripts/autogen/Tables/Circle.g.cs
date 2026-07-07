@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class CircleHandle : RemoteTableHandle<EventContext, Circle>
         {
-            protected override string RemoteTableName => "circle";
+            public override string RemoteTableName => "circle";
 
             public sealed class EntityIdUniqueIndex : UniqueIndexBase<int>
             {
