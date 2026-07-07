@@ -41,6 +41,26 @@
     M(String, S, TEXT(""), 0xbeef, FUniqueStringType)
 
 /*
+ * Macro list for unique option tables used in tests that insert then delete rows.
+ * Arguments: (Suffix, KeyField, SomeKeyLiteral, NoneKeyLiteral, ExpectedValue, RowStructType)
+ */
+#define FOREACH_UNIQUE_OPTION_PRIMITIVE(M) \
+    M(U8   , N, FTestClientOptionalUInt8(0), FTestClientOptionalUInt8(), 0xbeef, FUniqueOptionU8Type) \
+    M(U16  , N, FTestClientOptionalUInt16(0), FTestClientOptionalUInt16(), 0xbeef, FUniqueOptionU16Type) \
+    M(U32  , N, FTestClientOptionalUInt32(0), FTestClientOptionalUInt32(), 0xbeef, FUniqueOptionU32Type) \
+    M(U64  , N, FTestClientOptionalUInt64(0), FTestClientOptionalUInt64(), 0xbeef, FUniqueOptionU64Type) \
+    M(U128 , N, FTestClientOptionalUInt128(FSpacetimeDBUInt128(0,0)), FTestClientOptionalUInt128(), 0xbeef, FUniqueOptionU128Type) \
+    M(U256 , N, FTestClientOptionalUInt256(FSpacetimeDBUInt256(FSpacetimeDBUInt128(0,0),FSpacetimeDBUInt128(0,0))), FTestClientOptionalUInt256(), 0xbeef, FUniqueOptionU256Type) \
+    M(I8   , N, FTestClientOptionalInt8(0), FTestClientOptionalInt8(), 0xbeef, FUniqueOptionI8Type) \
+    M(I16  , N, FTestClientOptionalInt16(0), FTestClientOptionalInt16(), 0xbeef, FUniqueOptionI16Type) \
+    M(I32  , N, FTestClientOptionalInt32(0), FTestClientOptionalInt32(), 0xbeef, FUniqueOptionI32Type) \
+    M(I64  , N, FTestClientOptionalInt64(0), FTestClientOptionalInt64(), 0xbeef, FUniqueOptionI64Type) \
+    M(I128 , N, FTestClientOptionalInt128(FSpacetimeDBInt128(0,0)), FTestClientOptionalInt128(), 0xbeef, FUniqueOptionI128Type) \
+    M(I256 , N, FTestClientOptionalInt256(FSpacetimeDBInt256(FSpacetimeDBUInt128(0,0),FSpacetimeDBUInt128(0,0))), FTestClientOptionalInt256(), 0xbeef, FUniqueOptionI256Type) \
+    M(Bool , B, FTestClientOptionalBool(false), FTestClientOptionalBool(), 0xbeef, FUniqueOptionBoolType) \
+    M(String, S, FTestClientOptionalString(TEXT("")), FTestClientOptionalString(), 0xbeef, FUniqueOptionStringType)
+
+/*
  * Macro list for primary-key tables used in update tests.
  * Arguments: (Suffix, KeyField, KeyLiteral, ExpectedValue, UpdatedValue, RowStructType)
  */

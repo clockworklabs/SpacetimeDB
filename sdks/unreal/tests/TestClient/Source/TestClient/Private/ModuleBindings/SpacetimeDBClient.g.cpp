@@ -76,6 +76,23 @@
 #include "ModuleBindings/Tables/UniqueI64Table.g.h"
 #include "ModuleBindings/Tables/UniqueI8Table.g.h"
 #include "ModuleBindings/Tables/UniqueIdentityTable.g.h"
+#include "ModuleBindings/Tables/UniqueOptionBoolTable.g.h"
+#include "ModuleBindings/Tables/UniqueOptionConnectionIdTable.g.h"
+#include "ModuleBindings/Tables/UniqueOptionI128Table.g.h"
+#include "ModuleBindings/Tables/UniqueOptionI16Table.g.h"
+#include "ModuleBindings/Tables/UniqueOptionI256Table.g.h"
+#include "ModuleBindings/Tables/UniqueOptionI32Table.g.h"
+#include "ModuleBindings/Tables/UniqueOptionI64Table.g.h"
+#include "ModuleBindings/Tables/UniqueOptionI8Table.g.h"
+#include "ModuleBindings/Tables/UniqueOptionIdentityTable.g.h"
+#include "ModuleBindings/Tables/UniqueOptionStringTable.g.h"
+#include "ModuleBindings/Tables/UniqueOptionU128Table.g.h"
+#include "ModuleBindings/Tables/UniqueOptionU16Table.g.h"
+#include "ModuleBindings/Tables/UniqueOptionU256Table.g.h"
+#include "ModuleBindings/Tables/UniqueOptionU32Table.g.h"
+#include "ModuleBindings/Tables/UniqueOptionU64Table.g.h"
+#include "ModuleBindings/Tables/UniqueOptionU8Table.g.h"
+#include "ModuleBindings/Tables/UniqueOptionUuidTable.g.h"
 #include "ModuleBindings/Tables/UniqueStringTable.g.h"
 #include "ModuleBindings/Tables/UniqueU128Table.g.h"
 #include "ModuleBindings/Tables/UniqueU16Table.g.h"
@@ -195,6 +212,23 @@ UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Supe
 	RegisterTable<FUniqueI64Type, UUniqueI64Table, FEventContext>(TEXT("unique_i_64"), Db->UniqueI64);
 	RegisterTable<FUniqueI8Type, UUniqueI8Table, FEventContext>(TEXT("unique_i_8"), Db->UniqueI8);
 	RegisterTable<FUniqueIdentityType, UUniqueIdentityTable, FEventContext>(TEXT("unique_identity"), Db->UniqueIdentity);
+	RegisterTable<FUniqueOptionBoolType, UUniqueOptionBoolTable, FEventContext>(TEXT("unique_option_bool"), Db->UniqueOptionBool);
+	RegisterTable<FUniqueOptionConnectionIdType, UUniqueOptionConnectionIdTable, FEventContext>(TEXT("unique_option_connection_id"), Db->UniqueOptionConnectionId);
+	RegisterTable<FUniqueOptionI128Type, UUniqueOptionI128Table, FEventContext>(TEXT("unique_option_i_128"), Db->UniqueOptionI128);
+	RegisterTable<FUniqueOptionI16Type, UUniqueOptionI16Table, FEventContext>(TEXT("unique_option_i_16"), Db->UniqueOptionI16);
+	RegisterTable<FUniqueOptionI256Type, UUniqueOptionI256Table, FEventContext>(TEXT("unique_option_i_256"), Db->UniqueOptionI256);
+	RegisterTable<FUniqueOptionI32Type, UUniqueOptionI32Table, FEventContext>(TEXT("unique_option_i_32"), Db->UniqueOptionI32);
+	RegisterTable<FUniqueOptionI64Type, UUniqueOptionI64Table, FEventContext>(TEXT("unique_option_i_64"), Db->UniqueOptionI64);
+	RegisterTable<FUniqueOptionI8Type, UUniqueOptionI8Table, FEventContext>(TEXT("unique_option_i_8"), Db->UniqueOptionI8);
+	RegisterTable<FUniqueOptionIdentityType, UUniqueOptionIdentityTable, FEventContext>(TEXT("unique_option_identity"), Db->UniqueOptionIdentity);
+	RegisterTable<FUniqueOptionStringType, UUniqueOptionStringTable, FEventContext>(TEXT("unique_option_string"), Db->UniqueOptionString);
+	RegisterTable<FUniqueOptionU128Type, UUniqueOptionU128Table, FEventContext>(TEXT("unique_option_u_128"), Db->UniqueOptionU128);
+	RegisterTable<FUniqueOptionU16Type, UUniqueOptionU16Table, FEventContext>(TEXT("unique_option_u_16"), Db->UniqueOptionU16);
+	RegisterTable<FUniqueOptionU256Type, UUniqueOptionU256Table, FEventContext>(TEXT("unique_option_u_256"), Db->UniqueOptionU256);
+	RegisterTable<FUniqueOptionU32Type, UUniqueOptionU32Table, FEventContext>(TEXT("unique_option_u_32"), Db->UniqueOptionU32);
+	RegisterTable<FUniqueOptionU64Type, UUniqueOptionU64Table, FEventContext>(TEXT("unique_option_u_64"), Db->UniqueOptionU64);
+	RegisterTable<FUniqueOptionU8Type, UUniqueOptionU8Table, FEventContext>(TEXT("unique_option_u_8"), Db->UniqueOptionU8);
+	RegisterTable<FUniqueOptionUuidType, UUniqueOptionUuidTable, FEventContext>(TEXT("unique_option_uuid"), Db->UniqueOptionUuid);
 	RegisterTable<FUniqueStringType, UUniqueStringTable, FEventContext>(TEXT("unique_string"), Db->UniqueString);
 	RegisterTable<FUniqueU128Type, UUniqueU128Table, FEventContext>(TEXT("unique_u_128"), Db->UniqueU128);
 	RegisterTable<FUniqueU16Type, UUniqueU16Table, FEventContext>(TEXT("unique_u_16"), Db->UniqueU16);
@@ -336,6 +370,23 @@ void URemoteTables::Initialize()
 	UniqueI64 = NewObject<UUniqueI64Table>(this);
 	UniqueI8 = NewObject<UUniqueI8Table>(this);
 	UniqueIdentity = NewObject<UUniqueIdentityTable>(this);
+	UniqueOptionBool = NewObject<UUniqueOptionBoolTable>(this);
+	UniqueOptionConnectionId = NewObject<UUniqueOptionConnectionIdTable>(this);
+	UniqueOptionI128 = NewObject<UUniqueOptionI128Table>(this);
+	UniqueOptionI16 = NewObject<UUniqueOptionI16Table>(this);
+	UniqueOptionI256 = NewObject<UUniqueOptionI256Table>(this);
+	UniqueOptionI32 = NewObject<UUniqueOptionI32Table>(this);
+	UniqueOptionI64 = NewObject<UUniqueOptionI64Table>(this);
+	UniqueOptionI8 = NewObject<UUniqueOptionI8Table>(this);
+	UniqueOptionIdentity = NewObject<UUniqueOptionIdentityTable>(this);
+	UniqueOptionString = NewObject<UUniqueOptionStringTable>(this);
+	UniqueOptionU128 = NewObject<UUniqueOptionU128Table>(this);
+	UniqueOptionU16 = NewObject<UUniqueOptionU16Table>(this);
+	UniqueOptionU256 = NewObject<UUniqueOptionU256Table>(this);
+	UniqueOptionU32 = NewObject<UUniqueOptionU32Table>(this);
+	UniqueOptionU64 = NewObject<UUniqueOptionU64Table>(this);
+	UniqueOptionU8 = NewObject<UUniqueOptionU8Table>(this);
+	UniqueOptionUuid = NewObject<UUniqueOptionUuidTable>(this);
 	UniqueString = NewObject<UUniqueStringTable>(this);
 	UniqueU128 = NewObject<UUniqueU128Table>(this);
 	UniqueU16 = NewObject<UUniqueU16Table>(this);
@@ -446,6 +497,23 @@ void URemoteTables::Initialize()
 	UniqueI64->PostInitialize();
 	UniqueI8->PostInitialize();
 	UniqueIdentity->PostInitialize();
+	UniqueOptionBool->PostInitialize();
+	UniqueOptionConnectionId->PostInitialize();
+	UniqueOptionI128->PostInitialize();
+	UniqueOptionI16->PostInitialize();
+	UniqueOptionI256->PostInitialize();
+	UniqueOptionI32->PostInitialize();
+	UniqueOptionI64->PostInitialize();
+	UniqueOptionI8->PostInitialize();
+	UniqueOptionIdentity->PostInitialize();
+	UniqueOptionString->PostInitialize();
+	UniqueOptionU128->PostInitialize();
+	UniqueOptionU16->PostInitialize();
+	UniqueOptionU256->PostInitialize();
+	UniqueOptionU32->PostInitialize();
+	UniqueOptionU64->PostInitialize();
+	UniqueOptionU8->PostInitialize();
+	UniqueOptionUuid->PostInitialize();
 	UniqueString->PostInitialize();
 	UniqueU128->PostInitialize();
 	UniqueU16->PostInitialize();
@@ -3195,6 +3263,788 @@ bool URemoteReducers::InvokeDeleteAllUniqueIdentityWithArgs(const FReducerEventC
     }
 
     OnDeleteAllUniqueIdentity.Broadcast(Context, Args.I, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueOptionBool(const FTestClientOptionalBool B, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueOptionBoolArgs ReducerArgs(B, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_option_bool"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueOptionBool(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionBool(const FReducerEventContext& Context, const UDeleteAllUniqueOptionBoolReducer* Args)
+{
+    if (!OnDeleteAllUniqueOptionBool.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionBool"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionBool.Broadcast(Context, Args->B, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionBoolWithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueOptionBoolArgs& Args)
+{
+    if (!OnDeleteAllUniqueOptionBool.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionBool"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionBool.Broadcast(Context, Args.B, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueOptionConnectionId(const FTestClientOptionalConnectionId& A, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueOptionConnectionIdArgs ReducerArgs(A, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_option_connection_id"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueOptionConnectionId(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionConnectionId(const FReducerEventContext& Context, const UDeleteAllUniqueOptionConnectionIdReducer* Args)
+{
+    if (!OnDeleteAllUniqueOptionConnectionId.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionConnectionId"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionConnectionId.Broadcast(Context, Args->A, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionConnectionIdWithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueOptionConnectionIdArgs& Args)
+{
+    if (!OnDeleteAllUniqueOptionConnectionId.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionConnectionId"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionConnectionId.Broadcast(Context, Args.A, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueOptionI128(const FTestClientOptionalInt128& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueOptionI128Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_option_i_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueOptionI128(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionI128(const FReducerEventContext& Context, const UDeleteAllUniqueOptionI128Reducer* Args)
+{
+    if (!OnDeleteAllUniqueOptionI128.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionI128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionI128.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionI128WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueOptionI128Args& Args)
+{
+    if (!OnDeleteAllUniqueOptionI128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionI128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionI128.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueOptionI16(const FTestClientOptionalInt16 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueOptionI16Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_option_i_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueOptionI16(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionI16(const FReducerEventContext& Context, const UDeleteAllUniqueOptionI16Reducer* Args)
+{
+    if (!OnDeleteAllUniqueOptionI16.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionI16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionI16.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionI16WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueOptionI16Args& Args)
+{
+    if (!OnDeleteAllUniqueOptionI16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionI16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionI16.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueOptionI256(const FTestClientOptionalInt256& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueOptionI256Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_option_i_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueOptionI256(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionI256(const FReducerEventContext& Context, const UDeleteAllUniqueOptionI256Reducer* Args)
+{
+    if (!OnDeleteAllUniqueOptionI256.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionI256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionI256.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionI256WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueOptionI256Args& Args)
+{
+    if (!OnDeleteAllUniqueOptionI256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionI256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionI256.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueOptionI32(const FTestClientOptionalInt32 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueOptionI32Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_option_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueOptionI32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionI32(const FReducerEventContext& Context, const UDeleteAllUniqueOptionI32Reducer* Args)
+{
+    if (!OnDeleteAllUniqueOptionI32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionI32.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionI32WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueOptionI32Args& Args)
+{
+    if (!OnDeleteAllUniqueOptionI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionI32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionI32.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueOptionI64(const FTestClientOptionalInt64 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueOptionI64Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_option_i_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueOptionI64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionI64(const FReducerEventContext& Context, const UDeleteAllUniqueOptionI64Reducer* Args)
+{
+    if (!OnDeleteAllUniqueOptionI64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionI64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionI64.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionI64WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueOptionI64Args& Args)
+{
+    if (!OnDeleteAllUniqueOptionI64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionI64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionI64.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueOptionI8(const FTestClientOptionalInt8 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueOptionI8Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_option_i_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueOptionI8(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionI8(const FReducerEventContext& Context, const UDeleteAllUniqueOptionI8Reducer* Args)
+{
+    if (!OnDeleteAllUniqueOptionI8.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionI8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionI8.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionI8WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueOptionI8Args& Args)
+{
+    if (!OnDeleteAllUniqueOptionI8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionI8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionI8.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueOptionIdentity(const FTestClientOptionalIdentity& I, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueOptionIdentityArgs ReducerArgs(I, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_option_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueOptionIdentity(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionIdentity(const FReducerEventContext& Context, const UDeleteAllUniqueOptionIdentityReducer* Args)
+{
+    if (!OnDeleteAllUniqueOptionIdentity.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionIdentity.Broadcast(Context, Args->I, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionIdentityWithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueOptionIdentityArgs& Args)
+{
+    if (!OnDeleteAllUniqueOptionIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionIdentity.Broadcast(Context, Args.I, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueOptionString(const FTestClientOptionalString& S, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueOptionStringArgs ReducerArgs(S, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_option_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueOptionString(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionString(const FReducerEventContext& Context, const UDeleteAllUniqueOptionStringReducer* Args)
+{
+    if (!OnDeleteAllUniqueOptionString.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionString"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionString.Broadcast(Context, Args->S, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionStringWithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueOptionStringArgs& Args)
+{
+    if (!OnDeleteAllUniqueOptionString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionString"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionString.Broadcast(Context, Args.S, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueOptionU128(const FTestClientOptionalUInt128& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueOptionU128Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_option_u_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueOptionU128(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionU128(const FReducerEventContext& Context, const UDeleteAllUniqueOptionU128Reducer* Args)
+{
+    if (!OnDeleteAllUniqueOptionU128.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionU128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionU128.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionU128WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueOptionU128Args& Args)
+{
+    if (!OnDeleteAllUniqueOptionU128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionU128"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionU128.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueOptionU16(const FTestClientOptionalUInt16 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueOptionU16Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_option_u_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueOptionU16(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionU16(const FReducerEventContext& Context, const UDeleteAllUniqueOptionU16Reducer* Args)
+{
+    if (!OnDeleteAllUniqueOptionU16.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionU16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionU16.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionU16WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueOptionU16Args& Args)
+{
+    if (!OnDeleteAllUniqueOptionU16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionU16"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionU16.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueOptionU256(const FTestClientOptionalUInt256& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueOptionU256Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_option_u_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueOptionU256(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionU256(const FReducerEventContext& Context, const UDeleteAllUniqueOptionU256Reducer* Args)
+{
+    if (!OnDeleteAllUniqueOptionU256.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionU256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionU256.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionU256WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueOptionU256Args& Args)
+{
+    if (!OnDeleteAllUniqueOptionU256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionU256"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionU256.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueOptionU32(const FTestClientOptionalUInt32 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueOptionU32Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_option_u_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueOptionU32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionU32(const FReducerEventContext& Context, const UDeleteAllUniqueOptionU32Reducer* Args)
+{
+    if (!OnDeleteAllUniqueOptionU32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionU32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionU32.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionU32WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueOptionU32Args& Args)
+{
+    if (!OnDeleteAllUniqueOptionU32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionU32"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionU32.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueOptionU64(const FTestClientOptionalUInt64 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueOptionU64Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_option_u_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueOptionU64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionU64(const FReducerEventContext& Context, const UDeleteAllUniqueOptionU64Reducer* Args)
+{
+    if (!OnDeleteAllUniqueOptionU64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionU64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionU64.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionU64WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueOptionU64Args& Args)
+{
+    if (!OnDeleteAllUniqueOptionU64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionU64"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionU64.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueOptionU8(const FTestClientOptionalUInt8 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueOptionU8Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_option_u_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueOptionU8(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionU8(const FReducerEventContext& Context, const UDeleteAllUniqueOptionU8Reducer* Args)
+{
+    if (!OnDeleteAllUniqueOptionU8.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionU8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionU8.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionU8WithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueOptionU8Args& Args)
+{
+    if (!OnDeleteAllUniqueOptionU8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionU8"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionU8.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::DeleteAllUniqueOptionUuid(const FTestClientOptionalUuid& U, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteAllUniqueOptionUuidArgs ReducerArgs(U, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_all_unique_option_uuid"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteAllUniqueOptionUuid(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionUuid(const FReducerEventContext& Context, const UDeleteAllUniqueOptionUuidReducer* Args)
+{
+    if (!OnDeleteAllUniqueOptionUuid.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionUuid.Broadcast(Context, Args->U, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteAllUniqueOptionUuidWithArgs(const FReducerEventContext& Context, const FDeleteAllUniqueOptionUuidArgs& Args)
+{
+    if (!OnDeleteAllUniqueOptionUuid.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteAllUniqueOptionUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteAllUniqueOptionUuid.Broadcast(Context, Args.U, Args.Data);
     return true;
 }
 
@@ -6116,6 +6966,788 @@ bool URemoteReducers::InvokeDeleteUniqueIdentityWithArgs(const FReducerEventCont
     }
 
     OnDeleteUniqueIdentity.Broadcast(Context, Args.I);
+    return true;
+}
+
+void URemoteReducers::DeleteUniqueOptionBool(const FTestClientOptionalBool B)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteUniqueOptionBoolArgs ReducerArgs(B);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_option_bool"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueOptionBool(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionBool(const FReducerEventContext& Context, const UDeleteUniqueOptionBoolReducer* Args)
+{
+    if (!OnDeleteUniqueOptionBool.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionBool"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionBool.Broadcast(Context, Args->B);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionBoolWithArgs(const FReducerEventContext& Context, const FDeleteUniqueOptionBoolArgs& Args)
+{
+    if (!OnDeleteUniqueOptionBool.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionBool"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionBool.Broadcast(Context, Args.B);
+    return true;
+}
+
+void URemoteReducers::DeleteUniqueOptionConnectionId(const FTestClientOptionalConnectionId& A)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteUniqueOptionConnectionIdArgs ReducerArgs(A);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_option_connection_id"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueOptionConnectionId(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionConnectionId(const FReducerEventContext& Context, const UDeleteUniqueOptionConnectionIdReducer* Args)
+{
+    if (!OnDeleteUniqueOptionConnectionId.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionConnectionId"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionConnectionId.Broadcast(Context, Args->A);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionConnectionIdWithArgs(const FReducerEventContext& Context, const FDeleteUniqueOptionConnectionIdArgs& Args)
+{
+    if (!OnDeleteUniqueOptionConnectionId.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionConnectionId"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionConnectionId.Broadcast(Context, Args.A);
+    return true;
+}
+
+void URemoteReducers::DeleteUniqueOptionI128(const FTestClientOptionalInt128& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteUniqueOptionI128Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_option_i_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueOptionI128(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionI128(const FReducerEventContext& Context, const UDeleteUniqueOptionI128Reducer* Args)
+{
+    if (!OnDeleteUniqueOptionI128.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionI128"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionI128.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionI128WithArgs(const FReducerEventContext& Context, const FDeleteUniqueOptionI128Args& Args)
+{
+    if (!OnDeleteUniqueOptionI128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionI128"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionI128.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteUniqueOptionI16(const FTestClientOptionalInt16 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteUniqueOptionI16Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_option_i_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueOptionI16(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionI16(const FReducerEventContext& Context, const UDeleteUniqueOptionI16Reducer* Args)
+{
+    if (!OnDeleteUniqueOptionI16.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionI16"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionI16.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionI16WithArgs(const FReducerEventContext& Context, const FDeleteUniqueOptionI16Args& Args)
+{
+    if (!OnDeleteUniqueOptionI16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionI16"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionI16.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteUniqueOptionI256(const FTestClientOptionalInt256& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteUniqueOptionI256Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_option_i_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueOptionI256(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionI256(const FReducerEventContext& Context, const UDeleteUniqueOptionI256Reducer* Args)
+{
+    if (!OnDeleteUniqueOptionI256.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionI256"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionI256.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionI256WithArgs(const FReducerEventContext& Context, const FDeleteUniqueOptionI256Args& Args)
+{
+    if (!OnDeleteUniqueOptionI256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionI256"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionI256.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteUniqueOptionI32(const FTestClientOptionalInt32 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteUniqueOptionI32Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_option_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueOptionI32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionI32(const FReducerEventContext& Context, const UDeleteUniqueOptionI32Reducer* Args)
+{
+    if (!OnDeleteUniqueOptionI32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionI32"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionI32.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionI32WithArgs(const FReducerEventContext& Context, const FDeleteUniqueOptionI32Args& Args)
+{
+    if (!OnDeleteUniqueOptionI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionI32"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionI32.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteUniqueOptionI64(const FTestClientOptionalInt64 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteUniqueOptionI64Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_option_i_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueOptionI64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionI64(const FReducerEventContext& Context, const UDeleteUniqueOptionI64Reducer* Args)
+{
+    if (!OnDeleteUniqueOptionI64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionI64"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionI64.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionI64WithArgs(const FReducerEventContext& Context, const FDeleteUniqueOptionI64Args& Args)
+{
+    if (!OnDeleteUniqueOptionI64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionI64"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionI64.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteUniqueOptionI8(const FTestClientOptionalInt8 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteUniqueOptionI8Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_option_i_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueOptionI8(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionI8(const FReducerEventContext& Context, const UDeleteUniqueOptionI8Reducer* Args)
+{
+    if (!OnDeleteUniqueOptionI8.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionI8"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionI8.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionI8WithArgs(const FReducerEventContext& Context, const FDeleteUniqueOptionI8Args& Args)
+{
+    if (!OnDeleteUniqueOptionI8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionI8"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionI8.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteUniqueOptionIdentity(const FTestClientOptionalIdentity& I)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteUniqueOptionIdentityArgs ReducerArgs(I);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_option_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueOptionIdentity(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionIdentity(const FReducerEventContext& Context, const UDeleteUniqueOptionIdentityReducer* Args)
+{
+    if (!OnDeleteUniqueOptionIdentity.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionIdentity.Broadcast(Context, Args->I);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionIdentityWithArgs(const FReducerEventContext& Context, const FDeleteUniqueOptionIdentityArgs& Args)
+{
+    if (!OnDeleteUniqueOptionIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionIdentity.Broadcast(Context, Args.I);
+    return true;
+}
+
+void URemoteReducers::DeleteUniqueOptionString(const FTestClientOptionalString& S)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteUniqueOptionStringArgs ReducerArgs(S);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_option_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueOptionString(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionString(const FReducerEventContext& Context, const UDeleteUniqueOptionStringReducer* Args)
+{
+    if (!OnDeleteUniqueOptionString.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionString"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionString.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionStringWithArgs(const FReducerEventContext& Context, const FDeleteUniqueOptionStringArgs& Args)
+{
+    if (!OnDeleteUniqueOptionString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionString"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionString.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::DeleteUniqueOptionU128(const FTestClientOptionalUInt128& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteUniqueOptionU128Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_option_u_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueOptionU128(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionU128(const FReducerEventContext& Context, const UDeleteUniqueOptionU128Reducer* Args)
+{
+    if (!OnDeleteUniqueOptionU128.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionU128"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionU128.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionU128WithArgs(const FReducerEventContext& Context, const FDeleteUniqueOptionU128Args& Args)
+{
+    if (!OnDeleteUniqueOptionU128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionU128"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionU128.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteUniqueOptionU16(const FTestClientOptionalUInt16 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteUniqueOptionU16Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_option_u_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueOptionU16(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionU16(const FReducerEventContext& Context, const UDeleteUniqueOptionU16Reducer* Args)
+{
+    if (!OnDeleteUniqueOptionU16.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionU16"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionU16.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionU16WithArgs(const FReducerEventContext& Context, const FDeleteUniqueOptionU16Args& Args)
+{
+    if (!OnDeleteUniqueOptionU16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionU16"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionU16.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteUniqueOptionU256(const FTestClientOptionalUInt256& N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteUniqueOptionU256Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_option_u_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueOptionU256(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionU256(const FReducerEventContext& Context, const UDeleteUniqueOptionU256Reducer* Args)
+{
+    if (!OnDeleteUniqueOptionU256.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionU256"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionU256.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionU256WithArgs(const FReducerEventContext& Context, const FDeleteUniqueOptionU256Args& Args)
+{
+    if (!OnDeleteUniqueOptionU256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionU256"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionU256.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteUniqueOptionU32(const FTestClientOptionalUInt32 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteUniqueOptionU32Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_option_u_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueOptionU32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionU32(const FReducerEventContext& Context, const UDeleteUniqueOptionU32Reducer* Args)
+{
+    if (!OnDeleteUniqueOptionU32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionU32"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionU32.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionU32WithArgs(const FReducerEventContext& Context, const FDeleteUniqueOptionU32Args& Args)
+{
+    if (!OnDeleteUniqueOptionU32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionU32"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionU32.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteUniqueOptionU64(const FTestClientOptionalUInt64 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteUniqueOptionU64Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_option_u_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueOptionU64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionU64(const FReducerEventContext& Context, const UDeleteUniqueOptionU64Reducer* Args)
+{
+    if (!OnDeleteUniqueOptionU64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionU64"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionU64.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionU64WithArgs(const FReducerEventContext& Context, const FDeleteUniqueOptionU64Args& Args)
+{
+    if (!OnDeleteUniqueOptionU64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionU64"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionU64.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteUniqueOptionU8(const FTestClientOptionalUInt8 N)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteUniqueOptionU8Args ReducerArgs(N);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_option_u_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueOptionU8(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionU8(const FReducerEventContext& Context, const UDeleteUniqueOptionU8Reducer* Args)
+{
+    if (!OnDeleteUniqueOptionU8.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionU8"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionU8.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionU8WithArgs(const FReducerEventContext& Context, const FDeleteUniqueOptionU8Args& Args)
+{
+    if (!OnDeleteUniqueOptionU8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionU8"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionU8.Broadcast(Context, Args.N);
+    return true;
+}
+
+void URemoteReducers::DeleteUniqueOptionUuid(const FTestClientOptionalUuid& U)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FDeleteUniqueOptionUuidArgs ReducerArgs(U);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("delete_unique_option_uuid"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::DeleteUniqueOptionUuid(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionUuid(const FReducerEventContext& Context, const UDeleteUniqueOptionUuidReducer* Args)
+{
+    if (!OnDeleteUniqueOptionUuid.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionUuid.Broadcast(Context, Args->U);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueOptionUuidWithArgs(const FReducerEventContext& Context, const FDeleteUniqueOptionUuidArgs& Args)
+{
+    if (!OnDeleteUniqueOptionUuid.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueOptionUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueOptionUuid.Broadcast(Context, Args.U);
     return true;
 }
 
@@ -10374,6 +12006,788 @@ bool URemoteReducers::InvokeInsertUniqueIdentityWithArgs(const FReducerEventCont
     return true;
 }
 
+void URemoteReducers::InsertUniqueOptionBool(const FTestClientOptionalBool B, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FInsertUniqueOptionBoolArgs ReducerArgs(B, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_option_bool"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueOptionBool(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionBool(const FReducerEventContext& Context, const UInsertUniqueOptionBoolReducer* Args)
+{
+    if (!OnInsertUniqueOptionBool.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionBool"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionBool.Broadcast(Context, Args->B, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionBoolWithArgs(const FReducerEventContext& Context, const FInsertUniqueOptionBoolArgs& Args)
+{
+    if (!OnInsertUniqueOptionBool.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionBool"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionBool.Broadcast(Context, Args.B, Args.Data);
+    return true;
+}
+
+void URemoteReducers::InsertUniqueOptionConnectionId(const FTestClientOptionalConnectionId& A, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FInsertUniqueOptionConnectionIdArgs ReducerArgs(A, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_option_connection_id"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueOptionConnectionId(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionConnectionId(const FReducerEventContext& Context, const UInsertUniqueOptionConnectionIdReducer* Args)
+{
+    if (!OnInsertUniqueOptionConnectionId.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionConnectionId"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionConnectionId.Broadcast(Context, Args->A, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionConnectionIdWithArgs(const FReducerEventContext& Context, const FInsertUniqueOptionConnectionIdArgs& Args)
+{
+    if (!OnInsertUniqueOptionConnectionId.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionConnectionId"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionConnectionId.Broadcast(Context, Args.A, Args.Data);
+    return true;
+}
+
+void URemoteReducers::InsertUniqueOptionI128(const FTestClientOptionalInt128& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FInsertUniqueOptionI128Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_option_i_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueOptionI128(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionI128(const FReducerEventContext& Context, const UInsertUniqueOptionI128Reducer* Args)
+{
+    if (!OnInsertUniqueOptionI128.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionI128"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionI128.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionI128WithArgs(const FReducerEventContext& Context, const FInsertUniqueOptionI128Args& Args)
+{
+    if (!OnInsertUniqueOptionI128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionI128"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionI128.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::InsertUniqueOptionI16(const FTestClientOptionalInt16 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FInsertUniqueOptionI16Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_option_i_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueOptionI16(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionI16(const FReducerEventContext& Context, const UInsertUniqueOptionI16Reducer* Args)
+{
+    if (!OnInsertUniqueOptionI16.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionI16"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionI16.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionI16WithArgs(const FReducerEventContext& Context, const FInsertUniqueOptionI16Args& Args)
+{
+    if (!OnInsertUniqueOptionI16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionI16"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionI16.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::InsertUniqueOptionI256(const FTestClientOptionalInt256& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FInsertUniqueOptionI256Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_option_i_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueOptionI256(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionI256(const FReducerEventContext& Context, const UInsertUniqueOptionI256Reducer* Args)
+{
+    if (!OnInsertUniqueOptionI256.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionI256"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionI256.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionI256WithArgs(const FReducerEventContext& Context, const FInsertUniqueOptionI256Args& Args)
+{
+    if (!OnInsertUniqueOptionI256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionI256"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionI256.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::InsertUniqueOptionI32(const FTestClientOptionalInt32 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FInsertUniqueOptionI32Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_option_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueOptionI32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionI32(const FReducerEventContext& Context, const UInsertUniqueOptionI32Reducer* Args)
+{
+    if (!OnInsertUniqueOptionI32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionI32"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionI32.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionI32WithArgs(const FReducerEventContext& Context, const FInsertUniqueOptionI32Args& Args)
+{
+    if (!OnInsertUniqueOptionI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionI32"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionI32.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::InsertUniqueOptionI64(const FTestClientOptionalInt64 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FInsertUniqueOptionI64Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_option_i_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueOptionI64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionI64(const FReducerEventContext& Context, const UInsertUniqueOptionI64Reducer* Args)
+{
+    if (!OnInsertUniqueOptionI64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionI64"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionI64.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionI64WithArgs(const FReducerEventContext& Context, const FInsertUniqueOptionI64Args& Args)
+{
+    if (!OnInsertUniqueOptionI64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionI64"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionI64.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::InsertUniqueOptionI8(const FTestClientOptionalInt8 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FInsertUniqueOptionI8Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_option_i_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueOptionI8(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionI8(const FReducerEventContext& Context, const UInsertUniqueOptionI8Reducer* Args)
+{
+    if (!OnInsertUniqueOptionI8.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionI8"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionI8.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionI8WithArgs(const FReducerEventContext& Context, const FInsertUniqueOptionI8Args& Args)
+{
+    if (!OnInsertUniqueOptionI8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionI8"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionI8.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::InsertUniqueOptionIdentity(const FTestClientOptionalIdentity& I, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FInsertUniqueOptionIdentityArgs ReducerArgs(I, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_option_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueOptionIdentity(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionIdentity(const FReducerEventContext& Context, const UInsertUniqueOptionIdentityReducer* Args)
+{
+    if (!OnInsertUniqueOptionIdentity.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionIdentity"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionIdentity.Broadcast(Context, Args->I, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionIdentityWithArgs(const FReducerEventContext& Context, const FInsertUniqueOptionIdentityArgs& Args)
+{
+    if (!OnInsertUniqueOptionIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionIdentity"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionIdentity.Broadcast(Context, Args.I, Args.Data);
+    return true;
+}
+
+void URemoteReducers::InsertUniqueOptionString(const FTestClientOptionalString& S, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FInsertUniqueOptionStringArgs ReducerArgs(S, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_option_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueOptionString(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionString(const FReducerEventContext& Context, const UInsertUniqueOptionStringReducer* Args)
+{
+    if (!OnInsertUniqueOptionString.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionString"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionString.Broadcast(Context, Args->S, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionStringWithArgs(const FReducerEventContext& Context, const FInsertUniqueOptionStringArgs& Args)
+{
+    if (!OnInsertUniqueOptionString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionString"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionString.Broadcast(Context, Args.S, Args.Data);
+    return true;
+}
+
+void URemoteReducers::InsertUniqueOptionU128(const FTestClientOptionalUInt128& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FInsertUniqueOptionU128Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_option_u_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueOptionU128(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionU128(const FReducerEventContext& Context, const UInsertUniqueOptionU128Reducer* Args)
+{
+    if (!OnInsertUniqueOptionU128.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionU128"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionU128.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionU128WithArgs(const FReducerEventContext& Context, const FInsertUniqueOptionU128Args& Args)
+{
+    if (!OnInsertUniqueOptionU128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionU128"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionU128.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::InsertUniqueOptionU16(const FTestClientOptionalUInt16 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FInsertUniqueOptionU16Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_option_u_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueOptionU16(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionU16(const FReducerEventContext& Context, const UInsertUniqueOptionU16Reducer* Args)
+{
+    if (!OnInsertUniqueOptionU16.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionU16"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionU16.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionU16WithArgs(const FReducerEventContext& Context, const FInsertUniqueOptionU16Args& Args)
+{
+    if (!OnInsertUniqueOptionU16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionU16"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionU16.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::InsertUniqueOptionU256(const FTestClientOptionalUInt256& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FInsertUniqueOptionU256Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_option_u_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueOptionU256(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionU256(const FReducerEventContext& Context, const UInsertUniqueOptionU256Reducer* Args)
+{
+    if (!OnInsertUniqueOptionU256.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionU256"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionU256.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionU256WithArgs(const FReducerEventContext& Context, const FInsertUniqueOptionU256Args& Args)
+{
+    if (!OnInsertUniqueOptionU256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionU256"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionU256.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::InsertUniqueOptionU32(const FTestClientOptionalUInt32 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FInsertUniqueOptionU32Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_option_u_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueOptionU32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionU32(const FReducerEventContext& Context, const UInsertUniqueOptionU32Reducer* Args)
+{
+    if (!OnInsertUniqueOptionU32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionU32"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionU32.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionU32WithArgs(const FReducerEventContext& Context, const FInsertUniqueOptionU32Args& Args)
+{
+    if (!OnInsertUniqueOptionU32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionU32"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionU32.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::InsertUniqueOptionU64(const FTestClientOptionalUInt64 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FInsertUniqueOptionU64Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_option_u_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueOptionU64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionU64(const FReducerEventContext& Context, const UInsertUniqueOptionU64Reducer* Args)
+{
+    if (!OnInsertUniqueOptionU64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionU64"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionU64.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionU64WithArgs(const FReducerEventContext& Context, const FInsertUniqueOptionU64Args& Args)
+{
+    if (!OnInsertUniqueOptionU64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionU64"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionU64.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::InsertUniqueOptionU8(const FTestClientOptionalUInt8 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FInsertUniqueOptionU8Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_option_u_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueOptionU8(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionU8(const FReducerEventContext& Context, const UInsertUniqueOptionU8Reducer* Args)
+{
+    if (!OnInsertUniqueOptionU8.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionU8"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionU8.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionU8WithArgs(const FReducerEventContext& Context, const FInsertUniqueOptionU8Args& Args)
+{
+    if (!OnInsertUniqueOptionU8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionU8"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionU8.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::InsertUniqueOptionUuid(const FTestClientOptionalUuid& U, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FInsertUniqueOptionUuidArgs ReducerArgs(U, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("insert_unique_option_uuid"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::InsertUniqueOptionUuid(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionUuid(const FReducerEventContext& Context, const UInsertUniqueOptionUuidReducer* Args)
+{
+    if (!OnInsertUniqueOptionUuid.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionUuid"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionUuid.Broadcast(Context, Args->U, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueOptionUuidWithArgs(const FReducerEventContext& Context, const FInsertUniqueOptionUuidArgs& Args)
+{
+    if (!OnInsertUniqueOptionUuid.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueOptionUuid"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueOptionUuid.Broadcast(Context, Args.U, Args.Data);
+    return true;
+}
+
 void URemoteReducers::InsertUniqueString(const FString& S, const int32 Data)
 {
     if (!Conn)
@@ -13456,6 +15870,788 @@ bool URemoteReducers::InvokeUpdateUniqueIdentityWithArgs(const FReducerEventCont
     return true;
 }
 
+void URemoteReducers::UpdateUniqueOptionBool(const FTestClientOptionalBool B, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FUpdateUniqueOptionBoolArgs ReducerArgs(B, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_option_bool"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueOptionBool(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionBool(const FReducerEventContext& Context, const UUpdateUniqueOptionBoolReducer* Args)
+{
+    if (!OnUpdateUniqueOptionBool.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionBool"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionBool.Broadcast(Context, Args->B, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionBoolWithArgs(const FReducerEventContext& Context, const FUpdateUniqueOptionBoolArgs& Args)
+{
+    if (!OnUpdateUniqueOptionBool.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionBool"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionBool.Broadcast(Context, Args.B, Args.Data);
+    return true;
+}
+
+void URemoteReducers::UpdateUniqueOptionConnectionId(const FTestClientOptionalConnectionId& A, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FUpdateUniqueOptionConnectionIdArgs ReducerArgs(A, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_option_connection_id"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueOptionConnectionId(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionConnectionId(const FReducerEventContext& Context, const UUpdateUniqueOptionConnectionIdReducer* Args)
+{
+    if (!OnUpdateUniqueOptionConnectionId.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionConnectionId"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionConnectionId.Broadcast(Context, Args->A, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionConnectionIdWithArgs(const FReducerEventContext& Context, const FUpdateUniqueOptionConnectionIdArgs& Args)
+{
+    if (!OnUpdateUniqueOptionConnectionId.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionConnectionId"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionConnectionId.Broadcast(Context, Args.A, Args.Data);
+    return true;
+}
+
+void URemoteReducers::UpdateUniqueOptionI128(const FTestClientOptionalInt128& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FUpdateUniqueOptionI128Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_option_i_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueOptionI128(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionI128(const FReducerEventContext& Context, const UUpdateUniqueOptionI128Reducer* Args)
+{
+    if (!OnUpdateUniqueOptionI128.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionI128"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionI128.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionI128WithArgs(const FReducerEventContext& Context, const FUpdateUniqueOptionI128Args& Args)
+{
+    if (!OnUpdateUniqueOptionI128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionI128"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionI128.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::UpdateUniqueOptionI16(const FTestClientOptionalInt16 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FUpdateUniqueOptionI16Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_option_i_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueOptionI16(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionI16(const FReducerEventContext& Context, const UUpdateUniqueOptionI16Reducer* Args)
+{
+    if (!OnUpdateUniqueOptionI16.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionI16"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionI16.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionI16WithArgs(const FReducerEventContext& Context, const FUpdateUniqueOptionI16Args& Args)
+{
+    if (!OnUpdateUniqueOptionI16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionI16"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionI16.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::UpdateUniqueOptionI256(const FTestClientOptionalInt256& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FUpdateUniqueOptionI256Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_option_i_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueOptionI256(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionI256(const FReducerEventContext& Context, const UUpdateUniqueOptionI256Reducer* Args)
+{
+    if (!OnUpdateUniqueOptionI256.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionI256"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionI256.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionI256WithArgs(const FReducerEventContext& Context, const FUpdateUniqueOptionI256Args& Args)
+{
+    if (!OnUpdateUniqueOptionI256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionI256"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionI256.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::UpdateUniqueOptionI32(const FTestClientOptionalInt32 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FUpdateUniqueOptionI32Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_option_i_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueOptionI32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionI32(const FReducerEventContext& Context, const UUpdateUniqueOptionI32Reducer* Args)
+{
+    if (!OnUpdateUniqueOptionI32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionI32"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionI32.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionI32WithArgs(const FReducerEventContext& Context, const FUpdateUniqueOptionI32Args& Args)
+{
+    if (!OnUpdateUniqueOptionI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionI32"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionI32.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::UpdateUniqueOptionI64(const FTestClientOptionalInt64 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FUpdateUniqueOptionI64Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_option_i_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueOptionI64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionI64(const FReducerEventContext& Context, const UUpdateUniqueOptionI64Reducer* Args)
+{
+    if (!OnUpdateUniqueOptionI64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionI64"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionI64.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionI64WithArgs(const FReducerEventContext& Context, const FUpdateUniqueOptionI64Args& Args)
+{
+    if (!OnUpdateUniqueOptionI64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionI64"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionI64.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::UpdateUniqueOptionI8(const FTestClientOptionalInt8 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FUpdateUniqueOptionI8Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_option_i_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueOptionI8(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionI8(const FReducerEventContext& Context, const UUpdateUniqueOptionI8Reducer* Args)
+{
+    if (!OnUpdateUniqueOptionI8.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionI8"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionI8.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionI8WithArgs(const FReducerEventContext& Context, const FUpdateUniqueOptionI8Args& Args)
+{
+    if (!OnUpdateUniqueOptionI8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionI8"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionI8.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::UpdateUniqueOptionIdentity(const FTestClientOptionalIdentity& I, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FUpdateUniqueOptionIdentityArgs ReducerArgs(I, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_option_identity"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueOptionIdentity(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionIdentity(const FReducerEventContext& Context, const UUpdateUniqueOptionIdentityReducer* Args)
+{
+    if (!OnUpdateUniqueOptionIdentity.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionIdentity"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionIdentity.Broadcast(Context, Args->I, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionIdentityWithArgs(const FReducerEventContext& Context, const FUpdateUniqueOptionIdentityArgs& Args)
+{
+    if (!OnUpdateUniqueOptionIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionIdentity"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionIdentity.Broadcast(Context, Args.I, Args.Data);
+    return true;
+}
+
+void URemoteReducers::UpdateUniqueOptionString(const FTestClientOptionalString& S, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FUpdateUniqueOptionStringArgs ReducerArgs(S, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_option_string"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueOptionString(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionString(const FReducerEventContext& Context, const UUpdateUniqueOptionStringReducer* Args)
+{
+    if (!OnUpdateUniqueOptionString.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionString"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionString.Broadcast(Context, Args->S, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionStringWithArgs(const FReducerEventContext& Context, const FUpdateUniqueOptionStringArgs& Args)
+{
+    if (!OnUpdateUniqueOptionString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionString"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionString.Broadcast(Context, Args.S, Args.Data);
+    return true;
+}
+
+void URemoteReducers::UpdateUniqueOptionU128(const FTestClientOptionalUInt128& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FUpdateUniqueOptionU128Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_option_u_128"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueOptionU128(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionU128(const FReducerEventContext& Context, const UUpdateUniqueOptionU128Reducer* Args)
+{
+    if (!OnUpdateUniqueOptionU128.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionU128"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionU128.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionU128WithArgs(const FReducerEventContext& Context, const FUpdateUniqueOptionU128Args& Args)
+{
+    if (!OnUpdateUniqueOptionU128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionU128"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionU128.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::UpdateUniqueOptionU16(const FTestClientOptionalUInt16 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FUpdateUniqueOptionU16Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_option_u_16"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueOptionU16(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionU16(const FReducerEventContext& Context, const UUpdateUniqueOptionU16Reducer* Args)
+{
+    if (!OnUpdateUniqueOptionU16.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionU16"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionU16.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionU16WithArgs(const FReducerEventContext& Context, const FUpdateUniqueOptionU16Args& Args)
+{
+    if (!OnUpdateUniqueOptionU16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionU16"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionU16.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::UpdateUniqueOptionU256(const FTestClientOptionalUInt256& N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FUpdateUniqueOptionU256Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_option_u_256"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueOptionU256(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionU256(const FReducerEventContext& Context, const UUpdateUniqueOptionU256Reducer* Args)
+{
+    if (!OnUpdateUniqueOptionU256.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionU256"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionU256.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionU256WithArgs(const FReducerEventContext& Context, const FUpdateUniqueOptionU256Args& Args)
+{
+    if (!OnUpdateUniqueOptionU256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionU256"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionU256.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::UpdateUniqueOptionU32(const FTestClientOptionalUInt32 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FUpdateUniqueOptionU32Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_option_u_32"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueOptionU32(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionU32(const FReducerEventContext& Context, const UUpdateUniqueOptionU32Reducer* Args)
+{
+    if (!OnUpdateUniqueOptionU32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionU32"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionU32.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionU32WithArgs(const FReducerEventContext& Context, const FUpdateUniqueOptionU32Args& Args)
+{
+    if (!OnUpdateUniqueOptionU32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionU32"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionU32.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::UpdateUniqueOptionU64(const FTestClientOptionalUInt64 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FUpdateUniqueOptionU64Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_option_u_64"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueOptionU64(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionU64(const FReducerEventContext& Context, const UUpdateUniqueOptionU64Reducer* Args)
+{
+    if (!OnUpdateUniqueOptionU64.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionU64"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionU64.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionU64WithArgs(const FReducerEventContext& Context, const FUpdateUniqueOptionU64Args& Args)
+{
+    if (!OnUpdateUniqueOptionU64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionU64"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionU64.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::UpdateUniqueOptionU8(const FTestClientOptionalUInt8 N, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FUpdateUniqueOptionU8Args ReducerArgs(N, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_option_u_8"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueOptionU8(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionU8(const FReducerEventContext& Context, const UUpdateUniqueOptionU8Reducer* Args)
+{
+    if (!OnUpdateUniqueOptionU8.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionU8"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionU8.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionU8WithArgs(const FReducerEventContext& Context, const FUpdateUniqueOptionU8Args& Args)
+{
+    if (!OnUpdateUniqueOptionU8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionU8"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionU8.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
+void URemoteReducers::UpdateUniqueOptionUuid(const FTestClientOptionalUuid& U, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	FUpdateUniqueOptionUuidArgs ReducerArgs(U, Data);
+	const uint32 RequestId = Conn->CallReducerTyped(TEXT("update_unique_option_uuid"), ReducerArgs);
+	if (RequestId != 0) { Conn->RegisterPendingTypedReducer(RequestId, FReducer::UpdateUniqueOptionUuid(ReducerArgs)); }
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionUuid(const FReducerEventContext& Context, const UUpdateUniqueOptionUuidReducer* Args)
+{
+    if (!OnUpdateUniqueOptionUuid.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionUuid"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionUuid.Broadcast(Context, Args->U, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueOptionUuidWithArgs(const FReducerEventContext& Context, const FUpdateUniqueOptionUuidArgs& Args)
+{
+    if (!OnUpdateUniqueOptionUuid.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueOptionUuid"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueOptionUuid.Broadcast(Context, Args.U, Args.Data);
+    return true;
+}
+
 void URemoteReducers::UpdateUniqueString(const FString& S, const int32 Data)
 {
     if (!Conn)
@@ -14265,6 +17461,108 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeDeleteAllUniqueIdentityWithArgs(Context, Args);
         return;
     }
+    if (ReducerName == TEXT("delete_all_unique_option_bool"))
+    {
+        FDeleteAllUniqueOptionBoolArgs Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueOptionBool();
+        Reducers->InvokeDeleteAllUniqueOptionBoolWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_option_connection_id"))
+    {
+        FDeleteAllUniqueOptionConnectionIdArgs Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueOptionConnectionId();
+        Reducers->InvokeDeleteAllUniqueOptionConnectionIdWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_option_i_128"))
+    {
+        FDeleteAllUniqueOptionI128Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueOptionI128();
+        Reducers->InvokeDeleteAllUniqueOptionI128WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_option_i_16"))
+    {
+        FDeleteAllUniqueOptionI16Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueOptionI16();
+        Reducers->InvokeDeleteAllUniqueOptionI16WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_option_i_256"))
+    {
+        FDeleteAllUniqueOptionI256Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueOptionI256();
+        Reducers->InvokeDeleteAllUniqueOptionI256WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_option_i_32"))
+    {
+        FDeleteAllUniqueOptionI32Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueOptionI32();
+        Reducers->InvokeDeleteAllUniqueOptionI32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_option_i_64"))
+    {
+        FDeleteAllUniqueOptionI64Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueOptionI64();
+        Reducers->InvokeDeleteAllUniqueOptionI64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_option_i_8"))
+    {
+        FDeleteAllUniqueOptionI8Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueOptionI8();
+        Reducers->InvokeDeleteAllUniqueOptionI8WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_option_identity"))
+    {
+        FDeleteAllUniqueOptionIdentityArgs Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueOptionIdentity();
+        Reducers->InvokeDeleteAllUniqueOptionIdentityWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_option_string"))
+    {
+        FDeleteAllUniqueOptionStringArgs Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueOptionString();
+        Reducers->InvokeDeleteAllUniqueOptionStringWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_option_u_128"))
+    {
+        FDeleteAllUniqueOptionU128Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueOptionU128();
+        Reducers->InvokeDeleteAllUniqueOptionU128WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_option_u_16"))
+    {
+        FDeleteAllUniqueOptionU16Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueOptionU16();
+        Reducers->InvokeDeleteAllUniqueOptionU16WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_option_u_256"))
+    {
+        FDeleteAllUniqueOptionU256Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueOptionU256();
+        Reducers->InvokeDeleteAllUniqueOptionU256WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_option_u_32"))
+    {
+        FDeleteAllUniqueOptionU32Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueOptionU32();
+        Reducers->InvokeDeleteAllUniqueOptionU32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_option_u_64"))
+    {
+        FDeleteAllUniqueOptionU64Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueOptionU64();
+        Reducers->InvokeDeleteAllUniqueOptionU64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_option_u_8"))
+    {
+        FDeleteAllUniqueOptionU8Args Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueOptionU8();
+        Reducers->InvokeDeleteAllUniqueOptionU8WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_all_unique_option_uuid"))
+    {
+        FDeleteAllUniqueOptionUuidArgs Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueOptionUuid();
+        Reducers->InvokeDeleteAllUniqueOptionUuidWithArgs(Context, Args);
+        return;
+    }
     if (ReducerName == TEXT("delete_all_unique_string"))
     {
         FDeleteAllUniqueStringArgs Args = ReducerEvent.Reducer.GetAsDeleteAllUniqueString();
@@ -14641,6 +17939,108 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
     {
         FDeleteUniqueIdentityArgs Args = ReducerEvent.Reducer.GetAsDeleteUniqueIdentity();
         Reducers->InvokeDeleteUniqueIdentityWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_unique_option_bool"))
+    {
+        FDeleteUniqueOptionBoolArgs Args = ReducerEvent.Reducer.GetAsDeleteUniqueOptionBool();
+        Reducers->InvokeDeleteUniqueOptionBoolWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_unique_option_connection_id"))
+    {
+        FDeleteUniqueOptionConnectionIdArgs Args = ReducerEvent.Reducer.GetAsDeleteUniqueOptionConnectionId();
+        Reducers->InvokeDeleteUniqueOptionConnectionIdWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_unique_option_i_128"))
+    {
+        FDeleteUniqueOptionI128Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueOptionI128();
+        Reducers->InvokeDeleteUniqueOptionI128WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_unique_option_i_16"))
+    {
+        FDeleteUniqueOptionI16Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueOptionI16();
+        Reducers->InvokeDeleteUniqueOptionI16WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_unique_option_i_256"))
+    {
+        FDeleteUniqueOptionI256Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueOptionI256();
+        Reducers->InvokeDeleteUniqueOptionI256WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_unique_option_i_32"))
+    {
+        FDeleteUniqueOptionI32Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueOptionI32();
+        Reducers->InvokeDeleteUniqueOptionI32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_unique_option_i_64"))
+    {
+        FDeleteUniqueOptionI64Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueOptionI64();
+        Reducers->InvokeDeleteUniqueOptionI64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_unique_option_i_8"))
+    {
+        FDeleteUniqueOptionI8Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueOptionI8();
+        Reducers->InvokeDeleteUniqueOptionI8WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_unique_option_identity"))
+    {
+        FDeleteUniqueOptionIdentityArgs Args = ReducerEvent.Reducer.GetAsDeleteUniqueOptionIdentity();
+        Reducers->InvokeDeleteUniqueOptionIdentityWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_unique_option_string"))
+    {
+        FDeleteUniqueOptionStringArgs Args = ReducerEvent.Reducer.GetAsDeleteUniqueOptionString();
+        Reducers->InvokeDeleteUniqueOptionStringWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_unique_option_u_128"))
+    {
+        FDeleteUniqueOptionU128Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueOptionU128();
+        Reducers->InvokeDeleteUniqueOptionU128WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_unique_option_u_16"))
+    {
+        FDeleteUniqueOptionU16Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueOptionU16();
+        Reducers->InvokeDeleteUniqueOptionU16WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_unique_option_u_256"))
+    {
+        FDeleteUniqueOptionU256Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueOptionU256();
+        Reducers->InvokeDeleteUniqueOptionU256WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_unique_option_u_32"))
+    {
+        FDeleteUniqueOptionU32Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueOptionU32();
+        Reducers->InvokeDeleteUniqueOptionU32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_unique_option_u_64"))
+    {
+        FDeleteUniqueOptionU64Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueOptionU64();
+        Reducers->InvokeDeleteUniqueOptionU64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_unique_option_u_8"))
+    {
+        FDeleteUniqueOptionU8Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueOptionU8();
+        Reducers->InvokeDeleteUniqueOptionU8WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("delete_unique_option_uuid"))
+    {
+        FDeleteUniqueOptionUuidArgs Args = ReducerEvent.Reducer.GetAsDeleteUniqueOptionUuid();
+        Reducers->InvokeDeleteUniqueOptionUuidWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_unique_string"))
@@ -15195,6 +18595,108 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeInsertUniqueIdentityWithArgs(Context, Args);
         return;
     }
+    if (ReducerName == TEXT("insert_unique_option_bool"))
+    {
+        FInsertUniqueOptionBoolArgs Args = ReducerEvent.Reducer.GetAsInsertUniqueOptionBool();
+        Reducers->InvokeInsertUniqueOptionBoolWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("insert_unique_option_connection_id"))
+    {
+        FInsertUniqueOptionConnectionIdArgs Args = ReducerEvent.Reducer.GetAsInsertUniqueOptionConnectionId();
+        Reducers->InvokeInsertUniqueOptionConnectionIdWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("insert_unique_option_i_128"))
+    {
+        FInsertUniqueOptionI128Args Args = ReducerEvent.Reducer.GetAsInsertUniqueOptionI128();
+        Reducers->InvokeInsertUniqueOptionI128WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("insert_unique_option_i_16"))
+    {
+        FInsertUniqueOptionI16Args Args = ReducerEvent.Reducer.GetAsInsertUniqueOptionI16();
+        Reducers->InvokeInsertUniqueOptionI16WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("insert_unique_option_i_256"))
+    {
+        FInsertUniqueOptionI256Args Args = ReducerEvent.Reducer.GetAsInsertUniqueOptionI256();
+        Reducers->InvokeInsertUniqueOptionI256WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("insert_unique_option_i_32"))
+    {
+        FInsertUniqueOptionI32Args Args = ReducerEvent.Reducer.GetAsInsertUniqueOptionI32();
+        Reducers->InvokeInsertUniqueOptionI32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("insert_unique_option_i_64"))
+    {
+        FInsertUniqueOptionI64Args Args = ReducerEvent.Reducer.GetAsInsertUniqueOptionI64();
+        Reducers->InvokeInsertUniqueOptionI64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("insert_unique_option_i_8"))
+    {
+        FInsertUniqueOptionI8Args Args = ReducerEvent.Reducer.GetAsInsertUniqueOptionI8();
+        Reducers->InvokeInsertUniqueOptionI8WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("insert_unique_option_identity"))
+    {
+        FInsertUniqueOptionIdentityArgs Args = ReducerEvent.Reducer.GetAsInsertUniqueOptionIdentity();
+        Reducers->InvokeInsertUniqueOptionIdentityWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("insert_unique_option_string"))
+    {
+        FInsertUniqueOptionStringArgs Args = ReducerEvent.Reducer.GetAsInsertUniqueOptionString();
+        Reducers->InvokeInsertUniqueOptionStringWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("insert_unique_option_u_128"))
+    {
+        FInsertUniqueOptionU128Args Args = ReducerEvent.Reducer.GetAsInsertUniqueOptionU128();
+        Reducers->InvokeInsertUniqueOptionU128WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("insert_unique_option_u_16"))
+    {
+        FInsertUniqueOptionU16Args Args = ReducerEvent.Reducer.GetAsInsertUniqueOptionU16();
+        Reducers->InvokeInsertUniqueOptionU16WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("insert_unique_option_u_256"))
+    {
+        FInsertUniqueOptionU256Args Args = ReducerEvent.Reducer.GetAsInsertUniqueOptionU256();
+        Reducers->InvokeInsertUniqueOptionU256WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("insert_unique_option_u_32"))
+    {
+        FInsertUniqueOptionU32Args Args = ReducerEvent.Reducer.GetAsInsertUniqueOptionU32();
+        Reducers->InvokeInsertUniqueOptionU32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("insert_unique_option_u_64"))
+    {
+        FInsertUniqueOptionU64Args Args = ReducerEvent.Reducer.GetAsInsertUniqueOptionU64();
+        Reducers->InvokeInsertUniqueOptionU64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("insert_unique_option_u_8"))
+    {
+        FInsertUniqueOptionU8Args Args = ReducerEvent.Reducer.GetAsInsertUniqueOptionU8();
+        Reducers->InvokeInsertUniqueOptionU8WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("insert_unique_option_uuid"))
+    {
+        FInsertUniqueOptionUuidArgs Args = ReducerEvent.Reducer.GetAsInsertUniqueOptionUuid();
+        Reducers->InvokeInsertUniqueOptionUuidWithArgs(Context, Args);
+        return;
+    }
     if (ReducerName == TEXT("insert_unique_string"))
     {
         FInsertUniqueStringArgs Args = ReducerEvent.Reducer.GetAsInsertUniqueString();
@@ -15595,6 +19097,108 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
     {
         FUpdateUniqueIdentityArgs Args = ReducerEvent.Reducer.GetAsUpdateUniqueIdentity();
         Reducers->InvokeUpdateUniqueIdentityWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("update_unique_option_bool"))
+    {
+        FUpdateUniqueOptionBoolArgs Args = ReducerEvent.Reducer.GetAsUpdateUniqueOptionBool();
+        Reducers->InvokeUpdateUniqueOptionBoolWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("update_unique_option_connection_id"))
+    {
+        FUpdateUniqueOptionConnectionIdArgs Args = ReducerEvent.Reducer.GetAsUpdateUniqueOptionConnectionId();
+        Reducers->InvokeUpdateUniqueOptionConnectionIdWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("update_unique_option_i_128"))
+    {
+        FUpdateUniqueOptionI128Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueOptionI128();
+        Reducers->InvokeUpdateUniqueOptionI128WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("update_unique_option_i_16"))
+    {
+        FUpdateUniqueOptionI16Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueOptionI16();
+        Reducers->InvokeUpdateUniqueOptionI16WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("update_unique_option_i_256"))
+    {
+        FUpdateUniqueOptionI256Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueOptionI256();
+        Reducers->InvokeUpdateUniqueOptionI256WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("update_unique_option_i_32"))
+    {
+        FUpdateUniqueOptionI32Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueOptionI32();
+        Reducers->InvokeUpdateUniqueOptionI32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("update_unique_option_i_64"))
+    {
+        FUpdateUniqueOptionI64Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueOptionI64();
+        Reducers->InvokeUpdateUniqueOptionI64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("update_unique_option_i_8"))
+    {
+        FUpdateUniqueOptionI8Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueOptionI8();
+        Reducers->InvokeUpdateUniqueOptionI8WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("update_unique_option_identity"))
+    {
+        FUpdateUniqueOptionIdentityArgs Args = ReducerEvent.Reducer.GetAsUpdateUniqueOptionIdentity();
+        Reducers->InvokeUpdateUniqueOptionIdentityWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("update_unique_option_string"))
+    {
+        FUpdateUniqueOptionStringArgs Args = ReducerEvent.Reducer.GetAsUpdateUniqueOptionString();
+        Reducers->InvokeUpdateUniqueOptionStringWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("update_unique_option_u_128"))
+    {
+        FUpdateUniqueOptionU128Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueOptionU128();
+        Reducers->InvokeUpdateUniqueOptionU128WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("update_unique_option_u_16"))
+    {
+        FUpdateUniqueOptionU16Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueOptionU16();
+        Reducers->InvokeUpdateUniqueOptionU16WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("update_unique_option_u_256"))
+    {
+        FUpdateUniqueOptionU256Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueOptionU256();
+        Reducers->InvokeUpdateUniqueOptionU256WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("update_unique_option_u_32"))
+    {
+        FUpdateUniqueOptionU32Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueOptionU32();
+        Reducers->InvokeUpdateUniqueOptionU32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("update_unique_option_u_64"))
+    {
+        FUpdateUniqueOptionU64Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueOptionU64();
+        Reducers->InvokeUpdateUniqueOptionU64WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("update_unique_option_u_8"))
+    {
+        FUpdateUniqueOptionU8Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueOptionU8();
+        Reducers->InvokeUpdateUniqueOptionU8WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("update_unique_option_uuid"))
+    {
+        FUpdateUniqueOptionUuidArgs Args = ReducerEvent.Reducer.GetAsUpdateUniqueOptionUuid();
+        Reducers->InvokeUpdateUniqueOptionUuidWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_unique_string"))
@@ -16316,6 +19920,142 @@ USubscriptionBuilder* USubscriptionBuilder::AddUniqueI8Query(const FUniqueI8Quer
 }
 
 USubscriptionBuilder* USubscriptionBuilder::AddUniqueIdentityQuery(const FUniqueIdentityQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueOptionBoolQuery(const FUniqueOptionBoolQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueOptionConnectionIdQuery(const FUniqueOptionConnectionIdQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueOptionI128Query(const FUniqueOptionI128Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueOptionI16Query(const FUniqueOptionI16Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueOptionI256Query(const FUniqueOptionI256Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueOptionI32Query(const FUniqueOptionI32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueOptionI64Query(const FUniqueOptionI64Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueOptionI8Query(const FUniqueOptionI8Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueOptionIdentityQuery(const FUniqueOptionIdentityQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueOptionStringQuery(const FUniqueOptionStringQuery& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueOptionU128Query(const FUniqueOptionU128Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueOptionU16Query(const FUniqueOptionU16Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueOptionU256Query(const FUniqueOptionU256Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueOptionU32Query(const FUniqueOptionU32Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueOptionU64Query(const FUniqueOptionU64Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueOptionU8Query(const FUniqueOptionU8Query& Query)
+{
+	FBlueprintQuery GenericQuery;
+	GenericQuery.Sql = Query.Sql;
+	GenericQuery.ResultSourceName = Query.ResultSourceName;
+	return AddBlueprintQuery(GenericQuery);
+}
+
+USubscriptionBuilder* USubscriptionBuilder::AddUniqueOptionUuidQuery(const FUniqueOptionUuidQuery& Query)
 {
 	FBlueprintQuery GenericQuery;
 	GenericQuery.Sql = Query.Sql;

@@ -50,6 +50,34 @@ void UDeletePrimitiveHandler::OnDeleteUnique##Suffix(const FEventContext& Contex
 FOREACH_UNIQUE_PRIMITIVE(DEFINE_DELETE_UNIQUE)
 #undef DEFINE_DELETE_UNIQUE
 
+/* DeleteOption handler functions --------------------------------------- */
+#define DEFINE_DELETE_UNIQUE_OPTION(Suffix, Field, SomeLiteral, NoneLiteral, Expected, RowStructType) \
+void UDeleteOptionHandler::OnInsertUniqueOption##Suffix(const FEventContext& Context, const RowStructType& Value) \
+{ \
+	static const FString Name(TEXT("InsertUniqueOption" #Suffix)); \
+	RowStructType ExpectedValue; \
+	ExpectedValue.Field = bUseSome ? SomeLiteral : NoneLiteral; \
+	ExpectedValue.Data = Expected; \
+	if (Value == ExpectedValue) { \
+		Counter->MarkSuccess(Name); \
+	} else { \
+		Counter->MarkFailure(Name, TEXT("Unexpected value")); \
+	} \
+	Context.Reducers->DeleteUniqueOption##Suffix(Value.Field); \
+} \
+ \
+void UDeleteOptionHandler::OnDeleteUniqueOption##Suffix(const FEventContext& Context, const RowStructType& Value) \
+{ \
+	static const FString Name(TEXT("DeleteUniqueOption" #Suffix)); \
+	RowStructType ExpectedValue; \
+	ExpectedValue.Field = bUseSome ? SomeLiteral : NoneLiteral; \
+	ExpectedValue.Data = Expected; \
+	(Value == ExpectedValue) ? Counter->MarkSuccess(Name) : Counter->MarkFailure(Name, TEXT("Unexpected value")); \
+}
+
+FOREACH_UNIQUE_OPTION_PRIMITIVE(DEFINE_DELETE_UNIQUE_OPTION)
+#undef DEFINE_DELETE_UNIQUE_OPTION
+
 /* UpdatePrimitive handler functions ------------------------------------ */
 #define DEFINE_UPDATE_PK(Suffix, Field, Literal, Expected, Updated, RowStructType) \
 void UUpdatePrimitiveHandler::OnInsertPk##Suffix(const FEventContext& Context, const RowStructType& Value) \
