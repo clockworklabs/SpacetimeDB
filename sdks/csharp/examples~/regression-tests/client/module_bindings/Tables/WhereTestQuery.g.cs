@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class WhereTestQueryHandle : RemoteTableHandle<EventContext, WhereTest>
         {
-            protected override string RemoteTableName => "where_test_query";
+            public override string RemoteTableName => "where_test_query";
 
             public sealed class IdUniqueIndex : UniqueIndexBase<uint>
             {

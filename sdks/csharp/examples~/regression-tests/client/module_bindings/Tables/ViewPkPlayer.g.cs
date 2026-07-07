@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class ViewPkPlayerHandle : RemoteTableHandle<EventContext, ViewPkPlayer>
         {
-            protected override string RemoteTableName => "view_pk_player";
+            public override string RemoteTableName => "view_pk_player";
 
             public sealed class IdUniqueIndex : UniqueIndexBase<ulong>
             {
