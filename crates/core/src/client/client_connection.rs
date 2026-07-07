@@ -291,6 +291,15 @@ pub struct ClientConnectionMetrics {
     /// Care must be taken not to increment it after the client has disconnected
     /// and performed its clean-up.
     pub sendtx_queue_size: IntGauge,
+
+    /// The `ws_clients_disconnected` metric labeled with this database's
+    /// `Identity` and cause `capacity_kick`.
+    ///
+    /// Incremented when a client is forcibly disconnected because its outgoing
+    /// message queue reached [`CLIENT_CHANNEL_CAPACITY`]. Other disconnect
+    /// causes are recorded by the websocket actor in client-api, which cannot
+    /// observe this one: kicking aborts the actor task.
+    pub websocket_capacity_kicks: IntCounter,
 }
 
 impl ClientConnectionMetrics {
@@ -305,11 +314,15 @@ impl ClientConnectionMetrics {
         let sendtx_queue_size = WORKER_METRICS
             .total_outgoing_queue_length
             .with_label_values(&database_identity);
+        let websocket_capacity_kicks = WORKER_METRICS
+            .ws_clients_disconnected
+            .with_label_values(&database_identity, "capacity_kick");
 
         Self {
             websocket_request_msg_size,
             websocket_requests,
             sendtx_queue_size,
+            websocket_capacity_kicks,
         }
     }
 }
@@ -409,8 +422,11 @@ impl ClientConnectionSender {
                 log::warn!(
                     "Client {:?} exceeded channel capacity of {}, kicking",
                     self.id,
-                    self.sendtx.capacity(),
+                    self.sendtx.max_capacity(),
                 );
+                if let Some(metrics) = &self.metrics {
+                    metrics.websocket_capacity_kicks.inc();
+                }
                 self.abort_handle.abort();
                 self.cancelled.store(true, Ordering::Relaxed);
                 return Err(ClientSendError::Cancelled);
@@ -728,13 +744,20 @@ impl ClientConnection {
 
             let _gauge_guard = module_info.metrics.connected_clients.inc_scope();
             module_info.metrics.ws_clients_spawned.inc();
-            scopeguard::defer! {
-                let database_identity = module_info.database_identity;
+            // Runs only if this task is aborted (e.g. by `ClientConnectionSender::send`
+            // kicking a client whose outgoing queue is full) or if `fut` panics.
+            // Normal disconnects complete `fut`, defusing this guard;
+            // they are logged, with a cause, by the websocket actor.
+            let aborted_metric = module_info.metrics.ws_clients_aborted.clone();
+            let abort_guard = scopeguard::guard((), move |()| {
                 log::warn!("websocket connection aborted for client identity `{client_identity}` and database identity `{database_identity}`");
-                module_info.metrics.ws_clients_aborted.inc();
-            };
+                aborted_metric.inc();
+            });
 
-            fut.await
+            fut.await;
+
+            scopeguard::ScopeGuard::into_inner(abort_guard);
+            log::debug!("websocket connection ended for client identity `{client_identity}` and database identity `{database_identity}`");
         })
         .abort_handle();
 
