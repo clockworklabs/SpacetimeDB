@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class SenderViewPkPlayersBHandle : RemoteTableHandle<EventContext, ViewPkPlayer>
         {
-            protected override string RemoteTableName => "sender_view_pk_players_b";
+            public override string RemoteTableName => "sender_view_pk_players_b";
 
             internal SenderViewPkPlayersBHandle(DbConnection conn) : base(conn)
             {
@@ -30,11 +30,13 @@ namespace SpacetimeDB.Types
     public sealed class SenderViewPkPlayersBCols
     {
         public global::SpacetimeDB.Col<ViewPkPlayer, ulong> Id { get; }
+        public global::SpacetimeDB.Col<ViewPkPlayer, SpacetimeDB.Identity> Sender { get; }
         public global::SpacetimeDB.Col<ViewPkPlayer, string> Name { get; }
 
         public SenderViewPkPlayersBCols(string tableName)
         {
             Id = new global::SpacetimeDB.Col<ViewPkPlayer, ulong>(tableName, "id");
+            Sender = new global::SpacetimeDB.Col<ViewPkPlayer, SpacetimeDB.Identity>(tableName, "sender");
             Name = new global::SpacetimeDB.Col<ViewPkPlayer, string>(tableName, "name");
         }
     }

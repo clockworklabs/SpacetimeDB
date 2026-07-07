@@ -13,7 +13,7 @@ use core::mem;
 use futures::TryFutureExt;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
-use spacetimedb_client_api_messages::energy::EnergyQuanta;
+use spacetimedb_client_api_messages::energy::FunctionBudget;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
@@ -23,7 +23,7 @@ use spacetimedb_lib::{http as st_http, ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
-    buffer::{CountWriter, TeeWriter},
+    buffer::CountWriter,
     AlgebraicValue, ProductValue,
 };
 use spacetimedb_schema::identifier::Identifier;
@@ -343,16 +343,16 @@ impl InstanceEnv {
     fn project_cols_bsatn(buffer: &mut [u8], cols: ColList, row_ref: RowRef<'_>) -> usize {
         // We get back a col-list with the columns with generated values.
         // Write those back to `buffer` and then the encoded length to `row_len`.
-        let counter = CountWriter::default();
-        let mut writer = TeeWriter::new(counter, buffer);
-        for col in cols.iter() {
-            // Read the column value to AV and then serialize.
-            let val = row_ref
-                .read_col::<AlgebraicValue>(col)
-                .expect("reading col as AV never panics");
-            bsatn::to_writer(&mut writer, &val).unwrap();
-        }
-        writer.w1.finish()
+        let (_, count) = CountWriter::run(buffer, |writer| {
+            for col in cols.iter() {
+                // Read the column value to AV and then serialize.
+                let val = row_ref
+                    .read_col::<AlgebraicValue>(col)
+                    .expect("reading col as AV never panics");
+                bsatn::to_writer(writer, &val).unwrap();
+            }
+        });
+        count
     }
 
     pub fn insert(&self, table_id: TableId, buffer: &mut [u8]) -> Result<usize, NodesError> {
@@ -401,6 +401,14 @@ impl InstanceEnv {
         table_id: TableId,
         row_ptr: RowPointer,
     ) -> Result<(), NodesError> {
+        let function_name: Arc<str> = {
+            let table = stdb.schema_for_table_mut(tx, table_id)?;
+            let schedule = table
+                .schedule
+                .as_ref()
+                .expect("schedule_row should only be called for scheduled tables");
+            Arc::from(&schedule.function_name[..])
+        };
         let (id_column, at_column) = stdb
             .table_scheduled_id_and_at(tx, table_id)?
             .expect("schedule_row should only be called when we know its a scheduler table");
@@ -417,6 +425,7 @@ impl InstanceEnv {
                 schedule_at,
                 id_column,
                 at_column,
+                function_name,
                 self.start_time,
             )
             .map_err(NodesError::ScheduleError)?;
@@ -784,7 +793,7 @@ impl InstanceEnv {
             request_id: None,
             timer: None,
             // The procedure will pick up the tab for the energy.
-            energy_quanta_used: EnergyQuanta { quanta: 0 },
+            execution_budget_used: FunctionBudget::ZERO,
             host_execution_duration: Duration::from_millis(0),
         };
         // Commit the tx and broadcast it.
@@ -1338,6 +1347,7 @@ mod test {
         host::Scheduler,
         messages::control_db::{Database, HostType},
         replica_context::ReplicaContext,
+        resource::ModuleInstanceMemoryTracker,
         subscription::module_subscription_actor::ModuleSubscriptions,
     };
     use anyhow::{anyhow, Result};
@@ -1367,10 +1377,12 @@ mod test {
                     owner_identity: Identity::ZERO,
                     host_type: HostType::Wasm,
                     initial_program: Hash::ZERO,
+                    bootstrap_generation: 0,
                 },
                 replica_id: 0,
                 logger,
                 subscriptions: subs,
+                module_instance_memory_tracker: ModuleInstanceMemoryTracker::new(Identity::ZERO, Arc::new(())),
             },
             runtime,
         ))

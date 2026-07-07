@@ -1,0 +1,23 @@
+Write a SpacetimeDB backend module in C# that defines a private table for sensitive data and a public table for client-visible data, with a reducer that copies safe fields from private to public.
+
+TABLES
+- UserInternal
+  - Struct: UserInternal
+  - private table (do not set Public = true)
+  - Fields:
+    - Id: ulong (primary key, AutoInc)
+    - Name: string
+    - Email: string
+    - PasswordHash: string
+
+- UserPublic
+  - Struct: UserPublic
+  - public table (Public = true)
+  - Fields:
+    - Id: ulong (primary key)
+    - Name: string
+
+REDUCERS
+- RegisterUser(ctx, string name, string email, string passwordHash)
+  - Insert into UserInternal (Id: 0 for AutoInc)
+  - Also insert into UserPublic with just the Id and Name (safe fields only)

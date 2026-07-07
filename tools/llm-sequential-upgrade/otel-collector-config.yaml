@@ -1,0 +1,28 @@
+# OpenTelemetry Collector config for capturing Claude Code telemetry to JSON files.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+exporters:
+  # Write all events to a JSON file (one JSON object per line)
+  file/logs:
+    path: /telemetry/logs.jsonl
+    flush_interval: 1s
+
+  file/metrics:
+    path: /telemetry/metrics.jsonl
+    flush_interval: 5s
+
+service:
+  pipelines:
+    logs:
+      receivers: [otlp]
+      exporters: [file/logs]
+    metrics:
+      receivers: [otlp]
+      exporters: [file/metrics]

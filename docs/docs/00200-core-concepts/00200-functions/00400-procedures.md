@@ -15,10 +15,6 @@ However, procedures don't automatically run in database transactions,
 and must manually open and commit a transaction in order to read from or modify the database state.
 For this reason, prefer defining reducers rather than procedures unless you need to use one of the special procedure operators.
 
-:::warning
-***Procedures are currently in beta, and their API may change in upcoming SpacetimeDB releases.***
-:::
-
 ## Defining Procedures
 
 <Tabs groupId="server-language" queryString>
@@ -72,7 +68,7 @@ Because procedures are unstable, Rust modules that define them must opt in to th
 
 ```toml
 [dependencies]
-spacetimedb = { version = "1.*", features = ["unstable"] }
+spacetimedb = { version = "2.*", features = ["unstable"] }
 ```
 
 Define a procedure by annotating a function with `#[spacetimedb::procedure]`.
@@ -145,7 +141,7 @@ export default spacetimedb;
 
 export const insert_a_value = spacetimedb.procedure({ a: t.u32(), b: t.u32() }, t.unit(), (ctx, { a, b }) => {
     ctx.withTx(ctx => {
-        ctx.myTable.insert({ a, b });
+        ctx.db.myTable.insert({ a, b });
     });
     return {};
 })
@@ -332,7 +328,7 @@ export const maybe_insert_a_value = spacetimedb.procedure({ a: t.u32(), b: t.str
         if (a < 10) {
             throw new SenderError("a is less than 10!");
         }
-        ctx.myTable.insert({ a, b });
+        ctx.db.myTable.insert({ a, b });
     });
 })
 ```

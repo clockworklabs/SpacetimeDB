@@ -411,7 +411,8 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
       });
     }
 
-    if (meta.defaultValue) {
+    // Check for defaultValue on the property to allow for 0, false, '', and undefined as defaults
+    if (Object.prototype.hasOwnProperty.call(meta, 'defaultValue')) {
       const writer = new BinaryWriter(16);
       builder.serialize(writer, meta.defaultValue);
       defaultValues.push({

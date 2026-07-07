@@ -60,6 +60,11 @@ async fn can_sync_a_snapshot() -> anyhow::Result<()> {
     // Assert that the copied snapshot is valid.
     let pool = PagePool::new_for_test();
     let dst_snapshot_full = dst_repo.read_snapshot(src.offset, &pool)?;
+    let read_metrics = dst_snapshot_full.read_metrics;
+    assert_eq!(read_metrics.metadata.files, 1);
+    assert!(read_metrics.metadata.disk_bytes > 0);
+    assert_eq!(read_metrics.page.files + read_metrics.blob.files, total_objects);
+    assert!(read_metrics.page.disk_bytes + read_metrics.blob.disk_bytes > 0);
     Locking::restore_from_snapshot(dst_snapshot_full, pool)?;
 
     // Let's also check that running `synchronize_snapshot` again does nothing.
@@ -227,14 +232,14 @@ impl SourceSnapshot {
 
 async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffset> {
     let start = Instant::now();
-    let rt = tokio::runtime::Handle::current();
+    let rt = spacetimedb_runtime::Handle::tokio_current();
     // NOTE: `_db` needs to stay alive until the snapshot is taken,
     // because the snapshot worker holds only a weak reference.
     let (mut watch, _db) = spawn_blocking(|| {
         let persistence = Persistence {
             durability: Arc::new(NoDurability::default()),
             disk_size: Arc::new(|| Ok(<_>::default())),
-            snapshots: Some(SnapshotWorker::new(repo, snapshot::Compression::Disabled)),
+            snapshots: Some(SnapshotWorker::new(repo, snapshot::Compression::Disabled, rt.clone())),
             runtime: rt,
         };
         let db = TestDB::open_db(EmptyHistory::new(), Some(persistence), None, 0)?;

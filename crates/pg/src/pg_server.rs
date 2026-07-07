@@ -22,6 +22,7 @@ use pgwire::messages::data::DataRow;
 use pgwire::messages::startup::Authentication;
 use pgwire::messages::{PgWireBackendMessage, PgWireFrontendMessage};
 use pgwire::tokio::process_socket;
+use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api::auth::validate_token;
 use spacetimedb_client_api::routes::database;
 use spacetimedb_client_api::routes::database::{SqlParams, SqlQueryParams};
@@ -64,6 +65,7 @@ impl From<PgError> for PgWireError {
 struct Metadata {
     database: String,
     caller_identity: Identity,
+    caller_auth: ConnectionAuthCtx,
 }
 
 pub(crate) fn to_rows(
@@ -162,6 +164,7 @@ where
                 db,
                 SqlQueryParams { confirmed: Some(true) },
                 params.caller_identity,
+                params.caller_auth.clone(),
                 query.to_string(),
             )
             .await,
@@ -265,8 +268,8 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                     }
                 };
 
-                let caller_identity = match validate_token(&self.ctx, &pwd.password).await {
-                    Ok(claims) => claims.identity,
+                let claims = match validate_token(&self.ctx, &pwd.password).await {
+                    Ok(claims) => claims,
                     Err(err) => {
                         log::error!(
                             "PG: Authentication failed for identity `{}` on database {database}: {err}",
@@ -276,12 +279,22 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                         return close_client(client, err).await;
                     }
                 };
+                let caller_identity = claims.identity;
+                let caller_auth = ConnectionAuthCtx::try_from(claims).map_err(|e| {
+                    PgWireError::UserError(Box::new(ErrorInfo::new(
+                        "FATAL".to_owned(),
+                        // "invalid_authorization_specification"
+                        "28000".to_owned(),
+                        e.to_string(),
+                    )))
+                })?;
 
                 log::info!("PG: Connected to database: {database} using identity `{caller_identity}`");
 
                 let metadata = Metadata {
                     database,
                     caller_identity,
+                    caller_auth,
                 };
                 self.cached.lock().await.clone_from(&Some(metadata));
                 finish_authentication(client, &self.parameter_provider).await?;

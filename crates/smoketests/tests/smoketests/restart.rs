@@ -90,10 +90,14 @@ fn test_restart_auto_disconnect() {
 
     // Start two subscribers in the background
     let sub1 = test
-        .subscribe_background(&["SELECT * FROM connected_client"], 2)
+        .subscribe(&["SELECT * FROM connected_client"])
+        .expect_rows(2)
+        .background()
         .unwrap();
     let sub2 = test
-        .subscribe_background(&["SELECT * FROM connected_client"], 2)
+        .subscribe(&["SELECT * FROM connected_client"])
+        .expect_rows(2)
+        .background()
         .unwrap();
 
     // Call print_num_connected and check we have 3 clients (2 subscribers + the call)
@@ -141,12 +145,12 @@ fn test_add_remove_index_after_restart() {
         .autopublish(false)
         .build();
 
-    let name = format!("test-db-{}", std::process::id());
+    let name = format!("restart-add-remove-index-{}", std::process::id());
 
     // Publish and attempt subscribing to a join query.
     // There are no indices, resulting in an unsupported unindexed join.
-    test.publish_module_named(&name, false).unwrap();
-    let result = test.subscribe(&[JOIN_QUERY], 0);
+    test.publish().name(&name).run().unwrap();
+    let result = test.subscribe(&[JOIN_QUERY]).expect_rows(0).run();
     assert!(result.is_err(), "Expected subscription to fail without indices");
 
     // Restart before adding indices
@@ -155,10 +159,10 @@ fn test_add_remove_index_after_restart() {
     // Publish the indexed version.
     // Now we have indices, so the query should be accepted.
     test.use_precompiled_module("add-remove-index-indexed");
-    test.publish_module_named(&name, false).unwrap();
+    test.publish().name(&name).run().unwrap();
 
     // Subscription should work now
-    let result = test.subscribe(&[JOIN_QUERY], 0);
+    let result = test.subscribe(&[JOIN_QUERY]).expect_rows(0).run();
     assert!(
         result.is_ok(),
         "Expected subscription to succeed with indices, got: {:?}",
@@ -166,7 +170,7 @@ fn test_add_remove_index_after_restart() {
     );
 
     // Verify call works too
-    let sub = test.subscribe_background(&[JOIN_QUERY], 1).unwrap();
+    let sub = test.subscribe(&[JOIN_QUERY]).expect_rows(1).background().unwrap();
     test.call_anon("add", &[]).unwrap();
     let results = sub.collect().unwrap();
     assert_eq!(results.len(), 1, "Expected 1 update from subscription");
@@ -177,7 +181,7 @@ fn test_add_remove_index_after_restart() {
     // Publish the unindexed version again, removing the index.
     // The initial subscription should be rejected again.
     test.use_precompiled_module("add-remove-index");
-    test.publish_module_named(&name, false).unwrap();
-    let result = test.subscribe(&[JOIN_QUERY], 0);
+    test.publish().name(&name).run().unwrap();
+    let result = test.subscribe(&[JOIN_QUERY]).expect_rows(0).run();
     assert!(result.is_err(), "Expected subscription to fail after removing indices");
 }

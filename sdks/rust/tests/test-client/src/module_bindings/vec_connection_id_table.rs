@@ -40,6 +40,18 @@ impl VecConnectionIdTableAccess for super::RemoteTables {
 pub struct VecConnectionIdInsertCallbackId(__sdk::CallbackId);
 pub struct VecConnectionIdDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for VecConnectionIdTableHandle<'ctx> {
+    type Row = VecConnectionId;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = VecConnectionId> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for VecConnectionIdTableHandle<'ctx> {
     type Row = VecConnectionId;
     type EventContext = super::EventContext;
@@ -64,6 +76,36 @@ impl<'ctx> __sdk::Table for VecConnectionIdTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = VecConnectionIdDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> VecConnectionIdDeleteCallbackId {
+        VecConnectionIdDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: VecConnectionIdDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for VecConnectionIdTableHandle<'ctx> {
+    type InsertCallbackId = VecConnectionIdInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> VecConnectionIdInsertCallbackId {
+        VecConnectionIdInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: VecConnectionIdInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for VecConnectionIdTableHandle<'ctx> {
     type DeleteCallbackId = VecConnectionIdDeleteCallbackId;
 
     fn on_delete(

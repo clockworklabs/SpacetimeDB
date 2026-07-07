@@ -1,6 +1,6 @@
 use super::super::de::deserialize_js;
 use super::super::error::{
-    collapse_exc_thrown, terminate_execution, throw_if_terminated, BufferTooSmall, ErrorOrException, ExcResult,
+    check_termination, collapse_exc_thrown, terminate_execution, BufferTooSmall, ErrorOrException, ExcResult,
     ExceptionThrown, ExceptionValue, RangeError, SysCallError, SysCallResult,
 };
 use super::super::from_value::cast;
@@ -192,7 +192,7 @@ fn adapt_fun(
     fun: impl Copy + for<'scope> Fn(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>) -> FnRet<'scope>,
 ) -> impl Copy + for<'scope> Fn(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>, v8::ReturnValue) {
     move |scope, args, mut rv| {
-        if throw_if_terminated(scope) {
+        if check_termination(scope).is_err() {
             return;
         }
 
@@ -345,7 +345,7 @@ fn throw_nodes_error(abi_call: AbiCall, scope: &mut PinScope<'_, '_>, error: Nod
     let res = match err_to_errno_and_log::<u16>(abi_call, error) {
         Ok((code, None)) => CodeError::from_code(scope, code),
         Ok((code, Some(message))) => CodeMessageError::from_code(scope, code, message),
-        Err(err) => terminate_execution(scope, &err),
+        Err(err) => terminate_execution(scope, err),
     };
     collapse_exc_thrown(scope, res)
 }

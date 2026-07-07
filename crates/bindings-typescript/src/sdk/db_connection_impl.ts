@@ -1,7 +1,7 @@
 import { ConnectionId, ProductBuilder, ProductType } from '../';
 import { AlgebraicType, type ComparablePrimitive } from '../';
-import { BinaryReader } from '../';
-import { BinaryWriter } from '../';
+import BinaryReader from '../lib/binary_reader.ts';
+import BinaryWriter from '../lib/binary_writer.ts';
 import {
   BsatnRowList,
   ClientMessage,
@@ -23,7 +23,12 @@ import {
   type SubscriptionEventContextInterface,
 } from './event_context.ts';
 import { EventEmitter } from './event_emitter.ts';
-import type { Deserializer, Identity, InferTypeOfRow, Serializer } from '../';
+import type {
+  Deserializer,
+  Identity,
+  InferTypeOfParams,
+  Serializer,
+} from '../';
 import type {
   ProcedureResultMessage,
   ReducerResultMessage,
@@ -37,10 +42,6 @@ import {
   type PendingCallback,
   type TableUpdate as CacheTableUpdate,
 } from './table_cache.ts';
-import {
-  WebsocketDecompressAdapter,
-  type WebsocketAdapter,
-} from './websocket_decompress_adapter.ts';
 import {
   SubscriptionBuilderImpl,
   SubscriptionHandleImpl,
@@ -60,6 +61,19 @@ import type { ProceduresView } from './procedures.ts';
 import type { Values } from '../lib/type_util.ts';
 import type { TransactionUpdate } from './client_api/types.ts';
 import { InternalError, SenderError } from '../lib/errors.ts';
+import type { WebSocketAdapter, WebSocketFactory } from './ws.ts';
+import {
+  normalizeWsProtocol,
+  PREFERRED_WS_PROTOCOLS,
+  V2_WS_PROTOCOL,
+  V3_WS_PROTOCOL,
+  type NegotiatedWsProtocol,
+} from './websocket_protocols';
+import {
+  countClientMessagesForV3Frame,
+  encodeClientMessagesV3,
+  forEachServerMessageV3,
+} from './websocket_v3_frames.ts';
 
 export {
   DbConnectionBuilder,
@@ -89,8 +103,8 @@ export type DbConnectionConfig<RemoteModule extends UntypedRemoteModule> = {
   identity?: Identity;
   token?: string;
   emitter: EventEmitter<ConnectionEvent>;
-  createWSFn: typeof WebsocketDecompressAdapter.createWebSocketFn;
-  compression: 'gzip' | 'none';
+  createWSFn: WebSocketFactory;
+  compression: 'gzip' | 'brotli' | 'none';
   lightMode: boolean;
   confirmedReads?: boolean;
   remoteModule: RemoteModule;
@@ -98,7 +112,23 @@ export type DbConnectionConfig<RemoteModule extends UntypedRemoteModule> = {
 
 type ProcedureCallback = (result: ProcedureResultMessage['result']) => void;
 
+type Deferred<T> = {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason?: unknown) => void;
+};
+
 const TEXT_ENCODER = new TextEncoder();
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve!: Deferred<T>['resolve'];
+  let reject!: Deferred<T>['reject'];
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 function getClientMessageVariantTag(name: string): number {
   if (ClientMessage.algebraicType.tag !== 'Sum') {
@@ -117,6 +147,9 @@ const CLIENT_MESSAGE_CALL_REDUCER_TAG =
   getClientMessageVariantTag('CallReducer');
 const CLIENT_MESSAGE_CALL_PROCEDURE_TAG =
   getClientMessageVariantTag('CallProcedure');
+// Keep individual v3 frames bounded so one burst does not monopolize the send
+// path or create very large websocket writes.
+const MAX_V3_OUTBOUND_FRAME_BYTES = 256 * 1024;
 
 export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   implements DbContext<RemoteModule>
@@ -125,6 +158,14 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    * Whether or not the connection is active.
    */
   isActive = false;
+
+  /**
+   * Whether `disconnect()` has been called on this connection.
+   * Once requested, the connection will not be reused: managed environments
+   * (such as the React `SpacetimeDBProvider`) use this to avoid reconnecting
+   * after an intentional disconnect.
+   */
+  isDisconnectRequested = false;
 
   /**
    * This connection's public identity.
@@ -171,7 +212,9 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #inboundQueue: Uint8Array[] = [];
   #inboundQueueOffset = 0;
   #isDrainingInboundQueue = false;
-  #outboundQueue: Uint8Array[] = [];
+  #outboundQueue: Uint8Array<ArrayBuffer>[] = [];
+  #isOutboundFlushScheduled = false;
+  #negotiatedWsProtocol: NegotiatedWsProtocol = V2_WS_PROTOCOL;
   #subscriptionManager = new SubscriptionManager<RemoteModule>();
   #remoteModule: RemoteModule;
   #reducerCallbacks = new Map<
@@ -198,6 +241,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #sourceNameToTableDef: Record<string, Values<RemoteModule['tables']>>;
   #messageReader = new BinaryReader(new Uint8Array());
   #rowListReader = new BinaryReader(new Uint8Array());
+  #clientFrameEncoder = new BinaryWriter(1024);
   #boundSubscriptionBuilder!: () => SubscriptionBuilderImpl<RemoteModule>;
   #boundDisconnect!: () => void;
 
@@ -206,8 +250,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   // private fields.
   // We use them in testing.
   private clientCache: ClientCache<RemoteModule>;
-  private ws?: WebsocketAdapter;
-  private wsPromise: Promise<WebsocketAdapter | undefined>;
+  private ws?: WebSocketAdapter;
+  private wsPromise: Promise<WebSocketAdapter | undefined>;
 
   constructor({
     uri,
@@ -296,7 +340,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     this.wsPromise = createWSFn({
       url,
       nameOrAddress,
-      wsProtocol: 'v2.bsatn.spacetimedb',
+      wsProtocol: [...PREFERRED_WS_PROTOCOLS],
       authToken: token,
       compression: compression,
       lightMode: lightMode,
@@ -306,12 +350,12 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         this.ws = v;
 
         this.ws.onclose = () => {
-          this.#emitter.emit('disconnect', this);
           this.isActive = false;
+          this.#emitter.emit('disconnect', this);
         };
         this.ws.onerror = (e: ErrorEvent) => {
-          this.#emitter.emit('connectError', this, e);
           this.isActive = false;
+          this.#emitter.emit('connectError', this, e);
         };
         this.ws.onopen = this.#handleOnOpen.bind(this);
         this.ws.onmessage = this.#handleOnMessage.bind(this);
@@ -360,7 +404,9 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       const { serialize: serializeArgs } =
         this.#reducerArgsSerializers[reducerName];
 
-      (out as any)[key] = (params: InferTypeOfRow<typeof reducer.params>) => {
+      (out as any)[key] = (
+        params: InferTypeOfParams<typeof reducer.params>
+      ) => {
         const writer = this.#reducerArgsEncoder;
         writer.clear();
         serializeArgs(writer, params);
@@ -391,7 +437,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         this.#procedureSerializers[procedureName];
 
       (out as any)[key] = (
-        params: InferTypeOfRow<typeof procedure.params>
+        params: InferTypeOfParams<typeof procedure.params>
       ): Promise<any> => {
         writer.clear();
         serializeArgs(writer, params);
@@ -413,7 +459,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     event: Event<
       ReducerEventInfo<
         RemoteModule['reducers'][number]['name'],
-        InferTypeOfRow<RemoteModule['reducers'][number]['params']>
+        InferTypeOfParams<RemoteModule['reducers'][number]['params']>
       >
     >
   ): EventContextInterface<RemoteModule> {
@@ -594,24 +640,103 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     return this.#mergeTableUpdates(updates);
   }
 
-  #flushOutboundQueue(wsResolved: WebsocketAdapter): void {
+  #flushOutboundQueue(wsResolved: WebSocketAdapter): void {
+    if (this.#negotiatedWsProtocol === V3_WS_PROTOCOL) {
+      this.#flushOutboundQueueV3(wsResolved);
+      return;
+    }
+    this.#flushOutboundQueueV2(wsResolved);
+  }
+
+  #flushOutboundQueueV2(wsResolved: WebSocketAdapter): void {
     const pending = this.#outboundQueue.splice(0);
     for (const message of pending) {
       wsResolved.send(message);
     }
   }
 
+  #flushOutboundQueueV3(wsResolved: WebSocketAdapter): void {
+    if (this.#outboundQueue.length === 0) {
+      return;
+    }
+
+    // Emit at most one bounded frame per flush. If more encoded v2 messages
+    // remain in the queue, they are sent by a later scheduled flush so inbound
+    // traffic and other tasks get a chance to run between websocket writes.
+    const batchSize = countClientMessagesForV3Frame(
+      this.#outboundQueue,
+      MAX_V3_OUTBOUND_FRAME_BYTES
+    );
+    wsResolved.send(
+      encodeClientMessagesV3(
+        this.#clientFrameEncoder,
+        this.#outboundQueue,
+        batchSize
+      )
+    );
+
+    if (batchSize === this.#outboundQueue.length) {
+      this.#outboundQueue.length = 0;
+      return;
+    }
+
+    this.#outboundQueue.copyWithin(0, batchSize);
+    this.#outboundQueue.length -= batchSize;
+    if (this.#outboundQueue.length > 0) {
+      this.#scheduleDeferredOutboundFlush();
+    }
+  }
+
+  #scheduleOutboundFlush(): void {
+    this.#scheduleOutboundFlushWith('microtask');
+  }
+
+  #scheduleDeferredOutboundFlush(): void {
+    this.#scheduleOutboundFlushWith('next-task');
+  }
+
+  #scheduleOutboundFlushWith(schedule: 'microtask' | 'next-task'): void {
+    if (this.#isOutboundFlushScheduled) {
+      return;
+    }
+
+    this.#isOutboundFlushScheduled = true;
+    const flush = () => {
+      this.#isOutboundFlushScheduled = false;
+      if (this.ws && this.isActive) {
+        this.#flushOutboundQueue(this.ws);
+      }
+    };
+
+    // The first v3 flush stays on the current turn so same-tick sends coalesce.
+    // Follow-up flushes after a size-capped frame yield to the next task so we
+    // do not sit in a tight send loop while inbound websocket work is waiting.
+    if (schedule === 'next-task') {
+      setTimeout(flush, 0);
+    } else {
+      queueMicrotask(flush);
+    }
+  }
+
   #reducerArgsEncoder = new BinaryWriter(1024);
   #clientMessageEncoder = new BinaryWriter(1024);
-  #sendEncodedMessage(encoded: Uint8Array, describe: () => string): void {
+  #sendEncodedMessage(
+    encoded: Uint8Array<ArrayBuffer>,
+    describe: () => string
+  ): void {
+    stdbLogger('trace', describe);
     if (this.ws && this.isActive) {
-      if (this.#outboundQueue.length) this.#flushOutboundQueue(this.ws);
+      if (this.#negotiatedWsProtocol === V2_WS_PROTOCOL) {
+        if (this.#outboundQueue.length) this.#flushOutboundQueue(this.ws);
+        this.ws.send(encoded);
+        return;
+      }
 
-      stdbLogger('trace', describe);
-      this.ws.send(encoded);
+      this.#outboundQueue.push(encoded.slice());
+      this.#scheduleOutboundFlush();
     } else {
-      stdbLogger('trace', describe);
-      // use slice() to copy, in case the clientMessageEncoder's buffer gets used
+      // Use slice() to copy, in case the clientMessageEncoder's buffer gets reused
+      // before the connection opens or before a v3 microbatch flush runs.
       this.#outboundQueue.push(encoded.slice());
     }
   }
@@ -681,6 +806,9 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    * Handles WebSocket onOpen event.
    */
   #handleOnOpen(): void {
+    if (this.ws) {
+      this.#negotiatedWsProtocol = normalizeWsProtocol(this.ws.protocol);
+    }
     this.isActive = true;
     if (this.ws) {
       this.#flushOutboundQueue(this.ws);
@@ -728,10 +856,17 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     );
   }
 
-  #processMessage(data: Uint8Array): void {
-    const reader = this.#messageReader;
-    reader.reset(data);
-    const serverMessage = ServerMessage.deserialize(reader);
+  #dispatchPendingCallbacks(callbacks: readonly PendingCallback[]): void {
+    stdbLogger(
+      'trace',
+      () => `Calling ${callbacks.length} triggered row callbacks`
+    );
+    for (const callback of callbacks) {
+      callback.cb();
+    }
+  }
+
+  #processServerMessage(serverMessage: ServerMessage): void {
     stdbLogger(
       'trace',
       () => `Processing server message: ${stringify(serverMessage)}`
@@ -769,13 +904,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         const callbacks = this.#applyTableUpdates(tableUpdates, eventContext);
         const { event: _, ...subscriptionEventContext } = eventContext;
         subscription.emitter.emit('applied', subscriptionEventContext);
-        stdbLogger(
-          'trace',
-          () => `Calling ${callbacks.length} triggered row callbacks`
-        );
-        for (const callback of callbacks) {
-          callback.cb();
-        }
+        this.#dispatchPendingCallbacks(callbacks);
         break;
       }
       case 'UnsubscribeApplied': {
@@ -801,13 +930,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         const { event: _, ...subscriptionEventContext } = eventContext;
         subscription.emitter.emit('end', subscriptionEventContext);
         this.#subscriptionManager.subscriptions.delete(querySetId);
-        stdbLogger(
-          'trace',
-          () => `Calling ${callbacks.length} triggered row callbacks`
-        );
-        for (const callback of callbacks) {
-          callback.cb();
-        }
+        this.#dispatchPendingCallbacks(callbacks);
         break;
       }
       case 'SubscriptionError': {
@@ -861,13 +984,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           eventContext,
           serverMessage.value
         );
-        stdbLogger(
-          'trace',
-          () => `Calling ${callbacks.length} triggered row callbacks`
-        );
-        for (const callback of callbacks) {
-          callback.cb();
-        }
+        this.#dispatchPendingCallbacks(callbacks);
         break;
       }
       case 'ReducerResult': {
@@ -899,13 +1016,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
             eventContext,
             result.value.transactionUpdate
           );
-          stdbLogger(
-            'trace',
-            () => `Calling ${callbacks.length} triggered row callbacks`
-          );
-          for (const callback of callbacks) {
-            callback.cb();
-          }
+          this.#dispatchPendingCallbacks(callbacks);
         }
         this.#reducerCallInfo.delete(requestId);
         const cb = this.#reducerCallbacks.get(requestId);
@@ -932,6 +1043,31 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
         break;
       }
     }
+  }
+
+  #processV2Message(data: Uint8Array): void {
+    const reader = this.#messageReader;
+    reader.reset(data);
+    this.#processServerMessage(ServerMessage.deserialize(reader));
+  }
+
+  #processMessage(data: Uint8Array): void {
+    if (this.#negotiatedWsProtocol !== V3_WS_PROTOCOL) {
+      this.#processV2Message(data);
+      return;
+    }
+
+    const messageCount = forEachServerMessageV3(
+      this.#messageReader,
+      data,
+      serverMessage => {
+        this.#processServerMessage(serverMessage);
+      }
+    );
+    stdbLogger(
+      'trace',
+      () => `Processing server v3 payload with ${messageCount} message(s)`
+    );
   }
 
   /**
@@ -999,7 +1135,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     argsBuffer: Uint8Array,
     reducerArgs?: object
   ): Promise<void> {
-    const { promise, resolve, reject } = Promise.withResolvers<void>();
+    const { promise, resolve, reject } = createDeferred<void>();
     const requestId = this.#getNextRequestId();
     this.#sendCallReducerMessage(requestId, encodedReducerName, argsBuffer);
     if (reducerArgs) {
@@ -1034,7 +1170,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     argsBuffer: Uint8Array,
     reducerArgs?: object
   ): Promise<void> {
-    const { promise, resolve, reject } = Promise.withResolvers<void>();
+    const { promise, resolve, reject } = createDeferred<void>();
     const requestId = this.#getNextRequestId();
     const message = ClientMessage.CallReducer({
       reducer: reducerName,
@@ -1115,7 +1251,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     encodedProcedureName: Uint8Array,
     argsBuffer: Uint8Array
   ): Promise<Uint8Array> {
-    const { promise, resolve, reject } = Promise.withResolvers<Uint8Array>();
+    const { promise, resolve, reject } = createDeferred<Uint8Array>();
     const requestId = this.#getNextRequestId();
     this.#sendCallProcedureMessage(requestId, encodedProcedureName, argsBuffer);
     this.#procedureCallbacks.set(requestId, result => {
@@ -1132,7 +1268,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     procedureName: string,
     argsBuffer: Uint8Array
   ): Promise<Uint8Array> {
-    const { promise, resolve, reject } = Promise.withResolvers<Uint8Array>();
+    const { promise, resolve, reject } = createDeferred<Uint8Array>();
     const requestId = this.#getNextRequestId();
     const message = ClientMessage.CallProcedure({
       procedure: procedureName,
@@ -1187,6 +1323,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    * ```
    */
   disconnect(): void {
+    this.isDisconnectRequested = true;
     this.wsPromise.then(ws => ws?.close());
   }
 

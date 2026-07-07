@@ -24,10 +24,10 @@ fn test_fail_initial_publish() {
         .autopublish(false)
         .build();
 
-    let name = format!("test-db-{}", std::process::id());
+    let name = format!("fail-initial-publish-{}", std::process::id());
 
     // First publish should fail due to broken module
-    let result = test.publish_module_named(&name, false);
+    let result = test.publish().name(&name).run();
     assert!(result.is_err(), "Expected publish to fail with broken module");
 
     // Describe should fail because database doesn't exist
@@ -47,7 +47,7 @@ fn test_fail_initial_publish() {
     // This used to be broken; the failed initial publish would leave
     // the control database in a bad state.
     test.use_precompiled_module("fail-initial-publish-fixed");
-    test.publish_module_named(&name, false).unwrap();
+    test.publish().name(&name).run().unwrap();
 
     let describe_output = test
         .spacetime(&["describe", "--server", &test.server_url, "--json", &name])
@@ -61,7 +61,7 @@ fn test_fail_initial_publish() {
     // Publishing the broken code again fails, but the database still exists afterwards,
     // with the previous version of the module code.
     test.write_module_code(MODULE_CODE_BROKEN).unwrap();
-    let result = test.publish_module_named(&name, false);
+    let result = test.publish().name(&name).run();
     assert!(result.is_err(), "Expected publish to fail with broken module");
 
     // Database should still exist with the fixed code

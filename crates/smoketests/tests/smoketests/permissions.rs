@@ -102,8 +102,8 @@ fn test_replace_names() {
         .autopublish(false)
         .build();
 
-    let name = format!("test-db-{}", std::process::id());
-    test.publish_module_named(&name, false).unwrap();
+    let name = format!("permissions-replace-names-{}", std::process::id());
+    test.publish().name(&name).run().unwrap();
 
     // Switch to a new identity
     test.new_identity().unwrap();
@@ -141,7 +141,7 @@ fn test_private_table() {
     assert!(result.is_err(), "Expected query on private table to fail for non-owner");
 
     // Subscribing to the private table fails
-    let result = test.subscribe(&["SELECT * FROM secret"], 0);
+    let result = test.subscribe(&["SELECT * FROM secret"]).expect_rows(0).run();
     assert!(
         result.is_err(),
         "Expected subscribe to private table to fail for non-owner"
@@ -149,7 +149,9 @@ fn test_private_table() {
 
     // Subscribing to the public table works
     let sub = test
-        .subscribe_background(&["SELECT * FROM common_knowledge"], 1)
+        .subscribe(&["SELECT * FROM common_knowledge"])
+        .expect_rows(1)
+        .background()
         .unwrap();
     test.call("do_thing", &["godmorgon"]).unwrap();
     let events = sub.collect().unwrap();
@@ -165,7 +167,11 @@ fn test_private_table() {
     );
 
     // Subscribing to both tables returns updates for the public one only
-    let sub = test.subscribe_background(&["SELECT * FROM *"], 1).unwrap();
+    let sub = test
+        .subscribe(&["SELECT * FROM *"])
+        .expect_rows(1)
+        .background()
+        .unwrap();
     test.call("do_thing", &["howdy"]).unwrap();
     let events = sub.collect().unwrap();
 

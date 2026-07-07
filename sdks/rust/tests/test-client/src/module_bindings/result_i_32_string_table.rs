@@ -40,6 +40,18 @@ impl ResultI32StringTableAccess for super::RemoteTables {
 pub struct ResultI32StringInsertCallbackId(__sdk::CallbackId);
 pub struct ResultI32StringDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for ResultI32StringTableHandle<'ctx> {
+    type Row = ResultI32String;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = ResultI32String> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for ResultI32StringTableHandle<'ctx> {
     type Row = ResultI32String;
     type EventContext = super::EventContext;
@@ -64,6 +76,36 @@ impl<'ctx> __sdk::Table for ResultI32StringTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = ResultI32StringDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> ResultI32StringDeleteCallbackId {
+        ResultI32StringDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: ResultI32StringDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for ResultI32StringTableHandle<'ctx> {
+    type InsertCallbackId = ResultI32StringInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> ResultI32StringInsertCallbackId {
+        ResultI32StringInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: ResultI32StringInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for ResultI32StringTableHandle<'ctx> {
     type DeleteCallbackId = ResultI32StringDeleteCallbackId;
 
     fn on_delete(

@@ -40,6 +40,18 @@ impl OneI64TableAccess for super::RemoteTables {
 pub struct OneI64InsertCallbackId(__sdk::CallbackId);
 pub struct OneI64DeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for OneI64TableHandle<'ctx> {
+    type Row = OneI64;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = OneI64> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for OneI64TableHandle<'ctx> {
     type Row = OneI64;
     type EventContext = super::EventContext;
@@ -64,6 +76,36 @@ impl<'ctx> __sdk::Table for OneI64TableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = OneI64DeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OneI64DeleteCallbackId {
+        OneI64DeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: OneI64DeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for OneI64TableHandle<'ctx> {
+    type InsertCallbackId = OneI64InsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OneI64InsertCallbackId {
+        OneI64InsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: OneI64InsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for OneI64TableHandle<'ctx> {
     type DeleteCallbackId = OneI64DeleteCallbackId;
 
     fn on_delete(

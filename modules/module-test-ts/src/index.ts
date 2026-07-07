@@ -3,7 +3,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { ScheduleAt } from 'spacetimedb';
 import {
+  Router,
   schema,
+  SyncResponse,
   table,
   t,
   type Infer,
@@ -132,6 +134,14 @@ const repeatingTestArg = t.row({
 });
 type RepeatingTestArg = Infer<typeof repeatingTestArg>;
 
+// Rust: #[spacetimedb::table(name = nonrepeating_test_arg, scheduled(nonrepeating_test))]
+const nonrepeatingTestArg = t.row({
+  scheduled_id: t.u64().primaryKey().autoInc(),
+  scheduled_at: t.scheduleAt(),
+  prev_time: t.timestamp(),
+});
+type NonrepeatingTestArg = Infer<typeof nonrepeatingTestArg>;
+
 // Rust: #[spacetimedb::table(name = has_special_stuff)]
 const hasSpecialStuffRow = {
   identity: t.identity(),
@@ -217,6 +227,15 @@ const spacetimedb = schema({
     repeatingTestArg
   ),
 
+  // nonrepeating_test_arg table with scheduled(nonrepeating_test)
+  nonrepeatingTestArg: table(
+    {
+      name: 'nonrepeating_test_arg',
+      scheduled: (): any => nonrepeatingTest,
+    },
+    nonrepeatingTestArg
+  ),
+
   // has_special_stuff with Identity and ConnectionId
   hasSpecialStuff: table({ name: 'has_special_stuff' }, hasSpecialStuffRow),
 
@@ -252,6 +271,15 @@ export const init = spacetimedb.init(ctx => {
     scheduled_id: 0n, // u64 autoInc placeholder (engine will assign)
     scheduled_at: ScheduleAt.interval(1000000n), // 1000ms
   });
+
+  const currentTimeMicros = ctx.timestamp.microsSinceUnixEpoch;
+  const oneSecond = 1_000_000n; // 1 second in microseconds
+
+  ctx.db.nonrepeatingTestArg.insert({
+    prev_time: ctx.timestamp,
+    scheduled_id: 1n,
+    scheduled_at: ScheduleAt.time(currentTimeMicros + oneSecond),
+  });
 });
 
 // repeating_test
@@ -260,6 +288,17 @@ export const repeatingTest = spacetimedb.reducer(
   (ctx, { arg }) => {
     const delta = ctx.timestamp.since(arg.prev_time); // adjust if API differs
     console.trace(`Timestamp: ${ctx.timestamp}, Delta time: ${delta}`);
+  }
+);
+
+// nonrepeating_test
+export const nonrepeatingTest = spacetimedb.reducer(
+  { arg: nonrepeatingTestArg },
+  (ctx, { arg }) => {
+    const delta = ctx.timestamp.since(arg.prev_time);
+    console.trace(
+      `This reducers runs only once, at Timestamp: ${ctx.timestamp}, Delta time: ${delta}`
+    );
   }
 );
 
@@ -294,7 +333,7 @@ export const listOverAge = spacetimedb.reducer(
 
 // log_module_identity()
 export const log_module_identity = spacetimedb.reducer(ctx => {
-  console.info(`Module identity: ${ctx.identity}`);
+  console.info(`Module identity: ${ctx.databaseIdentity}`);
 });
 
 // test(arg: TestAlias(TestA), arg2: TestB, arg3: TestC, arg4: TestF)
@@ -457,7 +496,7 @@ export const test_btree_index_args = spacetimedb.reducer(ctx => {
 export const assert_caller_identity_is_module_identity = spacetimedb.reducer(
   ctx => {
     const caller = ctx.sender;
-    const owner = ctx.identity;
+    const owner = ctx.databaseIdentity;
     if (String(caller) !== String(owner)) {
       throw new Error(`Caller ${caller} is not the owner ${owner}`);
     } else {
@@ -470,7 +509,7 @@ export const assert_caller_identity_is_module_identity = spacetimedb.reducer(
 //
 // This is a silly thing to do, but an effective test of the procedure HTTP API.
 export const getMySchemaViaHttp = spacetimedb.procedure(t.string(), ctx => {
-  const module_identity = ctx.identity;
+  const module_identity = ctx.databaseIdentity;
   try {
     const response = ctx.http.fetch(
       `http://localhost:3000/v1/database/${module_identity}/schema?version=9`
@@ -483,3 +522,11 @@ export const getMySchemaViaHttp = spacetimedb.procedure(t.string(), ctx => {
     throw e;
   }
 });
+
+export const getSimple = spacetimedb.httpHandler(
+  (_ctx, _req) => new SyncResponse('ok')
+);
+
+export const router = spacetimedb.httpRouter(
+  new Router().get('/get', getSimple)
+);

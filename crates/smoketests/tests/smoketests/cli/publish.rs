@@ -16,12 +16,30 @@ fn cli_can_publish_spacetimedb_on_disk() {
 
     let dir = dir.to_string();
     let _ = test
-        .spacetime(&["publish", "--module-path", &dir, "--server", &test.server_url, "foobar"])
+        .spacetime(&[
+            "publish",
+            "--module-path",
+            &dir,
+            "--server",
+            &test.server_url,
+            // Needed when running smoketests against a remote server.
+            "--yes=remote",
+            "foobar",
+        ])
         .unwrap();
 
     // Can republish without error to the same name
     let _ = test
-        .spacetime(&["publish", "--module-path", &dir, "--server", &test.server_url, "foobar"])
+        .spacetime(&[
+            "publish",
+            "--module-path",
+            &dir,
+            "--server",
+            &test.server_url,
+            // Needed when running smoketests against a remote server.
+            "--yes=remote",
+            "foobar",
+        ])
         .unwrap();
 }
 
@@ -223,9 +241,7 @@ fn cli_publish_with_config_but_no_match_uses_cli_args() {
 
     // Create a config with a different database name
     let config_content = r#"{
-  "publish": {
-    "database": "config-db-name"
-  }
+  "database": "config-db-name"
 }"#;
     std::fs::write(module_dir.join("spacetime.json"), config_content).expect("failed to write config");
 
@@ -234,6 +250,8 @@ fn cli_publish_with_config_but_no_match_uses_cli_args() {
         "publish",
         "--server",
         &test.server_url,
+        // Needed when running smoketests against a remote server.
+        "--yes=remote",
         "cli-db-name",
         "--module-path",
         module_dir.to_str().unwrap(),
