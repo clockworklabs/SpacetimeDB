@@ -252,10 +252,14 @@ fn resume_small_trailing_garbage() {
         }
     }
 
+    let last_segment_offset = {
+        let segments = repo.existing_offsets().unwrap();
+        segments.last().copied().unwrap()
+    };
+
     // Add some extra bytes, less than the commit header length.
     let last_segment_size = {
-        let segments = repo.existing_offsets().unwrap();
-        let mut last_segment = repo.open_segment_writer(segments.last().copied().unwrap()).unwrap();
+        let mut last_segment = repo.open_segment_writer(last_segment_offset).unwrap();
         last_segment.write_all(&[67u8; commit::Header::LEN - 1]).unwrap();
         last_segment.flush().unwrap();
         last_segment.sync_all().unwrap();
@@ -263,10 +267,10 @@ fn resume_small_trailing_garbage() {
     };
     {
         let mut clog = commitlog::Generic::open(&repo, <_>::default()).unwrap();
-
+        // The segment list should be unchanged.
+        assert_eq!(&last_segment_offset, repo.existing_offsets().unwrap().last().unwrap());
         // The extra bytes should have been truncated away.
-        let segments = repo.existing_offsets().unwrap();
-        let mut last_segment = repo.open_segment_writer(segments.last().copied().unwrap()).unwrap();
+        let mut last_segment = repo.open_segment_writer(last_segment_offset).unwrap();
         assert_eq!(
             last_segment.segment_len().unwrap(),
             last_segment_size - (commit::Header::LEN - 1) as u64
