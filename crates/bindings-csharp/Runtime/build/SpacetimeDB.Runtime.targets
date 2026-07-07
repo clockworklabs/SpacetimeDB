@@ -105,8 +105,8 @@
   <!-- Adapted from https://github.com/dotnet/dotnet-wasi-sdk/blob/2dbb00c779180873d3ed985e59e431f56404d8da/src/Wasi.Sdk/build/Wasi.Sdk.targets#L245-L262 -->
   <!-- Executes before the errors in https://github.com/dotnet/runtime/blob/57fd56a99d4c97ac2f95fe84640f2a3f653f4dd7/src/mono/wasi/build/WasiApp.Native.targets#L41-L50. -->
   <!-- TODO: remove when https://github.com/dotnet/runtime/issues/82788 is resolved. -->
-  <!-- Only runs when NativeAOT-LLVM is being used. -->
-  <Target Name="ObtainWasiSdk" BeforeTargets="_SetupWasiSdk;CheckWasmSdks;_InitializeWasiSdk" Condition="'$(_UseNativeAotLlvm)' == 'true'">
+  <!-- Required for NativeAOT-LLVM and for the .NET 8 JIT path's NativeFileReference. -->
+  <Target Name="ObtainWasiSdk" BeforeTargets="_SetupWasiSdk;CheckWasmSdks;_InitializeWasiSdk">
     <PropertyGroup>
       <WasiSdkVersion Condition="$(TargetFramework.StartsWith('net10.'))">29</WasiSdkVersion>
       <WasiSdkVersion Condition="$(TargetFramework.StartsWith('net8.'))">24</WasiSdkVersion>
