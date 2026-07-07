@@ -18,6 +18,18 @@ pub struct PkU8TableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `pk_u_8`.
+pub struct PkU8TableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for PkU8TableAccessor {
+    type Row = PkU8;
+    type Handle<'db> = PkU8TableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.pk_u_8()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `pk_u_8`.
 ///

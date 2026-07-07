@@ -19,6 +19,18 @@ pub struct OneEnumWithPayloadTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `one_enum_with_payload`.
+pub struct OneEnumWithPayloadTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for OneEnumWithPayloadTableAccessor {
+    type Row = OneEnumWithPayload;
+    type Handle<'db> = OneEnumWithPayloadTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.one_enum_with_payload()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `one_enum_with_payload`.
 ///
