@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class AccountHandle : RemoteTableHandle<EventContext, Account>
         {
-            protected override string RemoteTableName => "account";
+            public override string RemoteTableName => "account";
 
             public sealed class IdUniqueIndex : UniqueIndexBase<ulong>
             {
