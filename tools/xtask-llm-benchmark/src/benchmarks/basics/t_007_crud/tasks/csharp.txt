@@ -4,14 +4,14 @@ TABLE
 - User
   - Struct: User
   - Fields:
-    - Id: int (primary key)
+    - Id: ulong (primary key, auto-increment)
     - Name: string
     - Age: int
     - Active: bool
 
 REDUCERS
 - Crud: perform these steps in order
-  - insert (Id=1, Name="Alice", Age=30, Active=true)
-  - insert (Id=2, Name="Bob",   Age=22, Active=false)
+  - insert (Name="Alice", Age=30, Active=true) — Id is auto-assigned
+  - insert (Name="Bob",   Age=22, Active=false) — Id is auto-assigned
   - update (Id=1, Name="Alice2", Age=31, Active=false)
   - delete Id=2

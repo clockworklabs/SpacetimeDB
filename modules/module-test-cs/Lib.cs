@@ -1,5 +1,6 @@
 namespace SpacetimeDB.Modules.ModuleTestCs;
 
+using System.Collections.Generic;
 using System.Reflection.Metadata.Ecma335;
 using SpacetimeDB;
 
@@ -300,7 +301,7 @@ static partial class Module
     public static void log_module_identity(ReducerContext ctx)
     {
         // Note: converting to lowercase to match the Rust formatting.
-        Log.Info($"Module identity: {ctx.Identity.ToString().ToLower()}");
+        Log.Info($"Module identity: {ctx.DatabaseIdentity.ToString().ToLower()}");
     }
 
     [Reducer]
@@ -492,7 +493,7 @@ static partial class Module
     public static void assert_caller_identity_is_module_identity(ReducerContext ctx)
     {
         var caller = ctx.Sender;
-        var owner = ctx.Identity;
+        var owner = ctx.DatabaseIdentity;
         if (!caller.Equals(owner))
         {
             throw new Exception($"Caller {caller} is not the owner {owner}");
@@ -502,4 +503,19 @@ static partial class Module
             Log.Info($"Called by the owner {owner}");
         }
     }
+
+    [SpacetimeDB.HttpHandler]
+    public static HttpResponse get_simple(HandlerContext ctx, HttpRequest request)
+    {
+        return new HttpResponse(
+            200,
+            HttpVersion.Http11,
+            new List<HttpHeader>(),
+            HttpBody.FromString("ok")
+        );
+    }
+
+    [SpacetimeDB.HttpRouter]
+    public static Router router() =>
+        SpacetimeDB.Router.New().Get("/get", Handlers.get_simple);
 }

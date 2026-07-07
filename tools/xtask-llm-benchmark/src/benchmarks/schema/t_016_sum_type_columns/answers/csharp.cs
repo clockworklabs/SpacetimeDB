@@ -14,7 +14,7 @@ public static partial class Module
     [Table(Accessor = "Drawing")]
     public partial struct Drawing
     {
-        [PrimaryKey] public int Id;
+        [PrimaryKey, AutoInc] public ulong Id;
         public Shape A;
         public Shape B;
     }
@@ -23,7 +23,7 @@ public static partial class Module
     public static void Seed(ReducerContext ctx)
     {
         ctx.Db.Drawing.Insert(new Drawing {
-            Id = 1,
+            Id = 0,
             A = new Shape.Circle(new Circle { Radius = 10 }),
             B = new Shape.Rectangle(new Rectangle { Width = 4, Height = 6 })
         });

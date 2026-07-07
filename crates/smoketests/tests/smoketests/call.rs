@@ -16,6 +16,36 @@ fn test_call_reducer_procedure() {
     assert_eq!(msg.trim(), r#"["World"]"#);
 }
 
+/// Tests that both reducers and procedures that take a [spacetimedb::Identity]
+/// argument can be called using any of the various encodings for that type.
+#[test]
+fn test_call_reducer_procedure_with_identity_argument() {
+    let test = Smoketest::builder()
+        .precompiled_module("call-reducer-procedure-identity-arg")
+        .build();
+
+    let identity = test.database_identity.as_ref().unwrap();
+    let identity_tuple_encoding = format!("[\"0x{identity}\"]");
+
+    let identity_encodings = [
+        identity,
+        &format!("0x{identity}"),
+        &identity_tuple_encoding,
+        &format!("{{\"__identity__\": \"0x{identity}\"}}"),
+    ];
+
+    for argument in identity_encodings {
+        let msg = test.call("return_my_identity", &[argument]).unwrap();
+        assert_eq!(msg.trim(), &identity_tuple_encoding);
+
+        test.call("say_my_identity", &[argument]).unwrap();
+    }
+
+    let logs = test.logs(100).unwrap();
+    let log_string = format!("Hello, {identity}!");
+    assert_eq!(logs.iter().filter(|l| l.contains(&log_string)).count(), 4);
+}
+
 /// Check calling a non-existent reducer/procedure raises error
 #[test]
 fn test_call_errors() {
@@ -41,8 +71,8 @@ Here are some existing procedures:
 - return_person"
     );
     assert!(
-        expected.contains(stderr.trim()),
-        "Expected stderr to be contained in expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
+        stderr.trim().starts_with(&expected),
+        "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
         expected,
         stderr.trim()
     );
@@ -63,8 +93,8 @@ Here are some existing procedures:
 - return_person"
     );
     assert!(
-        expected.contains(stderr.trim()),
-        "Expected stderr to be contained in expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
+        stderr.trim().starts_with(&expected),
+        "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
         expected,
         stderr.trim()
     );
@@ -81,8 +111,8 @@ Error: No such reducer OR procedure `say_hell` for database `{identity}` resolvi
 A reducer with a similar name exists: `say_hello`"
     );
     assert!(
-        expected.contains(stderr.trim()),
-        "Expected stderr to be contained in expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
+        stderr.trim().starts_with(&expected),
+        "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
         expected,
         stderr.trim()
     );
@@ -99,8 +129,8 @@ Error: No such reducer OR procedure `return_perso` for database `{identity}` res
 A procedure with a similar name exists: `return_person`"
     );
     assert!(
-        expected.contains(stderr.trim()),
-        "Expected stderr to be contained in expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
+        stderr.trim().starts_with(&expected),
+        "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
         expected,
         stderr.trim()
     );
@@ -126,8 +156,8 @@ The database has no reducers.
 The database has no procedures."
     );
     assert!(
-        expected.contains(stderr.trim()),
-        "Expected stderr to be contained in expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
+        stderr.trim().starts_with(&expected),
+        "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
         expected,
         stderr.trim()
     );
@@ -204,8 +234,8 @@ Here are some existing procedures:
 ... (1 procedure not shown)"
     );
     assert!(
-        expected.contains(stderr.trim()),
-        "Expected stderr to be contained in expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
+        stderr.trim().starts_with(&expected),
+        "Expected stderr to start with expected message.\nExpected:\n{}\n\nActual stderr:\n{}",
         expected,
         stderr.trim()
     );

@@ -87,10 +87,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FInsertDeleteLargeTableTest, "SpacetimeDB.TestC
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FInsertPrimitivesAsStringTest, "SpacetimeDB.TestClient.InsertPrimitivesAsStringsTest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 
-/** Tests authentication. */
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FReauth1Test, "SpacetimeDB.TestClient.ReauthPart1Test", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-/** Tests reauthenticate using old credentials. */
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FReauth2Test, "SpacetimeDB.TestClient.ReauthPart2Test", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+/** Tests reauthentication using stored credentials. */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FReauthTest, "SpacetimeDB.TestClient.ReauthTest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 
 /** Tests should file logic. */
@@ -132,3 +130,4 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FOverlappingSubscriptionsTest, "SpacetimeDB.Tes
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FInsertCallUuidV4Test, "SpacetimeDB.TestClient.InsertCallUuidV4Test", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FInsertCallUuidV7Test, "SpacetimeDB.TestClient.InsertCallUuidV7Test", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FBlueprintQueryBuilderBasicFlowTest, "SpacetimeDB.TestClient.BlueprintQueryBuilderBasicFlowTest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

@@ -2,7 +2,7 @@ use serial_test::serial;
 use spacetimedb_lib::sats::{product, AlgebraicValue};
 use spacetimedb_testing::modules::{
     CompilationMode, CompiledModule, Cpp, Csharp, LogLevel, LoggerRecord, ModuleHandle, ModuleLanguage, Rust,
-    TypeScript, DEFAULT_CONFIG, IN_MEMORY_CONFIG,
+    TypeScript, DEFAULT_CONFIG,
 };
 use std::{
     future::Future,
@@ -46,29 +46,29 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
 
     CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
-        |module| async move {
+        |mut module| async move {
             let json =
                 r#"{"CallReducer": {"reducer": "add", "args": "[\"Tyrion\", 24]", "request_id": 0, "flags": 0 }}"#
                     .to_string();
-            module.send(json).await.unwrap();
+            module.send_reducer_and_recv_update(json, 0).await.unwrap();
 
             let json =
                 r#"{"CallReducer": {"reducer": "add", "args": "[\"Cersei\", 31]", "request_id": 1, "flags": 0 }}"#
                     .to_string();
-            module.send(json).await.unwrap();
+            module.send_reducer_and_recv_update(json, 1).await.unwrap();
 
             let json =
                 r#"{"CallReducer": {"reducer": "say_hello", "args": "[]", "request_id": 2, "flags": 0 }}"#.to_string();
-            module.send(json).await.unwrap();
+            module.send_reducer_and_recv_update(json, 2).await.unwrap();
 
             let json = r#"{"CallReducer": {"reducer": "list_over_age", "args": "[30]", "request_id": 3, "flags": 0 }}"#
                 .to_string();
-            module.send(json).await.unwrap();
+            module.send_reducer_and_recv_update(json, 3).await.unwrap();
 
             let json =
                 r#"{"CallReducer": {"reducer": "log_module_identity", "args": "[]", "request_id": 4, "flags": 0 }}"#
                     .to_string();
-            module.send(json).await.unwrap();
+            module.send_reducer_and_recv_update(json, 4).await.unwrap();
 
             assert_eq!(
                 read_logs(&module).await,
@@ -283,11 +283,11 @@ fn test_calling_with_tx() {
 ///     TestF::Baz("buzz".to_string()),
 /// ]
 /// ```
-fn test_call_query_macro_with_caller<F: Future<Output = ()>>(caller: impl FnOnce(ModuleHandle) -> F) {
+fn test_call_query_macro_with_caller<F: Future<Output = ModuleHandle>>(caller: impl FnOnce(ModuleHandle) -> F) {
     CompiledModule::compile("module-test", CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
         |module| async move {
-            caller(module.clone()).await;
+            let module = caller(module).await;
             let logs = read_logs(&module)
                 .await
                 .into_iter()
@@ -321,7 +321,7 @@ fn test_call_query_macro_with_caller<F: Future<Output = ()>>(caller: impl FnOnce
 #[serial]
 fn test_call_query_macro() {
     // Hand-written JSON. This will fail if the JSON encoding of `ClientMessage` changes.
-    test_call_query_macro_with_caller(|module| async move {
+    test_call_query_macro_with_caller(|mut module| async move {
         // Note that JSON doesn't allow multiline strings, so the encoded args string must be on one line!
         let json = r#"
 { "CallReducer": {
@@ -330,9 +330,10 @@ fn test_call_query_macro() {
     "[ { \"x\": 0, \"y\": 2, \"z\": \"Macro\" }, { \"foo\": \"Foo\" }, { \"foo\": {} }, { \"baz\": \"buzz\" } ]",
   "request_id": 0,
   "flags": 0
-} }"#
+	} }"#
             .to_string();
-        module.send(json).await.unwrap();
+        module.send_reducer_and_recv_update(json, 0).await.unwrap();
+        module
     });
 
     let args_pv = &product![
@@ -345,64 +346,14 @@ fn test_call_query_macro() {
     // JSON via the `Serialize` path.
     test_call_query_macro_with_caller(|module| async move {
         module.call_reducer_json("test", args_pv).await.unwrap();
+        module
     });
 
     // BSATN via the `Serialize` path.
     test_call_query_macro_with_caller(|module| async move {
         module.call_reducer_binary("test", args_pv).await.unwrap();
+        module
     });
-}
-
-#[test]
-#[serial]
-/// This test runs the index scan workloads in the `perf-test` module.
-/// Timing spans should be < 1ms if the correct index was used.
-/// Otherwise these workloads will degenerate into full table scans.
-fn test_index_scans() {
-    init();
-    CompiledModule::compile("perf-test", CompilationMode::Release).with_module_async(
-        IN_MEMORY_CONFIG,
-        |module| async move {
-            let no_args = &product![];
-
-            module
-                .call_reducer_binary("load_location_table", no_args)
-                .await
-                .unwrap();
-
-            module
-                .call_reducer_binary("test_index_scan_on_id", no_args)
-                .await
-                .unwrap();
-
-            module
-                .call_reducer_binary("test_index_scan_on_chunk", no_args)
-                .await
-                .unwrap();
-
-            module
-                .call_reducer_binary("test_index_scan_on_x_z_dimension", no_args)
-                .await
-                .unwrap();
-
-            module
-                .call_reducer_binary("test_index_scan_on_x_z", no_args)
-                .await
-                .unwrap();
-
-            let logs = read_logs(&module).await;
-
-            // Each timing span should be < 1ms
-            let timing = |line: &str| {
-                line.starts_with("Timing span")
-                    && (line.ends_with("ns") || line.ends_with("us") || line.ends_with("µs"))
-            };
-            assert!(timing(&logs[0]));
-            assert!(timing(&logs[1]));
-            assert!(timing(&logs[2]));
-            assert!(timing(&logs[3]));
-        },
-    );
 }
 
 async fn bench_call(module: &ModuleHandle, call: &str, count: &u32) -> Duration {

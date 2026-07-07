@@ -40,6 +40,18 @@ impl VecU128TableAccess for super::RemoteTables {
 pub struct VecU128InsertCallbackId(__sdk::CallbackId);
 pub struct VecU128DeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for VecU128TableHandle<'ctx> {
+    type Row = VecU128;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = VecU128> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for VecU128TableHandle<'ctx> {
     type Row = VecU128;
     type EventContext = super::EventContext;
@@ -64,6 +76,36 @@ impl<'ctx> __sdk::Table for VecU128TableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = VecU128DeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> VecU128DeleteCallbackId {
+        VecU128DeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: VecU128DeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for VecU128TableHandle<'ctx> {
+    type InsertCallbackId = VecU128InsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> VecU128InsertCallbackId {
+        VecU128InsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: VecU128InsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for VecU128TableHandle<'ctx> {
     type DeleteCallbackId = VecU128DeleteCallbackId;
 
     fn on_delete(

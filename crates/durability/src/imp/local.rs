@@ -11,14 +11,17 @@ use futures::FutureExt as _;
 use itertools::Itertools as _;
 use log::{info, trace, warn};
 use scopeguard::ScopeGuard;
-use spacetimedb_commitlog::{error, payload::Txdata, Commit, Commitlog, Decoder, Encode, Transaction};
+use spacetimedb_commitlog::{
+    error,
+    payload::Txdata,
+    repo::{Fs, Repo, RepoWithoutLockFile},
+    Commit, Commitlog, CompressionStats, Decoder, Encode, Transaction,
+};
 use spacetimedb_fs_utils::lockfile::advisory::{LockError, LockedFile};
 use spacetimedb_paths::server::ReplicaDir;
+use spacetimedb_runtime::{Handle, JoinHandle};
 use thiserror::Error;
-use tokio::{
-    sync::watch,
-    task::{spawn_blocking, JoinHandle},
-};
+use tokio::sync::watch;
 use tracing::{instrument, Span};
 
 use crate::{Close, Durability, DurableOffset, History, PreparedTx, TxOffset};
@@ -83,9 +86,12 @@ pub enum OpenError {
 ///
 /// Note, however, that instantiating `T` to a different type may require to
 /// change the log format version!
-pub struct Local<T> {
+pub struct Local<T, R = Fs>
+where
+    R: Repo,
+{
     /// The [`Commitlog`] this [`Durability`] and [`History`] impl wraps.
-    clog: Arc<Commitlog<Txdata<T>>>,
+    clog: Arc<Commitlog<Txdata<T>, R>>,
     /// The durable transaction offset, as reported by the background
     /// [`FlushAndSyncTask`].
     durable_offset: watch::Receiver<Option<TxOffset>>,
@@ -106,18 +112,18 @@ pub struct Local<T> {
     actor: Mutex<Option<JoinHandle<()>>>,
 }
 
-impl<T: Encode + Send + Sync + 'static> Local<T> {
+impl<T: Encode + Send + Sync + 'static> Local<T, Fs> {
     /// Create a [`Local`] instance at the `replica_dir`.
     ///
     /// `replica_dir` must already exist.
     ///
-    /// Background tasks are spawned onto the provided tokio runtime.
+    /// Background tasks are spawned onto the provided runtime.
     ///
     /// We will send a message down the `on_new_segment` channel whenever we begin a new commitlog segment.
     /// This is used to capture a snapshot each new segment.
     pub fn open(
         replica_dir: ReplicaDir,
-        rt: tokio::runtime::Handle,
+        rt: Handle,
         opts: Options,
         on_new_segment: Option<Arc<OnNewSegmentFn>>,
     ) -> Result<Self, OpenError> {
@@ -132,20 +138,45 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
             opts.commitlog,
             on_new_segment,
         )?);
+        Self::open_inner(clog, rt, opts, Some(lock))
+    }
+}
+
+impl<T, R> Local<T, R>
+where
+    T: Encode + Send + Sync + 'static,
+    R: RepoWithoutLockFile + Send + Sync + 'static,
+{
+    /// Create a [`Local`] instance backed by the provided commitlog repo.
+    pub fn open_with_repo(repo: R, rt: Handle, opts: Options) -> Result<Self, OpenError> {
+        info!("open local durability");
+        let clog = Arc::new(Commitlog::open_with_repo(repo, opts.commitlog)?);
+        Self::open_inner(clog, rt, opts, None)
+    }
+}
+
+impl<T, R> Local<T, R>
+where
+    T: Encode + Send + Sync + 'static,
+    R: Repo + Send + Sync + 'static,
+{
+    fn open_inner(
+        clog: Arc<Commitlog<Txdata<T>, R>>,
+        rt: Handle,
+        opts: Options,
+        lock: Option<LockedFile>,
+    ) -> Result<Self, OpenError> {
         let queue_capacity = opts.queue_capacity();
         let (queue, txdata_rx) = async_channel::bounded(queue_capacity);
         let queue_depth = Arc::new(AtomicU64::new(0));
         let (durable_tx, durable_rx) = watch::channel(clog.max_committed_offset());
-
         let actor = rt.spawn(
             Actor {
                 clog: clog.clone(),
-
                 durable_offset: durable_tx,
                 queue_depth: queue_depth.clone(),
-
                 batch_capacity: opts.batch_capacity,
-
+                runtime: rt.clone(),
                 lock,
             }
             .run(txdata_rx),
@@ -161,12 +192,16 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
     }
 
     /// Obtain a read-only copy of the durable state that implements [History].
-    pub fn as_history(&self) -> impl History<TxData = Txdata<T>> + use<T> {
+    pub fn as_history(&self) -> impl History<TxData = Txdata<T>> + use<T, R> {
         self.clog.clone()
     }
 }
 
-impl<T: Send + Sync + 'static> Local<T> {
+impl<T, R> Local<T, R>
+where
+    T: Send + Sync + 'static,
+    R: Repo + Send + Sync + 'static,
+{
     /// Inspect how many transactions added via [`Self::append_tx`] are pending
     /// to be applied to the underlying [`Commitlog`].
     pub fn queue_depth(&self) -> u64 {
@@ -174,7 +209,7 @@ impl<T: Send + Sync + 'static> Local<T> {
     }
 
     /// Obtain an iterator over the [`Commit`]s in the underlying log.
-    pub fn commits_from(&self, offset: TxOffset) -> impl Iterator<Item = Result<Commit, error::Traversal>> + use<T> {
+    pub fn commits_from(&self, offset: TxOffset) -> impl Iterator<Item = Result<Commit, error::Traversal>> + use<T, R> {
         self.clog.commits_from(offset).map_ok(Commit::from)
     }
 
@@ -184,29 +219,39 @@ impl<T: Send + Sync + 'static> Local<T> {
     }
 
     /// Compress the segments at the offsets provided, marking them as immutable.
-    pub fn compress_segments(&self, offsets: &[TxOffset]) -> io::Result<()> {
+    pub fn compress_segments(&self, offsets: &[TxOffset]) -> io::Result<CompressionStats> {
         self.clog.compress_segments(offsets)
     }
+}
 
+impl<T: Send + Sync + 'static> Local<T, Fs> {
     /// Get the size on disk of the underlying [`Commitlog`].
     pub fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
         self.clog.size_on_disk()
     }
 }
 
-struct Actor<T> {
-    clog: Arc<Commitlog<Txdata<T>>>,
+struct Actor<T, R>
+where
+    R: Repo,
+{
+    clog: Arc<Commitlog<Txdata<T>, R>>,
 
     durable_offset: watch::Sender<Option<TxOffset>>,
     queue_depth: Arc<AtomicU64>,
 
     batch_capacity: NonZeroUsize,
+    runtime: Handle,
 
     #[allow(unused)]
-    lock: LockedFile,
+    lock: Option<LockedFile>,
 }
 
-impl<T: Encode + Send + Sync + 'static> Actor<T> {
+impl<T, R> Actor<T, R>
+where
+    T: Encode + Send + Sync + 'static,
+    R: Repo + Send + Sync + 'static,
+{
     #[instrument(name = "durability::local::actor", skip_all)]
     async fn run(self, transactions_rx: async_channel::Receiver<PreparedTx<Txdata<T>>>) {
         info!("starting durability actor");
@@ -232,15 +277,16 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
             let clog = self.clog.clone();
             let ready_len = tx_buf.len();
             self.queue_depth.fetch_sub(ready_len as u64, Relaxed);
-            tx_buf = spawn_blocking(move || -> io::Result<Vec<PreparedTx<Txdata<T>>>> {
-                for tx in tx_buf.drain(..) {
-                    clog.commit([tx.into_transaction()])?;
-                }
-                Ok(tx_buf)
-            })
-            .await
-            .expect("commitlog write panicked")
-            .expect("commitlog write failed");
+            let runtime = self.runtime.clone();
+            tx_buf = runtime
+                .spawn_blocking(move || -> io::Result<Vec<PreparedTx<Txdata<T>>>> {
+                    for tx in tx_buf.drain(..) {
+                        clog.commit([tx.into_transaction()])?;
+                    }
+                    Ok(tx_buf)
+                })
+                .await
+                .expect("commitlog write failed");
             if self.flush_and_sync().await.is_err() {
                 sync_on_exit = false;
                 break;
@@ -269,25 +315,30 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
 
         let clog = self.clog.clone();
         let span = Span::current();
-        spawn_blocking(move || {
-            let _span = span.enter();
-            clog.flush_and_sync()
-        })
-        .await
-        .expect("commitlog flush-and-sync blocking task panicked")
-        .inspect_err(|e| warn!("error flushing commitlog: {e:#}"))
-        .inspect(|maybe_offset| {
-            if let Some(new_offset) = maybe_offset {
-                trace!("synced to offset {new_offset}");
-                self.durable_offset.send_modify(|val| {
-                    val.replace(*new_offset);
-                });
-            }
-        })
+        let runtime = self.runtime.clone();
+        runtime
+            .spawn_blocking(move || {
+                let _span = span.enter();
+                clog.flush_and_sync()
+            })
+            .await
+            .inspect_err(|e| warn!("error flushing commitlog: {e:#}"))
+            .inspect(|maybe_offset| {
+                if let Some(new_offset) = maybe_offset {
+                    trace!("synced to offset {new_offset}");
+                    self.durable_offset.send_modify(|val| {
+                        val.replace(*new_offset);
+                    });
+                }
+            })
     }
 }
 
-impl<T: Send + Sync + 'static> Durability for Local<T> {
+impl<T, R> Durability for Local<T, R>
+where
+    T: Send + Sync + 'static,
+    R: Repo + Send + Sync + 'static,
+{
     type TxData = Txdata<T>;
 
     fn append_tx(&self, tx: PreparedTx<Self::TxData>) {
@@ -332,7 +383,11 @@ impl<T: Send + Sync + 'static> Durability for Local<T> {
     }
 }
 
-impl<T: Encode + 'static> History for Commitlog<Txdata<T>> {
+impl<T, R> History for Commitlog<Txdata<T>, R>
+where
+    T: Encode + 'static,
+    R: Repo + Send + Sync + 'static,
+{
     type TxData = Txdata<T>;
 
     fn fold_transactions_from<D>(&self, offset: TxOffset, decoder: D) -> Result<(), D::Error>

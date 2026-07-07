@@ -1,10 +1,14 @@
-use spacetimedb_smoketests::{random_string, Smoketest};
+use spacetimedb_smoketests::{random_string, require_server_issued_login, Smoketest};
 
 const TIMESTAMP_TAG: &str = "__timestamp_micros_since_unix_epoch__";
 
 /// Test the /v1/database/{name}/unstable/timestamp endpoint
 #[test]
 fn test_timestamp_route() {
+    // This test creates a throwaway server-issued identity before publishing,
+    // which is not available when smoketests use SpacetimeAuth login.
+    require_server_issued_login!();
+
     let mut test = Smoketest::builder().autopublish(false).build();
 
     let name = random_string();
@@ -23,7 +27,7 @@ fn test_timestamp_route() {
     );
 
     // Publish a module with the random name
-    test.publish_module_named(&name, false).unwrap();
+    test.publish().name(&name).run().unwrap();
 
     // A request for the timestamp at an extant database is a success
     let resp = test

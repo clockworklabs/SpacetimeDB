@@ -26,6 +26,6 @@ export default spacetimedb;
 export const setCircle = spacetimedb.reducer(
   { id: t.i32(), radius: t.i32() },
   (ctx, { id, radius }) => {
-    ctx.db.result.insert({ id, value: { circle: radius } });
+    ctx.db.result.insert({ id, value: { tag: 'circle', value: radius } });
   }
 );

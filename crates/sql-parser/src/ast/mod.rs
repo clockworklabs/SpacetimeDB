@@ -178,7 +178,7 @@ impl SqlExpr {
 }
 
 /// A named parameter prefixed with `:`
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Parameter {
     /// :sender
     Sender,

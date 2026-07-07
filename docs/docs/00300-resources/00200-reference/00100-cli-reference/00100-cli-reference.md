@@ -36,6 +36,8 @@ This document contains the help content for the `spacetime` command-line program
 * [`spacetime server clear`↴](#spacetime-server-clear)
 * [`spacetime subscribe`↴](#spacetime-subscribe)
 * [`spacetime start`↴](#spacetime-start)
+* [`spacetime lock`↴](#spacetime-lock)
+* [`spacetime unlock`↴](#spacetime-unlock)
 * [`spacetime version`↴](#spacetime-version)
 
 ## `spacetime`
@@ -61,6 +63,8 @@ This document contains the help content for the `spacetime` command-line program
 * `server` — Manage the connection to the SpacetimeDB server. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `subscribe` — Subscribe to SQL queries on the database. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `start` — Start a local SpacetimeDB instance
+* `lock` — Lock a database to prevent accidental deletion
+* `unlock` — Unlock a database to allow deletion
 * `version` — Manage installed spacetime versions
 
 ###### **Options:**
@@ -249,7 +253,7 @@ Start development mode with auto-regenerate client module bindings, auto-rebuild
 
   Default value: `src/module_bindings`
 * `--module-path <MODULE-PATH>` — Path to the SpacetimeDB server module, relative to current directory. Defaults to `<project-path>/spacetimedb`.
-* `--client-lang <CLIENT-LANG>` — The programming language for the generated client module bindings (e.g., typescript, csharp, python). If not specified, it will be detected from the project.
+* `--client-lang <CLIENT-LANG>` — The programming language for the generated client module bindings (e.g., typescript, csharp, rust, unrealcpp). If not specified, it will be detected from the project.
 
   Possible values: `csharp`, `typescript`, `rust`, `unrealcpp`
 
@@ -288,6 +292,12 @@ Runs a SQL query on the database. WARNING: This command is UNSTABLE and subject 
 
 * `--anonymous` — Perform this action with an anonymous identity
 * `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
+* `--format <FORMAT>` — Output format for the SQL results
+
+  Default value: `text`
+
+  Possible values: `text`, `json`
+
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
 * `--no-config` — Ignore spacetime.json configuration
 
@@ -318,7 +328,7 @@ Run `spacetime rename --help` for more detailed information.
 
 Generate client files for a spacetime module.
 
-**Usage:** `spacetime generate [DATABASE] --lang <LANG> --out-dir <DIR> [--module-path <DIR> | --bin-path <PATH> | --unreal-module-name <MODULE_NAME> | --uproject-dir <DIR> | --include-private]`
+**Usage:** `spacetime generate [DATABASE] --lang <LANG> [--module-path <DIR> | --bin-path <PATH> | --js-path <PATH>] [--out-dir <DIR> | --uproject-dir <DIR>] [--unreal-module-name <MODULE_NAME>] [OPTIONS]`
 
 Run `spacetime help generate` for more detailed information.
 
@@ -597,8 +607,7 @@ Subscribe to SQL queries on the database. WARNING: This command is UNSTABLE and 
 ###### **Options:**
 
 * `-n`, `--num-updates <NUM-UPDATES>` — The number of subscription updates to receive before exiting
-* `-t`, `--timeout <TIMEOUT>` — The timeout, in seconds, after which to disconnect and stop receiving subscription messages. If `-n` is specified, it will stop after whichever
-                     one comes first.
+* `-t`, `--timeout <TIMEOUT>` — The timeout, in seconds, after which to disconnect and stop receiving subscription messages. If `-n` is specified, it will stop after whichever one comes first. Timing out before receiving `-n` updates is an error.
 * `--print-initial-update` — Print the initial update for the queries.
 * `--confirmed <CONFIRMED>` — Instruct the server to deliver only updates of confirmed transactions
 
@@ -614,6 +623,11 @@ Subscribe to SQL queries on the database. WARNING: This command is UNSTABLE and 
 ## `spacetime start`
 
 Start a local SpacetimeDB instance
+
+Set a persistent default listen address in cli.toml with:
+    listen_addr = "0.0.0.0:4000"
+
+When present, `listen_addr` is used unless `--listen-addr` is passed explicitly.
 
 Run `spacetime start --help` to see all options.
 
@@ -631,6 +645,51 @@ Run `spacetime start --help` to see all options.
 
   Possible values: `standalone`, `cloud`
 
+
+
+
+## `spacetime lock`
+
+Lock a database to prevent it from being deleted.
+
+A locked database cannot be deleted until it is unlocked with `spacetime unlock`.
+This is a safety mechanism to protect production databases from accidental deletion.
+
+**Usage:** `spacetime lock [OPTIONS] [database]`
+
+Run `spacetime help lock` for more detailed information.
+
+
+###### **Arguments:**
+
+* `<DATABASE>` — The name or identity of the database to lock
+
+###### **Options:**
+
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
+* `--no-config` — Ignore spacetime.json configuration
+
+
+
+## `spacetime unlock`
+
+Unlock a database that was previously locked with `spacetime lock`.
+
+After unlocking, the database can be deleted normally with `spacetime delete`.
+
+**Usage:** `spacetime unlock [OPTIONS] [database]`
+
+Run `spacetime help unlock` for more detailed information.
+
+
+###### **Arguments:**
+
+* `<DATABASE>` — The name or identity of the database to unlock
+
+###### **Options:**
+
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
+* `--no-config` — Ignore spacetime.json configuration
 
 
 

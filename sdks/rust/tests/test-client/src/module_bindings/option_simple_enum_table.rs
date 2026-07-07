@@ -41,6 +41,18 @@ impl OptionSimpleEnumTableAccess for super::RemoteTables {
 pub struct OptionSimpleEnumInsertCallbackId(__sdk::CallbackId);
 pub struct OptionSimpleEnumDeleteCallbackId(__sdk::CallbackId);
 
+impl<'ctx> __sdk::TableLike for OptionSimpleEnumTableHandle<'ctx> {
+    type Row = OptionSimpleEnum;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = OptionSimpleEnum> + '_ {
+        self.imp.iter()
+    }
+}
+
 impl<'ctx> __sdk::Table for OptionSimpleEnumTableHandle<'ctx> {
     type Row = OptionSimpleEnum;
     type EventContext = super::EventContext;
@@ -65,6 +77,36 @@ impl<'ctx> __sdk::Table for OptionSimpleEnumTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = OptionSimpleEnumDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OptionSimpleEnumDeleteCallbackId {
+        OptionSimpleEnumDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: OptionSimpleEnumDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for OptionSimpleEnumTableHandle<'ctx> {
+    type InsertCallbackId = OptionSimpleEnumInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OptionSimpleEnumInsertCallbackId {
+        OptionSimpleEnumInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: OptionSimpleEnumInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for OptionSimpleEnumTableHandle<'ctx> {
     type DeleteCallbackId = OptionSimpleEnumDeleteCallbackId;
 
     fn on_delete(
