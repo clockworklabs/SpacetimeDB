@@ -260,6 +260,13 @@ impl Handle {
 
 #[cfg(feature = "simulation")]
 impl Handle {
+    pub fn now(&self) -> Duration {
+        match self {
+            Self::Tokio(_) => panic!("Handle::now requires a simulation runtime"),
+            Self::Simulation(handle) => handle.now(),
+        }
+    }
+
     pub fn simulation(handle: sim::Handle) -> Self {
         Self::Simulation(handle)
     }
@@ -354,14 +361,13 @@ impl Handle {
         }
     }
 
-    pub fn now(&self) -> Duration {
-        match self {
-            Self::Tokio(_) => panic!("Handle::now is only supported by the simulation runtime"),
-            #[cfg(feature = "simulation")]
-            Self::Simulation(handle) => handle.now(),
-        }
-    }
-
+    /// Blocks the current thread until `future` completes.
+    ///
+    /// For Tokio, this uses `block_in_place` before re-entering the runtime with
+    /// `Handle::block_on`, so it is supported from multi-thread runtime workers.
+    /// Do not call this from a current-thread Tokio runtime; Tokio panics on
+    /// that path. For simulation, this runs on the deterministic executor
+    /// thread; blocking inside the future blocks simulated progress.
     pub fn block_on<F: Future>(&self, future: F) -> F::Output {
         match self {
             Self::Tokio(handle) => tokio::task::block_in_place(|| handle.block_on(future)),
