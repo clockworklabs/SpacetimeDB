@@ -18,6 +18,18 @@ pub struct RightSourceTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `right_source`.
+pub struct RightSourceTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for RightSourceTableAccessor {
+    type Row = RightSource;
+    type Handle<'db> = RightSourceTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.right_source()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `right_source`.
 ///

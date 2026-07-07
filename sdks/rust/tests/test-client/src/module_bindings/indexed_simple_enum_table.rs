@@ -19,6 +19,18 @@ pub struct IndexedSimpleEnumTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `indexed_simple_enum`.
+pub struct IndexedSimpleEnumTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for IndexedSimpleEnumTableAccessor {
+    type Row = IndexedSimpleEnum;
+    type Handle<'db> = IndexedSimpleEnumTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.indexed_simple_enum()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `indexed_simple_enum`.
 ///
