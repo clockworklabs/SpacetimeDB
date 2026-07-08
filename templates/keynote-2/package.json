@@ -11,10 +11,7 @@
     "prep": "tsx src/init/init-all.ts",
     "down": "docker compose down || exit 0",
     "test-1": "tsx src/cli.ts test-1",
-    "bench": "tsx src/cli.ts",
-    "bench-dist-coordinator": "tsx src/distributed/coordinator.ts",
-    "bench-dist-generator": "tsx src/distributed/generator.ts",
-    "bench-dist-control": "tsx src/distributed/control.ts"
+    "bench": "tsx src/cli.ts"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
@@ -23,7 +20,7 @@
     "@types/pg": "^8.15.6",
     "@types/sql.js": "^1.4.9",
     "bun-types": "^1.3.2",
-    "convex": "^1.29.0",
+    "convex": "^1.37.0",
     "dotenv": "^17.2.3",
     "node-gyp": "^12.1.0",
     "pg": "^8.16.3",

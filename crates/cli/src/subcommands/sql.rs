@@ -33,6 +33,14 @@ pub fn cli() -> clap::Command {
         .arg(common_args::confirmed())
         .arg(common_args::anonymous())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
+        .arg(
+            Arg::new("format")
+                .long("format")
+                .default_value("text")
+                .required(false)
+                .value_parser(clap::value_parser!(Format))
+                .help("Output format for the SQL results"),
+        )
         .arg(common_args::yes())
         .arg(
             Arg::new("no_config")
@@ -40,6 +48,25 @@ pub fn cli() -> clap::Command {
                 .action(ArgAction::SetTrue)
                 .help("Ignore spacetime.json configuration"),
         )
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum Format {
+    Text,
+    Json,
+}
+
+impl clap::ValueEnum for Format {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::Text, Self::Json]
+    }
+
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        match self {
+            Self::Text => Some(clap::builder::PossibleValue::new("text").aliases(["default", "txt"])),
+            Self::Json => Some(clap::builder::PossibleValue::new("json")),
+        }
+    }
 }
 
 pub(crate) async fn parse_req(
@@ -143,7 +170,12 @@ fn print_stmt_result(
     Ok(())
 }
 
-pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, with_stats: bool) -> Result<(), anyhow::Error> {
+pub(crate) async fn run_sql(
+    builder: RequestBuilder,
+    sql: &str,
+    with_stats: bool,
+    format: Format,
+) -> Result<(), anyhow::Error> {
     let now = Instant::now();
 
     let json = builder
@@ -154,6 +186,11 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, with_stats: bool
         .await?
         .text()
         .await?;
+
+    if format == Format::Json {
+        println!("{json}");
+        return Ok(());
+    }
 
     let stmt_result_json: Vec<SqlStmtResult> = serde_json::from_str(&json).context("malformed sql response")?;
 
@@ -182,6 +219,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     eprintln!("{UNSTABLE_WARNING}\n");
     let interactive = args.get_one::<bool>("interactive").unwrap_or(&false);
     let no_config = args.get_flag("no_config");
+    let format = *args.get_one::<Format>("format").unwrap();
     let raw_parts: Vec<String> = args
         .get_many::<String>("sql_parts")
         .map(|vals| vals.cloned().collect())
@@ -201,7 +239,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         )?;
         let con = parse_req(config, args, &resolved.database, resolved.server.as_deref()).await?;
 
-        crate::repl::exec(con).await?;
+        crate::repl::exec(con, format).await?;
     } else {
         let resolved = resolve_optional_database_parts(
             &raw_parts,
@@ -243,7 +281,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
             api = api.query(&[("confirmed", if confirmed { "true" } else { "false" })]);
         }
 
-        run_sql(api, &query, false).await?;
+        run_sql(api, &query, false, format).await?;
     }
     Ok(())
 }

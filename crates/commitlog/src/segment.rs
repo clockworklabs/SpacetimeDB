@@ -46,7 +46,12 @@ impl Header {
 
     pub fn decode<R: io::Read>(mut read: R) -> io::Result<Self> {
         let mut buf = [0; Self::LEN];
-        read.read_exact(&mut buf)?;
+        read.read_exact(&mut buf).map_err(|e| {
+            io::Error::new(
+                e.kind(),
+                format!("failed to read segment header ({} bytes): {}", Self::LEN, e),
+            )
+        })?;
 
         if !buf.starts_with(&MAGIC) {
             return Err(io::Error::new(
@@ -356,9 +361,10 @@ impl OffsetIndexWriter {
             return Ok(());
         }
 
-        self.head
+        let entry_offset = self
+            .head
             .append(self.candidate_min_tx_offset, self.candidate_byte_offset)?;
-        self.head.async_flush()?;
+        self.head.async_flush_entry(entry_offset)?;
         self.reset();
 
         Ok(())
@@ -371,10 +377,6 @@ impl FileLike for OffsetIndexWriter {
         let _ = self.append_internal().map_err(|e| {
             warn!("failed to append to offset index: {e:?}");
         });
-        let _ = self
-            .head
-            .async_flush()
-            .map_err(|e| warn!("failed to flush offset index: {e:?}"));
         Ok(())
     }
 
@@ -496,7 +498,7 @@ pub fn seek_to_offset<R: io::Read + io::Seek>(
     debug_assert!(index_key <= start_tx_offset);
 
     // Check if the offset index is pointing to the right commit.
-    let hdr = validate_commit_header(&mut segment, byte_offset)?;
+    let hdr = validate_commit_at_byte_offset(&mut segment, byte_offset)?;
     if hdr.min_tx_offset == index_key {
         // Advance the segment Seek if expected commit is found.
         segment.seek(SeekFrom::Start(byte_offset))
@@ -511,20 +513,39 @@ pub fn seek_to_offset<R: io::Read + io::Seek>(
 
 /// Try to extract the commit header from the asked position without advancing seek.
 /// `IndexFileMut` fsync asynchoronously, which makes it important for reader to verify its entry
-pub fn validate_commit_header<Reader: io::Read + io::Seek>(
+fn validate_commit_at_byte_offset<Reader: io::Read + io::Seek>(
     mut reader: &mut Reader,
     byte_offset: u64,
 ) -> io::Result<commit::Header> {
     let pos = reader.stream_position()?;
     reader.seek(SeekFrom::Start(byte_offset))?;
 
-    let hdr = commit::Header::decode(&mut reader)
-        .and_then(|hdr| hdr.ok_or_else(|| io::Error::new(ErrorKind::UnexpectedEof, "unexpected EOF")));
+    let hdr_or_error = StoredCommit::decode(&mut reader).and_then(|maybe_commit| {
+        let StoredCommit {
+            min_tx_offset,
+            epoch,
+            n,
+            records,
+            ..
+        } = maybe_commit.ok_or_else(|| {
+            io::Error::new(
+                ErrorKind::UnexpectedEof,
+                format!("unexpected EOF while validating commit at byte offset {byte_offset}"),
+            )
+        })?;
+
+        Ok(commit::Header {
+            min_tx_offset,
+            epoch,
+            n,
+            len: records.len() as u32,
+        })
+    });
 
     // Restore the original position
     reader.seek(SeekFrom::Start(pos))?;
 
-    hdr
+    hdr_or_error
 }
 
 /// Pair of transaction offset and payload.
@@ -615,6 +636,7 @@ impl Metadata {
         mut reader: R,
         offset_index: Option<&TxOffsetIndex>,
     ) -> Result<Self, error::SegmentMetadata> {
+        reader.seek(io::SeekFrom::Start(0))?;
         let header = Header::decode(&mut reader)?;
         Self::with_header(min_tx_offset, header, reader, offset_index)
     }

@@ -4,7 +4,7 @@ use crate::{
 };
 use spacetimedb_datastore::locking_tx_datastore::{state_view::StateView as _, NumDistinctValues};
 use spacetimedb_lib::{identity::AuthCtx, query::Delta};
-use spacetimedb_physical_plan::plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, Sarg, TableScan};
+use spacetimedb_physical_plan::plan::{HashJoin, IndexProbe, IxJoin, IxScan, PhysicalPlan, TableScan};
 use spacetimedb_primitives::{ColList, TableId};
 
 /// If the caller is not allowed to exceed the row limit,
@@ -43,16 +43,14 @@ pub fn estimate_rows_scanned(tx: &Tx, plan: &PhysicalPlan) -> u64 {
         PhysicalPlan::IxJoin(IxJoin { lhs, unique: true, .. }, _) => {
             estimate_rows_scanned(tx, lhs).saturating_add(row_estimate(tx, lhs))
         }
-        PhysicalPlan::IxJoin(
-            IxJoin {
-                lhs, rhs, rhs_field, ..
-            },
-            _,
-        ) => estimate_rows_scanned(tx, lhs).saturating_add(row_estimate(tx, lhs).saturating_mul(index_row_est(
-            tx,
-            rhs.table_id,
-            &ColList::from(*rhs_field),
-        ))),
+        PhysicalPlan::IxJoin(IxJoin { lhs, rhs, .. }, _) => {
+            let cols = plan_ix_join_cols(plan);
+            estimate_rows_scanned(tx, lhs).saturating_add(row_estimate(tx, lhs).saturating_mul(index_row_est(
+                tx,
+                rhs.table_id,
+                &cols,
+            )))
+        }
         PhysicalPlan::HashJoin(
             HashJoin {
                 lhs, rhs, unique: true, ..
@@ -90,13 +88,12 @@ pub fn row_estimate(tx: &Tx, plan: &PhysicalPlan) -> u64 {
         ) => 0,
         PhysicalPlan::IxScan(
             ix @ IxScan {
-                arg: Sarg::Eq(last_col, _),
+                probe: IndexProbe::Point(_),
                 ..
             },
             _,
         ) => {
-            let mut cols: ColList = ix.prefix.iter().map(|(c, _)| *c).collect();
-            cols.push(*last_col);
+            let cols = ix.index_cols().to_owned();
             index_row_est(tx, ix.schema.table_id, &cols)
         }
         PhysicalPlan::IxScan(IxScan { schema, .. }, _) => tx.table_row_count(schema.table_id).unwrap_or_default(),
@@ -104,16 +101,21 @@ pub fn row_estimate(tx: &Tx, plan: &PhysicalPlan) -> u64 {
         PhysicalPlan::NLJoin(lhs, rhs) => row_estimate(tx, lhs).saturating_mul(row_estimate(tx, rhs)),
         PhysicalPlan::IxJoin(IxJoin { lhs, unique: true, .. }, _)
         | PhysicalPlan::HashJoin(HashJoin { lhs, unique: true, .. }, _) => row_estimate(tx, lhs),
-        PhysicalPlan::IxJoin(
-            IxJoin {
-                lhs, rhs, rhs_field, ..
-            },
-            _,
-        ) => row_estimate(tx, lhs).saturating_mul(index_row_est(tx, rhs.table_id, &ColList::from(*rhs_field))),
+        PhysicalPlan::IxJoin(IxJoin { lhs, rhs, .. }, _) => {
+            let cols = plan_ix_join_cols(plan);
+            row_estimate(tx, lhs).saturating_mul(index_row_est(tx, rhs.table_id, &cols))
+        }
         PhysicalPlan::HashJoin(HashJoin { lhs, rhs, .. }, _) => {
             row_estimate(tx, lhs).saturating_mul(row_estimate(tx, rhs))
         }
     }
+}
+
+fn plan_ix_join_cols(plan: &PhysicalPlan) -> ColList {
+    let PhysicalPlan::IxJoin(join, _) = plan else {
+        unreachable!()
+    };
+    join.index_cols().to_owned()
 }
 
 /// The estimated number of rows that an index probe will return.
@@ -131,8 +133,8 @@ mod tests {
     use super::{estimate_rows_scanned, row_estimate};
     use crate::db::relational_db::tests_utils::{begin_tx, insert, with_auto_commit};
     use crate::db::relational_db::{tests_utils::TestDB, RelationalDB};
+    use crate::db::sql::ast::SchemaViewer;
     use crate::error::DBError;
-    use crate::sql::ast::SchemaViewer;
     use spacetimedb_lib::{identity::AuthCtx, AlgebraicType};
     use spacetimedb_query::compile_subscription;
     use spacetimedb_sats::product;
@@ -150,7 +152,7 @@ mod tests {
             .map(|(plans, ..)| plans)
             .expect("failed to compile sql query")
             .into_iter()
-            .map(|plan| plan.optimize(&auth).expect("failed to optimize sql query"))
+            .map(|plan| plan.optimize().expect("failed to optimize sql query"))
             .map(|plan| row_estimate(&tx, &plan))
             .sum()
     }
@@ -164,7 +166,7 @@ mod tests {
             .map(|(plans, ..)| plans)
             .expect("failed to compile sql query")
             .into_iter()
-            .map(|plan| plan.optimize(&auth).expect("failed to optimize sql query"))
+            .map(|plan| plan.optimize().expect("failed to optimize sql query"))
             .map(|plan| estimate_rows_scanned(&tx, plan.physical_plan()))
             .sum()
     }

@@ -645,6 +645,8 @@ namespace SpacetimeDB
             );
     }
 
+    public static class Handlers { }
+
     public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
     {
         public readonly Identity Sender;
@@ -655,9 +657,13 @@ namespace SpacetimeDB
 
         // **Note:** must be 0..=u32::MAX
         internal int CounterUuid;
+        public Identity DatabaseIdentity => Internal.IReducerContext.GetDatabaseIdentity();
 
-        // We need this property to be non-static for parity with client SDK.
-        public Identity Identity => Internal.IReducerContext.GetIdentity();
+        // We keep this property for compatibility with existing module code.
+        [global::System.Obsolete(
+            "ReducerContext.Identity is deprecated. Use DatabaseIdentity instead."
+        )]
+        public Identity Identity => DatabaseIdentity;
 
         internal ReducerContext(
             Identity identity,
@@ -743,14 +749,11 @@ namespace SpacetimeDB
 
         private ProcedureTxContext? _cached;
 
-        [Experimental("STDB_UNSTABLE")]
         public Local Db => _db;
 
-        [Experimental("STDB_UNSTABLE")]
         public TResult WithTx<TResult>(Func<ProcedureTxContext, TResult> body) =>
             base.WithTx(tx => body((ProcedureTxContext)tx));
 
-        [Experimental("STDB_UNSTABLE")]
         public TxOutcome<TResult> TryWithTx<TResult, TError>(
             Func<ProcedureTxContext, Result<TResult, TError>> body
         )
@@ -804,10 +807,58 @@ namespace SpacetimeDB
         }
     }
 
-    [Experimental("STDB_UNSTABLE")]
+    public sealed partial class HandlerContext : global::SpacetimeDB.HandlerContextBase
+    {
+        private readonly Local _db = new();
+
+        internal HandlerContext(Random random, Timestamp time)
+            : base(random, time) { }
+
+        protected override global::SpacetimeDB.LocalBase CreateLocal() => _db;
+
+        protected override global::SpacetimeDB.HandlerTxContextBase CreateTxContext(
+            Internal.TxContext inner
+        ) => _cached ??= new HandlerTxContext(inner);
+
+        private HandlerTxContext? _cached;
+
+        [Experimental("STDB_UNSTABLE")]
+        public TResult WithTx<TResult>(Func<HandlerTxContext, TResult> body) =>
+            base.WithTx(tx => body((HandlerTxContext)tx));
+
+        [Experimental("STDB_UNSTABLE")]
+        public TxOutcome<TResult> TryWithTx<TResult, TError>(
+            Func<HandlerTxContext, Result<TResult, TError>> body
+        )
+            where TError : Exception => base.TryWithTx(tx => body((HandlerTxContext)tx));
+
+        public Uuid NewUuidV4()
+        {
+            var bytes = new byte[16];
+            Rng.NextBytes(bytes);
+            return Uuid.FromRandomBytesV4(bytes);
+        }
+
+        public Uuid NewUuidV7()
+        {
+            var bytes = new byte[4];
+            Rng.NextBytes(bytes);
+            return Uuid.FromCounterV7(ref CounterUuid, Timestamp, bytes);
+        }
+    }
+
     public sealed class ProcedureTxContext : global::SpacetimeDB.ProcedureTxContextBase
     {
         internal ProcedureTxContext(Internal.TxContext inner)
+            : base(inner) { }
+
+        public new Local Db => (Local)base.Db;
+    }
+
+    [Experimental("STDB_UNSTABLE")]
+    public sealed class HandlerTxContext : global::SpacetimeDB.HandlerTxContextBase
+    {
+        internal HandlerTxContext(Internal.TxContext inner)
             : base(inner) { }
 
         public new Local Db => (Local)base.Db;
@@ -2053,14 +2104,6 @@ sealed class view_def_ienumerable_return_from_filterViewDispatcher
     public byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
-    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
-
-    [System.Runtime.CompilerServices.MethodImpl(
-        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-    )]
-    private static byte[] __spacetimedb_begin_short_backtrace(
-        System.IO.BinaryReader reader,
-        global::SpacetimeDB.Internal.IViewContext ctx
     )
     {
         try
@@ -2111,14 +2154,6 @@ sealed class view_def_ienumerable_return_from_iterViewDispatcher
     public byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
-    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
-
-    [System.Runtime.CompilerServices.MethodImpl(
-        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-    )]
-    private static byte[] __spacetimedb_begin_short_backtrace(
-        System.IO.BinaryReader reader,
-        global::SpacetimeDB.Internal.IViewContext ctx
     )
     {
         try
@@ -2163,14 +2198,6 @@ sealed class view_def_no_contextViewDispatcher : global::SpacetimeDB.Internal.IV
     public byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
-    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
-
-    [System.Runtime.CompilerServices.MethodImpl(
-        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-    )]
-    private static byte[] __spacetimedb_begin_short_backtrace(
-        System.IO.BinaryReader reader,
-        global::SpacetimeDB.Internal.IViewContext ctx
     )
     {
         try
@@ -2211,14 +2238,6 @@ sealed class view_def_no_publicViewDispatcher : global::SpacetimeDB.Internal.IVi
         );
 
     public byte[] Invoke(
-        System.IO.BinaryReader reader,
-        global::SpacetimeDB.Internal.IViewContext ctx
-    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
-
-    [System.Runtime.CompilerServices.MethodImpl(
-        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-    )]
-    private static byte[] __spacetimedb_begin_short_backtrace(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
     )
@@ -2263,14 +2282,6 @@ sealed class view_def_wrong_contextViewDispatcher : global::SpacetimeDB.Internal
     public byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
-    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
-
-    [System.Runtime.CompilerServices.MethodImpl(
-        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-    )]
-    private static byte[] __spacetimedb_begin_short_backtrace(
-        System.IO.BinaryReader reader,
-        global::SpacetimeDB.Internal.IViewContext ctx
     )
     {
         try
@@ -2309,14 +2320,6 @@ sealed class view_def_wrong_returnViewDispatcher : global::SpacetimeDB.Internal.
         );
 
     public byte[] Invoke(
-        System.IO.BinaryReader reader,
-        global::SpacetimeDB.Internal.IViewContext ctx
-    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
-
-    [System.Runtime.CompilerServices.MethodImpl(
-        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-    )]
-    private static byte[] __spacetimedb_begin_short_backtrace(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
     )
@@ -2358,14 +2361,6 @@ sealed class view_no_deleteViewDispatcher : global::SpacetimeDB.Internal.IView
         );
 
     public byte[] Invoke(
-        System.IO.BinaryReader reader,
-        global::SpacetimeDB.Internal.IViewContext ctx
-    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
-
-    [System.Runtime.CompilerServices.MethodImpl(
-        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-    )]
-    private static byte[] __spacetimedb_begin_short_backtrace(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
     )
@@ -2413,14 +2408,6 @@ sealed class view_no_insertViewDispatcher : global::SpacetimeDB.Internal.IView
     public byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
-    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
-
-    [System.Runtime.CompilerServices.MethodImpl(
-        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-    )]
-    private static byte[] __spacetimedb_begin_short_backtrace(
-        System.IO.BinaryReader reader,
-        global::SpacetimeDB.Internal.IViewContext ctx
     )
     {
         try
@@ -2447,6 +2434,199 @@ sealed class view_no_insertViewDispatcher : global::SpacetimeDB.Internal.IView
     }
 }
 
+sealed class view_primary_key_missing_columnViewDispatcher : global::SpacetimeDB.Internal.IView
+{
+    public SpacetimeDB.Internal.RawViewDefV10 MakeViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "view_primary_key_missing_column",
+            Index: 8,
+            IsPublic: true,
+            IsAnonymous: false,
+            Params: [],
+            ReturnType: new SpacetimeDB.BSATN.List<Player, Player.BSATN>().GetAlgebraicType(
+                registrar
+            )
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.ViewPrimaryKeyMissingColumn((SpacetimeDB.ViewContext)ctx);
+            var listSerializer = new SpacetimeDB.BSATN.List<Player, Player.BSATN>();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
+            listSerializer.Write(writer, listValue);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error("Error in view 'view_primary_key_missing_column': " + e);
+            throw;
+        }
+    }
+}
+
+sealed class view_primary_key_non_equatable_columnViewDispatcher
+    : global::SpacetimeDB.Internal.IView
+{
+    public SpacetimeDB.Internal.RawViewDefV10 MakeViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "view_primary_key_non_equatable_column",
+            Index: 9,
+            IsPublic: true,
+            IsAnonymous: false,
+            Params: [],
+            ReturnType: new SpacetimeDB.BSATN.List<
+                NonEquatableViewPrimaryKeyRow,
+                NonEquatableViewPrimaryKeyRow.BSATN
+            >().GetAlgebraicType(registrar)
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.ViewPrimaryKeyNonEquatableColumn((SpacetimeDB.ViewContext)ctx);
+            var listSerializer = new SpacetimeDB.BSATN.List<
+                NonEquatableViewPrimaryKeyRow,
+                NonEquatableViewPrimaryKeyRow.BSATN
+            >();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
+            listSerializer.Write(writer, listValue);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error(
+                "Error in view 'view_primary_key_non_equatable_column': " + e
+            );
+            throw;
+        }
+    }
+}
+
+sealed class view_primary_key_uses_non_bsatn_partial_fieldViewDispatcher
+    : global::SpacetimeDB.Internal.IView
+{
+    public SpacetimeDB.Internal.RawViewDefV10 MakeViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "view_primary_key_uses_non_bsatn_partial_field",
+            Index: 10,
+            IsPublic: true,
+            IsAnonymous: false,
+            Params: [],
+            ReturnType: new SpacetimeDB.BSATN.List<
+                ViewPrimaryKeyPartialRow,
+                ViewPrimaryKeyPartialRow.BSATN
+            >().GetAlgebraicType(registrar)
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.ViewPrimaryKeyUsesNonBsatnPartialField(
+                (SpacetimeDB.ViewContext)ctx
+            );
+            var listSerializer = new SpacetimeDB.BSATN.List<
+                ViewPrimaryKeyPartialRow,
+                ViewPrimaryKeyPartialRow.BSATN
+            >();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
+            listSerializer.Write(writer, listValue);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error(
+                "Error in view 'view_primary_key_uses_non_bsatn_partial_field': " + e
+            );
+            throw;
+        }
+    }
+}
+
+sealed class view_primary_key_uses_wrong_source_nameViewDispatcher
+    : global::SpacetimeDB.Internal.IView
+{
+    public SpacetimeDB.Internal.RawViewDefV10 MakeViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV10(
+            SourceName: "view_primary_key_uses_wrong_source_name",
+            Index: 11,
+            IsPublic: true,
+            IsAnonymous: false,
+            Params: [],
+            ReturnType: new SpacetimeDB.BSATN.List<
+                ViewPrimaryKeyRenamedRow,
+                ViewPrimaryKeyRenamedRow.BSATN
+            >().GetAlgebraicType(registrar)
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.ViewPrimaryKeyUsesWrongSourceName(
+                (SpacetimeDB.ViewContext)ctx
+            );
+            var listSerializer = new SpacetimeDB.BSATN.List<
+                ViewPrimaryKeyRenamedRow,
+                ViewPrimaryKeyRenamedRow.BSATN
+            >();
+            var listValue = global::System.Linq.Enumerable.ToList(returnValue);
+            var header = new global::SpacetimeDB.Internal.ViewResultHeader.RowData(default);
+            var headerRW = new global::SpacetimeDB.Internal.ViewResultHeader.BSATN();
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            headerRW.Write(writer, header);
+            listSerializer.Write(writer, listValue);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error(
+                "Error in view 'view_primary_key_uses_wrong_source_name': " + e
+            );
+            throw;
+        }
+    }
+}
+
 sealed class view_def_index_no_mutationViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
 {
     public SpacetimeDB.Internal.RawViewDefV10 MakeAnonymousViewDef(
@@ -2464,14 +2644,6 @@ sealed class view_def_index_no_mutationViewDispatcher : global::SpacetimeDB.Inte
         );
 
     public byte[] Invoke(
-        System.IO.BinaryReader reader,
-        global::SpacetimeDB.Internal.IAnonymousViewContext ctx
-    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
-
-    [System.Runtime.CompilerServices.MethodImpl(
-        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-    )]
-    private static byte[] __spacetimedb_begin_short_backtrace(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IAnonymousViewContext ctx
     )
@@ -2519,14 +2691,6 @@ sealed class view_def_no_anon_identityViewDispatcher : global::SpacetimeDB.Inter
     public byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IAnonymousViewContext ctx
-    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
-
-    [System.Runtime.CompilerServices.MethodImpl(
-        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-    )]
-    private static byte[] __spacetimedb_begin_short_backtrace(
-        System.IO.BinaryReader reader,
-        global::SpacetimeDB.Internal.IAnonymousViewContext ctx
     )
     {
         try
@@ -2570,14 +2734,6 @@ sealed class view_def_no_iterViewDispatcher : global::SpacetimeDB.Internal.IAnon
         );
 
     public byte[] Invoke(
-        System.IO.BinaryReader reader,
-        global::SpacetimeDB.Internal.IAnonymousViewContext ctx
-    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
-
-    [System.Runtime.CompilerServices.MethodImpl(
-        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-    )]
-    private static byte[] __spacetimedb_begin_short_backtrace(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IAnonymousViewContext ctx
     )
@@ -2625,14 +2781,6 @@ sealed class view_def_returns_not_a_spacetime_typeViewDispatcher
         );
 
     public byte[] Invoke(
-        System.IO.BinaryReader reader,
-        global::SpacetimeDB.Internal.IAnonymousViewContext ctx
-    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
-
-    [System.Runtime.CompilerServices.MethodImpl(
-        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-    )]
-    private static byte[] __spacetimedb_begin_short_backtrace(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IAnonymousViewContext ctx
     )
@@ -3077,16 +3225,7 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
-            __spacetimedb_begin_short_backtrace(reader, ctx);
-
-        [System.Runtime.CompilerServices.MethodImpl(
-            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-        )]
-        private static void __spacetimedb_begin_short_backtrace(
-            BinaryReader reader,
-            SpacetimeDB.Internal.IReducerContext ctx
-        )
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Reducers.__ReducerWithReservedPrefix((SpacetimeDB.ReducerContext)ctx);
         }
@@ -3109,16 +3248,7 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
-            __spacetimedb_begin_short_backtrace(reader, ctx);
-
-        [System.Runtime.CompilerServices.MethodImpl(
-            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-        )]
-        private static void __spacetimedb_begin_short_backtrace(
-            BinaryReader reader,
-            SpacetimeDB.Internal.IReducerContext ctx
-        )
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             TestScheduleIssues.DummyScheduledReducer(
                 (SpacetimeDB.ReducerContext)ctx,
@@ -3142,16 +3272,7 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
-            __spacetimedb_begin_short_backtrace(reader, ctx);
-
-        [System.Runtime.CompilerServices.MethodImpl(
-            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-        )]
-        private static void __spacetimedb_begin_short_backtrace(
-            BinaryReader reader,
-            SpacetimeDB.Internal.IReducerContext ctx
-        )
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Reducers.OnReducerWithReservedPrefix((SpacetimeDB.ReducerContext)ctx);
         }
@@ -3172,16 +3293,7 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => SpacetimeDB.Internal.Lifecycle.Init;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
-            __spacetimedb_begin_short_backtrace(reader, ctx);
-
-        [System.Runtime.CompilerServices.MethodImpl(
-            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-        )]
-        private static void __spacetimedb_begin_short_backtrace(
-            BinaryReader reader,
-            SpacetimeDB.Internal.IReducerContext ctx
-        )
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Reducers.TestDuplicateReducerKind1((SpacetimeDB.ReducerContext)ctx);
         }
@@ -3202,16 +3314,7 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => SpacetimeDB.Internal.Lifecycle.Init;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
-            __spacetimedb_begin_short_backtrace(reader, ctx);
-
-        [System.Runtime.CompilerServices.MethodImpl(
-            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-        )]
-        private static void __spacetimedb_begin_short_backtrace(
-            BinaryReader reader,
-            SpacetimeDB.Internal.IReducerContext ctx
-        )
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Reducers.TestDuplicateReducerKind2((SpacetimeDB.ReducerContext)ctx);
         }
@@ -3232,16 +3335,7 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
-            __spacetimedb_begin_short_backtrace(reader, ctx);
-
-        [System.Runtime.CompilerServices.MethodImpl(
-            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-        )]
-        private static void __spacetimedb_begin_short_backtrace(
-            BinaryReader reader,
-            SpacetimeDB.Internal.IReducerContext ctx
-        )
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Reducers.TestDuplicateReducerName((SpacetimeDB.ReducerContext)ctx);
         }
@@ -3262,16 +3356,7 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
-            __spacetimedb_begin_short_backtrace(reader, ctx);
-
-        [System.Runtime.CompilerServices.MethodImpl(
-            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-        )]
-        private static void __spacetimedb_begin_short_backtrace(
-            BinaryReader reader,
-            SpacetimeDB.Internal.IReducerContext ctx
-        )
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Reducers.TestReducerReturnType((SpacetimeDB.ReducerContext)ctx);
         }
@@ -3292,16 +3377,7 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
-            __spacetimedb_begin_short_backtrace(reader, ctx);
-
-        [System.Runtime.CompilerServices.MethodImpl(
-            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-        )]
-        private static void __spacetimedb_begin_short_backtrace(
-            BinaryReader reader,
-            SpacetimeDB.Internal.IReducerContext ctx
-        )
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             throw new System.InvalidOperationException();
         }
@@ -3343,11 +3419,17 @@ static class ModuleRegistration
             (identity, connectionId, random, time) =>
                 new SpacetimeDB.ProcedureContext(identity, connectionId, random, time)
         );
+        SpacetimeDB.Internal.Module.SetCaseConversionPolicy(
+            SpacetimeDB.CaseConversionPolicy.SnakeCase
+        );
         SpacetimeDB.Internal.Module.RegisterExplicitIndexName(
             "TestIndexIssues_SecondaryIndexingColumn_idx_btree",
             "TestCanonicalNameWithoutAccessor"
         );
 
+        SpacetimeDB.Internal.Module.SetHandlerContextConstructor(
+            (random, time) => new SpacetimeDB.HandlerContext(random, time)
+        );
         var __memoryStream = new MemoryStream();
         var __writer = new BinaryWriter(__memoryStream);
 
@@ -3371,10 +3453,31 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.RegisterView<view_def_wrong_returnViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<view_no_deleteViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<view_no_insertViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterView<view_primary_key_missing_columnViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterView<view_primary_key_non_equatable_columnViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterView<view_primary_key_uses_non_bsatn_partial_fieldViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterView<view_primary_key_uses_wrong_source_nameViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterAnonymousView<view_def_index_no_mutationViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterAnonymousView<view_def_no_anon_identityViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterAnonymousView<view_def_no_iterViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterAnonymousView<view_def_returns_not_a_spacetime_typeViewDispatcher>();
+
+        SpacetimeDB.Internal.Module.RegisterViewPrimaryKey(
+            "view_primary_key_missing_column",
+            ["MissingIdentity"]
+        );
+        SpacetimeDB.Internal.Module.RegisterViewPrimaryKey(
+            "view_primary_key_non_equatable_column",
+            ["Identity"]
+        );
+        SpacetimeDB.Internal.Module.RegisterViewPrimaryKey(
+            "view_primary_key_uses_non_bsatn_partial_field",
+            ["ExtraPartialIdentity"]
+        );
+        SpacetimeDB.Internal.Module.RegisterViewPrimaryKey(
+            "view_primary_key_uses_wrong_source_name",
+            ["renamed_identity"]
+        );
 
         SpacetimeDB.Internal.Module.RegisterTable<
             global::Player,
@@ -3420,6 +3523,7 @@ static class ModuleRegistration
             global::TestUniqueNotEquatable,
             SpacetimeDB.Internal.TableHandles.TestUniqueNotEquatable
         >();
+
         SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FILTER);
         SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FOURTH_FILTER);
         SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_SECOND_FILTER);
@@ -3689,6 +3793,24 @@ static class ModuleRegistration
             timestamp,
             args,
             result_sink
+        );
+
+    [UnmanagedCallersOnly(EntryPoint = "__call_http_handler__")]
+    public static SpacetimeDB.Internal.Errno __call_http_handler__(
+        uint id,
+        SpacetimeDB.Timestamp timestamp,
+        SpacetimeDB.Internal.BytesSource request,
+        SpacetimeDB.Internal.BytesSource request_body,
+        SpacetimeDB.Internal.BytesSink response_sink,
+        SpacetimeDB.Internal.BytesSink response_body_sink
+    ) =>
+        SpacetimeDB.Internal.Module.__call_http_handler__(
+            id,
+            timestamp,
+            request,
+            request_body,
+            response_sink,
+            response_body_sink
         );
 
     [UnmanagedCallersOnly(EntryPoint = "__call_view__")]

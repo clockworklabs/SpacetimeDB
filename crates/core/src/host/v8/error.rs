@@ -2,10 +2,9 @@
 
 use super::serialize_to_js;
 use super::string::IntoJsString;
-use crate::database_logger::BacktraceFrameKind;
 use crate::error::NodesError;
 use crate::{
-    database_logger::{BacktraceFrame, LogLevel, ModuleBacktrace, Record},
+    database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record},
     host::instance_env::InstanceEnv,
     replica_context::ReplicaContext,
 };
@@ -396,15 +395,36 @@ impl fmt::Display for JsStackTrace {
     }
 }
 
-impl ModuleBacktrace for JsStackTrace {
-    fn frames(&self) -> Box<dyn Iterator<Item = BacktraceFrame<'_>> + '_> {
-        Box::new(self.frames.iter().map(|f| BacktraceFrame {
-            func_name: f.fn_name.as_deref(),
-            file: f.script_name.as_deref(),
-            line: Some(f.line as u32),
-            column: Some(f.column as u32),
-            kind: BacktraceFrameKind::Js,
-        }))
+impl BacktraceProvider for JsStackTrace {
+    fn capture(&self) -> Box<dyn ModuleBacktrace> {
+        let trace = self
+            .frames
+            .iter()
+            .map(|f| {
+                (
+                    format!("{}:{}:{}", f.script_name(), f.line, f.column),
+                    f.fn_name().to_owned(),
+                )
+            })
+            .collect();
+        Box::new(JsBacktrace { trace })
+    }
+}
+
+/// A rendered backtrace for a JS exception.
+struct JsBacktrace {
+    trace: Vec<(String, String)>,
+}
+
+impl ModuleBacktrace for JsBacktrace {
+    fn frames(&self) -> Vec<BacktraceFrame<'_>> {
+        self.trace
+            .iter()
+            .map(|(module_name, func_name)| BacktraceFrame {
+                module_name: Some(module_name),
+                func_name: Some(func_name),
+            })
+            .collect()
     }
 }
 
@@ -595,10 +615,10 @@ impl From<UnknownJsError> for anyhow::Error {
 }
 
 pub(super) fn log_traceback(replica_ctx: &ReplicaContext, func_type: &str, func: &str, e: &anyhow::Error) {
-    // no need to log `JsError` separately; it'll be displayed if it exists in the error.
-    log::info!("{func_type} \"{func}\" raised a runtime error: {e:#}");
-
+    log::info!("{func_type} \"{func}\" runtime error: {e:}");
     if let Some(js_err) = e.downcast_ref::<JsError>() {
+        log::info!("JS error: {js_err}",);
+
         // Also log to module logs.
         let first_frame = js_err.trace.frames.first();
         let filename = first_frame.map(|f| f.script_name());

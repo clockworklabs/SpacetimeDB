@@ -1,0 +1,15 @@
+{
+  "description": "Simple TypeScript chat app that calls an LLM API from a SpacetimeDB module",
+  "client_framework": "React",
+  "client_lang": "typescript",
+  "server_lang": "typescript",
+  "tags": ["Launchpad"],
+  "builtWith": [
+    "react",
+    "react-dom",
+    "vitejs",
+    "typescript",
+    "vite",
+    "spacetimedb"
+  ]
+}

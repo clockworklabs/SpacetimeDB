@@ -28,6 +28,18 @@ import {
 } from '../lib/indexes';
 import { callProcedure } from './procedures';
 import {
+  type HandlerContext,
+  Request,
+  SyncResponse,
+  makeRequest,
+} from './http_handlers';
+import { httpClient } from './http_internal';
+import {
+  deserializeHeaders,
+  deserializeMethod,
+  serializeHeaders,
+} from './http_shared';
+import {
   type AuthCtx,
   type JsonObject,
   type JwtClaims,
@@ -35,7 +47,7 @@ import {
 } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
 import { type RowType, type Table, type TableMethods } from '../lib/table';
-import { hasOwn } from '../lib/util';
+import { bsatnBaseSize, hasOwn } from '../lib/util';
 import { type AnonymousViewCtx, type ViewCtx } from './views';
 import { isRowTypedQuery, makeQueryBuilder, toSql } from './query';
 import type { DbView } from './db_view';
@@ -43,10 +55,31 @@ import { getErrorConstructor, SenderError } from './errors';
 import { Range, type Bound } from './range';
 import { makeRandom, type Random } from './rng';
 import type { SchemaInner } from './schema';
+import { HttpRequest, HttpResponse } from '../lib/autogen/types';
 
 const { freeze } = Object;
 
 export const sys = { ..._syscalls2_0, ..._syscalls2_1 };
+
+function requestFromWire(request: HttpRequest, body: Uint8Array): Request {
+  return Request[makeRequest](body, {
+    headers: deserializeHeaders(request.headers),
+    method: deserializeMethod(request.method),
+    uri: request.uri,
+    version: request.version,
+  });
+}
+
+function responseIntoWire(response: SyncResponse): [HttpResponse, Uint8Array] {
+  return [
+    {
+      headers: serializeHeaders(response.headers),
+      version: response.version,
+      code: response.status,
+    },
+    response.bytes(),
+  ];
+}
 
 export function parseJsonObject(json: string): JsonObject {
   let value: unknown;
@@ -221,8 +254,12 @@ export const ReducerCtxImpl = class ReducerCtx<
     me.#senderAuth = undefined;
   }
 
-  get identity() {
+  get databaseIdentity() {
     return (this.#identity ??= new Identity(sys.identity()));
+  }
+
+  get identity() {
+    return this.databaseIdentity;
   }
 
   get senderAuth() {
@@ -267,6 +304,38 @@ export const callUserFunction = function __spacetimedb_end_short_backtrace<
 >(fn: (...args: Args) => R, ...args: Args): R {
   return fn(...args);
 };
+
+export function runWithTx<T, Ctx>(
+  makeCtx: (timestamp: Timestamp) => Ctx,
+  body: (ctx: Ctx) => T
+): T {
+  const run = () => {
+    const timestamp = sys.procedure_start_mut_tx();
+
+    try {
+      return body(makeCtx(new Timestamp(timestamp)));
+    } catch (e) {
+      sys.procedure_abort_mut_tx();
+      throw e;
+    }
+  };
+
+  let res = run();
+  try {
+    sys.procedure_commit_mut_tx();
+    return res;
+  } catch {
+    // ignore the commit error
+  }
+  console.warn('committing anonymous transaction failed');
+  res = run();
+  try {
+    sys.procedure_commit_mut_tx();
+    return res;
+  } catch (e) {
+    throw new Error('transaction retry failed again', { cause: e });
+  }
+}
 
 export const makeHooks = (schema: SchemaInner): ModuleHooks =>
   new ModuleHooksImpl(schema);
@@ -414,12 +483,83 @@ class ModuleHooksImpl implements ModuleHooks {
       () => this.#dbView
     );
   }
+
+  __call_http_handler__(
+    id: u32,
+    timestamp: bigint,
+    request: Uint8Array,
+    body: Uint8Array
+  ): [response: Uint8Array, body: Uint8Array] {
+    const moduleCtx = this.#schema;
+    const handler = moduleCtx.httpHandlers[id];
+    const ctx = new HandlerContextImpl(
+      new Timestamp(timestamp),
+      () => this.#dbView
+    );
+    const requestMetadata = HttpRequest.deserialize(new BinaryReader(request));
+    const response = callUserFunction(
+      handler,
+      ctx,
+      requestFromWire(requestMetadata, body)
+    );
+    const [responseMetadata, responseBody] = responseIntoWire(response);
+    const responseBuf = new BinaryWriter(
+      bsatnBaseSize(moduleCtx.typespace, HttpResponse.algebraicType)
+    );
+    HttpResponse.serialize(responseBuf, responseMetadata);
+    return [responseBuf.getBuffer(), responseBody];
+  }
 }
 
 const BINARY_WRITER = new BinaryWriter(0);
 const BINARY_READER = new BinaryReader(new Uint8Array());
 
-function makeTableView(
+class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
+  implements HandlerContext<S>
+{
+  #identity: Identity | undefined;
+  #uuidCounter: { value: number } | undefined;
+  #random: Random | undefined;
+  #dbView: () => DbView<any>;
+
+  readonly http = httpClient;
+
+  constructor(
+    readonly timestamp: Timestamp,
+    dbView: () => DbView<any>
+  ) {
+    this.#dbView = dbView;
+  }
+
+  get identity() {
+    return (this.#identity ??= new Identity(sys.identity()));
+  }
+
+  get random() {
+    return (this.#random ??= makeRandom(this.timestamp));
+  }
+
+  withTx<T>(body: (ctx: any) => T): T {
+    return runWithTx(
+      timestamp =>
+        new ReducerCtxImpl(Identity.zero(), timestamp, null, this.#dbView()),
+      body
+    );
+  }
+
+  newUuidV4(): Uuid {
+    const bytes = this.random.fill(new Uint8Array(16));
+    return Uuid.fromRandomBytesV4(bytes);
+  }
+
+  newUuidV7(): Uuid {
+    const bytes = this.random.fill(new Uint8Array(4));
+    const counter = (this.#uuidCounter ??= { value: 0 });
+    return Uuid.fromCounterV7(counter, this.timestamp, bytes);
+  }
+}
+
+export function makeTableView(
   typespace: Typespace,
   table: RawTableDefV10
 ): Table<any> {
@@ -792,6 +932,10 @@ function makeTableView(
       };
       index = {
         filter: (range: any[]): IteratorObject<RowType<any>> => {
+          // A bare scalar or `Range` is the only type-valid way to express a
+          // one-column prefix scan; normalize it to a single-element array so
+          // `.length` and `serializeRange` see a prefix rather than NaN.
+          if (!Array.isArray(range)) range = [range];
           if (range.length === numColumns) {
             const buf = LEAF_BUF;
             const point_len = serializePoint(buf, range);
@@ -813,6 +957,7 @@ function makeTableView(
           }
         },
         delete: (range: any[]): u32 => {
+          if (!Array.isArray(range)) range = [range];
           if (range.length === numColumns) {
             const buf = LEAF_BUF;
             const point_len = serializePoint(buf, range);

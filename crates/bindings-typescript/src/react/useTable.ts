@@ -24,6 +24,8 @@ export interface UseTableCallbacks<RowType> {
   onInsert?: (row: RowType) => void;
   onDelete?: (row: RowType) => void;
   onUpdate?: (oldRow: RowType, newRow: RowType) => void;
+  /** Whether the subscription is active. Defaults to `true`. */
+  enabled?: boolean;
 }
 
 type MembershipChange = 'enter' | 'leave' | 'stayIn' | 'stayOut';
@@ -102,6 +104,7 @@ function useTableInternal<TableDef extends UntypedTableDef>(
   callbacks?: UseTableCallbacks<Prettify<RowType<TableDef>>>
 ): [readonly Prettify<RowType<TableDef>>[], boolean] {
   type UseTableRowType = RowType<TableDef>;
+  const enabled = callbacks?.enabled ?? true;
   const accessorName = getQueryAccessorName(query);
   const whereExpr = getQueryWhereClause(query);
 
@@ -118,6 +121,9 @@ function useTableInternal<TableDef extends UntypedTableDef>(
     readonly Prettify<UseTableRowType>[],
     boolean,
   ] => {
+    if (!enabled) {
+      return [[], true];
+    }
     const connection = connectionState.getConnection();
     if (!connection) {
       return [[], false];
@@ -132,29 +138,42 @@ function useTableInternal<TableDef extends UntypedTableDef>(
     // TODO: investigating refactoring so that this is no longer necessary, as we have had genuine bugs with missed deps.
     // See https://github.com/clockworklabs/SpacetimeDB/pull/4580.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionState, accessorName, querySql, subscribeApplied]);
+  }, [connectionState, accessorName, querySql, subscribeApplied, enabled]);
 
   useEffect(() => {
     lastSnapshotRef.current = null;
   }, [computeSnapshot]);
 
   useEffect(() => {
-    const connection = connectionState.getConnection()!;
-    if (connectionState.isActive && connection) {
-      const cancel = connection
-        .subscriptionBuilder()
-        .onApplied(() => {
-          setSubscribeApplied(true);
-        })
-        .subscribe(querySql);
-      return () => {
-        cancel.unsubscribe();
-      };
+    if (!enabled) {
+      setSubscribeApplied(false);
+      return;
     }
-  }, [querySql, connectionState.isActive, connectionState]);
+    const connection = connectionState.getConnection();
+    if (!connectionState.isActive || !connection) {
+      // The connection dropped (or was replaced and has not reconnected
+      // yet), so any previously applied subscription no longer reflects the
+      // current cache. Report not-ready until the new subscription applies.
+      setSubscribeApplied(false);
+      return;
+    }
+    const cancel = connection
+      .subscriptionBuilder()
+      .onApplied(() => {
+        setSubscribeApplied(true);
+      })
+      .subscribe(querySql);
+    return () => {
+      cancel.unsubscribe();
+    };
+  }, [querySql, connectionState.isActive, connectionState, enabled]);
 
   const subscribe = useCallback(
     (onStoreChange: () => void) => {
+      if (!enabled) {
+        return () => {};
+      }
+
       const onInsert = (
         ctx: EventContextInterface<UntypedRemoteModule>,
         row: any
@@ -240,6 +259,7 @@ function useTableInternal<TableDef extends UntypedTableDef>(
       callbacks?.onDelete,
       callbacks?.onInsert,
       callbacks?.onUpdate,
+      enabled,
     ]
   );
 

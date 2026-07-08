@@ -489,6 +489,8 @@ namespace SpacetimeDB
             );
     }
 
+    public static class Handlers { }
+
     public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
     {
         public readonly Identity Sender;
@@ -499,9 +501,13 @@ namespace SpacetimeDB
 
         // **Note:** must be 0..=u32::MAX
         internal int CounterUuid;
+        public Identity DatabaseIdentity => Internal.IReducerContext.GetDatabaseIdentity();
 
-        // We need this property to be non-static for parity with client SDK.
-        public Identity Identity => Internal.IReducerContext.GetIdentity();
+        // We keep this property for compatibility with existing module code.
+        [global::System.Obsolete(
+            "ReducerContext.Identity is deprecated. Use DatabaseIdentity instead."
+        )]
+        public Identity Identity => DatabaseIdentity;
 
         internal ReducerContext(
             Identity identity,
@@ -587,14 +593,11 @@ namespace SpacetimeDB
 
         private ProcedureTxContext? _cached;
 
-        [Experimental("STDB_UNSTABLE")]
         public Local Db => _db;
 
-        [Experimental("STDB_UNSTABLE")]
         public TResult WithTx<TResult>(Func<ProcedureTxContext, TResult> body) =>
             base.WithTx(tx => body((ProcedureTxContext)tx));
 
-        [Experimental("STDB_UNSTABLE")]
         public TxOutcome<TResult> TryWithTx<TResult, TError>(
             Func<ProcedureTxContext, Result<TResult, TError>> body
         )
@@ -648,10 +651,58 @@ namespace SpacetimeDB
         }
     }
 
-    [Experimental("STDB_UNSTABLE")]
+    public sealed partial class HandlerContext : global::SpacetimeDB.HandlerContextBase
+    {
+        private readonly Local _db = new();
+
+        internal HandlerContext(Random random, Timestamp time)
+            : base(random, time) { }
+
+        protected override global::SpacetimeDB.LocalBase CreateLocal() => _db;
+
+        protected override global::SpacetimeDB.HandlerTxContextBase CreateTxContext(
+            Internal.TxContext inner
+        ) => _cached ??= new HandlerTxContext(inner);
+
+        private HandlerTxContext? _cached;
+
+        [Experimental("STDB_UNSTABLE")]
+        public TResult WithTx<TResult>(Func<HandlerTxContext, TResult> body) =>
+            base.WithTx(tx => body((HandlerTxContext)tx));
+
+        [Experimental("STDB_UNSTABLE")]
+        public TxOutcome<TResult> TryWithTx<TResult, TError>(
+            Func<HandlerTxContext, Result<TResult, TError>> body
+        )
+            where TError : Exception => base.TryWithTx(tx => body((HandlerTxContext)tx));
+
+        public Uuid NewUuidV4()
+        {
+            var bytes = new byte[16];
+            Rng.NextBytes(bytes);
+            return Uuid.FromRandomBytesV4(bytes);
+        }
+
+        public Uuid NewUuidV7()
+        {
+            var bytes = new byte[4];
+            Rng.NextBytes(bytes);
+            return Uuid.FromCounterV7(ref CounterUuid, Timestamp, bytes);
+        }
+    }
+
     public sealed class ProcedureTxContext : global::SpacetimeDB.ProcedureTxContextBase
     {
         internal ProcedureTxContext(Internal.TxContext inner)
+            : base(inner) { }
+
+        public new Local Db => (Local)base.Db;
+    }
+
+    [Experimental("STDB_UNSTABLE")]
+    public sealed class HandlerTxContext : global::SpacetimeDB.HandlerTxContextBase
+    {
+        internal HandlerTxContext(Internal.TxContext inner)
             : base(inner) { }
 
         public new Local Db => (Local)base.Db;
@@ -1725,14 +1776,6 @@ sealed class public_table_queryViewDispatcher : global::SpacetimeDB.Internal.IVi
     public byte[] Invoke(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
-    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
-
-    [System.Runtime.CompilerServices.MethodImpl(
-        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-    )]
-    private static byte[] __spacetimedb_begin_short_backtrace(
-        System.IO.BinaryReader reader,
-        global::SpacetimeDB.Internal.IViewContext ctx
     )
     {
         try
@@ -1773,14 +1816,6 @@ sealed class public_table_viewViewDispatcher : global::SpacetimeDB.Internal.IVie
         );
 
     public byte[] Invoke(
-        System.IO.BinaryReader reader,
-        global::SpacetimeDB.Internal.IViewContext ctx
-    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
-
-    [System.Runtime.CompilerServices.MethodImpl(
-        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-    )]
-    private static byte[] __spacetimedb_begin_short_backtrace(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IViewContext ctx
     )
@@ -1828,14 +1863,6 @@ sealed class find_public_table__by_identityViewDispatcher
         );
 
     public byte[] Invoke(
-        System.IO.BinaryReader reader,
-        global::SpacetimeDB.Internal.IAnonymousViewContext ctx
-    ) => __spacetimedb_begin_short_backtrace(reader, ctx);
-
-    [System.Runtime.CompilerServices.MethodImpl(
-        System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-    )]
-    private static byte[] __spacetimedb_begin_short_backtrace(
         System.IO.BinaryReader reader,
         global::SpacetimeDB.Internal.IAnonymousViewContext ctx
     )
@@ -2310,16 +2337,7 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => SpacetimeDB.Internal.Lifecycle.Init;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
-            __spacetimedb_begin_short_backtrace(reader, ctx);
-
-        [System.Runtime.CompilerServices.MethodImpl(
-            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-        )]
-        private static void __spacetimedb_begin_short_backtrace(
-            BinaryReader reader,
-            SpacetimeDB.Internal.IReducerContext ctx
-        )
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Timers.Init((SpacetimeDB.ReducerContext)ctx);
         }
@@ -2342,16 +2360,7 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
-            __spacetimedb_begin_short_backtrace(reader, ctx);
-
-        [System.Runtime.CompilerServices.MethodImpl(
-            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-        )]
-        private static void __spacetimedb_begin_short_backtrace(
-            BinaryReader reader,
-            SpacetimeDB.Internal.IReducerContext ctx
-        )
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Reducers.InsertData((SpacetimeDB.ReducerContext)ctx, dataRW.Read(reader));
         }
@@ -2374,16 +2383,7 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
-            __spacetimedb_begin_short_backtrace(reader, ctx);
-
-        [System.Runtime.CompilerServices.MethodImpl(
-            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-        )]
-        private static void __spacetimedb_begin_short_backtrace(
-            BinaryReader reader,
-            SpacetimeDB.Internal.IReducerContext ctx
-        )
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Test.NestingNamespaces.AndClasses.InsertData2(
                 (SpacetimeDB.ReducerContext)ctx,
@@ -2409,16 +2409,7 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
-            __spacetimedb_begin_short_backtrace(reader, ctx);
-
-        [System.Runtime.CompilerServices.MethodImpl(
-            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-        )]
-        private static void __spacetimedb_begin_short_backtrace(
-            BinaryReader reader,
-            SpacetimeDB.Internal.IReducerContext ctx
-        )
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             MultiTableRow.InsertMultiData((SpacetimeDB.ReducerContext)ctx, dataRW.Read(reader));
         }
@@ -2441,16 +2432,7 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
-            __spacetimedb_begin_short_backtrace(reader, ctx);
-
-        [System.Runtime.CompilerServices.MethodImpl(
-            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-        )]
-        private static void __spacetimedb_begin_short_backtrace(
-            BinaryReader reader,
-            SpacetimeDB.Internal.IReducerContext ctx
-        )
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Reducers.ScheduleImmediate((SpacetimeDB.ReducerContext)ctx, dataRW.Read(reader));
         }
@@ -2473,16 +2455,7 @@ static class ModuleRegistration
 
         public SpacetimeDB.Internal.Lifecycle? Lifecycle => null;
 
-        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) =>
-            __spacetimedb_begin_short_backtrace(reader, ctx);
-
-        [System.Runtime.CompilerServices.MethodImpl(
-            System.Runtime.CompilerServices.MethodImplOptions.NoInlining
-        )]
-        private static void __spacetimedb_begin_short_backtrace(
-            BinaryReader reader,
-            SpacetimeDB.Internal.IReducerContext ctx
-        )
+        public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx)
         {
             Timers.SendScheduledMessage((SpacetimeDB.ReducerContext)ctx, argRW.Read(reader));
         }
@@ -2523,6 +2496,9 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.SetProcedureContextConstructor(
             (identity, connectionId, random, time) =>
                 new SpacetimeDB.ProcedureContext(identity, connectionId, random, time)
+        );
+        SpacetimeDB.Internal.Module.SetHandlerContextConstructor(
+            (random, time) => new SpacetimeDB.HandlerContext(random, time)
         );
         var __memoryStream = new MemoryStream();
         var __writer = new BinaryWriter(__memoryStream);
@@ -2573,6 +2549,7 @@ static class ModuleRegistration
             global::Timers.SendMessageTimer,
             SpacetimeDB.Internal.TableHandles.SendMessageTimer
         >();
+
         SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(
             global::Module.ALL_PUBLIC_TABLES
         );
@@ -2634,6 +2611,24 @@ static class ModuleRegistration
             timestamp,
             args,
             result_sink
+        );
+
+    [UnmanagedCallersOnly(EntryPoint = "__call_http_handler__")]
+    public static SpacetimeDB.Internal.Errno __call_http_handler__(
+        uint id,
+        SpacetimeDB.Timestamp timestamp,
+        SpacetimeDB.Internal.BytesSource request,
+        SpacetimeDB.Internal.BytesSource request_body,
+        SpacetimeDB.Internal.BytesSink response_sink,
+        SpacetimeDB.Internal.BytesSink response_body_sink
+    ) =>
+        SpacetimeDB.Internal.Module.__call_http_handler__(
+            id,
+            timestamp,
+            request,
+            request_body,
+            response_sink,
+            response_body_sink
         );
 
     [UnmanagedCallersOnly(EntryPoint = "__call_view__")]

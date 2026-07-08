@@ -18,6 +18,18 @@ pub struct ConnectedTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `connected`.
+pub struct ConnectedTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for ConnectedTableAccessor {
+    type Row = Connected;
+    type Handle<'db> = ConnectedTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.connected()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `connected`.
 ///
@@ -39,6 +51,18 @@ impl ConnectedTableAccess for super::RemoteTables {
 
 pub struct ConnectedInsertCallbackId(__sdk::CallbackId);
 pub struct ConnectedDeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for ConnectedTableHandle<'ctx> {
+    type Row = Connected;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = Connected> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for ConnectedTableHandle<'ctx> {
     type Row = Connected;
@@ -64,6 +88,36 @@ impl<'ctx> __sdk::Table for ConnectedTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = ConnectedDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> ConnectedDeleteCallbackId {
+        ConnectedDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: ConnectedDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for ConnectedTableHandle<'ctx> {
+    type InsertCallbackId = ConnectedInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> ConnectedInsertCallbackId {
+        ConnectedInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: ConnectedInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for ConnectedTableHandle<'ctx> {
     type DeleteCallbackId = ConnectedDeleteCallbackId;
 
     fn on_delete(

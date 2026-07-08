@@ -10,10 +10,15 @@ import type { OptionAlgebraicType } from '../lib/option';
 import type { ParamsObj } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
 import {
+  ArrayBuilder,
+  OptionBuilder,
   RowBuilder,
+  type ColumnBuilder,
+  type ColumnMetadata,
   type Infer,
   type InferSpacetimeTypeOfTypeBuilder,
   type InferTypeOfRow,
+  type RowObj,
   type TypeBuilder,
 } from '../lib/type_builders';
 import { bsatnBaseSize, toPascalCase } from '../lib/util';
@@ -90,6 +95,77 @@ export type ViewOpts = {
 
 type FlattenedArray<T> = T extends readonly (infer E)[] ? E : never;
 
+// Compile-time mirror of `viewReturnRow` below. Views currently return either
+// `array(row(...))` or `option(row(...))`; this extracts the row object type
+// from those builders so we can inspect column metadata at the type level.
+// Non-row returns collapse to `never`, which makes the primary-key validation
+// below a no-op for unsupported shapes.
+type ViewReturnRow<Ret extends ViewReturnTypeBuilder> =
+  Ret extends ArrayBuilder<infer Element>
+    ? Element extends RowBuilder<infer Row>
+      ? Row
+      : never
+    : Ret extends OptionBuilder<infer Value>
+      ? Value extends RowBuilder<infer Row>
+        ? Row
+        : never
+      : never;
+
+// Produces a union of the returned row's column names marked with
+// `.primaryKey()`. For example, `{ id: t.u32().primaryKey(), name: t.string() }`
+// becomes `"id"`, while two marked columns becomes `"id" | "name"`.
+type PrimaryKeyColumnNames<Row extends RowObj> = {
+  [K in keyof Row & string]: Row[K] extends ColumnBuilder<any, any, infer M>
+    ? M extends { isPrimaryKey: true }
+      ? K
+      : never
+    : never;
+}[keyof Row & string];
+
+// Standard conditional-type trick for distinguishing a single type from a
+// union. We use it because zero or one primary-key column is valid, but a union
+// of two or more column names means the row builder marked multiple primary
+// keys.
+type IsUnion<T, U = T> = [T] extends [never]
+  ? false
+  : T extends any
+    ? [U] extends [T]
+      ? false
+      : true
+    : false;
+
+// In generic code, row keys may widen from literal names like "id" | "name"
+// to plain `string`. That means "unknown column name", not "multiple primary
+// keys", so avoid a false-positive type error and rely on the runtime check.
+type HasMultiplePrimaryKeys<Row extends RowObj> =
+  string extends PrimaryKeyColumnNames<Row>
+    ? false
+    : IsUnion<PrimaryKeyColumnNames<Row>>;
+
+type MultiplePrimaryKeyColumns<Ret extends ViewReturnTypeBuilder> =
+  PrimaryKeyColumnNames<ViewReturnRow<Ret>>;
+
+type ERROR_view_return_type_can_have_at_most_one_primaryKey<
+  Columns extends string,
+> = {
+  _primaryKeyColumns: Columns;
+  _fix: 'Remove primaryKey() from all but one column on the returned row type';
+};
+
+// Used as a rest parameter type on `Schema.view` and `Schema.anonymousView`.
+// Valid return builders produce `[]`, so callers pass no extra arguments. If
+// the returned row has multiple `.primaryKey()` columns, this becomes a
+// one-element tuple containing an explanatory error type, which makes the
+// normal three-argument call fail to type-check.
+export type ValidateViewPrimaryKey<Ret extends ViewReturnTypeBuilder> =
+  HasMultiplePrimaryKeys<ViewReturnRow<Ret>> extends true
+    ? [
+        error: ERROR_view_return_type_can_have_at_most_one_primaryKey<
+          MultiplePrimaryKeyColumns<Ret>
+        >,
+      ]
+    : [];
+
 // // If we allowed functions to return either.
 // type ViewReturn<Ret extends ViewReturnTypeBuilder> =
 //   | Infer<Ret>
@@ -143,12 +219,7 @@ export function registerView<
     ? AnonymousViewFn<S, Params, Ret>
     : ViewFn<S, Params, Ret>
 ) {
-  // If the function isn't named (e.g. `function foobar() {}`), give it the same
-  // name as the reducer so that it's clear what it is in in backtraces.
-  if (!fn.name) {
-    Object.defineProperty(fn, 'name', { value: exportName, writable: false });
-  }
-
+  ctx.defineFunction(exportName);
   const paramsBuilder = new RowBuilder(params, toPascalCase(exportName));
 
   // Register return types if they are product types
@@ -168,6 +239,22 @@ export function registerView<
     params: paramType,
     returnType,
   });
+
+  // Runtime counterpart to `ValidateViewPrimaryKey`: the type-level check gives
+  // users an early diagnostic in normal code, but this still protects dynamic
+  // or widened builders and is the source of the raw module-def metadata.
+  const primaryKeyColumns = viewPrimaryKeyColumns(ret);
+  if (primaryKeyColumns.length > 1) {
+    throw new TypeError(
+      `View '${exportName}' can have at most one primaryKey() column on its returned row type; found ${primaryKeyColumns.join(', ')}`
+    );
+  }
+  if (primaryKeyColumns.length === 1) {
+    ctx.moduleDef.viewPrimaryKeys.push({
+      viewSourceName: exportName,
+      columns: primaryKeyColumns,
+    });
+  }
 
   if (opts.name != null) {
     ctx.moduleDef.explicitNames.entries.push({
@@ -199,6 +286,40 @@ export function registerView<
   });
 }
 
+// Inspect the returned row builder and collect the column property names marked
+// with `.primaryKey()`. These names are the TypeScript row-builder keys, which
+// are also the raw column names in the module definition emitted by the TS SDK.
+function viewPrimaryKeyColumns(ret: ViewReturnTypeBuilder): string[] {
+  const row = viewReturnRow(ret);
+  if (row == null) {
+    return [];
+  }
+
+  return Object.entries(row.row)
+    .filter(
+      (
+        entry
+      ): entry is [string, ColumnBuilder<any, any, ColumnMetadata<any>>] =>
+        entry[1].columnMetadata.isPrimaryKey === true
+    )
+    .map(([name]) => name);
+}
+
+// Views can return either `array(row(...))` or `option(row(...))`. The primary
+// key marker lives on the inner `RowBuilder`, so unwrap those two supported
+// shapes and ignore anything else.
+function viewReturnRow(
+  ret: ViewReturnTypeBuilder
+): RowBuilder<any> | undefined {
+  if (ret instanceof ArrayBuilder && ret.element instanceof RowBuilder) {
+    return ret.element;
+  }
+  if (ret instanceof OptionBuilder && ret.value instanceof RowBuilder) {
+    return ret.value;
+  }
+  return undefined;
+}
+
 type ViewInfo<F> = {
   fn: F;
   deserializeParams: Deserializer<any>;
@@ -206,8 +327,11 @@ type ViewInfo<F> = {
   returnTypeBaseSize: number;
 };
 
-export type Views = ViewInfo<ViewFn<any, any, any>>[];
-export type AnonViews = ViewInfo<AnonymousViewFn<any, any, any>>[];
+type AnyViewFn = (ctx: ViewCtx<any>, params: any) => any;
+type AnyAnonymousViewFn = (ctx: AnonymousViewCtx<any>, params: any) => any;
+
+export type Views = ViewInfo<AnyViewFn>[];
+export type AnonViews = ViewInfo<AnyAnonymousViewFn>[];
 
 // A helper to get the product type out of a type builder.
 // This is only non-never if the type builder is an array.

@@ -21,6 +21,7 @@ use crate::{log_and_500, ControlStateReadAccess};
 
 pub struct ByteStringBody(pub ByteString);
 
+#[async_trait::async_trait]
 impl<S: Send + Sync> FromRequest<S> for ByteStringBody {
     type Rejection = axum::response::Response;
 
@@ -48,8 +49,10 @@ impl headers::Header for XForwardedFor {
     fn decode<'i, I: Iterator<Item = &'i HeaderValue>>(values: &mut I) -> Result<Self, headers::Error> {
         let val = values.next().ok_or_else(headers::Error::invalid)?;
         let val = val.to_str().map_err(|_| headers::Error::invalid())?;
-        let (first, _) = val.split_once(',').ok_or_else(headers::Error::invalid)?;
-        let ip = first.trim().parse().map_err(|_| headers::Error::invalid())?;
+        // X-Forwarded-For is a comma-separated chain. For a single-hop
+        // proxy there is no comma; take the first IP either way.
+        let first = val.split(',').next().unwrap_or(val).trim();
+        let ip = first.parse().map_err(|_| headers::Error::invalid())?;
         Ok(XForwardedFor(ip))
     }
 
@@ -164,7 +167,8 @@ impl fmt::Display for NameOrIdentity {
 
 pub struct EmptyBody;
 
-impl<S: Sync> FromRequest<S> for EmptyBody {
+#[async_trait::async_trait]
+impl<S> FromRequest<S> for EmptyBody {
     type Rejection = axum::response::Response;
     async fn from_request(req: Request, _state: &S) -> Result<Self, Self::Rejection> {
         let body = req.into_body();
@@ -181,5 +185,43 @@ impl<S: Sync> FromRequest<S> for EmptyBody {
             return Err((StatusCode::BAD_REQUEST, "body must be empty").into_response());
         }
         Ok(Self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use headers::Header;
+
+    fn decode_one(raw: &str) -> Result<XForwardedFor, headers::Error> {
+        let val = HeaderValue::from_str(raw).unwrap();
+        let values = [val];
+        XForwardedFor::decode(&mut values.iter())
+    }
+
+    #[test]
+    fn decodes_single_ip() {
+        // Single-hop proxies (e.g. nginx inserting the client IP) emit
+        // a value with no comma. This must succeed.
+        let got = decode_one("10.0.0.1").expect("single IP should decode");
+        assert_eq!(got.0, "10.0.0.1".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn decodes_chain_takes_first() {
+        let got = decode_one("10.0.0.1, 192.168.1.1, 172.16.0.1").expect("chain should decode");
+        assert_eq!(got.0, "10.0.0.1".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn decodes_chain_trims_whitespace() {
+        let got = decode_one("   10.0.0.1   , 192.168.1.1").expect("chain should decode");
+        assert_eq!(got.0, "10.0.0.1".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn rejects_non_ip() {
+        assert!(decode_one("not-an-ip").is_err());
+        assert!(decode_one("not-an-ip, 10.0.0.1").is_err());
     }
 }

@@ -12,7 +12,7 @@
 use anyhow::{bail, Context, Result};
 use regex::Regex;
 use serde_json::Value;
-use spacetimedb_smoketests::{pnpm_path, random_string, workspace_root, Smoketest};
+use spacetimedb_smoketests::{pnpm, random_string, workspace_root, Smoketest};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -172,23 +172,100 @@ fn update_package_json_dependency(package_json_path: &Path, package_name: &str, 
     Ok(())
 }
 
+fn assert_major_minor_version(actual: &str, context: impl std::fmt::Display) -> Result<()> {
+    let re = Regex::new(r"^\d+\.\d+$").unwrap();
+    if !re.is_match(actual) {
+        bail!("{context}: expected MAJOR.MINOR, got {actual}");
+    }
+    Ok(())
+}
+
+fn assert_major_minor_patch_wildcard(actual: &str, context: impl std::fmt::Display) -> Result<()> {
+    let re = Regex::new(r"^\d+\.\d+\.\*$").unwrap();
+    if !re.is_match(actual) {
+        bail!("{context}: expected MAJOR.MINOR.*, got {actual}");
+    }
+    Ok(())
+}
+
+fn read_cargo_dependency_version(cargo_toml_path: &Path, package_name: &str) -> Result<String> {
+    let content =
+        fs::read_to_string(cargo_toml_path).with_context(|| format!("Failed to read {:?}", cargo_toml_path))?;
+    let data: toml::Value = content
+        .parse()
+        .with_context(|| format!("Failed to parse {:?}", cargo_toml_path))?;
+    let dep = data
+        .get("dependencies")
+        .and_then(|deps| deps.get(package_name))
+        .with_context(|| format!("No dependency `{package_name}` found in {:?}", cargo_toml_path))?;
+    match dep {
+        toml::Value::String(version) => Ok(version.clone()),
+        toml::Value::Table(table) => table
+            .get("version")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .with_context(|| format!("Dependency `{package_name}` in {:?} has no version", cargo_toml_path)),
+        _ => bail!(
+            "Unsupported dependency `{package_name}` format in {:?}",
+            cargo_toml_path
+        ),
+    }
+}
+
+fn read_package_json_dependency_version(package_json_path: &Path, package_name: &str) -> Result<String> {
+    let content =
+        fs::read_to_string(package_json_path).with_context(|| format!("Failed to read {:?}", package_json_path))?;
+    let data: Value =
+        serde_json::from_str(&content).with_context(|| format!("Failed to parse {:?}", package_json_path))?;
+    data.get("dependencies")
+        .and_then(|deps| deps.get(package_name))
+        .and_then(|v| v.as_str())
+        .map(String::from)
+        .with_context(|| format!("No dependency `{package_name}` found in {:?}", package_json_path))
+}
+
+fn read_csproj_package_reference_version(csproj_path: &Path, package_name: &str) -> Result<String> {
+    let content = fs::read_to_string(csproj_path).with_context(|| format!("Failed to read {:?}", csproj_path))?;
+    let root = xmltree::Element::parse(content.as_bytes())
+        .with_context(|| format!("Failed to parse XML {:?}", csproj_path))?;
+
+    root.children
+        .iter()
+        .filter_map(|node| match node {
+            xmltree::XMLNode::Element(element) if element.name == "ItemGroup" => Some(element),
+            _ => None,
+        })
+        .flat_map(|item_group| item_group.children.iter())
+        .filter_map(|node| match node {
+            xmltree::XMLNode::Element(element) if element.name == "PackageReference" => Some(element),
+            _ => None,
+        })
+        .find(|package_ref| package_ref.attributes.get("Include").map(String::as_str) == Some(package_name))
+        .and_then(|package_ref| package_ref.attributes.get("Version").cloned())
+        .with_context(|| format!("No PackageReference `{package_name}` found in {:?}", csproj_path))
+}
+
+fn find_csproj(dir: &Path) -> Result<PathBuf> {
+    fs::read_dir(dir)
+        .with_context(|| format!("Failed to read {:?}", dir))?
+        .flatten()
+        .map(|entry| entry.path())
+        .find(|path| path.extension().is_some_and(|ext| ext == "csproj"))
+        .with_context(|| format!("No .csproj found in {:?}", dir))
+}
+
+fn read_spacetimedb_cpp_version(cmake_path: &Path) -> Result<String> {
+    let content = fs::read_to_string(cmake_path).with_context(|| format!("Failed to read {:?}", cmake_path))?;
+    let re = Regex::new(r#"set\(SPACETIMEDB_CPP_VERSION\s+"([^"]+)""#).unwrap();
+    let caps = re
+        .captures(&content)
+        .with_context(|| format!("No SPACETIMEDB_CPP_VERSION found in {:?}", cmake_path))?;
+    Ok(caps.get(1).unwrap().as_str().to_string())
+}
+
 /// Runs pnpm with the given arguments in the given working directory.
 fn run_pnpm(args: &[&str], cwd: &Path) -> Result<()> {
-    let pnpm = pnpm_path().context("pnpm not found")?;
-    let output = Command::new(&pnpm)
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .with_context(|| format!("Failed to spawn pnpm {}", args.join(" ")))?;
-    if !output.status.success() {
-        bail!(
-            "pnpm {} (in {:?}) failed:\nstdout: {}\nstderr: {}",
-            args.join(" "),
-            cwd,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
+    pnpm(args, cwd)?;
     Ok(())
 }
 
@@ -776,6 +853,44 @@ fn test_template(test: &Smoketest, template: &Template) -> Result<()> {
 // ============================================================================
 // Test entry point
 // ============================================================================
+
+#[test]
+fn test_basic_template_dependency_versions() -> Result<()> {
+    let test = Smoketest::builder().autopublish(false).build();
+
+    let (_basic_cpp_tmpdir, basic_cpp_path) = init_template(&test, "basic-cpp")?;
+    let cpp_server_version = read_spacetimedb_cpp_version(&basic_cpp_path.join("spacetimedb").join("CMakeLists.txt"))?;
+    assert_major_minor_version(&cpp_server_version, "basic-cpp C++ server SPACETIMEDB_CPP_VERSION")?;
+    // The current basic C++ template still uses a Rust client; we do not have a C++ client yet.
+    let cpp_client_manifest = basic_cpp_path.join("Cargo.toml");
+    if !cpp_client_manifest.exists() {
+        bail!("basic-cpp expected Rust client manifest at {:?}", cpp_client_manifest);
+    }
+
+    let (_basic_rs_tmpdir, basic_rs_path) = init_template(&test, "basic-rs")?;
+    let rs_server_version =
+        read_cargo_dependency_version(&basic_rs_path.join("spacetimedb").join("Cargo.toml"), "spacetimedb")?;
+    assert_major_minor_patch_wildcard(&rs_server_version, "basic-rs Rust server spacetimedb")?;
+    let rs_client_version = read_cargo_dependency_version(&basic_rs_path.join("Cargo.toml"), "spacetimedb-sdk")?;
+    assert_major_minor_patch_wildcard(&rs_client_version, "basic-rs Rust client spacetimedb-sdk")?;
+
+    let (_basic_ts_tmpdir, basic_ts_path) = init_template(&test, "basic-ts")?;
+    let ts_server_version =
+        read_package_json_dependency_version(&basic_ts_path.join("spacetimedb").join("package.json"), "spacetimedb")?;
+    assert_major_minor_patch_wildcard(&ts_server_version, "basic-ts TypeScript server spacetimedb")?;
+    let ts_client_version = read_package_json_dependency_version(&basic_ts_path.join("package.json"), "spacetimedb")?;
+    assert_major_minor_patch_wildcard(&ts_client_version, "basic-ts TypeScript client spacetimedb")?;
+
+    let (_basic_cs_tmpdir, basic_cs_path) = init_template(&test, "basic-cs")?;
+    let cs_server_project = find_csproj(&basic_cs_path.join("spacetimedb"))?;
+    let cs_server_version = read_csproj_package_reference_version(&cs_server_project, "SpacetimeDB.Runtime")?;
+    assert_major_minor_patch_wildcard(&cs_server_version, "basic-cs C# server SpacetimeDB.Runtime")?;
+    let cs_client_version =
+        read_csproj_package_reference_version(&basic_cs_path.join("client.csproj"), "SpacetimeDB.ClientSDK")?;
+    assert_major_minor_patch_wildcard(&cs_client_version, "basic-cs C# client SpacetimeDB.ClientSDK")?;
+
+    Ok(())
+}
 
 /// Tests all templates discovered in the `templates/` directory.
 ///

@@ -67,11 +67,13 @@ pub struct TableInsert {
 
 pub struct TableDelete {
     pub table: Arc<TableOrViewSchema>,
+    pub alias: RawIdentifier,
     pub filter: Option<Expr>,
 }
 
 pub struct TableUpdate {
     pub table: Arc<TableOrViewSchema>,
+    pub alias: RawIdentifier,
     pub columns: Box<[(ColId, AlgebraicValue)]>,
     pub filter: Option<Expr>,
 }
@@ -176,16 +178,13 @@ pub fn type_delete(delete: SqlDelete, tx: &impl SchemaView) -> TypingResult<Tabl
         }));
     }
     let mut vars = Relvars::default();
-    vars.insert(query_table_name, from.clone());
-    vars.insert(table_name.clone().into(), from.clone());
-    if let Some(alias) = from.inner().alias.as_ref() {
-        vars.insert(alias.clone().into(), from.clone());
-    }
+    vars.insert(query_table_name.clone(), from.clone());
     let expr = filter
         .map(|expr| type_expr(&vars, expr, Some(&AlgebraicType::Bool)))
         .transpose()?;
     Ok(TableDelete {
         table: from,
+        alias: query_table_name,
         filter: expr,
     })
 }
@@ -240,17 +239,14 @@ pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<Tabl
         }
     }
     let mut vars = Relvars::default();
-    vars.insert(query_table_name, schema.clone());
-    vars.insert(table_name.clone().into(), schema.clone());
-    if let Some(alias) = schema.inner().alias.as_ref() {
-        vars.insert(alias.clone().into(), schema.clone());
-    }
+    vars.insert(query_table_name.clone(), schema.clone());
     let values = values.into_boxed_slice();
     let filter = filter
         .map(|expr| type_expr(&vars, expr, Some(&AlgebraicType::Bool)))
         .transpose()?;
     Ok(TableUpdate {
         table: schema,
+        alias: query_table_name,
         columns: values,
         filter,
     })
@@ -450,8 +446,8 @@ impl TypeChecker for SqlChecker {
     }
 }
 
-pub fn parse_and_type_sql(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> TypingResult<Statement> {
-    match parse_sql(sql)?.resolve_sender(auth.caller()) {
+pub fn parse_and_type_sql(sql: &str, tx: &impl SchemaView, _auth: &AuthCtx) -> TypingResult<Statement> {
+    match parse_sql(sql)? {
         SqlAst::Select(ast) => Ok(Statement::Select(SqlChecker::type_ast(ast, tx)?)),
         SqlAst::Insert(insert) => Ok(Statement::DML(DML::Insert(type_insert(insert, tx)?))),
         SqlAst::Delete(delete) => Ok(Statement::DML(DML::Delete(type_delete(delete, tx)?))),

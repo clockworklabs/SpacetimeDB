@@ -46,12 +46,30 @@ export type ConnectionState = {
 
 type Listener = () => void;
 
+export const CONNECTION_MANAGER_RECONNECT_BASE_DELAY_MS = 1000;
+export const CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS = 30_000;
+
+/**
+ * Computes the reconnect delay for the given attempt (0-based) using
+ * exponential backoff: the base delay doubles with each consecutive failed
+ * attempt, capped at the maximum delay.
+ */
+export function connectionManagerReconnectDelayMs(attempt: number): number {
+  return Math.min(
+    CONNECTION_MANAGER_RECONNECT_BASE_DELAY_MS * 2 ** attempt,
+    CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS
+  );
+}
+
 type ManagedConnection = {
   connection?: DbConnectionImpl<any>;
+  builder?: DbConnectionBuilder<any>;
   refCount: number;
   state: ConnectionState;
   listeners: Set<Listener>;
   pendingRelease: ReturnType<typeof setTimeout> | null;
+  reconnectTimer: ReturnType<typeof setTimeout> | null;
+  reconnectAttempt: number;
   onConnect?: (conn: DbConnectionImpl<any>) => void;
   onDisconnect?: (ctx: ErrorContextInterface<any>, error?: Error) => void;
   onConnectError?: (ctx: ErrorContextInterface<any>, error: Error) => void;
@@ -91,10 +109,13 @@ class ConnectionManagerImpl {
     }
     const managed: ManagedConnection = {
       connection: undefined,
+      builder: undefined,
       refCount: 0,
       state: defaultState(),
       listeners: new Set(),
       pendingRelease: null,
+      reconnectTimer: null,
+      reconnectAttempt: 0,
     };
     this.#connections.set(key, managed);
     return managed;
@@ -104,6 +125,140 @@ class ConnectionManagerImpl {
     for (const listener of managed.listeners) {
       listener();
     }
+  }
+
+  #updateState(
+    managed: ManagedConnection,
+    updates: Partial<ConnectionState>
+  ): void {
+    managed.state = { ...managed.state, ...updates };
+    this.#notify(managed);
+  }
+
+  #ensureCallbacks(managed: ManagedConnection): void {
+    if (managed.onConnect) {
+      return;
+    }
+
+    managed.onConnect = conn => {
+      if (conn !== managed.connection) {
+        return;
+      }
+      managed.reconnectAttempt = 0;
+      this.#updateState(managed, {
+        isActive: conn.isActive,
+        identity: conn.identity,
+        token: conn.token,
+        connectionId: conn.connectionId,
+        connectionError: undefined,
+      });
+    };
+
+    managed.onDisconnect = (ctx, error) => {
+      if (ctx !== managed.connection) {
+        return;
+      }
+      this.#updateState(managed, {
+        isActive: false,
+        connectionError: error ?? undefined,
+      });
+      this.#scheduleReconnect(managed);
+    };
+
+    managed.onConnectError = (ctx, error) => {
+      if (ctx !== managed.connection) {
+        return;
+      }
+      this.#updateState(managed, {
+        isActive: false,
+        connectionError: error,
+      });
+      this.#scheduleReconnect(managed);
+    };
+  }
+
+  #attachCallbacks<T extends DbConnectionImpl<any>>(
+    managed: ManagedConnection,
+    builder: DbConnectionBuilder<T>
+  ): void {
+    this.#ensureCallbacks(managed);
+    builder.onConnect(managed.onConnect!);
+    builder.onDisconnect(managed.onDisconnect!);
+    builder.onConnectError(managed.onConnectError!);
+  }
+
+  #detachCallbacks(
+    managed: ManagedConnection,
+    connection: DbConnectionImpl<any>
+  ): void {
+    if (managed.onConnect) {
+      connection.removeOnConnect(managed.onConnect as any);
+    }
+    if (managed.onDisconnect) {
+      connection.removeOnDisconnect(managed.onDisconnect as any);
+    }
+    if (managed.onConnectError) {
+      connection.removeOnConnectError(managed.onConnectError as any);
+    }
+  }
+
+  #buildManagedConnection<T extends DbConnectionImpl<any>>(
+    managed: ManagedConnection,
+    builder: DbConnectionBuilder<T>
+  ): T {
+    managed.builder = builder;
+    const connection = builder.build();
+    managed.connection = connection;
+    this.#attachCallbacks(managed, builder);
+
+    this.#updateState(managed, {
+      isActive: connection.isActive,
+      identity: connection.identity,
+      token: connection.token,
+      connectionId: connection.connectionId,
+      connectionError: undefined,
+    });
+
+    return connection as T;
+  }
+
+  #scheduleReconnect(managed: ManagedConnection): void {
+    if (
+      managed.refCount <= 0 ||
+      managed.pendingRelease ||
+      managed.reconnectTimer ||
+      !managed.builder
+    ) {
+      return;
+    }
+
+    const connection = managed.connection;
+    if (connection) {
+      this.#detachCallbacks(managed, connection);
+    }
+    managed.connection = undefined;
+
+    // The application asked this connection to close; don't fight it. A
+    // subsequent retain() will still build a fresh connection.
+    if (connection?.isDisconnectRequested) {
+      return;
+    }
+
+    const delay = connectionManagerReconnectDelayMs(managed.reconnectAttempt);
+    managed.reconnectAttempt += 1;
+    managed.reconnectTimer = setTimeout(() => {
+      managed.reconnectTimer = null;
+      if (
+        managed.refCount <= 0 ||
+        managed.pendingRelease ||
+        managed.connection ||
+        !managed.builder
+      ) {
+        return;
+      }
+
+      this.#buildManagedConnection(managed, managed.builder);
+    }, delay);
   }
 
   /**
@@ -124,27 +279,40 @@ class ConnectionManagerImpl {
       clearTimeout(managed.pendingRelease);
       managed.pendingRelease = null;
     }
+    if (managed.reconnectTimer) {
+      clearTimeout(managed.reconnectTimer);
+      managed.reconnectTimer = null;
+    }
+
     managed.refCount += 1;
+    managed.builder = builder;
+
     if (managed.connection) {
       return managed.connection as T;
     }
-    return this.#install<T>(managed, builder);
+
+    return this.#buildManagedConnection(managed, builder);
   }
 
   /**
-   * Tears down the current connection and re-installs one using a fresh
-   * builder, preserving the ref count and listener set.
+   * Tears down the current connection and builds a fresh one from `builder`,
+   * preserving the entry's ref count and listener set.
    *
-   * This exists because `retain()` ignores the builder once a connection is
-   * live — which is usually what you want for React ref-counting, but blocks
-   * "reconnect with a fresh token" flows. Call `rebuild()` from application
-   * reconnect logic (e.g. after a token refresh or auth change).
+   * `retain()` deliberately ignores the builder once a connection is live —
+   * the right behaviour for ref-counting, but it blocks "reconnect with a
+   * fresh token" flows (e.g. swapping an anonymous session for a signed-in one
+   * after an auth change). `rebuild()` is the supported escape hatch: pass a
+   * builder carrying the new token and the pool swaps the live connection
+   * under the same subscribers, so framework hooks (`useTable`, `useReducer`,
+   * …) re-bind to the new connection automatically.
    *
-   * Returns `null` if the key has no retained entry; otherwise returns the
-   * newly-installed connection.
+   * The old connection's callbacks are detached before it is closed, so its
+   * disconnect event never leaks into pool state, and any pending auto-reconnect
+   * is cancelled (the caller is driving the reconnect explicitly). Returns the
+   * newly-built connection, or `null` if the key has no retained entry.
    *
    * @param key - Unique identifier for the connection (use getKey to generate)
-   * @param builder - Fresh connection builder; its handlers will be rewired
+   * @param builder - Fresh connection builder; its handlers are rewired into the pool
    */
   rebuild<T extends DbConnectionImpl<any>>(
     key: string,
@@ -154,85 +322,42 @@ class ConnectionManagerImpl {
     if (!managed || managed.refCount <= 0) {
       return null;
     }
+
+    // The caller is taking over the connection lifecycle explicitly; cancel a
+    // deferred release or a pending auto-reconnect so neither races the fresh
+    // connection, and reset the backoff so the next unexpected drop starts over.
     if (managed.pendingRelease) {
       clearTimeout(managed.pendingRelease);
       managed.pendingRelease = null;
     }
-    this.#teardown(managed);
-    return this.#install<T>(managed, builder);
-  }
-
-  #install<T extends DbConnectionImpl<any>>(
-    managed: ManagedConnection,
-    builder: DbConnectionBuilder<T>
-  ): T {
-    const connection = builder.build();
-    managed.connection = connection;
-
-    const updateState = (updates: Partial<ConnectionState>) => {
-      managed.state = { ...managed.state, ...updates };
-      this.#notify(managed);
-    };
-
-    updateState({
-      isActive: connection.isActive,
-      identity: connection.identity,
-      token: connection.token,
-      connectionId: connection.connectionId,
-      connectionError: undefined,
-    });
-
-    managed.onConnect = conn => {
-      updateState({
-        isActive: conn.isActive,
-        identity: conn.identity,
-        token: conn.token,
-        connectionId: conn.connectionId,
-        connectionError: undefined,
-      });
-    };
-
-    managed.onDisconnect = (ctx, error) => {
-      updateState({
-        isActive: ctx.isActive,
-        connectionError: error ?? undefined,
-      });
-    };
-
-    managed.onConnectError = (ctx, error) => {
-      updateState({
-        isActive: ctx.isActive,
-        connectionError: error,
-      });
-    };
-
-    builder.onConnect(managed.onConnect);
-    builder.onDisconnect(managed.onDisconnect);
-    builder.onConnectError(managed.onConnectError);
-
-    return connection as T;
-  }
-
-  #teardown(managed: ManagedConnection): void {
-    if (!managed.connection) return;
-    if (managed.onConnect) {
-      managed.connection.removeOnConnect(managed.onConnect as any);
+    if (managed.reconnectTimer) {
+      clearTimeout(managed.reconnectTimer);
+      managed.reconnectTimer = null;
     }
-    if (managed.onDisconnect) {
-      managed.connection.removeOnDisconnect(managed.onDisconnect as any);
-    }
-    if (managed.onConnectError) {
-      managed.connection.removeOnConnectError(managed.onConnectError as any);
-    }
-    try {
-      managed.connection.disconnect();
-    } catch {
-      // disconnect on a dead socket is a no-op we can swallow
+    managed.reconnectAttempt = 0;
+
+    const connection = managed.connection;
+    if (connection) {
+      this.#detachCallbacks(managed, connection);
+      connection.disconnect();
     }
     managed.connection = undefined;
-    managed.onConnect = undefined;
-    managed.onDisconnect = undefined;
-    managed.onConnectError = undefined;
+
+    try {
+      return this.#buildManagedConnection(managed, builder) as T;
+    } catch (error) {
+      // The old connection is already torn down, so a failed rebuild would
+      // otherwise leave the pool reporting a stale "live" connection. Surface
+      // the failure into pool state (matching the onConnectError shape) so
+      // subscribers see a disconnected/errored connection, then re-throw so
+      // the caller can handle it.
+      this.#updateState(managed, {
+        isActive: false,
+        connectionError:
+          error instanceof Error ? error : new Error(String(error)),
+      });
+      throw error;
+    }
   }
 
   release(key: string): void {
@@ -246,12 +371,22 @@ class ConnectionManagerImpl {
       return;
     }
 
+    if (managed.reconnectTimer) {
+      clearTimeout(managed.reconnectTimer);
+      managed.reconnectTimer = null;
+    }
+
     managed.pendingRelease = setTimeout(() => {
       managed.pendingRelease = null;
       if (managed.refCount > 0) {
         return;
       }
-      this.#teardown(managed);
+      const connection = managed.connection;
+      managed.connection = undefined;
+      if (connection) {
+        this.#detachCallbacks(managed, connection);
+        connection.disconnect();
+      }
       this.#connections.delete(key);
     }, 0);
   }

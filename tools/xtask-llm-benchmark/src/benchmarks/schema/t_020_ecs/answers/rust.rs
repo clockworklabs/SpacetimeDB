@@ -3,7 +3,8 @@ use spacetimedb::{reducer, table, ReducerContext, Table};
 #[table(accessor = entity)]
 pub struct Entity {
     #[primary_key]
-    pub id: i32,
+    #[auto_inc]
+    pub id: u64,
 }
 
 #[table(accessor = position)]
@@ -32,12 +33,12 @@ pub struct NextPosition {
 
 #[reducer]
 pub fn seed(ctx: &ReducerContext) {
-    ctx.db.entity().insert(Entity { id: 1 });
-    ctx.db.entity().insert(Entity { id: 2 });
+    ctx.db.entity().insert(Entity { id: 0 });
+    ctx.db.entity().insert(Entity { id: 0 });
 
     ctx.db.position().insert(Position {
         entity_id: 1,
-        x: 1,
+        x: 0,
         y: 0,
     });
     ctx.db.position().insert(Position {

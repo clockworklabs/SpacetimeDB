@@ -1,7 +1,9 @@
+use std::io::Write;
+
 use log::info;
-use spacetimedb_commitlog::repo::Repo;
+use spacetimedb_commitlog::repo::{Repo, SegmentLen};
 use spacetimedb_commitlog::tests::helpers::enable_logging;
-use spacetimedb_commitlog::{commitlog, payload, repo, Commitlog, Options};
+use spacetimedb_commitlog::{commit, commitlog, payload, repo, Commitlog, Options};
 use spacetimedb_paths::server::CommitLogDir;
 use spacetimedb_paths::FromPathUnchecked;
 use tempfile::tempdir;
@@ -74,6 +76,37 @@ fn resets() {
             clog.transactions(&payload::ArrayDecoder).map(Result::unwrap).count() as u64
         );
     }
+}
+
+#[test]
+fn reset_then_resume() {
+    enable_logging();
+
+    let root = tempdir().unwrap();
+    let mut clog = Commitlog::open(CommitLogDir::from_path_unchecked(root.path()), <_>::default(), None).unwrap();
+
+    let payload = gen_payload();
+    for i in 0..10 {
+        clog.commit([(i, payload)]).unwrap();
+    }
+    clog.flush_and_sync().unwrap();
+
+    clog = clog.reset_to(4).unwrap();
+
+    let payload2 = gen_payload();
+    for i in 5..10 {
+        clog.commit([(i, payload2)]).unwrap();
+    }
+    clog.flush_and_sync().unwrap();
+
+    let txs = clog
+        .transactions(&payload::ArrayDecoder)
+        .map(Result::unwrap)
+        .collect::<Vec<_>>();
+
+    assert_eq!(txs.len(), 10);
+    assert!(txs[..5].iter().all(|tx| tx.txdata == payload));
+    assert!(txs[5..].iter().all(|tx| tx.txdata == payload2));
 }
 
 /// Try to generate commitlogs that will be amenable to compression -
@@ -160,4 +193,100 @@ fn all_segments_sealed() {
     let segments = repo.existing_offsets().unwrap();
     assert_eq!(num_segments + 1, segments.len());
     assert_eq!(segments.last().copied(), Some(num_commits as u64));
+}
+
+#[test]
+fn resume_empty_segment() {
+    enable_logging();
+
+    let root = tempdir().unwrap();
+    let path = CommitLogDir::from_path_unchecked(root.path());
+    let opts = Options {
+        max_segment_size: 64 * 1024,
+        ..<_>::default()
+    };
+    let num_commits = 1024;
+    let repo = repo::Fs::new(path, None).unwrap();
+    {
+        let mut clog = commitlog::Generic::open(&repo, opts).unwrap();
+        for (i, payload) in compressible_payloads().take(num_commits).enumerate() {
+            clog.commit([(i as u64, payload)]).unwrap();
+        }
+        clog.flush().unwrap();
+        clog.sync();
+    }
+
+    let mut segments = repo.existing_offsets().unwrap();
+    while let Some(last_segment) = segments.pop() {
+        repo.open_segment_writer(last_segment).unwrap().set_len(0).unwrap();
+
+        let _ = commitlog::Generic::<_, [u8; 256]>::open(&repo, opts).unwrap();
+        let segments1 = repo.existing_offsets().unwrap();
+        if segments.is_empty() {
+            assert_eq!([0], segments1.as_slice());
+        } else {
+            assert_eq!(segments, segments1);
+        }
+    }
+}
+
+/// Tests that resuming a segment that has trailing bytes smaller than a
+/// commitlog header causes those trailing bytes to be removed.
+///
+/// Regression test for https://github.com/clockworklabs/SpacetimeDB/pull/5116
+#[test]
+fn resume_small_trailing_garbage() {
+    enable_logging();
+
+    let root = tempdir().unwrap();
+    let path = CommitLogDir::from_path_unchecked(root.path());
+
+    let repo = repo::Fs::new(path, None).unwrap();
+    // Write some data.
+    {
+        let mut clog = commitlog::Generic::open(&repo, <_>::default()).unwrap();
+        for (i, payload) in compressible_payloads().take(1024).enumerate() {
+            clog.commit([(i as u64, payload)]).unwrap();
+            clog.flush().unwrap();
+            clog.sync();
+        }
+    }
+
+    let last_segment_offset = {
+        let segments = repo.existing_offsets().unwrap();
+        segments.last().copied().unwrap()
+    };
+
+    // Add some extra bytes, less than the commit header length.
+    let last_segment_size = {
+        let mut last_segment = repo.open_segment_writer(last_segment_offset).unwrap();
+        last_segment.write_all(&[67u8; commit::Header::LEN - 1]).unwrap();
+        last_segment.flush().unwrap();
+        last_segment.sync_all().unwrap();
+        last_segment.segment_len().unwrap()
+    };
+    {
+        let mut clog = commitlog::Generic::open(&repo, <_>::default()).unwrap();
+        // The segment list should be unchanged.
+        assert_eq!(&last_segment_offset, repo.existing_offsets().unwrap().last().unwrap());
+        // The extra bytes should have been truncated away.
+        let mut last_segment = repo.open_segment_writer(last_segment_offset).unwrap();
+        assert_eq!(
+            last_segment.segment_len().unwrap(),
+            last_segment_size - (commit::Header::LEN - 1) as u64
+        );
+
+        // Add some more data.
+        for (i, payload) in compressible_payloads()
+            .take(1024)
+            .enumerate()
+            .map(|(offset, payload)| (offset + 1024, payload))
+        {
+            clog.commit([(i as u64, payload)]).unwrap();
+            clog.flush().unwrap();
+            clog.sync();
+        }
+
+        assert_eq!(2048, clog.commits_from(0).map(Result::unwrap).count());
+    }
 }
