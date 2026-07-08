@@ -1,13 +1,8 @@
-use spacetimedb::{log, ReducerContext, Table};
+use spacetimedb::{log, ReducerContext};
 
 #[spacetimedb::table(accessor = marker, public)]
 pub struct Marker {
     id: u32,
-}
-
-#[spacetimedb::reducer(init)]
-pub fn init(ctx: &ReducerContext) {
-    ctx.db.marker().insert(Marker { id: 0 });
 }
 
 #[spacetimedb::reducer(client_connected)]
