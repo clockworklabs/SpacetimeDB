@@ -8,7 +8,7 @@ use crate::MetricsRecorderQueue;
 use anyhow::{anyhow, Context};
 use enum_map::EnumMap;
 use spacetimedb_commitlog::repo::OnNewSegmentFn;
-use spacetimedb_commitlog::{self as commitlog, Commitlog, SizeOnDisk};
+use spacetimedb_commitlog::{self as commitlog, SizeOnDisk};
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, TableError, ViewError};
@@ -35,6 +35,7 @@ use spacetimedb_datastore::{
     },
     traits::TxData,
 };
+use spacetimedb_durability::local::LocalHistory;
 use spacetimedb_durability::{self as durability, History};
 use spacetimedb_lib::bsatn::ToBsatn;
 use spacetimedb_lib::db::auth::StAccess;
@@ -1767,7 +1768,7 @@ pub async fn local_history(
     runtime: &Handle,
 ) -> io::Result<impl History<TxData = Txdata> + use<>> {
     let commitlog_dir = replica_dir.commit_log();
-    asyncify(runtime, move || Commitlog::open(commitlog_dir, <_>::default(), None)).await
+    asyncify(runtime, move || LocalHistory::open(commitlog_dir)).await
 }
 
 /// Watches snapshot creation events and compresses all commitlog segments older
