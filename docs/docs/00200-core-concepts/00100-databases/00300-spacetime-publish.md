@@ -95,7 +95,7 @@ If this publish is a major upgrade from 1.x to 2.0, read [1.x to 2.0 Upgrade Not
 To completely reset your database and delete all data:
 
 ```bash
-spacetime publish <DATABASE_NAME> --delete-data=always
+spacetime publish <DATABASE_NAME> --delete-data
 ```
 
 ⚠️ **Warning:** This permanently deletes all data in your database!
