@@ -17,8 +17,18 @@ namespace SpacetimeDB.Types
         {
             public override string RemoteTableName => "all_view_pk_players";
 
+            public sealed class IdUniqueIndex : UniqueIndexBase<ulong>
+            {
+                protected override ulong GetKey(ViewPkPlayer row) => row.Id;
+
+                public IdUniqueIndex(AllViewPkPlayersHandle table) : base(table) { }
+            }
+
+            public readonly IdUniqueIndex Id;
+
             internal AllViewPkPlayersHandle(DbConnection conn) : base(conn)
             {
+                Id = new(this);
             }
 
             protected override object GetPrimaryKey(ViewPkPlayer row) => row.Id;
