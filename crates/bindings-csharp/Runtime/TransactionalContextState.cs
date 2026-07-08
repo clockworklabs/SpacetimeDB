@@ -92,7 +92,7 @@ internal sealed class TransactionalContextState<TTxContext>(
         FFI.ErrnoHelpers.ThrowIfError(status);
     }
 
-    private void AbortMutTx()
+    private static void AbortMutTx()
     {
         var status = FFI.procedure_abort_mut_tx();
         FFI.ErrnoHelpers.ThrowIfError(status);
