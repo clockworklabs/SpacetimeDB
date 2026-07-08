@@ -842,6 +842,12 @@ void ExecViewPkOnUpdate()
                     oldRow,
                     newRow
                 );
+                var found = ctx.Db.AllViewPkPlayers.Id.Find(playerId);
+                Debug.Assert(found != null, $"Expected AllViewPkPlayers.Id.Find({playerId}) to find a row");
+                Debug.Assert(
+                    found.Id == playerId && found.Name == after,
+                    $"Expected AllViewPkPlayers.Id.Find({playerId}) to return updated row '{after}'"
+                );
 
                 waiting++;
                 phaseHandle?.UnsubscribeThen(_ =>
