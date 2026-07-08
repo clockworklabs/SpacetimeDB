@@ -79,14 +79,14 @@ internal sealed class TransactionalContextState<TTxContext>(
         }
     }
 
-    private long StartMutTx()
+    private static long StartMutTx()
     {
         var status = FFI.procedure_start_mut_tx(out var micros);
         FFI.ErrnoHelpers.ThrowIfError(status);
         return micros;
     }
 
-    private void CommitMutTx()
+    private static void CommitMutTx()
     {
         var status = FFI.procedure_commit_mut_tx();
         FFI.ErrnoHelpers.ThrowIfError(status);
@@ -98,7 +98,7 @@ internal sealed class TransactionalContextState<TTxContext>(
         FFI.ErrnoHelpers.ThrowIfError(status);
     }
 
-    private bool CommitMutTxWithRetry(Func<bool> retryBody)
+    private static bool CommitMutTxWithRetry(Func<bool> retryBody)
     {
         try
         {

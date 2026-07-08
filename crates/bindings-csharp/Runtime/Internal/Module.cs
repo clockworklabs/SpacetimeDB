@@ -31,11 +31,11 @@ partial class RawModuleDefV10
     // Fix it up to a different mangling scheme if it causes problems.
     private static string GetFriendlyName(Type type) =>
         type.IsGenericType
-            ? $"{type.Name.Remove(type.Name.IndexOf('`'))}_{string.Join("_", type.GetGenericArguments().Select(GetFriendlyName))}"
+            ? $"{type.Name[..type.Name.IndexOf('`')]}_{string.Join("_", type.GetGenericArguments().Select(GetFriendlyName))}"
             : type.Name;
 
     private static RawScopedTypeNameV10 MakeScopedTypeName(Type type) =>
-        new(new List<string>(), GetFriendlyName(type));
+        new([], GetFriendlyName(type));
 
     internal AlgebraicType.Ref RegisterType<T>(Func<AlgebraicType.Ref, AlgebraicType> makeType)
     {
@@ -84,7 +84,7 @@ partial class RawModuleDefV10
     internal void RegisterView(RawViewDefV10 view) => viewDefs.Add(view);
 
     internal void RegisterViewPrimaryKey(string viewSourceName, IEnumerable<string> columns) =>
-        viewPrimaryKeyDefs.Add(new RawViewPrimaryKeyDefV10(viewSourceName, columns.ToList()));
+        viewPrimaryKeyDefs.Add(new RawViewPrimaryKeyDefV10(viewSourceName, [.. columns]));
 
     internal void RegisterRowLevelSecurity(RawRowLevelSecurityDefV9 rls) =>
         rowLevelSecurityDefs.Add(rls);
@@ -96,7 +96,7 @@ partial class RawModuleDefV10
             defaults = [];
             defaultValuesByTable.Add(table, defaults);
         }
-        defaults.Add(new RawColumnDefaultValueV10(colId, new List<byte>(value)));
+        defaults.Add(new RawColumnDefaultValueV10(colId, [.. value]));
     }
 
     internal void SetCaseConversionPolicy(SpacetimeDB.CaseConversionPolicy policy) =>
@@ -131,7 +131,7 @@ partial class RawModuleDefV10
                     TableAccess: table.TableAccess,
                     DefaultValues: defaults is null
                         ? []
-                        : new List<RawColumnDefaultValueV10>(defaults),
+                        : [.. defaults],
                     IsEvent: table.IsEvent
                 )
             );
@@ -212,7 +212,7 @@ partial class RawModuleDefV10
         {
             sections.Add(
                 new RawModuleDefV10Section.ExplicitNames(
-                    new ExplicitNames(new List<ExplicitNameEntry>(explicitNames))
+                    new ExplicitNames([.. explicitNames])
                 )
             );
         }
@@ -244,7 +244,9 @@ public static class Module
         // These constructions are never executed at runtime — they exist solely
         // to make the IL scanner compute vtables for TaggedEnum subtypes.
         // The condition is always false but the scanner must assume it could be true.
+#pragma warning disable IDE0078 // Keep this opaque to the NativeAOT IL scanner.
         if (Environment.TickCount < 0 && Environment.TickCount > 0)
+#pragma warning restore IDE0078
         {
             _ = new RawIndexAlgorithm.BTree(null!);
             _ = new RawConstraintDataV9.Unique(null!);

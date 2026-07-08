@@ -1,6 +1,7 @@
 namespace SpacetimeDB;
 
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -57,7 +58,7 @@ public readonly record struct HttpHeader(string Name, byte[] Value, bool IsSensi
 /// </remarks>
 public readonly record struct HttpBody(byte[] Bytes)
 {
-    public static HttpBody Empty => new(Array.Empty<byte>());
+    public static HttpBody Empty => new([]);
 
     public byte[] ToBytes() => Bytes;
 
@@ -82,7 +83,7 @@ public sealed class HttpRequest
     public HttpMethod Method { get; init; } = HttpMethod.Get;
 
     /// <summary>HTTP headers to include with the request.</summary>
-    public List<HttpHeader> Headers { get; init; } = new();
+    public List<HttpHeader> Headers { get; init; } = [];
 
     /// <summary>Request body bytes.</summary>
     public HttpBody Body { get; init; } = HttpBody.Empty;
@@ -271,6 +272,7 @@ public sealed class HttpClient
     /// }
     /// </code>
     /// </example>
+    [SuppressMessage("Performance", "CA1822", Justification = "Public instance API exposed through ProcedureContext.Http.")]
     public Result<HttpResponse, HttpError> Send(HttpRequest request)
     {
         // The host syscall expects BSATN-encoded spacetimedb_lib::http::Request bytes.
@@ -306,10 +308,7 @@ public sealed class HttpClient
             var requestWire = new HttpRequestWire
             {
                 Method = ToWireMethod(request.Method),
-                Headers = new HttpHeadersWire
-                {
-                    Entries = request.Headers.Select(ToWireHeader).ToArray(),
-                },
+                Headers = new HttpHeadersWire { Entries = [.. request.Headers.Select(ToWireHeader)] },
                 Timeout = timeout is null
                     ? null
                     : new HttpTimeoutWire { Timeout = (TimeDuration)timeout.Value },
@@ -423,9 +422,7 @@ public sealed class HttpClient
         {
             Uri = requestWire.Uri,
             Method = FromWireMethod(requestWire.Method),
-            Headers = requestWire
-                .Headers.Entries.Select(h => new HttpHeader(h.Name, h.Value, false))
-                .ToList(),
+            Headers = [.. requestWire.Headers.Entries.Select(h => new HttpHeader(h.Name, h.Value, false))],
             Body = new HttpBody(body),
             Version = FromWireVersion(requestWire.Version),
         };
@@ -434,10 +431,7 @@ public sealed class HttpClient
         (
             new HttpResponseWire
             {
-                Headers = new HttpHeadersWire
-                {
-                    Entries = response.Headers.Select(ToWireHeader).ToArray(),
-                },
+                Headers = new HttpHeadersWire { Entries = [.. response.Headers.Select(ToWireHeader)] },
                 Version = ToWireVersion(response.Version),
                 Code = response.StatusCode,
             },
@@ -479,9 +473,7 @@ public sealed class HttpClient
     {
         var version = FromWireVersion(responseWire.Version);
 
-        var headers = responseWire
-            .Headers.Entries.Select(h => new HttpHeader(h.Name, h.Value, false))
-            .ToList();
+        var headers = responseWire.Headers.Entries.Select(h => new HttpHeader(h.Name, h.Value, false)).ToList();
 
         return (responseWire.Code, version, headers);
     }
