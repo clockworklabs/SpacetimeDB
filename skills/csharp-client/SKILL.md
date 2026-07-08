@@ -30,7 +30,7 @@ var conn = DbConnection.Builder()
     .OnConnect((conn, identity, token) =>
     {
         Console.WriteLine($"Connected as: {identity}");
-        // Save token for reconnection. Dev only: a lost token is unrecoverable; use OIDC in production.
+        // Save token for reconnection
         File.WriteAllText("auth_token.txt", token);
 
         conn.SubscriptionBuilder()

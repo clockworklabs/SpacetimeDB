@@ -30,7 +30,7 @@ function Root() {
     DbConnection.builder()
       .withUri(SPACETIMEDB_URI)
       .withDatabaseName(MODULE_NAME)
-      .withToken(localStorage.getItem('auth_token') || undefined), // Dev only: a lost token is unrecoverable. Use an OIDC provider token in production.
+      .withToken(localStorage.getItem('auth_token') || undefined),
     []
   );
   return (
@@ -80,7 +80,7 @@ function App() {
     }
   );
 
-  // Call reducers with object syntax. Returns Promise<void>; rejects with SenderError on failure.
+  // Call reducers with object syntax
   conn?.reducers.addRecord({ data }).catch(console.error);
 
   // Compare identities

@@ -351,7 +351,7 @@ const PLAYER_FILTER: Filter = Filter::Sql("
 
 #### Example: Recursive Rules
 
-This module will fail to publish because each rule depends on the other one.
+This module will publish, but because each rule depends on the other one, client queries and subscriptions on these tables will fail with a cyclic dependency error.
 
 <Tabs groupId="server-language" defaultValue="rust">
 <TabItem value="typescript" label="TypeScript">
