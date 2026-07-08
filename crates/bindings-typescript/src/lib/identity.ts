@@ -1,5 +1,10 @@
 import { AlgebraicType } from './algebraic_type';
-import { hexStringToU256, u256ToHexString, u256ToUint8Array } from './util';
+import {
+  coerceToBigInt,
+  hexStringToU256,
+  u256ToHexString,
+  u256ToUint8Array,
+} from './util';
 
 export type IdentityAlgebraicType = {
   tag: 'Product';
@@ -22,14 +27,15 @@ export class Identity {
   constructor(data: string | bigint) {
     // we get a JSON with __identity__ when getting a token with a JSON API
     // and an bigint when using BSATN.
-    // Coerce non-string inputs through BigInt(): callers that go via any
-    // JSON path outside the SDK (custom state caches, hand-rolled HTTP
-    // clients, etc.) can end up with `number` for a u256 field, which
-    // would otherwise be stored verbatim and crash later in BSATN
-    // serialization with an opaque "Cannot mix BigInt and other types"
-    // error.
+    // Coerce non-string inputs: callers that go via any JSON path outside
+    // the SDK (custom state caches, hand-rolled HTTP clients, etc.) can
+    // end up with `number` for a u256 field, which would otherwise be
+    // stored verbatim and crash later in BSATN serialization with an
+    // opaque "Cannot mix BigInt and other types" error.
     this.__identity__ =
-      typeof data === 'string' ? hexStringToU256(data) : BigInt(data);
+      typeof data === 'string'
+        ? hexStringToU256(data)
+        : coerceToBigInt(data, 'Identity');
   }
 
   /**

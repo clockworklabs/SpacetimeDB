@@ -70,3 +70,60 @@ describe('id-like constructors coerce non-bigint numerics', () => {
     expect(() => new Identity(undefined as unknown as bigint)).toThrow();
   });
 });
+
+describe('id-like constructors reject non-numeric inputs early', () => {
+  // Bare BigInt() would silently accept all of these: BigInt(true) is 1n,
+  // BigInt([42]) is 42n, BigInt('') is 0n — a malformed JSON payload must
+  // fail up front instead of producing a valid-looking id.
+  const garbage = [true, false, [42], {}, null];
+
+  test('ConnectionId rejects booleans, arrays, objects, null', () => {
+    for (const bad of garbage) {
+      expect(() => new ConnectionId(bad as unknown as bigint)).toThrow(
+        TypeError
+      );
+    }
+  });
+
+  test('Identity rejects booleans, arrays, objects, null', () => {
+    for (const bad of garbage) {
+      expect(() => new Identity(bad as unknown as bigint)).toThrow(TypeError);
+    }
+  });
+
+  test('Timestamp rejects booleans, arrays, objects, null', () => {
+    for (const bad of garbage) {
+      expect(() => new Timestamp(bad as unknown as bigint)).toThrow(TypeError);
+    }
+  });
+
+  test('TimeDuration rejects booleans, arrays, objects, null', () => {
+    for (const bad of garbage) {
+      expect(() => new TimeDuration(bad as unknown as bigint)).toThrow(
+        TypeError
+      );
+    }
+  });
+
+  test('Uuid rejects booleans, arrays, objects, null', () => {
+    for (const bad of garbage) {
+      expect(() => new Uuid(bad as unknown as bigint)).toThrow(TypeError);
+    }
+  });
+
+  test('empty / whitespace strings are rejected, not silently 0n', () => {
+    expect(() => new ConnectionId('' as unknown as bigint)).toThrow(TypeError);
+    expect(() => new Timestamp('   ' as unknown as bigint)).toThrow(TypeError);
+    expect(() => new TimeDuration('' as unknown as bigint)).toThrow(TypeError);
+    expect(() => new Uuid('' as unknown as bigint)).toThrow(TypeError);
+  });
+
+  test('decimal strings still coerce (JSON APIs serialize u64 as string)', () => {
+    expect(new ConnectionId('42' as unknown as bigint).__connection_id__).toBe(
+      42n
+    );
+    expect(
+      new Timestamp('1000000' as unknown as bigint).microsSinceUnixEpoch
+    ).toBe(1_000_000n);
+  });
+});

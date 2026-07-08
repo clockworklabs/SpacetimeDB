@@ -1,5 +1,6 @@
 import { AlgebraicType } from './algebraic_type';
 import { TimeDuration } from './time_duration';
+import { coerceToBigInt } from './util';
 
 export type TimestampAlgebraicType = {
   tag: 'Product';
@@ -26,10 +27,13 @@ export class Timestamp {
   }
 
   constructor(micros: bigint) {
-    // Coerce through BigInt() so callers who arrive via JSON (where
-    // bigint precision is lost) get a clear early failure instead of
-    // silent field corruption that crashes later in arithmetic.
-    this.__timestamp_micros_since_unix_epoch__ = BigInt(micros);
+    // Coerce so callers who arrive via JSON (where bigint precision is
+    // lost) get a clear early failure instead of silent field corruption
+    // that crashes later in arithmetic.
+    this.__timestamp_micros_since_unix_epoch__ = coerceToBigInt(
+      micros,
+      'Timestamp'
+    );
   }
 
   /**
