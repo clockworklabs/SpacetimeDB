@@ -18,6 +18,18 @@ pub struct PlayerLocationTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `player_location`.
+pub struct PlayerLocationTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for PlayerLocationTableAccessor {
+    type Row = PlayerLocation;
+    type Handle<'db> = PlayerLocationTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.player_location()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `player_location`.
 ///

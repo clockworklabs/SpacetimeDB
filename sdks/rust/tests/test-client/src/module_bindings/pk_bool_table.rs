@@ -18,6 +18,18 @@ pub struct PkBoolTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `pk_bool`.
+pub struct PkBoolTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for PkBoolTableAccessor {
+    type Row = PkBool;
+    type Handle<'db> = PkBoolTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.pk_bool()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `pk_bool`.
 ///

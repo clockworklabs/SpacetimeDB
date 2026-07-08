@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class NullableVecHandle : RemoteTableHandle<EventContext, NullableVec>
         {
-            protected override string RemoteTableName => "nullable_vec";
+            public override string RemoteTableName => "nullable_vec";
 
             public sealed class IdUniqueIndex : UniqueIndexBase<uint>
             {
