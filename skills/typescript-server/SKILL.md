@@ -99,6 +99,8 @@ export const createEntity = spacetimedb.reducer(
 export const doReset = spacetimedb.reducer((ctx) => { ... });
 ```
 
+Reducer args accept any column type, including arrays of custom types: `{ splits: t.array(Split) }`. Do not pass JSON strings for structured data.
+
 ## DB Operations
 
 ```typescript
@@ -142,6 +144,8 @@ const bytes: Uint8Array = ctx.random.fill(new Uint8Array(16));
 // Client: Timestamp → Date
 new Date(Number(row.createdAt.microsSinceUnixEpoch / 1000n));
 ```
+
+Do not construct `Identity` values from strings (e.g. `'hex' as Identity`): serialization fails and kills the module. Identities come from `ctx.sender` or `t.identity()` columns.
 
 ## Scheduled Tables
 
@@ -202,7 +206,7 @@ export const myProfile = spacetimedb.view(
 ## Complete Example
 
 ```typescript
-import { schema, table, t } from 'spacetimedb/server';
+import { schema, table, t, SenderError } from 'spacetimedb/server';
 
 const entity = table(
   { name: 'entity', public: true },
@@ -242,7 +246,7 @@ export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
 export const createEntity = spacetimedb.reducer(
   { name: t.string() },
   (ctx, { name }) => {
-    if (ctx.db.entity.identity.find(ctx.sender)) throw new Error('already exists');
+    if (ctx.db.entity.identity.find(ctx.sender)) throw new SenderError('already exists');
     ctx.db.entity.insert({ identity: ctx.sender, name, active: true });
   }
 );
@@ -250,7 +254,7 @@ export const createEntity = spacetimedb.reducer(
 export const addRecord = spacetimedb.reducer(
   { value: t.u32() },
   (ctx, { value }) => {
-    if (!ctx.db.entity.identity.find(ctx.sender)) throw new Error('not found');
+    if (!ctx.db.entity.identity.find(ctx.sender)) throw new SenderError('not found');
     ctx.db.record.insert({ id: 0n, owner: ctx.sender, value });
   }
 );

@@ -15,6 +15,8 @@ metadata:
 
 Install: `dotnet add package SpacetimeDB.ClientSDK`
 
+Generated bindings convert snake_case names to PascalCase, including row fields: a server column `trip_id` is `TripId` on client rows.
+
 ## Connection
 
 ```csharp
@@ -28,7 +30,7 @@ var conn = DbConnection.Builder()
     .OnConnect((conn, identity, token) =>
     {
         Console.WriteLine($"Connected as: {identity}");
-        // Save token for reconnection
+        // Save token for reconnection. Dev only: a lost token is unrecoverable; use OIDC in production.
         File.WriteAllText("auth_token.txt", token);
 
         conn.SubscriptionBuilder()
@@ -136,6 +138,8 @@ conn.Reducers.CreatePlayer("Alice");
 conn.Reducers.MovePlayer(10.0f, 20.0f);
 conn.Reducers.SendMessage("Hello!");
 ```
+
+Reducer calls return `void`; observe failures via the reducer callbacks below (`Status.Failed`).
 
 ## Reducer Callbacks
 

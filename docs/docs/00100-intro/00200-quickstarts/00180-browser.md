@@ -56,6 +56,10 @@ npm run build
       :::tip
       The browser IIFE bundle also exposes the generated `tables` query builders, so you can use query-builder subscriptions here too.
       :::
+
+      :::warning
+      The token saved to `localStorage` is tied to this browser and cannot be recovered if lost, so it is recommended for development only. For production, use an external OIDC provider. See [Authentication](../../00200-core-concepts/00500-authentication.md).
+      :::
     </StepText>
     <StepCode>
 ```html
@@ -97,7 +101,7 @@ npm run build
     <StepCode>
 ```javascript
 // Call a reducer with named arguments
-conn.reducers.add({ name: 'Alice' });
+conn.reducers.add({ name: 'Alice' }).catch(console.error);
 ```
     </StepCode>
   </Step>

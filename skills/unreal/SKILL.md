@@ -369,7 +369,7 @@ FSpacetimeDBConnectionId CId = Context.GetConnectionId();
 
 ## Token Persistence
 
-Use the built-in `UCredentials` helper to save and load tokens:
+Use the built-in `UCredentials` helper to save and load tokens. A lost token is unrecoverable and means a new identity, so this is for development; use an OIDC provider token in production.
 
 ```cpp
 UCredentials::Init(TEXT(".spacetime_token"));

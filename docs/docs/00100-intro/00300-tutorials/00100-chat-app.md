@@ -1444,6 +1444,10 @@ Here we are configuring our SpacetimeDB connection by specifying the server URI,
 
 We are also using `localStorage` to store our SpacetimeDB credentials. This way, we can reconnect to SpacetimeDB with the same `Identity` and token if we refresh the page. The first time we connect, we won't have any credentials stored, so we pass `undefined` to the `withToken` method. This will cause SpacetimeDB to generate new credentials for us.
 
+:::warning
+Identities issued this way are tied to a single token. If that token is lost, there is no way to recover or re-authenticate as that identity, so this approach is recommended for **development only**. For production applications, use an external OIDC provider. See [Authentication](../../00200-core-concepts/00500-authentication.md).
+:::
+
 If you chose a different name for your database, replace `quickstart-chat` with that name, or republish your module as `quickstart-chat`.
 
 Our React hooks will subscribe to the data in SpacetimeDB. When we subscribe, SpacetimeDB will run our subscription queries and store the result in a local "client cache". This cache will be updated in real-time as the data in the table changes on the server.
@@ -1532,7 +1536,7 @@ Modify the `onSubmitNewName` callback by adding a call to the `setName` reducer:
 const onSubmitNewName = (e: React.FormEvent<HTMLFormElement>) => {
   e.preventDefault();
   setSettingName(false);
-  setName({ name: newName });
+  setName({ name: newName }).catch(console.error);
 };
 ```
 
@@ -1542,11 +1546,11 @@ Next, modify the `onSubmitMessage` callback by adding a call to the `sendMessage
 const onSubmitMessage = (e: React.FormEvent<HTMLFormElement>) => {
   e.preventDefault();
   setNewMessage('');
-  sendMessage({ text: newMessage });
+  sendMessage({ text: newMessage }).catch(console.error);
 };
 ```
 
-SpacetimeDB generated these functions for us based on the type information provided by our module. Calling these functions will invoke our reducers in our module.
+SpacetimeDB generated these functions for us based on the type information provided by our module. Calling these functions will invoke our reducers in our module. They return a `Promise` that rejects if the reducer fails, so we log any error to the console.
 
 Let's try out our app to see the result of these changes.
 
