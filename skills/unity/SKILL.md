@@ -218,5 +218,5 @@ The SpacetimeDB SDK uses code generation. If you encounter issues with IL2CPP bu
 - Check that `link.xml` preserves SpacetimeDB types if you use assembly stripping
 
 ### Token Persistence
-Token save/load via `PlayerPrefs` is demonstrated in the SpacetimeManager singleton above. If the token is stale or invalid, the server issues a new identity and token in the `OnConnect` callback. Lost tokens are unrecoverable; use an OIDC provider token in production.
+Token save/load via `PlayerPrefs` is demonstrated in the SpacetimeManager singleton above. If the token is stale or invalid, the server issues a new identity and token in the `OnConnect` callback. A self-issued identity can't be recovered if its token is lost, so use an external OIDC provider in production for stable identities.
 

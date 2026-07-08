@@ -1445,7 +1445,7 @@ Here we are configuring our SpacetimeDB connection by specifying the server URI,
 We are also using `localStorage` to store our SpacetimeDB credentials. This way, we can reconnect to SpacetimeDB with the same `Identity` and token if we refresh the page. The first time we connect, we won't have any credentials stored, so we pass `undefined` to the `withToken` method. This will cause SpacetimeDB to generate new credentials for us.
 
 :::warning
-Identities issued this way are tied to a single token. If that token is lost, there is no way to recover or re-authenticate as that identity, so this approach is recommended for **development only**. For production applications, use an external OIDC provider. See [Authentication](../../00200-core-concepts/00500-authentication.md).
+When no token is provided, SpacetimeDB issues a new identity that can't be recovered if the stored token is later lost. This is fine for development; in production, use an external OIDC provider so each user keeps a stable identity. See [Authentication](../../00200-core-concepts/00500-authentication.md).
 :::
 
 If you chose a different name for your database, replace `quickstart-chat` with that name, or republish your module as `quickstart-chat`.
