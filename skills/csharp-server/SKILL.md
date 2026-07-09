@@ -13,28 +13,36 @@ metadata:
 
 # SpacetimeDB C# SDK Reference
 
-## Imports
-
-```csharp
-using SpacetimeDB;
-```
-
 ## Module Structure
 
-All tables, types, and reducers go inside a static partial class:
+All tables, types, and reducers go inside one `public static partial class Module`; the only import is `using SpacetimeDB;`:
 
 ```csharp
 using SpacetimeDB;
 
 public static partial class Module
 {
-    // Tables, types, and reducers here
+    [SpacetimeDB.Table(Accessor = "ScoreRecord", Public = true)]
+    public partial struct ScoreRecord
+    {
+        [PrimaryKey]
+        [AutoInc]
+        public ulong Id;
+        public Identity Owner;
+        public uint Value;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void AddRecord(ReducerContext ctx, uint value)
+    {
+        ctx.Db.ScoreRecord.Insert(new ScoreRecord { Id = 0, Owner = ctx.Sender, Value = value });
+    }
 }
 ```
 
 ## Tables
 
-`[SpacetimeDB.Table(...)]` on a `public partial struct`. `Accessor` should be PascalCase:
+`[SpacetimeDB.Table(...)]` on a `public partial struct` inside the `Module` class. `Accessor` should be PascalCase:
 
 ```csharp
 [SpacetimeDB.Table(Accessor = "Entity", Public = true)]
@@ -51,7 +59,7 @@ public partial struct Entity
 
 Options: `Accessor = "PascalCase"` (recommended), `Public = true`, `Scheduled = nameof(ReducerFn)`, `ScheduledAt = nameof(field)`, `Event = true`
 
-`ctx.Db` accessors use the `Accessor` name: `ctx.Db.Entity`, `ctx.Db.Record`.
+`ctx.Db` accessors use the `Accessor` name: `ctx.Db.Entity`, `ctx.Db.ScoreRecord`.
 
 ## Column Types
 
@@ -73,6 +81,8 @@ Options: `Accessor = "PascalCase"` (recommended), `Public = true`, `Scheduled = 
 
 ## Column Attributes
 
+The complete set of column attributes:
+
 ```csharp
 [PrimaryKey]          // primary key
 [AutoInc]             // auto-increment (use 0 as placeholder on insert)
@@ -82,7 +92,7 @@ Options: `Accessor = "PascalCase"` (recommended), `Public = true`, `Scheduled = 
 
 ## Indexes
 
-Prefer `[SpacetimeDB.Index.BTree]` inline for single-column. Multi-column uses struct-level:
+Write the index attribute fully qualified: `[SpacetimeDB.Index.BTree]`. Prefer inline for single-column; multi-column uses struct-level:
 
 ```csharp
 // Inline (preferred for single-column):
@@ -185,6 +195,8 @@ timestamp.MicrosecondsSinceUnixEpoch / 1000
 
 ## Scheduled Tables
 
+Declare the scheduled table and its reducer in the same `Module` class so `nameof(...)` resolves:
+
 ```csharp
 [SpacetimeDB.Table(
     Accessor = "TickTimer",
@@ -222,10 +234,23 @@ public enum Status { Online, Away, Offline }
 
 [SpacetimeDB.Type]
 public partial struct Point { public float X; public float Y; }
+```
 
-// Tagged enum (discriminated union):
+Tagged enums (discriminated unions): a `partial record` with empty body and no constructor parameters. Payloads are `[Type] partial struct`s:
+
+```csharp
 [SpacetimeDB.Type]
-public partial record MyUnion : SpacetimeDB.TaggedEnum<(string Text, int Number)>;
+public partial struct Circle { public int Radius; }
+
+[SpacetimeDB.Type]
+public partial struct Rectangle { public int Width; public int Height; }
+
+[SpacetimeDB.Type]
+public partial record Shape : SpacetimeDB.TaggedEnum<(Circle Circle, Rectangle Rectangle)> { }
+
+// Construct variants via the generated nested constructors:
+var a = new Shape.Circle(new Circle { Radius = 10 });
+var b = new Shape.Rectangle(new Rectangle { Width = 4, Height = 6 });
 ```
 
 ## Optional Fields
@@ -239,71 +264,5 @@ public partial struct Player
     public string Name;
     public string? Nickname;
     public uint? HighScore;
-}
-```
-
-## Complete Example
-
-```csharp
-using SpacetimeDB;
-
-[SpacetimeDB.Table(Accessor = "Entity", Public = true)]
-public partial struct Entity
-{
-    [PrimaryKey]
-    public Identity Identity;
-    public string Name;
-    public bool Active;
-}
-
-[SpacetimeDB.Table(Accessor = "Record", Public = true)]
-public partial struct Record
-{
-    [PrimaryKey]
-    [AutoInc]
-    public ulong Id;
-    public Identity Owner;
-    public uint Value;
-    public Timestamp CreatedAt;
-}
-
-public static partial class Module
-{
-    [SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
-    public static void OnConnect(ReducerContext ctx)
-    {
-        var existing = ctx.Db.Entity.Identity.Find(ctx.Sender);
-        if (existing is not null)
-            ctx.Db.Entity.Identity.Update(existing.Value with { Active = true });
-    }
-
-    [SpacetimeDB.Reducer(ReducerKind.ClientDisconnected)]
-    public static void OnDisconnect(ReducerContext ctx)
-    {
-        var existing = ctx.Db.Entity.Identity.Find(ctx.Sender);
-        if (existing is not null)
-            ctx.Db.Entity.Identity.Update(existing.Value with { Active = false });
-    }
-
-    [SpacetimeDB.Reducer]
-    public static void CreateEntity(ReducerContext ctx, string name)
-    {
-        if (ctx.Db.Entity.Identity.Find(ctx.Sender) is not null)
-            throw new Exception("already exists");
-        ctx.Db.Entity.Insert(new Entity { Identity = ctx.Sender, Name = name, Active = true });
-    }
-
-    [SpacetimeDB.Reducer]
-    public static void AddRecord(ReducerContext ctx, uint value)
-    {
-        if (ctx.Db.Entity.Identity.Find(ctx.Sender) is null)
-            throw new Exception("not found");
-        ctx.Db.Record.Insert(new Record {
-            Id = 0,
-            Owner = ctx.Sender,
-            Value = value,
-            CreatedAt = ctx.Timestamp,
-        });
-    }
 }
 ```

@@ -13,7 +13,36 @@ metadata:
 
 # SpacetimeDB TypeScript SDK Reference
 
+## Module Structure
+
+Tables are built with `table()`, bound with `schema()`, and exported as default. Reducers and lifecycle hooks are `export const`:
+
+```typescript
+import { schema, table, t } from 'spacetimedb/server';
+
+const score_record = table(
+  { name: 'score_record', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    owner: t.identity(),
+    value: t.u32(),
+  }
+);
+
+const spacetimedb = schema({ score_record });
+export default spacetimedb;
+
+export const addRecord = spacetimedb.reducer(
+  { value: t.u32() },
+  (ctx, { value }) => {
+    ctx.db.score_record.insert({ id: 0n, owner: ctx.sender, value });
+  }
+);
+```
+
 ## Imports
+
+`spacetimedb/server` is the only import path for server modules:
 
 ```typescript
 import { schema, table, t } from 'spacetimedb/server';
@@ -38,9 +67,11 @@ const entity = table(
 
 Options: `name` (snake_case, recommended), `public: true`, `event: true`, `scheduled: (): any => reducerRef`, `indexes: [...]`
 
-`ctx.db` accessors are the camelCase form of the table's `name` field.
+`ctx.db` accessors are the keys passed to `schema({...})`, verbatim: `schema({ score_record })` → `ctx.db.score_record`. Use snake_case keys matching the table `name`. Client codegen converts case; server `ctx.db` does not.
 
 ## Column Types
+
+Every column is a `t` builder value:
 
 | Builder | JS type | Notes |
 |---------|---------|-------|
@@ -56,7 +87,7 @@ Options: `name` (snake_case, recommended), `public: true`, `event: true`, `sched
 | `t.timeDuration()` | TimeDuration | |
 | `t.scheduleAt()` | ScheduleAt | |
 
-Modifiers: `.primaryKey()`, `.autoInc()`, `.unique()`, `.index('btree')`
+Modifiers (complete set): `.primaryKey()`, `.autoInc()`, `.unique()`, `.index('btree')`
 
 Optional columns: `nickname: t.option(t.string())`
 
@@ -79,13 +110,13 @@ When you frequently look up rows by multiple columns, prefer a multi-column inde
 ## Schema Export
 
 ```typescript
-const spacetimedb = schema({ entity, record });  // ONE object, not spread args
+const spacetimedb = schema({ entity, score_record });  // ONE object, not spread args
 export default spacetimedb;
 ```
 
 ## Reducers
 
-Export name becomes the reducer name:
+Reducers are created with `spacetimedb.reducer(...)`; the export name becomes the reducer name:
 
 ```typescript
 export const createEntity = spacetimedb.reducer(
@@ -150,7 +181,7 @@ Do not construct `Identity` values from strings (e.g. `'hex' as Identity`): seri
 ## Scheduled Tables
 
 ```typescript
-const tickTimer = table({
+const tick_timer = table({
   name: 'tick_timer',
   scheduled: (): any => tick,   // (): any => breaks circular dep
 }, {
@@ -159,7 +190,7 @@ const tickTimer = table({
 });
 
 export const tick = spacetimedb.reducer(
-  { timer: tickTimer.rowType },
+  { timer: tick_timer.rowType },
   (ctx, { timer }) => { /* timer row auto-deleted after this runs */ }
 );
 
@@ -200,62 +231,5 @@ export const myProfile = spacetimedb.view(
   { name: 'my_profile', public: true },
   t.option(entity.rowType),
   (ctx) => ctx.db.entity.identity.find(ctx.sender) ?? undefined
-);
-```
-
-## Complete Example
-
-```typescript
-import { schema, table, t, SenderError } from 'spacetimedb/server';
-
-const entity = table(
-  { name: 'entity', public: true },
-  {
-    identity: t.identity().primaryKey(),
-    name: t.string(),
-    active: t.bool(),
-  }
-);
-
-const record = table(
-  {
-    name: 'record',
-    public: true,
-    indexes: [{ accessor: 'by_owner', algorithm: 'btree', columns: ['owner'] }],
-  },
-  {
-    id: t.u64().primaryKey().autoInc(),
-    owner: t.identity(),
-    value: t.u32(),
-  }
-);
-
-const spacetimedb = schema({ entity, record });
-export default spacetimedb;
-
-export const onConnect = spacetimedb.clientConnected((ctx) => {
-  const existing = ctx.db.entity.identity.find(ctx.sender);
-  if (existing) ctx.db.entity.identity.update({ ...existing, active: true });
-});
-
-export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
-  const existing = ctx.db.entity.identity.find(ctx.sender);
-  if (existing) ctx.db.entity.identity.update({ ...existing, active: false });
-});
-
-export const createEntity = spacetimedb.reducer(
-  { name: t.string() },
-  (ctx, { name }) => {
-    if (ctx.db.entity.identity.find(ctx.sender)) throw new SenderError('already exists');
-    ctx.db.entity.insert({ identity: ctx.sender, name, active: true });
-  }
-);
-
-export const addRecord = spacetimedb.reducer(
-  { value: t.u32() },
-  (ctx, { value }) => {
-    if (!ctx.db.entity.identity.find(ctx.sender)) throw new SenderError('not found');
-    ctx.db.record.insert({ id: 0n, owner: ctx.sender, value });
-  }
 );
 ```
