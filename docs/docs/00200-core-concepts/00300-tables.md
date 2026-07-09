@@ -409,8 +409,8 @@ const playerColumns = {
 };
 
 // Create two tables with the same schema
-const Player = table({ name: 'Player', public: true }, playerColumns);
-const LoggedOutPlayer = table({ name: 'LoggedOutPlayer' }, playerColumns);
+const player = table({ name: 'player', public: true }, playerColumns);
+const loggedOutPlayer = table({ name: 'logged_out_player' }, playerColumns);
 ```
 
 </TabItem>

@@ -18,6 +18,18 @@ pub struct ScheduledProcTableTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `scheduled_proc_table`.
+pub struct ScheduledProcTableTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for ScheduledProcTableTableAccessor {
+    type Row = ScheduledProcTable;
+    type Handle<'db> = ScheduledProcTableTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.scheduled_proc_table()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `scheduled_proc_table`.
 ///
