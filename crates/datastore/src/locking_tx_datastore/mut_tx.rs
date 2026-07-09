@@ -2930,6 +2930,7 @@ impl MutTxId {
         let expiration_threshold = Timestamp::now() - expiration_duration;
         let is_expired = |state: &ViewInstanceState| !state.has_subscribers() && state.last_used < expiration_threshold;
         let mut cleaned = 0;
+        let batch_size = batch_size.max(1);
 
         loop {
             let mut batch = self
@@ -2939,13 +2940,6 @@ impl MutTxId {
                 .collect::<Vec<_>>();
             let backlog = batch.len() > batch_size;
             batch.truncate(batch_size);
-
-            if batch.is_empty() {
-                return Ok(ViewCleanupResult {
-                    cleaned,
-                    backlog: false,
-                });
-            }
 
             for call in batch {
                 let StViewRow { table_id, .. } = self.lookup_st_view(call.view_id)?;
