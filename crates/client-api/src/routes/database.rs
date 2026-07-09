@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::future::Future;
 use std::num::NonZeroU8;
 use std::str::FromStr;
 use std::time::Duration;
@@ -156,7 +157,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
 
     let (module, Database { owner_identity, .. }) = find_module_and_database(&worker_ctx, name_or_identity).await?;
 
-    let fut = async |module: ModuleHost, connection_id: ConnectionId| {
+    let fut = async move |module: ModuleHost, caller_identity: Identity, connection_id: ConnectionId| {
         let result = match module
             .call_reducer(
                 caller_identity,
@@ -211,7 +212,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         }
     };
 
-    with_connection(module, caller_auth, auth.claims.identity, fut).await
+    with_connection(module, caller_auth, caller_identity, fut).await
 }
 #[derive(Deserialize)]
 pub struct HttpRouteRootParams {
@@ -698,29 +699,33 @@ pub struct SqlQueryParams {
     pub confirmed: Option<bool>,
 }
 
+/// Runs `fut` inside an HTTP client connection lifecycle.
+///
+/// The lifecycle is detached from the request task, so once `client_connected`
+/// succeeds, `client_disconnected` still runs if the handler is dropped or
+/// `fut` returns an error.
 async fn with_connection<F, Fut, R>(
     module: ModuleHost,
     caller_auth: ConnectionAuthCtx,
     caller_identity: Identity,
-    func: F,
+    fut: F,
 ) -> axum::response::Result<R>
 where
-    F: FnOnce(ModuleHost, ConnectionId) -> Fut + Send + 'static,
+    F: FnOnce(ModuleHost, Identity, ConnectionId) -> Fut + Send + 'static,
     Fut: Future<Output = axum::response::Result<R>> + Send + 'static,
     R: Send + 'static,
 {
     tokio::spawn(async move {
-        // HTTP callers always need a connection ID to provide to connect/disconnect,
-        // so generate one.
         let connection_id = generate_random_connection_id();
+
         // Run the module's client_connected reducer, if any.
-        // If it rejects the connection, bail before executing `fut`.
+        // If it rejects the connection, bail before executing `fut`
         module
             .call_identity_connected(caller_auth, connection_id)
             .await
             .map_err(client_connected_error_to_response)?;
 
-        let result = func(module.clone(), connection_id).await;
+        let result = fut(module.clone(), caller_identity, connection_id).await;
 
         // Always disconnect, even if authorization or execution failed.
         module
@@ -748,7 +753,7 @@ where
     let (host, database) = find_leader_and_database(&worker_ctx, name_or_identity).await?;
 
     let module = host.module().await.map_err(log_and_500)?;
-    let fut = async move |_module: ModuleHost, caller_identity: Identity| {
+    let fut = async move |_module: ModuleHost, caller_identity: Identity, _connection_id: ConnectionId| {
         let sql_auth = worker_ctx
             .authorize_sql(caller_identity, database.database_identity)
             .await?;
