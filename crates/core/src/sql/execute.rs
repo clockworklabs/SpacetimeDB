@@ -23,6 +23,7 @@ use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{AlgebraicType, ProductType, ProductValue};
 use spacetimedb_query::{compile_sql_stmt, execute_dml_stmt, execute_select_stmt};
+use spacetimedb_sats::bsatn;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use tokio::sync::oneshot;
 
@@ -128,6 +129,9 @@ fn run_inner<I: WasmInstance>(
                 )?;
                 Ok(plan)
             })?;
+
+            // Charge egress, using BSATN size for parity with WebSocket queries.
+            metrics.bytes_sent_to_clients += rows.iter().map(|row| bsatn::to_len(row).unwrap_or(0)).sum::<usize>();
 
             // Update transaction metrics
             tx.metrics.merge(metrics);
@@ -1683,6 +1687,35 @@ pub(crate) mod tests {
             vec![product!(2u8)]
         );
         check(db.clone(), "DELETE FROM T", internal_auth, del)?;
+
+        Ok(())
+    }
+
+    // Selects should charge egress for the rows they return
+    #[test]
+    fn test_select_charges_egress() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
+        with_auto_commit(&db, |tx| -> Result<_, DBError> {
+            for i in 0..4u8 {
+                insert(&db, tx, table_id, &product!(i))?;
+            }
+            Ok(())
+        })?;
+
+        let rt = db.runtime().expect("runtime should be there");
+
+        let server = Identity::from_claims("issuer", "server");
+        let auth = AuthCtx::new(server, server);
+
+        let mut head = Vec::new();
+        let result = rt.block_on(run(db.clone(), "SELECT * FROM T".to_string(), auth, None, None, &mut head))?;
+
+        assert_eq!(result.rows.len(), 4);
+        let expected: usize = result.rows.iter().map(|row| bsatn::to_len(row).unwrap()).sum();
+        assert!(expected > 0);
+        assert_eq!(result.metrics.bytes_sent_to_clients, expected);
 
         Ok(())
     }

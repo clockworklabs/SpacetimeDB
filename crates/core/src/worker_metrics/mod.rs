@@ -51,6 +51,26 @@ metrics_group!(
         #[labels(database_identity: Identity, protocol: str)]
         pub websocket_request_msg_size: HistogramVec,
 
+        #[name = spacetime_http_requests_total]
+        #[help = "The cumulative number of HTTP requests, by matched route, method and response status"]
+        #[labels(route: str, method: str, status: str)]
+        pub http_requests: IntCounterVec,
+
+        #[name = spacetime_http_request_duration_sec]
+        #[help = "The time (in seconds) spent handling an HTTP request, by matched route"]
+        #[labels(route: str)]
+        pub http_request_duration: HistogramVec,
+
+        #[name = spacetime_http_request_body_bytes_total]
+        #[help = "The cumulative number of HTTP request body bytes received, by matched route"]
+        #[labels(route: str)]
+        pub http_request_body_bytes: IntCounterVec,
+
+        #[name = spacetime_http_response_body_bytes_total]
+        #[help = "The cumulative number of HTTP response body bytes sent, by matched route"]
+        #[labels(route: str)]
+        pub http_response_body_bytes: IntCounterVec,
+
         #[name = jemalloc_active_bytes]
         #[help = "Number of bytes in jemallocs heap"]
         #[labels(node_id: str)]
