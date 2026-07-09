@@ -235,7 +235,6 @@ const spacetimedb = schema({ player_scores });
 ctx.db.player_scores.insert({ /* ... */ });
 ```
 
-| Table Name | Accessor |
 | Schema Key | Accessor |
 |------------|----------|
 | `user` | `ctx.db.user` |
