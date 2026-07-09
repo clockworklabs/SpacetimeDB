@@ -50,6 +50,11 @@ public enum Errno : short
     HTTP_ERROR = 21,
 }
 
+internal static class ErrnoExtensions
+{
+    public static void Check(this Errno status) => FFI.ErrnoHelpers.ThrowIfError(status);
+}
+
 #pragma warning disable IDE1006 // Naming Styles - Not applicable to FFI stuff.
 internal static partial class FFI
 {
