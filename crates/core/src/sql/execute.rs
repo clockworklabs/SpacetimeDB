@@ -1709,8 +1709,7 @@ pub(crate) mod tests {
         let server = Identity::from_claims("issuer", "server");
         let auth = AuthCtx::new(server, server);
 
-        let mut head = Vec::new();
-        let result = rt.block_on(run(db.clone(), "SELECT * FROM T".to_string(), auth, None, None, &mut head))?;
+        let result = rt.block_on(run(db.clone(), "SELECT * FROM T".to_string(), auth, None, None, &mut vec![]))?;
 
         assert_eq!(result.rows.len(), 4);
         let expected: usize = result.rows.iter().map(|row| bsatn::to_len(row).unwrap()).sum();
