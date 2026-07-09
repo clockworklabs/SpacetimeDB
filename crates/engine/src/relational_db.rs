@@ -61,6 +61,7 @@ use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::table::{RowRef, TableScanIter};
 use spacetimedb_table::table_index::IndexKey;
+use sqlparser::keywords::MIN;
 use std::borrow::Cow;
 use std::io;
 use std::ops::RangeBounds;
@@ -1126,17 +1127,27 @@ impl RelationalDB {
 /// Value is chosen arbitrarily; can be tuned later if needed.
 const VIEWS_EXPIRATION: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
+/// Normal interval between view cleanup runs.
+const VIEW_CLEANUP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// Lower bound for adaptive cleanup retries when expired views remain.
+const MIN_VIEW_CLEANUP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// Duration to budget for each view cleanup job,
-/// so that it doesn't hold transaction lock for to long.
+/// so that it doesn't hold transaction lock for too long.
 //TODO: Make this value configurable
 const VIEW_CLEANUP_BUDGET: std::time::Duration = std::time::Duration::from_millis(10);
 
-/// Spawn a background task that periodically cleans up expired views
+/// Spawn a background task that periodically cleans up expired views.
+///
+/// Each cleanup run has a fixed lock-hold budget. If a run leaves expired
+/// views behind, the next run is scheduled sooner, down to
+/// [`MIN_VIEW_CLEANUP_INTERVAL`]. Once cleanup catches up, the interval resets.
 pub fn spawn_view_cleanup_loop(
     db: Arc<RelationalDB>,
     handle: &spacetimedb_runtime::Handle,
 ) -> spacetimedb_runtime::AbortHandle {
-    fn run_view_cleanup(db: &RelationalDB) {
+    fn run_view_cleanup(db: &RelationalDB) -> bool {
         match db.with_auto_commit(Workload::Internal, |tx| {
             tx.clear_expired_views(VIEWS_EXPIRATION, VIEW_CLEANUP_BUDGET)
                 .map_err(DBError::from)
@@ -1151,6 +1162,7 @@ pub fn spawn_view_cleanup_loop(
                         total_expired - cleared
                     );
                 }
+                cleared < total_expired
             }
             Err(e) => {
                 log::error!(
@@ -1158,6 +1170,7 @@ pub fn spawn_view_cleanup_loop(
                     db.database_identity(),
                     e
                 );
+                false
             }
         }
     }
@@ -1165,13 +1178,21 @@ pub fn spawn_view_cleanup_loop(
     let handle_clone = handle.clone();
     handle
         .spawn(async move {
+            let mut interval = VIEW_CLEANUP_INTERVAL;
             loop {
                 // Offload actual cleanup to blocking thread pool, as `VIEW_CLEANUP_BUDGET` is defined
                 // in milliseconds, which may be too long for async tasks.
                 let db = db.clone();
-                handle_clone.spawn_blocking(move || run_view_cleanup(&db)).await;
+                let backlog = handle_clone.spawn_blocking(move || run_view_cleanup(&db)).await;
 
-                handle_clone.sleep(VIEWS_EXPIRATION).await;
+                // Calculate next cleanup interval based on backlog
+                interval = if backlog {
+                    (interval / 2).max(MIN_VIEW_CLEANUP_INTERVAL)
+                } else {
+                    VIEW_CLEANUP_INTERVAL
+                };
+
+                handle_clone.sleep(interval).await;
             }
         })
         .abort_handle()
