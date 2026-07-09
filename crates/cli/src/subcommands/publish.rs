@@ -447,16 +447,6 @@ pub async fn exec_with_options(
 }
 
 pub async fn exec_from_entry(
-    mut config: Config,
-    entry: HashMap<String, serde_json::Value>,
-    config_dir: Option<&std::path::Path>,
-    clear_database: ClearMode,
-    force: bool,
-) -> Result<(), anyhow::Error> {
-    exec_from_entry_with_config(&mut config, entry, config_dir, clear_database, force).await
-}
-
-pub async fn exec_from_entry_with_config(
     config: &mut Config,
     entry: HashMap<String, serde_json::Value>,
     config_dir: Option<&std::path::Path>,

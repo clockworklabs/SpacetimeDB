@@ -1127,7 +1127,7 @@ async fn generate_build_and_publish(
             publish_entry.insert("break-clients".to_string(), json!(true));
         }
 
-        publish::exec_from_entry_with_config(config, publish_entry, config_dir, clear_database, yes).await?;
+        publish::exec_from_entry(config, publish_entry, config_dir, clear_database, yes).await?;
     }
 
     println!("{}", "Published successfully!".green().bold());
