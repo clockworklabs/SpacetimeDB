@@ -40,10 +40,10 @@ impl HttpBody for CountingBody {
 
     fn poll_frame(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<Frame<Bytes>, Self::Error>>> {
         let poll = Pin::new(&mut self.inner).poll_frame(cx);
-        if let Poll::Ready(Some(Ok(frame))) = &poll {
-            if let Some(data) = frame.data_ref() {
-                self.counter.inc_by(data.len() as u64);
-            }
+        if let Poll::Ready(Some(Ok(frame))) = &poll
+            && let Some(data) = frame.data_ref()
+        {
+            self.counter.inc_by(data.len() as u64);
         }
         poll
     }
