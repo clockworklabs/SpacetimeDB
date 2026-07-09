@@ -1059,7 +1059,10 @@ fn is_blocked_ip(ip: IpAddr) -> bool {
 
 fn is_blocked_ipv4(ip: Ipv4Addr) -> bool {
     let [a, b, c, d] = ip.octets();
-    let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+    let restrict_to_loopback = cfg!(feature = "allow_loopback_http_for_tests");
+    if restrict_to_loopback && a != 127 {
+        return true;
+    }
     // RFC 6890 Section 2.2.2, Table 1: "This host on this network" (0.0.0.0/8).
     let is_this_host_on_this_network = a == 0;
     // RFC 6890 Section 2.2.2, Table 2: "Private-Use" (10.0.0.0/8).
@@ -1067,7 +1070,7 @@ fn is_blocked_ipv4(ip: Ipv4Addr) -> bool {
     // RFC 6890 Section 2.2.2, Table 3: "Shared Address Space" (100.64.0.0/10).
     let is_shared_address_space = a == 100 && (b & 0b1100_0000) == 0b0100_0000;
     // RFC 6890 Section 2.2.2, Table 4: "Loopback" (127.0.0.0/8).
-    let is_loopback = block_loopback && a == 127;
+    let is_loopback = !restrict_to_loopback && a == 127;
     // RFC 6890 Section 2.2.2, Table 5: "Link Local" (169.254.0.0/16).
     let is_link_local = a == 169 && b == 254;
     // RFC 6890 Section 2.2.2, Table 6: "Private-Use" (172.16.0.0/12).
@@ -1119,9 +1122,12 @@ fn is_blocked_ipv4(ip: Ipv4Addr) -> bool {
 
 fn is_blocked_ipv6(ip: Ipv6Addr) -> bool {
     let segments = ip.segments();
-    let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+    let restrict_to_loopback = cfg!(feature = "allow_loopback_http_for_tests");
+    if restrict_to_loopback && ip != Ipv6Addr::LOCALHOST {
+        return true;
+    }
     // RFC 6890 Section 2.2.3, Table 17: "Loopback Address" (::1/128).
-    let is_loopback_address = block_loopback && ip == Ipv6Addr::LOCALHOST;
+    let is_loopback_address = !restrict_to_loopback && ip == Ipv6Addr::LOCALHOST;
     // RFC 6890 Section 2.2.3, Table 18: "Unspecified Address" (::/128).
     let is_unspecified_address = ip.is_unspecified();
     // RFC 6890 Section 2.2.3, Table 19: "IPv4-IPv6 Translat." (64:ff9b::/96).
@@ -1491,7 +1497,7 @@ mod test {
     #[test]
     fn blocks_each_rfc6890_ipv4_range() {
         // RFC 6890 §2.2.2 tables 1-18.
-        let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+        let allow_loopback = cfg!(feature = "allow_loopback_http_for_tests");
         let cases = [
             // Table 1: This host on this network (0.0.0.0/8).
             (Ipv4Addr::new(0, 0, 0, 1), true),
@@ -1500,7 +1506,7 @@ mod test {
             // Table 3: Shared Address Space (100.64.0.0/10).
             (Ipv4Addr::new(100, 127, 255, 255), true),
             // Table 4: Loopback (127.0.0.0/8).
-            (Ipv4Addr::new(127, 0, 0, 1), block_loopback),
+            (Ipv4Addr::new(127, 0, 0, 1), !allow_loopback),
             // Table 5: Link Local (169.254.0.0/16).
             (Ipv4Addr::new(169, 254, 255, 255), true),
             // Table 6: Private-Use (172.16.0.0/12).
@@ -1542,14 +1548,15 @@ mod test {
 
     #[test]
     fn blocks_ip_literal_hosts_in_urls() {
-        let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+        let restrict_to_loopback = cfg!(feature = "allow_loopback_http_for_tests");
+        let allow_loopback = cfg!(feature = "allow_loopback_http_for_tests");
         assert_eq!(
             is_blocked_ip_literal(&reqwest::Url::parse("http://127.0.0.1:80/").unwrap()),
-            block_loopback
+            !allow_loopback
         );
         assert_eq!(
             is_blocked_ip_literal(&reqwest::Url::parse("http://[::1]:80/").unwrap()),
-            block_loopback
+            !allow_loopback
         );
         assert!(is_blocked_ip_literal(
             &reqwest::Url::parse("http://10.0.0.1:80/").unwrap()
@@ -1557,9 +1564,10 @@ mod test {
         assert!(is_blocked_ip_literal(
             &reqwest::Url::parse("http://[fc00::1]:80/").unwrap()
         ));
-        assert!(!is_blocked_ip_literal(
-            &reqwest::Url::parse("http://8.8.8.8:80/").unwrap()
-        ));
+        assert_eq!(
+            is_blocked_ip_literal(&reqwest::Url::parse("http://8.8.8.8:80/").unwrap()),
+            restrict_to_loopback
+        );
         assert!(!is_blocked_ip_literal(
             &reqwest::Url::parse("http://example.com:80/").unwrap()
         ));
@@ -1568,7 +1576,7 @@ mod test {
     #[test]
     fn blocks_rfc6890_ipv4_range_endpoints() {
         // RFC 6890 §2.2.2 tables 1-18, checked at each range's low/high endpoints.
-        let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+        let allow_loopback = cfg!(feature = "allow_loopback_http_for_tests");
         let ranges = [
             // Table 1: This host on this network (0.0.0.0/8).
             (
@@ -1596,7 +1604,7 @@ mod test {
                 "loopback",
                 Ipv4Addr::new(127, 0, 0, 0),
                 Ipv4Addr::new(127, 255, 255, 255),
-                block_loopback,
+                !allow_loopback,
             ),
             // Table 5: Link Local (169.254.0.0/16).
             (
@@ -1715,10 +1723,11 @@ mod test {
     #[test]
     fn blocks_each_rfc6890_ipv6_range() {
         // RFC 6890 §2.2.3 tables 17-29.
-        let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+        let restrict_to_loopback = cfg!(feature = "allow_loopback_http_for_tests");
+        let allow_loopback = cfg!(feature = "allow_loopback_http_for_tests");
         let cases = [
             // Table 17: Loopback Address (::1/128).
-            (Ipv6Addr::LOCALHOST, block_loopback),
+            (Ipv6Addr::LOCALHOST, !allow_loopback),
             // Table 18: Unspecified Address (::/128).
             (Ipv6Addr::UNSPECIFIED, true),
             // Table 19: IPv4-IPv6 Translat. (64:ff9b::/96).
@@ -1752,23 +1761,24 @@ mod test {
                 "unexpected block decision for {addr}"
             );
         }
-        // A normal global IPv6 address should remain allowed.
-        assert!(!is_blocked_ip(IpAddr::V6(Ipv6Addr::new(
-            0x2606, 0x4700, 0x4700, 0, 0, 0, 0, 0x1111
-        ))));
+        // A normal global IPv6 address should only remain allowed in production builds.
+        assert_eq!(
+            is_blocked_ip(IpAddr::V6(Ipv6Addr::new(0x2606, 0x4700, 0x4700, 0, 0, 0, 0, 0x1111))),
+            restrict_to_loopback
+        );
     }
 
     #[test]
     fn blocks_rfc6890_ipv6_range_endpoints() {
         // RFC 6890 §2.2.3 tables 17-29, checked at each range's low/high endpoints.
-        let block_loopback = !cfg!(feature = "allow_loopback_http_for_tests");
+        let allow_loopback = cfg!(feature = "allow_loopback_http_for_tests");
         let ranges = [
             // Table 17: Loopback Address (::1/128).
             (
                 "loopback-address",
                 Ipv6Addr::LOCALHOST,
                 Ipv6Addr::LOCALHOST,
-                block_loopback,
+                !allow_loopback,
             ),
             // Table 18: Unspecified Address (::/128).
             (
