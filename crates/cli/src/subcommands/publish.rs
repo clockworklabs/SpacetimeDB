@@ -453,6 +453,16 @@ pub async fn exec_from_entry(
     clear_database: ClearMode,
     force: bool,
 ) -> Result<(), anyhow::Error> {
+    exec_from_entry_with_config(&mut config, entry, config_dir, clear_database, force).await
+}
+
+pub async fn exec_from_entry_with_config(
+    config: &mut Config,
+    entry: HashMap<String, serde_json::Value>,
+    config_dir: Option<&std::path::Path>,
+    clear_database: ClearMode,
+    force: bool,
+) -> Result<(), anyhow::Error> {
     let cmd = cli();
     let schema = build_publish_schema(&cmd)?;
     let matches = cmd.get_matches_from(vec!["publish"]);
@@ -462,7 +472,7 @@ pub async fn exec_from_entry(
 
     let yes = if force { YesFlags::all() } else { YesFlags::default() };
 
-    execute_publish_configs(&mut config, vec![command_config], true, config_dir, clear_database, yes).await
+    execute_publish_configs(config, vec![command_config], true, config_dir, clear_database, yes).await
 }
 
 async fn execute_publish_configs<'a>(
