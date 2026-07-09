@@ -21,6 +21,7 @@ spacetimedb-core.workspace = true
 cargo_metadata.workspace = true
 assert_cmd = "2"
 predicates = "3"
+socket2.workspace = true
 tokio.workspace = true
 tokio-postgres.workspace = true
 xmltree.workspace = true
