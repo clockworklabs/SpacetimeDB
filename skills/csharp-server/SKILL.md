@@ -174,7 +174,7 @@ public static Entity? MyProfile(ViewContext ctx)
 
 ## Reducer Context API
 
-`ReducerContext` is the single source of sender identity, deterministic time, and deterministic randomness inside a reducer. Always go through `ctx` for these. Standard library clocks and random sources are not available in modules.
+`ReducerContext` (`ctx`) is the only source of sender identity, time, and randomness; stdlib clocks and RNG are unavailable in modules.
 
 ```csharp
 // Auth: ctx.Sender is the caller's Identity

@@ -128,13 +128,13 @@ Reducer args accept any column type, including arrays of custom types: `{ splits
 ## DB Operations
 
 ```typescript
-ctx.db.entity.insert({ id: 0n, name: 'Sample' });          // Insert (0n for autoInc)
-ctx.db.entity.id.find(entityId);                           // Find by PK → row | null
+ctx.db.score_record.insert({ id: 0n, owner: ctx.sender, value: 1 });  // Insert (0n for autoInc)
+ctx.db.score_record.id.find(recordId);                     // Find by PK → row | null
 ctx.db.entity.identity.find(ctx.sender);                   // Find by unique column
-[...ctx.db.item.authorId.filter(authorId)];                // Filter → spread to Array
+[...ctx.db.post.authorId.filter(authorId)];                // Filter → spread to Array
 [...ctx.db.entity.iter()];                                 // All rows → Array
-ctx.db.entity.id.update({ ...existing, name: newName });   // Update (spread + override)
-ctx.db.entity.id.delete(entityId);                         // Delete by PK
+ctx.db.score_record.id.update({ ...existing, value: 2 });  // Update (spread + override)
+ctx.db.score_record.id.delete(recordId);                   // Delete by PK
 ```
 
 Note: `iter()` and `filter()` return iterators. Spread to Array for `.sort()`, `.filter()`, `.map()`.
@@ -151,7 +151,7 @@ export const onDisconnect = spacetimedb.clientDisconnected((ctx) => { ... });
 
 ## Reducer Context API
 
-`ReducerContext` is the single source of sender identity, deterministic time, and deterministic randomness inside a reducer. Always go through `ctx` for these. Standard library clocks and random sources are not available in modules.
+`ctx` is the only source of sender identity, time, and randomness; stdlib clocks and RNG are unavailable in modules. In helpers, type it as `ReducerCtx<InferSchema<typeof spacetimedb>>`.
 
 ```typescript
 // Auth: ctx.sender is the caller's Identity
