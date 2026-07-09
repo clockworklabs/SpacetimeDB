@@ -2948,11 +2948,13 @@ impl MutTxId {
                 .take(batch_size + 1)
                 .collect::<Vec<_>>();
             log::info!(
-                "[{}]: Traversed {} unexpired views to collect and delete a batch of {} expired views",
-                self.ctx.database_identity,
-                unexpired_visited_building_batch,
-                batch.len()
-            );
+            // FIXME: Use a better datastructure for `view_instances` in `CommittedState` and `MutTxId`
+            // to avoid having to traverse live or recently-expired views to delete stale ones.
+            let mut batch = self
+                .effective_view_instances()
+                .filter_map(|(call, state)| is_expired(state).then_some(call.clone()))
+                .take(batch_size + 1)
+.collect::<Vec<_>>();
             let backlog = batch.len() > batch_size;
             batch.truncate(batch_size);
 
