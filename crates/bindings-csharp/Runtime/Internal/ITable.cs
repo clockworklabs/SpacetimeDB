@@ -23,15 +23,11 @@ internal abstract class RawTableIterBase<T>
             {
                 return false;
             }
-
-            int bufferLen;
-            // This loop makes no sense and should be unnecessary.
-            // I (Lisandro 2026-07-09) am leaving the loop here because it's probably a similar case to the one in
-            // `Runtime/Internal/Module.cs#Consume` and in the future might become useful again.
+            
             while (true)
             {
                 var requestedLen = buffer.Length;
-                bufferLen = requestedLen;
+                var bufferLen = requestedLen;
                 var ret = FFI.row_iter_bsatn_advance(handle, buffer, ref bufferLen);
                 if (ret == Errno.EXHAUSTED)
                 {
