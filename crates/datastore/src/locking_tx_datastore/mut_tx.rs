@@ -2790,6 +2790,9 @@ impl MutTxId {
                 None => Some((call, state)),
             });
 
+        // The committed iterator above already applies tx-local overrides and
+        // removals for committed calls. This second half yields only tx-local
+        // inserts whose calls do not exist in committed state.
         let tx_only = self.view_instances.changes.iter().filter_map(|(call, state)| {
             if self.committed_state_write_lock.view_instance(call).is_some() {
                 None
@@ -2908,8 +2911,8 @@ impl MutTxId {
 
     /// Clean up materialized view arguments that have no subscribers and haven’t been used recently.
     ///
-    /// Each cleanup batch retains at most `batch_size` expired view calls while
-    /// deleting materialized rows. A `batch_size` of zero is treated as one.
+    /// Expired views are cleared in batches. Each loop iteration selects up to
+    /// `batch_size` expired view calls and deletes their materialized rows.
     ///
     /// `max_duration` is checked between batches, so cleanup always finishes at
     /// least one batch once it starts, even if that batch takes longer than
@@ -2928,8 +2931,6 @@ impl MutTxId {
         let is_expired = |state: &ViewInstanceState| !state.has_subscribers() && state.last_used < expiration_threshold;
         let mut cleaned = 0;
 
-        // Process expired calls in bounded batches so cleanup does not retain
-        // every expired call while deleting materialized rows.
         loop {
             let mut batch = self
                 .effective_view_instances()
