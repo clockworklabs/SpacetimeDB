@@ -1274,7 +1274,7 @@ const [users, isReady] = useTable(
 const sendMessage = useReducer(reducers.sendMessage);
 
 <Show when={isReady()} fallback={<div>Loading users...</div>}>
-  <button onClick={() => sendMessage('Hello!')}>Send</button>
+  <button onClick={() => sendMessage({ text: 'Hello!' })}>Send</button>
   <button onClick={() => setOnlineOnly(value => !value)}>Toggle online</button>
   <For each={users}>{user => <div>{user.name}</div>}</For>
 </Show>
