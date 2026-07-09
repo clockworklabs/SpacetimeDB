@@ -2809,6 +2809,8 @@ impl MutTxId {
         view_id: ViewId,
     ) -> impl Iterator<Item = (&ViewCallInfo, &ViewInstanceState)> + '_ {
         self.effective_view_instances()
+            // FIXME: use a better data structure to store view instances in `CommittedState` and `MutTxId`,
+            // so that this can behave like an index scan rather than a full scan and filter.
             .filter(move |(call, _)| call.view_id == view_id)
     }
 
