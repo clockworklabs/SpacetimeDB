@@ -518,8 +518,8 @@ public static class Module
         try
         {
             var module = moduleDef.BuildModuleDefinition();
-            RawModuleDef versioned = new RawModuleDef.V10(module);
-            var moduleBytes = IStructuralReadWrite.ToBytes(new RawModuleDef.BSATN(), versioned);
+            var versioned = new RawModuleDef.V10(module);
+            var moduleBytes = IStructuralWrite.ToBytes(versioned);
             description.Write(moduleBytes);
         }
         catch (Exception e)
@@ -647,7 +647,7 @@ public static class Module
                 .Invoke(ctx, SpacetimeDB.HttpClient.FromWire(requestWire, requestBody.Consume()));
             var (responseWire, responseBody) = SpacetimeDB.HttpClient.ToWire(response);
             responseSink.Write(
-                IStructuralReadWrite.ToBytes(new HttpResponseWire.BSATN(), responseWire)
+                IStructuralWrite.ToBytes(responseWire)
             );
             responseBodySink.Write(responseBody);
 

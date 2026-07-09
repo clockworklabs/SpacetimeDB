@@ -323,10 +323,7 @@ public sealed class HttpClient
                 Version = ToWireVersion(request.Version),
             };
 
-            var requestBytes = IStructuralReadWrite.ToBytes(
-                new HttpRequestWire.BSATN(),
-                requestWire
-            );
+            var requestBytes = IStructuralWrite.ToBytes(requestWire);
             var bodyBytes = request.Body.ToBytes();
 
             var status = FFI.procedure_http_request(

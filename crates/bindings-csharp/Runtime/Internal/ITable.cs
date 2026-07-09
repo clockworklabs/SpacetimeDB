@@ -171,7 +171,7 @@ public interface ITableView<View, T>
     protected static T DoInsert(T row)
     {
         // Insert the row.
-        var bytes = IStructuralReadWrite.ToBytes(row);
+        var bytes = IStructuralWrite.ToBytes(row);
         var bytes_len = (uint)bytes.Length;
         FFI.datastore_insert_bsatn(tableId, bytes, ref bytes_len);
 
