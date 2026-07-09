@@ -331,9 +331,9 @@ public sealed class HttpClient
 
             var status = FFI.procedure_http_request(
                 requestBytes,
-                (uint)requestBytes.Length,
+                requestBytes.Length,
                 bodyBytes,
-                (uint)bodyBytes.Length,
+                bodyBytes.Length,
                 out var out_
             );
 

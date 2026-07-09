@@ -2896,7 +2896,7 @@ public class Module : IIncrementalGenerator
 
                         [UnmanagedCallersOnly(EntryPoint = "__call_reducer__")]
                         public static SpacetimeDB.Internal.Errno __call_reducer__(
-                            uint id,
+                            int id,
                             ulong sender_0,
                             ulong sender_1,
                             ulong sender_2,
@@ -2921,7 +2921,7 @@ public class Module : IIncrementalGenerator
                         
                         [UnmanagedCallersOnly(EntryPoint = "__call_procedure__")]
                         public static SpacetimeDB.Internal.Errno __call_procedure__(
-                            uint id,
+                            int id,
                             ulong sender_0,
                             ulong sender_1,
                             ulong sender_2,
@@ -2946,7 +2946,7 @@ public class Module : IIncrementalGenerator
 
                         [UnmanagedCallersOnly(EntryPoint = "__call_http_handler__")]
                         public static SpacetimeDB.Internal.Errno __call_http_handler__(
-                            uint id,
+                            int id,
                             SpacetimeDB.Timestamp timestamp,
                             SpacetimeDB.Internal.BytesSource request,
                             SpacetimeDB.Internal.BytesSource request_body,
@@ -2963,7 +2963,7 @@ public class Module : IIncrementalGenerator
                         
                         [UnmanagedCallersOnly(EntryPoint = "__call_view__")]
                         public static SpacetimeDB.Internal.Errno __call_view__(
-                            uint id,
+                            int id,
                             ulong sender_0,
                             ulong sender_1,
                             ulong sender_2,
@@ -2982,7 +2982,7 @@ public class Module : IIncrementalGenerator
 
                         [UnmanagedCallersOnly(EntryPoint = "__call_view_anon__")]
                         public static SpacetimeDB.Internal.Errno __call_view_anon__(
-                            uint id,
+                            int id,
                             SpacetimeDB.Internal.BytesSource args,
                             SpacetimeDB.Internal.BytesSink sink
                         ) => SpacetimeDB.Internal.Module.__call_view_anon__(
