@@ -1,13 +1,13 @@
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use ::prometheus::IntCounter;
 use axum::body::{Body, Bytes, HttpBody};
 use axum::extract::{MatchedPath, Request};
 use axum::middleware::Next;
 use axum::response::Response;
 use http::header;
 use http_body::Frame;
-use ::prometheus::IntCounter;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use tower_http::cors;
 
@@ -89,7 +89,9 @@ async fn http_metrics_middleware(req: Request, next: Next) -> Response {
     let method = method_label(req.method());
 
     let request_body_bytes = WORKER_METRICS.http_request_body_bytes.with_label_values(route.as_str());
-    let response_body_bytes = WORKER_METRICS.http_response_body_bytes.with_label_values(route.as_str());
+    let response_body_bytes = WORKER_METRICS
+        .http_response_body_bytes
+        .with_label_values(route.as_str());
 
     let req = req.map(CountingBody::wrap(request_body_bytes));
 
