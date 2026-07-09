@@ -147,7 +147,7 @@ public abstract class UniqueIndex<Handle, Row, T, RW>(string name) : IndexBase<R
     protected Row DoUpdate(Row row)
     {
         // Insert the row.
-        var bytes = IStructuralReadWrite.ToBytes(row);
+        var bytes = IStructuralWrite.ToBytes(row);
         var bytes_len = (uint)bytes.Length;
         FFI.datastore_update_bsatn(ITableView<Handle, Row>.tableId, indexId, bytes, ref bytes_len);
 
@@ -210,7 +210,7 @@ public abstract class RefUniqueIndex<Handle, Row, T, RW>(string name) : IndexBas
     protected Row DoUpdate(Row row)
     {
         // Insert the row.
-        var bytes = IStructuralReadWrite.ToBytes(row);
+        var bytes = IStructuralWrite.ToBytes(row);
         var bytes_len = (uint)bytes.Length;
         FFI.datastore_update_bsatn(ITableView<Handle, Row>.tableId, indexId, bytes, ref bytes_len);
 

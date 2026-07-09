@@ -6,7 +6,41 @@ using System.Text;
 /// Implemented by product types marked with [SpacetimeDB.Type].
 /// All rows in SpacetimeDB are product types, so this is also implemented by all row types.
 /// </summary>
-public interface IStructuralReadWrite
+public interface IStructuralWrite
+{
+    /// <summary>
+    /// Write the fields of this type to the writer.
+    /// Throws an exception if the underlying writer throws.
+    /// Throws if this value is malformed (i.e. has null values for fields that
+    /// are not explicitly marked nullable.)
+    /// </summary>
+    /// <param name="writer"></param>
+    void WriteFields(BinaryWriter writer);
+
+    public static byte[] ToBytes<RW, T>(RW rw, T value)
+        where RW : IReadWrite<T>
+    {
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        rw.Write(writer, value);
+        return stream.ToArray();
+    }
+
+    public static byte[] ToBytes<T>(T value)
+        where T : IStructuralWrite
+    {
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        value.WriteFields(writer);
+        return stream.ToArray();
+    }
+}
+
+/// <summary>
+/// Implemented by product types marked with [SpacetimeDB.Type] that can be read from BSATN.
+/// All rows in SpacetimeDB are product types, so this is also implemented by all row types.
+/// </summary>
+public interface IStructuralReadWrite : IStructuralWrite
 {
     /// <summary>
     /// Initialize this value from the reader.
@@ -17,15 +51,6 @@ public interface IStructuralReadWrite
     /// </summary>
     /// <param name="reader"></param>
     void ReadFields(BinaryReader reader);
-
-    /// <summary>
-    /// Write the fields of this type to the writer.
-    /// Throws an exception if the underlying writer throws.
-    /// Throws if this value is malformed (i.e. has null values for fields that
-    /// are not explicitly marked nullable.)
-    /// </summary>
-    /// <param name="writer"></param>
-    void WriteFields(BinaryWriter writer);
 
     /// <summary>
     /// Get an IReadWrite implementation that can read values of this type.
@@ -67,23 +92,13 @@ public interface IStructuralReadWrite
         return result;
     }
 
-    public static byte[] ToBytes<RW, T>(RW rw, T value)
-        where RW : IReadWrite<T>
-    {
-        using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream);
-        rw.Write(writer, value);
-        return stream.ToArray();
-    }
+    public static new byte[] ToBytes<RW, T>(RW rw, T value)
+        where RW : IReadWrite<T> =>
+        IStructuralWrite.ToBytes(rw, value);
 
-    public static byte[] ToBytes<T>(T value)
-        where T : IStructuralReadWrite
-    {
-        using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream);
-        value.WriteFields(writer);
-        return stream.ToArray();
-    }
+    public static new byte[] ToBytes<T>(T value)
+        where T : IStructuralReadWrite =>
+        IStructuralWrite.ToBytes(value);
 }
 
 /// <summary>
