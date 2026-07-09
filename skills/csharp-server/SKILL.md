@@ -15,7 +15,7 @@ metadata:
 
 ## Module Structure
 
-All tables, types, and reducers go inside one `public static partial class Module`; the only import is `using SpacetimeDB;`:
+Reducers are static methods in a `static partial class`; tables are `public partial struct`s. This reference keeps everything in one `public static partial class Module`, which needs only `using SpacetimeDB;`:
 
 ```csharp
 using SpacetimeDB;
@@ -42,7 +42,7 @@ public static partial class Module
 
 ## Tables
 
-`[SpacetimeDB.Table(...)]` on a `public partial struct` inside the `Module` class. `Accessor` should be PascalCase:
+`[SpacetimeDB.Table(...)]` on a `public partial struct`. `Accessor` should be PascalCase:
 
 ```csharp
 [SpacetimeDB.Table(Accessor = "Entity", Public = true)]
@@ -79,6 +79,8 @@ Options: `Accessor = "PascalCase"` (recommended), `Public = true`, `Scheduled = 
 | `TimeDuration` | duration in microseconds |
 | `Uuid` | UUID |
 
+Optional columns: nullable types (`string? Nickname`, `uint? HighScore`)
+
 ## Column Attributes
 
 The complete set of column attributes:
@@ -106,7 +108,7 @@ public ulong AuthorId;
 public partial struct Membership { public ulong GroupId; public Identity UserId; ... }
 ```
 
-When you frequently look up rows by multiple columns, prefer a multi-column index over filtering by one column and looping over the results.
+Prefer a multi-column index over filtering by one column and looping.
 
 ## Reducers
 
@@ -251,18 +253,4 @@ public partial record Shape : SpacetimeDB.TaggedEnum<(Circle Circle, Rectangle R
 // Construct variants via the generated nested constructors:
 var a = new Shape.Circle(new Circle { Radius = 10 });
 var b = new Shape.Rectangle(new Rectangle { Width = 4, Height = 6 });
-```
-
-## Optional Fields
-
-```csharp
-[SpacetimeDB.Table(Accessor = "Player")]
-public partial struct Player
-{
-    [PrimaryKey, AutoInc]
-    public ulong Id;
-    public string Name;
-    public string? Nickname;
-    public uint? HighScore;
-}
 ```

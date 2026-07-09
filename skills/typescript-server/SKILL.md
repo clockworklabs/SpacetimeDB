@@ -29,7 +29,7 @@ const score_record = table(
   }
 );
 
-const spacetimedb = schema({ score_record });
+const spacetimedb = schema({ score_record });  // ONE object, not spread args
 export default spacetimedb;
 
 export const addRecord = spacetimedb.reducer(
@@ -105,14 +105,7 @@ indexes: [{ accessor: 'by_group_user', algorithm: 'btree', columns: ['groupId', 
 // Access: ctx.db.membership.by_group_user.filter([groupId, userId]);
 ```
 
-When you frequently look up rows by multiple columns, prefer a multi-column index over filtering by one column and looping over the results. Multi-column filter takes an array matching the index column order. You can omit trailing columns to do a prefix scan.
-
-## Schema Export
-
-```typescript
-const spacetimedb = schema({ entity, score_record });  // ONE object, not spread args
-export default spacetimedb;
-```
+Prefer a multi-column index over filtering by one column and looping. Filter takes an array in index column order; a prefix scan passes the leading value bare: `filter(groupId)`.
 
 ## Reducers
 
