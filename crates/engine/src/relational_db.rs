@@ -61,7 +61,6 @@ use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::table::{RowRef, TableScanIter};
 use spacetimedb_table::table_index::IndexKey;
-use sqlparser::keywords::MIN;
 use std::borrow::Cow;
 use std::io;
 use std::ops::RangeBounds;
@@ -1138,6 +1137,9 @@ const MIN_VIEW_CLEANUP_INTERVAL: std::time::Duration = std::time::Duration::from
 //TODO: Make this value configurable
 const VIEW_CLEANUP_BUDGET: std::time::Duration = std::time::Duration::from_millis(10);
 
+/// Number of expired view calls to clean before checking the time budget.
+const VIEW_CLEANUP_BATCH_SIZE: usize = 1024;
+
 /// Spawn a background task that periodically cleans up expired views.
 ///
 /// Each cleanup run has a fixed lock-hold budget. If a run leaves expired
@@ -1147,22 +1149,25 @@ pub fn spawn_view_cleanup_loop(
     db: Arc<RelationalDB>,
     handle: &spacetimedb_runtime::Handle,
 ) -> spacetimedb_runtime::AbortHandle {
+    fn shorten_cleanup_interval(current: std::time::Duration) -> std::time::Duration {
+        (current / 2).max(MIN_VIEW_CLEANUP_INTERVAL)
+    }
+
     fn run_view_cleanup(db: &RelationalDB) -> bool {
         match db.with_auto_commit(Workload::Internal, |tx| {
-            tx.clear_expired_views(VIEWS_EXPIRATION, VIEW_CLEANUP_BUDGET)
+            tx.clear_expired_views(VIEWS_EXPIRATION, VIEW_CLEANUP_BUDGET, VIEW_CLEANUP_BATCH_SIZE)
                 .map_err(DBError::from)
         }) {
-            Ok((cleared, total_expired)) => {
-                if cleared != total_expired {
+            Ok(result) => {
+                if result.backlog {
                     // TODO: metrics
                     log::info!(
-                        "[{}] DATABASE: cleared {} expired views ({} remaining)",
+                        "[{}] DATABASE: cleared {} expired views (more pending)",
                         db.database_identity(),
-                        cleared,
-                        total_expired - cleared
+                        result.cleaned,
                     );
                 }
-                cleared < total_expired
+                result.backlog
             }
             Err(e) => {
                 log::error!(
@@ -1185,9 +1190,8 @@ pub fn spawn_view_cleanup_loop(
                 let db = db.clone();
                 let backlog = handle_clone.spawn_blocking(move || run_view_cleanup(&db)).await;
 
-                // Calculate next cleanup interval based on backlog
                 interval = if backlog {
-                    (interval / 2).max(MIN_VIEW_CLEANUP_INTERVAL)
+                    shorten_cleanup_interval(interval)
                 } else {
                     VIEW_CLEANUP_INTERVAL
                 };
@@ -2752,6 +2756,7 @@ mod tests {
         tx.clear_expired_views(
             Instant::now().saturating_duration_since(before_sender2),
             VIEW_CLEANUP_BUDGET,
+            VIEW_CLEANUP_BATCH_SIZE,
         )?;
         stdb.commit_tx(tx)?;
 
@@ -2809,7 +2814,7 @@ mod tests {
         // Cleanup should remove only the stale subscriber row and keep the shared
         // anonymous materialization because another subscriber is still live.
         let mut tx = begin_mut_tx(&stdb);
-        let (_cleaned, _total_expired) = tx.clear_expired_views(Duration::from_secs(1), VIEW_CLEANUP_BUDGET)?;
+        let _result = tx.clear_expired_views(Duration::from_secs(1), VIEW_CLEANUP_BUDGET, VIEW_CLEANUP_BATCH_SIZE)?;
         stdb.commit_tx(tx)?;
 
         assert_eq!(
@@ -2853,7 +2858,7 @@ mod tests {
         // With no remaining subscriber rows, cleanup should drop the shared
         // anonymous materialization and remove the bookkeeping row.
         let mut tx = begin_mut_tx(&stdb);
-        let (_cleaned, _total_expired) = tx.clear_expired_views(Duration::from_secs(1), VIEW_CLEANUP_BUDGET)?;
+        let _result = tx.clear_expired_views(Duration::from_secs(1), VIEW_CLEANUP_BUDGET, VIEW_CLEANUP_BATCH_SIZE)?;
         stdb.commit_tx(tx)?;
 
         assert!(

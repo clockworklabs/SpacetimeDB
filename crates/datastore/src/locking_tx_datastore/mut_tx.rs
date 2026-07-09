@@ -145,6 +145,11 @@ impl MemoryUsage for ViewInstanceState {
     }
 }
 
+pub struct ViewCleanupResult {
+    pub cleaned: usize,
+    pub backlog: bool,
+}
+
 impl ViewInstanceState {
     fn new(args: ViewInstanceArgs, last_used: Timestamp) -> Self {
         Self {
@@ -797,7 +802,11 @@ impl MutTxId {
         self.drop_st_view_param(view_id)?;
         self.drop_st_view_column(view_id)?;
         self.drop_st_view_sub(view_id)?;
-        for call in self.effective_view_instances_for_view(view_id).into_keys() {
+        let calls = self
+            .effective_view_instances_for_view(view_id)
+            .map(|(call, _)| call.clone())
+            .collect::<Vec<_>>();
+        for call in calls {
             self.view_instances.remove(call);
         }
         self.drop_view_from_committed_read_set(view_id);
@@ -2771,32 +2780,33 @@ impl MutTxId {
         self.view_instances.get_cloned(&self.committed_state_write_lock, call)
     }
 
-    fn effective_view_instances(&self) -> HashMap<ViewCallInfo, ViewInstanceState> {
-        let mut instances = self
+    fn effective_view_instances(&self) -> impl Iterator<Item = (&ViewCallInfo, &ViewInstanceState)> + '_ {
+        let committed = self
             .committed_state_write_lock
             .view_instances()
-            .map(|(call, state)| (call.clone(), state.clone()))
-            .collect::<HashMap<_, _>>();
+            .filter_map(|(call, state)| match self.view_instances.changes.get(call) {
+                Some(Some(tx_state)) => Some((call, tx_state)),
+                Some(None) => None,
+                None => Some((call, state)),
+            });
 
-        for (call, state) in &self.view_instances.changes {
-            match state {
-                Some(state) => {
-                    instances.insert(call.clone(), state.clone());
-                }
-                None => {
-                    instances.remove(call);
-                }
+        let tx_only = self.view_instances.changes.iter().filter_map(|(call, state)| {
+            if self.committed_state_write_lock.view_instance(call).is_some() {
+                None
+            } else {
+                state.as_ref().map(|state| (call, state))
             }
-        }
+        });
 
-        instances
+        committed.chain(tx_only)
     }
 
-    fn effective_view_instances_for_view(&self, view_id: ViewId) -> HashMap<ViewCallInfo, ViewInstanceState> {
+    fn effective_view_instances_for_view(
+        &self,
+        view_id: ViewId,
+    ) -> impl Iterator<Item = (&ViewCallInfo, &ViewInstanceState)> + '_ {
         self.effective_view_instances()
-            .into_iter()
-            .filter(|(call, _)| call.view_id == view_id)
-            .collect()
+            .filter(move |(call, _)| call.view_id == view_id)
     }
 
     /// Is this view argument currently materialized?
@@ -2812,8 +2822,7 @@ impl MutTxId {
     /// Returns all materialized view instances for `view_id`.
     pub fn materialized_view_instances_for_view(&self, view_id: ViewId) -> Vec<ViewInstanceArgs> {
         self.effective_view_instances_for_view(view_id)
-            .into_values()
-            .map(|state| state.args)
+            .map(|(_, state)| state.args)
             .collect()
     }
 
@@ -2821,8 +2830,12 @@ impl MutTxId {
     #[cfg(any(test, feature = "test"))]
     pub fn active_subscribers_for_view(&self, view_id: ViewId) -> Vec<(Identity, u64)> {
         self.effective_view_instances_for_view(view_id)
-            .into_values()
-            .flat_map(|state| state.active_subscribers.into_iter())
+            .flat_map(|(_, state)| {
+                state
+                    .active_subscribers
+                    .iter()
+                    .map(|(identity, count)| (*identity, *count))
+            })
             .collect()
     }
 
@@ -2895,50 +2908,65 @@ impl MutTxId {
 
     /// Clean up materialized view arguments that have no subscribers and haven’t been used recently.
     ///
-    /// Returns a tuple `(cleaned, total_expired)`:
-    /// - `cleaned`: Number of expired materialized view arguments deleted in this run.
-    /// - `total_expired`: Total number of expired materialized view arguments found.
+    /// Each cleanup batch retains at most `batch_size` expired view calls while
+    /// deleting materialized rows. A `batch_size` of zero is treated as one.
+    ///
+    /// `max_duration` is checked between batches, so cleanup always finishes at
+    /// least one batch once it starts, even if that batch takes longer than
+    /// `max_duration`.
+    ///
+    /// Returns the number of calls cleaned and whether more expired work is
+    /// likely pending.
     pub fn clear_expired_views(
         &mut self,
         expiration_duration: Duration,
         max_duration: Duration,
-    ) -> Result<(usize, usize)> {
+        batch_size: usize,
+    ) -> Result<ViewCleanupResult> {
         let start = std::time::Instant::now();
         let expiration_threshold = Timestamp::now() - expiration_duration;
-        let mut cleaned_count = 0;
+        let is_expired = |state: &ViewInstanceState| !state.has_subscribers() && state.last_used < expiration_threshold;
+        let mut cleaned = 0;
 
-        let expired_items = self
-            .effective_view_instances()
-            .into_iter()
-            .filter_map(|(call, state)| {
-                (!state.has_subscribers() && state.last_used < expiration_threshold).then_some(call)
-            })
-            .collect::<Vec<_>>();
-
-        let total_expired = expired_items.len();
-
-        for call in expired_items {
-            if start.elapsed() >= max_duration {
-                break;
-            }
-
-            let StViewRow { table_id, .. } = self.lookup_st_view(call.view_id)?;
-            let table_id = table_id.expect("views have backing table");
-            let rows_to_delete = self
-                .iter_by_col_eq(table_id, VIEW_ARG_HASH_COL, &call.arg_hash)?
-                .map(|res| res.pointer())
+        // Process expired calls in bounded batches so cleanup does not retain
+        // every expired call while deleting materialized rows.
+        loop {
+            let mut batch = self
+                .effective_view_instances()
+                .filter_map(|(call, state)| is_expired(state).then_some(call.clone()))
+                .take(batch_size + 1)
                 .collect::<Vec<_>>();
+            let backlog = batch.len() > batch_size;
+            batch.truncate(batch_size);
 
-            for row_ptr in rows_to_delete {
-                self.delete(table_id, row_ptr)?;
+            if batch.is_empty() {
+                return Ok(ViewCleanupResult {
+                    cleaned,
+                    backlog: false,
+                });
             }
 
-            self.drop_view_call_from_committed_read_set(call.clone());
-            self.view_instances.remove(call);
-            cleaned_count += 1;
-        }
+            for call in batch {
+                let StViewRow { table_id, .. } = self.lookup_st_view(call.view_id)?;
+                let table_id = table_id.expect("views have backing table");
+                let rows_to_delete = self
+                    .iter_by_col_eq(table_id, VIEW_ARG_HASH_COL, &call.arg_hash)?
+                    .map(|res| res.pointer())
+                    .collect::<Vec<_>>();
 
-        Ok((cleaned_count, total_expired))
+                for row_ptr in rows_to_delete {
+                    self.delete(table_id, row_ptr)?;
+                }
+
+                self.drop_view_call_from_committed_read_set(call.clone());
+                self.view_instances.remove(call);
+                cleaned += 1;
+            }
+
+            if start.elapsed() >= max_duration || !backlog {
+                return Ok(ViewCleanupResult { cleaned, backlog });
+            }
+        }
     }
 
     /// Clear all rows from all view tables without dropping them.
