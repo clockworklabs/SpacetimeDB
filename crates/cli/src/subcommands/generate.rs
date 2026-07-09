@@ -173,6 +173,13 @@ fn get_filtered_generate_targets(
     }
 }
 
+/// Builds synthetic generate configs from publish/database targets when a config
+/// file has targets but no explicit `generate` entries.
+///
+/// This preserves the pre-config behavior of `spacetime generate <database>`:
+/// select targets by database name or glob, inherit target fields into each
+/// generated config, and reject CLI options that would be ambiguous across
+/// multiple generated targets.
 fn fallback_generate_configs_from_targets<'a>(
     spacetime_config: &SpacetimeConfig,
     command: &clap::Command,
