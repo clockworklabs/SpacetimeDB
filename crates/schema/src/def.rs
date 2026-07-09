@@ -32,7 +32,8 @@ use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors,
 use spacetimedb_data_structures::map::{Equivalent, HashMap};
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v10::{
-    ExplicitNames, MethodOrAny, RawConstraintDefV10, RawHttpHandlerDefV10, RawHttpRouteDefV10, RawIndexDefV10,
+    ExplicitNames, MethodOrAny, RawColumnDefaultValueV10, RawConstraintDefV10, RawHttpHandlerDefV10,
+    RawHttpRouteDefV10, RawIndexDefV10,
     RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section, RawProcedureDefV10, RawReducerDefV10,
     RawRowLevelSecurityDefV10, RawScheduleDefV10, RawScopedTypeNameV10, RawSequenceDefV10, RawTableDefV10,
     RawTypeDefV10, RawViewDefV10, RawViewPrimaryKeyDefV10,
@@ -860,7 +861,7 @@ impl From<TableDef> for RawTableDefV10 {
             name: _,
             product_type_ref,
             primary_key,
-            columns: _, // will be reconstructed from the product type.
+            columns, // names/types are reconstructed from the product type; only defaults are read here.
             indexes,
             constraints,
             sequences,
@@ -880,7 +881,16 @@ impl From<TableDef> for RawTableDefV10 {
             sequences: sequences.into_values().map(Into::into).collect(),
             table_type,
             table_access,
-            default_values: Vec::new(),
+            default_values: columns
+                .iter()
+                .filter_map(|col| {
+                    let default_value = col.default_value.as_ref()?;
+                    Some(RawColumnDefaultValueV10 {
+                        col_id: col.col_id,
+                        value: spacetimedb_sats::bsatn::to_vec(default_value).unwrap().into(),
+                    })
+                })
+                .collect(),
             is_event,
         }
     }
@@ -2145,6 +2155,32 @@ mod tests {
                 table,
                 ..
             } => *table == apples.clone().into()
+        );
+    }
+
+    #[test]
+    fn v10_roundtrip_preserves_column_defaults() {
+        use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+
+        let mut builder = RawModuleDefV10Builder::new();
+        builder
+            .build_table_with_new_type(
+                "Apples",
+                ProductType::from([("id", AlgebraicType::U64), ("count", AlgebraicType::U16)]),
+                true,
+            )
+            .with_default_column_value(1, AlgebraicValue::U16(12))
+            .finish();
+
+        let module_def: ModuleDef = builder.finish().try_into().expect("valid module");
+        let raw = RawModuleDefV10::from(module_def);
+        let tables = raw.tables().expect("tables section");
+        let defaults = &tables[0].default_values;
+        assert_eq!(defaults.len(), 1);
+        assert_eq!(defaults[0].col_id, ColId(1));
+        assert_eq!(
+            defaults[0].value,
+            spacetimedb_sats::bsatn::to_vec(&AlgebraicValue::U16(12)).unwrap().into()
         );
     }
 
