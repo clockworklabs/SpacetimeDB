@@ -2933,11 +2933,26 @@ impl MutTxId {
         let batch_size = batch_size.max(1);
 
         loop {
+            let mut unexpired_visited_building_batch = 0;
+            let filter_and_count_view_instance = |(call, state): (&ViewCallInfo, &ViewInstanceState)| {
+                if is_expired(state) {
+                    Some(call.clone())
+                } else {
+                    unexpired_visited_building_batch += 1;
+                    None
+                }
+            };
             let mut batch = self
                 .effective_view_instances()
-                .filter_map(|(call, state)| is_expired(state).then_some(call.clone()))
+                .filter_map(filter_and_count_view_instance)
                 .take(batch_size + 1)
                 .collect::<Vec<_>>();
+            log::info!(
+                "[{}]: Traversed {} unexpired views to collect and delete a batch of {} expired views",
+                self.ctx.database_identity,
+                unexpired_visited_building_batch,
+                batch.len()
+            );
             let backlog = batch.len() > batch_size;
             batch.truncate(batch_size);
 
