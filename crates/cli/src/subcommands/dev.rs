@@ -769,7 +769,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         let db_identity = database_identity(&config, db_name, Some(server_for_db)).await?;
         let prefix = if use_prefix { Some(db_name.to_string()) } else { None };
         let handle = start_log_stream(
-            config.clone(),
+            &mut config,
             db_identity.to_hex().to_string(),
             Some(server_for_db),
             prefix,
@@ -1246,14 +1246,14 @@ fn truncate_identity(identity: &str) -> String {
 }
 
 async fn start_log_stream(
-    mut config: Config,
+    config: &mut Config,
     database_identity: String,
     server: Option<&str>,
     prefix: Option<String>,
 ) -> Result<JoinHandle<()>, anyhow::Error> {
     let server = server.map(|s| s.to_string());
     let host_url = config.get_host_url(server.as_deref())?;
-    let auth_header = get_auth_header(&mut config, false, server.as_deref(), false).await?;
+    let auth_header = get_auth_header(config, false, server.as_deref(), false).await?;
 
     let handle = tokio::spawn(async move {
         loop {
