@@ -1808,13 +1808,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathB
     }
 
     // Validate that --dotnet-version is only used with C# projects
-    if options.dotnet_version.is_some() {
-        if let Some(lang) = server_lang
-            && lang.to_lowercase() != "csharp"
-            && lang.to_lowercase() != "c#"
-        {
-            anyhow::bail!("--dotnet-version is only supported for C# projects (--lang csharp)");
-        }
+    if options.dotnet_version.is_some()
+        && let Some(lang) = server_lang
+        && lang.to_lowercase() != "csharp"
+        && lang.to_lowercase() != "c#"
+    {
+        anyhow::bail!("--dotnet-version is only supported for C# projects (--lang csharp)");
     }
 
     if !is_interactive {
