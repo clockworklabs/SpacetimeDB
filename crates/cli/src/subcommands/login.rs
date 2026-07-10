@@ -210,8 +210,9 @@ async fn web_login(remote: &Url, open_browser: bool) -> Result<String, anyhow::E
         .post(remote.join("/api/auth/cli/login/request-token")?)
         .send()
         .await?
-        .error_for_status()?;
-    let response: WebLoginTokenResponse = response.json().await?;
+        .error_for_status()?
+        .json()
+        .await?;
 
     if !response.success {
         return Err(anyhow::anyhow!("Failed to request token"));
