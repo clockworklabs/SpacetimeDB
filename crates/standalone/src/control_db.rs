@@ -79,6 +79,7 @@ impl ControlDb {
         Ok(Self { db })
     }
 
+    #[cfg(test)]
     pub fn export_to_path(&self, path: &ControlDbDir) -> Result<()> {
         ensure_empty_control_db_export_dir(path)?;
 
@@ -92,7 +93,7 @@ impl ControlDb {
         dst.import(self.db.export());
         dst.flush()?;
         sync_dir(path.as_ref()).with_context(|| format!("syncing control db export dir {}", path.display()))?;
-        if let Some(parent) = path.as_ref().parent() {
+        if let Some(parent) = path.0.parent() {
             sync_dir(parent).with_context(|| format!("syncing control db export parent {}", parent.display()))?;
         }
         Ok(())
@@ -103,7 +104,7 @@ impl ControlDb {
         path: &ControlDbDir,
         database_identity: &Identity,
         replica_id: u64,
-    ) -> Result<()> {
+    ) -> Result<Database> {
         ensure_empty_control_db_export_dir(path)?;
         let database = self
             .get_database_by_identity(database_identity)?
@@ -111,13 +112,15 @@ impl ControlDb {
         let replica = self
             .get_replica_by_id(replica_id)?
             .with_context(|| format!("replica {replica_id} not found in control-db"))?;
-        anyhow::ensure!(
-            replica.database_id == database.id,
-            "replica {} belongs to database {}, not {}",
-            replica.id,
-            replica.database_id,
-            database.id
-        );
+        if replica.database_id != database.id {
+            return Err(anyhow::anyhow!(
+                "replica {} belongs to database {}, not {}",
+                replica.id,
+                replica.database_id,
+                database.id
+            )
+            .into());
+        }
 
         self.db.flush()?;
         let dst = sled::Config::default()
@@ -148,17 +151,12 @@ impl ControlDb {
         set_control_id_counter_at_least(&dst, next_control_id)?;
 
         copy_optional_control_db_tree_entry(&self.db, &dst, "database_locks", database_identity.to_be_byte_array())?;
-        copy_optional_control_db_tree_entry(
-            &self.db,
-            &dst,
-            "energy_budget",
-            &database.owner_identity.to_byte_array(),
-        )?;
+        copy_optional_control_db_tree_entry(&self.db, &dst, "energy_budget", database.owner_identity.to_byte_array())?;
 
         let domains = self.spacetime_reverse_dns(database_identity)?;
         if !domains.is_empty() {
             let identity_bytes = database_identity.to_byte_array();
-            copy_optional_control_db_tree_entry(&self.db, &dst, "reverse_dns", &identity_bytes)?;
+            copy_optional_control_db_tree_entry(&self.db, &dst, "reverse_dns", identity_bytes)?;
             for domain in domains {
                 copy_optional_control_db_tree_entry(&self.db, &dst, "dns", domain.to_lowercase().as_bytes())?;
                 copy_optional_control_db_tree_entry(
@@ -172,10 +170,10 @@ impl ControlDb {
 
         dst.flush()?;
         sync_dir(path.as_ref()).with_context(|| format!("syncing control db export dir {}", path.display()))?;
-        if let Some(parent) = path.as_ref().parent() {
+        if let Some(parent) = path.0.parent() {
             sync_dir(parent).with_context(|| format!("syncing control db export parent {}", parent.display()))?;
         }
-        Ok(())
+        Ok(database)
     }
 
     #[cfg(test)]
@@ -263,7 +261,7 @@ fn next_control_id_seed(db: &sled::Db) -> Result<u64> {
 
 fn set_control_id_counter_at_least(db: &sled::Db, next_id: u64) -> Result<()> {
     let counter = db.open_tree(CONTROL_ID_COUNTER_TREE)?;
-    let result: TransactionResult<(), anyhow::Error> = (&counter).transaction(|counter_tx| {
+    let result: TransactionResult<(), anyhow::Error> = counter.transaction(|counter_tx| {
         let stored_next_id = match counter_tx.get(CONTROL_ID_COUNTER_KEY)? {
             Some(value) => decode_control_id(&value).map_err(ConflictableTransactionError::Abort)?,
             None => 0,
@@ -287,7 +285,7 @@ fn set_control_id_counter_at_least(db: &sled::Db, next_id: u64) -> Result<()> {
 fn reserve_control_id(db: &sled::Db) -> Result<u64> {
     let seed = next_control_id_seed(db)?;
     let counter = db.open_tree(CONTROL_ID_COUNTER_TREE)?;
-    let result: TransactionResult<u64, anyhow::Error> = (&counter).transaction(|counter_tx| {
+    let result: TransactionResult<u64, anyhow::Error> = counter.transaction(|counter_tx| {
         let stored_next_id = match counter_tx.get(CONTROL_ID_COUNTER_KEY)? {
             Some(value) => decode_control_id(&value).map_err(ConflictableTransactionError::Abort)?,
             None => seed,

@@ -8,9 +8,11 @@ use crate::util::{add_auth_header_opt, database_identity, get_auth_header, Respo
 use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
-use spacetimedb_commitlog::{commits, committed_meta};
+use spacetimedb_commitlog::{commits, committed_meta, segment, DEFAULT_LOG_FORMAT_VERSION};
 use spacetimedb_fs_utils::{copy_dir_all, copy_file_sync, create_dir_all_sync, sync_dir};
-use spacetimedb_lib::{bsatn, de::Deserialize as BsatnDeserialize, ser::Serialize as BsatnSerialize, Hash, Identity};
+use spacetimedb_lib::{
+    bsatn, de::Deserialize as BsatnDeserialize, hash_bytes, ser::Serialize as BsatnSerialize, Hash, Identity,
+};
 use spacetimedb_paths::{
     server::{CommitLogDir, ServerDataDir, SnapshotsPath},
     FromPathUnchecked, SpacetimePaths,
@@ -160,6 +162,8 @@ fn exec_restore(paths: &SpacetimePaths, args: &ArgMatches) -> Result<(), anyhow:
 fn restore_backup(input_dir: &Path, data_dir: &ServerDataDir, force: bool) -> anyhow::Result<BackupManifest> {
     let manifest = read_backup_manifest(input_dir)?;
     validate_backup(input_dir, &manifest)?;
+    let backup_log_format_version = read_backup_max_log_format_version(input_dir)?;
+    validate_target_log_format_version(data_dir, backup_log_format_version)?;
     create_dir_all_sync(&data_dir.0)?;
 
     // The data-dir lock catches the common footgun; per-replica online restore needs a real restore service.
@@ -167,6 +171,96 @@ fn restore_backup(input_dir: &Path, data_dir: &ServerDataDir, force: bool) -> an
         .pid_file()
         .context("target data-dir must be offline before restore")?;
     restore_backup_inner(input_dir, data_dir, force, manifest)
+}
+
+#[derive(SerdeDeserialize)]
+struct RestoreTargetConfig {
+    #[serde(default)]
+    commitlog: RestoreTargetCommitlogConfig,
+}
+
+#[derive(SerdeDeserialize)]
+struct RestoreTargetCommitlogConfig {
+    #[serde(default = "default_log_format_version", rename = "log-format-version")]
+    log_format_version: u8,
+}
+
+impl Default for RestoreTargetCommitlogConfig {
+    fn default() -> Self {
+        Self {
+            log_format_version: DEFAULT_LOG_FORMAT_VERSION,
+        }
+    }
+}
+
+const fn default_log_format_version() -> u8 {
+    DEFAULT_LOG_FORMAT_VERSION
+}
+
+fn read_backup_max_log_format_version(input_dir: &Path) -> anyhow::Result<u8> {
+    let clog_dir = CommitLogDir::from_path_unchecked(input_dir.join("clog"));
+    anyhow::ensure!(
+        clog_dir.0.is_dir(),
+        "backup clog directory is missing: {}",
+        clog_dir.display()
+    );
+    let initial_segment = clog_dir.segment(0);
+    anyhow::ensure!(
+        initial_segment.0.is_file(),
+        "backup commitlog segment is missing: {}",
+        initial_segment.display()
+    );
+
+    let mut max_log_format_version: Option<u8> = None;
+    for entry in std::fs::read_dir(&clog_dir.0).with_context(|| format!("reading {}", clog_dir.display()))? {
+        let entry = entry?;
+        let file_name = entry.file_name();
+        let file_name = file_name.to_string_lossy();
+        if !file_name.ends_with(".stdb.log") {
+            continue;
+        }
+        anyhow::ensure!(
+            is_commitlog_segment_name(&file_name) && entry.file_type()?.is_file(),
+            "invalid backup commitlog segment: {}",
+            entry.path().display()
+        );
+        let path = entry.path();
+        let file = std::fs::File::open(&path)
+            .with_context(|| format!("opening backup commitlog segment header {}", path.display()))?;
+        let header = segment::Header::decode(file)
+            .with_context(|| format!("reading backup commitlog segment header {}", path.display()))?;
+        max_log_format_version = Some(
+            max_log_format_version
+                .unwrap_or_default()
+                .max(header.log_format_version),
+        );
+    }
+    max_log_format_version.with_context(|| {
+        format!(
+            "backup clog directory contains no segment files: {}",
+            clog_dir.display()
+        )
+    })
+}
+
+fn validate_target_log_format_version(data_dir: &ServerDataDir, backup_log_format_version: u8) -> anyhow::Result<()> {
+    let config_path = data_dir.0.join("config.toml");
+    let target_log_format_version = if config_path.exists() {
+        let config = std::fs::read_to_string(&config_path)
+            .with_context(|| format!("reading target server config {}", config_path.display()))?;
+        toml::from_str::<RestoreTargetConfig>(&config)
+            .with_context(|| format!("parsing target server config {}", config_path.display()))?
+            .commitlog
+            .log_format_version
+    } else {
+        DEFAULT_LOG_FORMAT_VERSION
+    };
+    anyhow::ensure!(
+        target_log_format_version >= backup_log_format_version,
+        "target commitlog log format version {target_log_format_version} is lower than backup commitlog requires version {backup_log_format_version}; update [commitlog].log-format-version in {} before restoring",
+        config_path.display()
+    );
+    Ok(())
 }
 
 fn restore_backup_inner(
@@ -212,13 +306,19 @@ fn restore_backup_inner(
         create_dir_all_sync(parent)?;
     }
 
-    let staged_server_state = stage_missing_server_state(input_dir, data_dir, restore_temp_id, &manifest)?;
-    validate_target_control_db(input_dir, data_dir, &manifest)?;
-    anyhow::ensure!(
-        !(force && replica_dir.0.exists() && !staged_server_state.is_empty()),
-        "cannot restore over existing replica {} while target data-dir is missing server state; restore into an empty data-dir or complete the target server state first",
-        replica_dir.display()
-    );
+    let mut staged_server_state = stage_missing_server_state(input_dir, data_dir, restore_temp_id, &manifest)?;
+    let validation = (|| -> anyhow::Result<()> {
+        validate_target_control_db(input_dir, data_dir, &manifest)?;
+        anyhow::ensure!(
+            !(force && replica_dir.0.exists() && !staged_server_state.is_empty()),
+            "cannot restore over existing replica {} while target data-dir is missing server state; restore into an empty data-dir or complete the target server state first",
+            replica_dir.display()
+        );
+        Ok(())
+    })();
+    if let Err(error) = validation {
+        return Err(staged_server_state.cleanup().attach(error));
+    }
 
     let mut old_tmp_moved = false;
     let mut restore_old_tmp_on_error = false;
@@ -264,21 +364,179 @@ fn restore_backup_inner(
         Ok(())
     })();
 
-    if res.is_err() {
-        let _ = std::fs::remove_dir_all(&tmp_dir);
-        let _ = sync_parent_dir(&tmp_dir);
-        if restored_replica_moved && replica_dir.0.exists() {
-            let _ = std::fs::remove_dir_all(&replica_dir.0);
-            let _ = sync_parent_dir(&replica_dir.0);
+    if let Err(error) = res {
+        let mut rollback = rollback_failed_replica_restore(
+            &tmp_dir,
+            &replica_dir.0,
+            &old_tmp_dir,
+            restored_replica_moved,
+            restore_old_tmp_on_error && old_tmp_moved,
+        );
+        if let Some(committed_server_state) = &mut committed_server_state {
+            rollback.extend(committed_server_state.rollback());
         }
-        if restore_old_tmp_on_error && old_tmp_moved && old_tmp_dir.exists() && !replica_dir.0.exists() {
-            let _ = std::fs::rename(&old_tmp_dir, &replica_dir.0);
-            let _ = sync_parent_dir(&replica_dir.0);
-        }
+        return Err(rollback.attach(error));
     }
-    res?;
 
     Ok(manifest)
+}
+
+#[derive(Debug, Default)]
+struct RollbackFailures {
+    errors: Vec<String>,
+    recovery_paths: Vec<PathBuf>,
+}
+
+impl RollbackFailures {
+    fn capture(&mut self, result: anyhow::Result<()>, recovery_paths: &[&Path]) -> bool {
+        match result {
+            Ok(()) => true,
+            Err(error) => {
+                self.errors.push(format!("{error:#}"));
+                for path in recovery_paths {
+                    let path = (*path).to_path_buf();
+                    if !self.recovery_paths.contains(&path) {
+                        self.recovery_paths.push(path);
+                    }
+                }
+                false
+            }
+        }
+    }
+
+    fn extend(&mut self, other: Self) {
+        self.errors.extend(other.errors);
+        for path in other.recovery_paths {
+            if !self.recovery_paths.contains(&path) {
+                self.recovery_paths.push(path);
+            }
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.errors.is_empty()
+    }
+
+    fn summary(&self) -> String {
+        let paths = self
+            .recovery_paths
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "restore rollback was incomplete; possible leftover/recoverable paths: {paths}; rollback errors: {}",
+            self.errors.join("; ")
+        )
+    }
+
+    fn attach(self, error: anyhow::Error) -> anyhow::Error {
+        if self.is_empty() {
+            error
+        } else {
+            error.context(self.summary())
+        }
+    }
+
+    fn report_unattached(&self) {
+        if !self.is_empty() {
+            tracing::error!("{}", self.summary());
+        }
+    }
+}
+
+fn rollback_failed_replica_restore(
+    tmp_dir: &Path,
+    replica_dir: &Path,
+    old_tmp_dir: &Path,
+    restored_replica_moved: bool,
+    restore_old_tmp: bool,
+) -> RollbackFailures {
+    let mut failures = RollbackFailures::default();
+
+    if tmp_dir.exists() {
+        failures.capture(rollback_remove_dir_all(tmp_dir), &[tmp_dir]);
+        failures.capture(rollback_sync_parent_dir(tmp_dir), &[tmp_dir]);
+    }
+    if restored_replica_moved && replica_dir.exists() {
+        failures.capture(rollback_remove_dir_all(replica_dir), &[replica_dir, old_tmp_dir]);
+        failures.capture(rollback_sync_parent_dir(replica_dir), &[replica_dir, old_tmp_dir]);
+    }
+    if restore_old_tmp {
+        if !old_tmp_dir.exists() {
+            if !replica_dir.exists() {
+                failures.capture(
+                    Err(anyhow::anyhow!(
+                        "recoverable old replica directory disappeared during rollback: {}",
+                        old_tmp_dir.display()
+                    )),
+                    &[replica_dir, old_tmp_dir],
+                );
+            }
+        } else if replica_dir.exists() {
+            failures.capture(
+                Err(anyhow::anyhow!(
+                    "could not restore old replica because rollback target still exists: {}",
+                    replica_dir.display()
+                )),
+                &[replica_dir, old_tmp_dir],
+            );
+        } else {
+            let renamed = failures.capture(rollback_rename(old_tmp_dir, replica_dir), &[replica_dir, old_tmp_dir]);
+            if renamed {
+                failures.capture(rollback_sync_parent_dir(replica_dir), &[replica_dir, old_tmp_dir]);
+            }
+        }
+    }
+
+    failures
+}
+
+fn rollback_remove_dir_all(path: &Path) -> anyhow::Result<()> {
+    #[cfg(test)]
+    maybe_fail_restore_rollback_operation(path, "remove")?;
+    std::fs::remove_dir_all(path).with_context(|| format!("removing directory {} during rollback", path.display()))
+}
+
+fn rollback_remove_file(path: &Path) -> anyhow::Result<()> {
+    #[cfg(test)]
+    maybe_fail_restore_rollback_operation(path, "remove")?;
+    std::fs::remove_file(path).with_context(|| format!("removing file {} during rollback", path.display()))
+}
+
+fn rollback_rename(from: &Path, to: &Path) -> anyhow::Result<()> {
+    #[cfg(test)]
+    maybe_fail_restore_rollback_operation(from, "rename")?;
+    std::fs::rename(from, to).with_context(|| {
+        format!(
+            "restoring recoverable path {} to {} during rollback",
+            from.display(),
+            to.display()
+        )
+    })
+}
+
+fn rollback_sync_parent_dir(path: &Path) -> anyhow::Result<()> {
+    if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+        #[cfg(test)]
+        maybe_fail_restore_rollback_operation(path, "sync-parent")?;
+        sync_dir(parent).with_context(|| format!("syncing parent directory {} during rollback", parent.display()))?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn maybe_fail_restore_rollback_operation(path: &Path, operation: &str) -> anyhow::Result<()> {
+    let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) else {
+        return Ok(());
+    };
+    let marker = parent.join(format!(".fail-next-restore-rollback-{operation}"));
+    anyhow::ensure!(
+        !marker.exists(),
+        "injected rollback {operation} failure for {}",
+        path.display()
+    );
+    Ok(())
 }
 
 fn sync_parent_dir(path: &Path) -> anyhow::Result<()> {
@@ -431,23 +689,6 @@ fn is_commitlog_segment_name(file_name: &str) -> bool {
     offset.len() == 20 && offset.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-fn validate_scoped_backup_control_db(
-    control_db_dir: &Path,
-    manifest: &BackupManifest,
-    database_identity: Identity,
-) -> anyhow::Result<()> {
-    if !control_db_dir.exists() {
-        return Ok(());
-    }
-    validate_control_db_records(
-        control_db_dir,
-        database_identity,
-        manifest.replica_id,
-        ControlDbValidationScope::ScopedBackup,
-    )
-    .with_context(|| format!("validating backup control-db {}", control_db_dir.display()))
-}
-
 fn validate_target_control_db(
     input_dir: &Path,
     data_dir: &ServerDataDir,
@@ -461,7 +702,7 @@ fn validate_target_control_db(
         .database_identity
         .parse()
         .with_context(|| format!("parsing backup database identity {}", manifest.database_identity))?;
-    validate_control_db_records(
+    let database = validate_control_db_records(
         &control_db_dir,
         database_identity,
         manifest.replica_id,
@@ -473,7 +714,53 @@ fn validate_target_control_db(
             control_db_dir.display(),
             input_dir.display()
         )
-    })
+    })?;
+    let backup_control_db_dir = input_dir.join("server").join("control-db");
+    let backup_database = validate_control_db_records(
+        &backup_control_db_dir,
+        database_identity,
+        manifest.replica_id,
+        ControlDbValidationScope::ScopedBackup,
+    )
+    .with_context(|| format!("validating backup control-db {}", backup_control_db_dir.display()))?;
+    validate_control_db_metadata_match(&backup_database, &database)?;
+    let backup_program_bytes_dir = input_dir.join("server").join("program-bytes");
+    validate_program_bytes(&backup_program_bytes_dir, backup_database.initial_program)
+        .with_context(|| format!("validating backup program-bytes {}", backup_program_bytes_dir.display()))?;
+    let program_bytes_dir = data_dir.0.join("program-bytes");
+    if program_bytes_dir.exists() {
+        validate_program_bytes(&program_bytes_dir, database.initial_program)
+            .with_context(|| format!("validating target program-bytes {}", program_bytes_dir.display()))?;
+    }
+    Ok(())
+}
+
+fn validate_control_db_metadata_match(backup: &ControlDbDatabase, target: &ControlDbDatabase) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        backup.database_identity == target.database_identity,
+        "backup control-db database identity {} does not match target {}",
+        backup.database_identity,
+        target.database_identity
+    );
+    anyhow::ensure!(
+        backup.owner_identity == target.owner_identity,
+        "backup control-db owner identity {} does not match target {}",
+        backup.owner_identity,
+        target.owner_identity
+    );
+    anyhow::ensure!(
+        backup.host_type == target.host_type,
+        "backup control-db host_type {:?} does not match target {:?}",
+        backup.host_type,
+        target.host_type
+    );
+    anyhow::ensure!(
+        backup.initial_program == target.initial_program,
+        "backup control-db initial_program {} does not match target {}",
+        backup.initial_program,
+        target.initial_program
+    );
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -483,7 +770,7 @@ enum ControlDbValidationScope {
 }
 
 #[allow(dead_code)]
-#[derive(BsatnDeserialize, BsatnSerialize)]
+#[derive(Debug, Clone, BsatnDeserialize, BsatnSerialize)]
 struct ControlDbDatabase {
     id: u64,
     database_identity: Identity,
@@ -493,7 +780,7 @@ struct ControlDbDatabase {
 }
 
 #[allow(dead_code)]
-#[derive(BsatnDeserialize, BsatnSerialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, BsatnDeserialize, BsatnSerialize)]
 #[repr(i32)]
 enum ControlDbHostType {
     Wasm = 0,
@@ -514,7 +801,7 @@ fn validate_control_db_records(
     database_identity: Identity,
     replica_id: u64,
     scope: ControlDbValidationScope,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<ControlDbDatabase> {
     anyhow::ensure!(
         control_db_dir.is_dir(),
         "control-db path is not a directory: {}",
@@ -642,7 +929,34 @@ fn validate_control_db_records(
             "backup control-db must contain exactly one replica record, found {replica_count}"
         );
     }
+    Ok(database_from_identity)
+}
+
+fn validate_program_bytes(program_bytes_dir: &Path, program_hash: Hash) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        program_bytes_dir.is_dir(),
+        "program-bytes path is not a directory: {}",
+        program_bytes_dir.display()
+    );
+    let relative_path = program_bytes_relative_path(&program_hash);
+    let path = program_bytes_dir.join(relative_path);
+    let program_bytes = std::fs::read(&path)
+        .with_context(|| format!("reading program bytes {} referenced by control-db", path.display()))?;
+    let actual_hash = hash_bytes(&program_bytes);
+    anyhow::ensure!(
+        actual_hash == program_hash,
+        "program bytes hash mismatch at {}: expected {}, got {}",
+        path.display(),
+        program_hash,
+        actual_hash
+    );
     Ok(())
+}
+
+fn program_bytes_relative_path(program_hash: &Hash) -> PathBuf {
+    let hex = program_hash.to_hex();
+    let (prefix, suffix) = hex.split_at(2);
+    PathBuf::from(prefix).join(suffix)
 }
 
 fn control_db_u64_key(key: &[u8], label: &str) -> anyhow::Result<u64> {
@@ -670,25 +984,42 @@ struct StagedServerStateEntry {
 #[derive(Debug)]
 struct StagedServerState {
     entries: Vec<StagedServerStateEntry>,
+    cleanup_on_drop: bool,
 }
 
 impl StagedServerState {
+    fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+            cleanup_on_drop: true,
+        }
+    }
+
     fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
-    fn cleanup(&self) {
-        for entry in &self.entries {
-            if entry.staged_path.is_dir() {
-                let _ = std::fs::remove_dir_all(&entry.staged_path);
-            } else {
-                let _ = std::fs::remove_file(&entry.staged_path);
-            }
-            let _ = sync_parent_dir(&entry.staged_path);
+    fn cleanup(&mut self) -> RollbackFailures {
+        if !self.cleanup_on_drop {
+            return RollbackFailures::default();
         }
+        self.cleanup_on_drop = false;
+        let mut failures = RollbackFailures::default();
+        for entry in &self.entries {
+            if !entry.staged_path.exists() {
+                continue;
+            }
+            if entry.staged_path.is_dir() {
+                failures.capture(rollback_remove_dir_all(&entry.staged_path), &[&entry.staged_path])
+            } else {
+                failures.capture(rollback_remove_file(&entry.staged_path), &[&entry.staged_path])
+            };
+            failures.capture(rollback_sync_parent_dir(&entry.staged_path), &[&entry.staged_path]);
+        }
+        failures
     }
 
-    fn commit(self) -> anyhow::Result<CommittedServerState> {
+    fn commit(mut self) -> anyhow::Result<CommittedServerState> {
         let mut committed = CommittedServerState::default();
         let res = (|| -> anyhow::Result<()> {
             for entry in &self.entries {
@@ -709,18 +1040,19 @@ impl StagedServerState {
             }
             Ok(())
         })();
-        if res.is_err() {
-            self.cleanup();
-            committed.rollback();
+        if let Err(error) = res {
+            let mut rollback = self.cleanup();
+            rollback.extend(committed.rollback());
+            return Err(rollback.attach(error));
         }
-        res?;
+        self.cleanup_on_drop = false;
         Ok(committed)
     }
 }
 
 impl Drop for StagedServerState {
     fn drop(&mut self) {
-        self.cleanup();
+        self.cleanup().report_unattached();
     }
 }
 
@@ -735,22 +1067,31 @@ impl CommittedServerState {
         self.keep = true;
     }
 
-    fn rollback(&self) {
-        for path in self.paths.iter().rev() {
-            if path.is_dir() {
-                let _ = std::fs::remove_dir_all(path);
-            } else {
-                let _ = std::fs::remove_file(path);
-            }
-            let _ = sync_parent_dir(path);
+    fn rollback(&mut self) -> RollbackFailures {
+        if self.keep {
+            return RollbackFailures::default();
         }
+        self.keep = true;
+        let mut failures = RollbackFailures::default();
+        for path in self.paths.iter().rev() {
+            if !path.exists() {
+                continue;
+            }
+            if path.is_dir() {
+                failures.capture(rollback_remove_dir_all(path), &[path])
+            } else {
+                failures.capture(rollback_remove_file(path), &[path])
+            };
+            failures.capture(rollback_sync_parent_dir(path), &[path]);
+        }
+        failures
     }
 }
 
 impl Drop for CommittedServerState {
     fn drop(&mut self) {
         if !self.keep {
-            self.rollback();
+            self.rollback().report_unattached();
         }
     }
 }
@@ -766,7 +1107,7 @@ fn stage_missing_server_state(
         .into_iter()
         .any(|required_dir| !data_dir.0.join(required_dir).exists());
     if !needs_required_dirs && !server_dir.exists() {
-        return Ok(StagedServerState { entries: Vec::new() });
+        return Ok(StagedServerState::new());
     }
 
     let mut entries = Vec::new();
@@ -814,28 +1155,45 @@ fn stage_missing_server_state(
         entries.push((src, dst, staged, false));
     }
 
-    let mut staged = StagedServerState { entries: Vec::new() };
+    let mut staged = StagedServerState::new();
     let res = (|| -> anyhow::Result<()> {
         for (src, final_path, staged_path, is_dir) in entries {
             copy_staged_server_state_entry(&mut staged, &src, final_path, staged_path, is_dir)?;
         }
-        if let Some(entry) = staged
+        let control_db_entry = staged
             .entries
             .iter()
-            .find(|entry| entry.final_path.ends_with("control-db"))
-        {
+            .find(|entry| entry.final_path.ends_with("control-db"));
+        let program_bytes_entry = staged
+            .entries
+            .iter()
+            .find(|entry| entry.final_path.ends_with("program-bytes"));
+        if control_db_entry.is_some() || program_bytes_entry.is_some() {
             let database_identity: Identity = manifest
                 .database_identity
                 .parse()
                 .with_context(|| format!("parsing backup database identity {}", manifest.database_identity))?;
-            validate_scoped_backup_control_db(&entry.staged_path, manifest, database_identity)?;
+            let control_db_path = control_db_entry
+                .map(|entry| entry.staged_path.clone())
+                .unwrap_or_else(|| data_dir.0.join("control-db"));
+            let scope = if control_db_entry.is_some() {
+                ControlDbValidationScope::ScopedBackup
+            } else {
+                ControlDbValidationScope::ExistingTarget
+            };
+            let database = validate_control_db_records(&control_db_path, database_identity, manifest.replica_id, scope)
+                .with_context(|| format!("validating control-db {}", control_db_path.display()))?;
+            let program_bytes_dir = program_bytes_entry
+                .map(|entry| entry.staged_path.clone())
+                .unwrap_or_else(|| data_dir.0.join("program-bytes"));
+            validate_program_bytes(&program_bytes_dir, database.initial_program)
+                .with_context(|| format!("validating program-bytes {}", program_bytes_dir.display()))?;
         }
         Ok(())
     })();
-    if res.is_err() {
-        staged.cleanup();
+    if let Err(error) = res {
+        return Err(staged.cleanup().attach(error));
     }
-    res?;
     Ok(staged)
 }
 
@@ -859,10 +1217,10 @@ fn copy_staged_server_state_entry(
             .with_context(|| format!("copying {} to {}", src.display(), entry.staged_path.display()))
             .map(|_| ())
     };
-    if res.is_err() {
-        staged.cleanup();
+    if let Err(error) = res {
+        return Err(staged.cleanup().attach(error));
     }
-    res
+    Ok(())
 }
 
 fn staged_server_state_path(path: &Path, restore_temp_id: u64) -> PathBuf {
@@ -886,6 +1244,7 @@ mod tests {
     fn backup_restore_copies_replica_into_existing_data_dir() -> anyhow::Result<()> {
         let backup = tempfile::tempdir()?;
         make_backup_dir(backup.path(), 7, 42)?;
+        make_backup_server_state(backup.path())?;
 
         let data = tempfile::tempdir()?;
         make_target_data_dir(data.path(), 7)?;
@@ -904,6 +1263,28 @@ mod tests {
             .is_file());
         assert!(data.path().join("replicas/7/module_logs").is_dir());
         assert!(!data.path().join("spacetime.pid").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn backup_restore_rejects_v1_backup_for_v0_target_before_mutation() -> anyhow::Result<()> {
+        let backup = tempfile::tempdir()?;
+        make_backup_dir(backup.path(), 7, 42)?;
+        make_backup_server_state(backup.path())?;
+
+        let data = tempfile::tempdir()?;
+        make_target_data_dir(data.path(), 7)?;
+        let config = "[commitlog]\nlog-format-version = 0\n";
+        std::fs::write(data.path().join("config.toml"), config)?;
+        let data_dir = ServerDataDir::from_path_unchecked(data.path());
+
+        let err = restore_backup(backup.path(), &data_dir, false).unwrap_err();
+        let rendered = format!("{err:#}");
+
+        assert!(rendered.contains("target commitlog log format version 0"));
+        assert!(rendered.contains("backup commitlog requires version 1"));
+        assert_eq!(std::fs::read_to_string(data.path().join("config.toml"))?, config);
+        assert!(!data.path().join("replicas/7").exists());
         Ok(())
     }
 
@@ -946,6 +1327,7 @@ mod tests {
     fn backup_restore_force_replaces_existing_replica_without_leaving_old_tmp() -> anyhow::Result<()> {
         let backup = tempfile::tempdir()?;
         make_backup_dir(backup.path(), 7, 42)?;
+        make_backup_server_state(backup.path())?;
 
         let data = tempfile::tempdir()?;
         make_target_data_dir(data.path(), 7)?;
@@ -974,6 +1356,7 @@ mod tests {
     fn backup_restore_force_restores_old_replica_when_sync_after_old_rename_fails() -> anyhow::Result<()> {
         let backup = tempfile::tempdir()?;
         make_backup_dir(backup.path(), 7, 42)?;
+        make_backup_server_state(backup.path())?;
 
         let data = tempfile::tempdir()?;
         make_target_data_dir(data.path(), 7)?;
@@ -996,6 +1379,7 @@ mod tests {
     fn backup_restore_force_restores_old_replica_when_sync_after_new_rename_fails() -> anyhow::Result<()> {
         let backup = tempfile::tempdir()?;
         make_backup_dir(backup.path(), 7, 42)?;
+        make_backup_server_state(backup.path())?;
 
         let data = tempfile::tempdir()?;
         make_target_data_dir(data.path(), 7)?;
@@ -1010,6 +1394,94 @@ mod tests {
         assert!(err.to_string().contains("injected sync_parent_dir failure"));
         assert_eq!(std::fs::read(replica_dir.join("old-marker"))?, b"old");
         assert!(!replica_dir.join("snapshots").exists());
+        assert_no_restore_temps(data.path())?;
+        Ok(())
+    }
+
+    #[test]
+    fn backup_restore_reports_rollback_remove_failure_with_recovery_paths() -> anyhow::Result<()> {
+        let backup = tempfile::tempdir()?;
+        make_backup_dir(backup.path(), 7, 42)?;
+        make_backup_server_state(backup.path())?;
+
+        let data = tempfile::tempdir()?;
+        make_target_data_dir(data.path(), 7)?;
+        let replica_dir = data.path().join("replicas/7");
+        std::fs::create_dir_all(&replica_dir)?;
+        std::fs::write(replica_dir.join("old-marker"), b"old")?;
+        let replicas_dir = data.path().join("replicas");
+        std::fs::write(replicas_dir.join(".fail-next-restore-sync-parent"), b"2")?;
+        std::fs::write(replicas_dir.join(".fail-next-restore-rollback-remove"), b"fail")?;
+        let data_dir = ServerDataDir::from_path_unchecked(data.path());
+
+        let err = restore_backup(backup.path(), &data_dir, true).unwrap_err();
+        let rendered = format!("{err:#}");
+        let recoverable_old = find_restore_old_dir(&replicas_dir)?;
+
+        assert!(rendered.contains("restore rollback was incomplete"));
+        assert!(rendered.contains("injected rollback remove failure"));
+        assert!(rendered.contains("injected sync_parent_dir failure"));
+        assert!(rendered.contains("possible leftover/recoverable paths"));
+        assert!(rendered.contains(&replica_dir.display().to_string()));
+        assert!(rendered.contains(&recoverable_old.display().to_string()));
+        assert!(replica_dir.join("snapshots").is_dir());
+        assert_eq!(std::fs::read(recoverable_old.join("old-marker"))?, b"old");
+        Ok(())
+    }
+
+    #[test]
+    fn backup_restore_reports_rollback_rename_failure_with_recoverable_old_replica() -> anyhow::Result<()> {
+        let backup = tempfile::tempdir()?;
+        make_backup_dir(backup.path(), 7, 42)?;
+        make_backup_server_state(backup.path())?;
+
+        let data = tempfile::tempdir()?;
+        make_target_data_dir(data.path(), 7)?;
+        let replica_dir = data.path().join("replicas/7");
+        std::fs::create_dir_all(&replica_dir)?;
+        std::fs::write(replica_dir.join("old-marker"), b"old")?;
+        let replicas_dir = data.path().join("replicas");
+        std::fs::write(replicas_dir.join(".fail-next-restore-sync-parent"), b"2")?;
+        std::fs::write(replicas_dir.join(".fail-next-restore-rollback-rename"), b"fail")?;
+        let data_dir = ServerDataDir::from_path_unchecked(data.path());
+
+        let err = restore_backup(backup.path(), &data_dir, true).unwrap_err();
+        let rendered = format!("{err:#}");
+        let recoverable_old = find_restore_old_dir(&replicas_dir)?;
+
+        assert!(rendered.contains("restore rollback was incomplete"));
+        assert!(rendered.contains("injected rollback rename failure"));
+        assert!(rendered.contains("injected sync_parent_dir failure"));
+        assert!(rendered.contains(&recoverable_old.display().to_string()));
+        assert!(!replica_dir.exists());
+        assert_eq!(std::fs::read(recoverable_old.join("old-marker"))?, b"old");
+        Ok(())
+    }
+
+    #[test]
+    fn backup_restore_reports_rollback_fsync_failure_and_preserves_original_error_chain() -> anyhow::Result<()> {
+        let backup = tempfile::tempdir()?;
+        make_backup_dir(backup.path(), 7, 42)?;
+        make_backup_server_state(backup.path())?;
+
+        let data = tempfile::tempdir()?;
+        make_target_data_dir(data.path(), 7)?;
+        let replica_dir = data.path().join("replicas/7");
+        std::fs::create_dir_all(&replica_dir)?;
+        std::fs::write(replica_dir.join("old-marker"), b"old")?;
+        let replicas_dir = data.path().join("replicas");
+        std::fs::write(replicas_dir.join(".fail-next-restore-sync-parent"), b"2")?;
+        std::fs::write(replicas_dir.join(".fail-next-restore-rollback-sync-parent"), b"fail")?;
+        let data_dir = ServerDataDir::from_path_unchecked(data.path());
+
+        let err = restore_backup(backup.path(), &data_dir, true).unwrap_err();
+        let rendered = format!("{err:#}");
+
+        assert!(rendered.contains("restore rollback was incomplete"));
+        assert!(rendered.contains("injected rollback sync-parent failure"));
+        assert!(rendered.contains("injected sync_parent_dir failure"));
+        assert!(rendered.contains(&replica_dir.display().to_string()));
+        assert_eq!(std::fs::read(replica_dir.join("old-marker"))?, b"old");
         assert_no_restore_temps(data.path())?;
         Ok(())
     }
@@ -1034,6 +1506,31 @@ mod tests {
         assert!(!data.path().join("metadata.toml").exists());
         assert!(!data.path().join("replicas/7").exists());
         assert_no_restore_temps(data.path())?;
+        Ok(())
+    }
+
+    #[test]
+    fn backup_restore_reports_committed_server_state_rollback_failure() -> anyhow::Result<()> {
+        let backup = tempfile::tempdir()?;
+        make_backup_dir(backup.path(), 7, 42)?;
+        make_backup_server_state(backup.path())?;
+
+        let data = tempfile::tempdir()?;
+        std::fs::create_dir_all(data.path().join("replicas"))?;
+        std::fs::write(data.path().join("replicas/.fail-next-restore-sync-parent"), b"1")?;
+        std::fs::write(data.path().join(".fail-next-restore-rollback-remove"), b"fail")?;
+        let data_dir = ServerDataDir::from_path_unchecked(data.path());
+
+        let err = restore_backup(backup.path(), &data_dir, false).unwrap_err();
+        let rendered = format!("{err:#}");
+        let metadata_path = data.path().join("metadata.toml");
+
+        assert!(rendered.contains("restore rollback was incomplete"));
+        assert!(rendered.contains("injected rollback remove failure"));
+        assert!(rendered.contains("injected sync_parent_dir failure"));
+        assert!(rendered.contains(&metadata_path.display().to_string()));
+        assert!(metadata_path.is_file());
+        assert!(!data.path().join("replicas/7").exists());
         Ok(())
     }
 
@@ -1084,9 +1581,171 @@ mod tests {
         restore_backup(backup.path(), &data_dir, false)?;
 
         assert!(data.path().join("control-db").is_dir());
-        assert!(data.path().join("program-bytes/program").is_file());
+        assert!(data
+            .path()
+            .join("program-bytes")
+            .join(program_bytes_relative_path(&test_program_hash()))
+            .is_file());
         assert_eq!(std::fs::read_to_string(data.path().join("config.toml"))?, "config");
         assert_eq!(std::fs::read_to_string(data.path().join("metadata.toml"))?, "metadata");
+        Ok(())
+    }
+
+    #[test]
+    fn backup_restore_copies_program_bytes_when_target_has_control_db() -> anyhow::Result<()> {
+        let backup = tempfile::tempdir()?;
+        make_backup_dir(backup.path(), 7, 42)?;
+        make_backup_server_state(backup.path())?;
+
+        let data = tempfile::tempdir()?;
+        make_test_control_db(&data.path().join("control-db"), test_database_identity()?, 7, false)?;
+        let data_dir = ServerDataDir::from_path_unchecked(data.path());
+
+        restore_backup(backup.path(), &data_dir, false)?;
+
+        assert!(data.path().join("control-db").is_dir());
+        assert!(data
+            .path()
+            .join("program-bytes")
+            .join(program_bytes_relative_path(&test_program_hash()))
+            .is_file());
+        assert!(data.path().join("replicas/7").is_dir());
+        Ok(())
+    }
+
+    #[test]
+    fn backup_restore_rejects_missing_program_bytes_referenced_by_control_db() -> anyhow::Result<()> {
+        let backup = tempfile::tempdir()?;
+        make_backup_dir(backup.path(), 7, 42)?;
+        make_backup_server_state(backup.path())?;
+        std::fs::remove_file(
+            backup
+                .path()
+                .join("server/program-bytes")
+                .join(program_bytes_relative_path(&test_program_hash())),
+        )?;
+
+        let data = tempfile::tempdir()?;
+        let data_dir = ServerDataDir::from_path_unchecked(data.path());
+
+        let err = restore_backup(backup.path(), &data_dir, false).unwrap_err();
+
+        assert!(format!("{err:#}").contains("referenced by control-db"));
+        assert!(!data.path().join("control-db").exists());
+        assert!(!data.path().join("program-bytes").exists());
+        assert!(!data.path().join("replicas/7").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn backup_restore_rejects_program_bytes_hash_mismatch() -> anyhow::Result<()> {
+        let backup = tempfile::tempdir()?;
+        make_backup_dir(backup.path(), 7, 42)?;
+        make_backup_server_state(backup.path())?;
+        std::fs::write(
+            backup
+                .path()
+                .join("server/program-bytes")
+                .join(program_bytes_relative_path(&test_program_hash())),
+            b"not the program bytes",
+        )?;
+
+        let data = tempfile::tempdir()?;
+        let data_dir = ServerDataDir::from_path_unchecked(data.path());
+
+        let err = restore_backup(backup.path(), &data_dir, false).unwrap_err();
+
+        assert!(format!("{err:#}").contains("program bytes hash mismatch"));
+        assert!(!data.path().join("control-db").exists());
+        assert!(!data.path().join("program-bytes").exists());
+        assert!(!data.path().join("replicas/7").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn backup_restore_rejects_existing_target_missing_program_bytes_referenced_by_control_db() -> anyhow::Result<()> {
+        let backup = tempfile::tempdir()?;
+        make_backup_dir(backup.path(), 7, 42)?;
+        make_backup_server_state(backup.path())?;
+
+        let data = tempfile::tempdir()?;
+        make_test_control_db(&data.path().join("control-db"), test_database_identity()?, 7, false)?;
+        std::fs::create_dir_all(data.path().join("program-bytes"))?;
+        let data_dir = ServerDataDir::from_path_unchecked(data.path());
+
+        let err = restore_backup(backup.path(), &data_dir, false).unwrap_err();
+
+        assert!(format!("{err:#}").contains("referenced by control-db"));
+        assert!(data.path().join("control-db").is_dir());
+        assert!(data.path().join("program-bytes").is_dir());
+        assert!(!data.path().join("replicas/7").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn backup_restore_rejects_existing_target_program_bytes_hash_mismatch() -> anyhow::Result<()> {
+        let backup = tempfile::tempdir()?;
+        make_backup_dir(backup.path(), 7, 42)?;
+        make_backup_server_state(backup.path())?;
+
+        let data = tempfile::tempdir()?;
+        make_test_control_db(&data.path().join("control-db"), test_database_identity()?, 7, false)?;
+        let program_path = data
+            .path()
+            .join("program-bytes")
+            .join(program_bytes_relative_path(&test_program_hash()));
+        std::fs::create_dir_all(program_path.parent().context("program bytes path has no parent")?)?;
+        std::fs::write(&program_path, b"not the program bytes")?;
+        let data_dir = ServerDataDir::from_path_unchecked(data.path());
+
+        let err = restore_backup(backup.path(), &data_dir, false).unwrap_err();
+
+        assert!(format!("{err:#}").contains("program bytes hash mismatch"));
+        assert!(data.path().join("control-db").is_dir());
+        assert!(program_path.is_file());
+        assert!(!data.path().join("replicas/7").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn backup_restore_rejects_existing_target_control_db_metadata_mismatch() -> anyhow::Result<()> {
+        let backup = tempfile::tempdir()?;
+        make_backup_dir(backup.path(), 7, 42)?;
+        make_backup_server_state(backup.path())?;
+
+        let data = tempfile::tempdir()?;
+        let target_program_bytes = b"different program";
+        let target_program_hash = hash_bytes(target_program_bytes);
+        make_test_control_db_with_database(
+            &data.path().join("control-db"),
+            ControlDbDatabase {
+                id: 1,
+                database_identity: test_database_identity()?,
+                owner_identity: Identity::ZERO,
+                host_type: ControlDbHostType::Wasm,
+                initial_program: target_program_hash,
+            },
+            7,
+            false,
+        )?;
+        let target_program_path = data
+            .path()
+            .join("program-bytes")
+            .join(program_bytes_relative_path(&target_program_hash));
+        std::fs::create_dir_all(
+            target_program_path
+                .parent()
+                .context("program bytes path has no parent")?,
+        )?;
+        std::fs::write(&target_program_path, target_program_bytes)?;
+        let data_dir = ServerDataDir::from_path_unchecked(data.path());
+
+        let err = restore_backup(backup.path(), &data_dir, false).unwrap_err();
+
+        assert!(format!("{err:#}").contains("initial_program"));
+        assert!(data.path().join("control-db").is_dir());
+        assert!(target_program_path.is_file());
+        assert!(!data.path().join("replicas/7").exists());
         Ok(())
     }
 
@@ -1224,8 +1883,7 @@ mod tests {
             7,
             true,
         )?;
-        std::fs::create_dir_all(backup.path().join("server/program-bytes"))?;
-        std::fs::write(backup.path().join("server/program-bytes/program"), b"program")?;
+        write_test_program_bytes(&backup.path().join("server/program-bytes"))?;
         std::fs::write(backup.path().join("server/config.toml"), b"config")?;
         std::fs::write(backup.path().join("server/metadata.toml"), b"metadata")?;
 
@@ -1251,13 +1909,14 @@ mod tests {
             .flush_every_ms(Some(50))
             .mode(sled::Mode::HighThroughput)
             .open()?;
-        let database_record = sled::IVec::from(bsatn::to_vec(&ControlDbDatabase {
+        let database = ControlDbDatabase {
             id: 1,
             database_identity: other_identity,
             owner_identity: Identity::ZERO,
             host_type: ControlDbHostType::Wasm,
             initial_program: Hash::ZERO,
-        })?);
+        };
+        let database_record = sled::IVec::from(encode_stored_control_db_database(&database)?);
         db.open_tree("database_by_identity")?
             .insert(manifest_identity.to_be_byte_array(), database_record.clone())?;
         db.open_tree("database")?.insert(1u64.to_be_bytes(), database_record)?;
@@ -1272,8 +1931,7 @@ mod tests {
         )?;
         db.flush()?;
         drop(db);
-        std::fs::create_dir_all(backup.path().join("server/program-bytes"))?;
-        std::fs::write(backup.path().join("server/program-bytes/program"), b"program")?;
+        write_test_program_bytes(&backup.path().join("server/program-bytes"))?;
         std::fs::write(backup.path().join("server/config.toml"), b"config")?;
         std::fs::write(backup.path().join("server/metadata.toml"), b"metadata")?;
 
@@ -1309,7 +1967,7 @@ mod tests {
         let data = tempfile::tempdir()?;
         let final_path = data.path().join("control-db");
         let staged_path = staged_server_state_path(&final_path, 99);
-        let mut staged = StagedServerState { entries: Vec::new() };
+        let mut staged = StagedServerState::new();
 
         let err = copy_staged_server_state_entry(
             &mut staged,
@@ -1348,16 +2006,35 @@ mod tests {
 
     fn make_target_data_dir(path: &Path, replica_id: u64) -> anyhow::Result<()> {
         make_test_control_db(&path.join("control-db"), test_database_identity()?, replica_id, false)?;
-        std::fs::create_dir_all(path.join("program-bytes"))?;
+        write_test_program_bytes(&path.join("program-bytes"))?;
+        std::fs::write(path.join("config.toml"), b"[commitlog]\nlog-format-version = 1\n")?;
+        std::fs::write(path.join("metadata.toml"), b"metadata")?;
         Ok(())
     }
 
     fn make_backup_server_state(path: &Path) -> anyhow::Result<()> {
         make_test_control_db(&path.join("server/control-db"), test_database_identity()?, 7, false)?;
-        std::fs::create_dir_all(path.join("server/program-bytes"))?;
-        std::fs::write(path.join("server/program-bytes/program"), b"program")?;
+        write_test_program_bytes(&path.join("server/program-bytes"))?;
         std::fs::write(path.join("server/config.toml"), b"config")?;
         std::fs::write(path.join("server/metadata.toml"), b"metadata")?;
+        Ok(())
+    }
+
+    fn test_program_bytes() -> &'static [u8] {
+        b"program"
+    }
+
+    fn test_program_hash() -> Hash {
+        hash_bytes(test_program_bytes())
+    }
+
+    fn write_test_program_bytes(program_bytes_dir: &Path) -> anyhow::Result<()> {
+        let program_hash = test_program_hash();
+        let path = program_bytes_dir.join(program_bytes_relative_path(&program_hash));
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, test_program_bytes())?;
         Ok(())
     }
 
@@ -1378,9 +2055,37 @@ mod tests {
         Ok(())
     }
 
+    fn find_restore_old_dir(replicas_dir: &Path) -> anyhow::Result<PathBuf> {
+        std::fs::read_dir(replicas_dir)?
+            .filter_map(Result::ok)
+            .find(|entry| entry.file_name().to_string_lossy().contains(".restore_old_"))
+            .map(|entry| entry.path())
+            .context("expected recoverable restore-old directory")
+    }
+
     fn make_test_control_db(
         path: &Path,
         database_identity: Identity,
+        replica_id: u64,
+        include_extra_database: bool,
+    ) -> anyhow::Result<()> {
+        make_test_control_db_with_database(
+            path,
+            ControlDbDatabase {
+                id: 1,
+                database_identity,
+                owner_identity: Identity::ZERO,
+                host_type: ControlDbHostType::Wasm,
+                initial_program: test_program_hash(),
+            },
+            replica_id,
+            include_extra_database,
+        )
+    }
+
+    fn make_test_control_db_with_database(
+        path: &Path,
+        database: ControlDbDatabase,
         replica_id: u64,
         include_extra_database: bool,
     ) -> anyhow::Result<()> {
@@ -1390,22 +2095,18 @@ mod tests {
             .flush_every_ms(Some(50))
             .mode(sled::Mode::HighThroughput)
             .open()?;
-        let database_record = sled::IVec::from(bsatn::to_vec(&ControlDbDatabase {
-            id: 1,
-            database_identity,
-            owner_identity: Identity::ZERO,
-            host_type: ControlDbHostType::Wasm,
-            initial_program: Hash::ZERO,
-        })?);
+        let database_identity = database.database_identity;
+        let database_id = database.id;
+        let database_record = sled::IVec::from(encode_stored_control_db_database(&database)?);
         db.open_tree("database_by_identity")?
             .insert(database_identity.to_be_byte_array(), database_record.clone())?;
         db.open_tree("database")?
-            .insert(1u64.to_be_bytes(), database_record.clone())?;
+            .insert(database_id.to_be_bytes(), database_record.clone())?;
         db.open_tree("replica")?.insert(
             replica_id.to_be_bytes(),
             bsatn::to_vec(&ControlDbReplica {
                 id: replica_id,
-                database_id: 1,
+                database_id,
                 node_id: 0,
                 leader: true,
             })?,
@@ -1413,13 +2114,14 @@ mod tests {
         if include_extra_database {
             let extra_identity: Identity =
                 "c300000000000000000000000000000000000000000000000000000000000000".parse()?;
-            let extra_database_record = sled::IVec::from(bsatn::to_vec(&ControlDbDatabase {
+            let extra_database = ControlDbDatabase {
                 id: 2,
                 database_identity: extra_identity,
                 owner_identity: Identity::ZERO,
                 host_type: ControlDbHostType::Wasm,
-                initial_program: Hash::ZERO,
-            })?);
+                initial_program: test_program_hash(),
+            };
+            let extra_database_record = sled::IVec::from(encode_stored_control_db_database(&extra_database)?);
             db.open_tree("database_by_identity")?
                 .insert(extra_identity.to_be_byte_array(), extra_database_record.clone())?;
             db.open_tree("database")?
@@ -1437,6 +2139,26 @@ mod tests {
         db.flush()?;
         drop(db);
         Ok(())
+    }
+
+    #[derive(BsatnSerialize)]
+    struct StoredControlDbDatabaseFixture {
+        id: u64,
+        database_identity: Identity,
+        owner_identity: Identity,
+        host_type: ControlDbHostType,
+        initial_program: Hash,
+    }
+
+    fn encode_stored_control_db_database(database: &ControlDbDatabase) -> anyhow::Result<Vec<u8>> {
+        bsatn::to_vec(&StoredControlDbDatabaseFixture {
+            id: database.id,
+            database_identity: database.database_identity,
+            owner_identity: database.owner_identity,
+            host_type: database.host_type,
+            initial_program: database.initial_program,
+        })
+        .map_err(Into::into)
     }
 
     fn test_database_identity() -> anyhow::Result<Identity> {

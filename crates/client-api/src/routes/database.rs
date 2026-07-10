@@ -737,12 +737,20 @@ pub async fn backup<S>(
 where
     S: ControlStateDelegate + NodeDelegate + Authorization,
 {
-    let (leader, database) = find_leader_and_database(&worker_ctx, name_or_identity).await?;
+    let server_output_dir = resolve_hot_backup_output_dir(worker_ctx.hot_backup_root(), &server_output_dir)?;
+    let database_identity = name_or_identity.resolve(&worker_ctx).await?;
+    let database = worker_ctx_find_database(&worker_ctx, &database_identity)
+        .await?
+        .ok_or(NO_SUCH_DATABASE)?;
     worker_ctx
-        .authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
+        .authorize_action(
+            auth.claims.identity,
+            database.database_identity,
+            Action::CreateHotBackup,
+        )
         .await?;
 
-    let server_output_dir = resolve_hot_backup_output_dir(worker_ctx.hot_backup_root(), &server_output_dir)?;
+    let leader = worker_ctx.leader(database.id).await.map_err(Into::into)?;
     let manifest = worker_ctx
         .create_hot_backup(leader, server_output_dir)
         .await
@@ -1747,7 +1755,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::auth::JwtAuthProvider;
+    use crate::auth::{JwtAuthProvider, SpacetimeCreds};
     use crate::routes::subscribe::{HasWebSocketOptions, WebSocketOptions};
     use crate::{
         Action, Authorization, ControlStateReadAccess, ControlStateWriteAccess, MaybeMisdirected, Unauthorized,
@@ -1812,6 +1820,16 @@ mod tests {
         jwt: DummyJwtProvider,
         client_actor_index: std::sync::Arc<ClientActorIndex>,
         module_logs_dir: ModuleLogsDir,
+        database: Option<Database>,
+        hot_backup_root: Option<PathBuf>,
+        leader_calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        authorize_action_result: DummyAuthorizeActionResult,
+    }
+
+    #[derive(Clone, Copy)]
+    enum DummyAuthorizeActionResult {
+        Deny,
+        InternalError,
     }
 
     impl DummyState {
@@ -1822,7 +1840,30 @@ mod tests {
                 },
                 client_actor_index: std::sync::Arc::new(ClientActorIndex::new()),
                 module_logs_dir: ModuleLogsDir::from_path_unchecked(std::env::temp_dir()),
+                database: None,
+                hot_backup_root: None,
+                leader_calls: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                authorize_action_result: DummyAuthorizeActionResult::InternalError,
             }
+        }
+
+        fn with_database(mut self, database: Database) -> Self {
+            self.database = Some(database);
+            self
+        }
+
+        fn with_hot_backup_root(mut self, root: PathBuf) -> Self {
+            self.hot_backup_root = Some(root);
+            self
+        }
+
+        fn with_authorize_action_result(mut self, result: DummyAuthorizeActionResult) -> Self {
+            self.authorize_action_result = result;
+            self
+        }
+
+        fn leader_calls(&self) -> usize {
+            self.leader_calls.load(std::sync::atomic::Ordering::SeqCst)
         }
     }
 
@@ -1850,7 +1891,12 @@ mod tests {
         }
 
         async fn leader(&self, _database_id: u64) -> Result<Host, Self::GetLeaderHostError> {
+            self.leader_calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Err(DummyLeaderError)
+        }
+
+        fn hot_backup_root(&self) -> Option<PathBuf> {
+            self.hot_backup_root.clone()
         }
 
         fn module_logs_dir(&self, _replica_id: u64) -> ModuleLogsDir {
@@ -1894,7 +1940,10 @@ mod tests {
             Ok(None)
         }
         async fn get_database_by_identity(&self, _database_identity: &Identity) -> anyhow::Result<Option<Database>> {
-            Ok(None)
+            Ok(self
+                .database
+                .clone()
+                .filter(|database| database.database_identity == *_database_identity))
         }
         async fn get_databases(&self) -> anyhow::Result<Vec<Database>> {
             Ok(Vec::new())
@@ -2000,11 +2049,21 @@ mod tests {
     impl Authorization for DummyState {
         async fn authorize_action(
             &self,
-            _subject: Identity,
-            _database: Identity,
-            _action: Action,
+            subject: Identity,
+            database: Identity,
+            action: Action,
         ) -> Result<(), Unauthorized> {
-            Err(Unauthorized::InternalError(anyhow::anyhow!("unused")))
+            match self.authorize_action_result {
+                DummyAuthorizeActionResult::Deny => Err(Unauthorized::Unauthorized {
+                    subject,
+                    action,
+                    database: Some(database),
+                    source: None,
+                }),
+                DummyAuthorizeActionResult::InternalError => {
+                    Err(Unauthorized::InternalError(anyhow::anyhow!("unused")))
+                }
+            }
         }
 
         async fn authorize_sql(&self, _subject: Identity, _database: Identity) -> Result<AuthCtx, Unauthorized> {
@@ -2016,6 +2075,22 @@ mod tests {
         axum::response::Result::<()>::Err(result.unwrap_err())
             .into_response()
             .status()
+    }
+
+    fn test_auth(identity: Identity) -> SpacetimeAuth {
+        SpacetimeAuth {
+            creds: SpacetimeCreds::from_signed_token("unused.header.signature".to_owned()),
+            claims: spacetimedb::auth::identity::SpacetimeIdentityClaims {
+                identity,
+                subject: "subject".into(),
+                issuer: "issuer".into(),
+                audience: [].into(),
+                extra: None,
+                iat: std::time::SystemTime::now(),
+                exp: None,
+            },
+            jwt_payload: "{}".into(),
+        }
     }
 
     #[test]
@@ -2060,6 +2135,43 @@ mod tests {
             )),
             StatusCode::BAD_REQUEST
         );
+    }
+
+    #[tokio::test]
+    async fn backup_authorizes_before_starting_leader() {
+        let root = tempfile::tempdir().unwrap();
+        let subject = Identity::from_claims("issuer", "owner");
+        let database_identity = Identity::from_claims("issuer", "database");
+        let state = DummyState::new()
+            .with_hot_backup_root(root.path().to_path_buf())
+            .with_database(Database {
+                id: 1,
+                database_identity,
+                owner_identity: subject,
+                host_type: HostType::Wasm,
+                initial_program: spacetimedb_lib::Hash::ZERO,
+                bootstrap_generation: 0,
+            })
+            .with_authorize_action_result(DummyAuthorizeActionResult::Deny);
+
+        let result = backup(
+            State(state.clone()),
+            Path(BackupParams {
+                name_or_identity: NameOrIdentity::Identity(database_identity.into()),
+            }),
+            Extension(test_auth(subject)),
+            axum::Json(BackupRequest {
+                server_output_dir: PathBuf::from("manual/backup-1"),
+            }),
+        )
+        .await;
+
+        let response = match result {
+            Ok(response) => response.into_response(),
+            Err(err) => axum::response::Result::<()>::Err(err).into_response(),
+        };
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert_eq!(state.leader_calls(), 0);
     }
 
     /// Tests that requests to user-defined routes under `/database/:name-or-identity/routes`

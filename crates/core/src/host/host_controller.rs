@@ -1,3 +1,4 @@
+use super::hot_backup::{self, HotBackupInProgress};
 use super::module_host::{DurableOffset, EventStatus, InitDatabaseResult, ModuleHost, ModuleInfo, NoSuchModule};
 use super::scheduler::SchedulerStarter;
 use super::v8::V8HeapMetrics;
@@ -46,6 +47,7 @@ use spacetimedb_schema::def::{ModuleDef, RawModuleDefVersion};
 use spacetimedb_table::page_pool::PagePool;
 use std::future::Future;
 use std::ops::Deref;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{watch, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock as AsyncRwLock};
@@ -688,6 +690,24 @@ impl HostController {
             .as_ref()
             .map(|Host { module, .. }| module.borrow().clone())
             .ok_or(NoSuchModule)
+    }
+
+    /// Create a hot backup for `replica_id`, leaving scoped server state for
+    /// the caller to export before finalizing the manifest.
+    pub async fn create_hot_backup_without_control_db(
+        &self,
+        replica_id: u64,
+        output_dir: impl AsRef<Path>,
+    ) -> anyhow::Result<HotBackupInProgress> {
+        let module = self.get_module_host(replica_id).await?;
+        hot_backup::create_hot_backup_without_control_db(
+            module.relational_db(),
+            &self.data_dir.replica(replica_id),
+            Some(&self.data_dir),
+            replica_id,
+            output_dir,
+        )
+        .await
     }
 
     /// Subscribe to updates of the [`ModuleHost`] identified by `replica_id`,

@@ -66,6 +66,7 @@ directives = [
 
 # [hot-backup]
 # HTTP/CLI-triggered backup output paths are relative to this server-side root.
+# Standalone database-owner tokens are not authorized to use this endpoint.
 # Omit to disable POST /v1/database/:name/backup.
 # root-dir = "/var/backups/stdb"
 

@@ -8477,7 +8477,6 @@ dependencies = [
  "pretty_assertions",
  "prometheus",
  "serde",
- "serde_json",
  "sled",
  "spacetimedb-commitlog",
  "spacetimedb-data-structures",
@@ -8498,7 +8497,6 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
- "tokio-util",
  "tracing",
 ]
 
@@ -8550,6 +8548,7 @@ dependencies = [
  "tempdir",
  "thiserror 1.0.69",
  "tokio",
+ "windows-sys 0.59.0",
  "zstd-framed",
 ]
 

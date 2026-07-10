@@ -12,7 +12,10 @@ use http::StatusCode;
 
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
-use spacetimedb::host::{HostController, MigratePlanResult, ModuleHost, NoSuchModule, UpdateDatabaseResult};
+use spacetimedb::host::{
+    HostController, HotBackupInProgress, HotBackupManifest, MigratePlanResult, ModuleHost, NoSuchModule,
+    UpdateDatabaseResult,
+};
 use spacetimedb::identity::{AuthCtx, Identity};
 use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
 use spacetimedb::sql;
@@ -60,11 +63,7 @@ pub trait NodeDelegate: Send + Sync {
     ///
     /// The [`Host`] is spawned implicitly if not already running.
     async fn leader(&self, database_id: u64) -> Result<Host, Self::GetLeaderHostError>;
-    async fn create_hot_backup(
-        &self,
-        leader: Host,
-        output_dir: PathBuf,
-    ) -> anyhow::Result<spacetimedb::db::relational_db::HotBackupManifest> {
+    async fn create_hot_backup(&self, leader: Host, output_dir: PathBuf) -> anyhow::Result<HotBackupManifest> {
         leader.create_hot_backup(output_dir).await
     }
     /// Root directory under which HTTP-initiated hot backups may be written.
@@ -123,10 +122,7 @@ impl Host {
         self.host_controller.get_module_host(self.replica_id).await
     }
 
-    pub async fn create_hot_backup(
-        &self,
-        output_dir: impl AsRef<Path>,
-    ) -> anyhow::Result<spacetimedb::db::relational_db::HotBackupManifest> {
+    pub async fn create_hot_backup(&self, output_dir: impl AsRef<Path>) -> anyhow::Result<HotBackupManifest> {
         let _ = output_dir;
         anyhow::bail!("hot backup requires the node delegate to export control-db and finalize the backup manifest")
     }
@@ -134,16 +130,9 @@ impl Host {
     pub async fn create_hot_backup_without_control_db(
         &self,
         output_dir: impl AsRef<Path>,
-    ) -> anyhow::Result<spacetimedb::db::relational_db::HotBackupManifest> {
-        let module = self.module().await?;
-        module
-            .relational_db()
-            .create_hot_backup_without_control_db(
-                &self.host_controller.data_dir.replica(self.replica_id),
-                Some(&self.host_controller.data_dir),
-                self.replica_id,
-                output_dir,
-            )
+    ) -> anyhow::Result<HotBackupInProgress> {
+        self.host_controller
+            .create_hot_backup_without_control_db(self.replica_id, output_dir)
             .await
     }
 
@@ -536,11 +525,7 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
         (**self).leader(database_id).await
     }
 
-    async fn create_hot_backup(
-        &self,
-        leader: Host,
-        output_dir: PathBuf,
-    ) -> anyhow::Result<spacetimedb::db::relational_db::HotBackupManifest> {
+    async fn create_hot_backup(&self, leader: Host, output_dir: PathBuf) -> anyhow::Result<HotBackupManifest> {
         (**self).create_hot_backup(leader, output_dir).await
     }
 
@@ -621,6 +606,7 @@ pub enum Action {
     DeleteDatabase,
     RenameDatabase,
     ViewModuleLogs,
+    CreateHotBackup,
 }
 
 impl fmt::Display for Action {
@@ -639,6 +625,7 @@ impl fmt::Display for Action {
             Self::DeleteDatabase => f.write_str("delete database"),
             Self::RenameDatabase => f.write_str("rename database"),
             Self::ViewModuleLogs => f.write_str("view module logs"),
+            Self::CreateHotBackup => f.write_str("create hot backup"),
         }
     }
 }

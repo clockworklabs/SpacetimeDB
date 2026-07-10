@@ -6,6 +6,7 @@ use spacetimedb_pg::pg_server;
 use std::io::{self, Write};
 use std::net::IpAddr;
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -23,10 +24,11 @@ use spacetimedb::worker_metrics;
 use spacetimedb_client_api::routes::database::DatabaseRoutes;
 use spacetimedb_client_api::routes::router;
 use spacetimedb_client_api::routes::subscribe::WebSocketOptions;
-use spacetimedb_fs_utils::sync_dir;
+use spacetimedb_fs_utils::{create_dir_all_sync, sync_dir};
 use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::server::{ConfigToml, ServerDataDir};
 use tokio::net::TcpListener;
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 pub fn cli() -> clap::Command {
@@ -154,12 +156,47 @@ where
     }
 }
 
+const SCHEDULED_BACKUP_DIR: &str = "scheduled";
+const SCHEDULED_BACKUP_MARKER: &str = ".scheduled-backup";
+const SCHEDULED_BACKUP_CREATE_ATTEMPTS: u32 = 1024;
+static SCHEDULED_BACKUP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
 fn backup_dir_name() -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_nanos())
         .unwrap_or_default();
-    format!("stdb-{nanos}")
+    let sequence = SCHEDULED_BACKUP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    format!("stdb-{nanos:039}-{:010}-{sequence:020}", std::process::id())
+}
+
+fn scheduled_backup_database_dir(output_dir: &Path, database_identity: &spacetimedb::Identity) -> PathBuf {
+    output_dir
+        .join(SCHEDULED_BACKUP_DIR)
+        .join(database_identity.to_hex().as_str())
+}
+
+fn create_scheduled_backup_output(database_dir: &Path) -> anyhow::Result<PathBuf> {
+    create_dir_all_sync(database_dir)
+        .with_context(|| format!("creating scheduled-backup database dir {}", database_dir.display()))?;
+    for _ in 0..SCHEDULED_BACKUP_CREATE_ATTEMPTS {
+        let output_dir = database_dir.join(backup_dir_name());
+        match std::fs::create_dir(&output_dir) {
+            Ok(()) => {
+                sync_dir(database_dir)
+                    .with_context(|| format!("syncing scheduled-backup database dir {}", database_dir.display()))?;
+                return Ok(output_dir);
+            }
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(error) => {
+                return Err(error).with_context(|| format!("creating scheduled-backup output {}", output_dir.display()))
+            }
+        }
+    }
+    anyhow::bail!(
+        "failed to reserve a unique scheduled-backup output under {} after {SCHEDULED_BACKUP_CREATE_ATTEMPTS} attempts",
+        database_dir.display()
+    )
 }
 
 fn validate_scheduled_backup_config(config: &ScheduledBackupConfig) -> anyhow::Result<()> {
@@ -186,51 +223,73 @@ fn validate_scheduled_backup_config(config: &ScheduledBackupConfig) -> anyhow::R
     Ok(())
 }
 
-/// Remove old scheduled backups, keeping the most recent `keep-last` complete ones.
+/// Remove old scheduler-owned backups for one database.
 ///
-/// A backup is complete iff it contains `manifest.json`, which is written as
-/// the final step of a backup. `stdb-*` directories without a manifest are
-/// ignored by pruning and never occupy a `keep-last` slot, so they cannot
-/// crowd out good backups. They are not deleted here because another backup may
-/// still be writing into a `stdb-*` directory in the same output root.
-fn prune_scheduled_backups(config: &ScheduledBackupConfig) -> anyhow::Result<()> {
-    let mut complete = Vec::new();
-    for entry in std::fs::read_dir(&config.output_dir)
-        .with_context(|| format!("reading scheduled-backup output-dir {}", config.output_dir.display()))?
+/// Both `manifest.json` and the scheduler ownership marker must be present.
+/// Manual, API-created, and incomplete `stdb-*` directories are preserved and
+/// do not occupy a `keep-last` slot.
+fn prune_scheduled_backups(database_dir: &Path, keep_last: Option<usize>) -> anyhow::Result<()> {
+    let Some(keep_last) = keep_last else {
+        return Ok(());
+    };
+
+    let mut complete_owned = Vec::new();
+    for entry in std::fs::read_dir(database_dir)
+        .with_context(|| format!("reading scheduled-backup database dir {}", database_dir.display()))?
     {
-        let entry = entry.with_context(|| format!("reading entry in {}", config.output_dir.display()))?;
+        let entry = entry.with_context(|| format!("reading entry in {}", database_dir.display()))?;
         let file_type = entry
             .file_type()
             .with_context(|| format!("reading file type for {}", entry.path().display()))?;
         if !file_type.is_dir() || !entry.file_name().to_string_lossy().starts_with("stdb-") {
             continue;
         }
-        if entry.path().join("manifest.json").is_file() {
-            complete.push(entry);
-        } else {
-            log::warn!("ignoring incomplete scheduled backup {}", entry.path().display());
+
+        let marker = entry.path().join(SCHEDULED_BACKUP_MARKER);
+        let has_ownership_marker = marker
+            .metadata()
+            .map(|metadata| metadata.is_file() && metadata.len() == 0)
+            .unwrap_or(false);
+        if entry.path().join("manifest.json").is_file() && has_ownership_marker {
+            complete_owned.push(entry);
         }
     }
-    let Some(keep_last) = config.keep_last else {
-        return Ok(());
-    };
-    complete.sort_by_key(|entry| entry.file_name());
-    let remove_count = complete.len().saturating_sub(keep_last);
-    for entry in complete.into_iter().take(remove_count) {
+
+    complete_owned.sort_by_key(|entry| entry.file_name());
+    let remove_count = complete_owned.len().saturating_sub(keep_last);
+    for entry in complete_owned.into_iter().take(remove_count) {
         std::fs::remove_dir_all(entry.path())
             .with_context(|| format!("removing old backup {}", entry.path().display()))?;
+    }
+    if remove_count > 0 {
+        sync_dir(database_dir)
+            .with_context(|| format!("syncing scheduled-backup database dir {}", database_dir.display()))?;
     }
     Ok(())
 }
 
 fn cleanup_failed_scheduled_backup_output(output_dir: &Path) -> anyhow::Result<()> {
-    if output_dir.exists() && !output_dir.join("manifest.json").is_file() {
+    if output_dir.exists() {
         std::fs::remove_dir_all(output_dir)
-            .with_context(|| format!("removing incomplete scheduled backup {}", output_dir.display()))?;
+            .with_context(|| format!("removing failed scheduled backup {}", output_dir.display()))?;
         if let Some(parent) = output_dir.parent() {
             sync_dir(parent).with_context(|| format!("syncing scheduled-backup output-dir {}", parent.display()))?;
         }
     }
+    Ok(())
+}
+
+fn write_scheduled_backup_marker(output_dir: &Path) -> anyhow::Result<()> {
+    let marker_path = output_dir.join(SCHEDULED_BACKUP_MARKER);
+    let marker = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&marker_path)
+        .with_context(|| format!("creating scheduled-backup marker {}", marker_path.display()))?;
+    marker
+        .sync_all()
+        .with_context(|| format!("syncing scheduled-backup marker {}", marker_path.display()))?;
+    sync_dir(output_dir).with_context(|| format!("syncing scheduled-backup output dir {}", output_dir.display()))?;
     Ok(())
 }
 
@@ -245,24 +304,30 @@ async fn run_scheduled_backup(ctx: &Arc<StandaloneEnv>, config: &ScheduledBackup
         .get_database_by_identity(&database_identity)
         .await?
         .with_context(|| format!("scheduled-backup database `{}` not found", config.database))?;
-    let output_dir = config.output_dir.join(backup_dir_name());
-    let cleanup_output_dir = output_dir.clone();
+    let database_dir = scheduled_backup_database_dir(&config.output_dir, &database_identity);
     let leader = ctx.leader(database.id).await?;
-    let backup_result = ctx.create_hot_backup(leader, output_dir).await;
-    // Remove only this scheduled run's incomplete output on failure. Pruning
-    // still ignores other manifest-less `stdb-*` dirs because they may belong
-    // to a concurrent manual or HTTP-triggered backup.
+    let create_in = database_dir.clone();
+    let output_dir = spacetimedb::util::asyncify(move || create_scheduled_backup_output(&create_in)).await?;
+    let cleanup_output_dir = output_dir.clone();
+    let marker_output_dir = output_dir.clone();
+    let backup_result = async {
+        ctx.create_hot_backup(leader, output_dir).await?;
+        spacetimedb::util::asyncify(move || write_scheduled_backup_marker(&marker_output_dir)).await
+    }
+    .await;
+    // This path is unique to the current run. Other scheduler, manual, API,
+    // and incomplete outputs are never cleaned from the failure path.
     let cleanup_result = if backup_result.is_err() {
         Some(spacetimedb::util::asyncify(move || cleanup_failed_scheduled_backup_output(&cleanup_output_dir)).await)
     } else {
         None
     };
     if let Some(Err(err)) = &cleanup_result {
-        log::warn!("failed to remove incomplete scheduled backup: {err:#}");
+        log::warn!("failed to remove failed scheduled backup output: {err:#}");
     }
     // Pruning is blocking filesystem work, so keep it off the async executor.
-    let prune_config = config.clone();
-    let prune_result = spacetimedb::util::asyncify(move || prune_scheduled_backups(&prune_config)).await;
+    let keep_last = config.keep_last;
+    let prune_result = spacetimedb::util::asyncify(move || prune_scheduled_backups(&database_dir, keep_last)).await;
     backup_result?;
     if let Some(cleanup_result) = cleanup_result {
         cleanup_result?;
@@ -270,8 +335,22 @@ async fn run_scheduled_backup(ctx: &Arc<StandaloneEnv>, config: &ScheduledBackup
     prune_result
 }
 
-fn spawn_scheduled_backup(ctx: Arc<StandaloneEnv>, config: ScheduledBackupConfig) -> JoinHandle<()> {
-    tokio::spawn(async move {
+struct ScheduledBackupTask {
+    shutdown: watch::Sender<bool>,
+    handle: JoinHandle<()>,
+}
+
+impl ScheduledBackupTask {
+    async fn shutdown(self) -> anyhow::Result<()> {
+        let _ = self.shutdown.send(true);
+        log::info!("waiting for scheduled backup task to stop");
+        self.handle.await.context("waiting for scheduled backup task to stop")
+    }
+}
+
+fn spawn_scheduled_backup(ctx: Arc<StandaloneEnv>, config: ScheduledBackupConfig) -> ScheduledBackupTask {
+    let (shutdown, mut shutdown_rx) = watch::channel(false);
+    let handle = tokio::spawn(async move {
         log::info!(
             "scheduled backup enabled for {} every {:?} into {}",
             config.database,
@@ -280,12 +359,22 @@ fn spawn_scheduled_backup(ctx: Arc<StandaloneEnv>, config: ScheduledBackupConfig
         );
 
         loop {
-            tokio::time::sleep(config.interval).await;
+            tokio::select! {
+                _ = shutdown_rx.changed() => break,
+                _ = tokio::time::sleep(config.interval) => {}
+            }
+            if *shutdown_rx.borrow() {
+                break;
+            }
             if let Err(err) = run_scheduled_backup(&ctx, &config).await {
                 log::error!("scheduled backup failed: {err:#}");
             }
+            if *shutdown_rx.borrow() {
+                break;
+            }
         }
-    })
+    });
+    ScheduledBackupTask { shutdown, handle }
 }
 
 pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
@@ -358,6 +447,15 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
         .context("cannot omit --jwt-{pub,priv}-key-path when those options are not specified in config.toml")?;
 
     let data_dir = Arc::new(data_dir.clone());
+    let hot_backup_root = if matches!(storage, Storage::Disk) {
+        config.hot_backup.root_dir.clone()
+    } else {
+        None
+    };
+    if config.hot_backup.root_dir.is_some() && matches!(storage, Storage::Memory) {
+        log::warn!("hot backup disabled for --in-memory server");
+    }
+
     let ctx = StandaloneEnv::init(
         StandaloneOptions {
             db_config,
@@ -367,7 +465,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
             websocket: config.websocket,
             wasm: config.common.wasm,
             v8: config.common.v8,
-            hot_backup_root: config.hot_backup.root_dir.clone(),
+            hot_backup_root,
         },
         &certs,
         data_dir,
@@ -481,7 +579,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
             .await?;
     }
     if let Some(task) = backup_task {
-        task.abort();
+        task.shutdown().await?;
     }
 
     Ok(())
@@ -710,69 +808,139 @@ mod tests {
         }
     }
 
-    #[test]
-    fn prune_scheduled_backups_ignores_incomplete_backups_without_keep_last() {
-        let temp = tempfile::tempdir().unwrap();
-        let incomplete = temp.path().join("stdb-incomplete");
-        let complete = temp.path().join("stdb-complete");
-        let unrelated = temp.path().join("not-a-backup");
-
-        std::fs::create_dir(&incomplete).unwrap();
-        std::fs::write(incomplete.join("partial"), b"not done").unwrap();
-        std::fs::create_dir(&complete).unwrap();
-        std::fs::write(complete.join("manifest.json"), b"{}").unwrap();
-        std::fs::create_dir(&unrelated).unwrap();
-
-        prune_scheduled_backups(&scheduled_backup_config(temp.path().to_path_buf(), None)).unwrap();
-
-        assert!(incomplete.exists());
-        assert!(complete.exists());
-        assert!(unrelated.exists());
+    fn create_owned_scheduled_backup(path: &Path) {
+        std::fs::create_dir(path).unwrap();
+        std::fs::write(path.join("manifest.json"), b"{}").unwrap();
+        write_scheduled_backup_marker(path).unwrap();
     }
 
     #[test]
-    fn prune_scheduled_backups_keeps_latest_complete_and_ignores_incomplete_with_keep_last() {
+    fn scheduled_backup_database_dir_is_scoped_by_identity() {
+        let identity = spacetimedb::Identity::ONE;
+        let output_dir = Path::new("/var/backups/stdb");
+
+        assert_eq!(
+            scheduled_backup_database_dir(output_dir, &identity),
+            output_dir.join("scheduled").join(identity.to_hex().as_str())
+        );
+    }
+
+    #[test]
+    fn write_scheduled_backup_marker_creates_zero_byte_file() {
         let temp = tempfile::tempdir().unwrap();
-        let old_complete = temp.path().join("stdb-0001");
-        let new_complete = temp.path().join("stdb-0002");
+        let backup = temp.path().join("stdb-0001");
+        std::fs::create_dir(&backup).unwrap();
+
+        write_scheduled_backup_marker(&backup).unwrap();
+
+        let marker = std::fs::metadata(backup.join(SCHEDULED_BACKUP_MARKER)).unwrap();
+        assert!(marker.is_file());
+        assert_eq!(marker.len(), 0);
+    }
+
+    #[test]
+    fn create_scheduled_backup_output_reserves_an_empty_unique_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let database_dir = temp.path().join("database");
+
+        let first = create_scheduled_backup_output(&database_dir).unwrap();
+        let second = create_scheduled_backup_output(&database_dir).unwrap();
+
+        assert_ne!(first, second);
+        assert!(first.is_dir());
+        assert!(second.is_dir());
+        assert_eq!(first.read_dir().unwrap().count(), 0);
+        assert_eq!(second.read_dir().unwrap().count(), 0);
+    }
+
+    #[test]
+    fn prune_scheduled_backups_only_removes_complete_owned_backups() {
+        let temp = tempfile::tempdir().unwrap();
+        let old_owned = temp.path().join("stdb-0001");
+        let manual = temp.path().join("stdb-0002");
         let incomplete = temp.path().join("stdb-0003");
+        let marker_only = temp.path().join("stdb-0004");
+        let new_owned = temp.path().join("stdb-0005");
 
-        std::fs::create_dir(&old_complete).unwrap();
-        std::fs::write(old_complete.join("manifest.json"), b"{}").unwrap();
-        std::fs::create_dir(&new_complete).unwrap();
-        std::fs::write(new_complete.join("manifest.json"), b"{}").unwrap();
+        create_owned_scheduled_backup(&old_owned);
+        std::fs::create_dir(&manual).unwrap();
+        std::fs::write(manual.join("manifest.json"), b"{}").unwrap();
         std::fs::create_dir(&incomplete).unwrap();
         std::fs::write(incomplete.join("partial"), b"not done").unwrap();
+        std::fs::create_dir(&marker_only).unwrap();
+        write_scheduled_backup_marker(&marker_only).unwrap();
+        create_owned_scheduled_backup(&new_owned);
 
-        prune_scheduled_backups(&scheduled_backup_config(temp.path().to_path_buf(), Some(1))).unwrap();
+        prune_scheduled_backups(temp.path(), Some(1)).unwrap();
 
-        assert!(!old_complete.exists());
-        assert!(new_complete.exists());
+        assert!(!old_owned.exists());
+        assert!(manual.exists(), "manual stdb-* backup must be preserved");
         assert!(incomplete.exists());
+        assert!(marker_only.exists());
+        assert!(new_owned.exists());
     }
 
     #[test]
-    fn cleanup_failed_scheduled_backup_output_removes_incomplete_dir() {
+    fn prune_scheduled_backups_is_scoped_to_one_database_dir() {
         let temp = tempfile::tempdir().unwrap();
-        let incomplete = temp.path().join("stdb-incomplete");
-        std::fs::create_dir(&incomplete).unwrap();
-        std::fs::write(incomplete.join("partial"), b"not done").unwrap();
+        let database_a = temp.path().join("database-a");
+        let database_b = temp.path().join("database-b");
+        std::fs::create_dir(&database_a).unwrap();
+        std::fs::create_dir(&database_b).unwrap();
+        let a_old = database_a.join("stdb-0001");
+        let a_new = database_a.join("stdb-0002");
+        let b_old = database_b.join("stdb-0001");
+        let b_new = database_b.join("stdb-0002");
+        create_owned_scheduled_backup(&a_old);
+        create_owned_scheduled_backup(&a_new);
+        create_owned_scheduled_backup(&b_old);
+        create_owned_scheduled_backup(&b_new);
 
-        cleanup_failed_scheduled_backup_output(&incomplete).unwrap();
+        prune_scheduled_backups(&database_a, Some(1)).unwrap();
 
-        assert!(!incomplete.exists());
+        assert!(!a_old.exists());
+        assert!(a_new.exists());
+        assert!(b_old.exists());
+        assert!(b_new.exists());
     }
 
     #[test]
-    fn cleanup_failed_scheduled_backup_output_preserves_complete_dir() {
+    fn cleanup_failed_scheduled_backup_output_only_removes_current_output() {
         let temp = tempfile::tempdir().unwrap();
-        let complete = temp.path().join("stdb-complete");
-        std::fs::create_dir(&complete).unwrap();
-        std::fs::write(complete.join("manifest.json"), b"{}").unwrap();
+        let current = temp.path().join("stdb-current");
+        let manual = temp.path().join("stdb-manual");
+        std::fs::create_dir(&current).unwrap();
+        std::fs::write(current.join("manifest.json"), b"{}").unwrap();
+        std::fs::create_dir(&manual).unwrap();
+        std::fs::write(manual.join("manifest.json"), b"{}").unwrap();
 
-        cleanup_failed_scheduled_backup_output(&complete).unwrap();
+        cleanup_failed_scheduled_backup_output(&current).unwrap();
 
-        assert!(complete.exists());
+        assert!(!current.exists());
+        assert!(manual.exists());
+    }
+
+    #[tokio::test]
+    async fn scheduled_backup_shutdown_waits_for_in_flight_task() {
+        let (shutdown, _shutdown_rx) = watch::channel(false);
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (finish_tx, finish_rx) = tokio::sync::oneshot::channel();
+        let handle = tokio::spawn(async move {
+            started_tx.send(()).unwrap();
+            finish_rx.await.unwrap();
+        });
+        let task = ScheduledBackupTask { shutdown, handle };
+
+        started_rx.await.unwrap();
+        let shutdown = task.shutdown();
+        tokio::pin!(shutdown);
+        tokio::select! {
+            result = &mut shutdown => panic!("scheduled backup shutdown returned early: {result:?}"),
+            _ = tokio::time::sleep(Duration::from_millis(10)) => {}
+        }
+        finish_tx.send(()).unwrap();
+
+        shutdown.await.unwrap();
     }
 
     #[test]

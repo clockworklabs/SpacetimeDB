@@ -165,6 +165,7 @@ fn test_export_to_path_can_be_opened() -> anyhow::Result<()> {
         owner_identity: *ALICE,
         host_type: HostType::Wasm,
         initial_program: Hash::ZERO,
+        bootstrap_generation: 0,
     };
     let database_id = cdb.insert_database(database)?;
     cdb.insert_replica(Replica {
@@ -194,6 +195,7 @@ fn test_export_database_to_path_is_scoped_to_one_database() -> anyhow::Result<()
         owner_identity: *ALICE,
         host_type: HostType::Wasm,
         initial_program: Hash::ZERO,
+        bootstrap_generation: 0,
     };
     let first_database_id = cdb.insert_database(first)?;
     let first_replica_id = cdb.insert_replica(Replica {
@@ -209,6 +211,7 @@ fn test_export_database_to_path_is_scoped_to_one_database() -> anyhow::Result<()
         owner_identity: *BOB,
         host_type: HostType::Wasm,
         initial_program: Hash::ZERO,
+        bootstrap_generation: 0,
     })?;
     cdb.insert_replica(Replica {
         id: 0,
@@ -247,6 +250,7 @@ fn test_export_database_to_path_advances_control_id_counter() -> anyhow::Result<
         owner_identity: *ALICE,
         host_type: HostType::Wasm,
         initial_program: Hash::ZERO,
+        bootstrap_generation: 0,
     })?;
     let first_replica_id = cdb.insert_replica(Replica {
         id: 0,
@@ -268,6 +272,7 @@ fn test_export_database_to_path_advances_control_id_counter() -> anyhow::Result<
         owner_identity: *BOB,
         host_type: HostType::Wasm,
         initial_program: Hash::ZERO,
+        bootstrap_generation: 0,
     })?;
     let second_replica_id = exported.insert_replica(Replica {
         id: 0,

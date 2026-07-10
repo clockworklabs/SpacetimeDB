@@ -31,16 +31,18 @@ use spacetimedb_client_api_messages::name::{
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::traits::Program;
-use spacetimedb_fs_utils::dir_size;
+use spacetimedb_fs_utils::{atomic_write_bytes, create_dir_all_sync, dir_size, sync_dir};
+use spacetimedb_lib::{hash_bytes, Hash};
 use spacetimedb_paths::server::{ModuleLogsDir, PidFile, ServerDataDir};
 use spacetimedb_paths::standalone::ControlDbDir;
 use spacetimedb_paths::standalone::StandaloneDataDirExt;
 use spacetimedb_paths::FromPathUnchecked;
 use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
 use spacetimedb_table::page_pool::PagePool;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::sync::Mutex as AsyncMutex;
 
 #[derive(Clone)]
 pub struct StandaloneOptions {
@@ -62,6 +64,7 @@ pub struct StandaloneEnv {
     auth_provider: auth::DefaultJwtAuthProvider,
     websocket_options: WebSocketOptions,
     hot_backup_root: Option<PathBuf>,
+    database_lifecycle_lock: Arc<AsyncMutex<()>>,
 }
 
 impl StandaloneEnv {
@@ -116,6 +119,7 @@ impl StandaloneEnv {
             auth_provider: auth_env,
             websocket_options: config.websocket,
             hot_backup_root: config.hot_backup_root,
+            database_lifecycle_lock: Arc::new(AsyncMutex::new(())),
         }))
     }
 
@@ -201,40 +205,41 @@ impl NodeDelegate for StandaloneEnv {
         &self,
         leader: Host,
         output_dir: PathBuf,
-    ) -> anyhow::Result<db::relational_db::HotBackupManifest> {
-        use db::relational_db::HotBackupManifest;
+    ) -> anyhow::Result<spacetimedb::host::HotBackupManifest> {
+        use spacetimedb::host::HotBackupManifest;
 
+        let database_lifecycle_guard = self.database_lifecycle_lock.clone().lock_owned().await;
         let total_start = Instant::now();
-        // Writes the snapshot, commitlog and server state, but leaves
-        // `server/control-db`, `bytes` and `manifest.json` to us.
-        let mut manifest = leader.create_hot_backup_without_control_db(&output_dir).await?;
+        // Writes the snapshot, commitlog and generic server state, but leaves
+        // scoped program bytes, `server/control-db`, `bytes` and `manifest.json` to us.
+        let backup = leader.create_hot_backup_without_control_db(&output_dir).await?;
         // Trust the normalized path used by the engine, not the raw request path.
-        let output_dir = manifest.output_dir.clone();
+        let output_dir = backup.manifest().output_dir.clone();
 
         let export_start = Instant::now();
         let control_db = self.control_db.clone();
-        let database_identity = manifest.database_identity;
-        let replica_id = manifest.replica_id;
-        // sled export and the dir-size sweep are blocking; keep them off the async executor.
-        manifest.bytes = spacetimedb::util::asyncify(move || -> anyhow::Result<u64> {
-            control_db
-                .export_database_to_path(
-                    &ControlDbDir::from_path_unchecked(output_dir.join("server").join("control-db")),
-                    &database_identity,
-                    replica_id,
-                )
-                .context("exporting control-db into backup")?;
-            dir_size(&output_dir).context("measuring backup size")
-        })
-        .await?;
-        manifest.copy_ms = manifest
-            .copy_ms
-            .saturating_add(HotBackupManifest::elapsed_ms(export_start.elapsed()));
-        manifest.total_ms = HotBackupManifest::elapsed_ms(total_start.elapsed());
-
-        // Written last: a `manifest.json` marks a complete backup.
-        db::relational_db::finalize_hot_backup_manifest(&manifest.output_dir, &manifest).await?;
-        Ok(manifest)
+        let database_identity = backup.manifest().database_identity;
+        let replica_id = backup.manifest().replica_id;
+        let program_bytes_dir = self.data_dir().program_bytes().0;
+        backup
+            .finalize_with_blocking(move |manifest| {
+                let _database_lifecycle_guard = database_lifecycle_guard;
+                let database = control_db
+                    .export_database_to_path(
+                        &ControlDbDir::from_path_unchecked(output_dir.join("server").join("control-db")),
+                        &database_identity,
+                        replica_id,
+                    )
+                    .context("exporting scoped server/control-db")?;
+                copy_program_bytes_to_backup(&program_bytes_dir, &output_dir, database.initial_program)?;
+                manifest.bytes = dir_size(&output_dir).context("measuring backup size")?;
+                manifest.copy_ms = manifest
+                    .copy_ms
+                    .saturating_add(HotBackupManifest::elapsed_ms(export_start.elapsed()));
+                manifest.total_ms = HotBackupManifest::elapsed_ms(total_start.elapsed());
+                Ok(())
+            })
+            .await
     }
 
     fn hot_backup_root(&self) -> Option<PathBuf> {
@@ -244,6 +249,38 @@ impl NodeDelegate for StandaloneEnv {
     fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir {
         self.data_dir().replica(replica_id).module_logs()
     }
+}
+
+fn copy_program_bytes_to_backup(program_bytes_dir: &Path, output_dir: &Path, program_hash: Hash) -> anyhow::Result<()> {
+    let relative_path = program_bytes_relative_path(&program_hash);
+    let src = program_bytes_dir.join(&relative_path);
+    let program_bytes = std::fs::read(&src).with_context(|| format!("reading program bytes {}", src.display()))?;
+    let actual_hash = hash_bytes(&program_bytes);
+    anyhow::ensure!(
+        actual_hash == program_hash,
+        "program bytes hash mismatch at {}: expected {}, got {}",
+        src.display(),
+        program_hash,
+        actual_hash
+    );
+
+    let dst = output_dir.join("server").join("program-bytes").join(relative_path);
+    let program_bytes_root = output_dir.join("server").join("program-bytes");
+    if let Some(parent) = dst.parent() {
+        create_dir_all_sync(parent)?;
+    }
+    atomic_write_bytes(&dst, &program_bytes)?;
+    sync_dir(&program_bytes_root)
+        .with_context(|| format!("syncing backup program-bytes dir {}", program_bytes_root.display()))?;
+    let server_dir = output_dir.join("server");
+    sync_dir(&server_dir).with_context(|| format!("syncing backup server dir {}", server_dir.display()))?;
+    Ok(())
+}
+
+fn program_bytes_relative_path(program_hash: &Hash) -> PathBuf {
+    let hex = program_hash.to_hex();
+    let (prefix, suffix) = hex.split_at(2);
+    PathBuf::from(prefix).join(suffix)
 }
 
 #[async_trait]
@@ -326,6 +363,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         spec: spacetimedb_client_api::DatabaseDef,
         policy: MigrationPolicy,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
+        let _database_lifecycle_guard = self.database_lifecycle_lock.lock().await;
         let existing_db = self.control_db.get_database_by_identity(&spec.database_identity)?;
 
         // standalone does not support replication.
@@ -449,6 +487,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
     }
 
     async fn delete_database(&self, _caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {
+        let _database_lifecycle_guard = self.database_lifecycle_lock.lock().await;
         let Some(database) = self.control_db.get_database_by_identity(database_identity)? else {
             return Ok(());
         };
@@ -462,6 +501,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
     }
 
     async fn reset_database(&self, _caller_identity: &Identity, spec: DatabaseResetDef) -> anyhow::Result<()> {
+        let _database_lifecycle_guard = self.database_lifecycle_lock.lock().await;
         let mut database = self
             .control_db
             .get_database_by_identity(&spec.database_identity)?
@@ -571,6 +611,14 @@ impl spacetimedb_client_api::Authorization for StandaloneEnv {
             .await?
             .with_context(|| format!("database {database} not found"))
             .with_context(|| format!("Unable to authorize {subject} to perform {action:?})"))?;
+        if matches!(action, spacetimedb_client_api::Action::CreateHotBackup) {
+            return Err(spacetimedb_client_api::Unauthorized::Unauthorized {
+                subject,
+                action,
+                database: Some(database.database_identity),
+                source: Some(anyhow::anyhow!("hot backup is a server-operator action in standalone")),
+            });
+        }
         if subject == database.owner_identity {
             return Ok(());
         }
@@ -693,9 +741,146 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use spacetimedb::db::Storage;
+    use spacetimedb::messages::control_db::HostType;
+    use spacetimedb_client_api::Authorization;
     use spacetimedb_paths::{cli::*, FromPathUnchecked};
     use std::fs;
     use tempfile::TempDir;
+
+    #[test]
+    fn program_bytes_relative_path_matches_disk_storage_layout() {
+        assert_eq!(
+            program_bytes_relative_path(&Hash::ZERO),
+            PathBuf::from("00").join("0".repeat(62))
+        );
+    }
+
+    #[test]
+    fn copy_program_bytes_to_backup_uses_disk_storage_layout() -> Result<()> {
+        let program_bytes_dir = TempDir::new()?;
+        let output_dir = TempDir::new()?;
+        let program_bytes = b"test program bytes";
+        let program_hash = hash_bytes(program_bytes);
+        let relative_path = program_bytes_relative_path(&program_hash);
+        let src = program_bytes_dir.path().join(&relative_path);
+        fs::create_dir_all(src.parent().unwrap())?;
+        fs::write(&src, program_bytes)?;
+
+        copy_program_bytes_to_backup(program_bytes_dir.path(), output_dir.path(), program_hash)?;
+
+        assert_eq!(
+            fs::read(
+                output_dir
+                    .path()
+                    .join("server")
+                    .join("program-bytes")
+                    .join(relative_path)
+            )?,
+            program_bytes
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn database_lifecycle_lock_survives_cancelled_blocking_finalizer() -> Result<()> {
+        let lock = Arc::new(AsyncMutex::new(()));
+        let guard = lock.clone().lock_owned().await;
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (finish_tx, finish_rx) = std::sync::mpsc::channel();
+
+        let handle = tokio::spawn(spacetimedb::util::asyncify(move || -> Result<()> {
+            let _guard = guard;
+            started_tx
+                .send(())
+                .map_err(|_| anyhow::anyhow!("finalizer start receiver dropped"))?;
+            finish_rx.recv().context("waiting for test to release finalizer")?;
+            Ok(())
+        }));
+
+        started_rx.await.context("finalizer did not start")?;
+        handle.abort();
+
+        assert!(
+            lock.try_lock().is_err(),
+            "database lifecycle lock was released after awaiter cancellation"
+        );
+
+        finish_tx
+            .send(())
+            .map_err(|_| anyhow::anyhow!("finalizer finished before release signal"))?;
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if let Ok(guard) = lock.try_lock() {
+                    drop(guard);
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .context("database lifecycle lock was not released after finalizer completed")?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn standalone_owner_cannot_authorize_hot_backup() -> Result<()> {
+        let tempdir = TempDir::new()?;
+        let keys = tempdir.path().join("keys");
+        let root = tempdir.path().join("data");
+        let data_dir = Arc::new(ServerDataDir::from_path_unchecked(root));
+
+        fs::create_dir(&keys)?;
+        data_dir.create()?;
+
+        let ca = CertificateAuthority {
+            jwt_pub_key_path: PubKeyPath(keys.join("public")),
+            jwt_priv_key_path: PrivKeyPath(keys.join("private")),
+        };
+        ca.get_or_create_keys()?;
+        let env = StandaloneEnv::init(
+            StandaloneOptions {
+                db_config: db::Config {
+                    storage: Storage::Memory,
+                    page_pool_max_size: None,
+                },
+                durability: DurabilityConfig::default(),
+                websocket: WebSocketOptions::default(),
+                wasm: WasmConfig::default(),
+                v8: V8Config::default(),
+                hot_backup_root: None,
+            },
+            &ca,
+            data_dir,
+            JobCores::without_pinned_cores(),
+        )
+        .await?;
+
+        let owner = Identity::from_claims(LOCALHOST, "owner");
+        let database_identity = Identity::from_claims(LOCALHOST, "database");
+        env.control_db.insert_database(Database {
+            id: 0,
+            database_identity,
+            owner_identity: owner,
+            host_type: HostType::Wasm,
+            initial_program: Hash::ZERO,
+            bootstrap_generation: 0,
+        })?;
+
+        env.authorize_action(owner, database_identity, spacetimedb_client_api::Action::UpdateDatabase)
+            .await?;
+        let err = env
+            .authorize_action(
+                owner,
+                database_identity,
+                spacetimedb_client_api::Action::CreateHotBackup,
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, spacetimedb_client_api::Unauthorized::Unauthorized { .. }));
+
+        Ok(())
+    }
 
     #[tokio::test]
     async fn ensure_init_grabs_lock() -> Result<()> {

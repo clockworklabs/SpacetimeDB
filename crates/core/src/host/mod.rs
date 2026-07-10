@@ -12,6 +12,7 @@ use spacetimedb_schema::def::ModuleDef;
 
 mod disk_storage;
 mod host_controller;
+mod hot_backup;
 mod module_common;
 #[allow(clippy::too_many_arguments)]
 pub mod module_host;
@@ -29,6 +30,7 @@ pub use host_controller::{
     HostController, HostRuntimeConfig, MigratePlanResult, ModuleHostWithBootstrap, ProcedureCallResult, ProgramStorage,
     ReducerCallResult, ReducerCallResultWithTxOffset, ReducerOutcome,
 };
+pub use hot_backup::{HotBackupInProgress, HotBackupManifest};
 pub use module_host::{
     InitDatabaseResult, ModuleHost, NoSuchModule, ProcedureCallError, ReducerCallError, UpdateDatabaseResult,
 };

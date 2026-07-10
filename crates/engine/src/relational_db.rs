@@ -7,9 +7,8 @@ use crate::util::asyncify;
 use crate::MetricsRecorderQueue;
 use anyhow::{anyhow, Context};
 use enum_map::EnumMap;
-use parking_lot::Mutex;
 use spacetimedb_commitlog::repo::OnNewSegmentFn;
-use spacetimedb_commitlog::{self as commitlog, Commitlog, SizeOnDisk};
+use spacetimedb_commitlog::{self as commitlog, Commitlog, CompressionStats, SizeOnDisk};
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, TableError, ViewError};
@@ -37,18 +36,13 @@ use spacetimedb_datastore::{
     traits::TxData,
 };
 use spacetimedb_durability::{self as durability, History};
-use spacetimedb_fs_utils::{
-    atomic_write_bytes, copy_dir_all, copy_file_sync, create_dir_all_sync, dir_size, normalize_absolute_path, sync_dir,
-};
 use spacetimedb_lib::bsatn::ToBsatn;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
 use spacetimedb_lib::st_var::StVarValue;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Identity;
-use spacetimedb_paths::server::{CommitLogDir, ReplicaDir, ServerDataDir, SnapshotsPath};
-use spacetimedb_paths::standalone::StandaloneDataDirExt;
-use spacetimedb_paths::FromPathUnchecked;
+use spacetimedb_paths::server::{ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
 use spacetimedb_runtime::sync::watch;
 use spacetimedb_runtime::Handle;
@@ -68,13 +62,9 @@ use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::table::{RowRef, TableScanIter};
 use spacetimedb_table::table_index::IndexKey;
 use std::borrow::Cow;
-use std::collections::BTreeSet;
-use std::ffi::OsString;
 use std::io;
 use std::ops::RangeBounds;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 pub use super::persistence::{DiskSizeFn, Durability, Persistence};
 pub use super::snapshot::SnapshotWorker;
@@ -139,29 +129,6 @@ pub struct RelationalDB {
 // this value, later introduction of dynamic configuration will allow the
 // compiler to find external dependencies.
 pub const SNAPSHOT_FREQUENCY: u64 = 1_000_000;
-
-#[derive(Debug, serde::Serialize)]
-pub struct HotBackupManifest {
-    pub version: u32,
-    pub database_identity: Identity,
-    pub replica_id: u64,
-    pub snapshot_offset: TxOffset,
-    pub durable_offset: TxOffset,
-    pub output_dir: PathBuf,
-    pub snapshot_ms: u64,
-    pub copy_ms: u64,
-    pub total_ms: u64,
-    pub bytes: u64,
-}
-
-impl HotBackupManifest {
-    /// Convert a [`Duration`] to whole milliseconds, saturating at `u64::MAX`.
-    ///
-    /// Used to fill in the `*_ms` timing fields of the manifest.
-    pub fn elapsed_ms(duration: Duration) -> u64 {
-        duration.as_millis().try_into().unwrap_or(u64::MAX)
-    }
-}
 
 impl std::fmt::Debug for RelationalDB {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -354,6 +321,11 @@ impl RelationalDB {
         }
 
         apply_history(&inner, database_identity, history)?;
+        if durable_tx_offset.is_some()
+            && let Some(snapshot_worker) = persistence.as_ref().and_then(|p| p.snapshots.as_ref())
+        {
+            snapshot_worker.request_snapshot();
+        }
 
         let elapsed_time = start_time.elapsed();
         ENGINE_METRICS
@@ -626,17 +598,24 @@ impl RelationalDB {
             }
         }
 
-        if let Some((snapshot_repo, durable_tx_offset)) = snapshot_repo.zip(durable_tx_offset) {
-            // Mark any newer snapshots as invalid, as the history past
-            // `durable_tx_offset` may have been reset and thus diverge from
-            // any snapshots taken earlier.
-            snapshot_repo
-                .invalidate_newer_snapshots(durable_tx_offset)
-                .map_err(|e| RestoreSnapshotError::Invalidate {
-                    offset: durable_tx_offset,
-                    source: Box::new(e),
+        if let Some(snapshot_repo) = snapshot_repo {
+            // Mark every snapshot without durable history as invalid. Otherwise,
+            // invalidate only snapshots after the last durable transaction.
+            let first_invalid_offset = match durable_tx_offset {
+                None => Some(0),
+                Some(offset) => offset.checked_add(1),
+            };
+            if let Some(offset) = first_invalid_offset {
+                snapshot_repo.invalidate_snapshots_at_or_after(offset).map_err(|e| {
+                    RestoreSnapshotError::Invalidate {
+                        offset,
+                        source: Box::new(e),
+                    }
                 })?;
+            }
+        }
 
+        if let Some((snapshot_repo, durable_tx_offset)) = snapshot_repo.zip(durable_tx_offset) {
             // Try to restore from any snapshot that was taken within the
             // range `(min_commitlog_offset + 1)..=durable_tx_offset`.
             let mut upper_bound = durable_tx_offset;
@@ -987,146 +966,6 @@ impl RelationalDB {
         let snapshot_offset = snapshot_worker.ensure_snapshot_at_least(target_offset).await?;
         durable_offset.wait_for(snapshot_offset).await?;
         Ok(snapshot_offset)
-    }
-
-    /// Export a point-in-time hot backup into `output_dir`.
-    pub async fn create_hot_backup(
-        &self,
-        replica_dir: &ReplicaDir,
-        server_data_dir: Option<&ServerDataDir>,
-        replica_id: u64,
-        output_dir: impl AsRef<Path>,
-    ) -> anyhow::Result<HotBackupManifest> {
-        self.create_hot_backup_inner(replica_dir, server_data_dir, replica_id, output_dir, true)
-            .await
-    }
-
-    /// Export a point-in-time hot backup into `output_dir`, leaving `server/control-db`
-    /// for the caller to provide.
-    ///
-    /// Unlike [`Self::create_hot_backup`], this does **not** compute
-    /// [`HotBackupManifest::bytes`] (it is left at 0) and does **not** write
-    /// `manifest.json`: the caller is expected to add `server/control-db` and
-    /// then finalize the manifest itself. This both avoids traversing the
-    /// backup tree twice and makes `manifest.json` a reliable marker of a
-    /// fully-written backup.
-    pub async fn create_hot_backup_without_control_db(
-        &self,
-        replica_dir: &ReplicaDir,
-        server_data_dir: Option<&ServerDataDir>,
-        replica_id: u64,
-        output_dir: impl AsRef<Path>,
-    ) -> anyhow::Result<HotBackupManifest> {
-        self.create_hot_backup_inner(replica_dir, server_data_dir, replica_id, output_dir, false)
-            .await
-    }
-
-    async fn create_hot_backup_inner(
-        &self,
-        replica_dir: &ReplicaDir,
-        server_data_dir: Option<&ServerDataDir>,
-        replica_id: u64,
-        output_dir: impl AsRef<Path>,
-        copy_control_db: bool,
-    ) -> anyhow::Result<HotBackupManifest> {
-        let total_start = Instant::now();
-        let runtime = self
-            .durability_runtime
-            .as_ref()
-            .context("durability runtime is not enabled for this database")?
-            .clone();
-        let output_dir = ensure_backup_path(replica_dir, server_data_dir, output_dir.as_ref())?;
-        // Guard against two concurrent backups interleaving writes into the same
-        // directory after both passed the `ensure_empty_dir` check.
-        let _dir_guard = BackupDirGuard::acquire(&output_dir)?;
-        anyhow::ensure!(
-            !(copy_control_db && server_data_dir.is_some()),
-            "copying live server/control-db is not supported by hot backup; export control-db separately and finalize the manifest after the export"
-        );
-
-        let snapshot_start = Instant::now();
-        let snapshot_offset = self.request_hot_backup_snapshot().await?;
-        let snapshot_ms = HotBackupManifest::elapsed_ms(snapshot_start.elapsed());
-        let durable_offset = snapshot_offset;
-
-        let copy_start = Instant::now();
-        let snapshot_repo = open_snapshot_repo(replica_dir.snapshots(), self.database_identity(), replica_id)?;
-        let src_snapshot_dir = snapshot_repo.snapshot_dir_path(snapshot_offset);
-        let dst_snapshots = output_dir.join("snapshots");
-        let dst_snapshot_dir = dst_snapshots.join(
-            src_snapshot_dir
-                .0
-                .file_name()
-                .context("snapshot directory has no file name")?,
-        );
-        // `request_hot_backup_snapshot` returns only after the snapshot worker has
-        // fsynced the snapshot to disk (see `SnapshotWorker::ensure_snapshot_at_least`),
-        // so both paths must already exist; a missing path is a bug, not a timing issue.
-        anyhow::ensure!(
-            src_snapshot_dir.0.is_dir(),
-            "snapshot directory does not exist: {}",
-            src_snapshot_dir.display()
-        );
-        let src_snapshot_file = src_snapshot_dir.snapshot_file(snapshot_offset);
-        anyhow::ensure!(
-            src_snapshot_file.0.is_file(),
-            "snapshot file does not exist: {}",
-            src_snapshot_file.display()
-        );
-        let snapshot_file_name: OsString = src_snapshot_file
-            .0
-            .file_name()
-            .context("snapshot file has no file name")?
-            .to_owned();
-
-        asyncify(&runtime, {
-            let output_dir = output_dir.clone();
-            let src_snapshot_dir = src_snapshot_dir.clone();
-            let snapshot_file_name = snapshot_file_name.clone();
-            move || -> anyhow::Result<()> {
-                ensure_empty_dir(&output_dir)?;
-                copy_dir_all_retry(&src_snapshot_dir.0, &dst_snapshot_dir, &snapshot_file_name)?;
-                Ok(())
-            }
-        })
-        .await?;
-
-        if let Some(server_data_dir) = server_data_dir {
-            copy_server_state(&runtime, server_data_dir, &output_dir, copy_control_db).await?;
-        }
-        copy_commitlog_range(
-            &runtime,
-            replica_dir.commit_log(),
-            output_dir.join("clog"),
-            snapshot_offset,
-        )
-        .await?;
-        let copy_ms = HotBackupManifest::elapsed_ms(copy_start.elapsed());
-
-        let mut manifest = HotBackupManifest {
-            version: 1,
-            database_identity: self.database_identity(),
-            replica_id,
-            snapshot_offset,
-            durable_offset,
-            output_dir: output_dir.clone(),
-            snapshot_ms,
-            copy_ms,
-            total_ms: HotBackupManifest::elapsed_ms(total_start.elapsed()),
-            bytes: 0,
-        };
-        // When the caller provides `server/control-db` itself, leave `bytes`
-        // and `manifest.json` to it, so the backup tree is only traversed once
-        // and the manifest is written exactly once, after the backup is complete.
-        if copy_control_db {
-            manifest.bytes = asyncify(&runtime, {
-                let output_dir = output_dir.clone();
-                move || dir_size(&output_dir)
-            })
-            .await?;
-            write_hot_backup_manifest(&runtime, &output_dir, &manifest).await?;
-        }
-        Ok(manifest)
     }
 
     /// Run a fallible function in a transaction.
@@ -1972,10 +1811,15 @@ pub async fn snapshot_watching_commitlog_compressor(
     durability: LocalDurability,
     runtime: Handle,
 ) {
-    let mut prev_snapshot_offset = *snapshot_rx.borrow_and_update();
+    let snapshot_offset = *snapshot_rx.borrow_and_update();
+    let res =
+        compress_commitlog_segments_older_than_snapshot(snapshot_offset, durability.clone(), runtime.clone()).await;
+    if let Err(err) = res {
+        tracing::warn!("failed to compress commitlog segments on startup for snapshot offset {snapshot_offset}: {err}");
+    }
+
     while snapshot_rx.changed().await.is_ok() {
         let snapshot_offset = *snapshot_rx.borrow_and_update();
-        let durability = durability.clone();
 
         if let Some(snap_tx) = &mut snap_tx
             && let Err(err) = snap_tx.try_send(snapshot_offset)
@@ -1983,41 +1827,63 @@ pub async fn snapshot_watching_commitlog_compressor(
             tracing::warn!("failed to send offset {snapshot_offset} after snapshot creation: {err}");
         }
 
-        let res: io::Result<_> = asyncify(&runtime, move || {
-            let segment_offsets = durability.existing_segment_offsets()?;
-            let start_idx = segment_offsets
-                .binary_search(&prev_snapshot_offset)
-                // if the snapshot is in the middle of a segment, we want to round down.
-                // [0, 2].binary_search(1) will return Err(1), so we subtract 1.
-                .unwrap_or_else(|i| i.saturating_sub(1));
-            let segment_offsets = &segment_offsets[start_idx..];
-            let end_idx = segment_offsets
-                .binary_search(&snapshot_offset)
-                .unwrap_or_else(|i| i.saturating_sub(1));
-            // in this case, segment_offsets[end_idx] is the segment that contains the snapshot,
-            // which we don't want to compress, so an exclusive range is correct.
-            let segment_offsets = &segment_offsets[..end_idx];
-            durability.compress_segments(segment_offsets)?;
-            let n = segment_offsets.len();
-            let last_compressed_segment = if n > 0 { Some(segment_offsets[n - 1]) } else { None };
-            Ok(last_compressed_segment)
-        })
-        .await;
+        let res =
+            compress_commitlog_segments_older_than_snapshot(snapshot_offset, durability.clone(), runtime.clone()).await;
 
-        let last_compressed_segment = match res {
-            Ok(opt_offset) => opt_offset,
+        let (last_compressed_segment, stats) = match res {
+            Ok(res) => res,
             Err(err) => {
                 tracing::warn!("failed to compress segments: {err}");
                 continue;
             }
         };
-        prev_snapshot_offset = snapshot_offset;
+        log_commitlog_compression_result(snapshot_offset, last_compressed_segment, stats);
 
         if let Some((clog_tx, last_compressed_segment)) = clog_tx.as_mut().zip(last_compressed_segment)
             && let Err(err) = clog_tx.try_send(last_compressed_segment)
         {
             tracing::warn!("failed to send offset {last_compressed_segment} after compression: {err}");
         }
+    }
+}
+
+async fn compress_commitlog_segments_older_than_snapshot(
+    snapshot_offset: TxOffset,
+    durability: LocalDurability,
+    runtime: Handle,
+) -> io::Result<(Option<TxOffset>, CompressionStats)> {
+    asyncify(&runtime, move || {
+        let segment_offsets = durability.existing_segment_offsets()?;
+        let segment_offsets = commitlog_segments_older_than_snapshot(&segment_offsets, snapshot_offset);
+        let last_compressed_segment = segment_offsets.last().copied();
+        let stats = durability.compress_segments(segment_offsets)?;
+        Ok((last_compressed_segment, stats))
+    })
+    .await
+}
+
+fn commitlog_segments_older_than_snapshot(segment_offsets: &[TxOffset], snapshot_offset: TxOffset) -> &[TxOffset] {
+    let end_idx = segment_offsets
+        .binary_search(&snapshot_offset)
+        // If the snapshot is in the middle of a segment, round down to the segment
+        // containing it. That segment is still needed for replay from the snapshot.
+        .unwrap_or_else(|i| i.saturating_sub(1));
+    &segment_offsets[..end_idx]
+}
+
+fn log_commitlog_compression_result(
+    snapshot_offset: TxOffset,
+    last_compressed_segment: Option<TxOffset>,
+    stats: CompressionStats,
+) {
+    if let Some(last_compressed_segment) = last_compressed_segment {
+        tracing::info!(
+            snapshot_offset,
+            last_compressed_segment,
+            bytes_read = stats.bytes_read,
+            bytes_written = stats.bytes_written,
+            "compressed commitlog segments older than snapshot"
+        );
     }
 }
 
@@ -2032,258 +1898,6 @@ pub fn open_snapshot_repo(
     SnapshotRepository::open(path, database_identity, replica_id)
         .map(Arc::new)
         .map_err(Box::new)
-}
-
-async fn copy_commitlog_range(
-    runtime: &Handle,
-    src: CommitLogDir,
-    dst: PathBuf,
-    through: TxOffset,
-) -> anyhow::Result<()> {
-    let src_repo = commitlog::repo::Fs::new(src, None)?;
-    let dst_repo = commitlog::repo::Fs::new(CommitLogDir::from_path_unchecked(&dst), None)?;
-    let reader = tokio::io::BufReader::new(tokio_util::io::StreamReader::new(commitlog::stream::commits(
-        src_repo,
-        ..=through,
-    )));
-    tokio::pin!(reader);
-    let writer =
-        commitlog::stream::StreamWriter::create(dst_repo, <_>::default(), commitlog::stream::OnTrailingData::Error)?;
-    let mut writer = writer.append_all(reader, |_| ()).await?;
-    writer.sync_all().await?;
-    asyncify(runtime, move || -> anyhow::Result<()> {
-        sync_dir(&dst).with_context(|| format!("syncing backup commitlog dir {}", dst.display()))?;
-        if let Some(parent) = dst.parent() {
-            sync_dir(parent).with_context(|| format!("syncing backup commitlog parent {}", parent.display()))?;
-        }
-        Ok(())
-    })
-    .await?;
-    Ok(())
-}
-
-async fn write_hot_backup_manifest(
-    runtime: &Handle,
-    output_dir: &Path,
-    manifest: &HotBackupManifest,
-) -> anyhow::Result<()> {
-    let output_dir = output_dir.to_path_buf();
-    let json = serde_json::to_vec_pretty(manifest)?;
-    asyncify(runtime, move || {
-        atomic_write_bytes(&output_dir.join("manifest.json"), &json)
-    })
-    .await?;
-    Ok(())
-}
-
-/// Write `manifest` as `manifest.json` into `output_dir` on a blocking thread.
-///
-/// Exposed for callers of
-/// [`RelationalDB::create_hot_backup_without_control_db`], which finalize the
-/// manifest themselves after adding their own state to the backup.
-pub async fn finalize_hot_backup_manifest(output_dir: &Path, manifest: &HotBackupManifest) -> anyhow::Result<()> {
-    write_hot_backup_manifest(&Handle::tokio_current(), output_dir, manifest).await
-}
-
-/// Serializes concurrent hot backups into the same output directory within
-/// this process.
-///
-/// Two concurrent backups into the same (empty) directory would both pass the
-/// `ensure_empty_dir` check and interleave their writes, producing a corrupt
-/// backup. Registering the normalized output path in a process-wide set closes
-/// that race; the path is released when the guard drops.
-struct BackupDirGuard(PathBuf);
-
-static ACTIVE_BACKUP_DIRS: Mutex<BTreeSet<PathBuf>> = Mutex::new(BTreeSet::new());
-
-impl BackupDirGuard {
-    fn acquire(output_dir: &Path) -> anyhow::Result<Self> {
-        let mut active = ACTIVE_BACKUP_DIRS.lock();
-        if let Some(overlapping) = active
-            .iter()
-            .find(|active_dir| backup_paths_overlap(output_dir, active_dir))
-        {
-            anyhow::bail!(
-                "backup output path {} overlaps with in-progress backup {}",
-                output_dir.display(),
-                overlapping.display()
-            );
-        }
-        anyhow::ensure!(
-            active.insert(output_dir.to_path_buf()),
-            "a backup into {} is already in progress",
-            output_dir.display()
-        );
-        Ok(Self(output_dir.to_path_buf()))
-    }
-}
-
-#[cfg(windows)]
-fn backup_path_components(path: &Path) -> Vec<String> {
-    path.components()
-        .map(|component| component.as_os_str().to_string_lossy().to_ascii_lowercase())
-        .collect()
-}
-
-#[cfg(windows)]
-fn backup_path_starts_with(path: &Path, base: &Path) -> bool {
-    let path = backup_path_components(path);
-    let base = backup_path_components(base);
-    base.len() <= path.len() && path.iter().zip(&base).all(|(path, base)| path == base)
-}
-
-#[cfg(not(windows))]
-fn backup_path_starts_with(path: &Path, base: &Path) -> bool {
-    path.starts_with(base)
-}
-
-fn backup_paths_overlap(a: &Path, b: &Path) -> bool {
-    backup_path_starts_with(a, b) || backup_path_starts_with(b, a)
-}
-
-impl Drop for BackupDirGuard {
-    fn drop(&mut self) {
-        ACTIVE_BACKUP_DIRS.lock().remove(&self.0);
-    }
-}
-
-fn ensure_empty_dir(path: &Path) -> anyhow::Result<()> {
-    if path.exists() {
-        anyhow::ensure!(
-            path.is_dir(),
-            "backup output path is not a directory: {}",
-            path.display()
-        );
-        anyhow::ensure!(
-            path.read_dir()?.next().is_none(),
-            "backup output directory must be empty: {}",
-            path.display()
-        );
-    } else {
-        create_dir_all_sync(path)?;
-    }
-    Ok(())
-}
-
-/// Validate `output_dir` as a hot backup destination and return its
-/// normalized form.
-///
-/// The path must be absolute and, after resolving symlinks in its existing
-/// ancestors and rejecting `..` components (see
-/// [`spacetimedb_fs_utils::normalize_absolute_path`]), must not point inside
-/// the server data directory or the replica directory. All subsequent backup
-/// I/O must use the returned path, so the checks cannot be bypassed via
-/// symlinks or path traversal.
-fn ensure_backup_path(
-    replica_dir: &ReplicaDir,
-    server_data_dir: Option<&ServerDataDir>,
-    output_dir: &Path,
-) -> anyhow::Result<PathBuf> {
-    anyhow::ensure!(
-        output_dir.is_absolute(),
-        "backup output directory must be an absolute server path: {}",
-        output_dir.display()
-    );
-    let output_dir = normalize_absolute_path(output_dir).context("normalizing the backup output directory path")?;
-    if let Some(server_data_dir) = server_data_dir {
-        let data_dir = normalize_absolute_path(&server_data_dir.0).unwrap_or_else(|_| server_data_dir.0.to_path_buf());
-        anyhow::ensure!(
-            !output_dir.starts_with(&data_dir),
-            "backup output directory must not be inside the server data directory: {}",
-            output_dir.display()
-        );
-    }
-    let replica_dir_normalized =
-        normalize_absolute_path(&replica_dir.0).unwrap_or_else(|_| replica_dir.0.to_path_buf());
-    anyhow::ensure!(
-        !output_dir.starts_with(&replica_dir_normalized),
-        "backup output directory must not be inside the replica directory: {}",
-        replica_dir.display()
-    );
-    Ok(output_dir)
-}
-
-async fn copy_server_state(
-    runtime: &Handle,
-    data_dir: &ServerDataDir,
-    output_dir: &Path,
-    copy_control_db: bool,
-) -> anyhow::Result<()> {
-    let data_dir = data_dir.clone();
-    let output_dir = output_dir.to_path_buf();
-    asyncify(runtime, move || -> anyhow::Result<()> {
-        debug_assert!(!copy_control_db);
-        let server_dir = output_dir.join("server");
-        create_dir_all_sync(&server_dir)?;
-
-        copy_required_file(&data_dir.config_toml().0, &server_dir.join("config.toml"))?;
-        copy_required_file(&data_dir.metadata_toml().0, &server_dir.join("metadata.toml"))?;
-        copy_required_dir(&data_dir.program_bytes().0, &server_dir.join("program-bytes"))?;
-        sync_dir(&server_dir)?;
-        Ok(())
-    })
-    .await?;
-    Ok(())
-}
-
-fn copy_required_file(src: &Path, dst: &Path) -> anyhow::Result<()> {
-    anyhow::ensure!(src.is_file(), "server state file is missing: {}", src.display());
-    if let Some(parent) = dst.parent() {
-        create_dir_all_sync(parent)?;
-    }
-    copy_file_sync(src, dst).with_context(|| format!("copying {} to {}", src.display(), dst.display()))?;
-    Ok(())
-}
-
-fn copy_required_dir(src: &Path, dst: &Path) -> anyhow::Result<()> {
-    anyhow::ensure!(src.is_dir(), "server state directory is missing: {}", src.display());
-    copy_dir_all(src, dst).with_context(|| format!("copying {} to {}", src.display(), dst.display()))
-}
-
-fn copy_dir_all_retry(src: &Path, dst: &Path, required_file_name: &OsString) -> anyhow::Result<()> {
-    let start = Instant::now();
-    loop {
-        match copy_snapshot_dir(src, dst, required_file_name) {
-            Ok(()) => return Ok(()),
-            Err(err) if start.elapsed() < Duration::from_secs(30) => {
-                std::thread::sleep(Duration::from_millis(10));
-                drop(err);
-            }
-            Err(err) => {
-                return Err(err).with_context(|| format!("copying snapshot {} to {}", src.display(), dst.display()));
-            }
-        }
-    }
-}
-
-fn copy_snapshot_dir(src: &Path, dst: &Path, required_file_name: &OsString) -> anyhow::Result<()> {
-    create_dir_all_sync(dst)?;
-    let src_required = src.join(required_file_name);
-    let dst_required = dst.join(required_file_name);
-    copy_file_sync(&src_required, &dst_required)
-        .with_context(|| format!("copying {} to {}", src_required.display(), dst_required.display()))?;
-
-    for entry in std::fs::read_dir(src).with_context(|| format!("reading {}", src.display()))? {
-        let entry = entry?;
-        if entry.file_name() == *required_file_name {
-            continue;
-        }
-        let ty = entry.file_type()?;
-        let dst = dst.join(entry.file_name());
-        if ty.is_dir() {
-            copy_dir_all(entry.path(), dst)?;
-        } else {
-            copy_file_sync(&entry.path(), &dst)?;
-        }
-    }
-    anyhow::ensure!(
-        dst_required.is_file(),
-        "copying snapshot {} to {} did not copy {}",
-        src.display(),
-        dst.display(),
-        required_file_name.to_string_lossy()
-    );
-    Ok(())
 }
 
 fn default_row_count_fn(db: Identity) -> RowCountFn {
@@ -2829,7 +2443,7 @@ mod tests {
     #[cfg(unix)]
     use spacetimedb_snapshot::Snapshot;
     use spacetimedb_table::read_column::ReadColumn;
-    use spacetimedb_table::table::RowRef;
+    use spacetimedb_table::table::{RowRef, Table};
     use tempfile::TempDir;
     use tests::tests_utils::TestHistory;
 
@@ -2910,6 +2524,21 @@ mod tests {
         stdb.commit_tx(tx)?;
 
         Ok(())
+    }
+
+    #[test]
+    fn commitlog_segments_older_than_snapshot_excludes_segment_containing_snapshot() {
+        let segment_offsets = [0, 100, 200, 300];
+
+        assert_eq!(commitlog_segments_older_than_snapshot(&segment_offsets, 0), &[]);
+        assert_eq!(commitlog_segments_older_than_snapshot(&segment_offsets, 99), &[]);
+        assert_eq!(commitlog_segments_older_than_snapshot(&segment_offsets, 100), &[0]);
+        assert_eq!(commitlog_segments_older_than_snapshot(&segment_offsets, 199), &[0]);
+        assert_eq!(commitlog_segments_older_than_snapshot(&segment_offsets, 200), &[0, 100]);
+        assert_eq!(
+            commitlog_segments_older_than_snapshot(&segment_offsets, 350),
+            &[0, 100, 200]
+        );
     }
 
     #[test]
@@ -4276,171 +3905,6 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn hot_backup_create_writes_manifest_snapshot_and_commitlog() -> anyhow::Result<()> {
-        let stdb = TestDB::durable()?;
-
-        let mut tx = begin_mut_tx(&stdb);
-        stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
-        stdb.commit_tx(tx)?;
-
-        let backup_dir = tempfile::tempdir()?;
-        let manifest = stdb.runtime().unwrap().block_on(async {
-            tokio::time::timeout(
-                HOT_BACKUP_TEST_TIMEOUT,
-                stdb.create_hot_backup(stdb.path().unwrap(), None, 0, backup_dir.path()),
-            )
-            .await
-        })??;
-
-        assert!(backup_dir.path().join("manifest.json").is_file());
-        assert!(manifest.bytes > 0);
-        assert_eq!(manifest.durable_offset, manifest.snapshot_offset);
-        let manifest_json: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(backup_dir.path().join("manifest.json"))?)?;
-        assert_eq!(
-            manifest_json["snapshot_offset"].as_u64(),
-            Some(manifest.snapshot_offset)
-        );
-        assert_eq!(manifest_json["durable_offset"].as_u64(), Some(manifest.snapshot_offset));
-        let repo = open_snapshot_repo(
-            SnapshotsPath::from_path_unchecked(backup_dir.path().join("snapshots")),
-            stdb.database_identity(),
-            0,
-        )?;
-        let snapshot = repo.read_snapshot(manifest.snapshot_offset, &PagePool::new_for_test())?;
-        assert_eq!(snapshot.database_identity, manifest.database_identity);
-        assert_eq!(snapshot.replica_id, manifest.replica_id);
-        assert_eq!(snapshot.tx_offset, manifest.snapshot_offset);
-        let clog = Commitlog::<Txdata>::open(
-            CommitLogDir::from_path_unchecked(backup_dir.path().join("clog")),
-            Default::default(),
-            None,
-        )?;
-        assert_eq!(clog.max_committed_offset(), Some(manifest.snapshot_offset));
-
-        Ok(())
-    }
-
-    #[test]
-    fn hot_backup_create_without_control_db_copies_other_server_state() -> anyhow::Result<()> {
-        let stdb = TestDB::durable()?;
-
-        let mut tx = begin_mut_tx(&stdb);
-        stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
-        stdb.commit_tx(tx)?;
-
-        let data = tempfile::tempdir()?;
-        let data_dir = ServerDataDir::from_path_unchecked(data.path());
-        std::fs::write(data.path().join("config.toml"), b"config")?;
-        std::fs::write(data.path().join("metadata.toml"), b"metadata")?;
-        std::fs::create_dir_all(data.path().join("control-db"))?;
-        std::fs::write(data.path().join("control-db/control"), b"control")?;
-        std::fs::create_dir_all(data.path().join("program-bytes"))?;
-        std::fs::write(data.path().join("program-bytes/program"), b"program")?;
-
-        let backup_dir = tempfile::tempdir()?;
-        let manifest = stdb.runtime().unwrap().block_on(async {
-            tokio::time::timeout(
-                HOT_BACKUP_TEST_TIMEOUT,
-                stdb.create_hot_backup_without_control_db(stdb.path().unwrap(), Some(&data_dir), 0, backup_dir.path()),
-            )
-            .await
-        })??;
-
-        assert_eq!(manifest.bytes, 0);
-        assert!(!backup_dir.path().join("manifest.json").exists());
-        assert_eq!(
-            std::fs::read_to_string(backup_dir.path().join("server/config.toml"))?,
-            "config"
-        );
-        assert_eq!(
-            std::fs::read_to_string(backup_dir.path().join("server/metadata.toml"))?,
-            "metadata"
-        );
-        assert!(!backup_dir.path().join("server/control-db").exists());
-        assert!(backup_dir.path().join("server/program-bytes/program").is_file());
-
-        Ok(())
-    }
-
-    #[test]
-    fn hot_backup_rejects_raw_copy_of_live_control_db() -> anyhow::Result<()> {
-        let stdb = TestDB::durable()?;
-
-        let mut tx = begin_mut_tx(&stdb);
-        stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
-        stdb.commit_tx(tx)?;
-
-        let data = tempfile::tempdir()?;
-        let data_dir = ServerDataDir::from_path_unchecked(data.path());
-        std::fs::write(data.path().join("config.toml"), b"config")?;
-        std::fs::write(data.path().join("metadata.toml"), b"metadata")?;
-        std::fs::create_dir_all(data.path().join("control-db"))?;
-        std::fs::write(data.path().join("control-db/control"), b"control")?;
-        std::fs::create_dir_all(data.path().join("program-bytes"))?;
-        std::fs::write(data.path().join("program-bytes/program"), b"program")?;
-
-        let backup_dir = tempfile::tempdir()?;
-        let result = stdb.runtime().unwrap().block_on(async {
-            tokio::time::timeout(
-                HOT_BACKUP_TEST_TIMEOUT,
-                stdb.create_hot_backup(stdb.path().unwrap(), Some(&data_dir), 0, backup_dir.path()),
-            )
-            .await
-        })?;
-        let err = result.unwrap_err();
-
-        assert!(err.to_string().contains("control-db"));
-        assert!(!backup_dir.path().join("manifest.json").exists());
-        Ok(())
-    }
-
-    #[test]
-    fn hot_backup_rejects_unsafe_output_dirs() -> anyhow::Result<()> {
-        let stdb = TestDB::durable()?;
-        let replica_dir = stdb.path().unwrap();
-
-        let err = stdb
-            .runtime()
-            .unwrap()
-            .block_on(stdb.create_hot_backup(replica_dir, None, 0, PathBuf::from("relative")))
-            .unwrap_err();
-        assert!(err.to_string().contains("absolute server path"));
-
-        let err = stdb
-            .runtime()
-            .unwrap()
-            .block_on(stdb.create_hot_backup(replica_dir, None, 0, replica_dir.0.join("backup")))
-            .unwrap_err();
-        assert!(err.to_string().contains("replica directory"));
-
-        Ok(())
-    }
-
-    #[test]
-    fn hot_backup_dir_guard_rejects_parent_child_overlap() -> anyhow::Result<()> {
-        let temp = tempfile::tempdir()?;
-        let parent = temp.path().join("backup");
-        let child = parent.join("nested");
-
-        let parent_guard = BackupDirGuard::acquire(&parent)?;
-        let Err(err) = BackupDirGuard::acquire(&child) else {
-            panic!("child backup directory overlapped active parent");
-        };
-        assert!(err.to_string().contains("overlaps"));
-        drop(parent_guard);
-
-        let child_guard = BackupDirGuard::acquire(&child)?;
-        let Err(err) = BackupDirGuard::acquire(&parent) else {
-            panic!("parent backup directory overlapped active child");
-        };
-        assert!(err.to_string().contains("overlaps"));
-        drop(child_guard);
-
-        Ok(())
-    }
-
     // For test compression into an existing database.
     // Must supply the path to the database and the identity of the replica using the `ENV`:
     // - `SNAPSHOT` the path to the database, like `/tmp/db/replicas/.../8/database`
@@ -4536,6 +4000,30 @@ mod tests {
             Err(RestoreSnapshotError::NoConnectedSnapshot { .. })
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn restore_without_durable_history_invalidates_all_snapshots() -> ResultTest<()> {
+        let temp = TempDir::with_prefix("snapshot-without-durable-history")?;
+        let snapshots_path = SnapshotsPath::from_path_unchecked(temp.path());
+        snapshots_path.create()?;
+        let repo = SnapshotRepository::open(snapshots_path, Identity::ZERO, 0)?;
+        let blobs = spacetimedb_table::blob_store::HashMapBlobStore::default();
+
+        repo.create_snapshot(std::iter::empty::<&mut Table>(), &blobs, 0)?
+            .sync_all()?;
+        assert_eq!(repo.latest_snapshot()?, Some(0));
+
+        RelationalDB::restore_from_snapshot_or_bootstrap(
+            Identity::ZERO,
+            Some(&repo),
+            None,
+            0,
+            PagePool::new_for_test(),
+        )?;
+
+        assert_eq!(repo.latest_snapshot()?, None);
         Ok(())
     }
 

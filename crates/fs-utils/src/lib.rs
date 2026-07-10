@@ -52,7 +52,7 @@ pub fn atomic_write_bytes(file_path: &Path, data: &[u8]) -> anyhow::Result<()> {
                     temp_file.write_all(data)?;
                     temp_file.sync_all()?;
                     drop(temp_file);
-                    std::fs::rename(&temp_path, file_path)?;
+                    replace_file(&temp_path, file_path)?;
                     if let Some(parent) = non_empty_parent(file_path) {
                         sync_dir(parent)?;
                     }
@@ -71,6 +71,41 @@ pub fn atomic_write_bytes(file_path: &Path, data: &[u8]) -> anyhow::Result<()> {
         "failed to create a temporary file for atomic write after repeated name collisions: {}",
         file_path.display()
     )
+}
+
+#[cfg(windows)]
+fn replace_file(source: &Path, destination: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt as _;
+    use windows_sys::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH};
+
+    fn encode_path(path: &Path) -> std::io::Result<Vec<u16>> {
+        let mut path: Vec<_> = path.as_os_str().encode_wide().collect();
+        if path.contains(&0) {
+            return Err(std::io::Error::new(
+                ErrorKind::InvalidInput,
+                "path contains a null character",
+            ));
+        }
+        path.push(0);
+        Ok(path)
+    }
+
+    let source = encode_path(source)?;
+    let destination = encode_path(destination)?;
+    let flags = MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH;
+
+    // SAFETY: Both paths are valid, null-terminated UTF-16 strings that live
+    // for the duration of the call.
+    if unsafe { MoveFileExW(source.as_ptr(), destination.as_ptr(), flags) } == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(not(windows))]
+fn replace_file(source: &Path, destination: &Path) -> std::io::Result<()> {
+    std::fs::rename(source, destination)
 }
 
 fn non_empty_parent(path: &Path) -> Option<&Path> {

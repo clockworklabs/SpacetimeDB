@@ -17,6 +17,9 @@ thiserror.workspace = true
 tokio.workspace = true
 zstd-framed.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+
 [dev-dependencies]
 tempdir.workspace = true
 

@@ -24,9 +24,8 @@ once_cell.workspace = true
 parking_lot.workspace = true
 prometheus.workspace = true
 serde.workspace = true
-serde_json.workspace = true
 sled.workspace = true
-spacetimedb-commitlog = { workspace = true, features = ["streaming"] }
+spacetimedb-commitlog.workspace = true
 spacetimedb-data-structures.workspace = true
 spacetimedb-datastore.workspace = true
 spacetimedb-durability.workspace = true
@@ -45,8 +44,6 @@ sqlparser.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-tokio.workspace = true
-tokio-util = { workspace = true, features = ["io-util"] }
 
 [dev-dependencies]
 bytes.workspace = true

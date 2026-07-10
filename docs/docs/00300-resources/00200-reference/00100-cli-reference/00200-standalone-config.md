@@ -4,7 +4,7 @@ slug: /cli-reference/standalone-config
 ---
 
 
-A local database instance (as started by `spacetime start`) can be configured in `{data-dir}/config.toml`, where `{data-dir}` is the database's data directory. This directory is printed when you run `spacetime start`:
+A local database instance (as started by `spacetime start`) can be configured in the `config.toml` file inside _data-dir_, where _data-dir_ is the database's data directory. This directory is printed when you run `spacetime start`:
 
 <pre class="shiki"><span>spacetimedb-standalone version: 1.0.0
 spacetimedb-standalone path: /home/user/.local/share/spacetime/bin/1.0.0/spacetimedb-standalone
@@ -112,11 +112,11 @@ Size in bytes of the memory buffer holding commit data before flushing to storag
 root-dir = "/var/backups/stdb"
 ```
 
-The `hot-backup` section configures server-side backups created through `spacetime backup create` or the HTTP backup endpoint.
+The `hot-backup` section configures the server-side root for backups created through `spacetime backup create` or the HTTP backup endpoint. These entry points require the server to provide operator authorization; standalone's ordinary database-owner tokens cannot create hot backups through this endpoint. Use scheduled backups for standalone self-hosted servers.
 
 #### `hot-backup.root-dir`
 
-An absolute server path that acts as the root directory for CLI/HTTP-triggered hot backups. Backup creation requests choose an output directory relative to this root. Omit `root-dir` to disable CLI/HTTP-triggered hot backups.
+Sets the absolute server path that acts as the root directory for CLI/HTTP-triggered hot backups. Backup creation requests choose an output directory relative to this root. Omit `root-dir` to disable CLI/HTTP-triggered hot backups.
 
 ### `scheduled-backup`
 
@@ -132,19 +132,19 @@ The `scheduled-backup` section configures a background task that periodically ba
 
 #### `scheduled-backup.database`
 
-The database name or identity to back up.
+Selects the database name or identity to back up.
 
 #### `scheduled-backup.output-dir`
 
-An absolute server path where scheduled backups are created. Each backup is written into a timestamped `stdb-*` subdirectory.
+Sets the absolute server path used as the scheduled-backup root. Each backup is written to `output-dir/scheduled/{database-identity}/stdb-*`, where _database-identity_ is the resolved identity even when `scheduled-backup.database` is configured with a name.
 
 #### `scheduled-backup.interval`
 
-How often to create a backup. Values are strings of any format the [`humantime`] crate can parse, such as `"15m"`, `"1h"`, or `"1day"`.
+Sets how often to create a backup. Values are strings of any format the [`humantime`] crate can parse, such as `"15m"`, `"1h"`, or `"1day"`.
 
 #### `scheduled-backup.keep-last`
 
-The number of complete scheduled backups to retain. Incomplete `stdb-*` directories are ignored during pruning and do not count toward this limit. A failed scheduled run removes its own incomplete output directory; other manifest-less directories are preserved because they may belong to a concurrent manual or HTTP-triggered backup. Omit `keep-last` to keep all complete scheduled backups.
+Sets the number of complete scheduler-owned backups to retain for this database identity. A backup is eligible for pruning only when its `stdb-*` directory contains both `manifest.json` and the scheduler's zero-byte `.scheduled-backup` ownership marker. Manual, API-created, and incomplete directories are preserved and do not count toward this limit. A failed scheduled run removes only its own output directory. Omit `keep-last` to keep all complete scheduled backups.
 
 ### `websocket`
 

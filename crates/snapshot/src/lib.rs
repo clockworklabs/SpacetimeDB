@@ -860,7 +860,7 @@ impl SnapshotRepository {
         // failover causes the commitlog to be reset to offset 9. The next
         // transaction (also offset 10) will trigger snapshot creation, but we'd
         // mistake the existing snapshot (now invalid) as the previous snapshot.
-        self.invalidate_newer_snapshots(tx_offset.saturating_sub(1))?;
+        self.invalidate_snapshots_at_or_after(tx_offset)?;
 
         // If a previous snapshot exists in this snapshot repo,
         // get a handle on its object repo in order to hardlink shared objects into the new snapshot.
@@ -1242,9 +1242,23 @@ impl SnapshotRepository {
     ///
     /// If this method returns an error, some snapshots may have been invalidated, but not all will have been.
     pub fn invalidate_newer_snapshots(&self, upper_bound: TxOffset) -> Result<(), SnapshotError> {
+        let Some(lower_bound) = upper_bound.checked_add(1) else {
+            return Ok(());
+        };
+        self.invalidate_snapshots_at_or_after(lower_bound)
+    }
+
+    /// Mark every snapshot at or after `lower_bound` invalid.
+    ///
+    /// Does not invalidate snapshots which are locked.
+    ///
+    /// This may overwrite previously-invalidated snapshots.
+    ///
+    /// If this method returns an error, some snapshots may have been invalidated, but not all will have been.
+    pub fn invalidate_snapshots_at_or_after(&self, lower_bound: TxOffset) -> Result<(), SnapshotError> {
         let newer_snapshots = self
             .all_snapshots()?
-            .filter(|tx_offset| *tx_offset > upper_bound)
+            .filter(|tx_offset| *tx_offset >= lower_bound)
             // Collect to a vec to avoid iterator invalidation,
             // as the subsequent `for` loop will mutate the directory.
             .collect::<Vec<TxOffset>>();
@@ -1485,6 +1499,19 @@ pub trait SnapshotRepo: Send + Sync {
     /// Invalidate every snapshot newer than `upper_bound`.
     fn invalidate_newer_snapshots(&self, upper_bound: TxOffset) -> Result<(), SnapshotError>;
 
+    /// Invalidate every snapshot at or after `lower_bound`.
+    fn invalidate_snapshots_at_or_after(&self, lower_bound: TxOffset) -> Result<(), SnapshotError> {
+        if let Some(upper_bound) = lower_bound.checked_sub(1) {
+            return self.invalidate_newer_snapshots(upper_bound);
+        }
+
+        self.invalidate_newer_snapshots(0)?;
+        if self.latest_snapshot_older_than(0)?.is_some() {
+            self.invalidate_snapshot(0)?;
+        }
+        Ok(())
+    }
+
     /// Invalidate the snapshot at `tx_offset`.
     fn invalidate_snapshot(&self, tx_offset: TxOffset) -> Result<(), SnapshotError>;
 }
@@ -1525,6 +1552,10 @@ impl SnapshotRepo for SnapshotRepository {
 
     fn invalidate_newer_snapshots(&self, upper_bound: TxOffset) -> Result<(), SnapshotError> {
         SnapshotRepository::invalidate_newer_snapshots(self, upper_bound)
+    }
+
+    fn invalidate_snapshots_at_or_after(&self, lower_bound: TxOffset) -> Result<(), SnapshotError> {
+        SnapshotRepository::invalidate_snapshots_at_or_after(self, lower_bound)
     }
 
     fn invalidate_snapshot(&self, tx_offset: TxOffset) -> Result<(), SnapshotError> {

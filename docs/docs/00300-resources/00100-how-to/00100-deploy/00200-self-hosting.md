@@ -239,14 +239,23 @@ Edit the standalone config:
 sudo -u spacetimedb nano /stdb/data/config.toml
 ```
 
-To enable CLI-triggered hot backups and a scheduled backup for one database, add:
+To enable a scheduled backup for one database, add:
 
 ```toml
-[hot-backup]
-root-dir = "/var/backups/stdb"
-
 [scheduled-backup]
-database = "<database-name>"
+database = "{database-name}"
+output-dir = "/var/backups/stdb"
+interval = "1h"
+keep-last = 24
+```
+
+where _database-name_ is the database name or identity to back up.
+
+For example:
+
+```toml
+[scheduled-backup]
+database = "module-chat"
 output-dir = "/var/backups/stdb"
 interval = "1h"
 keep-last = 24
@@ -258,21 +267,34 @@ Restart the service after changing the config:
 sudo systemctl restart spacetimedb
 ```
 
-Create a backup from the server host. The `--output-dir` value is relative to `[hot-backup].root-dir` and must name an empty or non-existent directory:
+Standalone scheduled backups are the supported self-hosted backup path. The HTTP/CLI hot-backup endpoint requires operator authorization, and standalone's ordinary database-owner tokens cannot create hot backups through that endpoint.
 
-```sh
-sudo -u spacetimedb /stdb/spacetime --root-dir=/stdb backup create \
-  --server http://127.0.0.1:3000 \
-  --database <database-name> \
-  --output-dir manual/<backup-name>
+Each run resolves the configured database to its identity and creates the backup at:
+
+```text
+/var/backups/stdb/scheduled/{database-identity}/{backup-name}
 ```
 
-Restore is an offline operation. Stop the service, restore into the server data directory, then start the service again:
+Here, _backup-name_ is the generated `stdb-*` directory name. Keeping the identity in the path gives each database its own retention history, even when `database` is configured with a name.
+
+Restore is an offline operation. Stop the service, restore into the server data directory, then start the service again. If the target data directory already has `control-db` and `program-bytes`, they must match the database metadata stored in the backup.
 
 ```sh
 sudo systemctl stop spacetimedb
 sudo -u spacetimedb /stdb/spacetime --root-dir=/stdb backup restore \
-  --input-dir /var/backups/stdb/manual/<backup-name> \
+  --input-dir /var/backups/stdb/scheduled/{database-identity}/{backup-name} \
+  --data-dir /stdb/data \
+  --force
+sudo systemctl start spacetimedb
+```
+
+For example, to restore a selected scheduled backup:
+
+```sh
+BACKUP_DIR=/var/backups/stdb/scheduled/c200000000000000000000000000000000000000000000000000000000000000/stdb-000000000000000000000001788000000000000-0000004242-00000000000000000000
+sudo systemctl stop spacetimedb
+sudo -u spacetimedb /stdb/spacetime --root-dir=/stdb backup restore \
+  --input-dir "$BACKUP_DIR" \
   --data-dir /stdb/data \
   --force
 sudo systemctl start spacetimedb
