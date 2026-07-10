@@ -1,7 +1,11 @@
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
+using System.Net.WebSockets;
 using CsCheck;
 using SpacetimeDB;
 using SpacetimeDB.BSATN;
+using SpacetimeDB.ClientApi;
 using SpacetimeDB.Types;
 
 public class Tests
@@ -127,5 +131,147 @@ public class Tests
                 Debug.Assert(arr1.SequenceEqual(arr2));
             }
         });
+    }
+
+    [Fact]
+    public static void V3PayloadSizingCapsAt256KiB()
+    {
+        var messages = new[]
+        {
+            new byte[100_000],
+            new byte[100_000],
+            new byte[100_000],
+        };
+
+        Assert.Equal(2, WebSocketV3Payload.CountClientMessagesThatFitInPayload(messages));
+        Assert.Equal(1, WebSocketV3Payload.CountClientMessagesThatFitInPayload(new[] { new byte[300_000] }));
+        Assert.Equal(0, WebSocketV3Payload.CountClientMessagesThatFitInPayload(Array.Empty<byte[]>()));
+    }
+
+    [Fact]
+    public static void V3ServerPayloadDecodeHandlesSingleAndCoalescedMessages()
+    {
+        static byte[] EncodeMessage(ServerMessage message) =>
+            IStructuralReadWrite.ToBytes(new ServerMessage.BSATN(), message);
+
+        static byte[] Concat(params byte[][] messages)
+        {
+            var payload = new byte[messages.Sum(message => message.Length)];
+            var offset = 0;
+            foreach (var message in messages)
+            {
+                Buffer.BlockCopy(message, 0, payload, offset, message.Length);
+                offset += message.Length;
+            }
+            return payload;
+        }
+
+        var singlePayload = EncodeMessage(new ServerMessage.SubscriptionError(new()
+        {
+            RequestId = null,
+            QueryId = 1,
+            Error = "single",
+        }));
+        var single = WebSocketV3Payload.DecodeServerMessages(singlePayload);
+        Assert.Single(single);
+        Assert.Equal(singlePayload, single[0]);
+
+        var firstPayload = EncodeMessage(new ServerMessage.SubscriptionError(new()
+        {
+            RequestId = null,
+            QueryId = 2,
+            Error = "first",
+        }));
+        var secondPayload = EncodeMessage(new ServerMessage.SubscriptionError(new()
+        {
+            RequestId = null,
+            QueryId = 3,
+            Error = "second",
+        }));
+        var batch = WebSocketV3Payload.DecodeServerMessages(Concat(firstPayload, secondPayload));
+        Assert.Equal(2, batch.Length);
+        Assert.Equal(firstPayload, batch[0]);
+        Assert.Equal(secondPayload, batch[1]);
+    }
+
+    [Fact]
+    public static async Task WebSocketFallsBackToV2WhenServerOnlyNegotiatesV2()
+    {
+        static int GetFreePort()
+        {
+            using var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            return ((IPEndPoint)listener.LocalEndpoint).Port;
+        }
+
+        static async Task WaitForAsync(Task task, SpacetimeDB.WebSocket ws, string error)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            while (!task.IsCompleted)
+            {
+                ws.Update();
+                if (DateTime.UtcNow >= deadline)
+                {
+                    throw new TimeoutException(error);
+                }
+                await Task.Delay(10);
+            }
+
+            await task;
+        }
+
+        var port = GetFreePort();
+        using var listener = new HttpListener();
+        listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+        listener.Start();
+
+        var serverObservedProtocols = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var serverTask = Task.Run(async () =>
+        {
+            var context = await listener.GetContextAsync();
+            serverObservedProtocols.TrySetResult(context.Request.Headers["Sec-WebSocket-Protocol"] ?? string.Empty);
+
+            var webSocketContext = await context.AcceptWebSocketAsync(WebSocketProtocols.V2);
+            await Task.Delay(100);
+            await webSocketContext.WebSocket.CloseAsync(
+                WebSocketCloseStatus.NormalClosure,
+                "done",
+                CancellationToken.None
+            );
+        });
+
+        var ws = new SpacetimeDB.WebSocket(new SpacetimeDB.WebSocket.ConnectOptions
+        {
+            Protocols = WebSocketProtocols.Preferred,
+        });
+
+        var connected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        ws.OnConnect += () => connected.TrySetResult();
+        ws.OnClose += _ => closed.TrySetResult();
+
+        var clientTask = Task.Run(() => ws.Connect(
+            "test-token",
+            $"ws://127.0.0.1:{port}",
+            "example",
+            ConnectionId.Random(),
+            Compression.None,
+            false,
+            null
+        ));
+
+        await WaitForAsync(connected.Task, ws, "Timed out waiting for websocket connection.");
+
+        Assert.Equal(WebSocketProtocolVersion.V2, ws.ProtocolVersion);
+
+        var offeredProtocols = await serverObservedProtocols.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Contains(WebSocketProtocols.V3, offeredProtocols);
+        Assert.Contains(WebSocketProtocols.V2, offeredProtocols);
+
+        await WaitForAsync(closed.Task, ws, "Timed out waiting for websocket close.");
+        await serverTask.WaitAsync(TimeSpan.FromSeconds(5));
+        await clientTask.WaitAsync(TimeSpan.FromSeconds(5));
     }
 }
