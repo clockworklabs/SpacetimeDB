@@ -269,8 +269,9 @@ async fn spacetimedb_login(remote: &Url, web_session_token: &String) -> Result<S
         .header("Authorization", format!("Bearer {web_session_token}"))
         .send()
         .await?
-        .error_for_status()?;
-    let response: SpacetimeDBTokenResponse = response.json().await?;
+        .error_for_status()?
+        .json()
+        .await?;
 
     if !response.success {
         return Err(anyhow::anyhow!(
