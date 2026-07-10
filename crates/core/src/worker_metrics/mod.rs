@@ -192,7 +192,7 @@ metrics_group!(
         // Accepted-client disconnection `cause` label values are:
         // client_close, idle_timeout, incoming_queue_full, outgoing_queue_full,
         // module_exited, client_message_error, websocket_receive_error,
-        // websocket_send_error, websocket_stream_ended, actor_aborted.
+        // websocket_send_error, websocket_stream_ended, unknown.
         #[name = spacetime_worker_ws_client_disconnections_total]
         #[help = "The cumulative number of accepted websocket client disconnections by cause. Cause values are documented by ClientDisconnectCause::ALL."]
         #[labels(database_identity: Identity, cause: str)]
