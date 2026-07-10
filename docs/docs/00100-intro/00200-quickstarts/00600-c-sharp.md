@@ -145,7 +145,7 @@ dotnet workload install wasi-experimental
     </StepText>
     <StepCode>
 ```bash
-spacetime dev --template basic-cs
+spacetime dev --template basic-cs --dotnet-version 8
 ```
     </StepCode>
   </Step>
