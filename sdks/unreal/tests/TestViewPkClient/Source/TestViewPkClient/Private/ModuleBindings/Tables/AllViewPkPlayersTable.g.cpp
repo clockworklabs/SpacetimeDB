@@ -13,6 +13,11 @@ void UAllViewPkPlayersTable::PostInitialize()
     Data = MakeShared<UClientCache<FViewPkPlayerType>>();
 
     TSharedPtr<FTableCache<FViewPkPlayerType>> AllViewPkPlayersTable = Data->GetOrAdd(TableName);
+    AllViewPkPlayersTable->AddUniqueConstraint<uint64>("id", [](const FViewPkPlayerType& Row) -> const uint64& {
+        return Row.Id; });
+
+    Id = NewObject<UAllViewPkPlayersIdUniqueIndex>(this);
+    Id->SetCache(AllViewPkPlayersTable);
 
     /***/
 }

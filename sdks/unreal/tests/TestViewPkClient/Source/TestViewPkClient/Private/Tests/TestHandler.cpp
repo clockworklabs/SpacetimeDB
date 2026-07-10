@@ -1,5 +1,7 @@
 #include "Tests/TestHandler.h"
 
+#include "ModuleBindings/Tables/AllViewPkPlayersTable.g.h"
+
 namespace
 {
 bool ValidateInsertedRow(UViewPkRuntimeHandler* Handler, const FString& StepName, const FViewPkPlayerType& Value)
@@ -51,10 +53,17 @@ void UViewPkRuntimeHandler::OnAllViewPkPlayersInsert(const FEventContext&, const
 	}
 }
 
-void UViewPkRuntimeHandler::OnAllViewPkPlayersUpdate(const FEventContext&, const FViewPkPlayerType& OldValue, const FViewPkPlayerType& NewValue)
+void UViewPkRuntimeHandler::OnAllViewPkPlayersUpdate(const FEventContext& Context, const FViewPkPlayerType& OldValue, const FViewPkPlayerType& NewValue)
 {
 	if (ValidateUpdatedRows(this, TEXT("all_view_pk_players_update"), OldValue, NewValue))
 	{
+		const FViewPkPlayerType Found = Context.Db->AllViewPkPlayers->Id->Find(ExpectedId);
+		if (Found.Id != ExpectedId || Found.Name != UpdatedName)
+		{
+			Counter->MarkFailure(TEXT("all_view_pk_players_update"), FString::Printf(TEXT("Expected Id.Find(%llu) to return updated row %s"), static_cast<unsigned long long>(ExpectedId), *UpdatedName));
+			Counter->Abort();
+			return;
+		}
 		Counter->MarkSuccess(TEXT("all_view_pk_players_update"));
 	}
 }
