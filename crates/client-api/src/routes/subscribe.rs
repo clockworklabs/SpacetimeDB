@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 use std::panic;
 use std::pin::{pin, Pin};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
@@ -343,6 +343,9 @@ struct ActorState {
     disconnect_recorder: Option<ClientDisconnectRecorder>,
     closed: AtomicBool,
     got_pong: AtomicBool,
+    /// When the last `Ping` frame was written to the socket.
+    /// Taken when the corresponding `Pong` arrives, to observe the roundtrip time.
+    last_ping_sent: Mutex<Option<Instant>>,
 }
 
 impl ActorState {
@@ -359,6 +362,7 @@ impl ActorState {
             disconnect_recorder,
             closed: AtomicBool::new(false),
             got_pong: AtomicBool::new(true),
+            last_ping_sent: Mutex::new(None),
         }
     }
 
@@ -376,6 +380,25 @@ impl ActorState {
 
     pub fn reset_ponged(&self) -> bool {
         self.got_pong.swap(false, Ordering::Relaxed)
+    }
+
+    /// Record that a `Ping` frame was written to the socket.
+    fn record_ping_sent(&self) {
+        *self.last_ping_sent.lock().unwrap() = Some(Instant::now());
+    }
+
+    /// Record that the client's `Pong` was processed,
+    /// observing the ping-pong roundtrip time.
+    ///
+    /// This time includes any queueing of the `Ping` behind other outgoing
+    /// data in the TCP stream.
+    fn record_pong(&self) {
+        if let Some(sent) = self.last_ping_sent.lock().unwrap().take() {
+            WORKER_METRICS
+                .websocket_pong_rtt
+                .with_label_values(&self.database)
+                .observe(sent.elapsed().as_secs_f64());
+        }
     }
 
     pub fn next_idle_deadline(&self) -> Instant {
@@ -1085,6 +1108,7 @@ fn ws_client_message_handler(
                 ClientMessage::Pong(_bytes) => {
                     log::trace!("Received pong from client {}", state.client_id);
                     state.set_ponged();
+                    state.record_pong();
                 },
                 ClientMessage::Close(close_frame) => {
                     log::trace!("Received Close frame from client {}: {:?}", state.client_id, close_frame);
@@ -1286,6 +1310,7 @@ async fn ws_send_loop_inner<T, U, Encoder>(
                             log::warn!("error sending ping: {e:#}");
                             break;
                         }
+                        state.record_ping_sent();
                     },
                     UnorderedWsMessage::Error(err) => {
                         log::trace!("encoding execution error");

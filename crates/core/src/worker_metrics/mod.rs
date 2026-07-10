@@ -412,6 +412,12 @@ metrics_group!(
         #[buckets(0.001, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0)]
         pub websocket_serialize_secs: HistogramVec,
 
+        #[name = spacetime_websocket_pong_rtt_secs]
+        #[help = "Time from writing a Ping frame to the socket until the client's Pong is processed"]
+        #[labels(db: Identity)]
+        #[buckets(0.005, 0.025, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0)]
+        pub websocket_pong_rtt: HistogramVec,
+
         #[name = spacetime_worker_instance_operation_queue_length]
         #[help = "Length of the wait queue for access to a module instance."]
         #[labels(database_identity: Identity)]
