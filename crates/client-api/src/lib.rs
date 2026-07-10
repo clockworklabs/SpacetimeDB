@@ -137,14 +137,28 @@ impl Host {
     pub async fn exec_sql(
         &self,
         auth: AuthCtx,
-        _database: Database,
+        database: Database,
         confirmed_read: bool,
         body: String,
     ) -> axum::response::Result<Vec<SqlStmtResult<ProductValue>>> {
+        let request_start = std::time::Instant::now();
+        let sql_len = body.len();
+        log::debug!(
+            "sql exec: start database={} caller={} confirmed={confirmed_read} sql_len={sql_len}",
+            database.database_identity,
+            auth.caller()
+        );
+        let start = std::time::Instant::now();
+        log::debug!("sql exec: module lookup start database={}", database.database_identity);
         let module_host = self
             .module()
             .await
             .map_err(|_| (StatusCode::NOT_FOUND, "module not found".to_string()))?;
+        log::debug!(
+            "sql exec: module lookup finished database={} elapsed={:?}",
+            database.database_identity,
+            start.elapsed()
+        );
 
         tracing::info!(sql = body);
         let mut header = vec![];
@@ -154,6 +168,11 @@ impl Host {
         let db = module_host.relational_db().clone();
         let durable_offset = db.durable_tx_offset();
 
+        log::debug!(
+            "sql exec: sql::execute::run start database={} caller={}",
+            database.database_identity,
+            auth.caller()
+        );
         let result = sql::execute::run(
             db,
             body,
@@ -164,9 +183,20 @@ impl Host {
         )
         .await
         .map_err(|e| {
+            log::debug!(
+                "sql exec: sql::execute::run failed database={} elapsed={:?} err={e}",
+                database.database_identity,
+                sql_start.elapsed()
+            );
             log::warn!("{e}");
             (StatusCode::BAD_REQUEST, e.to_string())
         })?;
+        log::debug!(
+            "sql exec: sql::execute::run finished database={} elapsed={:?} rows={}",
+            database.database_identity,
+            sql_start.elapsed(),
+            result.rows.len()
+        );
 
         let total_duration = sql_start.elapsed();
         drop(_guard);
@@ -184,12 +214,68 @@ impl Host {
             total_duration_micros: total_duration.as_micros() as u64,
             stats: SqlStmtStats::from_metrics(&result.metrics),
         }];
+        log::debug!(
+            "sql exec: response prepared database={} stmt_results={} rows={} confirmed={confirmed_read}",
+            database.database_identity,
+            json.len(),
+            json.iter().map(|result| result.rows.len()).sum::<usize>()
+        );
 
         if confirmed_read && let Some(mut durable_offset) = durable_offset {
-            let tx_offset = tx_offset.await.map_err(|_| log_and_500("transaction aborted"))?;
-            durable_offset.wait_for(tx_offset).await.map_err(log_and_500)?;
+            let start = std::time::Instant::now();
+            log::debug!(
+                "sql exec: awaiting transaction offset database={}",
+                database.database_identity
+            );
+            let tx_offset = tx_offset.await.map_err(|_| {
+                log::debug!(
+                    "sql exec: transaction offset await failed database={} elapsed={:?}",
+                    database.database_identity,
+                    start.elapsed()
+                );
+                log_and_500("transaction aborted")
+            })?;
+            log::debug!(
+                "sql exec: transaction offset received database={} tx_offset={} elapsed={:?}",
+                database.database_identity,
+                tx_offset,
+                start.elapsed()
+            );
+
+            let start = std::time::Instant::now();
+            log::debug!(
+                "sql exec: waiting for durable offset database={} tx_offset={}",
+                database.database_identity,
+                tx_offset
+            );
+            durable_offset.wait_for(tx_offset).await.map_err(|err| {
+                log::debug!(
+                    "sql exec: durable offset wait failed database={} tx_offset={} elapsed={:?} err={err}",
+                    database.database_identity,
+                    tx_offset,
+                    start.elapsed()
+                );
+                log_and_500(err)
+            })?;
+            log::debug!(
+                "sql exec: durable offset reached database={} tx_offset={} elapsed={:?}",
+                database.database_identity,
+                tx_offset,
+                start.elapsed()
+            );
+        } else {
+            log::debug!(
+                "sql exec: skipping durable offset wait database={} confirmed={confirmed_read} has_durable_offset={}",
+                database.database_identity,
+                durable_offset.is_some()
+            );
         }
 
+        log::debug!(
+            "sql exec: finished database={} elapsed={:?}",
+            database.database_identity,
+            request_start.elapsed()
+        );
         Ok(json)
     }
 

@@ -717,22 +717,48 @@ where
 {
     tokio::spawn(async move {
         let connection_id = generate_random_connection_id();
+        let request_start = std::time::Instant::now();
+        log::debug!("sql request {connection_id}: spawned connection lifecycle caller={caller_identity}");
 
         // Run the module's client_connected reducer, if any.
         // If it rejects the connection, bail before executing `fut`
+        let start = std::time::Instant::now();
+        log::debug!("sql request {connection_id}: client_connected start caller={caller_identity}");
         module
             .call_identity_connected(caller_auth, connection_id)
             .await
             .map_err(client_connected_error_to_response)?;
+        log::debug!(
+            "sql request {connection_id}: client_connected finished elapsed={:?}",
+            start.elapsed()
+        );
 
+        let start = std::time::Instant::now();
+        log::debug!("sql request {connection_id}: handler future start caller={caller_identity}");
         let result = fut(module.clone(), caller_identity, connection_id).await;
+        log::debug!(
+            "sql request {connection_id}: handler future finished elapsed={:?} ok={}",
+            start.elapsed(),
+            result.is_ok()
+        );
 
         // Always disconnect, even if authorization or execution failed.
+        let start = std::time::Instant::now();
+        log::debug!("sql request {connection_id}: client_disconnected start caller={caller_identity}");
         module
             .call_identity_disconnected(caller_identity, connection_id)
             .await
             .map_err(client_disconnected_error_to_response)?;
+        log::debug!(
+            "sql request {connection_id}: client_disconnected finished elapsed={:?}",
+            start.elapsed()
+        );
 
+        log::debug!(
+            "sql request {connection_id}: connection lifecycle finished elapsed={:?} ok={}",
+            request_start.elapsed(),
+            result.is_ok()
+        );
         result
     })
     .await
@@ -750,21 +776,65 @@ pub async fn sql_direct<S>(
 where
     S: NodeDelegate + ControlStateDelegate + Authorization + 'static,
 {
+    let confirmed_read = confirmed.unwrap_or(crate::DEFAULT_CONFIRMED_READS);
+    let sql_len = sql.len();
+    log::debug!(
+        "sql request: resolving database name_or_identity={name_or_identity:?} caller={caller_identity} confirmed={confirmed_read} sql_len={sql_len}"
+    );
+    let start = std::time::Instant::now();
     let (host, database) = find_leader_and_database(&worker_ctx, name_or_identity).await?;
+    log::debug!(
+        "sql request: resolved database identity={} id={} elapsed={:?}",
+        database.database_identity,
+        database.id,
+        start.elapsed()
+    );
 
+    let start = std::time::Instant::now();
+    log::debug!(
+        "sql request: loading module host database={}",
+        database.database_identity
+    );
     let module = host.module().await.map_err(log_and_500)?;
-    let fut = async move |_module: ModuleHost, caller_identity: Identity, _connection_id: ConnectionId| {
+    log::debug!(
+        "sql request: loaded module host database={} elapsed={:?}",
+        database.database_identity,
+        start.elapsed()
+    );
+    let fut = async move |_module: ModuleHost, caller_identity: Identity, connection_id: ConnectionId| {
+        let start = std::time::Instant::now();
+        log::debug!(
+            "sql request {connection_id}: authorize_sql start caller={caller_identity} database={}",
+            database.database_identity
+        );
         let sql_auth = worker_ctx
             .authorize_sql(caller_identity, database.database_identity)
             .await?;
+        log::debug!(
+            "sql request {connection_id}: authorize_sql finished elapsed={:?}",
+            start.elapsed()
+        );
 
-        host.exec_sql(
-            sql_auth,
-            database,
-            confirmed.unwrap_or(crate::DEFAULT_CONFIRMED_READS),
-            sql,
-        )
-        .await
+        let start = std::time::Instant::now();
+        log::debug!(
+            "sql request {connection_id}: host.exec_sql start database={} confirmed={confirmed_read} sql_len={sql_len}",
+            database.database_identity
+        );
+        host.exec_sql(sql_auth, database, confirmed_read, sql)
+            .await
+            .inspect(|rows| {
+                log::debug!(
+                    "sql request {connection_id}: host.exec_sql finished elapsed={:?} stmt_results={}",
+                    start.elapsed(),
+                    rows.len()
+                );
+            })
+            .inspect_err(|err| {
+                log::debug!(
+                    "sql request {connection_id}: host.exec_sql failed elapsed={:?} err={err:?}",
+                    start.elapsed(),
+                );
+            })
     };
 
     with_connection(module, caller_auth, caller_identity, fut).await
@@ -780,11 +850,27 @@ pub async fn sql<S>(
 where
     S: NodeDelegate + ControlStateDelegate + Authorization + 'static,
 {
+    log::debug!(
+        "sql route: received request caller={} confirmed={:?} sql_len={}",
+        auth.claims.identity,
+        params.confirmed,
+        body.len()
+    );
     let caller_identity = auth.claims.identity;
     let caller_auth: ConnectionAuthCtx = auth.into();
+    let start = std::time::Instant::now();
     let json = sql_direct(worker_ctx, name_or_identity, params, caller_identity, caller_auth, body).await?;
+    log::debug!(
+        "sql route: sql_direct finished caller={caller_identity} elapsed={:?} stmt_results={}",
+        start.elapsed(),
+        json.len()
+    );
 
     let total_duration = json.iter().fold(0, |acc, x| acc + x.total_duration_micros);
+    log::debug!(
+        "sql route: returning response caller={caller_identity} execution_duration_micros={}",
+        total_duration
+    );
 
     Ok((
         TypedHeader(SpacetimeExecutionDurationMicros(Duration::from_micros(total_duration))),

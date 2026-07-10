@@ -1821,6 +1821,10 @@ impl ModuleHost {
     {
         self.guard_closed()?;
         let timer_guard = self.start_call_timer(label);
+        let start = std::time::Instant::now();
+        if label == "call_sql" {
+            log::debug!("module host call_sql: dispatch start");
+        }
 
         scopeguard::defer_on_unwind!({
             log::warn!("module operation {label} panicked");
@@ -1829,21 +1833,42 @@ impl ModuleHost {
 
         Ok(match &*self.inner {
             ModuleHostInner::Wasm(host) => {
+                if label == "call_sql" {
+                    log::debug!("module host call_sql: dispatching to wasm main worker");
+                }
                 let executor = host.executor.clone();
-                executor
+                let result = executor
                     .run_sync_job(move |state| {
                         state.with_instance(move |inst| {
                             drop(timer_guard);
                             wasm(arg, inst)
                         })
                     })
-                    .await
+                    .await;
+                if label == "call_sql" {
+                    log::debug!(
+                        "module host call_sql: wasm main worker finished elapsed={:?}",
+                        start.elapsed()
+                    );
+                }
+                result
             }
             ModuleHostInner::Js(host) => {
+                if label == "call_sql" {
+                    log::debug!("module host call_sql: dispatching to js main worker");
+                }
                 drop(timer_guard);
-                host.main_instance
+                let result = host
+                    .main_instance
                     .with_instance(|inst| async move { js(arg, &inst).await })
-                    .await
+                    .await;
+                if label == "call_sql" {
+                    log::debug!(
+                        "module host call_sql: js main worker finished elapsed={:?}",
+                        start.elapsed()
+                    );
+                }
+                result
             }
         })
     }
@@ -1986,10 +2011,18 @@ impl ModuleHost {
     }
 
     async fn call_sql_command(&self, cmd: SqlCommand) -> Result<SqlCommandResult, DBError> {
-        call_instance!(self, "call_sql", cmd, |cmd, inst| inst.call_sql(cmd), |cmd, inst| inst
+        let start = std::time::Instant::now();
+        log::debug!("module host call_sql: command dispatch start");
+        let result = call_instance!(self, "call_sql", cmd, |cmd, inst| inst.call_sql(cmd), |cmd, inst| inst
             .call_sql(cmd)
             .await,)
-        .map_err(|_| DBError::Other(anyhow::anyhow!("no such module")))
+        .map_err(|_| DBError::Other(anyhow::anyhow!("no such module")));
+        log::debug!(
+            "module host call_sql: command dispatch finished elapsed={:?} ok={}",
+            start.elapsed(),
+            result.is_ok()
+        );
+        result
     }
 
     pub async fn disconnect_client(&self, client_id: ClientActorId) {
@@ -2510,6 +2543,13 @@ impl ModuleHost {
         subs: Option<ModuleSubscriptions>,
         head: &mut Vec<(RawIdentifier, AlgebraicType)>,
     ) -> Result<SqlResult, DBError> {
+        let start = std::time::Instant::now();
+        log::debug!(
+            "module host call_sql: start caller={} sql_len={} subscriptions={}",
+            auth.caller(),
+            sql_text.len(),
+            subs.is_some()
+        );
         let cmd = SqlCommand {
             db,
             sql_text,
@@ -2520,7 +2560,13 @@ impl ModuleHost {
         let res = self.call_sql_command(cmd).await?;
 
         *head = res.head;
-        res.result
+        let result = res.result;
+        log::debug!(
+            "module host call_sql: finished elapsed={:?} ok={}",
+            start.elapsed(),
+            result.is_ok()
+        );
+        result
     }
 
     pub async fn call_procedure(

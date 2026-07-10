@@ -57,9 +57,34 @@ pub async fn run(
     module: Option<ModuleHost>,
     head: &mut Vec<(RawIdentifier, AlgebraicType)>,
 ) -> Result<SqlResult, DBError> {
+    let start = std::time::Instant::now();
+    let sql_len = sql_text.len();
+    let caller = auth.caller();
+    let via_module = module.is_some();
+    log::debug!(
+        "sql execute: run start caller={caller} sql_len={sql_len} via_module={via_module} subscriptions={}",
+        subs.is_some()
+    );
     match module {
-        Some(module) => module.call_sql(db, sql_text, auth, subs, head).await,
-        None => run_inner::<crate::host::wasmtime::WasmtimeInstance>(None, db, sql_text, auth, subs, head).map(|x| x.0),
+        Some(module) => {
+            let result = module.call_sql(db, sql_text, auth, subs, head).await;
+            log::debug!(
+                "sql execute: run finished caller={caller} via_module=true elapsed={:?} ok={}",
+                start.elapsed(),
+                result.is_ok()
+            );
+            result
+        }
+        None => {
+            let result =
+                run_inner::<crate::host::wasmtime::WasmtimeInstance>(None, db, sql_text, auth, subs, head).map(|x| x.0);
+            log::debug!(
+                "sql execute: run finished caller={caller} via_module=false elapsed={:?} ok={}",
+                start.elapsed(),
+                result.is_ok()
+            );
+            result
+        }
     }
 }
 
@@ -85,29 +110,60 @@ fn run_inner<I: WasmInstance>(
     subs: Option<ModuleSubscriptions>,
     head: &mut Vec<(RawIdentifier, AlgebraicType)>,
 ) -> Result<(SqlResult, bool), DBError> {
+    let start = std::time::Instant::now();
+    log::debug!(
+        "sql execute: run_inner start caller={} sql_len={} has_instance={} subscriptions={}",
+        auth.caller(),
+        sql_text.len(),
+        instance.is_some(),
+        subs.is_some()
+    );
     // We parse the sql statement in a mutable transaction.
     // If it turns out to be a query, we downgrade the tx.
+    let compile_start = std::time::Instant::now();
+    log::debug!("sql execute: compile start caller={}", auth.caller());
     let (tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
         compile_sql_stmt(&sql_text, &SchemaViewer::new(tx, &auth), &auth)
     })?;
+    log::debug!(
+        "sql execute: compile finished caller={} elapsed={:?}",
+        auth.caller(),
+        compile_start.elapsed()
+    );
 
     let mut metrics = ExecutionMetrics::default();
 
     match stmt {
         Statement::Select(stmt) => {
+            log::debug!("sql execute: statement kind=select caller={}", auth.caller());
             // Materialize views and downgrade to a read-only transaction
+            let materialize_start = std::time::Instant::now();
+            log::debug!("sql execute: materialize views start caller={}", auth.caller());
             let (tx, trapped) = match instance {
                 Some(instance) => ModuleHost::materialize_views(tx, instance, &stmt, auth.caller(), Workload::Sql)?,
                 None => (tx, false),
             };
+            log::debug!(
+                "sql execute: materialize views finished caller={} elapsed={:?} trapped={trapped}",
+                auth.caller(),
+                materialize_start.elapsed()
+            );
 
+            let downgrade_start = std::time::Instant::now();
+            log::debug!("sql execute: commit downgrade start caller={}", auth.caller());
             let (tx_data, tx_metrics_mut, tx) = db.commit_tx_downgrade(tx, Workload::Sql);
+            log::debug!(
+                "sql execute: commit downgrade finished caller={} elapsed={:?}",
+                auth.caller(),
+                downgrade_start.elapsed()
+            );
 
             let (tx_offset_send, tx_offset) = oneshot::channel();
             // Release the tx on drop, so that we record metrics
             // and set the transaction offset.
             let mut tx = scopeguard::guard(tx, |tx| {
                 let (offset, tx_metrics_downgrade, reducer) = db.release_tx(tx);
+                log::debug!("sql execute: select tx released offset={offset}");
                 let _ = tx_offset_send.send(offset);
                 db.report_tx_metrics(reducer, Some(tx_data), Some(tx_metrics_mut), Some(tx_metrics_downgrade));
             });
@@ -118,7 +174,11 @@ fn run_inner<I: WasmInstance>(
             });
 
             // Evaluate the query
+            let select_start = std::time::Instant::now();
+            log::debug!("sql execute: select execution start caller={}", auth.caller());
             let rows = execute_select_stmt(&auth, stmt, &DeltaTx::from(&*tx), &mut metrics, |plan| {
+                let row_limit_start = std::time::Instant::now();
+                log::debug!("sql execute: select row limit check start caller={}", auth.caller());
                 check_row_limit(
                     &[&plan],
                     &db,
@@ -126,12 +186,28 @@ fn run_inner<I: WasmInstance>(
                     |plan, tx| plan.plan_iter().map(|plan| estimate_rows_scanned(tx, plan)).sum(),
                     &auth,
                 )?;
+                log::debug!(
+                    "sql execute: select row limit check finished caller={} elapsed={:?}",
+                    auth.caller(),
+                    row_limit_start.elapsed()
+                );
                 Ok(plan)
             })?;
+            log::debug!(
+                "sql execute: select execution finished caller={} elapsed={:?} rows={}",
+                auth.caller(),
+                select_start.elapsed(),
+                rows.len()
+            );
 
             // Update transaction metrics
             tx.metrics.merge(metrics);
 
+            log::debug!(
+                "sql execute: run_inner finished caller={} kind=select elapsed={:?}",
+                auth.caller(),
+                start.elapsed()
+            );
             Ok((
                 SqlResult {
                     tx_offset,
@@ -142,25 +218,42 @@ fn run_inner<I: WasmInstance>(
             ))
         }
         Statement::DML(stmt) => {
+            log::debug!("sql execute: statement kind=dml caller={}", auth.caller());
             // An extra layer of auth is required for DML
             if !auth.has_write_access() {
+                log::debug!("sql execute: dml rejected caller={} reason=unauthorized", auth.caller());
                 return Err(anyhow!("Caller {} is not authorized to run SQL DML statements", auth.caller()).into());
             }
 
             // Evaluate the mutation
+            let dml_start = std::time::Instant::now();
+            log::debug!("sql execute: dml execution start caller={}", auth.caller());
             let (mut tx, _) = db.with_auto_rollback(tx, |tx| execute_dml_stmt(&auth, stmt, tx, &mut metrics))?;
+            log::debug!(
+                "sql execute: dml execution finished caller={} elapsed={:?}",
+                auth.caller(),
+                dml_start.elapsed()
+            );
 
             // Update transaction metrics
             tx.metrics.merge(metrics);
 
             // Update views
+            let views_start = std::time::Instant::now();
+            log::debug!("sql execute: dml view update start caller={}", auth.caller());
             let (result, trapped) = match instance {
                 Some(instance) => ModuleHost::call_views_with_tx(tx, instance, auth.caller()),
                 None => (ViewCallResult::default(tx), false),
             };
+            log::debug!(
+                "sql execute: dml view update finished caller={} elapsed={:?} trapped={trapped}",
+                auth.caller(),
+                views_start.elapsed()
+            );
 
             // Rollback transaction and report metrics if view execution failed
             if let ViewOutcome::Failed(err) = result.outcome {
+                log::debug!("sql execute: dml view update failed caller={}", auth.caller());
                 let (_, metrics, reducer) = db.rollback_mut_tx(result.tx);
                 db.report_mut_tx_metrics(reducer, metrics, None);
                 return Err(DBError::View(spacetimedb_engine::error::ViewError::InternalError(err)));
@@ -171,8 +264,15 @@ fn run_inner<I: WasmInstance>(
             // Commit the tx if there are no deltas to process
             if subs.is_none() {
                 let metrics = tx.metrics;
+                let commit_start = std::time::Instant::now();
+                log::debug!("sql execute: dml commit start caller={}", auth.caller());
                 return db.commit_tx(tx).map(|tx_opt| {
                     let (tx_offset, tx_data, tx_metrics, reducer) = tx_opt.unwrap();
+                    log::debug!(
+                        "sql execute: dml commit finished caller={} elapsed={:?} tx_offset={tx_offset}",
+                        auth.caller(),
+                        commit_start.elapsed()
+                    );
 
                     let (tx_offset_sender, tx_offset_receiver) = oneshot::channel();
                     let _ = tx_offset_sender.send(tx_offset);
@@ -209,7 +309,19 @@ fn run_inner<I: WasmInstance>(
                 request_id: None,
                 timer: None,
             };
+            let broadcast_start = std::time::Instant::now();
+            log::debug!("sql execute: dml commit and broadcast start caller={}", auth.caller());
             let res = commit_and_broadcast_event(&subs.unwrap(), None, event, tx);
+            log::debug!(
+                "sql execute: dml commit and broadcast finished caller={} elapsed={:?}",
+                auth.caller(),
+                broadcast_start.elapsed()
+            );
+            log::debug!(
+                "sql execute: run_inner finished caller={} kind=dml elapsed={:?}",
+                auth.caller(),
+                start.elapsed()
+            );
             Ok((
                 SqlResult {
                     tx_offset: res.tx_offset,
