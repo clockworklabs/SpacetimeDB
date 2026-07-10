@@ -523,11 +523,6 @@ async fn ws_client_actor_inner(
 /// initiated a close due to idle timeout, before tearing down the connection.
 const SERVER_CLOSE_GRACE: Duration = Duration::from_secs(10);
 
-/// How often, at most, the send loop extends the idle deadline when it makes
-/// write progress. Purely to avoid hammering the idle timer's watch channel
-/// once per frame on fast connections.
-const WRITE_PROGRESS_INTERVAL: Duration = Duration::from_secs(1);
-
 /// The main `select!` loop of the websocket client actor.
 ///
 /// > This function is defined standalone with generic parameters so that its
@@ -1189,16 +1184,6 @@ async fn ws_send_loop_inner<T, U, Encoder>(
     let mut message_batch = Vec::new();
     let (frames_tx, mut frames_rx) = mpsc::unbounded_channel();
 
-    // When we last extended the idle deadline due to write progress.
-    //
-    // The socket accepting bytes means the client's TCP stack has been
-    // acknowledging previously sent data: the peer is alive, just possibly
-    // slow. Counting this as activity prevents the idle timer from
-    // disconnecting clients that are actively (if slowly) downloading a large
-    // message — such clients may not see our `Ping` for a long time, as it is
-    // queued in the TCP stream behind the message data.
-    let mut last_write_progress = Instant::now();
-
     let (encode_tx, encode_rx) = mpsc::unbounded_channel();
     // Spawn the encode task.
     //
@@ -1305,12 +1290,7 @@ async fn ws_send_loop_inner<T, U, Encoder>(
                         log::warn!("error sending frame: {e:#}");
                         break 'outer;
                     }
-                    // Writing succeeded, so the client is making progress:
-                    // extend the idle deadline (rate-limited).
-                    if last_write_progress.elapsed() >= WRITE_PROGRESS_INTERVAL {
-                        last_write_progress = Instant::now();
-                        state.record_activity();
-                    }
+                    state.record_activity();
                 }
             },
 
