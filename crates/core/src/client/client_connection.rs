@@ -881,9 +881,12 @@ impl ClientConnection {
             module_info.metrics.ws_clients_spawned.inc();
             scopeguard::defer! {
                 let database_identity = module_info.database_identity;
-                log::warn!("websocket connection aborted for client identity `{client_identity}` and database identity `{database_identity}`");
                 module_info.metrics.ws_clients_aborted.inc();
-                actor_disconnect_recorder.record(ClientDisconnectCause::Unknown);
+                // This is always called for to make sure `ws_clients_aborted` is incremented, but we only want to log a warning here
+                // if we haven't already recorded a cause for this disconnection.
+                if actor_disconnect_recorder.record(ClientDisconnectCause::Unknown) {
+                    log::warn!("websocket connection aborted for client identity `{client_identity}` and database identity `{database_identity}`");
+                }
             };
 
             fut.await
