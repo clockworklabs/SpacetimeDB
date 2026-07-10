@@ -206,7 +206,7 @@ impl WebLoginSessionResponse {
 async fn web_login(remote: &Url, open_browser: bool) -> Result<String, anyhow::Error> {
     let client = reqwest::Client::new();
 
-    let response = client
+    let response: WebLoginTokenResponse = client
         .post(remote.join("/api/auth/cli/login/request-token")?)
         .send()
         .await?
