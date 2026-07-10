@@ -63,6 +63,10 @@ spacetime publish my-database --server local --yes
 spacetime publish my-database --delete-data=always --yes
 ```
 
+Bare `--delete-data` defaults to `always`. Keep simple interactive docs examples
+bare, and use `--delete-data=always` for scripted/non-interactive examples that
+also pass `--yes`.
+
 ### Database Interaction
 
 ```bash

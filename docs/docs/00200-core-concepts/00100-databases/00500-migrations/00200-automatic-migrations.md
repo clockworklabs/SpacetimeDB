@@ -59,13 +59,13 @@ The following changes cannot be performed with automatic migration and will caus
 
 If you need to make changes that aren't supported by automatic migration, see [Incremental Migrations](./00300-incremental-migrations.md) for a production-ready pattern that allows complex schema changes without downtime or data loss.
 
-For development and testing, you can use `spacetime publish --delete-data=always` to completely reset your database, but this should **not** be used in production as it permanently deletes all data.
+For development and testing, you can use `spacetime publish --delete-data` to completely reset your database, but this should **not** be used in production as it permanently deletes all data.
 
 ## Best Practices
 
 ### During Development
 
-- Use `--delete-data=always` freely during early development when data loss is acceptable
+- Use `--delete-data` freely during early development when data loss is acceptable
 - Test migrations with sample data before applying to production databases
 - Consider creating separate databases for development, staging, and production
 
