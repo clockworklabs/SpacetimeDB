@@ -206,12 +206,12 @@ impl WebLoginSessionResponse {
 async fn web_login(remote: &Url, open_browser: bool) -> Result<String, anyhow::Error> {
     let client = reqwest::Client::new();
 
-    let response: WebLoginTokenResponse = client
+    let response = client
         .post(remote.join("/api/auth/cli/login/request-token")?)
         .send()
         .await?
-        .json()
-        .await?;
+        .error_for_status()?;
+    let response: WebLoginTokenResponse = response.json().await?;
 
     if !response.success {
         return Err(anyhow::anyhow!("Failed to request token"));
@@ -240,7 +240,8 @@ async fn web_login(remote: &Url, open_browser: bool) -> Result<String, anyhow::E
         status_url
             .query_pairs_mut()
             .append_pair("token", web_login_request_token);
-        let response: WebLoginSessionResponse = client.get(status_url).send().await?.json().await?;
+        let response = client.get(status_url).send().await?.error_for_status()?;
+        let response: WebLoginSessionResponse = response.json().await?;
         if let Some(approved) = response.approved()? {
             println!("Login successful!");
             return Ok(approved.session_token.clone());
@@ -263,13 +264,13 @@ struct SpacetimeDBTokenData {
 async fn spacetimedb_login(remote: &Url, web_session_token: &String) -> Result<String, anyhow::Error> {
     let client = reqwest::Client::new();
 
-    let response: SpacetimeDBTokenResponse = client
+    let response = client
         .post(remote.join("api/spacetimedb-token")?)
         .header("Authorization", format!("Bearer {web_session_token}"))
         .send()
         .await?
-        .json()
-        .await?;
+        .error_for_status()?;
+    let response: SpacetimeDBTokenResponse = response.json().await?;
 
     if !response.success {
         return Err(anyhow::anyhow!(
