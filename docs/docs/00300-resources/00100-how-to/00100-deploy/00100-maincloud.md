@@ -41,7 +41,7 @@ To update an existing module, run the same command. SpacetimeDB hot-swaps the mo
 To clear all data and start fresh:
 
 ```bash
-spacetime publish my-database --server maincloud --delete-data
+spacetime publish my-database --server maincloud --delete-data=always
 ```
 
 ## Connecting Clients to Maincloud
