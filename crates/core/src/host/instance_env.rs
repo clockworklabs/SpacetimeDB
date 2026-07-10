@@ -1,4 +1,5 @@
 use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
+use crate::config::HttpEgressPolicy;
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
@@ -53,6 +54,7 @@ pub struct InstanceEnv {
     in_anon_tx: bool,
     /// A procedure's last known transaction offset.
     procedure_last_tx_offset: Option<TransactionOffset>,
+    http_egress_policy: HttpEgressPolicy,
 }
 
 /// `InstanceEnv` needs to be `Send` because it is created on the host thread
@@ -224,7 +226,7 @@ impl ChunkedWriter {
 
 // Generic 'instance environment' delegated to from various host types.
 impl InstanceEnv {
-    pub fn new(replica_ctx: Arc<ReplicaContext>, scheduler: Scheduler) -> Self {
+    pub fn new(replica_ctx: Arc<ReplicaContext>, scheduler: Scheduler, http_egress_policy: HttpEgressPolicy) -> Self {
         Self {
             replica_ctx,
             scheduler,
@@ -237,6 +239,7 @@ impl InstanceEnv {
             func_name: None,
             in_anon_tx: false,
             procedure_last_tx_offset: None,
+            http_egress_policy,
         }
     }
 
@@ -926,13 +929,15 @@ impl InstanceEnv {
 
         let reqwest = reqwest;
 
+        let http_egress_policy = self.http_egress_policy;
+
         // Check if we have a blocked IP address, since IP literals bypass DNS resolution.
-        if is_blocked_ip_literal(reqwest.url()) {
+        if is_blocked_ip_literal(reqwest.url(), http_egress_policy) {
             return Err(NodesError::HttpError(BLOCKED_HTTP_ADDRESS_ERROR.to_string()));
         }
 
-        let redirect_policy = reqwest::redirect::Policy::custom(|attempt| {
-            if is_blocked_ip_literal(attempt.url()) {
+        let redirect_policy = reqwest::redirect::Policy::custom(move |attempt| {
+            if is_blocked_ip_literal(attempt.url(), http_egress_policy) {
                 attempt.error(BLOCKED_HTTP_ADDRESS_ERROR)
             } else {
                 reqwest::redirect::Policy::default().redirect(attempt)
@@ -944,7 +949,7 @@ impl InstanceEnv {
         // Actually execute the HTTP request!
         // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
         let execute_fut = reqwest::Client::builder()
-            .dns_resolver(Arc::new(FilteredDnsResolver))
+            .dns_resolver(Arc::new(FilteredDnsResolver { http_egress_policy }))
             .redirect(redirect_policy)
             .build()
             .map_err(http_error)?
@@ -1022,14 +1027,19 @@ const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const HTTP_MAX_TIMEOUT: Duration = Duration::from_secs(180);
 const BLOCKED_HTTP_ADDRESS_ERROR: &str = "refusing to connect to private or special-purpose addresses";
 
-struct FilteredDnsResolver;
+struct FilteredDnsResolver {
+    http_egress_policy: HttpEgressPolicy,
+}
 
 impl reqwest::dns::Resolve for FilteredDnsResolver {
     fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
         let host = name.as_str().to_owned();
+        let http_egress_policy = self.http_egress_policy;
         Box::pin(async move {
             let addrs = tokio::net::lookup_host((host.as_str(), 0)).await?;
-            let filtered_addrs: Vec<SocketAddr> = addrs.filter(|addr| !is_blocked_ip(addr.ip())).collect();
+            let filtered_addrs: Vec<SocketAddr> = addrs
+                .filter(|addr| !is_blocked_ip(addr.ip(), http_egress_policy))
+                .collect();
 
             if filtered_addrs.is_empty() {
                 return Err(
@@ -1042,25 +1052,24 @@ impl reqwest::dns::Resolve for FilteredDnsResolver {
     }
 }
 
-fn is_blocked_ip_literal(url: &reqwest::Url) -> bool {
+fn is_blocked_ip_literal(url: &reqwest::Url, http_egress_policy: HttpEgressPolicy) -> bool {
     match url.host() {
-        Some(url::Host::Ipv4(ip)) => is_blocked_ip(IpAddr::V4(ip)),
-        Some(url::Host::Ipv6(ip)) => is_blocked_ip(IpAddr::V6(ip)),
+        Some(url::Host::Ipv4(ip)) => is_blocked_ip(IpAddr::V4(ip), http_egress_policy),
+        Some(url::Host::Ipv6(ip)) => is_blocked_ip(IpAddr::V6(ip), http_egress_policy),
         Some(url::Host::Domain(_)) | None => false,
     }
 }
 
-fn is_blocked_ip(ip: IpAddr) -> bool {
+fn is_blocked_ip(ip: IpAddr, http_egress_policy: HttpEgressPolicy) -> bool {
     match ip {
-        IpAddr::V4(ip) => is_blocked_ipv4(ip),
-        IpAddr::V6(ip) => is_blocked_ipv6(ip),
+        IpAddr::V4(ip) => is_blocked_ipv4(ip, http_egress_policy),
+        IpAddr::V6(ip) => is_blocked_ipv6(ip, http_egress_policy),
     }
 }
 
-fn is_blocked_ipv4(ip: Ipv4Addr) -> bool {
+fn is_blocked_ipv4(ip: Ipv4Addr, http_egress_policy: HttpEgressPolicy) -> bool {
     let [a, b, c, d] = ip.octets();
-    let restrict_to_loopback = cfg!(feature = "allow_loopback_http_for_tests");
-    if restrict_to_loopback && a != 127 {
+    if http_egress_policy == HttpEgressPolicy::LoopbackOnly && a != 127 {
         return true;
     }
     // RFC 6890 Section 2.2.2, Table 1: "This host on this network" (0.0.0.0/8).
@@ -1070,7 +1079,7 @@ fn is_blocked_ipv4(ip: Ipv4Addr) -> bool {
     // RFC 6890 Section 2.2.2, Table 3: "Shared Address Space" (100.64.0.0/10).
     let is_shared_address_space = a == 100 && (b & 0b1100_0000) == 0b0100_0000;
     // RFC 6890 Section 2.2.2, Table 4: "Loopback" (127.0.0.0/8).
-    let is_loopback = !restrict_to_loopback && a == 127;
+    let is_loopback = http_egress_policy == HttpEgressPolicy::PublicInternet && a == 127;
     // RFC 6890 Section 2.2.2, Table 5: "Link Local" (169.254.0.0/16).
     let is_link_local = a == 169 && b == 254;
     // RFC 6890 Section 2.2.2, Table 6: "Private-Use" (172.16.0.0/12).
@@ -1120,14 +1129,13 @@ fn is_blocked_ipv4(ip: Ipv4Addr) -> bool {
         || is_limited_broadcast
 }
 
-fn is_blocked_ipv6(ip: Ipv6Addr) -> bool {
+fn is_blocked_ipv6(ip: Ipv6Addr, http_egress_policy: HttpEgressPolicy) -> bool {
     let segments = ip.segments();
-    let restrict_to_loopback = cfg!(feature = "allow_loopback_http_for_tests");
-    if restrict_to_loopback && ip != Ipv6Addr::LOCALHOST {
+    if http_egress_policy == HttpEgressPolicy::LoopbackOnly && ip != Ipv6Addr::LOCALHOST {
         return true;
     }
     // RFC 6890 Section 2.2.3, Table 17: "Loopback Address" (::1/128).
-    let is_loopback_address = !restrict_to_loopback && ip == Ipv6Addr::LOCALHOST;
+    let is_loopback_address = http_egress_policy == HttpEgressPolicy::PublicInternet && ip == Ipv6Addr::LOCALHOST;
     // RFC 6890 Section 2.2.3, Table 18: "Unspecified Address" (::/128).
     let is_unspecified_address = ip.is_unspecified();
     // RFC 6890 Section 2.2.3, Table 19: "IPv4-IPv6 Translat." (64:ff9b::/96).
@@ -1362,6 +1370,14 @@ mod test {
     use spacetimedb_primitives::{IndexId, TableId};
     use spacetimedb_sats::product;
 
+    fn is_blocked_ip(ip: IpAddr) -> bool {
+        super::is_blocked_ip(ip, HttpEgressPolicy::default())
+    }
+
+    fn is_blocked_ip_literal(url: &reqwest::Url) -> bool {
+        super::is_blocked_ip_literal(url, HttpEgressPolicy::default())
+    }
+
     /// An `InstanceEnv` requires a `DatabaseLogger`
     fn temp_logger() -> DatabaseLogger {
         DatabaseLogger::in_memory(64 * 1024)
@@ -1398,7 +1414,10 @@ mod test {
     fn instance_env(db: Arc<RelationalDB>) -> Result<(InstanceEnv, tokio::runtime::Runtime)> {
         let (scheduler, _) = Scheduler::open(db.clone());
         let (replica_context, runtime) = replica_ctx(db)?;
-        Ok((InstanceEnv::new(Arc::new(replica_context), scheduler), runtime))
+        Ok((
+            InstanceEnv::new(Arc::new(replica_context), scheduler, HttpEgressPolicy::default()),
+            runtime,
+        ))
     }
 
     /// An in-memory `RelationalDB` for testing.
@@ -1548,7 +1567,6 @@ mod test {
 
     #[test]
     fn blocks_ip_literal_hosts_in_urls() {
-        let restrict_to_loopback = cfg!(feature = "allow_loopback_http_for_tests");
         let allow_loopback = cfg!(feature = "allow_loopback_http_for_tests");
         assert_eq!(
             is_blocked_ip_literal(&reqwest::Url::parse("http://127.0.0.1:80/").unwrap()),
@@ -1566,10 +1584,35 @@ mod test {
         ));
         assert_eq!(
             is_blocked_ip_literal(&reqwest::Url::parse("http://8.8.8.8:80/").unwrap()),
-            restrict_to_loopback
+            false
         );
         assert!(!is_blocked_ip_literal(
             &reqwest::Url::parse("http://example.com:80/").unwrap()
+        ));
+    }
+
+    #[test]
+    fn loopback_only_policy_blocks_non_loopback_ip_literals() {
+        let policy = HttpEgressPolicy::LoopbackOnly;
+        assert!(!super::is_blocked_ip_literal(
+            &reqwest::Url::parse("http://127.0.0.1:80/").unwrap(),
+            policy,
+        ));
+        assert!(!super::is_blocked_ip_literal(
+            &reqwest::Url::parse("http://[::1]:80/").unwrap(),
+            policy,
+        ));
+        assert!(super::is_blocked_ip_literal(
+            &reqwest::Url::parse("http://8.8.8.8:80/").unwrap(),
+            policy,
+        ));
+        assert!(super::is_blocked_ip_literal(
+            &reqwest::Url::parse("http://10.0.0.1:80/").unwrap(),
+            policy,
+        ));
+        assert!(!super::is_blocked_ip_literal(
+            &reqwest::Url::parse("http://example.com:80/").unwrap(),
+            policy,
         ));
     }
 
@@ -1723,7 +1766,6 @@ mod test {
     #[test]
     fn blocks_each_rfc6890_ipv6_range() {
         // RFC 6890 §2.2.3 tables 17-29.
-        let restrict_to_loopback = cfg!(feature = "allow_loopback_http_for_tests");
         let allow_loopback = cfg!(feature = "allow_loopback_http_for_tests");
         let cases = [
             // Table 17: Loopback Address (::1/128).
@@ -1764,7 +1806,7 @@ mod test {
         // A normal global IPv6 address should only remain allowed in production builds.
         assert_eq!(
             is_blocked_ip(IpAddr::V6(Ipv6Addr::new(0x2606, 0x4700, 0x4700, 0, 0, 0, 0, 0x1111))),
-            restrict_to_loopback
+            false
         );
     }
 

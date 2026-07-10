@@ -1,5 +1,6 @@
 use std::num::NonZeroUsize;
 use std::path::Path;
+use std::str::FromStr;
 use std::time::Duration;
 use std::{fmt, io};
 
@@ -139,6 +140,7 @@ pub struct ConfigFile {
     pub logs: LogConfig,
     pub wasm: WasmConfig,
     pub v8: V8Config,
+    pub http_egress_policy: HttpEgressPolicy,
 }
 
 #[derive(serde::Deserialize, Default)]
@@ -154,6 +156,8 @@ struct ConfigFileToml {
     v8: V8ConfigToml,
     #[serde(default)]
     v8_heap_policy: V8HeapPolicyConfig,
+    #[serde(default)]
+    http_egress_policy: HttpEgressPolicy,
 }
 
 impl<'de> serde::Deserialize<'de> for ConfigFile {
@@ -172,6 +176,7 @@ impl<'de> serde::Deserialize<'de> for ConfigFile {
                 procedure_instance_pool_size: config.v8.procedure_instance_pool_size,
                 heap_policy: config.v8_heap_policy,
             },
+            http_egress_policy: config.http_egress_policy,
         })
     }
 }
@@ -199,6 +204,37 @@ impl CertificateAuthority {
 
     pub fn get_or_create_keys(&self) -> anyhow::Result<crate::auth::JwtKeys> {
         crate::auth::get_or_create_keys(self)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum HttpEgressPolicy {
+    PublicInternet,
+    AllowLoopback,
+    LoopbackOnly,
+}
+
+impl Default for HttpEgressPolicy {
+    fn default() -> Self {
+        if cfg!(feature = "allow_loopback_http_for_tests") {
+            Self::AllowLoopback
+        } else {
+            Self::PublicInternet
+        }
+    }
+}
+
+impl FromStr for HttpEgressPolicy {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "public-internet" => Ok(Self::PublicInternet),
+            "allow-loopback" => Ok(Self::AllowLoopback),
+            "loopback-only" => Ok(Self::LoopbackOnly),
+            _ => Err(format!("invalid HTTP egress policy `{value}`")),
+        }
     }
 }
 
@@ -562,6 +598,7 @@ mod tests {
     fn v8_heap_policy_defaults_when_omitted() {
         let config: ConfigFile = toml::from_str("").unwrap();
 
+        assert_eq!(config.http_egress_policy, HttpEgressPolicy::default());
         assert_eq!(
             config.wasm.procedure_instance_pool_size,
             default_wasm_procedure_instance_pool_size()
@@ -583,6 +620,8 @@ mod tests {
     #[test]
     fn v8_heap_policy_parses_from_toml() {
         let toml = r#"
+            http-egress-policy = "loopback-only"
+
             [wasm]
             procedure-instance-pool-size = 4
 
@@ -599,6 +638,7 @@ mod tests {
 
         let config: ConfigFile = toml::from_str(toml).unwrap();
 
+        assert_eq!(config.http_egress_policy, HttpEgressPolicy::LoopbackOnly);
         assert_eq!(config.wasm.procedure_instance_pool_size.get(), 4);
         assert_eq!(config.v8.procedure_instance_pool_size.get(), 3);
         assert_eq!(config.v8.heap_policy.heap_check_request_interval, None);

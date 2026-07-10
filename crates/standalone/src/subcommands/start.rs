@@ -10,7 +10,7 @@ use anyhow::Context;
 use axum::extract::DefaultBodyLimit;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
-use spacetimedb::config::{parse_config, CertificateAuthority};
+use spacetimedb::config::{parse_config, CertificateAuthority, HttpEgressPolicy};
 use spacetimedb::db::persistence::{CommitlogConfig, DurabilityConfig};
 use spacetimedb::db::{self, Storage};
 use spacetimedb::startup::{self, TracingOptions};
@@ -92,6 +92,12 @@ pub fn cli() -> clap::Command {
                 .action(SetTrue)
                 .help("Run in non-interactive mode (fail immediately if port is in use)"),
         )
+        .arg(
+            Arg::new("http_egress_policy")
+                .long("http-egress-policy")
+                .value_parser(["public-internet", "allow-loopback", "loopback-only"])
+                .help("Controls which addresses module HTTP requests may reach"),
+        )
     // .after_help("Run `spacetime help start` for more detailed information.")
 }
 
@@ -115,6 +121,11 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     let listen_addr = args.get_one::<String>("listen_addr").unwrap();
     let pg_port = args.get_one::<u16>("pg_port");
     let non_interactive = args.get_flag("non_interactive");
+    let http_egress_policy = args
+        .get_one::<String>("http_egress_policy")
+        .map(|value| value.parse::<HttpEgressPolicy>())
+        .transpose()
+        .map_err(anyhow::Error::msg)?;
     let cert_dir = args.get_one::<spacetimedb_paths::cli::ConfigDir>("jwt_key_dir");
     let certs = Option::zip(
         args.get_one::<PubKeyPath>("jwt_pub_key_path").cloned(),
@@ -190,6 +201,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
             websocket: config.websocket,
             wasm: config.common.wasm,
             v8: config.common.v8,
+            http_egress_policy: http_egress_policy.unwrap_or(config.common.http_egress_policy),
         },
         &certs,
         data_dir,
@@ -510,6 +522,8 @@ mod tests {
     #[test]
     fn options_from_partial_toml() {
         let toml = r#"
+            http-egress-policy = "loopback-only"
+
             [logs]
             directives = [
                 "banana_shake=strawberry",
@@ -547,6 +561,7 @@ mod tests {
         // so check `common` in a pedestrian way.
         assert_eq!(&config.common.logs.directives, &["banana_shake=strawberry"]);
         assert!(config.common.certificate_authority.is_none());
+        assert_eq!(config.common.http_egress_policy, HttpEgressPolicy::LoopbackOnly);
         assert_eq!(config.common.wasm.procedure_instance_pool_size.get(), 4);
         assert_eq!(config.common.v8.procedure_instance_pool_size.get(), 3);
         assert_eq!(config.common.v8.heap_policy.heap_check_request_interval, None);

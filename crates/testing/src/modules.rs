@@ -277,6 +277,7 @@ impl CompiledModule {
                 websocket: WebSocketOptions::default(),
                 wasm: Default::default(),
                 v8: Default::default(),
+                http_egress_policy: Default::default(),
             },
             &certs,
             paths.data_dir.into(),

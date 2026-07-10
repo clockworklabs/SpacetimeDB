@@ -1,3 +1,4 @@
+use crate::config::HttpEgressPolicy;
 use crate::energy::EnergyMonitor;
 use crate::host::scheduler::Scheduler;
 use crate::replica_context::ReplicaContext;
@@ -9,4 +10,5 @@ pub struct ModuleCreationContext {
     pub scheduler: Scheduler,
     pub program_hash: Hash,
     pub energy_monitor: Arc<dyn EnergyMonitor>,
+    pub http_egress_policy: HttpEgressPolicy,
 }
