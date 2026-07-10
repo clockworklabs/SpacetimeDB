@@ -44,6 +44,14 @@ directives = [
 # Apply a V8 heap limit in MiB. Set to 0 to use V8's default limit.
 # heap-limit-mb = 0
 
+# [websocket]
+# Interval at which keep-alive Ping frames are sent to clients.
+# ping-interval = "15s"
+# Close connections from which nothing was received, and to which no send
+# progress was made, for this long. Slow clients that keep accepting data are
+# not considered idle. Must be greater than ping-interval.
+# idle-timeout = "30s"
+
 [commitlog]
 # The maximum supported commitlog format version, also used for writing.
 # log-format-version = 1
