@@ -138,7 +138,6 @@ unsafe extern "C" fn pthread_attr_init(attr: *mut libc::pthread_attr_t) -> libc:
 //
 // This crate no longer tries to make host randomness deterministic. Any such
 // request is surfaced with a warning and then delegated to the host OS.
-#[cfg(target_os = "linux")]
 #[unsafe(no_mangle)]
 #[inline(never)]
 unsafe extern "C" fn getrandom(buf: *mut u8, buflen: usize, flags: u32) -> isize {
@@ -160,6 +159,43 @@ fn real_getrandom() -> unsafe extern "C" fn(*mut u8, usize, u32) -> isize {
     })
 }
 
+#[cfg(target_os = "macos")]
+fn real_getrandom() -> unsafe extern "C" fn(*mut u8, usize, u32) -> isize {
+    unsafe extern "C" fn macos_getrandom(buf: *mut u8, buflen: usize, flags: u32) -> isize {
+        if flags != 0 {
+            return -1;
+        }
+
+        let mut filled = 0;
+        while filled < buflen {
+            let chunk_len = (buflen - filled).min(256);
+            if unsafe { real_getentropy()(buf.add(filled).cast(), chunk_len) } != 0 {
+                return -1;
+            }
+            filled += chunk_len;
+        }
+        buflen as isize
+    }
+
+    macos_getrandom
+}
+
+#[cfg(target_os = "macos")]
+fn real_getentropy() -> unsafe extern "C" fn(*mut libc::c_void, usize) -> libc::c_int {
+    type GetentropyFn = unsafe extern "C" fn(*mut libc::c_void, usize) -> libc::c_int;
+    static GETENTROPY: OnceLock<GetentropyFn> = OnceLock::new();
+    *GETENTROPY.get_or_init(|| unsafe {
+        let ptr = libc::dlsym(libc::RTLD_NEXT, c"getentropy".as_ptr().cast());
+        assert!(!ptr.is_null(), "failed to resolve original getentropy");
+        std::mem::transmute(ptr)
+    })
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn real_getrandom() -> unsafe extern "C" fn(*mut u8, usize, u32) -> isize {
+    compile_error!("unsupported OS for DST getrandom override");
+}
+
 // Hook `getentropy` and route it through the same deterministic path as
 // `getrandom`.
 //
@@ -175,26 +211,10 @@ unsafe extern "C" fn getentropy(buf: *mut u8, buflen: usize) -> i32 {
         eprintln!("warning: randomness requested; delegating to host OS");
         eprintln!("{}", std::backtrace::Backtrace::force_capture());
     }
-    #[cfg(target_os = "linux")]
     match unsafe { getrandom(buf, buflen, 0) } {
         -1 => -1,
         _ => 0,
     }
-    #[cfg(not(target_os = "linux"))]
-    unsafe {
-        real_getentropy()(buf, buflen)
-    }
-}
-
-#[cfg(not(target_os = "linux"))]
-fn real_getentropy() -> unsafe extern "C" fn(*mut u8, usize) -> i32 {
-    type GetentropyFn = unsafe extern "C" fn(*mut u8, usize) -> i32;
-    static GETENTROPY: OnceLock<GetentropyFn> = OnceLock::new();
-    *GETENTROPY.get_or_init(|| unsafe {
-        let ptr = libc::dlsym(libc::RTLD_NEXT, c"getentropy".as_ptr().cast());
-        assert!(!ptr.is_null(), "failed to resolve original getentropy");
-        std::mem::transmute(ptr)
-    })
 }
 
 #[cfg(test)]

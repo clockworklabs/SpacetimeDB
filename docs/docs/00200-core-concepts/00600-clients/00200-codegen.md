@@ -104,14 +104,14 @@ For example, a `user` table becomes:
 
 ```typescript
 // Generated type
-export default __t.object("User", {
+export default __t.row({
   id: __t.u64(),
   name: __t.string(),
   email: __t.string(),
 });
 
 // Access via DbConnection
-conn.db.User
+conn.db.user
 ```
 
 </TabItem>

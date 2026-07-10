@@ -18,6 +18,18 @@ pub struct TestEventTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `test_event`.
+pub struct TestEventTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for TestEventTableAccessor {
+    type Row = TestEvent;
+    type Handle<'db> = TestEventTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.test_event()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `test_event`.
 ///

@@ -88,14 +88,13 @@ export function makeRandomFromSeed(
   const random: Random = () => generateFloat64(rng);
 
   random.fill = array => {
-    const elem = array.at(0);
-    if (typeof elem === 'bigint') {
+    if (isBigIntArray(array)) {
       const upper = (1n << BigInt(array.BYTES_PER_ELEMENT * 8)) - 1n;
       for (let i = 0; i < array.length; i++) {
         array[i] = unsafeUniformBigIntDistribution(0n, upper, rng);
       }
-    } else if (typeof elem === 'number') {
-      const upper = (1 << (array.BYTES_PER_ELEMENT * 8)) - 1;
+    } else {
+      const upper = Math.pow(2, array.BYTES_PER_ELEMENT * 8) - 1;
       for (let i = 0; i < array.length; i++) {
         array[i] = unsafeUniformIntDistribution(0, upper, rng);
       }
@@ -130,4 +129,10 @@ function seedToBigInt(seed: Timestamp | number | bigint | Uint8Array): bigint {
     return value;
   }
   return seed.microsSinceUnixEpoch;
+}
+
+function isBigIntArray(
+  array: IntArray
+): array is BigInt64Array | BigUint64Array {
+  return array instanceof BigInt64Array || array instanceof BigUint64Array;
 }
