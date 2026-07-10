@@ -19,6 +19,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use toml_edit::{value, DocumentMut, Item};
 
 use crate::spacetime_config::{PackageManager, SpacetimeConfig, CONFIG_FILENAME};
+use crate::subcommands::dotnet::parse_dotnet_version;
 use crate::subcommands::login::{spacetimedb_login_and_save, DEFAULT_AUTH_HOST};
 
 mod embedded {
@@ -139,8 +140,8 @@ pub struct InitOptions {
 }
 
 impl InitOptions {
-    pub fn from_args(args: &ArgMatches) -> Self {
-        Self {
+    pub fn from_args(args: &ArgMatches) -> anyhow::Result<Self> {
+        Ok(Self {
             project_path: args.get_one::<PathBuf>("project-path").cloned(),
             project_name: args.get_one::<String>("project-name").cloned(),
             project_name_default: None,
@@ -152,10 +153,8 @@ impl InitOptions {
             non_interactive: args.get_flag("non-interactive"),
             skip_next_steps: false,
             native_aot: args.get_flag("native-aot"),
-            dotnet_version: args
-                .get_one::<String>("dotnet-version")
-                .and_then(|s| s.parse::<u8>().ok()),
-        }
+            dotnet_version: parse_dotnet_version(args.get_one::<String>("dotnet-version").map(String::as_str))?,
+        })
     }
 }
 
@@ -556,9 +555,15 @@ pub async fn exec_with_options(config: &mut Config, options: &InitOptions) -> an
 
     template_config.use_local = use_local;
 
+    if options.dotnet_version.is_some() && template_config.server_lang != Some(ServerLanguage::Csharp) {
+        anyhow::bail!("--dotnet-version is only supported for C# projects (--lang csharp)");
+    }
+
     // For C# projects, resolve the target .NET version before scaffolding.
     let dotnet_major = if template_config.server_lang == Some(ServerLanguage::Csharp) {
-        Some(resolve_dotnet_major(options)?)
+        let dotnet_major = resolve_dotnet_major(options)?;
+        println!("Targeting .NET SDK {dotnet_major}.");
+        Some(dotnet_major)
     } else {
         None
     };
@@ -1769,7 +1774,7 @@ fn check_for_git() -> bool {
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathBuf> {
-    let options = InitOptions::from_args(args);
+    let options = InitOptions::from_args(args)?;
 
     // --template without arg prints templates list and link to website
     if options.template.as_deref() == Some("") {
@@ -1803,15 +1808,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathB
     }
 
     // Validate that --dotnet-version is only used with C# projects
-    if let Some(v) = options.dotnet_version {
+    if options.dotnet_version.is_some() {
         if let Some(lang) = server_lang
             && lang.to_lowercase() != "csharp"
             && lang.to_lowercase() != "c#"
         {
             anyhow::bail!("--dotnet-version is only supported for C# projects (--lang csharp)");
-        }
-        if v != 8 && v != 10 {
-            anyhow::bail!("Unsupported --dotnet-version {v}. Supported values: 8, 10.");
         }
     }
 
@@ -1857,9 +1859,6 @@ pub fn init_csharp_project(project_path: &Path, dotnet_major: Option<u8>) -> any
     check_for_git();
 
     let dotnet_major = dotnet_major.unwrap_or_else(resolve_default_dotnet_major);
-    if dotnet_major == 10 {
-        println!("Configuring for .NET 10 (NativeAOT-LLVM).");
-    }
 
     let export_files = vec![
         (

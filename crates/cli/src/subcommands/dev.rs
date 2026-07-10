@@ -1,3 +1,4 @@
+use super::dotnet::parse_dotnet_version;
 use crate::common_args::ClearMode;
 use crate::config::Config;
 use crate::generate::Language;
@@ -1157,16 +1158,6 @@ async fn generate_build_and_publish(
     println!("{}", "---".dimmed());
 
     Ok(())
-}
-
-fn parse_dotnet_version(dotnet_version: Option<&str>) -> anyhow::Result<Option<u8>> {
-    dotnet_version
-        .map(|version| match version.parse::<u8>() {
-            Ok(version @ (8 | 10)) => Ok(version),
-            Ok(version) => anyhow::bail!("Unsupported --dotnet-version {version}. Supported values: 8, 10."),
-            Err(error) => anyhow::bail!("Invalid --dotnet-version: {error}"),
-        })
-        .transpose()
 }
 
 fn with_dotnet_version_override(

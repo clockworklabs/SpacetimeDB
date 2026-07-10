@@ -1,3 +1,4 @@
+use super::dotnet::parse_dotnet_version;
 use crate::util::find_module_path;
 use crate::Config;
 use clap::ArgAction::SetTrue;
@@ -66,7 +67,7 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(PathBuf, &'stat
     };
     let build_debug = args.get_flag("debug");
     let features = features.cloned();
-    let dotnet_version = parse_dotnet_version(args.get_one::<String>("dotnet_version"))?;
+    let dotnet_version = parse_dotnet_version(args.get_one::<String>("dotnet_version").map(String::as_str))?;
 
     run_build(module_path, lint_dir, build_debug, features, false, dotnet_version)
 }
@@ -127,19 +128,9 @@ pub async fn exec_with_argstring(
         Some(PathBuf::from(lint_dir))
     };
     let build_debug = arg_matches.get_flag("debug");
-    let dotnet_version = parse_dotnet_version(arg_matches.get_one::<String>("dotnet_version"))?;
+    let dotnet_version = parse_dotnet_version(arg_matches.get_one::<String>("dotnet_version").map(String::as_str))?;
 
     run_build(module_path, lint_dir, build_debug, features, native_aot, dotnet_version)
-}
-
-fn parse_dotnet_version(dotnet_version: Option<&String>) -> anyhow::Result<Option<u8>> {
-    dotnet_version
-        .map(|version| match version.parse::<u8>() {
-            Ok(version @ (8 | 10)) => Ok(version),
-            Ok(version) => anyhow::bail!("Unsupported --dotnet-version {version}. Supported values: 8, 10."),
-            Err(error) => anyhow::bail!("Invalid --dotnet-version: {error}"),
-        })
-        .transpose()
 }
 
 fn exec_with_argstring_argv(project_path: &Path, arg_string: &str) -> Vec<OsString> {

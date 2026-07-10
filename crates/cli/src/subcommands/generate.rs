@@ -19,6 +19,7 @@ use std::process::{Command, Stdio};
 use crate::spacetime_config::{
     find_and_load_with_env, CommandConfig, CommandSchema, CommandSchemaBuilder, Key, LoadedConfig, SpacetimeConfig,
 };
+use crate::subcommands::dotnet::{build_options_with_dotnet_version, parse_dotnet_version};
 use crate::tasks::csharp::dotnet_format;
 use crate::tasks::rust::rustfmt;
 use crate::util::{resolve_sibling_binary, y_or_n};
@@ -335,6 +336,7 @@ fn prepare_generate_run_configs<'a>(
             .get_one::<String>("build_options")?
             .unwrap_or_else(String::new);
         let dotnet_version = command_config.get_one::<String>("dotnet_version")?;
+        parse_dotnet_version(dotnet_version.as_deref())?;
 
         // Validate Unreal-specific args first to preserve focused errors for this mode.
         if requested_lang == Some(Language::UnrealCpp) {
@@ -499,7 +501,7 @@ pub async fn run_prepared_generate_configs(
                 path.clone()
             } else {
                 let build_options =
-                    build_options_with_dotnet_version(&run.build_options, run.dotnet_version.as_deref());
+                    build_options_with_dotnet_version(&run.build_options, run.dotnet_version.as_deref())?;
                 let (path, _) = build::exec_with_argstring(&run.project_path, &build_options, false).await?;
                 path
             };
@@ -607,14 +609,6 @@ pub async fn run_prepared_generate_configs(
     }
 
     Ok(())
-}
-
-fn build_options_with_dotnet_version(build_options: &str, dotnet_version: Option<&str>) -> String {
-    match dotnet_version {
-        Some(version) if build_options.is_empty() => format!("--dotnet-version {version}"),
-        Some(version) => format!("{build_options} --dotnet-version {version}"),
-        None => build_options.to_string(),
-    }
 }
 
 /// Like `exec`, but lets you specify a custom a function to extract a schema from a file.
