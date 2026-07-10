@@ -317,6 +317,7 @@ struct ActorState {
     config: WebSocketOptions,
     closed: AtomicBool,
     got_pong: AtomicBool,
+    // used to determine if the connection is idle.
     last_activity: Arc<Mutex<Instant>>,
 }
 
@@ -357,6 +358,11 @@ impl ActorState {
     // This future completes if `self.config.idle_timeout` has elapsed since `self.record_activity()` was last called.
     pub fn idle_timer(&self) -> impl Future<Output = ()> + use<> {
         ws_idle_timer(self.last_activity.clone(), self.config.idle_timeout)
+    }
+
+    pub fn get_last_activity(&self) -> Instant {
+        let last_activity = self.last_activity.lock().unwrap();
+        *last_activity
     }
 }
 
@@ -2101,8 +2107,7 @@ mod tests {
     #[tokio::test]
     async fn recv_loop_updates_idle_channel() {
         let state = Arc::new(dummy_actor_state());
-        //let starting_time = Instant::now();
-        let mut prev_activity = *state.last_activity.lock().unwrap();
+        let mut prev_activity = state.get_last_activity();
         tokio::time::advance(Duration::from_millis(1));
 
         let input = stream::iter(vec![
@@ -2113,12 +2118,11 @@ mod tests {
         pin_mut!(recv_loop);
 
         while let Some(message) = recv_loop.next().await {
-            let last_activity = *state.last_activity.lock().unwrap();
+            let last_activity = state.get_last_activity();
             drop(message);
             tokio::time::advance(Duration::from_millis(1));
             assert!(last_activity > prev_activity);
         }
-        // assert!(state.last_activity.lock().unwrap() > starting_time);
     }
 
     #[tokio::test]
@@ -2400,7 +2404,6 @@ mod tests {
         ws_main_loop(
             state.clone(),
             future::pending,
-            // ws_idle_timer(idle_rx),
             tokio::spawn(future::pending()),
             tokio::spawn(async move { notify.notified().await }),
             unordered_tx,
