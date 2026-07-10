@@ -264,7 +264,7 @@ struct SpacetimeDBTokenData {
 async fn spacetimedb_login(remote: &Url, web_session_token: &String) -> Result<String, anyhow::Error> {
     let client = reqwest::Client::new();
 
-    let response = client
+    let response: SpacetimeDBTokenResponse = client
         .post(remote.join("api/spacetimedb-token")?)
         .header("Authorization", format!("Bearer {web_session_token}"))
         .send()
