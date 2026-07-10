@@ -14,7 +14,9 @@ use crate::host::module_host::{ClientConnectedError, ProcedureResultTarget};
 use crate::host::{FunctionArgs, ModuleHost, NoSuchModule, ReducerCallError};
 use crate::subscription::module_subscription_manager::BroadcastError;
 use crate::util::prometheus_handle::IntGaugeExt;
-use crate::worker_metrics::{ClientDisconnectCause, ClientDisconnectRecorder, WORKER_METRICS};
+use crate::worker_metrics::{
+    record_client_rejection, ClientDisconnectCause, ClientDisconnectRecorder, ClientRejectCause, WORKER_METRICS,
+};
 use bytes::Bytes;
 use bytestring::ByteString;
 use derive_more::From;
@@ -875,7 +877,10 @@ impl ClientConnection {
         let metrics = ClientConnectionMetrics::new(database_identity, config.protocol);
         let actor_disconnect_recorder = metrics.disconnect_recorder.clone();
         let abort_handle = tokio::spawn(async move {
-            let Ok(fut) = fut_rx.await else { return };
+            let Ok(fut) = fut_rx.await else {
+                log::warn!("websocket connection aborted for client identity `{client_identity}` and database identity `{database_identity}` before actor startup");
+                record_client_rejection(database_identity, ClientRejectCause::ActorStartupFailure);
+                return };
 
             let _gauge_guard = module_info.metrics.connected_clients.inc_scope();
             module_info.metrics.ws_clients_spawned.inc();

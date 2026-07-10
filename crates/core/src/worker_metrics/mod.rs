@@ -94,16 +94,19 @@ pub enum ClientRejectCause {
     OutOfEnergy,
     /// The client-connected lifecycle reducer or module host failed while accepting the connection.
     ClientConnectedError,
+    /// The client actor function failed before completing setup.
+    ActorStartupFailure,
 }
 
 impl ClientRejectCause {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::InvalidProtocol,
         Self::AuthorizationFailed,
         Self::WebsocketUpgradeError,
         Self::ClientConnectedRejected,
         Self::OutOfEnergy,
         Self::ClientConnectedError,
+        Self::ActorStartupFailure,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -114,6 +117,7 @@ impl ClientRejectCause {
             Self::ClientConnectedRejected => "client_connected_rejected",
             Self::OutOfEnergy => "out_of_energy",
             Self::ClientConnectedError => "client_connected_error",
+            Self::ActorStartupFailure => "actor_startup_failure",
         }
     }
 }
@@ -200,7 +204,8 @@ metrics_group!(
 
         // Pre-connected rejection `cause` label values are:
         // invalid_protocol, authorization_failed, websocket_upgrade_error,
-        // client_connected_rejected, out_of_energy, client_connected_error.
+        // client_connected_rejected, out_of_energy, client_connected_error,
+        // actor_startup_failure.
         #[name = spacetime_worker_ws_client_rejections_total]
         #[help = "The cumulative number of websocket client attempts rejected before being counted as connected. Cause values are documented by ClientRejectCause::ALL."]
         #[labels(database_identity: Identity, cause: str)]
