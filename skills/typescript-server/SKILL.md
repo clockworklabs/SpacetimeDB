@@ -23,7 +23,8 @@ import { ScheduleAt } from 'spacetimedb';        // for scheduled tables only
 
 ## Tables
 
-`table(OPTIONS, COLUMNS)` takes two arguments. The `name` field MUST be snake_case:
+`table(OPTIONS, COLUMNS)` takes two arguments. The `name` field is optional;
+when present, it overrides the canonical SQL name and should be snake_case:
 
 ```typescript
 const entity = table(
@@ -36,9 +37,11 @@ const entity = table(
 );
 ```
 
-Options: `name` (snake_case, recommended), `public: true`, `event: true`, `scheduled: (): any => reducerRef`, `indexes: [...]`
+Options: `name` (optional canonical SQL name override), `public: true`, `event: true`, `scheduled: (): any => reducerRef`, `indexes: [...]`
 
-`ctx.db` accessors are the camelCase form of the table's `name` field.
+`ctx.db` accessors come from the key passed to `schema({ ... })`, not from the
+`name` override. If `name` is omitted, the canonical SQL name is derived from the
+schema key.
 
 ## Column Types
 
