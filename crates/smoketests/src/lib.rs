@@ -62,7 +62,7 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::OnceLock;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use which::which;
 
 /// Returns the remote server URL if running against a remote server.
@@ -1122,6 +1122,61 @@ impl Smoketest {
         let cmd_name = args.first().unwrap_or(&"unknown");
         eprintln!("[TIMING] spacetime {}: {:?}", cmd_name, start.elapsed());
         output
+    }
+
+    /// Runs a spacetime CLI command with a process-level timeout.
+    ///
+    /// Uses --config-path to isolate test config from user config.
+    /// Callers should pass `--server` explicitly when the command needs it.
+    pub fn spacetime_with_timeout(&self, args: &[&str], timeout: Duration) -> Result<String> {
+        let start = Instant::now();
+        let cli_path = self.cli_path();
+        let mut child = Command::new(&cli_path)
+            .arg("--config-path")
+            .arg(&self.config_path)
+            .args(args)
+            .current_dir(self.project_dir.path())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to spawn spacetime command");
+
+        loop {
+            if child.try_wait().context("Failed to poll spacetime command")?.is_some() {
+                let output = child.wait_with_output().expect("Failed to wait for spacetime command");
+                let cmd_name = args.first().unwrap_or(&"unknown");
+                eprintln!("[TIMING] spacetime {}: {:?}", cmd_name, start.elapsed());
+
+                if !output.status.success() {
+                    bail!(
+                        "spacetime {:?} failed:\nstdout: {}\nstderr: {}",
+                        args,
+                        String::from_utf8_lossy(&output.stdout),
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                }
+                return Ok(String::from_utf8_lossy(&output.stdout).to_string());
+            }
+
+            let elapsed = start.elapsed();
+            if elapsed >= timeout {
+                let _ = child.kill();
+                let output = child
+                    .wait_with_output()
+                    .expect("Failed to wait for timed out spacetime command");
+                let cmd_name = args.first().unwrap_or(&"unknown");
+                eprintln!("[TIMING] spacetime {} timed out after {:?}", cmd_name, elapsed);
+                bail!(
+                    "spacetime {:?} timed out after {:?}:\nstdout: {}\nstderr: {}",
+                    args,
+                    elapsed,
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+
+            std::thread::sleep(Duration::from_millis(25));
+        }
     }
 
     /// Runs a spacetime CLI command with stdin input.
