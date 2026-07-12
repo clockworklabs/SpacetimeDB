@@ -1085,7 +1085,7 @@ impl StateView for ReplayCommittedState<'_> {
     /// then falling back to [`CommittedState::iter_by_col_eq`].
     fn find_st_table_row(&self, table_id: TableId) -> Result<StTableRow> {
         if let Some(row_ptr) = self.replay_table_updated.get(&table_id) {
-            let (table, blob_store, _) = self.state.get_table_and_blob_store(table_id)?;
+            let (table, blob_store, _) = self.state.get_table_and_blob_store(ST_TABLE_ID)?;
             // SAFETY: `row_ptr` is stored in `self.replay_table_updated`,
             // meaning it was inserted into `st_table` by `replay_insert`
             // and has not yet been deleted by `replay_delete_by_rel`.

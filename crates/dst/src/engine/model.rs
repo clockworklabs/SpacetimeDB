@@ -1,5 +1,6 @@
 use super::workload::{
-    normalize_rows, CommitDelta, CountState, InsertOutcome, Interaction, Observation, Row, TableDelta, TableRowCount,
+    normalize_rows, schema_state_for_plan, CommitDelta, CountState, InsertOutcome, Interaction, Observation, Row,
+    TableDelta, TableRowCount,
 };
 use crate::schema::SchemaPlan;
 
@@ -151,6 +152,21 @@ impl Model {
                 let delta = self.commit_pending(pending_tx);
                 Observation::Committed { delta }
             }
+            Interaction::Migrate(migration) => {
+                debug_assert!(self.pending_tx.is_none());
+                let added_defaults = migration.added_column_defaults();
+                self.schema = migration
+                    .apply_to(&self.schema)
+                    .expect("generated migrations must be valid for the model schema");
+                if !added_defaults.is_empty() {
+                    for row in &mut self.committed_tables[migration.table].rows {
+                        let mut elements = row.elements.to_vec();
+                        elements.extend(added_defaults.iter().cloned());
+                        row.elements = elements.into_boxed_slice();
+                    }
+                }
+                Observation::Migrated
+            }
             Interaction::Replay => {
                 self.pending_tx = None;
                 Observation::Replayed {
@@ -233,7 +249,10 @@ impl Model {
                 count: self.visible_count(table),
             })
             .collect();
-        CountState { row_counts }
+        CountState {
+            row_counts,
+            schema: schema_state_for_plan(&self.schema),
+        }
     }
 }
 
@@ -260,6 +279,7 @@ mod tests {
                 unique_constraints: vec![UniqueConstraintPlan { columns: vec![0] }],
                 sequences: vec![],
                 is_public: true,
+                is_event: false,
             }],
         }
     }

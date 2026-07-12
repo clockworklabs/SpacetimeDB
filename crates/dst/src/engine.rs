@@ -6,21 +6,27 @@ use spacetimedb_datastore::traits::{IsolationLevel, TxData};
 use spacetimedb_engine::error::{DBError, DatastoreError, IndexError};
 use spacetimedb_engine::persistence::{DiskSizeFn, Durability as EngineDurability, Persistence};
 use spacetimedb_engine::relational_db::{MutTx, RelationalDB};
+use spacetimedb_engine::update::{update_database, UpdateLogger};
+use spacetimedb_lib::db::auth::StAccess;
+use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{Identity, RawModuleDef};
 use spacetimedb_primitives::TableId;
 use spacetimedb_runtime::sim::{Rng, Runtime as SimRuntime};
 use spacetimedb_runtime::Handle;
-use spacetimedb_schema::def::ModuleDef;
+use spacetimedb_schema::auto_migrate::{ponder_migrate, AutoMigrateStep, MigratePlan};
+use spacetimedb_schema::def::{IndexAlgorithm as SchemaIndexAlgorithm, ModuleDef};
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_table::page_pool::PagePool;
 
+mod migrations;
 mod model;
 mod properties;
 mod workload;
 
+use self::migrations::{ExpectedStep, Migration};
 use self::workload::{
-    normalize_rows, row_to_bytes, CommitDelta, CountState, InsertOutcome, Interaction, Observation, TableDelta,
-    TableRowCount,
+    normalize_rows, row_to_bytes, ColumnState, CommitDelta, CountState, IndexAlgorithmState, IndexState, InsertOutcome,
+    Interaction, Observation, SchemaState, SequenceState, TableDelta, TableRowCount, TableSchemaState,
 };
 
 use crate::engine::model::Model;
@@ -36,6 +42,7 @@ pub struct EngineTarget {
     active_mut_tx: Option<MutTx>,
     commitlog: InMemoryCommitlog,
     runtime_handle: Handle,
+    schema: SchemaPlan,
 }
 
 impl EngineTarget {
@@ -54,6 +61,7 @@ impl EngineTarget {
             active_mut_tx: None,
             commitlog,
             runtime_handle,
+            schema,
         })
     }
 
@@ -88,11 +96,14 @@ impl EngineTarget {
         }
     }
 
-    fn install_schema(db: &RelationalDB, schema: &SchemaPlan) -> anyhow::Result<()> {
+    fn module_def(schema: &SchemaPlan) -> anyhow::Result<ModuleDef> {
         let raw = to_raw_def(schema);
         let raw_module_def = RawModuleDef::V10(raw);
-        let module_def =
-            ModuleDef::try_from(raw_module_def).map_err(|e| anyhow::anyhow!("schema validation failed: {e}"))?;
+        ModuleDef::try_from(raw_module_def).map_err(|e| anyhow::anyhow!("schema validation failed: {e}"))
+    }
+
+    fn install_schema(db: &RelationalDB, schema: &SchemaPlan) -> anyhow::Result<()> {
+        let module_def = Self::module_def(schema)?;
 
         db.with_auto_commit(Workload::Internal, |tx| -> Result<(), DBError> {
             for table_def in module_def.tables() {
@@ -138,6 +149,7 @@ impl EngineTarget {
             .ok_or_else(|| anyhow::anyhow!("database is not open"))?;
         let tx = db.begin_tx(Workload::Internal);
         let mut row_counts = Vec::with_capacity(self.table_ids.len());
+        let mut schema_tables = Vec::with_capacity(self.table_ids.len());
 
         for (table, table_id) in self.table_ids.iter().enumerate() {
             let count = match db.iter(&tx, *table_id) {
@@ -148,10 +160,57 @@ impl EngineTarget {
                 }
             };
             row_counts.push(TableRowCount { table, count });
+
+            let schema = match db.schema_for_table(&tx, *table_id) {
+                Ok(schema) => schema,
+                Err(err) => {
+                    let _ = db.release_tx(tx);
+                    return Err(err.into());
+                }
+            };
+            let mut indexes = schema
+                .indexes
+                .iter()
+                .map(|index| IndexState {
+                    columns: index_columns(&index.index_algorithm),
+                    algorithm: index_algorithm_state(&index.index_algorithm),
+                })
+                .collect::<Vec<_>>();
+            indexes.sort();
+
+            let mut sequences = schema
+                .sequences
+                .iter()
+                .map(|sequence| SequenceState {
+                    column: sequence.col_pos.0 as usize,
+                })
+                .collect::<Vec<_>>();
+            sequences.sort();
+
+            schema_tables.push(TableSchemaState {
+                table,
+                name: schema.table_name.to_string(),
+                is_public: schema.table_access == StAccess::Public,
+                is_event: schema.is_event,
+                primary_key: schema.primary_key.map(|col| col.0 as usize),
+                columns: schema
+                    .columns
+                    .iter()
+                    .map(|column| ColumnState {
+                        name: column.col_name.to_string(),
+                        ty: column.col_type.clone(),
+                    })
+                    .collect(),
+                indexes,
+                sequences,
+            });
         }
 
         let _ = db.release_tx(tx);
-        Ok(CountState { row_counts })
+        Ok(CountState {
+            row_counts,
+            schema: SchemaState { tables: schema_tables },
+        })
     }
 
     fn is_unique_constraint_violation(error: &DBError) -> bool {
@@ -185,6 +244,55 @@ impl EngineTarget {
 
         tables.sort_by_key(|delta| delta.table);
         CommitDelta { tables }
+    }
+
+    fn migrate(&mut self, migration: &Migration) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.active_mut_tx.is_none(),
+            "migration while mutable transaction is active"
+        );
+
+        let new_schema = migration.apply_to(&self.schema)?;
+        let old_module_def = Self::module_def(&self.schema)?;
+        let new_module_def = Self::module_def(&new_schema)?;
+        let plan = ponder_migrate(&old_module_def, &new_module_def)?;
+        self.ensure_expected_plan(migration, &plan)?;
+
+        let db = self
+            .db
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("database is not open"))?;
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        let _ = update_database(db, &mut tx, AuthCtx::for_testing(), plan, &DstUpdateLogger)?;
+        let Some((_tx_offset, _tx_data, _tx_metrics, _reducer)) = db.commit_tx(tx)? else {
+            anyhow::bail!("migration commit produced no transaction data");
+        };
+
+        self.schema = new_schema;
+        self.table_ids = Self::load_table_ids(db, &self.schema)?;
+        Ok(())
+    }
+
+    fn ensure_expected_plan(&self, migration: &Migration, plan: &MigratePlan<'_>) -> anyhow::Result<()> {
+        let MigratePlan::Auto(plan) = plan else {
+            anyhow::bail!("engine DST generated a manual migration plan");
+        };
+
+        let mut actual = plan
+            .steps
+            .iter()
+            .map(expected_step_from_auto_step)
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        actual.sort();
+
+        let mut expected = migration.expected_steps();
+        expected.sort();
+
+        anyhow::ensure!(
+            actual == expected,
+            "engine DST generated unexpected migration steps: actual={actual:?}, expected={expected:?}"
+        );
+        Ok(())
     }
 
     pub fn execute(&mut self, interaction: &Interaction) -> anyhow::Result<Observation> {
@@ -253,6 +361,10 @@ impl EngineTarget {
                     delta: self.commit_delta_from_tx_data(&tx_data),
                 })
             }
+            Interaction::Migrate(migration) => {
+                self.migrate(migration)?;
+                Ok(Observation::Migrated)
+            }
             Interaction::Replay => {
                 let _ = self.active_mut_tx.take();
                 self.reopen_from_commitlog()?;
@@ -268,6 +380,41 @@ impl EngineTarget {
         }
 
         observation
+    }
+}
+
+fn expected_step_from_auto_step(step: &AutoMigrateStep<'_>) -> anyhow::Result<ExpectedStep> {
+    match step {
+        AutoMigrateStep::AddColumns(_) => Ok(ExpectedStep::AddColumns),
+        AutoMigrateStep::AddIndex(_) => Ok(ExpectedStep::AddIndex),
+        AutoMigrateStep::RemoveIndex(_) => Ok(ExpectedStep::RemoveIndex),
+        AutoMigrateStep::ChangeAccess(_) => Ok(ExpectedStep::ChangeAccess),
+        AutoMigrateStep::ChangePrimaryKey(_) => Ok(ExpectedStep::ChangePrimaryKey),
+        AutoMigrateStep::ChangeColumns(_) => Ok(ExpectedStep::ChangeColumns),
+        AutoMigrateStep::ReschemaEventTable(_) => Ok(ExpectedStep::ReschemaEventTable),
+        AutoMigrateStep::DisconnectAllUsers => Ok(ExpectedStep::DisconnectAllUsers),
+        step => anyhow::bail!("engine DST generated unsupported migration step: {step:?}"),
+    }
+}
+
+fn index_columns(algorithm: &SchemaIndexAlgorithm) -> Vec<usize> {
+    algorithm.columns().iter().map(|col| col.0 as usize).collect()
+}
+
+fn index_algorithm_state(algorithm: &SchemaIndexAlgorithm) -> IndexAlgorithmState {
+    match algorithm {
+        SchemaIndexAlgorithm::BTree(_) => IndexAlgorithmState::BTree,
+        SchemaIndexAlgorithm::Hash(_) => IndexAlgorithmState::Hash,
+        SchemaIndexAlgorithm::Direct(_) => IndexAlgorithmState::Direct,
+        _ => IndexAlgorithmState::Unknown,
+    }
+}
+
+struct DstUpdateLogger;
+
+impl UpdateLogger for DstUpdateLogger {
+    fn info(&self, msg: &str) {
+        tracing::debug!(%msg, "engine DST migration update");
     }
 }
 
@@ -300,5 +447,171 @@ impl TestSuite for EngineTest {
         let interactions = WorkloadGen::new(rng, model);
 
         Ok((interactions, target, properties))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use spacetimedb_lib::AlgebraicValue;
+    use spacetimedb_sats::product;
+
+    use super::migrations::{Migration, MigrationOp};
+    use super::*;
+    use crate::schema::{ColumnPlan, IndexAlgorithm, IndexPlan, TablePlan, Type, UniqueConstraintPlan};
+
+    fn migration_replay_schema() -> SchemaPlan {
+        SchemaPlan {
+            tables: vec![TablePlan {
+                name: "items".into(),
+                columns: vec![
+                    ColumnPlan {
+                        name: "id".into(),
+                        ty: Type::U64,
+                    },
+                    ColumnPlan {
+                        name: "kind".into(),
+                        ty: Type::Sum { variants: 1 },
+                    },
+                ],
+                primary_key: Some(0),
+                indexes: vec![IndexPlan {
+                    columns: vec![0],
+                    algorithm: IndexAlgorithm::BTree,
+                }],
+                unique_constraints: vec![UniqueConstraintPlan { columns: vec![0] }],
+                sequences: vec![],
+                is_public: true,
+                is_event: false,
+            }],
+        }
+    }
+
+    fn add_column_replay_schema() -> SchemaPlan {
+        SchemaPlan {
+            tables: vec![TablePlan {
+                name: "items".into(),
+                columns: vec![
+                    ColumnPlan {
+                        name: "id".into(),
+                        ty: Type::U64,
+                    },
+                    ColumnPlan {
+                        name: "score".into(),
+                        ty: Type::U64,
+                    },
+                ],
+                primary_key: Some(0),
+                indexes: vec![IndexPlan {
+                    columns: vec![0],
+                    algorithm: IndexAlgorithm::BTree,
+                }],
+                unique_constraints: vec![UniqueConstraintPlan { columns: vec![0] }],
+                sequences: vec![],
+                is_public: true,
+                is_event: false,
+            }],
+        }
+    }
+
+    fn change_index_replay_schema() -> SchemaPlan {
+        SchemaPlan {
+            tables: vec![TablePlan {
+                name: "items".into(),
+                columns: vec![
+                    ColumnPlan {
+                        name: "id".into(),
+                        ty: Type::U64,
+                    },
+                    ColumnPlan {
+                        name: "score".into(),
+                        ty: Type::U64,
+                    },
+                ],
+                primary_key: Some(0),
+                indexes: vec![
+                    IndexPlan {
+                        columns: vec![0],
+                        algorithm: IndexAlgorithm::BTree,
+                    },
+                    IndexPlan {
+                        columns: vec![1],
+                        algorithm: IndexAlgorithm::BTree,
+                    },
+                ],
+                unique_constraints: vec![UniqueConstraintPlan { columns: vec![0] }],
+                sequences: vec![],
+                is_public: true,
+                is_event: false,
+            }],
+        }
+    }
+
+    fn insert_u64_rows(target: &mut EngineTarget) -> anyhow::Result<()> {
+        target.execute(&Interaction::BeginMutTx)?;
+        for id in 0..128u64 {
+            target.execute(&Interaction::Insert {
+                table: 0,
+                row: product![id, id * 10],
+            })?;
+        }
+        target.execute(&Interaction::CommitTx)?;
+        Ok(())
+    }
+
+    #[test]
+    fn engine_dst_smoke_runs_random_workload() -> anyhow::Result<()> {
+        let mut runtime = SimRuntime::new(0);
+        runtime.block_on(EngineTest.run(Rng::new(0), 1_000))?;
+        Ok(())
+    }
+
+    #[test]
+    fn add_column_migration_replays_with_existing_rows() -> anyhow::Result<()> {
+        let mut target = EngineTarget::init(add_column_replay_schema(), 0)?;
+        insert_u64_rows(&mut target)?;
+
+        target.execute(&Interaction::Migrate(Migration {
+            table: 0,
+            ops: vec![MigrationOp::ChangeAccess, MigrationOp::AddColumn { ty: Type::U64 }],
+        }))?;
+        target.execute(&Interaction::Replay)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn change_index_migration_replays_with_existing_rows() -> anyhow::Result<()> {
+        let mut target = EngineTarget::init(change_index_replay_schema(), 0)?;
+        insert_u64_rows(&mut target)?;
+
+        target.execute(&Interaction::Migrate(Migration {
+            table: 0,
+            ops: vec![MigrationOp::ChangeAccess, MigrationOp::ChangeIndex { index: 1 }],
+        }))?;
+        target.execute(&Interaction::Replay)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn migration_that_updates_st_table_and_st_column_replays() -> anyhow::Result<()> {
+        let mut target = EngineTarget::init(migration_replay_schema(), 0)?;
+
+        target.execute(&Interaction::BeginMutTx)?;
+        for id in 0..128u64 {
+            target.execute(&Interaction::Insert {
+                table: 0,
+                row: product![id, AlgebraicValue::sum(0, AlgebraicValue::U8(1))],
+            })?;
+        }
+        target.execute(&Interaction::CommitTx)?;
+
+        target.execute(&Interaction::Migrate(Migration {
+            table: 0,
+            ops: vec![MigrationOp::ChangeAccess, MigrationOp::ChangeColumnType { column: 1 }],
+        }))?;
+        target.execute(&Interaction::Replay)?;
+
+        Ok(())
     }
 }
