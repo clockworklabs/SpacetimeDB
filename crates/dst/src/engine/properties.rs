@@ -1,5 +1,5 @@
 use super::model::Model;
-use super::workload::{InsertOutcome, Interaction, Observation, Row};
+use super::workload::{InsertOutcome, Interaction, Observation};
 use crate::schema::SchemaPlan;
 use crate::traits::Properties;
 
@@ -15,6 +15,7 @@ impl EngineProperties {
             properties: vec![
                 Box::new(InsertMatches),
                 Box::new(CommitMatches),
+                Box::new(MigrateMatches),
                 Box::new(ReplayMatchesModel),
             ],
         }
@@ -55,30 +56,12 @@ impl EngineOracle {
 
     fn apply(&mut self, interaction: &Interaction, observation: &Observation) -> anyhow::Result<Observation> {
         let observation = match (interaction, observation) {
-            (
-                Interaction::Insert { table, .. },
-                Observation::Inserted {
-                    outcome: InsertOutcome::Accepted(row),
-                },
-            ) => self.apply_insert(*table, row),
-            (
-                Interaction::Insert { .. },
-                Observation::Inserted {
-                    outcome: InsertOutcome::UniqueConstraintViolation,
-                },
-            ) => self.model.apply(interaction),
+            (Interaction::Insert { .. }, Observation::Inserted { .. }) => self.model.apply(interaction),
             (Interaction::Insert { .. }, _) => anyhow::bail!("insert produced unexpected observation"),
             _ => self.model.apply(interaction),
         };
 
         Ok(observation)
-    }
-
-    fn apply_insert(&mut self, table: usize, row: &Row) -> Observation {
-        self.model.apply(&Interaction::Insert {
-            table,
-            row: row.clone(),
-        })
     }
 }
 
@@ -91,7 +74,7 @@ impl EngineProperty for InsertMatches {
 
     fn check(
         &self,
-        _interaction: &Interaction,
+        interaction: &Interaction,
         observation: &Observation,
         expected: &Observation,
     ) -> anyhow::Result<()> {
@@ -106,12 +89,16 @@ impl EngineProperty for InsertMatches {
             (InsertOutcome::Accepted(row), InsertOutcome::Accepted(expected)) => {
                 anyhow::ensure!(row == expected, "insert_matches: accepted row diverged from model");
             }
-            (InsertOutcome::UniqueConstraintViolation, InsertOutcome::UniqueConstraintViolation) => {}
-            (InsertOutcome::Accepted(_), InsertOutcome::UniqueConstraintViolation) => {
-                anyhow::bail!("insert_matches: target accepted row rejected by model");
+            (InsertOutcome::UniqueConstraintViolation { .. }, InsertOutcome::UniqueConstraintViolation { .. }) => {}
+            (InsertOutcome::Accepted(_), InsertOutcome::UniqueConstraintViolation { .. }) => {
+                anyhow::bail!(
+                    "insert_matches: target accepted row rejected by model\ninteraction: {interaction:#?}\ntarget: {observation:#?}\nmodel: {expected:#?}"
+                );
             }
-            (InsertOutcome::UniqueConstraintViolation, InsertOutcome::Accepted(_)) => {
-                anyhow::bail!("insert_matches: target rejected row accepted by model");
+            (InsertOutcome::UniqueConstraintViolation { .. }, InsertOutcome::Accepted(_)) => {
+                anyhow::bail!(
+                    "insert_matches: target rejected row accepted by model\ninteraction: {interaction:#?}\ntarget: {observation:#?}\nmodel: {expected:#?}"
+                );
             }
         }
 
@@ -140,6 +127,30 @@ impl EngineProperty for CommitMatches {
         };
 
         anyhow::ensure!(delta == expected, "commit_matches: committed delta diverged from model");
+        Ok(())
+    }
+}
+
+struct MigrateMatches;
+
+impl EngineProperty for MigrateMatches {
+    fn observes(&self, interaction: &Interaction) -> bool {
+        matches!(interaction, Interaction::Migrate(_))
+    }
+
+    fn check(
+        &self,
+        interaction: &Interaction,
+        observation: &Observation,
+        expected: &Observation,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            observation == expected,
+            "migrate_matches: migration outcome diverged from model
+interaction: {interaction:#?}
+target: {observation:#?}
+model: {expected:#?}"
+        );
         Ok(())
     }
 }

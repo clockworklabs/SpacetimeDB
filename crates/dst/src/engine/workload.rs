@@ -1,24 +1,30 @@
-use std::fmt::{Debug, Error, Formatter};
+//! Workload interaction generation for the engine DST driver.
 
-use spacetimedb_lib::bsatn::to_vec;
-use spacetimedb_lib::{AlgebraicValue, ProductValue};
-use spacetimedb_runtime::sim::Rng;
-use spacetimedb_sats::ArrayValue;
+use std::fmt::{Debug, Error as FmtError, Formatter};
 
+use super::generation::GenCtx;
+use super::migrations::{Migration, MigrationRejection};
 use super::model::Model;
-use crate::schema::{SchemaPlan, TablePlan, Type};
+use super::row::Row;
+use super::state::{CommitDelta, CountState};
+use crate::rng::{choice, pick_choice, Choice};
+use crate::schema::SchemaPlan;
+use crate::traits::InteractionGen;
+use anyhow::Error;
+use spacetimedb_runtime::sim::Rng;
 
-pub type Row = ProductValue;
-
+/// One generated action for the engine target to execute.
 #[derive(Debug, Clone)]
 pub enum Interaction {
     BeginMutTx,
     Insert { table: usize, row: Row },
     Delete { table: usize, row: Row },
     CommitTx,
+    Migrate(Migration),
     Replay,
 }
 
+/// Counts of emitted workload interactions, reported at the end of each run.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct InteractionCounts {
     pub total: usize,
@@ -26,6 +32,7 @@ pub struct InteractionCounts {
     pub insert: usize,
     pub delete: usize,
     pub commit_tx: usize,
+    pub migrate: usize,
     pub replay: usize,
 }
 
@@ -38,53 +45,53 @@ impl InteractionCounts {
             Interaction::Insert { .. } => self.insert += 1,
             Interaction::Delete { .. } => self.delete += 1,
             Interaction::CommitTx => self.commit_tx += 1,
+            Interaction::Migrate(_) => self.migrate += 1,
             Interaction::Replay => self.replay += 1,
         }
     }
 }
 
+/// Observable result of executing an interaction against the engine.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Observation {
     BeganMutTx,
     Inserted { outcome: InsertOutcome },
     Deleted,
     Committed { delta: CommitDelta },
+    Migrated,
+    MigrationRejected { reason: MigrationRejection },
     Replayed { state: CountState },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InsertOutcome {
     Accepted(Row),
-    UniqueConstraintViolation,
+    UniqueConstraintViolation { details: String },
 }
 
+/// Runtime-tunable weights for top-level workload actions.
 #[derive(Debug, Clone, Copy)]
 pub struct InteractionWeights {
     pub insert: u64,
     pub delete: u64,
     pub commit_tx: u64,
+    pub migrate: u64,
     pub replay: u64,
 }
 
 impl Default for InteractionWeights {
     fn default() -> Self {
         Self {
-            insert: 50,
-            delete: 20,
-            commit_tx: 29,
+            insert: 5_000,
+            delete: 2_000,
+            commit_tx: 2_800,
+            migrate: 100,
             replay: 1,
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-enum InteractionChoice {
-    Insert,
-    Delete,
-    CommitTx,
-    Replay,
-}
-
+/// Stateful interaction source that mirrors target observations into the model.
 pub struct WorkloadGen {
     rng: Rng,
     model: Model,
@@ -94,11 +101,15 @@ pub struct WorkloadGen {
 
 impl WorkloadGen {
     pub fn new(rng: Rng, model: Model) -> Self {
+        Self::with_weights(rng, model, InteractionWeights::default())
+    }
+
+    pub fn with_weights(rng: Rng, model: Model, weights: InteractionWeights) -> Self {
         Self {
             rng,
             model,
             stats: InteractionCounts::default(),
-            weights: InteractionWeights::default(),
+            weights,
         }
     }
 
@@ -106,70 +117,71 @@ impl WorkloadGen {
         self.stats
     }
 
-    fn schema(&self) -> &SchemaPlan {
-        self.model.schema()
-    }
-
-    fn gen_value(&self, ty: Type) -> AlgebraicValue {
-        match ty {
-            Type::Bool => AlgebraicValue::Bool(self.rng.next_u64().is_multiple_of(2)),
-            Type::I64 => AlgebraicValue::I64(self.rng.next_u64() as i64),
-            Type::U64 => AlgebraicValue::U64(self.rng.next_u64()),
-            Type::String => AlgebraicValue::String(format!("v_{}", self.rng.next_u64()).into()),
-            Type::Bytes => {
-                let len = (self.rng.next_u64() % 16) as usize;
-                let bytes: Vec<u8> = (0..len).map(|_| self.rng.next_u64() as u8).collect();
-                AlgebraicValue::Array(ArrayValue::U8(bytes.into()))
-            }
-        }
-    }
-
-    fn gen_row(&self, table: &TablePlan) -> Row {
-        table
-            .columns
-            .iter()
-            .map(|c| self.gen_value(c.ty))
-            .collect::<ProductValue>()
-    }
-
-    fn gen_insert_row(&self, table_idx: usize) -> Row {
-        let table = &self.schema().tables[table_idx];
-        let mut row = self.gen_row(table);
-
-        if let Some(sequence) = table.sequences.first() {
-            row.elements[sequence.column] = match table.columns[sequence.column].ty {
-                Type::I64 => AlgebraicValue::I64(0),
-                Type::U64 => AlgebraicValue::U64(0),
-                _ => unreachable!("sequence columns are integral"),
-            };
-        }
-
-        row
-    }
-
-    fn non_auto_inc_table_idx(&self) -> Option<usize> {
-        let auto_inc_table = self
-            .schema()
-            .auto_inc_table_and_column()
-            .map(|(table_idx, _)| table_idx);
-
-        (0..self.schema().tables.len()).find(|&table_idx| Some(table_idx) != auto_inc_table)
-    }
-
     pub fn next_interaction(&mut self) -> Interaction {
         let choice = self.pick_interaction_choice();
         let interaction = self.interaction_from_choice(choice);
 
-        self.model.apply(&interaction);
         self.stats.record(&interaction);
 
         interaction
+    }
+
+    fn observe_interaction(&mut self, interaction: &Interaction, observation: &Observation) -> Result<(), Error> {
+        match (interaction, observation) {
+            (Interaction::Insert { .. }, Observation::Inserted { .. }) => {
+                self.model.apply(interaction);
+            }
+            (Interaction::Insert { .. }, _) => anyhow::bail!("insert produced unexpected observation"),
+            _ => {
+                self.model.apply(interaction);
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum InteractionChoice {
+    Insert,
+    Delete,
+    CommitTx,
+    Migrate,
+    Replay,
+}
+
+impl InteractionWeights {
+    fn choices(self) -> [Choice<InteractionChoice>; 5] {
+        [
+            choice(self.insert, InteractionChoice::Insert),
+            choice(self.delete, InteractionChoice::Delete),
+            choice(self.commit_tx, InteractionChoice::CommitTx),
+            choice(self.migrate, InteractionChoice::Migrate),
+            choice(self.replay, InteractionChoice::Replay),
+        ]
+    }
+}
+
+impl WorkloadGen {
+    fn schema(&self) -> &SchemaPlan {
+        self.model.schema()
+    }
+
+    fn non_sequenced_table_idx(&self) -> Option<usize> {
+        (0..self.schema().tables.len()).find(|&table_idx| {
+            let table = &self.schema().tables[table_idx];
+            !table.is_event && table.sequences.is_empty()
+        })
     }
 
     fn interaction_from_choice(&mut self, choice: InteractionChoice) -> Interaction {
         if !self.model.in_mut_tx() {
             return match choice {
                 InteractionChoice::Replay => Interaction::Replay,
+                InteractionChoice::Migrate => self
+                    .gen_migration()
+                    .map(Interaction::Migrate)
+                    .unwrap_or(Interaction::Replay),
 
                 // Insert/Delete/CommitTx are not legal outside a mutable tx.
                 // Treat those weighted choices as pressure to start one.
@@ -182,12 +194,14 @@ impl WorkloadGen {
         match choice {
             InteractionChoice::Replay => Interaction::Replay,
 
+            InteractionChoice::Migrate => Interaction::CommitTx,
+
             InteractionChoice::Insert => {
                 let table = self.insert_table_idx();
 
                 Interaction::Insert {
                     table,
-                    row: self.gen_insert_row(table),
+                    row: GenCtx::new(&self.rng, &self.model).gen_insert_row(table),
                 }
             }
 
@@ -213,96 +227,70 @@ impl WorkloadGen {
     }
 
     fn pick_interaction_choice(&mut self) -> InteractionChoice {
-        let weights = self.weights;
-
-        match self.pick_weighted(&[weights.insert, weights.delete, weights.commit_tx, weights.replay]) {
-            0 => InteractionChoice::Insert,
-            1 => InteractionChoice::Delete,
-            2 => InteractionChoice::CommitTx,
-            3 => InteractionChoice::Replay,
-            _ => unreachable!(),
-        }
-    }
-
-    fn pick_weighted(&mut self, weights: &[u64]) -> usize {
-        let total: u64 = weights.iter().sum();
-
-        assert!(total > 0, "at least one interaction weight must be non-zero");
-
-        let mut selected = self.rng.next_u64() % total;
-
-        for (idx, weight) in weights.iter().copied().enumerate() {
-            if selected < weight {
-                return idx;
-            }
-
-            selected -= weight;
-        }
-
-        unreachable!("selected value is always inside total weight")
+        let choices = self.weights.choices();
+        pick_choice(&self.rng, &choices)
     }
 
     fn insert_table_idx(&self) -> usize {
-        let auto_inc_table_idx = self
-            .schema()
-            .auto_inc_table_and_column()
-            .map(|(table_idx, _)| table_idx);
+        let sequenced_tables = self.sequenced_table_indices();
+        let data_tables = self.data_table_indices();
 
-        match auto_inc_table_idx {
-            Some(table_idx) if !self.rng.next_u64().is_multiple_of(3) => table_idx,
-            _ => self.rng.index(self.schema().tables.len()),
+        if !sequenced_tables.is_empty() && !self.rng.next_u64().is_multiple_of(3) {
+            sequenced_tables[self.rng.index(sequenced_tables.len())]
+        } else {
+            data_tables[self.rng.index(data_tables.len())]
         }
     }
 
+    fn sequenced_table_indices(&self) -> Vec<usize> {
+        self.schema()
+            .tables
+            .iter()
+            .enumerate()
+            .filter_map(|(table_idx, table)| (!table.is_event && !table.sequences.is_empty()).then_some(table_idx))
+            .collect()
+    }
+
+    fn data_table_indices(&self) -> Vec<usize> {
+        let data_tables: Vec<_> = self
+            .schema()
+            .tables
+            .iter()
+            .enumerate()
+            .filter_map(|(table_idx, table)| (!table.is_event).then_some(table_idx))
+            .collect();
+        assert!(
+            !data_tables.is_empty(),
+            "engine DST schema must include a non-event table"
+        );
+        data_tables
+    }
+
+    fn gen_migration(&self) -> Option<Migration> {
+        GenCtx::new(&self.rng, &self.model).gen_migration()
+    }
+
     fn deletable_table_idx(&self) -> Option<usize> {
-        self.non_auto_inc_table_idx()
+        self.non_sequenced_table_idx()
             .filter(|&table_idx| self.model.row_count(table_idx) > 0)
     }
 }
 
 impl Debug for WorkloadGen {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
         write!(f, "{:?}", self.stats())
     }
 }
 
-impl Iterator for WorkloadGen {
-    type Item = Interaction;
+impl InteractionGen for WorkloadGen {
+    type Interaction = Interaction;
+    type Observation = Observation;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        Some(self.next_interaction())
+    fn next_interaction(&mut self) -> Option<Self::Interaction> {
+        Some(WorkloadGen::next_interaction(self))
     }
-}
 
-pub fn row_to_bytes(row: &Row) -> Vec<u8> {
-    to_vec(row).expect("row serialization must not fail")
-}
-
-pub fn normalize_rows(mut rows: Vec<Row>) -> Vec<Row> {
-    rows.sort_by_key(row_to_bytes);
-    rows
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CountState {
-    pub row_counts: Vec<TableRowCount>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TableRowCount {
-    pub table: usize,
-    pub count: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CommitDelta {
-    pub tables: Vec<TableDelta>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TableDelta {
-    pub table: usize,
-    pub inserts: Vec<Row>,
-    pub deletes: Vec<Row>,
-    pub truncated: bool,
+    fn observe(&mut self, interaction: &Self::Interaction, observation: &Self::Observation) -> Result<(), Error> {
+        self.observe_interaction(interaction, observation)
+    }
 }

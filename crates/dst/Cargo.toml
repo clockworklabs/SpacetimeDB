@@ -11,6 +11,7 @@ fallocate = ["spacetimedb-commitlog/fallocate"]
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+futures.workspace = true
 spacetimedb-datastore.workspace = true
 spacetimedb-commitlog.workspace = true
 spacetimedb-durability.workspace = true

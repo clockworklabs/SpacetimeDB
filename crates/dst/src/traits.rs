@@ -1,4 +1,10 @@
-use anyhow::Error;
+use std::{
+    fmt::Debug,
+    panic::{resume_unwind, AssertUnwindSafe},
+};
+
+use anyhow::{Context, Error};
+use futures::FutureExt;
 use spacetimedb_runtime::sim::Rng;
 
 /// This should be implemented by System under test.
@@ -16,6 +22,16 @@ pub trait Properties<I, O> {
     fn observe(&mut self, interaction: &I, observation: &O) -> Result<(), Error>;
 }
 
+/// Stateful source of interactions that can incorporate target feedback.
+pub trait InteractionGen {
+    type Interaction: Debug;
+    type Observation;
+
+    fn next_interaction(&mut self) -> Option<Self::Interaction>;
+
+    fn observe(&mut self, interaction: &Self::Interaction, observation: &Self::Observation) -> Result<(), Error>;
+}
+
 pub type TestSuiteParts<S> = (
     <S as TestSuite>::Interactions,
     <S as TestSuite>::Target,
@@ -23,8 +39,11 @@ pub type TestSuiteParts<S> = (
 );
 
 pub trait TestSuite {
-    type Interaction: std::fmt::Debug;
-    type Interactions: Iterator<Item = Self::Interaction> + std::fmt::Debug;
+    type Interaction: Debug;
+    type Interactions: InteractionGen<
+            Interaction = Self::Interaction,
+            Observation = <Self::Target as TargetDriver<Self::Interaction>>::Observation,
+        > + Debug;
     type Target: TargetDriver<Self::Interaction>;
     type Properties: Properties<Self::Interaction, <Self::Target as TargetDriver<Self::Interaction>>::Observation>;
 
@@ -39,19 +58,38 @@ pub trait TestSuite {
         async move {
             let (mut interactions, mut target, mut properties) = self.build(rng).await?;
 
-            let result = async {
-                for interaction in interactions.by_ref().take(max_interactions) {
-                    let observation = target.execute(&interaction).await?;
-                    properties.observe(&interaction, &observation)?;
+            let result = AssertUnwindSafe(async {
+                for step in 0..max_interactions {
+                    let Some(interaction) = interactions.next_interaction() else {
+                        break;
+                    };
+
+                    let observation = target
+                        .execute(&interaction)
+                        .await
+                        .with_context(|| format!("DST target failed at interaction #{step}: {interaction:?}"))?;
+
+                    properties
+                        .observe(&interaction, &observation)
+                        .with_context(|| format!("DST property failed at interaction #{step}: {interaction:?}"))?;
+
+                    interactions.observe(&interaction, &observation).with_context(|| {
+                        format!("DST generator feedback failed at interaction #{step}: {interaction:?}")
+                    })?;
                 }
 
                 Ok(())
-            }
+            })
+            .catch_unwind()
             .await;
 
+            eprintln!("final interaction counts: {interactions:?}");
             tracing::info!(interaction_counts = ?interactions, "final interaction counts");
 
-            result
+            match result {
+                Ok(result) => result,
+                Err(payload) => resume_unwind(payload),
+            }
         }
     }
 }
