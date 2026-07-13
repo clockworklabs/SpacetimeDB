@@ -10,17 +10,14 @@ const MAX_TABLE_COLUMNS: usize = 32;
 const MAX_TABLES: usize = 128;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Migration {
-    pub table: usize,
-    pub ops: Vec<MigrationOp>,
+pub enum Migration {
+    AddTable { is_event: bool },
+    RemoveTable { table: usize },
+    AlterTable { table: usize, ops: Vec<TableMigrationOp> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MigrationOp {
-    AddTable {
-        is_event: bool,
-    },
-    RemoveTable,
+pub enum TableMigrationOp {
     ChangeAccess,
     AddColumn {
         ty: Type,
@@ -81,14 +78,8 @@ impl Migration {
         let non_event_tables = schema.tables.iter().filter(|table| !table.is_event).count();
 
         if schema.tables.len() < MAX_TABLES {
-            candidates.push(Self::new(
-                schema.tables.len(),
-                [MigrationOp::AddTable { is_event: false }],
-            ));
-            candidates.push(Self::new(
-                schema.tables.len(),
-                [MigrationOp::AddTable { is_event: true }],
-            ));
+            candidates.push(Self::AddTable { is_event: false });
+            candidates.push(Self::AddTable { is_event: true });
         }
 
         for (table, table_plan) in schema.tables.iter().enumerate() {
@@ -96,43 +87,43 @@ impl Migration {
             let pristine = row_count == 0 && !model.ever_inserted(table);
 
             if (table_plan.is_event && row_count == 0) || (!table_plan.is_event && pristine && non_event_tables > 1) {
-                candidates.push(Self::new(table, [MigrationOp::RemoveTable]));
+                candidates.push(Self::RemoveTable { table });
             }
 
             if table_plan.is_event {
                 if row_count == 0 && table_plan.columns.len() < MAX_EVENT_COLUMNS {
-                    candidates.push(Self::new(
+                    candidates.push(Self::alter_table(
                         table,
-                        [MigrationOp::ChangeAccess, MigrationOp::ReschemaEventTable],
+                        [TableMigrationOp::ChangeAccess, TableMigrationOp::ReschemaEventTable],
                     ));
                 }
                 continue;
             }
 
             if table_plan.columns.len() < MAX_TABLE_COLUMNS {
-                candidates.extend(
-                    Type::ALL
-                        .iter()
-                        .copied()
-                        .map(|ty| Self::new(table, [MigrationOp::ChangeAccess, MigrationOp::AddColumn { ty }])),
-                );
+                candidates.extend(Type::ALL.iter().copied().map(|ty| {
+                    Self::alter_table(
+                        table,
+                        [TableMigrationOp::ChangeAccess, TableMigrationOp::AddColumn { ty }],
+                    )
+                }));
             }
 
             if pristine {
                 if let Some(sequence) = first_addable_sequence(table_plan) {
-                    candidates.push(Self::new(table, [MigrationOp::AddSequence { sequence }]));
+                    candidates.push(Self::alter_table(table, [TableMigrationOp::AddSequence { sequence }]));
                 }
 
                 if let Some(columns) = first_addable_unique_constraint_columns(table_plan) {
                     let mut ops = Vec::new();
                     if !has_index(table_plan, &columns) {
-                        ops.push(MigrationOp::AddIndex {
+                        ops.push(TableMigrationOp::AddIndex {
                             columns: columns.clone(),
                             algorithm: IndexAlgorithm::BTree,
                         });
                     }
-                    ops.push(MigrationOp::AddUniqueConstraint { columns });
-                    candidates.push(Self::new(table, ops));
+                    ops.push(TableMigrationOp::AddUniqueConstraint { columns });
+                    candidates.push(Self::alter_table(table, ops));
                 }
             }
 
@@ -140,42 +131,54 @@ impl Migration {
                 if let Some(sequence) =
                     first_addable_sequence_boundary_probe(table_plan, |column| model.column_domain(table, column))
                 {
-                    candidates.push(Self::new(table, [MigrationOp::AddSequence { sequence }]));
+                    candidates.push(Self::alter_table(table, [TableMigrationOp::AddSequence { sequence }]));
                 }
             }
 
             if let Some(sequence) = first_removable_sequence(table_plan) {
-                candidates.push(Self::new(table, [MigrationOp::RemoveSequence { sequence }]));
+                candidates.push(Self::alter_table(
+                    table,
+                    [TableMigrationOp::RemoveSequence { sequence }],
+                ));
             }
 
             if let Some(constraint) = first_removable_unique_constraint(table_plan) {
-                candidates.push(Self::new(table, [MigrationOp::RemoveUniqueConstraint { constraint }]));
+                candidates.push(Self::alter_table(
+                    table,
+                    [TableMigrationOp::RemoveUniqueConstraint { constraint }],
+                ));
             }
 
             if let Some((columns, algorithm)) = first_addable_index(table_plan) {
-                candidates.push(Self::new(table, [MigrationOp::AddIndex { columns, algorithm }]));
+                candidates.push(Self::alter_table(
+                    table,
+                    [TableMigrationOp::AddIndex { columns, algorithm }],
+                ));
             }
 
             if let Some(index) = first_changeable_index(table_plan) {
-                candidates.push(Self::new(
+                candidates.push(Self::alter_table(
                     table,
-                    [MigrationOp::ChangeAccess, MigrationOp::ChangeIndex { index }],
+                    [TableMigrationOp::ChangeAccess, TableMigrationOp::ChangeIndex { index }],
                 ));
-                candidates.push(Self::new(table, [MigrationOp::RemoveIndex { index }]));
+                candidates.push(Self::alter_table(table, [TableMigrationOp::RemoveIndex { index }]));
             }
 
             if let Some(column) = first_widenable_sum_column(table_plan) {
-                candidates.push(Self::new(
+                candidates.push(Self::alter_table(
                     table,
-                    [MigrationOp::ChangeAccess, MigrationOp::ChangeColumnType { column }],
+                    [
+                        TableMigrationOp::ChangeAccess,
+                        TableMigrationOp::ChangeColumnType { column },
+                    ],
                 ));
 
                 if table_plan.primary_key.is_some() && table_plan.sequences.is_empty() {
-                    candidates.push(Self::new(
+                    candidates.push(Self::alter_table(
                         table,
                         [
-                            MigrationOp::ChangePrimaryKey { column: None },
-                            MigrationOp::ChangeColumnType { column },
+                            TableMigrationOp::ChangePrimaryKey { column: None },
+                            TableMigrationOp::ChangeColumnType { column },
                         ],
                     ));
                 }
@@ -187,81 +190,60 @@ impl Migration {
 
     pub fn apply_to(&self, schema: &SchemaPlan) -> anyhow::Result<SchemaPlan> {
         let mut next = schema.clone();
-        if let Some(is_event) = self.adds_table() {
-            next.tables.push(new_table(&next.tables, is_event));
-            return Ok(next);
-        }
-        if self.removes_table() {
-            if self.table >= next.tables.len() {
-                anyhow::bail!("remove-table migration references missing table {}", self.table);
+
+        match self {
+            Self::AddTable { is_event } => {
+                next.tables.push(new_table(&next.tables, *is_event));
             }
-            next.tables.remove(self.table);
-            return Ok(next);
-        }
+            Self::RemoveTable { table } => {
+                anyhow::ensure!(
+                    *table < next.tables.len(),
+                    "remove-table migration references missing table {table}"
+                );
+                next.tables.remove(*table);
+            }
+            Self::AlterTable { table, ops } => {
+                let table_plan = next
+                    .tables
+                    .get_mut(*table)
+                    .ok_or_else(|| anyhow::anyhow!("migration references missing table {table}"))?;
 
-        let table = next
-            .tables
-            .get_mut(self.table)
-            .ok_or_else(|| anyhow::anyhow!("migration references missing table {}", self.table))?;
-
-        for op in &self.ops {
-            apply_op(table, op.clone())?;
+                for op in ops {
+                    apply_table_op(table_plan, op.clone())?;
+                }
+            }
         }
 
         Ok(next)
     }
 
-    pub fn adds_table(&self) -> Option<bool> {
-        match self.ops.as_slice() {
-            [MigrationOp::AddTable { is_event }] => Some(*is_event),
-            _ => None,
-        }
-    }
-
-    pub fn removes_table(&self) -> bool {
-        matches!(self.ops.as_slice(), [MigrationOp::RemoveTable])
-    }
-
-    pub fn added_column_defaults(&self) -> Vec<AlgebraicValue> {
-        self.ops
+    pub fn added_column_defaults(&self) -> Option<(usize, Vec<AlgebraicValue>)> {
+        let Self::AlterTable { table, ops } = self else {
+            return None;
+        };
+        let defaults = ops
             .iter()
             .filter_map(|op| match op {
-                MigrationOp::AddColumn { ty } => Some(ty.default_value()),
+                TableMigrationOp::AddColumn { ty } => Some(ty.default_value()),
                 _ => None,
             })
-            .collect()
+            .collect::<Vec<_>>();
+
+        (!defaults.is_empty()).then_some((*table, defaults))
     }
 
     pub fn expected_steps(&self) -> Vec<ExpectedStep> {
         let mut expected = Vec::new();
 
-        for op in &self.ops {
-            match op {
-                MigrationOp::AddTable { .. } => expected.push(ExpectedStep::AddTable),
-                MigrationOp::RemoveTable => {
-                    expected.push(ExpectedStep::RemoveTable);
-                    expected.push(ExpectedStep::DisconnectAllUsers);
-                }
-                MigrationOp::ChangeAccess => expected.push(ExpectedStep::ChangeAccess),
-                MigrationOp::AddColumn { .. } => {
-                    expected.push(ExpectedStep::AddColumns);
-                    expected.push(ExpectedStep::DisconnectAllUsers);
-                }
-                MigrationOp::AddIndex { .. } => expected.push(ExpectedStep::AddIndex),
-                MigrationOp::RemoveIndex { .. } => expected.push(ExpectedStep::RemoveIndex),
-                MigrationOp::AddSequence { .. } => expected.push(ExpectedStep::AddSequence),
-                MigrationOp::RemoveSequence { .. } => expected.push(ExpectedStep::RemoveSequence),
-                MigrationOp::AddUniqueConstraint { .. } => expected.push(ExpectedStep::AddConstraint),
-                MigrationOp::RemoveUniqueConstraint { .. } => expected.push(ExpectedStep::RemoveConstraint),
-                MigrationOp::ChangePrimaryKey { .. } => expected.push(ExpectedStep::ChangePrimaryKey),
-                MigrationOp::ChangeIndex { .. } => {
-                    expected.push(ExpectedStep::RemoveIndex);
-                    expected.push(ExpectedStep::AddIndex);
-                }
-                MigrationOp::ChangeColumnType { .. } => expected.push(ExpectedStep::ChangeColumns),
-                MigrationOp::ReschemaEventTable => {
-                    expected.push(ExpectedStep::ReschemaEventTable);
-                    expected.push(ExpectedStep::DisconnectAllUsers);
+        match self {
+            Self::AddTable { .. } => expected.push(ExpectedStep::AddTable),
+            Self::RemoveTable { .. } => {
+                expected.push(ExpectedStep::RemoveTable);
+                expected.push(ExpectedStep::DisconnectAllUsers);
+            }
+            Self::AlterTable { ops, .. } => {
+                for op in ops {
+                    expected_steps_for_table_op(op, &mut expected);
                 }
             }
         }
@@ -275,23 +257,43 @@ impl Migration {
         expected
     }
 
-    fn new(table: usize, ops: impl Into<Vec<MigrationOp>>) -> Self {
-        Self { table, ops: ops.into() }
+    fn alter_table(table: usize, ops: impl Into<Vec<TableMigrationOp>>) -> Self {
+        Self::AlterTable { table, ops: ops.into() }
     }
 }
 
-fn apply_op(table: &mut TablePlan, op: MigrationOp) -> anyhow::Result<()> {
+fn expected_steps_for_table_op(op: &TableMigrationOp, expected: &mut Vec<ExpectedStep>) {
     match op {
-        MigrationOp::AddTable { .. } => {
-            anyhow::bail!("add-table migration should be applied by SchemaPlan::push before table ops");
+        TableMigrationOp::ChangeAccess => expected.push(ExpectedStep::ChangeAccess),
+        TableMigrationOp::AddColumn { .. } => {
+            expected.push(ExpectedStep::AddColumns);
+            expected.push(ExpectedStep::DisconnectAllUsers);
         }
-        MigrationOp::RemoveTable => {
-            anyhow::bail!("remove-table migration should be applied by SchemaPlan::remove before table ops");
+        TableMigrationOp::AddIndex { .. } => expected.push(ExpectedStep::AddIndex),
+        TableMigrationOp::RemoveIndex { .. } => expected.push(ExpectedStep::RemoveIndex),
+        TableMigrationOp::AddSequence { .. } => expected.push(ExpectedStep::AddSequence),
+        TableMigrationOp::RemoveSequence { .. } => expected.push(ExpectedStep::RemoveSequence),
+        TableMigrationOp::AddUniqueConstraint { .. } => expected.push(ExpectedStep::AddConstraint),
+        TableMigrationOp::RemoveUniqueConstraint { .. } => expected.push(ExpectedStep::RemoveConstraint),
+        TableMigrationOp::ChangePrimaryKey { .. } => expected.push(ExpectedStep::ChangePrimaryKey),
+        TableMigrationOp::ChangeIndex { .. } => {
+            expected.push(ExpectedStep::RemoveIndex);
+            expected.push(ExpectedStep::AddIndex);
         }
-        MigrationOp::ChangeAccess => {
+        TableMigrationOp::ChangeColumnType { .. } => expected.push(ExpectedStep::ChangeColumns),
+        TableMigrationOp::ReschemaEventTable => {
+            expected.push(ExpectedStep::ReschemaEventTable);
+            expected.push(ExpectedStep::DisconnectAllUsers);
+        }
+    }
+}
+
+fn apply_table_op(table: &mut TablePlan, op: TableMigrationOp) -> anyhow::Result<()> {
+    match op {
+        TableMigrationOp::ChangeAccess => {
             table.is_public = !table.is_public;
         }
-        MigrationOp::AddColumn { ty } => {
+        TableMigrationOp::AddColumn { ty } => {
             anyhow::ensure!(!table.is_event, "add-column migration selected event table");
             anyhow::ensure!(
                 table.columns.len() < MAX_TABLE_COLUMNS,
@@ -302,7 +304,7 @@ fn apply_op(table: &mut TablePlan, op: MigrationOp) -> anyhow::Result<()> {
                 ty,
             });
         }
-        MigrationOp::AddIndex { columns, algorithm } => {
+        TableMigrationOp::AddIndex { columns, algorithm } => {
             ensure_columns_exist(table, &columns)?;
             anyhow::ensure!(
                 !has_index(table, &columns),
@@ -310,7 +312,7 @@ fn apply_op(table: &mut TablePlan, op: MigrationOp) -> anyhow::Result<()> {
             );
             table.indexes.push(IndexPlan { columns, algorithm });
         }
-        MigrationOp::RemoveIndex { index } => {
+        TableMigrationOp::RemoveIndex { index } => {
             let Some(index_plan) = table.indexes.get(index) else {
                 anyhow::bail!("remove-index migration references missing index {index}");
             };
@@ -320,7 +322,7 @@ fn apply_op(table: &mut TablePlan, op: MigrationOp) -> anyhow::Result<()> {
             );
             table.indexes.remove(index);
         }
-        MigrationOp::AddSequence { sequence } => {
+        TableMigrationOp::AddSequence { sequence } => {
             let column = sequence.column;
             let Some(column_plan) = table.columns.get(column) else {
                 anyhow::bail!("add-sequence migration references missing column {column}");
@@ -335,14 +337,14 @@ fn apply_op(table: &mut TablePlan, op: MigrationOp) -> anyhow::Result<()> {
             );
             table.sequences.push(sequence);
         }
-        MigrationOp::RemoveSequence { sequence } => {
+        TableMigrationOp::RemoveSequence { sequence } => {
             anyhow::ensure!(
                 sequence < table.sequences.len(),
                 "remove-sequence migration references missing sequence"
             );
             table.sequences.remove(sequence);
         }
-        MigrationOp::AddUniqueConstraint { columns } => {
+        TableMigrationOp::AddUniqueConstraint { columns } => {
             ensure_columns_exist(table, &columns)?;
             anyhow::ensure!(
                 !table
@@ -357,7 +359,7 @@ fn apply_op(table: &mut TablePlan, op: MigrationOp) -> anyhow::Result<()> {
             );
             table.unique_constraints.push(UniqueConstraintPlan { columns });
         }
-        MigrationOp::RemoveUniqueConstraint { constraint } => {
+        TableMigrationOp::RemoveUniqueConstraint { constraint } => {
             let Some(constraint_plan) = table.unique_constraints.get(constraint) else {
                 anyhow::bail!("remove-constraint migration references missing constraint {constraint}");
             };
@@ -369,7 +371,7 @@ fn apply_op(table: &mut TablePlan, op: MigrationOp) -> anyhow::Result<()> {
             );
             table.unique_constraints.remove(constraint);
         }
-        MigrationOp::ChangePrimaryKey { column } => {
+        TableMigrationOp::ChangePrimaryKey { column } => {
             if let Some(column) = column {
                 anyhow::ensure!(
                     column < table.columns.len(),
@@ -378,7 +380,7 @@ fn apply_op(table: &mut TablePlan, op: MigrationOp) -> anyhow::Result<()> {
             }
             table.primary_key = column;
         }
-        MigrationOp::ChangeIndex { index } => {
+        TableMigrationOp::ChangeIndex { index } => {
             let Some(index_plan) = table.indexes.get_mut(index) else {
                 anyhow::bail!("index migration references missing index {index}");
             };
@@ -387,10 +389,10 @@ fn apply_op(table: &mut TablePlan, op: MigrationOp) -> anyhow::Result<()> {
                 IndexAlgorithm::Hash => IndexAlgorithm::BTree,
             };
         }
-        MigrationOp::ChangeColumnType { column } => {
+        TableMigrationOp::ChangeColumnType { column } => {
             widen_sum_column(table, Some(column))?;
         }
-        MigrationOp::ReschemaEventTable => {
+        TableMigrationOp::ReschemaEventTable => {
             anyhow::ensure!(table.is_event, "event-table migration selected non-event table");
             anyhow::ensure!(
                 table.columns.len() < MAX_EVENT_COLUMNS,

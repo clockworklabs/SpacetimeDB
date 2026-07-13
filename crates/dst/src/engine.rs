@@ -7,14 +7,13 @@ use spacetimedb_engine::error::{DBError, DatastoreError, IndexError};
 use spacetimedb_engine::persistence::{DiskSizeFn, Durability as EngineDurability, Persistence};
 use spacetimedb_engine::relational_db::{MutTx, RelationalDB};
 use spacetimedb_engine::update::{update_database, UpdateLogger};
-use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{Identity, RawModuleDef};
 use spacetimedb_primitives::TableId;
 use spacetimedb_runtime::sim::{Rng, Runtime as SimRuntime};
 use spacetimedb_runtime::Handle;
 use spacetimedb_schema::auto_migrate::{ponder_migrate, AutoMigrateStep, MigratePlan};
-use spacetimedb_schema::def::{IndexAlgorithm as SchemaIndexAlgorithm, ModuleDef};
+use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_table::page_pool::PagePool;
 
@@ -22,15 +21,16 @@ mod generation;
 mod migrations;
 mod model;
 mod properties;
+mod row;
 mod state;
 mod workload;
 
 use self::migrations::{ExpectedStep, Migration};
+use self::row::{normalize_rows, row_to_bytes};
 use self::state::{
-    ColumnState, CommitDelta, CountState, IndexAlgorithmState, IndexState, SchemaState, SequenceState, TableDelta,
-    TableRowCount, TableRows, TableSchemaState, UniqueConstraintState,
+    table_schema_state_for_schema, CommitDelta, CountState, SchemaState, TableDelta, TableRowCount, TableRows,
 };
-use self::workload::{normalize_rows, row_to_bytes, InsertOutcome, Interaction, Observation};
+use self::workload::{InsertOutcome, Interaction, Observation};
 
 use crate::engine::model::Model;
 use crate::engine::properties::EngineProperties;
@@ -174,54 +174,7 @@ impl EngineTarget {
                     return Err(err.into());
                 }
             };
-            let mut indexes = schema
-                .indexes
-                .iter()
-                .map(|index| IndexState {
-                    columns: index_columns(&index.index_algorithm),
-                    algorithm: index_algorithm_state(&index.index_algorithm),
-                })
-                .collect::<Vec<_>>();
-            indexes.sort();
-
-            let mut unique_constraints = schema
-                .constraints
-                .iter()
-                .filter_map(|constraint| {
-                    constraint.data.unique_columns().map(|columns| UniqueConstraintState {
-                        columns: columns.iter().map(|col| col.0 as usize).collect(),
-                    })
-                })
-                .collect::<Vec<_>>();
-            unique_constraints.sort();
-
-            let mut sequences = schema
-                .sequences
-                .iter()
-                .map(|sequence| SequenceState {
-                    column: sequence.col_pos.0 as usize,
-                })
-                .collect::<Vec<_>>();
-            sequences.sort();
-
-            schema_tables.push(TableSchemaState {
-                table,
-                name: schema.table_name.to_string(),
-                is_public: schema.table_access == StAccess::Public,
-                is_event: schema.is_event,
-                primary_key: schema.primary_key.map(|col| col.0 as usize),
-                columns: schema
-                    .columns
-                    .iter()
-                    .map(|column| ColumnState {
-                        name: column.col_name.to_string(),
-                        ty: column.col_type.clone(),
-                    })
-                    .collect(),
-                indexes,
-                unique_constraints,
-                sequences,
-            });
+            schema_tables.push(table_schema_state_for_schema(table, &schema));
         }
 
         let _ = db.release_tx(tx);
@@ -422,19 +375,6 @@ fn expected_step_from_auto_step(step: &AutoMigrateStep<'_>) -> anyhow::Result<Ex
     }
 }
 
-fn index_columns(algorithm: &SchemaIndexAlgorithm) -> Vec<usize> {
-    algorithm.columns().iter().map(|col| col.0 as usize).collect()
-}
-
-fn index_algorithm_state(algorithm: &SchemaIndexAlgorithm) -> IndexAlgorithmState {
-    match algorithm {
-        SchemaIndexAlgorithm::BTree(_) => IndexAlgorithmState::BTree,
-        SchemaIndexAlgorithm::Hash(_) => IndexAlgorithmState::Hash,
-        SchemaIndexAlgorithm::Direct(_) => IndexAlgorithmState::Direct,
-        _ => IndexAlgorithmState::Unknown,
-    }
-}
-
 struct DstUpdateLogger;
 
 impl UpdateLogger for DstUpdateLogger {
@@ -481,7 +421,7 @@ mod tests {
     use spacetimedb_runtime::sim::Runtime as SimRuntime;
     use spacetimedb_sats::product;
 
-    use super::migrations::{Migration, MigrationOp};
+    use super::migrations::{Migration, TableMigrationOp};
     use super::*;
     use crate::schema::{ColumnPlan, IndexAlgorithm, IndexPlan, TablePlan, Type, UniqueConstraintPlan};
 
@@ -596,9 +536,12 @@ mod tests {
         let mut target = EngineTarget::init(add_column_replay_schema(), 0)?;
         insert_u64_rows(&mut target)?;
 
-        target.execute(&Interaction::Migrate(Migration {
+        target.execute(&Interaction::Migrate(Migration::AlterTable {
             table: 0,
-            ops: vec![MigrationOp::ChangeAccess, MigrationOp::AddColumn { ty: Type::U64 }],
+            ops: vec![
+                TableMigrationOp::ChangeAccess,
+                TableMigrationOp::AddColumn { ty: Type::U64 },
+            ],
         }))?;
         target.execute(&Interaction::Replay)?;
 
@@ -610,9 +553,12 @@ mod tests {
         let mut target = EngineTarget::init(change_index_replay_schema(), 0)?;
         insert_u64_rows(&mut target)?;
 
-        target.execute(&Interaction::Migrate(Migration {
+        target.execute(&Interaction::Migrate(Migration::AlterTable {
             table: 0,
-            ops: vec![MigrationOp::ChangeAccess, MigrationOp::ChangeIndex { index: 1 }],
+            ops: vec![
+                TableMigrationOp::ChangeAccess,
+                TableMigrationOp::ChangeIndex { index: 1 },
+            ],
         }))?;
         target.execute(&Interaction::Replay)?;
 
@@ -632,9 +578,12 @@ mod tests {
         }
         target.execute(&Interaction::CommitTx)?;
 
-        target.execute(&Interaction::Migrate(Migration {
+        target.execute(&Interaction::Migrate(Migration::AlterTable {
             table: 0,
-            ops: vec![MigrationOp::ChangeAccess, MigrationOp::ChangeColumnType { column: 1 }],
+            ops: vec![
+                TableMigrationOp::ChangeAccess,
+                TableMigrationOp::ChangeColumnType { column: 1 },
+            ],
         }))?;
         target.execute(&Interaction::Replay)?;
 

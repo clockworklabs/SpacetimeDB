@@ -1,5 +1,6 @@
 use super::model::Model;
-use super::workload::{InsertOutcome, Interaction, Observation, Row};
+use super::row::Row;
+use super::workload::{InsertOutcome, Interaction, Observation};
 use crate::schema::SchemaPlan;
 use crate::traits::Properties;
 

@@ -1,3 +1,4 @@
+use crate::rng;
 use spacetimedb_lib::db::raw_def::v10::*;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, TableAccess, TableType};
 use spacetimedb_primitives::{ColId, ColList};
@@ -68,18 +69,15 @@ pub struct SchemaDecisions;
 
 impl SchemaDecisions {
     pub fn range(rng: &Rng, (lo, hi): (usize, usize)) -> usize {
-        if lo >= hi {
-            return lo;
-        }
-        lo + (rng.next_u64() as usize % (hi - lo + 1))
+        rng::range_inclusive(rng, lo, hi)
     }
 
     pub fn index(rng: &Rng, len: usize) -> usize {
-        rng.index(len)
+        rng::choose_index(rng, len).expect("len must be non-zero")
     }
 
     pub fn choose_index(rng: &Rng, len: usize) -> Option<usize> {
-        (len > 0).then(|| Self::index(rng, len))
+        rng::choose_index(rng, len)
     }
 
     pub fn sample_probability(rng: &Rng, probability: f64) -> bool {

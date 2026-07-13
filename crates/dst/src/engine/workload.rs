@@ -1,15 +1,13 @@
 use std::fmt::{Debug, Error, Formatter};
 
-use super::generation::{pick_weighted, GenCtx};
+use super::generation::GenCtx;
 use super::migrations::Migration;
 use super::model::Model;
+use super::row::Row;
 use super::state::{CommitDelta, CountState};
+use crate::rng::pick_weighted;
 use crate::schema::SchemaPlan;
-use spacetimedb_lib::bsatn::to_vec;
-use spacetimedb_lib::ProductValue;
 use spacetimedb_runtime::sim::Rng;
-
-pub type Row = ProductValue;
 
 #[derive(Debug, Clone)]
 pub enum Interaction {
@@ -266,13 +264,4 @@ impl Iterator for WorkloadGen {
     fn next(&mut self) -> Option<Self::Item> {
         Some(self.next_interaction())
     }
-}
-
-pub fn row_to_bytes(row: &Row) -> Vec<u8> {
-    to_vec(row).expect("row serialization must not fail")
-}
-
-pub fn normalize_rows(mut rows: Vec<Row>) -> Vec<Row> {
-    rows.sort_by_key(row_to_bytes);
-    rows
 }

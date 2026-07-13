@@ -1,7 +1,9 @@
 use spacetimedb_lib::AlgebraicValue;
 
+use super::migrations::Migration;
+use super::row::{normalize_rows, Row};
 use super::state::{schema_state_for_plan, CommitDelta, CountState, TableDelta, TableRowCount, TableRows};
-use super::workload::{normalize_rows, InsertOutcome, Interaction, Observation, Row};
+use super::workload::{InsertOutcome, Interaction, Observation};
 use crate::schema::{SchemaPlan, Type};
 
 #[derive(Debug)]
@@ -187,24 +189,28 @@ impl Model {
             }
             Interaction::Migrate(migration) => {
                 debug_assert!(self.pending_tx.is_none());
-                let adds_table = migration.adds_table().is_some();
-                let removes_table = migration.removes_table();
                 let added_defaults = migration.added_column_defaults();
                 self.schema = migration
                     .apply_to(&self.schema)
                     .expect("generated migrations must be valid for the model schema");
-                if adds_table {
-                    self.committed_tables.push(TableState {
-                        rows: vec![],
-                        ever_inserted: false,
-                    });
-                } else if removes_table {
-                    self.committed_tables.remove(migration.table);
-                } else if !added_defaults.is_empty() {
-                    for row in &mut self.committed_tables[migration.table].rows {
-                        let mut elements = row.elements.to_vec();
-                        elements.extend(added_defaults.iter().cloned());
-                        row.elements = elements.into_boxed_slice();
+                match migration {
+                    Migration::AddTable { .. } => {
+                        self.committed_tables.push(TableState {
+                            rows: vec![],
+                            ever_inserted: false,
+                        });
+                    }
+                    Migration::RemoveTable { table } => {
+                        self.committed_tables.remove(*table);
+                    }
+                    Migration::AlterTable { .. } => {
+                        if let Some((table, defaults)) = added_defaults {
+                            for row in &mut self.committed_tables[table].rows {
+                                let mut elements = row.elements.to_vec();
+                                elements.extend(defaults.iter().cloned());
+                                row.elements = elements.into_boxed_slice();
+                            }
+                        }
                     }
                 }
                 Observation::Migrated

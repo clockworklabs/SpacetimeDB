@@ -4,8 +4,9 @@ use spacetimedb_sats::ArrayValue;
 
 use super::migrations::Migration;
 use super::model::{ColumnDomain, Model};
-use super::workload::Row;
-use crate::schema::{SchemaDecisions, Type};
+use super::row::Row;
+use crate::rng::{choice, choose_index, frequency};
+use crate::schema::Type;
 
 pub(crate) struct GenCtx<'a> {
     rng: &'a Rng,
@@ -24,52 +25,6 @@ impl<'a> GenCtx<'a> {
     pub(crate) fn gen_migration(&self) -> Option<Migration> {
         MigrationGen::new(self.rng, self.model).choose()
     }
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct Choice<T> {
-    weight: u64,
-    value: T,
-}
-
-pub(crate) const fn choice<T>(weight: u64, value: T) -> Choice<T> {
-    Choice { weight, value }
-}
-
-pub(crate) fn frequency<T: Copy>(rng: &Rng, choices: &[Choice<T>]) -> T {
-    let total: u64 = choices.iter().map(|choice| choice.weight).sum();
-
-    assert!(total > 0, "at least one choice weight must be non-zero");
-
-    let mut selected = rng.next_u64() % total;
-
-    for choice in choices.iter().copied() {
-        if selected < choice.weight {
-            return choice.value;
-        }
-
-        selected -= choice.weight;
-    }
-
-    unreachable!("selected value is always inside total weight")
-}
-
-pub(crate) fn pick_weighted(rng: &Rng, weights: &[u64]) -> usize {
-    let total: u64 = weights.iter().sum();
-
-    assert!(total > 0, "at least one interaction weight must be non-zero");
-
-    let mut selected = rng.next_u64() % total;
-
-    for (idx, weight) in weights.iter().copied().enumerate() {
-        if selected < weight {
-            return idx;
-        }
-
-        selected -= weight;
-    }
-
-    unreachable!("selected value is always inside total weight")
 }
 
 #[derive(Clone, Copy)]
@@ -398,6 +353,6 @@ impl<'a> MigrationGen<'a> {
 
     fn choose(&self) -> Option<Migration> {
         let candidates = Migration::candidates(self.model);
-        SchemaDecisions::choose_index(self.rng, candidates.len()).map(|idx| candidates[idx].clone())
+        choose_index(self.rng, candidates.len()).map(|idx| candidates[idx].clone())
     }
 }
