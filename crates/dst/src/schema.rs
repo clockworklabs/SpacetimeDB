@@ -166,6 +166,19 @@ impl SchemaNames {
                 .join("_")
         )
     }
+
+    pub fn constraint_name(table: &TablePlan, constraint: &UniqueConstraintPlan) -> String {
+        format!(
+            "{}_{}_key",
+            table.name,
+            constraint
+                .columns
+                .iter()
+                .map(|&c| table.columns[c].name.as_str())
+                .collect::<Vec<_>>()
+                .join("_")
+        )
+    }
 }
 
 // Schema plan — the canonical source of truth.
@@ -179,6 +192,9 @@ impl SchemaPlan {
     pub fn ensure_engine_migration_coverage(&mut self) {
         self.ensure_widenable_sum_column();
         self.ensure_event_table();
+        self.ensure_sequence_mutation_column();
+        self.ensure_unique_constraint_mutation_column();
+        self.ensure_standalone_index();
     }
 
     pub fn auto_inc_table_and_column(&self) -> Option<(usize, usize)> {
@@ -260,6 +276,112 @@ impl SchemaPlan {
             is_event: true,
         });
     }
+
+    fn ensure_sequence_mutation_column(&mut self) {
+        if self.tables.iter().any(Self::has_sequence_mutation_column) {
+            return;
+        }
+
+        let table = self
+            .tables
+            .iter_mut()
+            .find(|table| !table.is_event)
+            .expect("schema must contain at least one non-event table");
+        let column = table.columns.len();
+        table.columns.push(ColumnPlan {
+            name: SchemaNames::fresh_column_name(table, "dst_seq"),
+            ty: Type::U64,
+        });
+        table.indexes.push(IndexPlan {
+            columns: vec![column],
+            algorithm: IndexAlgorithm::BTree,
+        });
+        table
+            .unique_constraints
+            .push(UniqueConstraintPlan { columns: vec![column] });
+    }
+
+    fn ensure_unique_constraint_mutation_column(&mut self) {
+        if self.tables.iter().any(|table| {
+            !table.is_event
+                && table.columns.iter().enumerate().any(|(column, _)| {
+                    !table
+                        .unique_constraints
+                        .iter()
+                        .any(|constraint| constraint.columns == [column])
+                })
+        }) {
+            return;
+        }
+
+        let table = self
+            .tables
+            .iter_mut()
+            .find(|table| !table.is_event)
+            .expect("schema must contain at least one non-event table");
+        table.columns.push(ColumnPlan {
+            name: SchemaNames::fresh_column_name(table, "dst_unique"),
+            ty: Type::U64,
+        });
+    }
+
+    fn has_sequence_mutation_column(table: &TablePlan) -> bool {
+        !table.is_event
+            && table.columns.iter().enumerate().any(|(column, plan)| {
+                plan.ty == Type::U64
+                    && table.sequences.iter().all(|seq| seq.column != column)
+                    && table.indexes.iter().any(|index| index.columns == [column])
+                    && table
+                        .unique_constraints
+                        .iter()
+                        .any(|constraint| constraint.columns == [column])
+            })
+    }
+
+    fn ensure_standalone_index(&mut self) {
+        if self.tables.iter().any(|table| {
+            !table.is_event
+                && table.indexes.iter().any(|index| {
+                    !table.primary_key.is_some_and(|pk| index.columns == [pk])
+                        && !table
+                            .unique_constraints
+                            .iter()
+                            .any(|constraint| constraint.columns == index.columns)
+                })
+        }) {
+            return;
+        }
+
+        let table = self
+            .tables
+            .iter_mut()
+            .find(|table| !table.is_event)
+            .expect("schema must contain at least one non-event table");
+        let column = if table.columns.len() < 2 {
+            table.columns.push(ColumnPlan {
+                name: SchemaNames::fresh_column_name(table, "dst_indexed"),
+                ty: Type::U64,
+            });
+            table.columns.len() - 1
+        } else {
+            (0..table.columns.len())
+                .find(|&column| {
+                    !table.primary_key.is_some_and(|pk| pk == column)
+                        && !table
+                            .unique_constraints
+                            .iter()
+                            .any(|constraint| constraint.columns == [column])
+                })
+                .unwrap_or(0)
+        };
+
+        if !table.indexes.iter().any(|index| index.columns == [column]) {
+            table.indexes.push(IndexPlan {
+                columns: vec![column],
+                algorithm: IndexAlgorithm::BTree,
+            });
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -300,10 +422,14 @@ pub struct UniqueConstraintPlan {
 }
 
 /// A sequence on a specific integral column.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SequencePlan {
     /// Index into `TablePlan.columns`.
     pub column: usize,
+    pub start: Option<i128>,
+    pub min_value: Option<i128>,
+    pub max_value: Option<i128>,
+    pub increment: i128,
 }
 
 impl SequencePlan {
@@ -312,7 +438,44 @@ impl SequencePlan {
         if !ty.is_integral() {
             return None;
         }
-        Some(Self { column })
+        Some(Self {
+            column,
+            start: None,
+            min_value: None,
+            max_value: None,
+            increment: 1,
+        })
+    }
+
+    pub fn with_bounds(
+        column: usize,
+        ty: Type,
+        start: i128,
+        min_value: i128,
+        max_value: i128,
+        increment: i128,
+    ) -> Option<Self> {
+        if !ty.is_integral() || increment == 0 || min_value >= max_value || start < min_value || start > max_value {
+            return None;
+        }
+        Some(Self {
+            column,
+            start: Some(start),
+            min_value: Some(min_value),
+            max_value: Some(max_value),
+            increment,
+        })
+    }
+
+    pub fn with_existing_value_as_max(column: usize, ty: Type, existing_value: i128) -> Option<Self> {
+        const DOMAIN_SIZE: i128 = 3;
+
+        if existing_value < DOMAIN_SIZE {
+            return None;
+        }
+
+        let min_value = existing_value - (DOMAIN_SIZE - 1);
+        Self::with_bounds(column, ty, min_value, min_value, existing_value, 1)
     }
 }
 
@@ -325,7 +488,20 @@ pub fn to_raw_def(schema: &SchemaPlan) -> RawModuleDefV10 {
         to_raw_def_table(&mut builder, table);
     }
 
-    builder.finish()
+    let mut raw = builder.finish();
+    apply_sequence_bounds(schema, &mut raw);
+    raw
+}
+
+fn apply_sequence_bounds(schema: &SchemaPlan, raw: &mut RawModuleDefV10) {
+    for (table_plan, raw_table) in schema.tables.iter().zip(raw.tables_mut_for_tests().iter_mut()) {
+        for (sequence_plan, raw_sequence) in table_plan.sequences.iter().zip(raw_table.sequences.iter_mut()) {
+            raw_sequence.start = sequence_plan.start;
+            raw_sequence.min_value = sequence_plan.min_value;
+            raw_sequence.max_value = sequence_plan.max_value;
+            raw_sequence.increment = sequence_plan.increment;
+        }
+    }
 }
 
 fn to_raw_def_table(builder: &mut RawModuleDefV10Builder, table: &TablePlan) {
@@ -456,10 +632,10 @@ impl SchemaGenerator {
             }
         }
         // Ensure PK has a matching unique constraint.
-        if let Some(pk) = pk
-            && !seen.iter().any(|cols| cols.len() == 1 && cols[0] == *pk)
-        {
-            result.push(UniqueConstraintPlan { columns: vec![*pk] });
+        if let Some(pk) = pk {
+            if !seen.iter().any(|cols| cols.len() == 1 && cols[0] == *pk) {
+                result.push(UniqueConstraintPlan { columns: vec![*pk] });
+            }
         }
         result
     }

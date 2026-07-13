@@ -1,13 +1,12 @@
 use std::fmt::{Debug, Error, Formatter};
 
-use spacetimedb_lib::bsatn::to_vec;
-use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ProductValue};
-use spacetimedb_runtime::sim::Rng;
-use spacetimedb_sats::ArrayValue;
-
+use super::generation::{pick_weighted, GenCtx};
 use super::migrations::Migration;
 use super::model::Model;
-use crate::schema::{IndexAlgorithm, SchemaPlan, TablePlan, Type};
+use crate::schema::{IndexAlgorithm, SchemaPlan};
+use spacetimedb_lib::bsatn::to_vec;
+use spacetimedb_lib::{AlgebraicType, ProductValue};
+use spacetimedb_runtime::sim::Rng;
 
 pub type Row = ProductValue;
 
@@ -118,55 +117,11 @@ impl WorkloadGen {
         self.model.schema()
     }
 
-    fn gen_value(&self, ty: Type) -> AlgebraicValue {
-        match ty {
-            Type::Bool => AlgebraicValue::Bool(self.rng.next_u64().is_multiple_of(2)),
-            Type::I64 => AlgebraicValue::I64(self.rng.next_u64() as i64),
-            Type::U64 => AlgebraicValue::U64(self.rng.next_u64()),
-            Type::String => AlgebraicValue::String(format!("v_{}", self.rng.next_u64()).into()),
-            Type::Bytes => {
-                let len = (self.rng.next_u64() % 16) as usize;
-                let bytes: Vec<u8> = (0..len).map(|_| self.rng.next_u64() as u8).collect();
-                AlgebraicValue::Array(ArrayValue::U8(bytes.into()))
-            }
-            Type::Sum { variants } => {
-                let tag = self.rng.index(variants as usize) as u8;
-                AlgebraicValue::sum(tag, AlgebraicValue::U8(self.rng.next_u64() as u8))
-            }
-        }
-    }
-
-    fn gen_row(&self, table: &TablePlan) -> Row {
-        table
-            .columns
-            .iter()
-            .map(|c| self.gen_value(c.ty))
-            .collect::<ProductValue>()
-    }
-
-    fn gen_insert_row(&self, table_idx: usize) -> Row {
-        let table = &self.schema().tables[table_idx];
-        let mut row = self.gen_row(table);
-
-        if let Some(sequence) = table.sequences.first() {
-            row.elements[sequence.column] = match table.columns[sequence.column].ty {
-                Type::I64 => AlgebraicValue::I64(0),
-                Type::U64 => AlgebraicValue::U64(0),
-                _ => unreachable!("sequence columns are integral"),
-            };
-        }
-
-        row
-    }
-
-    fn non_auto_inc_table_idx(&self) -> Option<usize> {
-        let auto_inc_table = self
-            .schema()
-            .auto_inc_table_and_column()
-            .map(|(table_idx, _)| table_idx);
-
-        (0..self.schema().tables.len())
-            .find(|&table_idx| Some(table_idx) != auto_inc_table && !self.schema().tables[table_idx].is_event)
+    fn non_sequenced_table_idx(&self) -> Option<usize> {
+        (0..self.schema().tables.len()).find(|&table_idx| {
+            let table = &self.schema().tables[table_idx];
+            !table.is_event && table.sequences.is_empty()
+        })
     }
 
     pub fn next_interaction(&mut self) -> Interaction {
@@ -206,7 +161,7 @@ impl WorkloadGen {
 
                 Interaction::Insert {
                     table,
-                    row: self.gen_insert_row(table),
+                    row: GenCtx::new(&self.rng, &self.model).gen_insert_row(table),
                 }
             }
 
@@ -234,13 +189,16 @@ impl WorkloadGen {
     fn pick_interaction_choice(&mut self) -> InteractionChoice {
         let weights = self.weights;
 
-        match self.pick_weighted(&[
-            weights.insert,
-            weights.delete,
-            weights.commit_tx,
-            weights.migrate,
-            weights.replay,
-        ]) {
+        match pick_weighted(
+            &self.rng,
+            &[
+                weights.insert,
+                weights.delete,
+                weights.commit_tx,
+                weights.migrate,
+                weights.replay,
+            ],
+        ) {
             0 => InteractionChoice::Insert,
             1 => InteractionChoice::Delete,
             2 => InteractionChoice::CommitTx,
@@ -250,36 +208,24 @@ impl WorkloadGen {
         }
     }
 
-    fn pick_weighted(&mut self, weights: &[u64]) -> usize {
-        let total: u64 = weights.iter().sum();
-
-        assert!(total > 0, "at least one interaction weight must be non-zero");
-
-        let mut selected = self.rng.next_u64() % total;
-
-        for (idx, weight) in weights.iter().copied().enumerate() {
-            if selected < weight {
-                return idx;
-            }
-
-            selected -= weight;
-        }
-
-        unreachable!("selected value is always inside total weight")
-    }
-
     fn insert_table_idx(&self) -> usize {
-        let auto_inc_table_idx = self
-            .schema()
-            .auto_inc_table_and_column()
-            .map(|(table_idx, _)| table_idx)
-            .filter(|&table_idx| !self.schema().tables[table_idx].is_event);
+        let sequenced_tables = self.sequenced_table_indices();
         let data_tables = self.data_table_indices();
 
-        match auto_inc_table_idx {
-            Some(table_idx) if !self.rng.next_u64().is_multiple_of(3) => table_idx,
-            _ => data_tables[self.rng.index(data_tables.len())],
+        if !sequenced_tables.is_empty() && !self.rng.next_u64().is_multiple_of(3) {
+            sequenced_tables[self.rng.index(sequenced_tables.len())]
+        } else {
+            data_tables[self.rng.index(data_tables.len())]
         }
+    }
+
+    fn sequenced_table_indices(&self) -> Vec<usize> {
+        self.schema()
+            .tables
+            .iter()
+            .enumerate()
+            .filter_map(|(table_idx, table)| (!table.is_event && !table.sequences.is_empty()).then_some(table_idx))
+            .collect()
     }
 
     fn data_table_indices(&self) -> Vec<usize> {
@@ -298,11 +244,11 @@ impl WorkloadGen {
     }
 
     fn gen_migration(&self) -> Option<Migration> {
-        Migration::choose(self.schema(), &self.rng, |table| self.model.row_count(table))
+        GenCtx::new(&self.rng, &self.model).gen_migration()
     }
 
     fn deletable_table_idx(&self) -> Option<usize> {
-        self.non_auto_inc_table_idx()
+        self.non_sequenced_table_idx()
             .filter(|&table_idx| self.model.row_count(table_idx) > 0)
     }
 }
@@ -333,6 +279,7 @@ pub fn normalize_rows(mut rows: Vec<Row>) -> Vec<Row> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CountState {
     pub row_counts: Vec<TableRowCount>,
+    pub table_rows: Vec<TableRows>,
     pub schema: SchemaState,
 }
 
@@ -340,6 +287,12 @@ pub struct CountState {
 pub struct TableRowCount {
     pub table: usize,
     pub count: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableRows {
+    pub table: usize,
+    pub rows: Vec<Row>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -356,6 +309,7 @@ pub struct TableSchemaState {
     pub primary_key: Option<usize>,
     pub columns: Vec<ColumnState>,
     pub indexes: Vec<IndexState>,
+    pub unique_constraints: Vec<UniqueConstraintState>,
     pub sequences: Vec<SequenceState>,
 }
 
@@ -377,6 +331,11 @@ pub enum IndexAlgorithmState {
     Hash,
     Direct,
     Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct UniqueConstraintState {
+    pub columns: Vec<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -404,6 +363,15 @@ pub fn schema_state_for_plan(schema: &SchemaPlan) -> SchemaState {
                     .collect::<Vec<_>>();
                 indexes.sort();
 
+                let mut unique_constraints = table_plan
+                    .unique_constraints
+                    .iter()
+                    .map(|constraint| UniqueConstraintState {
+                        columns: constraint.columns.clone(),
+                    })
+                    .collect::<Vec<_>>();
+                unique_constraints.sort();
+
                 let mut sequences = table_plan
                     .sequences
                     .iter()
@@ -428,6 +396,7 @@ pub fn schema_state_for_plan(schema: &SchemaPlan) -> SchemaState {
                         })
                         .collect(),
                     indexes,
+                    unique_constraints,
                     sequences,
                 }
             })

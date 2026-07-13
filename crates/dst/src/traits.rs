@@ -1,4 +1,7 @@
+use std::panic::{resume_unwind, AssertUnwindSafe};
+
 use anyhow::Error;
+use futures::FutureExt;
 use spacetimedb_runtime::sim::Rng;
 
 /// This should be implemented by System under test.
@@ -39,19 +42,24 @@ pub trait TestSuite {
         async move {
             let (mut interactions, mut target, mut properties) = self.build(rng).await?;
 
-            let result = async {
+            let result = AssertUnwindSafe(async {
                 for interaction in interactions.by_ref().take(max_interactions) {
                     let observation = target.execute(&interaction).await?;
                     properties.observe(&interaction, &observation)?;
                 }
 
                 Ok(())
-            }
+            })
+            .catch_unwind()
             .await;
 
+            eprintln!("final interaction counts: {interactions:?}");
             tracing::info!(interaction_counts = ?interactions, "final interaction counts");
 
-            result
+            match result {
+                Ok(result) => result,
+                Err(payload) => resume_unwind(payload),
+            }
         }
     }
 }

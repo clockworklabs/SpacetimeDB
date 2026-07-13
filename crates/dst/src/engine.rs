@@ -18,6 +18,7 @@ use spacetimedb_schema::def::{IndexAlgorithm as SchemaIndexAlgorithm, ModuleDef}
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_table::page_pool::PagePool;
 
+mod generation;
 mod migrations;
 mod model;
 mod properties;
@@ -26,7 +27,8 @@ mod workload;
 use self::migrations::{ExpectedStep, Migration};
 use self::workload::{
     normalize_rows, row_to_bytes, ColumnState, CommitDelta, CountState, IndexAlgorithmState, IndexState, InsertOutcome,
-    Interaction, Observation, SchemaState, SequenceState, TableDelta, TableRowCount, TableSchemaState,
+    Interaction, Observation, SchemaState, SequenceState, TableDelta, TableRowCount, TableRows, TableSchemaState,
+    UniqueConstraintState,
 };
 
 use crate::engine::model::Model;
@@ -149,17 +151,20 @@ impl EngineTarget {
             .ok_or_else(|| anyhow::anyhow!("database is not open"))?;
         let tx = db.begin_tx(Workload::Internal);
         let mut row_counts = Vec::with_capacity(self.table_ids.len());
+        let mut table_rows = Vec::with_capacity(self.table_ids.len());
         let mut schema_tables = Vec::with_capacity(self.table_ids.len());
 
         for (table, table_id) in self.table_ids.iter().enumerate() {
-            let count = match db.iter(&tx, *table_id) {
-                Ok(iter) => iter.count() as u64,
+            let rows = match db.iter(&tx, *table_id) {
+                Ok(iter) => normalize_rows(iter.map(|row| row.to_product_value()).collect()),
                 Err(err) => {
                     let _ = db.release_tx(tx);
                     return Err(err.into());
                 }
             };
+            let count = rows.len() as u64;
             row_counts.push(TableRowCount { table, count });
+            table_rows.push(TableRows { table, rows });
 
             let schema = match db.schema_for_table(&tx, *table_id) {
                 Ok(schema) => schema,
@@ -177,6 +182,17 @@ impl EngineTarget {
                 })
                 .collect::<Vec<_>>();
             indexes.sort();
+
+            let mut unique_constraints = schema
+                .constraints
+                .iter()
+                .filter_map(|constraint| {
+                    constraint.data.unique_columns().map(|columns| UniqueConstraintState {
+                        columns: columns.iter().map(|col| col.0 as usize).collect(),
+                    })
+                })
+                .collect::<Vec<_>>();
+            unique_constraints.sort();
 
             let mut sequences = schema
                 .sequences
@@ -202,6 +218,7 @@ impl EngineTarget {
                     })
                     .collect(),
                 indexes,
+                unique_constraints,
                 sequences,
             });
         }
@@ -209,6 +226,7 @@ impl EngineTarget {
         let _ = db.release_tx(tx);
         Ok(CountState {
             row_counts,
+            table_rows,
             schema: SchemaState { tables: schema_tables },
         })
     }
@@ -385,9 +403,15 @@ impl EngineTarget {
 
 fn expected_step_from_auto_step(step: &AutoMigrateStep<'_>) -> anyhow::Result<ExpectedStep> {
     match step {
+        AutoMigrateStep::AddTable(_) => Ok(ExpectedStep::AddTable),
+        AutoMigrateStep::RemoveTable(_) => Ok(ExpectedStep::RemoveTable),
         AutoMigrateStep::AddColumns(_) => Ok(ExpectedStep::AddColumns),
         AutoMigrateStep::AddIndex(_) => Ok(ExpectedStep::AddIndex),
         AutoMigrateStep::RemoveIndex(_) => Ok(ExpectedStep::RemoveIndex),
+        AutoMigrateStep::AddSequence(_) => Ok(ExpectedStep::AddSequence),
+        AutoMigrateStep::RemoveSequence(_) => Ok(ExpectedStep::RemoveSequence),
+        AutoMigrateStep::AddConstraint(_) => Ok(ExpectedStep::AddConstraint),
+        AutoMigrateStep::RemoveConstraint(_) => Ok(ExpectedStep::RemoveConstraint),
         AutoMigrateStep::ChangeAccess(_) => Ok(ExpectedStep::ChangeAccess),
         AutoMigrateStep::ChangePrimaryKey(_) => Ok(ExpectedStep::ChangePrimaryKey),
         AutoMigrateStep::ChangeColumns(_) => Ok(ExpectedStep::ChangeColumns),
@@ -453,6 +477,7 @@ impl TestSuite for EngineTest {
 #[cfg(test)]
 mod tests {
     use spacetimedb_lib::AlgebraicValue;
+    use spacetimedb_runtime::sim::Runtime as SimRuntime;
     use spacetimedb_sats::product;
 
     use super::migrations::{Migration, MigrationOp};

@@ -1,8 +1,10 @@
+use spacetimedb_lib::AlgebraicValue;
+
 use super::workload::{
     normalize_rows, schema_state_for_plan, CommitDelta, CountState, InsertOutcome, Interaction, Observation, Row,
-    TableDelta, TableRowCount,
+    TableDelta, TableRowCount, TableRows,
 };
-use crate::schema::SchemaPlan;
+use crate::schema::{SchemaPlan, Type};
 
 #[derive(Debug)]
 pub struct Model {
@@ -14,11 +16,36 @@ pub struct Model {
 #[derive(Debug)]
 struct TableState {
     rows: Vec<Row>,
+    ever_inserted: bool,
 }
 
 #[derive(Debug)]
 struct PendingTx {
     tables: Vec<PendingTable>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ColumnDomain {
+    pub(crate) ty: Type,
+    pub(crate) values: Vec<AlgebraicValue>,
+    pub(crate) unique: bool,
+    pub(crate) single_column_unique: bool,
+    pub(crate) single_column_indexed: bool,
+    pub(crate) sequenced: bool,
+}
+
+impl ColumnDomain {
+    pub(crate) fn integral_values(&self) -> impl Iterator<Item = i128> + '_ {
+        self.values.iter().filter_map(|value| match value {
+            AlgebraicValue::U64(value) => Some(*value as i128),
+            AlgebraicValue::I64(value) => Some(*value as i128),
+            _ => None,
+        })
+    }
+
+    pub(crate) fn positive_i128_value_above(&self, min_exclusive: i128) -> Option<i128> {
+        self.integral_values().find(|value| *value > min_exclusive)
+    }
 }
 
 // Keep mutable transactions as an overlay: committed rows stay shared, while
@@ -45,7 +72,14 @@ impl PendingTx {
 
 impl Model {
     pub fn new(schema: SchemaPlan) -> Self {
-        let committed_tables = schema.tables.iter().map(|_| TableState { rows: vec![] }).collect();
+        let committed_tables = schema
+            .tables
+            .iter()
+            .map(|_| TableState {
+                rows: vec![],
+                ever_inserted: false,
+            })
+            .collect();
         Self {
             schema,
             committed_tables,
@@ -115,6 +149,7 @@ impl Model {
             }
             Interaction::Insert { table, row } => {
                 debug_assert!(self.pending_tx.is_some());
+                self.committed_tables[*table].ever_inserted = true;
                 // Properties feed the target-returned row here, so sequence-generated
                 // values become part of the oracle before commit/replay checks run.
                 if self.any_visible_row(*table, |visible_row| visible_row == row) {
@@ -154,11 +189,20 @@ impl Model {
             }
             Interaction::Migrate(migration) => {
                 debug_assert!(self.pending_tx.is_none());
+                let adds_table = migration.adds_table().is_some();
+                let removes_table = migration.removes_table();
                 let added_defaults = migration.added_column_defaults();
                 self.schema = migration
                     .apply_to(&self.schema)
                     .expect("generated migrations must be valid for the model schema");
-                if !added_defaults.is_empty() {
+                if adds_table {
+                    self.committed_tables.push(TableState {
+                        rows: vec![],
+                        ever_inserted: false,
+                    });
+                } else if removes_table {
+                    self.committed_tables.remove(migration.table);
+                } else if !added_defaults.is_empty() {
                     for row in &mut self.committed_tables[migration.table].rows {
                         let mut elements = row.elements.to_vec();
                         elements.extend(added_defaults.iter().cloned());
@@ -233,6 +277,31 @@ impl Model {
         self.visible_count(table) as usize
     }
 
+    pub fn ever_inserted(&self, table: usize) -> bool {
+        self.committed_tables[table].ever_inserted
+    }
+
+    pub(crate) fn column_domain(&self, table: usize, column: usize) -> ColumnDomain {
+        let table_plan = &self.schema.tables[table];
+        ColumnDomain {
+            ty: table_plan.columns[column].ty,
+            values: self
+                .visible_rows(table)
+                .map(|row| row.elements[column].clone())
+                .collect(),
+            unique: table_plan
+                .unique_constraints
+                .iter()
+                .any(|constraint| constraint.columns.contains(&column)),
+            single_column_unique: table_plan
+                .unique_constraints
+                .iter()
+                .any(|constraint| constraint.columns == [column]),
+            single_column_indexed: table_plan.indexes.iter().any(|index| index.columns == [column]),
+            sequenced: table_plan.sequences.iter().any(|sequence| sequence.column == column),
+        }
+    }
+
     pub fn row(&self, table: usize, row: usize) -> Option<&Row> {
         self.visible_rows(table).nth(row)
     }
@@ -249,8 +318,16 @@ impl Model {
                 count: self.visible_count(table),
             })
             .collect();
+        let table_rows = (0..self.schema.tables.len())
+            .map(|table| TableRows {
+                table,
+                rows: normalize_rows(self.visible_rows(table).cloned().collect()),
+            })
+            .collect();
+
         CountState {
             row_counts,
+            table_rows,
             schema: schema_state_for_plan(&self.schema),
         }
     }
