@@ -1013,7 +1013,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
                 public readonly partial struct QueryBuilder
                 {
-                    {{vis}} global::SpacetimeDB.Table<{{globalRowName}}, {{colsTypeName}}, {{ixColsTypeName}}> {{accessorIdentifier}}() =>
+                    {{vis}} global::SpacetimeDB.TableQuery<{{globalRowName}}, {{colsTypeName}}, {{ixColsTypeName}}> {{accessorIdentifier}}() =>
                         new("{{tableName}}", new {{colsTypeName}}("{{tableName}}"), new {{ixColsTypeName}}("{{tableName}}"));
                 }
                 """;

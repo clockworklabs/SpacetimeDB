@@ -345,7 +345,7 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THI
     }
   },
   {/*
-    public global::SpacetimeDB.Table<global::InAnotherNamespace.TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
+    public global::SpacetimeDB.TableQuery<global::InAnotherNamespace.TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
         new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
 }
@@ -368,7 +368,7 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THI
     }
   },
   {/*
-    public global::SpacetimeDB.Table<global::TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
+    public global::SpacetimeDB.TableQuery<global::TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
         new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
 }
@@ -391,7 +391,7 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THI
     }
   },
   {/*
-    public global::SpacetimeDB.Table<global::InAnotherNamespace.TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
+    public global::SpacetimeDB.TableQuery<global::InAnotherNamespace.TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
         new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 }
@@ -414,7 +414,7 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THI
     }
   },
   {/*
-    public global::SpacetimeDB.Table<global::TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
+    public global::SpacetimeDB.TableQuery<global::TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
         new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 }
@@ -576,8 +576,8 @@ public readonly struct TestDuplicateTableNameIxCols
   },
   {/*
 {
-    public global::SpacetimeDB.Table<global::TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
-                                                                                                                               ^^^^^^^^^^^^^^^^^^^^^^
+    public global::SpacetimeDB.TableQuery<global::TestDuplicateTableName, TestDuplicateTableNameCols, TestDuplicateTableNameIxCols> TestDuplicateTableName() =>
+                                                                                                                                    ^^^^^^^^^^^^^^^^^^^^^^
         new("TestDuplicateTableName", new TestDuplicateTableNameCols("TestDuplicateTableName"), new TestDuplicateTableNameIxCols("TestDuplicateTableName"));
 */
     Message: Type 'QueryBuilder' already defines a member called 'TestDuplicateTableName' with the same parameter types,

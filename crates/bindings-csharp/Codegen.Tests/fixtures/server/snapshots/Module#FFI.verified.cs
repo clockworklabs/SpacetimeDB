@@ -45,7 +45,7 @@ namespace SpacetimeDB
 
     public readonly partial struct QueryBuilder
     {
-        internal global::SpacetimeDB.Table<
+        internal global::SpacetimeDB.TableQuery<
             global::BTreeMultiColumn,
             BTreeMultiColumnCols,
             BTreeMultiColumnIxCols
@@ -100,7 +100,7 @@ namespace SpacetimeDB
 
     public readonly partial struct QueryBuilder
     {
-        internal global::SpacetimeDB.Table<
+        internal global::SpacetimeDB.TableQuery<
             global::BTreeViews,
             BTreeViewsCols,
             BTreeViewsIxCols
@@ -136,7 +136,7 @@ namespace SpacetimeDB
 
     public readonly partial struct QueryBuilder
     {
-        public global::SpacetimeDB.Table<
+        public global::SpacetimeDB.TableQuery<
             global::MultiTableRow,
             MultiTable1Cols,
             MultiTable1IxCols
@@ -169,7 +169,7 @@ namespace SpacetimeDB
 
     public readonly partial struct QueryBuilder
     {
-        public global::SpacetimeDB.Table<
+        public global::SpacetimeDB.TableQuery<
             global::MultiTableRow,
             MultiTable2Cols,
             MultiTable2IxCols
@@ -193,7 +193,7 @@ namespace SpacetimeDB
 
     public readonly partial struct QueryBuilder
     {
-        public global::SpacetimeDB.Table<
+        public global::SpacetimeDB.TableQuery<
             global::PrivateTable,
             PrivateTableCols,
             PrivateTableIxCols
@@ -374,7 +374,7 @@ namespace SpacetimeDB
 
     public readonly partial struct QueryBuilder
     {
-        public global::SpacetimeDB.Table<
+        public global::SpacetimeDB.TableQuery<
             global::PublicTable,
             PublicTableCols,
             PublicTableIxCols
@@ -417,7 +417,7 @@ namespace SpacetimeDB
 
     public readonly partial struct QueryBuilder
     {
-        internal global::SpacetimeDB.Table<
+        internal global::SpacetimeDB.TableQuery<
             global::RegressionMultipleUniqueIndexesHadSameName,
             RegressionMultipleUniqueIndexesHadSameNameCols,
             RegressionMultipleUniqueIndexesHadSameNameIxCols
@@ -477,7 +477,7 @@ namespace SpacetimeDB
 
     public readonly partial struct QueryBuilder
     {
-        public global::SpacetimeDB.Table<
+        public global::SpacetimeDB.TableQuery<
             global::Timers.SendMessageTimer,
             SendMessageTimerCols,
             SendMessageTimerIxCols

@@ -39,7 +39,7 @@ namespace SpacetimeDB
 
     public readonly partial struct QueryBuilder
     {
-        public global::SpacetimeDB.Table<
+        public global::SpacetimeDB.TableQuery<
             global::DemoTable,
             DemoTableCols,
             DemoTableIxCols
