@@ -970,10 +970,33 @@ Each table defined by a module has an accessor method, whose name is the table n
 
 | Name                                                              | Description                                                                     |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| [`TableAccessor` trait](#trait-tableaccessor)                     | Accesses a generated table handle from a database view in generic code.         |
 | [`Table` trait](#trait-table)                                     | Provides access to subscribed rows of a specific table within the client cache. |
 | [`TableWithPrimaryKey` trait](#trait-tablewithprimarykey)         | Extension trait for tables which have a column designated as a primary key.     |
 | [Unique constraint index access](#unique-constraint-index-access) | Seek a subscribed row by the value in its unique or primary key column.         |
 | [BTree index access](#btree-index-access)                         | Not supported.                                                                  |
+
+### Trait `TableAccessor`
+
+```rust
+spacetimedb_sdk::TableAccessor
+```
+
+For each table, `spacetime generate` emits a marker type named in the form `{TableNamePascalCase}TableAccessor` that implements `TableAccessor<RemoteTables>`.
+This is mainly useful when writing generic helpers or integrations that need to name a table at the type level. Most application code should access tables directly through the generated methods on `ctx.db`.
+
+```rust
+trait spacetimedb_sdk::TableAccessor<DbView: ?Sized> {
+    type Row: 'static;
+    type Handle<'db>
+    where
+        DbView: 'db;
+
+    fn get<'db>(db: &'db DbView) -> Self::Handle<'db>;
+}
+```
+
+The marker type itself does not contain or cache table data. `TableAccessor::get` still requires a database view borrowed from a [`DbConnection`](#type-dbconnection) or context, so the normal client-cache lifetime rules still apply.
 
 ### Trait `Table`
 

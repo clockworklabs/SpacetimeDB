@@ -18,6 +18,18 @@ pub struct OneTimestampTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `one_timestamp`.
+pub struct OneTimestampTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for OneTimestampTableAccessor {
+    type Row = OneTimestamp;
+    type Handle<'db> = OneTimestampTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.one_timestamp()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `one_timestamp`.
 ///

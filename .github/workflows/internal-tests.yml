@@ -59,53 +59,28 @@ jobs:
             // Use the ref for pull requests because the head sha is brittle (github does some extra dance where it merges in master).
             const publicRef = (context.eventName === 'pull_request') ? context.payload.pull_request.head.ref : context.sha;
             const publicPrNumber = context.payload.pull_request?.number;
-            const preDispatch = new Date().toISOString();
             const inputs = { public_ref: publicRef };
             if (publicPrNumber) {
               inputs.public_pr_number = String(publicPrNumber);
             }
 
             // Dispatch the workflow in the target repository
-            await github.rest.actions.createWorkflowDispatch({
+            const dispatchResp = await github.rest.actions.createWorkflowDispatch({
               owner: targetOwner,
               repo: targetRepo,
               workflow_id: workflowId,
               ref: targetRef,
               inputs,
+              return_run_details: true,
             });
 
-            const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-            // Find the dispatched run by name
-            let runId = null;
-            for (let attempt = 0; attempt < 20 && !runId; attempt++) { // up to ~10 minutes to locate the run
-              await sleep(5000);
-              const runsResp = await github.rest.actions.listWorkflowRuns({
-                owner: targetOwner,
-                repo: targetRepo,
-                workflow_id: workflowId,
-                event: 'workflow_dispatch',
-                branch: targetRef,
-                per_page: 50,
-              });
-
-              const expectedName = `CI [public_ref=${publicRef}]`;
-              const candidates = runsResp.data.workflow_runs
-                .filter(r => r.name === expectedName && new Date(r.created_at) >= new Date(preDispatch))
-                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
-              if (candidates.length > 0) {
-                runId = candidates[0].id;
-                break;
-              }
-            }
-
-            if (!runId) {
-              core.setFailed('Failed to locate dispatched run in the private repository.');
+            const runId = dispatchResp.data.workflow_run_id;
+            const runUrl = dispatchResp.data.html_url;
+            if (!runId || !runUrl) {
+              core.setFailed(`Dispatch response did not include run details: ${JSON.stringify(dispatchResp.data)}`);
               return;
             }
 
-            const runUrl = `https://github.com/${targetOwner}/${targetRepo}/actions/runs/${runId}`;
             core.info(`View run: ${runUrl}`);
             core.setOutput('run_id', String(runId));
             core.setOutput('run_url', runUrl);
