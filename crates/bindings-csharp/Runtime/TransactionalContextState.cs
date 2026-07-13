@@ -98,29 +98,6 @@ internal sealed class TransactionalContextState<TTxContext>(
         FFI.ErrnoHelpers.ThrowIfError(status);
     }
 
-    private static bool CommitMutTxWithRetry(Func<bool> retryBody)
-    {
-        try
-        {
-            CommitMutTx();
-            return true;
-        }
-        catch (TransactionNotAnonymousException)
-        {
-            return false;
-        }
-        catch (StdbException)
-        {
-            Log.Warn("Committing anonymous transaction failed; retrying once.");
-            if (retryBody())
-            {
-                CommitMutTx();
-                return true;
-            }
-            return false;
-        }
-    }
-
     private Result<TResult, TError> RunWithRetry<TResult, TError>(
         Func<TTxContext, Result<TResult, TError>> body
     )
@@ -132,18 +109,28 @@ internal sealed class TransactionalContextState<TTxContext>(
             return result;
         }
 
-        bool Retry()
+        try
         {
-            result = RunOnce(body);
-            return result is Result<TResult, TError>.OkR;
+            CommitMutTx();
+            return result;
         }
-
-        if (!CommitMutTxWithRetry(Retry))
+        catch (TransactionNotAnonymousException)
         {
             return result;
         }
+        catch (StdbException)
+        {
+            Log.Warn("Committing anonymous transaction failed; retrying once.");
 
-        return result;
+            var retryResult = RunOnce(body);
+            if (retryResult is Result<TResult, TError>.ErrR)
+            {
+                return retryResult;
+            }
+
+            CommitMutTx();
+            return retryResult;
+        }
     }
 
     private Result<TResult, TError> RunOnce<TResult, TError>(
