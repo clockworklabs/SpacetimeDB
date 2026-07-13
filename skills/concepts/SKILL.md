@@ -13,7 +13,7 @@ metadata:
 
 # SpacetimeDB Core Concepts
 
-SpacetimeDB is a relational database that is also a server. It lets you upload application logic directly into the database via WebAssembly modules, eliminating the traditional web/game server layer entirely.
+SpacetimeDB is a relational database that is also a server. It lets you upload application logic directly into the database as modules, eliminating the traditional web/game server layer entirely. Rust, C#, and C++ modules compile to WebAssembly, while TypeScript modules run on V8.
 
 ---
 
@@ -87,7 +87,7 @@ Best practices:
 
 ## Modules
 
-Modules are WebAssembly bundles containing application logic that runs inside the database.
+Modules contain application logic that runs inside the database.
 
 - **Tables**: Define the data schema
 - **Reducers**: Define callable functions that modify state
