@@ -168,6 +168,28 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   isDisconnectRequested = false;
 
   /**
+   * Whether the underlying websocket has entered `CLOSING` (2) or `CLOSED`
+   * (3). This becomes true even when the browser never delivered an
+   * `onclose` event, for example if the socket was torn down while the tab was
+   * frozen or the machine was asleep. The `ConnectionManager` uses this to detect
+   * such "zombie" connections when the page resumes and to force a reconnect.
+   *
+   * Returns false while the socket is still `CONNECTING`/`OPEN`, or before
+   * the socket has been created.
+   */
+  get isSocketClosed(): boolean {
+    const ws = this.ws;
+    if (!ws) {
+      return false;
+    }
+    // Only reached from the browser-only resume handlers, where the
+    // `WebSocket` global (and its CLOSING/CLOSED constants) always exists.
+    return (
+      ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED
+    );
+  }
+
+  /**
    * This connection's public identity.
    */
   identity?: Identity = undefined;
