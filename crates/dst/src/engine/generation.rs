@@ -26,6 +26,34 @@ impl<'a> GenCtx<'a> {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct Choice<T> {
+    weight: u64,
+    value: T,
+}
+
+pub(crate) const fn choice<T>(weight: u64, value: T) -> Choice<T> {
+    Choice { weight, value }
+}
+
+pub(crate) fn frequency<T: Copy>(rng: &Rng, choices: &[Choice<T>]) -> T {
+    let total: u64 = choices.iter().map(|choice| choice.weight).sum();
+
+    assert!(total > 0, "at least one choice weight must be non-zero");
+
+    let mut selected = rng.next_u64() % total;
+
+    for choice in choices.iter().copied() {
+        if selected < choice.weight {
+            return choice.value;
+        }
+
+        selected -= choice.weight;
+    }
+
+    unreachable!("selected value is always inside total weight")
+}
+
 pub(crate) fn pick_weighted(rng: &Rng, weights: &[u64]) -> usize {
     let total: u64 = weights.iter().sum();
 
@@ -42,6 +70,59 @@ pub(crate) fn pick_weighted(rng: &Rng, weights: &[u64]) -> usize {
     }
 
     unreachable!("selected value is always inside total weight")
+}
+
+#[derive(Clone, Copy)]
+enum ValueCase {
+    Random,
+    Small,
+    Edge,
+    NearExisting,
+    Existing,
+    Weird,
+}
+
+#[derive(Clone, Copy)]
+enum FreshValueCase {
+    Random,
+    Small,
+    Edge,
+    Weird,
+}
+
+#[derive(Clone, Copy)]
+enum I64Case {
+    Random,
+    Small,
+    Edge,
+}
+
+#[derive(Clone, Copy)]
+enum U64Case {
+    Random,
+    Small,
+    Edge,
+}
+
+#[derive(Clone, Copy)]
+enum StringCase {
+    RandomTagged,
+    Empty,
+    SmallAscii,
+    OrderedPrefix,
+    SqlEscaped,
+    NullByte,
+    Long,
+}
+
+#[derive(Clone, Copy)]
+enum BytesCase {
+    Random,
+    Empty,
+    Small,
+    RepeatedZero,
+    RepeatedMax,
+    Alternating,
 }
 
 struct ValueGen<'a> {
@@ -79,18 +160,27 @@ impl<'a> ValueGen<'a> {
     }
 
     fn gen_value(&self, domain: &ColumnDomain) -> AlgebraicValue {
-        match pick_weighted(self.rng, &[45, 15, 15, 10, 10, 5]) {
-            0 => self.gen_random_value(domain.ty),
-            1 => self.gen_small_value(domain.ty),
-            2 => self.gen_edge_value(domain.ty),
-            3 => self
+        match frequency(
+            self.rng,
+            &[
+                choice(45, ValueCase::Random),
+                choice(15, ValueCase::Small),
+                choice(15, ValueCase::Edge),
+                choice(10, ValueCase::NearExisting),
+                choice(10, ValueCase::Existing),
+                choice(5, ValueCase::Weird),
+            ],
+        ) {
+            ValueCase::Random => self.gen_random_value(domain.ty),
+            ValueCase::Small => self.gen_small_value(domain.ty),
+            ValueCase::Edge => self.gen_edge_value(domain.ty),
+            ValueCase::NearExisting => self
                 .near_existing_value(domain)
                 .unwrap_or_else(|| self.gen_random_value(domain.ty)),
-            4 => self
+            ValueCase::Existing => self
                 .existing_value(domain)
                 .unwrap_or_else(|| self.gen_random_value(domain.ty)),
-            5 => self.gen_weird_value(domain.ty),
-            _ => unreachable!(),
+            ValueCase::Weird => self.gen_weird_value(domain.ty),
         }
     }
 
@@ -106,12 +196,19 @@ impl<'a> ValueGen<'a> {
     }
 
     fn gen_fresh_candidate(&self, ty: Type) -> AlgebraicValue {
-        match pick_weighted(self.rng, &[50, 20, 20, 10]) {
-            0 => self.gen_random_value(ty),
-            1 => self.gen_small_value(ty),
-            2 => self.gen_edge_value(ty),
-            3 => self.gen_weird_value(ty),
-            _ => unreachable!(),
+        match frequency(
+            self.rng,
+            &[
+                choice(50, FreshValueCase::Random),
+                choice(20, FreshValueCase::Small),
+                choice(20, FreshValueCase::Edge),
+                choice(10, FreshValueCase::Weird),
+            ],
+        ) {
+            FreshValueCase::Random => self.gen_random_value(ty),
+            FreshValueCase::Small => self.gen_small_value(ty),
+            FreshValueCase::Edge => self.gen_edge_value(ty),
+            FreshValueCase::Weird => self.gen_weird_value(ty),
         }
     }
 
@@ -143,14 +240,10 @@ impl<'a> ValueGen<'a> {
     fn gen_random_value(&self, ty: Type) -> AlgebraicValue {
         match ty {
             Type::Bool => AlgebraicValue::Bool(self.rng.next_u64().is_multiple_of(2)),
-            Type::I64 => AlgebraicValue::I64(self.rng.next_u64() as i64),
-            Type::U64 => AlgebraicValue::U64(self.rng.next_u64()),
-            Type::String => AlgebraicValue::String(format!("v_{}", self.rng.next_u64()).into()),
-            Type::Bytes => {
-                let len = (self.rng.next_u64() % 16) as usize;
-                let bytes: Vec<u8> = (0..len).map(|_| self.rng.next_u64() as u8).collect();
-                AlgebraicValue::Array(ArrayValue::U8(bytes.into()))
-            }
+            Type::I64 => AlgebraicValue::I64(self.gen_i64_value(I64Case::Random)),
+            Type::U64 => AlgebraicValue::U64(self.gen_u64_value(U64Case::Random)),
+            Type::String => AlgebraicValue::String(self.gen_string_value(StringCase::RandomTagged).into()),
+            Type::Bytes => AlgebraicValue::Array(ArrayValue::U8(self.gen_bytes_value(BytesCase::Random).into())),
             Type::Sum { variants } => {
                 let tag = self.rng.index(variants as usize) as u8;
                 AlgebraicValue::sum(tag, AlgebraicValue::U8(self.rng.next_u64() as u8))
@@ -161,22 +254,10 @@ impl<'a> ValueGen<'a> {
     fn gen_small_value(&self, ty: Type) -> AlgebraicValue {
         match ty {
             Type::Bool => AlgebraicValue::Bool(false),
-            Type::I64 => {
-                const VALUES: &[i64] = &[-1, 0, 1, 2, 3];
-                AlgebraicValue::I64(VALUES[self.rng.index(VALUES.len())])
-            }
-            Type::U64 => {
-                const VALUES: &[u64] = &[0, 1, 2, 3];
-                AlgebraicValue::U64(VALUES[self.rng.index(VALUES.len())])
-            }
-            Type::String => {
-                const VALUES: &[&str] = &["", "a", "aa", "ab", "b", "v_0"];
-                AlgebraicValue::String(VALUES[self.rng.index(VALUES.len())].into())
-            }
-            Type::Bytes => {
-                const VALUES: &[&[u8]] = &[&[], &[0], &[1], &[0, 255]];
-                AlgebraicValue::Array(ArrayValue::U8(VALUES[self.rng.index(VALUES.len())].to_vec().into()))
-            }
+            Type::I64 => AlgebraicValue::I64(self.gen_i64_value(I64Case::Small)),
+            Type::U64 => AlgebraicValue::U64(self.gen_u64_value(U64Case::Small)),
+            Type::String => AlgebraicValue::String(self.gen_string_value(StringCase::SmallAscii).into()),
+            Type::Bytes => AlgebraicValue::Array(ArrayValue::U8(self.gen_bytes_value(BytesCase::Small).into())),
             Type::Sum { variants } => {
                 let tag = if variants <= 1 {
                     0
@@ -191,16 +272,10 @@ impl<'a> ValueGen<'a> {
     fn gen_edge_value(&self, ty: Type) -> AlgebraicValue {
         match ty {
             Type::Bool => AlgebraicValue::Bool(true),
-            Type::I64 => {
-                const VALUES: &[i64] = &[i64::MIN, i64::MIN + 1, i64::MAX - 1, i64::MAX];
-                AlgebraicValue::I64(VALUES[self.rng.index(VALUES.len())])
-            }
-            Type::U64 => {
-                const VALUES: &[u64] = &[0, 1, u64::MAX - 1, u64::MAX];
-                AlgebraicValue::U64(VALUES[self.rng.index(VALUES.len())])
-            }
-            Type::String => AlgebraicValue::String("x".repeat(128).into()),
-            Type::Bytes => AlgebraicValue::Array(ArrayValue::U8(vec![255; 32].into())),
+            Type::I64 => AlgebraicValue::I64(self.gen_i64_value(I64Case::Edge)),
+            Type::U64 => AlgebraicValue::U64(self.gen_u64_value(U64Case::Edge)),
+            Type::String => AlgebraicValue::String(self.gen_string_value(StringCase::Long).into()),
+            Type::Bytes => AlgebraicValue::Array(ArrayValue::U8(self.gen_bytes_value(BytesCase::RepeatedMax).into())),
             Type::Sum { variants } => AlgebraicValue::sum(variants.saturating_sub(1), AlgebraicValue::U8(u8::MAX)),
         }
     }
@@ -208,14 +283,75 @@ impl<'a> ValueGen<'a> {
     fn gen_weird_value(&self, ty: Type) -> AlgebraicValue {
         match ty {
             Type::String => {
-                const VALUES: &[&str] = &["quote'", "double\"quote", "back\\slash", "line\nbreak", "\0"];
-                AlgebraicValue::String(VALUES[self.rng.index(VALUES.len())].into())
+                let case = frequency(
+                    self.rng,
+                    &[
+                        choice(35, StringCase::SqlEscaped),
+                        choice(25, StringCase::NullByte),
+                        choice(25, StringCase::OrderedPrefix),
+                        choice(15, StringCase::Empty),
+                    ],
+                );
+                AlgebraicValue::String(self.gen_string_value(case).into())
             }
             Type::Bytes => {
-                const VALUES: &[&[u8]] = &[&[0], &[0, 0, 0], &[255], &[0, 255, 0, 255]];
-                AlgebraicValue::Array(ArrayValue::U8(VALUES[self.rng.index(VALUES.len())].to_vec().into()))
+                let case = frequency(
+                    self.rng,
+                    &[
+                        choice(25, BytesCase::Empty),
+                        choice(20, BytesCase::RepeatedZero),
+                        choice(20, BytesCase::RepeatedMax),
+                        choice(20, BytesCase::Alternating),
+                        choice(15, BytesCase::Small),
+                    ],
+                );
+                AlgebraicValue::Array(ArrayValue::U8(self.gen_bytes_value(case).into()))
             }
             _ => self.gen_edge_value(ty),
+        }
+    }
+
+    fn gen_i64_value(&self, case: I64Case) -> i64 {
+        match case {
+            I64Case::Random => self.rng.next_u64() as i64,
+            I64Case::Small => self.sample(&[-3, -2, -1, 0, 1, 2, 3]),
+            I64Case::Edge => self.sample(&[i64::MIN, i64::MIN + 1, -1, 0, 1, i64::MAX - 1, i64::MAX]),
+        }
+    }
+
+    fn gen_u64_value(&self, case: U64Case) -> u64 {
+        match case {
+            U64Case::Random => self.rng.next_u64(),
+            U64Case::Small => self.sample(&[0, 1, 2, 3, 4, 5]),
+            U64Case::Edge => self.sample(&[0, 1, 2, u64::MAX - 1, u64::MAX]),
+        }
+    }
+
+    fn gen_string_value(&self, case: StringCase) -> String {
+        match case {
+            StringCase::RandomTagged => format!("v_{}", self.rng.next_u64()),
+            StringCase::Empty => String::new(),
+            StringCase::SmallAscii => self.sample(&["a", "aa", "ab", "b", "z", "v_0", "v_1"]).to_owned(),
+            StringCase::OrderedPrefix => self.sample(&["a", "aa", "aaa", "ab", "aba", "abb", "b"]).to_owned(),
+            StringCase::SqlEscaped => self
+                .sample(&["quote'", "double\"quote", "back\\slash", "line\nbreak"])
+                .to_owned(),
+            StringCase::NullByte => "nul\0byte".to_owned(),
+            StringCase::Long => "x".repeat(128),
+        }
+    }
+
+    fn gen_bytes_value(&self, case: BytesCase) -> Vec<u8> {
+        match case {
+            BytesCase::Random => {
+                let len = (self.rng.next_u64() % 16) as usize;
+                (0..len).map(|_| self.rng.next_u64() as u8).collect()
+            }
+            BytesCase::Empty => Vec::new(),
+            BytesCase::Small => self.sample(&[&[][..], &[0][..], &[1][..], &[0, 255][..]]).to_vec(),
+            BytesCase::RepeatedZero => vec![0; 32],
+            BytesCase::RepeatedMax => vec![255; 32],
+            BytesCase::Alternating => vec![0, 255, 0, 255, 0, 255],
         }
     }
 
@@ -235,6 +371,10 @@ impl<'a> ValueGen<'a> {
                 AlgebraicValue::U8(counter as u8),
             ),
         }
+    }
+
+    fn sample<T: Copy>(&self, values: &[T]) -> T {
+        values[self.rng.index(values.len())]
     }
 }
 

@@ -1,9 +1,7 @@
 use spacetimedb_lib::AlgebraicValue;
 
-use super::workload::{
-    normalize_rows, schema_state_for_plan, CommitDelta, CountState, InsertOutcome, Interaction, Observation, Row,
-    TableDelta, TableRowCount, TableRows,
-};
+use super::state::{schema_state_for_plan, CommitDelta, CountState, TableDelta, TableRowCount, TableRows};
+use super::workload::{normalize_rows, InsertOutcome, Interaction, Observation, Row};
 use crate::schema::{SchemaPlan, Type};
 
 #[derive(Debug)]

@@ -22,14 +22,15 @@ mod generation;
 mod migrations;
 mod model;
 mod properties;
+mod state;
 mod workload;
 
 use self::migrations::{ExpectedStep, Migration};
-use self::workload::{
-    normalize_rows, row_to_bytes, ColumnState, CommitDelta, CountState, IndexAlgorithmState, IndexState, InsertOutcome,
-    Interaction, Observation, SchemaState, SequenceState, TableDelta, TableRowCount, TableRows, TableSchemaState,
-    UniqueConstraintState,
+use self::state::{
+    ColumnState, CommitDelta, CountState, IndexAlgorithmState, IndexState, SchemaState, SequenceState, TableDelta,
+    TableRowCount, TableRows, TableSchemaState, UniqueConstraintState,
 };
+use self::workload::{normalize_rows, row_to_bytes, InsertOutcome, Interaction, Observation};
 
 use crate::engine::model::Model;
 use crate::engine::properties::EngineProperties;
