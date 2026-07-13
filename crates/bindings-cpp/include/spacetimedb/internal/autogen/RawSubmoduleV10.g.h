@@ -23,10 +23,8 @@ SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawSubmoduleV10) {
     std::string namespace_;
     std::shared_ptr<SpacetimeDB::Internal::RawModuleDefV10> module;
 
-    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {
-        ::SpacetimeDB::bsatn::serialize(writer, namespace_);
-        ::SpacetimeDB::bsatn::serialize(writer, *module);
-    }
-    SPACETIMEDB_PRODUCT_TYPE_EQUALITY(namespace_, module)
+    void bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const;
+    bool operator==(const RawSubmoduleV10& other) const;
+    bool operator!=(const RawSubmoduleV10& other) const;
 };
 } // namespace SpacetimeDB::Internal

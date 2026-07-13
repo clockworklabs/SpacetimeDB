@@ -46,10 +46,6 @@ impl<'opts> Cpp<'opts> {
         }
     }
 
-    fn is_recursive_mount_module_field(&self, type_name: &str, field_name: &str) -> bool {
-        type_name == "RawSubmoduleV10" && field_name == "module"
-    }
-
     fn write_header_comment(&self, output: &mut String) {
         writeln!(
             output,
@@ -179,13 +175,7 @@ impl<'opts> Cpp<'opts> {
         // Write fields only
         for (field_name, field_type) in &product.elements {
             write!(output, "    ").unwrap();
-            if self.is_recursive_mount_module_field(type_name, field_name) {
-                // Temporary special-case to preserve the recursive RawSubmoduleV10 ->
-                // RawModuleDefV10 shape while breaking the include cycle in generated C++.
-                write!(output, "std::shared_ptr<{}::RawModuleDefV10>", self.namespace).unwrap();
-            } else {
-                self.write_algebraic_type(output, module, field_type).unwrap();
-            }
+            self.write_algebraic_type(output, module, field_type).unwrap();
             write!(output, " ").unwrap();
             self.write_cpp_field_name(output, field_name).unwrap();
             writeln!(output, ";").unwrap();
@@ -200,24 +190,14 @@ impl<'opts> Cpp<'opts> {
         )
         .unwrap();
         for (field_name, _) in &product.elements {
-            if self.is_recursive_mount_module_field(type_name, field_name) {
-                write!(output, "        ::SpacetimeDB::bsatn::serialize(writer, *").unwrap();
-                self.write_cpp_field_name(output, field_name).unwrap();
-                writeln!(output, ");").unwrap();
-            } else {
-                write!(output, "        ::SpacetimeDB::bsatn::serialize(writer, ").unwrap();
-                self.write_cpp_field_name(output, field_name).unwrap();
-                writeln!(output, ");").unwrap();
-            }
+            write!(output, "        ::SpacetimeDB::bsatn::serialize(writer, ").unwrap();
+            self.write_cpp_field_name(output, field_name).unwrap();
+            writeln!(output, ");").unwrap();
         }
         writeln!(output, "    }}").unwrap();
 
         // Generate equality method
-        if type_name == "RawSubmoduleV10" {
-            // Pointer equality is sufficient for this internal autogen type. Mounts are not
-            // emitted by the C++ module path yet; this exists to keep the schema shape aligned.
-            writeln!(output, "    SPACETIMEDB_PRODUCT_TYPE_EQUALITY(namespace_, module)").unwrap();
-        } else if !product.elements.is_empty() {
+        if !product.elements.is_empty() {
             write!(output, "    SPACETIMEDB_PRODUCT_TYPE_EQUALITY(").unwrap();
             for (i, (field_name, _)) in product.elements.iter().enumerate() {
                 if i > 0 {
@@ -490,7 +470,8 @@ impl Lang for Cpp<'_> {
 
         // Add includes for dependencies
         if let Some(AlgebraicTypeDef::Product(product)) = module.typespace_for_generate().get(table.product_type_ref) {
-            let deps = self.collect_product_dependencies(module, product);
+            let mut deps: Vec<_> = self.collect_product_dependencies(module, product).into_iter().collect();
+            deps.sort();
             for dep in deps {
                 if dep != table.name.to_string() {
                     writeln!(output, "#include \"{}.g.h\"", dep).unwrap();
@@ -540,19 +521,15 @@ impl Lang for Cpp<'_> {
         };
 
         let type_name = name.to_string();
+        let mut deps: Vec<_> = deps.into_iter().collect();
+        deps.sort();
         for dep in deps {
-            if dep != type_name && !(type_name == "RawSubmoduleV10" && dep == "RawModuleDefV10") {
+            if dep != type_name {
                 writeln!(output, "#include \"{}.g.h\"", dep).unwrap();
             }
         }
 
         writeln!(output).unwrap();
-        if type_name == "RawSubmoduleV10" {
-            writeln!(output, "namespace {} {{", self.namespace).unwrap();
-            writeln!(output, "struct RawModuleDefV10;").unwrap();
-            writeln!(output, "}} // namespace {}", self.namespace).unwrap();
-            writeln!(output).unwrap();
-        }
         writeln!(output, "namespace {} {{", self.namespace).unwrap();
         writeln!(output).unwrap();
 
