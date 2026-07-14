@@ -184,12 +184,13 @@ fn remove_table_rewrites(schema: &SchemaPlan, model: &Model) -> Vec<SchemaRewrit
 }
 
 fn add_column_rewrites(schema: &SchemaPlan) -> Vec<SchemaRewrite> {
+    let types = addable_column_types(schema);
     schema
         .tables
         .iter()
         .filter(|table| !table.is_event && table.columns.len() < MAX_TABLE_COLUMNS)
         .flat_map(|table| {
-            Type::ALL.iter().copied().map(|ty| {
+            types.iter().copied().map(|ty| {
                 SchemaRewrite::alter_table(
                     table,
                     [TableMigrationOp::ChangeAccess, TableMigrationOp::AddColumn { ty }],
@@ -197,6 +198,22 @@ fn add_column_rewrites(schema: &SchemaPlan) -> Vec<SchemaRewrite> {
             })
         })
         .collect()
+}
+
+fn addable_column_types(schema: &SchemaPlan) -> Vec<Type> {
+    Type::ALL
+        .iter()
+        .copied()
+        .filter(|ty| !matches!(ty, Type::Sum { .. }) || !schema_has_sum_column(schema))
+        .collect()
+}
+
+fn schema_has_sum_column(schema: &SchemaPlan) -> bool {
+    schema
+        .tables
+        .iter()
+        .flat_map(|table| table.columns.iter())
+        .any(|column| matches!(column.ty, Type::Sum { .. }))
 }
 
 fn add_index_rewrites(schema: &SchemaPlan) -> Vec<SchemaRewrite> {

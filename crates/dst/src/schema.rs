@@ -8,11 +8,7 @@ use spacetimedb_sats::{
 };
 
 pub fn default_schema(rng: Rng) -> SchemaPlan {
-    let profile = SchemaProfile::default();
-    let mut plan = SchemaGenerator::new(rng, profile).gen_schema();
-    plan.ensure_auto_inc_table();
-    plan.ensure_engine_migration_coverage();
-    plan
+    SchemaGenerator::new(rng, SchemaProfile::engine_dst()).gen_schema()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -26,7 +22,14 @@ pub enum Type {
 }
 
 impl Type {
-    pub const ALL: &'static [Type] = &[Type::Bool, Type::I64, Type::U64, Type::String, Type::Bytes];
+    pub const ALL: &'static [Type] = &[
+        Type::Bool,
+        Type::I64,
+        Type::U64,
+        Type::String,
+        Type::Bytes,
+        Type::Sum { variants: 1 },
+    ];
 
     pub fn to_algebraic(self) -> AlgebraicType {
         match self {
@@ -82,10 +85,6 @@ impl SchemaDecisions {
 
     pub fn sample_probability(rng: &Rng, probability: f64) -> bool {
         rng.sample_probability(probability)
-    }
-
-    pub fn gen_type(rng: &Rng) -> Type {
-        Type::ALL[Self::index(rng, Type::ALL.len())]
     }
 
     pub fn gen_table_name(rng: &Rng, tables: &[TablePlan]) -> String {
@@ -184,202 +183,6 @@ impl SchemaNames {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SchemaPlan {
     pub tables: Vec<TablePlan>,
-}
-
-impl SchemaPlan {
-    pub fn ensure_engine_migration_coverage(&mut self) {
-        self.ensure_widenable_sum_column();
-        self.ensure_event_table();
-        self.ensure_sequence_mutation_column();
-        self.ensure_unique_constraint_mutation_column();
-        self.ensure_standalone_index();
-    }
-
-    pub fn auto_inc_table_and_column(&self) -> Option<(usize, usize)> {
-        self.tables
-            .iter()
-            .enumerate()
-            .find_map(|(table_idx, table)| table.sequences.first().map(|sequence| (table_idx, sequence.column)))
-    }
-
-    pub fn ensure_auto_inc_table(&mut self) {
-        if self.auto_inc_table_and_column().is_some() {
-            return;
-        }
-
-        let table = self.tables.first_mut().expect("schema must contain at least one table");
-        if table.columns.is_empty() {
-            table.columns.push(ColumnPlan {
-                name: "id".into(),
-                ty: Type::U64,
-            });
-        } else {
-            table.columns[0].ty = Type::U64;
-        }
-
-        table.primary_key = Some(0);
-        if !table
-            .unique_constraints
-            .iter()
-            .any(|constraint| constraint.columns == [0])
-        {
-            table.unique_constraints.push(UniqueConstraintPlan { columns: vec![0] });
-        }
-        if !table.indexes.iter().any(|index| index.columns == [0]) {
-            table.indexes.push(IndexPlan {
-                columns: vec![0],
-                algorithm: IndexAlgorithm::BTree,
-            });
-        }
-        table.sequences = vec![SequencePlan::new(0, Type::U64).expect("u64 is integral")];
-    }
-
-    fn ensure_widenable_sum_column(&mut self) {
-        if self
-            .tables
-            .iter()
-            .any(|table| !table.is_event && table.columns.iter().any(|column| matches!(column.ty, Type::Sum { .. })))
-        {
-            return;
-        }
-
-        let table = self
-            .tables
-            .iter_mut()
-            .find(|table| !table.is_event)
-            .expect("schema must contain at least one non-event table");
-        table.columns.push(ColumnPlan {
-            name: SchemaNames::fresh_column_name(table, "dst_sum"),
-            ty: Type::Sum { variants: 1 },
-        });
-    }
-
-    fn ensure_event_table(&mut self) {
-        if self.tables.iter().any(|table| table.is_event) {
-            return;
-        }
-
-        let name = SchemaNames::fresh_table_name(&self.tables, "dst_events");
-        self.tables.push(TablePlan {
-            name,
-            columns: vec![ColumnPlan {
-                name: "payload".into(),
-                ty: Type::U64,
-            }],
-            primary_key: None,
-            indexes: vec![],
-            unique_constraints: vec![],
-            sequences: vec![],
-            is_public: true,
-            is_event: true,
-        });
-    }
-
-    fn ensure_sequence_mutation_column(&mut self) {
-        if self.tables.iter().any(Self::has_sequence_mutation_column) {
-            return;
-        }
-
-        let table = self
-            .tables
-            .iter_mut()
-            .find(|table| !table.is_event)
-            .expect("schema must contain at least one non-event table");
-        let column = table.columns.len();
-        table.columns.push(ColumnPlan {
-            name: SchemaNames::fresh_column_name(table, "dst_seq"),
-            ty: Type::U64,
-        });
-        table.indexes.push(IndexPlan {
-            columns: vec![column],
-            algorithm: IndexAlgorithm::BTree,
-        });
-        table
-            .unique_constraints
-            .push(UniqueConstraintPlan { columns: vec![column] });
-    }
-
-    fn ensure_unique_constraint_mutation_column(&mut self) {
-        if self.tables.iter().any(|table| {
-            !table.is_event
-                && table.columns.iter().enumerate().any(|(column, _)| {
-                    !table
-                        .unique_constraints
-                        .iter()
-                        .any(|constraint| constraint.columns == [column])
-                })
-        }) {
-            return;
-        }
-
-        let table = self
-            .tables
-            .iter_mut()
-            .find(|table| !table.is_event)
-            .expect("schema must contain at least one non-event table");
-        table.columns.push(ColumnPlan {
-            name: SchemaNames::fresh_column_name(table, "dst_unique"),
-            ty: Type::U64,
-        });
-    }
-
-    fn has_sequence_mutation_column(table: &TablePlan) -> bool {
-        !table.is_event
-            && table.columns.iter().enumerate().any(|(column, plan)| {
-                plan.ty == Type::U64
-                    && table.sequences.iter().all(|seq| seq.column != column)
-                    && table.indexes.iter().any(|index| index.columns == [column])
-                    && table
-                        .unique_constraints
-                        .iter()
-                        .any(|constraint| constraint.columns == [column])
-            })
-    }
-
-    fn ensure_standalone_index(&mut self) {
-        if self.tables.iter().any(|table| {
-            !table.is_event
-                && table.indexes.iter().any(|index| {
-                    !table.primary_key.is_some_and(|pk| index.columns == [pk])
-                        && !table
-                            .unique_constraints
-                            .iter()
-                            .any(|constraint| constraint.columns == index.columns)
-                })
-        }) {
-            return;
-        }
-
-        let table = self
-            .tables
-            .iter_mut()
-            .find(|table| !table.is_event)
-            .expect("schema must contain at least one non-event table");
-        let column = if table.columns.len() < 2 {
-            table.columns.push(ColumnPlan {
-                name: SchemaNames::fresh_column_name(table, "dst_indexed"),
-                ty: Type::U64,
-            });
-            table.columns.len() - 1
-        } else {
-            (0..table.columns.len())
-                .find(|&column| {
-                    !table.primary_key.is_some_and(|pk| pk == column)
-                        && !table
-                            .unique_constraints
-                            .iter()
-                            .any(|constraint| constraint.columns == [column])
-                })
-                .unwrap_or(0)
-        };
-
-        if !table.indexes.iter().any(|index| index.columns == [column]) {
-            table.indexes.push(IndexPlan {
-                columns: vec![column],
-                algorithm: IndexAlgorithm::BTree,
-            });
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -565,6 +368,9 @@ fn to_raw_def_table(builder: &mut RawModuleDefV10Builder, table: &TablePlan) {
 pub struct SchemaProfile {
     pub table_count: (usize, usize),
     pub columns: (usize, usize),
+    pub table_kind_weights: TableKindWeights,
+    pub type_weights: TypeWeights,
+    pub sum_variants: (usize, usize),
     pub pk_prob: f64,
     pub auto_inc_prob: f64,
     pub indexes: (usize, usize),
@@ -573,18 +379,110 @@ pub struct SchemaProfile {
     pub private_prob: f64,
 }
 
+impl SchemaProfile {
+    pub fn engine_dst() -> Self {
+        Self {
+            table_count: (3, 10),
+            columns: (1, 20),
+            table_kind_weights: TableKindWeights::default(),
+            type_weights: TypeWeights::default(),
+            sum_variants: (1, 4),
+            pk_prob: 0.65,
+            auto_inc_prob: 0.20,
+            indexes: (0, 5),
+            unique_constraints: (0, 3),
+            btree_prob: 0.65,
+            private_prob: 0.10,
+        }
+    }
+}
+
 impl Default for SchemaProfile {
     fn default() -> Self {
+        Self::engine_dst()
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TableKindWeights {
+    pub data: u64,
+    pub event: u64,
+}
+
+impl Default for TableKindWeights {
+    fn default() -> Self {
+        Self { data: 9, event: 1 }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TypeWeights {
+    pub bool_: u64,
+    pub i64_: u64,
+    pub u64_: u64,
+    pub string: u64,
+    pub bytes: u64,
+    pub sum: u64,
+}
+
+impl Default for TypeWeights {
+    fn default() -> Self {
         Self {
-            table_count: (1, 100),
-            columns: (1, 10),
-            pk_prob: 0.7,
-            auto_inc_prob: 0.3,
-            indexes: (0, 3),
-            unique_constraints: (0, 2),
-            btree_prob: 0.7,
-            private_prob: 0.1,
+            bool_: 12,
+            i64_: 24,
+            u64_: 28,
+            string: 16,
+            bytes: 12,
+            sum: 8,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TableKind {
+    Data,
+    Event,
+}
+
+impl TableKindWeights {
+    fn choices(self) -> [rng::Choice<TableKind>; 2] {
+        [
+            rng::choice(self.data, TableKind::Data),
+            rng::choice(self.event, TableKind::Event),
+        ]
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TypeKind {
+    Bool,
+    I64,
+    U64,
+    String,
+    Bytes,
+    Sum,
+}
+
+impl TypeWeights {
+    fn choices(self) -> [rng::Choice<TypeKind>; 6] {
+        [
+            rng::choice(self.bool_, TypeKind::Bool),
+            rng::choice(self.i64_, TypeKind::I64),
+            rng::choice(self.u64_, TypeKind::U64),
+            rng::choice(self.string, TypeKind::String),
+            rng::choice(self.bytes, TypeKind::Bytes),
+            rng::choice(self.sum, TypeKind::Sum),
+        ]
+    }
+
+    fn non_sum_choices(self) -> [rng::Choice<TypeKind>; 5] {
+        [
+            rng::choice(self.bool_, TypeKind::Bool),
+            rng::choice(self.i64_, TypeKind::I64),
+            rng::choice(self.u64_, TypeKind::U64),
+            rng::choice(self.string, TypeKind::String),
+            rng::choice(self.bytes, TypeKind::Bytes),
+        ]
     }
 }
 
@@ -598,7 +496,7 @@ impl SchemaGenerator {
         Self { rng, profile }
     }
 
-    fn gen_columns(&self) -> Vec<ColumnPlan> {
+    fn gen_columns(&self, sum_available: &mut bool) -> Vec<ColumnPlan> {
         let n = SchemaDecisions::range(&self.rng, self.profile.columns);
         let mut names = Vec::with_capacity(n);
         let mut seen = Vec::with_capacity(n);
@@ -607,10 +505,34 @@ impl SchemaGenerator {
             seen.push(name.clone());
             names.push(ColumnPlan {
                 name,
-                ty: SchemaDecisions::gen_type(&self.rng),
+                ty: self.gen_type(sum_available),
             });
         }
         names
+    }
+
+    fn gen_type(&self, sum_available: &mut bool) -> Type {
+        let kind = if *sum_available {
+            let choices = self.profile.type_weights.choices();
+            rng::pick_choice(&self.rng, &choices)
+        } else {
+            let choices = self.profile.type_weights.non_sum_choices();
+            rng::pick_choice(&self.rng, &choices)
+        };
+
+        match kind {
+            TypeKind::Bool => Type::Bool,
+            TypeKind::I64 => Type::I64,
+            TypeKind::U64 => Type::U64,
+            TypeKind::String => Type::String,
+            TypeKind::Bytes => Type::Bytes,
+            TypeKind::Sum => {
+                *sum_available = false;
+                Type::Sum {
+                    variants: SchemaDecisions::range(&self.rng, self.profile.sum_variants) as u8,
+                }
+            }
+        }
     }
 
     fn gen_unique_constraints(&self, columns: &[ColumnPlan], pk: &Option<usize>) -> Vec<UniqueConstraintPlan> {
@@ -696,8 +618,23 @@ impl SchemaGenerator {
         indexes
     }
 
-    fn gen_table(&self, existing_tables: &[TablePlan]) -> TablePlan {
-        let columns = self.gen_columns();
+    fn gen_table(&self, existing_tables: &[TablePlan], is_event: bool, sum_available: &mut bool) -> TablePlan {
+        let columns = self.gen_columns(sum_available);
+        let name = SchemaDecisions::gen_table_name(&self.rng, existing_tables);
+        let is_public = !SchemaDecisions::sample_probability(&self.rng, self.profile.private_prob);
+
+        if is_event {
+            return TablePlan {
+                name,
+                columns,
+                primary_key: None,
+                indexes: vec![],
+                unique_constraints: vec![],
+                sequences: vec![],
+                is_public,
+                is_event: true,
+            };
+        }
 
         let primary_key = if SchemaDecisions::sample_probability(&self.rng, self.profile.pk_prob) && !columns.is_empty()
         {
@@ -722,8 +659,6 @@ impl SchemaGenerator {
 
         let indexes = self.gen_indexes(&columns, &unique_constraints, &primary_key);
 
-        let name = SchemaDecisions::gen_table_name(&self.rng, existing_tables);
-
         TablePlan {
             name,
             columns,
@@ -731,16 +666,24 @@ impl SchemaGenerator {
             indexes,
             unique_constraints,
             sequences,
-            is_public: !SchemaDecisions::sample_probability(&self.rng, self.profile.private_prob),
+            is_public,
             is_event: false,
         }
     }
 
+    fn gen_table_kind(&self) -> TableKind {
+        let choices = self.profile.table_kind_weights.choices();
+        rng::pick_choice(&self.rng, &choices)
+    }
+
     pub fn gen_schema(&self) -> SchemaPlan {
         let table_count = SchemaDecisions::range(&self.rng, self.profile.table_count);
-        let mut tables = Vec::with_capacity(table_count);
-        for _ in 0..table_count {
-            tables.push(self.gen_table(&tables));
+        let mut tables: Vec<TablePlan> = Vec::with_capacity(table_count);
+        let mut sum_available = true;
+        for table_idx in 0..table_count {
+            let must_be_data = table_idx + 1 == table_count && !tables.iter().any(|table| !table.is_event);
+            let is_event = !must_be_data && matches!(self.gen_table_kind(), TableKind::Event);
+            tables.push(self.gen_table(&tables, is_event, &mut sum_available));
         }
         SchemaPlan { tables }
     }
