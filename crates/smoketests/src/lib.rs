@@ -823,6 +823,10 @@ impl Smoketest {
     pub fn spacetime_cmd(&self, args: &[&str]) -> Output {
         let start = Instant::now();
         let cli_path = ensure_binaries_built();
+
+        let cmd_name = args.first().unwrap_or(&"unknown");
+        eprintln!("[TIMING] spacetime {cmd_name}: starting at {start:?}");
+
         let output = Command::new(&cli_path)
             .arg("--config-path")
             .arg(&self.config_path)
@@ -831,8 +835,8 @@ impl Smoketest {
             .output()
             .expect("Failed to execute spacetime command");
 
-        let cmd_name = args.first().unwrap_or(&"unknown");
-        eprintln!("[TIMING] spacetime {}: {:?}", cmd_name, start.elapsed());
+        eprintln!("[TIMING] spacetime {}: completed in {:?}", cmd_name, start.elapsed());
+
         output
     }
 
