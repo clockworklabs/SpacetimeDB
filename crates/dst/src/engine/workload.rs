@@ -5,7 +5,7 @@ use super::migrations::Migration;
 use super::model::Model;
 use super::row::Row;
 use super::state::{CommitDelta, CountState};
-use crate::rng::pick_weighted;
+use crate::rng::{choice, pick_choice, Choice};
 use crate::schema::SchemaPlan;
 use spacetimedb_runtime::sim::Rng;
 
@@ -91,6 +91,18 @@ enum InteractionChoice {
     Replay,
 }
 
+impl InteractionWeights {
+    fn choices(self) -> [Choice<InteractionChoice>; 5] {
+        [
+            choice(self.insert, InteractionChoice::Insert),
+            choice(self.delete, InteractionChoice::Delete),
+            choice(self.commit_tx, InteractionChoice::CommitTx),
+            choice(self.migrate, InteractionChoice::Migrate),
+            choice(self.replay, InteractionChoice::Replay),
+        ]
+    }
+}
+
 pub struct WorkloadGen {
     rng: Rng,
     model: Model,
@@ -100,11 +112,15 @@ pub struct WorkloadGen {
 
 impl WorkloadGen {
     pub fn new(rng: Rng, model: Model) -> Self {
+        Self::with_weights(rng, model, InteractionWeights::default())
+    }
+
+    pub fn with_weights(rng: Rng, model: Model, weights: InteractionWeights) -> Self {
         Self {
             rng,
             model,
             stats: InteractionCounts::default(),
-            weights: InteractionWeights::default(),
+            weights,
         }
     }
 
@@ -186,25 +202,8 @@ impl WorkloadGen {
     }
 
     fn pick_interaction_choice(&mut self) -> InteractionChoice {
-        let weights = self.weights;
-
-        match pick_weighted(
-            &self.rng,
-            &[
-                weights.insert,
-                weights.delete,
-                weights.commit_tx,
-                weights.migrate,
-                weights.replay,
-            ],
-        ) {
-            0 => InteractionChoice::Insert,
-            1 => InteractionChoice::Delete,
-            2 => InteractionChoice::CommitTx,
-            3 => InteractionChoice::Migrate,
-            4 => InteractionChoice::Replay,
-            _ => unreachable!(),
-        }
+        let choices = self.weights.choices();
+        pick_choice(&self.rng, &choices)
     }
 
     fn insert_table_idx(&self) -> usize {

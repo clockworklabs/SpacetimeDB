@@ -1,7 +1,9 @@
 use super::model::{ColumnDomain, Model};
+use crate::rng::{choice, choose_index, Choice, WeightedChoice};
 use crate::schema::{
     ColumnPlan, IndexAlgorithm, IndexPlan, SchemaNames, SchemaPlan, SequencePlan, TablePlan, Type, UniqueConstraintPlan,
 };
+use spacetimedb_runtime::sim::Rng;
 
 const MAX_SUM_VARIANTS: u8 = 32;
 const MAX_EVENT_COLUMNS: usize = 32;
@@ -57,6 +59,41 @@ pub enum TableMigrationOp {
     ReschemaEventTable,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MigrationChoice {
+    AddTable,
+    RemoveTable,
+    AddColumn,
+    AddIndex,
+    RemoveIndex,
+    ChangeIndex,
+    AddSequence,
+    RemoveSequence,
+    AddUniqueConstraint,
+    RemoveUniqueConstraint,
+    DropPrimaryKeyAndWidenSum,
+    WidenSumColumn,
+    ReschemaEventTable,
+}
+
+impl WeightedChoice for MigrationChoice {
+    const CHOICES: &'static [Choice<Self>] = &[
+        choice(2, Self::AddTable),
+        choice(1, Self::RemoveTable),
+        choice(14, Self::AddColumn),
+        choice(10, Self::AddIndex),
+        choice(8, Self::RemoveIndex),
+        choice(10, Self::ChangeIndex),
+        choice(18, Self::AddSequence),
+        choice(8, Self::RemoveSequence),
+        choice(12, Self::AddUniqueConstraint),
+        choice(8, Self::RemoveUniqueConstraint),
+        choice(6, Self::DropPrimaryKeyAndWidenSum),
+        choice(12, Self::WidenSumColumn),
+        choice(8, Self::ReschemaEventTable),
+    ];
+}
+
 impl Migration {
     pub(crate) fn from_schema(schema: SchemaPlan) -> Self {
         Self { schema }
@@ -75,136 +112,268 @@ impl Migration {
         &self.schema
     }
 
-    pub(crate) fn candidates(schema: &SchemaPlan, model: &Model) -> Vec<SchemaRewrite> {
-        let mut candidates = Vec::new();
-        let non_event_tables = schema.tables.iter().filter(|table| !table.is_event).count();
-
-        if schema.tables.len() < MAX_TABLES {
-            candidates.push(SchemaRewrite::AddTable { is_event: false });
-            candidates.push(SchemaRewrite::AddTable { is_event: true });
+    pub(crate) fn choose_rewrite(rng: &Rng, schema: &SchemaPlan, model: &Model) -> Option<SchemaRewrite> {
+        for _ in 0..16 {
+            let choice = MigrationChoice::pick(rng);
+            if let Some(rewrite) = pick_rewrite(rng, Self::candidates_for(schema, model, choice)) {
+                return Some(rewrite);
+            }
         }
 
-        for table_plan in &schema.tables {
-            let row_count = model.row_count_by_table_name(&table_plan.name);
-            let pristine = row_count == 0 && !model.ever_inserted_by_table_name(&table_plan.name);
+        pick_rewrite(rng, Self::candidates(schema, model))
+    }
 
-            if (table_plan.is_event && row_count == 0) || (!table_plan.is_event && pristine && non_event_tables > 1) {
-                candidates.push(SchemaRewrite::RemoveTable {
-                    table: table_plan.name.clone(),
-                });
-            }
+    pub(crate) fn candidates(schema: &SchemaPlan, model: &Model) -> Vec<SchemaRewrite> {
+        <MigrationChoice as WeightedChoice>::CHOICES
+            .iter()
+            .flat_map(|choice| Self::candidates_for(schema, model, choice.value()))
+            .collect()
+    }
 
-            if table_plan.is_event {
-                if row_count == 0 && table_plan.columns.len() < MAX_EVENT_COLUMNS {
-                    candidates.push(SchemaRewrite::alter_table(
-                        table_plan,
-                        [TableMigrationOp::ChangeAccess, TableMigrationOp::ReschemaEventTable],
-                    ));
+    fn candidates_for(schema: &SchemaPlan, model: &Model, choice: MigrationChoice) -> Vec<SchemaRewrite> {
+        match choice {
+            MigrationChoice::AddTable => add_table_rewrites(schema),
+            MigrationChoice::RemoveTable => remove_table_rewrites(schema, model),
+            MigrationChoice::AddColumn => add_column_rewrites(schema),
+            MigrationChoice::AddIndex => add_index_rewrites(schema),
+            MigrationChoice::RemoveIndex => remove_index_rewrites(schema),
+            MigrationChoice::ChangeIndex => change_index_rewrites(schema),
+            MigrationChoice::AddSequence => add_sequence_rewrites(schema, model),
+            MigrationChoice::RemoveSequence => remove_sequence_rewrites(schema),
+            MigrationChoice::AddUniqueConstraint => add_unique_constraint_rewrites(schema, model),
+            MigrationChoice::RemoveUniqueConstraint => remove_unique_constraint_rewrites(schema),
+            MigrationChoice::DropPrimaryKeyAndWidenSum => drop_primary_key_and_widen_sum_rewrites(schema),
+            MigrationChoice::WidenSumColumn => widen_sum_column_rewrites(schema),
+            MigrationChoice::ReschemaEventTable => reschema_event_table_rewrites(schema, model),
+        }
+    }
+}
+
+fn pick_rewrite(rng: &Rng, mut candidates: Vec<SchemaRewrite>) -> Option<SchemaRewrite> {
+    let idx = choose_index(rng, candidates.len())?;
+    Some(candidates.swap_remove(idx))
+}
+
+fn add_table_rewrites(schema: &SchemaPlan) -> Vec<SchemaRewrite> {
+    if schema.tables.len() >= MAX_TABLES {
+        return Vec::new();
+    }
+
+    vec![
+        SchemaRewrite::AddTable { is_event: false },
+        SchemaRewrite::AddTable { is_event: true },
+    ]
+}
+
+fn remove_table_rewrites(schema: &SchemaPlan, model: &Model) -> Vec<SchemaRewrite> {
+    let non_event_tables = schema.tables.iter().filter(|table| !table.is_event).count();
+
+    schema
+        .tables
+        .iter()
+        .filter_map(|table| {
+            let row_count = model.row_count_by_table_name(&table.name);
+            let pristine = row_count == 0 && !model.ever_inserted_by_table_name(&table.name);
+            ((table.is_event && row_count == 0) || (!table.is_event && pristine && non_event_tables > 1)).then(|| {
+                SchemaRewrite::RemoveTable {
+                    table: table.name.clone(),
                 }
-                continue;
-            }
+            })
+        })
+        .collect()
+}
 
-            if table_plan.columns.len() < MAX_TABLE_COLUMNS {
-                candidates.extend(Type::ALL.iter().copied().map(|ty| {
-                    SchemaRewrite::alter_table(
-                        table_plan,
-                        [TableMigrationOp::ChangeAccess, TableMigrationOp::AddColumn { ty }],
-                    )
-                }));
-            }
+fn add_column_rewrites(schema: &SchemaPlan) -> Vec<SchemaRewrite> {
+    schema
+        .tables
+        .iter()
+        .filter(|table| !table.is_event && table.columns.len() < MAX_TABLE_COLUMNS)
+        .flat_map(|table| {
+            Type::ALL.iter().copied().map(|ty| {
+                SchemaRewrite::alter_table(
+                    table,
+                    [TableMigrationOp::ChangeAccess, TableMigrationOp::AddColumn { ty }],
+                )
+            })
+        })
+        .collect()
+}
 
-            if pristine {
-                for sequence in addable_sequences(table_plan) {
-                    candidates.push(SchemaRewrite::alter_table(
-                        table_plan,
-                        [TableMigrationOp::AddSequence { sequence }],
-                    ));
-                }
+fn add_index_rewrites(schema: &SchemaPlan) -> Vec<SchemaRewrite> {
+    schema
+        .tables
+        .iter()
+        .filter(|table| !table.is_event)
+        .flat_map(|table| {
+            addable_indexes(table).into_iter().map(|(columns, algorithm)| {
+                SchemaRewrite::alter_table(table, [TableMigrationOp::AddIndex { columns, algorithm }])
+            })
+        })
+        .collect()
+}
 
-                for columns in addable_unique_constraint_columns(table_plan) {
-                    let mut ops = Vec::new();
-                    if !has_index(table_plan, &columns) {
-                        ops.push(TableMigrationOp::AddIndex {
-                            columns: columns.clone(),
-                            algorithm: IndexAlgorithm::BTree,
-                        });
-                    }
-                    ops.push(TableMigrationOp::AddUniqueConstraint { columns });
-                    candidates.push(SchemaRewrite::alter_table(table_plan, ops));
-                }
-            }
+fn remove_index_rewrites(schema: &SchemaPlan) -> Vec<SchemaRewrite> {
+    schema
+        .tables
+        .iter()
+        .filter(|table| !table.is_event)
+        .flat_map(|table| {
+            changeable_index_columns(table)
+                .into_iter()
+                .map(|columns| SchemaRewrite::alter_table(table, [TableMigrationOp::RemoveIndex { columns }]))
+        })
+        .collect()
+}
 
-            if row_count > 0 {
-                for sequence in
-                    addable_sequence_boundary_probes(table_plan, |column| column_domain(model, table_plan, column))
-                {
-                    candidates.push(SchemaRewrite::alter_table(
-                        table_plan,
-                        [TableMigrationOp::AddSequence { sequence }],
-                    ));
-                }
-            }
-
-            for column in removable_sequence_columns(table_plan) {
-                candidates.push(SchemaRewrite::alter_table(
-                    table_plan,
-                    [TableMigrationOp::RemoveSequence { column }],
-                ));
-            }
-
-            for columns in removable_unique_constraint_columns(table_plan) {
-                candidates.push(SchemaRewrite::alter_table(
-                    table_plan,
-                    [TableMigrationOp::RemoveUniqueConstraint { columns }],
-                ));
-            }
-
-            for (columns, algorithm) in addable_indexes(table_plan) {
-                candidates.push(SchemaRewrite::alter_table(
-                    table_plan,
-                    [TableMigrationOp::AddIndex { columns, algorithm }],
-                ));
-            }
-
-            for columns in changeable_index_columns(table_plan) {
-                candidates.push(SchemaRewrite::alter_table(
-                    table_plan,
+fn change_index_rewrites(schema: &SchemaPlan) -> Vec<SchemaRewrite> {
+    schema
+        .tables
+        .iter()
+        .filter(|table| !table.is_event)
+        .flat_map(|table| {
+            changeable_index_columns(table).into_iter().map(|columns| {
+                SchemaRewrite::alter_table(
+                    table,
                     [
                         TableMigrationOp::ChangeAccess,
-                        TableMigrationOp::ChangeIndex {
-                            columns: columns.clone(),
-                        },
+                        TableMigrationOp::ChangeIndex { columns },
                     ],
-                ));
-                candidates.push(SchemaRewrite::alter_table(
-                    table_plan,
-                    [TableMigrationOp::RemoveIndex { columns }],
-                ));
-            }
+                )
+            })
+        })
+        .collect()
+}
 
-            for column in widenable_sum_columns(table_plan) {
-                candidates.push(SchemaRewrite::alter_table(
-                    table_plan,
+fn add_sequence_rewrites(schema: &SchemaPlan, model: &Model) -> Vec<SchemaRewrite> {
+    let mut rewrites = Vec::new();
+
+    for table in schema.tables.iter().filter(|table| !table.is_event) {
+        let row_count = model.row_count_by_table_name(&table.name);
+        let pristine = row_count == 0 && !model.ever_inserted_by_table_name(&table.name);
+
+        if pristine {
+            rewrites.extend(
+                addable_sequences(table)
+                    .into_iter()
+                    .map(|sequence| SchemaRewrite::alter_table(table, [TableMigrationOp::AddSequence { sequence }])),
+            );
+        }
+
+        if row_count > 0 {
+            rewrites.extend(
+                addable_sequence_boundary_probes(table, |column| column_domain(model, table, column))
+                    .into_iter()
+                    .map(|sequence| SchemaRewrite::alter_table(table, [TableMigrationOp::AddSequence { sequence }])),
+            );
+        }
+    }
+
+    rewrites
+}
+
+fn remove_sequence_rewrites(schema: &SchemaPlan) -> Vec<SchemaRewrite> {
+    schema
+        .tables
+        .iter()
+        .filter(|table| !table.is_event)
+        .flat_map(|table| {
+            removable_sequence_columns(table)
+                .into_iter()
+                .map(|column| SchemaRewrite::alter_table(table, [TableMigrationOp::RemoveSequence { column }]))
+        })
+        .collect()
+}
+
+fn add_unique_constraint_rewrites(schema: &SchemaPlan, model: &Model) -> Vec<SchemaRewrite> {
+    let mut rewrites = Vec::new();
+
+    for table in schema.tables.iter().filter(|table| !table.is_event) {
+        let row_count = model.row_count_by_table_name(&table.name);
+        let pristine = row_count == 0 && !model.ever_inserted_by_table_name(&table.name);
+        if !pristine {
+            continue;
+        }
+
+        for columns in addable_unique_constraint_columns(table) {
+            let mut ops = Vec::new();
+            if !has_index(table, &columns) {
+                ops.push(TableMigrationOp::AddIndex {
+                    columns: columns.clone(),
+                    algorithm: IndexAlgorithm::BTree,
+                });
+            }
+            ops.push(TableMigrationOp::AddUniqueConstraint { columns });
+            rewrites.push(SchemaRewrite::alter_table(table, ops));
+        }
+    }
+
+    rewrites
+}
+
+fn remove_unique_constraint_rewrites(schema: &SchemaPlan) -> Vec<SchemaRewrite> {
+    schema
+        .tables
+        .iter()
+        .filter(|table| !table.is_event)
+        .flat_map(|table| {
+            removable_unique_constraint_columns(table).into_iter().map(|columns| {
+                SchemaRewrite::alter_table(table, [TableMigrationOp::RemoveUniqueConstraint { columns }])
+            })
+        })
+        .collect()
+}
+
+fn drop_primary_key_and_widen_sum_rewrites(schema: &SchemaPlan) -> Vec<SchemaRewrite> {
+    schema
+        .tables
+        .iter()
+        .filter(|table| !table.is_event && table.primary_key.is_some() && table.sequences.is_empty())
+        .flat_map(|table| {
+            widenable_sum_columns(table).into_iter().map(|column| {
+                SchemaRewrite::alter_table(
+                    table,
+                    [
+                        TableMigrationOp::ChangePrimaryKey { column: None },
+                        TableMigrationOp::ChangeColumnType { column },
+                    ],
+                )
+            })
+        })
+        .collect()
+}
+
+fn widen_sum_column_rewrites(schema: &SchemaPlan) -> Vec<SchemaRewrite> {
+    schema
+        .tables
+        .iter()
+        .filter(|table| !table.is_event)
+        .flat_map(|table| {
+            widenable_sum_columns(table).into_iter().map(|column| {
+                SchemaRewrite::alter_table(
+                    table,
                     [
                         TableMigrationOp::ChangeAccess,
                         TableMigrationOp::ChangeColumnType { column },
                     ],
-                ));
+                )
+            })
+        })
+        .collect()
+}
 
-                if table_plan.primary_key.is_some() && table_plan.sequences.is_empty() {
-                    candidates.push(SchemaRewrite::alter_table(
-                        table_plan,
-                        [
-                            TableMigrationOp::ChangePrimaryKey { column: None },
-                            TableMigrationOp::ChangeColumnType { column },
-                        ],
-                    ));
-                }
-            }
-        }
-
-        candidates
-    }
+fn reschema_event_table_rewrites(schema: &SchemaPlan, model: &Model) -> Vec<SchemaRewrite> {
+    schema
+        .tables
+        .iter()
+        .filter(|table| table.is_event && model.row_count_by_table_name(&table.name) == 0)
+        .filter(|table| table.columns.len() < MAX_EVENT_COLUMNS)
+        .map(|table| {
+            SchemaRewrite::alter_table(
+                table,
+                [TableMigrationOp::ChangeAccess, TableMigrationOp::ReschemaEventTable],
+            )
+        })
+        .collect()
 }
 
 impl SchemaRewrite {

@@ -6,11 +6,17 @@ pub(crate) struct Choice<T> {
     value: T,
 }
 
+impl<T: Copy> Choice<T> {
+    pub(crate) const fn value(self) -> T {
+        self.value
+    }
+}
+
 pub(crate) const fn choice<T>(weight: u64, value: T) -> Choice<T> {
     Choice { weight, value }
 }
 
-pub(crate) fn frequency<T: Copy>(rng: &Rng, choices: &[Choice<T>]) -> T {
+pub(crate) fn pick_choice<T: Copy>(rng: &Rng, choices: &[Choice<T>]) -> T {
     let total: u64 = choices.iter().map(|choice| choice.weight).sum();
 
     assert!(total > 0, "at least one choice weight must be non-zero");
@@ -32,26 +38,8 @@ pub(crate) trait WeightedChoice: Copy + 'static {
     const CHOICES: &'static [Choice<Self>];
 
     fn pick(rng: &Rng) -> Self {
-        frequency(rng, Self::CHOICES)
+        pick_choice(rng, Self::CHOICES)
     }
-}
-
-pub(crate) fn pick_weighted(rng: &Rng, weights: &[u64]) -> usize {
-    let total: u64 = weights.iter().sum();
-
-    assert!(total > 0, "at least one weight must be non-zero");
-
-    let mut selected = rng.next_u64() % total;
-
-    for (idx, weight) in weights.iter().copied().enumerate() {
-        if selected < weight {
-            return idx;
-        }
-
-        selected -= weight;
-    }
-
-    unreachable!("selected value is always inside total weight")
 }
 
 pub(crate) fn choose_index(rng: &Rng, len: usize) -> Option<usize> {

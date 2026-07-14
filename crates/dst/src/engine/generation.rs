@@ -5,7 +5,7 @@ use spacetimedb_sats::ArrayValue;
 use super::migrations::Migration;
 use super::model::{ColumnDomain, Model};
 use super::row::Row;
-use crate::rng::{choice, choose_index, Choice, WeightedChoice};
+use crate::rng::{choice, Choice, WeightedChoice};
 use crate::schema::Type;
 
 pub(crate) struct GenCtx<'a> {
@@ -99,7 +99,7 @@ impl StringCase {
     ];
 
     fn pick_weird(rng: &Rng) -> Self {
-        crate::rng::frequency(rng, Self::WEIRD_CHOICES)
+        crate::rng::pick_choice(rng, Self::WEIRD_CHOICES)
     }
 }
 
@@ -123,7 +123,7 @@ impl BytesCase {
     ];
 
     fn pick_weird(rng: &Rng) -> Self {
-        crate::rng::frequency(rng, Self::WEIRD_CHOICES)
+        crate::rng::pick_choice(rng, Self::WEIRD_CHOICES)
     }
 }
 
@@ -369,11 +369,9 @@ impl<'a> MigrationGen<'a> {
         let steps = 1 + self.rng.index(10);
 
         for _ in 0..steps {
-            let candidates = Migration::candidates(&schema, self.model);
-            let Some(idx) = choose_index(self.rng, candidates.len()) else {
+            let Some(rewrite) = Migration::choose_rewrite(self.rng, &schema, self.model) else {
                 break;
             };
-            let rewrite = candidates[idx].clone();
             rewrite
                 .apply_to(&mut schema)
                 .expect("generated rewrite must be valid for the draft schema");
