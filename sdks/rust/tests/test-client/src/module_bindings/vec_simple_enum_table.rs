@@ -19,6 +19,18 @@ pub struct VecSimpleEnumTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `vec_simple_enum`.
+pub struct VecSimpleEnumTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for VecSimpleEnumTableAccessor {
+    type Row = VecSimpleEnum;
+    type Handle<'db> = VecSimpleEnumTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.vec_simple_enum()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `vec_simple_enum`.
 ///

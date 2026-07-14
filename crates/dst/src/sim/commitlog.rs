@@ -22,6 +22,12 @@ pub struct InMemoryCommitlog {
     options: Options,
 }
 
+impl Default for InMemoryCommitlog {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InMemoryCommitlog {
     pub fn new() -> Self {
         Self {
@@ -392,6 +398,10 @@ impl FileLike for Segment {
             storage.buf.resize(size as usize, 0);
         }
 
+        Ok(())
+    }
+
+    fn fallocate(&mut self, _size: u64) -> io::Result<()> {
         Ok(())
     }
 }

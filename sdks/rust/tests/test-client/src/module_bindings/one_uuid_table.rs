@@ -18,6 +18,18 @@ pub struct OneUuidTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `one_uuid`.
+pub struct OneUuidTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for OneUuidTableAccessor {
+    type Row = OneUuid;
+    type Handle<'db> = OneUuidTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.one_uuid()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `one_uuid`.
 ///
