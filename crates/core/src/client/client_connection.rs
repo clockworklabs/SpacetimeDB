@@ -445,7 +445,7 @@ impl ClientConnectionSender {
                 log::warn!(
                     "Client {:?} exceeded channel capacity of {}, kicking",
                     self.id,
-                    self.sendtx.capacity(),
+                    self.sendtx.max_capacity(),
                 );
                 if let Some(metrics) = &self.metrics {
                     metrics.outgoing_queue_disconnects.inc();
@@ -871,13 +871,20 @@ impl ClientConnection {
 
             let _gauge_guard = module_info.metrics.connected_clients.inc_scope();
             module_info.metrics.ws_clients_spawned.inc();
-            scopeguard::defer! {
-                let database_identity = module_info.database_identity;
+            // Runs only if this task is aborted (e.g. by `ClientConnectionSender::send`
+            // kicking a client whose outgoing queue is full) or if `fut` panics.
+            // Normal disconnects complete `fut`, defusing this guard;
+            // they are logged by the websocket actor.
+            let aborted_metric = module_info.metrics.ws_clients_aborted.clone();
+            let abort_guard = scopeguard::guard((), move |()| {
                 log::warn!("websocket connection aborted for client identity `{client_identity}` and database identity `{database_identity}`");
-                module_info.metrics.ws_clients_aborted.inc();
-            };
+                aborted_metric.inc();
+            });
 
-            fut.await
+            fut.await;
+
+            scopeguard::ScopeGuard::into_inner(abort_guard);
+            log::debug!("websocket connection ended for client identity `{client_identity}` and database identity `{database_identity}`");
         })
         .abort_handle();
 
