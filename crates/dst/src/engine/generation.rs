@@ -1,3 +1,5 @@
+//! Workload value and migration generation for the engine DST driver.
+
 use spacetimedb_lib::{AlgebraicValue, ProductValue};
 use spacetimedb_runtime::sim::Rng;
 use spacetimedb_sats::ArrayValue;
@@ -8,6 +10,7 @@ use super::row::Row;
 use crate::rng::{choice, Choice, WeightedChoice};
 use crate::schema::Type;
 
+/// Read-only generation context for one model state.
 pub(crate) struct GenCtx<'a> {
     rng: &'a Rng,
     model: &'a Model,

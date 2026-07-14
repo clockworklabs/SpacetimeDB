@@ -1,3 +1,5 @@
+//! Schema plans and raw module lowering for the engine DST harness.
+
 use crate::rng;
 use spacetimedb_lib::db::raw_def::v10::*;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, TableAccess, TableType};
@@ -7,8 +9,27 @@ use spacetimedb_sats::{
     AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, ProductType, ProductTypeElement, SumType, SumTypeVariant,
 };
 
+/// Generate the default engine DST schema.
+///
+/// The initial schema is intentionally random and valid, not repaired into a
+/// fixed coverage fixture. Long runs are expected to discover more surfaces via
+/// migrations.
 pub fn default_schema(rng: Rng) -> SchemaPlan {
     SchemaGenerator::new(rng, SchemaProfile::engine_dst()).gen_schema()
+}
+
+/// Lower a generated schema plan into the raw module format used by the engine.
+pub fn to_raw_def(schema: &SchemaPlan) -> RawModuleDefV10 {
+    let mut builder = RawModuleDefV10Builder::new();
+    builder.set_case_conversion_policy(CaseConversionPolicy::None);
+
+    for table in &schema.tables {
+        to_raw_def_table(&mut builder, table);
+    }
+
+    let mut raw = builder.finish();
+    apply_sequence_bounds(schema, &mut raw);
+    raw
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -22,6 +43,7 @@ pub enum Type {
 }
 
 impl Type {
+    /// Representative column types used by migration candidate generation.
     pub const ALL: &'static [Type] = &[
         Type::Bool,
         Type::I64,
@@ -68,118 +90,7 @@ impl Type {
     }
 }
 
-pub struct SchemaDecisions;
-
-impl SchemaDecisions {
-    pub fn range(rng: &Rng, (lo, hi): (usize, usize)) -> usize {
-        rng::range_inclusive(rng, lo, hi)
-    }
-
-    pub fn index(rng: &Rng, len: usize) -> usize {
-        rng::choose_index(rng, len).expect("len must be non-zero")
-    }
-
-    pub fn choose_index(rng: &Rng, len: usize) -> Option<usize> {
-        rng::choose_index(rng, len)
-    }
-
-    pub fn sample_probability(rng: &Rng, probability: f64) -> bool {
-        rng.sample_probability(probability)
-    }
-
-    pub fn gen_table_name(rng: &Rng, tables: &[TablePlan]) -> String {
-        loop {
-            let name = format!("tbl_{}", Self::gen_ident(rng));
-            if tables.iter().all(|table| table.name != name) {
-                return name;
-            }
-        }
-    }
-
-    pub fn gen_column_name(rng: &Rng, seen: &[String]) -> String {
-        loop {
-            let name = Self::gen_ident(rng);
-            if !seen.contains(&name) {
-                return name;
-            }
-        }
-    }
-
-    fn gen_ident(rng: &Rng) -> String {
-        const CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789_";
-        const FIRST: &[u8] = b"abcdefghijklmnopqrstuvwxyz_";
-        let len = 4 + (rng.next_u64() as usize % 12);
-        let mut s = String::with_capacity(len);
-        s.push(FIRST[Self::index(rng, FIRST.len())] as char);
-        for _ in 1..len {
-            s.push(CHARS[Self::index(rng, CHARS.len())] as char);
-        }
-        s
-    }
-}
-
-pub struct SchemaNames;
-
-impl SchemaNames {
-    pub fn fresh_column_name(table: &TablePlan, base: &str) -> String {
-        if table.columns.iter().all(|column| column.name != base) {
-            return base.into();
-        }
-
-        for suffix in 0.. {
-            let candidate = format!("{base}_{suffix}");
-            if table.columns.iter().all(|column| column.name != candidate) {
-                return candidate;
-            }
-        }
-
-        unreachable!("unbounded suffix search must find a unique column name")
-    }
-
-    pub fn fresh_table_name(tables: &[TablePlan], base: &str) -> String {
-        if tables.iter().all(|table| table.name != base) {
-            return base.into();
-        }
-
-        for suffix in 0.. {
-            let candidate = format!("{base}_{suffix}");
-            if tables.iter().all(|table| table.name != candidate) {
-                return candidate;
-            }
-        }
-
-        unreachable!("unbounded suffix search must find a unique table name")
-    }
-
-    pub fn index_name(table: &TablePlan, index: &IndexPlan) -> String {
-        format!(
-            "{}_{}_idx",
-            table.name,
-            index
-                .columns
-                .iter()
-                .map(|&c| table.columns[c].name.as_str())
-                .collect::<Vec<_>>()
-                .join("_")
-        )
-    }
-
-    pub fn constraint_name(table: &TablePlan, constraint: &UniqueConstraintPlan) -> String {
-        format!(
-            "{}_{}_key",
-            table.name,
-            constraint
-                .columns
-                .iter()
-                .map(|&c| table.columns[c].name.as_str())
-                .collect::<Vec<_>>()
-                .join("_")
-        )
-    }
-}
-
-// Schema plan — the canonical source of truth.
-// This Schema should be able to translate to valid `RawModuleDefV10`.
+/// Canonical schema representation for the DST model and engine target.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SchemaPlan {
     pub tables: Vec<TablePlan>,
@@ -268,6 +179,11 @@ impl SequencePlan {
         })
     }
 
+    /// Build a small bounded sequence whose max is an already-observed value.
+    ///
+    /// This intentionally creates a high-risk migration surface: if migration
+    /// prechecks accept an unsafe sequence, later inserts can collide with
+    /// existing unique values.
     pub fn with_existing_value_as_max(column: usize, ty: Type, existing_value: i128) -> Option<Self> {
         const DOMAIN_SIZE: i128 = 3;
 
@@ -278,89 +194,6 @@ impl SequencePlan {
         let min_value = existing_value - (DOMAIN_SIZE - 1);
         Self::with_bounds(column, ty, min_value, min_value, existing_value, 1)
     }
-}
-
-// Lowering into RawModuleDefV10.
-pub fn to_raw_def(schema: &SchemaPlan) -> RawModuleDefV10 {
-    let mut builder = RawModuleDefV10Builder::new();
-    builder.set_case_conversion_policy(CaseConversionPolicy::None);
-
-    for table in &schema.tables {
-        to_raw_def_table(&mut builder, table);
-    }
-
-    let mut raw = builder.finish();
-    apply_sequence_bounds(schema, &mut raw);
-    raw
-}
-
-fn apply_sequence_bounds(schema: &SchemaPlan, raw: &mut RawModuleDefV10) {
-    for (table_plan, raw_table) in schema.tables.iter().zip(raw.tables_mut_for_tests().iter_mut()) {
-        for (sequence_plan, raw_sequence) in table_plan.sequences.iter().zip(raw_table.sequences.iter_mut()) {
-            raw_sequence.start = sequence_plan.start;
-            raw_sequence.min_value = sequence_plan.min_value;
-            raw_sequence.max_value = sequence_plan.max_value;
-            raw_sequence.increment = sequence_plan.increment;
-        }
-    }
-}
-
-fn to_raw_def_table(builder: &mut RawModuleDefV10Builder, table: &TablePlan) {
-    let product_type = ProductType {
-        elements: table
-            .columns
-            .iter()
-            .map(|col| ProductTypeElement {
-                name: Some(col.name.clone().into()),
-                algebraic_type: col.ty.to_algebraic(),
-            })
-            .collect(),
-    };
-
-    let mut tbl = builder.build_table_with_new_type_for_tests(table.name.clone(), product_type, true);
-
-    tbl = tbl.with_type(TableType::User);
-    tbl = tbl.with_event(table.is_event);
-    tbl = tbl.with_access(if table.is_public {
-        TableAccess::Public
-    } else {
-        TableAccess::Private
-    });
-    // Primary key.
-    if let Some(pk) = table.primary_key {
-        tbl = tbl.with_primary_key(ColId(pk as u16));
-    }
-
-    // Unique constraints — all of them, including PK-matching.
-    for constraint in &table.unique_constraints {
-        let col_list: ColList = constraint.columns.iter().map(|&c| ColId(c as u16)).collect();
-        tbl = tbl.with_unique_constraint(col_list);
-    }
-
-    // Indexes.
-    for index in &table.indexes {
-        let col_list: ColList = index.columns.iter().map(|&c| ColId(c as u16)).collect();
-
-        let algorithm = match index.algorithm {
-            IndexAlgorithm::BTree => RawIndexAlgorithm::BTree { columns: col_list },
-            IndexAlgorithm::Hash => RawIndexAlgorithm::Hash { columns: col_list },
-        };
-
-        tbl = tbl.with_index_no_accessor_name(algorithm, SchemaNames::index_name(table, index));
-    }
-
-    // Sequences — all of them.
-    for seq in &table.sequences {
-        tbl = tbl.with_column_sequence(ColId(seq.column as u16));
-    }
-
-    // AddColumns needs defaults when existing rows are present. Supplying stable
-    // defaults for all columns lets the engine keep only the newly-added tail.
-    for (col_id, column) in table.columns.iter().enumerate() {
-        tbl = tbl.with_default_column_value(ColId(col_id as u16), column.ty.default_value());
-    }
-
-    tbl.finish();
 }
 
 /// Controls the shape of generated schemas.
@@ -438,6 +271,74 @@ impl Default for TypeWeights {
     }
 }
 
+/// Random schema generator used by initial schema creation and add-table migrations.
+pub struct SchemaGenerator {
+    rng: Rng,
+    profile: SchemaProfile,
+}
+
+impl SchemaGenerator {
+    pub fn new(rng: Rng, profile: SchemaProfile) -> Self {
+        Self { rng, profile }
+    }
+
+    /// Generate one table compatible with an existing schema.
+    ///
+    /// This is used by migration generation so add-table migrations use the same
+    /// shape policy as initial schema generation. Randomness happens before the
+    /// rewrite is applied; the rewrite itself remains deterministic.
+    pub fn gen_table_for_schema(&self, schema: &SchemaPlan, is_event: bool) -> TablePlan {
+        let mut sum_available = !schema_has_sum_column(schema);
+        self.gen_table(&schema.tables, is_event, &mut sum_available)
+    }
+
+    /// Generate a complete schema from this generator's profile.
+    pub fn gen_schema(&self) -> SchemaPlan {
+        let table_count = SchemaDecisions::range(&self.rng, self.profile.table_count);
+        let mut tables: Vec<TablePlan> = Vec::with_capacity(table_count);
+        let mut sum_available = true;
+        for table_idx in 0..table_count {
+            let must_be_data = table_idx + 1 == table_count && !tables.iter().any(|table| !table.is_event);
+            let is_event = !must_be_data && matches!(self.gen_table_kind(), TableKind::Event);
+            tables.push(self.gen_table(&tables, is_event, &mut sum_available));
+        }
+        SchemaPlan { tables }
+    }
+}
+
+/// Stable naming helpers for generated migration artifacts.
+pub struct SchemaNames;
+
+impl SchemaNames {
+    pub fn fresh_column_name(table: &TablePlan, base: &str) -> String {
+        if table.columns.iter().all(|column| column.name != base) {
+            return base.into();
+        }
+
+        for suffix in 0.. {
+            let candidate = format!("{base}_{suffix}");
+            if table.columns.iter().all(|column| column.name != candidate) {
+                return candidate;
+            }
+        }
+
+        unreachable!("unbounded suffix search must find a unique column name")
+    }
+
+    pub fn index_name(table: &TablePlan, index: &IndexPlan) -> String {
+        format!(
+            "{}_{}_idx",
+            table.name,
+            index
+                .columns
+                .iter()
+                .map(|&c| table.columns[c].name.as_str())
+                .collect::<Vec<_>>()
+                .join("_")
+        )
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum TableKind {
     Data,
@@ -486,16 +387,53 @@ impl TypeWeights {
     }
 }
 
-pub struct SchemaGenerator {
-    rng: Rng,
-    profile: SchemaProfile,
+struct SchemaDecisions;
+
+impl SchemaDecisions {
+    fn range(rng: &Rng, (lo, hi): (usize, usize)) -> usize {
+        rng::range_inclusive(rng, lo, hi)
+    }
+
+    fn index(rng: &Rng, len: usize) -> usize {
+        rng::choose_index(rng, len).expect("len must be non-zero")
+    }
+
+    fn sample_probability(rng: &Rng, probability: f64) -> bool {
+        rng.sample_probability(probability)
+    }
+
+    fn gen_table_name(rng: &Rng, tables: &[TablePlan]) -> String {
+        loop {
+            let name = format!("tbl_{}", Self::gen_ident(rng));
+            if tables.iter().all(|table| table.name != name) {
+                return name;
+            }
+        }
+    }
+
+    fn gen_column_name(rng: &Rng, seen: &[String]) -> String {
+        loop {
+            let name = Self::gen_ident(rng);
+            if !seen.contains(&name) {
+                return name;
+            }
+        }
+    }
+
+    fn gen_ident(rng: &Rng) -> String {
+        const CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789_";
+        const FIRST: &[u8] = b"abcdefghijklmnopqrstuvwxyz_";
+        let len = 4 + (rng.next_u64() as usize % 12);
+        let mut s = String::with_capacity(len);
+        s.push(FIRST[Self::index(rng, FIRST.len())] as char);
+        for _ in 1..len {
+            s.push(CHARS[Self::index(rng, CHARS.len())] as char);
+        }
+        s
+    }
 }
 
 impl SchemaGenerator {
-    pub fn new(rng: Rng, profile: SchemaProfile) -> Self {
-        Self { rng, profile }
-    }
-
     fn gen_columns(&self, sum_available: &mut bool) -> Vec<ColumnPlan> {
         let n = SchemaDecisions::range(&self.rng, self.profile.columns);
         let mut names = Vec::with_capacity(n);
@@ -551,7 +489,7 @@ impl SchemaGenerator {
                 result.push(UniqueConstraintPlan { columns: cols });
             }
         }
-        // Ensure PK has a matching unique constraint.
+        // A primary key always has a matching unique constraint.
         if let Some(pk) = pk {
             if !seen.iter().any(|cols| cols.len() == 1 && cols[0] == *pk) {
                 result.push(UniqueConstraintPlan { columns: vec![*pk] });
@@ -566,11 +504,9 @@ impl SchemaGenerator {
         unique_constraints: &[UniqueConstraintPlan],
         pk: &Option<usize>,
     ) -> Vec<IndexPlan> {
-        // Every unique constraint and PK needs a matching index.
         let mut seen_cols: Vec<Vec<usize>> = Vec::new();
         let mut indexes: Vec<IndexPlan> = Vec::new();
 
-        // Index for PK.
         if let Some(pk) = pk {
             seen_cols.push(vec![*pk]);
             indexes.push(IndexPlan {
@@ -579,7 +515,6 @@ impl SchemaGenerator {
             });
         }
 
-        // Indexes for unique constraints.
         for constraint in unique_constraints {
             if seen_cols.contains(&constraint.columns) {
                 continue;
@@ -591,7 +526,6 @@ impl SchemaGenerator {
             });
         }
 
-        // Additional random indexes.
         let n = SchemaDecisions::range(&self.rng, self.profile.indexes);
         for _ in 0..n {
             let num_cols = 1 + SchemaDecisions::index(&self.rng, columns.len().min(3));
@@ -616,11 +550,6 @@ impl SchemaGenerator {
         }
 
         indexes
-    }
-
-    pub fn gen_table_for_schema(&self, schema: &SchemaPlan, is_event: bool) -> TablePlan {
-        let mut sum_available = !schema_has_sum_column(schema);
-        self.gen_table(&schema.tables, is_event, &mut sum_available)
     }
 
     fn gen_table(&self, existing_tables: &[TablePlan], is_event: bool, sum_available: &mut bool) -> TablePlan {
@@ -680,18 +609,72 @@ impl SchemaGenerator {
         let choices = self.profile.table_kind_weights.choices();
         rng::pick_choice(&self.rng, &choices)
     }
+}
 
-    pub fn gen_schema(&self) -> SchemaPlan {
-        let table_count = SchemaDecisions::range(&self.rng, self.profile.table_count);
-        let mut tables: Vec<TablePlan> = Vec::with_capacity(table_count);
-        let mut sum_available = true;
-        for table_idx in 0..table_count {
-            let must_be_data = table_idx + 1 == table_count && !tables.iter().any(|table| !table.is_event);
-            let is_event = !must_be_data && matches!(self.gen_table_kind(), TableKind::Event);
-            tables.push(self.gen_table(&tables, is_event, &mut sum_available));
+fn apply_sequence_bounds(schema: &SchemaPlan, raw: &mut RawModuleDefV10) {
+    for (table_plan, raw_table) in schema.tables.iter().zip(raw.tables_mut_for_tests().iter_mut()) {
+        for (sequence_plan, raw_sequence) in table_plan.sequences.iter().zip(raw_table.sequences.iter_mut()) {
+            raw_sequence.start = sequence_plan.start;
+            raw_sequence.min_value = sequence_plan.min_value;
+            raw_sequence.max_value = sequence_plan.max_value;
+            raw_sequence.increment = sequence_plan.increment;
         }
-        SchemaPlan { tables }
     }
+}
+
+fn to_raw_def_table(builder: &mut RawModuleDefV10Builder, table: &TablePlan) {
+    let product_type = ProductType {
+        elements: table
+            .columns
+            .iter()
+            .map(|col| ProductTypeElement {
+                name: Some(col.name.clone().into()),
+                algebraic_type: col.ty.to_algebraic(),
+            })
+            .collect(),
+    };
+
+    let mut tbl = builder.build_table_with_new_type_for_tests(table.name.clone(), product_type, true);
+
+    tbl = tbl.with_type(TableType::User);
+    tbl = tbl.with_event(table.is_event);
+    tbl = tbl.with_access(if table.is_public {
+        TableAccess::Public
+    } else {
+        TableAccess::Private
+    });
+
+    if let Some(pk) = table.primary_key {
+        tbl = tbl.with_primary_key(ColId(pk as u16));
+    }
+
+    for constraint in &table.unique_constraints {
+        let col_list: ColList = constraint.columns.iter().map(|&c| ColId(c as u16)).collect();
+        tbl = tbl.with_unique_constraint(col_list);
+    }
+
+    for index in &table.indexes {
+        let col_list: ColList = index.columns.iter().map(|&c| ColId(c as u16)).collect();
+
+        let algorithm = match index.algorithm {
+            IndexAlgorithm::BTree => RawIndexAlgorithm::BTree { columns: col_list },
+            IndexAlgorithm::Hash => RawIndexAlgorithm::Hash { columns: col_list },
+        };
+
+        tbl = tbl.with_index_no_accessor_name(algorithm, SchemaNames::index_name(table, index));
+    }
+
+    for seq in &table.sequences {
+        tbl = tbl.with_column_sequence(ColId(seq.column as u16));
+    }
+
+    // AddColumns needs defaults when existing rows are present. Supplying stable
+    // defaults for all columns lets the engine keep only the newly-added tail.
+    for (col_id, column) in table.columns.iter().enumerate() {
+        tbl = tbl.with_default_column_value(ColId(col_id as u16), column.ty.default_value());
+    }
+
+    tbl.finish();
 }
 
 fn schema_has_sum_column(schema: &SchemaPlan) -> bool {

@@ -1,3 +1,5 @@
+//! Workload interaction generation for the engine DST driver.
+
 use std::fmt::{Debug, Error, Formatter};
 
 use super::generation::GenCtx;
@@ -9,6 +11,7 @@ use crate::rng::{choice, pick_choice, Choice};
 use crate::schema::SchemaPlan;
 use spacetimedb_runtime::sim::Rng;
 
+/// One generated action for the engine target to execute.
 #[derive(Debug, Clone)]
 pub enum Interaction {
     BeginMutTx,
@@ -19,6 +22,7 @@ pub enum Interaction {
     Replay,
 }
 
+/// Counts of emitted workload interactions, reported at the end of each run.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct InteractionCounts {
     pub total: usize,
@@ -45,6 +49,7 @@ impl InteractionCounts {
     }
 }
 
+/// Observable result of executing an interaction against the engine.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Observation {
     BeganMutTx,
@@ -61,6 +66,7 @@ pub enum InsertOutcome {
     UniqueConstraintViolation,
 }
 
+/// Runtime-tunable weights for top-level workload actions.
 #[derive(Debug, Clone, Copy)]
 pub struct InteractionWeights {
     pub insert: u64,
@@ -82,27 +88,7 @@ impl Default for InteractionWeights {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-enum InteractionChoice {
-    Insert,
-    Delete,
-    CommitTx,
-    Migrate,
-    Replay,
-}
-
-impl InteractionWeights {
-    fn choices(self) -> [Choice<InteractionChoice>; 5] {
-        [
-            choice(self.insert, InteractionChoice::Insert),
-            choice(self.delete, InteractionChoice::Delete),
-            choice(self.commit_tx, InteractionChoice::CommitTx),
-            choice(self.migrate, InteractionChoice::Migrate),
-            choice(self.replay, InteractionChoice::Replay),
-        ]
-    }
-}
-
+/// Stateful iterator that emits interactions and mirrors them into the model.
 pub struct WorkloadGen {
     rng: Rng,
     model: Model,
@@ -128,6 +114,39 @@ impl WorkloadGen {
         self.stats
     }
 
+    pub fn next_interaction(&mut self) -> Interaction {
+        let choice = self.pick_interaction_choice();
+        let interaction = self.interaction_from_choice(choice);
+
+        self.model.apply(&interaction);
+        self.stats.record(&interaction);
+
+        interaction
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum InteractionChoice {
+    Insert,
+    Delete,
+    CommitTx,
+    Migrate,
+    Replay,
+}
+
+impl InteractionWeights {
+    fn choices(self) -> [Choice<InteractionChoice>; 5] {
+        [
+            choice(self.insert, InteractionChoice::Insert),
+            choice(self.delete, InteractionChoice::Delete),
+            choice(self.commit_tx, InteractionChoice::CommitTx),
+            choice(self.migrate, InteractionChoice::Migrate),
+            choice(self.replay, InteractionChoice::Replay),
+        ]
+    }
+}
+
+impl WorkloadGen {
     fn schema(&self) -> &SchemaPlan {
         self.model.schema()
     }
@@ -137,16 +156,6 @@ impl WorkloadGen {
             let table = &self.schema().tables[table_idx];
             !table.is_event && table.sequences.is_empty()
         })
-    }
-
-    pub fn next_interaction(&mut self) -> Interaction {
-        let choice = self.pick_interaction_choice();
-        let interaction = self.interaction_from_choice(choice);
-
-        self.model.apply(&interaction);
-        self.stats.record(&interaction);
-
-        interaction
     }
 
     fn interaction_from_choice(&mut self, choice: InteractionChoice) -> Interaction {
