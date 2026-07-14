@@ -618,6 +618,11 @@ impl SchemaGenerator {
         indexes
     }
 
+    pub fn gen_table_for_schema(&self, schema: &SchemaPlan, is_event: bool) -> TablePlan {
+        let mut sum_available = !schema_has_sum_column(schema);
+        self.gen_table(&schema.tables, is_event, &mut sum_available)
+    }
+
     fn gen_table(&self, existing_tables: &[TablePlan], is_event: bool, sum_available: &mut bool) -> TablePlan {
         let columns = self.gen_columns(sum_available);
         let name = SchemaDecisions::gen_table_name(&self.rng, existing_tables);
@@ -687,6 +692,14 @@ impl SchemaGenerator {
         }
         SchemaPlan { tables }
     }
+}
+
+fn schema_has_sum_column(schema: &SchemaPlan) -> bool {
+    schema
+        .tables
+        .iter()
+        .flat_map(|table| table.columns.iter())
+        .any(|column| matches!(column.ty, Type::Sum { .. }))
 }
 
 #[cfg(test)]

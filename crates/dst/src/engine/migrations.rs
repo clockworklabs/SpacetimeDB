@@ -1,7 +1,8 @@
 use super::model::{ColumnDomain, Model};
 use crate::rng::{choice, choose_index, Choice, WeightedChoice};
 use crate::schema::{
-    ColumnPlan, IndexAlgorithm, IndexPlan, SchemaNames, SchemaPlan, SequencePlan, TablePlan, Type, UniqueConstraintPlan,
+    ColumnPlan, IndexAlgorithm, IndexPlan, SchemaGenerator, SchemaNames, SchemaPlan, SchemaProfile, SequencePlan,
+    TablePlan, Type, UniqueConstraintPlan,
 };
 use spacetimedb_runtime::sim::Rng;
 
@@ -17,7 +18,7 @@ pub struct Migration {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SchemaRewrite {
-    AddTable { is_event: bool },
+    AddTable { table: TablePlan },
     RemoveTable { table: String },
     AlterTable { table: String, ops: Vec<TableMigrationOp> },
 }
@@ -115,24 +116,24 @@ impl Migration {
     pub(crate) fn choose_rewrite(rng: &Rng, schema: &SchemaPlan, model: &Model) -> Option<SchemaRewrite> {
         for _ in 0..16 {
             let choice = MigrationChoice::pick(rng);
-            if let Some(rewrite) = pick_rewrite(rng, Self::candidates_for(schema, model, choice)) {
+            if let Some(rewrite) = pick_rewrite(rng, Self::candidates_for(rng, schema, model, choice)) {
                 return Some(rewrite);
             }
         }
 
-        pick_rewrite(rng, Self::candidates(schema, model))
+        pick_rewrite(rng, Self::candidates(rng, schema, model))
     }
 
-    pub(crate) fn candidates(schema: &SchemaPlan, model: &Model) -> Vec<SchemaRewrite> {
+    pub(crate) fn candidates(rng: &Rng, schema: &SchemaPlan, model: &Model) -> Vec<SchemaRewrite> {
         <MigrationChoice as WeightedChoice>::CHOICES
             .iter()
-            .flat_map(|choice| Self::candidates_for(schema, model, choice.value()))
+            .flat_map(|choice| Self::candidates_for(rng, schema, model, choice.value()))
             .collect()
     }
 
-    fn candidates_for(schema: &SchemaPlan, model: &Model, choice: MigrationChoice) -> Vec<SchemaRewrite> {
+    fn candidates_for(rng: &Rng, schema: &SchemaPlan, model: &Model, choice: MigrationChoice) -> Vec<SchemaRewrite> {
         match choice {
-            MigrationChoice::AddTable => add_table_rewrites(schema),
+            MigrationChoice::AddTable => add_table_rewrites(rng, schema),
             MigrationChoice::RemoveTable => remove_table_rewrites(schema, model),
             MigrationChoice::AddColumn => add_column_rewrites(schema),
             MigrationChoice::AddIndex => add_index_rewrites(schema),
@@ -154,15 +155,18 @@ fn pick_rewrite(rng: &Rng, mut candidates: Vec<SchemaRewrite>) -> Option<SchemaR
     Some(candidates.swap_remove(idx))
 }
 
-fn add_table_rewrites(schema: &SchemaPlan) -> Vec<SchemaRewrite> {
+fn add_table_rewrites(rng: &Rng, schema: &SchemaPlan) -> Vec<SchemaRewrite> {
     if schema.tables.len() >= MAX_TABLES {
         return Vec::new();
     }
 
-    vec![
-        SchemaRewrite::AddTable { is_event: false },
-        SchemaRewrite::AddTable { is_event: true },
-    ]
+    let generator = SchemaGenerator::new(rng.clone(), SchemaProfile::engine_dst());
+    [false, true]
+        .into_iter()
+        .map(|is_event| SchemaRewrite::AddTable {
+            table: generator.gen_table_for_schema(schema, is_event),
+        })
+        .collect()
 }
 
 fn remove_table_rewrites(schema: &SchemaPlan, model: &Model) -> Vec<SchemaRewrite> {
@@ -403,8 +407,8 @@ impl SchemaRewrite {
 
     pub(crate) fn apply_to(&self, schema: &mut SchemaPlan) -> anyhow::Result<()> {
         match self {
-            Self::AddTable { is_event } => {
-                schema.tables.push(new_table(&schema.tables, *is_event));
+            Self::AddTable { table } => {
+                schema.tables.push(table.clone());
             }
             Self::RemoveTable { table } => {
                 let table = table_position(schema, table)?;
@@ -560,57 +564,6 @@ fn apply_table_op(table: &mut TablePlan, op: TableMigrationOp) -> anyhow::Result
     }
 
     Ok(())
-}
-
-fn new_table(tables: &[TablePlan], is_event: bool) -> TablePlan {
-    if is_event {
-        return TablePlan {
-            name: SchemaNames::fresh_table_name(tables, "added_events"),
-            columns: vec![ColumnPlan {
-                name: "payload".into(),
-                ty: Type::U64,
-            }],
-            primary_key: None,
-            indexes: vec![],
-            unique_constraints: vec![],
-            sequences: vec![],
-            is_public: true,
-            is_event: true,
-        };
-    }
-
-    TablePlan {
-        name: SchemaNames::fresh_table_name(tables, "added_table"),
-        columns: vec![
-            ColumnPlan {
-                name: "id".into(),
-                ty: Type::U64,
-            },
-            ColumnPlan {
-                name: "value".into(),
-                ty: Type::U64,
-            },
-            ColumnPlan {
-                name: "kind".into(),
-                ty: Type::U64,
-            },
-        ],
-        primary_key: Some(0),
-        indexes: vec![
-            IndexPlan {
-                columns: vec![0],
-                algorithm: IndexAlgorithm::BTree,
-            },
-            IndexPlan {
-                columns: vec![1],
-                algorithm: IndexAlgorithm::Hash,
-            },
-        ],
-        unique_constraints: vec![UniqueConstraintPlan { columns: vec![0] }],
-        sequences: vec![SequencePlan::new(0, Type::U64).expect("u64 is integral")],
-        is_public: true,
-        is_event: false,
-    }
 }
 
 fn widenable_sum_columns(table: &TablePlan) -> Vec<usize> {
