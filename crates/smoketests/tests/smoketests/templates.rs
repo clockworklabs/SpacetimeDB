@@ -709,6 +709,47 @@ fn setup_csharp_nuget(project_path: &Path) -> Result<PathBuf> {
     Ok(nuget_config)
 }
 
+/// Points the C++ template at the local workspace C++ bindings.
+fn setup_cpp_server_sdk(server_path: &Path) -> Result<()> {
+    let cmake_lists = server_path.join("CMakeLists.txt");
+    let bindings_path = workspace_root().join("crates/bindings-cpp");
+    let bindings_path_str = normalize_dependency_path(&bindings_path);
+
+    let content = fs::read_to_string(&cmake_lists)
+        .with_context(|| format!("Failed to read {:?}", cmake_lists))?;
+
+    let replacement = format!(
+        r#"set(SPACETIMEDB_CPP_DIR "{}" CACHE PATH "Path to a local clone of SpacetimeDB C++ bindings (overrides FetchContent)")"#,
+        bindings_path_str
+    );
+
+    let mut changed = false;
+    let updated = content
+        .lines()
+        .map(|line| {
+            if line.trim_start().starts_with("set(SPACETIMEDB_CPP_DIR ") {
+                changed = true;
+                replacement.as_str()
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if !changed {
+        bail!(
+            "Failed to configure C++ template smoketest: could not find SPACETIMEDB_CPP_DIR in {}",
+            cmake_lists.display()
+        );
+    }
+
+    fs::write(&cmake_lists, format!("{updated}\n"))
+        .with_context(|| format!("Failed to write {:?}", cmake_lists))?;
+
+    Ok(())
+}
+
 // ============================================================================
 // Per-language publish + client-test helpers
 // ============================================================================
@@ -826,6 +867,53 @@ fn test_csharp_template(test: &Smoketest, template: &Template, project_path: &Pa
     Ok(())
 }
 
+/// Publishes a C++ server module and verifies the client builds.
+fn test_cpp_template(test: &Smoketest, template: &Template, project_path: &Path) -> Result<()> {
+    let server_path = project_path.join("spacetimedb");
+    setup_cpp_server_sdk(&server_path)?;
+
+    let domain = format!("test-{}-{}", template.id, random_string());
+    test.spacetime(&[
+        "publish",
+        "--server",
+        &test.server_url,
+        "--yes",
+        "--module-path",
+        server_path.to_str().unwrap(),
+        &domain,
+    ])
+    .with_context(|| format!("spacetime publish failed for C++ server in template {}",
+    template.id))?;
+
+    let _ = test.spacetime(&["delete", "--server", &test.server_url, "--yes", &domain]);
+
+    if template.client_lang.as_deref() == Some("rust") {
+        setup_rust_client_sdk(project_path)?;
+        let output = Command::new("cargo")
+            .args(["build"])
+            .current_dir(project_path)
+            .output()
+            .context("Failed to run cargo build")?;
+
+        if !output.status.success() {
+            bail!(
+                "cargo build for {} client failed:\nstdout: {}\nstderr: {}",
+                template.id,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    } else if let Some(client_lang) = template.client_lang.as_deref() {
+        bail!(
+            "C++ template {} has unsupported client language `{}`",
+            template.id,
+            client_lang
+        );
+    }
+
+    Ok(())
+}
+
 /// Runs the full init + publish + client-test cycle for a single template.
 fn test_template(test: &Smoketest, template: &Template) -> Result<()> {
     eprintln!("[TEMPLATES] Testing template: {}", template.id);
@@ -836,14 +924,15 @@ fn test_template(test: &Smoketest, template: &Template) -> Result<()> {
         Some("rust") => test_rust_template(test, template, &project_path)?,
         Some("typescript") => test_typescript_template(test, template, &project_path)?,
         Some("csharp") => test_csharp_template(test, template, &project_path)?,
+        Some("cpp") => test_cpp_template(test, template, &project_path)?,
         Some(other) => {
-            eprintln!(
+            bail!(
                 "[TEMPLATES] Skipping template {} with unsupported server language: {}",
                 template.id, other
             );
         }
         None => {
-            eprintln!("[TEMPLATES] Skipping template {} with no server language", template.id);
+            bail!("[TEMPLATES] Skipping template {} with no server language", template.id);
         }
     }
 
