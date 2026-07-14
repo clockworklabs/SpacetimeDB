@@ -1,10 +1,9 @@
-use spacetimedb_lib::AlgebraicValue;
+use spacetimedb_lib::{AlgebraicValue, ProductValue};
 
-use super::migrations::Migration;
 use super::row::{normalize_rows, Row};
 use super::state::{schema_state_for_plan, CommitDelta, CountState, TableDelta, TableRowCount, TableRows};
 use super::workload::{InsertOutcome, Interaction, Observation};
-use crate::schema::{SchemaPlan, Type};
+use crate::schema::{ColumnPlan, SchemaPlan, TablePlan, Type};
 
 #[derive(Debug)]
 pub struct Model {
@@ -189,30 +188,9 @@ impl Model {
             }
             Interaction::Migrate(migration) => {
                 debug_assert!(self.pending_tx.is_none());
-                let added_defaults = migration.added_column_defaults();
-                self.schema = migration
-                    .apply_to(&self.schema)
-                    .expect("generated migrations must be valid for the model schema");
-                match migration {
-                    Migration::AddTable { .. } => {
-                        self.committed_tables.push(TableState {
-                            rows: vec![],
-                            ever_inserted: false,
-                        });
-                    }
-                    Migration::RemoveTable { table } => {
-                        self.committed_tables.remove(*table);
-                    }
-                    Migration::AlterTable { .. } => {
-                        if let Some((table, defaults)) = added_defaults {
-                            for row in &mut self.committed_tables[table].rows {
-                                let mut elements = row.elements.to_vec();
-                                elements.extend(defaults.iter().cloned());
-                                row.elements = elements.into_boxed_slice();
-                            }
-                        }
-                    }
-                }
+                let old_schema = std::mem::replace(&mut self.schema, migration.schema().clone());
+                let old_tables = std::mem::take(&mut self.committed_tables);
+                self.committed_tables = remap_table_states(&old_schema, &self.schema, old_tables);
                 Observation::Migrated
             }
             Interaction::Replay => {
@@ -285,6 +263,31 @@ impl Model {
         self.committed_tables[table].ever_inserted
     }
 
+    pub(crate) fn row_count_by_table_name(&self, table: &str) -> usize {
+        self.table_index(table).map_or(0, |table| self.row_count(table))
+    }
+
+    pub(crate) fn ever_inserted_by_table_name(&self, table: &str) -> bool {
+        self.table_index(table)
+            .is_some_and(|table| self.committed_tables[table].ever_inserted)
+    }
+
+    pub(crate) fn column_domain_by_name(&self, table: &str, column: &str) -> Option<ColumnDomain> {
+        let table = self.table_index(table)?;
+        let column = self.schema.tables[table]
+            .columns
+            .iter()
+            .position(|column_plan| column_plan.name == column)?;
+        Some(self.column_domain(table, column))
+    }
+
+    fn table_index(&self, table: &str) -> Option<usize> {
+        self.schema
+            .tables
+            .iter()
+            .position(|table_plan| table_plan.name == table)
+    }
+
     pub(crate) fn column_domain(&self, table: usize, column: usize) -> ColumnDomain {
         let table_plan = &self.schema.tables[table];
         ColumnDomain {
@@ -335,6 +338,67 @@ impl Model {
             schema: schema_state_for_plan(&self.schema),
         }
     }
+}
+
+fn remap_table_states(
+    old_schema: &SchemaPlan,
+    new_schema: &SchemaPlan,
+    old_tables: Vec<TableState>,
+) -> Vec<TableState> {
+    let mut old_tables = old_tables.into_iter().map(Some).collect::<Vec<_>>();
+    new_schema
+        .tables
+        .iter()
+        .map(|new_table| {
+            let Some(old_table_idx) = old_schema
+                .tables
+                .iter()
+                .position(|old_table| old_table.name == new_table.name)
+            else {
+                return TableState {
+                    rows: vec![],
+                    ever_inserted: false,
+                };
+            };
+
+            let old_table = &old_schema.tables[old_table_idx];
+            let old_state = old_tables[old_table_idx]
+                .take()
+                .expect("old table state is consumed once");
+            remap_table_state(old_table, new_table, old_state)
+        })
+        .collect()
+}
+
+fn remap_table_state(old_table: &TablePlan, new_table: &TablePlan, state: TableState) -> TableState {
+    TableState {
+        rows: state
+            .rows
+            .into_iter()
+            .map(|row| remap_row(old_table, new_table, row))
+            .collect(),
+        ever_inserted: state.ever_inserted,
+    }
+}
+
+fn remap_row(old_table: &TablePlan, new_table: &TablePlan, row: Row) -> Row {
+    let elements = new_table
+        .columns
+        .iter()
+        .map(|new_column| remap_value(old_table, new_column, &row))
+        .collect::<Vec<_>>();
+    ProductValue {
+        elements: elements.into_boxed_slice(),
+    }
+}
+
+fn remap_value(old_table: &TablePlan, new_column: &ColumnPlan, row: &Row) -> AlgebraicValue {
+    old_table
+        .columns
+        .iter()
+        .position(|old_column| old_column.name == new_column.name)
+        .map(|old_column| row.elements[old_column].clone())
+        .unwrap_or_else(|| new_column.ty.default_value())
 }
 
 #[cfg(test)]

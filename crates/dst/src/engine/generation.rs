@@ -5,7 +5,7 @@ use spacetimedb_sats::ArrayValue;
 use super::migrations::Migration;
 use super::model::{ColumnDomain, Model};
 use super::row::Row;
-use crate::rng::{choice, choose_index, frequency};
+use crate::rng::{choice, choose_index, Choice, WeightedChoice};
 use crate::schema::Type;
 
 pub(crate) struct GenCtx<'a> {
@@ -37,12 +37,32 @@ enum ValueCase {
     Weird,
 }
 
+impl WeightedChoice for ValueCase {
+    const CHOICES: &'static [Choice<Self>] = &[
+        choice(45, Self::Random),
+        choice(15, Self::Small),
+        choice(15, Self::Edge),
+        choice(10, Self::NearExisting),
+        choice(10, Self::Existing),
+        choice(5, Self::Weird),
+    ];
+}
+
 #[derive(Clone, Copy)]
 enum FreshValueCase {
     Random,
     Small,
     Edge,
     Weird,
+}
+
+impl WeightedChoice for FreshValueCase {
+    const CHOICES: &'static [Choice<Self>] = &[
+        choice(50, Self::Random),
+        choice(20, Self::Small),
+        choice(20, Self::Edge),
+        choice(10, Self::Weird),
+    ];
 }
 
 #[derive(Clone, Copy)]
@@ -70,6 +90,19 @@ enum StringCase {
     Long,
 }
 
+impl StringCase {
+    const WEIRD_CHOICES: &'static [Choice<Self>] = &[
+        choice(35, Self::SqlEscaped),
+        choice(25, Self::NullByte),
+        choice(25, Self::OrderedPrefix),
+        choice(15, Self::Empty),
+    ];
+
+    fn pick_weird(rng: &Rng) -> Self {
+        crate::rng::frequency(rng, Self::WEIRD_CHOICES)
+    }
+}
+
 #[derive(Clone, Copy)]
 enum BytesCase {
     Random,
@@ -78,6 +111,20 @@ enum BytesCase {
     RepeatedZero,
     RepeatedMax,
     Alternating,
+}
+
+impl BytesCase {
+    const WEIRD_CHOICES: &'static [Choice<Self>] = &[
+        choice(25, Self::Empty),
+        choice(20, Self::RepeatedZero),
+        choice(20, Self::RepeatedMax),
+        choice(20, Self::Alternating),
+        choice(15, Self::Small),
+    ];
+
+    fn pick_weird(rng: &Rng) -> Self {
+        crate::rng::frequency(rng, Self::WEIRD_CHOICES)
+    }
 }
 
 struct ValueGen<'a> {
@@ -115,17 +162,7 @@ impl<'a> ValueGen<'a> {
     }
 
     fn gen_value(&self, domain: &ColumnDomain) -> AlgebraicValue {
-        match frequency(
-            self.rng,
-            &[
-                choice(45, ValueCase::Random),
-                choice(15, ValueCase::Small),
-                choice(15, ValueCase::Edge),
-                choice(10, ValueCase::NearExisting),
-                choice(10, ValueCase::Existing),
-                choice(5, ValueCase::Weird),
-            ],
-        ) {
+        match ValueCase::pick(self.rng) {
             ValueCase::Random => self.gen_random_value(domain.ty),
             ValueCase::Small => self.gen_small_value(domain.ty),
             ValueCase::Edge => self.gen_edge_value(domain.ty),
@@ -151,15 +188,7 @@ impl<'a> ValueGen<'a> {
     }
 
     fn gen_fresh_candidate(&self, ty: Type) -> AlgebraicValue {
-        match frequency(
-            self.rng,
-            &[
-                choice(50, FreshValueCase::Random),
-                choice(20, FreshValueCase::Small),
-                choice(20, FreshValueCase::Edge),
-                choice(10, FreshValueCase::Weird),
-            ],
-        ) {
+        match FreshValueCase::pick(self.rng) {
             FreshValueCase::Random => self.gen_random_value(ty),
             FreshValueCase::Small => self.gen_small_value(ty),
             FreshValueCase::Edge => self.gen_edge_value(ty),
@@ -238,28 +267,11 @@ impl<'a> ValueGen<'a> {
     fn gen_weird_value(&self, ty: Type) -> AlgebraicValue {
         match ty {
             Type::String => {
-                let case = frequency(
-                    self.rng,
-                    &[
-                        choice(35, StringCase::SqlEscaped),
-                        choice(25, StringCase::NullByte),
-                        choice(25, StringCase::OrderedPrefix),
-                        choice(15, StringCase::Empty),
-                    ],
-                );
+                let case = StringCase::pick_weird(self.rng);
                 AlgebraicValue::String(self.gen_string_value(case).into())
             }
             Type::Bytes => {
-                let case = frequency(
-                    self.rng,
-                    &[
-                        choice(25, BytesCase::Empty),
-                        choice(20, BytesCase::RepeatedZero),
-                        choice(20, BytesCase::RepeatedMax),
-                        choice(20, BytesCase::Alternating),
-                        choice(15, BytesCase::Small),
-                    ],
-                );
+                let case = BytesCase::pick_weird(self.rng);
                 AlgebraicValue::Array(ArrayValue::U8(self.gen_bytes_value(case).into()))
             }
             _ => self.gen_edge_value(ty),
@@ -352,7 +364,21 @@ impl<'a> MigrationGen<'a> {
     }
 
     fn choose(&self) -> Option<Migration> {
-        let candidates = Migration::candidates(self.model);
-        choose_index(self.rng, candidates.len()).map(|idx| candidates[idx].clone())
+        let original = self.model.schema();
+        let mut schema = original.clone();
+        let steps = 1 + self.rng.index(10);
+
+        for _ in 0..steps {
+            let candidates = Migration::candidates(&schema, self.model);
+            let Some(idx) = choose_index(self.rng, candidates.len()) else {
+                break;
+            };
+            let rewrite = candidates[idx].clone();
+            rewrite
+                .apply_to(&mut schema)
+                .expect("generated rewrite must be valid for the draft schema");
+        }
+
+        (schema != *original).then(|| Migration::from_schema(schema))
     }
 }

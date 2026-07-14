@@ -12,7 +12,7 @@ use spacetimedb_lib::{Identity, RawModuleDef};
 use spacetimedb_primitives::TableId;
 use spacetimedb_runtime::sim::{Rng, Runtime as SimRuntime};
 use spacetimedb_runtime::Handle;
-use spacetimedb_schema::auto_migrate::{ponder_migrate, AutoMigrateStep, MigratePlan};
+use spacetimedb_schema::auto_migrate::{ponder_migrate, MigratePlan};
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_table::page_pool::PagePool;
@@ -25,7 +25,7 @@ mod row;
 mod state;
 mod workload;
 
-use self::migrations::{ExpectedStep, Migration};
+use self::migrations::Migration;
 use self::row::{normalize_rows, row_to_bytes};
 use self::state::{
     table_schema_state_for_schema, CommitDelta, CountState, SchemaState, TableDelta, TableRowCount, TableRows,
@@ -223,12 +223,15 @@ impl EngineTarget {
             self.active_mut_tx.is_none(),
             "migration while mutable transaction is active"
         );
+        anyhow::ensure!(
+            migration.schema() != &self.schema,
+            "engine DST generated a no-op migration"
+        );
 
-        let new_schema = migration.apply_to(&self.schema)?;
         let old_module_def = Self::module_def(&self.schema)?;
-        let new_module_def = Self::module_def(&new_schema)?;
+        let new_module_def = Self::module_def(migration.schema())?;
         let plan = ponder_migrate(&old_module_def, &new_module_def)?;
-        self.ensure_expected_plan(migration, &plan)?;
+        ensure_auto_plan(&plan)?;
 
         let db = self
             .db
@@ -240,30 +243,8 @@ impl EngineTarget {
             anyhow::bail!("migration commit produced no transaction data");
         };
 
-        self.schema = new_schema;
+        self.schema = migration.schema().clone();
         self.table_ids = Self::load_table_ids(db, &self.schema)?;
-        Ok(())
-    }
-
-    fn ensure_expected_plan(&self, migration: &Migration, plan: &MigratePlan<'_>) -> anyhow::Result<()> {
-        let MigratePlan::Auto(plan) = plan else {
-            anyhow::bail!("engine DST generated a manual migration plan");
-        };
-
-        let mut actual = plan
-            .steps
-            .iter()
-            .map(expected_step_from_auto_step)
-            .collect::<anyhow::Result<Vec<_>>>()?;
-        actual.sort();
-
-        let mut expected = migration.expected_steps();
-        expected.sort();
-
-        anyhow::ensure!(
-            actual == expected,
-            "engine DST generated unexpected migration steps: actual={actual:?}, expected={expected:?}"
-        );
         Ok(())
     }
 
@@ -355,24 +336,11 @@ impl EngineTarget {
     }
 }
 
-fn expected_step_from_auto_step(step: &AutoMigrateStep<'_>) -> anyhow::Result<ExpectedStep> {
-    match step {
-        AutoMigrateStep::AddTable(_) => Ok(ExpectedStep::AddTable),
-        AutoMigrateStep::RemoveTable(_) => Ok(ExpectedStep::RemoveTable),
-        AutoMigrateStep::AddColumns(_) => Ok(ExpectedStep::AddColumns),
-        AutoMigrateStep::AddIndex(_) => Ok(ExpectedStep::AddIndex),
-        AutoMigrateStep::RemoveIndex(_) => Ok(ExpectedStep::RemoveIndex),
-        AutoMigrateStep::AddSequence(_) => Ok(ExpectedStep::AddSequence),
-        AutoMigrateStep::RemoveSequence(_) => Ok(ExpectedStep::RemoveSequence),
-        AutoMigrateStep::AddConstraint(_) => Ok(ExpectedStep::AddConstraint),
-        AutoMigrateStep::RemoveConstraint(_) => Ok(ExpectedStep::RemoveConstraint),
-        AutoMigrateStep::ChangeAccess(_) => Ok(ExpectedStep::ChangeAccess),
-        AutoMigrateStep::ChangePrimaryKey(_) => Ok(ExpectedStep::ChangePrimaryKey),
-        AutoMigrateStep::ChangeColumns(_) => Ok(ExpectedStep::ChangeColumns),
-        AutoMigrateStep::ReschemaEventTable(_) => Ok(ExpectedStep::ReschemaEventTable),
-        AutoMigrateStep::DisconnectAllUsers => Ok(ExpectedStep::DisconnectAllUsers),
-        step => anyhow::bail!("engine DST generated unsupported migration step: {step:?}"),
-    }
+fn ensure_auto_plan(plan: &MigratePlan<'_>) -> anyhow::Result<()> {
+    let MigratePlan::Auto(_) = plan else {
+        anyhow::bail!("engine DST generated a manual migration plan");
+    };
+    Ok(())
 }
 
 struct DstUpdateLogger;
@@ -421,7 +389,7 @@ mod tests {
     use spacetimedb_runtime::sim::Runtime as SimRuntime;
     use spacetimedb_sats::product;
 
-    use super::migrations::{Migration, TableMigrationOp};
+    use super::migrations::{Migration, SchemaRewrite, TableMigrationOp};
     use super::*;
     use crate::schema::{ColumnPlan, IndexAlgorithm, IndexPlan, TablePlan, Type, UniqueConstraintPlan};
 
@@ -536,13 +504,16 @@ mod tests {
         let mut target = EngineTarget::init(add_column_replay_schema(), 0)?;
         insert_u64_rows(&mut target)?;
 
-        target.execute(&Interaction::Migrate(Migration::AlterTable {
-            table: 0,
-            ops: vec![
-                TableMigrationOp::ChangeAccess,
-                TableMigrationOp::AddColumn { ty: Type::U64 },
-            ],
-        }))?;
+        target.execute(&Interaction::Migrate(Migration::from_rewrites(
+            &target.schema,
+            vec![SchemaRewrite::AlterTable {
+                table: "items".into(),
+                ops: vec![
+                    TableMigrationOp::ChangeAccess,
+                    TableMigrationOp::AddColumn { ty: Type::U64 },
+                ],
+            }],
+        )?))?;
         target.execute(&Interaction::Replay)?;
 
         Ok(())
@@ -553,13 +524,16 @@ mod tests {
         let mut target = EngineTarget::init(change_index_replay_schema(), 0)?;
         insert_u64_rows(&mut target)?;
 
-        target.execute(&Interaction::Migrate(Migration::AlterTable {
-            table: 0,
-            ops: vec![
-                TableMigrationOp::ChangeAccess,
-                TableMigrationOp::ChangeIndex { index: 1 },
-            ],
-        }))?;
+        target.execute(&Interaction::Migrate(Migration::from_rewrites(
+            &target.schema,
+            vec![SchemaRewrite::AlterTable {
+                table: "items".into(),
+                ops: vec![
+                    TableMigrationOp::ChangeAccess,
+                    TableMigrationOp::ChangeIndex { columns: vec![1] },
+                ],
+            }],
+        )?))?;
         target.execute(&Interaction::Replay)?;
 
         Ok(())
@@ -578,13 +552,16 @@ mod tests {
         }
         target.execute(&Interaction::CommitTx)?;
 
-        target.execute(&Interaction::Migrate(Migration::AlterTable {
-            table: 0,
-            ops: vec![
-                TableMigrationOp::ChangeAccess,
-                TableMigrationOp::ChangeColumnType { column: 1 },
-            ],
-        }))?;
+        target.execute(&Interaction::Migrate(Migration::from_rewrites(
+            &target.schema,
+            vec![SchemaRewrite::AlterTable {
+                table: "items".into(),
+                ops: vec![
+                    TableMigrationOp::ChangeAccess,
+                    TableMigrationOp::ChangeColumnType { column: 1 },
+                ],
+            }],
+        )?))?;
         target.execute(&Interaction::Replay)?;
 
         Ok(())

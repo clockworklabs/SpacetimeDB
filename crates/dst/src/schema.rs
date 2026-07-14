@@ -181,7 +181,7 @@ impl SchemaNames {
 
 // Schema plan — the canonical source of truth.
 // This Schema should be able to translate to valid `RawModuleDefV10`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SchemaPlan {
     pub tables: Vec<TablePlan>,
 }
@@ -382,7 +382,7 @@ impl SchemaPlan {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TablePlan {
     pub name: String,
     pub columns: Vec<ColumnPlan>,
@@ -394,13 +394,13 @@ pub struct TablePlan {
     pub is_event: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ColumnPlan {
     pub name: String,
     pub ty: Type,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexPlan {
     /// Indices into `TablePlan.columns`.
     pub columns: Vec<usize>,
@@ -413,7 +413,7 @@ pub enum IndexAlgorithm {
     Hash,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UniqueConstraintPlan {
     /// Indices into `TablePlan.columns`. Non-empty.
     pub columns: Vec<usize>,

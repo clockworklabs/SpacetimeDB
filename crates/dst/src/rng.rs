@@ -28,6 +28,14 @@ pub(crate) fn frequency<T: Copy>(rng: &Rng, choices: &[Choice<T>]) -> T {
     unreachable!("selected value is always inside total weight")
 }
 
+pub(crate) trait WeightedChoice: Copy + 'static {
+    const CHOICES: &'static [Choice<Self>];
+
+    fn pick(rng: &Rng) -> Self {
+        frequency(rng, Self::CHOICES)
+    }
+}
+
 pub(crate) fn pick_weighted(rng: &Rng, weights: &[u64]) -> usize {
     let total: u64 = weights.iter().sum();
 
