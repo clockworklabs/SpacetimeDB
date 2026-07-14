@@ -185,11 +185,13 @@ impl EngineTarget {
         })
     }
 
-    fn is_unique_constraint_violation(error: &DBError) -> bool {
-        matches!(
-            error,
-            DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(_)))
-        )
+    fn unique_constraint_violation_details(error: &DBError) -> Option<String> {
+        match error {
+            DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(violation))) => {
+                Some(violation.to_string())
+            }
+            _ => None,
+        }
     }
 
     fn commit_delta_from_tx_data(&self, tx_data: &TxData) -> CommitDelta {
@@ -277,11 +279,14 @@ impl EngineTarget {
                     .ok_or_else(|| anyhow::anyhow!("insert without active mutable transaction"))?;
                 let outcome = match db.insert(tx, table_id, &bytes) {
                     Ok((_generated_columns, row, _flags)) => InsertOutcome::Accepted(row.to_product_value()),
-                    // Generated rows can intentionally hit unique constraints; the oracle validates that rejection.
-                    Err(error) if Self::is_unique_constraint_violation(&error) => {
-                        InsertOutcome::UniqueConstraintViolation
+                    Err(error) => {
+                        // Generated rows can intentionally hit unique constraints; the oracle validates that rejection.
+                        if let Some(details) = Self::unique_constraint_violation_details(&error) {
+                            InsertOutcome::UniqueConstraintViolation { details }
+                        } else {
+                            return Err(error.into());
+                        }
                     }
-                    Err(error) => return Err(error.into()),
                 };
                 Ok(Observation::Inserted { outcome })
             }

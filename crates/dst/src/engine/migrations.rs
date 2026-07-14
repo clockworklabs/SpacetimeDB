@@ -628,6 +628,7 @@ fn addable_sequence_boundary_probes(
         .filter_map(|(column, column_plan)| {
             let domain = column_domain(column)?;
             if column_plan.ty != Type::U64
+                || table.sequences.iter().any(|sequence| sequence.column == column)
                 || domain.sequenced
                 || !domain.single_column_indexed
                 || !domain.single_column_unique
@@ -635,10 +636,22 @@ fn addable_sequence_boundary_probes(
                 return None;
             }
 
-            let max_value = domain.positive_i128_value_above(2)?;
-            SequencePlan::with_existing_value_as_max(column, column_plan.ty, max_value)
+            domain
+                .integral_values()
+                .filter_map(|max_value| SequencePlan::with_existing_value_as_max(column, column_plan.ty, max_value))
+                .find(|sequence| added_sequence_precheck_range_is_clear(&domain, sequence))
         })
         .collect()
+}
+
+fn added_sequence_precheck_range_is_clear(domain: &ColumnDomain, sequence: &SequencePlan) -> bool {
+    let min = sequence.min_value.unwrap_or(1);
+    let max = sequence.max_value.unwrap_or(i128::MAX);
+
+    // The engine's add-sequence precheck rejects existing values in `min..max`.
+    // The boundary probe intentionally places an existing value at `max`, so
+    // only values below the exclusive upper bound make the migration invalid.
+    domain.integral_values().all(|value| value < min || value >= max)
 }
 
 fn column_domain(model: &Model, table: &TablePlan, column: usize) -> Option<ColumnDomain> {

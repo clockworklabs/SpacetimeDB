@@ -41,10 +41,6 @@ impl ColumnDomain {
             _ => None,
         })
     }
-
-    pub(crate) fn positive_i128_value_above(&self, min_exclusive: i128) -> Option<i128> {
-        self.integral_values().find(|value| *value > min_exclusive)
-    }
 }
 
 // Keep mutable transactions as an overlay: committed rows stay shared, while
@@ -159,7 +155,9 @@ impl Model {
 
                 if self.violates_unique_constraint(*table, row) {
                     return Observation::Inserted {
-                        outcome: InsertOutcome::UniqueConstraintViolation,
+                        outcome: InsertOutcome::UniqueConstraintViolation {
+                            details: "model unique constraint".into(),
+                        },
                     };
                 }
 

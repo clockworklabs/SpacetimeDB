@@ -65,7 +65,7 @@ impl EngineOracle {
             (
                 Interaction::Insert { .. },
                 Observation::Inserted {
-                    outcome: InsertOutcome::UniqueConstraintViolation,
+                    outcome: InsertOutcome::UniqueConstraintViolation { .. },
                 },
             ) => self.model.apply(interaction),
             (Interaction::Insert { .. }, _) => anyhow::bail!("insert produced unexpected observation"),
@@ -92,7 +92,7 @@ impl EngineProperty for InsertMatches {
 
     fn check(
         &self,
-        _interaction: &Interaction,
+        interaction: &Interaction,
         observation: &Observation,
         expected: &Observation,
     ) -> anyhow::Result<()> {
@@ -107,12 +107,16 @@ impl EngineProperty for InsertMatches {
             (InsertOutcome::Accepted(row), InsertOutcome::Accepted(expected)) => {
                 anyhow::ensure!(row == expected, "insert_matches: accepted row diverged from model");
             }
-            (InsertOutcome::UniqueConstraintViolation, InsertOutcome::UniqueConstraintViolation) => {}
-            (InsertOutcome::Accepted(_), InsertOutcome::UniqueConstraintViolation) => {
-                anyhow::bail!("insert_matches: target accepted row rejected by model");
+            (InsertOutcome::UniqueConstraintViolation { .. }, InsertOutcome::UniqueConstraintViolation { .. }) => {}
+            (InsertOutcome::Accepted(_), InsertOutcome::UniqueConstraintViolation { .. }) => {
+                anyhow::bail!(
+                    "insert_matches: target accepted row rejected by model\ninteraction: {interaction:#?}\ntarget: {observation:#?}\nmodel: {expected:#?}"
+                );
             }
-            (InsertOutcome::UniqueConstraintViolation, InsertOutcome::Accepted(_)) => {
-                anyhow::bail!("insert_matches: target rejected row accepted by model");
+            (InsertOutcome::UniqueConstraintViolation { .. }, InsertOutcome::Accepted(_)) => {
+                anyhow::bail!(
+                    "insert_matches: target rejected row accepted by model\ninteraction: {interaction:#?}\ntarget: {observation:#?}\nmodel: {expected:#?}"
+                );
             }
         }
 

@@ -63,7 +63,7 @@ pub enum Observation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InsertOutcome {
     Accepted(Row),
-    UniqueConstraintViolation,
+    UniqueConstraintViolation { details: String },
 }
 
 /// Runtime-tunable weights for top-level workload actions.
