@@ -1088,7 +1088,7 @@ impl StateView for ReplayCommittedState<'_> {
     /// then falling back to [`CommittedState::iter_by_col_eq`].
     fn find_st_table_row(&self, table_id: TableId) -> Result<StTableRow> {
         if let Some(row_ptr) = self.replay_table_updated.get(&table_id) {
-            let (table, blob_store, _) = self.state.get_table_and_blob_store(table_id)?;
+            let (table, blob_store, _) = self.state.get_table_and_blob_store(ST_TABLE_ID)?;
             // SAFETY: `row_ptr` is stored in `self.replay_table_updated`,
             // meaning it was inserted into `st_table` by `replay_insert`
             // and has not yet been deleted by `replay_delete_by_rel`.
@@ -1151,7 +1151,11 @@ mod tests {
         locking_tx_datastore::datastore::tests::{all_rows, begin_mut_tx, commit, setup_event_table, u32_str_u32},
         traits::{MutTx as _, MutTxDatastore as _},
     };
+    use spacetimedb_execution::dml::MutDatastore as _;
+    use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_sats::{product, AlgebraicType};
+    use spacetimedb_table::page_pool::PagePool;
 
     use super::*;
 
@@ -1181,6 +1185,55 @@ mod tests {
             0,
             "replay_insert should be a no-op for event tables"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_replay_updated_st_table_lookup_reads_st_table() -> ResultTest<()> {
+        let datastore = Locking::bootstrap(Identity::ZERO, PagePool::new_for_test())?;
+
+        let mut tx = begin_mut_tx(&datastore);
+        let schema = TableSchema::new(
+            TableId::SENTINEL,
+            TableName::for_test("Foo"),
+            None,
+            vec![
+                ColumnSchema::for_test(0, "id", AlgebraicType::U32),
+                ColumnSchema::for_test(1, "name", AlgebraicType::String),
+                ColumnSchema::for_test(2, "kind", AlgebraicType::String),
+            ],
+            vec![],
+            vec![],
+            vec![],
+            StTableType::User,
+            StAccess::Public,
+            None,
+            None,
+            false,
+            None,
+        );
+        let table_id = datastore.create_table_mut_tx(&mut tx, schema)?;
+
+        // Fill enough user rows that the `st_table` row pointer below would also
+        // be addressable in the user table if replay looked in the wrong table.
+        for id in 0u32..128 {
+            tx.insert_product_value(table_id, &product![id, "row", ""]).unwrap();
+        }
+        commit(&datastore, tx)?;
+
+        let state = datastore.committed_state.write();
+        let mut committed_state = ReplayCommittedState::new(state);
+        let row_ptr = {
+            let table_id_value = table_id.into();
+            let mut rows = committed_state.iter_by_col_eq(ST_TABLE_ID, StTableFields::TableId, &table_id_value)?;
+            rows.next().expect("user table should have an `st_table` row").pointer()
+        };
+        committed_state.replay_table_updated.insert(table_id, row_ptr);
+
+        let st_table_row = committed_state.find_st_table_row(table_id)?;
+        assert_eq!(st_table_row.table_id, table_id);
+        assert_eq!(st_table_row.table_name, TableName::for_test("Foo"));
+
         Ok(())
     }
 
