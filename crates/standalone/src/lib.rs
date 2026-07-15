@@ -12,7 +12,7 @@ use http::StatusCode;
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile, V8Config, WasmConfig};
 use spacetimedb::db;
-use spacetimedb::db::persistence::{DurabilityConfig, LocalPersistenceProvider};
+use spacetimedb::db::persistence::{DurabilityConfig, LocalPersistenceProvider, RetentionConfig};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta, NullEnergyMonitor};
 use spacetimedb::host::{DiskStorage, HostController, HostRuntimeConfig, MigratePlanResult, UpdateDatabaseResult};
 use spacetimedb::identity::{AuthCtx, Identity};
@@ -43,6 +43,7 @@ pub use spacetimedb_client_api::routes::subscribe::{BIN_PROTOCOL, TEXT_PROTOCOL}
 pub struct StandaloneOptions {
     pub db_config: db::Config,
     pub durability: DurabilityConfig,
+    pub retention: RetentionConfig,
     pub websocket: WebSocketOptions,
     pub wasm: WasmConfig,
     pub v8: V8Config,
@@ -78,8 +79,11 @@ impl StandaloneEnv {
         let energy_monitor = Arc::new(NullEnergyMonitor);
         let program_store = Arc::new(DiskStorage::new(data_dir.program_bytes().0).await?);
 
-        let persistence_provider =
-            Arc::new(LocalPersistenceProvider::new(data_dir.clone()).with_durability_config(config.durability));
+        let persistence_provider = Arc::new(
+            LocalPersistenceProvider::new(data_dir.clone())
+                .with_durability_config(config.durability)
+                .with_retention_config(config.retention),
+        );
         let host_controller = HostController::new(
             data_dir,
             config.db_config,
@@ -673,6 +677,7 @@ mod tests {
                 page_pool_max_size: None,
             },
             durability: DurabilityConfig::default(),
+            retention: RetentionConfig::default(),
             websocket: WebSocketOptions::default(),
             wasm: WasmConfig::default(),
             v8: V8Config::default(),

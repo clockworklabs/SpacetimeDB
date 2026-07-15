@@ -11,7 +11,7 @@ use axum::extract::DefaultBodyLimit;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
 use spacetimedb::config::{parse_config, CertificateAuthority};
-use spacetimedb::db::persistence::{CommitlogConfig, DurabilityConfig};
+use spacetimedb::db::persistence::{CommitlogConfig, DurabilityConfig, RetentionConfig};
 use spacetimedb::db::{self, Storage};
 use spacetimedb::startup::{self, TracingOptions};
 use spacetimedb::util::jobs::JobCores;
@@ -102,6 +102,8 @@ struct ConfigFile {
     #[serde(default)]
     commitlog: CommitlogConfig,
     #[serde(default)]
+    retention: RetentionConfig,
+    #[serde(default)]
     websocket: WebSocketOptions,
 }
 
@@ -187,6 +189,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
             durability: DurabilityConfig {
                 commitlog: config.commitlog,
             },
+            retention: config.retention,
             websocket: config.websocket,
             wasm: config.common.wasm,
             v8: config.common.v8,
@@ -505,6 +508,7 @@ fn banner() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spacetimedb::db::persistence::RetentionPolicy;
     use std::time::Duration;
 
     #[test]
@@ -539,6 +543,10 @@ mod tests {
             offset-index-require-segment-fsync = false
             preallocate-segments = true
             write-buffer-size = 131072
+
+            [retention]
+            policy = "keep"
+            retain-snapshots = 5
 "#;
 
         let config: ConfigFile = toml::from_str(toml).unwrap();
@@ -581,6 +589,20 @@ mod tests {
                 ..<_>::default()
             }
         );
+
+        assert_eq!(config.retention.policy, RetentionPolicy::Keep);
+        assert_eq!(config.retention.retain_snapshots.get(), 5);
+    }
+
+    /// The default configuration, including the shipped `config.toml`
+    /// template, deletes historical data after it has been snapshotted.
+    #[test]
+    fn retention_defaults_to_delete() {
+        for toml in ["", include_str!("../../config.toml")] {
+            let config: ConfigFile = toml::from_str(toml).unwrap();
+            assert_eq!(config.retention.policy, RetentionPolicy::Delete);
+            assert_eq!(config.retention.retain_snapshots.get(), 2);
+        }
     }
 
     #[test]

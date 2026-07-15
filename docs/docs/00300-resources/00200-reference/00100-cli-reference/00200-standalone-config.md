@@ -20,6 +20,8 @@ On Linux and macOS, this directory is by default `~/.local/share/spacetime/data`
 
 - [`commitlog`](#commitlog)
 
+- [`retention`](#retention)
+
 - [`websocket`](#websocket)
 
 ### `certificate-authority`
@@ -100,6 +102,30 @@ If `true`, preallocate disk space for commitlog segments up to `commitlog.max-se
 #### `commitlog.write-buffer-size`
 
 Size in bytes of the memory buffer holding commit data before flushing to storage.
+
+### `retention`
+
+```toml
+[retention]
+policy = "delete"
+retain-snapshots = 2
+```
+
+The `retention` table configures what happens to historical data, i.e. data that is no longer needed to restart the database. This comprises commitlog segments whose entire contents precede the most recent snapshots, and all but the most recent snapshots.
+
+#### `retention.policy`
+
+Can be one of:
+
+- `"delete"`: Delete historical data from disk whenever a new snapshot is taken. This is the default, as it bounds disk usage.
+
+- `"keep"`: Keep historical data on disk indefinitely. Historical commitlog segments are compressed, but disk usage grows without bound. Use this if you want to preserve the full transaction history of the database.
+
+#### `retention.retain-snapshots`
+
+Number of most recent snapshots to retain when `retention.policy` is `"delete"`. Must be at least 1, the default is 2.
+
+The commitlog is retained from the oldest retained snapshot onwards, so that the database can be restored from any retained snapshot even if a newer one turns out to be unreadable.
 
 ### `websocket`
 

@@ -64,6 +64,7 @@ use spacetimedb_table::table::{RowRef, TableScanIter};
 use spacetimedb_table::table_index::IndexKey;
 use std::borrow::Cow;
 use std::io;
+use std::num::NonZeroUsize;
 use std::ops::RangeBounds;
 use std::sync::Arc;
 
@@ -1854,6 +1855,128 @@ pub async fn snapshot_watching_commitlog_compressor(
             tracing::warn!("failed to send offset {last_compressed_segment} after compression: {err}");
         }
     }
+}
+
+/// Watches snapshot creation events and deletes historical data that is no
+/// longer needed to restart the database.
+///
+/// Whenever a new snapshot is created, [`prune_history`] is invoked with the
+/// given `retain_snapshots`, deleting all but the most recent snapshots along
+/// with the prefix of the commitlog that precedes them.
+///
+/// Suitable **only** for non-replicated databases.
+pub async fn snapshot_watching_history_pruner(
+    mut snapshot_rx: watch::Receiver<u64>,
+    retain_snapshots: NonZeroUsize,
+    snapshot_repo: Arc<SnapshotRepository>,
+    durability: LocalDurability,
+    runtime: Handle,
+) {
+    // Prune once at startup, then whenever a snapshot is created. The initial
+    // run deletes history that accumulated while the database was offline, or
+    // was running with a different retention policy, without waiting for the
+    // next snapshot.
+    loop {
+        let snapshot_repo = snapshot_repo.clone();
+        let durability = durability.clone();
+        let res = asyncify(&runtime, move || {
+            prune_history(&snapshot_repo, &durability, retain_snapshots)
+        })
+        .await;
+        if let Err(err) = res {
+            tracing::warn!("failed to prune history: {err:#}");
+        }
+
+        if snapshot_rx.changed().await.is_err() {
+            break;
+        }
+        snapshot_rx.borrow_and_update();
+    }
+}
+
+/// Delete snapshots and commitlog segments that are no longer needed to
+/// restart the database.
+///
+/// The `retain_snapshots` most recent snapshots are retained, all older
+/// snapshots are deleted. Commitlog segments whose entire contents precede
+/// the oldest retained snapshot are also deleted, as the database will never
+/// replay them again.
+///
+/// Snapshots are captured from the committed, not necessarily durable, state
+/// of the database, and a snapshot can only be restored from if its offset is
+/// durable (see `RelationalDB::maybe_do_snapshot`). Snapshots above the
+/// durable [`TxOffset`] are therefore ignored: they neither count towards
+/// `retain_snapshots`, nor are they ever deleted.
+///
+/// Nothing is deleted unless more than `retain_snapshots` durable snapshots
+/// exist, or the commitlog extends before the oldest retained snapshot,
+/// respectively.
+pub fn prune_history(
+    snapshot_repo: &SnapshotRepository,
+    durability: &durability::Local<ProductValue>,
+    retain_snapshots: NonZeroUsize,
+) -> anyhow::Result<()> {
+    use durability::Durability as _;
+
+    let database_identity = snapshot_repo.database_identity();
+
+    // Clean up leftovers of an earlier prune that was interrupted after
+    // renaming a snapshot, but before deleting it from disk.
+    for archived in snapshot_repo.all_archived_snapshots()? {
+        if let Err(err) = SnapshotRepository::remove_archived_snapshot(&archived) {
+            tracing::warn!(
+                "failed to delete archived snapshot {} of database {database_identity}: {err:#}",
+                archived.display()
+            );
+        }
+    }
+
+    let durable_offset = durability.durable_tx_offset().get().context("durability has exited")?;
+    let mut snapshots = snapshot_repo
+        .all_snapshots()?
+        .filter(|offset| durable_offset.is_some_and(|durable| *offset <= durable))
+        .collect::<Vec<_>>();
+    snapshots.sort_unstable_by(|a, b| b.cmp(a));
+    let Some(&oldest_retained) = snapshots.get(retain_snapshots.get() - 1) else {
+        // Fewer snapshots than the retention policy asks for, nothing to do.
+        return Ok(());
+    };
+
+    // Delete all snapshots older than the oldest retained one. Rename before
+    // deletion, so that a partially deleted snapshot is never mistaken for a
+    // valid one.
+    for &offset in &snapshots[retain_snapshots.get()..] {
+        snapshot_repo
+            .snapshot_dir_path(offset)
+            .rename_as_archived()
+            .map_err(anyhow::Error::from)
+            .and_then(|archived| Ok(SnapshotRepository::remove_archived_snapshot(&archived)?))
+            .with_context(|| format!("failed to delete snapshot {offset} of database {database_identity}"))?;
+        tracing::info!("deleted snapshot {offset} of database {database_identity}");
+    }
+
+    // Delete all commitlog segments whose entire contents precede the oldest
+    // retained snapshot. Segments are named for the first transaction they
+    // contain, so the last segment starting at or before `oldest_retained`
+    // may still be needed and must be retained.
+    let segment_offsets = durability.existing_segment_offsets()?;
+    let end_idx = segment_offsets
+        .binary_search(&oldest_retained)
+        // If the snapshot is in the middle of a segment, round down to
+        // exclude the segment that contains it.
+        .unwrap_or_else(|i| i.saturating_sub(1));
+    let segment_offsets = &segment_offsets[..end_idx];
+    if !segment_offsets.is_empty() {
+        durability.remove_segments(segment_offsets).with_context(|| {
+            format!("failed to delete commitlog segments before {oldest_retained} of database {database_identity}")
+        })?;
+        tracing::info!(
+            "deleted {} commitlog segment(s) before {oldest_retained} of database {database_identity}",
+            segment_offsets.len()
+        );
+    }
+
+    Ok(())
 }
 
 /// Open a [`SnapshotRepository`] at `db_path/snapshots`,
@@ -3805,6 +3928,115 @@ mod tests {
             0,
             PagePool::new_for_test(),
         )?;
+
+        Ok(())
+    }
+
+    /// Tests that [`prune_history`] deletes exactly the snapshots and
+    /// commitlog segments that are no longer needed to restart the database.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn prune_history_deletes_stale_snapshots_and_segments() -> ResultTest<()> {
+        use durability::Durability as _;
+        use tests_utils::TempReplicaDir;
+
+        /// Fabricate an entry on disk which [`SnapshotRepository::all_snapshots`]
+        /// recognizes as a complete snapshot.
+        fn fake_snapshot(repo: &SnapshotRepository, offset: TxOffset) {
+            let dir = repo.snapshot_dir_path(offset);
+            std::fs::create_dir_all(&dir.0).unwrap();
+            std::fs::write(dir.snapshot_file(offset).0, []).unwrap();
+        }
+
+        let retain_snapshots = NonZeroUsize::new(2).unwrap();
+        let dir = TempReplicaDir::new()?;
+        let durability = durability::Local::open(
+            (*dir).clone(),
+            Handle::tokio_current(),
+            durability::local::Options {
+                commitlog: commitlog::Options {
+                    max_segment_size: 128,
+                    ..<_>::default()
+                },
+                ..<_>::default()
+            },
+            None,
+        )?;
+
+        // Commit transactions one at a time, waiting for each to become
+        // durable, so that the log rotates into multiple small segments.
+        for offset in 0..16u64 {
+            durability.append_tx(Box::new(durability::Transaction::from((
+                offset,
+                Txdata {
+                    inputs: None,
+                    outputs: None,
+                    mutations: Some(txdata::Mutations {
+                        inserts: Box::new([txdata::Ops {
+                            table_id: 8000.into(),
+                            rowdata: Arc::new([product![offset]]),
+                        }]),
+                        deletes: Box::new([]),
+                        truncates: Box::new([]),
+                    }),
+                },
+            ))));
+            durability.durable_tx_offset().wait_for(offset).await.unwrap();
+        }
+
+        let segments = durability.existing_segment_offsets()?;
+        assert!(segments.len() > 3, "expected more than 3 segments, got {segments:?}");
+
+        let snapshots_path = dir.snapshots();
+        snapshots_path.create()?;
+        let repo = SnapshotRepository::open(snapshots_path, Identity::ZERO, 0)?;
+
+        // With fewer snapshots than the retention policy asks for,
+        // nothing is deleted.
+        let oldest_snapshot = segments[1];
+        fake_snapshot(&repo, oldest_snapshot);
+        prune_history(&repo, &durability, retain_snapshots).unwrap();
+        assert_eq!(repo.all_snapshots()?.collect::<Vec<_>>(), vec![oldest_snapshot]);
+        assert_eq!(durability.existing_segment_offsets()?, segments);
+
+        // A leftover of an interrupted prune run.
+        fake_snapshot(&repo, 0);
+        repo.snapshot_dir_path(0).rename_as_archived()?;
+
+        // A snapshot above the durable offset neither counts towards the
+        // retention limit, nor is it ever deleted.
+        let undurable_snapshot = 100;
+        fake_snapshot(&repo, undurable_snapshot);
+
+        // Two more snapshots. The segment containing the older one, and all
+        // segments after it, must be retained.
+        let retained_snapshot = 14;
+        let latest_snapshot = 15;
+        let first_retained_segment = segments.iter().rposition(|&s| s <= retained_snapshot).unwrap();
+        assert!(
+            (2..segments.len() - 1).contains(&first_retained_segment),
+            "test wants a snapshot in the middle of the log, \
+             but segment offsets are {segments:?}"
+        );
+        fake_snapshot(&repo, retained_snapshot);
+        fake_snapshot(&repo, latest_snapshot);
+        prune_history(&repo, &durability, retain_snapshots).unwrap();
+
+        let mut snapshots = repo.all_snapshots()?.collect::<Vec<_>>();
+        snapshots.sort_unstable();
+        assert_eq!(snapshots, vec![retained_snapshot, latest_snapshot, undurable_snapshot]);
+        assert_eq!(repo.all_archived_snapshots()?.count(), 0);
+        assert_eq!(
+            durability.existing_segment_offsets()?,
+            segments[first_retained_segment..].to_vec()
+        );
+
+        // The remaining log covers the retained snapshot up to the latest
+        // transaction, i.e. the database can restart from it.
+        durability.close().await;
+        let commits =
+            commitlog::commits_from(dir.commit_log(), retained_snapshot + 1)?.collect::<Result<Vec<_>, _>>()?;
+        let last_commit = commits.last().expect("no commits after the retained snapshot");
+        assert_eq!(last_commit.min_tx_offset + last_commit.n as u64 - 1, latest_snapshot);
 
         Ok(())
     }

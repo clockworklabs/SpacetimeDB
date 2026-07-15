@@ -398,6 +398,26 @@ where
         Ok(stats)
     }
 
+    /// Remove the segments at the given offsets from the log.
+    ///
+    /// `offsets` must contain the exact segment offsets, no rounding to the
+    /// nearest offset is performed.
+    ///
+    /// The segments' contents are discarded permanently, including their
+    /// offset indexes. The latest, writable segment cannot be removed: if
+    /// `offsets` contains its offset, an error is returned and no segments
+    /// are removed.
+    ///
+    /// Segments are removed oldest-first, so that a failure partway through
+    /// does not leave a gap in the log. If removing a segment fails, the
+    /// error is returned and the remaining, newer segments are retained.
+    ///
+    /// This method acquires a write lock on this `Commitlog` instance for the
+    /// duration of the removal.
+    pub fn remove_segments(&self, offsets: &[u64]) -> io::Result<()> {
+        self.inner.write().unwrap().remove_segments(offsets)
+    }
+
     /// Remove all data from the log and reopen it.
     ///
     /// Log segments are deleted starting from the newest. As multiple segments

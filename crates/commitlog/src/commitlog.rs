@@ -242,6 +242,38 @@ impl<R: Repo, T> Generic<R, T> {
         Self::open(self.repo.clone(), self.opts)
     }
 
+    /// Remove the segments at the given offsets from the log.
+    ///
+    /// `offsets` must contain the exact segment offsets, no rounding to the
+    /// nearest offset is performed.
+    ///
+    /// The segments' contents are discarded permanently, including their
+    /// offset indexes. The current writable segment cannot be removed: if
+    /// `offsets` contains an offset at or beyond it, an error is returned
+    /// and no segments are removed.
+    ///
+    /// Segments are removed oldest-first, so that a failure partway through
+    /// does not leave a gap in the log. If removing a segment fails, the
+    /// error is returned and the remaining, newer segments are retained.
+    pub fn remove_segments(&mut self, offsets: &[u64]) -> io::Result<()> {
+        let head_offset = self.head.min_tx_offset();
+        if let Some(offset) = offsets.iter().find(|&&offset| offset >= head_offset) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("refusing to remove mutable segment {offset}"),
+            ));
+        }
+        let mut offsets = offsets.to_vec();
+        offsets.sort_unstable();
+        for offset in offsets {
+            debug!("removing segment {offset}");
+            self.repo.remove_segment(offset)?;
+            self.tail.retain(|&tail_offset| tail_offset != offset);
+        }
+
+        Ok(())
+    }
+
     /// Start a new segment, preserving the current head's `Commit`.
     ///
     /// The caller must ensure that the current head is synced to disk as
@@ -1089,6 +1121,32 @@ mod tests {
         assert_eq!(&offsets[..offsets.len() - 1], &log.tail);
         // TODO: We overshoot the max segment size.
         assert_eq!(&offsets, &[0, 3]);
+    }
+
+    #[test]
+    fn remove_segments() {
+        let mut log = mem_log::<[u8; 32]>(32);
+        fill_log(&mut log, 10, repeat(1));
+
+        let offsets = log.repo.existing_offsets().unwrap();
+        assert!(offsets.len() > 3, "expected more than 3 segments, got {offsets:?}");
+
+        // Refuses to remove the writable segment, leaving the log untouched.
+        let err = log.remove_segments(&offsets).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+        assert_eq!(log.repo.existing_offsets().unwrap(), offsets);
+
+        // Removes historical segments and keeps the in-memory state consistent.
+        let (remove, retain) = offsets.split_at(2);
+        log.remove_segments(remove).unwrap();
+        assert_eq!(&log.repo.existing_offsets().unwrap(), retain);
+        assert_eq!(&log.tail, &retain[..retain.len() - 1]);
+
+        // The log is still traversable from the first retained segment.
+        let first_retained = retain[0];
+        for (offset, commit) in (first_retained..10).zip(log.commits_from(first_retained)) {
+            assert_eq!(offset, commit.unwrap().min_tx_offset);
+        }
     }
 
     #[test]

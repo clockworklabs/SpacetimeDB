@@ -41,6 +41,57 @@ pub struct CommitlogConfig {
     pub write_buffer_size: Option<NonZeroUsize>,
 }
 
+/// Retention of historical data exposed through server config.
+///
+/// Historical data is data which is no longer needed to restart the database:
+/// commitlog segments whose entire contents precede the most recent snapshots,
+/// and all but the most recent snapshots.
+#[derive(Clone, Copy, Debug, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub struct RetentionConfig {
+    /// What to do with historical data.
+    #[serde(default)]
+    pub policy: RetentionPolicy,
+    /// Number of most recent snapshots to retain when `policy` is
+    /// [`RetentionPolicy::Delete`].
+    ///
+    /// The commitlog is retained from the oldest retained snapshot onwards,
+    /// so that the database can be restored from any retained snapshot.
+    ///
+    /// Default: 2
+    #[serde(default = "default_retain_snapshots")]
+    pub retain_snapshots: NonZeroUsize,
+}
+
+fn default_retain_snapshots() -> NonZeroUsize {
+    NonZeroUsize::new(2).unwrap()
+}
+
+impl Default for RetentionConfig {
+    fn default() -> Self {
+        Self {
+            policy: RetentionPolicy::default(),
+            retain_snapshots: default_retain_snapshots(),
+        }
+    }
+}
+
+/// Policy for handling historical data, see [`RetentionConfig`].
+#[derive(Clone, Copy, Debug, Default, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum RetentionPolicy {
+    /// Delete historical data from disk whenever a new snapshot is taken.
+    ///
+    /// This is the default, as it bounds disk usage.
+    #[default]
+    Delete,
+    /// Keep historical data on disk indefinitely.
+    ///
+    /// Historical commitlog segments are compressed, but disk usage still
+    /// grows without bound.
+    Keep,
+}
+
 impl DurabilityConfig {
     fn into_options(self) -> spacetimedb_durability::local::Options {
         let mut opts = spacetimedb_durability::local::Options::default();
@@ -197,13 +248,20 @@ pub trait PersistenceProvider: Send + Sync {
 /// [Persistence] services are provided for the local [ServerDataDir].
 ///
 /// Note that its [PersistenceProvider::persistence] impl will spawn a
-/// background task that [compresses] older commitlog segments whenever a
-/// snapshot is taken.
+/// background task that handles historical data whenever a snapshot is
+/// taken, according to the configured [RetentionConfig]:
 ///
+/// - [RetentionPolicy::Delete] (the default) [deletes] historical snapshots
+///   and commitlog segments,
+/// - [RetentionPolicy::Keep] [compresses] historical commitlog segments and
+///   keeps all data on disk.
+///
+/// [deletes]: relational_db::snapshot_watching_history_pruner
 /// [compresses]: relational_db::snapshot_watching_commitlog_compressor
 pub struct LocalPersistenceProvider {
     data_dir: Arc<ServerDataDir>,
     durability: DurabilityConfig,
+    retention: RetentionConfig,
 }
 
 impl LocalPersistenceProvider {
@@ -211,11 +269,17 @@ impl LocalPersistenceProvider {
         Self {
             data_dir: data_dir.into(),
             durability: DurabilityConfig::default(),
+            retention: RetentionConfig::default(),
         }
     }
 
     pub fn with_durability_config(mut self, durability: DurabilityConfig) -> Self {
         self.durability = durability;
+        self
+    }
+
+    pub fn with_retention_config(mut self, retention: RetentionConfig) -> Self {
+        self.retention = retention;
         self
     }
 }
@@ -228,11 +292,17 @@ impl PersistenceProvider for LocalPersistenceProvider {
         let snapshot_dir = replica_dir.snapshots();
         let runtime = Handle::tokio_current();
 
-        let snapshot_worker = asyncify(&runtime, move || {
+        let snapshot_repo = asyncify(&runtime, move || {
             relational_db::open_snapshot_repo(snapshot_dir, database_identity, replica_id)
         })
-        .await
-        .map(|repo| SnapshotWorker::new(repo, snapshot::Compression::Enabled, runtime.clone()))?;
+        .await?;
+        // When historical snapshots are deleted anyway, compressing them
+        // beforehand is wasted work.
+        let compression = match self.retention.policy {
+            RetentionPolicy::Delete => snapshot::Compression::Disabled,
+            RetentionPolicy::Keep => snapshot::Compression::Enabled,
+        };
+        let snapshot_worker = SnapshotWorker::new(snapshot_repo.clone(), compression, runtime.clone());
         let (durability, disk_size) = relational_db::local_durability_with_options(
             replica_dir,
             runtime.clone(),
@@ -241,13 +311,26 @@ impl PersistenceProvider for LocalPersistenceProvider {
         )
         .await?;
 
-        runtime.spawn(relational_db::snapshot_watching_commitlog_compressor(
-            snapshot_worker.subscribe(),
-            None,
-            None,
-            durability.clone(),
-            runtime.clone(),
-        ));
+        match self.retention.policy {
+            RetentionPolicy::Delete => {
+                runtime.spawn(relational_db::snapshot_watching_history_pruner(
+                    snapshot_worker.subscribe(),
+                    self.retention.retain_snapshots,
+                    snapshot_repo,
+                    durability.clone(),
+                    runtime.clone(),
+                ));
+            }
+            RetentionPolicy::Keep => {
+                runtime.spawn(relational_db::snapshot_watching_commitlog_compressor(
+                    snapshot_worker.subscribe(),
+                    None,
+                    None,
+                    durability.clone(),
+                    runtime.clone(),
+                ));
+            }
+        }
 
         Ok(Persistence {
             durability,
