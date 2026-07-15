@@ -18,6 +18,18 @@ pub struct OptionStringTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `option_string`.
+pub struct OptionStringTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for OptionStringTableAccessor {
+    type Row = OptionString;
+    type Handle<'db> = OptionStringTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.option_string()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `option_string`.
 ///

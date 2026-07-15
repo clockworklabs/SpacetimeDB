@@ -19,6 +19,18 @@ pub struct ResultEveryPrimitiveStructStringTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `result_every_primitive_struct_string`.
+pub struct ResultEveryPrimitiveStructStringTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for ResultEveryPrimitiveStructStringTableAccessor {
+    type Row = ResultEveryPrimitiveStructString;
+    type Handle<'db> = ResultEveryPrimitiveStructStringTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.result_every_primitive_struct_string()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `result_every_primitive_struct_string`.
 ///

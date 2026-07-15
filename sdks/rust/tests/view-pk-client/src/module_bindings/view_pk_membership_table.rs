@@ -18,6 +18,18 @@ pub struct ViewPkMembershipTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `view_pk_membership`.
+pub struct ViewPkMembershipTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for ViewPkMembershipTableAccessor {
+    type Row = ViewPkMembership;
+    type Handle<'db> = ViewPkMembershipTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.view_pk_membership()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `view_pk_membership`.
 ///

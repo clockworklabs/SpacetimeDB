@@ -29,7 +29,7 @@ pub use db_connection::DbConnectionBuilder;
 pub use db_context::DbContext;
 pub use error::{Error, Result};
 pub use event::{Event, ReducerEvent, Status};
-pub use table::{EventTable, Table, TableWithPrimaryKey};
+pub use table::{EventTable, Table, TableAccessor, TableWithPrimaryKey};
 
 pub use spacetime_module::SubscriptionHandle;
 pub use spacetimedb_client_api_messages::websocket::v1::Compression;
@@ -63,7 +63,7 @@ pub mod __codegen {
     pub use crate::table::{TableLike, WithDelete, WithInsert, WithUpdate};
     pub use crate::{
         ConnectionId, DbConnectionBuilder, DbContext, Event, EventTable, Identity, ReducerEvent, ScheduleAt, Table,
-        TableWithPrimaryKey, TimeDuration, Timestamp, Uuid,
+        TableAccessor, TableWithPrimaryKey, TimeDuration, Timestamp, Uuid,
     };
 }
 

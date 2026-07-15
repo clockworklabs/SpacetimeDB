@@ -8413,7 +8413,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "spacetimedb-dst"
+name = "spacetimedb-dst-lib"
 version = "2.7.0"
 dependencies = [
  "anyhow",
@@ -8851,6 +8851,7 @@ dependencies = [
  "regex",
  "reqwest",
  "serde_json",
+ "socket2 0.5.10",
  "spacetimedb-core",
  "spacetimedb-guard",
  "tempfile",

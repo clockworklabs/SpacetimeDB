@@ -12,12 +12,52 @@
 #include "DBCache/TableCache.h"
 #include "AllViewPkPlayersTable.g.generated.h"
 
+UCLASS(Blueprintable)
+class TESTVIEWPKCLIENT_API UAllViewPkPlayersIdUniqueIndex : public UObject
+{
+    GENERATED_BODY()
+
+private:
+    // Declare an instance of your templated helper.
+    // It's private because the UObject wrapper will expose its functionality.
+    FUniqueIndexHelper<FViewPkPlayerType, uint64, FTableCache<FViewPkPlayerType>> IdIndexHelper;
+
+public:
+    UAllViewPkPlayersIdUniqueIndex()
+        // Initialize the helper with the specific unique index name
+        : IdIndexHelper("id") {
+    }
+
+    /**
+     * Finds a AllViewPkPlayers by their unique id.
+     * @param Key The id to search for.
+     * @return The found FViewPkPlayerType, or a default-constructed FViewPkPlayerType if not found.
+     */
+    // NOTE: Not exposed to Blueprint because uint64 types are not Blueprint-compatible
+    FViewPkPlayerType Find(uint64 Key)
+    {
+        // Simply delegate the call to the internal helper
+        return IdIndexHelper.FindUniqueIndex(Key);
+    }
+
+    // A public setter to provide the cache to the helper after construction
+    // This is a common pattern when the cache might be created or provided by another system.
+    void SetCache(TSharedPtr<const FTableCache<FViewPkPlayerType>> InAllViewPkPlayersCache)
+    {
+        IdIndexHelper.Cache = InAllViewPkPlayersCache;
+    }
+};
+/***/
+
 UCLASS(BlueprintType)
 class TESTVIEWPKCLIENT_API UAllViewPkPlayersTable : public URemoteTable
 {
     GENERATED_BODY()
 
 public:
+    UPROPERTY(BlueprintReadOnly)
+    UAllViewPkPlayersIdUniqueIndex* Id;
+
     void PostInitialize();
 
     /** Update function for all_view_pk_players table*/

@@ -19,6 +19,18 @@ pub struct VecEveryVecStructTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `vec_every_vec_struct`.
+pub struct VecEveryVecStructTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for VecEveryVecStructTableAccessor {
+    type Row = VecEveryVecStruct;
+    type Handle<'db> = VecEveryVecStructTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.vec_every_vec_struct()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `vec_every_vec_struct`.
 ///
