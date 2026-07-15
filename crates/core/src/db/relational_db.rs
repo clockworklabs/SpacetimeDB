@@ -1084,28 +1084,45 @@ impl RelationalDB {
 /// Value is chosen arbitrarily; can be tuned later if needed.
 const VIEWS_EXPIRATION: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
+/// Normal interval between view cleanup runs.
+const VIEW_CLEANUP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// Lower bound for adaptive cleanup retries when expired views remain.
+const MIN_VIEW_CLEANUP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// Duration to budget for each view cleanup job,
-/// so that it doesn't hold transaction lock for to long.
+/// so that it doesn't hold transaction lock for too long.
 //TODO: Make this value configurable
 const VIEW_CLEANUP_BUDGET: std::time::Duration = std::time::Duration::from_millis(10);
 
-/// Spawn a background task that periodically cleans up expired views
+/// Number of expired view rows to clean before checking the time budget.
+const VIEW_CLEANUP_BATCH_SIZE: usize = 1024;
+
+/// Spawn a background task that periodically cleans up expired views.
+///
+/// Each cleanup run has a fixed lock-hold budget. If a run leaves expired
+/// views behind, the next run is scheduled sooner, down to
+/// [`MIN_VIEW_CLEANUP_INTERVAL`]. Once cleanup catches up, the interval resets.
 pub fn spawn_view_cleanup_loop(db: Arc<RelationalDB>) -> tokio::task::AbortHandle {
-    fn run_view_cleanup(db: &RelationalDB) {
+    fn shorten_cleanup_interval(current: std::time::Duration) -> std::time::Duration {
+        (current / 2).max(MIN_VIEW_CLEANUP_INTERVAL)
+    }
+
+    fn run_view_cleanup(db: &RelationalDB) -> bool {
         match db.with_auto_commit(Workload::Internal, |tx| {
-            tx.clear_expired_views(VIEWS_EXPIRATION, VIEW_CLEANUP_BUDGET)
+            tx.clear_expired_views(VIEWS_EXPIRATION, VIEW_CLEANUP_BUDGET, VIEW_CLEANUP_BATCH_SIZE)
                 .map_err(DBError::from)
         }) {
-            Ok((cleared, total_expired)) => {
-                if cleared != total_expired {
+            Ok(result) => {
+                if result.backlog {
                     // TODO: metrics
                     log::info!(
-                        "[{}] DATABASE: cleared {} expired views ({} remaining)",
+                        "[{}] DATABASE: cleared {} expired views (more pending)",
                         db.database_identity(),
-                        cleared,
-                        total_expired - cleared
+                        result.cleaned,
                     );
                 }
+                result.backlog
             }
             Err(e) => {
                 log::error!(
@@ -1113,24 +1130,32 @@ pub fn spawn_view_cleanup_loop(db: Arc<RelationalDB>) -> tokio::task::AbortHandl
                     db.database_identity(),
                     e
                 );
+                false
             }
         }
     }
 
     tokio::spawn(async move {
+        let mut interval = VIEW_CLEANUP_INTERVAL;
         loop {
             // Offload actual cleanup to blocking thread pool, as `VIEW_CLEANUP_BUDGET` is defined
             // in milliseconds, which may be too long for async tasks.
             let db = db.clone();
             let db_identity = db.database_identity();
-            tokio::task::spawn_blocking(move || run_view_cleanup(&db))
+            let backlog = tokio::task::spawn_blocking(move || run_view_cleanup(&db))
                 .await
                 .inspect_err(|e| {
                     log::error!("[{}] DATABASE: failed to run view cleanup task: {}", db_identity, e);
                 })
-                .ok();
+                .unwrap_or(false);
 
-            tokio::time::sleep(VIEWS_EXPIRATION).await;
+            interval = if backlog {
+                shorten_cleanup_interval(interval)
+            } else {
+                VIEW_CLEANUP_INTERVAL
+            };
+
+            tokio::time::sleep(interval).await;
         }
     })
     .abort_handle()
@@ -2698,6 +2723,7 @@ mod tests {
         tx.clear_expired_views(
             Instant::now().saturating_duration_since(before_sender2),
             VIEW_CLEANUP_BUDGET,
+            VIEW_CLEANUP_BATCH_SIZE,
         )?;
         stdb.commit_tx(tx)?;
 
@@ -2717,6 +2743,49 @@ mod tests {
         let st_after = tx.lookup_st_view_subs(view_id)?;
         assert_eq!(st_after.len(), 1);
         assert_eq!(st_after[0].identity.0, sender2);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_view_cleanup_batches_expired_rows() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+        let (view_id, table_id, _, _) = setup_view(&stdb)?;
+
+        let identity_from_u8 = |byte| Identity::from_byte_array([byte; 32]);
+        let senders = [identity_from_u8(1), identity_from_u8(2), identity_from_u8(3)];
+
+        for (idx, sender) in senders.iter().copied().enumerate() {
+            insert_view_row(&stdb, view_id, table_id, sender, idx as u8)?;
+
+            let mut tx = begin_mut_tx(&stdb);
+            tx.unsubscribe_view(view_id, ArgId::SENTINEL, sender)?;
+            stdb.commit_tx(tx)?;
+            update_last_called(&stdb, view_id, sender, Timestamp::UNIX_EPOCH)?;
+        }
+
+        let mut tx = begin_mut_tx(&stdb);
+        let result = tx.clear_expired_views(Duration::from_secs(1), Duration::ZERO, 1)?;
+        assert_eq!(result.cleaned, 1);
+        assert!(result.backlog);
+        stdb.commit_tx(tx)?;
+
+        let tx = begin_mut_tx(&stdb);
+        assert_eq!(tx.lookup_st_view_subs(view_id)?.len(), 2);
+        stdb.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        let result = tx.clear_expired_views(Duration::from_secs(1), VIEW_CLEANUP_BUDGET, VIEW_CLEANUP_BATCH_SIZE)?;
+        assert_eq!(result.cleaned, 2);
+        assert!(!result.backlog);
+        stdb.commit_tx(tx)?;
+
+        let tx = begin_mut_tx(&stdb);
+        assert!(tx.lookup_st_view_subs(view_id)?.is_empty());
+        stdb.commit_tx(tx)?;
+        for sender in senders {
+            assert!(project_views(&stdb, table_id, sender).is_empty());
+        }
 
         Ok(())
     }
@@ -2754,7 +2823,7 @@ mod tests {
         // Cleanup should remove only the stale subscriber row and keep the shared
         // anonymous materialization because another subscriber is still live.
         let mut tx = begin_mut_tx(&stdb);
-        let (_cleaned, _total_expired) = tx.clear_expired_views(Duration::from_secs(1), VIEW_CLEANUP_BUDGET)?;
+        let _result = tx.clear_expired_views(Duration::from_secs(1), VIEW_CLEANUP_BUDGET, VIEW_CLEANUP_BATCH_SIZE)?;
         stdb.commit_tx(tx)?;
 
         assert_eq!(
@@ -2799,7 +2868,7 @@ mod tests {
         // With no remaining subscriber rows, cleanup should drop the shared
         // anonymous materialization and remove the bookkeeping row.
         let mut tx = begin_mut_tx(&stdb);
-        let (_cleaned, _total_expired) = tx.clear_expired_views(Duration::from_secs(1), VIEW_CLEANUP_BUDGET)?;
+        let _result = tx.clear_expired_views(Duration::from_secs(1), VIEW_CLEANUP_BUDGET, VIEW_CLEANUP_BATCH_SIZE)?;
         stdb.commit_tx(tx)?;
 
         assert!(

@@ -82,6 +82,11 @@ pub struct ViewCallInfo {
     pub sender: Option<Identity>,
 }
 
+pub struct ViewCleanupResult {
+    pub cleaned: usize,
+    pub backlog: bool,
+}
+
 /// A data structure for tracking the database rows/keys that are read by views
 #[derive(Default)]
 pub struct ViewReadSets {
@@ -2492,80 +2497,94 @@ impl MutTxId {
     /// 2. If that row was the last remaining materialization entry for the view,
     ///    it clears the backing table and removes the view from the committed read set.
     ///
-    /// The cleanup is bounded by a total `max_duration`. The function stops when either:
-    /// - all expired views have been processed, or
-    /// - the `max_duration` budget is reached.
+    /// Expired views are cleared in batches. Each loop iteration selects up to
+    /// `batch_size` expired rows and deletes their materialized rows.
     ///
-    /// Returns a tuple `(cleaned, total_expired)`:
-    /// - `cleaned`: Number of expired `st_view_sub` rows deleted in this run.
-    /// - `total_expired`: Total number of expired rows found (even if not all were cleaned due to time budget).
+    /// `max_duration` is checked between batches, so cleanup always finishes at
+    /// least one batch once it starts, even if that batch takes longer than
+    /// `max_duration`.
+    ///
+    /// Returns the number of rows cleaned and whether more expired work is
+    /// likely pending.
     pub fn clear_expired_views(
         &mut self,
         expiration_duration: Duration,
         max_duration: Duration,
-    ) -> Result<(usize, usize)> {
+        batch_size: usize,
+    ) -> Result<ViewCleanupResult> {
         let start = std::time::Instant::now();
         let now = Timestamp::now();
         let expiration_threshold = now - expiration_duration;
-        let mut cleaned_count = 0;
+        let mut cleaned = 0;
+        let batch_size = batch_size.max(1);
 
-        // Collect all expired views from st_view_sub
-        let expired_items: Vec<(ViewId, Identity, RowPointer)> = self
-            .iter_by_col_eq(
+        loop {
+            let mut unexpired_visited_building_batch = 0;
+            let mut batch: Vec<(ViewId, Identity, RowPointer)> = Vec::with_capacity(batch_size + 1);
+
+            // Collect one batch of expired views from st_view_sub.
+            for row_ref in self.iter_by_col_eq(
                 ST_VIEW_SUB_ID,
                 StViewSubFields::HasSubscribers,
                 &AlgebraicValue::from(false),
-            )?
-            .filter_map(|row_ref| {
-                let row = StViewSubRow::try_from(row_ref).expect("Failed to deserialize st_view_sub row");
+            )? {
+                let row = StViewSubRow::try_from(row_ref)?;
 
                 if !row.has_subscribers && row.num_subscribers == 0 && row.last_called.0 < expiration_threshold {
-                    Some((row.view_id, row.identity.into(), row_ref.pointer()))
+                    batch.push((row.view_id, row.identity.into(), row_ref.pointer()));
+                    if batch.len() > batch_size {
+                        break;
+                    }
                 } else {
-                    None
+                    unexpired_visited_building_batch += 1;
                 }
-            })
-            .collect();
-
-        let total_expired = expired_items.len();
-
-        // For each expired subscription row, clear the backing table only if that row
-        // was the last remaining entry for the shared materialization.
-        for (view_id, sender, sub_row_ptr) in expired_items {
-            // Check if we've exceeded our time budget
-            if start.elapsed() >= max_duration {
-                break;
             }
 
-            let StViewRow {
-                table_id, is_anonymous, ..
-            } = self.lookup_st_view(view_id)?;
-            let table_id = table_id.expect("views have backing table");
+            log::info!(
+                "[{}]: Traversed {} unexpired views to collect and delete a batch of {} expired views",
+                self.ctx.database_identity,
+                unexpired_visited_building_batch,
+                batch.len()
+            );
 
-            if is_anonymous {
-                if !self.has_other_st_view_sub_entries(view_id, sub_row_ptr)? {
-                    self.clear_table(table_id)?;
-                    self.drop_view_from_committed_read_set(view_id);
+            let backlog = batch.len() > batch_size;
+            batch.truncate(batch_size);
+
+            // For each expired subscription row, clear the backing table only if that row
+            // was the last remaining entry for the shared materialization.
+            for (view_id, sender, sub_row_ptr) in batch {
+                let StViewRow {
+                    table_id, is_anonymous, ..
+                } = self.lookup_st_view(view_id)?;
+                let table_id = table_id.expect("views have backing table");
+
+                if is_anonymous {
+                    if !self.has_other_st_view_sub_entries(view_id, sub_row_ptr)? {
+                        self.clear_table(table_id)?;
+                        self.drop_view_from_committed_read_set(view_id);
+                    }
+                } else {
+                    let rows_to_delete = self
+                        .iter_by_col_eq(table_id, 0, &sender.into())?
+                        .map(|res| res.pointer())
+                        .collect::<Vec<_>>();
+
+                    for row_ptr in rows_to_delete {
+                        self.delete(table_id, row_ptr)?;
+                    }
+
+                    self.drop_view_with_sender_from_committed_read_set(view_id, sender);
                 }
-            } else {
-                let rows_to_delete = self
-                    .iter_by_col_eq(table_id, 0, &sender.into())?
-                    .map(|res| res.pointer())
-                    .collect::<Vec<_>>();
 
-                for row_ptr in rows_to_delete {
-                    self.delete(table_id, row_ptr)?;
-                }
-
-                self.drop_view_with_sender_from_committed_read_set(view_id, sender);
+                // Finally, delete the subscription row.
+                self.delete(ST_VIEW_SUB_ID, sub_row_ptr)?;
+                cleaned += 1;
             }
 
-            // Finally, delete the subscription row
-            self.delete(ST_VIEW_SUB_ID, sub_row_ptr)?;
-            cleaned_count += 1;
+            if start.elapsed() >= max_duration || !backlog {
+                return Ok(ViewCleanupResult { cleaned, backlog });
+            }
         }
-
-        Ok((cleaned_count, total_expired))
     }
 
     /// Decrement `num_subscribers` in `st_view_sub` to effectively unsubscribe a caller from a view.
