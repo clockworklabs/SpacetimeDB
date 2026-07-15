@@ -1626,6 +1626,7 @@ impl AllVmMetrics {
             .expect("all counters for reducers should've been pre-fetched")
     }
 
+    // Returns the view metrics for `id`.
     fn get_for_view_id2(&mut self, id: ViewId, identity: &Identity, name: &str) -> ViewMetrics {
         self.view_metrics
             .entry(id)
@@ -1635,6 +1636,10 @@ impl AllVmMetrics {
 
     /// Returns the vm metrics counters for `id`,
     /// or panics if `id` was not pre-fetched in [`AllVmMetrics::new`].
+    ///
+    /// TODO: delete these. This version is using reducer stats, which is very confusing.
+    /// I'm leaving this in place for now because I need to figure out if this matters for
+    /// billing or the website dashboard.
     #[inline]
     fn get_for_view_id(&self, id: ViewId, identity: &Identity, name: &str) -> VmMetrics {
         // Cosunters for the first view starts after counters for the last reducer.
