@@ -1443,6 +1443,7 @@ impl InstanceCommon {
     /// A [`MutTxId`] knows which views must be updated (re-evaluated).
     /// This method re-evaluates them and updates their backing tables.
     /// Returns an overall result, the number of views evaluated, and whether any call trapped.
+    /// The caller should use the number of views evaluated to increment the metric `view_calls_triggered`.
     pub(crate) fn call_views_with_tx<I: WasmInstance>(
         &mut self,
         tx: MutTxId,
@@ -1639,7 +1640,7 @@ impl AllVmMetrics {
     ///
     /// TODO: delete these. This version is using reducer stats, which is very confusing.
     /// I'm leaving this in place for now because I need to figure out if this matters for
-    /// billing or the website dashboard.
+    /// billing or the website dashboard. (jsdt 2026-07-15)
     #[inline]
     fn get_for_view_id(&self, id: ViewId, identity: &Identity, name: &str) -> VmMetrics {
         // Cosunters for the first view starts after counters for the last reducer.
