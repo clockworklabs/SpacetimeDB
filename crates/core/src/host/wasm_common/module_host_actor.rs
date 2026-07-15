@@ -1720,7 +1720,7 @@ impl VmMetrics {
             .reducer_abi_time_usec
             .with_label_values(database_identity, reducer_name);
         let views_refreshed = DB_METRICS
-            .view_calls_triggered
+            .view_calls_triggered_by_reducer
             .with_label_values(database_identity, reducer_name);
         Self {
             reducer_plus_query_duration,
