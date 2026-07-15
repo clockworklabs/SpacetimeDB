@@ -20,7 +20,7 @@ Store binary data using `Vec<u8>` (Rust), `List<byte>` (C#), `std::vector<uint8_
 ```typescript
 import { table, t, schema } from 'spacetimedb/server';
 
-const userAvatar = table(
+const user_avatar = table(
   { name: 'user_avatar', public: true },
   {
     userId: t.u64().primaryKey(),
@@ -30,7 +30,7 @@ const userAvatar = table(
   }
 );
 
-const spacetimedb = schema({ userAvatar });
+const spacetimedb = schema({ user_avatar });
 export default spacetimedb;
 
 export const upload_avatar = spacetimedb.reducer({
@@ -39,10 +39,10 @@ export const upload_avatar = spacetimedb.reducer({
   data: t.array(t.u8()),
 }, (ctx, { userId, mimeType, data }) => {
   // Delete existing avatar if present
-  ctx.db.userAvatar.userId.delete(userId);
+  ctx.db.user_avatar.userId.delete(userId);
 
   // Insert new avatar
-  ctx.db.userAvatar.insert({
+  ctx.db.user_avatar.insert({
     userId,
     mimeType,
     data,

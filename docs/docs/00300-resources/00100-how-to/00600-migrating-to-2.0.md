@@ -190,15 +190,15 @@ spacetimedb.reducer('deal_damage', { target: t.identity(), amount: t.u32() }, (c
 **Server (module) -- after:**
 ```typescript
 // 2.0 server -- explicitly publish events via an event table
-const damageEvent = table({ event: true }, {
+const damage_event = table({ name: 'damage_event', event: true }, {
     target: t.identity(),
     amount: t.u32(),
 })
-// schema() takes an object: schema({ damageEvent }), never schema(damageEvent)
-const spacetimedb = schema({ damageEvent });
+// schema() takes an object: schema({ damage_event }), never schema(damage_event)
+const spacetimedb = schema({ damage_event });
 
 export const dealDamage = spacetimedb.reducer({ target: t.identity(), amount: t.u32() }, (ctx, { target, amount }) => {
-  ctx.db.damageEvent.insert({ target, amount });
+  ctx.db.damage_event.insert({ target, amount });
 });
 ```
 
