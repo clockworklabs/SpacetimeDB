@@ -80,7 +80,7 @@ const score = table(
   {
     name: 'score',
     indexes: [{
-      name: 'idx',
+      accessor: 'idx',
       algorithm: 'btree',
       columns: ['player_id', 'level'],
     }],
@@ -878,6 +878,9 @@ LOG_DEBUG("Debug: " + msg);
 7. **Use `spacetimedb/server`** — For modules, use `spacetimedb/server` (builder API), not `spacetimedb-sdk` (client decorators).
 8. **`t.object` not `t.struct`** — Use `t.object('Name', {...})` for product types.
 9. **`autoInc` not `autoIncrement`** — Use `.autoInc()` on column builders.
+10. **Row fields are camelCase** — Generated client row fields convert snake_case column names: `trip_id` → `row.tripId`.
+11. **Await reducer calls** — Client reducer calls return `Promise<void>` that rejects with `SenderError` on failure; `await` or `.catch()` them.
+12. **Throw `SenderError` in reducers** — A plain `Error` surfaces as an internal error, not a reducer error.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -913,20 +916,20 @@ spacetime login                          # Authenticate
 # Module management
 spacetime build                          # Build module
 spacetime publish <NAME>                 # Publish module
-spacetime publish --delete-data <NAME>   # Reset database
+spacetime publish <NAME> --delete-data         # Reset database
 spacetime delete <NAME>                  # Delete database
 
 # Database operations
 spacetime logs <NAME>                    # View logs
 spacetime logs --follow <NAME>           # Stream logs
 spacetime sql <NAME> "SELECT * FROM t"   # Run SQL query
-spacetime describe <NAME>                # Show schema
+spacetime describe <NAME> --json         # Show schema
 spacetime call <NAME> reducer arg1 arg2  # Call reducer
 
 # Code generation
-spacetime generate --lang rust <NAME>    # Generate Rust client
-spacetime generate --lang csharp <NAME>  # Generate C# client
-spacetime generate --lang ts <NAME>      # Generate TypeScript client
+spacetime generate --lang rust --out-dir src/module_bindings --module-path spacetimedb
+spacetime generate --lang csharp --out-dir module_bindings --module-path spacetimedb
+spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb
 ```
 
 ## Common Types

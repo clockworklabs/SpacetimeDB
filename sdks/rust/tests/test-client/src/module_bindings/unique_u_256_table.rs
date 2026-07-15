@@ -18,6 +18,18 @@ pub struct UniqueU256TableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `unique_u_256`.
+pub struct UniqueU256TableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for UniqueU256TableAccessor {
+    type Row = UniqueU256;
+    type Handle<'db> = UniqueU256TableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.unique_u_256()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `unique_u_256`.
 ///
