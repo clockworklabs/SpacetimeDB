@@ -116,6 +116,26 @@ metrics_group!(
         #[labels(db: Identity, reducer: str)]
         pub reducer_duration_usec: IntCounterVec,
 
+        #[name = view_call_time_usec]
+        #[help = "The duration of view function calls, not counting materialization"]
+        #[labels(db: Identity, view: str)]
+        pub view_call_duration_usec: IntCounterVec,
+
+        #[name = view_total_time_usec]
+        #[help = "The total duration of view computation"]
+        #[labels(db: Identity, view: str)]
+        pub view_total_duration_usec: IntCounterVec,
+
+        #[name = view_calls]
+        #[help = "The total number of view function calls"]
+        #[labels(db: Identity, view: str)]
+        pub view_calls: IntCounterVec,
+
+        #[name = view_calls_triggered]
+        #[help = "The total number of view calls triggered by a reducer"]
+        #[labels(db: Identity, reducer: str)]
+        pub view_calls_triggered: IntCounterVec,
+
         #[name = reducer_abi_time_usec]
         #[help = "The total time spent in reducer ABI calls"]
         #[labels(db: Identity, reducer: str)]
