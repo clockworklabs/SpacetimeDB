@@ -19,9 +19,19 @@ pub struct BuiltPrompt {
     pub search_enabled: bool,
 }
 
+/// SpacetimeDB version as "major.minor".
+fn spacetimedb_version() -> String {
+    let full = spacetimedb_lib::version::spacetimedb_lib_version();
+    let mut parts = full.splitn(3, '.');
+    match (parts.next(), parts.next()) {
+        (Some(major), Some(minor)) => format!("{major}.{minor}"),
+        _ => full.to_string(),
+    }
+}
+
 impl PromptBuilder {
     pub fn build_segmented(&self, mode: &str, context: &str) -> BuiltPrompt {
-        let version = "1.6";
+        let version = spacetimedb_version();
         let search_enabled = mode == "search";
 
         // SYSTEM: hygiene-only for Knowledge; hygiene + stricter output rules for Conformance.
@@ -102,6 +112,31 @@ pub fn make_prompt_from_task(spec_file: &str, task_id: &str, lang: Lang) -> Resu
         task_id: task_id.to_string(),
         instructions,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn prompt_uses_workspace_version() {
+        let pb = super::PromptBuilder {
+            lang: "TypeScript".into(),
+            task_id: "t_000".into(),
+            instructions: "test".into(),
+        };
+        let built = pb.build_segmented("no_context", "");
+        let task = &built.segments[0].text;
+        let expected = format!("SpacetimeDB {} syntax", super::spacetimedb_version());
+        assert!(task.contains(&expected), "prompt missing '{expected}': {task}");
+    }
+
+    #[test]
+    fn version_is_major_minor() {
+        let v = super::spacetimedb_version();
+        let mut parts = v.split('.');
+        assert!(parts.next().unwrap().parse::<u32>().is_ok(), "major not numeric: {v}");
+        assert!(parts.next().unwrap().parse::<u32>().is_ok(), "minor not numeric: {v}");
+        assert_eq!(parts.next(), None, "expected major.minor only: {v}");
+    }
 }
 
 fn find_tasks_file(task_root: &Path, lang: Lang) -> Option<PathBuf> {

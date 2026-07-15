@@ -25,7 +25,7 @@ pub fn casing_for_lang(lang: Lang) -> Casing {
 pub fn table_name(singular: &str, lang: Lang) -> String {
     match lang {
         Lang::CSharp => singular.to_upper_camel_case(),
-        Lang::TypeScript => singular.to_lower_camel_case(),
+        Lang::TypeScript => singular.to_snake_case(),
         Lang::Rust => singular.to_snake_case(),
     }
 }

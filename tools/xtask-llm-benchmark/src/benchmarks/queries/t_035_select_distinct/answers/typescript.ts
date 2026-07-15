@@ -8,13 +8,13 @@ const order = table({
   amount: t.u32(),
 });
 
-const distinctCategory = table({
+const distinct_category = table({
   name: 'distinct_category',
 }, {
   category: t.string().primaryKey(),
 });
 
-const spacetimedb = schema({ order, distinctCategory });
+const spacetimedb = schema({ order, distinct_category });
 export default spacetimedb;
 
 export const collect_distinct_categories = spacetimedb.reducer(
@@ -24,7 +24,7 @@ export const collect_distinct_categories = spacetimedb.reducer(
       categories.add(o.category);
     }
     for (const category of categories) {
-      ctx.db.distinctCategory.insert({ category });
+      ctx.db.distinct_category.insert({ category });
     }
   }
 );

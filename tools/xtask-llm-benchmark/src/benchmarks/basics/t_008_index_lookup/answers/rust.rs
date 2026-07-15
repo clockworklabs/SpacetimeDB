@@ -10,7 +10,7 @@ pub struct User {
     pub active: bool,
 }
 
-#[table(accessor = result)]
+#[table(accessor = result, public)]
 pub struct ResultRow {
     #[primary_key]
     pub id: u64,
