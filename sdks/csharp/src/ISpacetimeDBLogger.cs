@@ -25,6 +25,21 @@ namespace SpacetimeDB
             new ConsoleLogger();
 #endif
 
+        /// <summary>
+        /// Resets the static instance to prevent data persistence when Enter Play Mode Options (Disable Domain Reloading) is active.
+        /// RuntimeInitializeOnLoadMethod is used since it is supported in older versions of Unity.
+        /// AutoStaticsCleanup and NoAutoStaticsCleanup is only supported in Unity 6+
+        /// </summary>
+        /// <remarks>
+        /// See the <see href="https://docs.unity3d.com/6000.5/Documentation/Manual/domain-reloading.html">Unity Domain Reloading Manual</see> 
+        /// and the <see href="https://docs.unity3d.com/6000.5/Documentation/ScriptReference/RuntimeInitializeOnLoadMethodAttribute.html">RuntimeInitializeOnLoadMethodAttribute API Docs</see> for details.
+        /// </remarks>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStaticFields()
+        {
+            Current = null;
+        }
+
         public static void Debug(string message) => Current.Debug(message);
         public static void Trace(string message) => Current.Trace(message);
         public static void Info(string message) => Current.Info(message);
