@@ -131,10 +131,10 @@ metrics_group!(
         #[labels(db: Identity, view: str)]
         pub view_calls: IntCounterVec,
 
-        #[name = view_calls_triggered]
+        #[name = view_calls_triggered_by_reducer]
         #[help = "The total number of view calls triggered by a reducer"]
         #[labels(db: Identity, reducer: str)]
-        pub view_calls_triggered: IntCounterVec,
+        pub view_calls_triggered_by_reducer: IntCounterVec,
 
         #[name = reducer_abi_time_usec]
         #[help = "The total time spent in reducer ABI calls"]
