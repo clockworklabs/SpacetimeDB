@@ -18,6 +18,18 @@ pub struct ProcInsertsIntoTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `proc_inserts_into`.
+pub struct ProcInsertsIntoTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for ProcInsertsIntoTableAccessor {
+    type Row = ProcInsertsInto;
+    type Handle<'db> = ProcInsertsIntoTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.proc_inserts_into()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `proc_inserts_into`.
 ///

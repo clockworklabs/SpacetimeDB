@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class UsersAgeUnder18Handle : RemoteTableHandle<EventContext, User>
         {
-            protected override string RemoteTableName => "users_age_under_18";
+            public override string RemoteTableName => "users_age_under_18";
 
             internal UsersAgeUnder18Handle(DbConnection conn) : base(conn)
             {

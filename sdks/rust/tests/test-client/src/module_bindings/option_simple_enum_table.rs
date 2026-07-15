@@ -19,6 +19,18 @@ pub struct OptionSimpleEnumTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `option_simple_enum`.
+pub struct OptionSimpleEnumTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for OptionSimpleEnumTableAccessor {
+    type Row = OptionSimpleEnum;
+    type Handle<'db> = OptionSimpleEnumTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.option_simple_enum()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `option_simple_enum`.
 ///

@@ -29,6 +29,10 @@ These access rules are expressed in SQL and evaluated automatically for queries 
 RLS is **experimental and unstable**. It must be explicitly enabled in your module, and the API may change in future releases.
 
 <Tabs groupId="server-language" defaultValue="rust">
+<TabItem value="typescript" label="TypeScript">
+No explicit opt-in is required in TypeScript; the feature is still experimental and the API may change.
+
+</TabItem>
 <TabItem value="csharp" label="C#">
 To enable RLS, include the following preprocessor directive at the top of your module files:
 
@@ -50,6 +54,17 @@ spacetimedb = { version = "...", features = ["unstable"] }
 ## How It Works
 
 <Tabs groupId="server-language" defaultValue="rust">
+<TabItem value="typescript" label="TypeScript">
+RLS rules are expressed in SQL and declared as exported filters on your schema.
+
+```typescript
+/** A client can only see their account */
+export const accountFilter = spacetimedb.clientVisibilityFilter.sql(
+  'SELECT * FROM account WHERE account.identity = :sender'
+);
+```
+
+</TabItem>
 <TabItem value="csharp" label="C#">
 RLS rules are expressed in SQL and declared as public static readonly fields of type `Filter`.
 
@@ -112,6 +127,21 @@ This means clients will be able to see to any row that matches at least one of t
 #### Example
 
 <Tabs groupId="server-language" defaultValue="rust">
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+/** A client can only see their account */
+export const accountFilter = spacetimedb.clientVisibilityFilter.sql(
+  'SELECT * FROM account WHERE account.identity = :sender'
+);
+
+/** An admin can see all accounts */
+export const accountFilterForAdmins = spacetimedb.clientVisibilityFilter.sql(
+  'SELECT account.* FROM account JOIN admin WHERE admin.identity = :sender'
+);
+```
+
+</TabItem>
 <TabItem value="csharp" label="C#">
 
 ```cs
@@ -169,6 +199,30 @@ This ensures that data is never leaked through indirect access patterns.
 #### Example
 
 <Tabs groupId="server-language" defaultValue="rust">
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+/** A client can only see their account */
+export const accountFilter = spacetimedb.clientVisibilityFilter.sql(
+  'SELECT * FROM account WHERE account.identity = :sender'
+);
+
+/** An admin can see all accounts */
+export const accountFilterForAdmins = spacetimedb.clientVisibilityFilter.sql(
+  'SELECT account.* FROM account JOIN admin WHERE admin.identity = :sender'
+);
+
+/**
+ * Explicitly filtering by client identity in this rule is not necessary,
+ * since the above RLS rules on `account` will be applied automatically.
+ * Hence a client can only see their player, but an admin can see all players.
+ */
+export const playerFilter = spacetimedb.clientVisibilityFilter.sql(
+  'SELECT p.* FROM account a JOIN player p ON a.id = p.id'
+);
+```
+
+</TabItem>
 <TabItem value="csharp" label="C#">
 
 ```cs
@@ -240,6 +294,20 @@ as this would result in infinite recursion.
 #### Example: Self-Join
 
 <Tabs groupId="server-language" defaultValue="rust">
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+/** A client can only see players on their same level */
+export const playerFilter = spacetimedb.clientVisibilityFilter.sql(`
+  SELECT q.*
+  FROM account a
+  JOIN player p ON a.id = p.id
+  JOIN player q on p.level = q.level
+  WHERE a.identity = :sender
+`);
+```
+
+</TabItem>
 <TabItem value="csharp" label="C#">
 
 ```cs
@@ -283,9 +351,24 @@ const PLAYER_FILTER: Filter = Filter::Sql("
 
 #### Example: Recursive Rules
 
-This module will fail to publish because each rule depends on the other one.
+This module will publish, but because each rule depends on the other one, client queries and subscriptions on these tables will fail with a cyclic dependency error.
 
 <Tabs groupId="server-language" defaultValue="rust">
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+/** An account must have a corresponding player */
+export const accountFilter = spacetimedb.clientVisibilityFilter.sql(
+  'SELECT a.* FROM account a JOIN player p ON a.id = p.id WHERE a.identity = :sender'
+);
+
+/** A player must have a corresponding account */
+export const playerFilter = spacetimedb.clientVisibilityFilter.sql(
+  'SELECT p.* FROM account a JOIN player p ON a.id = p.id WHERE a.identity = :sender'
+);
+```
+
+</TabItem>
 <TabItem value="csharp" label="C#">
 
 ```cs

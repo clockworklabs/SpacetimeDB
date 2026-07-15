@@ -18,6 +18,18 @@ pub struct MyPlayerAndLevelTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `my_player_and_level`.
+pub struct MyPlayerAndLevelTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for MyPlayerAndLevelTableAccessor {
+    type Row = PlayerAndLevel;
+    type Handle<'db> = MyPlayerAndLevelTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.my_player_and_level()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `my_player_and_level`.
 ///
