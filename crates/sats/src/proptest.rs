@@ -156,8 +156,7 @@ pub fn generate_algebraic_value(ty: AlgebraicType) -> impl Strategy<Value = Alge
 
 /// Generates a `ProductValue` typed at `ty`.
 pub fn generate_product_value(ty: ProductType) -> impl Strategy<Value = ProductValue> {
-    Vec::from(ty.elements)
-        .into_iter()
+    ty.into_iter()
         .map(|elem| generate_algebraic_value(elem.algebraic_type))
         .collect::<Vec<_>>()
         .prop_map_into()
