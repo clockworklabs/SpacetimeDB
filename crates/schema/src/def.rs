@@ -33,10 +33,9 @@ use spacetimedb_data_structures::map::{Equivalent, HashMap};
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v10::{
     ExplicitNames, MethodOrAny, RawColumnDefaultValueV10, RawConstraintDefV10, RawHttpHandlerDefV10,
-    RawHttpRouteDefV10, RawIndexDefV10,
-    RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section, RawProcedureDefV10, RawReducerDefV10,
-    RawRowLevelSecurityDefV10, RawScheduleDefV10, RawScopedTypeNameV10, RawSequenceDefV10, RawTableDefV10,
-    RawTypeDefV10, RawViewDefV10, RawViewPrimaryKeyDefV10,
+    RawHttpRouteDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section,
+    RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10, RawScopedTypeNameV10,
+    RawSequenceDefV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10, RawViewPrimaryKeyDefV10,
 };
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIndexAlgorithm, RawIndexDefV9,
@@ -2180,7 +2179,9 @@ mod tests {
         assert_eq!(defaults[0].col_id, ColId(1));
         assert_eq!(
             defaults[0].value,
-            spacetimedb_sats::bsatn::to_vec(&AlgebraicValue::U16(12)).unwrap().into()
+            spacetimedb_sats::bsatn::to_vec(&AlgebraicValue::U16(12))
+                .unwrap()
+                .into()
         );
     }
 
