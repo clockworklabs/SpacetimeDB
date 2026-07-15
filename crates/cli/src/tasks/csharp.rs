@@ -259,14 +259,6 @@ pub(crate) fn build_csharp(
     //   3. Single <TargetFramework> in the project's .csproj
     //   4. .NET 10 default for missing or multi-target project context
     let csproj_tfms = read_tfms_from_csproj(project_path);
-    eprintln!(
-        "dotnet version detection: override={:?}, global_json={:?}, csproj_tfms={:?}, dotnet_version={:?}, project_path={}",
-        dotnet_version_override,
-        project_global_json.as_ref().or(cwd_global_json.as_ref()),
-        csproj_tfms,
-        dotnet_version_str,
-        project_path.display()
-    );
     let dotnet_major = dotnet_version_override
         .or_else(|| dotnet_version_str.as_deref().and_then(parse_major_version))
         .or_else(|| csproj_tfms.as_ref().and_then(CsprojTargetFrameworks::single_major))
