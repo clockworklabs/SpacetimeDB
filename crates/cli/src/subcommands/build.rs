@@ -113,6 +113,7 @@ pub async fn exec_with_argstring(
     project_path: &Path,
     arg_string: &str,
     native_aot: bool,
+    dotnet_version: Option<u8>,
 ) -> Result<(PathBuf, &'static str), anyhow::Error> {
     let argv = exec_with_argstring_argv(project_path, arg_string);
     let arg_matches = cli().get_matches_from(argv);
@@ -129,7 +130,7 @@ pub async fn exec_with_argstring(
         Some(PathBuf::from(lint_dir))
     };
     let build_debug = arg_matches.get_flag("debug");
-    let dotnet_version = arg_matches.get_one::<u8>("dotnet_version").copied();
+    let dotnet_version = dotnet_version.or_else(|| arg_matches.get_one::<u8>("dotnet_version").copied());
 
     run_build(module_path, lint_dir, build_debug, features, native_aot, dotnet_version)
 }

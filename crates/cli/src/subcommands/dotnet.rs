@@ -10,24 +10,9 @@ pub(crate) fn parse_optional_dotnet_version(dotnet_version: Option<&str>) -> any
     dotnet_version.map(parse_dotnet_version).transpose()
 }
 
-pub(crate) fn build_options_with_dotnet_version(
-    build_options: &str,
-    dotnet_version: Option<&str>,
-) -> anyhow::Result<String> {
-    let Some(version) = parse_optional_dotnet_version(dotnet_version)? else {
-        return Ok(build_options.to_string());
-    };
-
-    Ok(if build_options.is_empty() {
-        format!("--dotnet-version {version}")
-    } else {
-        format!("{build_options} --dotnet-version {version}")
-    })
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{build_options_with_dotnet_version, parse_optional_dotnet_version};
+    use super::parse_optional_dotnet_version;
 
     #[test]
     fn dotnet_version_accepts_supported_sdk_majors() {
@@ -40,18 +25,5 @@ mod tests {
     fn dotnet_version_rejects_unsupported_sdk_majors() {
         assert!(parse_optional_dotnet_version(Some("9")).is_err());
         assert!(parse_optional_dotnet_version(Some("not-a-number")).is_err());
-    }
-
-    #[test]
-    fn dotnet_version_is_added_to_build_options_after_validation() {
-        assert_eq!(
-            build_options_with_dotnet_version("", Some("8")).unwrap(),
-            "--dotnet-version 8"
-        );
-        assert_eq!(
-            build_options_with_dotnet_version("--debug", Some("10")).unwrap(),
-            "--debug --dotnet-version 10"
-        );
-        assert!(build_options_with_dotnet_version("", Some("9")).is_err());
     }
 }

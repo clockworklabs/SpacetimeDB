@@ -19,9 +19,7 @@ use std::process::{Command, Stdio};
 use crate::spacetime_config::{
     find_and_load_with_env, CommandConfig, CommandSchema, CommandSchemaBuilder, Key, LoadedConfig, SpacetimeConfig,
 };
-use crate::subcommands::dotnet::{
-    build_options_with_dotnet_version, parse_dotnet_version, parse_optional_dotnet_version,
-};
+use crate::subcommands::dotnet::{parse_dotnet_version, parse_optional_dotnet_version};
 use crate::tasks::csharp::dotnet_format;
 use crate::tasks::rust::rustfmt;
 use crate::util::{resolve_sibling_binary, y_or_n};
@@ -306,7 +304,7 @@ pub struct GenerateRunConfig {
     pub module_name: Option<String>,
     pub module_prefix: Option<String>,
     pub build_options: String,
-    pub dotnet_version: Option<String>,
+    pub dotnet_version: Option<u8>,
     pub out_dir: PathBuf,
     pub include_private: bool,
 }
@@ -339,13 +337,10 @@ fn prepare_generate_run_configs<'a>(
             .get_one::<String>("build_options")?
             .unwrap_or_else(String::new);
         let dotnet_version = if command_config.is_from_cli("dotnet_version") {
-            command_config
-                .get_one::<u8>("dotnet_version")?
-                .map(|version| version.to_string())
+            command_config.get_one::<u8>("dotnet_version")?
         } else {
             let dotnet_version = command_config.get_one::<String>("dotnet_version")?;
-            parse_optional_dotnet_version(dotnet_version.as_deref())?;
-            dotnet_version
+            parse_optional_dotnet_version(dotnet_version.as_deref())?
         };
 
         // Validate Unreal-specific args first to preserve focused errors for this mode.
@@ -510,9 +505,9 @@ pub async fn run_prepared_generate_configs(
                 println!("Skipping build. Instead we are inspecting {}", path.display());
                 path.clone()
             } else {
-                let build_options =
-                    build_options_with_dotnet_version(&run.build_options, run.dotnet_version.as_deref())?;
-                let (path, _) = build::exec_with_argstring(&run.project_path, &build_options, false).await?;
+                let (path, _) =
+                    build::exec_with_argstring(&run.project_path, &run.build_options, false, run.dotnet_version)
+                        .await?;
                 path
             };
             let spinner = indicatif::ProgressBar::new_spinner();
