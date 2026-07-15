@@ -153,7 +153,7 @@ impl InitOptions {
             non_interactive: args.get_flag("non-interactive"),
             skip_next_steps: false,
             native_aot: args.get_flag("native-aot"),
-            dotnet_version: parse_dotnet_version(args.get_one::<String>("dotnet-version").map(String::as_str))?,
+            dotnet_version: args.get_one::<u8>("dotnet-version").copied(),
         })
     }
 }
@@ -209,6 +209,7 @@ pub fn cli() -> clap::Command {
             Arg::new("dotnet-version")
                 .long("dotnet-version")
                 .value_name("VERSION")
+                .value_parser(parse_dotnet_version)
                 .help("Target .NET SDK major version for C# projects (e.g. 8 or 10). Defaults to 10 except on macOS or when only .NET 8 is installed."),
         )
 }
@@ -2526,6 +2527,19 @@ bytes.workspace = true
         assert!(csharp_global_json(8).contains("\"rollForward\": \"latestFeature\""));
         assert!(csharp_global_json(10).contains("\"version\": \"10.0.100\""));
         assert!(csharp_global_json(10).contains("\"rollForward\": \"latestMinor\""));
+    }
+
+    #[test]
+    fn test_init_cli_parses_dotnet_version_as_supported_sdk_major() {
+        let matches = cli().try_get_matches_from(["init", "--dotnet-version", "10"]).unwrap();
+        let options = InitOptions::from_args(&matches).unwrap();
+
+        assert_eq!(options.dotnet_version, Some(10));
+    }
+
+    #[test]
+    fn test_init_cli_rejects_unsupported_dotnet_version() {
+        assert!(cli().try_get_matches_from(["init", "--dotnet-version", "9"]).is_err());
     }
 
     #[test]

@@ -19,7 +19,9 @@ use std::process::{Command, Stdio};
 use crate::spacetime_config::{
     find_and_load_with_env, CommandConfig, CommandSchema, CommandSchemaBuilder, Key, LoadedConfig, SpacetimeConfig,
 };
-use crate::subcommands::dotnet::{build_options_with_dotnet_version, parse_dotnet_version};
+use crate::subcommands::dotnet::{
+    build_options_with_dotnet_version, parse_dotnet_version, parse_optional_dotnet_version,
+};
 use crate::tasks::csharp::dotnet_format;
 use crate::tasks::rust::rustfmt;
 use crate::util::{resolve_sibling_binary, y_or_n};
@@ -261,6 +263,7 @@ pub fn cli() -> clap::Command {
             Arg::new("dotnet_version")
                 .long("dotnet-version")
                 .value_name("VERSION")
+                .value_parser(parse_dotnet_version)
                 .conflicts_with("wasm_file")
                 .conflicts_with("js_file")
                 .help("Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.")
@@ -335,8 +338,15 @@ fn prepare_generate_run_configs<'a>(
         let build_options = command_config
             .get_one::<String>("build_options")?
             .unwrap_or_else(String::new);
-        let dotnet_version = command_config.get_one::<String>("dotnet_version")?;
-        parse_dotnet_version(dotnet_version.as_deref())?;
+        let dotnet_version = if command_config.is_from_cli("dotnet_version") {
+            command_config
+                .get_one::<u8>("dotnet_version")?
+                .map(|version| version.to_string())
+        } else {
+            let dotnet_version = command_config.get_one::<String>("dotnet_version")?;
+            parse_optional_dotnet_version(dotnet_version.as_deref())?;
+            dotnet_version
+        };
 
         // Validate Unreal-specific args first to preserve focused errors for this mode.
         if requested_lang == Some(Language::UnrealCpp) {
@@ -1233,6 +1243,22 @@ mod tests {
 
         assert_eq!(uproject_dir, Some(PathBuf::from("/config/path")));
         assert_eq!(module_name, Some("MyModule".to_string()));
+    }
+
+    #[test]
+    fn test_generate_cli_parses_dotnet_version_as_supported_sdk_major() {
+        let matches = cli()
+            .try_get_matches_from(["generate", "--dotnet-version", "10"])
+            .unwrap();
+
+        assert_eq!(matches.get_one::<u8>("dotnet_version").copied(), Some(10));
+    }
+
+    #[test]
+    fn test_generate_cli_rejects_unsupported_dotnet_version() {
+        assert!(cli()
+            .try_get_matches_from(["generate", "--dotnet-version", "9"])
+            .is_err());
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use super::dotnet::parse_dotnet_version;
+use super::dotnet::{parse_dotnet_version, parse_optional_dotnet_version};
 use crate::common_args::ClearMode;
 use crate::config::Config;
 use crate::generate::Language;
@@ -98,6 +98,7 @@ pub fn cli() -> Command {
             Arg::new("dotnet_version")
                 .long("dotnet-version")
                 .value_name("VERSION")
+                .value_parser(parse_dotnet_version)
                 .help("Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted."),
         )
         .arg(
@@ -196,7 +197,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let no_config = args.get_flag("no_config");
     let skip_publish = args.get_flag("skip_publish");
     let skip_generate = args.get_flag("skip_generate");
-    let dotnet_version = args.get_one::<String>("dotnet_version").map(String::as_str);
+    let dotnet_version = args.get_one::<u8>("dotnet_version").map(u8::to_string);
 
     // --env defaults to "dev" for spacetime dev
     let env = args.get_one::<String>("env").map(|s| s.as_str()).unwrap_or("dev");
@@ -412,7 +413,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 project_name_default: database_name_from_cli_for_init.clone(),
                 database_name_default: database_name_from_cli_for_init.clone(),
                 skip_next_steps: true,
-                dotnet_version: parse_dotnet_version(dotnet_version)?,
+                dotnet_version: parse_optional_dotnet_version(dotnet_version.as_deref())?,
                 ..Default::default()
             };
             let created_project_path = init::exec_with_options(&mut config, &init_options).await?;
@@ -755,7 +756,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         using_spacetime_config,
         server_from_cli,
         force,
-        dotnet_version,
+        dotnet_version.as_deref(),
         skip_publish,
         skip_generate,
     )
@@ -870,7 +871,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                     using_spacetime_config,
                     server_from_cli,
                     force,
-                    dotnet_version,
+                    dotnet_version.as_deref(),
                     skip_publish,
                     skip_generate,
                 )
@@ -1028,7 +1029,7 @@ async fn generate_build_and_publish(
         false,
         None,
         false,
-        parse_dotnet_version(dotnet_version)?,
+        parse_optional_dotnet_version(dotnet_version)?,
     )
     .context("Failed to build project")?;
     println!("{}", "Build complete!".green());
@@ -1993,23 +1994,16 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_dotnet_version_flag_exists() {
+    fn test_dev_cli_parses_dotnet_version_as_supported_sdk_major() {
         let cmd = cli();
         let matches = cmd.clone().get_matches_from(vec!["dev", "--dotnet-version", "8"]);
 
-        assert_eq!(
-            matches.get_one::<String>("dotnet_version").map(|s| s.as_str()),
-            Some("8")
-        );
+        assert_eq!(matches.get_one::<u8>("dotnet_version").copied(), Some(8));
     }
 
     #[test]
-    fn test_parse_dotnet_version() {
-        assert_eq!(parse_dotnet_version(None).unwrap(), None);
-        assert_eq!(parse_dotnet_version(Some("8")).unwrap(), Some(8));
-        assert_eq!(parse_dotnet_version(Some("10")).unwrap(), Some(10));
-        assert!(parse_dotnet_version(Some("9")).is_err());
-        assert!(parse_dotnet_version(Some("not-a-number")).is_err());
+    fn test_dev_cli_rejects_unsupported_dotnet_version() {
+        assert!(cli().try_get_matches_from(["dev", "--dotnet-version", "9"]).is_err());
     }
 
     #[test]

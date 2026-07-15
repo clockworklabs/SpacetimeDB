@@ -15,7 +15,9 @@ use crate::spacetime_config::{
     find_and_load_with_env, find_and_load_with_env_from, CommandConfig, CommandSchema, CommandSchemaBuilder,
     FlatTarget, Key, LoadedConfig, SpacetimeConfig,
 };
-use crate::subcommands::dotnet::{build_options_with_dotnet_version, parse_dotnet_version};
+use crate::subcommands::dotnet::{
+    build_options_with_dotnet_version, parse_dotnet_version, parse_optional_dotnet_version,
+};
 use crate::util::{add_auth_header_opt, get_auth_header, strip_verbatim_prefix, AuthHeader, ResponseExt};
 use crate::util::{decode_identity, y_or_n};
 use crate::{build, common_args};
@@ -322,6 +324,7 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
             Arg::new("dotnet_version")
                 .long("dotnet-version")
                 .value_name("VERSION")
+                .value_parser(parse_dotnet_version)
                 .help("Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.")
         )
         .after_help("Run `spacetime help publish` for more detailed information.")
@@ -526,8 +529,15 @@ async fn execute_publish_configs<'a>(
         let org_opt = command_config.get_one::<String>("organization")?;
         let org = org_opt.as_deref();
         let native_aot = command_config.get_one::<bool>("native_aot")?.unwrap_or(false);
-        let dotnet_version = command_config.get_one::<String>("dotnet_version")?;
-        parse_dotnet_version(dotnet_version.as_deref())?;
+        let dotnet_version = if command_config.is_from_cli("dotnet_version") {
+            command_config
+                .get_one::<u8>("dotnet_version")?
+                .map(|version| version.to_string())
+        } else {
+            let dotnet_version = command_config.get_one::<String>("dotnet_version")?;
+            parse_optional_dotnet_version(dotnet_version.as_deref())?;
+            dotnet_version
+        };
 
         // If the user didn't specify an identity and we didn't specify an anonymous identity, then
         // we want to use the default identity
@@ -1274,6 +1284,22 @@ mod tests {
         let matches = cmd.clone().get_matches_from(vec!["publish", ""]);
         let result = get_filtered_publish_configs(&spacetime_config, &cmd, &schema, &matches);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_publish_cli_parses_dotnet_version_as_supported_sdk_major() {
+        let matches = cli()
+            .try_get_matches_from(["publish", "--dotnet-version", "10"])
+            .unwrap();
+
+        assert_eq!(matches.get_one::<u8>("dotnet_version").copied(), Some(10));
+    }
+
+    #[test]
+    fn test_publish_cli_rejects_unsupported_dotnet_version() {
+        assert!(cli()
+            .try_get_matches_from(["publish", "--dotnet-version", "9"])
+            .is_err());
     }
 
     #[test]

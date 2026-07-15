@@ -44,6 +44,7 @@ pub fn cli() -> clap::Command {
             Arg::new("dotnet_version")
                 .long("dotnet-version")
                 .value_name("VERSION")
+                .value_parser(parse_dotnet_version)
                 .help("Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.")
         )
 }
@@ -67,7 +68,7 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(PathBuf, &'stat
     };
     let build_debug = args.get_flag("debug");
     let features = features.cloned();
-    let dotnet_version = parse_dotnet_version(args.get_one::<String>("dotnet_version").map(String::as_str))?;
+    let dotnet_version = args.get_one::<u8>("dotnet_version").copied();
 
     run_build(module_path, lint_dir, build_debug, features, false, dotnet_version)
 }
@@ -128,7 +129,7 @@ pub async fn exec_with_argstring(
         Some(PathBuf::from(lint_dir))
     };
     let build_debug = arg_matches.get_flag("debug");
-    let dotnet_version = parse_dotnet_version(arg_matches.get_one::<String>("dotnet_version").map(String::as_str))?;
+    let dotnet_version = arg_matches.get_one::<u8>("dotnet_version").copied();
 
     run_build(module_path, lint_dir, build_debug, features, native_aot, dotnet_version)
 }
@@ -145,7 +146,7 @@ fn exec_with_argstring_argv(project_path: &Path, arg_string: &str) -> Vec<OsStri
 
 #[cfg(test)]
 mod tests {
-    use super::exec_with_argstring_argv;
+    use super::{cli, exec_with_argstring_argv};
     use std::path::Path;
 
     #[test]
@@ -162,5 +163,17 @@ mod tests {
             argv[5].to_string_lossy(),
             "SpacetimeDB Projects/My SpacetimeDB App/spacetimedb"
         );
+    }
+
+    #[test]
+    fn build_cli_parses_dotnet_version_as_supported_sdk_major() {
+        let matches = cli().try_get_matches_from(["build", "--dotnet-version", "10"]).unwrap();
+
+        assert_eq!(matches.get_one::<u8>("dotnet_version").copied(), Some(10));
+    }
+
+    #[test]
+    fn build_cli_rejects_unsupported_dotnet_version() {
+        assert!(cli().try_get_matches_from(["build", "--dotnet-version", "9"]).is_err());
     }
 }
