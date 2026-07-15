@@ -715,8 +715,7 @@ fn setup_cpp_server_sdk(server_path: &Path) -> Result<()> {
     let bindings_path = workspace_root().join("crates/bindings-cpp");
     let bindings_path_str = normalize_dependency_path(&bindings_path);
 
-    let content = fs::read_to_string(&cmake_lists)
-        .with_context(|| format!("Failed to read {:?}", cmake_lists))?;
+    let content = fs::read_to_string(&cmake_lists).with_context(|| format!("Failed to read {:?}", cmake_lists))?;
 
     let replacement = format!(
         r#"set(SPACETIMEDB_CPP_DIR "{}" CACHE PATH "Path to a local clone of SpacetimeDB C++ bindings (overrides FetchContent)")"#,
@@ -744,8 +743,7 @@ fn setup_cpp_server_sdk(server_path: &Path) -> Result<()> {
         );
     }
 
-    fs::write(&cmake_lists, format!("{updated}\n"))
-        .with_context(|| format!("Failed to write {:?}", cmake_lists))?;
+    fs::write(&cmake_lists, format!("{updated}\n")).with_context(|| format!("Failed to write {:?}", cmake_lists))?;
 
     Ok(())
 }
@@ -882,8 +880,7 @@ fn test_cpp_template(test: &Smoketest, template: &Template, project_path: &Path)
         server_path.to_str().unwrap(),
         &domain,
     ])
-    .with_context(|| format!("spacetime publish failed for C++ server in template {}",
-    template.id))?;
+    .with_context(|| format!("spacetime publish failed for C++ server in template {}", template.id))?;
 
     let _ = test.spacetime(&["delete", "--server", &test.server_url, "--yes", &domain]);
 
@@ -928,7 +925,8 @@ fn test_template(test: &Smoketest, template: &Template) -> Result<()> {
         Some(other) => {
             bail!(
                 "[TEMPLATES] Skipping template {} with unsupported server language: {}",
-                template.id, other
+                template.id,
+                other
             );
         }
         None => {
