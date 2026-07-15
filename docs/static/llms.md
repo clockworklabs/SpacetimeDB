@@ -44,12 +44,14 @@ This section covers the fundamental concepts you need to understand to build app
 
 - [Core Concepts](/docs/core-concepts): This section covers the fundamental concepts you need to understand to build applications with SpacetimeDB.
 - [Authentication](/docs/core-concepts/authentication): SpacetimeDB modules are exposed to the open internet and anyone can connect to
-- [Auth0](/docs/core-concepts/authentication/Auth0): This guilde will walk you through integrating Auth0 authentication with your SpacetimeDB application.
+- [Auth0](/docs/core-concepts/authentication/Auth0): This guide will walk you through integrating Auth0 authentication with your SpacetimeDB application.
+- [Better Auth](/docs/core-concepts/authentication/BetterAuth): Better Auth is a TypeScript authentication
 - [Clerk](/docs/core-concepts/authentication/Clerk): This guide will walk you through integrating Clerk authentication with your SpacetimeDB React application. You will configure a Clerk application, obtain a JWT from Clerk, and pass it to your SpacetimeDB connection as the authentication token.
 - [Overview](/docs/core-concepts/authentication/spacetimeauth/): SpacetimeAuth is currently in beta, some features may not be available yet or
 - [Configuring your project](/docs/core-concepts/authentication/spacetimeauth/configuring-a-project): SpacetimeAuth is currently in beta, some features may not be available yet or may change in the future. You might encounter bugs or issues while using the service. Please report any problems you encounter to help us improve SpacetimeAuth.
 - [Creating a project](/docs/core-concepts/authentication/spacetimeauth/creating-a-project): SpacetimeAuth is currently in beta, some features may not be available yet or may change in the future. You might encounter bugs or issues while using the service. Please report any problems you encounter to help us improve SpacetimeAuth.
 - [React Integration](/docs/core-concepts/authentication/spacetimeauth/react-integration): SpacetimeAuth is currently in beta, some features may not be available yet or may change in the future. You might encounter bugs or issues while using the service. Please report any problems you encounter to help us improve SpacetimeAuth.
+- [Steam Session Ticket Authentication](/docs/core-concepts/authentication/spacetimeauth/steam): SpacetimeAuth supports authentication using Steam's Session Ticket system. This allows
 - [Testing](/docs/core-concepts/authentication/spacetimeauth/testing): SpacetimeAuth is currently in beta, some features may not be available yet or may change in the future. You might encounter bugs or issues while using the service. Please report any problems you encounter to help us improve SpacetimeAuth.
 - [Using Auth Claims](/docs/core-concepts/authentication/usage): SpacetimeDB allows you to easily access authentication (auth) claims embedded in
 
@@ -60,7 +62,7 @@ A module is a collection of functions and schema definitions, which can be writt
 - [The Database Module](/docs/databases): A module is a collection of functions and schema definitions, which can be written in TypeScript, C#, Rust, or C++. Modules define the structure of your database and the server-side logic that processes and handles client requests.
 - [Automatic Migrations](/docs/databases/automatic-migrations): When you republish a module to an existing database using spacetime publish , SpacetimeDB attempts to automatically migrate your database schema to match the new module definition. This allows you to update your module code and redeploy without losing existing data, as long as the changes are compatible.
 - [spacetime publish](/docs/databases/building-publishing): This guide covers how to build and publish your SpacetimeDB module.
-- [Cheat Sheet](/docs/databases/cheat-sheet): Quick reference for SpacetimeDB module syntax across Rust, C#, and TypeScript.
+- [Cheat Sheet](/docs/databases/cheat-sheet): Quick reference for SpacetimeDB module syntax across Rust, C#, TypeScript, and C++.
 - [spacetime dev](/docs/databases/developing): This guide covers how to create a new SpacetimeDB database module project.
 - [Incremental Migrations](/docs/databases/incremental-migrations): SpacetimeDB does not provide built-in support for general schema-modifying migrations. It does, however, allow adding new tables, and changing reducers' definitions in arbitrary ways. It's possible to run general migrations using an external tool, but this is tedious, necessitates downtime, and imposes the requirement that you update all your clients at the same time as publishing your new module version.
 - [Transactions and Atomicity](/docs/databases/transactions-atomicity): SpacetimeDB provides strong transactional guarantees for all database operations. Every reducer runs inside a database transaction, ensuring your data remains consistent and reliable even under concurrent load.
@@ -70,6 +72,7 @@ A module is a collection of functions and schema definitions, which can be writt
 | Property / Characteristic | Reducers | Procedures | Views |
 
 - [Functions](/docs/functions): | Property / Characteristic | Reducers | Procedures | Views |
+- [HTTP Handlers](/docs/functions/http-handlers): HTTP handlers allow a SpacetimeDB database to expose an HTTP API.
 - [Procedures](/docs/functions/procedures): A procedure is a function exported by a database, similar to a reducer.
 - [Overview](/docs/functions/reducers): Reducers are functions that modify database state in response to client requests or system events. They are the only way to mutate tables in SpacetimeDB - all database changes must go through reducers.
 - [Error Handling](/docs/functions/reducers/error-handling): Error Handling
@@ -80,6 +83,7 @@ A module is a collection of functions and schema definitions, which can be writt
 ### how-to
 
 - [Maincloud](/docs/how-to/deploy/maincloud): Maincloud is SpacetimeDB's fully managed serverless platform. It handles infrastructure, scaling, replication, and backups so you can focus on building your application. Maincloud scales to zero when your database is idle, so you only pay for what you use.
+- [Railway](/docs/how-to/deploy/railway): Railway is a hosted platform for deploying infrastructure and application services. If you want to run SpacetimeDB without managing your own VM, the official Railway template is a quick way to get started.
 - [Self-hosting](/docs/how-to/deploy/self-hosting): This tutorial will guide you through setting up SpacetimeDB on an Ubuntu 24.04 server, securing it with HTTPS using Nginx and Let's Encrypt, and configuring a systemd service to keep it running.
 - [Logging](/docs/how-to/logging): SpacetimeDB provides logging capabilities for debugging and monitoring your modules. Log messages are private to the database owner and are not visible to clients.
 - [PostgreSQL Wire Protocol (PGWire)](/docs/how-to/pg-wire): SpacetimeDB supports the PostgreSQL wire protocol (PGWire),
@@ -90,7 +94,7 @@ A module is a collection of functions and schema definitions, which can be writt
 ### http
 
 - [Authorization](/docs/http/authorization): Generating identities and tokens
-- [/v1/database](/docs/http/database): The HTTP endpoints in /v1/database allow clients to interact with Spacetime databases in a variety of ways, including retrieving information, creating and deleting databases, invoking reducers and evaluating SQL queries.
+- [/v1/database](/docs/http/database): The HTTP endpoints in /v1/database allow clients to interact with Spacetime databases in a variety of ways, including retrieving information, creating and deleting databases, invoking reducers and evaluating SQL queries. These APIs are intended primarily for management, debugging and interactive developer use, and have not been optimized for performance to the same extent as the WebSocket API used by the SpacetimeDB client SDKs.
 - [/v1/identity](/docs/http/identity): The HTTP endpoints in /v1/identity allow clients to generate and manage Spacetime public identities and private tokens.
 
 ### intro
@@ -104,6 +108,7 @@ A module is a collection of functions and schema definitions, which can be writt
 ### quickstarts
 
 - [Angular Quickstart](/docs/quickstarts/angular): Get a SpacetimeDB Angular app running in under 5 minutes.
+- [Astro Quickstart](/docs/quickstarts/astro): Get a SpacetimeDB Astro app running in under 5 minutes.
 - [Browser Quickstart](/docs/quickstarts/browser): Get a SpacetimeDB app running in the browser with inline JavaScript.
 - [Bun Quickstart](/docs/quickstarts/bun): Get a SpacetimeDB Bun app running in under 5 minutes.
 - [C++ Quickstart](/docs/quickstarts/c-plus-plus): Get a SpacetimeDB C++ app running in under 5 minutes.
@@ -115,6 +120,7 @@ A module is a collection of functions and schema definitions, which can be writt
 - [React Quickstart](/docs/quickstarts/react): Get a SpacetimeDB React app running in under 5 minutes.
 - [Remix Quickstart](/docs/quickstarts/remix): Get a SpacetimeDB Remix app running in under 5 minutes.
 - [Rust Quickstart](/docs/quickstarts/rust): Get a SpacetimeDB Rust app running in under 5 minutes.
+- [SolidJS Quickstart](/docs/quickstarts/solid): Get a SpacetimeDB SolidJS app running in under 5 minutes.
 - [Svelte Quickstart](/docs/quickstarts/svelte): Get a SpacetimeDB Svelte app running in under 5 minutes.
 - [TanStack Start Quickstart](/docs/quickstarts/tanstack): Get a SpacetimeDB app with TanStack Start running in under 5 minutes.
 - [TypeScript Quickstart](/docs/quickstarts/typescript): Get a SpacetimeDB TypeScript app running in under 5 minutes.
@@ -122,6 +128,7 @@ A module is a collection of functions and schema definitions, which can be writt
 
 ### reference
 
+- [Commitlog](/docs/reference/internals/commitlog): The commitlog is the write-ahead log (WAL) used by SpacetimeDB to persist all committed transactions. As an in-memory database, SpacetimeDB relies entirely on this log for durability. Every committed transaction is written to the commitlog before it is considered durable, and the full state of any database can be reconstructed by replaying the log from the beginning.
 - [SQL Reference](/docs/reference/sql): SpacetimeDB supports two subsets of SQL:
 
 ### resources
@@ -152,9 +159,20 @@ Tables are the way to store data in SpacetimeDB. All data in SpacetimeDB is stor
 - [Performance Best Practices](/docs/tables/performance): Follow these guidelines to optimize table performance in your SpacetimeDB modules.
 - [Schedule Tables](/docs/tables/schedule-tables): Tables can trigger reducers or procedures at specific times by including a special scheduling column. This allows you to schedule future actions like sending reminders, expiring items, or running periodic maintenance tasks.
 
+### troubleshooting
+
+This is a list of common problems when using SpacetimeDB and how to fix them.
+
+- [Troubleshooting](/docs/troubleshooting): This is a list of common problems when using SpacetimeDB and how to fix them.
+
 ### tutorials
 
 - [Chat App Tutorial](/docs/tutorials/chat-app): In this tutorial, we'll implement a simple chat server as a SpacetimeDB module. You can write your module in TypeScript, C#, or Rust - use the tabs throughout this guide to see code examples in your preferred language.
+- [Godot Tutorial](/docs/tutorials/godot): Need help with the tutorial or CLI commands? Join our Discord server!
+- [1 - Setup](/docs/tutorials/godot/part-1): Unity Tutorial Hero Image
+- [2 - Connecting to SpacetimeDB](/docs/tutorials/godot/part-2): Need help with the tutorial? Join our Discord server!
+- [3 - Gameplay](/docs/tutorials/Godot/part-3): Need help with the tutorial? Join our Discord server!
+- [4 - Moving and Colliding](/docs/tutorials/Godot/part-4): Need help with the tutorial? Join our Discord server!
 - [Unity Tutorial](/docs/tutorials/unity): Need help with the tutorial or CLI commands? Join our Discord server!
 - [1 - Setup](/docs/tutorials/unity/part-1): Unity Tutorial Hero Image
 - [2 - Connecting to SpacetimeDB](/docs/tutorials/unity/part-2): Need help with the tutorial? Join our Discord server!

@@ -1,23 +1,110 @@
+name: Release Notifications
+
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      release_body:
+        description: 'Release body/description'
+        required: true
+        default: 'This is a test release body. It can contain **markdown** and multiple lines.'
+      release_tag:
+        description: 'Release tag'
+        required: true
+        default: 'v0.0.0-test'
+      release_url:
+        description: 'Release URL'
+        required: true
+        default: 'https://github.com/clockworklabs/SpacetimeDB/releases'
+      dry_run:
+        description: 'Dry run (print message instead of sending)'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
 
 jobs:
-  on-release:
-    name: Re-tag latest
+  # Internal/team announcement (simple)
+  announce-release:
+    name: Announce GitHub release (Internal)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    steps:
+      - name: Send Discord notification
+        run: |
+          set -euo pipefail
+
+          message="SpacetimeDB GitHub release published: [${{ github.event.release.name }}](<${{ github.event.release.html_url }}>)"
+
+          data="$(jq --null-input --arg msg "$message" '.content=$msg')"
+          curl -X POST -H 'Content-Type: application/json' -d "$data" "${{ secrets.DISCORD_WEBHOOK_RELEASE_ANNOUNCE_URL }}"
+
+  # Public announcement with full release notes
+  public-discord-notification:
+    name: Announce GitHub release (Public)
     runs-on: ubuntu-latest
     steps:
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
-          # Docker Hub access tokens are passed to docker/login-action via the password input.
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
- 
-      - name: Retag the image 
+      - name: Send Discord notification
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_PUBLIC_ANNOUNCEMENTS_WEBHOOK_URL }}
+          RELEASE_BODY: ${{ github.event.release.body || github.event.inputs.release_body }}
+          RELEASE_URL: ${{ github.event.release.html_url || github.event.inputs.release_url }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || github.event.inputs.release_tag }}
         run: |
-          VERSION=${GITHUB_REF#refs/*/}
-          docker buildx imagetools create clockworklabs/spacetimedb:$VERSION --tag clockworklabs/spacetimedb:latest
+          set -euo pipefail
+
+          # Construct the Discord message with the release title and body
+          message="**SpacetimeDB ${RELEASE_TAG}**"
+          message+=$'\n\n'
+          message+="View the full release notes:"
+          message+=$'\n'
+          message+="<${RELEASE_URL}>"
+          message+=$'\n\n'
+          message+="${RELEASE_BODY}"
+
+          # Send a single chunk to Discord, exiting on HTTP error.
+          post_chunk() {
+            local chunk="$1"
+            local data
+            data="$(jq --null-input --arg content "$chunk" \
+              '.content=$content | .allowed_mentions={"parse":["roles","users"]}')"
+            if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+              echo "=== DRY RUN chunk ==="
+              echo "$data" | jq .
+            else
+              curl --fail-with-body -X POST \
+                -H 'Content-Type: application/json' \
+                -d "$data" \
+                "${DISCORD_WEBHOOK_URL}"
+            fi
+          }
+
+          # Split message into chunks of at most 2000 characters, breaking on newlines.
+          MAX=2000
+          current_chunk=""
+          while IFS= read -r line || [ -n "$line" ]; do
+            # +1 for the newline we append after each line
+            candidate="${current_chunk}${line}"$'\n'
+            if [ "${#candidate}" -gt "$MAX" ]; then
+              if [ -n "$current_chunk" ]; then
+                post_chunk "$current_chunk"
+                current_chunk=""
+              fi
+              # If a single line exceeds the limit, bail out loudly rather than silently truncating.
+              if [ "$((${#line} + 1))" -gt "$MAX" ]; then
+                echo "ERROR: A single line is longer than ${MAX} characters and cannot be posted to Discord." >&2
+                exit 1
+              fi
+              current_chunk="${line}"$'\n'
+            else
+              current_chunk="$candidate"
+            fi
+          done <<< "$message"
+
+          # Post any remaining content
+          if [ -n "$current_chunk" ]; then
+            post_chunk "$current_chunk"
+          fi

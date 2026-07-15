@@ -38,6 +38,7 @@ void V10Builder::Clear() {
     reducers_.clear();
     procedures_.clear();
     views_.clear();
+    view_primary_keys_.clear();
     http_handlers_.clear();
     http_routes_.clear();
     schedules_.clear();
@@ -96,6 +97,15 @@ AlgebraicType V10Builder::MakeUnitAlgebraicType() {
 
 AlgebraicType V10Builder::MakeStringAlgebraicType() {
     return AlgebraicType(AlgebraicType::Tag::String);
+}
+
+AlgebraicType V10Builder::MakeQueryReturnAlgebraicType(AlgebraicType row_type) {
+    auto product = std::make_unique<ProductType>();
+    product->elements.emplace_back(std::optional<std::string>("__query__"), std::move(row_type));
+
+    AlgebraicType query_type(AlgebraicType::Tag::Product);
+    query_type.set<2>(std::move(product));
+    return query_type;
 }
 
 void V10Builder::UpsertTable(const RawTableDefV10& table) {
@@ -293,6 +303,11 @@ RawModuleDefV10 V10Builder::BuildModuleDef() const {
         RawModuleDefV10Section section_http_routes;
         section_http_routes.set<12>(http_routes_);
         v10_module.sections.push_back(std::move(section_http_routes));
+    }
+    if (!view_primary_keys_.empty()) {
+        RawModuleDefV10Section section_view_primary_keys;
+        section_view_primary_keys.set<13>(view_primary_keys_);
+        v10_module.sections.push_back(std::move(section_view_primary_keys));
     }
     if (!row_level_security_.empty()) {
         RawModuleDefV10Section section_rls;

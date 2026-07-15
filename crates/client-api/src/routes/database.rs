@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::future::Future;
 use std::num::NonZeroU8;
 use std::str::FromStr;
 use std::time::Duration;
@@ -43,7 +44,7 @@ use spacetimedb_client_api_messages::name::{
 };
 use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
-use spacetimedb_lib::http as st_http;
+use spacetimedb_lib::{http as st_http, ConnectionId};
 use spacetimedb_lib::{sats, AlgebraicValue, Hash, ProductValue, Timestamp};
 use spacetimedb_schema::auto_migrate::{
     MigrationPolicy as SchemaMigrationPolicy, MigrationToken, PrettyPrintStyle as AutoMigratePrettyPrintStyle,
@@ -152,78 +153,67 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
 
     let args = FunctionArgs::Json(body);
 
-    // HTTP callers always need a connection ID to provide to connect/disconnect,
-    // so generate one.
-    let connection_id = generate_random_connection_id();
+    let caller_auth: ConnectionAuthCtx = auth.into();
 
     let (module, Database { owner_identity, .. }) = find_module_and_database(&worker_ctx, name_or_identity).await?;
 
-    // Call the database's `client_connected` reducer, if any.
-    // If it fails or rejects the connection, bail.
-    module
-        .call_identity_connected(auth.into(), connection_id)
-        .await
-        .map_err(client_connected_error_to_response)?;
-
-    let result = match module
-        .call_reducer(
-            caller_identity,
-            Some(connection_id),
-            None,
-            None,
-            None,
-            &reducer,
-            args.clone(),
-        )
-        .await
-    {
-        Ok(rcr) => Ok(CallResult::Reducer(rcr)),
-        Err(ReducerCallError::NoSuchReducer | ReducerCallError::ScheduleReducerNotFound) => {
-            // Not a reducer — try procedure instead
-            match module
-                .call_procedure(caller_identity, Some(connection_id), None, &reducer, args)
-                .await
-                .result
-            {
-                Ok(res) => Ok(CallResult::Procedure(res)),
-                Err(e) => Err(map_procedure_error(e, &reducer)),
+    let fut = async move |module: ModuleHost, caller_identity: Identity, connection_id: ConnectionId| {
+        let result = match module
+            .call_reducer(
+                caller_identity,
+                Some(connection_id),
+                None,
+                None,
+                None,
+                &reducer,
+                args.clone(),
+            )
+            .await
+        {
+            Ok(rcr) => Ok(CallResult::Reducer(rcr)),
+            Err(ReducerCallError::NoSuchReducer | ReducerCallError::ScheduleReducerNotFound) => {
+                // Not a reducer — try procedure instead
+                match module
+                    .call_procedure(caller_identity, Some(connection_id), None, &reducer, args)
+                    .await
+                    .result
+                {
+                    Ok(res) => Ok(CallResult::Procedure(res)),
+                    Err(e) => Err(map_procedure_error(e, &reducer)),
+                }
             }
+            Err(e) => Err(map_reducer_error(e, &reducer)),
+        };
+
+        match result {
+            Ok(CallResult::Reducer(result)) => {
+                let (status, body) = reducer_outcome_response(&owner_identity, &reducer, result.outcome);
+                Ok((
+                    status,
+                    TypedHeader(SpacetimeEnergyUsed(result.execution_budget_used)),
+                    TypedHeader(SpacetimeExecutionDurationMicros(result.execution_duration)),
+                    body,
+                )
+                    .into_response())
+            }
+            Ok(CallResult::Procedure(result)) => {
+                // Procedures don't assign a special meaning to error returns, unlike reducers,
+                // as there's no transaction for them to automatically abort.
+                // Instead, we just pass on their return value with the OK status so long as we successfully invoked the procedure.
+                let (status, body) = procedure_outcome_response(result.return_val);
+                Ok((
+                    status,
+                    TypedHeader(SpacetimeExecutionDurationMicros(result.execution_duration)),
+                    body,
+                )
+                    .into_response())
+            }
+            Err(e) => Err((e.0, e.1).into()),
         }
-        Err(e) => Err(map_reducer_error(e, &reducer)),
     };
 
-    module
-        .call_identity_disconnected(caller_identity, connection_id)
-        .await
-        .map_err(client_disconnected_error_to_response)?;
-
-    match result {
-        Ok(CallResult::Reducer(result)) => {
-            let (status, body) = reducer_outcome_response(&owner_identity, &reducer, result.outcome);
-            Ok((
-                status,
-                TypedHeader(SpacetimeEnergyUsed(result.execution_budget_used)),
-                TypedHeader(SpacetimeExecutionDurationMicros(result.execution_duration)),
-                body,
-            )
-                .into_response())
-        }
-        Ok(CallResult::Procedure(result)) => {
-            // Procedures don't assign a special meaning to error returns, unlike reducers,
-            // as there's no transaction for them to automatically abort.
-            // Instead, we just pass on their return value with the OK status so long as we successfully invoked the procedure.
-            let (status, body) = procedure_outcome_response(result.return_val);
-            Ok((
-                status,
-                TypedHeader(SpacetimeExecutionDurationMicros(result.execution_duration)),
-                body,
-            )
-                .into_response())
-        }
-        Err(e) => Err((e.0, e.1).into()),
-    }
+    with_connection(module, caller_auth, caller_identity, fut).await
 }
-
 #[derive(Deserialize)]
 pub struct HttpRouteRootParams {
     name_or_identity: NameOrIdentity,
@@ -709,6 +699,46 @@ pub struct SqlQueryParams {
     pub confirmed: Option<bool>,
 }
 
+/// Runs `fut` inside an HTTP client connection lifecycle.
+///
+/// The lifecycle is detached from the request task, so once `client_connected`
+/// succeeds, `client_disconnected` still runs if the handler is dropped or
+/// `fut` returns an error.
+async fn with_connection<F, Fut, R>(
+    module: ModuleHost,
+    caller_auth: ConnectionAuthCtx,
+    caller_identity: Identity,
+    fut: F,
+) -> axum::response::Result<R>
+where
+    F: FnOnce(ModuleHost, Identity, ConnectionId) -> Fut + Send + 'static,
+    Fut: Future<Output = axum::response::Result<R>> + Send + 'static,
+    R: Send + 'static,
+{
+    tokio::spawn(async move {
+        let connection_id = generate_random_connection_id();
+
+        // Run the module's client_connected reducer, if any.
+        // If it rejects the connection, bail before executing `fut`
+        module
+            .call_identity_connected(caller_auth, connection_id)
+            .await
+            .map_err(client_connected_error_to_response)?;
+
+        let result = fut(module.clone(), caller_identity, connection_id).await;
+
+        // Always disconnect, even if authorization or execution failed.
+        module
+            .call_identity_disconnected(caller_identity, connection_id)
+            .await
+            .map_err(client_disconnected_error_to_response)?;
+
+        result
+    })
+    .await
+    .map_err(log_and_500)?
+}
+
 pub async fn sql_direct<S>(
     worker_ctx: S,
     SqlParams { name_or_identity }: SqlParams,
@@ -718,21 +748,12 @@ pub async fn sql_direct<S>(
     sql: String,
 ) -> axum::response::Result<Vec<SqlStmtResult<ProductValue>>>
 where
-    S: NodeDelegate + ControlStateDelegate + Authorization,
+    S: NodeDelegate + ControlStateDelegate + Authorization + 'static,
 {
-    let connection_id = generate_random_connection_id();
-
     let (host, database) = find_leader_and_database(&worker_ctx, name_or_identity).await?;
 
-    // Run the module's client_connected reducer, if any.
-    // If it rejects the connection, bail before executing SQL.
     let module = host.module().await.map_err(log_and_500)?;
-    module
-        .call_identity_connected(caller_auth, connection_id)
-        .await
-        .map_err(client_connected_error_to_response)?;
-
-    let result = async {
+    let fut = async move |_module: ModuleHost, caller_identity: Identity, _connection_id: ConnectionId| {
         let sql_auth = worker_ctx
             .authorize_sql(caller_identity, database.database_identity)
             .await?;
@@ -744,16 +765,9 @@ where
             sql,
         )
         .await
-    }
-    .await;
+    };
 
-    // Always disconnect, even if authorization or execution failed.
-    module
-        .call_identity_disconnected(caller_identity, connection_id)
-        .await
-        .map_err(client_disconnected_error_to_response)?;
-
-    result
+    with_connection(module, caller_auth, caller_identity, fut).await
 }
 
 pub async fn sql<S>(
@@ -764,7 +778,7 @@ pub async fn sql<S>(
     body: String,
 ) -> axum::response::Result<impl IntoResponse>
 where
-    S: NodeDelegate + ControlStateDelegate + Authorization,
+    S: NodeDelegate + ControlStateDelegate + Authorization + 'static,
 {
     let caller_identity = auth.claims.identity;
     let caller_auth: ConnectionAuthCtx = auth.into();
@@ -847,6 +861,14 @@ pub async fn reset<S: NodeDelegate + ControlStateDelegate + Authorization>(
 
     ctx.authorize_action(auth.claims.identity, database.database_identity, Action::ResetDatabase)
         .await?;
+
+    if ctx.is_database_locked(&database_identity).await.map_err(log_and_500)? {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Database is locked and cannot be reset with --delete-data. Run `spacetime unlock` first.",
+        )
+            .into());
+    }
 
     let num_replicas = num_replicas.map(validate_replication_factor).transpose()?.flatten();
     ctx.reset_database(
@@ -1323,7 +1345,56 @@ pub async fn delete_database<S: ControlStateDelegate + Authorization>(
 
     ctx.authorize_action(auth.claims.identity, database_identity, Action::DeleteDatabase)
         .await?;
+
+    if ctx.is_database_locked(&database_identity).await.map_err(log_and_500)? {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Database is locked and cannot be deleted. Run `spacetime unlock` first.",
+        )
+            .into());
+    }
+
     ctx.delete_database(&auth.claims.identity, &database_identity)
+        .await
+        .map_err(log_and_500)?;
+
+    Ok(())
+}
+
+pub async fn lock_database<S: ControlStateDelegate + Authorization>(
+    State(ctx): State<S>,
+    Path(DeleteDatabaseParams { name_or_identity }): Path<DeleteDatabaseParams>,
+    Extension(auth): Extension<SpacetimeAuth>,
+) -> axum::response::Result<impl IntoResponse> {
+    let database_identity = name_or_identity.resolve(&ctx).await?;
+    let Some(_database) = worker_ctx_find_database(&ctx, &database_identity).await? else {
+        return Err(StatusCode::NOT_FOUND.into());
+    };
+
+    ctx.authorize_action(auth.claims.identity, database_identity, Action::DeleteDatabase)
+        .await?;
+
+    ctx.set_database_lock(&auth.claims.identity, &database_identity, true)
+        .await
+        .map_err(log_and_500)?;
+
+    Ok(())
+}
+
+pub async fn unlock_database<S: ControlStateDelegate + Authorization>(
+    State(ctx): State<S>,
+    Path(DeleteDatabaseParams { name_or_identity }): Path<DeleteDatabaseParams>,
+    Extension(auth): Extension<SpacetimeAuth>,
+) -> axum::response::Result<impl IntoResponse> {
+    let database_identity = name_or_identity.resolve(&ctx).await?;
+    let Some(_database) = worker_ctx_find_database(&ctx, &database_identity).await? else {
+        return Err(StatusCode::NOT_FOUND.into());
+    };
+
+    ctx.authorize_action(auth.claims.identity, database_identity, Action::DeleteDatabase)
+        .await?;
+
+    ctx.set_database_lock(&auth.claims.identity, &database_identity, false)
         .await
         .map_err(log_and_500)?;
 
@@ -1498,6 +1569,10 @@ pub struct DatabaseRoutes<S> {
     pub db_reset: MethodRouter<S>,
     /// GET: /database/: name_or_identity/unstable/timestamp
     pub timestamp_get: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/lock
+    pub lock_post: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/unlock
+    pub unlock_post: MethodRouter<S>,
     /// ANY: /database/:name_or_identity/route
     pub http_route_root: MethodRouter<S>,
     /// ANY: /database/:name_or_identity/route/
@@ -1529,6 +1604,8 @@ where
             pre_publish: post(pre_publish::<S>),
             db_reset: put(reset::<S>),
             timestamp_get: get(get_timestamp::<S>),
+            lock_post: post(lock_database::<S>),
+            unlock_post: post(unlock_database::<S>),
             http_route_root: any(handle_http_route_root::<S>),
             http_route_root_slash: any(handle_http_route_root_slash::<S>),
             http_route: any(handle_http_route::<S>),
@@ -1556,7 +1633,9 @@ where
             .route("/sql", self.sql_post)
             .route("/unstable/timestamp", self.timestamp_get)
             .route("/pre_publish", self.pre_publish)
-            .route("/reset", self.db_reset);
+            .route("/reset", self.db_reset)
+            .route("/lock", self.lock_post)
+            .route("/unlock", self.unlock_post);
 
         let authed_root_router = axum::Router::new().route(
             "/",
@@ -1761,6 +1840,10 @@ mod tests {
         async fn lookup_namespace_owner(&self, _name: &str) -> anyhow::Result<Option<Identity>> {
             Ok(None)
         }
+
+        async fn is_database_locked(&self, _database_identity: &Identity) -> anyhow::Result<bool> {
+            Ok(false)
+        }
     }
 
     #[async_trait]
@@ -1786,6 +1869,15 @@ mod tests {
             &self,
             _caller_identity: &Identity,
             _database_identity: &Identity,
+        ) -> anyhow::Result<()> {
+            Err(anyhow::anyhow!("unused"))
+        }
+
+        async fn set_database_lock(
+            &self,
+            _caller_identity: &Identity,
+            _database_identity: &Identity,
+            _locked: bool,
         ) -> anyhow::Result<()> {
             Err(anyhow::anyhow!("unused"))
         }

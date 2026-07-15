@@ -68,17 +68,6 @@ namespace Internal {
     };
     static std::vector<HttpHandler> g_http_handlers;
     
-    /**
-     * @brief View result header for serializing view return values
-     * 
-     * This enum is serialized before the actual view data to indicate
-     * the type of result being returned.
-     */
-    enum class ViewResultHeader : uint8_t {
-        RowData = 0,  // Followed by BSATN-encoded Vec<RowType>
-        RawSql = 1,   // Followed by SQL string (future use)
-    };
-    
     // Global error flag for multiple primary key detection
     static bool g_multiple_primary_key_error = false;
     static std::string g_multiple_primary_key_table_name = "";
@@ -555,22 +544,9 @@ int16_t Module::__call_view__(
     // Get the handler
     const auto& handler_info = g_view_handlers[id];
     
-    // Call the view handler - returns serialized result data
+    // Call the view handler - returns fully serialized result data, including the header byte.
     std::vector<uint8_t> result_data = handler_info.handler(ctx, args_source);
-    
-    // Serialize ViewResultHeader::RowData followed by the result
-    std::vector<uint8_t> full_result;
-    
-    // Write the header (RowData = 0)
-    ViewResultHeader header = ViewResultHeader::RowData;
-    bsatn::Writer header_writer(full_result);
-    header_writer.write_u8(static_cast<uint8_t>(header));
-    
-    // Append the actual result data
-    full_result.insert(full_result.end(), result_data.begin(), result_data.end());
-    
-    // Write to the result sink
-    WriteBytes(result_sink, full_result);
+    WriteBytes(result_sink, result_data);
     
     return 2;  // Success with data
 }
@@ -594,22 +570,9 @@ int16_t Module::__call_view_anon__(
     // Get the handler
     const auto& handler_info = g_view_anon_handlers[id];
     
-    // Call the view handler - returns serialized result data
+    // Call the view handler - returns fully serialized result data, including the header byte.
     std::vector<uint8_t> result_data = handler_info.handler(ctx, args_source);
-    
-    // Serialize ViewResultHeader::RowData followed by the result
-    std::vector<uint8_t> full_result;
-    
-    // Write the header (RowData = 0)
-    ViewResultHeader header = ViewResultHeader::RowData;
-    bsatn::Writer header_writer(full_result);
-    header_writer.write_u8(static_cast<uint8_t>(header));
-    
-    // Append the actual result data
-    full_result.insert(full_result.end(), result_data.begin(), result_data.end());
-    
-    // Write to the result sink
-    WriteBytes(result_sink, full_result);
+    WriteBytes(result_sink, result_data);
     
     return 2;  // Success with data
 }
@@ -710,6 +673,13 @@ void Module::RegisterClientVisibilityFilter(const char* sql) {
     getV10Builder().RegisterRowLevelSecurity(sql);
 }
 
+void Module::RegisterClientVisibilityFilter(const std::string& sql) {
+    if (sql.empty()) {
+        return;
+    }
+    getV10Builder().RegisterRowLevelSecurity(sql.c_str());
+}
+
 void Module::RegisterExplicitTableName(const std::string& source_name, const std::string& canonical_name) {
     getV10Builder().RegisterExplicitTableName(source_name, canonical_name);
 }
@@ -720,6 +690,10 @@ void Module::RegisterExplicitFunctionName(const std::string& source_name, const 
 
 void Module::RegisterExplicitIndexName(const std::string& source_name, const std::string& canonical_name) {
     getV10Builder().RegisterExplicitIndexName(source_name, canonical_name);
+}
+
+void Module::RegisterViewPrimaryKey(const std::string& view_source_name, std::vector<std::string> columns) {
+    getV10Builder().RegisterViewPrimaryKey(view_source_name, std::move(columns));
 }
 }
 }

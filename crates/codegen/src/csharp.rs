@@ -8,7 +8,7 @@ use std::ops::Deref;
 use super::code_indenter::CodeIndenter;
 use super::Lang;
 use crate::util::{
-    collect_case, is_reducer_invokable, iter_indexes, iter_reducers, iter_table_names_and_types,
+    collect_case, is_reducer_invokable, iter_indexes, iter_reducers, iter_table_names_and_types, iter_unique_cols,
     print_auto_generated_file_comment, print_auto_generated_version_comment, type_ref_name,
 };
 use crate::{indent_scope, CodegenOptions, OutputFile};
@@ -531,11 +531,7 @@ impl Lang for Csharp<'_> {
                 "public sealed class {csharp_table_class_name} : {base_class}<EventContext, {table_type}>"
             );
             indented_block(output, |output| {
-                writeln!(
-                    output,
-                    "protected override string RemoteTableName => \"{}\";",
-                    table.name
-                );
+                writeln!(output, "public override string RemoteTableName => \"{}\";", table.name);
                 writeln!(output);
 
                 // If this is a table, we want to generate event accessor and indexes
@@ -544,6 +540,41 @@ impl Lang for Csharp<'_> {
                     .unwrap();
 
                 let mut index_names = Vec::new();
+
+                let emit_unique_index = |output: &mut CodeIndenter<String>,
+                                         index_names: &mut Vec<String>,
+                                         csharp_index_name: String,
+                                         field_name: &Identifier,
+                                         field_type: &AlgebraicTypeUse| {
+                    if index_names.contains(&csharp_index_name) {
+                        return;
+                    }
+
+                    let csharp_index_class_name = csharp_index_name.clone() + "UniqueIndex";
+                    let csharp_field_name_pascal = field_name.deref().to_case(Case::Pascal);
+                    let csharp_field_type = ty_fmt(module, field_type).to_string();
+
+                    writeln!(
+                        output,
+                        "public sealed class {csharp_index_class_name} : UniqueIndexBase<{csharp_field_type}>"
+                    );
+                    indented_block(output, |output| {
+                        writeln!(
+                                output,
+                                "protected override {csharp_field_type} GetKey({table_type} row) => row.{csharp_field_name_pascal};"
+                            );
+                        writeln!(output);
+                        writeln!(
+                            output,
+                            "public {csharp_index_class_name}({csharp_table_class_name} table) : base(table) {{ }}"
+                        );
+                    });
+                    writeln!(output);
+                    writeln!(output, "public readonly {csharp_index_class_name} {csharp_index_name};");
+                    writeln!(output);
+
+                    index_names.push(csharp_index_name);
+                };
 
                 for idx in iter_indexes(table) {
                     let Some(accessor_name) = idx.accessor_name.as_ref() else {
@@ -582,18 +613,42 @@ impl Lang for Csharp<'_> {
 
                     let csharp_index_name = accessor_name.deref().to_case(Case::Pascal);
 
-                    let mut csharp_index_class_name = csharp_index_name.clone();
-                    let csharp_index_base_class_name = if schema.is_unique(&columns) {
-                        csharp_index_class_name += "UniqueIndex";
-                        "UniqueIndexBase"
-                    } else {
-                        csharp_index_class_name += "Index";
-                        "BTreeIndexBase"
-                    };
+                    if schema.is_unique(&columns) {
+                        if let Some(col_pos) = columns.as_singleton() {
+                            let (field_name, field_type) = &product_type.elements[col_pos.idx()];
+                            emit_unique_index(output, &mut index_names, csharp_index_name, field_name, field_type);
+                        } else {
+                            let csharp_index_class_name = csharp_index_name.clone() + "UniqueIndex";
+
+                            writeln!(
+                                output,
+                                "public sealed class {csharp_index_class_name} : UniqueIndexBase<{key_type}>"
+                            );
+                            indented_block(output, |output| {
+                                writeln!(
+                                    output,
+                                    "protected override {key_type} GetKey({table_type} row) => {row_to_key};"
+                                );
+                                writeln!(output);
+                                writeln!(
+                                    output,
+                                    "public {csharp_index_class_name}({csharp_table_class_name} table) : base(table) {{ }}"
+                                );
+                            });
+                            writeln!(output);
+                            writeln!(output, "public readonly {csharp_index_class_name} {csharp_index_name};");
+                            writeln!(output);
+
+                            index_names.push(csharp_index_name);
+                        }
+                        continue;
+                    }
+
+                    let csharp_index_class_name = csharp_index_name.clone() + "Index";
 
                     writeln!(
                         output,
-                        "public sealed class {csharp_index_class_name} : {csharp_index_base_class_name}<{key_type}>"
+                        "public sealed class {csharp_index_class_name} : BTreeIndexBase<{key_type}>"
                     );
                     indented_block(output, |output| {
                         writeln!(
@@ -611,6 +666,17 @@ impl Lang for Csharp<'_> {
                     writeln!(output);
 
                     index_names.push(csharp_index_name);
+                }
+
+                for (field_name, field_type) in iter_unique_cols(module.typespace_for_generate(), &schema, product_type)
+                {
+                    emit_unique_index(
+                        output,
+                        &mut index_names,
+                        field_name.deref().to_case(Case::Pascal),
+                        field_name,
+                        field_type,
+                    );
                 }
 
                 writeln!(

@@ -77,7 +77,7 @@ pub(super) struct TxState {
     pub(super) pending_schema_changes: ThinVec<PendingSchemaChange>,
 }
 
-static_assert_size!(TxState, 88);
+static_assert_size!(TxState, 96);
 
 impl MemoryUsage for TxState {
     fn heap_usage(&self) -> usize {
@@ -121,17 +121,10 @@ pub enum PendingSchemaChange {
     ),
     /// The accessor name alias of the table with [`TableId`] changed.
     /// The old alias is stored for rollback.
-    TableAlterAccessorName(
-        TableId,
-        Option<Identifier>,
-    ),
+    TableAlterAccessorName(TableId, Option<Identifier>),
     /// The accessor name alias of the column with [`ColId`] in the table with [`TableId`] changed.
     /// The old alias is stored for rollback.
-    ColumnAlterAccessorName(
-        TableId,
-        ColId,
-        Option<Identifier>,
-    ),
+    ColumnAlterAccessorName(TableId, ColId, Option<Identifier>),
     /// The [`Table`] with [`TableId`] was removed.
     TableRemoved(TableId, Table),
     /// The table with [`TableId`] was added.
@@ -144,13 +137,21 @@ pub enum PendingSchemaChange {
     /// Only non-representational row-type changes are allowed here,
     /// so existing rows in the table will be compatible with the new row type.
     TableAlterRowType(TableId, Vec<ColumnSchema>),
+    /// The row type of the event table with [`TableId`] was changed.
+    /// The old column schemas was stored.
+    ///
+    /// As event tables never have rows resident across transactions or during automigrations,
+    /// we're fine to allow representational/layout-incompatible changes here.
+    ReschemaEventTable(TableId, Vec<ColumnSchema>),
     /// The primary key of the table with [`TableId`] was changed.
     /// The old primary key was stored.
     TableAlterPrimaryKey(TableId, Option<ColList>),
-    /// The constraint with [`ConstraintSchema`] was added to the table with [`TableId`].
-    ConstraintRemoved(TableId, ConstraintSchema),
+    /// The constraint with [`ConstraintSchema`] was removed from the table with [`TableId`].
+    /// If indices were made non-unique, their [`IndexId`]s are stored.
+    ConstraintRemoved(TableId, ConstraintSchema, Vec<IndexId>),
     /// The constraint with [`ConstraintId`] was added to the table with [`TableId`].
-    ConstraintAdded(TableId, ConstraintId),
+    /// If indices were made unique, their [`IndexId`]s and the taken [`PointerMap`] are stored.
+    ConstraintAdded(TableId, ConstraintId, Vec<IndexId>, Option<PointerMap>),
     /// The [`Sequence`] with [`SequenceSchema`] was added to the table with [`TableId`].
     SequenceRemoved(TableId, Sequence, SequenceSchema),
     /// The sequence with [`SequenceId`] was added to the table with [`TableId`].
@@ -174,10 +175,12 @@ impl MemoryUsage for PendingSchemaChange {
             Self::TableAlterAccess(table_id, st_access) => table_id.heap_usage() + st_access.heap_usage(),
             Self::TableAlterRowType(table_id, column_schemas) => table_id.heap_usage() + column_schemas.heap_usage(),
             Self::TableAlterPrimaryKey(table_id, pk) => table_id.heap_usage() + pk.heap_usage(),
-            Self::ConstraintRemoved(table_id, constraint_schema) => {
-                table_id.heap_usage() + constraint_schema.heap_usage()
+            Self::ConstraintRemoved(table_id, constraint_schema, index_ids) => {
+                table_id.heap_usage() + constraint_schema.heap_usage() + index_ids.heap_usage()
             }
-            Self::ConstraintAdded(table_id, constraint_id) => table_id.heap_usage() + constraint_id.heap_usage(),
+            Self::ConstraintAdded(table_id, constraint_id, index_ids, pointer_map) => {
+                table_id.heap_usage() + constraint_id.heap_usage() + index_ids.heap_usage() + pointer_map.heap_usage()
+            }
             Self::SequenceRemoved(table_id, sequence, sequence_schema) => {
                 table_id.heap_usage() + sequence.heap_usage() + sequence_schema.heap_usage()
             }
@@ -190,6 +193,7 @@ impl MemoryUsage for PendingSchemaChange {
                     + col_id.heap_usage()
                     + alias.as_ref().map(|a| a.as_raw().heap_usage()).unwrap_or(0)
             }
+            Self::ReschemaEventTable(table_id, column_schemas) => table_id.heap_usage() + column_schemas.heap_usage(),
         }
     }
 }

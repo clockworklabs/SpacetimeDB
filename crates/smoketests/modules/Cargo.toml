@@ -19,6 +19,8 @@ members = [
     "views-sql",
     "views-auto-migrate",
     "views-auto-migrate-updated",
+    "views-primary-key-auto-migrate",
+    "views-primary-key-auto-migrate-updated",
     "views-drop-view",
     "views-trapped",
     "views-recovered",
@@ -40,6 +42,7 @@ members = [
 
     # Call/procedure tests
     "call-reducer-procedure",
+    "call-reducer-procedure-identity-arg",
     "call-empty",
 
     # SQL format tests
@@ -79,6 +82,7 @@ members = [
     "delete-database",
     "client-connection-reject",
     "client-connection-disconnect-panic",
+    "client-connection-http-cancel",
     "sql-connect-hook",
 
     # Log filtering tests

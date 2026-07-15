@@ -763,10 +763,22 @@ fn refresh_views(
             let view_def = resolved.view_def;
             let view_name = &view_def.name;
             let fn_ptr = view_def.fn_ptr;
+            let sender = tx
+                .as_ref()
+                .expect("procedure tx missing while looking up refreshed view args")
+                .view_instance_args(&view_call)
+                .ok_or_else(|| {
+                    TypeError(format!(
+                        "failed to look up materialized view args for view {}",
+                        view_call.view_id
+                    ))
+                    .throw(scope)
+                })?
+                .sender();
 
             let current_tx = tx.take().expect("procedure tx missing during view refresh");
             let (next_tx, call_result) = tx_slot.set(current_tx, || {
-                call_view(scope, hooks, &view_call, view_name, table_id, fn_ptr)
+                call_view(scope, hooks, &view_call, view_name, table_id, fn_ptr, sender)
             });
             tx = Some(next_tx);
             let return_data = call_result?;
@@ -851,6 +863,7 @@ fn call_view(
     view_name: &Identifier,
     table_id: TableId,
     fn_ptr: ViewFnPtr,
+    sender: Option<Identity>,
 ) -> SysCallResult<ViewReturnData> {
     let prev_func_type = get_env(scope)?
         .instance_env
@@ -858,7 +871,7 @@ fn call_view(
 
     let result = {
         let args = crate::host::ArgsTuple::nullary();
-        match view_call.sender {
+        match sender {
             Some(sender) => call_call_view(
                 scope,
                 hooks,

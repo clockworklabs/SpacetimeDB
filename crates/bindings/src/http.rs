@@ -5,19 +5,31 @@
 //! The [`get`](HttpClient::get) helper can be used for simple `GET` requests,
 //! while [`send`](HttpClient::send) allows more complex requests with headers, bodies and other methods.
 
-use crate::{
-    rt::{read_bytes_source_as, read_bytes_source_into},
-    try_with_tx, with_tx, IterBuf, StdbRng, Timestamp, TxContext,
-};
+use crate::rt::{read_bytes_source_as, read_bytes_source_into};
+use crate::IterBuf;
+// Imports used only by the (still-unstable) HTTP handler machinery.
+#[cfg(all(feature = "unstable", feature = "rand08"))]
+use crate::StdbRng;
+#[cfg(feature = "unstable")]
+use crate::{try_with_tx, with_tx, Timestamp, TxContext};
 use bytes::Bytes;
-#[cfg(feature = "rand")]
+#[cfg(all(feature = "rand08", feature = "unstable"))]
 use rand08::RngCore;
+#[cfg(feature = "unstable")]
 use spacetimedb_lib::db::raw_def::v10::MethodOrAny;
-use spacetimedb_lib::http::{
-    self as st_http, character_is_acceptable_for_route_path, ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION,
-};
-use spacetimedb_lib::{bsatn, Identity, TimeDuration, Uuid};
-use std::cell::{Cell, OnceCell};
+use spacetimedb_lib::http as st_http;
+#[cfg(feature = "unstable")]
+use spacetimedb_lib::http::{character_is_acceptable_for_route_path, ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION};
+#[cfg(feature = "unstable")]
+use spacetimedb_lib::Identity;
+#[cfg(all(feature = "unstable", feature = "rand08"))]
+use spacetimedb_lib::Uuid;
+use spacetimedb_lib::{bsatn, TimeDuration};
+#[cfg(all(feature = "unstable", feature = "rand08"))]
+use std::cell::Cell;
+#[cfg(all(feature = "unstable", feature = "rand08"))]
+use std::cell::OnceCell;
+#[cfg(feature = "unstable")]
 use std::str::FromStr;
 
 pub type Request<T = Body> = http::Request<T>;
@@ -54,12 +66,13 @@ pub type Response<T = Body> = http::Response<T>;
 /// hello_world(ctx, req); // Won't compile, as our handler `hello_world`'s function was shadowed.
 /// # }
 /// ```
+#[cfg(feature = "unstable")]
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::http_handler as handler;
 
 /// Register a [`Router`](struct@Router) to route HTTP requests to handlers.
 ///
-/// This should annotate a function of no arguments which returns a [`Router`](struct@router).
+/// This should annotate a function of no arguments which returns a [`Router`](struct@Router).
 ///
 /// ```no_run
 /// # use spacetimedb::http::{handler, router, Request, Response, Body, HandlerContext, Router};
@@ -72,6 +85,7 @@ pub use spacetimedb_bindings_macro::http_handler as handler;
 ///     Router::new().get("/hello-world", hello_world)
 /// }
 /// ```
+#[cfg(feature = "unstable")]
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::http_router as router;
 
@@ -81,6 +95,7 @@ pub use spacetimedb_bindings_macro::http_router as router;
 ///
 /// Includes the time of invocation and exposes methods for running transactions
 /// and performing side-effecting operations.
+#[cfg(feature = "unstable")]
 #[non_exhaustive]
 pub struct HandlerContext {
     /// The time at which the handler was started.
@@ -94,10 +109,11 @@ pub struct HandlerContext {
 
     /// A counter used for generating UUIDv7 values.
     /// **Note:** must be 0..=u32::MAX
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     pub(crate) counter_uuid: Cell<u32>,
 }
 
+#[cfg(feature = "unstable")]
 impl HandlerContext {
     pub(crate) fn new(timestamp: Timestamp) -> Self {
         Self {
@@ -105,28 +121,34 @@ impl HandlerContext {
             http: HttpClient {},
             #[cfg(feature = "rand08")]
             rng: OnceCell::new(),
-            #[cfg(feature = "rand")]
+            #[cfg(feature = "rand08")]
             counter_uuid: Cell::new(0),
         }
     }
 
     /// Read the current module's [`Identity`].
+    #[deprecated(note = "Use `HandlerContext::database_identity` instead.")]
     pub fn identity(&self) -> Identity {
+        self.database_identity()
+    }
+
+    /// Read the current module's [`Identity`].
+    pub fn database_identity(&self) -> Identity {
         Identity::from_byte_array(spacetimedb_bindings_sys::identity())
     }
 
     /// Acquire a mutable transaction and execute `body` with read-write access.
     pub fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
-        with_tx(body)
+        with_tx(body, Identity::ZERO, None)
     }
 
     /// Acquire a mutable transaction and execute `body` with read-write access.
     pub fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
-        try_with_tx(body)
+        try_with_tx(body, Identity::ZERO, None)
     }
 
     /// Create a new random [`Uuid`] `v4` using the built-in RNG.
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     pub fn new_uuid_v4(&self) -> anyhow::Result<Uuid> {
         let mut bytes = [0u8; 16];
         self.rng().try_fill_bytes(&mut bytes)?;
@@ -134,7 +156,7 @@ impl HandlerContext {
     }
 
     /// Create a new sortable [`Uuid`] `v7` using the built-in RNG, counter and timestamp.
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     pub fn new_uuid_v7(&self) -> anyhow::Result<Uuid> {
         let mut random_bytes = [0u8; 4];
         self.rng().try_fill_bytes(&mut random_bytes)?;
@@ -146,11 +168,13 @@ impl HandlerContext {
 ///
 /// The [`handler`] macro will define a constant of type [`Handler`],
 /// which can be used to refer to the handler function when registering it to handle a route.
+#[cfg(feature = "unstable")]
 #[derive(Clone, Copy)]
 pub struct Handler {
     name: &'static str,
 }
 
+#[cfg(feature = "unstable")]
 impl Handler {
     /// Emitted by the [`handler`] macro.
     ///
@@ -199,11 +223,13 @@ impl Handler {
 /// ## Registering
 ///
 /// Register a `Handler` as the root handler of your database with the [`handler` macro](macro@handler).
+#[cfg(feature = "unstable")]
 #[derive(Clone, Default)]
 pub struct Router {
     routes: Vec<RouteSpec>,
 }
 
+#[cfg(feature = "unstable")]
 #[derive(Clone)]
 pub(crate) struct RouteSpec {
     pub method: MethodOrAny,
@@ -211,6 +237,7 @@ pub(crate) struct RouteSpec {
     pub handler: Handler,
 }
 
+#[cfg(feature = "unstable")]
 impl Router {
     /// Returns a new, empty `Router`.
     pub fn new() -> Self {
@@ -365,6 +392,7 @@ impl Router {
     }
 }
 
+#[cfg(feature = "unstable")]
 fn join_paths(prefix: &str, suffix: &str) -> String {
     if prefix == "/" {
         return suffix.to_string();
@@ -377,6 +405,7 @@ fn join_paths(prefix: &str, suffix: &str) -> String {
     format!("{prefix}/{suffix}")
 }
 
+#[cfg(feature = "unstable")]
 fn assert_valid_path(path: &str) {
     if !path.is_empty() && !path.starts_with('/') {
         panic!("Route paths must start with `/`: {path}");
@@ -389,6 +418,7 @@ fn assert_valid_path(path: &str) {
     }
 }
 
+#[cfg(feature = "unstable")]
 fn routes_overlap(a: &RouteSpec, b: &RouteSpec) -> bool {
     if a.path != b.path {
         return false;
@@ -408,7 +438,7 @@ impl HttpClient {
     ///
     /// For simple `GET` requests with no headers, use [`HttpClient::get`] instead.
     ///
-    /// Include a [`Timeout`] in the [`Request::extensions`] via [`http::request::RequestBuilder::extension`]
+    /// Include a [`Timeout`] in the [`Request::extensions`] via [`http::request::Builder::extension`]
     /// to impose a timeout on the request.
     /// All HTTP requests in SpacetimeDB are subject to a maximum timeout of 500 milliseconds.
     /// All other extensions in `request` are ignored.
@@ -578,6 +608,7 @@ fn convert_response(response: st_http::Response) -> http::Result<http::response:
     Ok(response)
 }
 
+#[cfg(feature = "unstable")]
 pub(crate) fn request_from_wire(request: st_http::Request, body: Bytes) -> http::Request<Body> {
     let st_http::Request {
         method,
@@ -628,6 +659,7 @@ pub(crate) fn request_from_wire(request: st_http::Request, body: Bytes) -> http:
     http::Request::from_parts(parts, body)
 }
 
+#[cfg(feature = "unstable")]
 pub(crate) fn response_into_wire(response: http::Response<Body>) -> (st_http::Response, Bytes) {
     let (parts, body) = response.into_parts();
     let st_response = st_http::Response {
@@ -784,7 +816,7 @@ impl From<http::Error> for Error {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "unstable"))]
 mod tests {
     use super::*;
 

@@ -1,6 +1,6 @@
+use crate::hash::Hash;
 use crate::messages::control_db::HostType;
 use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
-use crate::{hash::Hash, host::v8::JsWorkerKind};
 use once_cell::sync::Lazy;
 use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_datastore::execution_context::WorkloadType;
@@ -8,8 +8,162 @@ use spacetimedb_lib::Identity;
 use spacetimedb_metrics::metrics_group;
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_table::page_pool::PagePool;
-use std::{sync::Once, time::Duration};
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Once,
+    },
+    time::Duration,
+};
 use tokio::{spawn, time::sleep};
+
+// Used as a metrics label value, so private billing code needs access to it.
+pub use crate::host::v8::JsWorkerKind;
+
+/// Causes for websocket client connection endings.
+///
+/// These values are metric labels, so changes may require changes to dashboards and alerting rules.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum ClientDisconnectCause {
+    /// The client sent a websocket close frame.
+    ClientClose,
+    /// The accepted client stopped sending data, including keepalive pongs, until the idle timeout elapsed.
+    IdleTimeout,
+    /// The accepted client sent messages faster than the server could process and filled its incoming queue.
+    IncomingQueueFull,
+    /// The accepted client could not receive server messages quickly enough and filled its outgoing queue.
+    OutgoingQueueFull,
+    /// The database module exited and the server closed the websocket.
+    ModuleExited,
+    /// The accepted client sent a syntactically or semantically invalid websocket request.
+    ClientMessageError,
+    /// The websocket receive stream returned an error.
+    WebsocketReceiveError,
+    /// The server failed while sending or flushing websocket data.
+    WebsocketSendError,
+    /// The websocket receive stream ended without a more specific cause.
+    WebsocketStreamEnded,
+    /// The accepted websocket actor ended without a more specific recorded cause.
+    Unknown,
+}
+
+impl ClientDisconnectCause {
+    pub const ALL: [Self; 10] = [
+        Self::ClientClose,
+        Self::IdleTimeout,
+        Self::IncomingQueueFull,
+        Self::OutgoingQueueFull,
+        Self::ModuleExited,
+        Self::ClientMessageError,
+        Self::WebsocketReceiveError,
+        Self::WebsocketSendError,
+        Self::WebsocketStreamEnded,
+        Self::Unknown,
+    ];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ClientClose => "client_close",
+            Self::IdleTimeout => "idle_timeout",
+            Self::IncomingQueueFull => "incoming_queue_full",
+            Self::OutgoingQueueFull => "outgoing_queue_full",
+            Self::ModuleExited => "module_exited",
+            Self::ClientMessageError => "client_message_error",
+            Self::WebsocketReceiveError => "websocket_receive_error",
+            Self::WebsocketSendError => "websocket_send_error",
+            Self::WebsocketStreamEnded => "websocket_stream_ended",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// Causes for websocket client connection attempts rejected before being counted as connected.
+///
+/// These values are metric labels, so changes may require changes to dashboards and alerting rules.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum ClientRejectCause {
+    /// The subscribe request did not negotiate a supported websocket protocol.
+    InvalidProtocol,
+    /// SQL authorization failed after the request was associated with a database.
+    AuthorizationFailed,
+    /// The HTTP upgrade to a websocket failed after the request was associated with a database.
+    WebsocketUpgradeError,
+    /// The module's client-connected lifecycle reducer rejected the connection.
+    ClientConnectedRejected,
+    /// The module rejected the connection because the caller was out of energy.
+    OutOfEnergy,
+    /// The client-connected lifecycle reducer or module host failed while accepting the connection.
+    ClientConnectedError,
+    /// The client actor function failed before completing setup.
+    ActorStartupFailure,
+}
+
+impl ClientRejectCause {
+    pub const ALL: [Self; 7] = [
+        Self::InvalidProtocol,
+        Self::AuthorizationFailed,
+        Self::WebsocketUpgradeError,
+        Self::ClientConnectedRejected,
+        Self::OutOfEnergy,
+        Self::ClientConnectedError,
+        Self::ActorStartupFailure,
+    ];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::InvalidProtocol => "invalid_protocol",
+            Self::AuthorizationFailed => "authorization_failed",
+            Self::WebsocketUpgradeError => "websocket_upgrade_error",
+            Self::ClientConnectedRejected => "client_connected_rejected",
+            Self::OutOfEnergy => "out_of_energy",
+            Self::ClientConnectedError => "client_connected_error",
+            Self::ActorStartupFailure => "actor_startup_failure",
+        }
+    }
+}
+
+pub fn record_client_disconnect(database_identity: Identity, cause: ClientDisconnectCause) {
+    WORKER_METRICS
+        .ws_client_disconnections
+        .with_label_values(&database_identity, cause.as_str())
+        .inc();
+}
+
+pub fn record_client_rejection(database_identity: Identity, cause: ClientRejectCause) {
+    WORKER_METRICS
+        .ws_client_rejections
+        .with_label_values(&database_identity, cause.as_str())
+        .inc();
+}
+
+/// Records at most one disconnect cause for a single accepted websocket client.
+#[derive(Clone, Debug)]
+pub struct ClientDisconnectRecorder {
+    database_identity: Identity,
+    recorded: Arc<AtomicBool>,
+}
+
+impl ClientDisconnectRecorder {
+    pub fn new(database_identity: Identity) -> Self {
+        Self {
+            database_identity,
+            recorded: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    pub fn record(&self, cause: ClientDisconnectCause) -> bool {
+        if self
+            .recorded
+            .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+        {
+            record_client_disconnect(self.database_identity, cause);
+            true
+        } else {
+            false
+        }
+    }
+}
 
 metrics_group!(
     pub struct WorkerMetrics {
@@ -32,6 +186,30 @@ metrics_group!(
         #[help = "Number of ws client connections closed by the client as opposed to being termiated by the server"]
         #[labels(database_identity: Identity)]
         pub ws_clients_closed_connection: IntGaugeVec,
+
+        #[name = spacetime_worker_ws_clients_idle_timed_out_total]
+        #[help = "The cumulative number of ws client connections disconnected after becoming idle"]
+        #[labels(database_identity: Identity)]
+        pub ws_clients_idle_timed_out: IntCounterVec,
+
+        // Compatibility counters above continue to be emitted for existing dashboards.
+        // Accepted-client disconnection `cause` label values are:
+        // client_close, idle_timeout, incoming_queue_full, outgoing_queue_full,
+        // module_exited, client_message_error, websocket_receive_error,
+        // websocket_send_error, websocket_stream_ended, unknown.
+        #[name = spacetime_worker_ws_client_disconnections_total]
+        #[help = "The cumulative number of accepted websocket client disconnections by cause. Cause values are documented by ClientDisconnectCause::ALL."]
+        #[labels(database_identity: Identity, cause: str)]
+        pub ws_client_disconnections: IntCounterVec,
+
+        // Pre-connected rejection `cause` label values are:
+        // invalid_protocol, authorization_failed, websocket_upgrade_error,
+        // client_connected_rejected, out_of_energy, client_connected_error,
+        // actor_startup_failure.
+        #[name = spacetime_worker_ws_client_rejections_total]
+        #[help = "The cumulative number of websocket client attempts rejected before being counted as connected. Cause values are documented by ClientRejectCause::ALL."]
+        #[labels(database_identity: Identity, cause: str)]
+        pub ws_client_rejections: IntCounterVec,
 
         #[name = spacetime_websocket_requests_total]
         #[help = "The cumulative number of websocket request messages"]
@@ -239,6 +417,12 @@ metrics_group!(
         #[buckets(0.001, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0)]
         pub websocket_serialize_secs: HistogramVec,
 
+        #[name = spacetime_websocket_pong_rtt_secs]
+        #[help = "Time from writing a Ping frame to the socket until the client's Pong is processed"]
+        #[labels(db: Identity)]
+        #[buckets(0.005, 0.025, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0)]
+        pub websocket_pong_rtt: HistogramVec,
+
         #[name = spacetime_worker_instance_operation_queue_length]
         #[help = "Length of the wait queue for access to a module instance."]
         #[labels(database_identity: Identity)]
@@ -283,7 +467,7 @@ metrics_group!(
         pub sender_errors: IntCounterVec,
 
         #[name = spacetime_worker_wasm_memory_bytes]
-        #[help = "The number of bytes of linear memory allocated by the database's WASM module instance"]
+        #[help = "The total number of bytes of linear memory allocated by all of the database's WASM module instances"]
         #[labels(database_identity: Identity)]
         pub wasm_memory_bytes: IntGaugeVec,
 
@@ -352,11 +536,6 @@ metrics_group!(
         #[labels(db: Identity, reducer: str)]
         pub reducer_plus_query_duration: HistogramVec,
 
-        #[name = spacetime_num_bytes_sent_to_clients_total]
-        #[help = "The cumulative number of bytes sent to clients"]
-        #[labels(txn_type: WorkloadType, db: Identity)]
-        pub bytes_sent_to_clients: IntCounterVec,
-
         #[name = spacetime_subscription_send_queue_length]
         #[help = "The number of `ComputedQueries` waiting in the queue to be aggregated and broadcast by the `send_worker`"]
         #[labels(database_identity: Identity)]
@@ -372,33 +551,10 @@ metrics_group!(
         #[labels(db: Identity)]
         pub total_outgoing_queue_length: IntGaugeVec,
 
-        #[name = spacetime_replay_total_time_seconds]
-        #[help = "Total time spent replaying a database upon restart, including snapshot read, snapshot restore and commitlog replay"]
+        #[name = spacetime_client_outgoing_queue_disconnects_total]
+        #[help = "The number of clients disconnected because their outgoing WebSocket message queue filled up"]
         #[labels(db: Identity)]
-        // We expect a small number of observations per label
-        // (exactly one, for non-replicated databases, and one per leader change for replicated databases)
-        // so we'll just store a `Gauge` with the most recent observation for each database.
-        pub replay_total_time_seconds: GaugeVec,
-
-        #[name = spacetime_replay_snapshot_read_time_seconds]
-        #[help = "Time spent reading a snapshot from disk before restoring the snapshot upon restart"]
-        #[labels(db: Identity)]
-        pub replay_snapshot_read_time_seconds: GaugeVec,
-
-        #[name = spacetime_replay_snapshot_restore_time_seconds]
-        #[help = "Time spent restoring a database from a snapshot after reading the snapshot and before commitlog replay upon restart"]
-        #[labels(db: Identity)]
-        pub replay_snapshot_restore_time_seconds: GaugeVec,
-
-        #[name = spacetime_replay_commitlog_time_seconds]
-        #[help = "Time spent replaying the commitlog after restoring from a snapshot upon restart"]
-        #[labels(db: Identity)]
-        pub replay_commitlog_time_seconds: GaugeVec,
-
-        #[name = spacetime_replay_commitlog_num_commits]
-        #[help = "Number of commits replayed after restoring from a snapshot upon restart"]
-        #[labels(db: Identity)]
-        pub replay_commitlog_num_commits: IntGaugeVec,
+        pub client_outgoing_queue_disconnects: IntCounterVec,
 
         #[name = spacetime_module_create_instance_time_seconds]
         #[help = "Time taken to construct a WASM instance or V8 isolate to run module code"]
@@ -410,75 +566,6 @@ metrics_group!(
         // so I'm making up some buckets based on what I imagine are the upper and lower bounds of plausibility.
         #[buckets(0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 50, 100)]
         pub module_create_instance_time_seconds: HistogramVec,
-
-        #[name = spacetime_snapshot_creation_time_total_sec]
-        #[help = "The time (in seconds) it took to take and store a database snapshot, including scheduling overhead"]
-        #[labels(db: Identity)]
-        // Snapshot creation should take in the order of milliseconds,
-        // but log data suggests that there are outliers.
-        // So let's track a wide range of buckets to get a better picture.
-        //
-        // We also track the timing without `asyncify` scheduling overhead
-        // (`snapshot_creation_time_inner`), and the snapshot compression
-        // timing with / without scheduling overhead (`snapshot_compression_time_total`
-        // and `snapshot_compression_time_inner`, respectively).
-        //
-        // Compression may have contributed to observed outliers, but is no
-        // longer included in the snapshot creation timing.
-        #[buckets(0.0005, 0.001, 0.005, 0.01, 0.1, 1.0, 5.0, 10.0)]
-        pub snapshot_creation_time_total: HistogramVec,
-
-        #[name = spacetime_snapshot_creation_time_inner_sec]
-        #[help = "The time (in seconds) it took to take and store a database snapshot, excluding scheduling overhead"]
-        #[labels(db: Identity)]
-        #[buckets(0.0005, 0.001, 0.005, 0.01, 0.1, 1.0, 5.0, 10.0)]
-        pub snapshot_creation_time_inner: HistogramVec,
-
-        #[name = spacetime_snapshot_creation_time_fsync_sec]
-        #[help = "The time (in seconds) it took to fsync a database snapshot, excluding scheduling overhead"]
-        #[labels(db: Identity)]
-        #[buckets(0.0005, 0.001, 0.005, 0.01, 0.1, 1.0, 5.0, 10.0)]
-        pub snapshot_creation_time_fsync: HistogramVec,
-
-        #[name = spacetime_snapshot_compression_time_total_sec]
-        #[help = "The time (in seconds) it took to do a compression pass on the snapshot repository, including scheduling overhead"]
-        #[labels(db: Identity)]
-        // Not sure what range to expect, but certainly slower than snapshot
-        // creation.
-        #[buckets(0.001, 0.01, 0.1, 1.0, 5.0, 10.0)]
-        pub snapshot_compression_time_total: HistogramVec,
-
-        #[name = spacetime_snapshot_compression_time_inner_sec]
-        #[help = "The time (in seconds) it took to do a compression pass on the snapshot repository, excluding scheduling overhead"]
-        #[labels(db: Identity)]
-        #[buckets(0.001, 0.01, 0.1, 1.0, 5.0, 10.0)]
-        pub snapshot_compression_time_inner: HistogramVec,
-
-        #[name = spacetime_snapshot_compression_time_per_snapshot_sec]
-        #[help = "The time (in seconds) it took to compress a single snapshot"]
-        #[labels(db: Identity)]
-        #[buckets(0.001, 0.01, 0.1, 1.0, 5.0, 10.0)]
-        pub snapshot_compression_time_single: HistogramVec,
-
-        #[name = spacetime_snapshot_compression_skipped]
-        #[help = "The number of snapshots skipped in a single compression pass because they were already compressed"]
-        #[labels(db: Identity)]
-        pub snapshot_compression_skipped: IntGaugeVec,
-
-        #[name = spacetime_snapshot_compression_compressed]
-        #[help = "The number of snapshots compressed in a single compression pass"]
-        #[labels(db: Identity)]
-        pub snapshot_compression_compressed: IntGaugeVec,
-
-        #[name = spacetime_snapshot_compression_objects_compressed]
-        #[help = "The number of snapshot objects compressed in a single compression pass"]
-        #[labels(db: Identity)]
-        pub snapshot_compression_objects_compressed: IntGaugeVec,
-
-        #[name = spacetime_snapshot_compression_objects_hardlinked]
-        #[help = "The number of snapshot objects hardlinked in a single compression pass"]
-        #[labels(db: Identity)]
-        pub snapshot_compression_objects_hardlinked: IntGaugeVec,
 
         #[name = spacetime_subscription_rows_examined]
         #[help = "Distribution of rows examined per subscription query"]
@@ -496,12 +583,6 @@ metrics_group!(
         #[help = "Total number of subscription queries by scan strategy"]
         #[labels(db: Identity, scan_type: str, table: str, unindexed_columns: str)]
         pub subscription_queries_total: IntCounterVec,
-
-        #[name = spacetime_durability_blocking_send_duration_sec]
-        #[help = "Latency of blocking sends in request_durability (seconds); _count gives the number of times the channel was full"]
-        #[labels(database_identity: Identity)]
-        #[buckets(0.001, 0.01, 0.1, 1.0, 10.0)]
-        pub durability_blocking_send_duration: HistogramVec,
     }
 );
 
@@ -719,4 +800,17 @@ pub fn spawn_tokio_stats(node_id: String, rt_id: String, rt: tokio::runtime::Han
             }
         });
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn client_disconnect_recorder_records_only_first_cause() {
+        let recorder = ClientDisconnectRecorder::new(Identity::ZERO);
+
+        assert!(recorder.record(ClientDisconnectCause::ClientClose));
+        assert!(!recorder.record(ClientDisconnectCause::Unknown));
+    }
 }

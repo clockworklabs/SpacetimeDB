@@ -102,6 +102,12 @@ Usage: smoketests [OPTIONS] [ARGS]... [COMMAND]
 
 When specified, tests will connect to the given URL instead of starting local server instances. Tests that require local server control (like restart tests) will be skipped.
 
+- `--auth-host <AUTH_HOST>`: Use a SpacetimeAuth-issued login for remote-server tests.
+
+This is required for servers that reject direct server-issued logins for privileged operations.
+
+Optionally accepts an auth host to pass through to `spacetime login`, for example `--auth-host=https://spacetimedb.com`.
+
 - `--dotnet <DOTNET>`:
 - `args <ARGS>`: Additional arguments to pass to the test runner
 - `--help`: Print help (see a summary with '-h')
@@ -253,6 +259,55 @@ Usage: docs
 **Options:**
 
 - `--help`: Print help
+
+### `cla-assistant`
+
+**Usage:**
+```bash
+Usage: cla-assistant <COMMAND>
+```
+
+**Options:**
+
+- `--help`: Print help
+
+#### `retry`
+
+**Usage:**
+```bash
+Usage: retry [OPTIONS] --pr-number <PR_NUMBER>
+```
+
+**Options:**
+
+- `--pr-number <PR_NUMBER>`: Pull request number to check
+- `--repo <REPO>`: Repository in `owner/name` form. Defaults to GITHUB_REPOSITORY
+- `--help`: Print help
+
+#### `status`
+
+**Usage:**
+```bash
+Usage: status [OPTIONS] <--pr <PR>|--sha <SHA>>
+```
+
+**Options:**
+
+- `--pr <PR>`: Pull request number whose head commit should be checked
+- `--sha <SHA>`: Commit SHA to check
+- `--repo <REPO>`: Repository in `owner/name` form. Defaults to GITHUB_REPOSITORY
+- `--help`: Print help
+
+#### `help`
+
+**Usage:**
+```bash
+Usage: help [COMMAND]...
+```
+
+**Options:**
+
+- `subcommand <COMMAND>`: Print help for the subcommand(s)
 
 ### `help`
 

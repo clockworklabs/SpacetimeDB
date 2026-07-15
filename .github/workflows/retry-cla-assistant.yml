@@ -1,0 +1,82 @@
+name: Retry CLA Assistant
+
+# CLA Assistant publishes `license/cla` as a commit status, not a check run.
+# If its webhook handler misses a PR update, GitHub branch protection can wait
+# forever even after every real CI check has passed. This workflow nudges CLA
+# Assistant only when that status is the sole remaining non-green signal.
+#
+# SECURITY: This workflow checks out trusted default-branch code only; it must
+# never check out, build, or execute code from the PR head.
+
+on:
+  workflow_run:
+    workflows: [CI, Internal Tests]
+    types: [completed]
+  schedule:
+    - cron: "7 * * * *"
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request number to check"
+        required: true
+        type: number
+
+permissions:
+  actions: read
+  checks: read
+  contents: read
+  pull-requests: read
+  statuses: read
+
+jobs:
+  retry-cla:
+    name: Retry CLA Assistant if it is the only blocker
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out trusted base code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - uses: dsherret/rust-toolchain-file@v1
+
+      - name: Collect pull requests to check
+        id: prs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pr_numbers="${RUNNER_TEMP}/cla-pr-numbers"
+
+          case "${GITHUB_EVENT_NAME}" in
+            workflow_run)
+              if jq -e '.workflow_run.name == "Retry CLA Assistant"' "${GITHUB_EVENT_PATH}" > /dev/null; then
+                : > "${pr_numbers}"
+              else
+                jq -r '.workflow_run.pull_requests[].number' "${GITHUB_EVENT_PATH}" > "${pr_numbers}"
+              fi
+              ;;
+            schedule)
+              gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls?state=open&base=master&per_page=100" --jq '.[].number' > "${pr_numbers}"
+              ;;
+            workflow_dispatch)
+              jq -r '.inputs.pr_number' "${GITHUB_EVENT_PATH}" > "${pr_numbers}"
+              ;;
+            *)
+              echo "unsupported event ${GITHUB_EVENT_NAME}" >&2
+              exit 1
+              ;;
+          esac
+
+          sort -n -u "${pr_numbers}" -o "${pr_numbers}"
+          echo "path=${pr_numbers}" >> "${GITHUB_OUTPUT}"
+
+      - name: Recheck CLA Assistant
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          while read -r pr_number; do
+            if [ -n "${pr_number}" ]; then
+              cargo ci cla-assistant retry --pr-number "${pr_number}"
+            fi
+          done < "${{ steps.prs.outputs.path }}"

@@ -1,5 +1,7 @@
 use regex::Regex;
-use spacetimedb_smoketests::{require_dotnet, require_emscripten, require_pnpm, workspace_root, Smoketest};
+use spacetimedb_smoketests::{
+    random_string, require_dotnet, require_emscripten, require_pnpm, workspace_root, ModuleLanguage, Smoketest,
+};
 use std::{fs, path::Path};
 
 const MODULE_CODE: &str = r#"
@@ -1095,20 +1097,36 @@ fn rust_http_test(module_code: &str) -> (Smoketest, String) {
 fn cpp_http_test(name: &str, module_code: &str) -> (Smoketest, String) {
     require_emscripten!();
     let mut test = Smoketest::builder().autopublish(false).build();
-    let identity = test.publish_cpp_module_source(name, name, module_code).unwrap();
+    let identity = test
+        .publish()
+        .name(name)
+        .source(ModuleLanguage::Cpp, name, module_code)
+        .run()
+        .unwrap();
     (test, identity)
 }
 
 fn typescript_http_test(name: &str, module_code: &str) -> (Smoketest, String) {
     require_pnpm!();
     let mut test = Smoketest::builder().autopublish(false).build();
-    let identity = test.publish_typescript_module_source(name, name, module_code).unwrap();
+    let database_name = format!("{name}-{}", random_string());
+    let identity = test
+        .publish()
+        .name(&database_name)
+        .source(ModuleLanguage::TypeScript, name, module_code)
+        .run()
+        .unwrap();
     (test, identity)
 }
 
 fn csharp_http_test(name: &str, module_code: &str) -> (Smoketest, String) {
     let mut test = Smoketest::builder().autopublish(false).build();
-    let identity = test.publish_csharp_module_source(name, name, module_code).unwrap();
+    let identity = test
+        .publish()
+        .name(name)
+        .source(ModuleLanguage::CSharp, name, module_code)
+        .run()
+        .unwrap();
     (test, identity)
 }
 
@@ -1528,7 +1546,10 @@ fn cpp_http_handlers_tutorial_say_hello_route_works() {
     );
     let mut test = Smoketest::builder().autopublish(false).build();
     let identity = test
-        .publish_cpp_module_source("http-handlers-docs-cpp", "http-handlers-docs-cpp", &module_code)
+        .publish()
+        .name("http-handlers-docs-cpp")
+        .source(ModuleLanguage::Cpp, "http-handlers-docs-cpp", &module_code)
+        .run()
         .unwrap();
 
     let url = format!("{}/v1/database/{identity}/route/say-hello", test.server_url);
@@ -1551,11 +1572,14 @@ fn typescript_http_handlers_tutorial_say_hello_route_works() {
     );
     let mut test = Smoketest::builder().autopublish(false).build();
     let identity = test
-        .publish_typescript_module_source(
-            "http-handlers-docs-typescript",
+        .publish()
+        .name("http-handlers-docs-typescript")
+        .source(
+            ModuleLanguage::TypeScript,
             "http-handlers-docs-typescript",
             &module_code,
         )
+        .run()
         .unwrap();
 
     let url = format!("{}/v1/database/{identity}/route/say-hello", test.server_url);

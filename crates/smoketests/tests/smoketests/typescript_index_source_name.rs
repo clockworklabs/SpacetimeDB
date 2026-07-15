@@ -1,4 +1,4 @@
-use spacetimedb_smoketests::{random_string, require_local_server, require_pnpm, Smoketest};
+use spacetimedb_smoketests::{random_string, require_local_server, require_pnpm, ModuleLanguage, Smoketest};
 
 const TYPESCRIPT_MODULE_V1: &str = r#"import { schema, table, t } from "spacetimedb/server";
 
@@ -109,24 +109,29 @@ fn test_typescript_add_optional_columns() {
     let module_name = format!("typescript-add-optional-columns-{}", random_string());
 
     let database_identity = test
-        .publish_typescript_module_source(
+        .publish()
+        .name(&module_name)
+        .source(
+            ModuleLanguage::TypeScript,
             "typescript-add-optional-columns-v1",
-            &module_name,
             TYPESCRIPT_MODULE_V1,
         )
+        .run()
         .unwrap();
 
     test.call("insert_user", &["Alice", "alice@example.com"]).unwrap();
 
     test.restart_server();
 
-    test.publish_typescript_module_source_clear(
-        "typescript-add-optional-columns-v2",
-        &database_identity,
-        TYPESCRIPT_MODULE_WITH_NEW_COLUMNS,
-        false,
-    )
-    .unwrap();
+    test.publish()
+        .name(&database_identity)
+        .source(
+            ModuleLanguage::TypeScript,
+            "typescript-add-optional-columns-v2",
+            TYPESCRIPT_MODULE_WITH_NEW_COLUMNS,
+        )
+        .run()
+        .unwrap();
 
     test.call("find_user_by_email", &["alice@example.com"]).unwrap();
     test.call("find_users_by_active_status", &["false"]).unwrap();
@@ -141,22 +146,27 @@ fn test_typescript_change_index_source_name() {
     let module_name = format!("typescript-change-source-name-{}", random_string());
 
     let database_identity = test
-        .publish_typescript_module_source(
+        .publish()
+        .name(&module_name)
+        .source(
+            ModuleLanguage::TypeScript,
             "typescript-change-source-name-v1",
-            &module_name,
             TYPESCRIPT_MODULE_V1,
         )
+        .run()
         .unwrap();
 
     test.call("insert_user", &["Alice", "alice@example.com"]).unwrap();
 
-    test.publish_typescript_module_source_clear(
-        "typescript-change-source-name-v2",
-        &database_identity,
-        TYPESCRIPT_MODULE_V2_RENAMED_ACCESSOR,
-        false,
-    )
-    .unwrap();
+    test.publish()
+        .name(&database_identity)
+        .source(
+            ModuleLanguage::TypeScript,
+            "typescript-change-source-name-v2",
+            TYPESCRIPT_MODULE_V2_RENAMED_ACCESSOR,
+        )
+        .run()
+        .unwrap();
 
     test.call("find_user_by_email", &["alice@example.com"]).unwrap();
 }

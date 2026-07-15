@@ -74,6 +74,10 @@ fn format_step<F: MigrationFormatter>(
             let constraint_info = extract_constraint_info(*constraint, plan.old)?;
             f.format_constraint(&constraint_info, Action::Removed)
         }
+        AutoMigrateStep::AddConstraint(constraint) => {
+            let constraint_info = extract_constraint_info(*constraint, plan.new)?;
+            f.format_constraint(&constraint_info, Action::Created)
+        }
         AutoMigrateStep::AddSequence(sequence) => {
             let sequence_info = extract_sequence_info(*sequence, plan.new)?;
             f.format_sequence(&sequence_info, Action::Created)
@@ -116,10 +120,17 @@ fn format_step<F: MigrationFormatter>(
             f.format_change_columns(&column_changes)
         }
         AutoMigrateStep::AddColumns(table) => {
+            // FIXME: It looks (pgoldman 2026-06-10) like `super::auto_migrate_table` will emit only `AddColumns`
+            // in the case where a table has both new columns and changed columns.
+            // As such, we probably need to call `extract_column_changes` here too.
             let new_columns = extract_new_columns(*table, plan)?;
             f.format_add_columns(&new_columns)
         }
         AutoMigrateStep::DisconnectAllUsers => f.format_disconnect_warning(),
+
+        // TODO(format-event-table-reschema): I (pgoldman 2026-06-10) didn't have time to meaningfully format event table reschemas,
+        // so for now we're just printing the table name.
+        AutoMigrateStep::ReschemaEventTable(table) => f.format_event_table_reschema(table),
     }?;
 
     Ok(())
@@ -180,6 +191,9 @@ pub trait MigrationFormatter {
     fn format_change_table_accessor_name(&mut self, table_name: &str) -> io::Result<()>;
     fn format_change_column_accessor_name(&mut self, table_name: &str, col_name: &str) -> io::Result<()>;
     fn format_disconnect_warning(&mut self) -> io::Result<()>;
+    // TODO(format-event-table-reschema): I (pgoldman 2026-06-10) didn't have time to meaningfully format event table reschemas,
+    // so for now we're just printing the table name.
+    fn format_event_table_reschema(&mut self, table_name: &Identifier) -> io::Result<()>;
 }
 
 #[derive(Debug, Clone, PartialEq)]

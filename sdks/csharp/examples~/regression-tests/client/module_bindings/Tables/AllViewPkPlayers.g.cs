@@ -15,10 +15,20 @@ namespace SpacetimeDB.Types
     {
         public sealed class AllViewPkPlayersHandle : RemoteTableHandle<EventContext, ViewPkPlayer>
         {
-            protected override string RemoteTableName => "all_view_pk_players";
+            public override string RemoteTableName => "all_view_pk_players";
+
+            public sealed class IdUniqueIndex : UniqueIndexBase<ulong>
+            {
+                protected override ulong GetKey(ViewPkPlayer row) => row.Id;
+
+                public IdUniqueIndex(AllViewPkPlayersHandle table) : base(table) { }
+            }
+
+            public readonly IdUniqueIndex Id;
 
             internal AllViewPkPlayersHandle(DbConnection conn) : base(conn)
             {
+                Id = new(this);
             }
 
             protected override object GetPrimaryKey(ViewPkPlayer row) => row.Id;
@@ -30,11 +40,13 @@ namespace SpacetimeDB.Types
     public sealed class AllViewPkPlayersCols
     {
         public global::SpacetimeDB.Col<ViewPkPlayer, ulong> Id { get; }
+        public global::SpacetimeDB.Col<ViewPkPlayer, SpacetimeDB.Identity> Sender { get; }
         public global::SpacetimeDB.Col<ViewPkPlayer, string> Name { get; }
 
         public AllViewPkPlayersCols(string tableName)
         {
             Id = new global::SpacetimeDB.Col<ViewPkPlayer, ulong>(tableName, "id");
+            Sender = new global::SpacetimeDB.Col<ViewPkPlayer, SpacetimeDB.Identity>(tableName, "sender");
             Name = new global::SpacetimeDB.Col<ViewPkPlayer, string>(tableName, "name");
         }
     }

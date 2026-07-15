@@ -19,6 +19,18 @@ pub struct OneUnitStructTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `one_unit_struct`.
+pub struct OneUnitStructTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for OneUnitStructTableAccessor {
+    type Row = OneUnitStruct;
+    type Handle<'db> = OneUnitStructTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.one_unit_struct()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `one_unit_struct`.
 ///
@@ -40,6 +52,18 @@ impl OneUnitStructTableAccess for super::RemoteTables {
 
 pub struct OneUnitStructInsertCallbackId(__sdk::CallbackId);
 pub struct OneUnitStructDeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for OneUnitStructTableHandle<'ctx> {
+    type Row = OneUnitStruct;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = OneUnitStruct> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for OneUnitStructTableHandle<'ctx> {
     type Row = OneUnitStruct;
@@ -65,6 +89,36 @@ impl<'ctx> __sdk::Table for OneUnitStructTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = OneUnitStructDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OneUnitStructDeleteCallbackId {
+        OneUnitStructDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: OneUnitStructDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for OneUnitStructTableHandle<'ctx> {
+    type InsertCallbackId = OneUnitStructInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OneUnitStructInsertCallbackId {
+        OneUnitStructInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: OneUnitStructInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for OneUnitStructTableHandle<'ctx> {
     type DeleteCallbackId = OneUnitStructDeleteCallbackId;
 
     fn on_delete(

@@ -8,7 +8,7 @@ import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNot
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-Quick reference for SpacetimeDB module syntax across Rust, C#, and TypeScript.
+Quick reference for SpacetimeDB module syntax across Rust, C#, TypeScript, and C++.
 
 ## Project Setup
 
@@ -80,7 +80,7 @@ const score = table(
   {
     name: 'score',
     indexes: [{
-      name: 'idx',
+      accessor: 'idx',
       algorithm: 'btree',
       columns: ['player_id', 'level'],
     }],
@@ -600,23 +600,29 @@ SPACETIMEDB_PROCEDURE(std::string, fetch_data, ProcedureContext ctx, std::string
 
 ```typescript
 // Return single row
-export const my_player = spacetimedb.view({ name: 'my_player' }, {}, t.option(player.rowType), ctx => {
+export const my_player = spacetimedb.view({ name: 'my_player', public: true }, t.option(player.rowType), ctx => {
   return ctx.db.player.identity.find(ctx.sender);
 });
 
 // Return potentially multiple rows
-export const top_players = spacetimedb.view({ name: 'top_players' }, {}, t.array(player.rowType), ctx => {
+export const top_players = spacetimedb.view({ name: 'top_players', public: true }, t.array(player.rowType), ctx => {
+  return ctx.db.player.score.filter(1000);
+});
+
+// Procedural view with update callbacks.
+// The returned row type has exactly one `.primaryKey()` column.
+export const top_players_with_updates = spacetimedb.view({ name: 'top_players_with_updates', public: true }, t.array(player.rowType), ctx => {
   return ctx.db.player.score.filter(1000);
 });
 
 // Perform a generic filter using the query builder.
 // Equivalent to `SELECT * FROM player WHERE score < 1000`.
-export const bottom_players = spacetimedb.view({ name: 'bottom_players' }, {}, t.array(player.rowType), ctx => {
+export const bottom_players = spacetimedb.view({ name: 'bottom_players', public: true }, t.array(player.rowType), ctx => {
   return ctx.from.player.where(p => p.score.lt(1000))
 });
 
 // Count rows in a table.
-export const player_count = spacetimedb.anonymousView({ name: 'player_count' }, {}, t.array(t.row('PlayerCount', {
+export const player_count = spacetimedb.anonymousView({ name: 'player_count', public: true }, t.array(t.row('PlayerCount', {
   count: t.u64(),
 })), ctx => {
   return [{ count: ctx.db.player.count() }];
@@ -639,6 +645,13 @@ public static Player? MyPlayer(ViewContext ctx)
 // Return potentially multiple rows
 [SpacetimeDB.View(Accessor = "TopPlayers", Public = true)]
 public static IEnumerable<Player> TopPlayers(ViewContext ctx)
+{
+    return ctx.Db.Player.Score.Filter(1000);
+}
+
+// Procedural view with update callbacks.
+[SpacetimeDB.View(Accessor = "TopPlayersWithUpdates", Public = true, PrimaryKey = "Id")]
+public static IEnumerable<Player> TopPlayersWithUpdates(ViewContext ctx)
 {
     return ctx.Db.Player.Score.Filter(1000);
 }
@@ -683,6 +696,12 @@ fn top_players(ctx: &ViewContext) -> Vec<Player> {
     ctx.db.player().score().filter(1000).collect()
 }
 
+// Procedural view with update callbacks.
+#[view(accessor = top_players_with_updates, public, primary_key = id)]
+fn top_players_with_updates(ctx: &ViewContext) -> Vec<Player> {
+    ctx.db.player().score().filter(1000).collect()
+}
+
 // Perform a generic filter using the query builder.
 // Equivalent to `SELECT * FROM player WHERE score < 1000`.
 #[view(accessor = bottom_players, public)]
@@ -720,6 +739,20 @@ SPACETIMEDB_VIEW(std::vector<Player>, top_players, Public, ViewContext ctx) {
     return ctx.db[player_score].filter(range_from(int32_t(1000))).collect();
 }
 
+// Procedural view with update callbacks.
+SPACETIMEDB_VIEW(std::vector<Player>, top_players_with_updates, Public, ViewContext ctx) {
+    return ctx.db[player_score].filter(range_from(int32_t(1000))).collect();
+}
+VIEW_PrimaryKey(top_players_with_updates, id)
+
+// Perform a generic filter using the query builder.
+// Equivalent to `SELECT * FROM player WHERE score < 1000`.
+SPACETIMEDB_VIEW(Query<Player>, bottom_players, Public, ViewContext ctx) {
+    return ctx.from[player].where([](const auto& p) {
+        return p.score.lt(int32_t(1000));
+    });
+}
+
 struct PlayerCount {
     uint64_t count;
 };
@@ -744,7 +777,7 @@ ctx.db                  // Database access
 ctx.sender              // Identity of caller
 ctx.connectionId        // ConnectionId | undefined
 ctx.timestamp           // Timestamp
-ctx.identity            // Module's identity
+ctx.databaseIdentity    // Module's identity
 ```
 
 </TabItem>
@@ -755,7 +788,7 @@ ctx.Db                  // Database access
 ctx.Sender              // Identity of caller
 ctx.ConnectionId        // ConnectionId?
 ctx.Timestamp           // Timestamp
-ctx.Identity            // Module's identity
+ctx.DatabaseIdentity    // Module's identity
 ctx.Rng                 // Random number generator
 ```
 
@@ -767,7 +800,7 @@ ctx.db                  // Database access
 ctx.sender()            // Identity of caller
 ctx.connection_id()     // Option<ConnectionId>
 ctx.timestamp           // Timestamp
-ctx.identity()          // Module's identity
+ctx.database_identity() // Module's identity
 ctx.rng()               // Random number generator
 ```
 
@@ -779,7 +812,7 @@ ctx.db                  // Database access (Table accessor)
 ctx.sender()            // Identity of caller (Identity type)
 ctx.connection_id       // std::optional<ConnectionId>
 ctx.timestamp           // Timestamp of current transaction (Timestamp type)
-ctx.identity()          // Module's own identity (Identity type)
+ctx.database_identity() // Module's own identity (Identity type)
 ctx.rng()               // Random number generator (for seeded randomness)
 ```
 
@@ -845,6 +878,9 @@ LOG_DEBUG("Debug: " + msg);
 7. **Use `spacetimedb/server`** — For modules, use `spacetimedb/server` (builder API), not `spacetimedb-sdk` (client decorators).
 8. **`t.object` not `t.struct`** — Use `t.object('Name', {...})` for product types.
 9. **`autoInc` not `autoIncrement`** — Use `.autoInc()` on column builders.
+10. **Row fields are camelCase** — Generated client row fields convert snake_case column names: `trip_id` → `row.tripId`.
+11. **Await reducer calls** — Client reducer calls return `Promise<void>` that rejects with `SenderError` on failure; `await` or `.catch()` them.
+12. **Throw `SenderError` in reducers** — A plain `Error` surfaces as an internal error, not a reducer error.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -880,20 +916,20 @@ spacetime login                          # Authenticate
 # Module management
 spacetime build                          # Build module
 spacetime publish <NAME>                 # Publish module
-spacetime publish --delete-data <NAME>   # Reset database
+spacetime publish <NAME> --delete-data         # Reset database
 spacetime delete <NAME>                  # Delete database
 
 # Database operations
 spacetime logs <NAME>                    # View logs
 spacetime logs --follow <NAME>           # Stream logs
 spacetime sql <NAME> "SELECT * FROM t"   # Run SQL query
-spacetime describe <NAME>                # Show schema
+spacetime describe <NAME> --json         # Show schema
 spacetime call <NAME> reducer arg1 arg2  # Call reducer
 
 # Code generation
-spacetime generate --lang rust <NAME>    # Generate Rust client
-spacetime generate --lang csharp <NAME>  # Generate C# client
-spacetime generate --lang ts <NAME>      # Generate TypeScript client
+spacetime generate --lang rust --out-dir src/module_bindings --module-path spacetimedb
+spacetime generate --lang csharp --out-dir module_bindings --module-path spacetimedb
+spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb
 ```
 
 ## Common Types

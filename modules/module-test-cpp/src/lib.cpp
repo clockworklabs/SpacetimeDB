@@ -210,7 +210,6 @@ FIELD_PrimaryKeyAutoInc(table_with_defaults, id)
 FIELD_Default(table_with_defaults, score, uint32_t(100))
 FIELD_Default(table_with_defaults, active, true)
 
-
 // =============================================================================
 // VIEWS
 // =============================================================================
@@ -218,6 +217,11 @@ FIELD_Default(table_with_defaults, active, true)
 // View to find the player associated with the calling identity
 SPACETIMEDB_VIEW(std::optional<Player>, my_player, Public, ViewContext ctx) {
     return ctx.db[player_identity].find(ctx.sender());
+}
+
+SPACETIMEDB_VIEW(std::optional<Person>, first_person, Public, AnonymousViewContext ctx) {
+    (void)ctx;
+    return ctx.db[person_id].find(1);
 }
 
 // =============================================================================
@@ -702,4 +706,17 @@ SPACETIMEDB_PROCEDURE(std::string, get_my_schema_via_http, ProcedureContext ctx)
     } else {
         return result.error();
     }
+}
+
+SPACETIMEDB_HTTP_HANDLER(get_simple, HandlerContext ctx, HttpRequest request) {
+    return HttpResponse{
+        200,
+        HttpVersion::Http11,
+        {},
+        HttpBody::from_string("ok"),
+    };
+}
+
+SPACETIMEDB_HTTP_ROUTER(router) {
+    return Router().get("/get", get_simple);
 }

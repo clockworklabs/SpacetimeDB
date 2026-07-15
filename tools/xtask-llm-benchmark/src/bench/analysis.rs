@@ -27,10 +27,10 @@ pub async fn run_analysis(
     let prompt = build_prompt(lang, mode, model_name, bench_root, &failures);
 
     let route = ModelRoute::new(
-        "gpt-4.1-mini",
+        "gpt-5.4-mini",
         crate::llm::types::Vendor::OpenAi,
-        "gpt-4.1-mini",
-        Some("openai/gpt-4.1-mini"),
+        "gpt-5.4-mini",
+        Some("openai/gpt-5.4-mini"),
     );
 
     let built = BuiltPrompt {

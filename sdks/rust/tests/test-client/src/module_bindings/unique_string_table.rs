@@ -18,6 +18,18 @@ pub struct UniqueStringTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `unique_string`.
+pub struct UniqueStringTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for UniqueStringTableAccessor {
+    type Row = UniqueString;
+    type Handle<'db> = UniqueStringTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.unique_string()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `unique_string`.
 ///
@@ -39,6 +51,18 @@ impl UniqueStringTableAccess for super::RemoteTables {
 
 pub struct UniqueStringInsertCallbackId(__sdk::CallbackId);
 pub struct UniqueStringDeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for UniqueStringTableHandle<'ctx> {
+    type Row = UniqueString;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = UniqueString> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for UniqueStringTableHandle<'ctx> {
     type Row = UniqueString;
@@ -64,6 +88,36 @@ impl<'ctx> __sdk::Table for UniqueStringTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = UniqueStringDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> UniqueStringDeleteCallbackId {
+        UniqueStringDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: UniqueStringDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for UniqueStringTableHandle<'ctx> {
+    type InsertCallbackId = UniqueStringInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> UniqueStringInsertCallbackId {
+        UniqueStringInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: UniqueStringInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for UniqueStringTableHandle<'ctx> {
     type DeleteCallbackId = UniqueStringDeleteCallbackId;
 
     fn on_delete(

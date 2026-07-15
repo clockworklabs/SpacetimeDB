@@ -1,9 +1,13 @@
-use spacetimedb_smoketests::Smoketest;
+use spacetimedb_smoketests::{require_server_issued_login, Smoketest};
 
 // TODO: This test originally was testing to make sure that our tutorial isn't broken. Since our onboarding has changed we should probably update this test in the future.
 /// Test the entirety of the new user flow.
 #[test]
 fn test_new_user_flow() {
+    // This flow creates a throwaway server-issued identity with `new_identity`,
+    // which is not available when smoketests use SpacetimeAuth login.
+    require_server_issued_login!();
+
     let mut test = Smoketest::builder()
         .precompiled_module("new-user-flow")
         .autopublish(false)
@@ -11,7 +15,7 @@ fn test_new_user_flow() {
 
     // Create a new identity and publish
     test.new_identity().unwrap();
-    test.publish_module().unwrap();
+    test.publish().run().unwrap();
 
     // Calling our database
     test.call("say_hello", &[]).unwrap();

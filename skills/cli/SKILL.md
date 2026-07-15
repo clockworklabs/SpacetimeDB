@@ -46,7 +46,8 @@ spacetime dev
 spacetime dev --client-lang typescript --module-bindings-path ./client/src/module_bindings
 
 # Generate client bindings
-spacetime generate --lang typescript|csharp|rust|unrealcpp --out-dir ./bindings --module-path ./server
+spacetime generate --lang typescript|csharp|rust --out-dir ./bindings --module-path ./server
+spacetime generate --lang unrealcpp --uproject-dir ./MyGame --module-path ./server --unreal-module-name MyGame
 ```
 
 ### Publishing & Deployment
@@ -59,7 +60,7 @@ spacetime publish my-database --yes
 spacetime publish my-database --server local --yes
 
 # Clear database and republish
-spacetime publish my-database --delete-data always --yes
+spacetime publish my-database --delete-data=always --yes
 ```
 
 ### Database Interaction
@@ -170,7 +171,7 @@ spacetime server ping <server>
 ### "Schema conflict"
 ```bash
 # Clear data and republish
-spacetime publish my-db --delete-data always --yes
+spacetime publish my-db --delete-data=always --yes
 ```
 
 ### "Build failed"
@@ -186,4 +187,3 @@ rustup target add wasm32-unknown-unknown
 **Server-side (modules):** Rust, C#, TypeScript, C++
 **Client SDKs:** TypeScript, C#, Rust, Unreal Engine
 **CLI `generate` targets:** TypeScript, C#, Rust, Unreal C++
-

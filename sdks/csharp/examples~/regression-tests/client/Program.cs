@@ -842,6 +842,12 @@ void ExecViewPkOnUpdate()
                     oldRow,
                     newRow
                 );
+                var found = ctx.Db.AllViewPkPlayers.Id.Find(playerId);
+                Debug.Assert(found != null, $"Expected AllViewPkPlayers.Id.Find({playerId}) to find a row");
+                Debug.Assert(
+                    found.Id == playerId && found.Name == after,
+                    $"Expected AllViewPkPlayers.Id.Find({playerId}) to return updated row '{after}'"
+                );
 
                 waiting++;
                 phaseHandle?.UnsubscribeThen(_ =>
@@ -1010,7 +1016,7 @@ void ExecViewPkSemijoinTwoSenderViewsQueryBuilder()
                 phaseHandle?.UnsubscribeThen(_ =>
                 {
                     Debug.Assert(sawUpdate, $"Expected an OnUpdate callback for {testName}");
-                    runComplete = true;
+                    ExecProceduralViewPkOnUpdate();
                     waiting--;
                 });
             }
@@ -1042,6 +1048,75 @@ void ExecViewPkSemijoinTwoSenderViewsQueryBuilder()
                     (lhsView, rhsView) => lhsView.Id.Eq(rhsView.Id)
                 )
         )
+        .Subscribe();
+}
+
+/// Subscribe to a procedural view with an explicitly declared primary key.
+/// Ensures the C# SDK emits an `OnUpdate` callback and that the client receives the correct old and new rows.
+///
+/// Test:
+/// 1. Subscribe to: SELECT * FROM procedural_view_pk_players
+/// 2. Insert row:  (id=1, name="before")
+/// 3. Update row:  (id=1, name="after")
+///
+/// Expect:
+/// - `OnUpdate` is called for PK=1
+/// - `oldRow` should be the "before" value
+/// - `newRow` should be the "after" value
+void ExecProceduralViewPkOnUpdate()
+{
+    const string testName = "procedural-view-pk-on-update";
+    var playerId = NextViewPkId();
+    const string before = "before";
+    const string after = "after";
+    bool sawUpdate = false;
+    SubscriptionHandle? phaseHandle = null;
+
+    Log.Debug($"Starting {testName}");
+    phaseHandle = db.SubscriptionBuilder()
+        .OnApplied(ctx =>
+        {
+            void OnProceduralViewPkPlayersUpdate(
+                EventContext _,
+                ViewPkPlayer oldRow,
+                ViewPkPlayer newRow
+            )
+            {
+                ctx.Db.ProceduralViewPkPlayers.OnUpdate -= OnProceduralViewPkPlayersUpdate;
+                ExpectSingleViewPkPlayerUpdate(
+                    testName,
+                    ref sawUpdate,
+                    playerId,
+                    before,
+                    after,
+                    oldRow,
+                    newRow
+                );
+
+                waiting++;
+                phaseHandle?.UnsubscribeThen(_ =>
+                {
+                    Debug.Assert(sawUpdate, $"Expected an OnUpdate callback for {testName}");
+                    runComplete = true;
+                    waiting--;
+                });
+            }
+
+            ctx.Db.ProceduralViewPkPlayers.OnUpdate += OnProceduralViewPkPlayersUpdate;
+
+            waiting++;
+            ctx.Reducers.InsertViewPkPlayer(playerId, before);
+
+            waiting++;
+            ctx.Reducers.UpdateViewPkPlayer(playerId, after);
+        })
+        .OnError(
+            (_, err) =>
+            {
+                throw err;
+            }
+        )
+        .AddQuery(q => q.From.ProceduralViewPkPlayers())
         .Subscribe();
 }
 

@@ -2,6 +2,7 @@ use super::instrumentation::CallTimes;
 use super::*;
 use crate::client::ClientActorId;
 use crate::database_logger;
+use crate::db::sql::ast::SchemaViewer;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
 use crate::error::DBError;
 use crate::host::host_controller::CallProcedureReturn;
@@ -15,14 +16,13 @@ use crate::host::module_host::{
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::{
-    ArgsTuple, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError, ReducerCallResult, ReducerId,
-    ReducerOutcome, Scheduler, UpdateDatabaseResult,
+    ArgsTuple, InitDatabaseResult, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError,
+    ReducerCallResult, ReducerCallResultWithTxOffset, ReducerId, ReducerOutcome, Scheduler, UpdateDatabaseResult,
 };
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
-use crate::sql::ast::SchemaViewer;
 use crate::sql::execute::run_with_instance;
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, CommitAndBroadcastEventSuccess};
 use crate::subscription::module_subscription_manager::TransactionOffset;
@@ -32,14 +32,14 @@ use anyhow::{anyhow, bail, ensure, Context};
 use bytes::{Buf, Bytes};
 use core::future::Future;
 use core::time::Duration;
-use prometheus::{Histogram, IntCounter, IntGauge};
+use prometheus::{Histogram, IntCounter};
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, ViewError};
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, Program};
-use spacetimedb_execution::pipelined::PipelinedProject;
+use spacetimedb_execution::ExecutionParams;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::db::raw_def::v9::{Lifecycle, ViewResultHeader};
 use spacetimedb_lib::de::DeserializeSeed;
@@ -109,6 +109,12 @@ pub trait WasmInstance {
 pub struct EnergyStats {
     pub budget: FunctionBudget,
     pub remaining: FunctionBudget,
+}
+
+impl Default for EnergyStats {
+    fn default() -> Self {
+        Self::ZERO
+    }
 }
 
 impl EnergyStats {
@@ -182,11 +188,10 @@ pub(crate) fn run_query_for_view(
 
     // Validate shape and disallow views-on-views.
     for plan in &plans {
-        let phys = plan.optimized_physical_plan();
-        let Some(source_schema) = phys.return_table() else {
+        let Some(source_schema) = plan.return_table() else {
             bail!("query does not return plain table rows");
         };
-        if phys.reads_from_view(true) || phys.reads_from_view(false) {
+        if plan.reads_from_view(true) || plan.reads_from_view(false) {
             bail!("view definition cannot read from other views");
         }
         if source_schema.row_type != *expected_row_type {
@@ -202,6 +207,8 @@ pub(crate) fn run_query_for_view(
     let mut metrics = ExecutionMetrics::default();
     let mut rows = Vec::new();
 
+    let params = ExecutionParams::from_auth(&auth);
+
     for plan in plans {
         // Track read sets for all tables involved in this plan.
         // TODO(jsdt): This means we will rerun the view and query for any change to these tables, so we should optimize this asap.
@@ -209,8 +216,7 @@ pub(crate) fn run_query_for_view(
             tx.record_table_scan(&op, table_id);
         }
 
-        let pipelined = PipelinedProject::from(plan.optimized_physical_plan().clone());
-        pipelined.execute(&*tx, &mut metrics, &mut |row| {
+        plan.base_plan().execute(&*tx, &params, &mut metrics, &mut |row| {
             rows.push(row.to_product_value());
             Ok(())
         })?;
@@ -219,6 +225,7 @@ pub(crate) fn run_query_for_view(
     Ok(rows)
 }
 
+#[derive(Default)]
 pub struct ExecutionTimings {
     pub total_duration: Duration,
     pub wasm_instance_env_call_times: CallTimes,
@@ -238,10 +245,10 @@ impl ExecutionTimings {
 /// The result that `__call_reducer__` produces during normal non-trap execution.
 pub type ReducerResult = Result<Option<Bytes>, Box<str>>;
 
+#[derive(Default)]
 pub struct ExecutionStats {
     pub energy: EnergyStats,
     pub timings: ExecutionTimings,
-    pub memory_allocation: usize,
 }
 
 impl ExecutionStats {
@@ -536,10 +543,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
-    pub fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
+    pub fn init_database(&mut self, program: Program) -> anyhow::Result<InitDatabaseResult> {
         let module_def = &self.common.info.clone().module_def;
         let replica_ctx = &self.instance.replica_ctx().clone();
-        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let call_reducer = |tx, params| self.call_reducer_with_tx_offset(tx, params);
         let (res, trapped) = init_database(replica_ctx, module_def, program, call_reducer);
         self.trapped = trapped;
         res
@@ -582,8 +589,18 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 impl<T: WasmInstance> WasmModuleInstance<T> {
     #[tracing::instrument(level = "trace", skip_all)]
     fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> (ReducerCallResult, bool) {
+        let (res, trapped) = self.call_reducer_with_tx_offset(tx, params);
+        (res.result, trapped)
+    }
+
+    #[tracing::instrument(level = "trace", skip_all)]
+    fn call_reducer_with_tx_offset(
+        &mut self,
+        tx: Option<MutTxId>,
+        params: CallReducerParams,
+    ) -> (ReducerCallResultWithTxOffset, bool) {
         crate::callgrind_flag::invoke_allowing_callgrind(|| {
-            self.common.call_reducer_with_tx(tx, params, &mut self.instance)
+            self.common.call_reducer_with_tx_offset(tx, params, &mut self.instance)
         })
     }
 
@@ -603,8 +620,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 pub struct InstanceCommon {
     info: Arc<ModuleInfo>,
     energy_monitor: Arc<dyn EnergyMonitor>,
-    allocated_memory: usize,
-    metric_wasm_memory_bytes: IntGauge,
     vm_metrics: AllVmMetrics,
 }
 
@@ -617,11 +632,6 @@ impl InstanceCommon {
             info: module.info(),
             vm_metrics,
             energy_monitor: module.energy_monitor(),
-            // Will be updated on the first reducer call.
-            allocated_memory: 0,
-            metric_wasm_memory_bytes: WORKER_METRICS
-                .wasm_memory_bytes
-                .with_label_values(module.database_identity()),
         }
     }
 
@@ -748,7 +758,7 @@ impl InstanceCommon {
         }
     }
 
-    /// Re-evaluates all views which have entries in `st_view_subs`.
+    /// Re-evaluates all materialized view instances tracked in view lifecycle state.
     fn evaluate_subscribed_views<I: WasmInstance>(
         &mut self,
         tx: MutTxId,
@@ -804,18 +814,11 @@ impl InstanceCommon {
         let ProcedureExecuteResult {
             stats:
                 ExecutionStats {
-                    memory_allocation,
                     // TODO(procedure-energy): Do something with timing and energy.
                     ..
                 },
             call_result,
         } = result;
-
-        // TODO(shub): deduplicate with reducer and view logic.
-        if self.allocated_memory != memory_allocation {
-            self.metric_wasm_memory_bytes.set(memory_allocation as i64);
-            self.allocated_memory = memory_allocation;
-        }
 
         let trapped = call_result.is_err();
 
@@ -903,17 +906,11 @@ impl InstanceCommon {
         let HttpHandlerExecuteResult {
             stats:
                 ExecutionStats {
-                    memory_allocation,
                     // TODO(http-handler-energy): Do something with timing and energy.
                     ..
                 },
             call_result,
         } = result;
-
-        if self.allocated_memory != memory_allocation {
-            self.metric_wasm_memory_bytes.set(memory_allocation as i64);
-            self.allocated_memory = memory_allocation;
-        }
 
         let trapped = call_result.is_err();
 
@@ -959,6 +956,16 @@ impl InstanceCommon {
         params: CallReducerParams,
         inst: &mut I,
     ) -> (ReducerCallResult, bool) {
+        let (res, trapped) = self.call_reducer_with_tx_offset(tx, params, inst);
+        (res.result, trapped)
+    }
+
+    pub(crate) fn call_reducer_with_tx_offset<I: WasmInstance>(
+        &mut self,
+        tx: Option<MutTxId>,
+        params: CallReducerParams,
+        inst: &mut I,
+    ) -> (ReducerCallResultWithTxOffset, bool) {
         let CallReducerParams {
             timestamp,
             caller_identity,
@@ -1096,7 +1103,8 @@ impl InstanceCommon {
             request_id,
             timer,
         };
-        let event = commit_and_broadcast_event(&info.subscriptions, client, event, out.tx).event;
+        let CommitAndBroadcastEventSuccess { event, tx_offset, .. } =
+            commit_and_broadcast_event(&info.subscriptions, client, event, out.tx);
 
         let res = ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),
@@ -1104,7 +1112,7 @@ impl InstanceCommon {
             execution_duration: total_duration,
         };
 
-        (res, trapped)
+        (ReducerCallResultWithTxOffset { result: res, tx_offset }, trapped)
     }
 
     fn handle_outer_error(&mut self, energy: &EnergyStats, reducer_name: &str) -> EventStatus {
@@ -1145,14 +1153,9 @@ impl InstanceCommon {
         let stats: &ExecutionStats = result.as_ref();
         let execution_budget_used = stats.energy.used();
         let timings = &stats.timings;
-        let memory_allocation = stats.memory_allocation;
 
         self.energy_monitor
             .record_reducer(&energy_fingerprint, execution_budget_used, timings.total_duration);
-        if self.allocated_memory != memory_allocation {
-            self.metric_wasm_memory_bytes.set(memory_allocation as i64);
-            self.allocated_memory = memory_allocation;
-        }
 
         maybe_log_long_running_function(function_name, timings.total_duration);
 
@@ -1364,7 +1367,10 @@ impl InstanceCommon {
             (Ok(raw), sender) => {
                 // This is wrapped in a closure to simplify error handling.
                 let outcome: Result<ViewOutcome, anyhow::Error> = (|| {
-                    let view_call = ViewCallInfo { view_id, sender };
+                    let view_call = match sender {
+                        Some(sender) => ViewCallInfo::sender(view_id, sender),
+                        None => ViewCallInfo::anonymous(view_id),
+                    };
                     let result = ViewResult::from_return_data(raw).context("Error parsing view result")?;
                     let typespace = self.info.module_def.typespace();
                     let row_product_type = typespace
@@ -1514,10 +1520,10 @@ fn collect_subscribed_view_calls(
         let table_id = st_view
             .table_id
             .ok_or_else(|| anyhow::anyhow!("view {} does not have a backing table in database", &view_name))?;
-        let subs = tx.lookup_st_view_subs(view_id)?;
+        let view_instances = tx.materialized_view_instances_for_view(view_id);
 
         if *is_anonymous {
-            if subs.is_empty() {
+            if view_instances.is_empty() {
                 continue;
             }
             view_calls.push(CallViewParams {
@@ -1534,14 +1540,17 @@ fn collect_subscribed_view_calls(
             continue;
         }
 
-        for sub in subs {
+        for args in view_instances {
+            let Some(sender) = args.sender() else {
+                continue;
+            };
             view_calls.push(CallViewParams {
                 view_name: view_name.clone(),
                 view_id,
                 table_id,
                 fn_ptr: *fn_ptr,
                 caller: owner_identity,
-                sender: Some(sub.identity.into()),
+                sender: Some(sender),
                 args: ArgsTuple::nullary(),
                 row_type: *product_type_ref,
                 timestamp: Timestamp::now(),
@@ -1788,10 +1797,7 @@ impl InstanceOp for ViewOp<'_> {
     }
 
     fn call_type(&self) -> FuncCallType {
-        FuncCallType::View(ViewCallInfo {
-            view_id: self.view_id,
-            sender: Some(*self.sender),
-        })
+        FuncCallType::View(ViewCallInfo::sender(self.view_id, *self.sender))
     }
 }
 
@@ -1816,10 +1822,7 @@ impl InstanceOp for AnonymousViewOp<'_> {
     }
 
     fn call_type(&self) -> FuncCallType {
-        FuncCallType::View(ViewCallInfo {
-            view_id: self.view_id,
-            sender: None,
-        })
+        FuncCallType::View(ViewCallInfo::anonymous(self.view_id))
     }
 }
 
@@ -1917,9 +1920,9 @@ impl InstanceOp for HttpHandlerOp {
 mod tests {
     use super::collect_subscribed_view_calls;
     use crate::db::relational_db::tests_utils::{begin_mut_tx, TestDB};
+    use spacetimedb_datastore::locking_tx_datastore::{ViewCallInfo, ViewInstanceArgs};
     use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
     use spacetimedb_lib::{AlgebraicType, Identity, ProductType};
-    use spacetimedb_primitives::ArgId;
     use spacetimedb_sats::raw_identifier::RawIdentifier;
     use spacetimedb_schema::def::ModuleDef;
 
@@ -1957,8 +1960,9 @@ mod tests {
 
         let mut tx = begin_mut_tx(&stdb);
         let (view_id, _table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
-        tx.subscribe_view(view_id, ArgId::SENTINEL, Identity::ZERO)?;
-        tx.subscribe_view(view_id, ArgId::SENTINEL, Identity::ONE)?;
+        let view_call = ViewCallInfo::anonymous(view_id);
+        tx.subscribe_view(view_call.clone(), ViewInstanceArgs::Anonymous, Identity::ZERO)?;
+        tx.subscribe_view(view_call, ViewInstanceArgs::Anonymous, Identity::ONE)?;
 
         // Two subscriber rows exist, but anonymous views should still be reevaluated once
         // because they share a single materialization.
@@ -1986,8 +1990,10 @@ mod tests {
 
         let mut tx = begin_mut_tx(&stdb);
         let (view_id, _table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
-        tx.subscribe_view(view_id, ArgId::SENTINEL, Identity::ZERO)?;
-        tx.subscribe_view(view_id, ArgId::SENTINEL, Identity::ONE)?;
+        let zero_args = ViewInstanceArgs::Sender(Identity::ZERO);
+        let one_args = ViewInstanceArgs::Sender(Identity::ONE);
+        tx.subscribe_view(ViewCallInfo::from_args(view_id, zero_args), zero_args, Identity::ZERO)?;
+        tx.subscribe_view(ViewCallInfo::from_args(view_id, one_args), one_args, Identity::ONE)?;
 
         // Sender-backed views keep one materialization per sender, so reevaluation must
         // preserve both callers.

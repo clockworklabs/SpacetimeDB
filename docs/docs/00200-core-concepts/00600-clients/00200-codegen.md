@@ -45,7 +45,7 @@ Replace **PATH-TO-MODULE-DIRECTORY** with the path to your module's directory, w
 
 ```bash
 mkdir -p module_bindings
-spacetime generate --lang cs --out-dir module_bindings --module-path PATH-TO-MODULE-DIRECTORY
+spacetime generate --lang csharp --out-dir module_bindings --module-path PATH-TO-MODULE-DIRECTORY
 ```
 
 This generates C# files in `module_bindings/`. The generated files are automatically included in your project.
@@ -104,14 +104,14 @@ For example, a `user` table becomes:
 
 ```typescript
 // Generated type
-export default __t.object("User", {
+export default __t.row({
   id: __t.u64(),
   name: __t.string(),
-  email: __t.string(),
+  emailAddress: __t.string(),
 });
 
 // Access via DbConnection
-conn.db.User
+conn.db.user
 ```
 
 </TabItem>
@@ -123,7 +123,7 @@ public partial class User
 {
     public ulong Id;
     public string Name;
-    public string Email;
+    public string EmailAddress;
 }
 
 // Access via DbConnection
@@ -138,7 +138,7 @@ conn.Db.User
 pub struct User {
     pub id: u64,
     pub name: String,
-    pub email: String,
+    pub email_address: String,
 }
 
 // Access via DbConnection
@@ -162,7 +162,7 @@ struct FUser
     FString Name;
     
     UPROPERTY(BlueprintReadWrite)
-    FString Email;
+    FString EmailAddress;
 };
 
 // Access via DbConnection
@@ -171,6 +171,8 @@ Context.Db->User
 
 </TabItem>
 </Tabs>
+
+Note that generated names follow each language's conventions, including field names: a column declared as `email_address` in your module becomes `emailAddress` in TypeScript and `EmailAddress` in C#.
 
 See the [Tables](../00300-tables.md) documentation for details on defining tables in your module.
 
@@ -189,10 +191,10 @@ For example, a `create_user` reducer becomes:
 
 ```typescript
 // Call the reducer
-conn.reducers.createUser(name, email);
+await conn.reducers.createUser({ name, email });
 
 // Register a callback to observe reducer invocations
-conn.reducers.onCreateUser((ctx, name, email) => {
+conn.reducers.onCreateUser((ctx, { name, email }) => {
   console.log(`User created: ${name}`);
 });
 ```
@@ -257,7 +259,7 @@ For each [procedure](../00200-functions/00400-procedures.md) in your module, cod
 - **Return value handling** for procedures that return results
 - **Type-safe parameters** matching the procedure's signature
 
-Procedures are currently in beta. For example, a `fetch_external_data` procedure becomes:
+For example, a `fetch_external_data` procedure becomes:
 
 <Tabs groupId="client-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -346,6 +348,7 @@ For each [view](../00200-functions/00500-views.md) in your module, codegen gener
 - **Type definitions** for the view's return type
 - **Subscription interfaces** for subscribing to view results
 - **Query methods** for accessing cached view results
+- **Update callbacks** when the view has a known primary key
 
 Views provide subscribable, computed queries over your data.
 
