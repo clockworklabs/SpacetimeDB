@@ -7,7 +7,7 @@ TABLES
     - category: string
     - amount: number (u32)
 
-- distinctCategory
+- distinct_category
   - Fields:
     - category: string (primary key)
 
@@ -15,4 +15,4 @@ REDUCERS
 - collect_distinct_categories(ctx)
   - Iterate all orders
   - Collect unique category values (use a Set)
-  - Insert each unique category into distinctCategory
+  - Insert each unique category into distinct_category

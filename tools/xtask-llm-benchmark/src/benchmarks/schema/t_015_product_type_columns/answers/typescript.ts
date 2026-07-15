@@ -13,6 +13,7 @@ const Position = t.object('Position', {
 const profile = table(
   {
     name: 'profile',
+    public: true,
   },
   {
     id: t.u64().primaryKey().autoInc(),

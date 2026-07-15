@@ -44,7 +44,8 @@ This section covers the fundamental concepts you need to understand to build app
 
 - [Core Concepts](/docs/core-concepts): This section covers the fundamental concepts you need to understand to build applications with SpacetimeDB.
 - [Authentication](/docs/core-concepts/authentication): SpacetimeDB modules are exposed to the open internet and anyone can connect to
-- [Auth0](/docs/core-concepts/authentication/Auth0): This guilde will walk you through integrating Auth0 authentication with your SpacetimeDB application.
+- [Auth0](/docs/core-concepts/authentication/Auth0): This guide will walk you through integrating Auth0 authentication with your SpacetimeDB application.
+- [Better Auth](/docs/core-concepts/authentication/BetterAuth): Better Auth is a TypeScript authentication
 - [Clerk](/docs/core-concepts/authentication/Clerk): This guide will walk you through integrating Clerk authentication with your SpacetimeDB React application. You will configure a Clerk application, obtain a JWT from Clerk, and pass it to your SpacetimeDB connection as the authentication token.
 - [Overview](/docs/core-concepts/authentication/spacetimeauth/): SpacetimeAuth is currently in beta, some features may not be available yet or
 - [Configuring your project](/docs/core-concepts/authentication/spacetimeauth/configuring-a-project): SpacetimeAuth is currently in beta, some features may not be available yet or may change in the future. You might encounter bugs or issues while using the service. Please report any problems you encounter to help us improve SpacetimeAuth.
@@ -119,6 +120,7 @@ A module is a collection of functions and schema definitions, which can be writt
 - [React Quickstart](/docs/quickstarts/react): Get a SpacetimeDB React app running in under 5 minutes.
 - [Remix Quickstart](/docs/quickstarts/remix): Get a SpacetimeDB Remix app running in under 5 minutes.
 - [Rust Quickstart](/docs/quickstarts/rust): Get a SpacetimeDB Rust app running in under 5 minutes.
+- [SolidJS Quickstart](/docs/quickstarts/solid): Get a SpacetimeDB SolidJS app running in under 5 minutes.
 - [Svelte Quickstart](/docs/quickstarts/svelte): Get a SpacetimeDB Svelte app running in under 5 minutes.
 - [TanStack Start Quickstart](/docs/quickstarts/tanstack): Get a SpacetimeDB app with TanStack Start running in under 5 minutes.
 - [TypeScript Quickstart](/docs/quickstarts/typescript): Get a SpacetimeDB TypeScript app running in under 5 minutes.

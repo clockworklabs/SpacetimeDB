@@ -9,7 +9,7 @@ TYPES
   - y: number (i32)
 
 TABLE
-- profile
+- profile (public)
   - Fields:
     - id: number (u64, primary key, autoInc)
     - home: Address

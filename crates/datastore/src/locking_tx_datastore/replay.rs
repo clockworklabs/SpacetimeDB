@@ -29,6 +29,7 @@ use spacetimedb_schema::table_name::TableName;
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::{InsertError, RowRef};
 use std::cell::RefCell;
+use std::io;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -104,6 +105,8 @@ pub enum ReplayError {
     Db(#[from] DatastoreError),
     #[error(transparent)]
     Any(#[from] anyhow::Error),
+    #[error(transparent)]
+    Io(#[from] io::Error),
 }
 
 /// A [`spacetimedb_commitlog::Decoder`] suitable for replaying a transaction
