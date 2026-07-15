@@ -562,7 +562,7 @@ pub async fn exec_with_options(config: &mut Config, options: &InitOptions) -> an
 
     // For C# projects, resolve the target .NET version before scaffolding.
     let dotnet_major = if template_config.server_lang == Some(ServerLanguage::Csharp) {
-        let dotnet_major = resolve_dotnet_major(options)?;
+        let dotnet_major = options.dotnet_version.unwrap_or_else(resolve_default_dotnet_major);
         println!("Targeting .NET SDK {dotnet_major}.");
         Some(dotnet_major)
     } else {
@@ -1629,24 +1629,6 @@ fn check_for_cargo() -> bool {
         }
     }
     false
-}
-
-/// Determine the target .NET major version for a C# project.
-///
-/// Resolution order:
-///   1. Explicit `--dotnet-version` flag
-///   2. .NET 8 on macOS, where NativeAOT-LLVM is not supported
-///   3. .NET 8, if it is the only installed .NET SDK major version
-///   4. .NET 10 default
-fn resolve_dotnet_major(options: &InitOptions) -> anyhow::Result<u8> {
-    if let Some(v) = options.dotnet_version {
-        match v {
-            8 | 10 => return Ok(v),
-            _ => anyhow::bail!("Unsupported --dotnet-version {v}. Supported values: 8, 10."),
-        }
-    }
-
-    Ok(resolve_default_dotnet_major())
 }
 
 fn resolve_default_dotnet_major() -> u8 {
