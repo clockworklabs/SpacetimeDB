@@ -878,6 +878,9 @@ LOG_DEBUG("Debug: " + msg);
 7. **Use `spacetimedb/server`** — For modules, use `spacetimedb/server` (builder API), not `spacetimedb-sdk` (client decorators).
 8. **`t.object` not `t.struct`** — Use `t.object('Name', {...})` for product types.
 9. **`autoInc` not `autoIncrement`** — Use `.autoInc()` on column builders.
+10. **Row fields are camelCase** — Generated client row fields convert snake_case column names: `trip_id` → `row.tripId`.
+11. **Await reducer calls** — Client reducer calls return `Promise<void>` that rejects with `SenderError` on failure; `await` or `.catch()` them.
+12. **Throw `SenderError` in reducers** — A plain `Error` surfaces as an internal error, not a reducer error.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
