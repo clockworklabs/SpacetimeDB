@@ -114,6 +114,24 @@ pub fn make_prompt_from_task(spec_file: &str, task_id: &str, lang: Lang) -> Resu
     })
 }
 
+fn find_tasks_file(task_root: &Path, lang: Lang) -> Option<PathBuf> {
+    let dir = task_root.join("tasks");
+    match lang {
+        Lang::CSharp => {
+            let p = dir.join("csharp.txt");
+            p.exists().then_some(p)
+        }
+        Lang::Rust => {
+            let p = dir.join("rust.txt");
+            p.exists().then_some(p)
+        }
+        Lang::TypeScript => {
+            let p = dir.join("typescript.txt");
+            p.exists().then_some(p)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -136,23 +154,5 @@ mod tests {
         assert!(parts.next().unwrap().parse::<u32>().is_ok(), "major not numeric: {v}");
         assert!(parts.next().unwrap().parse::<u32>().is_ok(), "minor not numeric: {v}");
         assert_eq!(parts.next(), None, "expected major.minor only: {v}");
-    }
-}
-
-fn find_tasks_file(task_root: &Path, lang: Lang) -> Option<PathBuf> {
-    let dir = task_root.join("tasks");
-    match lang {
-        Lang::CSharp => {
-            let p = dir.join("csharp.txt");
-            p.exists().then_some(p)
-        }
-        Lang::Rust => {
-            let p = dir.join("rust.txt");
-            p.exists().then_some(p)
-        }
-        Lang::TypeScript => {
-            let p = dir.join("typescript.txt");
-            p.exists().then_some(p)
-        }
     }
 }
