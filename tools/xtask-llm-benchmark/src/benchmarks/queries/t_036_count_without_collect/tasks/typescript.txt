@@ -7,7 +7,7 @@ TABLES
     - name: string
     - active: boolean
 
-- userStats
+- user_stats
   - Fields:
     - key: string (primary key)
     - count: number (u64)
@@ -16,5 +16,5 @@ REDUCERS
 - compute_user_counts(ctx)
   - Count total users by iterating (do not collect into an array first)
   - Count active users by iterating and checking active === true
-  - Insert a userStats row with key="total" and the total count
-  - Insert a userStats row with key="active" and the active count
+  - Insert a user_stats row with key="total" and the total count
+  - Insert a user_stats row with key="active" and the active count

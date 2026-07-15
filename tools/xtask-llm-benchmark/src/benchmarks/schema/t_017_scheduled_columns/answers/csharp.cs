@@ -2,7 +2,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [Table(Accessor = "TickTimer", Scheduled = nameof(Tick), ScheduledAt = nameof(ScheduledAt))]
+    [Table(Accessor = "TickTimer", Public = true, Scheduled = nameof(Tick), ScheduledAt = nameof(ScheduledAt))]
     public partial struct TickTimer
     {
         [PrimaryKey, AutoInc] public ulong ScheduledId;
