@@ -1,4 +1,4 @@
-use super::dotnet::{parse_dotnet_version, parse_optional_dotnet_version};
+use crate::common_args::parse_optional_dotnet_version;
 use crate::common_args::ClearMode;
 use crate::config::Config;
 use crate::generate::Language;
@@ -94,13 +94,7 @@ pub fn cli() -> Command {
                 .value_name("TEMPLATE")
                 .help("Template ID or GitHub repository (owner/repo or URL) for project initialization"),
         )
-        .arg(
-            Arg::new("dotnet_version")
-                .long("dotnet-version")
-                .value_name("VERSION")
-                .value_parser(parse_dotnet_version)
-                .help("Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted."),
-        )
+        .arg(common_args::dotnet_version())
         .arg(
             Arg::new("run")
                 .long("run")

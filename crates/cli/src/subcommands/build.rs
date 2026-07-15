@@ -1,4 +1,4 @@
-use super::dotnet::parse_dotnet_version;
+use crate::common_args;
 use crate::util::find_module_path;
 use crate::Config;
 use clap::ArgAction::SetTrue;
@@ -40,13 +40,7 @@ pub fn cli() -> clap::Command {
                 .action(SetTrue)
                 .help("Builds the module using debug instead of release (intended to speed up local iteration, not recommended for CI)"),
         )
-        .arg(
-            Arg::new("dotnet_version")
-                .long("dotnet-version")
-                .value_name("VERSION")
-                .value_parser(parse_dotnet_version)
-                .help("Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.")
-        )
+        .arg(common_args::dotnet_version())
 }
 
 pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(PathBuf, &'static str), anyhow::Error> {

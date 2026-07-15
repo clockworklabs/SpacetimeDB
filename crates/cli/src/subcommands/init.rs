@@ -18,8 +18,8 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use toml_edit::{value, DocumentMut, Item};
 
+use crate::common_args;
 use crate::spacetime_config::{PackageManager, SpacetimeConfig, CONFIG_FILENAME};
-use crate::subcommands::dotnet::parse_dotnet_version;
 use crate::subcommands::login::{spacetimedb_login_and_save, DEFAULT_AUTH_HOST};
 
 mod embedded {
@@ -153,7 +153,7 @@ impl InitOptions {
             non_interactive: args.get_flag("non-interactive"),
             skip_next_steps: false,
             native_aot: args.get_flag("native-aot"),
-            dotnet_version: args.get_one::<u8>("dotnet-version").copied(),
+            dotnet_version: args.get_one::<u8>("dotnet_version").copied(),
         })
     }
 }
@@ -206,11 +206,7 @@ pub fn cli() -> clap::Command {
                 .help("Configure C# project for NativeAOT-LLVM compilation (experimental, Windows only)"),
         )
         .arg(
-            Arg::new("dotnet-version")
-                .long("dotnet-version")
-                .value_name("VERSION")
-                .value_parser(parse_dotnet_version)
-                .help("Target .NET SDK major version for C# projects (e.g. 8 or 10). Defaults to 10 except on macOS or when only .NET 8 is installed."),
+            common_args::dotnet_version().help("Target .NET SDK major version for C# projects (e.g. 8 or 10). Defaults to 10 except on macOS or when only .NET 8 is installed."),
         )
 }
 

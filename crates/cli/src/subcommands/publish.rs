@@ -9,13 +9,13 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::{env, fs};
 
+use crate::common_args::parse_optional_dotnet_version;
 use crate::common_args::ClearMode;
 use crate::config::Config;
 use crate::spacetime_config::{
     find_and_load_with_env, find_and_load_with_env_from, CommandConfig, CommandSchema, CommandSchemaBuilder,
     FlatTarget, Key, LoadedConfig, SpacetimeConfig,
 };
-use crate::subcommands::dotnet::{parse_dotnet_version, parse_optional_dotnet_version};
 use crate::util::{add_auth_header_opt, get_auth_header, strip_verbatim_prefix, AuthHeader, ResponseExt};
 use crate::util::{decode_identity, y_or_n};
 use crate::{build, common_args};
@@ -318,13 +318,7 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
                 .action(SetTrue)
                 .help("Use NativeAOT-LLVM compilation for C# modules (experimental, Windows only)")
         )
-        .arg(
-            Arg::new("dotnet_version")
-                .long("dotnet-version")
-                .value_name("VERSION")
-                .value_parser(parse_dotnet_version)
-                .help("Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.")
-        )
+        .arg(common_args::dotnet_version())
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 

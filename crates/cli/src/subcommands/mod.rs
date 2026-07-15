@@ -5,7 +5,6 @@ pub mod delete;
 pub mod describe;
 pub mod dev;
 pub mod dns;
-pub(crate) mod dotnet;
 pub mod generate;
 pub mod init;
 pub mod list;

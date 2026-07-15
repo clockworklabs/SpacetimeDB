@@ -16,10 +16,10 @@ use spacetimedb_schema::def::ModuleDef;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use crate::common_args::parse_optional_dotnet_version;
 use crate::spacetime_config::{
     find_and_load_with_env, CommandConfig, CommandSchema, CommandSchemaBuilder, Key, LoadedConfig, SpacetimeConfig,
 };
-use crate::subcommands::dotnet::{parse_dotnet_version, parse_optional_dotnet_version};
 use crate::tasks::csharp::dotnet_format;
 use crate::tasks::rust::rustfmt;
 use crate::util::{resolve_sibling_binary, y_or_n};
@@ -258,13 +258,9 @@ pub fn cli() -> clap::Command {
                 .help("Options to pass to the build command, for example --build-options='--lint-dir='"),
         )
         .arg(
-            Arg::new("dotnet_version")
-                .long("dotnet-version")
-                .value_name("VERSION")
-                .value_parser(parse_dotnet_version)
+            common_args::dotnet_version()
                 .conflicts_with("wasm_file")
-                .conflicts_with("js_file")
-                .help("Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.")
+                .conflicts_with("js_file"),
         )
         .arg(
             Arg::new("include_private")
