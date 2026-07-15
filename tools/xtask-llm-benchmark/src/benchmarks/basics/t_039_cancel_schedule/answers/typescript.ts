@@ -1,7 +1,7 @@
 import { ScheduleAt } from 'spacetimedb';
 import { schema, table, t } from 'spacetimedb/server';
 
-const cleanupJob = table({
+const cleanup_job = table({
   name: 'cleanup_job',
   scheduled: (): any => runCleanup,
 }, {
@@ -9,16 +9,16 @@ const cleanupJob = table({
   scheduledAt: t.scheduleAt(),
 });
 
-const spacetimedb = schema({ cleanupJob });
+const spacetimedb = schema({ cleanup_job });
 export default spacetimedb;
 
 export const runCleanup = spacetimedb.reducer(
-  { timer: cleanupJob.rowType },
+  { timer: cleanup_job.rowType },
   (_ctx, _args) => {}
 );
 
 export const init = spacetimedb.init(ctx => {
-  ctx.db.cleanupJob.insert({
+  ctx.db.cleanup_job.insert({
     scheduledId: 0n,
     scheduledAt: ScheduleAt.interval(60_000_000n),
   });
@@ -27,6 +27,6 @@ export const init = spacetimedb.init(ctx => {
 export const cancelCleanup = spacetimedb.reducer(
   { scheduledId: t.u64() },
   (ctx, { scheduledId }) => {
-    ctx.db.cleanupJob.scheduledId.delete(scheduledId);
+    ctx.db.cleanup_job.scheduledId.delete(scheduledId);
   }
 );
