@@ -54,10 +54,20 @@ pub struct CommitlogConfig {
 // server: how long history is worth keeping depends on the application, and
 // deleting history can even be a compliance requirement of a particular
 // database. When per-database configuration becomes available, the values
-// here should become the server's *defaults*, with a database's own setting
-// taking precedence:
+// here should become the server's *defaults*: a database's own setting, when
+// present, always takes precedence, and neither level acts as a floor or
+// ceiling on the other. In particular, a database may retain history on a
+// server whose default is to delete it:
 //
-// - `policy` and `retain_snapshots` are the per-database knobs.
+//   server default | database setting | effective
+//   ---------------+------------------+----------
+//   keep           | unset            | keep
+//   delete         | unset            | delete
+//   any            | keep             | keep
+//   any            | delete           | delete
+//
+// The same resolution applies to `retain_snapshots`.
+//
 // - The resolution belongs in [PersistenceProvider::persistence], which
 //   already receives the [Database] it is asked to provide services for.
 // - Storage-level settings must remain server config, as they describe the
@@ -67,7 +77,11 @@ pub struct CommitlogConfig {
 // - A per-database policy naming a capability the server does not have (e.g.
 //   `archive` on a server without an archive backend) cannot be rejected at
 //   server startup. It must be rejected when the per-database setting is
-//   accepted, with a log-and-fall-back safeguard at runtime.
+//   accepted, and fall back to `keep` (never to `delete`) with a warning if
+//   it is encountered at runtime regardless.
+// - A change of the effective policy applies from the next prune run onwards.
+//   Switching to `delete` deletes all history accumulated so far; switching
+//   away from it does not bring deleted history back.
 #[derive(Clone, Copy, Debug, serde::Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub struct RetentionConfig {
