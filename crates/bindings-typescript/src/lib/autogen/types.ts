@@ -390,6 +390,9 @@ export const RawModuleDefV10Section = __t.enum('RawModuleDefV10Section', {
   get ViewPrimaryKeys() {
     return __t.array(RawViewPrimaryKeyDefV10);
   },
+  get Submodules() {
+    return __t.array(RawSubmoduleV10);
+  },
 });
 export type RawModuleDefV10Section = __Infer<typeof RawModuleDefV10Section>;
 
@@ -546,6 +549,14 @@ export const RawSequenceDefV9 = __t.object('RawSequenceDefV9', {
   increment: __t.i128(),
 });
 export type RawSequenceDefV9 = __Infer<typeof RawSequenceDefV9>;
+
+export const RawSubmoduleV10 = __t.object('RawSubmoduleV10', {
+  namespace: __t.string(),
+  get module(): any {
+    return RawModuleDefV10;
+  },
+});
+export type RawSubmoduleV10 = __Infer<typeof RawSubmoduleV10>;
 
 export const RawTableDefV10 = __t.object('RawTableDefV10', {
   sourceName: __t.string(),

@@ -176,6 +176,13 @@ pub enum ValidationError {
         ok_type: PrettyAlgebraicType,
         err_type: PrettyAlgebraicType,
     },
+    #[error(
+        "lifecycle event {lifecycle:?} is not permitted in submodule under namespace `{namespace}`; \
+         lifecycle reducers may only be declared in the root module"
+    )]
+    LifecycleInSubmodule { lifecycle: Lifecycle, namespace: String },
+    #[error("submodule namespace `{namespace}` is {len} bytes, which exceeds the 63-byte limit")]
+    NamespaceTooLong { namespace: RawIdentifier, len: usize },
 }
 
 /// A wrapper around an `AlgebraicType` that implements `fmt::Display`.

@@ -22,10 +22,18 @@ import { Uuid } from '../lib/uuid';
 import { httpClient, type HttpClient } from './http_internal';
 import type { DbView } from './db_view';
 import { makeRandom, type Random } from './rng';
-import { callUserFunction, ReducerCtxImpl, runWithTx, sys } from './runtime';
+import {
+  assignTxAliasViews,
+  buildProcedureAliasCtxMap,
+  callUserFunction,
+  ReducerCtxImpl,
+  runWithTx,
+  sys,
+} from './runtime';
 import {
   exportContext,
   registerExport,
+  type SubmoduleDispatchInfo,
   type ModuleExport,
   type SchemaInner,
 } from './schema';
@@ -73,6 +81,13 @@ export interface ProcedureOpts {
   name: string;
 }
 
+export type ProcedureAliasViews<SchemaDef extends UntypedSchemaDef> =
+  SchemaDef extends {
+    namespaces: infer NS extends Record<string, UntypedSchemaDef>;
+  }
+    ? { readonly [K in keyof NS]: ProcedureCtx<NS[K]> }
+    : {};
+
 export interface ProcedureCtx<S extends UntypedSchemaDef> {
   readonly sender: Identity;
   readonly databaseIdentity: Identity;
@@ -82,6 +97,7 @@ export interface ProcedureCtx<S extends UntypedSchemaDef> {
   readonly connectionId: ConnectionId | null;
   readonly http: HttpClient;
   readonly random: Random;
+  readonly as: ProcedureAliasViews<S>;
   withTx<T>(body: (ctx: TransactionCtx<S>) => T): T;
   newUuidV4(): Uuid;
   newUuidV7(): Uuid;
@@ -154,23 +170,27 @@ export type Procedures = Array<{
 }>;
 
 export function callProcedure(
-  moduleCtx: SchemaInner,
+  procedures: Procedures,
   id: number,
   sender: Identity,
   connectionId: ConnectionId | null,
   timestamp: Timestamp,
   argsBuf: Uint8Array,
-  dbView: () => DbView<any>
+  dbView: () => DbView<any>,
+  dispatches: SubmoduleDispatchInfo[] = [],
+  parentPrefix = ''
 ): Uint8Array {
   const { fn, deserializeArgs, serializeReturn, returnTypeBaseSize } =
-    moduleCtx.procedures[id];
+    procedures[id];
   const args = deserializeArgs(new BinaryReader(argsBuf));
 
   const ctx: ProcedureCtx<UntypedSchemaDef> = new ProcedureCtxImpl(
     sender,
     timestamp,
     connectionId,
-    dbView
+    dbView,
+    dispatches,
+    parentPrefix
   );
 
   const ret = callUserFunction(fn, ctx, args);
@@ -187,14 +207,21 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   #uuidCounter: { value: 0 } | undefined;
   #random: Random | undefined;
   #dbView: () => DbView<any>;
+  #dispatches: SubmoduleDispatchInfo[];
+  #parentPrefix: string;
+  #asViews: object | undefined;
 
   constructor(
     readonly sender: Identity,
     readonly timestamp: Timestamp,
     readonly connectionId: ConnectionId | null,
-    dbView: () => DbView<any>
+    dbView: () => DbView<any>,
+    dispatches: SubmoduleDispatchInfo[] = [],
+    parentPrefix = ''
   ) {
     this.#dbView = dbView;
+    this.#dispatches = dispatches;
+    this.#parentPrefix = parentPrefix;
   }
 
   get databaseIdentity() {
@@ -213,17 +240,27 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
     return httpClient;
   }
 
+  get as() {
+    return (this.#asViews ??= buildProcedureAliasCtxMap(
+      this,
+      this.#dispatches,
+      this.#parentPrefix
+    )) as any;
+  }
+
   withTx<T>(body: (ctx: TransactionCtx<S>) => T): T {
-    return runWithTx(
-      timestamp =>
-        new TransactionCtxImpl(
-          this.sender,
-          timestamp,
-          this.connectionId,
-          this.#dbView()
-        ) as TransactionCtx<S>,
-      body
-    );
+    const dispatches = this.#dispatches;
+    const parentPrefix = this.#parentPrefix;
+    return runWithTx(timestamp => {
+      const tx = new TransactionCtxImpl(
+        this.sender,
+        timestamp,
+        this.connectionId,
+        this.#dbView()
+      );
+      assignTxAliasViews(tx, dispatches, parentPrefix);
+      return tx as unknown as TransactionCtx<S>;
+    }, body);
   }
 
   newUuidV4(): Uuid {

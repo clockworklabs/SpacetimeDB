@@ -6,13 +6,20 @@ import type {
 } from './event_context';
 import { EventEmitter } from './event_emitter';
 import type { UntypedRemoteModule } from './spacetime_module';
-import { isRowTypedQuery, toSql, type RowTypedQuery } from '../lib/query';
+import {
+  isRowTypedQuery,
+  toSql,
+  type SubscriptionFromBuilder,
+  type RowTypedQuery,
+} from '../lib/query';
+import type { UntypedSchemaDef } from '../lib/schema';
 import type { Values } from '../lib/type_util';
 
 export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
   #onApplied?: (ctx: SubscriptionEventContextInterface<RemoteModule>) => void =
     undefined;
   #onError?: (ctx: ErrorContextInterface<RemoteModule>) => void = undefined;
+  #pendingQueries: Array<string | RowTypedQuery<any, any>> = [];
   constructor(private db: DbConnectionImpl<RemoteModule>) {}
 
   /**
@@ -65,6 +72,32 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
   }
 
   /**
+   * Accumulates a query for a later `subscribe()` call.
+   * Queries added via `addQuery` and queries passed directly to `subscribe` are mutually exclusive —
+   * call `subscribe()` with no arguments to send all accumulated queries.
+   *
+   * @param queryFn - Receives `{ from }`, where `from` exposes all tables (root and namespaced).
+   * @returns The current `SubscriptionBuilder` instance for chaining.
+   *
+   * @example
+   * ```ts
+   * conn.subscriptionBuilder()
+   *   .addQuery(q => q.from.players.build())
+   *   .addQuery(q => q.from.inventory.items.build())
+   *   .subscribe();
+   * ```
+   */
+  addQuery(
+    queryFn: (q: {
+      from: SubscriptionFromBuilder<RemoteModule & UntypedSchemaDef>;
+    }) => RowTypedQuery<any, any>
+  ): this {
+    const from = this.db.getFromBuilder<RemoteModule & UntypedSchemaDef>();
+    this.#pendingQueries.push(queryFn({ from }));
+    return this;
+  }
+
+  /**
    * Subscribe to a single query. The results of the query will be merged into the client
    * cache and deduplicated on the client.
    *
@@ -80,6 +113,7 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
    * subscription.unsubscribe();
    * ```
    */
+  subscribe(): SubscriptionHandleImpl<RemoteModule>;
   subscribe(
     query_sql: string | RowTypedQuery<any, any>
   ): SubscriptionHandleImpl<RemoteModule>;
@@ -92,14 +126,22 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
     ) => RowTypedQuery<any, any> | RowTypedQuery<any, any>[]
   ): SubscriptionHandleImpl<RemoteModule>;
   subscribe(
-    query_sql:
+    query_sql?:
       | string
       | RowTypedQuery<any, any>
       | Array<string | RowTypedQuery<any, any>>
       | ((tables: any) => RowTypedQuery<any, any> | RowTypedQuery<any, any>[])
   ): SubscriptionHandleImpl<RemoteModule> {
     let queries: Array<string | RowTypedQuery<any, any>>;
-    if (typeof query_sql === 'function') {
+    if (query_sql === undefined) {
+      if (this.#pendingQueries.length === 0) {
+        throw new Error(
+          'subscriptionBuilder().subscribe() called with no queries; use addQuery() first or pass a query argument'
+        );
+      }
+      queries = this.#pendingQueries;
+      this.#pendingQueries = [];
+    } else if (typeof query_sql === 'function') {
       const tablesMap = this.db.getTablesMap?.();
       const result = query_sql(tablesMap);
       queries = Array.isArray(result) ? result : [result];
