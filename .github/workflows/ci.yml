@@ -1104,8 +1104,6 @@ jobs:
           done
 
       - name: Override NuGet packages
-        env:
-          EXPERIMENTAL_WASM_AOT: 1
         run: |
           dotnet pack crates/bindings-csharp/BSATN.Runtime
           dotnet pack crates/bindings-csharp/Runtime
