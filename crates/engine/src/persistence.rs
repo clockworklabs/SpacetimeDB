@@ -46,6 +46,28 @@ pub struct CommitlogConfig {
 /// Historical data is data which is no longer needed to restart the database:
 /// commitlog segments whose entire contents precede the most recent snapshots,
 /// and all but the most recent snapshots.
+//
+// TODO(config): Allow databases to override the retention policy individually.
+//
+// This config is currently server-wide, applied uniformly to every database
+// the server hosts. Retention is really a property of a database, not of the
+// server: how long history is worth keeping depends on the application, and
+// deleting history can even be a compliance requirement of a particular
+// database. When per-database configuration becomes available, the values
+// here should become the server's *defaults*, with a database's own setting
+// taking precedence:
+//
+// - `policy` and `retain_snapshots` are the per-database knobs.
+// - The resolution belongs in [PersistenceProvider::persistence], which
+//   already receives the [Database] it is asked to provide services for.
+// - Storage-level settings must remain server config, as they describe the
+//   node's infrastructure rather than a database's lifecycle. (Standalone has
+//   none today; in SpacetimeDB-cloud, these are the archive backend URL and
+//   the bandwidth limits.)
+// - A per-database policy naming a capability the server does not have (e.g.
+//   `archive` on a server without an archive backend) cannot be rejected at
+//   server startup. It must be rejected when the per-database setting is
+//   accepted, with a log-and-fall-back safeguard at runtime.
 #[derive(Clone, Copy, Debug, serde::Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub struct RetentionConfig {
