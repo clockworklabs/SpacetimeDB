@@ -4,7 +4,6 @@ use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
 use serde_json::Value;
-use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::path::Path;
 use std::path::PathBuf;
@@ -48,21 +47,6 @@ fn check_global_json_policy() -> Result<()> {
     let root_json = Path::new("global.json");
     let root_contents = fs::read_to_string(root_json)?;
 
-    fn find_all_global_json(dir: &Path) -> Result<Vec<PathBuf>> {
-        let mut out = Vec::new();
-        for entry in fs::read_dir(dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            let ft = entry.file_type()?;
-            if ft.is_dir() {
-                out.extend(find_all_global_json(&path)?);
-            } else if path.file_name() == Some(OsStr::new("global.json")) {
-                out.push(path);
-            }
-        }
-        Ok(out)
-    }
-
     let globals = find_all_global_json(Path::new("."))?;
 
     let mut ok = true;
@@ -79,10 +63,7 @@ fn check_global_json_policy() -> Result<()> {
         }
 
         let contents = fs::read_to_string(&p)?;
-        // Templates are exempt from content matching to preserve the .NET 8 JIT path for
-        // module developers importing templates, while the main codebase uses .NET 10 AOT.
-        // TODO: Remove this exemption once .NET 10 is the default and templates should use it.
-        if contents != root_contents && !is_template_global_json {
+        if contents != root_contents {
             eprintln!("Error: {} does not match the root global.json contents", p.display());
             ok = false;
         } else if !is_template_global_json || !is_symlink {
