@@ -9,54 +9,12 @@ pub(crate) fn parse_major_version(version: &str) -> Option<u8> {
     version.split('.').next()?.parse::<u8>().ok()
 }
 
-enum OriginalGlobalJson {
-    Missing,
-    File(String),
-    Symlink(PathBuf),
-}
-
-struct TemporaryGlobalJson {
-    path: PathBuf,
-    original: OriginalGlobalJson,
-}
-
-impl Drop for TemporaryGlobalJson {
-    fn drop(&mut self) {
-        let _ = fs::remove_file(&self.path);
-        match &self.original {
-            OriginalGlobalJson::Missing => {}
-            OriginalGlobalJson::File(content) => {
-                let _ = fs::write(&self.path, content);
-            }
-            OriginalGlobalJson::Symlink(target) => {
-                #[cfg(unix)]
-                let _ = std::os::unix::fs::symlink(target, &self.path);
-                #[cfg(windows)]
-                let _ = std::os::windows::fs::symlink_file(target, &self.path);
-            }
-        }
-    }
-}
-
 fn dotnet_global_json(major: u8) -> anyhow::Result<String> {
     match major {
         8 => Ok(r#"{"sdk":{"version":"8.0.100","rollForward":"latestFeature"}}"#.to_string()),
         10 => Ok(r#"{"sdk":{"version":"10.0.100","rollForward":"latestMinor"}}"#.to_string()),
         _ => anyhow::bail!("Unsupported .NET SDK version: {major}. SpacetimeDB requires .NET SDK 8.0 or 10.0."),
     }
-}
-
-fn temporarily_pin_project_sdk(project_path: &Path, major: u8) -> anyhow::Result<TemporaryGlobalJson> {
-    let path = project_path.join("global.json");
-    let original = match fs::symlink_metadata(&path) {
-        Ok(metadata) if metadata.file_type().is_symlink() => OriginalGlobalJson::Symlink(fs::read_link(&path)?),
-        Ok(_) => OriginalGlobalJson::File(fs::read_to_string(&path)?),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => OriginalGlobalJson::Missing,
-        Err(error) => return Err(error.into()),
-    };
-
-    fs::write(&path, dotnet_global_json(major)?)?;
-    Ok(TemporaryGlobalJson { path, original })
 }
 
 #[derive(Debug)]
@@ -298,17 +256,16 @@ pub(crate) fn build_csharp(
         CsharpBuildPath::Net10Aot => 10,
     };
     let active_sdk_major = dotnet_version_str.as_deref().and_then(parse_major_version);
-    let temporary_global_json = if active_sdk_major != Some(desired_sdk_major) {
+    if active_sdk_major != Some(desired_sdk_major) {
         let active = dotnet_version_str.as_deref().map(str::trim).unwrap_or("<unknown>");
-        let global_json = temporarily_pin_project_sdk(project_path, desired_sdk_major)?;
-        println!(
-            "Note: temporarily pinned {} to the .NET {desired_sdk_major} SDK (active SDK was .NET {active}).",
-            project_path.join("global.json").display()
+        anyhow::bail!(
+            "The selected C# build path requires the .NET {desired_sdk_major} SDK, but the active SDK is .NET {active}.\n\
+             Update {} to select the .NET {desired_sdk_major} SDK, or run `spacetime init --dotnet-version {desired_sdk_major}` to create a project configured for this SDK.\n\
+             Expected global.json contents:\n{}",
+            project_path.join("global.json").display(),
+            dotnet_global_json(desired_sdk_major)?
         );
-        Some(global_json)
-    } else {
-        None
-    };
+    }
 
     // Manage the EXPERIMENTAL_WASM_AOT environment variable for MSBuild.
     // - Net8Aot / Net10Aot: must SET it — the ILCompiler.LLVM.targets import in
@@ -504,7 +461,6 @@ pub(crate) fn build_csharp(
     }
     for output_path in &possible_output_paths {
         if output_path.exists() {
-            drop(temporary_global_json);
             return Ok(output_path.clone());
         }
     }
