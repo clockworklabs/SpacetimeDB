@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class PkUuidHandle : RemoteTableHandle<EventContext, PkUuid>
         {
-            protected override string RemoteTableName => "pk_uuid";
+            public override string RemoteTableName => "pk_uuid";
 
             internal PkUuidHandle(DbConnection conn) : base(conn)
             {

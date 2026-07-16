@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::future::Future;
 use std::num::NonZeroU8;
 use std::str::FromStr;
 use std::time::Duration;
@@ -43,7 +44,7 @@ use spacetimedb_client_api_messages::name::{
 };
 use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
-use spacetimedb_lib::http as st_http;
+use spacetimedb_lib::{http as st_http, ConnectionId};
 use spacetimedb_lib::{sats, AlgebraicValue, Hash, ProductValue, Timestamp};
 use spacetimedb_schema::auto_migrate::{
     MigrationPolicy as SchemaMigrationPolicy, MigrationToken, PrettyPrintStyle as AutoMigratePrettyPrintStyle,
@@ -95,7 +96,7 @@ pub struct CallParams {
 pub const NO_SUCH_DATABASE: (StatusCode, &str) = (StatusCode::NOT_FOUND, "No such database.");
 const MISDIRECTED: (StatusCode, &str) = (StatusCode::NOT_FOUND, "Database is not scheduled on this host");
 
-fn map_reducer_error(e: ReducerCallError, reducer: &str) -> (StatusCode, String) {
+pub(crate) fn map_reducer_error(e: ReducerCallError, reducer: &str) -> (StatusCode, String) {
     let status_code = match e {
         ReducerCallError::Args(_) => {
             log::debug!("Attempt to call reducer {reducer} with invalid arguments");
@@ -152,78 +153,67 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
 
     let args = FunctionArgs::Json(body);
 
-    // HTTP callers always need a connection ID to provide to connect/disconnect,
-    // so generate one.
-    let connection_id = generate_random_connection_id();
+    let caller_auth: ConnectionAuthCtx = auth.into();
 
     let (module, Database { owner_identity, .. }) = find_module_and_database(&worker_ctx, name_or_identity).await?;
 
-    // Call the database's `client_connected` reducer, if any.
-    // If it fails or rejects the connection, bail.
-    module
-        .call_identity_connected(auth.into(), connection_id)
-        .await
-        .map_err(client_connected_error_to_response)?;
-
-    let result = match module
-        .call_reducer(
-            caller_identity,
-            Some(connection_id),
-            None,
-            None,
-            None,
-            &reducer,
-            args.clone(),
-        )
-        .await
-    {
-        Ok(rcr) => Ok(CallResult::Reducer(rcr)),
-        Err(ReducerCallError::NoSuchReducer | ReducerCallError::ScheduleReducerNotFound) => {
-            // Not a reducer — try procedure instead
-            match module
-                .call_procedure(caller_identity, Some(connection_id), None, &reducer, args)
-                .await
-                .result
-            {
-                Ok(res) => Ok(CallResult::Procedure(res)),
-                Err(e) => Err(map_procedure_error(e, &reducer)),
+    let fut = async move |module: ModuleHost, caller_identity: Identity, connection_id: ConnectionId| {
+        let result = match module
+            .call_reducer(
+                caller_identity,
+                Some(connection_id),
+                None,
+                None,
+                None,
+                &reducer,
+                args.clone(),
+            )
+            .await
+        {
+            Ok(rcr) => Ok(CallResult::Reducer(rcr)),
+            Err(ReducerCallError::NoSuchReducer | ReducerCallError::ScheduleReducerNotFound) => {
+                // Not a reducer — try procedure instead
+                match module
+                    .call_procedure(caller_identity, Some(connection_id), None, &reducer, args)
+                    .await
+                    .result
+                {
+                    Ok(res) => Ok(CallResult::Procedure(res)),
+                    Err(e) => Err(map_procedure_error(e, &reducer)),
+                }
             }
+            Err(e) => Err(map_reducer_error(e, &reducer)),
+        };
+
+        match result {
+            Ok(CallResult::Reducer(result)) => {
+                let (status, body) = reducer_outcome_response(&owner_identity, &reducer, result.outcome);
+                Ok((
+                    status,
+                    TypedHeader(SpacetimeEnergyUsed(result.execution_budget_used)),
+                    TypedHeader(SpacetimeExecutionDurationMicros(result.execution_duration)),
+                    body,
+                )
+                    .into_response())
+            }
+            Ok(CallResult::Procedure(result)) => {
+                // Procedures don't assign a special meaning to error returns, unlike reducers,
+                // as there's no transaction for them to automatically abort.
+                // Instead, we just pass on their return value with the OK status so long as we successfully invoked the procedure.
+                let (status, body) = procedure_outcome_response(result.return_val);
+                Ok((
+                    status,
+                    TypedHeader(SpacetimeExecutionDurationMicros(result.execution_duration)),
+                    body,
+                )
+                    .into_response())
+            }
+            Err(e) => Err((e.0, e.1).into()),
         }
-        Err(e) => Err(map_reducer_error(e, &reducer)),
     };
 
-    module
-        .call_identity_disconnected(caller_identity, connection_id)
-        .await
-        .map_err(client_disconnected_error_to_response)?;
-
-    match result {
-        Ok(CallResult::Reducer(result)) => {
-            let (status, body) = reducer_outcome_response(&owner_identity, &reducer, result.outcome);
-            Ok((
-                status,
-                TypedHeader(SpacetimeEnergyUsed(result.execution_budget_used)),
-                TypedHeader(SpacetimeExecutionDurationMicros(result.execution_duration)),
-                body,
-            )
-                .into_response())
-        }
-        Ok(CallResult::Procedure(result)) => {
-            // Procedures don't assign a special meaning to error returns, unlike reducers,
-            // as there's no transaction for them to automatically abort.
-            // Instead, we just pass on their return value with the OK status so long as we successfully invoked the procedure.
-            let (status, body) = procedure_outcome_response(result.return_val);
-            Ok((
-                status,
-                TypedHeader(SpacetimeExecutionDurationMicros(result.execution_duration)),
-                body,
-            )
-                .into_response())
-        }
-        Err(e) => Err((e.0, e.1).into()),
-    }
+    with_connection(module, caller_auth, caller_identity, fut).await
 }
-
 #[derive(Deserialize)]
 pub struct HttpRouteRootParams {
     name_or_identity: NameOrIdentity,
@@ -438,7 +428,7 @@ fn reducer_outcome_response(
     }
 }
 
-fn client_connected_error_to_response(err: ClientConnectedError) -> ErrorResponse {
+pub(crate) fn client_connected_error_to_response(err: ClientConnectedError) -> ErrorResponse {
     match err {
         // If `call_identity_connected` returns `Err(Rejected)`, then the `client_connected` reducer errored,
         // meaning the connection was refused. Return 403 forbidden.
@@ -466,11 +456,11 @@ fn client_connected_error_to_response(err: ClientConnectedError) -> ErrorRespons
 ///
 /// Note that `call_identity_disconnected` swallows errors from the `client_disconnected` reducer.
 /// Slap a 500 on it and pray.
-fn client_disconnected_error_to_response(err: ReducerCallError) -> ErrorResponse {
+pub(crate) fn client_disconnected_error_to_response(err: ReducerCallError) -> ErrorResponse {
     (StatusCode::INTERNAL_SERVER_ERROR, format!("{:#}", anyhow::anyhow!(err))).into()
 }
 
-async fn find_leader_and_database<S: ControlStateDelegate + NodeDelegate>(
+pub(crate) async fn find_leader_and_database<S: ControlStateDelegate + NodeDelegate>(
     worker_ctx: &S,
     name_or_identity: NameOrIdentity,
 ) -> axum::response::Result<(Host, Database)> {
@@ -487,7 +477,7 @@ async fn find_leader_and_database<S: ControlStateDelegate + NodeDelegate>(
     Ok((leader, database))
 }
 
-async fn find_module_and_database<S: ControlStateDelegate + NodeDelegate>(
+pub(crate) async fn find_module_and_database<S: ControlStateDelegate + NodeDelegate>(
     worker_ctx: &S,
     name_or_identity: NameOrIdentity,
 ) -> axum::response::Result<(ModuleHost, Database)> {
@@ -709,6 +699,46 @@ pub struct SqlQueryParams {
     pub confirmed: Option<bool>,
 }
 
+/// Runs `fut` inside an HTTP client connection lifecycle.
+///
+/// The lifecycle is detached from the request task, so once `client_connected`
+/// succeeds, `client_disconnected` still runs if the handler is dropped or
+/// `fut` returns an error.
+async fn with_connection<F, Fut, R>(
+    module: ModuleHost,
+    caller_auth: ConnectionAuthCtx,
+    caller_identity: Identity,
+    fut: F,
+) -> axum::response::Result<R>
+where
+    F: FnOnce(ModuleHost, Identity, ConnectionId) -> Fut + Send + 'static,
+    Fut: Future<Output = axum::response::Result<R>> + Send + 'static,
+    R: Send + 'static,
+{
+    tokio::spawn(async move {
+        let connection_id = generate_random_connection_id();
+
+        // Run the module's client_connected reducer, if any.
+        // If it rejects the connection, bail before executing `fut`
+        module
+            .call_identity_connected(caller_auth, connection_id)
+            .await
+            .map_err(client_connected_error_to_response)?;
+
+        let result = fut(module.clone(), caller_identity, connection_id).await;
+
+        // Always disconnect, even if authorization or execution failed.
+        module
+            .call_identity_disconnected(caller_identity, connection_id)
+            .await
+            .map_err(client_disconnected_error_to_response)?;
+
+        result
+    })
+    .await
+    .map_err(log_and_500)?
+}
+
 pub async fn sql_direct<S>(
     worker_ctx: S,
     SqlParams { name_or_identity }: SqlParams,
@@ -718,21 +748,12 @@ pub async fn sql_direct<S>(
     sql: String,
 ) -> axum::response::Result<Vec<SqlStmtResult<ProductValue>>>
 where
-    S: NodeDelegate + ControlStateDelegate + Authorization,
+    S: NodeDelegate + ControlStateDelegate + Authorization + 'static,
 {
-    let connection_id = generate_random_connection_id();
-
     let (host, database) = find_leader_and_database(&worker_ctx, name_or_identity).await?;
 
-    // Run the module's client_connected reducer, if any.
-    // If it rejects the connection, bail before executing SQL.
     let module = host.module().await.map_err(log_and_500)?;
-    module
-        .call_identity_connected(caller_auth, connection_id)
-        .await
-        .map_err(client_connected_error_to_response)?;
-
-    let result = async {
+    let fut = async move |_module: ModuleHost, caller_identity: Identity, _connection_id: ConnectionId| {
         let sql_auth = worker_ctx
             .authorize_sql(caller_identity, database.database_identity)
             .await?;
@@ -744,16 +765,9 @@ where
             sql,
         )
         .await
-    }
-    .await;
+    };
 
-    // Always disconnect, even if authorization or execution failed.
-    module
-        .call_identity_disconnected(caller_identity, connection_id)
-        .await
-        .map_err(client_disconnected_error_to_response)?;
-
-    result
+    with_connection(module, caller_auth, caller_identity, fut).await
 }
 
 pub async fn sql<S>(
@@ -764,7 +778,7 @@ pub async fn sql<S>(
     body: String,
 ) -> axum::response::Result<impl IntoResponse>
 where
-    S: NodeDelegate + ControlStateDelegate + Authorization,
+    S: NodeDelegate + ControlStateDelegate + Authorization + 'static,
 {
     let caller_identity = auth.claims.identity;
     let caller_auth: ConnectionAuthCtx = auth.into();
@@ -1549,6 +1563,8 @@ pub struct DatabaseRoutes<S> {
     pub logs_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/sql
     pub sql_post: MethodRouter<S>,
+    /// POST: /database/:name_or_identity/mcp
+    pub mcp_post: MethodRouter<S>,
     /// POST: /database/:name_or_identity/pre-publish
     pub pre_publish: MethodRouter<S>,
     /// PUT: /database/:name_or_identity/reset
@@ -1587,6 +1603,7 @@ where
             schema_get: get(schema::<S>),
             logs_get: get(logs::<S>),
             sql_post: post(sql::<S>),
+            mcp_post: post(crate::routes::mcp::mcp::<S>),
             pre_publish: post(pre_publish::<S>),
             db_reset: put(reset::<S>),
             timestamp_get: get(get_timestamp::<S>),
@@ -1617,6 +1634,7 @@ where
             .route("/schema", self.schema_get)
             .route("/logs", self.logs_get)
             .route("/sql", self.sql_post)
+            .route("/mcp", self.mcp_post)
             .route("/unstable/timestamp", self.timestamp_get)
             .route("/pre_publish", self.pre_publish)
             .route("/reset", self.db_reset)

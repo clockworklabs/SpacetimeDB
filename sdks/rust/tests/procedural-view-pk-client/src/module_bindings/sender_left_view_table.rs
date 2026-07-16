@@ -18,6 +18,18 @@ pub struct SenderLeftViewTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `sender_left_view`.
+pub struct SenderLeftViewTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for SenderLeftViewTableAccessor {
+    type Row = LeftSource;
+    type Handle<'db> = SenderLeftViewTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.sender_left_view()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `sender_left_view`.
 ///
@@ -39,6 +51,18 @@ impl SenderLeftViewTableAccess for super::RemoteTables {
 
 pub struct SenderLeftViewInsertCallbackId(__sdk::CallbackId);
 pub struct SenderLeftViewDeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for SenderLeftViewTableHandle<'ctx> {
+    type Row = LeftSource;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = LeftSource> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for SenderLeftViewTableHandle<'ctx> {
     type Row = LeftSource;
@@ -78,9 +102,54 @@ impl<'ctx> __sdk::Table for SenderLeftViewTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithInsert for SenderLeftViewTableHandle<'ctx> {
+    type InsertCallbackId = SenderLeftViewInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> SenderLeftViewInsertCallbackId {
+        SenderLeftViewInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: SenderLeftViewInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for SenderLeftViewTableHandle<'ctx> {
+    type DeleteCallbackId = SenderLeftViewDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> SenderLeftViewDeleteCallbackId {
+        SenderLeftViewDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: SenderLeftViewDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
 pub struct SenderLeftViewUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for SenderLeftViewTableHandle<'ctx> {
+    type UpdateCallbackId = SenderLeftViewUpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> SenderLeftViewUpdateCallbackId {
+        SenderLeftViewUpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: SenderLeftViewUpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithUpdate for SenderLeftViewTableHandle<'ctx> {
     type UpdateCallbackId = SenderLeftViewUpdateCallbackId;
 
     fn on_update(

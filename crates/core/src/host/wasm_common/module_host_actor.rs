@@ -16,8 +16,8 @@ use crate::host::module_host::{
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::{
-    ArgsTuple, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError, ReducerCallResult, ReducerId,
-    ReducerOutcome, Scheduler, UpdateDatabaseResult,
+    ArgsTuple, InitDatabaseResult, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError,
+    ReducerCallResult, ReducerCallResultWithTxOffset, ReducerId, ReducerOutcome, Scheduler, UpdateDatabaseResult,
 };
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
@@ -55,6 +55,7 @@ use spacetimedb_schema::def::{ModuleDef, ViewDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_subscription::SubscriptionPlan;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::span::EnteredSpan;
 
@@ -543,10 +544,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
-    pub fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
+    pub fn init_database(&mut self, program: Program) -> anyhow::Result<InitDatabaseResult> {
         let module_def = &self.common.info.clone().module_def;
         let replica_ctx = &self.instance.replica_ctx().clone();
-        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let call_reducer = |tx, params| self.call_reducer_with_tx_offset(tx, params);
         let (res, trapped) = init_database(replica_ctx, module_def, program, call_reducer);
         self.trapped = trapped;
         res
@@ -589,8 +590,18 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 impl<T: WasmInstance> WasmModuleInstance<T> {
     #[tracing::instrument(level = "trace", skip_all)]
     fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> (ReducerCallResult, bool) {
+        let (res, trapped) = self.call_reducer_with_tx_offset(tx, params);
+        (res.result, trapped)
+    }
+
+    #[tracing::instrument(level = "trace", skip_all)]
+    fn call_reducer_with_tx_offset(
+        &mut self,
+        tx: Option<MutTxId>,
+        params: CallReducerParams,
+    ) -> (ReducerCallResultWithTxOffset, bool) {
         crate::callgrind_flag::invoke_allowing_callgrind(|| {
-            self.common.call_reducer_with_tx(tx, params, &mut self.instance)
+            self.common.call_reducer_with_tx_offset(tx, params, &mut self.instance)
         })
     }
 
@@ -711,7 +722,7 @@ impl InstanceCommon {
                         }
                     }
                     crate::db::update::UpdateResult::EvaluateSubscribedViews => {
-                        let (out, trapped) = self.evaluate_subscribed_views(tx, inst)?;
+                        let (out, _, trapped) = self.evaluate_subscribed_views(tx, inst)?;
                         tx = out.tx;
                         if trapped || out.outcome != ViewOutcome::Success {
                             let msg = match trapped {
@@ -748,12 +759,12 @@ impl InstanceCommon {
         }
     }
 
-    /// Re-evaluates all views which have entries in `st_view_subs`.
+    /// Re-evaluates all materialized view instances tracked in view lifecycle state.
     fn evaluate_subscribed_views<I: WasmInstance>(
         &mut self,
         tx: MutTxId,
         inst: &mut I,
-    ) -> Result<(ViewCallResult, bool), anyhow::Error> {
+    ) -> Result<(ViewCallResult, u32, bool), anyhow::Error> {
         let view_calls = collect_subscribed_view_calls(&tx, &self.info.module_def, self.info.owner_identity)?;
         Ok(self.execute_view_calls(tx, view_calls, inst))
     }
@@ -946,6 +957,16 @@ impl InstanceCommon {
         params: CallReducerParams,
         inst: &mut I,
     ) -> (ReducerCallResult, bool) {
+        let (res, trapped) = self.call_reducer_with_tx_offset(tx, params, inst);
+        (res.result, trapped)
+    }
+
+    pub(crate) fn call_reducer_with_tx_offset<I: WasmInstance>(
+        &mut self,
+        tx: Option<MutTxId>,
+        params: CallReducerParams,
+        inst: &mut I,
+    ) -> (ReducerCallResultWithTxOffset, bool) {
         let CallReducerParams {
             timestamp,
             caller_identity,
@@ -1044,16 +1065,15 @@ impl InstanceCommon {
         };
 
         // Only re-evaluate and update views if the reducer's execution was successful
-        let (out, trapped) = if !trapped && matches!(status, EventStatus::Committed(_)) {
+        let (out, n_views_evaluated, trapped) = if !trapped && matches!(status, EventStatus::Committed(_)) {
             self.call_views_with_tx(tx, caller_identity, inst, timestamp)
         } else {
-            (ViewCallResult::default(tx), trapped)
+            (ViewCallResult::default(tx), 0, trapped)
         };
 
         // Account for view execution in reducer reporting metrics
-        vm_metrics.report_execution_budget_used(out.execution_budget_used);
-        vm_metrics.report_total_duration(out.total_duration);
-        vm_metrics.report_abi_duration(out.abi_duration);
+
+        vm_metrics.report_view_refreshed(n_views_evaluated);
 
         let status = match out.outcome {
             ViewOutcome::BudgetExceeded => EventStatus::OutOfEnergy,
@@ -1079,11 +1099,13 @@ impl InstanceCommon {
             status,
             reducer_return_value,
             execution_budget_used,
+            // Note: this is not counting view work.
             host_execution_duration: total_duration,
             request_id,
             timer,
         };
-        let event = commit_and_broadcast_event(&info.subscriptions, client, event, out.tx).event;
+        let CommitAndBroadcastEventSuccess { event, tx_offset, .. } =
+            commit_and_broadcast_event(&info.subscriptions, client, event, out.tx);
 
         let res = ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),
@@ -1091,7 +1113,7 @@ impl InstanceCommon {
             execution_duration: total_duration,
         };
 
-        (res, trapped)
+        (ReducerCallResultWithTxOffset { result: res, tx_offset }, trapped)
     }
 
     fn handle_outer_error(&mut self, energy: &EnergyStats, reducer_name: &str) -> EventStatus {
@@ -1283,6 +1305,7 @@ impl InstanceCommon {
         params: CallViewParams,
         inst: &mut I,
     ) -> (ViewCallResult, bool) {
+        let compute_start = std::time::Instant::now();
         let CallViewParams {
             view_name,
             view_id,
@@ -1346,7 +1369,10 @@ impl InstanceCommon {
             (Ok(raw), sender) => {
                 // This is wrapped in a closure to simplify error handling.
                 let outcome: Result<ViewOutcome, anyhow::Error> = (|| {
-                    let view_call = ViewCallInfo { view_id, sender };
+                    let view_call = match sender {
+                        Some(sender) => ViewCallInfo::sender(view_id, sender),
+                        None => ViewCallInfo::anonymous(view_id),
+                    };
                     let result = ViewResult::from_return_data(raw).context("Error parsing view result")?;
                     let typespace = self.info.module_def.typespace();
                     let row_product_type = typespace
@@ -1380,12 +1406,23 @@ impl InstanceCommon {
             }
         };
 
+        let total_time = compute_start.elapsed();
+        // Report execution metrics on each view call.
+        self.vm_metrics
+            //.get_for_view_id(view_id, &self.info.database_identity, &view_name)
+            .get_for_view_id2(view_id, &self.info.database_identity, &view_name)
+            .report(&ViewExecutionStats {
+                call_duration: result.stats.total_duration(),
+                total_duration: total_time,
+            });
+
         let res = ViewCallResult {
             outcome,
             tx,
             execution_budget_used: result.stats.execution_budget_used(),
-            total_duration: result.stats.total_duration(),
+            total_duration: total_time,
             abi_duration: result.stats.abi_duration(),
+            call_duration: result.stats.total_duration(),
         };
 
         (res, trapped)
@@ -1405,13 +1442,15 @@ impl InstanceCommon {
     }
     /// A [`MutTxId`] knows which views must be updated (re-evaluated).
     /// This method re-evaluates them and updates their backing tables.
+    /// Returns an overall result, the number of views evaluated, and whether any call trapped.
+    /// The caller should use the number of views evaluated to increment the metric `view_calls_triggered`.
     pub(crate) fn call_views_with_tx<I: WasmInstance>(
         &mut self,
         tx: MutTxId,
         caller: Identity,
         inst: &mut I,
         timestamp: Timestamp,
-    ) -> (ViewCallResult, bool) {
+    ) -> (ViewCallResult, u32, bool) {
         let mut instance = RefInstance {
             common: self,
             instance: inst,
@@ -1426,11 +1465,13 @@ impl InstanceCommon {
         tx: MutTxId,
         view_calls: Vec<CallViewParams>,
         inst: &mut I,
-    ) -> (ViewCallResult, bool) {
+    ) -> (ViewCallResult, u32, bool) {
         let mut out = ViewCallResult::default(tx);
         let mut trapped = false;
+        let mut num_views_evaluated = 0;
 
         for params in view_calls {
+            num_views_evaluated += 1;
             let (result, call_trapped) = self.call_view_with_tx(out.tx, params, inst);
 
             out.tx = result.tx;
@@ -1447,7 +1488,7 @@ impl InstanceCommon {
             }
         }
 
-        (out, trapped)
+        (out, num_views_evaluated, trapped)
     }
 
     /// Empty the system tables tracking clients without running any lifecycle reducers.
@@ -1496,10 +1537,10 @@ fn collect_subscribed_view_calls(
         let table_id = st_view
             .table_id
             .ok_or_else(|| anyhow::anyhow!("view {} does not have a backing table in database", &view_name))?;
-        let subs = tx.lookup_st_view_subs(view_id)?;
+        let view_instances = tx.materialized_view_instances_for_view(view_id);
 
         if *is_anonymous {
-            if subs.is_empty() {
+            if view_instances.is_empty() {
                 continue;
             }
             view_calls.push(CallViewParams {
@@ -1516,14 +1557,17 @@ fn collect_subscribed_view_calls(
             continue;
         }
 
-        for sub in subs {
+        for args in view_instances {
+            let Some(sender) = args.sender() else {
+                continue;
+            };
             view_calls.push(CallViewParams {
                 view_name: view_name.clone(),
                 view_id,
                 table_id,
                 fn_ptr: *fn_ptr,
                 caller: owner_identity,
-                sender: Some(sub.identity.into()),
+                sender: Some(sender),
                 args: ArgsTuple::nullary(),
                 row_type: *product_type_ref,
                 timestamp: Timestamp::now(),
@@ -1542,8 +1586,10 @@ struct AllVmMetrics {
     // TODO(perf, centril): Define a `VecMapWithFallback<N>`
     // that falls back to `HashMap` when exceeding `N` entries.
     // This could be useful elsewhere for e.g., TableId => X maps and similar.
-    counters: Vec<VmMetrics>,
+    reducer_counters: Vec<VmMetrics>,
     num_reducers: u32,
+
+    view_metrics: HashMap<ViewId, ViewMetrics>,
 }
 
 impl AllVmMetrics {
@@ -1555,21 +1601,22 @@ impl AllVmMetrics {
         let num_reducers = reducers.len() as u32;
         let reducers = reducers.map(|(_, def)| def.name());
 
-        // These are the views:
-        let views = def.views().map(|def| def.name());
-
         // Pre-fetch the metrics for both:
-        let counters = reducers
-            .chain(views)
+        let reducer_counters = reducers
             .map(|name| VmMetrics::new(&info.database_identity, name))
             .collect();
 
-        Self { counters, num_reducers }
+        // View metrics will be lazily fetched, as they are not always called.
+        Self {
+            reducer_counters,
+            num_reducers,
+            view_metrics: HashMap::new(),
+        }
     }
 
     #[inline]
     fn get_for_index(&self, index: u32) -> Option<VmMetrics> {
-        self.counters.get(index as usize).cloned()
+        self.reducer_counters.get(index as usize).cloned()
     }
 
     /// Returns the vm metrics counters for `id`,
@@ -1580,8 +1627,20 @@ impl AllVmMetrics {
             .expect("all counters for reducers should've been pre-fetched")
     }
 
+    // Returns the view metrics for `id`.
+    fn get_for_view_id2(&mut self, id: ViewId, identity: &Identity, name: &str) -> ViewMetrics {
+        self.view_metrics
+            .entry(id)
+            .or_insert_with(|| ViewMetrics::new(identity, name))
+            .clone()
+    }
+
     /// Returns the vm metrics counters for `id`,
     /// or panics if `id` was not pre-fetched in [`AllVmMetrics::new`].
+    ///
+    /// TODO: delete these. This version is using reducer stats, which is very confusing.
+    /// I'm leaving this in place for now because I need to figure out if this matters for
+    /// billing or the website dashboard. (jsdt 2026-07-15)
     #[inline]
     fn get_for_view_id(&self, id: ViewId, identity: &Identity, name: &str) -> VmMetrics {
         // Cosunters for the first view starts after counters for the last reducer.
@@ -1596,6 +1655,41 @@ impl AllVmMetrics {
     }
 }
 
+#[derive(Clone)]
+struct ViewMetrics {
+    // Counts the time calling the user-defined function.
+    call_duration_usec: IntCounter,
+    // Includes the time spent calling the user-defined function and materializing the results.
+    total_duration_usec: IntCounter,
+    // Number of times the view was called.
+    total_calls: IntCounter,
+}
+
+struct ViewExecutionStats {
+    call_duration: Duration,
+    total_duration: Duration,
+}
+
+impl ViewMetrics {
+    fn new(identity: &Identity, name: &str) -> Self {
+        let call_duration_usec = DB_METRICS.view_call_duration_usec.with_label_values(identity, name);
+        let total_duration_usec = DB_METRICS.view_total_duration_usec.with_label_values(identity, name);
+        let total_calls = DB_METRICS.view_calls.with_label_values(identity, name);
+
+        Self {
+            call_duration_usec,
+            total_duration_usec,
+            total_calls,
+        }
+    }
+
+    fn report(&self, stats: &ViewExecutionStats) {
+        self.call_duration_usec.inc_by(stats.call_duration.as_micros() as u64);
+        self.total_duration_usec.inc_by(stats.total_duration.as_micros() as u64);
+        self.total_calls.inc();
+    }
+}
+
 /// VM-related metrics for reducer execution.
 #[derive(Clone)]
 struct VmMetrics {
@@ -1607,6 +1701,8 @@ struct VmMetrics {
     reducer_duration_usec: IntCounter,
     /// The total time spent in reducer ABI calls.
     reducer_abi_time_usec: IntCounter,
+    /// The number of view refreshes triggered by this reducer.
+    views_refreshed: IntCounter,
 }
 
 impl VmMetrics {
@@ -1624,12 +1720,15 @@ impl VmMetrics {
         let reducer_abi_time_usec = DB_METRICS
             .reducer_abi_time_usec
             .with_label_values(database_identity, reducer_name);
-
+        let views_refreshed = DB_METRICS
+            .view_calls_triggered_by_reducer
+            .with_label_values(database_identity, reducer_name);
         Self {
             reducer_plus_query_duration,
             reducer_fuel_used,
             reducer_duration_usec,
             reducer_abi_time_usec,
+            views_refreshed,
         }
     }
 
@@ -1648,6 +1747,10 @@ impl VmMetrics {
 
     fn report_abi_duration(&self, duration: Duration) {
         self.reducer_abi_time_usec.inc_by(duration.as_micros() as u64);
+    }
+
+    fn report_view_refreshed(&self, num_views_evaluated: u32) {
+        self.views_refreshed.inc_by(num_views_evaluated as u64);
     }
 
     /// Reports some VM metrics.
@@ -1770,10 +1873,7 @@ impl InstanceOp for ViewOp<'_> {
     }
 
     fn call_type(&self) -> FuncCallType {
-        FuncCallType::View(ViewCallInfo {
-            view_id: self.view_id,
-            sender: Some(*self.sender),
-        })
+        FuncCallType::View(ViewCallInfo::sender(self.view_id, *self.sender))
     }
 }
 
@@ -1798,10 +1898,7 @@ impl InstanceOp for AnonymousViewOp<'_> {
     }
 
     fn call_type(&self) -> FuncCallType {
-        FuncCallType::View(ViewCallInfo {
-            view_id: self.view_id,
-            sender: None,
-        })
+        FuncCallType::View(ViewCallInfo::anonymous(self.view_id))
     }
 }
 
@@ -1899,9 +1996,9 @@ impl InstanceOp for HttpHandlerOp {
 mod tests {
     use super::collect_subscribed_view_calls;
     use crate::db::relational_db::tests_utils::{begin_mut_tx, TestDB};
+    use spacetimedb_datastore::locking_tx_datastore::{ViewCallInfo, ViewInstanceArgs};
     use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
     use spacetimedb_lib::{AlgebraicType, Identity, ProductType};
-    use spacetimedb_primitives::ArgId;
     use spacetimedb_sats::raw_identifier::RawIdentifier;
     use spacetimedb_schema::def::ModuleDef;
 
@@ -1939,8 +2036,9 @@ mod tests {
 
         let mut tx = begin_mut_tx(&stdb);
         let (view_id, _table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
-        tx.subscribe_view(view_id, ArgId::SENTINEL, Identity::ZERO)?;
-        tx.subscribe_view(view_id, ArgId::SENTINEL, Identity::ONE)?;
+        let view_call = ViewCallInfo::anonymous(view_id);
+        tx.subscribe_view(view_call.clone(), ViewInstanceArgs::Anonymous, Identity::ZERO)?;
+        tx.subscribe_view(view_call, ViewInstanceArgs::Anonymous, Identity::ONE)?;
 
         // Two subscriber rows exist, but anonymous views should still be reevaluated once
         // because they share a single materialization.
@@ -1968,8 +2066,10 @@ mod tests {
 
         let mut tx = begin_mut_tx(&stdb);
         let (view_id, _table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
-        tx.subscribe_view(view_id, ArgId::SENTINEL, Identity::ZERO)?;
-        tx.subscribe_view(view_id, ArgId::SENTINEL, Identity::ONE)?;
+        let zero_args = ViewInstanceArgs::Sender(Identity::ZERO);
+        let one_args = ViewInstanceArgs::Sender(Identity::ONE);
+        tx.subscribe_view(ViewCallInfo::from_args(view_id, zero_args), zero_args, Identity::ZERO)?;
+        tx.subscribe_view(ViewCallInfo::from_args(view_id, one_args), one_args, Identity::ONE)?;
 
         // Sender-backed views keep one materialization per sender, so reevaluation must
         // preserve both callers.

@@ -1,9 +1,11 @@
 #![doc = include_str!("../README.md")]
 // ^ if you are working on docs, go read the top comment of README.md please.
 
-use core::cell::{Cell, LazyCell, OnceCell, RefCell};
+use core::cell::{LazyCell, OnceCell, RefCell};
 use core::ops::Deref;
 use spacetimedb_lib::bsatn;
+#[cfg(feature = "rand08")]
+use std::cell::Cell;
 use std::rc::Rc;
 
 #[cfg(feature = "unstable")]
@@ -24,9 +26,11 @@ pub use spacetimedb_query_builder as query_builder;
 #[cfg(feature = "unstable")]
 pub use client_visibility_filter::Filter;
 pub use log;
-#[cfg(feature = "rand")]
+#[cfg(feature = "rand08")]
+use rand::distributions::{Distribution, Standard};
+#[cfg(feature = "rand08")]
 pub use rand08 as rand;
-#[cfg(feature = "rand")]
+#[cfg(feature = "rand08")]
 use rand08::RngCore;
 #[cfg(feature = "rand08")]
 pub use rng::StdbRng;
@@ -42,6 +46,9 @@ pub use spacetimedb_lib::ser::Serialize;
 pub use spacetimedb_lib::AlgebraicValue;
 pub use spacetimedb_lib::ConnectionId;
 // `FilterableValue` re-exported purely for rustdoc.
+#[cfg(feature = "unstable")]
+use crate::http::HandlerContext;
+use crate::http::HttpClient;
 pub use spacetimedb_lib::FilterableValue;
 pub use spacetimedb_lib::Identity;
 pub use spacetimedb_lib::ScheduleAt;
@@ -1027,7 +1034,7 @@ pub struct ReducerContext {
     rng: std::cell::OnceCell<StdbRng>,
     /// A counter used for generating UUIDv7 values.
     /// **Note:** must be 0..=u32::MAX
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     counter_uuid: Cell<u32>,
 }
 
@@ -1042,7 +1049,7 @@ impl ReducerContext {
             sender_auth: AuthCtx::internal(),
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
-            #[cfg(feature = "rand")]
+            #[cfg(feature = "rand08")]
             counter_uuid: Cell::new(0),
         }
     }
@@ -1057,7 +1064,7 @@ impl ReducerContext {
             sender_auth: AuthCtx::from_connection_id_opt(connection_id),
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
-            #[cfg(feature = "rand")]
+            #[cfg(feature = "rand08")]
             counter_uuid: Cell::new(0),
         }
     }
@@ -1123,7 +1130,7 @@ impl ReducerContext {
     /// }
     /// # }
     /// ```
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     pub fn new_uuid_v4(&self) -> anyhow::Result<Uuid> {
         let mut bytes = [0u8; 16];
         self.rng().try_fill_bytes(&mut bytes)?;
@@ -1145,7 +1152,7 @@ impl ReducerContext {
     /// }
     /// # }
     /// ```
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     pub fn new_uuid_v7(&self) -> anyhow::Result<Uuid> {
         let mut random_bytes = [0u8; 4];
         self.rng().try_fill_bytes(&mut random_bytes)?;
@@ -1268,7 +1275,7 @@ pub struct ProcedureContext {
     /// A counter used for generating UUIDv7 values.
     /// **Note:** must be 0..=u32::MAX
     // Disabled when compiling without `rand`, as both v4 and v7 UUIDs have random components.
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     counter_uuid: Cell<u32>,
 }
 
@@ -1281,7 +1288,7 @@ impl ProcedureContext {
             http: http::HttpClient {},
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
-            #[cfg(feature = "rand")]
+            #[cfg(feature = "rand08")]
             counter_uuid: Cell::new(0),
         }
     }
@@ -1421,7 +1428,7 @@ impl ProcedureContext {
     /// }
     /// # }
     /// ```
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     pub fn new_uuid_v4(&self) -> anyhow::Result<Uuid> {
         let mut bytes = [0u8; 16];
         self.rng().try_fill_bytes(&mut bytes)?;
@@ -1443,7 +1450,7 @@ impl ProcedureContext {
     /// }
     /// # }
     /// ```
-    #[cfg(feature = "rand")]
+    #[cfg(feature = "rand08")]
     pub fn new_uuid_v7(&self) -> anyhow::Result<Uuid> {
         let mut random_bytes = [0u8; 4];
         self.rng().try_fill_bytes(&mut random_bytes)?;
@@ -1452,6 +1459,7 @@ impl ProcedureContext {
 }
 
 /// A handle on a database with a particular table schema.
+#[deprecated(note = "Use the capability based traits (CtxDbRead, CtxDbWrite) instead!")]
 pub trait DbContext {
     /// A view into the tables of a database.
     ///
@@ -1473,6 +1481,7 @@ pub trait DbContext {
     fn db_read_only(&self) -> &LocalReadOnly;
 }
 
+#[allow(deprecated)]
 impl DbContext for AnonymousViewContext {
     type DbView = LocalReadOnly;
 
@@ -1485,6 +1494,7 @@ impl DbContext for AnonymousViewContext {
     }
 }
 
+#[allow(deprecated)]
 impl DbContext for ReducerContext {
     type DbView = Local;
 
@@ -1497,6 +1507,7 @@ impl DbContext for ReducerContext {
     }
 }
 
+#[allow(deprecated)]
 impl DbContext for TxContext {
     type DbView = Local;
 
@@ -1509,6 +1520,7 @@ impl DbContext for TxContext {
     }
 }
 
+#[allow(deprecated)]
 impl DbContext for ViewContext {
     type DbView = LocalReadOnly;
 
@@ -1535,6 +1547,295 @@ pub struct Local {}
 impl Local {
     fn get_read_only(&self) -> &LocalReadOnly {
         &LocalReadOnly {}
+    }
+}
+
+/// Contexts which provide read access to the database.
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from views, reducers, and transactions started by procedures and HTTP handlers.
+///
+/// When operating on a concrete-typed [`ViewContext`], [`ReducerContext`] or [`TxContext`],
+/// this trait is not necessary, as the context's `db` field provides the same (or greater, read-write) access.
+pub trait CtxDbRead {
+    fn db_read_only(&self) -> &LocalReadOnly;
+}
+
+impl CtxDbRead for TxContext {
+    fn db_read_only(&self) -> &LocalReadOnly {
+        &LocalReadOnly {}
+    }
+}
+
+impl CtxDbRead for ReducerContext {
+    fn db_read_only(&self) -> &LocalReadOnly {
+        &LocalReadOnly {}
+    }
+}
+
+impl CtxDbRead for ViewContext {
+    fn db_read_only(&self) -> &LocalReadOnly {
+        &LocalReadOnly {}
+    }
+}
+
+impl CtxDbRead for AnonymousViewContext {
+    fn db_read_only(&self) -> &LocalReadOnly {
+        &LocalReadOnly {}
+    }
+}
+
+/// Contexts which provide read-write access to the database.
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from reducers and from transactions started by procedures and HTTP handlers.
+///
+/// When operating on a concrete-typed [`ReducerContext`] or [`TxContext`], this trait is not necessary,
+/// as the context's `db` field provides the same access.
+pub trait CtxDbWrite: CtxDbRead {
+    fn db(&self) -> &Local;
+}
+
+impl CtxDbWrite for TxContext {
+    fn db(&self) -> &Local {
+        &Local {}
+    }
+}
+
+impl CtxDbWrite for ReducerContext {
+    fn db(&self) -> &Local {
+        &Local {}
+    }
+}
+
+/// Contexts which can retrieve the sender [`Identity`].
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from views, reducers, and transactions started by procedures and HTTP handlers.
+///
+/// When operating on a concrete-typed [`ViewContext`], [`ReducerContext`], [`ProcedureContext`] or [`TxContext`],
+/// this trait is not necessary, as the context's inherent `sender` method provides the same access.
+pub trait CtxWithSender {
+    fn sender(&self) -> Identity;
+}
+
+impl CtxWithSender for ViewContext {
+    fn sender(&self) -> Identity {
+        self.sender
+    }
+}
+
+impl CtxWithSender for ReducerContext {
+    fn sender(&self) -> Identity {
+        self.sender
+    }
+}
+
+impl CtxWithSender for TxContext {
+    fn sender(&self) -> Identity {
+        self.0.sender
+    }
+}
+
+impl CtxWithSender for ProcedureContext {
+    fn sender(&self) -> Identity {
+        self.sender
+    }
+}
+
+/// Contexts which can retrieve the current [`Timestamp`].
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from reducers, procedures, HTTP handlers,
+/// and transactions started by procedures and HTTP handlers.
+///
+/// When operating on a concrete-typed [`ReducerContext`], [`ProcedureContext`]
+#[cfg_attr(feature = "unstable", doc = ", [`HandlerContext`]")]
+/// or [`TxContext`],
+/// this trait is not necessary, as the context's `timestamp` field provides the same access.
+pub trait CtxWithTimestamp {
+    fn timestamp(&self) -> Timestamp;
+}
+
+impl CtxWithTimestamp for ReducerContext {
+    fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+}
+
+impl CtxWithTimestamp for TxContext {
+    fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+}
+
+impl CtxWithTimestamp for ProcedureContext {
+    fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+}
+
+#[cfg(feature = "unstable")]
+impl CtxWithTimestamp for HandlerContext {
+    fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+}
+
+/// Contexts which can retrieve the current [`AuthCtx`].
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from reducers and procedures.
+///
+/// When operating on a concrete-typed [`ReducerContext`], [`ProcedureContext`], [`TxContext`],
+/// this trait is not necessary, as the context's sender_auth method provides the same access.
+pub trait CtxWithSenderAuth {
+    fn sender_auth(&self) -> &AuthCtx;
+}
+
+impl CtxWithSenderAuth for ReducerContext {
+    fn sender_auth(&self) -> &AuthCtx {
+        self.sender_auth()
+    }
+}
+
+impl CtxWithSenderAuth for TxContext {
+    fn sender_auth(&self) -> &AuthCtx {
+        self.0.sender_auth()
+    }
+}
+
+/// Contexts which can enter a start a transaction with a [`TxContext`] inside the function.
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from reducers and procedures.
+///
+/// When operating on a concrete-typed
+#[cfg_attr(feature = "unstable", doc = "[`HandlerContext`] or")]
+/// [`ProcedureContext`],
+/// this trait is not necessary, as the context's methods provide the same access.
+pub trait CtxWithTxManagement {
+    fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T;
+    fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E>;
+}
+
+impl CtxWithTxManagement for ProcedureContext {
+    fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
+        self.with_tx(body)
+    }
+
+    fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
+        self.try_with_tx(body)
+    }
+}
+
+#[cfg(feature = "unstable")]
+impl CtxWithTxManagement for HandlerContext {
+    fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
+        self.with_tx(body)
+    }
+
+    fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
+        self.try_with_tx(body)
+    }
+}
+
+/// Contexts which can retrieve the current [`StdbRng`] state.
+///
+/// This trait is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from reducers and procedures.
+///
+/// When operating on a concrete-typed
+#[cfg_attr(feature = "unstable", doc = "[`HandlerContext`],")]
+/// [`ProcedureContext`], [`ReducerContext`], [`TxContext`]
+/// this trait is not necessary, as the context's methods provide the same access.
+#[cfg(feature = "rand08")]
+pub trait CtxWithRng {
+    fn rng(&self) -> &StdbRng;
+    fn random<T>(&self) -> T
+    where
+        Standard: Distribution<T>;
+}
+
+#[cfg(feature = "rand08")]
+impl CtxWithRng for ProcedureContext {
+    fn rng(&self) -> &StdbRng {
+        self.rng()
+    }
+
+    fn random<T>(&self) -> T
+    where
+        Standard: Distribution<T>,
+    {
+        self.random()
+    }
+}
+
+#[cfg(all(feature = "unstable", feature = "rand08"))]
+impl CtxWithRng for HandlerContext {
+    fn rng(&self) -> &StdbRng {
+        self.rng()
+    }
+
+    fn random<T>(&self) -> T
+    where
+        Standard: Distribution<T>,
+    {
+        self.random()
+    }
+}
+
+#[cfg(feature = "rand08")]
+impl CtxWithRng for ReducerContext {
+    fn rng(&self) -> &StdbRng {
+        self.rng()
+    }
+
+    fn random<T>(&self) -> T
+    where
+        Standard: Distribution<T>,
+    {
+        self.random()
+    }
+}
+
+#[cfg(feature = "rand08")]
+impl CtxWithRng for TxContext {
+    fn rng(&self) -> &StdbRng {
+        self.0.rng()
+    }
+
+    fn random<T>(&self) -> T
+    where
+        Standard: Distribution<T>,
+    {
+        self.0.random()
+    }
+}
+
+/// Contexts which can perform outgoing HTTP requests.
+///
+/// This type is useful for writing reusable logic which is generic over the context type,
+/// allowing it to be used from procedures and HTTP handlers.
+///
+/// When operating on a concrete-typed [`ProcedureContext`]
+#[cfg_attr(feature = "unstable", doc = "or [`HandlerContext`],")]
+/// this trait is not necessary,
+/// as the context's `http` field provides the same access.
+pub trait CtxWithHttp {
+    fn http(&self) -> &HttpClient;
+}
+
+#[cfg(feature = "unstable")]
+impl CtxWithHttp for HandlerContext {
+    fn http(&self) -> &HttpClient {
+        &self.http
+    }
+}
+
+impl CtxWithHttp for ProcedureContext {
+    fn http(&self) -> &HttpClient {
+        &self.http
     }
 }
 

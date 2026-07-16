@@ -1,0 +1,4 @@
+!replicas/
+!replicas/1/
+!replicas/1/clog/
+!replicas/1/clog/*.stdb.log

@@ -86,6 +86,7 @@ impl StandaloneEnv {
             HostRuntimeConfig::new(config.wasm, config.v8),
             program_store.clone(),
             energy_monitor,
+            Arc::new(()),
             persistence_provider,
             db_cores,
         );
@@ -291,6 +292,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     owner_identity: *publisher,
                     host_type: spec.host_type,
                     initial_program: program.hash,
+                    bootstrap_generation: 0,
                 };
 
                 let _hash_for_assert = program.hash;
@@ -431,9 +433,8 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                 .await?;
             let _stored_hash_for_assert = self.program_store.put(program_bytes).await?;
             debug_assert_eq!(_hash_for_assert, _stored_hash_for_assert);
-
-            self.control_db.update_database(database)?;
         }
+        self.control_db.update_database(database)?;
 
         for instance in self.control_db.get_replicas_by_database(database_id)? {
             self.delete_replica(instance.id).await?;
