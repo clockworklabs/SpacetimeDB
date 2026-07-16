@@ -214,8 +214,7 @@ impl Host {
     }
 }
 
-/// The egress to charge for a SQL result set: the BSATN size of the rows,
-/// for parity with WebSocket queries regardless of wire encoding.
+/// Uses the BSATN size for parity with WebSocket queries, regardless of wire encoding.
 fn sql_egress_bytes(rows: &[ProductValue]) -> u64 {
     rows.iter().map(|row| bsatn::to_len(row).unwrap_or(0) as u64).sum()
 }
