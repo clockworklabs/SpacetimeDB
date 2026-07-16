@@ -1826,13 +1826,9 @@ pub async fn snapshot_watching_commitlog_compressor(
                 // if the snapshot is in the middle of a segment, we want to round down.
                 // [0, 2].binary_search(1) will return Err(1), so we subtract 1.
                 .unwrap_or_else(|i| i.saturating_sub(1));
-            let segment_offsets = &segment_offsets[start_idx..];
-            let end_idx = segment_offsets
-                .binary_search(&snapshot_offset)
-                .unwrap_or_else(|i| i.saturating_sub(1));
-            // in this case, segment_offsets[end_idx] is the segment that contains the snapshot,
-            // which we don't want to compress, so an exclusive range is correct.
-            let segment_offsets = &segment_offsets[..end_idx];
+            // Exclude the segment which contains the snapshot,
+            // as it may still be written to.
+            let segment_offsets = commitlog::segments_older_than(&segment_offsets[start_idx..], snapshot_offset);
             durability.compress_segments(segment_offsets)?;
             let n = segment_offsets.len();
             let last_compressed_segment = if n > 0 { Some(segment_offsets[n - 1]) } else { None };
@@ -1920,52 +1916,25 @@ pub fn prune_history(
 
     let database_identity = snapshot_repo.database_identity();
 
-    // Clean up leftovers of an earlier prune that was interrupted after
-    // renaming a snapshot, but before deleting it from disk.
-    for archived in snapshot_repo.all_archived_snapshots()? {
-        if let Err(err) = SnapshotRepository::remove_archived_snapshot(&archived) {
-            tracing::warn!(
-                "failed to delete archived snapshot {} of database {database_identity}: {err:#}",
-                archived.display()
-            );
-        }
-    }
-
-    let durable_offset = durability.durable_tx_offset().get().context("durability has exited")?;
-    let mut snapshots = snapshot_repo
-        .all_snapshots()?
-        .filter(|offset| durable_offset.is_some_and(|durable| *offset <= durable))
-        .collect::<Vec<_>>();
-    snapshots.sort_unstable_by(|a, b| b.cmp(a));
-    let Some(&oldest_retained) = snapshots.get(retain_snapshots.get() - 1) else {
-        // Fewer snapshots than the retention policy asks for, nothing to do.
+    let Some(durable_offset) = durability.durable_tx_offset().get().context("durability has exited")? else {
+        // Nothing is durable yet, so no snapshot can be restored from.
+        return Ok(());
+    };
+    let Some(oldest_retained) = snapshot_repo.nth_latest_snapshot(retain_snapshots, durable_offset)? else {
+        // Fewer durable snapshots than the retention policy asks for,
+        // nothing to do.
         return Ok(());
     };
 
-    // Delete all snapshots older than the oldest retained one. Rename before
-    // deletion, so that a partially deleted snapshot is never mistaken for a
-    // valid one.
-    for &offset in &snapshots[retain_snapshots.get()..] {
-        snapshot_repo
-            .snapshot_dir_path(offset)
-            .rename_as_archived()
-            .map_err(anyhow::Error::from)
-            .and_then(|archived| Ok(SnapshotRepository::remove_archived_snapshot(&archived)?))
-            .with_context(|| format!("failed to delete snapshot {offset} of database {database_identity}"))?;
-        tracing::info!("deleted snapshot {offset} of database {database_identity}");
-    }
+    // Delete all snapshots older than the oldest retained one.
+    snapshot_repo
+        .prune_snapshots_before(oldest_retained)
+        .with_context(|| format!("failed to delete snapshots of database {database_identity}"))?;
 
     // Delete all commitlog segments whose entire contents precede the oldest
-    // retained snapshot. Segments are named for the first transaction they
-    // contain, so the last segment starting at or before `oldest_retained`
-    // may still be needed and must be retained.
+    // retained snapshot.
     let segment_offsets = durability.existing_segment_offsets()?;
-    let end_idx = segment_offsets
-        .binary_search(&oldest_retained)
-        // If the snapshot is in the middle of a segment, round down to
-        // exclude the segment that contains it.
-        .unwrap_or_else(|i| i.saturating_sub(1));
-    let segment_offsets = &segment_offsets[..end_idx];
+    let segment_offsets = commitlog::segments_older_than(&segment_offsets, oldest_retained);
     if !segment_offsets.is_empty() {
         durability.remove_segments(segment_offsets).with_context(|| {
             format!("failed to delete commitlog segments before {oldest_retained} of database {database_identity}")

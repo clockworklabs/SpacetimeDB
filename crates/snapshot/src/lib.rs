@@ -54,6 +54,7 @@ use std::{
     ffi::OsStr,
     fmt,
     io::{BufWriter, Read, Write},
+    num::NonZeroUsize,
     ops::{Add, AddAssign},
     path::PathBuf,
 };
@@ -1227,6 +1228,56 @@ impl SnapshotRepository {
         self.latest_snapshot_older_than(TxOffset::MAX)
     }
 
+    /// Return the `TxOffset` of the `n`-th most recent complete snapshot
+    /// at or below `upper_bound`, if one exists.
+    ///
+    /// When deleting or archiving historical snapshots while retaining the
+    /// `n` most recent ones, the returned offset is the cutoff: all snapshots
+    /// strictly before it can be removed from the repository, e.g. via
+    /// [`Self::prune_snapshots_before`].
+    pub fn nth_latest_snapshot(
+        &self,
+        n: NonZeroUsize,
+        upper_bound: TxOffset,
+    ) -> Result<Option<TxOffset>, SnapshotError> {
+        let mut snapshots = self
+            .all_snapshots()?
+            .filter(|tx_offset| *tx_offset <= upper_bound)
+            .collect::<Vec<TxOffset>>();
+        snapshots.sort_unstable_by(|a, b| b.cmp(a));
+        Ok(snapshots.get(n.get() - 1).copied())
+    }
+
+    /// Delete all complete snapshots strictly before `cutoff` from the
+    /// repository.
+    ///
+    /// Snapshot directories are renamed with [`ARCHIVED_SNAPSHOT_EXT`] before
+    /// deletion, so that a partially deleted snapshot is never mistaken for a
+    /// valid one. Leftover renamed directories of an earlier, interrupted run
+    /// are also deleted, regardless of their offset.
+    ///
+    /// Does not delete invalidated or locked snapshots.
+    pub fn prune_snapshots_before(&self, cutoff: TxOffset) -> Result<(), SnapshotError> {
+        for path in self.all_archived_snapshots()? {
+            match Self::remove_archived_snapshot(&path) {
+                Ok(()) => log::info!("deleted archived snapshot directory {}", path.display()),
+                Err(e) => warn!("failed to delete archived snapshot directory {}: {e}", path.display()),
+            }
+        }
+
+        let stale = self
+            .all_snapshots()?
+            .filter(|tx_offset| *tx_offset < cutoff)
+            .collect::<Vec<TxOffset>>();
+        for tx_offset in stale {
+            let archived = self.snapshot_dir_path(tx_offset).rename_as_archived()?;
+            Self::remove_archived_snapshot(&archived)?;
+            log::info!("deleted snapshot {tx_offset} of database {}", self.database_identity());
+        }
+
+        Ok(())
+    }
+
     /// Rename any snapshot newer than `upper_bound` with [`INVALID_SNAPSHOT_DIR_EXT`].
     ///
     /// When rebuilding a database, we will call this method
@@ -1631,6 +1682,61 @@ mod tests {
             .map(drop)?;
 
         assert_eq!(vec![5], repo.all_snapshots()?.collect::<Vec<_>>());
+
+        Ok(())
+    }
+
+    /// Create the on-disk representation of a complete snapshot at `tx_offset`.
+    fn complete_snapshot(repo: &SnapshotRepository, tx_offset: TxOffset) -> anyhow::Result<()> {
+        let dir = repo.snapshot_dir_path(tx_offset);
+        dir.create()?;
+        dir.snapshot_file(tx_offset)
+            .open_file(OpenOptions::new().write(true).create_new(true))
+            .map(drop)?;
+        Ok(())
+    }
+
+    #[test]
+    fn nth_latest_snapshot_respects_count_and_upper_bound() -> anyhow::Result<()> {
+        let tmp = tempdir()?;
+        let root = SnapshotsPath::from_path_unchecked(tmp.path());
+        let repo = SnapshotRepository::open(root, Identity::ZERO, 42)?;
+
+        let one = NonZeroUsize::new(1).unwrap();
+        let two = NonZeroUsize::new(2).unwrap();
+
+        assert_eq!(repo.nth_latest_snapshot(two, TxOffset::MAX)?, None);
+
+        for tx_offset in [10, 20, 30] {
+            complete_snapshot(&repo, tx_offset)?;
+        }
+
+        assert_eq!(repo.nth_latest_snapshot(two, TxOffset::MAX)?, Some(20));
+        assert_eq!(repo.nth_latest_snapshot(two, 25)?, Some(10));
+        assert_eq!(repo.nth_latest_snapshot(two, 15)?, None);
+        assert_eq!(repo.nth_latest_snapshot(one, 25)?, Some(20));
+
+        Ok(())
+    }
+
+    #[test]
+    fn prune_snapshots_before_deletes_stale_snapshots_and_leftovers() -> anyhow::Result<()> {
+        let tmp = tempdir()?;
+        let root = SnapshotsPath::from_path_unchecked(tmp.path());
+        let repo = SnapshotRepository::open(root, Identity::ZERO, 42)?;
+
+        for tx_offset in [10, 20, 30] {
+            complete_snapshot(&repo, tx_offset)?;
+        }
+        // A leftover of an earlier prune run that was interrupted after
+        // renaming a snapshot, but before deleting it from disk.
+        complete_snapshot(&repo, 5)?;
+        repo.snapshot_dir_path(5).rename_as_archived()?;
+
+        repo.prune_snapshots_before(30)?;
+
+        assert_eq!(vec![30], repo.all_snapshots()?.collect::<Vec<_>>());
+        assert_eq!(0, repo.all_archived_snapshots()?.count());
 
         Ok(())
     }
