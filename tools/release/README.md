@@ -155,6 +155,24 @@ cargo release docker v1.2.0 --dry-run
 - You must be logged in to DockerHub (`docker login`)
 - You must have push access to the clockworklabs/spacetime repository
 
+### GitHub Release
+
+Publish the GitHub release after all package and artifact release steps have completed. This will:
+1. Verify the tag's GitHub release exists and is still a draft
+2. Dispatch the `attach-artifacts.yml` workflow to upload client binaries
+3. Wait for that workflow to finish successfully
+4. Publish the draft GitHub release
+
+```bash
+cargo release github-release v1.2.0
+```
+
+If the GitHub release is already published, the command treats that as success and exits without re-uploading artifacts.
+
+**Prerequisites:**
+- GitHub CLI must be installed
+- `GH_TOKEN` must have permission to dispatch workflows and update releases
+
 ## Full Release
 
 To perform a full release of all components:
