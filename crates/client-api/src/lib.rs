@@ -214,7 +214,7 @@ impl Host {
     }
 }
 
-/// Uses the BSATN size for parity with WebSocket queries, regardless of wire encoding.
+/// Uses the BSATN size for parity with WebSocket queries.
 fn sql_egress_bytes(rows: &[ProductValue]) -> u64 {
     rows.iter().map(|row| bsatn::to_len(row).unwrap_or(0) as u64).sum()
 }
