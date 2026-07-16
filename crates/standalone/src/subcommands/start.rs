@@ -594,15 +594,19 @@ mod tests {
         assert_eq!(config.retention.retain_snapshots.get(), 5);
     }
 
-    /// The default configuration, including the shipped `config.toml`
-    /// template, deletes historical data after it has been snapshotted.
+    /// The shipped `config.toml` template, which is written into every newly
+    /// created data directory, deletes historical data after it has been
+    /// snapshotted. A config without a `[retention]` section, as found in
+    /// data directories that predate the option, keeps historical data.
     #[test]
-    fn retention_defaults_to_delete() {
-        for toml in ["", include_str!("../../config.toml")] {
-            let config: ConfigFile = toml::from_str(toml).unwrap();
-            assert_eq!(config.retention.policy, RetentionPolicy::Delete);
-            assert_eq!(config.retention.retain_snapshots.get(), 2);
-        }
+    fn retention_defaults() {
+        let template: ConfigFile = toml::from_str(include_str!("../../config.toml")).unwrap();
+        assert_eq!(template.retention.policy, RetentionPolicy::Delete);
+        assert_eq!(template.retention.retain_snapshots.get(), 2);
+
+        let unconfigured: ConfigFile = toml::from_str("").unwrap();
+        assert_eq!(unconfigured.retention.policy, RetentionPolicy::Keep);
+        assert_eq!(unconfigured.retention.retain_snapshots.get(), 2);
     }
 
     #[test]

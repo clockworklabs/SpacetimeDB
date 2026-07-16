@@ -80,15 +80,21 @@ impl Default for RetentionConfig {
 #[derive(Clone, Copy, Debug, Default, serde::Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum RetentionPolicy {
-    /// Delete historical data from disk whenever a new snapshot is taken.
+    /// Delete historical data from disk whenever a new snapshot is taken,
+    /// bounding disk usage.
     ///
-    /// This is the default, as it bounds disk usage.
-    #[default]
+    /// SpacetimeDB Standalone writes a `config.toml` which enables this
+    /// policy into every newly created data directory.
     Delete,
     /// Keep historical data on disk indefinitely.
     ///
     /// Historical commitlog segments are compressed, but disk usage still
     /// grows without bound.
+    ///
+    /// This is the default when no retention policy is configured, so that
+    /// data directories which predate the introduction of this option keep
+    /// their history when the server is upgraded.
+    #[default]
     Keep,
 }
 
@@ -251,10 +257,10 @@ pub trait PersistenceProvider: Send + Sync {
 /// background task that handles historical data whenever a snapshot is
 /// taken, according to the configured [RetentionConfig]:
 ///
-/// - [RetentionPolicy::Delete] (the default) [deletes] historical snapshots
-///   and commitlog segments,
-/// - [RetentionPolicy::Keep] [compresses] historical commitlog segments and
-///   keeps all data on disk.
+/// - [RetentionPolicy::Delete] [deletes] historical snapshots and commitlog
+///   segments,
+/// - [RetentionPolicy::Keep] (the default) [compresses] historical commitlog
+///   segments and keeps all data on disk.
 ///
 /// [deletes]: relational_db::snapshot_watching_history_pruner
 /// [compresses]: relational_db::snapshot_watching_commitlog_compressor

@@ -117,9 +117,11 @@ The `retention` table configures what happens to historical data, i.e. data that
 
 Can be one of:
 
-- `"delete"`: Delete historical data from disk whenever a new snapshot is taken. This is the default, as it bounds disk usage.
+- `"delete"`: Delete historical data from disk whenever a new snapshot is taken. This bounds disk usage. The `config.toml` written into newly created data directories sets this policy.
 
 - `"keep"`: Keep historical data on disk indefinitely. Historical commitlog segments are compressed, but disk usage grows without bound. Use this if you want to preserve the full transaction history of the database.
+
+If the key is omitted, historical data is kept. Data directories created by SpacetimeDB versions that predate this option therefore keep their history when the server is upgraded; add `policy = "delete"` to their `config.toml` to reclaim disk space.
 
 #### `retention.retain-snapshots`
 

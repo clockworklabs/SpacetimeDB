@@ -70,11 +70,13 @@ directives = [
 # most recent snapshots, and older snapshots.
 #
 #   "delete": delete historical data from disk whenever a new snapshot is
-#             taken. This is the default, as it bounds disk usage.
+#             taken. This bounds disk usage.
 #   "keep":   keep historical data on disk indefinitely. Historical commitlog
 #             segments are compressed, but disk usage grows without bound.
 #
-# policy = "delete"
+# If this key is omitted, historical data is kept, preserving the behavior of
+# SpacetimeDB versions that predate this option.
+policy = "delete"
 
 # Number of most recent snapshots to retain when policy = "delete".
 # The commitlog is retained from the oldest retained snapshot onwards, so
