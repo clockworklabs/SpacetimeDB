@@ -1091,19 +1091,6 @@ jobs:
           dotnet workload install wasi-experimental
           rm global.json
 
-      # Remove broken global.json symlinks before regression scripts temporarily pin
-      # each C# module directory to the SDK version under test.
-      - name: Fix global.json symlinks
-        run: |
-          for dir in sdks/csharp/examples~/regression-tests/server \
-                     sdks/csharp/examples~/regression-tests/republishing/server-initial \
-                     sdks/csharp/examples~/regression-tests/republishing/server-republish; do
-            if [ -L "$dir/global.json" ] && [ ! -f "$dir/global.json" ]; then
-              echo "Fixing broken symlink at $dir/global.json"
-              rm -f "$dir/global.json"
-            fi
-          done
-
       - name: Override NuGet packages
         run: |
           dotnet pack crates/bindings-csharp/BSATN.Runtime
