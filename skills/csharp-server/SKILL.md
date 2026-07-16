@@ -13,22 +13,30 @@ metadata:
 
 # SpacetimeDB C# SDK Reference
 
-## Imports
-
-```csharp
-using SpacetimeDB;
-```
-
 ## Module Structure
 
-All tables, types, and reducers go inside a static partial class:
+Reducers are static methods in a `static partial class`; tables are `public partial struct`s. This reference keeps everything in one `public static partial class Module`, which needs only `using SpacetimeDB;`:
 
 ```csharp
 using SpacetimeDB;
 
 public static partial class Module
 {
-    // Tables, types, and reducers here
+    [SpacetimeDB.Table(Accessor = "ScoreRecord", Public = true)]
+    public partial struct ScoreRecord
+    {
+        [PrimaryKey]
+        [AutoInc]
+        public ulong Id;
+        public Identity Owner;
+        public uint Value;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void AddRecord(ReducerContext ctx, uint value)
+    {
+        ctx.Db.ScoreRecord.Insert(new ScoreRecord { Id = 0, Owner = ctx.Sender, Value = value });
+    }
 }
 ```
 
@@ -51,7 +59,7 @@ public partial struct Entity
 
 Options: `Accessor = "PascalCase"` (recommended), `Public = true`, `Scheduled = nameof(ReducerFn)`, `ScheduledAt = nameof(field)`, `Event = true`
 
-`ctx.Db` accessors use the `Accessor` name: `ctx.Db.Entity`, `ctx.Db.Record`.
+`ctx.Db` accessors use the `Accessor` name: `ctx.Db.Entity`, `ctx.Db.ScoreRecord`.
 
 ## Column Types
 
@@ -71,18 +79,22 @@ Options: `Accessor = "PascalCase"` (recommended), `Public = true`, `Scheduled = 
 | `TimeDuration` | duration in microseconds |
 | `Uuid` | UUID |
 
+Optional columns: nullable types (`string? Nickname`, `uint? HighScore`)
+
 ## Column Attributes
+
+The complete set of column attributes:
 
 ```csharp
 [PrimaryKey]          // primary key
 [AutoInc]             // auto-increment (use 0 as placeholder on insert)
-[Unique]              // unique constraint
+[Unique]              // unique constraint; indexes the column, enables .Find()
 [SpacetimeDB.Index.BTree]  // btree index (enables .Filter() on this column)
 ```
 
 ## Indexes
 
-Prefer `[SpacetimeDB.Index.BTree]` inline for single-column. Multi-column uses struct-level:
+Write the index attribute fully qualified: `[SpacetimeDB.Index.BTree]`. Prefer inline for single-column; multi-column uses struct-level:
 
 ```csharp
 // Inline (preferred for single-column):
@@ -96,7 +108,7 @@ public ulong AuthorId;
 public partial struct Membership { public ulong GroupId; public Identity UserId; ... }
 ```
 
-When you frequently look up rows by multiple columns, prefer a multi-column index over filtering by one column and looping over the results.
+Prefer a multi-column index over filtering by one column and looping.
 
 ## Reducers
 
@@ -115,9 +127,10 @@ public static void DoReset(ReducerContext ctx) { ... }
 ## DB Operations
 
 ```csharp
-ctx.Db.Entity.Insert(new Entity { Name = "Sample" });             // Insert
+var row = ctx.Db.Entity.Insert(new Entity { Name = "Sample" });   // Insert; returns the row with AutoInc fields assigned
 ctx.Db.Entity.Id.Find(entityId);                                  // Find by PK → Entity? (nullable)
 ctx.Db.Entity.Identity.Find(ctx.Sender);                          // Find by unique column → Entity?
+if (ctx.Db.Entity.Id.Find(entityId) is { } entity) { ... }        // unwrap Entity? before member access
 ctx.Db.Item.AuthorId.Filter(authorId);                            // Filter by index → IEnumerable<Item>
 ctx.Db.Entity.Iter();                                             // All rows → IEnumerable<Entity>
 ctx.Db.Entity.Count;                                              // Count rows
@@ -162,7 +175,7 @@ public static Entity? MyProfile(ViewContext ctx)
 
 ## Reducer Context API
 
-`ReducerContext` is the single source of sender identity, deterministic time, and deterministic randomness inside a reducer. Always go through `ctx` for these. Standard library clocks and random sources are not available in modules.
+`ReducerContext` (`ctx`) is the only source of sender identity, time, and randomness; stdlib clocks and RNG are unavailable in modules.
 
 ```csharp
 // Auth: ctx.Sender is the caller's Identity
@@ -179,11 +192,13 @@ var expiry = ctx.Timestamp + new TimeDuration(delayMicros);
 int roll = ctx.Rng.Next(1, 7);          // [1, 7): inclusive 1, exclusive 7
 double f = ctx.Rng.NextDouble();        // [0.0, 1.0)
 
-// Client: Timestamp → milliseconds since epoch
+// Timestamp → milliseconds since epoch
 timestamp.MicrosecondsSinceUnixEpoch / 1000
 ```
 
 ## Scheduled Tables
+
+Declare the scheduled table and its reducer in the same `Module` class so `nameof(...)` resolves:
 
 ```csharp
 [SpacetimeDB.Table(
@@ -222,88 +237,21 @@ public enum Status { Online, Away, Offline }
 
 [SpacetimeDB.Type]
 public partial struct Point { public float X; public float Y; }
+```
 
-// Tagged enum (discriminated union):
+Tagged enums (discriminated unions): a `partial record` with empty body and no constructor parameters. Payloads are `[Type] partial struct`s:
+
+```csharp
 [SpacetimeDB.Type]
-public partial record MyUnion : SpacetimeDB.TaggedEnum<(string Text, int Number)>;
-```
+public partial struct Circle { public int Radius; }
 
-## Optional Fields
+[SpacetimeDB.Type]
+public partial struct Rectangle { public int Width; public int Height; }
 
-```csharp
-[SpacetimeDB.Table(Accessor = "Player")]
-public partial struct Player
-{
-    [PrimaryKey, AutoInc]
-    public ulong Id;
-    public string Name;
-    public string? Nickname;
-    public uint? HighScore;
-}
-```
+[SpacetimeDB.Type]
+public partial record Shape : SpacetimeDB.TaggedEnum<(Circle Circle, Rectangle Rectangle)> { }
 
-## Complete Example
-
-```csharp
-using SpacetimeDB;
-
-[SpacetimeDB.Table(Accessor = "Entity", Public = true)]
-public partial struct Entity
-{
-    [PrimaryKey]
-    public Identity Identity;
-    public string Name;
-    public bool Active;
-}
-
-[SpacetimeDB.Table(Accessor = "Record", Public = true)]
-public partial struct Record
-{
-    [PrimaryKey]
-    [AutoInc]
-    public ulong Id;
-    public Identity Owner;
-    public uint Value;
-    public Timestamp CreatedAt;
-}
-
-public static partial class Module
-{
-    [SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
-    public static void OnConnect(ReducerContext ctx)
-    {
-        var existing = ctx.Db.Entity.Identity.Find(ctx.Sender);
-        if (existing is not null)
-            ctx.Db.Entity.Identity.Update(existing.Value with { Active = true });
-    }
-
-    [SpacetimeDB.Reducer(ReducerKind.ClientDisconnected)]
-    public static void OnDisconnect(ReducerContext ctx)
-    {
-        var existing = ctx.Db.Entity.Identity.Find(ctx.Sender);
-        if (existing is not null)
-            ctx.Db.Entity.Identity.Update(existing.Value with { Active = false });
-    }
-
-    [SpacetimeDB.Reducer]
-    public static void CreateEntity(ReducerContext ctx, string name)
-    {
-        if (ctx.Db.Entity.Identity.Find(ctx.Sender) is not null)
-            throw new Exception("already exists");
-        ctx.Db.Entity.Insert(new Entity { Identity = ctx.Sender, Name = name, Active = true });
-    }
-
-    [SpacetimeDB.Reducer]
-    public static void AddRecord(ReducerContext ctx, uint value)
-    {
-        if (ctx.Db.Entity.Identity.Find(ctx.Sender) is null)
-            throw new Exception("not found");
-        ctx.Db.Record.Insert(new Record {
-            Id = 0,
-            Owner = ctx.Sender,
-            Value = value,
-            CreatedAt = ctx.Timestamp,
-        });
-    }
-}
+// Construct variants via the generated nested constructors:
+var a = new Shape.Circle(new Circle { Radius = 10 });
+var b = new Shape.Rectangle(new Rectangle { Width = 4, Height = 6 });
 ```

@@ -156,9 +156,9 @@ fn run_inner<I: WasmInstance>(
             tx.metrics.merge(metrics);
 
             // Update views
-            let (result, trapped) = match instance {
+            let (result, _num_views_evaluated, trapped) = match instance {
                 Some(instance) => ModuleHost::call_views_with_tx(tx, instance, auth.caller()),
-                None => (ViewCallResult::default(tx), false),
+                None => (ViewCallResult::default(tx), 0, false),
             };
 
             // Rollback transaction and report metrics if view execution failed
