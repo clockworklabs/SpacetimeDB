@@ -182,6 +182,7 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
 
           cd modules
+          # the sdk-manifests on windows-latest are messed up, so we need to update them
           dotnet workload config --update-mode manifests
           dotnet workload update --from-previous-sdk
           # Explicitly install wasi-experimental for .NET 8 SDK (needed for test_build_csharp_module)
