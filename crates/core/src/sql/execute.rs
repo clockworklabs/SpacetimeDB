@@ -23,7 +23,6 @@ use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{AlgebraicType, ProductType, ProductValue};
 use spacetimedb_query::{compile_sql_stmt, execute_dml_stmt, execute_select_stmt};
-use spacetimedb_sats::bsatn;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use tokio::sync::oneshot;
 
@@ -50,6 +49,8 @@ pub struct SqlResult {
 /// If a `ModuleHost` is provided, the SQL query is executed via the module host,
 /// meaning the module’s core is used to run the statement.
 /// If no module host is provided, the SQL query is executed on the current thread.
+///
+/// Callers that send the returned rows to a client must record `bytes_sent_to_clients` themselves.
 pub async fn run(
     db: Arc<RelationalDB>,
     sql_text: String,
@@ -129,9 +130,6 @@ fn run_inner<I: WasmInstance>(
                 )?;
                 Ok(plan)
             })?;
-
-            // Charge egress, using BSATN size for parity with WebSocket queries.
-            metrics.bytes_sent_to_clients += rows.iter().map(|row| bsatn::to_len(row).unwrap_or(0)).sum::<usize>();
 
             // Update transaction metrics
             tx.metrics.merge(metrics);
@@ -1691,9 +1689,9 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    // Selects should charge egress for the rows they return
+    // Egress is charged by the transport that sends the rows; charging here would double count.
     #[test]
-    fn test_select_charges_egress() -> ResultTest<()> {
+    fn test_select_does_not_charge_egress() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
         let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
@@ -1719,9 +1717,7 @@ pub(crate) mod tests {
         ))?;
 
         assert_eq!(result.rows.len(), 4);
-        let expected: usize = result.rows.iter().map(|row| bsatn::to_len(row).unwrap()).sum();
-        assert!(expected > 0);
-        assert_eq!(result.metrics.bytes_sent_to_clients, expected);
+        assert_eq!(result.metrics.bytes_sent_to_clients, 0);
 
         Ok(())
     }

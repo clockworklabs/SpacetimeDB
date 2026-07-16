@@ -14,10 +14,12 @@ use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
 use spacetimedb::host::{HostController, MigratePlanResult, ModuleHost, NoSuchModule, UpdateDatabaseResult};
 use spacetimedb::identity::{AuthCtx, Identity};
 use spacetimedb::messages::control_db::{Database, HostType, Node, Replica};
+use spacetimedb::metrics::ENGINE_METRICS;
 use spacetimedb::sql;
 use spacetimedb_client_api_messages::http::{SqlStmtResult, SqlStmtStats};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
-use spacetimedb_lib::{ProductTypeElement, ProductValue};
+use spacetimedb_datastore::execution_context::WorkloadType;
+use spacetimedb_lib::{bsatn, ProductTypeElement, ProductValue};
 use spacetimedb_paths::server::ModuleLogsDir;
 use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
 use thiserror::Error;
@@ -137,7 +139,7 @@ impl Host {
     pub async fn exec_sql(
         &self,
         auth: AuthCtx,
-        _database: Database,
+        database: Database,
         confirmed_read: bool,
         body: String,
     ) -> axum::response::Result<Vec<SqlStmtResult<ProductValue>>> {
@@ -172,6 +174,12 @@ impl Host {
         drop(_guard);
         sql_span.record("total_duration", tracing::field::debug(total_duration));
 
+        // Charge egress; each transport charges for the rows it sends.
+        ENGINE_METRICS
+            .bytes_sent_to_clients
+            .with_label_values(&WorkloadType::Sql, &database.database_identity)
+            .inc_by(sql_egress_bytes(&result.rows));
+
         let schema = header
             .into_iter()
             .map(|(col_name, col_type)| ProductTypeElement::new(col_type, Some(col_name)))
@@ -205,6 +213,32 @@ impl Host {
             .await
     }
 }
+
+/// The egress to charge for a SQL result set: the BSATN size of the rows,
+/// for parity with WebSocket queries regardless of wire encoding.
+fn sql_egress_bytes(rows: &[ProductValue]) -> u64 {
+    rows.iter().map(|row| bsatn::to_len(row).unwrap_or(0) as u64).sum()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sql_egress_bytes;
+    use spacetimedb_lib::sats::product;
+
+    #[test]
+    fn sql_egress_bytes_is_zero_for_empty_result_sets() {
+        assert_eq!(sql_egress_bytes(&[]), 0);
+    }
+
+    #[test]
+    fn sql_egress_bytes_is_the_bsatn_size_of_the_rows() {
+        // Each row: u32 (4) + string (4-byte length prefix + contents) + u8 (1).
+        // The empty string still costs its length prefix.
+        let rows = vec![product!(1u32, "", 0u8), product!(2u32, "nonempty", 3u8)];
+        assert_eq!(sql_egress_bytes(&rows), (4 + 4 + 0 + 1) + (4 + 4 + 8 + 1));
+    }
+}
+
 /// Parameters for publishing a database.
 ///
 /// See [`ControlStateDelegate::publish_database`].

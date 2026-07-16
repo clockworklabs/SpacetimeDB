@@ -9,7 +9,7 @@ use spacetimedb_metrics::metrics_group;
 metrics_group!(
     pub struct EngineMetrics {
         #[name = spacetime_num_bytes_sent_to_clients_total]
-        #[help = "The cumulative number of bytes sent to clients"]
+        #[help = "The cumulative number of bytes sent to clients. The authoritative egress counter for billing"]
         #[labels(txn_type: WorkloadType, db: Identity)]
         pub bytes_sent_to_clients: IntCounterVec,
 

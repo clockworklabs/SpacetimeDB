@@ -67,7 +67,7 @@ metrics_group!(
         pub http_request_body_bytes: IntCounterVec,
 
         #[name = spacetime_http_response_body_bytes_total]
-        #[help = "The cumulative number of HTTP response body bytes sent, by matched route"]
+        #[help = "The cumulative number of HTTP response body bytes sent, by matched route. Observability only, not billed"]
         #[labels(route: str)]
         pub http_response_body_bytes: IntCounterVec,
 
