@@ -179,6 +179,8 @@ Do not construct `Identity` values from strings (e.g. `'hex' as Identity`): seri
 ## Scheduled Tables
 
 ```typescript
+import { ScheduleAt } from 'spacetimedb';   // ScheduleAt comes from the root package
+
 const tick_timer = table({
   name: 'tick_timer',
   scheduled: (): any => tick,   // (): any => breaks circular dep

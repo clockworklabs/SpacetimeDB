@@ -11711,6 +11711,7 @@ dependencies = [
  "spacetimedb",
  "spacetimedb-data-structures",
  "spacetimedb-guard",
+ "spacetimedb-lib",
  "thiserror 2.0.17",
  "tokio",
  "urlencoding",

@@ -690,7 +690,8 @@ fn refresh_views_then_commit_and_broadcast(
     inst: &mut impl WasmInstance,
 ) {
     let timestamp = Timestamp::now();
-    let (view_result, trapped) = inst_common.call_views_with_tx(tx, module_info.database_identity, inst, timestamp);
+    let (view_result, _n_evaluated, trapped) =
+        inst_common.call_views_with_tx(tx, module_info.database_identity, inst, timestamp);
     let mut status = match view_result.outcome {
         crate::host::module_host::ViewOutcome::Success => EventStatus::Committed(DatabaseUpdate::default()),
         crate::host::module_host::ViewOutcome::Failed(err) => EventStatus::FailedInternal(err),
