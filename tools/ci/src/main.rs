@@ -47,7 +47,7 @@ fn check_global_json_policy() -> Result<()> {
     let root_json = Path::new("global.json");
     let root_contents = fs::read_to_string(root_json)?;
 
-    let globals = find_all_global_json(Path::new("."))?;
+    let globals = git_tracked_files(":(glob)**/global.json")?;
 
     let mut ok = true;
     for p in globals {
