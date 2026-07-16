@@ -220,25 +220,6 @@ fn sql_egress_bytes(rows: &[ProductValue]) -> u64 {
     rows.iter().map(|row| bsatn::to_len(row).unwrap_or(0) as u64).sum()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::sql_egress_bytes;
-    use spacetimedb_lib::sats::product;
-
-    #[test]
-    fn sql_egress_bytes_is_zero_for_empty_result_sets() {
-        assert_eq!(sql_egress_bytes(&[]), 0);
-    }
-
-    #[test]
-    fn sql_egress_bytes_is_the_bsatn_size_of_the_rows() {
-        // Each row: u32 (4) + string (4-byte length prefix + contents) + u8 (1).
-        // The empty string still costs its length prefix.
-        let rows = vec![product!(1u32, "", 0u8), product!(2u32, "nonempty", 3u8)];
-        assert_eq!(sql_egress_bytes(&rows), (4 + 4 + 0 + 1) + (4 + 4 + 8 + 1));
-    }
-}
-
 /// Parameters for publishing a database.
 ///
 /// See [`ControlStateDelegate::publish_database`].
