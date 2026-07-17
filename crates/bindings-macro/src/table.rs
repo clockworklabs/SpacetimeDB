@@ -1026,6 +1026,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let col_defaults: Vec<TokenStream> = columns.iter().filter_map(|col| {
         if let Some(val) = &col.default_value {
             let col_id = col.index;
+            let ty=&col.ty;
             Some(quote! {
                 spacetimedb::table::ColumnDefault {
                     col_id: #col_id,
