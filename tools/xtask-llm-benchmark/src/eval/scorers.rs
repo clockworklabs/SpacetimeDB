@@ -701,6 +701,46 @@ pub struct SqlCountOnlyScorer {
     pub id_str: &'static str,
 }
 
+pub struct EventuallySqlCountScorer {
+    pub server: String,
+    pub db: String,
+    pub sql: String,
+    pub expected: i64,
+    pub timeout: Duration,
+    pub id_str: &'static str,
+}
+
+impl Scorer for EventuallySqlCountScorer {
+    fn id(&self) -> &'static str {
+        self.id_str
+    }
+
+    fn score(&self, _llm_output: &str) -> ScoreDetails {
+        let started = Instant::now();
+        loop {
+            let last = match sql_count(&self.db, &self.sql, Some(&self.server)) {
+                Ok(actual) if actual == self.expected => {
+                    return ScoreDetails {
+                        pass: true,
+                        partial: 1.0,
+                        notes: json!({ "sql": self.sql, "expected": self.expected, "actual": actual }),
+                    };
+                }
+                Ok(actual) => json!({ "actual": actual }),
+                Err(error) => json!({ "error": error }),
+            };
+            if started.elapsed() >= self.timeout {
+                return ScoreDetails {
+                    pass: false,
+                    partial: 0.0,
+                    notes: json!({ "sql": self.sql, "expected": self.expected, "last": last }),
+                };
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+    }
+}
+
 impl Scorer for SqlCountOnlyScorer {
     fn id(&self) -> &'static str {
         self.id_str

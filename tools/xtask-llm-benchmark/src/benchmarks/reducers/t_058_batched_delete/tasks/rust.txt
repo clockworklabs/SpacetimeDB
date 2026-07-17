@@ -1,0 +1,3 @@
+Write a Rust SpacetimeDB module that deletes a logical group in scheduled batches of at most two rows.
+
+Define a public work_item table with id: u64 primary key and indexed group_id: u64. Define a private delete_job scheduled table with scheduled_id, scheduled_at, and group_id. Add seed_group(group_id, count), request_delete(group_id), and the scheduled reducer. Each scheduled invocation may delete at most two matching items and must enqueue another one-shot job when items remain.
