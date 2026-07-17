@@ -122,20 +122,11 @@ fn resolve_node_exe(nodejs_dir: Option<&Path>) -> Option<PathBuf> {
 
 struct CliRootDir {
     path: PathBuf,
-    remove_on_drop: bool,
 }
 
 impl CliRootDir {
     fn path(&self) -> &Path {
         &self.path
-    }
-}
-
-impl Drop for CliRootDir {
-    fn drop(&mut self) {
-        if self.remove_on_drop {
-            let _ = fs::remove_dir_all(&self.path);
-        }
     }
 }
 
@@ -192,10 +183,7 @@ fn database_cli_root(module_name: &str) -> Result<CliRootDir> {
     let db = sanitize_db_name(module_name);
     let path = env::temp_dir().join(format!("stdb-llm-cli-{}-{db}", std::process::id()));
     fs::create_dir_all(&path)?;
-    Ok(CliRootDir {
-        path,
-        remove_on_drop: false,
-    })
+    Ok(CliRootDir { path })
 }
 
 /// Check if the process was killed by a signal (e.g., SIGSEGV = 11)

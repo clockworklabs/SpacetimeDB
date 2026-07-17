@@ -1,0 +1,1 @@
+Write a C# SpacetimeDB module with a public UserRecord table containing Identity: Identity as its primary key and Name: string. Add a client visibility filter with SQL exactly `SELECT * FROM UserRecord WHERE Identity = :sender` so each caller can only see its own row. Add RegisterSelf(name), which inserts a UserRecord using ctx.Sender rather than accepting an identity argument.

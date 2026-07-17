@@ -44,12 +44,13 @@ impl Scorer for SchemaParityScorer {
             }
         }
 
-        let (tables_a, reducers_a) = extract_schema(&golden);
-        let (tables_b, reducers_b) = extract_schema(&llm);
+        let (tables_a, reducers_a, rls_a) = extract_schema(&golden);
+        let (tables_b, reducers_b, rls_b) = extract_schema(&llm);
 
         let tables_diff = diff_maps(&tables_a, &tables_b);
         let reducers_diff = diff_sets(&reducers_a, &reducers_b);
-        let pass = tables_diff.is_null() && reducers_diff.is_null();
+        let rls_diff = diff_sets(&rls_a, &rls_b);
+        let pass = tables_diff.is_null() && reducers_diff.is_null() && rls_diff.is_null();
 
         ScoreDetails {
             pass,
@@ -60,8 +61,10 @@ impl Scorer for SchemaParityScorer {
                 "llm_db": self.llm_db,
                 "tables_equal": tables_diff.is_null(),
                 "reducers_equal": reducers_diff.is_null(),
+                "row_level_security_equal": rls_diff.is_null(),
                 "tables_diff": tables_diff,
                 "reducers_diff": reducers_diff,
+                "row_level_security_diff": rls_diff,
             }),
         }
     }
@@ -109,9 +112,16 @@ fn describe_db(server: &str, db: &str, timeout: Duration) -> io::Result<Value> {
     Ok(v)
 }
 
-fn extract_schema(v: &Value) -> (BTreeMap<String, BTreeMap<String, String>>, BTreeSet<String>) {
+fn extract_schema(
+    v: &Value,
+) -> (
+    BTreeMap<String, BTreeMap<String, String>>,
+    BTreeSet<String>,
+    BTreeSet<String>,
+) {
     let mut tables: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
     let mut reducers: BTreeSet<String> = BTreeSet::new();
+    let mut row_level_security: BTreeSet<String> = BTreeSet::new();
     let types = v
         .pointer("/typespace/types")
         .and_then(Value::as_array)
@@ -196,7 +206,17 @@ fn extract_schema(v: &Value) -> (BTreeMap<String, BTreeMap<String, String>>, BTr
         }
     }
 
-    (tables, reducers)
+    for rule in v
+        .get("row_level_security")
+        .or_else(|| v.get("rowLevelSecurity"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        row_level_security.insert(canonical_value(Some(rule)));
+    }
+
+    (tables, reducers, row_level_security)
 }
 
 fn schema_name(value: Option<&Value>) -> String {
@@ -1024,7 +1044,7 @@ mod tests {
 
     #[test]
     fn current_schema_extracts_columns_and_table_properties() {
-        let (tables, reducers) = extract_schema(&current_schema(true));
+        let (tables, reducers, row_level_security) = extract_schema(&current_schema(true));
         let child_item = &tables["child_item"];
 
         assert_eq!(child_item["id"], r#"{"U64":[]}"#);
@@ -1035,13 +1055,25 @@ mod tests {
         assert_eq!(child_item["@sequences"], "id:1");
         assert_eq!(child_item["@table_access"], r#"{"Public":[]}"#);
         assert!(reducers.is_empty());
+        assert!(row_level_security.is_empty());
     }
 
     #[test]
     fn missing_index_produces_a_schema_diff() {
-        let (golden, _) = extract_schema(&current_schema(true));
-        let (candidate, _) = extract_schema(&current_schema(false));
+        let (golden, _, _) = extract_schema(&current_schema(true));
+        let (candidate, _, _) = extract_schema(&current_schema(false));
 
         assert!(!diff_maps(&golden, &candidate).is_null());
+    }
+
+    #[test]
+    fn row_level_security_produces_a_schema_diff() {
+        let mut golden = current_schema(true);
+        golden["row_level_security"] = json!([{ "sql": "SELECT * FROM users WHERE identity = :sender" }]);
+        let candidate = current_schema(true);
+        let (_, _, golden_rls) = extract_schema(&golden);
+        let (_, _, candidate_rls) = extract_schema(&candidate);
+
+        assert!(!diff_sets(&golden_rls, &candidate_rls).is_null());
     }
 }

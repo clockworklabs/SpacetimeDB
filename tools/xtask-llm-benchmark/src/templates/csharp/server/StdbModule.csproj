@@ -5,6 +5,7 @@
     <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <NoWarn>$(NoWarn);STDB_UNSTABLE</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

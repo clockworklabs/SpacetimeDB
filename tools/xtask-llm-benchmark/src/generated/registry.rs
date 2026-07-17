@@ -58,6 +58,12 @@ mod auth_t_068_secure_projection {
 
 #[allow(dead_code)]
 #[allow(clippy::all)]
+mod auth_t_083_row_level_security {
+    include!("../benchmarks/auth/t_083_row_level_security/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
 mod basics_t_000_empty_reducers {
     include!("../benchmarks/basics/t_000_empty_reducers/spec.rs");
 }
@@ -198,6 +204,24 @@ mod lifecycle_t_070_connection_scoped_presence {
 #[allow(clippy::all)]
 mod lifecycle_t_071_scheduled_private {
     include!("../benchmarks/lifecycle/t_071_scheduled_private/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod migrations_t_080_automatic_migration {
+    include!("../benchmarks/migrations/t_080_automatic_migration/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod migrations_t_081_incremental_migration {
+    include!("../benchmarks/migrations/t_081_incremental_migration/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod migrations_t_082_hot_swap_compatibility {
+    include!("../benchmarks/migrations/t_082_hot_swap_compatibility/spec.rs");
 }
 
 #[allow(dead_code)]
@@ -502,6 +526,7 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         ("auth", "t_045_rate_limit") => auth_t_045_rate_limit::spec,
         ("auth", "t_046_shared_document") => auth_t_046_shared_document::spec,
         ("auth", "t_068_secure_projection") => auth_t_068_secure_projection::spec,
+        ("auth", "t_083_row_level_security") => auth_t_083_row_level_security::spec,
         ("basics", "t_000_empty_reducers") => basics_t_000_empty_reducers::spec,
         ("basics", "t_001_basic_tables") => basics_t_001_basic_tables::spec,
         ("basics", "t_002_scheduled_table") => basics_t_002_scheduled_table::spec,
@@ -526,6 +551,9 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         ("lifecycle", "t_069_scheduled_materialization") => lifecycle_t_069_scheduled_materialization::spec,
         ("lifecycle", "t_070_connection_scoped_presence") => lifecycle_t_070_connection_scoped_presence::spec,
         ("lifecycle", "t_071_scheduled_private") => lifecycle_t_071_scheduled_private::spec,
+        ("migrations", "t_080_automatic_migration") => migrations_t_080_automatic_migration::spec,
+        ("migrations", "t_081_incremental_migration") => migrations_t_081_incremental_migration::spec,
+        ("migrations", "t_082_hot_swap_compatibility") => migrations_t_082_hot_swap_compatibility::spec,
         ("procedures", "t_072_procedure_return") => procedures_t_072_procedure_return::spec,
         ("procedures", "t_073_http_fetch") => procedures_t_073_http_fetch::spec,
         ("procedures", "t_074_fetch_and_store") => procedures_t_074_fetch_and_store::spec,

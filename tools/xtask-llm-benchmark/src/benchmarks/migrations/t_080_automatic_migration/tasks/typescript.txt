@@ -1,0 +1,1 @@
+Update the TypeScript SpacetimeDB module with a compatible schema change. Preserve the public product table and its fields, plus the seed and touch reducers. Add a public category table with id: u64 as its primary key and label: string. Add create_category(id, label) to insert a category. The populated product table must survive a normal republish without deleting data.

@@ -1,0 +1,1 @@
+Update the Rust SpacetimeDB module with a compatible schema change. Preserve the public Product table and its fields, plus the seed and touch reducers. Add a public Category table with id: u64 as its primary key and label: String. Add create_category(id, label) to insert a Category. The populated Product table must survive a normal republish without deleting data.
