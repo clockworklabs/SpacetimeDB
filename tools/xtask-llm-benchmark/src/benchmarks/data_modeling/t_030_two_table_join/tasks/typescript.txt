@@ -13,7 +13,7 @@ TABLES
     - product: string
     - amount: number (u32)
 
-- orderDetail
+- order_detail
   - Fields:
     - orderId: number (u64, primary key)
     - customerName: string
@@ -24,4 +24,4 @@ REDUCERS
 - build_order_details(ctx)
   - Iterate all orders
   - For each order, look up the customer by customerId
-  - If the customer is found, insert an orderDetail row with the joined data
+  - If the customer is found, insert an order_detail row with the joined data

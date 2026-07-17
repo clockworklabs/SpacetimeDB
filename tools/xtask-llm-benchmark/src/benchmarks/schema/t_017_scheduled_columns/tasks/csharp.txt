@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in C# that defines a scheduled table and seeds one schedule entry.
 
 TABLE
-- TickTimer
+- TickTimer (public)
   - Struct: TickTimer
   - Fields:
     - ScheduledId: ulong (primary key, auto-increment)

@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 use std::panic;
 use std::pin::{pin, Pin};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
@@ -34,7 +34,9 @@ use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::NoSuchModule;
 use spacetimedb::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use spacetimedb::util::spawn_rayon;
-use spacetimedb::worker_metrics::WORKER_METRICS;
+use spacetimedb::worker_metrics::{
+    record_client_rejection, ClientDisconnectCause, ClientDisconnectRecorder, ClientRejectCause, WORKER_METRICS,
+};
 use spacetimedb::Identity;
 use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_client_api_messages::websocket::v2 as ws_v2;
@@ -145,7 +147,13 @@ where
     }
 
     let db_identity = name_or_identity.resolve(&ctx).await?;
-    let sql_auth = ctx.authorize_sql(auth.claims.identity, db_identity).await?;
+    let sql_auth = match ctx.authorize_sql(auth.claims.identity, db_identity).await {
+        Ok(sql_auth) => sql_auth,
+        Err(err) => {
+            record_client_rejection(db_identity, ClientRejectCause::AuthorizationFailed);
+            return Err(err.into());
+        }
+    };
 
     #[derive(Clone, Copy)]
     struct NegotiatedProtocol {
@@ -184,7 +192,13 @@ where
         ),
     ]);
 
-    let negotiated = protocol.ok_or((StatusCode::BAD_REQUEST, "no valid protocol selected"))?;
+    let negotiated = match protocol {
+        Some(protocol) => protocol,
+        None => {
+            record_client_rejection(db_identity, ClientRejectCause::InvalidProtocol);
+            Err((StatusCode::BAD_REQUEST, "no valid protocol selected"))?
+        }
+    };
     let client_config = ClientConfig {
         protocol: negotiated.protocol,
         version: negotiated.version,
@@ -225,6 +239,7 @@ where
         let ws = match ws_upgrade.upgrade(ws_config).await {
             Ok(ws) => ws,
             Err(err) => {
+                record_client_rejection(db_identity, ClientRejectCause::WebsocketUpgradeError);
                 log::error!("websocket: WebSocket init error: {err}");
                 return;
             }
@@ -251,14 +266,24 @@ where
                 log::debug!("websocket: client_connected returned Ok for {client_log_string}");
                 connected
             }
-            Err(e @ (ClientConnectedError::Rejected(_) | ClientConnectedError::OutOfEnergy)) => {
-                log::info!(
-                    "websocket: Rejecting connection for {client_log_string} due to error from client_connected reducer: {e}"
-                );
-                return;
-            }
-            Err(e @ (ClientConnectedError::DBError(_) | ClientConnectedError::ReducerCall(_))) => {
-                log::warn!("websocket: ModuleHost died while {client_log_string} was connecting: {e:#}");
+            Err(e) => {
+                let cause = match &e {
+                    ClientConnectedError::Rejected(_) => {
+                        log::info!("websocket: Rejecting connection for {client_log_string} due to rejection from client_connected reducer: {e}");
+                        ClientRejectCause::ClientConnectedRejected
+                    }
+                    ClientConnectedError::OutOfEnergy => {
+                        log::info!("websocket: Rejecting connection for {client_log_string} due to out of energy error from client_connected reducer: {e}");
+                        ClientRejectCause::OutOfEnergy
+                    }
+                    ClientConnectedError::DBError(_) | ClientConnectedError::ReducerCall(_) => {
+                        log::warn!(
+                            "websocket: Rejecting connection for {client_log_string} due to error running client_connected reducer: {e:#}"
+                        );
+                        ClientRejectCause::ClientConnectedError
+                    }
+                };
+                record_client_rejection(db_identity, cause);
                 return;
             }
         };
@@ -315,18 +340,29 @@ struct ActorState {
     pub client_id: ClientActorId,
     pub database: Identity,
     config: WebSocketOptions,
+    disconnect_recorder: Option<ClientDisconnectRecorder>,
     closed: AtomicBool,
     got_pong: AtomicBool,
+    /// When the last `Ping` frame was written to the socket.
+    /// Taken when the corresponding `Pong` arrives, to observe the roundtrip time.
+    last_ping_sent: Mutex<Option<Instant>>,
 }
 
 impl ActorState {
-    pub fn new(database: Identity, client_id: ClientActorId, config: WebSocketOptions) -> Self {
+    pub fn new(
+        database: Identity,
+        client_id: ClientActorId,
+        config: WebSocketOptions,
+        disconnect_recorder: Option<ClientDisconnectRecorder>,
+    ) -> Self {
         Self {
             database,
             client_id,
             config,
+            disconnect_recorder,
             closed: AtomicBool::new(false),
             got_pong: AtomicBool::new(true),
+            last_ping_sent: Mutex::new(None),
         }
     }
 
@@ -346,8 +382,33 @@ impl ActorState {
         self.got_pong.swap(false, Ordering::Relaxed)
     }
 
+    /// Record that a `Ping` frame was written to the socket.
+    fn record_ping_sent(&self) {
+        *self.last_ping_sent.lock().unwrap() = Some(Instant::now());
+    }
+
+    /// Record that the client's `Pong` was processed,
+    /// observing the ping-pong roundtrip time.
+    ///
+    /// This time includes any queueing of the `Ping` behind other outgoing
+    /// data in the TCP stream.
+    fn record_pong(&self) {
+        if let Some(sent) = self.last_ping_sent.lock().unwrap().take() {
+            WORKER_METRICS
+                .websocket_pong_rtt
+                .with_label_values(&self.database)
+                .observe(sent.elapsed().as_secs_f64());
+        }
+    }
+
     pub fn next_idle_deadline(&self) -> Instant {
         Instant::now() + self.config.idle_timeout
+    }
+
+    pub fn record_disconnect(&self, cause: ClientDisconnectCause) -> bool {
+        self.disconnect_recorder
+            .as_ref()
+            .is_some_and(|recorder| recorder.record(cause))
     }
 }
 
@@ -452,7 +513,12 @@ async fn ws_client_actor_inner(
     let database = client.module().info().database_identity;
     let client_id = client.id;
     let client_closed_metric = WORKER_METRICS.ws_clients_closed_connection.with_label_values(&database);
-    let state = Arc::new(ActorState::new(database, client_id, config));
+    let state = Arc::new(ActorState::new(
+        database,
+        client_id,
+        config,
+        client.disconnect_recorder(),
+    ));
 
     // Channel for [`UnorderedWsMessage`]s.
     let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
@@ -673,6 +739,7 @@ async fn ws_main_loop<HotswapWatcher>(
                     .ws_clients_idle_timed_out
                     .with_label_values(&state.database)
                     .inc();
+                state.record_disconnect(ClientDisconnectCause::IdleTimeout);
                 break;
             },
 
@@ -682,6 +749,7 @@ async fn ws_main_loop<HotswapWatcher>(
             // Branch is disabled if we already sent a close frame.
             res = &mut watch_hotswap, if !closed => {
                 if let Err(NoSuchModule) = res {
+                    state.record_disconnect(ClientDisconnectCause::ModuleExited);
                     let close = CloseFrame {
                         code: CloseCode::Away,
                         reason: "module exited".into()
@@ -795,6 +863,7 @@ async fn ws_recv_task<MessageHandler>(
                 continue;
             }
             log::debug!("Client caused error: {e}");
+            state.record_disconnect(ClientDisconnectCause::ClientMessageError);
             let close = CloseFrame {
                 code: CloseCode::Error,
                 reason: format!("{e:#}").into(),
@@ -823,6 +892,23 @@ fn ws_recv_loop(
     idle_tx: watch::Sender<Instant>,
     mut ws: impl Stream<Item = Result<WsMessage, WsError>> + Unpin,
 ) -> impl Stream<Item = ClientMessage> {
+    fn receive_error_cause(error: &WsError) -> ClientDisconnectCause {
+        match error {
+            WsError::ConnectionClosed => ClientDisconnectCause::WebsocketReceiveConnectionClosed,
+            WsError::AlreadyClosed => ClientDisconnectCause::WebsocketReceiveAlreadyClosed,
+            WsError::Io(_) => ClientDisconnectCause::WebsocketReceiveIo,
+            WsError::Tls(_) => ClientDisconnectCause::WebsocketReceiveTls,
+            WsError::Capacity(_) => ClientDisconnectCause::WebsocketReceiveCapacity,
+            WsError::Protocol(_) => ClientDisconnectCause::WebsocketReceiveProtocol,
+            WsError::WriteBufferFull(_) => ClientDisconnectCause::WebsocketReceiveWriteBufferFull,
+            WsError::Utf8(_) => ClientDisconnectCause::WebsocketReceiveUtf8,
+            WsError::AttackAttempt => ClientDisconnectCause::WebsocketReceiveAttackAttempt,
+            WsError::Url(_) => ClientDisconnectCause::WebsocketReceiveUrl,
+            WsError::Http(_) => ClientDisconnectCause::WebsocketReceiveHttp,
+            WsError::HttpFormat(_) => ClientDisconnectCause::WebsocketReceiveHttpFormat,
+        }
+    }
+
     // Get the next message from `ws`, or `None` if the stream is exhausted.
     //
     // If `state.closed`, `ws` is drained until it either yields an `Err`, is
@@ -861,6 +947,7 @@ fn ws_recv_loop(
         loop {
             let Some(res) = next_message(&state, &mut ws).await else {
                 log::trace!("recv stream exhausted");
+                state.record_disconnect(ClientDisconnectCause::WebsocketStreamEnded);
                 break;
             };
             match res {
@@ -878,26 +965,13 @@ fn ws_recv_loop(
                     log::trace!("message received while already closed");
                 }
                 // None of the error cases can be meaningfully recovered from
-                // (and some can't even occur on the `ws` stream).
-                // Exit here but spell out an exhaustive match
-                // in order to bring any future library changes to our attention.
-                Err(e) => match e {
-                    e @ (WsError::ConnectionClosed
-                    | WsError::AlreadyClosed
-                    | WsError::Io(_)
-                    | WsError::Tls(_)
-                    | WsError::Capacity(_)
-                    | WsError::Protocol(_)
-                    | WsError::WriteBufferFull(_)
-                    | WsError::Utf8(_)
-                    | WsError::AttackAttempt
-                    | WsError::Url(_)
-                    | WsError::Http(_)
-                    | WsError::HttpFormat(_)) => {
-                        log::warn!("Websocket receive error: {e}");
-                        break;
-                    }
-                },
+                // (and some can't even occur on the `ws` stream), so record the
+                // specific receive error cause and terminate the stream.
+                Err(e) => {
+                    state.record_disconnect(receive_error_cause(&e));
+                    log::warn!("Websocket receive error: {e}");
+                    break;
+                }
             }
         }
     }
@@ -946,6 +1020,7 @@ fn ws_recv_queue(
                     mpsc::error::TrySendError::Full(item) => {
                         let client_id = state.client_id;
                         log::warn!("Client {client_id} exceeded incoming_queue_length limit of {max_incoming_queue_length} requests");
+                        state.record_disconnect(ClientDisconnectCause::IncomingQueueFull);
                         // If we can't send close (send task already terminated):
                         //
                         // - Let downstream handlers know that we're closing,
@@ -1036,6 +1111,7 @@ fn ws_client_message_handler(
                 ClientMessage::Pong(_bytes) => {
                     log::trace!("Received pong from client {}", state.client_id);
                     state.set_ponged();
+                    state.record_pong();
                 },
                 ClientMessage::Close(close_frame) => {
                     log::trace!("Received Close frame from client {}: {:?}", state.client_id, close_frame);
@@ -1043,6 +1119,7 @@ fn ws_client_message_handler(
                     // This is the client telling us they want to close.
                     if !was_closed {
                         client_closed_metric.inc();
+                        state.record_disconnect(ClientDisconnectCause::ClientClose);
                     }
                 }
             }
@@ -1198,6 +1275,7 @@ async fn ws_send_loop_inner<T, U, Encoder>(
                         while let Ok(frame) = frames_rx.try_recv() {
                             let eof = frame.header().is_final;
                             if let Err(e) = ws.feed(WsMessage::Frame(frame)).await {
+                                state.record_disconnect(ClientDisconnectCause::WebsocketSendError);
                                 log::warn!("error sending frame: {e:#}");
                                 break 'outer;
                             }
@@ -1209,6 +1287,7 @@ async fn ws_send_loop_inner<T, U, Encoder>(
                         // Then send the close frame.
                         log::trace!("sending close frame");
                         if let Err(e) = ws.send(WsMessage::Close(Some(close_frame))).await {
+                            state.record_disconnect(ClientDisconnectCause::WebsocketSendError);
                             log::warn!("error sending close frame: {e:#}");
                             break;
                         }
@@ -1230,9 +1309,11 @@ async fn ws_send_loop_inner<T, U, Encoder>(
                     UnorderedWsMessage::Ping(bytes) => {
                         log::trace!("sending ping");
                         if let Err(e) = ws.feed(WsMessage::Ping(bytes)).await {
+                            state.record_disconnect(ClientDisconnectCause::WebsocketSendError);
                             log::warn!("error sending ping: {e:#}");
                             break;
                         }
+                        state.record_ping_sent();
                     },
                     UnorderedWsMessage::Error(err) => {
                         log::trace!("encoding execution error");
@@ -1259,6 +1340,7 @@ async fn ws_send_loop_inner<T, U, Encoder>(
                 log::trace!("sending batch of {n} frames");
                 for frame in frames_batch.drain(..n) {
                     if let Err(e) = ws.feed(WsMessage::Frame(frame)).await {
+                        state.record_disconnect(ClientDisconnectCause::WebsocketSendError);
                         log::warn!("error sending frame: {e:#}");
                         break 'outer;
                     }
@@ -1282,6 +1364,7 @@ async fn ws_send_loop_inner<T, U, Encoder>(
         }
 
         if let Err(e) = ws.flush().await {
+            state.record_disconnect(ClientDisconnectCause::WebsocketSendError);
             log::warn!("error flushing websocket: {e}");
             break;
         }
@@ -1955,7 +2038,56 @@ mod tests {
     }
 
     fn dummy_actor_state_with_config(config: WebSocketOptions) -> ActorState {
-        ActorState::new(Identity::ZERO, dummy_client_id(), config)
+        ActorState::new(Identity::ZERO, dummy_client_id(), config, None)
+    }
+
+    fn test_database(byte: u8) -> Identity {
+        let mut bytes = [0; 32];
+        bytes[31] = byte;
+        Identity::from_be_byte_array(bytes)
+    }
+
+    fn actor_state_with_disconnect_recorder(byte: u8, config: WebSocketOptions) -> ActorState {
+        let database = test_database(byte);
+        ActorState::new(
+            database,
+            dummy_client_id(),
+            config,
+            Some(ClientDisconnectRecorder::new(database)),
+        )
+    }
+
+    fn disconnect_count(database: Identity, cause: ClientDisconnectCause) -> u64 {
+        WORKER_METRICS
+            .ws_client_disconnections
+            .with_label_values(&database, cause.as_str())
+            .get()
+    }
+
+    fn rejection_count(database: Identity, cause: ClientRejectCause) -> u64 {
+        WORKER_METRICS
+            .ws_client_rejections
+            .with_label_values(&database, cause.as_str())
+            .get()
+    }
+
+    fn assert_disconnect_count_incremented(database: Identity, cause: ClientDisconnectCause, before: u64) {
+        assert_eq!(disconnect_count(database, cause), before + 1);
+    }
+
+    fn assert_rejection_count_incremented(database: Identity, cause: ClientRejectCause, before: u64) {
+        assert_eq!(rejection_count(database, cause), before + 1);
+    }
+
+    #[test]
+    fn record_client_rejection_increments_rejection_metric() {
+        let database = test_database(100);
+
+        for cause in ClientRejectCause::ALL {
+            let before = rejection_count(database, cause);
+            record_client_rejection(database, cause);
+            assert_rejection_count_incremented(database, cause, before);
+        }
     }
 
     #[tokio::test(start_paused = true)] // see [NOTE: start_paused]
@@ -1982,22 +2114,26 @@ mod tests {
 
     #[tokio::test]
     async fn recv_loop_terminates_when_input_exhausted() {
-        let state = Arc::new(dummy_actor_state());
+        let state = Arc::new(actor_state_with_disconnect_recorder(1, <_>::default()));
+        let before = disconnect_count(state.database, ClientDisconnectCause::WebsocketStreamEnded);
         let (idle_tx, _idle_rx) = watch::channel(Instant::now() + state.config.idle_timeout);
 
         let input = stream::iter(vec![Ok(WsMessage::Ping(Bytes::new()))]);
         pin_mut!(input);
 
-        let recv_loop = ws_recv_loop(state, idle_tx, input);
+        let recv_loop = ws_recv_loop(state.clone(), idle_tx, input);
         pin_mut!(recv_loop);
 
         assert_matches!(recv_loop.next().await, Some(ClientMessage::Ping(_)));
         assert_matches!(recv_loop.next().await, None);
+        assert_disconnect_count_incremented(state.database, ClientDisconnectCause::WebsocketStreamEnded, before);
     }
 
     #[tokio::test]
     async fn recv_loop_terminates_when_input_yields_err() {
-        let state = Arc::new(dummy_actor_state());
+        let state = Arc::new(actor_state_with_disconnect_recorder(2, <_>::default()));
+        let cause = ClientDisconnectCause::WebsocketReceiveConnectionClosed;
+        let before = disconnect_count(state.database, cause);
         let (idle_tx, _idle_rx) = watch::channel(Instant::now() + state.config.idle_timeout);
 
         let input = stream::iter(vec![
@@ -2007,11 +2143,12 @@ mod tests {
         ]);
         pin_mut!(input);
 
-        let recv_loop = ws_recv_loop(state, idle_tx, input);
+        let recv_loop = ws_recv_loop(state.clone(), idle_tx, input);
         pin_mut!(recv_loop);
 
         assert_matches!(recv_loop.next().await, Some(ClientMessage::Ping(_)));
         assert_matches!(recv_loop.next().await, None);
+        assert_disconnect_count_incremented(state.database, cause, before);
     }
 
     #[tokio::test]
@@ -2098,7 +2235,8 @@ mod tests {
 
     #[tokio::test]
     async fn client_message_handler_updates_pong_and_closed_states_and_metric() {
-        let state = Arc::new(dummy_actor_state());
+        let state = Arc::new(actor_state_with_disconnect_recorder(3, <_>::default()));
+        let before = disconnect_count(state.database, ClientDisconnectCause::ClientClose);
         state.reset_ponged();
         let metric = IntGauge::new("bleep", "unhelpful").unwrap();
 
@@ -2109,6 +2247,31 @@ mod tests {
         assert!(state.closed());
         assert!(state.reset_ponged());
         assert_eq!(metric.get(), 1);
+        assert_disconnect_count_incremented(state.database, ClientDisconnectCause::ClientClose, before);
+    }
+
+    #[tokio::test]
+    async fn recv_task_records_client_message_error_disconnect() {
+        let state = Arc::new(actor_state_with_disconnect_recorder(7, <_>::default()));
+        let before = disconnect_count(state.database, ClientDisconnectCause::ClientMessageError);
+        let (idle_tx, _idle_rx) = watch::channel(state.next_idle_deadline());
+        let metric = IntGauge::new("bleep", "unhelpful").unwrap();
+        let (unordered_tx, mut unordered_rx) = mpsc::unbounded_channel();
+        let input = stream::iter([Ok(WsMessage::text("not useful"))]);
+
+        ws_recv_task(
+            state.clone(),
+            idle_tx,
+            metric,
+            |_data, _timer| future::ready(Err(MessageHandleError::UnsupportedVersion("test"))),
+            unordered_tx,
+            input,
+            WsVersion::V2,
+        )
+        .await;
+
+        assert_matches!(unordered_rx.recv().await, Some(UnorderedWsMessage::Close(_)));
+        assert_disconnect_count_incremented(state.database, ClientDisconnectCause::ClientMessageError, before);
     }
 
     #[tokio::test]
@@ -2189,8 +2352,9 @@ mod tests {
             ))),
         ];
 
-        for message in input {
-            let state = Arc::new(dummy_actor_state());
+        for (i, message) in input.into_iter().enumerate() {
+            let state = Arc::new(actor_state_with_disconnect_recorder(20 + i as u8, <_>::default()));
+            let before = disconnect_count(state.database, ClientDisconnectCause::WebsocketSendError);
             let (messages_tx, messages_rx) = mpsc::channel(64);
             let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
 
@@ -2209,6 +2373,7 @@ mod tests {
                 Either::Right(message) => messages_tx.send(message).await.unwrap(),
             }
             send_loop.await;
+            assert_disconnect_count_incremented(state.database, ClientDisconnectCause::WebsocketSendError, before);
         }
     }
 
@@ -2238,8 +2403,9 @@ mod tests {
             ))),
         ];
 
-        for message in input {
-            let state = Arc::new(dummy_actor_state());
+        for (i, message) in input.into_iter().enumerate() {
+            let state = Arc::new(actor_state_with_disconnect_recorder(30 + i as u8, <_>::default()));
+            let before = disconnect_count(state.database, ClientDisconnectCause::WebsocketSendError);
             let (messages_tx, messages_rx) = mpsc::channel(64);
             let (unordered_tx, unordered_rx) = mpsc::unbounded_channel();
 
@@ -2258,6 +2424,7 @@ mod tests {
                 Either::Right(message) => messages_tx.send(message).await.unwrap(),
             }
             send_loop.await;
+            assert_disconnect_count_incremented(state.database, ClientDisconnectCause::WebsocketSendError, before);
         }
     }
 
@@ -2286,10 +2453,14 @@ mod tests {
 
     #[tokio::test(start_paused = true)] // see [NOTE: start_paused]
     async fn main_loop_terminates_on_idle_timeout() {
-        let state = Arc::new(dummy_actor_state_with_config(WebSocketOptions {
-            idle_timeout: Duration::from_millis(10),
-            ..<_>::default()
-        }));
+        let state = Arc::new(actor_state_with_disconnect_recorder(
+            4,
+            WebSocketOptions {
+                idle_timeout: Duration::from_millis(10),
+                ..<_>::default()
+            },
+        ));
+        let before = disconnect_count(state.database, ClientDisconnectCause::IdleTimeout);
         let (idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
 
         let start = Instant::now();
@@ -2320,6 +2491,7 @@ mod tests {
         let elapsed = start.elapsed();
         assert!(elapsed >= timeout);
         assert!(elapsed < timeout + Duration::from_millis(10));
+        assert_disconnect_count_incremented(state.database, ClientDisconnectCause::IdleTimeout, before);
     }
 
     #[tokio::test(start_paused = true)] // see [NOTE: start_paused]
@@ -2380,7 +2552,8 @@ mod tests {
 
     #[tokio::test(start_paused = true)] // see [NOTE: start_paused]
     async fn main_loop_terminates_when_module_exits() {
-        let state = Arc::new(dummy_actor_state());
+        let state = Arc::new(actor_state_with_disconnect_recorder(5, <_>::default()));
+        let before = disconnect_count(state.database, ClientDisconnectCause::ModuleExited);
 
         let (_idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
         let unordered_tx = {
@@ -2393,6 +2566,7 @@ mod tests {
         };
 
         let start = tokio::time::Instant::now();
+        let state_for_loop = state.clone();
         tokio::spawn(async move {
             let hotswap = || async {
                 sleep(Duration::from_millis(5)).await;
@@ -2400,13 +2574,13 @@ mod tests {
             };
 
             ws_main_loop(
-                state.clone(),
+                state_for_loop.clone(),
                 hotswap,
                 ws_idle_timer(idle_rx),
                 // Pretend we received a close immediately after sending one.
                 tokio::spawn(async move {
                     loop {
-                        if state.closed() {
+                        if state_for_loop.closed() {
                             break;
                         }
                         sleep(Duration::from_millis(1)).await
@@ -2429,20 +2603,25 @@ mod tests {
             elapsed < Duration::from_millis(10),
             "main loop should shut down shortly after module is shut down"
         );
+        assert_disconnect_count_incremented(state.database, ClientDisconnectCause::ModuleExited, before);
     }
 
     #[tokio::test]
     async fn recv_queue_sends_close_when_at_capacity() {
-        let state = Arc::new(dummy_actor_state_with_config(WebSocketOptions {
-            incoming_queue_length: 10.try_into().unwrap(),
-            ..<_>::default()
-        }));
+        let state = Arc::new(actor_state_with_disconnect_recorder(
+            6,
+            WebSocketOptions {
+                incoming_queue_length: 10.try_into().unwrap(),
+                ..<_>::default()
+            },
+        ));
+        let before = disconnect_count(state.database, ClientDisconnectCause::IncomingQueueFull);
 
         let (unordered_tx, mut unordered_rx) = mpsc::unbounded_channel();
         let input = stream::iter((0..20).map(|i| Ok(WsMessage::text(format!("message {i}")))));
 
         let metric = IntGauge::new("bleep", "unhelpful").unwrap();
-        let received = ws_recv_queue(state, unordered_tx, metric.clone(), input)
+        let received = ws_recv_queue(state.clone(), unordered_tx, metric.clone(), input)
             .collect::<Vec<_>>()
             .await;
 
@@ -2451,6 +2630,7 @@ mod tests {
         assert_eq!(metric.get(), 0);
         // Should have received all of the input.
         assert_eq!(received.len(), 20);
+        assert_disconnect_count_incremented(state.database, ClientDisconnectCause::IncomingQueueFull, before);
     }
 
     #[tokio::test]
