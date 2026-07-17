@@ -265,6 +265,36 @@ public static class Module
     private static readonly List<IView> viewDispatchers = [];
     private static readonly List<IAnonymousView> anonymousViewDispatchers = [];
 
+    private static class ReducerCache<R>
+        where R : IReducer, new()
+    {
+        public static readonly R Instance = new();
+    }
+
+    private static class ProcedureCache<P>
+        where P : IProcedure, new()
+    {
+        public static readonly P Instance = new();
+    }
+
+    private static class HttpHandlerCache<H>
+        where H : IHttpHandler, new()
+    {
+        public static readonly H Instance = new();
+    }
+
+    private static class ViewDispatcherCache<TDispatcher>
+        where TDispatcher : IView, new()
+    {
+        public static readonly TDispatcher Instance = new();
+    }
+
+    private static class AnonymousViewDispatcherCache<TDispatcher>
+        where TDispatcher : IAnonymousView, new()
+    {
+        public static readonly TDispatcher Instance = new();
+    }
+
     private static Func<
         Identity,
         ConnectionId?,
@@ -337,7 +367,7 @@ public static class Module
     public static void RegisterReducer<R>()
         where R : IReducer, new()
     {
-        var reducer = new R();
+        var reducer = ReducerCache<R>.Instance;
         reducers.Add(reducer);
         moduleDef.RegisterReducer(reducer.MakeReducerDef(typeRegistrar), reducer.Lifecycle);
     }
@@ -345,7 +375,7 @@ public static class Module
     public static void RegisterProcedure<P>()
         where P : IProcedure, new()
     {
-        var procedure = new P();
+        var procedure = ProcedureCache<P>.Instance;
         procedures.Add(procedure);
         moduleDef.RegisterProcedure(procedure.MakeProcedureDef(typeRegistrar));
     }
@@ -353,7 +383,7 @@ public static class Module
     public static void RegisterHttpHandler<H>()
         where H : IHttpHandler, new()
     {
-        var handler = new H();
+        var handler = HttpHandlerCache<H>.Instance;
         httpHandlers.Add(handler);
         moduleDef.RegisterHttpHandler(handler.MakeHandlerDef());
     }
@@ -394,7 +424,7 @@ public static class Module
     public static void RegisterView<TDispatcher>()
         where TDispatcher : IView, new()
     {
-        var dispatcher = new TDispatcher();
+        var dispatcher = ViewDispatcherCache<TDispatcher>.Instance;
         var def = dispatcher.MakeViewDef(typeRegistrar);
         viewDispatchers.Add(dispatcher);
         moduleDef.RegisterView(def);
@@ -403,7 +433,7 @@ public static class Module
     public static void RegisterAnonymousView<TDispatcher>()
         where TDispatcher : IAnonymousView, new()
     {
-        var dispatcher = new TDispatcher();
+        var dispatcher = AnonymousViewDispatcherCache<TDispatcher>.Instance;
         var def = dispatcher.MakeAnonymousViewDef(typeRegistrar);
         anonymousViewDispatchers.Add(dispatcher);
         moduleDef.RegisterView(def);
@@ -566,6 +596,50 @@ public static class Module
         }
     }
 
+    public static Errno __call_reducer__<R>(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        Timestamp timestamp,
+        BytesSource args,
+        BytesSink error
+    )
+        where R : IReducer, new()
+    {
+        try
+        {
+            var senderIdentity = Identity.From(
+                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
+            );
+            var connectionId = ConnectionId.From(
+                MemoryMarshal.AsBytes([conn_id_0, conn_id_1]).ToArray()
+            );
+            var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
+            var time = timestamp.ToStd();
+
+            var ctx = newReducerContext!(senderIdentity, connectionId, random, time);
+
+            using var stream = args.Consume(ref reducerArgsBuffer);
+            using var reader = new BinaryReader(stream);
+            ReducerCache<R>.Instance.Invoke(reader, ctx);
+            if (stream.Position != stream.Length)
+            {
+                throw new Exception("Unrecognised extra bytes in the reducer arguments");
+            }
+            return Errno.OK; /* no exception */
+        }
+        catch (Exception e)
+        {
+            var error_str = e.Message ?? e.GetType().FullName ?? e.GetType().Name;
+            var error_bytes = System.Text.Encoding.UTF8.GetBytes(error_str);
+            error.Write(error_bytes);
+            return Errno.HOST_CALL_FAILURE;
+        }
+    }
+
     public static Errno __call_procedure__(
         uint id,
         ulong sender_0,
@@ -613,6 +687,50 @@ public static class Module
         }
     }
 
+    public static Errno __call_procedure__<P>(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        Timestamp timestamp,
+        BytesSource args,
+        BytesSink resultSink
+    )
+        where P : IProcedure, new()
+    {
+        try
+        {
+            var sender = Identity.From(
+                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
+            );
+            var connectionId = ConnectionId.From(
+                MemoryMarshal.AsBytes([conn_id_0, conn_id_1]).ToArray()
+            );
+            var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
+            var time = timestamp.ToStd();
+
+            var ctx = newProcedureContext!(sender, connectionId, random, time);
+
+            using var stream = args.Consume(ref procedureArgsBuffer);
+            using var reader = new BinaryReader(stream);
+            var bytes = ProcedureCache<P>.Instance.Invoke(reader, ctx);
+            if (stream.Position != stream.Length)
+            {
+                throw new Exception("Unrecognised extra bytes in the procedure arguments");
+            }
+            resultSink.Write(bytes);
+
+            return Errno.OK;
+        }
+        catch (Exception e)
+        {
+            Log.Error($"Error while invoking procedure: {e}");
+            throw;
+        }
+    }
+
     public static Errno __call_http_handler__(
         uint id,
         Timestamp timestamp,
@@ -644,6 +762,51 @@ public static class Module
                         requestBody.Consume(ref httpRequestBodyBuffer).ToArray()
                     )
                 );
+            var (responseWire, responseBody) = SpacetimeDB.HttpClient.ToWire(response);
+            responseSink.Write(
+                IStructuralReadWrite.ToBytes(new HttpResponseWire.BSATN(), responseWire)
+            );
+            responseBodySink.Write(responseBody);
+
+            return Errno.OK;
+        }
+        catch (Exception e)
+        {
+            Log.Error($"Error while invoking HTTP handler: {e}");
+            throw;
+        }
+    }
+
+    public static Errno __call_http_handler__<H>(
+        Timestamp timestamp,
+        BytesSource request,
+        BytesSource requestBody,
+        BytesSink responseSink,
+        BytesSink responseBodySink
+    )
+        where H : IHttpHandler, new()
+    {
+        try
+        {
+            var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
+            var time = timestamp.ToStd();
+            var ctx = newHandlerContext!(random, time);
+
+            using var stream = request.Consume(ref httpRequestBuffer);
+            using var reader = new BinaryReader(stream);
+            var requestWire = new HttpRequestWire.BSATN().Read(reader);
+            if (stream.Position != stream.Length)
+            {
+                throw new Exception("Unrecognised extra bytes in the HTTP handler request");
+            }
+
+            var response = HttpHandlerCache<H>.Instance.Invoke(
+                ctx,
+                SpacetimeDB.HttpClient.FromWire(
+                    requestWire,
+                    requestBody.Consume(ref httpRequestBodyBuffer).ToArray()
+                )
+            );
             var (responseWire, responseBody) = SpacetimeDB.HttpClient.ToWire(response);
             responseSink.Write(
                 IStructuralReadWrite.ToBytes(new HttpResponseWire.BSATN(), responseWire)
@@ -712,6 +875,35 @@ public static class Module
         }
     }
 
+    public static Errno __call_view__<TDispatcher>(
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        BytesSource args,
+        BytesSink rows
+    )
+        where TDispatcher : IView, new()
+    {
+        try
+        {
+            var sender = Identity.From(
+                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
+            );
+            var ctx = newViewContext!(sender);
+            using var stream = args.Consume(ref viewArgsBuffer);
+            using var reader = new BinaryReader(stream);
+            var bytes = ViewDispatcherCache<TDispatcher>.Instance.Invoke(reader, ctx);
+            rows.Write(bytes);
+            return (Errno)2;
+        }
+        catch (Exception e)
+        {
+            Log.Error($"Error while invoking view: {e}");
+            return Errno.HOST_CALL_FAILURE;
+        }
+    }
+
     /// <summary>
     /// Called by the host to execute an anonymous view.
     /// </summary>
@@ -740,6 +932,25 @@ public static class Module
             using var stream = args.Consume(ref anonymousViewArgsBuffer);
             using var reader = new BinaryReader(stream);
             var bytes = anonymousViewDispatchers[(int)id].Invoke(reader, ctx);
+            rows.Write(bytes);
+            return (Errno)2;
+        }
+        catch (Exception e)
+        {
+            Log.Error($"Error while invoking anonymous view: {e}");
+            return Errno.HOST_CALL_FAILURE;
+        }
+    }
+
+    public static Errno __call_view_anon__<TDispatcher>(BytesSource args, BytesSink rows)
+        where TDispatcher : IAnonymousView, new()
+    {
+        try
+        {
+            var ctx = newAnonymousViewContext!();
+            using var stream = args.Consume(ref anonymousViewArgsBuffer);
+            using var reader = new BinaryReader(stream);
+            var bytes = AnonymousViewDispatcherCache<TDispatcher>.Instance.Invoke(reader, ctx);
             rows.Write(bytes);
             return (Errno)2;
         }

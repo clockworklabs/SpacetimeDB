@@ -3210,7 +3210,7 @@ namespace SpacetimeDB.Internal
 
 static class ModuleRegistration
 {
-    class __ReducerWithReservedPrefix : SpacetimeDB.Internal.IReducer
+    sealed class __ReducerWithReservedPrefix : SpacetimeDB.Internal.IReducer
     {
         public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
@@ -3231,7 +3231,7 @@ static class ModuleRegistration
         }
     }
 
-    class DummyScheduledReducer : SpacetimeDB.Internal.IReducer
+    sealed class DummyScheduledReducer : SpacetimeDB.Internal.IReducer
     {
         private static readonly TestScheduleIssues.BSATN tableRW = new();
 
@@ -3257,7 +3257,7 @@ static class ModuleRegistration
         }
     }
 
-    class OnReducerWithReservedPrefix : SpacetimeDB.Internal.IReducer
+    sealed class OnReducerWithReservedPrefix : SpacetimeDB.Internal.IReducer
     {
         public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
@@ -3278,7 +3278,7 @@ static class ModuleRegistration
         }
     }
 
-    class TestDuplicateReducerKind1 : SpacetimeDB.Internal.IReducer
+    sealed class TestDuplicateReducerKind1 : SpacetimeDB.Internal.IReducer
     {
         public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
@@ -3299,7 +3299,7 @@ static class ModuleRegistration
         }
     }
 
-    class TestDuplicateReducerKind2 : SpacetimeDB.Internal.IReducer
+    sealed class TestDuplicateReducerKind2 : SpacetimeDB.Internal.IReducer
     {
         public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
@@ -3320,7 +3320,7 @@ static class ModuleRegistration
         }
     }
 
-    class TestDuplicateReducerName : SpacetimeDB.Internal.IReducer
+    sealed class TestDuplicateReducerName : SpacetimeDB.Internal.IReducer
     {
         public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
@@ -3341,7 +3341,7 @@ static class ModuleRegistration
         }
     }
 
-    class TestReducerReturnType : SpacetimeDB.Internal.IReducer
+    sealed class TestReducerReturnType : SpacetimeDB.Internal.IReducer
     {
         public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
@@ -3362,7 +3362,7 @@ static class ModuleRegistration
         }
     }
 
-    class TestReducerWithoutContext : SpacetimeDB.Internal.IReducer
+    sealed class TestReducerWithoutContext : SpacetimeDB.Internal.IReducer
     {
         public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
@@ -3756,18 +3756,118 @@ static class ModuleRegistration
         SpacetimeDB.Internal.BytesSource args,
         SpacetimeDB.Internal.BytesSink error
     ) =>
-        SpacetimeDB.Internal.Module.__call_reducer__(
-            id,
-            sender_0,
-            sender_1,
-            sender_2,
-            sender_3,
-            conn_id_0,
-            conn_id_1,
-            timestamp,
-            args,
-            error
-        );
+        id switch
+        {
+            0
+                => SpacetimeDB.Internal.Module.__call_reducer__<__ReducerWithReservedPrefix>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    error
+                ),
+            1
+                => SpacetimeDB.Internal.Module.__call_reducer__<DummyScheduledReducer>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    error
+                ),
+            2
+                => SpacetimeDB.Internal.Module.__call_reducer__<OnReducerWithReservedPrefix>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    error
+                ),
+            3
+                => SpacetimeDB.Internal.Module.__call_reducer__<TestDuplicateReducerKind1>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    error
+                ),
+            4
+                => SpacetimeDB.Internal.Module.__call_reducer__<TestDuplicateReducerKind2>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    error
+                ),
+            5
+                => SpacetimeDB.Internal.Module.__call_reducer__<TestDuplicateReducerName>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    error
+                ),
+            6
+                => SpacetimeDB.Internal.Module.__call_reducer__<TestReducerReturnType>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    error
+                ),
+            7
+                => SpacetimeDB.Internal.Module.__call_reducer__<TestReducerWithoutContext>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    error
+                ),
+            _
+                => SpacetimeDB.Internal.Module.__call_reducer__(
+                    id,
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    error
+                )
+        };
 
     [UnmanagedCallersOnly(EntryPoint = "__call_procedure__")]
     public static SpacetimeDB.Internal.Errno __call_procedure__(
@@ -3782,18 +3882,22 @@ static class ModuleRegistration
         SpacetimeDB.Internal.BytesSource args,
         SpacetimeDB.Internal.BytesSink result_sink
     ) =>
-        SpacetimeDB.Internal.Module.__call_procedure__(
-            id,
-            sender_0,
-            sender_1,
-            sender_2,
-            sender_3,
-            conn_id_0,
-            conn_id_1,
-            timestamp,
-            args,
-            result_sink
-        );
+        id switch
+        {
+            _
+                => SpacetimeDB.Internal.Module.__call_procedure__(
+                    id,
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    result_sink
+                )
+        };
 
     [UnmanagedCallersOnly(EntryPoint = "__call_http_handler__")]
     public static SpacetimeDB.Internal.Errno __call_http_handler__(
@@ -3804,14 +3908,18 @@ static class ModuleRegistration
         SpacetimeDB.Internal.BytesSink response_sink,
         SpacetimeDB.Internal.BytesSink response_body_sink
     ) =>
-        SpacetimeDB.Internal.Module.__call_http_handler__(
-            id,
-            timestamp,
-            request,
-            request_body,
-            response_sink,
-            response_body_sink
-        );
+        id switch
+        {
+            _
+                => SpacetimeDB.Internal.Module.__call_http_handler__(
+                    id,
+                    timestamp,
+                    request,
+                    request_body,
+                    response_sink,
+                    response_body_sink
+                )
+        };
 
     [UnmanagedCallersOnly(EntryPoint = "__call_view__")]
     public static SpacetimeDB.Internal.Errno __call_view__(
@@ -3823,22 +3931,158 @@ static class ModuleRegistration
         SpacetimeDB.Internal.BytesSource args,
         SpacetimeDB.Internal.BytesSink sink
     ) =>
-        SpacetimeDB.Internal.Module.__call_view__(
-            id,
-            sender_0,
-            sender_1,
-            sender_2,
-            sender_3,
-            args,
-            sink
-        );
+        id switch
+        {
+            0
+                => SpacetimeDB.Internal.Module.__call_view__<view_def_ienumerable_return_from_filterViewDispatcher>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    args,
+                    sink
+                ),
+            1
+                => SpacetimeDB.Internal.Module.__call_view__<view_def_ienumerable_return_from_iterViewDispatcher>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    args,
+                    sink
+                ),
+            2
+                => SpacetimeDB.Internal.Module.__call_view__<view_def_no_contextViewDispatcher>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    args,
+                    sink
+                ),
+            3
+                => SpacetimeDB.Internal.Module.__call_view__<view_def_no_publicViewDispatcher>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    args,
+                    sink
+                ),
+            4
+                => SpacetimeDB.Internal.Module.__call_view__<view_def_wrong_contextViewDispatcher>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    args,
+                    sink
+                ),
+            5
+                => SpacetimeDB.Internal.Module.__call_view__<view_def_wrong_returnViewDispatcher>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    args,
+                    sink
+                ),
+            6
+                => SpacetimeDB.Internal.Module.__call_view__<view_no_deleteViewDispatcher>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    args,
+                    sink
+                ),
+            7
+                => SpacetimeDB.Internal.Module.__call_view__<view_no_insertViewDispatcher>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    args,
+                    sink
+                ),
+            8
+                => SpacetimeDB.Internal.Module.__call_view__<view_primary_key_missing_columnViewDispatcher>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    args,
+                    sink
+                ),
+            9
+                => SpacetimeDB.Internal.Module.__call_view__<view_primary_key_non_equatable_columnViewDispatcher>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    args,
+                    sink
+                ),
+            10
+                => SpacetimeDB.Internal.Module.__call_view__<view_primary_key_uses_non_bsatn_partial_fieldViewDispatcher>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    args,
+                    sink
+                ),
+            11
+                => SpacetimeDB.Internal.Module.__call_view__<view_primary_key_uses_wrong_source_nameViewDispatcher>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    args,
+                    sink
+                ),
+            _
+                => SpacetimeDB.Internal.Module.__call_view__(
+                    id,
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    args,
+                    sink
+                )
+        };
 
     [UnmanagedCallersOnly(EntryPoint = "__call_view_anon__")]
     public static SpacetimeDB.Internal.Errno __call_view_anon__(
         uint id,
         SpacetimeDB.Internal.BytesSource args,
         SpacetimeDB.Internal.BytesSink sink
-    ) => SpacetimeDB.Internal.Module.__call_view_anon__(id, args, sink);
+    ) =>
+        id switch
+        {
+            0
+                => SpacetimeDB.Internal.Module.__call_view_anon__<view_def_index_no_mutationViewDispatcher>(
+                    args,
+                    sink
+                ),
+            1
+                => SpacetimeDB.Internal.Module.__call_view_anon__<view_def_no_anon_identityViewDispatcher>(
+                    args,
+                    sink
+                ),
+            2
+                => SpacetimeDB.Internal.Module.__call_view_anon__<view_def_no_iterViewDispatcher>(
+                    args,
+                    sink
+                ),
+            3
+                => SpacetimeDB.Internal.Module.__call_view_anon__<view_def_returns_not_a_spacetime_typeViewDispatcher>(
+                    args,
+                    sink
+                ),
+            _ => SpacetimeDB.Internal.Module.__call_view_anon__(id, args, sink)
+        };
 #endif
 }
 
