@@ -6,11 +6,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    LazyLock,
-};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::LazyLock;
 
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -126,6 +122,7 @@ fn resolve_node_exe(nodejs_dir: Option<&Path>) -> Option<PathBuf> {
 
 struct CliRootDir {
     path: PathBuf,
+    remove_on_drop: bool,
 }
 
 impl CliRootDir {
@@ -136,28 +133,10 @@ impl CliRootDir {
 
 impl Drop for CliRootDir {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
-}
-
-fn isolated_cli_root() -> Result<CliRootDir> {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-
-    for _ in 0..16 {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|duration| duration.as_nanos())
-            .unwrap_or(0);
-        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let path = env::temp_dir().join(format!("stdb-llm-cli-{}-{nanos}-{id}", std::process::id()));
-        match fs::create_dir(&path) {
-            Ok(()) => return Ok(CliRootDir { path }),
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(error) => return Err(error.into()),
+        if self.remove_on_drop {
+            let _ = fs::remove_dir_all(&self.path);
         }
     }
-
-    bail!("failed to create isolated SpacetimeDB CLI root directory");
 }
 
 fn spacetime_cmd(cli_root: &CliRootDir) -> Command {
@@ -206,7 +185,17 @@ fn strip_ansi_codes(s: &str) -> Cow<'_, str> {
 /* -------------------------------------------------------------------------- */
 
 pub trait Publisher: Send + Sync {
-    fn publish(&self, host_url: &str, source: &Path, module_name: &str) -> Result<()>;
+    fn publish(&self, host_url: &str, source: &Path, module_name: &str, clear_database: bool) -> Result<()>;
+}
+
+fn database_cli_root(module_name: &str) -> Result<CliRootDir> {
+    let db = sanitize_db_name(module_name);
+    let path = env::temp_dir().join(format!("stdb-llm-cli-{}-{db}", std::process::id()));
+    fs::create_dir_all(&path)?;
+    Ok(CliRootDir {
+        path,
+        remove_on_drop: false,
+    })
 }
 
 /// Check if the process was killed by a signal (e.g., SIGSEGV = 11)
@@ -342,7 +331,7 @@ impl DotnetPublisher {
 }
 
 impl Publisher for DotnetPublisher {
-    fn publish(&self, host_url: &str, source: &Path, module_name: &str) -> Result<()> {
+    fn publish(&self, host_url: &str, source: &Path, module_name: &str, clear_database: bool) -> Result<()> {
         if !source.exists() {
             bail!("no source: {}", source.display());
         }
@@ -354,12 +343,14 @@ impl Publisher for DotnetPublisher {
         let source = source
             .canonicalize()
             .with_context(|| format!("failed to resolve C# source path {}", source.display()))?;
-        let cli_root = isolated_cli_root()?;
+        let cli_root = database_cli_root(module_name)?;
 
         let mut pubcmd = spacetime_cmd(&cli_root);
+        pubcmd.arg("publish");
+        if clear_database {
+            pubcmd.arg("-c");
+        }
         pubcmd
-            .arg("publish")
-            .arg("-c")
             .arg("-y")
             .arg("--server")
             .arg(host_url)
@@ -390,7 +381,7 @@ impl SpacetimeRustPublisher {
 }
 
 impl Publisher for SpacetimeRustPublisher {
-    fn publish(&self, host_url: &str, source: &Path, module_name: &str) -> Result<()> {
+    fn publish(&self, host_url: &str, source: &Path, module_name: &str, clear_database: bool) -> Result<()> {
         if !source.exists() {
             bail!("no source: {}", source.display());
         }
@@ -401,20 +392,21 @@ impl Publisher for SpacetimeRustPublisher {
 
         // sanitize db + server
         let db = sanitize_db_name(module_name);
-        let cli_root = isolated_cli_root()?;
+        let cli_root = database_cli_root(module_name)?;
 
         // 2) Publish
-        run(
-            spacetime_cmd(&cli_root)
-                .arg("publish")
-                .arg("-c")
-                .arg("-y")
-                .arg("--server")
-                .arg(host_url)
-                .arg(&db)
-                .current_dir(source),
-            "spacetime publish",
-        )?;
+        let mut pubcmd = spacetime_cmd(&cli_root);
+        pubcmd.arg("publish");
+        if clear_database {
+            pubcmd.arg("-c");
+        }
+        pubcmd
+            .arg("-y")
+            .arg("--server")
+            .arg(host_url)
+            .arg(&db)
+            .current_dir(source);
+        run(&mut pubcmd, "spacetime publish")?;
 
         Ok(())
     }
@@ -437,7 +429,7 @@ impl TypeScriptPublisher {
 }
 
 impl Publisher for TypeScriptPublisher {
-    fn publish(&self, host_url: &str, source: &Path, module_name: &str) -> Result<()> {
+    fn publish(&self, host_url: &str, source: &Path, module_name: &str, clear_database: bool) -> Result<()> {
         if !source.exists() {
             bail!("no source: {}", source.display());
         }
@@ -445,7 +437,7 @@ impl Publisher for TypeScriptPublisher {
 
         Self::ensure_package_json(source)?;
         let db = sanitize_db_name(module_name);
-        let cli_root = isolated_cli_root()?;
+        let cli_root = database_cli_root(module_name)?;
 
         // Install dependencies (--ignore-workspace to avoid parent workspace interference).
         let nodejs_dir = configured_nodejs_dir();
@@ -520,9 +512,11 @@ impl Publisher for TypeScriptPublisher {
 
         // Publish (spacetime CLI handles TypeScript compilation internally)
         let mut publish_cmd = spacetime_cmd(&cli_root);
+        publish_cmd.arg("publish");
+        if clear_database {
+            publish_cmd.arg("-c");
+        }
         publish_cmd
-            .arg("publish")
-            .arg("-c")
             .arg("-y")
             .arg("--server")
             .arg(host_url)

@@ -430,6 +430,12 @@ mod tables_t_052_autoinc_reference {
 
 #[allow(dead_code)]
 #[allow(clippy::all)]
+mod tables_t_053_default_values {
+    include!("../benchmarks/tables/t_053_default_values/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
 mod tables_t_054_special_types {
     include!("../benchmarks/tables/t_054_special_types/spec.rs");
 }
@@ -558,6 +564,7 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         ("tables", "t_050_normalized_schema") => tables_t_050_normalized_schema::spec,
         ("tables", "t_051_denormalized_index") => tables_t_051_denormalized_index::spec,
         ("tables", "t_052_autoinc_reference") => tables_t_052_autoinc_reference::spec,
+        ("tables", "t_053_default_values") => tables_t_053_default_values::spec,
         ("tables", "t_054_special_types") => tables_t_054_special_types::spec,
         ("views", "t_061_three_table_join") => views_t_061_three_table_join::spec,
         ("views", "t_062_semijoin_intersection") => views_t_062_semijoin_intersection::spec,

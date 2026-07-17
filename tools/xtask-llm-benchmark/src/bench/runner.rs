@@ -19,6 +19,7 @@ use crate::bench::utils::{
     print_llm_output, sanitize_db_name, task_slug, work_server_dir_scoped,
 };
 use crate::bench::Publisher;
+use crate::eval::scorers::call_reducer_json_out;
 use crate::eval::{Lang, ScoreDetails};
 use crate::generated::resolve_by_path;
 use crate::llm::model_routes::ModelRoute;
@@ -87,16 +88,29 @@ async fn publish_rust_async(
     host_url: String,
     wdir: PathBuf,
     db: String,
+    clear_database: bool,
 ) -> Result<()> {
-    task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db)).await??;
+    task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db, clear_database)).await??;
     Ok(())
 }
-async fn publish_cs_async(publisher: DotnetPublisher, host_url: String, wdir: PathBuf, db: String) -> Result<()> {
-    task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db)).await??;
+async fn publish_cs_async(
+    publisher: DotnetPublisher,
+    host_url: String,
+    wdir: PathBuf,
+    db: String,
+    clear_database: bool,
+) -> Result<()> {
+    task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db, clear_database)).await??;
     Ok(())
 }
-async fn publish_ts_async(publisher: TypeScriptPublisher, host_url: String, wdir: PathBuf, db: String) -> Result<()> {
-    task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db)).await??;
+async fn publish_ts_async(
+    publisher: TypeScriptPublisher,
+    host_url: String,
+    wdir: PathBuf,
+    db: String,
+    clear_database: bool,
+) -> Result<()> {
+    task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db, clear_database)).await??;
     Ok(())
 }
 
@@ -123,6 +137,7 @@ impl TaskRunner {
         golden_src_text: &str,
         golden_db: String,
         host: Option<String>,
+        clear_database: bool,
     ) -> Result<()> {
         self.publish(
             PublishParams {
@@ -133,6 +148,7 @@ impl TaskRunner {
                 source_text: golden_src_text,
                 db_name: golden_db,
                 host,
+                clear_database,
             },
             "golden",
         )
@@ -165,9 +181,22 @@ impl TaskRunner {
 
         let host_url = params.host.unwrap_or_else(|| "local".to_owned());
         match params.lang {
-            Lang::Rust => publish_rust_async(self.rust_publisher, host_url, wdir, params.db_name).await?,
-            Lang::CSharp => publish_cs_async(self.cs_publisher, host_url, wdir, params.db_name).await?,
-            Lang::TypeScript => publish_ts_async(self.ts_publisher, host_url, wdir, params.db_name).await?,
+            Lang::Rust => {
+                publish_rust_async(
+                    self.rust_publisher,
+                    host_url,
+                    wdir,
+                    params.db_name,
+                    params.clear_database,
+                )
+                .await?
+            }
+            Lang::CSharp => {
+                publish_cs_async(self.cs_publisher, host_url, wdir, params.db_name, params.clear_database).await?
+            }
+            Lang::TypeScript => {
+                publish_ts_async(self.ts_publisher, host_url, wdir, params.db_name, params.clear_database).await?
+            }
         }
 
         Ok(())
@@ -263,12 +292,42 @@ impl TaskRunner {
         let output_tokens = llm_result.output_tokens;
         let llm_output = llm_result.text;
 
+        let migration_setup = load_migration_setup_source(task, cfg.lang)?;
+
         if debug_llm() {
             print_llm_output(&cfg.route.display_name, &task_id, &llm_output);
         }
 
-        let publish_error: Option<String> = self
-            .publish_llm(PublishParams {
+        let setup_error = if let Some(setup_source) = migration_setup.as_deref() {
+            let setup_result = self
+                .publish(
+                    PublishParams {
+                        lang: cfg.lang,
+                        category: &category,
+                        task_id: &task_id,
+                        route_tag: &route_tag,
+                        source_text: setup_source,
+                        db_name: llm_db.clone(),
+                        host: cfg.host.clone(),
+                        clear_database: true,
+                    },
+                    "llm-setup",
+                )
+                .await;
+            match setup_result {
+                Ok(()) => call_reducer_json_out(&llm_db, "seed", &[], Some(cfg.host.as_deref().unwrap_or("local")))
+                    .map(|_| ())
+                    .map_err(anyhow::Error::msg),
+                Err(error) => Err(error),
+            }
+        } else {
+            Ok(())
+        };
+
+        let publish_error: Option<String> = if let Err(error) = setup_error {
+            Some(format!("migration setup failed: {error:#}"))
+        } else {
+            self.publish_llm(PublishParams {
                 lang: cfg.lang,
                 category: &category,
                 task_id: &task_id,
@@ -276,6 +335,7 @@ impl TaskRunner {
                 source_text: &llm_output,
                 db_name: llm_db.clone(),
                 host: cfg.host.clone(),
+                clear_database: migration_setup.is_none(),
             })
             .await
             .err()
@@ -285,7 +345,8 @@ impl TaskRunner {
                     category, task_id, cfg.route.display_name
                 );
                 format!("{:#}", e)
-            });
+            })
+        };
 
         let mut passed = 0usize;
         let mut partial_sum = 0f32;
@@ -930,10 +991,38 @@ pub async fn build_goldens_only_for_lang(
             let task_id = task_slug(&task.root);
             let golden_db = sanitize_db_name(&format!("{}-{}-golden", category, task_id));
             let golden_src_text = load_golden_source(&task, lang)?;
+            let migration_setup = load_migration_setup_source(&task, lang)?;
             println!("→ [{}] build golden {} {}", lang_name, category, task_id);
-            runner
-                .publish_golden_only(lang, &category, &task_id, &golden_src_text, golden_db, host_clone)
-                .await
+            if let Some(setup_source) = migration_setup {
+                runner
+                    .publish_golden_only(
+                        lang,
+                        &category,
+                        &task_id,
+                        &setup_source,
+                        golden_db.clone(),
+                        host_clone.clone(),
+                        true,
+                    )
+                    .await?;
+                call_reducer_json_out(&golden_db, "seed", &[], Some(host_clone.as_deref().unwrap_or("local")))
+                    .map_err(anyhow::Error::msg)?;
+                runner
+                    .publish_golden_only(
+                        lang,
+                        &category,
+                        &task_id,
+                        &golden_src_text,
+                        golden_db,
+                        host_clone,
+                        false,
+                    )
+                    .await
+            } else {
+                runner
+                    .publish_golden_only(lang, &category, &task_id, &golden_src_text, golden_db, host_clone, true)
+                    .await
+            }
         }
     }))
     .buffer_unordered(buf)
@@ -1042,6 +1131,21 @@ fn load_golden_source(task: &TaskPaths, lang: Lang) -> Result<String> {
             fs::read_to_string(&p).with_context(|| format!("read {}", p.display()))
         }
     }
+}
+
+fn load_migration_setup_source(task: &TaskPaths, lang: Lang) -> Result<Option<String>> {
+    let file = match lang {
+        Lang::Rust => "rust.rs",
+        Lang::CSharp => "csharp.cs",
+        Lang::TypeScript => "typescript.ts",
+    };
+    let path = task.root.join("setup").join(file);
+    if !path.is_file() {
+        return Ok(None);
+    }
+    fs::read_to_string(&path)
+        .with_context(|| format!("read {}", path.display()))
+        .map(Some)
 }
 
 // "1" | "01" | "001" | "t_001" -> "t_001"
