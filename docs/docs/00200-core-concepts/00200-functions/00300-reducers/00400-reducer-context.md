@@ -327,8 +327,8 @@ import { schema, table, t } from 'spacetimedb/server';
 const scheduled_task = table(
   { name: 'scheduled_task', scheduled: (): any => send_reminder },
   {
-    taskId: t.u64().primaryKey().autoInc(),
-    scheduledAt: t.scheduleAt(),
+    task_id: t.u64().primaryKey().autoInc(),
+    scheduled_at: t.scheduleAt(),
     message: t.string(),
   }
 );
@@ -349,14 +349,14 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Accessor = "ScheduledTask", Scheduled = nameof(SendReminder))]
+    [SpacetimeDB.Table(Accessor = "ScheduledTask", Scheduled = nameof(SendReminder), ScheduledAt = nameof(ScheduledAt))]
     public partial struct ScheduledTask
     {
         [SpacetimeDB.PrimaryKey]
         [SpacetimeDB.AutoInc]
-        public ulong taskId;
-        public ScheduleAt scheduledAt;
-        public string message;
+        public ulong TaskId;
+        public ScheduleAt ScheduledAt;
+        public string Message;
     }
 
     [SpacetimeDB.Reducer]

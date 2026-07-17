@@ -1366,14 +1366,14 @@ spacetimedb.reducer('runMyTimer', myTimer.rowType, (ctx, timer) => {
 ```
 
 ```typescript
-const myTimer = table({ scheduled: () => runMyTimer }, {
-  scheduledId: t.u64().primaryKey().autoInc(),
-  scheduledAt: t.scheduleAt(),
+const my_timer = table({ name: "my_timer", scheduled: (): any => runMyTimer }, {
+  scheduled_id: t.u64().primaryKey().autoInc(),
+  scheduled_at: t.scheduleAt(),
 });
-const spacetimedb = schema({ myTimer }); // schema({ table }), never schema(table)
+const spacetimedb = schema({ my_timer }); // schema({ table }), never schema(table)
 
 // 2.0 -- Can only be called by the database
-export const runMyTimer = spacetimedb.reducer({ arg: myTimer.rowType }, (ctx, { arg }) => {
+export const runMyTimer = spacetimedb.reducer({ arg: my_timer.rowType }, (ctx, { arg }) => {
   // Do stuff
 })
 ```
@@ -1479,17 +1479,17 @@ In the rare event that you have a reducer or procedure which is intended to be i
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-const myTimer = table({ scheduled: () => runMyTimerPrivate }, {
-  scheduledId: t.u64().primaryKey().autoInc(),
-  scheduledAt: t.scheduleAt(),
+const my_timer = table({ name: "my_timer", scheduled: (): any => runMyTimerPrivate }, {
+  scheduled_id: t.u64().primaryKey().autoInc(),
+  scheduled_at: t.scheduleAt(),
 });
-const spacetimedb = schema({ myTimer }); // schema({ table }), never schema(table)
+const spacetimedb = schema({ my_timer }); // schema({ table }), never schema(table)
 
-export const runMyTimerPrivate = spacetimedb.reducer({ arg: myTimer.rowType }, (ctx, { arg }) => {
+export const runMyTimerPrivate = spacetimedb.reducer({ arg: my_timer.rowType }, (ctx, { arg }) => {
   // Do stuff...
 });
 
-export const runMyTimer = spacetimedb.reducer({ arg: myTimer.rowType }, (ctx, { arg }) => {
+export const runMyTimer = spacetimedb.reducer({ arg: my_timer.rowType }, (ctx, { arg }) => {
   // Same logic as runMyTimerPrivate — extract to a helper if needed
 });
 ```
