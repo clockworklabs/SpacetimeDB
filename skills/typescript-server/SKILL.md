@@ -42,12 +42,12 @@ export const addRecord = spacetimedb.reducer(
 
 ## Imports
 
-`spacetimedb/server` is the only import path for server modules:
+Schema builders and module exports come from `spacetimedb/server`. Runtime value classes such as `ScheduleAt`, `Timestamp`, `Range`, and `ConnectionId` come from the root `spacetimedb` package:
 
 ```typescript
 import { schema, table, t } from 'spacetimedb/server';
 import { SenderError } from 'spacetimedb/server';
-import { ScheduleAt } from 'spacetimedb';        // for scheduled tables only
+import { ConnectionId, Range, ScheduleAt, Timestamp } from 'spacetimedb';
 ```
 
 ## Tables
@@ -75,9 +75,11 @@ Every column is a `t` builder value:
 
 | Builder | JS type | Notes |
 |---------|---------|-------|
+| `t.u8()` / `t.u16()` / `t.u32()` | number | |
+| `t.i8()` / `t.i16()` / `t.i32()` | number | |
 | `t.u64()` | bigint | Use `0n` literals |
 | `t.i64()` | bigint | Use `0n` literals |
-| `t.u32()` / `t.i32()` | number | |
+| `t.u128()` / `t.i128()` / `t.u256()` / `t.i256()` | bigint | |
 | `t.f64()` / `t.f32()` | number | |
 | `t.bool()` | boolean | |
 | `t.string()` | string | |
@@ -90,8 +92,6 @@ Every column is a `t` builder value:
 Modifiers: `.primaryKey()`, `.autoInc()`, `.unique()`, `.index('btree')`, `.default(value)`.
 
 Use `.default(value)` only for a newly appended migration-safe field. Preserve existing fields and reducers exactly, and do not put defaults on primary-key, unique, or auto-increment columns.
-
-Additional numeric builders include `t.u128()`, `t.i128()`, `t.u256()`, and `t.i256()`.
 
 Optional columns: `nickname: t.option(t.string())`
 
@@ -166,7 +166,7 @@ ctx.db.item.insert({ id: 0n, createdAt: ctx.timestamp });
 
 // Deterministic RNG
 const f: number = ctx.random();                          // [0.0, 1.0)
-const roll: number = ctx.random.integerInRange(1, 6);    // inclusive
+const roll: number = ctx.random.integerInRange(1, 6);    // inclusive; wrap with BigInt(...) for an i64/u64 column
 const bytes: Uint8Array = ctx.random.fill(new Uint8Array(16));
 
 // Client: Timestamp → Date
@@ -182,9 +182,9 @@ Construct exact timestamps with `new Timestamp(micros)` after importing `Timesta
 ```typescript
 import { Range, Timestamp } from 'spacetimedb';
 
-ctx.db.event.occurredAt.filter(new Range(
-  { tag: 'included', value: new Timestamp(200n) },
-  { tag: 'included', value: new Timestamp(400n) },
+ctx.db.shipment.deliverBy.filter(new Range(
+  { tag: 'included', value: new Timestamp(1_000n) },
+  { tag: 'included', value: new Timestamp(2_000n) },
 ));
 ```
 
@@ -230,6 +230,8 @@ const Shape = t.enum('Shape', {
 
 ## Views
 
+`t.row(...)` and `t.object(...)` return schema builders, not TypeScript runtime row types. Let a view callback infer its result, or annotate a separately declared structural type such as `Array<{ sku: bigint; label: string }>`.
+
 ```typescript
 // Anonymous view (same for all clients):
 export const activeUsers = spacetimedb.anonymousView(
@@ -249,27 +251,27 @@ export const myProfile = spacetimedb.view(
 For a procedural view primary key, define the output with `t.row` and mark its field `.primaryKey()`:
 
 ```typescript
-const SourceViewRow = t.row('SourceViewRow', {
-  id: t.u64().primaryKey(),
-  value: t.string(),
+const CatalogKey = t.row('CatalogKey', {
+  sku: t.u64().primaryKey(),
+  label: t.string(),
 });
 ```
 
 Query-builder views use `ctx.from` and return the query directly:
 
 ```typescript
-export const openTicket = spacetimedb.view(
-  { name: 'open_ticket', public: true },
-  t.array(ticket.rowType),
-  ctx => ctx.from.ticket.where(ticket => ticket.status.eq('open'))
+export const discountedProduct = spacetimedb.view(
+  { name: 'discounted_product', public: true },
+  t.array(product.rowType),
+  ctx => ctx.from.product.where(product => product.discounted.eq(true))
 );
 
-export const eligibleMember = spacetimedb.view(
-  { name: 'eligible_member', public: true },
-  t.array(member.rowType),
-  ctx => ctx.from.eligibility.rightSemijoin(
-    ctx.from.member,
-    (eligibility, member) => eligibility.memberId.eq(member.id)
+export const taggedProduct = spacetimedb.view(
+  { name: 'tagged_product', public: true },
+  t.array(product.rowType),
+  ctx => ctx.from.productTag.rightSemijoin(
+    ctx.from.product,
+    (tag, product) => tag.productId.eq(product.id)
   )
 );
 ```
@@ -277,8 +279,8 @@ export const eligibleMember = spacetimedb.view(
 ## Client Visibility Filters
 
 ```typescript
-export const userRecordFilter = spacetimedb.clientVisibilityFilter.sql(
-  'SELECT * FROM user_record WHERE identity = :sender'
+export const privateNoteFilter = spacetimedb.clientVisibilityFilter.sql(
+  'SELECT * FROM private_note WHERE author = :sender'
 );
 ```
 
@@ -287,37 +289,61 @@ export const userRecordFilter = spacetimedb.clientVisibilityFilter.sql(
 Procedures declare argument and return types. They can perform outbound HTTP through `ctx.http` and open short transactions with `ctx.withTx`:
 
 ```typescript
-const Summary = t.object('Summary', { total: t.u32(), label: t.string() });
+const Product = t.object('Product', { value: t.u32(), description: t.string() });
 
-export const calculateSummary = spacetimedb.procedure(
+export const multiply = spacetimedb.procedure(
   { lhs: t.u32(), rhs: t.u32() },
-  Summary,
-  (_ctx, { lhs, rhs }) => ({ total: lhs + rhs, label: 'calculated' })
+  Product,
+  (_ctx, { lhs, rhs }) => ({ value: lhs * rhs, description: 'product' })
 );
 
-export const fetchAndStore = spacetimedb.procedure(
+export const refreshCache = spacetimedb.procedure(
   { url: t.string() },
   t.unit(),
   (ctx, { url }) => {
     const response = ctx.http.fetch(url);
-    ctx.withTx(tx => tx.db.fetchedRecord.insert({ id: 1n, status: response.status }));
+    ctx.withTx(tx => tx.db.cacheEntry.insert({ key: url, status: response.status }));
     return {};
   }
 );
 ```
 
-Scheduled procedures use a normal scheduled table, but reference a `spacetimedb.procedure(...)` callback instead of a reducer.
+Outbound responses expose the numeric `status`, `headers.get(name)`, and `text()` APIs. Perform network I/O before `withTx`; only database work belongs inside its callback.
+
+Scheduled procedures use a normal scheduled table, but its `scheduled` option references a `spacetimedb.procedure(...)` export instead of a reducer. The procedure receives its scheduled row as an argument and uses `withTx` for database access:
+
+```typescript
+const cleanup_timer = table(
+  { name: 'cleanup_timer', scheduled: (): any => runCleanup },
+  {
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+    cacheKey: t.string(),
+  }
+);
+
+export const runCleanup = spacetimedb.procedure(
+  { timer: cleanup_timer.rowType },
+  t.unit(),
+  (ctx, { timer }) => {
+    ctx.withTx(tx => tx.db.cacheEntry.key.delete(timer.cacheKey));
+    return {};
+  }
+);
+```
 
 Inbound HTTP uses `httpHandler`, `httpRouter`, `Router`, and `SyncResponse`:
 
 ```typescript
 import { Router, SyncResponse } from 'spacetimedb/server';
 
-export const echo = spacetimedb.httpHandler((_ctx, request) =>
-  new SyncResponse(`echo:${request.text()}`, {
-    status: 201,
+export const health = spacetimedb.httpHandler((_ctx, _request) =>
+  new SyncResponse('ok', {
+    status: 200,
     headers: { 'content-type': 'text/plain' },
   })
 );
-export const routes = spacetimedb.httpRouter(new Router().post('/echo', echo));
+export const routes = spacetimedb.httpRouter(new Router().get('/health', health));
 ```
+
+Pass the exported `httpHandler(...)` value to the router, not its raw callback. A handler context does not expose `ctx.db`; use `ctx.withTx(tx => ...)` when a handler needs transactional database access.
