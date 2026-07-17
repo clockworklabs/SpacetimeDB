@@ -1007,7 +1007,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let primary_col_id = primary_key_column.clone().into_iter().map(|col| col.index);
     let sequence_col_ids = sequenced_columns.iter().map(|col| col.index);
 
-    fn is_string(s: &dyn Any) -> bool {
+    fn is_string(s: &dyn std::any::Any) -> bool {
         std::any::TypeId::of::<&'static str>() == s.type_id()
     }
 
