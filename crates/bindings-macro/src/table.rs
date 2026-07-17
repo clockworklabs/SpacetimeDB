@@ -1017,7 +1017,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                 Some(quote_spanned! { ident_span =>
 
                     // This closure enforces that `val` is of type `ty` at compile-time.
-                       if std::any::TypeId::of::<&'static str>() == std::any::TypeId::of::<#ty>() {
+                       if std::any::TypeId::of::<String>() == std::any::TypeId::of::<#ty>() {
                            let _check: &'static str = #val;
                        } else {
 
