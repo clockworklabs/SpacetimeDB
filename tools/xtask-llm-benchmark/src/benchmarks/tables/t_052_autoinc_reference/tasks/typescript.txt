@@ -1,0 +1,5 @@
+Write a SpacetimeDB backend module in TypeScript that safely creates related rows with an auto-incremented parent ID.
+
+Define public parent and child tables. Both have auto-incremented u64 primary keys named id. Parent also has name: string. Child has parentId: u64 with a B-tree index named byParent and name: string.
+
+Define create_family(parentName, childNames). Insert the parent, capture the row returned by insert, and use that returned id for every child. Never calculate or assume the next auto-increment value.

@@ -1,0 +1,3 @@
+Write a SpacetimeDB backend module in TypeScript defining one public special_value table.
+
+The table must contain id: u64 primary key, uuid: Uuid, connectionId: ConnectionId, duration: TimeDuration, unsigned128: u128, signed128: i128, unsigned256: u256, and signed256: i256. No reducers are required.

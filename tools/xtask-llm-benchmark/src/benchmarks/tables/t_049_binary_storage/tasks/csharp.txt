@@ -1,0 +1,5 @@
+Write a SpacetimeDB backend module in C# that stores binary content and its metadata.
+
+Define a public BlobRecord table with an auto-incremented ulong primary key named Id, Owner: Identity, Filename: string, MimeType: string, Size: ulong, and Data: List<byte>. Add a B-tree index named by_owner on Owner.
+
+Define a StoreBlob reducer taking filename, mimeType, and data. Store the sender as Owner, derive Size from the byte count, and insert the bytes unchanged.

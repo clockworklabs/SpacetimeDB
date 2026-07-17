@@ -1,0 +1,5 @@
+Write a SpacetimeDB backend module in C# that safely creates related rows with an auto-incremented parent ID.
+
+Define public Parent and Child tables. Both have auto-incremented ulong primary keys named Id. Parent also has Name: string. Child has ParentId: ulong with a B-tree index named by_parent and Name: string.
+
+Define CreateFamily(parentName, childNames). Insert the parent, capture the row returned by Insert, and use that returned Id for every child. Never calculate or assume the next auto-increment value.

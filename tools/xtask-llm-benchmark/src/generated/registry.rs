@@ -298,8 +298,32 @@ mod tables_t_048_heartbeat_isolation {
 
 #[allow(dead_code)]
 #[allow(clippy::all)]
+mod tables_t_049_binary_storage {
+    include!("../benchmarks/tables/t_049_binary_storage/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
 mod tables_t_050_normalized_schema {
     include!("../benchmarks/tables/t_050_normalized_schema/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod tables_t_051_denormalized_index {
+    include!("../benchmarks/tables/t_051_denormalized_index/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod tables_t_052_autoinc_reference {
+    include!("../benchmarks/tables/t_052_autoinc_reference/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod tables_t_054_special_types {
+    include!("../benchmarks/tables/t_054_special_types/spec.rs");
 }
 
 pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
@@ -362,7 +386,11 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         ("schema", "t_021_multi_column_index") => schema_t_021_multi_column_index::spec,
         ("tables", "t_047_normalized_collection") => tables_t_047_normalized_collection::spec,
         ("tables", "t_048_heartbeat_isolation") => tables_t_048_heartbeat_isolation::spec,
+        ("tables", "t_049_binary_storage") => tables_t_049_binary_storage::spec,
         ("tables", "t_050_normalized_schema") => tables_t_050_normalized_schema::spec,
+        ("tables", "t_051_denormalized_index") => tables_t_051_denormalized_index::spec,
+        ("tables", "t_052_autoinc_reference") => tables_t_052_autoinc_reference::spec,
+        ("tables", "t_054_special_types") => tables_t_054_special_types::spec,
         _ => return Err(anyhow!("no spec registered for {}/{} (need spec.rs)", category, task)),
     };
 
