@@ -90,7 +90,10 @@ The complete set of column attributes:
 [AutoInc]             // auto-increment (use 0 as placeholder on insert)
 [Unique]              // unique constraint; indexes the column, enables .Find()
 [SpacetimeDB.Index.BTree]  // btree index (enables .Filter() on this column)
+[Default(true)]       // migration-safe default for a newly appended field
 ```
+
+Defaults are for compatible schema upgrades. Preserve existing fields and reducers, append the defaulted field, and do not apply `[Default(...)]` to primary-key, unique, or auto-increment fields.
 
 ## Indexes
 
@@ -173,6 +176,34 @@ public static Entity? MyProfile(ViewContext ctx)
 }
 ```
 
+Query-builder views use `ViewContext`, `ctx.From`, and return `IQuery<T>` directly:
+
+```csharp
+[SpacetimeDB.View(Accessor = "DiscountedProduct", Public = true)]
+public static IQuery<Product> DiscountedProduct(ViewContext ctx) =>
+    ctx.From.Product().Where(product => product.Discounted.Eq(true));
+
+[SpacetimeDB.View(Accessor = "TaggedProduct", Public = true)]
+public static IQuery<Product> TaggedProduct(ViewContext ctx) =>
+    ctx.From.ProductTag().RightSemijoin(
+        ctx.From.Product(),
+        (tag, product) => tag.ProductId.Eq(product.Id)
+    );
+```
+
+Declare a procedural view primary key in its attribute: `[SpacetimeDB.View(Accessor = "CatalogEntry", Public = true, PrimaryKey = nameof(CatalogRow.Sku))]`.
+
+Inclusive btree ranges use tuples, for example `ctx.Db.Shipment.DeliverBy.Filter((new Timestamp(1_000), new Timestamp(2_000)))`.
+
+## Client Visibility Filters
+
+```csharp
+[ClientVisibilityFilter]
+public static readonly Filter PrivateNoteFilter = new Filter.Sql(
+    "SELECT * FROM PrivateNote WHERE Author = :sender"
+);
+```
+
 ## Reducer Context API
 
 `ReducerContext` (`ctx`) is the only source of sender identity, time, and randomness; stdlib clocks and RNG are unavailable in modules.
@@ -227,6 +258,44 @@ var at = new ScheduleAt.Time(ctx.Timestamp + new TimeDuration(10_000_000));
 var at = new ScheduleAt.Interval(TimeSpan.FromSeconds(5));
 
 ctx.Db.TickTimer.Insert(new TickTimer { ScheduledId = 0, ScheduledAt = at });
+```
+
+Synthetic connection IDs can be constructed from 16 bytes with `ConnectionId.From(bytes)`; the result is nullable and must be checked.
+
+## Procedures and HTTP
+
+Procedures are unstable APIs, so modules using them should include `#pragma warning disable STDB_UNSTABLE`. They receive `ProcedureContext`, may return `[SpacetimeDB.Type]` values, perform outbound HTTP through `ctx.Http`, and open short transactions with `ctx.WithTx`:
+
+```csharp
+[SpacetimeDB.Type]
+public partial struct ProductResult { public uint Value; public string Description; }
+
+[SpacetimeDB.Procedure]
+public static ProductResult Multiply(ProcedureContext ctx, uint lhs, uint rhs) =>
+    new() { Value = lhs * rhs, Description = "product" };
+
+[SpacetimeDB.Procedure]
+public static void RefreshCache(ProcedureContext ctx, string url)
+{
+    ctx.Http.Get(url).Match(response => {
+        ctx.WithTx(tx => { tx.Db.CacheEntry.Insert(new CacheEntry { Key = url, Status = response.StatusCode }); return 0; });
+        return 0;
+    }, error => throw new Exception(error.Message));
+}
+```
+
+Scheduled procedures use an ordinary scheduled table whose `Scheduled` name refers to a `[SpacetimeDB.Procedure]` method taking `ProcedureContext` plus the scheduled row. Database access inside the procedure goes through `ctx.WithTx`.
+
+Inbound HTTP uses handler attributes and one router. Handler database access also goes through `ctx.WithTx`:
+
+```csharp
+[SpacetimeDB.HttpHandler]
+public static HttpResponse Health(HandlerContext ctx, HttpRequest request) => new(
+    200, HttpVersion.Http11, new(), HttpBody.FromString("ok")
+);
+
+[SpacetimeDB.HttpRouter]
+public static Router Routes() => SpacetimeDB.Router.New().Get("/health", Handlers.Health);
 ```
 
 ## Custom Types

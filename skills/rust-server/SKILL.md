@@ -17,8 +17,9 @@ metadata:
 
 ```rust
 use spacetimedb::{
-    reducer, table, Identity, ReducerContext, SpacetimeType, Table,
-    ConnectionId, ScheduleAt, TimeDuration, Timestamp, Uuid,
+    procedure, reducer, table, Filter, Identity, ProcedureContext, Query,
+    ReducerContext, SpacetimeType, Table, ConnectionId, ScheduleAt,
+    TimeDuration, Timestamp, Uuid,
 };
 ```
 
@@ -50,6 +51,7 @@ Options: `accessor = snake_case` (required), `public`, `scheduled(reducer_fn)`, 
 |-----------|-------|
 | `u8` / `u16` / `u32` / `u64` / `u128` | unsigned integers |
 | `i8` / `i16` / `i32` / `i64` / `i128` | signed integers |
+| `spacetimedb::sats::u256` / `spacetimedb::sats::i256` | 256-bit integers |
 | `f32` / `f64` | floats |
 | `bool` | boolean |
 | `String` | text |
@@ -68,7 +70,10 @@ Options: `accessor = snake_case` (required), `public`, `scheduled(reducer_fn)`, 
 #[auto_inc]             // auto-increment (use 0 as placeholder on insert)
 #[unique]               // unique constraint
 #[index(btree)]         // btree index (enables .filter() on this column)
+#[default(true)]        // migration-safe default for a newly appended column
 ```
+
+Defaults are for compatible schema upgrades. Append the defaulted field, preserve all existing fields and reducers exactly, and do not place `#[default(...)]` on primary-key, unique, or auto-increment columns.
 
 ## Indexes
 
@@ -129,6 +134,8 @@ Note: `iter()` and `filter()` return iterators. Collect to Vec if you need `.sor
 
 Range queries on btree indexes: `filter(18..=65)`, `filter(18..)`, `filter(..18)`.
 
+String index filters borrow the key: `ctx.db.product().category().filter(&"hardware".to_string())`.
+
 ## Lifecycle Hooks
 
 ```rust
@@ -160,6 +167,42 @@ use spacetimedb::{view, ViewContext};
 fn my_profile(ctx: &ViewContext) -> Option<Entity> {
     ctx.db.entity().identity().find(ctx.sender())
 }
+```
+
+Declare a procedural view primary key in the view attribute:
+
+```rust
+#[view(accessor = catalog_entry, public, primary_key = sku)]
+fn catalog_entry(ctx: &AnonymousViewContext) -> Vec<CatalogEntry> { ... }
+```
+
+Query-builder views use `ViewContext`, `ctx.from`, and return `impl Query<Row>`:
+
+```rust
+use spacetimedb::{view, Query, ViewContext};
+
+#[view(accessor = discounted_product, public)]
+fn discounted_product(ctx: &ViewContext) -> impl Query<Product> {
+    ctx.from.product().filter(|product| product.discounted.eq(true))
+}
+
+#[view(accessor = tagged_product, public)]
+fn tagged_product(ctx: &ViewContext) -> impl Query<Product> {
+    ctx.from.product_tag().right_semijoin(
+        ctx.from.product(),
+        |tag, product| tag.product_id.eq(product.id),
+    )
+}
+```
+
+## Client Visibility Filters
+
+```rust
+use spacetimedb::Filter;
+
+#[spacetimedb::client_visibility_filter]
+const PRIVATE_NOTE_FILTER: Filter =
+    Filter::Sql("SELECT * FROM private_note WHERE author = :sender");
 ```
 
 ## Reducer Context API
@@ -210,6 +253,49 @@ let at = ScheduleAt::Time(ctx.timestamp + std::time::Duration::from_secs(10));
 let at = ScheduleAt::Interval(std::time::Duration::from_secs(5).into());
 
 ctx.db.tick_timer().insert(TickTimer { scheduled_id: 0, scheduled_at: at });
+```
+
+Synthetic connection IDs for module logic/tests can use `ConnectionId::from_u128(1)`.
+
+## Procedures and HTTP
+
+Procedures use `&mut ProcedureContext`, may return typed values, perform outbound HTTP through `ctx.http`, and open short database transactions with `ctx.with_tx`:
+
+```rust
+use spacetimedb::{procedure, ProcedureContext, SpacetimeType, Table};
+
+#[derive(SpacetimeType)]
+pub struct Product { pub value: u32, pub description: String }
+
+#[procedure]
+pub fn multiply(_ctx: &mut ProcedureContext, lhs: u32, rhs: u32) -> Product {
+    Product { value: lhs * rhs, description: "product".into() }
+}
+
+#[procedure]
+pub fn refresh_cache(ctx: &mut ProcedureContext, url: String) {
+    let response = ctx.http.get(url).expect("request failed");
+    let status = response.status().as_u16();
+    ctx.with_tx(|tx| {
+        tx.db.cache_entry().insert(CacheEntry { key: url, status });
+    });
+}
+```
+
+Scheduled procedures use a normal scheduled table, but the scheduled function is marked `#[procedure]` and receives `&mut ProcedureContext` plus the scheduled row.
+
+Inbound HTTP uses handler functions and one router:
+
+```rust
+use spacetimedb::http::{handler, router, Body, HandlerContext, Request, Response, Router};
+
+#[handler]
+fn health(_ctx: &mut HandlerContext, _request: Request) -> Response {
+    Response::builder().status(200).body(Body::from_bytes("ok")).unwrap()
+}
+
+#[router]
+fn routes() -> Router { Router::new().get("/health", health) }
 ```
 
 ## Logging
