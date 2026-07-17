@@ -39,6 +39,30 @@ pub enum ClientDisconnectCause {
     ClientMessageError,
     /// The websocket receive stream returned an error.
     WebsocketReceiveError,
+    /// The websocket receive stream reported that the connection was already closed.
+    WebsocketReceiveConnectionClosed,
+    /// The websocket receive stream was polled after it had already closed.
+    WebsocketReceiveAlreadyClosed,
+    /// The websocket receive stream returned an IO error.
+    WebsocketReceiveIo,
+    /// The websocket receive stream returned a TLS error.
+    WebsocketReceiveTls,
+    /// The websocket receive stream returned a capacity error.
+    WebsocketReceiveCapacity,
+    /// The websocket receive stream returned a protocol error.
+    WebsocketReceiveProtocol,
+    /// The websocket receive stream reported a full write buffer while receiving.
+    WebsocketReceiveWriteBufferFull,
+    /// The websocket receive stream returned a UTF-8 error.
+    WebsocketReceiveUtf8,
+    /// The websocket receive stream detected an attack attempt.
+    WebsocketReceiveAttackAttempt,
+    /// The websocket receive stream returned a URL error.
+    WebsocketReceiveUrl,
+    /// The websocket receive stream returned an HTTP error.
+    WebsocketReceiveHttp,
+    /// The websocket receive stream returned an HTTP format error.
+    WebsocketReceiveHttpFormat,
     /// The server failed while sending or flushing websocket data.
     WebsocketSendError,
     /// The websocket receive stream ended without a more specific cause.
@@ -48,7 +72,7 @@ pub enum ClientDisconnectCause {
 }
 
 impl ClientDisconnectCause {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 22] = [
         Self::ClientClose,
         Self::IdleTimeout,
         Self::IncomingQueueFull,
@@ -56,6 +80,18 @@ impl ClientDisconnectCause {
         Self::ModuleExited,
         Self::ClientMessageError,
         Self::WebsocketReceiveError,
+        Self::WebsocketReceiveConnectionClosed,
+        Self::WebsocketReceiveAlreadyClosed,
+        Self::WebsocketReceiveIo,
+        Self::WebsocketReceiveTls,
+        Self::WebsocketReceiveCapacity,
+        Self::WebsocketReceiveProtocol,
+        Self::WebsocketReceiveWriteBufferFull,
+        Self::WebsocketReceiveUtf8,
+        Self::WebsocketReceiveAttackAttempt,
+        Self::WebsocketReceiveUrl,
+        Self::WebsocketReceiveHttp,
+        Self::WebsocketReceiveHttpFormat,
         Self::WebsocketSendError,
         Self::WebsocketStreamEnded,
         Self::Unknown,
@@ -70,6 +106,18 @@ impl ClientDisconnectCause {
             Self::ModuleExited => "module_exited",
             Self::ClientMessageError => "client_message_error",
             Self::WebsocketReceiveError => "websocket_receive_error",
+            Self::WebsocketReceiveConnectionClosed => "websocket_receive_connection_closed",
+            Self::WebsocketReceiveAlreadyClosed => "websocket_receive_already_closed",
+            Self::WebsocketReceiveIo => "websocket_receive_io",
+            Self::WebsocketReceiveTls => "websocket_receive_tls",
+            Self::WebsocketReceiveCapacity => "websocket_receive_capacity",
+            Self::WebsocketReceiveProtocol => "websocket_receive_protocol",
+            Self::WebsocketReceiveWriteBufferFull => "websocket_receive_write_buffer_full",
+            Self::WebsocketReceiveUtf8 => "websocket_receive_utf8",
+            Self::WebsocketReceiveAttackAttempt => "websocket_receive_attack_attempt",
+            Self::WebsocketReceiveUrl => "websocket_receive_url",
+            Self::WebsocketReceiveHttp => "websocket_receive_http",
+            Self::WebsocketReceiveHttpFormat => "websocket_receive_http_format",
             Self::WebsocketSendError => "websocket_send_error",
             Self::WebsocketStreamEnded => "websocket_stream_ended",
             Self::Unknown => "unknown",
@@ -196,7 +244,13 @@ metrics_group!(
         // Accepted-client disconnection `cause` label values are:
         // client_close, idle_timeout, incoming_queue_full, outgoing_queue_full,
         // module_exited, client_message_error, websocket_receive_error,
-        // websocket_send_error, websocket_stream_ended, unknown.
+        // websocket_receive_connection_closed, websocket_receive_already_closed,
+        // websocket_receive_io, websocket_receive_tls, websocket_receive_capacity,
+        // websocket_receive_protocol, websocket_receive_write_buffer_full,
+        // websocket_receive_utf8, websocket_receive_attack_attempt,
+        // websocket_receive_url, websocket_receive_http,
+        // websocket_receive_http_format, websocket_send_error,
+        // websocket_stream_ended, unknown.
         #[name = spacetime_worker_ws_client_disconnections_total]
         #[help = "The cumulative number of accepted websocket client disconnections by cause. Cause values are documented by ClientDisconnectCause::ALL."]
         #[labels(database_identity: Identity, cause: str)]
@@ -805,6 +859,15 @@ pub fn spawn_tokio_stats(node_id: String, rt_id: String, rt: tokio::runtime::Han
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn client_disconnect_cause_labels_are_unique() {
+        let mut labels = HashSet::new();
+        for cause in ClientDisconnectCause::ALL {
+            assert!(labels.insert(cause.as_str()), "duplicate label for {cause:?}");
+        }
+    }
 
     #[test]
     fn client_disconnect_recorder_records_only_first_cause() {
