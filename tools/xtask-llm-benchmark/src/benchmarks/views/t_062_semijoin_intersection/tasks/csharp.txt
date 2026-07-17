@@ -1,0 +1,1 @@
+Write a C# SpacetimeDB module with public Member(Id primary key, Name) and Eligibility(Id primary key, indexed MemberId) tables. Add Seed() with two members but eligibility for only member 1. Expose a public EligibleMember view using a query-builder semijoin that returns members only when a matching eligibility row exists.

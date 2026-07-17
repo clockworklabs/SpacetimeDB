@@ -1,0 +1,1 @@
+Write a TypeScript SpacetimeDB module with a public source_row table containing id: u64 primary key, value: string, and indexed visible: boolean. Expose visible rows through a public source_view procedural view whose returned row type declares id as its primary key.
