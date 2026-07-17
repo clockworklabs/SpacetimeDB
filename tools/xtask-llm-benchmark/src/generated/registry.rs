@@ -364,8 +364,20 @@ mod tables_t_054_special_types {
 
 #[allow(dead_code)]
 #[allow(clippy::all)]
+mod views_t_061_three_table_join {
+    include!("../benchmarks/views/t_061_three_table_join/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
 mod views_t_062_semijoin_intersection {
     include!("../benchmarks/views/t_062_semijoin_intersection/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod views_t_064_index_and_filter {
+    include!("../benchmarks/views/t_064_index_and_filter/spec.rs");
 }
 
 #[allow(dead_code)]
@@ -451,7 +463,9 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         ("tables", "t_051_denormalized_index") => tables_t_051_denormalized_index::spec,
         ("tables", "t_052_autoinc_reference") => tables_t_052_autoinc_reference::spec,
         ("tables", "t_054_special_types") => tables_t_054_special_types::spec,
+        ("views", "t_061_three_table_join") => views_t_061_three_table_join::spec,
         ("views", "t_062_semijoin_intersection") => views_t_062_semijoin_intersection::spec,
+        ("views", "t_064_index_and_filter") => views_t_064_index_and_filter::spec,
         ("views", "t_066_query_builder_view") => views_t_066_query_builder_view::spec,
         ("views", "t_067_view_primary_key") => views_t_067_view_primary_key::spec,
         _ => return Err(anyhow!("no spec registered for {}/{} (need spec.rs)", category, task)),

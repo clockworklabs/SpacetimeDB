@@ -1,0 +1,1 @@
+Write a C# SpacetimeDB module with public Customer(Id, Name), Purchase(Id, CustomerId), and LineItem(Id, PurchaseId, Sku, indexed Visible) tables. IDs are ulong primary keys and relationship IDs are indexed. Add Seed() with one complete visible chain. Expose a public OrderLineDetail view returning LineId, CustomerName, and Sku by joining all three tables through indexed lookups.
