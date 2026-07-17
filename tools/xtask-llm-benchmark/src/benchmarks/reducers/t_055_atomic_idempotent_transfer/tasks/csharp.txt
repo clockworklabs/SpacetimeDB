@@ -1,0 +1,3 @@
+Write a C# SpacetimeDB module with public Account and TransferRequest tables. Account has Id: ulong primary key and Balance: long. TransferRequest has RequestId: string primary key, FromId: ulong, ToId: ulong, and Amount: long.
+
+Add CreateAccount(id, balance) and Transfer(requestId, fromId, toId, amount). Transfer must reject invalid or insufficient transfers, update both balances atomically, and record RequestId. Repeating a recorded RequestId must be a no-op.

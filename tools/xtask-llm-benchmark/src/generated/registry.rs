@@ -226,6 +226,36 @@ mod queries_t_037_multi_column_filter {
 
 #[allow(dead_code)]
 #[allow(clippy::all)]
+mod reducers_t_055_atomic_idempotent_transfer {
+    include!("../benchmarks/reducers/t_055_atomic_idempotent_transfer/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod reducers_t_056_nested_update {
+    include!("../benchmarks/reducers/t_056_nested_update/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod reducers_t_057_nested_cascade_delete {
+    include!("../benchmarks/reducers/t_057_nested_cascade_delete/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod reducers_t_059_deterministic_context {
+    include!("../benchmarks/reducers/t_059_deterministic_context/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod reducers_t_060_reducer_result_table {
+    include!("../benchmarks/reducers/t_060_reducer_result_table/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
 mod schema_t_012_spacetime_product_type {
     include!("../benchmarks/schema/t_012_spacetime_product_type/spec.rs");
 }
@@ -374,6 +404,11 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         ("queries", "t_035_select_distinct") => queries_t_035_select_distinct::spec,
         ("queries", "t_036_count_without_collect") => queries_t_036_count_without_collect::spec,
         ("queries", "t_037_multi_column_filter") => queries_t_037_multi_column_filter::spec,
+        ("reducers", "t_055_atomic_idempotent_transfer") => reducers_t_055_atomic_idempotent_transfer::spec,
+        ("reducers", "t_056_nested_update") => reducers_t_056_nested_update::spec,
+        ("reducers", "t_057_nested_cascade_delete") => reducers_t_057_nested_cascade_delete::spec,
+        ("reducers", "t_059_deterministic_context") => reducers_t_059_deterministic_context::spec,
+        ("reducers", "t_060_reducer_result_table") => reducers_t_060_reducer_result_table::spec,
         ("schema", "t_012_spacetime_product_type") => schema_t_012_spacetime_product_type::spec,
         ("schema", "t_013_spacetime_sum_type") => schema_t_013_spacetime_sum_type::spec,
         ("schema", "t_014_elementary_columns") => schema_t_014_elementary_columns::spec,

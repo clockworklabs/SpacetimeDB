@@ -1,0 +1,3 @@
+Write a TypeScript SpacetimeDB module with a Preferences object type containing theme: string, emailNotifications: boolean, and timezone: string. Store it in a public profile table with id: u64 primary key.
+
+Add create_profile(id, theme, emailNotifications, timezone) and update_theme(id, theme). update_theme must change only the nested theme and preserve both sibling fields.

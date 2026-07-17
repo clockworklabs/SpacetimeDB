@@ -1,0 +1,1 @@
+Write a C# SpacetimeDB module with a public CommandResult table containing RequestId: string primary key, Success: bool, and Message: string. Add RunCommand(requestId, value). Reducers do not return application data; write a result row whose Message is "value=<value>" and Success is true.

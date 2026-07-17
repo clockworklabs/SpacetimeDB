@@ -1,0 +1,3 @@
+Write a C# SpacetimeDB module with public Workspace, Project, TaskItem, and TaskNote tables. Each has an ulong primary key. Project has indexed WorkspaceId, TaskItem has indexed ProjectId, and TaskNote has indexed TaskId.
+
+Add Seed() creating two independent workspace→project→task→note chains using IDs 1 and 2. Add DeleteWorkspace(id) that deletes the selected workspace and every level of its descendants while preserving the unrelated chain.

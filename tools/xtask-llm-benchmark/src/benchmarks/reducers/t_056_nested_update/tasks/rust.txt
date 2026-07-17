@@ -1,0 +1,3 @@
+Write a Rust SpacetimeDB module with a Preferences product type containing theme: String, email_notifications: bool, and timezone: String. Store it in a public profile table with id: u64 primary key.
+
+Add create_profile(id, theme, email_notifications, timezone) and update_theme(id, theme). update_theme must change only the nested theme and preserve both sibling fields.

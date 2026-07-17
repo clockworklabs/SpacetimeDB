@@ -1,0 +1,1 @@
+Write a Rust SpacetimeDB module with a public command_result table containing request_id: String primary key, success: bool, and message: String. Add run_command(request_id, value). Reducers do not return application data; write a result row whose message is "value=<value>" and success is true.

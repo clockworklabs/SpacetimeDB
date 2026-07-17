@@ -1,0 +1,1 @@
+Write a C# SpacetimeDB module with a public GeneratedValue table containing Id: ulong auto-increment primary key, CreatedAt: Timestamp, and RandomValue: long. Add Generate() that stores ctx.Timestamp and a random long from ctx.Rng. Do not use a host clock or separately seeded Random.

@@ -1,0 +1,3 @@
+Write a C# SpacetimeDB module with a Preferences product type containing Theme: string, EmailNotifications: bool, and Timezone: string. Store it in a public Profile table with Id: ulong primary key.
+
+Add CreateProfile(id, theme, emailNotifications, timezone) and UpdateTheme(id, theme). UpdateTheme must change only the nested Theme and preserve both sibling fields.

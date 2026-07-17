@@ -1,0 +1,3 @@
+Write a Rust SpacetimeDB module with public account and transfer_request tables. Account has id: u64 primary key and balance: i64. TransferRequest has request_id: String primary key, from_id: u64, to_id: u64, and amount: i64.
+
+Add create_account(id, balance) and transfer(request_id, from_id, to_id, amount). Transfer must reject invalid or insufficient transfers, update both balances atomically, and record request_id. Repeating a recorded request_id must be a no-op.

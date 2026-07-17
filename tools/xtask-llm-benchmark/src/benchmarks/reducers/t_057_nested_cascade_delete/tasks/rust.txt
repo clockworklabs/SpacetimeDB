@@ -1,0 +1,3 @@
+Write a Rust SpacetimeDB module with public workspace, project, task_item, and task_note tables. Each has a u64 primary key. Project has indexed workspace_id, TaskItem has indexed project_id, and TaskNote has indexed task_id.
+
+Add seed() creating two independent workspace→project→task→note chains using IDs 1 and 2. Add delete_workspace(id) that deletes the selected workspace and every level of its descendants while preserving the unrelated chain.

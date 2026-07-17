@@ -1,0 +1,1 @@
+Write a Rust SpacetimeDB module with a public generated_value table containing id: u64 auto-increment primary key, created_at: Timestamp, and random_value: u64. Add generate() that stores the reducer context timestamp and a u64 from the reducer context RNG. Do not use a host clock or separately seeded RNG.

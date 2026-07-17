@@ -1,0 +1,1 @@
+Write a TypeScript SpacetimeDB module with a public generated_value table containing id: u64 auto-increment primary key, createdAt: Timestamp, and randomValue: i64. Add generate() that stores ctx.timestamp and a random integer from ctx.random. Do not use Date, Math.random, or a separately seeded RNG.
