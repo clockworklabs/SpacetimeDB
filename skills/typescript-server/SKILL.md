@@ -47,7 +47,8 @@ Schema builders and module exports come from `spacetimedb/server`. Runtime value
 ```typescript
 import { schema, table, t } from 'spacetimedb/server';
 import { SenderError } from 'spacetimedb/server';
-import { ConnectionId, Range, ScheduleAt, Timestamp } from 'spacetimedb';
+import { ConnectionId, ScheduleAt, Timestamp } from 'spacetimedb';
+import { Range } from 'spacetimedb/server';
 ```
 
 ## Tables
@@ -166,7 +167,8 @@ ctx.db.item.insert({ id: 0n, createdAt: ctx.timestamp });
 
 // Deterministic RNG
 const f: number = ctx.random();                          // [0.0, 1.0)
-const roll: number = ctx.random.integerInRange(1, 6);    // inclusive; wrap with BigInt(...) for an i64/u64 column
+const roll: number = ctx.random.integerInRange(1, 6);    // number bounds/result, inclusive
+const storedRoll: bigint = BigInt(roll);                 // convert the result for an i64/u64 column
 const bytes: Uint8Array = ctx.random.fill(new Uint8Array(16));
 
 // Client: Timestamp → Date
@@ -177,10 +179,11 @@ Do not construct `Identity` values from strings (e.g. `'hex' as Identity`): seri
 
 Synthetic connection IDs for module logic/tests can use `new ConnectionId(1n)` after importing `ConnectionId` from `spacetimedb`.
 
-Construct exact timestamps with `new Timestamp(micros)` after importing `Timestamp` from `spacetimedb`. Inclusive index ranges use `Range`:
+Construct exact timestamps with `new Timestamp(micros)` after importing `Timestamp` from `spacetimedb`. Inclusive index ranges use `Range` from `spacetimedb/server`:
 
 ```typescript
-import { Range, Timestamp } from 'spacetimedb';
+import { Timestamp } from 'spacetimedb';
+import { Range } from 'spacetimedb/server';
 
 ctx.db.shipment.deliverBy.filter(new Range(
   { tag: 'included', value: new Timestamp(1_000n) },
@@ -230,7 +233,7 @@ const Shape = t.enum('Shape', {
 
 ## Views
 
-`t.row(...)` and `t.object(...)` return schema builders, not TypeScript runtime row types. Let a view callback infer its result, or annotate a separately declared structural type such as `Array<{ sku: bigint; label: string }>`.
+`t.row(...)` and `t.object(...)` return schema builders, not TypeScript runtime row types. Let a view callback infer its result, or annotate a separately declared structural type such as `Array<{ sku: bigint; label: string }>`. A named output type must not reuse the generated PascalCase name of its view accessor (for example, reserve `DiscountedProduct` for a `discounted_product` view).
 
 ```typescript
 // Anonymous view (same for all clients):
@@ -346,4 +349,4 @@ export const health = spacetimedb.httpHandler((_ctx, _request) =>
 export const routes = spacetimedb.httpRouter(new Router().get('/health', health));
 ```
 
-Pass the exported `httpHandler(...)` value to the router, not its raw callback. A handler context does not expose `ctx.db`; use `ctx.withTx(tx => ...)` when a handler needs transactional database access.
+Handlers are synchronous: return `SyncResponse` directly rather than marking the callback `async`. Pass the exported `httpHandler(...)` value to the router, not its raw callback. The router selects the path, while a handler reads request data with APIs such as `request.text()`; `Request` has no `path` property. A handler context does not expose `ctx.db`; use `ctx.withTx(tx => ...)` when a handler needs transactional database access.
