@@ -154,6 +154,8 @@ export const onConnect = spacetimedb.clientConnected((ctx) => { ... });
 export const onDisconnect = spacetimedb.clientDisconnected((ctx) => { ... });
 ```
 
+`ctx.connectionId` is `ConnectionId | null`, including in lifecycle contexts. Guard it before passing it to a helper or using it as a table key.
+
 ## Reducer Context API
 
 `ctx` is the only source of sender identity, time, and randomness; stdlib clocks and RNG are unavailable in modules. In helpers, type it as `ReducerCtx<InferSchema<typeof spacetimedb>>`.
@@ -167,7 +169,7 @@ ctx.db.item.insert({ id: 0n, createdAt: ctx.timestamp });
 
 // Deterministic RNG
 const f: number = ctx.random();                          // [0.0, 1.0)
-const roll: number = ctx.random.integerInRange(1, 6);    // number bounds/result, inclusive
+const roll: number = ctx.random.integerInRange(1, 6);    // safe JS number bounds/result, inclusive
 const storedRoll: bigint = BigInt(roll);                 // convert the result for an i64/u64 column
 const bytes: Uint8Array = ctx.random.fill(new Uint8Array(16));
 
@@ -311,7 +313,7 @@ export const refreshCache = spacetimedb.procedure(
 );
 ```
 
-Outbound responses expose the numeric `status`, `headers.get(name)`, and `text()` APIs. Perform network I/O before `withTx`; only database work belongs inside its callback.
+TypeScript outbound HTTP uses `ctx.http.fetch(url, options)`, including for non-GET requests; it does not provide convenience methods such as `get()` or `post()`. Responses expose the numeric `status`, `headers.get(name)`, and `text()` APIs. Perform network I/O before `withTx`; only database work belongs inside its callback.
 
 Scheduled procedures use a normal scheduled table, but its `scheduled` option references a `spacetimedb.procedure(...)` export instead of a reducer. The procedure receives its scheduled row as an argument and uses `withTx` for database access:
 
