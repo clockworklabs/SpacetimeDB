@@ -819,6 +819,137 @@ pub struct ReducerCallBothScorer {
     pub id_str: &'static str,
 }
 
+pub struct CallOutputParityScorer {
+    pub server: String,
+    pub golden_db: String,
+    pub llm_db: String,
+    pub function: String,
+    pub args: Vec<Value>,
+    pub collapse_ws: bool,
+    pub id_str: &'static str,
+}
+
+pub struct HttpRouteCase {
+    pub method: String,
+    pub path: String,
+    pub body: Option<String>,
+}
+
+pub struct HttpRouteParityScorer {
+    pub server: String,
+    pub golden_db: String,
+    pub llm_db: String,
+    pub cases: Vec<HttpRouteCase>,
+    pub id_str: &'static str,
+}
+
+fn call_http_route(server: &str, db: &str, case: &HttpRouteCase) -> Result<(u16, String, String), String> {
+    let server = server.trim_end_matches('/').to_string();
+    let db = db.to_string();
+    let method = case.method.clone();
+    let path = case.path.clone();
+    let body = case.body.clone();
+    std::thread::spawn(move || {
+        let runtime = tokio::runtime::Runtime::new().map_err(|error| error.to_string())?;
+        runtime.block_on(async move {
+            let method = reqwest::Method::from_bytes(method.as_bytes()).map_err(|error| error.to_string())?;
+            let url = format!("{server}/v1/database/{db}/route{path}");
+            let mut request = reqwest::Client::new().request(method, url);
+            if let Some(body) = body {
+                request = request.header("content-type", "text/plain").body(body);
+            }
+            let response = request.send().await.map_err(|error| error.to_string())?;
+            let status = response.status().as_u16();
+            let content_type = response
+                .headers()
+                .get("content-type")
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or("")
+                .to_string();
+            let body = response.text().await.map_err(|error| error.to_string())?;
+            Ok((status, content_type, body))
+        })
+    })
+    .join()
+    .map_err(|_| "HTTP route worker panicked".to_string())?
+}
+
+impl Scorer for HttpRouteParityScorer {
+    fn id(&self) -> &'static str {
+        self.id_str
+    }
+
+    fn score(&self, _llm_output: &str) -> ScoreDetails {
+        let mut golden_results = Vec::new();
+        let mut llm_results = Vec::new();
+        for case in &self.cases {
+            match call_http_route(&self.server, &self.golden_db, case) {
+                Ok(result) => golden_results.push(result),
+                Err(error) => {
+                    return ScoreDetails {
+                        pass: false,
+                        partial: 0.0,
+                        notes: json!({ "phase": "http_golden", "error": error }),
+                    }
+                }
+            }
+            match call_http_route(&self.server, &self.llm_db, case) {
+                Ok(result) => llm_results.push(result),
+                Err(error) => {
+                    return ScoreDetails {
+                        pass: false,
+                        partial: 0.0,
+                        notes: json!({ "phase": "http_llm", "error": error }),
+                    }
+                }
+            }
+        }
+        let pass = golden_results == llm_results;
+        ScoreDetails {
+            pass,
+            partial: if pass { 1.0 } else { 0.0 },
+            notes: json!({ "golden": golden_results, "llm": llm_results }),
+        }
+    }
+}
+
+impl Scorer for CallOutputParityScorer {
+    fn id(&self) -> &'static str {
+        self.id_str
+    }
+
+    fn score(&self, _llm_output: &str) -> ScoreDetails {
+        let golden = match call_reducer_json_out(&self.golden_db, &self.function, &self.args, Some(&self.server)) {
+            Ok(output) => output,
+            Err(error) => {
+                return ScoreDetails {
+                    pass: false,
+                    partial: 0.0,
+                    notes: json!({ "phase": "call_golden", "function": self.function, "error": error }),
+                }
+            }
+        };
+        let llm = match call_reducer_json_out(&self.llm_db, &self.function, &self.args, Some(&self.server)) {
+            Ok(output) => output,
+            Err(error) => {
+                return ScoreDetails {
+                    pass: false,
+                    partial: 0.0,
+                    notes: json!({ "phase": "call_llm", "function": self.function, "error": error }),
+                }
+            }
+        };
+        let golden = normalize(&golden, self.collapse_ws);
+        let llm = normalize(&llm, self.collapse_ws);
+        let pass = golden == llm;
+        ScoreDetails {
+            pass,
+            partial: if pass { 1.0 } else { 0.0 },
+            notes: json!({ "function": self.function, "golden": golden, "llm": llm }),
+        }
+    }
+}
+
 impl Scorer for ReducerCallBothScorer {
     fn id(&self) -> &'static str {
         self.id_str

@@ -1,0 +1,1 @@
+Write a TypeScript SpacetimeDB module with a typed Summary result containing total: u32 and label: string. Add a calculate_summary(lhs: u32, rhs: u32) procedure that returns total lhs + rhs and label "calculated".

@@ -1,0 +1,1 @@
+Write a C# SpacetimeDB procedure FetchSchemaSummary(serverUrl: string) that performs an outbound GET to this database's schema endpoint. Return a typed FetchSummary with the HTTP status, whether Content-Type contains "application/json", and whether the body contains the tables field.

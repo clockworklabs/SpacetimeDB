@@ -202,6 +202,54 @@ mod lifecycle_t_071_scheduled_private {
 
 #[allow(dead_code)]
 #[allow(clippy::all)]
+mod procedures_t_072_procedure_return {
+    include!("../benchmarks/procedures/t_072_procedure_return/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod procedures_t_073_http_fetch {
+    include!("../benchmarks/procedures/t_073_http_fetch/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod procedures_t_074_fetch_and_store {
+    include!("../benchmarks/procedures/t_074_fetch_and_store/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod procedures_t_075_scheduled_procedure {
+    include!("../benchmarks/procedures/t_075_scheduled_procedure/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod procedures_t_076_http_handler {
+    include!("../benchmarks/procedures/t_076_http_handler/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod procedures_t_077_http_router {
+    include!("../benchmarks/procedures/t_077_http_router/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod procedures_t_078_idempotent_webhook {
+    include!("../benchmarks/procedures/t_078_idempotent_webhook/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod procedures_t_079_external_upload_flow {
+    include!("../benchmarks/procedures/t_079_external_upload_flow/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
 mod queries_t_022_view_basic {
     include!("../benchmarks/queries/t_022_view_basic/spec.rs");
 }
@@ -472,6 +520,14 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         ("lifecycle", "t_069_scheduled_materialization") => lifecycle_t_069_scheduled_materialization::spec,
         ("lifecycle", "t_070_connection_scoped_presence") => lifecycle_t_070_connection_scoped_presence::spec,
         ("lifecycle", "t_071_scheduled_private") => lifecycle_t_071_scheduled_private::spec,
+        ("procedures", "t_072_procedure_return") => procedures_t_072_procedure_return::spec,
+        ("procedures", "t_073_http_fetch") => procedures_t_073_http_fetch::spec,
+        ("procedures", "t_074_fetch_and_store") => procedures_t_074_fetch_and_store::spec,
+        ("procedures", "t_075_scheduled_procedure") => procedures_t_075_scheduled_procedure::spec,
+        ("procedures", "t_076_http_handler") => procedures_t_076_http_handler::spec,
+        ("procedures", "t_077_http_router") => procedures_t_077_http_router::spec,
+        ("procedures", "t_078_idempotent_webhook") => procedures_t_078_idempotent_webhook::spec,
+        ("procedures", "t_079_external_upload_flow") => procedures_t_079_external_upload_flow::spec,
         ("queries", "t_022_view_basic") => queries_t_022_view_basic::spec,
         ("queries", "t_023_view_per_user") => queries_t_023_view_per_user::spec,
         ("queries", "t_032_range_query") => queries_t_032_range_query::spec,

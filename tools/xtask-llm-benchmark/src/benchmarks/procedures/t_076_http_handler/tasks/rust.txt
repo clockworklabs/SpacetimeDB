@@ -1,0 +1,1 @@
+Write a Rust SpacetimeDB module with an inbound POST /echo HTTP handler. It must read the request body and return status 201, Content-Type text/plain, and body "echo:" followed by the input body. Register the handler through an HTTP router.

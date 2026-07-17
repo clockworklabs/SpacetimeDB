@@ -1,0 +1,1 @@
+Write a Rust SpacetimeDB HTTP router with GET /items returning status 200 and body "list", and POST /items returning status 201 and body "created:" followed by the request body. Unsupported methods on /items and unknown paths must remain rejected by the router.

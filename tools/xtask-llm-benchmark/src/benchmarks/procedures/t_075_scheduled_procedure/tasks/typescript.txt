@@ -1,0 +1,1 @@
+Write a TypeScript SpacetimeDB module with a public procedure_result table containing id: u64 primary key and value: u32. Add schedule_procedure(id, lhs, rhs) to enqueue a procedure for one millisecond later. The scheduled procedure must open a transaction and insert value lhs + rhs into procedure_result.

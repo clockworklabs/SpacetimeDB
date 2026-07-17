@@ -131,11 +131,11 @@ fn inject_rust(root: &Path, llm_code: &str) -> anyhow::Result<()> {
     if !sdk_path.is_dir() {
         bail!("local Rust SDK not found at {}", sdk_path.display());
     }
-    let replacement = format!(r#"spacetimedb = {{ path = "{}" }}"#, relative);
+    let replacement = format!(r#"spacetimedb = {{ path = "{}", features = ["unstable"] }}"#, relative);
     let cargo_toml = root.join("Cargo.toml");
     let mut toml = fs::read_to_string(&cargo_toml).with_context(|| format!("read {}", cargo_toml.display()))?;
     toml = toml.replace(
-        "spacetimedb = { path = \"../../../../../../sdks/rust/\" }",
+        "spacetimedb = { path = \"../../../../../../sdks/rust/\", features = [\"unstable\"] }",
         &replacement,
     );
     fs::write(&cargo_toml, toml).with_context(|| format!("write {}", cargo_toml.display()))?;
