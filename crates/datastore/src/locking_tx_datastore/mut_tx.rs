@@ -4,7 +4,7 @@ use super::{
     delete_table::DeleteTable,
     sequence::{Sequence, SequencesState},
     state_view::{IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, StateView},
-    time::Instant,
+    time::{now_timestamp, Instant},
     tx::TxId,
     tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
     SharedMutexGuard, SharedWriteGuard,
@@ -2850,7 +2850,7 @@ impl MutTxId {
     /// This is invoked when calling a view, but not subscribing to it.
     /// Such is the case for the sql http api.
     pub fn update_view_timestamp(&mut self, call: ViewCallInfo, args: ViewInstanceArgs) -> Result<()> {
-        self.update_view_timestamp_at(call, args, Timestamp::now())
+        self.update_view_timestamp_at(call, args, now_timestamp())
     }
 
     /// Updates the `last_used` timestamp for a materialized view argument to an explicit value.
@@ -2871,12 +2871,13 @@ impl MutTxId {
 
     /// Increment this subscriber's refcount for a materialized view argument.
     pub fn subscribe_view(&mut self, call: ViewCallInfo, args: ViewInstanceArgs, subscriber: Identity) -> Result<()> {
+        let now = now_timestamp();
         let mut state = self
             .get_view_instance_cloned(&call)
-            .unwrap_or_else(|| ViewInstanceState::new(args, Timestamp::now()));
+            .unwrap_or_else(|| ViewInstanceState::new(args, now));
         state.args = args;
         *state.active_subscribers.entry(subscriber).or_default() += 1;
-        state.last_used = Timestamp::now();
+        state.last_used = now;
         self.view_instances.set(call, state);
         Ok(())
     }
@@ -2892,7 +2893,7 @@ impl MutTxId {
             if *count == 0 {
                 state.active_subscribers.remove(&subscriber);
             }
-            state.last_used = Timestamp::now();
+            state.last_used = now_timestamp();
             self.view_instances.set(call, state);
         }
 
@@ -2929,8 +2930,8 @@ impl MutTxId {
         max_duration: Duration,
         batch_size: usize,
     ) -> Result<ViewCleanupResult> {
-        let start = std::time::Instant::now();
-        let expiration_threshold = Timestamp::now() - expiration_duration;
+        let start = Instant::now();
+        let expiration_threshold = now_timestamp() - expiration_duration;
         let is_expired = |state: &ViewInstanceState| !state.has_subscribers() && state.last_used < expiration_threshold;
         let mut cleaned = 0;
         let batch_size = batch_size.max(1);
