@@ -87,6 +87,7 @@ fn run_with_timeout(mut cmd: Command, cwd: &Path, timeout: Duration) -> io::Resu
         }
         if start.elapsed() > timeout {
             let _ = child.kill();
+            let _ = child.wait();
             return Err(io::Error::new(io::ErrorKind::TimedOut, "process timeout"));
         }
         thread::sleep(Duration::from_millis(30));
@@ -401,24 +402,20 @@ pub fn call_reducer_json_out(db: &str, reducer: &str, args: &[Value], host: Opti
         eprintln!("[dbg] spacetime call: {:?}", cmd);
     }
 
-    let out = cmd
-        .output()
-        .map_err(|e| format!("failed to spawn spacetime call: {e}"))?;
+    let (code, stdout, stderr) = run_with_timeout(cmd, Path::new("."), Duration::from_secs(30))
+        .map_err(|e| format!("spacetime call failed or timed out: {e}"))?;
     if debug_llm_verbose() {
         eprintln!(
             "[dbg] spacetime call exit={} stdout:\n{}\n-- stderr:\n{}\n",
-            out.status.code().unwrap_or(-1),
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr)
+            code,
+            String::from_utf8_lossy(&stdout),
+            String::from_utf8_lossy(&stderr)
         );
     }
-    if !out.status.success() {
-        return Err(format!(
-            "spacetime call failed:\n{}",
-            String::from_utf8_lossy(&out.stderr)
-        ));
+    if code != 0 {
+        return Err(format!("spacetime call failed:\n{}", String::from_utf8_lossy(&stderr)));
     }
-    Ok(String::from_utf8_lossy(&out.stdout).to_string())
+    Ok(String::from_utf8_lossy(&stdout).to_string())
 }
 
 pub fn sql_raw(db: &str, query: &str, host: Option<&str>) -> Result<String, String> {
