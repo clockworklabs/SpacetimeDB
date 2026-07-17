@@ -230,7 +230,14 @@ fn cmd_run(args: RunArgs) -> Result<()> {
 fn run_benchmarks(args: RunArgs) -> Result<()> {
     let dry_run = args.dry_run;
     let local_analysis = args.local_analysis;
-    let dry_run_id = dry_run.then(|| chrono::Utc::now().format("%Y-%m-%d_%H%M%S").to_string());
+    let dry_run_id = dry_run.then(|| {
+        format!(
+            "{}-{}-{}",
+            chrono::Utc::now().format("%Y-%m-%d_%H%M%S_%3f"),
+            args.lang.as_str(),
+            std::process::id()
+        )
+    });
     let should_fetch_remote_routes = should_fetch_remote_routes(&args);
 
     let needs_api_client = should_fetch_remote_routes || !dry_run;
