@@ -17,7 +17,7 @@ pub fn spec() -> BenchmarkSpec {
                 route_tag,
                 reducer: "increment".into(),
                 args: vec![json!(1), json!(2)],
-                select_query: format!("SELECT {id}, {value} FROM {counter} ORDER BY {id}"),
+                select_query: format!("SELECT {id}, {value} FROM {counter}"),
                 collapse_ws: true,
                 timeout: Duration::from_secs(10),
                 id_str: "existing_api_survives_republish",

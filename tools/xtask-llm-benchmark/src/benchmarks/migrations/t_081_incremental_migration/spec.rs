@@ -11,7 +11,7 @@ pub fn spec() -> BenchmarkSpec {
         let id = ident("id", casing);
         let value = ident("value", casing);
         let version = ident("version", casing);
-        let v2_query = format!("SELECT {id}, {value}, {version} FROM {item_v2} ORDER BY {id}");
+        let v2_query = format!("SELECT {id}, {value}, {version} FROM {item_v2}");
         scorers.push(make_reducer_data_parity_scorer(
             host_url,
             ReducerDataParityConfig {
@@ -46,7 +46,7 @@ pub fn spec() -> BenchmarkSpec {
                 route_tag,
                 reducer: "migrate".into(),
                 args: vec![],
-                select_query: format!("SELECT {id}, {value} FROM {legacy} ORDER BY {id}"),
+                select_query: format!("SELECT {id}, {value} FROM {legacy}"),
                 collapse_ws: true,
                 timeout: Duration::from_secs(10),
                 id_str: "legacy_table_remains_current",

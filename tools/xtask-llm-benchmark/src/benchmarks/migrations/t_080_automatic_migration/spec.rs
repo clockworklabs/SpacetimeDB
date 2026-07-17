@@ -30,7 +30,7 @@ pub fn spec() -> BenchmarkSpec {
                 route_tag,
                 reducer: "create_category".into(),
                 args: vec![json!(7), json!("general")],
-                select_query: format!("SELECT {id}, {label} FROM {category} ORDER BY {id}"),
+                select_query: format!("SELECT {id}, {label} FROM {category}"),
                 collapse_ws: true,
                 timeout: Duration::from_secs(10),
                 id_str: "new_schema_usable",

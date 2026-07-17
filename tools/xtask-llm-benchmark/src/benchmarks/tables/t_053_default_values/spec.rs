@@ -17,7 +17,7 @@ pub fn spec() -> BenchmarkSpec {
                 route_tag,
                 reducer: "touch".into(),
                 args: vec![],
-                select_query: format!("SELECT {id}, {name}, {enabled} FROM {widget} ORDER BY {id}"),
+                select_query: format!("SELECT {id}, {name}, {enabled} FROM {widget}"),
                 collapse_ws: true,
                 timeout: Duration::from_secs(10),
                 id_str: "existing_row_backfilled",
