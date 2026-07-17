@@ -127,6 +127,18 @@ pub fn make_reducer_call_both_scorer(
     args: Vec<serde_json::Value>,
     id_str: &'static str,
 ) -> Box<dyn Scorer> {
+    make_reducer_call_both_scorer_with_attempts(host_url, src_file, route_tag, reducer, args, id_str, 1)
+}
+
+pub fn make_reducer_call_both_scorer_with_attempts(
+    host_url: &str,
+    src_file: &str,
+    route_tag: &str,
+    reducer: &str,
+    args: Vec<serde_json::Value>,
+    id_str: &'static str,
+    attempts: usize,
+) -> Box<dyn Scorer> {
     let (cat, task) = derive_cat_task_from_file(src_file);
     let golden_db = sanitize_db_name(&format!("{}-{}-golden", cat, task));
     let llm_db = sanitize_db_name(&format!("{}-{}-{}-llm", cat, task, route_tag));
@@ -137,6 +149,7 @@ pub fn make_reducer_call_both_scorer(
         llm_db,
         reducer: reducer.to_string(),
         args,
+        attempts,
         id_str,
     }) as Box<dyn Scorer>
 }
@@ -149,6 +162,18 @@ pub fn make_call_output_parity_scorer(
     args: Vec<serde_json::Value>,
     id_str: &'static str,
 ) -> Box<dyn Scorer> {
+    make_call_output_parity_scorer_with_attempts(host_url, src_file, route_tag, function, args, id_str, 1)
+}
+
+pub fn make_call_output_parity_scorer_with_attempts(
+    host_url: &str,
+    src_file: &str,
+    route_tag: &str,
+    function: &str,
+    args: Vec<serde_json::Value>,
+    id_str: &'static str,
+    attempts: usize,
+) -> Box<dyn Scorer> {
     let (cat, task) = derive_cat_task_from_file(src_file);
     let golden_db = sanitize_db_name(&format!("{}-{}-golden", cat, task));
     let llm_db = sanitize_db_name(&format!("{}-{}-{}-llm", cat, task, route_tag));
@@ -159,6 +184,7 @@ pub fn make_call_output_parity_scorer(
         function: function.to_string(),
         args,
         collapse_ws: true,
+        attempts,
         id_str,
     })
 }

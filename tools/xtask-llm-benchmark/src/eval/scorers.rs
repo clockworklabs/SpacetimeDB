@@ -833,6 +833,7 @@ pub struct ReducerCallBothScorer {
     pub llm_db: String,
     pub reducer: String,
     pub args: Vec<Value>,
+    pub attempts: usize,
     pub id_str: &'static str,
 }
 
@@ -843,7 +844,29 @@ pub struct CallOutputParityScorer {
     pub function: String,
     pub args: Vec<Value>,
     pub collapse_ws: bool,
+    pub attempts: usize,
     pub id_str: &'static str,
+}
+
+fn call_with_retries(
+    db: &str,
+    function: &str,
+    args: &[Value],
+    server: &str,
+    attempts: usize,
+) -> Result<String, String> {
+    let attempts = attempts.max(1);
+    let mut last_error = None;
+    for attempt in 0..attempts {
+        match call_reducer_json_out(db, function, args, Some(server)) {
+            Ok(output) => return Ok(output),
+            Err(error) => last_error = Some(error),
+        }
+        if attempt + 1 < attempts {
+            thread::sleep(Duration::from_millis(250));
+        }
+    }
+    Err(last_error.expect("at least one call attempt must run"))
 }
 
 pub struct HttpRouteCase {
@@ -953,7 +976,7 @@ impl Scorer for CallOutputParityScorer {
     }
 
     fn score(&self, _llm_output: &str) -> ScoreDetails {
-        let golden = match call_reducer_json_out(&self.golden_db, &self.function, &self.args, Some(&self.server)) {
+        let golden = match call_with_retries(&self.golden_db, &self.function, &self.args, &self.server, self.attempts) {
             Ok(output) => output,
             Err(error) => {
                 return ScoreDetails {
@@ -963,7 +986,7 @@ impl Scorer for CallOutputParityScorer {
                 }
             }
         };
-        let llm = match call_reducer_json_out(&self.llm_db, &self.function, &self.args, Some(&self.server)) {
+        let llm = match call_with_retries(&self.llm_db, &self.function, &self.args, &self.server, self.attempts) {
             Ok(output) => output,
             Err(error) => {
                 return ScoreDetails {
@@ -996,14 +1019,14 @@ impl Scorer for ReducerCallBothScorer {
                 self.reducer, self.args, self.golden_db, self.llm_db, self.server
             );
         }
-        if let Err(e) = call_reducer_json_out(&self.golden_db, &self.reducer, &self.args, Some(&self.server)) {
+        if let Err(e) = call_with_retries(&self.golden_db, &self.reducer, &self.args, &self.server, self.attempts) {
             return ScoreDetails {
                 pass: false,
                 partial: 0.0,
                 notes: json!({ "phase":"call_reducer_golden", "error": e, "reducer": self.reducer }),
             };
         }
-        if let Err(e) = call_reducer_json_out(&self.llm_db, &self.reducer, &self.args, Some(&self.server)) {
+        if let Err(e) = call_with_retries(&self.llm_db, &self.reducer, &self.args, &self.server, self.attempts) {
             return ScoreDetails {
                 pass: false,
                 partial: 0.0,
