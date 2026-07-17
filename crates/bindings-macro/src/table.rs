@@ -1007,20 +1007,21 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let primary_col_id = primary_key_column.clone().into_iter().map(|col| col.index);
     let sequence_col_ids = sequenced_columns.iter().map(|col| col.index);
 
-    fn is_string(s: &dyn std::any::Any) -> bool {
-        std::any::TypeId::of::<&'static str>() == s.type_id()
-    }
-
     let default_type_check: TokenStream = columns
         .iter()
         .filter_map(|col| {
             if let Some(val) = &col.default_value {
                 let ty = &col.ty;
                 let ident_span = col.ident.span();
+
+                fn is_string(s: &dyn std::any::Any) -> bool {
+                    std::any::TypeId::of::<&'static str>() == s.type_id()
+                }
+
                 Some(quote_spanned! { ident_span =>
                     // This closure enforces that `val` is of type `ty` at compile-time.
                     if is_string(#ty) {
-                        WAHOOOO;
+                        "bang"
                     }
                     let _check: #ty = #val;
                 })
