@@ -13,13 +13,12 @@ fn upload(_ctx: &mut HandlerContext, _request: Request) -> Response {
 fn routes() -> Router { Router::new().post("/upload", upload) }
 
 #[procedure]
-pub fn upload_and_register(ctx: &mut ProcedureContext, server_url: String, data: Vec<u8>) -> String {
-    let url = format!("{}/v1/database/{}/route/upload", server_url.trim_end_matches('/'), ctx.database_identity());
-    let request = Request::builder().method("POST").uri(url).header("content-type", "application/octet-stream")
+pub fn upload_and_register(ctx: &mut ProcedureContext, upload_url: String, data: Vec<u8>) -> String {
+    let request = Request::builder().method("POST").uri(upload_url.clone()).header("content-type", "application/octet-stream")
         .body(Body::from_bytes(data.clone())).unwrap();
     let response = ctx.http.send(request).expect("upload failed");
-    let asset_url = response.into_body().into_string_lossy();
-    let row_url = asset_url.clone();
-    ctx.with_tx(|tx| { tx.db.uploaded_asset().insert(UploadedAsset { id: 1, url: row_url.clone(), size: data.len() as u64 }); });
-    asset_url
+    assert!(response.status().is_success(), "upload failed: {}", response.status());
+    let row_url = upload_url.clone();
+    ctx.with_tx(|tx| { tx.db.uploaded_asset().insert(UploadedAsset { id: 1, url: row_url, size: data.len() as u64 }); });
+    upload_url
 }

@@ -1035,6 +1035,135 @@ pub async fn build_goldens_only_for_lang(
     Ok(())
 }
 
+/// Build each selected golden, publish the same source as a stand-in candidate,
+/// and run the task's complete scorer set against the pair. This proves more
+/// than compilation: the golden must also satisfy every behavior and parity
+/// assertion used to grade model output.
+pub async fn validate_goldens_for_lang(
+    host: Option<String>,
+    bench_root: &Path,
+    lang: Lang,
+    selectors: Option<&[String]>,
+) -> Result<()> {
+    build_goldens_only_for_lang(host.clone(), bench_root, lang, selectors).await?;
+
+    let tasks = if let Some(sels) = selectors {
+        let wanted: HashSet<String> = sels.iter().map(|s| normalize_task_selector(s)).collect::<Result<_>>()?;
+        let filtered: Vec<TaskPaths> = discover_tasks(bench_root)?
+            .into_iter()
+            .filter(|task| {
+                let name = task.root.file_name().and_then(|name| name.to_str()).unwrap_or("");
+                wanted.iter().any(|wanted| name.starts_with(wanted))
+            })
+            .collect();
+        if filtered.is_empty() {
+            bail!("no tasks matched {:?}", wanted);
+        }
+        filtered
+    } else {
+        discover_tasks(bench_root)?
+    };
+
+    let runner = TaskRunner::new(
+        PathBuf::from(bench_root),
+        SpacetimeRustPublisher,
+        DotnetPublisher,
+        TypeScriptPublisher,
+    );
+    let lang_name = lang.as_str();
+    let route_tag = "golden-validation";
+    let host_url = host.as_deref().unwrap_or("local");
+    let mut failures = Vec::new();
+
+    // Scorers can mutate both databases, so validate one task at a time and
+    // preserve the scorer ordering declared by its spec.
+    for task in tasks {
+        let category = category_slug(&task.root);
+        let task_id = task_slug(&task.root);
+        let candidate_db = sanitize_db_name(&format!("{}-{}-{}-llm", category, task_id, route_tag));
+        let golden_src_text = load_golden_source(&task, lang)?;
+        let migration_setup = load_migration_setup_source(&task, lang)?;
+
+        println!("→ [{}] validate golden {} {}", lang_name, category, task_id);
+        if let Some(setup_source) = migration_setup {
+            runner
+                .publish(
+                    PublishParams {
+                        lang,
+                        category: &category,
+                        task_id: &task_id,
+                        route_tag,
+                        source_text: &setup_source,
+                        db_name: candidate_db.clone(),
+                        host: host.clone(),
+                        clear_database: true,
+                    },
+                    "golden-validation-setup",
+                )
+                .await?;
+            call_reducer_json_out(&candidate_db, "seed", &[], Some(host_url)).map_err(anyhow::Error::msg)?;
+            runner
+                .publish(
+                    PublishParams {
+                        lang,
+                        category: &category,
+                        task_id: &task_id,
+                        route_tag,
+                        source_text: &golden_src_text,
+                        db_name: candidate_db,
+                        host: host.clone(),
+                        clear_database: false,
+                    },
+                    "golden-validation",
+                )
+                .await?;
+        } else {
+            runner
+                .publish(
+                    PublishParams {
+                        lang,
+                        category: &category,
+                        task_id: &task_id,
+                        route_tag,
+                        source_text: &golden_src_text,
+                        db_name: candidate_db,
+                        host: host.clone(),
+                        clear_database: true,
+                    },
+                    "golden-validation",
+                )
+                .await?;
+        }
+
+        let ctor = resolve_by_path(&task.root)?;
+        let spec = ctor();
+        for scorer in spec.scorers_for(lang, route_tag, host_url) {
+            let details = scorer.score(&golden_src_text);
+            if !details.pass {
+                failures.push(format!(
+                    "{}/{} [{}]: {}",
+                    category,
+                    task_id,
+                    scorer.id(),
+                    serde_json::to_string(&details.notes).unwrap_or_else(|_| "<unprintable details>".to_string())
+                ));
+            }
+        }
+    }
+
+    if !failures.is_empty() {
+        bail!(
+            "[{}] golden validation failed ({} scorer failures):\n{}",
+            lang_name,
+            failures.len(),
+            failures.join("\n")
+        );
+    }
+
+    println!("✓ [{}] goldens behavior/scorer validation: complete", lang_name);
+    Ok(())
+}
+
 fn discover_tasks(benchmarks_root: &Path) -> Result<Vec<TaskPaths>> {
     let mut out = Vec::new();
     for cat in read_dirs(benchmarks_root)? {

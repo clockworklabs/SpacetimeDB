@@ -7,11 +7,16 @@ pub fn spec() -> BenchmarkSpec {
     BenchmarkSpec::from_tasks_auto(file!(), |lang, route_tag, host_url| {
         let mut scorers = default_schema_parity_scorers(host_url, file!(), route_tag);
         scorers.push(make_reducer_call_both_scorer(
-            host_url, file!(), route_tag, "fetch_and_store", vec![json!(host_url)], "fetch_and_store",
+            host_url,
+            file!(),
+            route_tag,
+            "fetch_and_store",
+            vec![json!("https://example.com")],
+            "fetch_and_store",
         ));
         let table = table_name("fetched_record", lang);
         let status = ident("status", casing_for_lang(lang));
-        let valid = ident("valid_schema", casing_for_lang(lang));
+        let valid = ident("valid_body", casing_for_lang(lang));
         scorers.push(make_sql_count_only_scorer(
             host_url, file!(), route_tag,
             format!("SELECT COUNT(*) AS n FROM {table} WHERE {status}=200 AND {valid}=true"),

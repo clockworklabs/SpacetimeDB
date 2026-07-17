@@ -12,14 +12,14 @@ export const upload = spacetimedb.httpHandler((_ctx, _request) =>
 export const routes = spacetimedb.httpRouter(new Router().post('/upload', upload));
 
 export const upload_and_register = spacetimedb.procedure(
-  { serverUrl: t.string(), data: t.array(t.u8()) }, t.string(),
-  (ctx, { serverUrl, data }) => {
+  { uploadUrl: t.string(), data: t.array(t.u8()) }, t.string(),
+  (ctx, { uploadUrl, data }) => {
     const response = ctx.http.fetch(
-      `${serverUrl.replace(/\/+$/, '')}/v1/database/${ctx.databaseIdentity}/route/upload`,
+      uploadUrl,
       { method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: new Uint8Array(data) }
     );
-    const assetUrl = response.text();
-    ctx.withTx(tx => tx.db.uploadedAsset.insert({ id: 1n, url: assetUrl, size: BigInt(data.length) }));
-    return assetUrl;
+    if (response.status < 200 || response.status >= 300) throw new Error(`upload failed: ${response.status}`);
+    ctx.withTx(tx => tx.db.uploadedAsset.insert({ id: 1n, url: uploadUrl, size: BigInt(data.length) }));
+    return uploadUrl;
   }
 );

@@ -15,18 +15,18 @@ public static partial class Module
     public static Router Routes() => SpacetimeDB.Router.New().Post("/upload", Handlers.Upload);
 
     [SpacetimeDB.Procedure]
-    public static string UploadAndRegister(ProcedureContext ctx, string serverUrl, byte[] data)
+    public static string UploadAndRegister(ProcedureContext ctx, string uploadUrl, byte[] data)
     {
         var request = new HttpRequest {
-            Uri = $"{serverUrl.TrimEnd('/')}/v1/database/{ProcedureContextBase.Identity}/route/upload",
+            Uri = uploadUrl,
             Method = SpacetimeDB.HttpMethod.Post,
             Headers = new() { new HttpHeader("content-type", "application/octet-stream") },
             Body = new HttpBody(data),
         };
         return ctx.Http.Send(request).Match(response => {
-            var assetUrl = response.Body.ToStringUtf8Lossy();
-            ctx.WithTx(tx => { tx.Db.UploadedAsset.Insert(new UploadedAsset { Id = 1, Url = assetUrl, Size = (ulong)data.Length }); return 0; });
-            return assetUrl;
+            if (response.StatusCode < 200 || response.StatusCode >= 300) throw new Exception($"upload failed: {response.StatusCode}");
+            ctx.WithTx(tx => { tx.Db.UploadedAsset.Insert(new UploadedAsset { Id = 1, Url = uploadUrl, Size = (ulong)data.Length }); return 0; });
+            return uploadUrl;
         }, error => throw new Exception(error.Message));
     }
 }

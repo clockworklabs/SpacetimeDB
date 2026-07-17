@@ -1,19 +1,19 @@
 import { schema, t } from 'spacetimedb/server';
 
 const FetchSummary = t.object('FetchSummary', {
-  status: t.u16(), jsonContentType: t.bool(), hasTables: t.bool(),
+  status: t.u16(), htmlContentType: t.bool(), hasExampleDomain: t.bool(),
 });
 const spacetimedb = schema({});
 export default spacetimedb;
 
-export const fetch_schema_summary = spacetimedb.procedure(
-  { serverUrl: t.string() }, FetchSummary,
-  (ctx, { serverUrl }) => {
-    const response = ctx.http.fetch(`${serverUrl.replace(/\/+$/, '')}/v1/database/${ctx.databaseIdentity}/schema?version=9`);
+export const fetch_page_summary = spacetimedb.procedure(
+  { url: t.string() }, FetchSummary,
+  (ctx, { url }) => {
+    const response = ctx.http.fetch(url);
     return {
       status: response.status,
-      jsonContentType: (response.headers.get('content-type') ?? '').includes('application/json'),
-      hasTables: response.text().includes('"tables"'),
+      htmlContentType: (response.headers.get('content-type') ?? '').includes('text/html'),
+      hasExampleDomain: response.text().includes('Example Domain'),
     };
   }
 );

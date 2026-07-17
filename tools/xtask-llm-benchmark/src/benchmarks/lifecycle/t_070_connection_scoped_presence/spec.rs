@@ -8,7 +8,10 @@ pub fn spec() -> BenchmarkSpec {
         scorers.push(make_reducer_sql_count_scorer(host_url, ReducerSqlCountConfig {
             src_file: file!(), route_tag, reducer: "exercise_presence".into(), args: vec![],
             sql_count_query: format!("SELECT COUNT(*) AS n FROM {}", table_name("presence_session", lang)),
-            expected_count: 1, id_str: "disconnect_removes_one_connection", timeout: Duration::from_secs(10),
+            // The CLI call itself creates one lifecycle-managed session. The
+            // helper adds two synthetic sessions and removes one, leaving two
+            // total rows while still proving connection-scoped deletion.
+            expected_count: 2, id_str: "disconnect_removes_one_connection", timeout: Duration::from_secs(10),
         }));
         scorers
     })

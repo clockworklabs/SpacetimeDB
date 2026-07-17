@@ -3,14 +3,13 @@ using System.Text;
 #pragma warning disable STDB_UNSTABLE
 
 [SpacetimeDB.Type]
-public partial struct FetchSummary { public ushort Status; public bool JsonContentType; public bool HasTables; }
+public partial struct FetchSummary { public ushort Status; public bool HtmlContentType; public bool HasExampleDomain; }
 
 public static partial class Module
 {
     [SpacetimeDB.Procedure]
-    public static FetchSummary FetchSchemaSummary(ProcedureContext ctx, string serverUrl)
+    public static FetchSummary FetchPageSummary(ProcedureContext ctx, string url)
     {
-        var url = $"{serverUrl.TrimEnd('/')}/v1/database/{ProcedureContextBase.Identity}/schema?version=9";
         var result = ctx.Http.Get(url);
         return result.Match(response => {
             var contentType = response.Headers.FirstOrDefault(h => h.Name.Equals("content-type", StringComparison.OrdinalIgnoreCase));
@@ -18,8 +17,8 @@ public static partial class Module
             var body = response.Body.ToStringUtf8Lossy();
             return new FetchSummary {
                 Status = response.StatusCode,
-                JsonContentType = contentTypeValue.Contains("application/json"),
-                HasTables = body.Contains("\"tables\""),
+                HtmlContentType = contentTypeValue.Contains("text/html"),
+                HasExampleDomain = body.Contains("Example Domain"),
             };
         }, error => throw new Exception(error.Message));
     }

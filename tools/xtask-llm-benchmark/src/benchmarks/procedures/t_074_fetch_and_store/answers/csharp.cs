@@ -4,16 +4,15 @@ using SpacetimeDB;
 public static partial class Module
 {
     [Table(Accessor = "FetchedRecord", Public = true)]
-    public partial struct FetchedRecord { [PrimaryKey] public ulong Id; public ushort Status; public bool ValidSchema; }
+    public partial struct FetchedRecord { [PrimaryKey] public ulong Id; public ushort Status; public bool ValidBody; }
 
     [SpacetimeDB.Procedure]
-    public static void FetchAndStore(ProcedureContext ctx, string serverUrl)
+    public static void FetchAndStore(ProcedureContext ctx, string url)
     {
-        var url = $"{serverUrl.TrimEnd('/')}/v1/database/{ProcedureContextBase.Identity}/schema?version=9";
         var result = ctx.Http.Get(url);
         result.Match(response => {
-            var validSchema = response.Body.ToStringUtf8Lossy().Contains("\"tables\"");
-            ctx.WithTx(tx => { tx.Db.FetchedRecord.Insert(new FetchedRecord { Id = 1, Status = response.StatusCode, ValidSchema = validSchema }); return 0; });
+            var validBody = response.Body.ToStringUtf8Lossy().Contains("Example Domain");
+            ctx.WithTx(tx => { tx.Db.FetchedRecord.Insert(new FetchedRecord { Id = 1, Status = response.StatusCode, ValidBody = validBody }); return 0; });
             return 0;
         }, error => throw new Exception(error.Message));
     }

@@ -13,7 +13,7 @@ use tokio::runtime::Runtime;
 use xtask_llm_benchmark::api::ApiClient;
 use xtask_llm_benchmark::bench::bench_route_concurrency;
 use xtask_llm_benchmark::bench::runner::{
-    build_goldens_only_for_lang, ensure_goldens_built_once, run_selected_or_all_for_model_async_for_lang,
+    ensure_goldens_built_once, run_selected_or_all_for_model_async_for_lang, validate_goldens_for_lang,
 };
 use xtask_llm_benchmark::bench::types::{BenchRunContext, RouteRun, RunConfig, RunOutcome};
 use xtask_llm_benchmark::context::constants::ALL_MODES;
@@ -100,7 +100,7 @@ struct RunArgs {
     #[arg(long, conflicts_with = "goldens_only")]
     hash_only: bool,
 
-    /// Build/publish goldens only (skip LLM calls)
+    /// Build/publish and self-score goldens (skip LLM calls)
     #[arg(long, conflicts_with = "hash_only")]
     goldens_only: bool,
 
@@ -302,13 +302,13 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
 
     if config.goldens_only {
         let rt = runtime.as_ref().expect("runtime required for --goldens-only");
-        rt.block_on(build_goldens_only_for_lang(
+        rt.block_on(validate_goldens_for_lang(
             config.host.clone(),
             &bench_root,
             config.lang,
             selectors_ref,
         ))?;
-        println!("[{}] goldens-only build complete", config.lang.as_str());
+        println!("[{}] goldens-only validation complete", config.lang.as_str());
         return Ok(());
     }
 
