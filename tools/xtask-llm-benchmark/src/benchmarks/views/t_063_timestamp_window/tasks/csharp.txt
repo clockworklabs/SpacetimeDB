@@ -1,0 +1,1 @@
+Write a C# SpacetimeDB module with a public Event table containing Id: ulong primary key, indexed OccurredAt: Timestamp, and Label: string. Add Seed() with events at 100, 200, 300, 400, and 500 microseconds after the Unix epoch. Expose a public WindowEvent procedural view that uses the OccurredAt index to return the inclusive range from 200 through 400 microseconds.
