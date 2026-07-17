@@ -52,6 +52,12 @@ mod auth_t_046_shared_document {
 
 #[allow(dead_code)]
 #[allow(clippy::all)]
+mod auth_t_068_secure_projection {
+    include!("../benchmarks/auth/t_068_secure_projection/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
 mod basics_t_000_empty_reducers {
     include!("../benchmarks/basics/t_000_empty_reducers/spec.rs");
 }
@@ -174,6 +180,24 @@ mod data_modeling_t_030_two_table_join {
 #[allow(clippy::all)]
 mod data_modeling_t_031_unique_constraint {
     include!("../benchmarks/data_modeling/t_031_unique_constraint/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod lifecycle_t_069_scheduled_materialization {
+    include!("../benchmarks/lifecycle/t_069_scheduled_materialization/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod lifecycle_t_070_connection_scoped_presence {
+    include!("../benchmarks/lifecycle/t_070_connection_scoped_presence/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod lifecycle_t_071_scheduled_private {
+    include!("../benchmarks/lifecycle/t_071_scheduled_private/spec.rs");
 }
 
 #[allow(dead_code)]
@@ -423,6 +447,7 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         ("auth", "t_044_ban_list") => auth_t_044_ban_list::spec,
         ("auth", "t_045_rate_limit") => auth_t_045_rate_limit::spec,
         ("auth", "t_046_shared_document") => auth_t_046_shared_document::spec,
+        ("auth", "t_068_secure_projection") => auth_t_068_secure_projection::spec,
         ("basics", "t_000_empty_reducers") => basics_t_000_empty_reducers::spec,
         ("basics", "t_001_basic_tables") => basics_t_001_basic_tables::spec,
         ("basics", "t_002_scheduled_table") => basics_t_002_scheduled_table::spec,
@@ -444,6 +469,9 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         ("data_modeling", "t_029_filter_and_aggregate") => data_modeling_t_029_filter_and_aggregate::spec,
         ("data_modeling", "t_030_two_table_join") => data_modeling_t_030_two_table_join::spec,
         ("data_modeling", "t_031_unique_constraint") => data_modeling_t_031_unique_constraint::spec,
+        ("lifecycle", "t_069_scheduled_materialization") => lifecycle_t_069_scheduled_materialization::spec,
+        ("lifecycle", "t_070_connection_scoped_presence") => lifecycle_t_070_connection_scoped_presence::spec,
+        ("lifecycle", "t_071_scheduled_private") => lifecycle_t_071_scheduled_private::spec,
         ("queries", "t_022_view_basic") => queries_t_022_view_basic::spec,
         ("queries", "t_023_view_per_user") => queries_t_023_view_per_user::spec,
         ("queries", "t_032_range_query") => queries_t_032_range_query::spec,

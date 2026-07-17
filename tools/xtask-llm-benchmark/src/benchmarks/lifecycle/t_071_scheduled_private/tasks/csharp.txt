@@ -1,0 +1,1 @@
+Write a C# SpacetimeDB module with a public JobResult table containing Id: ulong primary key and Status: string. Add public EnqueuePrivate(Id) to write Status "queued" and insert a private schedule-table row for one millisecond later. Its scheduled RunPrivateJob reducer must be scheduler-only, not client-callable, and update the result to "complete".

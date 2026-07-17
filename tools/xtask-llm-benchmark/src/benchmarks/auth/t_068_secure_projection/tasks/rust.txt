@@ -1,0 +1,1 @@
+Write a Rust SpacetimeDB module with a private secret_note table containing id: u64 primary key, indexed owner: Identity, title: String, and secret_body: String. Add seed_private_note() to insert one note for the caller. Expose a public per-user my_safe_note view that returns only the caller's id and title, never owner or secret_body.
