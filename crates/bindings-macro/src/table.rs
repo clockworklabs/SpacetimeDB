@@ -1018,7 +1018,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                     /* fn is_string(s: &dyn std::any::Any) -> bool {
                         std::any::TypeId::of::<&'static str>() == s.type_id()
                     } */
-                    if  std::any::TypeId::of::<&'static str>() == s.type_id::<#ty>() {
+                    if  std::any::TypeId::of::<&'static str>() == std::any::TypeId::of::<#ty>() {
                         "bang";
                     }
                     // This closure enforces that `val` is of type `ty` at compile-time.
