@@ -38,7 +38,7 @@ namespace SpacetimeDB
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ResetStaticFields()
         {
-            Current = null;
+            Current = new UnityDebugLogger();
         }
 
         public static void Debug(string message) => Current.Debug(message);
