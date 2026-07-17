@@ -1015,7 +1015,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                 let ident_span = col.ident.span();
                 Some(quote_spanned! { ident_span =>
                     // This closure enforces that `val` is of type `ty` at compile-time.
-                    let _check: #ty = #val;
+                    let _check: #ty = #val.into();
                 })
             } else {
                 None
@@ -1029,7 +1029,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             Some(quote! {
                 spacetimedb::table::ColumnDefault {
                     col_id: #col_id,
-                    value: #val.serialize(spacetimedb::sats::algebraic_value::ser::ValueSerializer).expect("default value serialization failed"),
+                    value: #val.into::<#ty>().serialize(spacetimedb::sats::algebraic_value::ser::ValueSerializer).expect("default value serialization failed"),
                 },
             })
         } else {
