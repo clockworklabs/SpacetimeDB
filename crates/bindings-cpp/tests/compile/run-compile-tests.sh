@@ -24,7 +24,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ "$SUITE" != "http-handlers" ]]; then
+if [[ "$SUITE" != "http-handlers" && "$SUITE" != "indexes" ]]; then
     echo "Unsupported suite: $SUITE" >&2
     exit 1
 fi
@@ -54,81 +54,95 @@ if ! cmake --build "$LIBRARY_BUILD_DIR" >"$LIBRARY_BUILD_LOG" 2>&1; then
     exit 1
 fi
 
-declare -a CASE_NAMES=(
-    "ok_http_handlers_basic"
-    "error_http_handler_no_args"
-    "error_http_handler_immutable_ctx"
-    "error_http_handler_wrong_ctx"
-    "error_http_handler_no_request_arg"
-    "error_http_handler_wrong_request_arg_type"
-    "error_http_handler_no_return_type"
-    "error_http_handler_wrong_return_type"
-    "error_http_handler_no_sender"
-    "error_http_handler_no_connection_id"
-    "error_http_handler_no_db"
-    "error_http_router_not_a_function"
-    "error_http_router_with_args"
-    "error_http_router_wrong_return_type"
-)
-
 declare -A CASE_EXPECTATION
 declare -A CASE_MARKER
 declare -A CASE_SOURCE
 
-CASE_EXPECTATION["ok_http_handlers_basic"]="success"
-CASE_SOURCE["ok_http_handlers_basic"]="$SCRIPT_DIR/cases/http-handlers/ok_http_handlers_basic.cpp"
+if [[ "$SUITE" == "http-handlers" ]]; then
+    declare -a CASE_NAMES=(
+        "ok_http_handlers_basic"
+        "error_http_handler_no_args"
+        "error_http_handler_immutable_ctx"
+        "error_http_handler_wrong_ctx"
+        "error_http_handler_no_request_arg"
+        "error_http_handler_wrong_request_arg_type"
+        "error_http_handler_no_return_type"
+        "error_http_handler_wrong_return_type"
+        "error_http_handler_no_sender"
+        "error_http_handler_no_connection_id"
+        "error_http_handler_no_db"
+        "error_http_router_not_a_function"
+        "error_http_router_with_args"
+        "error_http_router_wrong_return_type"
+    )
 
-CASE_EXPECTATION["error_http_handler_no_args"]="failure"
-CASE_MARKER["error_http_handler_no_args"]="too few arguments provided to function-like macro invocation"
-CASE_SOURCE["error_http_handler_no_args"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_no_args.cpp"
+    CASE_EXPECTATION["ok_http_handlers_basic"]="success"
+    CASE_SOURCE["ok_http_handlers_basic"]="$SCRIPT_DIR/cases/http-handlers/ok_http_handlers_basic.cpp"
 
-CASE_EXPECTATION["error_http_handler_immutable_ctx"]="failure"
-CASE_MARKER["error_http_handler_immutable_ctx"]="First parameter of HTTP handler must be HandlerContext"
-CASE_SOURCE["error_http_handler_immutable_ctx"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_immutable_ctx.cpp"
+    CASE_EXPECTATION["error_http_handler_no_args"]="failure"
+    CASE_MARKER["error_http_handler_no_args"]="too few arguments provided to function-like macro invocation"
+    CASE_SOURCE["error_http_handler_no_args"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_no_args.cpp"
 
-CASE_EXPECTATION["error_http_handler_wrong_ctx"]="failure"
-CASE_MARKER["error_http_handler_wrong_ctx"]="First parameter of HTTP handler must be HandlerContext"
-CASE_SOURCE["error_http_handler_wrong_ctx"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_wrong_ctx.cpp"
+    CASE_EXPECTATION["error_http_handler_immutable_ctx"]="failure"
+    CASE_MARKER["error_http_handler_immutable_ctx"]="First parameter of HTTP handler must be HandlerContext"
+    CASE_SOURCE["error_http_handler_immutable_ctx"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_immutable_ctx.cpp"
 
-CASE_EXPECTATION["error_http_handler_no_request_arg"]="failure"
-CASE_MARKER["error_http_handler_no_request_arg"]="too few arguments provided to function-like macro invocation"
-CASE_SOURCE["error_http_handler_no_request_arg"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_no_request_arg.cpp"
+    CASE_EXPECTATION["error_http_handler_wrong_ctx"]="failure"
+    CASE_MARKER["error_http_handler_wrong_ctx"]="First parameter of HTTP handler must be HandlerContext"
+    CASE_SOURCE["error_http_handler_wrong_ctx"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_wrong_ctx.cpp"
 
-CASE_EXPECTATION["error_http_handler_wrong_request_arg_type"]="failure"
-CASE_MARKER["error_http_handler_wrong_request_arg_type"]="Second parameter of HTTP handler must be HttpRequest"
-CASE_SOURCE["error_http_handler_wrong_request_arg_type"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_wrong_request_arg_type.cpp"
+    CASE_EXPECTATION["error_http_handler_no_request_arg"]="failure"
+    CASE_MARKER["error_http_handler_no_request_arg"]="too few arguments provided to function-like macro invocation"
+    CASE_SOURCE["error_http_handler_no_request_arg"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_no_request_arg.cpp"
 
-CASE_EXPECTATION["error_http_handler_no_return_type"]="failure"
-CASE_MARKER["error_http_handler_no_return_type"]="non-void function does not return a value"
-CASE_SOURCE["error_http_handler_no_return_type"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_no_return_type.cpp"
+    CASE_EXPECTATION["error_http_handler_wrong_request_arg_type"]="failure"
+    CASE_MARKER["error_http_handler_wrong_request_arg_type"]="Second parameter of HTTP handler must be HttpRequest"
+    CASE_SOURCE["error_http_handler_wrong_request_arg_type"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_wrong_request_arg_type.cpp"
 
-CASE_EXPECTATION["error_http_handler_wrong_return_type"]="failure"
-CASE_MARKER["error_http_handler_wrong_return_type"]="no viable conversion from returned value of type 'unsigned int' to function return type 'SpacetimeDB::HttpResponse'"
-CASE_SOURCE["error_http_handler_wrong_return_type"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_wrong_return_type.cpp"
+    CASE_EXPECTATION["error_http_handler_no_return_type"]="failure"
+    CASE_MARKER["error_http_handler_no_return_type"]="non-void function does not return a value"
+    CASE_SOURCE["error_http_handler_no_return_type"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_no_return_type.cpp"
 
-CASE_EXPECTATION["error_http_handler_no_sender"]="failure"
-CASE_MARKER["error_http_handler_no_sender"]="no member named 'sender' in 'SpacetimeDB::HandlerContext'"
-CASE_SOURCE["error_http_handler_no_sender"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_no_sender.cpp"
+    CASE_EXPECTATION["error_http_handler_wrong_return_type"]="failure"
+    CASE_MARKER["error_http_handler_wrong_return_type"]="no viable conversion from returned value of type 'unsigned int' to function return type 'SpacetimeDB::HttpResponse'"
+    CASE_SOURCE["error_http_handler_wrong_return_type"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_wrong_return_type.cpp"
 
-CASE_EXPECTATION["error_http_handler_no_connection_id"]="failure"
-CASE_MARKER["error_http_handler_no_connection_id"]="no member named 'connection_id' in 'SpacetimeDB::HandlerContext'"
-CASE_SOURCE["error_http_handler_no_connection_id"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_no_connection_id.cpp"
+    CASE_EXPECTATION["error_http_handler_no_sender"]="failure"
+    CASE_MARKER["error_http_handler_no_sender"]="no member named 'sender' in 'SpacetimeDB::HandlerContext'"
+    CASE_SOURCE["error_http_handler_no_sender"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_no_sender.cpp"
 
-CASE_EXPECTATION["error_http_handler_no_db"]="failure"
-CASE_MARKER["error_http_handler_no_db"]="no member named 'db' in 'SpacetimeDB::HandlerContext'"
-CASE_SOURCE["error_http_handler_no_db"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_no_db.cpp"
+    CASE_EXPECTATION["error_http_handler_no_connection_id"]="failure"
+    CASE_MARKER["error_http_handler_no_connection_id"]="no member named 'connection_id' in 'SpacetimeDB::HandlerContext'"
+    CASE_SOURCE["error_http_handler_no_connection_id"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_no_connection_id.cpp"
 
-CASE_EXPECTATION["error_http_router_not_a_function"]="failure"
-CASE_MARKER["error_http_router_not_a_function"]="illegal initializer"
-CASE_SOURCE["error_http_router_not_a_function"]="$SCRIPT_DIR/cases/http-handlers/error_http_router_not_a_function.cpp"
+    CASE_EXPECTATION["error_http_handler_no_db"]="failure"
+    CASE_MARKER["error_http_handler_no_db"]="no member named 'db' in 'SpacetimeDB::HandlerContext'"
+    CASE_SOURCE["error_http_handler_no_db"]="$SCRIPT_DIR/cases/http-handlers/error_http_handler_no_db.cpp"
 
-CASE_EXPECTATION["error_http_router_with_args"]="failure"
-CASE_MARKER["error_http_router_with_args"]="too many arguments provided to function-like macro invocation"
-CASE_SOURCE["error_http_router_with_args"]="$SCRIPT_DIR/cases/http-handlers/error_http_router_with_args.cpp"
+    CASE_EXPECTATION["error_http_router_not_a_function"]="failure"
+    CASE_MARKER["error_http_router_not_a_function"]="illegal initializer"
+    CASE_SOURCE["error_http_router_not_a_function"]="$SCRIPT_DIR/cases/http-handlers/error_http_router_not_a_function.cpp"
 
-CASE_EXPECTATION["error_http_router_wrong_return_type"]="failure"
-CASE_MARKER["error_http_router_wrong_return_type"]="no viable conversion from returned value of type 'unsigned int' to function return type 'SpacetimeDB::Router'"
-CASE_SOURCE["error_http_router_wrong_return_type"]="$SCRIPT_DIR/cases/http-handlers/error_http_router_wrong_return_type.cpp"
+    CASE_EXPECTATION["error_http_router_with_args"]="failure"
+    CASE_MARKER["error_http_router_with_args"]="too many arguments provided to function-like macro invocation"
+    CASE_SOURCE["error_http_router_with_args"]="$SCRIPT_DIR/cases/http-handlers/error_http_router_with_args.cpp"
+
+    CASE_EXPECTATION["error_http_router_wrong_return_type"]="failure"
+    CASE_MARKER["error_http_router_wrong_return_type"]="no viable conversion from returned value of type 'unsigned int' to function return type 'SpacetimeDB::Router'"
+    CASE_SOURCE["error_http_router_wrong_return_type"]="$SCRIPT_DIR/cases/http-handlers/error_http_router_wrong_return_type.cpp"
+else
+    declare -a CASE_NAMES=(
+        "ok_multi_column_range_prefixes"
+        "error_multi_column_range_not_terminal"
+    )
+
+    CASE_EXPECTATION["ok_multi_column_range_prefixes"]="success"
+    CASE_SOURCE["ok_multi_column_range_prefixes"]="$SCRIPT_DIR/cases/indexes/ok_multi_column_range_prefixes.cpp"
+
+    CASE_EXPECTATION["error_multi_column_range_not_terminal"]="failure"
+    CASE_MARKER["error_multi_column_range_not_terminal"]="Range<T> in a multi-column index filter must be the final supplied element"
+    CASE_SOURCE["error_multi_column_range_not_terminal"]="$SCRIPT_DIR/cases/indexes/error_multi_column_range_not_terminal.cpp"
+fi
 
 FAILURES=0
 
