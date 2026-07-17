@@ -203,6 +203,7 @@ fn signal_killed_by(_status: &std::process::ExitStatus) -> Option<i32> {
 /// These are resource contention issues in the dotnet WASI SDK.
 fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
     let combined = format!("{stderr}{stdout}");
+    let diagnostic = combined.to_ascii_lowercase();
     // "Pipe is broken" errors from WASI SDK parallel builds
     combined.contains("Pipe is broken")
         || combined.contains("EmitBundleObjectFiles")
@@ -214,6 +215,33 @@ fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
         || (combined.contains("MSB3073") && combined.contains("exited with code 2"))
         // dotnet can crash below spacetime while spacetime exits 1.
         || combined.contains("code <signal")
+        // A child process can occasionally disappear on Windows after login but
+        // before the CLI emits a compiler/MSBuild diagnostic. Retrying is safe:
+        // benchmark publishes always use their own temporary CLI root and database.
+        || (!diagnostic.contains("error")
+            && !diagnostic.contains("failed")
+            && !diagnostic.contains("exception"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_transient_build_error;
+
+    #[test]
+    fn retries_publish_exit_without_actionable_diagnostic() {
+        assert!(is_transient_build_error(
+            "Saving config to temporary-root/config/cli.toml.",
+            "Logged in with identity c200"
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_source_compile_error() {
+        assert!(!is_transient_build_error(
+            "error: could not compile `spacetime-module`",
+            ""
+        ));
+    }
 }
 
 fn run(cmd: &mut Command, label: &str) -> Result<()> {
