@@ -131,7 +131,8 @@ impl CliRootDir {
 }
 
 fn spacetime_cmd(cli_root: &CliRootDir) -> Command {
-    let mut cmd = Command::new("spacetime");
+    let spacetime = env::var_os("LLM_BENCH_SPACETIME_BIN").unwrap_or_else(|| "spacetime".into());
+    let mut cmd = Command::new(spacetime);
     cmd.arg("--root-dir").arg(cli_root.path());
     cmd
 }
@@ -394,6 +395,9 @@ impl Publisher for SpacetimeRustPublisher {
             .arg(host_url)
             .arg(&db)
             .current_dir(source);
+        if let Some(target_dir) = env::var_os("LLM_BENCH_RUST_TARGET_DIR") {
+            pubcmd.env("CARGO_TARGET_DIR", target_dir);
+        }
         run(&mut pubcmd, "spacetime publish")?;
 
         Ok(())
