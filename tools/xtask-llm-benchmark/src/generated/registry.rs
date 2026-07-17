@@ -284,6 +284,24 @@ mod schema_t_021_multi_column_index {
     include!("../benchmarks/schema/t_021_multi_column_index/spec.rs");
 }
 
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod tables_t_047_normalized_collection {
+    include!("../benchmarks/tables/t_047_normalized_collection/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod tables_t_048_heartbeat_isolation {
+    include!("../benchmarks/tables/t_048_heartbeat_isolation/spec.rs");
+}
+
+#[allow(dead_code)]
+#[allow(clippy::all)]
+mod tables_t_050_normalized_schema {
+    include!("../benchmarks/tables/t_050_normalized_schema/spec.rs");
+}
+
 pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
     let task = task_root
         .file_name()
@@ -342,6 +360,9 @@ pub fn resolve_by_path(task_root: &Path) -> Result<fn() -> BenchmarkSpec> {
         ("schema", "t_019_many_to_many") => schema_t_019_many_to_many::spec,
         ("schema", "t_020_ecs") => schema_t_020_ecs::spec,
         ("schema", "t_021_multi_column_index") => schema_t_021_multi_column_index::spec,
+        ("tables", "t_047_normalized_collection") => tables_t_047_normalized_collection::spec,
+        ("tables", "t_048_heartbeat_isolation") => tables_t_048_heartbeat_isolation::spec,
+        ("tables", "t_050_normalized_schema") => tables_t_050_normalized_schema::spec,
         _ => return Err(anyhow!("no spec registered for {}/{} (need spec.rs)", category, task)),
     };
 

@@ -1,0 +1,18 @@
+Write a SpacetimeDB backend module in Rust that normalizes organization data into three related tables.
+
+TABLES
+- organization (public), struct Organization
+  - id: u64 (primary key, auto_inc)
+  - name: String
+- department (public), struct Department
+  - id: u64 (primary key, auto_inc)
+  - organization_id: u64
+  - name: String
+  - index by_organization: btree(organization_id)
+- employee (public), struct Employee
+  - id: u64 (primary key, auto_inc)
+  - department_id: u64
+  - name: String
+  - index by_department: btree(department_id)
+
+Do not use nested arrays. No reducers are required.

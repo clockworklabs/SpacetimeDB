@@ -1,0 +1,13 @@
+Write a SpacetimeDB backend module in C# that models an unbounded child collection with normalized tables.
+
+TABLES
+- CollectionOwner (public, accessor CollectionOwner)
+  - Id: ulong (primary key, auto increment)
+  - Name: string
+- ChildItem (public, accessor ChildItem)
+  - Id: ulong (primary key, auto increment)
+  - OwnerId: ulong
+  - Value: string
+  - index by_owner: btree(OwnerId)
+
+Do not store child items in an array on CollectionOwner. No reducers are required.

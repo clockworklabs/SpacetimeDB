@@ -112,18 +112,70 @@ fn describe_db(server: &str, db: &str, timeout: Duration) -> io::Result<Value> {
 fn extract_schema(v: &Value) -> (BTreeMap<String, BTreeMap<String, String>>, BTreeSet<String>) {
     let mut tables: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
     let mut reducers: BTreeSet<String> = BTreeSet::new();
+    let types = v
+        .pointer("/typespace/types")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
 
     if let Some(ts) = v.get("tables").and_then(|x| x.as_array()) {
         for t in ts {
             let name = t.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string();
             let mut cols = BTreeMap::new();
-            if let Some(cs) = t.get("columns").and_then(|x| x.as_array()) {
+
+            // Older CLI descriptions put columns directly on the table. Keep
+            // accepting that shape while also reading the current typespace
+            // representation.
+            let legacy_columns = t.get("columns").and_then(Value::as_array);
+            let current_columns = t
+                .get("product_type_ref")
+                .and_then(Value::as_u64)
+                .and_then(|idx| types.get(idx as usize))
+                .and_then(|ty| ty.pointer("/Product/elements"))
+                .and_then(Value::as_array);
+
+            if let Some(cs) = legacy_columns.or(current_columns) {
                 for c in cs {
-                    let cname = c.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                    let cty = c.get("type").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                    let cname = schema_name(c.get("name"));
+                    let cty = c
+                        .get("type")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                        .or_else(|| {
+                            c.get("algebraic_type")
+                                .map(|ty| canonical_type(ty, types, &mut BTreeSet::new()).to_string())
+                        })
+                        .unwrap_or_default();
                     cols.insert(cname, cty);
                 }
             }
+
+            let column_names: Vec<String> = current_columns
+                .or(legacy_columns)
+                .into_iter()
+                .flatten()
+                .map(|column| schema_name(column.get("name")))
+                .collect();
+
+            insert_schema_property(
+                &mut cols,
+                "primary_key",
+                column_list(t.get("primary_key"), &column_names),
+            );
+            insert_schema_property(&mut cols, "indexes", normalize_indexes(t.get("indexes"), &column_names));
+            insert_schema_property(
+                &mut cols,
+                "constraints",
+                normalize_constraints(t.get("constraints"), &column_names),
+            );
+            insert_schema_property(
+                &mut cols,
+                "sequences",
+                normalize_sequences(t.get("sequences"), &column_names),
+            );
+            insert_schema_property(&mut cols, "schedule", canonical_value(t.get("schedule")));
+            insert_schema_property(&mut cols, "table_type", canonical_value(t.get("table_type")));
+            insert_schema_property(&mut cols, "table_access", canonical_value(t.get("table_access")));
             tables.insert(name, cols);
         }
     }
@@ -145,6 +197,123 @@ fn extract_schema(v: &Value) -> (BTreeMap<String, BTreeMap<String, String>>, BTr
     }
 
     (tables, reducers)
+}
+
+fn schema_name(value: Option<&Value>) -> String {
+    value
+        .and_then(Value::as_str)
+        .or_else(|| value.and_then(|value| value.get("some")).and_then(Value::as_str))
+        .unwrap_or("")
+        .to_owned()
+}
+
+fn canonical_type(value: &Value, types: &[Value], visiting: &mut BTreeSet<usize>) -> Value {
+    if let Some(idx) = value.get("Ref").and_then(Value::as_u64).map(|idx| idx as usize) {
+        if !visiting.insert(idx) {
+            return json!({ "recursive_ref": idx });
+        }
+        let resolved = types
+            .get(idx)
+            .map(|value| canonical_type(value, types, visiting))
+            .unwrap_or_else(|| json!({ "missing_ref": idx }));
+        visiting.remove(&idx);
+        return resolved;
+    }
+
+    match value {
+        Value::Array(values) => Value::Array(
+            values
+                .iter()
+                .map(|value| canonical_type(value, types, visiting))
+                .collect(),
+        ),
+        Value::Object(values) => Value::Object(
+            values
+                .iter()
+                .map(|(key, value)| (key.clone(), canonical_type(value, types, visiting)))
+                .collect(),
+        ),
+        _ => value.clone(),
+    }
+}
+
+fn column_name(value: &Value, columns: &[String]) -> String {
+    value
+        .as_u64()
+        .and_then(|idx| columns.get(idx as usize))
+        .cloned()
+        .unwrap_or_else(|| value.to_string())
+}
+
+fn column_list(value: Option<&Value>, columns: &[String]) -> String {
+    value
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .map(|value| column_name(value, columns))
+                .collect::<Vec<_>>()
+                .join(",")
+        })
+        .unwrap_or_default()
+}
+
+fn normalize_indexes(value: Option<&Value>, columns: &[String]) -> String {
+    let mut indexes = BTreeSet::new();
+    for index in value.and_then(Value::as_array).into_iter().flatten() {
+        let Some(algorithm) = index.get("algorithm").and_then(Value::as_object) else {
+            continue;
+        };
+        for (kind, indexed_columns) in algorithm {
+            let normalized_columns = match indexed_columns {
+                Value::Array(values) => values
+                    .iter()
+                    .map(|value| column_name(value, columns))
+                    .collect::<Vec<_>>()
+                    .join(","),
+                value => column_name(value, columns),
+            };
+            indexes.insert(format!("{kind}({normalized_columns})"));
+        }
+    }
+    indexes.into_iter().collect::<Vec<_>>().join(";")
+}
+
+fn normalize_constraints(value: Option<&Value>, columns: &[String]) -> String {
+    let mut constraints = BTreeSet::new();
+    for constraint in value.and_then(Value::as_array).into_iter().flatten() {
+        let Some(data) = constraint.get("data").and_then(Value::as_object) else {
+            continue;
+        };
+        for (kind, detail) in data {
+            let normalized_columns = column_list(detail.get("columns"), columns);
+            constraints.insert(format!("{kind}({normalized_columns})"));
+        }
+    }
+    constraints.into_iter().collect::<Vec<_>>().join(";")
+}
+
+fn normalize_sequences(value: Option<&Value>, columns: &[String]) -> String {
+    let mut sequences = BTreeSet::new();
+    for sequence in value.and_then(Value::as_array).into_iter().flatten() {
+        let column = sequence
+            .get("column")
+            .map(|value| column_name(value, columns))
+            .unwrap_or_default();
+        let increment = sequence.get("increment").and_then(Value::as_i64).unwrap_or_default();
+        sequences.insert(format!("{column}:{increment}"));
+    }
+    sequences.into_iter().collect::<Vec<_>>().join(";")
+}
+
+fn canonical_value(value: Option<&Value>) -> String {
+    value.map(Value::to_string).unwrap_or_default()
+}
+
+fn insert_schema_property(columns: &mut BTreeMap<String, String>, name: &str, value: String) {
+    if !value.is_empty() {
+        columns.insert(format!("@{name}"), value);
+    }
 }
 
 fn diff_maps(a: &BTreeMap<String, BTreeMap<String, String>>, b: &BTreeMap<String, BTreeMap<String, String>>) -> Value {
@@ -644,5 +813,64 @@ impl Scorer for ReducerCallBothScorer {
             partial: 1.0,
             notes: json!({ "reducer": self.reducer, "args": self.args }),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn current_schema(include_owner_index: bool) -> Value {
+        let mut indexes = vec![json!({ "algorithm": { "BTree": [0] } })];
+        if include_owner_index {
+            indexes.push(json!({ "algorithm": { "BTree": [1] } }));
+        }
+        json!({
+            "typespace": {
+                "types": [{
+                    "Product": {
+                        "elements": [
+                            { "name": { "some": "id" }, "algebraic_type": { "U64": [] } },
+                            { "name": { "some": "owner_id" }, "algebraic_type": { "U64": [] } }
+                        ]
+                    }
+                }]
+            },
+            "tables": [{
+                "name": "child_item",
+                "product_type_ref": 0,
+                "primary_key": [0],
+                "indexes": indexes,
+                "constraints": [{ "data": { "Unique": { "columns": [0] } } }],
+                "sequences": [{ "column": 0, "increment": 1 }],
+                "schedule": { "none": [] },
+                "table_type": { "User": [] },
+                "table_access": { "Public": [] }
+            }],
+            "reducers": []
+        })
+    }
+
+    #[test]
+    fn current_schema_extracts_columns_and_table_properties() {
+        let (tables, reducers) = extract_schema(&current_schema(true));
+        let child_item = &tables["child_item"];
+
+        assert_eq!(child_item["id"], r#"{"U64":[]}"#);
+        assert_eq!(child_item["owner_id"], r#"{"U64":[]}"#);
+        assert_eq!(child_item["@primary_key"], "id");
+        assert_eq!(child_item["@indexes"], "BTree(id);BTree(owner_id)");
+        assert_eq!(child_item["@constraints"], "Unique(id)");
+        assert_eq!(child_item["@sequences"], "id:1");
+        assert_eq!(child_item["@table_access"], r#"{"Public":[]}"#);
+        assert!(reducers.is_empty());
+    }
+
+    #[test]
+    fn missing_index_produces_a_schema_diff() {
+        let (golden, _) = extract_schema(&current_schema(true));
+        let (candidate, _) = extract_schema(&current_schema(false));
+
+        assert!(!diff_maps(&golden, &candidate).is_null());
     }
 }
