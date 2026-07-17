@@ -1059,7 +1059,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     .Select(m => m.Attrs.FirstOrDefault(a => a.Mask == ColumnAttrs.Default))
             );
 
-            var withDefaultValues = fieldsWithDefaultValues as ColumnDeclaration[] ?? [.. fieldsWithDefaultValues];
+            var withDefaultValues =
+                fieldsWithDefaultValues as ColumnDeclaration[] ?? [.. fieldsWithDefaultValues];
             foreach (var fieldsWithDefaultValue in withDefaultValues)
             {
                 if (

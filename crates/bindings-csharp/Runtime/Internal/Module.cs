@@ -129,9 +129,7 @@ partial class RawModuleDefV10
                     Sequences: table.Sequences,
                     TableType: table.TableType,
                     TableAccess: table.TableAccess,
-                    DefaultValues: defaults is null
-                        ? []
-                        : [.. defaults],
+                    DefaultValues: defaults is null ? [] : [.. defaults],
                     IsEvent: table.IsEvent
                 )
             );
@@ -211,9 +209,7 @@ partial class RawModuleDefV10
         if (explicitNames.Count > 0)
         {
             sections.Add(
-                new RawModuleDefV10Section.ExplicitNames(
-                    new ExplicitNames([.. explicitNames])
-                )
+                new RawModuleDefV10Section.ExplicitNames(new ExplicitNames([.. explicitNames]))
             );
         }
         if (rowLevelSecurityDefs.Count > 0)

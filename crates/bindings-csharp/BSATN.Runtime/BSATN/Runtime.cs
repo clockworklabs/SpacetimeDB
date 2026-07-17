@@ -180,7 +180,10 @@ public readonly struct Enum<T> : IReadWrite<T>
             (_) =>
                 new AlgebraicType.Sum(
 #pragma warning disable CA2263 // netstandard2.1 lacks the generic Enum overloads.
-                    [.. Enum.GetNames(typeof(T)).Select(name => new AggregateElement(name, AlgebraicType.Unit))]
+                    [
+                        .. Enum.GetNames(typeof(T))
+                            .Select(name => new AggregateElement(name, AlgebraicType.Unit)),
+                    ]
 #pragma warning restore CA2263
                 )
         );
