@@ -132,7 +132,7 @@ namespace SpacetimeDB
         where DbConnection : DbConnectionBase<DbConnection, Tables, Reducer>, new()
         where Tables : RemoteTablesBase
     {
-        internal const bool IsTesting = false;
+        internal static bool IsTesting { get; set; } = false;
 
         public static DbConnectionBuilder<DbConnection> Builder() => new();
 
