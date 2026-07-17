@@ -1008,7 +1008,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let sequence_col_ids = sequenced_columns.iter().map(|col| col.index);
 
     fn is_string(s: &dyn Any) -> bool {
-        TypeId::of::<&'static str>() == s.type_id()
+        std::any::TypeId::of::<&'static str>() == s.type_id()
     }
 
     let default_type_check: TokenStream = columns
