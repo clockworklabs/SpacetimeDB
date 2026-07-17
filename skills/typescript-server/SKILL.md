@@ -87,7 +87,11 @@ Every column is a `t` builder value:
 | `t.timeDuration()` | TimeDuration | |
 | `t.scheduleAt()` | ScheduleAt | |
 
-Modifiers (complete set): `.primaryKey()`, `.autoInc()`, `.unique()`, `.index('btree')`
+Modifiers: `.primaryKey()`, `.autoInc()`, `.unique()`, `.index('btree')`, `.default(value)`.
+
+Use `.default(value)` only for a newly appended migration-safe field. Preserve existing fields and reducers exactly, and do not put defaults on primary-key, unique, or auto-increment columns.
+
+Additional numeric builders include `t.u128()`, `t.i128()`, `t.u256()`, and `t.i256()`.
 
 Optional columns: `nickname: t.option(t.string())`
 
@@ -171,6 +175,19 @@ new Date(Number(row.createdAt.microsSinceUnixEpoch / 1000n));
 
 Do not construct `Identity` values from strings (e.g. `'hex' as Identity`): serialization fails and kills the module. Identities come from `ctx.sender` or `t.identity()` columns.
 
+Synthetic connection IDs for module logic/tests can use `new ConnectionId(1n)` after importing `ConnectionId` from `spacetimedb`.
+
+Construct exact timestamps with `new Timestamp(micros)` after importing `Timestamp` from `spacetimedb`. Inclusive index ranges use `Range`:
+
+```typescript
+import { Range, Timestamp } from 'spacetimedb';
+
+ctx.db.event.occurredAt.filter(new Range(
+  { tag: 'included', value: new Timestamp(200n) },
+  { tag: 'included', value: new Timestamp(400n) },
+));
+```
+
 ## Scheduled Tables
 
 ```typescript
@@ -227,4 +244,80 @@ export const myProfile = spacetimedb.view(
   t.option(entity.rowType),
   (ctx) => ctx.db.entity.identity.find(ctx.sender) ?? undefined
 );
+```
+
+For a procedural view primary key, define the output with `t.row` and mark its field `.primaryKey()`:
+
+```typescript
+const SourceViewRow = t.row('SourceViewRow', {
+  id: t.u64().primaryKey(),
+  value: t.string(),
+});
+```
+
+Query-builder views use `ctx.from` and return the query directly:
+
+```typescript
+export const openTicket = spacetimedb.view(
+  { name: 'open_ticket', public: true },
+  t.array(ticket.rowType),
+  ctx => ctx.from.ticket.where(ticket => ticket.status.eq('open'))
+);
+
+export const eligibleMember = spacetimedb.view(
+  { name: 'eligible_member', public: true },
+  t.array(member.rowType),
+  ctx => ctx.from.eligibility.rightSemijoin(
+    ctx.from.member,
+    (eligibility, member) => eligibility.memberId.eq(member.id)
+  )
+);
+```
+
+## Client Visibility Filters
+
+```typescript
+export const userRecordFilter = spacetimedb.clientVisibilityFilter.sql(
+  'SELECT * FROM user_record WHERE identity = :sender'
+);
+```
+
+## Procedures and HTTP
+
+Procedures declare argument and return types. They can perform outbound HTTP through `ctx.http` and open short transactions with `ctx.withTx`:
+
+```typescript
+const Summary = t.object('Summary', { total: t.u32(), label: t.string() });
+
+export const calculateSummary = spacetimedb.procedure(
+  { lhs: t.u32(), rhs: t.u32() },
+  Summary,
+  (_ctx, { lhs, rhs }) => ({ total: lhs + rhs, label: 'calculated' })
+);
+
+export const fetchAndStore = spacetimedb.procedure(
+  { url: t.string() },
+  t.unit(),
+  (ctx, { url }) => {
+    const response = ctx.http.fetch(url);
+    ctx.withTx(tx => tx.db.fetchedRecord.insert({ id: 1n, status: response.status }));
+    return {};
+  }
+);
+```
+
+Scheduled procedures use a normal scheduled table, but reference a `spacetimedb.procedure(...)` callback instead of a reducer.
+
+Inbound HTTP uses `httpHandler`, `httpRouter`, `Router`, and `SyncResponse`:
+
+```typescript
+import { Router, SyncResponse } from 'spacetimedb/server';
+
+export const echo = spacetimedb.httpHandler((_ctx, request) =>
+  new SyncResponse(`echo:${request.text()}`, {
+    status: 201,
+    headers: { 'content-type': 'text/plain' },
+  })
+);
+export const routes = spacetimedb.httpRouter(new Router().post('/echo', echo));
 ```
