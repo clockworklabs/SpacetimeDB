@@ -1014,15 +1014,14 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                 let ty = &col.ty;
                 let ident_span = col.ident.span();
 
-                fn is_string(s: &dyn std::any::Any) -> bool {
-                    std::any::TypeId::of::<&'static str>() == s.type_id()
-                }
-
                 Some(quote_spanned! { ident_span =>
-                    // This closure enforces that `val` is of type `ty` at compile-time.
-                    if is_string(#ty) {
-                        "bang"
+                    fn is_string(s: &dyn std::any::Any) -> bool {
+                        std::any::TypeId::of::<&'static str>() == s.type_id()
                     }
+                    if is_string(#ty) {
+                        "bang";
+                    }
+                    // This closure enforces that `val` is of type `ty` at compile-time.
                     let _check: #ty = #val;
                 })
             } else {
