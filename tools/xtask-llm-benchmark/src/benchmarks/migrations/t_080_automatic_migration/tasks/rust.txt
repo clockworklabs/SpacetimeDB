@@ -1,1 +1,17 @@
-Update the Rust SpacetimeDB module with a compatible schema change. Preserve the public Product table and its fields, plus the seed and touch reducers. Add a public Category table with id: u64 as its primary key and label: String. Add create_category(id, label) to insert a Category. The populated Product table must survive a normal republish without deleting data.
+Update the existing SpacetimeDB backend module in Rust with a compatible schema change.
+
+TABLES
+- product (public), struct Product
+  - Preserve the existing table and its fields
+- category (public), struct Category
+  - Fields:
+    - id: u64 (primary key)
+    - label: String
+
+REDUCERS
+- Preserve seed and touch
+- create_category(id: u64, label: String)
+  - Insert a Category with the supplied values
+
+MIGRATION
+- The populated product table must survive a normal republish without deleting data

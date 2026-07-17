@@ -1,1 +1,19 @@
-Write a Rust SpacetimeDB module with a public content table containing id: u64 primary key, indexed category: String, active: bool, and score: i32. Add seed() with rows that separately fail category, active, and score checks plus one passing row. Expose a public featured_content procedural view that first uses the category index for "news", then filters for active rows with score at least 10.
+Write a SpacetimeDB backend module in Rust that defines a procedural view using an index and additional filters.
+
+TABLE
+- content (public), struct Content
+  - Fields:
+    - id: u64 (primary key)
+    - category: String (btree index)
+    - active: bool
+    - score: i32
+
+REDUCERS
+- seed()
+  - Insert rows that separately fail the category, active, and score checks
+  - Insert one passing row
+
+VIEW
+- featured_content (procedural, public)
+  - First use the category index for "news"
+  - Then return only active rows with score at least 10

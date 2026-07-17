@@ -1,1 +1,17 @@
-Write a Rust SpacetimeDB module with a public table named event containing id: u64 primary key, indexed occurred_at: Timestamp, and label: String. Add seed() with events at 100, 200, 300, 400, and 500 microseconds after the Unix epoch. Expose a public window_event procedural view that uses the occurred_at index to return the inclusive range from 200 through 400 microseconds.
+Write a SpacetimeDB backend module in Rust that defines a procedural view over an inclusive timestamp range.
+
+TABLE
+- event (public), struct Event
+  - Fields:
+    - id: u64 (primary key)
+    - occurred_at: Timestamp (btree index)
+    - label: String
+
+REDUCERS
+- seed()
+  - Insert events at 100, 200, 300, 400, and 500 microseconds after the Unix epoch
+
+VIEW
+- window_event (procedural, public)
+  - Use the occurred_at index
+  - Return the inclusive range from 200 through 400 microseconds

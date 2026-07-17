@@ -1,1 +1,25 @@
-Write a C# SpacetimeDB module with a private SecretNote table containing Id: ulong primary key, indexed Owner: Identity, Title: string, and SecretBody: string. Define a SafeNote product type containing only Id: ulong and Title: string. Add SeedPrivateNote() to insert Id 1 for the caller with Title "Visible title" and SecretBody "never expose this". Expose a public per-user MySafeNote view returning IEnumerable<SafeNote> for only the caller, never Owner or SecretBody.
+Write a SpacetimeDB backend module in C# that exposes a safe per-user projection of private rows.
+
+TYPES
+- SafeNote
+  - Id: ulong
+  - Title: string
+
+TABLE
+- SecretNote (private, accessor SecretNote)
+  - Fields:
+    - Id: ulong (primary key)
+    - Owner: Identity (btree index)
+    - Title: string
+    - SecretBody: string
+
+REDUCERS
+- SeedPrivateNote()
+  - Insert Id 1 for the caller
+  - Set Title to "Visible title"
+  - Set SecretBody to "never expose this"
+
+VIEW
+- MySafeNote (per-user, public)
+  - Return IEnumerable<SafeNote> for only the caller
+  - Never expose Owner or SecretBody

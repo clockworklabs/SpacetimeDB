@@ -1,1 +1,14 @@
-Write a C# SpacetimeDB module with a public CommandResult table containing RequestId: string primary key, Success: bool, and Message: string. Add RunCommand(requestId, value). Reducers do not return application data; write a result row whose Message is "value=<value>" and Success is true.
+Write a SpacetimeDB backend module in C# that writes reducer results to a table.
+
+TABLE
+- CommandResult (public, accessor CommandResult)
+  - Fields:
+    - RequestId: string (primary key)
+    - Success: bool
+    - Message: string
+
+REDUCERS
+- RunCommand(requestId: string, value: int)
+  - Reducers do not return application data
+  - Insert a CommandResult row with Success set to true
+  - Set Message to "value=<value>" using the supplied value

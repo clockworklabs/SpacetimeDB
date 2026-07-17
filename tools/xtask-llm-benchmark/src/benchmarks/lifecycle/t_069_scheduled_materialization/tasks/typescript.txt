@@ -1,1 +1,23 @@
-Write a TypeScript SpacetimeDB module with a public materialized_state table containing id: u64 primary key, status: string, version: u64, and refreshedAt: Timestamp. Define a private refresh_job scheduled table for reducer refreshMaterialized with scheduledId: u64 auto-increment primary key, scheduledAt: ScheduleAt, and stateId: u64 in that order. Add start_refresh() to write id 1 with status "pending" and version 0, then schedule state 1 one millisecond later. refreshMaterialized must update that row to status "ready", version 1, and the scheduled reducer timestamp without any further client call.
+Write a SpacetimeDB backend module in TypeScript that refreshes materialized state through a scheduled reducer.
+
+TABLES
+- materialized_state (public)
+  - Fields:
+    - id: u64 (primary key)
+    - status: string
+    - version: u64
+    - refreshedAt: Timestamp
+- refresh_job (private, scheduled for refreshMaterialized)
+  - Fields, in this order:
+    - scheduledId: u64 (primary key, auto-increment)
+    - scheduledAt: ScheduleAt
+    - stateId: u64
+
+REDUCERS
+- start_refresh()
+  - Write id 1 with status "pending" and version 0
+  - Schedule state 1 for one millisecond later
+- refreshMaterialized(job: refresh_job row) (scheduled reducer)
+  - Update state 1 to status "ready" and version 1
+  - Set refreshedAt to the scheduled reducer timestamp
+  - Complete without any further client call

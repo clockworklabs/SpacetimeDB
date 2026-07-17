@@ -1,1 +1,23 @@
-Write a C# SpacetimeDB module with a public UploadedAsset table containing Id: ulong primary key, Url: string, and Size: ulong. Register a POST /upload handler that returns status 201 and body "https://files.local/object-1". Add the procedure UploadAndRegister(uploadUrl: string, data: byte[]) to POST the binary data to the supplied public URL, require a successful response, then open a transaction to store Id 1, the supplied URL, and the byte length, and return the supplied URL.
+Write a SpacetimeDB backend module in C# that exposes an upload route and an external upload procedure.
+
+TABLE
+- UploadedAsset (public, accessor UploadedAsset)
+  - Fields:
+    - Id: ulong (primary key)
+    - Url: string
+    - Size: ulong
+
+HANDLER
+- POST /upload
+  - Return status 201
+  - Return body "https://files.local/object-1"
+
+PROCEDURE
+- UploadAndRegister(uploadUrl: string, data: byte[]) -> string
+  - POST the binary data to the supplied public URL
+  - Require a successful response
+  - Open a transaction and store Id 1, the supplied URL, and the byte length
+  - Return the supplied URL
+
+ROUTER
+- Register POST /upload through an HTTP router

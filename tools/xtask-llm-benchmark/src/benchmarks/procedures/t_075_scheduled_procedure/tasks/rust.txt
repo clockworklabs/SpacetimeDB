@@ -1,1 +1,23 @@
-Write a Rust SpacetimeDB module with a public procedure_result table (struct ProcedureResult) containing id: u64 primary key and value: u32. Define a private procedure_job scheduled table (struct ProcedureJob) for procedure run_scheduled_procedure with scheduled_id: u64 auto-increment primary key, scheduled_at: ScheduleAt, id: u64, lhs: u32, and rhs: u32 in that order. Add schedule_procedure(id, lhs, rhs) to enqueue that procedure for one millisecond later. run_scheduled_procedure must open a transaction and insert value lhs + rhs into procedure_result.
+Write a SpacetimeDB backend module in Rust that schedules a procedure which writes inside a transaction.
+
+TABLES
+- procedure_result (public), struct ProcedureResult
+  - Fields:
+    - id: u64 (primary key)
+    - value: u32
+- procedure_job (private, scheduled for run_scheduled_procedure), struct ProcedureJob
+  - Fields, in this order:
+    - scheduled_id: u64 (primary key, auto-increment)
+    - scheduled_at: ScheduleAt
+    - id: u64
+    - lhs: u32
+    - rhs: u32
+
+REDUCERS
+- schedule_procedure(id: u64, lhs: u32, rhs: u32)
+  - Enqueue run_scheduled_procedure for one millisecond later
+
+PROCEDURE
+- run_scheduled_procedure(job: ProcedureJob) -> () (scheduled procedure)
+  - Open a transaction
+  - Insert id and value lhs + rhs into procedure_result

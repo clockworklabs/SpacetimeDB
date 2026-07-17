@@ -1,1 +1,17 @@
-Update the C# SpacetimeDB module with a compatible schema change. Preserve the public Product table and its fields, plus the Seed and Touch reducers. Add a public Category table with Id: ulong as its primary key and Label: string. Add CreateCategory(id, label) to insert a Category. The populated Product table must survive a normal republish without deleting data.
+Update the existing SpacetimeDB backend module in C# with a compatible schema change.
+
+TABLES
+- Product (public, accessor Product)
+  - Preserve the existing table and its fields
+- Category (public, accessor Category)
+  - Fields:
+    - Id: ulong (primary key)
+    - Label: string
+
+REDUCERS
+- Preserve Seed and Touch
+- CreateCategory(id: ulong, label: string)
+  - Insert a Category with the supplied values
+
+MIGRATION
+- The populated Product table must survive a normal republish without deleting data

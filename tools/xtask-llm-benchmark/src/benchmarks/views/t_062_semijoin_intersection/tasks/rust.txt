@@ -1,1 +1,21 @@
-Write a Rust SpacetimeDB module with public member(id primary key, name) and eligibility(id primary key, indexed member_id) tables. Add seed() with two members but eligibility for only member 1. Expose a public eligible_member view using a query-builder semijoin that returns members only when a matching eligibility row exists.
+Write a SpacetimeDB backend module in Rust that defines a query-builder semijoin view.
+
+TABLES
+- member (public), struct Member
+  - Fields:
+    - id: u64 (primary key)
+    - name: String
+- eligibility (public), struct Eligibility
+  - Fields:
+    - id: u64 (primary key)
+    - member_id: u64 (btree index)
+
+REDUCERS
+- seed()
+  - Insert two members
+  - Insert an eligibility row for only member 1
+
+VIEW
+- eligible_member (public, query-builder)
+  - Use a semijoin
+  - Return members only when a matching eligibility row exists

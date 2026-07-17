@@ -1,1 +1,14 @@
-Write a TypeScript SpacetimeDB module with a public command_result table containing requestId: string primary key, success: boolean, and message: string. Add run_command(requestId, value). Reducers do not return application data; write a result row whose message is "value=<value>" and success is true.
+Write a SpacetimeDB backend module in TypeScript that writes reducer results to a table.
+
+TABLE
+- command_result (public)
+  - Fields:
+    - requestId: string (primary key)
+    - success: boolean
+    - message: string
+
+REDUCERS
+- run_command(requestId: string, value: i32)
+  - Reducers do not return application data
+  - Insert a command_result row with success set to true
+  - Set message to "value=<value>" using the supplied value

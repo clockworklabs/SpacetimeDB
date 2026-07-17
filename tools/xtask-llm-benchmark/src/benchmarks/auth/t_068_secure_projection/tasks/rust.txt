@@ -1,1 +1,25 @@
-Write a Rust SpacetimeDB module with a private secret_note table (struct SecretNote) containing id: u64 primary key, indexed owner: Identity, title: String, and secret_body: String. Define a SafeNote product type containing only id: u64 and title: String. Add seed_private_note() to insert id 1 for the caller with title "Visible title" and secret_body "never expose this". Expose a public per-user my_safe_note view returning Vec<SafeNote> for only the caller, never owner or secret_body.
+Write a SpacetimeDB backend module in Rust that exposes a safe per-user projection of private rows.
+
+TYPES
+- SafeNote
+  - id: u64
+  - title: String
+
+TABLE
+- secret_note (private), struct SecretNote
+  - Fields:
+    - id: u64 (primary key)
+    - owner: Identity (btree index)
+    - title: String
+    - secret_body: String
+
+REDUCERS
+- seed_private_note()
+  - Insert id 1 for the caller
+  - Set title to "Visible title"
+  - Set secret_body to "never expose this"
+
+VIEW
+- my_safe_note (per-user, public)
+  - Return Vec<SafeNote> for only the caller
+  - Never expose owner or secret_body

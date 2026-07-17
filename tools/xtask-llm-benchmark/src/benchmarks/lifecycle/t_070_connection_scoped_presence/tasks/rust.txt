@@ -1,1 +1,25 @@
-Write a Rust SpacetimeDB module with a public presence_session table keyed by connection_id: ConnectionId and containing indexed identity: Identity plus connected_at: Timestamp. Export the lifecycle reducers with the exact identifiers client_connected and client_disconnected. Client-connected must insert one row per connection, and client-disconnected must delete only that connection's row. Share that logic with exercise_presence(), which inserts two synthetic connections for the caller and removes only the first, leaving the second synthetic session intact.
+Write a SpacetimeDB backend module in Rust that tracks presence separately for each connection.
+
+TABLE
+- presence_session (public), struct PresenceSession
+  - Fields:
+    - connection_id: ConnectionId (primary key)
+    - identity: Identity (btree index)
+    - connected_at: Timestamp
+
+HELPERS
+- Share the insert and delete logic between the lifecycle reducers and exercise_presence
+
+LIFECYCLE HOOKS
+- client_connected
+  - Export with this exact identifier
+  - Insert one row for the connected connection
+- client_disconnected
+  - Export with this exact identifier
+  - Delete only the disconnected connection's row
+
+REDUCERS
+- exercise_presence()
+  - Insert two synthetic connections for the caller
+  - Remove only the first
+  - Leave the second synthetic session intact

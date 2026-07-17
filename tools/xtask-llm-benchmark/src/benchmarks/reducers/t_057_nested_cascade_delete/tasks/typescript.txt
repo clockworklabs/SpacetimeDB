@@ -1,3 +1,25 @@
-Write a TypeScript SpacetimeDB module with public workspace, project, task_item, and task_note tables. Each has a u64 primary key. Project has indexed workspaceId, TaskItem has indexed projectId, and TaskNote has indexed taskId.
+Write a SpacetimeDB backend module in TypeScript that performs a nested cascade delete across normalized tables.
 
-Add seed() creating two independent workspace→project→task→note chains using IDs 1 and 2. Add delete_workspace(id) that deletes the selected workspace and every level of its descendants while preserving the unrelated chain.
+TABLES
+- workspace (public)
+  - Fields:
+    - id: u64 (primary key)
+- project (public)
+  - Fields:
+    - id: u64 (primary key)
+    - workspaceId: u64 (btree index)
+- task_item (public)
+  - Fields:
+    - id: u64 (primary key)
+    - projectId: u64 (btree index)
+- task_note (public)
+  - Fields:
+    - id: u64 (primary key)
+    - taskId: u64 (btree index)
+
+REDUCERS
+- seed()
+  - Create two independent workspace -> project -> task_item -> task_note chains using IDs 1 and 2
+- delete_workspace(id: u64)
+  - Delete the selected workspace and every level of its descendants
+  - Preserve the unrelated chain

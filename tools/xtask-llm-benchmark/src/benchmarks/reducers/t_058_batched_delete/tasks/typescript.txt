@@ -1,3 +1,19 @@
-Write a TypeScript SpacetimeDB module that deletes a logical group in scheduled batches of at most two rows.
+Write a SpacetimeDB backend module in TypeScript that deletes a logical group in scheduled batches of at most two rows.
 
-Define a public work_item table with id: u64 primary key and indexed groupId: u64. Define a private delete_job scheduled table with scheduledId: u64 auto-increment primary key, scheduledAt: ScheduleAt, and groupId: u64. Add seed_group(groupId, count), request_delete(groupId), and the scheduled reducer runDeleteBatch. Each scheduled invocation may delete at most two matching items and must enqueue another one-shot job when items remain.
+TABLES
+- work_item (public)
+  - Fields:
+    - id: u64 (primary key)
+    - groupId: u64 (btree index)
+- delete_job (private, scheduled for runDeleteBatch)
+  - Fields:
+    - scheduledId: u64 (primary key, auto-increment)
+    - scheduledAt: ScheduleAt
+    - groupId: u64
+
+REDUCERS
+- seed_group(groupId: u64, count: u32)
+- request_delete(groupId: u64)
+- runDeleteBatch(timer: delete_job row) (scheduled reducer)
+  - Delete at most two work_item rows matching the scheduled groupId
+  - If matching rows remain, enqueue another one-shot delete_job

@@ -1,1 +1,14 @@
-Write a Rust SpacetimeDB procedure fetch_page_summary(url: String) that performs an outbound GET to the supplied public URL. Return a FetchSummary product type with status: u16, html_content_type: bool indicating whether Content-Type contains "text/html", and has_example_domain: bool indicating whether the body contains "Example Domain".
+Write a SpacetimeDB backend module in Rust that performs outbound HTTP in a procedure.
+
+TYPES
+- FetchSummary
+  - status: u16
+  - html_content_type: bool
+  - has_example_domain: bool
+
+PROCEDURE
+- fetch_page_summary(url: String) -> FetchSummary
+  - Perform an outbound GET to the supplied public URL
+  - Set status from the response status
+  - Set html_content_type based on whether Content-Type contains "text/html"
+  - Set has_example_domain based on whether the body contains "Example Domain"

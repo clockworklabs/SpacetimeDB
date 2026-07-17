@@ -1,1 +1,22 @@
-Write a TypeScript SpacetimeDB module with a POST /webhook handler accepting a pipe-delimited body event_id|sequence|value. Define a private processed_event table with eventId: string primary key. Define a public webhook_state table with key: string primary key, lastSequence: u64, and value: string. Store state under key "account". A newly applied event must return status 200 and body "applied". Duplicate event IDs must return status 200 and body "duplicate" without applying twice. Events whose sequence is not newer must return status 200 and body "stale" without replacing state. Register POST /webhook through an HTTP router.
+Write a SpacetimeDB backend module in TypeScript that handles idempotent, ordered webhook events.
+
+TABLES
+- processed_event (private)
+  - Fields:
+    - eventId: string (primary key)
+- webhook_state (public)
+  - Fields:
+    - key: string (primary key)
+    - lastSequence: u64
+    - value: string
+
+HANDLER
+- POST /webhook
+  - Accept a pipe-delimited body: event_id|sequence|value
+  - Store state under key "account"
+  - For a newly applied event, return status 200 and body "applied"
+  - For a duplicate eventId, return status 200 and body "duplicate" without applying twice
+  - When sequence is not newer, return status 200 and body "stale" without replacing state
+
+ROUTER
+- Register POST /webhook through an HTTP router

@@ -1,1 +1,25 @@
-Write a C# SpacetimeDB module with a public PresenceSession table keyed by ConnectionId: ConnectionId and containing indexed Identity: Identity plus ConnectedAt: Timestamp. Export the lifecycle reducers with the exact method names ClientConnected and ClientDisconnected. ClientConnected must insert one row per connection, and ClientDisconnected must delete only that connection's row. Share that logic with ExercisePresence(), which inserts two synthetic connections for the caller and removes only the first, leaving the second synthetic session intact.
+Write a SpacetimeDB backend module in C# that tracks presence separately for each connection.
+
+TABLE
+- PresenceSession (public, accessor PresenceSession)
+  - Fields:
+    - ConnectionId: ConnectionId (primary key)
+    - Identity: Identity (btree index)
+    - ConnectedAt: Timestamp
+
+HELPERS
+- Share the insert and delete logic between the lifecycle reducers and ExercisePresence
+
+LIFECYCLE HOOKS
+- ClientConnected
+  - Export with this exact method name
+  - Insert one row for the connected connection
+- ClientDisconnected
+  - Export with this exact method name
+  - Delete only the disconnected connection's row
+
+REDUCERS
+- ExercisePresence()
+  - Insert two synthetic connections for the caller
+  - Remove only the first
+  - Leave the second synthetic session intact

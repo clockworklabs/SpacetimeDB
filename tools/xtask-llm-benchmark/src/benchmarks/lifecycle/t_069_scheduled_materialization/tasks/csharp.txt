@@ -1,1 +1,23 @@
-Write a C# SpacetimeDB module with a public MaterializedState table containing Id: ulong primary key, Status: string, Version: ulong, and RefreshedAt: Timestamp. Define a private RefreshJob scheduled table for reducer RefreshMaterialized with ScheduledId: ulong auto-increment primary key, ScheduledAt: ScheduleAt, and StateId: ulong in that order. Add StartRefresh() to write Id 1 with Status "pending" and Version 0, then schedule state 1 one millisecond later. RefreshMaterialized must update that row to Status "ready", Version 1, and the scheduled reducer timestamp without any further client call.
+Write a SpacetimeDB backend module in C# that refreshes materialized state through a scheduled reducer.
+
+TABLES
+- MaterializedState (public, accessor MaterializedState)
+  - Fields:
+    - Id: ulong (primary key)
+    - Status: string
+    - Version: ulong
+    - RefreshedAt: Timestamp
+- RefreshJob (private, scheduled for RefreshMaterialized, accessor RefreshJob)
+  - Fields, in this order:
+    - ScheduledId: ulong (primary key, auto-increment)
+    - ScheduledAt: ScheduleAt
+    - StateId: ulong
+
+REDUCERS
+- StartRefresh()
+  - Write Id 1 with Status "pending" and Version 0
+  - Schedule state 1 for one millisecond later
+- RefreshMaterialized(job: RefreshJob) (scheduled reducer)
+  - Update state 1 to Status "ready" and Version 1
+  - Set RefreshedAt to the scheduled reducer timestamp
+  - Complete without any further client call

@@ -1,3 +1,22 @@
-Write a Rust SpacetimeDB module with public account and transfer_request tables. Account has id: u64 primary key and balance: i64. TransferRequest has request_id: String primary key, from_id: u64, to_id: u64, and amount: i64.
+Write a SpacetimeDB backend module in Rust that performs atomic, idempotent transfers between accounts.
 
-Add create_account(id, balance) and transfer(request_id, from_id, to_id, amount). Transfer must reject invalid or insufficient transfers, update both balances atomically, and record request_id. Repeating a recorded request_id must be a no-op.
+TABLES
+- account (public), struct Account
+  - Fields:
+    - id: u64 (primary key)
+    - balance: i64
+- transfer_request (public), struct TransferRequest
+  - Fields:
+    - request_id: String (primary key)
+    - from_id: u64
+    - to_id: u64
+    - amount: i64
+
+REDUCERS
+- create_account(id: u64, balance: i64)
+  - Insert an account with the supplied values
+- transfer(request_id: String, from_id: u64, to_id: u64, amount: i64)
+  - Reject invalid or insufficient transfers
+  - Update both account balances atomically
+  - Record request_id in transfer_request
+  - If request_id is already recorded, make no changes

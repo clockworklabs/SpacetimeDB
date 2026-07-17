@@ -1,1 +1,20 @@
-Write a C# SpacetimeDB module with a public JobResult table containing Id: ulong primary key and Status: string. Define a private PrivateJob scheduled table for reducer RunPrivateJob with ScheduledId: ulong auto-increment primary key, ScheduledAt: ScheduleAt, and ResultId: ulong in that order. Add EnqueuePrivate(Id) to write Status "queued" and schedule that Id one millisecond later. RunPrivateJob must be scheduler-only, not client-callable, and update the result to "complete".
+Write a SpacetimeDB backend module in C# with a private scheduled table that is not client-callable.
+
+TABLES
+- JobResult (public, accessor JobResult)
+  - Fields:
+    - Id: ulong (primary key)
+    - Status: string
+- PrivateJob (private, scheduled for RunPrivateJob, accessor PrivateJob)
+  - Fields, in this order:
+    - ScheduledId: ulong (primary key, auto-increment)
+    - ScheduledAt: ScheduleAt
+    - ResultId: ulong
+
+REDUCERS
+- EnqueuePrivate(id: ulong)
+  - Write JobResult Status "queued"
+  - Schedule that Id for one millisecond later
+- RunPrivateJob(job: PrivateJob) (scheduled reducer)
+  - Must be scheduler-only and not client-callable
+  - Update the matching JobResult Status to "complete"

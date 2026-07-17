@@ -1,1 +1,17 @@
-Write a TypeScript SpacetimeDB module with a public ticket table containing id: u64 primary key, indexed status: string, and title: string. Add a seed() reducer with one open and one closed ticket. Define a public open_ticket view that returns the query-builder filter for status "open" rather than materializing rows manually.
+Write a SpacetimeDB backend module in TypeScript that defines a query-builder filter view.
+
+TABLE
+- ticket (public)
+  - Fields:
+    - id: u64 (primary key)
+    - status: string (btree index)
+    - title: string
+
+REDUCERS
+- seed()
+  - Insert one open ticket and one closed ticket
+
+VIEW
+- open_ticket (public, query-builder)
+  - Return the query-builder filter for status "open"
+  - Do not materialize rows manually

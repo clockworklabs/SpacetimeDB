@@ -1,1 +1,19 @@
-Update the Rust SpacetimeDB module for an incremental migration while preserving the public LegacyItem table and seed reducer. Add a public ItemV2 table with id: u64 primary key, value: String, and version: u32. Add an idempotent migrate reducer that copies missing legacy rows into ItemV2 with version 2. Add dual_write(id, value) that writes the same new item to both tables with version 2 in ItemV2.
+Update the existing SpacetimeDB backend module in Rust with an incremental migration.
+
+TABLES
+- legacy_item (public), struct LegacyItem
+  - Preserve the existing table and fields
+- item_v2 (public), struct ItemV2
+  - Fields:
+    - id: u64 (primary key)
+    - value: String
+    - version: u32
+
+REDUCERS
+- Preserve seed
+- migrate()
+  - Be idempotent
+  - Copy missing legacy_item rows into item_v2 with version 2
+- dual_write(id: u64, value: String)
+  - Write the same new item to both tables
+  - Set version 2 in item_v2

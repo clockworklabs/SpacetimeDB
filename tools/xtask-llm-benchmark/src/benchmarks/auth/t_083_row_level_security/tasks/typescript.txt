@@ -1,1 +1,16 @@
-Write a TypeScript SpacetimeDB module with a public user_record table containing identity: Identity as its primary key and name: string. Add a client visibility filter with SQL exactly `SELECT * FROM user_record WHERE identity = :sender` so each caller can only see its own row. Add register_self(name), which inserts a user_record using ctx.sender rather than accepting an identity argument.
+Write a SpacetimeDB backend module in TypeScript that applies row-level visibility to a public table.
+
+TABLE
+- user_record (public)
+  - Fields:
+    - identity: Identity (primary key)
+    - name: string
+
+CLIENT VISIBILITY FILTER
+- SQL exactly: `SELECT * FROM user_record WHERE identity = :sender`
+- Each caller can see only its own row
+
+REDUCERS
+- register_self(name: string)
+  - Insert a user_record using ctx.sender
+  - Do not accept an identity argument

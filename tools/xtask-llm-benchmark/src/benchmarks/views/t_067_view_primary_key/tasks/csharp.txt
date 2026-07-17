@@ -1,1 +1,13 @@
-Write a C# SpacetimeDB module with a public SourceRow table containing Id: ulong primary key, Value: string, and indexed Visible: bool. Expose visible rows through a public SourceView procedural view and explicitly declare Id as the view primary key.
+Write a SpacetimeDB backend module in C# that defines a procedural view with a primary key.
+
+TABLE
+- SourceRow (public, accessor SourceRow)
+  - Fields:
+    - Id: ulong (primary key)
+    - Value: string
+    - Visible: bool (btree index)
+
+VIEW
+- SourceView (procedural, public)
+  - Return visible SourceRow rows
+  - Explicitly declare Id as the view primary key

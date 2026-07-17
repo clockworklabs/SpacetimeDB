@@ -1,1 +1,23 @@
-Write a Rust SpacetimeDB module with a public materialized_state table (struct MaterializedState) containing id: u64 primary key, status: String, version: u64, and refreshed_at: Timestamp. Define a private refresh_job scheduled table (struct RefreshJob) for reducer refresh_materialized with scheduled_id: u64 auto-increment primary key, scheduled_at: ScheduleAt, and state_id: u64 in that order. Add start_refresh() to write id 1 with status "pending" and version 0, then schedule state 1 one millisecond later. refresh_materialized must update that row to status "ready", version 1, and the scheduled reducer timestamp without any further client call.
+Write a SpacetimeDB backend module in Rust that refreshes materialized state through a scheduled reducer.
+
+TABLES
+- materialized_state (public), struct MaterializedState
+  - Fields:
+    - id: u64 (primary key)
+    - status: String
+    - version: u64
+    - refreshed_at: Timestamp
+- refresh_job (private, scheduled for refresh_materialized), struct RefreshJob
+  - Fields, in this order:
+    - scheduled_id: u64 (primary key, auto-increment)
+    - scheduled_at: ScheduleAt
+    - state_id: u64
+
+REDUCERS
+- start_refresh()
+  - Write id 1 with status "pending" and version 0
+  - Schedule state 1 for one millisecond later
+- refresh_materialized(job: RefreshJob) (scheduled reducer)
+  - Update state 1 to status "ready" and version 1
+  - Set refreshed_at to the scheduled reducer timestamp
+  - Complete without any further client call

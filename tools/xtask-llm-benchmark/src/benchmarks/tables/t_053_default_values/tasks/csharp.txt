@@ -1,1 +1,16 @@
-Update the C# SpacetimeDB module without removing or renaming its public Widget table, Seed reducer, or Touch reducer. Add a trailing bool field named Enabled to Widget and annotate that field with a default value of true so a compatible republish backfills existing rows. Keep Id as the ulong primary key and do not put the default annotation on a primary-key, unique, or auto-increment column. Update new Widget values to set Enabled to true.
+Update the existing SpacetimeDB backend module in C# to add a migration-safe default value.
+
+TABLE
+- Widget (public, accessor Widget)
+  - Preserve the existing table and fields
+  - Keep Id: ulong as the primary key
+  - Add Enabled: bool as the trailing field
+  - Give Enabled a default value of true
+
+REDUCERS
+- Preserve Seed and Touch without renaming them
+- Update new Widget values to set Enabled to true
+
+MIGRATION
+- A compatible republish must backfill existing rows
+- Do not put the default annotation on a primary-key, unique, or auto-increment column

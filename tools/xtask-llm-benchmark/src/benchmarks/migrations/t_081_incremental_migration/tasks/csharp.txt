@@ -1,1 +1,19 @@
-Update the C# SpacetimeDB module for an incremental migration while preserving the public LegacyItem table and Seed reducer. Add a public ItemV2 table with Id: ulong primary key, Value: string, and Version: uint. Add an idempotent Migrate reducer that copies missing legacy rows into ItemV2 with Version 2. Add DualWrite(id, value) that writes the same new item to both tables with Version 2 in ItemV2.
+Update the existing SpacetimeDB backend module in C# with an incremental migration.
+
+TABLES
+- LegacyItem (public, accessor LegacyItem)
+  - Preserve the existing table and fields
+- ItemV2 (public, accessor ItemV2)
+  - Fields:
+    - Id: ulong (primary key)
+    - Value: string
+    - Version: uint
+
+REDUCERS
+- Preserve Seed
+- Migrate()
+  - Be idempotent
+  - Copy missing LegacyItem rows into ItemV2 with Version 2
+- DualWrite(id: ulong, value: string)
+  - Write the same new item to both tables
+  - Set Version 2 in ItemV2

@@ -1,1 +1,26 @@
-Write a C# SpacetimeDB module with public Customer, Purchase, and LineItem tables. Customer has Id: ulong primary key and Name: string. Purchase has Id: ulong primary key and indexed CustomerId: ulong. LineItem has Id: ulong primary key, indexed PurchaseId: ulong, Sku: string, and indexed Visible: bool. Add a Seed() reducer with one complete visible chain. Expose rows containing LineId: ulong, CustomerName: string, and Sku: string through a public OrderLineDetail view by joining all three tables through indexed lookups.
+Write a SpacetimeDB backend module in C# that defines a public view joining three normalized tables.
+
+TABLES
+- Customer (public, accessor Customer)
+  - Fields:
+    - Id: ulong (primary key)
+    - Name: string
+- Purchase (public, accessor Purchase)
+  - Fields:
+    - Id: ulong (primary key)
+    - CustomerId: ulong (btree index)
+- LineItem (public, accessor LineItem)
+  - Fields:
+    - Id: ulong (primary key)
+    - PurchaseId: ulong (btree index)
+    - Sku: string
+    - Visible: bool (btree index)
+
+REDUCERS
+- Seed()
+  - Insert one complete visible Customer -> Purchase -> LineItem chain
+
+VIEW
+- OrderLineDetail (public)
+  - Returns rows with LineId: ulong, CustomerName: string, and Sku: string
+  - Join all three tables through indexed lookups

@@ -1,3 +1,25 @@
-Write a Rust SpacetimeDB module with public workspace, project, task_item, and task_note tables. Each has a u64 primary key. Project has indexed workspace_id, TaskItem has indexed project_id, and TaskNote has indexed task_id.
+Write a SpacetimeDB backend module in Rust that performs a nested cascade delete across normalized tables.
 
-Add seed() creating two independent workspace→project→task→note chains using IDs 1 and 2. Add delete_workspace(id) that deletes the selected workspace and every level of its descendants while preserving the unrelated chain.
+TABLES
+- workspace (public), struct Workspace
+  - Fields:
+    - id: u64 (primary key)
+- project (public), struct Project
+  - Fields:
+    - id: u64 (primary key)
+    - workspace_id: u64 (btree index)
+- task_item (public), struct TaskItem
+  - Fields:
+    - id: u64 (primary key)
+    - project_id: u64 (btree index)
+- task_note (public), struct TaskNote
+  - Fields:
+    - id: u64 (primary key)
+    - task_id: u64 (btree index)
+
+REDUCERS
+- seed()
+  - Create two independent workspace -> project -> task_item -> task_note chains using IDs 1 and 2
+- delete_workspace(id: u64)
+  - Delete the selected workspace and every level of its descendants
+  - Preserve the unrelated chain

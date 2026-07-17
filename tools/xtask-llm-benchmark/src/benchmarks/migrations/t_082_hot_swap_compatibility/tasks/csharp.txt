@@ -1,1 +1,17 @@
-Update the C# SpacetimeDB module through a compatible republish while preserving the public Counter table, its exact fields, and the Seed and Increment reducers. Add a private Release table with Version: uint as its primary key and add RecordRelease(version). Do not rename or change the signature of Increment. Existing counter data and the existing server API must remain usable after republish.
+Update the existing SpacetimeDB backend module in C# through a compatible republish.
+
+TABLES
+- Counter (public, accessor Counter)
+  - Preserve the existing table and its exact fields
+- Release (private, accessor Release)
+  - Fields:
+    - Version: uint (primary key)
+
+REDUCERS
+- Preserve Seed
+- Preserve Increment without renaming it or changing its signature
+- RecordRelease(version: uint)
+
+MIGRATION
+- Existing Counter data must remain usable after republish
+- The existing server API must remain usable after republish

@@ -1,1 +1,14 @@
-Write a C# SpacetimeDB module with a public GeneratedValue table containing Id: ulong auto-increment primary key, CreatedAt: Timestamp, and RandomValue: long. Add Generate() that stores ctx.Timestamp and a random long from ctx.Rng. Do not use a host clock or separately seeded Random.
+Write a SpacetimeDB backend module in C# that records deterministic reducer time and randomness.
+
+TABLE
+- GeneratedValue (public, accessor GeneratedValue)
+  - Fields:
+    - Id: ulong (primary key, auto-increment)
+    - CreatedAt: Timestamp
+    - RandomValue: long
+
+REDUCERS
+- Generate()
+  - Store ctx.Timestamp in CreatedAt
+  - Store a random long from ctx.Rng in RandomValue
+  - Do not use a host clock or a separately seeded Random

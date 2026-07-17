@@ -1,1 +1,30 @@
-Write a TypeScript SpacetimeDB module with public sale(id: u64 primary key, category: string, amount: i64) and category_total(category: string primary key, totalAmount: i64, saleCount: u64) tables. Implement internal shared upsert and delete helpers that keep category_total transactionally synchronized when a sale is inserted, changed, moved between categories, or deleted. Export only an exercise() reducer; it inserts books sales of 10 and 20, updates the second to 25, inserts and then deletes a games sale, and deletes the first books sale. Expose category_total through a public category_summary query-builder view. The final view must contain only books with totalAmount 25 and saleCount 1.
+Write a SpacetimeDB backend module in TypeScript that maintains and exposes a materialized aggregate.
+
+TABLES
+- sale (public)
+  - Fields:
+    - id: u64 (primary key)
+    - category: string
+    - amount: i64
+- category_total (public)
+  - Fields:
+    - category: string (primary key)
+    - totalAmount: i64
+    - saleCount: u64
+
+HELPERS
+- Internal shared upsert and delete helpers
+  - Keep category_total transactionally synchronized when a sale is inserted, changed, moved between categories, or deleted
+
+REDUCERS
+- exercise()
+  - This is the only exported reducer
+  - Insert books sales of 10 and 20
+  - Update the second books sale to 25
+  - Insert and then delete a games sale
+  - Delete the first books sale
+
+VIEW
+- category_summary (public, query-builder)
+  - Expose category_total
+  - Final result contains only books with totalAmount 25 and saleCount 1

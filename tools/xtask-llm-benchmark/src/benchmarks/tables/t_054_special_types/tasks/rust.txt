@@ -1,3 +1,16 @@
-Write a SpacetimeDB backend module in Rust defining one public special_value table.
+Write a SpacetimeDB backend module in Rust defining one public table with special value types.
 
-The table must contain id: u64 primary key, uuid: Uuid, connection_id: ConnectionId, duration: TimeDuration, unsigned_128: u128, signed_128: i128, unsigned_256: u256, and signed_256: i256. Use the SpacetimeDB integer types for 256-bit values. No reducers are required.
+TABLE
+- special_value (public), struct SpecialValue
+  - Fields:
+    - id: u64 (primary key)
+    - uuid: Uuid
+    - connection_id: ConnectionId
+    - duration: TimeDuration
+    - unsigned_128: u128
+    - signed_128: i128
+    - unsigned_256: u256
+    - signed_256: i256
+  - Use the SpacetimeDB integer types for 256-bit values
+
+No reducers are required.

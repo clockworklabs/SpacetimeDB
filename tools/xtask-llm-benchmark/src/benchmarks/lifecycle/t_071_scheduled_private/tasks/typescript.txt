@@ -1,1 +1,20 @@
-Write a TypeScript SpacetimeDB module with a public job_result table containing id: u64 primary key and status: string. Define a private private_job scheduled table for reducer runPrivateJob with scheduledId: u64 auto-increment primary key, scheduledAt: ScheduleAt, and resultId: u64 in that order. Add enqueue_private(id) to write status "queued" and schedule that id one millisecond later. runPrivateJob must be scheduler-only, not client-callable, and update the result to "complete".
+Write a SpacetimeDB backend module in TypeScript with a private scheduled table that is not client-callable.
+
+TABLES
+- job_result (public)
+  - Fields:
+    - id: u64 (primary key)
+    - status: string
+- private_job (private, scheduled for runPrivateJob)
+  - Fields, in this order:
+    - scheduledId: u64 (primary key, auto-increment)
+    - scheduledAt: ScheduleAt
+    - resultId: u64
+
+REDUCERS
+- enqueue_private(id: u64)
+  - Write job_result status "queued"
+  - Schedule that id for one millisecond later
+- runPrivateJob(job: private_job row) (scheduled reducer)
+  - Must be scheduler-only and not client-callable
+  - Update the matching job_result status to "complete"

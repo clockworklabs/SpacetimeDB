@@ -1,1 +1,16 @@
-Update the TypeScript SpacetimeDB module without removing or renaming its public widget table, seed reducer, or touch reducer. Add a trailing bool field named enabled to widget and give that field a default value of true so a compatible republish backfills existing rows. Keep id as the u64 primary key and do not put the default on a primary-key, unique, or auto-increment column. Update new widget values to set enabled to true.
+Update the existing SpacetimeDB backend module in TypeScript to add a migration-safe default value.
+
+TABLE
+- widget (public)
+  - Preserve the existing table and fields
+  - Keep id: u64 as the primary key
+  - Add enabled: bool as the trailing field
+  - Give enabled a default value of true
+
+REDUCERS
+- Preserve seed and touch without renaming them
+- Update new widget values to set enabled to true
+
+MIGRATION
+- A compatible republish must backfill existing rows
+- Do not put the default on a primary-key, unique, or auto-increment column

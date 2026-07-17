@@ -1,1 +1,30 @@
-Write a Rust SpacetimeDB module with public sale(id: u64 primary key, category: String, amount: i64) and category_total(category: String primary key, total_amount: i64, sale_count: u64) tables. Implement internal shared upsert and delete helpers that keep category_total transactionally synchronized when a sale is inserted, changed, moved between categories, or deleted. Export only an exercise() reducer; it inserts books sales of 10 and 20, updates the second to 25, inserts and then deletes a games sale, and deletes the first books sale. Expose category_total through a public category_summary query-builder view. The final view must contain only books with total_amount 25 and sale_count 1.
+Write a SpacetimeDB backend module in Rust that maintains and exposes a materialized aggregate.
+
+TABLES
+- sale (public), struct Sale
+  - Fields:
+    - id: u64 (primary key)
+    - category: String
+    - amount: i64
+- category_total (public), struct CategoryTotal
+  - Fields:
+    - category: String (primary key)
+    - total_amount: i64
+    - sale_count: u64
+
+HELPERS
+- Internal shared upsert and delete helpers
+  - Keep category_total transactionally synchronized when a sale is inserted, changed, moved between categories, or deleted
+
+REDUCERS
+- exercise()
+  - This is the only exported reducer
+  - Insert books sales of 10 and 20
+  - Update the second books sale to 25
+  - Insert and then delete a games sale
+  - Delete the first books sale
+
+VIEW
+- category_summary (public, query-builder)
+  - Expose category_total
+  - Final result contains only books with total_amount 25 and sale_count 1

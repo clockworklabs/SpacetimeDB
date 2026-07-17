@@ -1,1 +1,26 @@
-Write a TypeScript SpacetimeDB module with public customer, purchase, and line_item tables. Customer has id: u64 primary key and name: string. Purchase has id: u64 primary key and indexed customerId: u64. Line item has id: u64 primary key, indexed purchaseId: u64, sku: string, and indexed visible: bool. Add a seed() reducer with one complete visible chain. Expose rows containing lineId: u64, customerName: string, and sku: string through a public order_line_detail view by joining all three tables through indexed lookups.
+Write a SpacetimeDB backend module in TypeScript that defines a public view joining three normalized tables.
+
+TABLES
+- customer (public)
+  - Fields:
+    - id: u64 (primary key)
+    - name: string
+- purchase (public)
+  - Fields:
+    - id: u64 (primary key)
+    - customerId: u64 (btree index)
+- line_item (public)
+  - Fields:
+    - id: u64 (primary key)
+    - purchaseId: u64 (btree index)
+    - sku: string
+    - visible: bool (btree index)
+
+REDUCERS
+- seed()
+  - Insert one complete visible customer -> purchase -> line_item chain
+
+VIEW
+- order_line_detail (public)
+  - Returns rows with lineId: u64, customerName: string, and sku: string
+  - Join all three tables through indexed lookups

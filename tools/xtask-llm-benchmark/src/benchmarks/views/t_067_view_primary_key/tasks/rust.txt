@@ -1,1 +1,13 @@
-Write a Rust SpacetimeDB module with a public source_row table containing id: u64 primary key, value: String, and indexed visible: bool. Expose visible rows through a public source_view procedural view and explicitly declare id as the view primary key.
+Write a SpacetimeDB backend module in Rust that defines a procedural view with a primary key.
+
+TABLE
+- source_row (public), struct SourceRow
+  - Fields:
+    - id: u64 (primary key)
+    - value: String
+    - visible: bool (btree index)
+
+VIEW
+- source_view (procedural, public)
+  - Return visible source_row rows
+  - Explicitly declare id as the view primary key

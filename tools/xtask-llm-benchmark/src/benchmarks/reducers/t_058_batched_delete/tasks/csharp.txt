@@ -1,3 +1,19 @@
-Write a C# SpacetimeDB module that deletes a logical group in scheduled batches of at most two rows.
+Write a SpacetimeDB backend module in C# that deletes a logical group in scheduled batches of at most two rows.
 
-Define a public WorkItem table with Id: ulong primary key and indexed GroupId: ulong. Define a private DeleteJob scheduled table with ScheduledId: ulong auto-increment primary key, ScheduledAt: ScheduleAt, and GroupId: ulong. Add SeedGroup(groupId, count), RequestDelete(groupId), and the scheduled reducer RunDeleteBatch. Each scheduled invocation may delete at most two matching items and must enqueue another one-shot job when items remain.
+TABLES
+- WorkItem (public, accessor WorkItem)
+  - Fields:
+    - Id: ulong (primary key)
+    - GroupId: ulong (btree index)
+- DeleteJob (private, scheduled for RunDeleteBatch, accessor DeleteJob)
+  - Fields:
+    - ScheduledId: ulong (primary key, auto-increment)
+    - ScheduledAt: ScheduleAt
+    - GroupId: ulong
+
+REDUCERS
+- SeedGroup(groupId: ulong, count: uint)
+- RequestDelete(groupId: ulong)
+- RunDeleteBatch(job: DeleteJob) (scheduled reducer)
+  - Delete at most two WorkItem rows matching the scheduled GroupId
+  - If matching rows remain, enqueue another one-shot DeleteJob

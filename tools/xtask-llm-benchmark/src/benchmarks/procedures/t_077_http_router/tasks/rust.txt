@@ -1,1 +1,15 @@
-Write a Rust SpacetimeDB HTTP router with GET /items returning status 200 and body "list", and POST /items returning status 201 and body "created:" followed by the request body. Unsupported methods on /items and unknown paths must remain rejected by the router.
+Write a SpacetimeDB backend module in Rust that routes two HTTP methods on the same path.
+
+HANDLERS
+- GET /items
+  - Return status 200
+  - Return body "list"
+- POST /items
+  - Read the request body
+  - Return status 201
+  - Return body "created:" followed by the request body
+
+ROUTER
+- Register both handlers for /items
+- Reject unsupported methods on /items
+- Reject unknown paths

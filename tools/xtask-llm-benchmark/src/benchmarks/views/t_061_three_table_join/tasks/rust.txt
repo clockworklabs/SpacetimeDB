@@ -1,1 +1,26 @@
-Write a Rust SpacetimeDB module with public customer (struct Customer), purchase (struct Purchase), and line_item (struct LineItem) tables. Customer has id: u64 primary key and name: String. Purchase has id: u64 primary key and indexed customer_id: u64. LineItem has id: u64 primary key, indexed purchase_id: u64, sku: String, and indexed visible: bool. Add a seed() reducer with one complete visible chain. Expose rows containing line_id: u64, customer_name: String, and sku: String through a public order_line_detail view by joining all three tables through indexed lookups.
+Write a SpacetimeDB backend module in Rust that defines a public view joining three normalized tables.
+
+TABLES
+- customer (public), struct Customer
+  - Fields:
+    - id: u64 (primary key)
+    - name: String
+- purchase (public), struct Purchase
+  - Fields:
+    - id: u64 (primary key)
+    - customer_id: u64 (btree index)
+- line_item (public), struct LineItem
+  - Fields:
+    - id: u64 (primary key)
+    - purchase_id: u64 (btree index)
+    - sku: String
+    - visible: bool (btree index)
+
+REDUCERS
+- seed()
+  - Insert one complete visible customer -> purchase -> line_item chain
+
+VIEW
+- order_line_detail (public)
+  - Returns rows with line_id: u64, customer_name: String, and sku: String
+  - Join all three tables through indexed lookups

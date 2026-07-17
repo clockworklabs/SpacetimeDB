@@ -1,5 +1,21 @@
 Write a SpacetimeDB backend module in Rust that maintains an indexed denormalized category slug on products.
 
-Define public category and product tables. Category has id: u64 primary key and slug: String. Product has id: u64 primary key, category_id: u64 with a B-tree index named by_category, category_slug: String with a B-tree index named by_category_slug, and name: String.
+TABLES
+- category (public), struct Category
+  - Fields:
+    - id: u64 (primary key)
+    - slug: String
+- product (public), struct Product
+  - Fields:
+    - id: u64 (primary key)
+    - category_id: u64 (btree index by_category)
+    - category_slug: String (btree index by_category_slug)
+    - name: String
 
-Add create_category(id, slug), create_product(id, category_id, name), and rename_category(id, new_slug) reducers. create_product must copy the current category slug. rename_category must update both the category and every related product so category_slug stays synchronized.
+REDUCERS
+- create_category(id: u64, slug: String)
+- create_product(id: u64, category_id: u64, name: String)
+  - Copy the current category slug into category_slug
+- rename_category(id: u64, new_slug: String)
+  - Update the category slug
+  - Update every related product so category_slug stays synchronized

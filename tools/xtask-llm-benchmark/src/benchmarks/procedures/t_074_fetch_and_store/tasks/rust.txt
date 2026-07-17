@@ -1,1 +1,14 @@
-Write a Rust SpacetimeDB module with a public fetched_record table containing id: u64 primary key, status: u16, and valid_body: bool. Add fetch_and_store(url: String), which performs an outbound GET to the supplied public URL before opening a transaction, then stores id 1, the response status, and whether the body contains "Example Domain" inside a short transaction.
+Write a SpacetimeDB backend module in Rust that fetches external data before storing a result in a transaction.
+
+TABLE
+- fetched_record (public), struct FetchedRecord
+  - Fields:
+    - id: u64 (primary key)
+    - status: u16
+    - valid_body: bool
+
+PROCEDURE
+- fetch_and_store(url: String)
+  - Perform an outbound GET to the supplied public URL before opening a transaction
+  - Inside a short transaction, store id 1 and the response status
+  - Set valid_body based on whether the response body contains "Example Domain"

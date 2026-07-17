@@ -1,1 +1,11 @@
-Write a C# SpacetimeDB module with a typed Summary result containing Total: uint and Label: string. Add a CalculateSummary(lhs: uint, rhs: uint) procedure that returns Total lhs + rhs and Label "calculated".
+Write a SpacetimeDB backend module in C# that defines a procedure with a typed return value.
+
+TYPES
+- Summary
+  - Total: uint
+  - Label: string
+
+PROCEDURE
+- CalculateSummary(lhs: uint, rhs: uint) -> Summary
+  - Return Total as lhs + rhs
+  - Return Label as "calculated"

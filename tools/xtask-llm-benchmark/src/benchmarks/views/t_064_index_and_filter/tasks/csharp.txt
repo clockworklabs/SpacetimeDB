@@ -1,1 +1,19 @@
-Write a C# SpacetimeDB module with a public Content table containing Id: ulong primary key, indexed Category: string, Active: bool, and Score: int. Add Seed() with rows that separately fail category, active, and score checks plus one passing row. Expose a public FeaturedContent procedural view that first uses the Category index for "news", then filters for active rows with Score at least 10.
+Write a SpacetimeDB backend module in C# that defines a procedural view using an index and additional filters.
+
+TABLE
+- Content (public, accessor Content)
+  - Fields:
+    - Id: ulong (primary key)
+    - Category: string (btree index)
+    - Active: bool
+    - Score: int
+
+REDUCERS
+- Seed()
+  - Insert rows that separately fail the Category, Active, and Score checks
+  - Insert one passing row
+
+VIEW
+- FeaturedContent (procedural, public)
+  - First use the Category index for "news"
+  - Then return only Active rows with Score at least 10

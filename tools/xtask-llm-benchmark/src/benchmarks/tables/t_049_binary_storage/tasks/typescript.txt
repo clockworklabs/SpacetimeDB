@@ -1,5 +1,17 @@
 Write a SpacetimeDB backend module in TypeScript that stores binary content and its metadata.
 
-Define a public blob_record table with an auto-incremented u64 primary key named id, owner: Identity, filename: string, mimeType: string, size: u64, and data: u8 array. Add a B-tree index named byOwner on owner.
+TABLE
+- blob_record (public)
+  - Fields:
+    - id: u64 (primary key, auto-increment)
+    - owner: Identity (btree index byOwner)
+    - filename: string
+    - mimeType: string
+    - size: u64
+    - data: u8 array
 
-Define a store_blob reducer taking filename, mimeType, and data. Store ctx.sender as owner, derive size from the byte length, and insert the bytes unchanged.
+REDUCERS
+- store_blob(filename: string, mimeType: string, data: u8 array)
+  - Store ctx.sender as owner
+  - Derive size from the byte length
+  - Insert the bytes unchanged
