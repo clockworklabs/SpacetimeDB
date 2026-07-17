@@ -199,16 +199,21 @@ fn auto_migrate_database(
                     .clone();
 
                 // Convert `SequenceDef` min/max to `AlgebraicValue`s of the correct type.
-                let min = AlgebraicValue::from_i128(&ty, sequence_def.min_value.unwrap_or(1)).ok_or_else(|| {
-                    anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid min value")
-                })?;
-
-                let max =
-                    AlgebraicValue::from_i128(&ty, sequence_def.max_value.unwrap_or(i128::MAX)).ok_or_else(|| {
-                        anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid max value")
+                let min = ty
+                    .saturating_value_from_i128(sequence_def.min_value.unwrap_or(1))
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid min value")
                     })?;
 
-                let range = min..max;
+                let max = match sequence_def.max_value {
+                    Some(max) => ty.saturating_value_from_i128(max),
+                    None => ty.saturating_value_from_i128(i128::MAX),
+                }
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid max value")
+                })?;
+
+                let range = min..=max;
                 if stdb
                     .iter_by_col_range_mut(tx, table_id, sequence_def.column, range)?
                     .next()
@@ -985,6 +990,51 @@ mod test {
             "failed migration should leave no pending schema changes: {:?}",
             tx.pending_schema_changes()
         );
+        Ok(())
+    }
+
+    #[test]
+    fn add_sequence_precheck_rejects_existing_column_max_value() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        let module_v1: ModuleDef = {
+            let mut b = RawModuleDefV9Builder::new();
+            b.build_table_with_new_type("seq_t", [("id", AlgebraicType::U8)], true)
+                .with_access(TableAccess::Public)
+                .finish();
+            b.finish().try_into().expect("valid module v1")
+        };
+
+        let module_v2: ModuleDef = {
+            let mut b = RawModuleDefV9Builder::new();
+            b.build_table_with_new_type("seq_t", [("id", AlgebraicType::U8)], true)
+                .with_column_sequence(0)
+                .with_access(TableAccess::Public)
+                .finish();
+            b.finish().try_into().expect("valid module v2")
+        };
+
+        {
+            let mut tx = begin_mut_tx(&stdb);
+            for def in module_v1.tables() {
+                create_table_from_def(&stdb, &mut tx, &module_v1, def)?;
+            }
+            let table_id = stdb.table_id_from_name_mut(&tx, "seq_t")?.expect("seq_t should exist");
+            insert(&stdb, &mut tx, table_id, &product![u8::MAX])?;
+            stdb.commit_tx(tx)?;
+        }
+
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&module_v1, &module_v2)?;
+        let err = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)
+            .err()
+            .expect("adding a sequence over an existing max value should fail");
+        assert!(
+            err.to_string().contains("already has values in range"),
+            "error should mention existing values in range, got: {err}"
+        );
+
         Ok(())
     }
 
