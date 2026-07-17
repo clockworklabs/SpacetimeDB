@@ -42,7 +42,7 @@ export const addRecord = spacetimedb.reducer(
 
 ## Imports
 
-Schema builders and module exports come from `spacetimedb/server`. Runtime value classes such as `ScheduleAt`, `Timestamp`, `Range`, and `ConnectionId` come from the root `spacetimedb` package:
+Schema builders and module exports come from `spacetimedb/server`. Runtime value classes such as `ScheduleAt`, `Timestamp`, and `ConnectionId` come from the root `spacetimedb` package; `Range` comes from `spacetimedb/server`:
 
 ```typescript
 import { schema, table, t } from 'spacetimedb/server';
@@ -96,6 +96,10 @@ Use `.default(value)` only for a newly appended migration-safe field. Preserve e
 
 Optional columns: `nickname: t.option(t.string())`
 
+Schema builders describe the database's wire types; they are not TypeScript type names. For example, a `t.u16()` value is a TypeScript `number`, not a value cast to a type named `u16`.
+
+Treat requested table options and column modifiers as part of the schema contract. Do not add `event`, `autoInc`, `unique`, indexes, or defaults unless the module requirements call for them.
+
 ## Indexes
 
 Prefer inline `.index('btree')` for single-column. Use named indexes only for multi-column:
@@ -141,6 +145,8 @@ ctx.db.entity.identity.find(ctx.sender);                   // Find by unique col
 ctx.db.score_record.id.update({ ...existing, value: 2 });  // Update (spread + override)
 ctx.db.score_record.id.delete(recordId);                   // Delete by PK
 ```
+
+Insert through the table accessor (`ctx.db.score_record.insert(...)`). Primary-key, unique, and index accessors support lookup or mutation of existing rows, but do not have `insert(...)`.
 
 Note: `iter()` and `filter()` return iterators. Spread to Array for `.sort()`, `.filter()`, `.map()`.
 
@@ -290,6 +296,8 @@ export const privateNoteFilter = spacetimedb.clientVisibilityFilter.sql(
 ```
 
 ## Procedures and HTTP
+
+`spacetimedb` is the local schema value returned by `schema({...})`; it is not a named export to import from `spacetimedb/server`.
 
 Procedures declare argument and return types. They can perform outbound HTTP through `ctx.http` and open short transactions with `ctx.withTx`:
 
