@@ -1007,6 +1007,10 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let primary_col_id = primary_key_column.clone().into_iter().map(|col| col.index);
     let sequence_col_ids = sequenced_columns.iter().map(|col| col.index);
 
+    fn is_string(s: &dyn Any) -> bool {
+        TypeId::of::<&'static str>() == s.type_id()
+    }
+
     let default_type_check: TokenStream = columns
         .iter()
         .filter_map(|col| {
@@ -1015,7 +1019,10 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                 let ident_span = col.ident.span();
                 Some(quote_spanned! { ident_span =>
                     // This closure enforces that `val` is of type `ty` at compile-time.
-                    let _check: #ty = #val.into();
+                    if is_string(#ty) {
+                        WAHOOOO;
+                    }
+                    let _check: #ty = #val;
                 })
             } else {
                 None
@@ -1030,7 +1037,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             Some(quote! {
                 spacetimedb::table::ColumnDefault {
                     col_id: #col_id,
-                    value: #val.into::<#ty>().serialize(spacetimedb::sats::algebraic_value::ser::ValueSerializer).expect("default value serialization failed"),
+                    value: #val.serialize(spacetimedb::sats::algebraic_value::ser::ValueSerializer).expect("default value serialization failed"),
                 },
             })
         } else {
