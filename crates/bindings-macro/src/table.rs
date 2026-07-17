@@ -1015,12 +1015,11 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                 let ident_span = col.ident.span();
 
                 // The upper branch of this if clause is special handling for the string type.
-                if let Type::Path(type_path) = ty
+                if let syn::ty::Type::Path(type_path) = ty
                     && let Some(segment) = type_path.path.segments.last()
                     && segment.ident.to_string() == "String"
                 {
                     Some(quote_spanned! { ident_span =>
-
                         let _check: &'static str = #val;
                     })
                 } else {
