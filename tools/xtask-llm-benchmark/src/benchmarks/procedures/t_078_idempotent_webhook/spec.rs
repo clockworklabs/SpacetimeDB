@@ -12,6 +12,7 @@ pub fn spec() -> BenchmarkSpec {
                 ("POST", "/webhook", Some("evt-1|2|new")),
                 ("POST", "/webhook", Some("evt-2|1|old")),
             ],
+            false,
             "webhook_idempotency",
         ));
         let table = table_name("webhook_state", lang);

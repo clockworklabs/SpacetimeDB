@@ -12,6 +12,7 @@ pub fn spec() -> BenchmarkSpec {
                 ("PUT", "/items", Some("no")),
                 ("GET", "/missing", None),
             ],
+            false,
             "router_method_matrix",
         ));
         scorers

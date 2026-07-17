@@ -168,6 +168,7 @@ pub fn make_http_route_parity_scorer(
     src_file: &str,
     route_tag: &str,
     cases: Vec<(&str, &str, Option<&str>)>,
+    compare_content_type: bool,
     id_str: &'static str,
 ) -> Box<dyn Scorer> {
     let (cat, task) = derive_cat_task_from_file(src_file);
@@ -178,6 +179,7 @@ pub fn make_http_route_parity_scorer(
         golden_db,
         llm_db,
         id_str,
+        compare_content_type,
         cases: cases
             .into_iter()
             .map(|(method, path, body)| HttpRouteCase {

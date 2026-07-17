@@ -860,6 +860,7 @@ pub struct HttpRouteParityScorer {
     pub golden_db: String,
     pub llm_db: String,
     pub cases: Vec<HttpRouteCase>,
+    pub compare_content_type: bool,
     pub id_str: &'static str,
 }
 
@@ -894,6 +895,18 @@ fn call_http_route(server: &str, db: &str, case: &HttpRouteCase) -> Result<(u16,
     .map_err(|_| "HTTP route worker panicked".to_string())?
 }
 
+fn http_route_results_equal(
+    golden_results: &[(u16, String, String)],
+    llm_results: &[(u16, String, String)],
+    compare_content_type: bool,
+) -> bool {
+    golden_results.len() == llm_results.len()
+        && golden_results
+            .iter()
+            .zip(llm_results)
+            .all(|(golden, llm)| golden.0 == llm.0 && golden.2 == llm.2 && (!compare_content_type || golden.1 == llm.1))
+}
+
 impl Scorer for HttpRouteParityScorer {
     fn id(&self) -> &'static str {
         self.id_str
@@ -924,11 +937,15 @@ impl Scorer for HttpRouteParityScorer {
                 }
             }
         }
-        let pass = golden_results == llm_results;
+        let pass = http_route_results_equal(&golden_results, &llm_results, self.compare_content_type);
         ScoreDetails {
             pass,
             partial: if pass { 1.0 } else { 0.0 },
-            notes: json!({ "golden": golden_results, "llm": llm_results }),
+            notes: json!({
+                "golden": golden_results,
+                "llm": llm_results,
+                "compared_content_type": self.compare_content_type,
+            }),
         }
     }
 }
@@ -1075,5 +1092,14 @@ mod tests {
         let (_, _, candidate_rls) = extract_schema(&candidate);
 
         assert!(!diff_sets(&golden_rls, &candidate_rls).is_null());
+    }
+
+    #[test]
+    fn http_route_parity_ignores_unspecified_content_type() {
+        let golden = vec![(201, String::new(), "created".to_string())];
+        let candidate = vec![(201, "text/plain".to_string(), "created".to_string())];
+
+        assert!(http_route_results_equal(&golden, &candidate, false));
+        assert!(!http_route_results_equal(&golden, &candidate, true));
     }
 }

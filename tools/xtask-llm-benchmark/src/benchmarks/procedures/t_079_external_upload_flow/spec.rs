@@ -18,6 +18,7 @@ pub fn spec() -> BenchmarkSpec {
             file!(),
             route_tag,
             vec![("POST", "/upload", Some("payload"))],
+            false,
             "upload_route",
         ));
         let table = table_name("uploaded_asset", lang);
