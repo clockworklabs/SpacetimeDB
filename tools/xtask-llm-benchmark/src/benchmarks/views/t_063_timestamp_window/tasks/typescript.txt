@@ -11,8 +11,10 @@ REDUCERS
 - seed()
   - Insert events at 100, 200, 300, 400, and 500 microseconds after the Unix epoch
   - Assign ids 1 through 5 in timestamp order
+  - Set each label to "event-{microseconds}", such as "event-100"
 
 VIEW
 - window_event (procedural, public)
   - Use the occurredAt index
   - Return the inclusive range from 200 through 400 microseconds
+  - Return rows in ascending occurredAt order

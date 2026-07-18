@@ -9,7 +9,8 @@ TABLE
 
 REDUCERS
 - Seed()
-  - Insert one open Ticket and one closed Ticket
+  - Insert open Ticket Id 1 titled "A"
+  - Insert closed Ticket Id 2 titled "B"
 
 VIEW
 - OpenTicket (public, query-builder)

@@ -19,6 +19,9 @@ TABLES
 REDUCERS
 - Seed()
   - Insert one complete visible Customer -> Purchase -> LineItem chain
+  - Use Customer Id 1 named "Ada"
+  - Use Purchase Id 10 for Customer 1
+  - Use visible LineItem Id 100 for Purchase 10 with Sku "SKU-1"
 
 VIEW
 - OrderLineDetail (public)

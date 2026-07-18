@@ -12,8 +12,8 @@ TABLES
 
 REDUCERS
 - Seed()
-  - Insert two Member rows
-  - Insert an Eligibility row for only member 1
+  - Insert Member 1 named "Ada" and Member 2 named "Grace"
+  - Insert Eligibility Id 10 for only Member 1
 
 VIEW
 - EligibleMember (public, query-builder)
