@@ -194,15 +194,28 @@ fn extract_schema(
     if let Some(rs) = v.get("reducers").and_then(|x| x.as_array()) {
         for r in rs {
             let name = r.get("name").and_then(|x| x.as_str()).unwrap_or("");
-            let sig = if let Some(args) = r.get("args").and_then(|x| x.as_array()) {
-                let tys: Vec<String> = args
-                    .iter()
-                    .map(|a| a.get("type").and_then(|x| x.as_str()).unwrap_or("").to_string())
-                    .collect();
-                format!("{}({})", name, tys.join(","))
-            } else {
-                format!("{}()", name)
-            };
+            let params = r
+                .pointer("/params/elements")
+                .and_then(Value::as_array)
+                .or_else(|| r.get("args").and_then(Value::as_array));
+            let params = params
+                .into_iter()
+                .flatten()
+                .map(|param| {
+                    let name = schema_name(param.get("name"));
+                    let ty = param
+                        .get("algebraic_type")
+                        .map(|ty| canonical_type(ty, types, &mut BTreeSet::new()).to_string())
+                        .or_else(|| param.get("type").and_then(Value::as_str).map(str::to_owned))
+                        .unwrap_or_default();
+                    if name.is_empty() {
+                        ty
+                    } else {
+                        format!("{name}:{ty}")
+                    }
+                })
+                .collect::<Vec<_>>();
+            let sig = format!("{}({})", name, params.join(","));
             reducers.insert(sig);
         }
     }
@@ -1112,6 +1125,62 @@ mod tests {
         let (_, _, candidate_rls) = extract_schema(&candidate);
 
         assert!(!diff_sets(&golden_rls, &candidate_rls).is_null());
+    }
+
+    #[test]
+    fn current_schema_extracts_reducer_parameter_names_and_types() {
+        let mut schema = current_schema(true);
+        schema["reducers"] = json!([{
+            "name": "set_owner",
+            "params": {
+                "elements": [
+                    { "name": { "some": "id" }, "algebraic_type": { "U64": [] } },
+                    { "name": { "some": "owner" }, "algebraic_type": { "String": [] } }
+                ]
+            }
+        }]);
+
+        let (_, reducers, _) = extract_schema(&schema);
+
+        assert_eq!(
+            reducers,
+            BTreeSet::from([r#"set_owner(id:{"U64":[]},owner:{"String":[]})"#.to_owned()])
+        );
+    }
+
+    #[test]
+    fn reducer_parameter_type_produces_a_schema_diff() {
+        let mut golden = current_schema(true);
+        golden["reducers"] = json!([{
+            "name": "set_owner",
+            "params": { "elements": [
+                { "name": { "some": "owner" }, "algebraic_type": { "String": [] } }
+            ] }
+        }]);
+        let mut candidate = current_schema(true);
+        candidate["reducers"] = json!([{
+            "name": "set_owner",
+            "params": { "elements": [
+                { "name": { "some": "owner" }, "algebraic_type": { "U64": [] } }
+            ] }
+        }]);
+        let (_, golden_reducers, _) = extract_schema(&golden);
+        let (_, candidate_reducers, _) = extract_schema(&candidate);
+
+        assert!(!diff_sets(&golden_reducers, &candidate_reducers).is_null());
+    }
+
+    #[test]
+    fn legacy_reducer_args_remain_supported() {
+        let mut schema = current_schema(true);
+        schema["reducers"] = json!([{
+            "name": "set_owner",
+            "args": [{ "name": "owner", "type": "String" }]
+        }]);
+
+        let (_, reducers, _) = extract_schema(&schema);
+
+        assert_eq!(reducers, BTreeSet::from(["set_owner(owner:String)".to_owned()]));
     }
 
     #[test]
