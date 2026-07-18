@@ -149,6 +149,8 @@ pub fn on_connect(ctx: &ReducerContext) { ... }
 pub fn on_disconnect(ctx: &ReducerContext) { ... }
 ```
 
+The current connection ID is available through `ctx.connection_id()` (not a public field) and may be absent outside connection-scoped calls.
+
 ## Views
 
 ```rust
@@ -277,9 +279,22 @@ pub fn refresh_cache(ctx: &mut ProcedureContext, url: String) {
     let response = ctx.http.get(url).expect("request failed");
     let status = response.status().as_u16();
     ctx.with_tx(|tx| {
-        tx.db.cache_entry().insert(CacheEntry { key: url, status });
+        tx.db.cache_entry().insert(CacheEntry { key: url.clone(), status });
     });
 }
+```
+
+`with_tx` callbacks implement `Fn`; clone captured owned values when storing them rather than moving them out of the closure.
+
+Consume an HTTP response body as text with `response.into_body().into_string_lossy()`. For methods other than the available convenience calls, build a request and use `send`:
+
+```rust
+let request = Request::builder()
+    .method("POST")
+    .uri(url)
+    .body(Body::from_bytes(data))
+    .unwrap();
+let response = ctx.http.send(request).expect("request failed");
 ```
 
 Scheduled procedures use a normal scheduled table, but the scheduled function is marked `#[procedure]` and receives `&mut ProcedureContext` plus the scheduled row.
