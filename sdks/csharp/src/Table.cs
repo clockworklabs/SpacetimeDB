@@ -4,7 +4,9 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+#if UNITY_5_3_OR_NEWER
 using UnityEngine;
+#endif
 using SpacetimeDB.BSATN;
 using SpacetimeDB.ClientApi;
 using SpacetimeDB.EventHandling;
