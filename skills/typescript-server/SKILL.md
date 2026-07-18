@@ -201,6 +201,8 @@ ctx.db.shipment.deliverBy.filter(new Range(
 
 ## Scheduled Tables
 
+The reducer or procedure referenced by a table's `scheduled` option must be exported.
+
 ```typescript
 import { ScheduleAt } from 'spacetimedb';   // ScheduleAt comes from the root package
 
