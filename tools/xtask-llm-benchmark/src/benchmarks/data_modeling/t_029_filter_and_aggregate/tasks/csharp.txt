@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in C# that defines an Order table and a CategoryStats table, with a reducer that computes aggregate statistics from filtered orders.
 
 TABLES
-- Order
+- Order (private)
   - Struct: Order
   - Fields:
     - Id: ulong (primary key, AutoInc)
@@ -9,7 +9,7 @@ TABLES
     - Amount: ulong
     - Fulfilled: bool
 
-- CategoryStats
+- CategoryStats (private)
   - Struct: CategoryStats
   - Fields:
     - Category: string (primary key)
