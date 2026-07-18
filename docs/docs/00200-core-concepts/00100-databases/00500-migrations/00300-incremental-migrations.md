@@ -106,7 +106,7 @@ We'll play around a bit with `spacetime call` to set up a character:
 ```sh
 $ spacetime logs incr-migration-demo -f &
 
-$ spacetime call incr-migration-demo create_character '{ "Fighter": {} }' "Phoebe"
+$ spacetime call incr-migration-demo create_character '{ "fighter": {} }' "Phoebe"
 
 2025-01-07T15:32:57.447286Z  INFO: src/lib.rs:21: Creating new level 1 Fighter named Phoebe
 
