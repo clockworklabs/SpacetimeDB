@@ -13,6 +13,7 @@ TABLES
 
 REDUCERS
 - seed_group(groupId: u64, count: u32)
+  - Assign deterministic unique id values to the inserted rows
 - request_delete(groupId: u64)
 - runDeleteBatch(timer: delete_job row) (scheduled reducer)
   - Delete at most two work_item rows matching the scheduled groupId

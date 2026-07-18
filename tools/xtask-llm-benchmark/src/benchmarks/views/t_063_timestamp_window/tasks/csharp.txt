@@ -10,6 +10,7 @@ TABLE
 REDUCERS
 - Seed()
   - Insert events at 100, 200, 300, 400, and 500 microseconds after the Unix epoch
+  - Assign Ids 1 through 5 in timestamp order
 
 VIEW
 - WindowEvent (procedural, public)

@@ -13,6 +13,7 @@ TABLES
 
 REDUCERS
 - SeedGroup(groupId: ulong, count: uint)
+  - Assign deterministic unique Id values to the inserted rows
 - RequestDelete(groupId: ulong)
 - RunDeleteBatch(job: DeleteJob) (scheduled reducer)
   - Delete at most two WorkItem rows matching the scheduled GroupId

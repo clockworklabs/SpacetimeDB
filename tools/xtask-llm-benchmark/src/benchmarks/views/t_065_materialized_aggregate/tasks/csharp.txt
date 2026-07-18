@@ -26,5 +26,5 @@ REDUCERS
 
 VIEW
 - CategorySummary (public, query-builder)
-  - Expose CategoryTotal
-  - Final result contains only books with TotalAmount 25 and SaleCount 1
+  - Expose all CategoryTotal rows
+  - After Exercise, the only row is books with TotalAmount 25 and SaleCount 1
