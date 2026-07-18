@@ -4,7 +4,6 @@ use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
 use serde_json::Value;
-use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::path::Path;
 use std::path::PathBuf;
@@ -48,22 +47,7 @@ fn check_global_json_policy() -> Result<()> {
     let root_json = Path::new("global.json");
     let root_contents = fs::read_to_string(root_json)?;
 
-    fn find_all_global_json(dir: &Path) -> Result<Vec<PathBuf>> {
-        let mut out = Vec::new();
-        for entry in fs::read_dir(dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            let ft = entry.file_type()?;
-            if ft.is_dir() {
-                out.extend(find_all_global_json(&path)?);
-            } else if path.file_name() == Some(OsStr::new("global.json")) {
-                out.push(path);
-            }
-        }
-        Ok(out)
-    }
-
-    let globals = find_all_global_json(Path::new("."))?;
+    let globals = git_tracked_files(":(glob)**/global.json")?;
 
     let mut ok = true;
     for p in globals {

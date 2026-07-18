@@ -1534,6 +1534,9 @@ pub struct ViewCallResult {
     pub tx: MutTxId,
     pub execution_budget_used: FunctionBudget,
     pub total_duration: Duration,
+    // Includes the time spent calling the user-defined view function, but not the time spent materializing the view
+    // after that function returns.
+    pub call_duration: Duration,
     pub abi_duration: Duration,
 }
 
@@ -1543,6 +1546,7 @@ impl fmt::Debug for ViewCallResult {
             .field("outcome", &self.outcome)
             .field("execution_budget_used", &self.execution_budget_used)
             .field("total_duration", &self.total_duration)
+            .field("call_duration", &self.call_duration)
             .field("abi_duration", &self.abi_duration)
             .finish()
     }
@@ -1554,6 +1558,7 @@ impl ViewCallResult {
             outcome: ViewOutcome::Success,
             execution_budget_used: FunctionBudget::ZERO,
             total_duration: Duration::ZERO,
+            call_duration: Duration::ZERO,
             abi_duration: Duration::ZERO,
             tx,
         }
@@ -2908,11 +2913,12 @@ impl ModuleHost {
     ///
     /// The returned transaction contains both the original writes and any backing-table
     /// updates produced by re-materializing the affected views.
+    /// This returns the number of views that were evaluated, and whether any of them trapped.
     pub fn call_views_with_tx<I: WasmInstance>(
         tx: MutTxId,
         instance: &mut RefInstance<'_, I>,
         caller: Identity,
-    ) -> (ViewCallResult, bool) {
+    ) -> (ViewCallResult, u32, bool) {
         Self::call_views_with_tx_at(tx, instance, caller, Timestamp::now())
     }
 
@@ -2925,14 +2931,16 @@ impl ModuleHost {
         instance: &mut RefInstance<'_, I>,
         caller: Identity,
         timestamp: Timestamp,
-    ) -> (ViewCallResult, bool) {
+    ) -> (ViewCallResult, u32, bool) {
         let mut tx = tx;
         let module_def = &instance.common.info().module_def;
         let mut outcome = ViewOutcome::Success;
         let mut energy_used = FunctionBudget::ZERO;
         let mut total_duration = Duration::ZERO;
+        let mut call_duration = Duration::ZERO;
         let mut abi_duration = Duration::ZERO;
         let mut trapped = false;
+        let mut num_views_evaluated = 0;
         for view_call in tx.views_for_refresh().cloned().collect::<Vec<_>>() {
             let resolved = match resolve_view_for_refresh(&tx, module_def, &view_call) {
                 Ok(resolved) => resolved,
@@ -2978,6 +2986,7 @@ impl ModuleHost {
                 view_def.product_type_ref,
                 timestamp,
             );
+            num_views_evaluated += 1;
 
             // Increment execution stats
             tx = result.tx;
@@ -2985,6 +2994,7 @@ impl ModuleHost {
             energy_used += result.execution_budget_used;
             total_duration += result.total_duration;
             abi_duration += result.abi_duration;
+            call_duration += result.call_duration;
             trapped |= trap;
 
             // Terminate early if execution failed
@@ -2999,7 +3009,9 @@ impl ModuleHost {
                 execution_budget_used: energy_used,
                 total_duration,
                 abi_duration,
+                call_duration,
             },
+            num_views_evaluated,
             trapped,
         )
     }

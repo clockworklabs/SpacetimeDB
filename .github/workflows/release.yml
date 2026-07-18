@@ -38,6 +38,11 @@ on:
         required: true
         type: boolean
         default: false
+      release_github:
+        description: "Publish GitHub release (if nothing fails)"
+        required: true
+        type: boolean
+        default: false
       update_mirror_latest_version:
         description: "Update S3 mirror latest-version marker"
         required: true
@@ -387,3 +392,46 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
         run: aws s3 cp latest-version s3://spacetimedb-client-binaries/latest-version --acl public-read
+
+  publish-github-release:
+    needs:
+      - build-cargo-release
+      - release-crates
+      - release-csharp
+      - release-cpp
+      - release-npm
+      - release-docker
+      - update-mirror-latest-version
+    runs-on: ubuntu-latest
+    if: >-
+      ${{
+        always()
+        && !inputs.dry_run
+        && inputs.release_github
+        && needs.build-cargo-release.result == 'success'
+        && contains(fromJSON('["success", "skipped"]'), needs.release-crates.result)
+        && contains(fromJSON('["success", "skipped"]'), needs.release-csharp.result)
+        && contains(fromJSON('["success", "skipped"]'), needs.release-cpp.result)
+        && contains(fromJSON('["success", "skipped"]'), needs.release-npm.result)
+        && contains(fromJSON('["success", "skipped"]'), needs.release-docker.result)
+        && contains(fromJSON('["success", "skipped"]'), needs.update-mirror-latest-version.result)
+      }}
+    permissions:
+      actions: write
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Download cargo-release
+        uses: actions/download-artifact@v4
+        with:
+          name: cargo-release-bin
+          path: ./shared-bin
+
+      - name: Make binary executable and on PATH
+        run: |
+          chmod +x ./shared-bin/cargo-release
+          echo "$PWD/shared-bin" >> "$GITHUB_PATH"
+
+      - name: Publish GitHub release
+        run: cargo-release release github-release ${{ github.event.inputs.release_tag }}
