@@ -4,7 +4,7 @@ TABLE
 - event (private)
   - Struct: Event
   - Fields:
-    - id: i32 (primary key, auto-increment)
+    - id: u64 (primary key, auto-increment)
     - kind: String
 
 REDUCERS
