@@ -19,6 +19,6 @@ pub fn upload_and_register(ctx: &mut ProcedureContext, upload_url: String, data:
     let response = ctx.http.send(request).expect("upload failed");
     assert!(response.status().is_success(), "upload failed: {}", response.status());
     let row_url = upload_url.clone();
-    ctx.with_tx(|tx| { tx.db.uploaded_asset().insert(UploadedAsset { id: 1, url: row_url, size: data.len() as u64 }); });
+    ctx.with_tx(|tx| { tx.db.uploaded_asset().insert(UploadedAsset { id: 1, url: row_url.clone(), size: data.len() as u64 }); });
     upload_url
 }
