@@ -16,6 +16,7 @@ use spacetimedb_schema::def::ModuleDef;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use crate::common_args::parse_optional_dotnet_version;
 use crate::spacetime_config::{
     find_and_load_with_env, CommandConfig, CommandSchema, CommandSchemaBuilder, Key, LoadedConfig, SpacetimeConfig,
 };
@@ -50,6 +51,7 @@ fn build_generate_config_schema(command: &clap::Command) -> Result<CommandSchema
         .key(Key::new("unreal_module_name").generate_entry_specific())
         .key(Key::new("module_prefix").generate_entry_specific())
         .key(Key::new("build_options").module_specific())
+        .key(Key::new("dotnet_version").module_specific())
         .key(Key::new("include_private"))
         .exclude("json_module")
         .exclude("force")
@@ -256,6 +258,11 @@ pub fn cli() -> clap::Command {
                 .help("Options to pass to the build command, for example --build-options='--lint-dir='"),
         )
         .arg(
+            common_args::dotnet_version()
+                .conflicts_with("wasm_file")
+                .conflicts_with("js_file"),
+        )
+        .arg(
             Arg::new("include_private")
                 .long("include-private")
                 .action(SetTrue)
@@ -293,6 +300,7 @@ pub struct GenerateRunConfig {
     pub module_name: Option<String>,
     pub module_prefix: Option<String>,
     pub build_options: String,
+    pub dotnet_version: Option<u8>,
     pub out_dir: PathBuf,
     pub include_private: bool,
 }
@@ -324,6 +332,12 @@ fn prepare_generate_run_configs<'a>(
         let build_options = command_config
             .get_one::<String>("build_options")?
             .unwrap_or_else(String::new);
+        let dotnet_version = if command_config.is_from_cli("dotnet_version") {
+            command_config.get_one::<u8>("dotnet_version")?
+        } else {
+            let dotnet_version = command_config.get_one::<String>("dotnet_version")?;
+            parse_optional_dotnet_version(dotnet_version.as_deref())?
+        };
 
         // Validate Unreal-specific args first to preserve focused errors for this mode.
         if requested_lang == Some(Language::UnrealCpp) {
@@ -381,6 +395,7 @@ fn prepare_generate_run_configs<'a>(
             module_name,
             module_prefix,
             build_options,
+            dotnet_version,
             out_dir,
             include_private,
         });
@@ -486,7 +501,9 @@ pub async fn run_prepared_generate_configs(
                 println!("Skipping build. Instead we are inspecting {}", path.display());
                 path.clone()
             } else {
-                let (path, _) = build::exec_with_argstring(&run.project_path, &run.build_options).await?;
+                let (path, _) =
+                    build::exec_with_argstring(&run.project_path, &run.build_options, false, run.dotnet_version)
+                        .await?;
                 path
             };
             let spinner = indicatif::ProgressBar::new_spinner();
@@ -1217,6 +1234,22 @@ mod tests {
 
         assert_eq!(uproject_dir, Some(PathBuf::from("/config/path")));
         assert_eq!(module_name, Some("MyModule".to_string()));
+    }
+
+    #[test]
+    fn test_generate_cli_parses_dotnet_version_as_supported_sdk_major() {
+        let matches = cli()
+            .try_get_matches_from(["generate", "--dotnet-version", "10"])
+            .unwrap();
+
+        assert_eq!(matches.get_one::<u8>("dotnet_version").copied(), Some(10));
+    }
+
+    #[test]
+    fn test_generate_cli_rejects_unsupported_dotnet_version() {
+        assert!(cli()
+            .try_get_matches_from(["generate", "--dotnet-version", "9"])
+            .is_err());
     }
 
     #[test]

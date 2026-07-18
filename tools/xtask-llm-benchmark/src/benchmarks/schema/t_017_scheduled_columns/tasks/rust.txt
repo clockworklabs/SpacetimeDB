@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in Rust that defines a scheduled table and seeds one schedule entry.
 
 TABLE
-- tick_timer
+- tick_timer (public)
   - Struct: TickTimer
   - Fields:
     - scheduled_id: u64 (primary key, auto-increment)
