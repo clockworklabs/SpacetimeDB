@@ -193,12 +193,13 @@ pub fn xai_ctx_limit_tokens(model: &str) -> usize {
     128_000
 }
 
-/// Desired output tokens (planning only). Env override: `LLM_DESIRED_OUTPUT_TOKENS` (usize).
+/// Desired output tokens for context planning and bounded provider requests.
+/// Env override: `LLM_DESIRED_OUTPUT_TOKENS` (usize).
 pub fn desired_output_tokens() -> usize {
     std::env::var("LLM_DESIRED_OUTPUT_TOKENS")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(1500)
+        .unwrap_or(4096)
 }
 
 /// Static headroom from env, with sensible defaults and 500-token rounding.
