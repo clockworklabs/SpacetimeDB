@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in Rust that defines one table and two reducers for client lifecycle events.
 
 TABLE
-- event
+- event (private)
   - Struct: Event
   - Fields:
     - id: i32 (primary key, auto-increment)

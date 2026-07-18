@@ -1,14 +1,14 @@
 Write a SpacetimeDB backend module in C# that defines a Task table and a result table, with a reducer that finds the first incomplete task and writes it to the result table.
 
 TABLES
-- Task
+- Task (private)
   - Struct: Task
   - Fields:
     - Id: ulong (primary key, AutoInc)
     - Title: string
     - Completed: bool
 
-- FirstIncomplete
+- FirstIncomplete (private)
   - Struct: FirstIncomplete
   - Fields:
     - TaskId: ulong (primary key)
