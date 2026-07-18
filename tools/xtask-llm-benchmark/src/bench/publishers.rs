@@ -204,18 +204,23 @@ fn signal_killed_by(_status: &std::process::ExitStatus) -> Option<i32> {
 fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
     let combined = format!("{stderr}{stdout}");
     let diagnostic = combined.to_ascii_lowercase();
+    let has_actionable_compiler_diagnostic = diagnostic.lines().any(|line| {
+        let line = line.trim_start();
+        line.starts_with("error[")
+            || line.strip_prefix("error:").is_some_and(|message| {
+                let message = message.trim_start();
+                !message.starts_with("could not compile `")
+                    && !message.starts_with("process didn't exit successfully")
+                    && !message.starts_with("command [\"cargo\", \"build\"")
+            })
+    });
     let silent_rustc_exit = diagnostic.contains("process didn't exit successfully")
         && diagnostic.contains("--crate-name")
         && diagnostic.contains("(exit code: 1)")
-        && !diagnostic.lines().any(|line| {
-            let line = line.trim_start();
-            line.starts_with("error[")
-                || line.strip_prefix("error:").is_some_and(|message| {
-                    let message = message.trim_start();
-                    !message.starts_with("could not compile `")
-                        && !message.starts_with("process didn't exit successfully")
-                })
-        });
+        && !has_actionable_compiler_diagnostic;
+    let silent_cargo_exit = diagnostic.contains("error: command [\"cargo\", \"build\"")
+        && diagnostic.contains("exited with code 1")
+        && !has_actionable_compiler_diagnostic;
     // "Pipe is broken" errors from WASI SDK parallel builds
     combined.contains("Pipe is broken")
         || combined.contains("EmitBundleObjectFiles")
@@ -230,6 +235,7 @@ fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
         // Cargo sometimes reports only a failed rustc command with no compiler
         // diagnostic. This is a transient child-process failure, not bad source.
         || silent_rustc_exit
+        || silent_cargo_exit
         // A child process can occasionally disappear on Windows after login but
         // before the CLI emits a compiler/MSBuild diagnostic. Retrying is safe:
         // benchmark publishes always use their own temporary CLI root and database.
@@ -270,6 +276,14 @@ mod tests {
     fn does_not_retry_rustc_source_diagnostic() {
         assert!(!is_transient_build_error(
             "error[E0425]: cannot find value `missing` in this scope\nerror: could not compile `spacetime-module`\n\nCaused by:\n  process didn't exit successfully: `rustc --crate-name spacetime_module` (exit code: 1)",
+            ""
+        ));
+    }
+
+    #[test]
+    fn retries_silent_cargo_exit() {
+        assert!(is_transient_build_error(
+            "Error: command [\"cargo\", \"build\", \"--release\"] exited with code 1",
             ""
         ));
     }
