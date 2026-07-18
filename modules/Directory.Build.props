@@ -1,10 +1,7 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <!-- Only needed when referencing local dependencies as projects. For published packages, these are imported automatically. -->
-  <Import Project="../crates/bindings-csharp/Runtime/build/SpacetimeDB.Runtime.props" />
-
   <PropertyGroup>
     <TargetName>StdbModule</TargetName>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -14,4 +11,17 @@
     <!-- ignore naming conventions, we're trying to match Rust 1:1 -->
     <NoWarn>$(NoWarn);CS8981;IDE1006</NoWarn>
   </PropertyGroup>
+
+  <!-- Only needed when referencing local dependencies as projects. For published packages, these are imported automatically. -->
+  <Import Project="../crates/bindings-csharp/Runtime/build/SpacetimeDB.Runtime.props" />
+
+  <ItemGroup Condition="$(TargetFramework.StartsWith('net10.'))">
+    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" GeneratePathProperty="true" />
+    <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" />
+  </ItemGroup>
+
+  <ItemGroup Condition="$(TargetFramework.StartsWith('net8.')) And '$(EXPERIMENTAL_WASM_AOT)' == '1'">
+    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" GeneratePathProperty="true" />
+    <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
+  </ItemGroup>
 </Project>

@@ -21,10 +21,11 @@
   <ItemGroup>
     <!-- This analyzer uses some shared helpers from the BSATN.Codegen one, so include it as a regular dependency -->
     <!-- (*not* with OutputItemType=analyzer because we don't want to use that source generator on source of Codegen itself) -->
-    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" />
+    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained" />
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Keep the shipped analyzer loadable by the .NET 8 compiler host. -->
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.3.1" PrivateAssets="all" />
   </ItemGroup>
 
