@@ -164,7 +164,7 @@ export const onDisconnect = spacetimedb.clientDisconnected((ctx) => { ... });
 
 ## Reducer Context API
 
-`ctx` is the only source of sender identity, time, and randomness; stdlib clocks and RNG are unavailable in modules. In helpers, type it as `ReducerCtx<InferSchema<typeof spacetimedb>>`.
+`ctx` is the only source of sender identity, time, and randomness; stdlib clocks and RNG are unavailable in modules. Let exported callbacks infer their context type. In helpers, use `ReducerCtx<InferSchema<typeof spacetimedb>>`; do not annotate a context as `any`, because that erases table row types and can make `bigint` expressions infer as `number`.
 
 ```typescript
 // Auth: ctx.sender is the caller's Identity
@@ -245,6 +245,8 @@ const Shape = t.enum('Shape', {
 
 `t.row(...)` and `t.object(...)` return schema builders, not TypeScript runtime row types. Let a view callback infer its result, or annotate a separately declared structural type such as `Array<{ sku: bigint; label: string }>`. A named output type must not reuse the generated PascalCase name of its view accessor (for example, reserve `DiscountedProduct` for a `discounted_product` view).
 
+Both `spacetimedb.view(...)` and `spacetimedb.anonymousView(...)` take three arguments: view options, the declared return schema, and the callback.
+
 ```typescript
 // Anonymous view (same for all clients):
 export const activeUsers = spacetimedb.anonymousView(
@@ -303,6 +305,8 @@ export const inspect = spacetimedb.procedure(
   (_ctx, { input }) => ({ value: input })
 );
 ```
+
+Procedure callbacks are synchronous. Do not mark them `async` or use `await`; return the declared value directly. A procedure with return type `t.unit()` returns `{}`.
 
 TypeScript outbound HTTP uses `ctx.http.fetch(url, options)`, including for non-GET requests; it does not provide convenience methods such as `get()` or `post()`. Responses expose the numeric `status`, `headers.get(name)`, and `text()` APIs.
 
