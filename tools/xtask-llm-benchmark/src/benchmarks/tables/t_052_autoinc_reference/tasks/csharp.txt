@@ -13,6 +13,4 @@ TABLES
 
 REDUCERS
 - CreateFamily(parentName: string, childNames: List<string>)
-  - Insert the Parent and capture the row returned by Insert
-  - Use the returned Parent Id for every Child
-  - Never calculate or assume the next auto-increment value
+  - Insert the Parent, then insert every Child using the Id actually assigned to that Parent

@@ -11,6 +11,6 @@ export const generate = spacetimedb.reducer(ctx => {
   ctx.db.generatedValue.insert({
     id: 0n,
     createdAt: ctx.timestamp,
-    randomValue: BigInt(ctx.random.integerInRange(0, Number.MAX_SAFE_INTEGER)),
+    randomValue: BigInt(ctx.random.integerInRange(1, Number.MAX_SAFE_INTEGER)),
   });
 });

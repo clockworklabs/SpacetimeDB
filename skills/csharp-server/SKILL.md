@@ -176,19 +176,14 @@ public static Entity? MyProfile(ViewContext ctx)
 }
 ```
 
-Query-builder views use `ViewContext`, `ctx.From`, and return `IQuery<T>` directly:
+Query-builder views use `ViewContext`, `ctx.From`, and return `IQuery<T>` directly. Use `Where` for predicates and `RightSemijoin` when the result should contain right-side rows that have a matching left-side row:
 
 ```csharp
-[SpacetimeDB.View(Accessor = "DiscountedProduct", Public = true)]
-public static IQuery<Product> DiscountedProduct(ViewContext ctx) =>
-    ctx.From.Product().Where(product => product.Discounted.Eq(true));
-
-[SpacetimeDB.View(Accessor = "TaggedProduct", Public = true)]
-public static IQuery<Product> TaggedProduct(ViewContext ctx) =>
-    ctx.From.ProductTag().RightSemijoin(
-        ctx.From.Product(),
-        (tag, product) => tag.ProductId.Eq(product.Id)
-    );
+ctx.From.Article().Where(article => article.Published.Eq(true));
+ctx.From.Subscription().RightSemijoin(
+    ctx.From.Account(),
+    (subscription, account) => subscription.AccountId.Eq(account.Id)
+);
 ```
 
 Declare a procedural view primary key in its attribute: `[SpacetimeDB.View(Accessor = "CatalogEntry", Public = true, PrimaryKey = nameof(CatalogRow.Sku))]`.
@@ -200,7 +195,7 @@ Inclusive btree ranges use tuples, for example `ctx.Db.Shipment.DeliverBy.Filter
 ```csharp
 [ClientVisibilityFilter]
 public static readonly Filter PrivateNoteFilter = new Filter.Sql(
-    "SELECT * FROM PrivateNote WHERE Author = :sender"
+    "SELECT * FROM OwnedRow WHERE Owner = :sender"
 );
 ```
 
@@ -260,31 +255,24 @@ var at = new ScheduleAt.Interval(TimeSpan.FromSeconds(5));
 ctx.Db.TickTimer.Insert(new TickTimer { ScheduledId = 0, ScheduledAt = at });
 ```
 
-Synthetic connection IDs can be constructed from 16 bytes with `ConnectionId.From(bytes)`; the result is nullable and must be checked.
+Construct a connection ID from 16 bytes with `ConnectionId.From(bytes)`; the result is nullable and must be checked.
 
 ## Procedures and HTTP
 
-Procedures are unstable APIs, so modules using them should include `#pragma warning disable STDB_UNSTABLE`. They receive `ProcedureContext`, may return `[SpacetimeDB.Type]` values, perform outbound HTTP through `ctx.Http`, and open short transactions with `ctx.WithTx`:
+Procedures are unstable APIs, so modules using them should include `#pragma warning disable STDB_UNSTABLE`. They receive `ProcedureContext` and may return `[SpacetimeDB.Type]` values:
 
 ```csharp
 [SpacetimeDB.Type]
-public partial struct ProductResult { public uint Value; public string Description; }
+public partial struct ResultValue { public string Value; }
 
 [SpacetimeDB.Procedure]
-public static ProductResult Multiply(ProcedureContext ctx, uint lhs, uint rhs) =>
-    new() { Value = lhs * rhs, Description = "product" };
-
-[SpacetimeDB.Procedure]
-public static void RefreshCache(ProcedureContext ctx, string url)
-{
-    ctx.Http.Get(url).Match(response => {
-        ctx.WithTx(tx => { tx.Db.CacheEntry.Insert(new CacheEntry { Key = url, Status = response.StatusCode }); return 0; });
-        return 0;
-    }, error => throw new Exception(error.Message));
-}
+public static ResultValue Inspect(ProcedureContext ctx, string input) =>
+    new() { Value = input };
 ```
 
-Scheduled procedures use an ordinary scheduled table whose `Scheduled` name refers to a `[SpacetimeDB.Procedure]` method taking `ProcedureContext` plus the scheduled row. Database access inside the procedure goes through `ctx.WithTx`.
+Outbound HTTP is available through `ctx.Http`; handle its success/error result before using the response. Open short database transactions with `ctx.WithTx`. Perform network I/O before opening the transaction, and keep only database work inside its callback.
+
+Scheduled procedures use the ordinary scheduled-table shape. Its `Scheduled` name refers to a `[SpacetimeDB.Procedure]` method taking `ProcedureContext` plus the scheduled row, and database access inside that procedure goes through `ctx.WithTx`.
 
 Inbound HTTP uses handler attributes and one router. Handler database access also goes through `ctx.WithTx`:
 

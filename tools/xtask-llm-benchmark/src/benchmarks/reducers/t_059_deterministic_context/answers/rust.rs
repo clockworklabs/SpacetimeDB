@@ -11,9 +11,10 @@ pub struct GeneratedValue {
 
 #[reducer]
 pub fn generate(ctx: &ReducerContext) {
+    let random_value: u64 = ctx.random();
     ctx.db.generated_value().insert(GeneratedValue {
         id: 0,
         created_at: ctx.timestamp,
-        random_value: ctx.random(),
+        random_value: random_value.max(1),
     });
 }

@@ -2,6 +2,7 @@ use crate::bench::utils::sanitize_db_name;
 use crate::eval::scorers::{
     CallOutputParityScorer, EventuallySqlCountScorer, HttpRouteCase, HttpRouteParityScorer, ReducerCallBothScorer,
     ReducerDataParityScorer, ReducerSqlCountScorer, SchemaParityScorer, Scorer, SqlCountOnlyScorer, SqlExecBothScorer,
+    SqlOutputExcludesScorer,
 };
 use crate::eval::{derive_cat_task_from_file, ReducerDataParityConfig, ReducerSqlCountConfig};
 use std::time::Duration;
@@ -128,6 +129,25 @@ pub fn make_reducer_call_both_scorer(
     id_str: &'static str,
 ) -> Box<dyn Scorer> {
     make_reducer_call_both_scorer_with_attempts(host_url, src_file, route_tag, reducer, args, id_str, 1)
+}
+
+pub fn make_sql_output_excludes_scorer(
+    host_url: &str,
+    src_file: &str,
+    route_tag: &str,
+    sql: impl Into<String>,
+    excluded: Vec<String>,
+    id_str: &'static str,
+) -> Box<dyn Scorer> {
+    let (cat, task) = derive_cat_task_from_file(src_file);
+    let llm_db = sanitize_db_name(&format!("{}-{}-{}-llm", cat, task, route_tag));
+    Box::new(SqlOutputExcludesScorer {
+        server: host_url.to_string(),
+        db: llm_db,
+        sql: sql.into(),
+        excluded,
+        id_str,
+    })
 }
 
 pub fn make_reducer_call_both_scorer_with_attempts(

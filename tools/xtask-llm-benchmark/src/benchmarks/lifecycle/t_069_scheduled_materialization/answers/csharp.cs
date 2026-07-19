@@ -22,7 +22,7 @@ public static partial class Module
     [Reducer]
     public static void StartRefresh(ReducerContext ctx)
     {
-        var pending = new MaterializedState { Id = 1, Status = "pending", Version = 0, RefreshedAt = ctx.Timestamp };
+        var pending = new MaterializedState { Id = 1, Status = "pending", Version = 0, RefreshedAt = new Timestamp(0) };
         if (ctx.Db.MaterializedState.Id.Find(1) is null) ctx.Db.MaterializedState.Insert(pending);
         else ctx.Db.MaterializedState.Id.Update(pending);
         ctx.Db.RefreshJob.Insert(new RefreshJob {

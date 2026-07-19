@@ -26,4 +26,4 @@ REDUCERS
 VIEW
 - OrderLineDetail (public)
   - Returns rows with LineId: ulong, CustomerName: string, and Sku: string
-  - Join all three tables through indexed lookups
+  - Return only rows connected through matching Customer, Purchase, and LineItem IDs

@@ -1,4 +1,4 @@
-import { ScheduleAt } from 'spacetimedb';
+import { ScheduleAt, Timestamp } from 'spacetimedb';
 import { schema, table, t } from 'spacetimedb/server';
 
 const materializedState = table({ name: 'materialized_state', public: true }, {
@@ -11,7 +11,7 @@ const spacetimedb = schema({ materializedState, refreshJob });
 export default spacetimedb;
 
 export const start_refresh = spacetimedb.reducer(ctx => {
-  const pending = { id: 1n, status: 'pending', version: 0n, refreshedAt: ctx.timestamp };
+  const pending = { id: 1n, status: 'pending', version: 0n, refreshedAt: new Timestamp(0n) };
   if (ctx.db.materializedState.id.find(1n)) ctx.db.materializedState.id.update(pending);
   else ctx.db.materializedState.insert(pending);
   ctx.db.refreshJob.insert({

@@ -725,6 +725,14 @@ pub struct SqlCountOnlyScorer {
     pub id_str: &'static str,
 }
 
+pub struct SqlOutputExcludesScorer {
+    pub server: String,
+    pub db: String,
+    pub sql: String,
+    pub excluded: Vec<String>,
+    pub id_str: &'static str,
+}
+
 pub struct EventuallySqlCountScorer {
     pub server: String,
     pub db: String,
@@ -783,6 +791,36 @@ impl Scorer for SqlCountOnlyScorer {
                 pass: false,
                 partial: 0.0,
                 notes: json!({ "phase":"sql","error": e }),
+            },
+        }
+    }
+}
+
+impl Scorer for SqlOutputExcludesScorer {
+    fn id(&self) -> &'static str {
+        self.id_str
+    }
+
+    fn score(&self, _llm_output: &str) -> ScoreDetails {
+        match sql_raw(&self.db, &self.sql, Some(&self.server)) {
+            Ok(output) => {
+                let found = self
+                    .excluded
+                    .iter()
+                    .filter(|value| output.contains(value.as_str()))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let pass = found.is_empty();
+                ScoreDetails {
+                    pass,
+                    partial: if pass { 1.0 } else { 0.0 },
+                    notes: json!({ "sql": self.sql, "excluded": self.excluded, "found": found, "actual": output }),
+                }
+            }
+            Err(error) => ScoreDetails {
+                pass: false,
+                partial: 0.0,
+                notes: json!({ "phase": "sql", "error": error }),
             },
         }
     }

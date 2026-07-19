@@ -7,9 +7,6 @@ TABLE
     - identity: Identity (btree index)
     - connected_at: Timestamp
 
-HELPERS
-- Share the insert and delete logic between the lifecycle reducers and exercise_presence
-
 LIFECYCLE HOOKS
 - client_connected
   - Export with this exact identifier
@@ -20,6 +17,6 @@ LIFECYCLE HOOKS
 
 REDUCERS
 - exercise_presence()
-  - Insert two synthetic connections for the caller
-  - Remove only the first
-  - Leave the second synthetic session intact
+  - Insert synthetic connection IDs 1 and 2 for the caller
+  - Remove connection ID 1
+  - Leave connection ID 2 intact

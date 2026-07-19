@@ -185,7 +185,7 @@ new Date(Number(row.createdAt.microsSinceUnixEpoch / 1000n));
 
 Do not construct `Identity` values from strings (e.g. `'hex' as Identity`): serialization fails and kills the module. Identities come from `ctx.sender` or `t.identity()` columns.
 
-Synthetic connection IDs for module logic/tests can use `new ConnectionId(1n)` after importing `ConnectionId` from `spacetimedb`.
+Construct a `ConnectionId` from its numeric representation with `new ConnectionId(value)` after importing `ConnectionId` from `spacetimedb`.
 
 Construct exact timestamps with `new Timestamp(micros)` after importing `Timestamp` from `spacetimedb`. Inclusive index ranges use `Range` from `spacetimedb/server`:
 
@@ -270,30 +270,21 @@ const CatalogKey = t.row('CatalogKey', {
 });
 ```
 
-Query-builder views use `ctx.from` and return the query directly:
+Query-builder views use `ctx.from` and return the query directly. Use `where` for predicates and `rightSemijoin` when the result should contain right-side rows that have a matching left-side row:
 
 ```typescript
-export const discountedProduct = spacetimedb.view(
-  { name: 'discounted_product', public: true },
-  t.array(product.rowType),
-  ctx => ctx.from.product.where(product => product.discounted.eq(true))
-);
-
-export const taggedProduct = spacetimedb.view(
-  { name: 'tagged_product', public: true },
-  t.array(product.rowType),
-  ctx => ctx.from.productTag.rightSemijoin(
-    ctx.from.product,
-    (tag, product) => tag.productId.eq(product.id)
-  )
-);
+ctx => ctx.from.article.where(article => article.published.eq(true))
+ctx => ctx.from.subscription.rightSemijoin(
+  ctx.from.account,
+  (subscription, account) => subscription.accountId.eq(account.id)
+)
 ```
 
 ## Client Visibility Filters
 
 ```typescript
 export const privateNoteFilter = spacetimedb.clientVisibilityFilter.sql(
-  'SELECT * FROM private_note WHERE author = :sender'
+  'SELECT * FROM owned_row WHERE owner = :sender'
 );
 ```
 
@@ -301,51 +292,23 @@ export const privateNoteFilter = spacetimedb.clientVisibilityFilter.sql(
 
 `spacetimedb` is the local schema value returned by `schema({...})`; it is not a named export to import from `spacetimedb/server`.
 
-Procedures declare argument and return types. They can perform outbound HTTP through `ctx.http` and open short transactions with `ctx.withTx`:
+Procedures declare argument and return types:
 
 ```typescript
-const Product = t.object('Product', { value: t.u32(), description: t.string() });
+const Result = t.object('Result', { value: t.string() });
 
-export const multiply = spacetimedb.procedure(
-  { lhs: t.u32(), rhs: t.u32() },
-  Product,
-  (_ctx, { lhs, rhs }) => ({ value: lhs * rhs, description: 'product' })
-);
-
-export const refreshCache = spacetimedb.procedure(
-  { url: t.string() },
-  t.unit(),
-  (ctx, { url }) => {
-    const response = ctx.http.fetch(url);
-    ctx.withTx(tx => tx.db.cacheEntry.insert({ key: url, status: response.status }));
-    return {};
-  }
+export const inspect = spacetimedb.procedure(
+  { input: t.string() },
+  Result,
+  (_ctx, { input }) => ({ value: input })
 );
 ```
 
-TypeScript outbound HTTP uses `ctx.http.fetch(url, options)`, including for non-GET requests; it does not provide convenience methods such as `get()` or `post()`. Responses expose the numeric `status`, `headers.get(name)`, and `text()` APIs. Perform network I/O before `withTx`; only database work belongs inside its callback.
+TypeScript outbound HTTP uses `ctx.http.fetch(url, options)`, including for non-GET requests; it does not provide convenience methods such as `get()` or `post()`. Responses expose the numeric `status`, `headers.get(name)`, and `text()` APIs.
 
-Scheduled procedures use a normal scheduled table, but its `scheduled` option references a `spacetimedb.procedure(...)` export instead of a reducer. The procedure receives its scheduled row as an argument and uses `withTx` for database access:
+Procedures and handlers open short database transactions with `ctx.withTx(tx => ...)`. Perform network I/O before opening the transaction; only database work belongs inside its callback.
 
-```typescript
-const cleanup_timer = table(
-  { name: 'cleanup_timer', scheduled: (): any => runCleanup },
-  {
-    scheduledId: t.u64().primaryKey().autoInc(),
-    scheduledAt: t.scheduleAt(),
-    cacheKey: t.string(),
-  }
-);
-
-export const runCleanup = spacetimedb.procedure(
-  { timer: cleanup_timer.rowType },
-  t.unit(),
-  (ctx, { timer }) => {
-    ctx.withTx(tx => tx.db.cacheEntry.key.delete(timer.cacheKey));
-    return {};
-  }
-);
-```
+Scheduled procedures use the ordinary scheduled-table shape. Its `scheduled` option references an exported `spacetimedb.procedure(...)` value instead of a reducer, and the procedure accepts the scheduled row as its argument.
 
 Inbound HTTP uses `httpHandler`, `httpRouter`, `Router`, and `SyncResponse`:
 

@@ -15,9 +15,9 @@ TABLES
 
 REDUCERS
 - StartRefresh()
-  - Write Id 1 with Status "pending" and Version 0
+  - Write Id 1 with Status "pending", Version 0, and RefreshedAt at the Unix epoch
   - Schedule state 1 for one millisecond later
 - RefreshMaterialized(job: RefreshJob) (scheduled reducer)
   - Update state 1 to Status "ready" and Version 1
-  - Set RefreshedAt to the scheduled reducer timestamp
+  - Replace RefreshedAt with the scheduled reducer timestamp
   - Complete without any further client call

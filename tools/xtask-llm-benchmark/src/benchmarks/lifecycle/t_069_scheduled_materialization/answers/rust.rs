@@ -21,7 +21,7 @@ pub struct RefreshJob {
 
 #[reducer]
 pub fn start_refresh(ctx: &ReducerContext) {
-    let pending = MaterializedState { id: 1, status: "pending".into(), version: 0, refreshed_at: ctx.timestamp };
+    let pending = MaterializedState { id: 1, status: "pending".into(), version: 0, refreshed_at: Timestamp::UNIX_EPOCH };
     if ctx.db.materialized_state().id().find(1).is_some() { ctx.db.materialized_state().id().update(pending); }
     else { ctx.db.materialized_state().insert(pending); }
     ctx.db.refresh_job().insert(RefreshJob {

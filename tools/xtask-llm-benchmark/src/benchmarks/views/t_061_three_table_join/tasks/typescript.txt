@@ -26,4 +26,4 @@ REDUCERS
 VIEW
 - order_line_detail (public)
   - Returns rows with lineId: u64, customerName: string, and sku: string
-  - Join all three tables through indexed lookups
+  - Return only rows connected through matching customer, purchase, and line-item IDs

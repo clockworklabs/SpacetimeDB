@@ -15,6 +15,6 @@ public static partial class Module
     {
         Id = 0,
         CreatedAt = ctx.Timestamp,
-        RandomValue = ctx.Rng.NextInt64(),
+        RandomValue = ctx.Rng.NextInt64(1, long.MaxValue),
     });
 }

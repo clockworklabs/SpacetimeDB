@@ -13,6 +13,4 @@ TABLES
 
 REDUCERS
 - create_family(parentName: string, childNames: string array)
-  - Insert the parent and capture the row returned by insert
-  - Use the returned parent id for every child
-  - Never calculate or assume the next auto-increment value
+  - Insert the parent, then insert every child using the ID actually assigned to that parent

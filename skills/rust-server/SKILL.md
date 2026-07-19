@@ -178,23 +178,14 @@ Declare a procedural view primary key in the view attribute:
 fn catalog_entry(ctx: &AnonymousViewContext) -> Vec<CatalogEntry> { ... }
 ```
 
-Query-builder views use `ViewContext`, `ctx.from`, and return `impl Query<Row>`:
+Query-builder views use `ViewContext`, `ctx.from`, and return `impl Query<Row>`. Use `filter` for predicates and `right_semijoin` when the result should contain right-side rows that have a matching left-side row:
 
 ```rust
-use spacetimedb::{view, Query, ViewContext};
-
-#[view(accessor = discounted_product, public)]
-fn discounted_product(ctx: &ViewContext) -> impl Query<Product> {
-    ctx.from.product().filter(|product| product.discounted.eq(true))
-}
-
-#[view(accessor = tagged_product, public)]
-fn tagged_product(ctx: &ViewContext) -> impl Query<Product> {
-    ctx.from.product_tag().right_semijoin(
-        ctx.from.product(),
-        |tag, product| tag.product_id.eq(product.id),
-    )
-}
+ctx.from.article().filter(|article| article.published.eq(true))
+ctx.from.subscription().right_semijoin(
+    ctx.from.account(),
+    |subscription, account| subscription.account_id.eq(account.id),
+)
 ```
 
 ## Client Visibility Filters
@@ -204,7 +195,7 @@ use spacetimedb::Filter;
 
 #[spacetimedb::client_visibility_filter]
 const PRIVATE_NOTE_FILTER: Filter =
-    Filter::Sql("SELECT * FROM private_note WHERE author = :sender");
+    Filter::Sql("SELECT * FROM owned_row WHERE owner = :sender");
 ```
 
 ## Reducer Context API
@@ -257,36 +248,29 @@ let at = ScheduleAt::Interval(std::time::Duration::from_secs(5).into());
 ctx.db.tick_timer().insert(TickTimer { scheduled_id: 0, scheduled_at: at });
 ```
 
-Synthetic connection IDs for module logic/tests can use `ConnectionId::from_u128(1)`.
+Construct a connection ID from a numeric representation with `ConnectionId::from_u128(value)`.
 
 ## Procedures and HTTP
 
-Procedures use `&mut ProcedureContext`, may return typed values, perform outbound HTTP through `ctx.http`, and open short database transactions with `ctx.with_tx`:
+Procedures use `&mut ProcedureContext` and may return typed values:
 
 ```rust
-use spacetimedb::{procedure, ProcedureContext, SpacetimeType, Table};
+use spacetimedb::{procedure, ProcedureContext, SpacetimeType};
 
 #[derive(SpacetimeType)]
-pub struct Product { pub value: u32, pub description: String }
+pub struct ResultValue { pub value: String }
 
 #[procedure]
-pub fn multiply(_ctx: &mut ProcedureContext, lhs: u32, rhs: u32) -> Product {
-    Product { value: lhs * rhs, description: "product".into() }
-}
-
-#[procedure]
-pub fn refresh_cache(ctx: &mut ProcedureContext, url: String) {
-    let response = ctx.http.get(url).expect("request failed");
-    let status = response.status().as_u16();
-    ctx.with_tx(|tx| {
-        tx.db.cache_entry().insert(CacheEntry { key: url.clone(), status });
-    });
+pub fn inspect(_ctx: &mut ProcedureContext, input: String) -> ResultValue {
+    ResultValue { value: input }
 }
 ```
 
-`with_tx` callbacks implement `Fn`; clone captured owned values when storing them rather than moving them out of the closure.
+Outbound HTTP is available through `ctx.http`. Convenience methods such as `get` return a response, and other methods use `Request::builder()` with `ctx.http.send(request)`. Consume a response body as text with `response.into_body().into_string_lossy()`.
 
-Consume an HTTP response body as text with `response.into_body().into_string_lossy()`. For methods other than the available convenience calls, build a request and use `send`:
+Open short database transactions with `ctx.with_tx(|tx| ...)`. The callback implements `Fn`, so clone captured owned values when storing them rather than moving them out of the closure. Perform network I/O before opening the transaction.
+
+For an outbound request without a convenience method:
 
 ```rust
 let request = Request::builder()
@@ -297,7 +281,7 @@ let request = Request::builder()
 let response = ctx.http.send(request).expect("request failed");
 ```
 
-Scheduled procedures use a normal scheduled table, but the scheduled function is marked `#[procedure]` and receives `&mut ProcedureContext` plus the scheduled row.
+Scheduled procedures use the ordinary scheduled-table shape, but the scheduled function is marked `#[procedure]` and receives `&mut ProcedureContext` plus the scheduled row.
 
 Inbound HTTP uses handler functions and one router:
 
