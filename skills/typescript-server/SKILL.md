@@ -40,13 +40,17 @@ export const addRecord = spacetimedb.reducer(
 );
 ```
 
+Named runtime exports are reserved for values registered with SpacetimeDB, such as reducers, lifecycle hooks, views, procedures, HTTP exports, and visibility filters. Keep ordinary helper functions and constants unexported.
+
 ## Imports
 
 Schema builders and module exports come from `spacetimedb/server`. Runtime value classes such as `ScheduleAt`, `Timestamp`, and `ConnectionId` come from the root `spacetimedb` package; `Range` comes from `spacetimedb/server`:
 
 ```typescript
-import { schema, table, t } from 'spacetimedb/server';
-import { SenderError } from 'spacetimedb/server';
+import {
+  schema, table, t, SenderError,
+  type InferSchema, type ReducerCtx,
+} from 'spacetimedb/server';
 import { ConnectionId, ScheduleAt, Timestamp } from 'spacetimedb';
 import { Range } from 'spacetimedb/server';
 ```
@@ -272,7 +276,7 @@ const CatalogKey = t.row('CatalogKey', {
 });
 ```
 
-Query-builder views use `ctx.from` and return the query directly. Use `where` for predicates and `rightSemijoin` when the result should contain right-side rows that have a matching left-side row:
+Query-builder views use `ctx.from` and return the query directly. Because a query returns a row set, declare its return schema as `t.array(tableName.rowType)`. Use `where` for predicates and `rightSemijoin` when the result should contain right-side rows that have a matching left-side row:
 
 ```typescript
 ctx => ctx.from.article.where(article => article.published.eq(true))
