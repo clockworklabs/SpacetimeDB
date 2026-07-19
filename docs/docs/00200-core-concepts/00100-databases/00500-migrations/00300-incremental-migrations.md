@@ -352,7 +352,7 @@ $ spacetime sql incr-migration-demo 'SELECT * FROM character'
  <snip>    | "Gefjon" | 3     | (Fighter = ())
 
 # We can set our alliance:
-$ spacetime call incr-migration-demo choose_alliance '{ "Good": {} }'
+$ spacetime call incr-migration-demo choose_alliance '{ "good": {} }'
 
 2025-01-07T16:13:53.816501Z  INFO: src/lib.rs:129: Setting alliance of Gefjon to Good
 
