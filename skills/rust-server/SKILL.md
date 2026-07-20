@@ -37,6 +37,7 @@ pub struct Entity {
     pub id: u64,
     pub owner: Identity,
     pub name: String,
+    #[index(btree)]
     pub active: bool,
 }
 ```
@@ -159,7 +160,7 @@ use spacetimedb::{view, AnonymousViewContext};
 
 #[view(accessor = active_users, public)]
 fn active_users(ctx: &AnonymousViewContext) -> Vec<Entity> {
-    ctx.db.entity().iter().filter(|e| e.active).collect()
+    ctx.db.entity().active().filter(true).collect()
 }
 
 // Per-user view (result varies by sender):
@@ -170,6 +171,8 @@ fn my_profile(ctx: &ViewContext) -> Option<Entity> {
     ctx.db.entity().identity().find(ctx.sender())
 }
 ```
+
+Procedural-view table handles support indexed `find` and `filter` access, but not full-table `iter()`. Start a procedural view from an appropriate table index.
 
 Declare a procedural view primary key in the view attribute:
 
