@@ -11,7 +11,7 @@ public static partial class Module
         public bool Active;
     }
 
-    [Table(Accessor = "Result")]
+    [Table(Accessor = "Result", Public = true)]
     public partial struct Result
     {
         [PrimaryKey] public ulong Id;

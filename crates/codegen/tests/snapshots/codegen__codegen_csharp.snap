@@ -1718,7 +1718,7 @@ namespace SpacetimeDB
     {
         public sealed class LoggedOutPlayerHandle : RemoteTableHandle<EventContext, Player>
         {
-            protected override string RemoteTableName => "logged_out_player";
+            public override string RemoteTableName => "logged_out_player";
 
             public sealed class IdentityUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
             {
@@ -1807,7 +1807,7 @@ namespace SpacetimeDB
     {
         public sealed class MyPlayerHandle : RemoteTableHandle<EventContext, Player>
         {
-            protected override string RemoteTableName => "my_player";
+            public override string RemoteTableName => "my_player";
 
             internal MyPlayerHandle(DbConnection conn) : base(conn)
             {
@@ -1858,7 +1858,7 @@ namespace SpacetimeDB
     {
         public sealed class PersonHandle : RemoteTableHandle<EventContext, Person>
         {
-            protected override string RemoteTableName => "person";
+            public override string RemoteTableName => "person";
 
             public sealed class AgeIndex : BTreeIndexBase<byte>
             {
@@ -1935,7 +1935,7 @@ namespace SpacetimeDB
     {
         public sealed class PlayerHandle : RemoteTableHandle<EventContext, Player>
         {
-            protected override string RemoteTableName => "player";
+            public override string RemoteTableName => "player";
 
             public sealed class IdentityUniqueIndex : UniqueIndexBase<SpacetimeDB.Identity>
             {
@@ -2024,7 +2024,7 @@ namespace SpacetimeDB
     {
         public sealed class TestDHandle : RemoteTableHandle<EventContext, TestD>
         {
-            protected override string RemoteTableName => "test_d";
+            public override string RemoteTableName => "test_d";
 
             internal TestDHandle(DbConnection conn) : base(conn)
             {
@@ -2073,7 +2073,7 @@ namespace SpacetimeDB
     {
         public sealed class TestFHandle : RemoteTableHandle<EventContext, TestFoobar>
         {
-            protected override string RemoteTableName => "test_f";
+            public override string RemoteTableName => "test_f";
 
             internal TestFHandle(DbConnection conn) : base(conn)
             {

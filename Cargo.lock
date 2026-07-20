@@ -8413,7 +8413,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "spacetimedb-dst"
+name = "spacetimedb-dst-lib"
 version = "2.7.0"
 dependencies = [
  "anyhow",
@@ -8710,6 +8710,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap 4.5.50",
+ "duct",
  "serde",
  "serde_json",
  "toml 0.8.23",
@@ -8850,6 +8851,7 @@ dependencies = [
  "regex",
  "reqwest",
  "serde_json",
+ "socket2 0.5.10",
  "spacetimedb-core",
  "spacetimedb-guard",
  "tempfile",
@@ -11710,6 +11712,7 @@ dependencies = [
  "spacetimedb",
  "spacetimedb-data-structures",
  "spacetimedb-guard",
+ "spacetimedb-lib",
  "thiserror 2.0.17",
  "tokio",
  "urlencoding",

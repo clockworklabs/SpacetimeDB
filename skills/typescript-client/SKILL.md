@@ -13,6 +13,8 @@ metadata:
 
 # SpacetimeDB TypeScript Client
 
+Generated bindings convert snake_case names to camelCase, including row fields: a server column `trip_id` is `tripId` on client rows.
+
 ## React: main.tsx
 
 ```typescript
@@ -79,7 +81,7 @@ function App() {
   );
 
   // Call reducers with object syntax
-  conn?.reducers.addRecord({ data });
+  conn?.reducers.addRecord({ data }).catch(console.error);
 
   // Compare identities
   const isMe = row.owner.toHexString() === myIdentity?.toHexString();

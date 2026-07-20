@@ -18,6 +18,18 @@ pub struct ProcedureConcurrencyRowTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `procedure_concurrency_row`.
+pub struct ProcedureConcurrencyRowTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for ProcedureConcurrencyRowTableAccessor {
+    type Row = ProcedureConcurrencyRow;
+    type Handle<'db> = ProcedureConcurrencyRowTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.procedure_concurrency_row()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `procedure_concurrency_row`.
 ///

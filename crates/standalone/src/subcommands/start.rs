@@ -316,7 +316,12 @@ pub fn is_port_available(host: &str, port: u16) -> bool {
 
     let sockets = match get_sockets_info(AddressFamilyFlags::IPV4 | AddressFamilyFlags::IPV6, ProtocolFlags::TCP) {
         Ok(s) => s,
-        Err(_) => return false, // if we can't inspect sockets, fail closed
+        Err(_) => {
+            log::warn!("Unable to check whether port {port} is available. Proceeding as though it is.");
+            // Default to allowing, because otherwise we can have cases where users are entirely unable to start servers.
+            // See https://github.com/clockworklabs/SpacetimeDB/issues/5556.
+            return true;
+        }
     };
 
     for si in sockets {
