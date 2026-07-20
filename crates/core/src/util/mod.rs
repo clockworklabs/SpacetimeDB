@@ -4,8 +4,6 @@ use std::pin::pin;
 use tokio::sync::oneshot;
 use tracing::Span;
 
-pub mod prometheus_handle;
-
 pub mod adaptive_recv;
 pub mod jobs;
 pub mod notify_once;
