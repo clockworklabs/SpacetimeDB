@@ -18,5 +18,6 @@ LIFECYCLE HOOKS
 REDUCERS
 - ExercisePresence()
   - Insert synthetic connection IDs 1 and 2 for the caller
+  - Encode ID N as 16 bytes with byte 0 set to N and all remaining bytes zero
   - Remove connection ID 1
   - Leave connection ID 2 intact

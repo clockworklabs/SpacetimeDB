@@ -302,13 +302,13 @@ For non-GET requests, construct and send an `HttpRequest` directly:
 var result = ctx.Http.Send(new HttpRequest
 {
     Uri = uri,
-    Method = HttpMethod.Post,
+    Method = SpacetimeDB.HttpMethod.Post,
     Headers = new() { new HttpHeader("content-type", "text/plain") },
     Body = HttpBody.FromString(payload),
 });
 ```
 
-`HttpResponse.StatusCode` is `ushort`. HTTP headers are `HttpHeader` values, not tuples. Treat bodies as bytes: use `HttpBody.FromString(...)` to create text and `ToStringUtf8Lossy()` to read text; `ToString()` does not return body contents.
+`HttpResponse.StatusCode` is `ushort`. HTTP headers are `HttpHeader` values, not tuples, and each header's `Value` is `byte[]`; decode text values with `System.Text.Encoding.UTF8.GetString(header.Value)`. Treat bodies as bytes: use `HttpBody.FromString(...)` to create text, `new HttpBody(bytes)` to supply raw bytes, and `ToStringUtf8Lossy()` to read text. There is no `HttpBody.FromBytes`, and `ToString()` does not return body contents. Qualify `SpacetimeDB.HttpMethod` when .NET's implicit `System.Net.Http` imports could make the name ambiguous.
 
 Scheduled procedures use the ordinary scheduled-table shape. Its `Scheduled` name refers to a `[SpacetimeDB.Procedure]` method taking `ProcedureContext` plus the scheduled row, and database access inside that procedure goes through `ctx.WithTx`.
 
