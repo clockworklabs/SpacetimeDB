@@ -28,6 +28,59 @@ struct SchemaSnapshot {
     row_level_security: BTreeSet<String>,
 }
 
+#[derive(Debug, Default)]
+struct SchemaNames {
+    tables: BTreeMap<String, String>,
+    functions: BTreeMap<String, String>,
+}
+
+impl SchemaNames {
+    fn from_schema(schema: &Value) -> Self {
+        let Some(sections) = schema.get("sections") else {
+            return Self::default();
+        };
+        let mut names = Self::default();
+
+        if let Some(entries) = sections
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find_map(|section| section.get("ExplicitNames"))
+            .and_then(|names| names.get("entries"))
+            .and_then(Value::as_array)
+        {
+            for entry in entries {
+                if let Some(mapping) = entry.get("Table") {
+                    insert_name_mapping(&mut names.tables, mapping);
+                } else if let Some(mapping) = entry.get("Function") {
+                    insert_name_mapping(&mut names.functions, mapping);
+                }
+            }
+        }
+        names
+    }
+
+    fn table(&self, name: String) -> String {
+        self.canonical(name, &self.tables)
+    }
+
+    fn function(&self, name: String) -> String {
+        self.canonical(name, &self.functions)
+    }
+
+    fn canonical(&self, name: String, explicit: &BTreeMap<String, String>) -> String {
+        explicit.get(&name).cloned().unwrap_or(name)
+    }
+}
+
+fn insert_name_mapping(names: &mut BTreeMap<String, String>, mapping: &Value) {
+    let source = schema_name(mapping.get("source_name"));
+    let canonical = schema_name(mapping.get("canonical_name"));
+    if !source.is_empty() && !canonical.is_empty() {
+        names.insert(source, canonical);
+    }
+}
+
 impl Scorer for SchemaParityScorer {
     fn id(&self) -> &'static str {
         self.id_str
@@ -106,6 +159,7 @@ fn describe_db(server: &str, db: &str, timeout: Duration) -> io::Result<Value> {
 
 fn extract_schema(v: &Value) -> SchemaSnapshot {
     let mut schema = SchemaSnapshot::default();
+    let names = SchemaNames::from_schema(v);
     let typespace = v.get("typespace").or_else(|| section(v, "Typespace"));
     let types = typespace
         .and_then(|value| value.get("types"))
@@ -115,7 +169,7 @@ fn extract_schema(v: &Value) -> SchemaSnapshot {
 
     if let Some(ts) = schema_array(v, "tables", "Tables") {
         for t in ts {
-            let name = schema_name(t.get("source_name").or_else(|| t.get("name")));
+            let name = names.table(schema_name(t.get("source_name").or_else(|| t.get("name"))));
             let mut cols = BTreeMap::new();
 
             // Older CLI descriptions put columns directly on the table. Keep
@@ -179,7 +233,7 @@ fn extract_schema(v: &Value) -> SchemaSnapshot {
 
     if let Some(rs) = schema_array(v, "reducers", "Reducers") {
         for r in rs {
-            let name = schema_name(r.get("source_name").or_else(|| r.get("name")));
+            let name = names.function(schema_name(r.get("source_name").or_else(|| r.get("name"))));
             let mut sig = format!("{}({})", name, parameter_types(r, types).join(","));
             append_field(&mut sig, "visibility", r.get("visibility"));
             append_type(&mut sig, "ok", r.get("ok_return_type"), types);
@@ -191,9 +245,11 @@ fn extract_schema(v: &Value) -> SchemaSnapshot {
 
     for export in v.get("misc_exports").and_then(Value::as_array).into_iter().flatten() {
         if let Some(procedure) = export.get("Procedure") {
-            schema.exports.insert(function_export("procedure", procedure, types));
+            schema
+                .exports
+                .insert(function_export("procedure", procedure, types, &names));
         } else if let Some(view) = export.get("View") {
-            schema.exports.insert(view_export(view, types));
+            schema.exports.insert(view_export(view, types, &names));
         } else if let Some(default) = export.get("ColumnDefaultValue") {
             schema
                 .exports
@@ -202,10 +258,12 @@ fn extract_schema(v: &Value) -> SchemaSnapshot {
     }
 
     for procedure in schema_array(v, "procedures", "Procedures").into_iter().flatten() {
-        schema.exports.insert(function_export("procedure", procedure, types));
+        schema
+            .exports
+            .insert(function_export("procedure", procedure, types, &names));
     }
     for view in schema_array(v, "views", "Views").into_iter().flatten() {
-        schema.exports.insert(view_export(view, types));
+        schema.exports.insert(view_export(view, types, &names));
     }
     insert_canonical_exports(&mut schema.exports, v, "schedules", "Schedules", "schedule");
     insert_canonical_exports(
@@ -215,8 +273,7 @@ fn extract_schema(v: &Value) -> SchemaSnapshot {
         "LifeCycleReducers",
         "lifecycle",
     );
-    insert_canonical_exports(&mut schema.exports, v, "http_handlers", "HttpHandlers", "http_handler");
-    insert_canonical_exports(&mut schema.exports, v, "http_routes", "HttpRoutes", "http_route");
+    insert_http_routes(&mut schema.exports, v);
     insert_canonical_exports(
         &mut schema.exports,
         v,
@@ -281,16 +338,18 @@ fn append_type(signature: &mut String, label: &str, value: Option<&Value>, types
     }
 }
 
-fn function_export(kind: &str, function: &Value, types: &[Value]) -> String {
-    let name = schema_name(function.get("source_name").or_else(|| function.get("name")));
+fn function_export(kind: &str, function: &Value, types: &[Value], names: &SchemaNames) -> String {
+    let name = names.function(schema_name(
+        function.get("source_name").or_else(|| function.get("name")),
+    ));
     let mut signature = format!("{kind}:{name}({})", parameter_types(function, types).join(","));
     append_type(&mut signature, "return", function.get("return_type"), types);
     append_field(&mut signature, "visibility", function.get("visibility"));
     signature
 }
 
-fn view_export(view: &Value, types: &[Value]) -> String {
-    let mut signature = function_export("view", view, types);
+fn view_export(view: &Value, types: &[Value], names: &SchemaNames) -> String {
+    let mut signature = function_export("view", view, types, names);
     append_field(&mut signature, "public", view.get("is_public"));
     append_field(&mut signature, "anonymous", view.get("is_anonymous"));
     signature
@@ -305,6 +364,16 @@ fn insert_canonical_exports(
 ) {
     for export in schema_array(schema, direct_name, section_name).into_iter().flatten() {
         exports.insert(format!("{kind}:{}", canonical_value(Some(export))));
+    }
+}
+
+fn insert_http_routes(exports: &mut BTreeSet<String>, schema: &Value) {
+    for route in schema_array(schema, "http_routes", "HttpRoutes").into_iter().flatten() {
+        let mut route = route.clone();
+        if let Some(route) = route.as_object_mut() {
+            route.remove("handler_function");
+        }
+        exports.insert(format!("http_route:{}", canonical_value(Some(&route))));
     }
 }
 
@@ -1281,6 +1350,40 @@ mod tests {
     }
 
     #[test]
+    fn v10_schema_compares_explicit_canonical_table_names() {
+        let schema = |source_name: &str| {
+            json!({
+                "sections": [
+                    { "Typespace": { "types": [{ "Product": { "elements": [] } }] } },
+                    { "Tables": [{
+                        "source_name": source_name,
+                        "product_type_ref": 0,
+                        "primary_key": [],
+                        "indexes": [],
+                        "constraints": [],
+                        "sequences": [],
+                        "table_type": { "User": [] },
+                        "table_access": { "Public": [] },
+                        "default_values": [],
+                        "is_event": false
+                    }] },
+                    { "ExplicitNames": { "entries": [{
+                        "Table": {
+                            "source_name": source_name,
+                            "canonical_name": "child_item"
+                        }
+                    }] } }
+                ]
+            })
+        };
+
+        assert_eq!(
+            extract_schema(&schema("childItem")),
+            extract_schema(&schema("child_item"))
+        );
+    }
+
+    #[test]
     fn row_level_security_produces_a_schema_diff() {
         let mut golden = current_schema(true);
         golden["row_level_security"] = json!([{ "sql": "SELECT * FROM users WHERE identity = :sender" }]);
@@ -1379,6 +1482,27 @@ mod tests {
     }
 
     #[test]
+    fn http_route_schema_ignores_handler_names() {
+        let schema = |handler: &str| {
+            json!({
+                "sections": [
+                    { "HttpHandlers": [{ "source_name": handler }] },
+                    { "HttpRoutes": [{
+                        "handler_function": handler,
+                        "method": { "Method": { "Get": [] } },
+                        "path": "/items"
+                    }] }
+                ]
+            })
+        };
+
+        assert_eq!(
+            extract_schema(&schema("listItems")),
+            extract_schema(&schema("get_items"))
+        );
+    }
+
+    #[test]
     fn v10_schema_extracts_lifecycle_procedures_views_and_http_exports() {
         let schema = json!({
             "sections": [
@@ -1427,7 +1551,6 @@ mod tests {
             .any(|value| value.starts_with("procedure:fetch")));
         assert!(extracted.exports.iter().any(|value| value.starts_with("view:profile")));
         assert!(extracted.exports.iter().any(|value| value.starts_with("lifecycle:")));
-        assert!(extracted.exports.iter().any(|value| value.starts_with("http_handler:")));
         assert!(extracted.exports.iter().any(|value| value.starts_with("http_route:")));
         assert!(extracted
             .exports
@@ -1450,7 +1573,7 @@ mod tests {
         let extracted = extract_schema(&json);
 
         assert_eq!(extracted.reducers.len(), 1, "serialized schema was {json}");
-        assert_eq!(extracted.exports.len(), 6, "serialized schema was {json}");
+        assert_eq!(extracted.exports.len(), 5, "serialized schema was {json}");
         assert!(
             extracted
                 .exports

@@ -24,6 +24,6 @@ REDUCERS
   - Use visible LineItem Id 100 for Purchase 10 with Sku "SKU-1"
 
 VIEW
-- OrderLineDetail (public)
+- OrderLineDetail (anonymous procedural, public)
   - Returns rows with LineId: ulong, CustomerName: string, and Sku: string
   - Return only rows connected through matching Customer, Purchase, and LineItem IDs

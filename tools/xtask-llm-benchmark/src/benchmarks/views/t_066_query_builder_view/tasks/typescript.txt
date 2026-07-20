@@ -13,6 +13,6 @@ REDUCERS
   - Insert closed ticket id 2 titled "B"
 
 VIEW
-- open_ticket (public, query-builder)
+- open_ticket (public, non-anonymous query-builder)
   - Return the query-builder filter for status "open"
   - Do not materialize rows manually

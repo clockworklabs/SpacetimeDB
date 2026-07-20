@@ -16,6 +16,6 @@ REDUCERS
   - Insert Eligibility Id 10 for only Member 1
 
 VIEW
-- EligibleMember (public, query-builder)
+- EligibleMember (public, non-anonymous query-builder)
   - Use a semijoin
   - Return members only when a matching Eligibility row exists

@@ -13,6 +13,6 @@ REDUCERS
   - Insert closed Ticket Id 2 titled "B"
 
 VIEW
-- OpenTicket (public, query-builder)
+- OpenTicket (public, non-anonymous query-builder)
   - Return the query-builder filter for Status "open"
   - Do not materialize rows manually

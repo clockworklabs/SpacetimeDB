@@ -8,6 +8,6 @@ TABLE
     - visible: bool (btree index)
 
 VIEW
-- source_view (procedural, public)
+- source_view (anonymous procedural, public)
   - Return visible source_row rows
   - Explicitly declare id as the view primary key

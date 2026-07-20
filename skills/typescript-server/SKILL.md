@@ -40,6 +40,8 @@ export const addRecord = spacetimedb.reducer(
 );
 ```
 
+Only table definitions belong in `schema({...})`. Row and object builders used as reducer arguments or view return types are not schema entries.
+
 Named runtime exports are reserved for values registered with SpacetimeDB, such as reducers, lifecycle hooks, views, procedures, HTTP exports, and visibility filters. Keep ordinary helper functions and constants unexported.
 
 ## Imports
@@ -151,6 +153,10 @@ ctx.db.score_record.id.delete(recordId);                   // Delete by PK
 ```
 
 Insert through the table accessor (`ctx.db.score_record.insert(...)`). Primary-key, unique, and index accessors support lookup or mutation of existing rows, but do not have `insert(...)`.
+
+The accessor for a primary key or index is the declared column name. For example, a primary key named `eventId` is accessed as `ctx.db.event.eventId`, not `ctx.db.event.id`.
+
+The schema value registers module exports but does not expose database rows. Pass a context into any helper that needs `ctx.db`.
 
 Note: `iter()` and `filter()` return iterators. Spread to Array for `.sort()`, `.filter()`, `.map()`.
 
@@ -286,6 +292,8 @@ ctx => ctx.from.subscription.rightSemijoin(
 )
 ```
 
+For `A.leftSemijoin(B, ...)`, the result contains rows from `A`; for `A.rightSemijoin(B, ...)`, it contains rows from `B`. Semijoins do not project combined columns from both tables. Use a procedural view when the result is a custom row assembled from multiple tables.
+
 ## Client Visibility Filters
 
 ```typescript
@@ -319,6 +327,8 @@ Procedures and handlers open short database transactions with `ctx.withTx(tx => 
 Scheduled procedures use the ordinary scheduled-table shape. Its `scheduled` option references an exported `spacetimedb.procedure(...)` value instead of a reducer, and the procedure accepts the scheduled row as its argument.
 
 Inbound HTTP uses `httpHandler`, `httpRouter`, `Router`, and `SyncResponse`:
+
+`httpHandler` and `httpRouter` are methods on the local `spacetimedb` schema value, not named imports.
 
 ```typescript
 import { Router, SyncResponse } from 'spacetimedb/server';

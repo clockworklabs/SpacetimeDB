@@ -14,7 +14,7 @@ REDUCERS
   - Set each Label to "event-{microseconds}", such as "event-100"
 
 VIEW
-- WindowEvent (procedural, public)
+- WindowEvent (anonymous procedural, public)
   - Use the OccurredAt index
   - Return the inclusive range from 200 through 400 microseconds
   - Return rows in ascending OccurredAt order

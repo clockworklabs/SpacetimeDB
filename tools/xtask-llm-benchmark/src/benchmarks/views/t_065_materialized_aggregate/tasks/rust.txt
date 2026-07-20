@@ -22,6 +22,6 @@ REDUCERS
   - Delete the first books sale
 
 VIEW
-- category_summary (public, query-builder)
+- category_summary (public, non-anonymous query-builder)
   - Expose all category_total rows
   - After exercise, the only row is books with total_amount 25 and sale_count 1

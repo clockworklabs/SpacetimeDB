@@ -24,6 +24,6 @@ REDUCERS
   - Use visible line_item id 100 for purchase 10 with sku "SKU-1"
 
 VIEW
-- order_line_detail (public)
+- order_line_detail (anonymous procedural, public)
   - Returns rows with lineId: u64, customerName: string, and sku: string
   - Return only rows connected through matching customer, purchase, and line-item IDs

@@ -16,6 +16,6 @@ REDUCERS
   - Insert Id 4 with Category "sports", Active true, and Score 20
 
 VIEW
-- FeaturedContent (procedural, public)
+- FeaturedContent (anonymous procedural, public)
   - First use the Category index for "news"
   - Then return only Active rows with Score at least 10
