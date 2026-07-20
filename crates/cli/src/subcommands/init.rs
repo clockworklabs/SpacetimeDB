@@ -1631,7 +1631,7 @@ fn check_for_cargo() -> bool {
     false
 }
 
-fn resolve_default_dotnet_major() -> u8 {
+pub(crate) fn resolve_default_dotnet_major() -> u8 {
     let installed_majors = installed_dotnet_sdk_majors();
     if let Some(reason) = dotnet8_default_reason(std::env::consts::OS, installed_majors.as_deref()) {
         match reason {
