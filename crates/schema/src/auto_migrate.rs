@@ -24,7 +24,7 @@ mod termcolor_formatter;
 
 pub type Result<T> = std::result::Result<T, ErrorStream<AutoMigrateError>>;
 
-// A plan for a migration.
+/// A plan for a migration.
 #[derive(Debug)]
 pub enum MigratePlan<'def> {
     Manual(ManualMigratePlan<'def>),
@@ -661,8 +661,11 @@ fn auto_migrate_view(
         }))
         .collect();
 
+    if old.is_public != new.is_public {
+        plan.steps.push(AutoMigrateStep::ChangeAccess(full_name.clone()));
+    }
+
     if old.is_anonymous != new.is_anonymous
-        || old.is_public != new.is_public
         || old.primary_key != new.primary_key
         || incompatible_return_type
         || incompatible_param_types
@@ -2056,6 +2059,9 @@ mod tests {
             && type1.0 == prod1_ty && type2.0 == new_prod1_ty
         );
 
+        // Note: `AddUniqueConstraint` is no longer an error — adding unique constraints
+        // to existing tables is now allowed; duplicate detection happens inside create_constraint.
+
         expect_error_matching!(
             result,
             AutoMigrateError::ChangeTableType { table, type1, type2 } => table == &apples && type1 == &TableType::User && type2 == &TableType::System
@@ -2162,6 +2168,43 @@ mod tests {
             ))),
             "{steps:?}"
         );
+    }
+
+    #[test]
+    fn change_view_visibility_is_a_cheap_access_change() {
+        let view_module = |is_public: bool| {
+            create_module_def(move |builder| {
+                let return_type_ref = builder.add_algebraic_type(
+                    [],
+                    "my_view_return_type",
+                    AlgebraicType::product([("a", AlgebraicType::U64)]),
+                    true,
+                );
+                builder.add_view(
+                    "my_view",
+                    0,
+                    is_public,
+                    true,
+                    ProductType::from([("x", AlgebraicType::U32)]),
+                    AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+                );
+            })
+        };
+
+        let old_def = view_module(false);
+        let new_def = view_module(true);
+
+        let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
+        let steps = &plan.steps[..];
+        let my_view = NamespacedIdentifier::new_assume_valid("my_view");
+
+        assert!(!plan.disconnects_all_users(), "{plan:#?}");
+        assert!(
+            steps.contains(&AutoMigrateStep::ChangeAccess(my_view.clone())),
+            "{steps:?}"
+        );
+        assert!(!steps.contains(&AutoMigrateStep::AddView(my_view.clone())), "{steps:?}");
+        assert!(!steps.contains(&AutoMigrateStep::RemoveView(my_view)), "{steps:?}");
     }
 
     #[test]

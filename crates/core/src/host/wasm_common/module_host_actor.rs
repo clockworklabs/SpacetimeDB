@@ -763,7 +763,7 @@ impl InstanceCommon {
         }
     }
 
-    /// Re-evaluates all views which have entries in `st_view_subs`.
+    /// Re-evaluates all materialized view instances tracked in view lifecycle state.
     fn evaluate_subscribed_views<I: WasmInstance>(
         &mut self,
         tx: MutTxId,

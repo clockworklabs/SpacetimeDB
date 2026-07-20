@@ -345,13 +345,17 @@ pub(crate) fn parse_ident(ObjectName(parts): ObjectName) -> SqlParseResult<SqlId
     parse_parts(parts)
 }
 
-/// Parse an identifier
+/// Parse an identifier.
+///
+/// Multi-part names are joined back together with dots, because submodule tables are stored
+/// in the catalog under namespace-prefixed names (e.g. `lib.library_table`). Nesting means
+/// arbitrarily many parts are legal: `auth.baz.baz_items` is a single catalog name, not a
+/// three-level qualification. Note that qualified *column* references (`t.a`) never reach
+/// here — they are parsed as `Expr::CompoundIdentifier` instead.
 pub(crate) fn parse_parts(mut parts: Vec<Ident>) -> SqlParseResult<SqlIdent> {
     if parts.len() == 1 {
         return Ok(parts.swap_remove(0).into());
     }
-    // Join multi-part names (e.g. `lib.library_table`) with dots to match
-    // namespace-prefixed table names stored in the catalog.
     let joined = parts.iter().map(|p| p.value.as_str()).collect::<Vec<_>>().join(".");
     Ok(SqlIdent(RawIdentifier::new(joined)))
 }

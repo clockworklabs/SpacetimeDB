@@ -6,6 +6,7 @@ use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
 use spacetimedb_datastore::system_tables::{StViewFields, StViewRow, ST_VIEW_ID};
 use spacetimedb_lib::db::auth::StTableType;
+use spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColSet, ConstraintId, TableId};
@@ -436,11 +437,23 @@ fn auto_migrate_database(
                 stdb.alter_event_table_row_type(tx, table_id, column_schemas)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeAccess(table_name) => {
-                let (_prefix, _owning_def, table_def) = plan
-                    .new
-                    .find_table_by_full_name(&table_name)
-                    .ok_or_else(|| anyhow::anyhow!("ChangeAccess: table `{table_name}` not found in new module def"))?;
-                stdb.alter_table_access(tx, &table_name, table_def.table_access.into())?;
+                let access =
+                    if let Some((_prefix, _owning_def, table_def)) = plan.new.find_table_by_full_name(&table_name) {
+                        table_def.table_access
+                    } else {
+                        let (_prefix, _owning_def, view_def) =
+                            plan.new.find_view_by_full_name(&table_name).ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "ChangeAccess: `{table_name}` not found as a table or view in new module def"
+                                )
+                            })?;
+                        if view_def.is_public {
+                            TableAccess::Public
+                        } else {
+                            TableAccess::Private
+                        }
+                    };
+                stdb.alter_table_access(tx, &table_name, access.into())?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangePrimaryKey(table_name) => {
                 let (_prefix, _owning_def, table_def) =
@@ -774,6 +787,86 @@ mod test {
             .finish()
             .try_into()
             .expect("should be a valid module definition")
+    }
+
+    fn view_module() -> ModuleDef {
+        let mut builder = RawModuleDefV10Builder::new();
+        let return_type_ref = builder.add_algebraic_type(
+            [],
+            "my_view_return_type",
+            AlgebraicType::product([("a", AlgebraicType::U64)]),
+            true,
+        );
+        builder.add_view(
+            "my_view",
+            0,
+            true,
+            true,
+            ProductType::unit(),
+            AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+        );
+        builder.add_view_primary_key("my_view", ["a"]);
+        builder
+            .finish()
+            .try_into()
+            .expect("should be a valid module definition")
+    }
+
+    fn old_view_backing_schema(module_def: &ModuleDef) -> TableSchema {
+        let view = module_def.view("my_view").unwrap();
+        let mut schema = TableSchema::from_view_def_for_datastore(module_def, view);
+
+        schema.columns.remove(0);
+        for (pos, col) in schema.columns.iter_mut().enumerate() {
+            col.col_pos = pos.into();
+        }
+        schema.indexes.clear();
+        schema.constraints.clear();
+        schema.reset();
+
+        schema
+    }
+
+    fn create_backing_table(stdb: &TestDB, schema: TableSchema) -> anyhow::Result<()> {
+        let mut tx = begin_mut_tx(stdb);
+        stdb.create_table(&mut tx, schema)?;
+        stdb.commit_tx(tx)?;
+        Ok(())
+    }
+
+    #[test]
+    fn stale_view_backing_schema_generates_startup_repair_plan() -> anyhow::Result<()> {
+        let stdb = TestDB::durable()?;
+        let module_def = view_module();
+        create_backing_table(&stdb, old_view_backing_schema(&module_def))?;
+
+        let plan = stale_view_backing_table_recreate_plan(&stdb, &module_def)?.expect("expected repair plan");
+
+        let MigratePlan::Auto(plan) = &plan else {
+            panic!("expected auto migration");
+        };
+        let my_view = NamespacedIdentifier::new_assume_valid("my_view");
+        assert!(plan.steps.contains(&AutoMigrateStep::RemoveView(my_view.clone())));
+        assert!(plan.steps.contains(&AutoMigrateStep::AddView(my_view.clone())));
+        assert!(plan.steps.contains(&AutoMigrateStep::DisconnectAllUsers));
+        assert!(!plan.steps.contains(&AutoMigrateStep::UpdateView(my_view)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn current_view_backing_schema_skips_startup_repair_plan() -> anyhow::Result<()> {
+        let stdb = TestDB::durable()?;
+        let module_def = view_module();
+        let view = module_def.view("my_view").unwrap();
+        let backing_schema = TableSchema::from_view_def_for_datastore(&module_def, view);
+        create_backing_table(&stdb, backing_schema)?;
+
+        let plan = stale_view_backing_table_recreate_plan(&stdb, &module_def)?;
+
+        assert!(plan.is_none(), "{plan:#?}");
+
+        Ok(())
     }
 
     enum TakeSnapshot {
