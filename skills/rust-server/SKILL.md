@@ -128,14 +128,14 @@ ctx.db.entity().iter();                                            // All rows â
 ctx.db.entity().count();                                           // Count rows
 ctx.db.entity().id().update(Entity { name: new_name, ..existing }); // Update (override + spread)
 ctx.db.entity().id().delete(entity_id);                            // Delete by PK
-ctx.db.entity().name().delete("Alice");                            // Delete by indexed column
+ctx.db.entity().name().delete("Alice".to_string());                // Delete by indexed String column
 ```
 
 Note: `iter()` and `filter()` return iterators. Collect to Vec if you need `.sort()`, `.filter()`, `.map()`.
 
 Range queries on btree indexes: `filter(18..=65)`, `filter(18..)`, `filter(..18)`.
 
-String index filters borrow the key: `ctx.db.product().category().filter(&"hardware".to_string())`.
+String column accessors operate on the column's owned `String` type, not `&str`. Pass a `String` or `&String` to `find` and `delete`; index filters borrow the key, as in `ctx.db.product().category().filter(&"hardware".to_string())`.
 
 ## Lifecycle Hooks
 
