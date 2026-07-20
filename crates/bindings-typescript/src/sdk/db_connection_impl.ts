@@ -151,6 +151,11 @@ const CLIENT_MESSAGE_CALL_PROCEDURE_TAG =
 // path or create very large websocket writes.
 const MAX_V3_OUTBOUND_FRAME_BYTES = 256 * 1024;
 
+// WebSocket `readyState` values from the WHATWG spec. Uses literals rather than
+// the `WebSocket` global, which is not defined on earlier Node versions we
+const WS_READY_STATE_CLOSING = 2;
+const WS_READY_STATE_CLOSED = 3;
+
 export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   implements DbContext<RemoteModule>
 {
@@ -182,10 +187,9 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     if (!ws) {
       return false;
     }
-    // Only reached from the browser-only resume handlers, where the
-    // `WebSocket` global (and its CLOSING/CLOSED constants) always exists.
     return (
-      ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED
+      ws.readyState === WS_READY_STATE_CLOSING ||
+      ws.readyState === WS_READY_STATE_CLOSED
     );
   }
 
