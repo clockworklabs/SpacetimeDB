@@ -43,7 +43,7 @@ use spacetimedb_client_api_messages::websocket::v2 as ws_v2;
 use spacetimedb_client_api_messages::websocket::v3 as ws_v3;
 use spacetimedb_lib::bsatn;
 use spacetimedb_lib::connection_id::{ConnectionId, ConnectionIdForUrl};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::error::Elapsed;
 use tokio::time::{sleep_until, timeout, Instant};
@@ -346,6 +346,8 @@ struct ActorState {
     /// When the last `Ping` frame was written to the socket.
     /// Taken when the corresponding `Pong` arrives, to observe the roundtrip time.
     last_ping_sent: Mutex<Option<Instant>>,
+    // used to determine if the connection is idle.
+    last_activity: Arc<Mutex<Instant>>,
 }
 
 impl ActorState {
@@ -363,6 +365,7 @@ impl ActorState {
             closed: AtomicBool::new(false),
             got_pong: AtomicBool::new(true),
             last_ping_sent: Mutex::new(None),
+            last_activity: Arc::new(Mutex::new(Instant::now())),
         }
     }
 
@@ -401,8 +404,20 @@ impl ActorState {
         }
     }
 
-    pub fn next_idle_deadline(&self) -> Instant {
-        Instant::now() + self.config.idle_timeout
+    // Update the `last_activity watermark` to indicate that the connection is still active.
+    pub fn record_activity(&self) {
+        let mut last_activity = self.last_activity.lock().unwrap();
+        *last_activity = Instant::now();
+    }
+
+    // This future completes if `self.config.idle_timeout` has elapsed since `self.record_activity()` was last called.
+    pub fn idle_timer(&self) -> impl Future<Output = ()> + use<> {
+        ws_idle_timer(self.last_activity.clone(), self.config.idle_timeout)
+    }
+
+    pub fn get_last_activity(&self) -> Instant {
+        let last_activity = self.last_activity.lock().unwrap();
+        *last_activity
     }
 
     pub fn record_disconnect(&self, cause: ClientDisconnectCause) -> bool {
@@ -528,15 +543,6 @@ async fn ws_client_actor_inner(
     // Split websocket into send and receive halves.
     let (ws_send, ws_recv) = ws.split();
 
-    // Set up the idle timer.
-    //
-    // The deadline is extended by the receive task whenever data arrives from
-    // the client, and by the send task whenever it makes progress writing to
-    // the socket (a slow client that keeps accepting data is not idle).
-    let (idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
-    let idle_tx = Arc::new(idle_tx);
-    let idle_timer = ws_idle_timer(idle_rx);
-
     let bsatn_rlb_pool = client.module().subscriptions().bsatn_rlb_pool.clone();
 
     // Spawn a task to send outgoing messages
@@ -548,12 +554,10 @@ async fn ws_client_actor_inner(
         sendrx,
         unordered_rx,
         bsatn_rlb_pool,
-        idle_tx.clone(),
     ));
     // Spawn a task to handle incoming messages.
     let recv_task = tokio::spawn(ws_recv_task(
         state.clone(),
-        idle_tx,
         client_closed_metric,
         {
             let client = client.clone();
@@ -574,7 +578,7 @@ async fn ws_client_actor_inner(
         }
     };
 
-    ws_main_loop(state, hotswap, idle_timer, send_task, recv_task, move |msg| {
+    ws_main_loop(state, hotswap, send_task, recv_task, move |msg| {
         let _ = unordered_tx.send(msg);
     })
     .await;
@@ -584,11 +588,6 @@ async fn ws_client_actor_inner(
 /// How long to wait for the close handshake to complete after the server
 /// initiated a close due to idle timeout, before tearing down the connection.
 const SERVER_CLOSE_GRACE: Duration = Duration::from_secs(10);
-
-/// How often, at most, the send loop extends the idle deadline when it makes
-/// write progress. Purely to avoid hammering the idle timer's watch channel
-/// once per frame on fast connections.
-const WRITE_PROGRESS_INTERVAL: Duration = Duration::from_secs(1);
 
 /// The main `select!` loop of the websocket client actor.
 ///
@@ -700,7 +699,6 @@ const WRITE_PROGRESS_INTERVAL: Duration = Duration::from_secs(1);
 async fn ws_main_loop<HotswapWatcher>(
     state: Arc<ActorState>,
     hotswap: impl Fn() -> HotswapWatcher,
-    idle_timer: impl Future<Output = ()>,
     mut send_task: JoinHandle<()>,
     mut recv_task: JoinHandle<()>,
     unordered_tx: impl Fn(UnorderedWsMessage),
@@ -722,6 +720,8 @@ async fn ws_main_loop<HotswapWatcher>(
     // due to idle timeout. Armed if and when the idle timer fires.
     let close_grace = sleep_until(Instant::now());
     let mut timed_out = false;
+
+    let idle_timer = state.idle_timer();
 
     pin_mut!(watch_hotswap);
     pin_mut!(idle_timer);
@@ -824,34 +824,19 @@ async fn ws_main_loop<HotswapWatcher>(
     }
 }
 
-/// A sleep that can be extended by sending it new deadlines.
-///
-/// Sleeps until the deadline appearing on the `activity` channel,
-/// i.e. if a new deadline appears before the sleep finishes,
-/// the sleep is reset to the new deadline.
-///
-/// The `activity` should be updated whenever a new message is received.
-async fn ws_idle_timer(mut activity: watch::Receiver<Instant>) {
-    let mut deadline = *activity.borrow();
-    let sleep = sleep_until(deadline);
-    pin_mut!(sleep);
-
+// Sleeps until the last_activity + idle_timeout is reached. The `last_activity` should be updated whenever
+// the client proves it is not idle.
+async fn ws_idle_timer(last_activity: Arc<Mutex<Instant>>, idle_timeout: Duration) {
     loop {
-        tokio::select! {
-            biased;
-
-            Ok(()) = activity.changed() => {
-                let new_deadline = *activity.borrow_and_update();
-                if new_deadline != deadline {
-                    deadline = new_deadline;
-                    sleep.as_mut().reset(deadline);
-                }
-            },
-
-            () = &mut sleep => {
-                break;
-            },
+        let deadline = {
+            let last_activity = last_activity.lock().unwrap();
+            *last_activity + idle_timeout
+        };
+        let now = Instant::now();
+        if deadline <= now {
+            break;
         }
+        sleep_until(deadline).await;
     }
 }
 
@@ -876,7 +861,6 @@ async fn ws_idle_timer(mut activity: watch::Receiver<Instant>) {
 /// such that we wouldn't be able to receive any more messages anyway.
 async fn ws_recv_task<MessageHandler>(
     state: Arc<ActorState>,
-    idle_tx: Arc<watch::Sender<Instant>>,
     client_closed_metric: IntGauge,
     message_handler: impl Fn(DataMessage, Instant) -> MessageHandler,
     unordered_tx: mpsc::UnboundedSender<UnorderedWsMessage>,
@@ -889,7 +873,7 @@ async fn ws_recv_task<MessageHandler>(
         .total_incoming_queue_length
         .with_label_values(&state.database);
     let recv_queue = ws_recv_queue(state.clone(), unordered_tx.clone(), recv_queue_gauge, ws);
-    let recv_loop = pin!(ws_recv_loop(state.clone(), idle_tx, recv_queue));
+    let recv_loop = pin!(ws_recv_loop(state.clone(), recv_queue));
     let recv_handler = ws_client_message_handler(state.clone(), client_closed_metric, recv_loop);
     pin_mut!(recv_handler);
 
@@ -933,7 +917,6 @@ async fn ws_recv_task<MessageHandler>(
 /// state are dropped.
 fn ws_recv_loop(
     state: Arc<ActorState>,
-    idle_tx: Arc<watch::Sender<Instant>>,
     mut ws: impl Stream<Item = Result<WsMessage, WsError>> + Unpin,
 ) -> impl Stream<Item = ClientMessage> {
     fn receive_error_cause(error: &WsError) -> ClientDisconnectCause {
@@ -996,7 +979,7 @@ fn ws_recv_loop(
             };
             match res {
                 Ok(m) => {
-                    idle_tx.send(state.next_idle_deadline()).ok();
+                    state.record_activity();
 
                     if !state.closed() {
                         yield ClientMessage::from_message(m);
@@ -1242,10 +1225,9 @@ async fn ws_send_loop(
     messages: impl Receiver<OutboundMessage>,
     unordered: mpsc::UnboundedReceiver<UnorderedWsMessage>,
     bsatn_rlb_pool: BsatnRowListBuilderPool,
-    idle_tx: Arc<watch::Sender<Instant>>,
 ) {
     let metrics = SendMetrics::new(state.database);
-    ws_send_loop_inner(state, ws, messages, unordered, idle_tx, move |encode_rx, frames_tx| {
+    ws_send_loop_inner(state, ws, messages, unordered, move |encode_rx, frames_tx| {
         ws_encode_task(metrics, config, encode_rx, frames_tx, bsatn_rlb_pool)
     })
     .await
@@ -1256,7 +1238,6 @@ async fn ws_send_loop_inner<T, U, Encoder>(
     mut ws: impl Sink<WsMessage, Error: Display> + Unpin,
     mut messages: impl Receiver<T>,
     mut unordered: mpsc::UnboundedReceiver<UnorderedWsMessage>,
-    idle_tx: Arc<watch::Sender<Instant>>,
     encoder: impl FnOnce(mpsc::UnboundedReceiver<U>, mpsc::UnboundedSender<Frame>) -> Encoder,
 ) where
     T: Into<U>,
@@ -1279,16 +1260,6 @@ async fn ws_send_loop_inner<T, U, Encoder>(
     const MESSAGE_BATCH_SIZE: usize = ClientConnectionReceiver::DEFAULT_RECV_MANY_LIMIT;
     let mut message_batch = Vec::new();
     let (frames_tx, mut frames_rx) = mpsc::unbounded_channel();
-
-    // When we last extended the idle deadline due to write progress.
-    //
-    // The socket accepting bytes means the client's TCP stack has been
-    // acknowledging previously sent data: the peer is alive, just possibly
-    // slow. Counting this as activity prevents the idle timer from
-    // disconnecting clients that are actively (if slowly) downloading a large
-    // message — such clients may not see our `Ping` for a long time, as it is
-    // queued in the TCP stream behind the message data.
-    let mut last_write_progress = Instant::now();
 
     let (encode_tx, encode_rx) = mpsc::unbounded_channel();
     // Spawn the encode task.
@@ -1401,12 +1372,7 @@ async fn ws_send_loop_inner<T, U, Encoder>(
                         log::warn!("error sending frame: {e:#}");
                         break 'outer;
                     }
-                    // Writing succeeded, so the client is making progress:
-                    // extend the idle deadline (rate-limited).
-                    if last_write_progress.elapsed() >= WRITE_PROGRESS_INTERVAL {
-                        last_write_progress = Instant::now();
-                        idle_tx.send(state.next_idle_deadline()).ok();
-                    }
+                    state.record_activity();
                 }
             },
 
@@ -2153,20 +2119,16 @@ mod tests {
         }
     }
 
-    fn dummy_idle_tx() -> Arc<watch::Sender<Instant>> {
-        Arc::new(watch::channel(Instant::now()).0)
-    }
-
     #[tokio::test(start_paused = true)] // see [NOTE: start_paused]
     async fn idle_timer_extends_sleep() {
         let timeout = Duration::from_millis(10);
 
         let start = Instant::now();
-        let (tx, rx) = watch::channel(start + timeout);
-        tokio::join!(ws_idle_timer(rx), async {
+        let last_activity = Arc::new(Mutex::new(start));
+        tokio::join!(ws_idle_timer(last_activity.clone(), timeout), async {
             for _ in 0..5 {
                 sleep(Duration::from_millis(1)).await;
-                tx.send(Instant::now() + timeout).unwrap();
+                *last_activity.lock().unwrap() = Instant::now();
             }
         });
         let elapsed = start.elapsed();
@@ -2183,12 +2145,11 @@ mod tests {
     async fn recv_loop_terminates_when_input_exhausted() {
         let state = Arc::new(actor_state_with_disconnect_recorder(1, <_>::default()));
         let before = disconnect_count(state.database, ClientDisconnectCause::WebsocketStreamEnded);
-        let (idle_tx, _idle_rx) = watch::channel(Instant::now() + state.config.idle_timeout);
 
         let input = stream::iter(vec![Ok(WsMessage::Ping(Bytes::new()))]);
         pin_mut!(input);
 
-        let recv_loop = ws_recv_loop(state.clone(), Arc::new(idle_tx), input);
+        let recv_loop = ws_recv_loop(state.clone(), input);
         pin_mut!(recv_loop);
 
         assert_matches!(recv_loop.next().await, Some(ClientMessage::Ping(_)));
@@ -2201,7 +2162,6 @@ mod tests {
         let state = Arc::new(actor_state_with_disconnect_recorder(2, <_>::default()));
         let cause = ClientDisconnectCause::WebsocketReceiveConnectionClosed;
         let before = disconnect_count(state.database, cause);
-        let (idle_tx, _idle_rx) = watch::channel(Instant::now() + state.config.idle_timeout);
 
         let input = stream::iter(vec![
             Ok(WsMessage::Ping(Bytes::new())),
@@ -2210,7 +2170,7 @@ mod tests {
         ]);
         pin_mut!(input);
 
-        let recv_loop = ws_recv_loop(state.clone(), Arc::new(idle_tx), input);
+        let recv_loop = ws_recv_loop(state.clone(), input);
         pin_mut!(recv_loop);
 
         assert_matches!(recv_loop.next().await, Some(ClientMessage::Ping(_)));
@@ -2221,7 +2181,6 @@ mod tests {
     #[tokio::test]
     async fn recv_loop_drains_remaining_messages_when_closed() {
         let state = Arc::new(dummy_actor_state());
-        let (idle_tx, _idle_rx) = watch::channel(Instant::now() + state.config.idle_timeout);
 
         let input = stream::iter(vec![
             Ok(WsMessage::Ping(Bytes::new())),
@@ -2229,7 +2188,7 @@ mod tests {
         ]);
         pin_mut!(input);
         {
-            let recv_loop = ws_recv_loop(state.clone(), Arc::new(idle_tx), &mut input);
+            let recv_loop = ws_recv_loop(state.clone(), &mut input);
             pin_mut!(recv_loop);
 
             state.close();
@@ -2241,7 +2200,6 @@ mod tests {
     #[tokio::test]
     async fn recv_loop_stops_at_error_while_draining() {
         let state = Arc::new(dummy_actor_state());
-        let (idle_tx, _idle_rx) = watch::channel(Instant::now() + state.config.idle_timeout);
 
         let input = stream::iter(vec![
             Ok(WsMessage::Ping(Bytes::new())),
@@ -2250,7 +2208,7 @@ mod tests {
         ]);
         pin_mut!(input);
         {
-            let recv_loop = ws_recv_loop(state.clone(), Arc::new(idle_tx), &mut input);
+            let recv_loop = ws_recv_loop(state.clone(), &mut input);
             pin_mut!(recv_loop);
 
             state.close();
@@ -2262,23 +2220,22 @@ mod tests {
     #[tokio::test]
     async fn recv_loop_updates_idle_channel() {
         let state = Arc::new(dummy_actor_state());
-        let idle_deadline = Instant::now() + state.config.idle_timeout;
-        let (idle_tx, mut idle_rx) = watch::channel(idle_deadline);
+        let mut prev_activity = state.get_last_activity();
+        tokio::time::advance(Duration::from_millis(1));
 
         let input = stream::iter(vec![
             Ok(WsMessage::Ping(Bytes::new())),
             Ok(WsMessage::Pong(Bytes::new())),
         ]);
-        let recv_loop = ws_recv_loop(state, Arc::new(idle_tx), input);
+        let recv_loop = ws_recv_loop(state.clone(), input);
         pin_mut!(recv_loop);
 
-        let mut new_idle_deadline = *idle_rx.borrow();
         while let Some(message) = recv_loop.next().await {
+            let last_activity = state.get_last_activity();
             drop(message);
-            assert!(idle_rx.has_changed().unwrap());
-            new_idle_deadline = *idle_rx.borrow_and_update();
+            tokio::time::advance(Duration::from_millis(1));
+            assert!(last_activity > prev_activity);
         }
-        assert!(new_idle_deadline > idle_deadline);
     }
 
     #[tokio::test]
@@ -2321,14 +2278,12 @@ mod tests {
     async fn recv_task_records_client_message_error_disconnect() {
         let state = Arc::new(actor_state_with_disconnect_recorder(7, <_>::default()));
         let before = disconnect_count(state.database, ClientDisconnectCause::ClientMessageError);
-        let (idle_tx, _idle_rx) = watch::channel(state.next_idle_deadline());
         let metric = IntGauge::new("bleep", "unhelpful").unwrap();
         let (unordered_tx, mut unordered_rx) = mpsc::unbounded_channel();
         let input = stream::iter([Ok(WsMessage::text("not useful"))]);
 
         ws_recv_task(
             state.clone(),
-            idle_tx,
             metric,
             |_data, _timer| future::ready(Err(MessageHandleError::UnsupportedVersion("test"))),
             unordered_tx,
@@ -2354,7 +2309,6 @@ mod tests {
             messages_rx,
             unordered_rx,
             BsatnRowListBuilderPool::new(),
-            dummy_idle_tx(),
         );
         pin_mut!(send_loop);
 
@@ -2379,7 +2333,6 @@ mod tests {
             messages_rx,
             unordered_rx,
             BsatnRowListBuilderPool::new(),
-            dummy_idle_tx(),
         );
         pin_mut!(send_loop);
 
@@ -2434,7 +2387,6 @@ mod tests {
                 messages_rx,
                 unordered_rx,
                 BsatnRowListBuilderPool::new(),
-                dummy_idle_tx(),
             );
             pin_mut!(send_loop);
 
@@ -2486,7 +2438,6 @@ mod tests {
                 messages_rx,
                 unordered_rx,
                 BsatnRowListBuilderPool::new(),
-                dummy_idle_tx(),
             );
             pin_mut!(send_loop);
 
@@ -2505,7 +2456,6 @@ mod tests {
         ws_main_loop(
             state.clone(),
             future::pending,
-            future::pending(),
             tokio::spawn(sleep(Duration::from_millis(10))),
             tokio::spawn(future::pending()),
             drop,
@@ -2514,7 +2464,6 @@ mod tests {
         ws_main_loop(
             state,
             future::pending,
-            future::pending(),
             tokio::spawn(future::pending()),
             tokio::spawn(sleep(Duration::from_millis(10))),
             drop,
@@ -2532,7 +2481,6 @@ mod tests {
             },
         ));
         let before = disconnect_count(state.database, ClientDisconnectCause::IdleTimeout);
-        let (idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
 
         // Record the `Close` frame the main loop sends when the idle timer
         // fires. Since we never complete the close handshake (both tasks are
@@ -2555,7 +2503,6 @@ mod tests {
                 ws_main_loop(
                     state,
                     future::pending,
-                    ws_idle_timer(idle_rx),
                     tokio::spawn(future::pending()),
                     tokio::spawn(future::pending()),
                     unordered_tx,
@@ -2567,7 +2514,7 @@ mod tests {
         let loop_start = Instant::now();
         for _ in 0..5 {
             sleep(Duration::from_millis(5)).await;
-            idle_tx.send(state.next_idle_deadline()).unwrap();
+            state.record_activity();
             assert!(is_pending(&mut t).await);
         }
         let timeout = loop_start.elapsed() + Duration::from_millis(10);
@@ -2586,7 +2533,6 @@ mod tests {
             idle_timeout: Duration::from_millis(10),
             ..<_>::default()
         }));
-        let (_idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
 
         // Pretend the client acknowledges the close immediately:
         // the recv task terminates as soon as the `Close` frame is sent.
@@ -2604,7 +2550,6 @@ mod tests {
         ws_main_loop(
             state.clone(),
             future::pending,
-            ws_idle_timer(idle_rx),
             tokio::spawn(future::pending()),
             tokio::spawn(async move { notify.notified().await }),
             unordered_tx,
@@ -2626,7 +2571,6 @@ mod tests {
             idle_timeout: Duration::from_millis(10),
             ..<_>::default()
         }));
-        let (idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
         // Pretend we received a pong immediately after sending a ping,
         // but only five times.
         let unordered_tx = {
@@ -2637,7 +2581,7 @@ mod tests {
                     let n = pings.fetch_add(1, Ordering::Relaxed);
                     if n < 5 {
                         state.set_ponged();
-                        idle_tx.send(state.next_idle_deadline()).ok();
+                        state.record_activity();
                     }
                 }
             }
@@ -2648,9 +2592,8 @@ mod tests {
             let state = state.clone();
             async move {
                 ws_main_loop(
-                    state,
+                    state.clone(),
                     future::pending,
-                    ws_idle_timer(idle_rx),
                     tokio::spawn(future::pending()),
                     tokio::spawn(future::pending()),
                     unordered_tx,
@@ -2682,7 +2625,6 @@ mod tests {
         let state = Arc::new(actor_state_with_disconnect_recorder(5, <_>::default()));
         let before = disconnect_count(state.database, ClientDisconnectCause::ModuleExited);
 
-        let (_idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
         let unordered_tx = {
             let state = state.clone();
             move |m| {
@@ -2703,7 +2645,6 @@ mod tests {
             ws_main_loop(
                 state_for_loop.clone(),
                 hotswap,
-                ws_idle_timer(idle_rx),
                 // Pretend we received a close immediately after sending one.
                 tokio::spawn(async move {
                     loop {
@@ -2812,15 +2753,7 @@ mod tests {
         const NUM_CONTROL_FRAMES: usize = 2;
 
         let send_loop = tokio::spawn(async move {
-            ws_send_loop_inner(
-                state,
-                &mut received,
-                messages_rx,
-                unordered_rx,
-                dummy_idle_tx(),
-                encoder,
-            )
-            .await;
+            ws_send_loop_inner(state, &mut received, messages_rx, unordered_rx, encoder).await;
             received
         });
         messages_tx.send(Bytes::from_static(&[1; MESSAGE_SIZE])).await.unwrap();
