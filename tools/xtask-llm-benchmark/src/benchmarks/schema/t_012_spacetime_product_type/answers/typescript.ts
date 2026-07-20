@@ -7,6 +7,7 @@ const Score = t.object('Score', {
 
 const result = table({
   name: 'result',
+  public: true,
 }, {
   id: t.i32().primaryKey(),
   value: Score,
