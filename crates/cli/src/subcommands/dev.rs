@@ -196,7 +196,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let no_config = args.get_flag("no_config");
     let skip_publish = args.get_flag("skip_publish");
     let skip_generate = args.get_flag("skip_generate");
-    let native_aot = args.get_flag("native_aot");
+    let native_aot_from_cli = args.get_flag("native_aot");
     let dotnet_major = args
         .get_one::<u8>("dotnet_version")
         .copied()
@@ -417,7 +417,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 project_name_default: database_name_from_cli_for_init.clone(),
                 database_name_default: database_name_from_cli_for_init.clone(),
                 skip_next_steps: true,
-                native_aot,
+                native_aot: native_aot_from_cli,
                 dotnet_version: parse_optional_dotnet_version(Some(dotnet_version.as_str()))?,
                 ..Default::default()
             };
@@ -568,7 +568,16 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         publish_configs = vec![CommandConfig::new(&publish_schema, config_map, &publish_args)?];
     }
 
-    ensure_nativeaot_supported_for_dev(&publish_configs, dotnet_major, native_aot)?;
+    let native_aot = native_aot_from_cli
+        || publish_configs.iter().any(|config_entry| {
+            config_entry
+                .get_config_value("native_aot")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        });
+    if native_aot {
+        common_args::ensure_nativeaot_supported_on_host(Some(dotnet_major))?;
+    }
 
     if !no_config {
         let db_to_persist = database_name_from_cli_for_init.as_deref().or_else(|| {
@@ -1170,27 +1179,6 @@ async fn generate_build_and_publish(
 
     println!("{}", "Published successfully!".green().bold());
     println!("{}", "---".dimmed());
-
-    Ok(())
-}
-
-fn ensure_nativeaot_supported_for_dev(
-    publish_configs: &[CommandConfig<'_>],
-    dotnet_version: u8,
-    native_aot: bool,
-) -> anyhow::Result<()> {
-    for config_entry in publish_configs {
-        let uses_native_aot = native_aot
-            || dotnet_version == 10
-            || config_entry
-                .get_config_value("native_aot")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-
-        if uses_native_aot {
-            common_args::ensure_nativeaot_supported_on_host(Some(dotnet_version))?;
-        }
-    }
 
     Ok(())
 }
