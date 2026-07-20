@@ -565,6 +565,18 @@ pub async fn exec_with_options(config: &mut Config, options: &InitOptions) -> an
         None
     };
 
+    // Add NativeAOT-LLVM project configuration for C# projects when:
+    //   - --native-aot was explicitly specified, OR
+    //   - .NET 10 was selected/detected as the target
+    let needs_native_aot = if template_config.server_lang == Some(ServerLanguage::Csharp) {
+        options.native_aot || dotnet_major == Some(10)
+    } else {
+        false
+    };
+    if needs_native_aot {
+        common_args::ensure_nativeaot_supported_on_host(dotnet_major)?;
+    }
+
     ensure_empty_directory(
         &template_config.project_name,
         &template_config.project_path,
@@ -578,14 +590,6 @@ pub async fn exec_with_options(config: &mut Config, options: &InitOptions) -> an
     )
     .await?;
 
-    // Add NativeAOT-LLVM project configuration for C# projects when:
-    //   - --native-aot was explicitly specified, OR
-    //   - .NET 10 was selected/detected as the target
-    let needs_native_aot = if template_config.server_lang == Some(ServerLanguage::Csharp) {
-        options.native_aot || dotnet_major == Some(10)
-    } else {
-        false
-    };
     if needs_native_aot {
         let server_dir = template_config.project_path.join("spacetimedb");
         add_native_aot_packages_to_csproj(&server_dir, dotnet_major)?;
