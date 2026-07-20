@@ -221,6 +221,14 @@ fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
     let silent_cargo_exit = diagnostic.contains("error: command [\"cargo\", \"build\"")
         && diagnostic.contains("exited with code 1")
         && !has_actionable_compiler_diagnostic;
+    let has_actionable_dotnet_diagnostic = diagnostic.lines().any(|line| {
+        line.contains(".cs(")
+            && (line.contains(": error cs") || line.contains(": error stdb") || line.contains(": error il"))
+    });
+    let dotnet_linker_exit = diagnostic.contains("error msb6006")
+        && diagnostic.contains("\"dotnet.exe\" exited with code 1")
+        && diagnostic.contains("error netsdk1144")
+        && !has_actionable_dotnet_diagnostic;
     // "Pipe is broken" errors from WASI SDK parallel builds
     combined.contains("Pipe is broken")
         || combined.contains("EmitBundleObjectFiles")
@@ -236,6 +244,10 @@ fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
         // diagnostic. This is a transient child-process failure, not bad source.
         || silent_rustc_exit
         || silent_cargo_exit
+        // The .NET linker occasionally exits without a source diagnostic and
+        // MSBuild reports only MSB6006 + NETSDK1144. Do not retry when the
+        // output also contains a C#, SpacetimeDB codegen, or IL source error.
+        || dotnet_linker_exit
         // A child process can occasionally disappear on Windows after login but
         // before the CLI emits a compiler/MSBuild diagnostic. Retrying is safe:
         // benchmark publishes always use their own temporary CLI root and database.
@@ -285,6 +297,22 @@ mod tests {
         assert!(is_transient_build_error(
             "Error: command [\"cargo\", \"build\", \"--release\"] exited with code 1",
             ""
+        ));
+    }
+
+    #[test]
+    fn retries_dotnet_linker_exit_without_source_diagnostic() {
+        assert!(is_transient_build_error(
+            "Error: command [\"dotnet\", \"publish\"] exited with code 1",
+            "Microsoft.NET.ILLink.targets(134,5): error MSB6006: \"dotnet.exe\" exited with code 1.\nMicrosoft.NET.ILLink.targets(87,5): error NETSDK1144: Optimizing assemblies for size failed."
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_dotnet_linker_exit_with_source_diagnostic() {
+        assert!(!is_transient_build_error(
+            "Error: command [\"dotnet\", \"publish\"] exited with code 1",
+            "Lib.cs(10,5): error CS0103: The name 'missing' does not exist.\nMicrosoft.NET.ILLink.targets(134,5): error MSB6006: \"dotnet.exe\" exited with code 1.\nMicrosoft.NET.ILLink.targets(87,5): error NETSDK1144: Optimizing assemblies for size failed."
         ));
     }
 }
