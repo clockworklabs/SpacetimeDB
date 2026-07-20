@@ -30,6 +30,9 @@ regex = "1"
 heck = "0.5.0"
 thiserror = "2.0.17"
 
+[dev-dependencies]
+spacetimedb-lib = { workspace = true, features = ["serde"] }
+
 [lib]
 path = "src/lib.rs"
 

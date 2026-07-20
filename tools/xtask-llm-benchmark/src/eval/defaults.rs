@@ -1,4 +1,4 @@
-use crate::bench::utils::sanitize_db_name;
+use crate::bench::utils::{golden_db_name, sanitize_db_name};
 use crate::eval::scorers::{
     CallOutputParityScorer, EventuallySqlCountScorer, HttpRouteCase, HttpRouteParityScorer, ReducerCallBothScorer,
     ReducerDataParityScorer, ReducerSqlCountScorer, SchemaParityScorer, Scorer, SqlCountOnlyScorer, SqlExecBothScorer,
@@ -10,7 +10,7 @@ use std::time::Duration;
 pub fn default_schema_parity_scorers(host_url: &str, src_file: &str, route_tag: &str) -> Vec<Box<dyn Scorer>> {
     let (cat, task) = derive_cat_task_from_file(src_file);
 
-    let golden_db = sanitize_db_name(&format!("{}-{}-golden", cat, task));
+    let golden_db = golden_db_name(&cat, &task, route_tag);
     let llm_db = sanitize_db_name(&format!("{}-{}-{}-llm", cat, task, route_tag));
 
     vec![Box::new(SchemaParityScorer {
@@ -82,7 +82,7 @@ pub fn make_eventually_sql_count_scorer(
 
 pub fn make_reducer_data_parity_scorer(host_url: &str, cfg: ReducerDataParityConfig<'_>) -> Box<dyn Scorer> {
     let (cat, task) = derive_cat_task_from_file(cfg.src_file);
-    let golden_db = sanitize_db_name(&format!("{}-{}-golden", cat, task));
+    let golden_db = golden_db_name(&cat, &task, cfg.route_tag);
     let llm_db = sanitize_db_name(&format!("{}-{}-{}-llm", cat, task, cfg.route_tag));
 
     Box::new(ReducerDataParityScorer {
@@ -107,7 +107,7 @@ pub fn make_sql_exec_both_scorer(
     timeout: Duration,
 ) -> Box<dyn Scorer> {
     let (cat, task) = derive_cat_task_from_file(src_file);
-    let golden_db = sanitize_db_name(&format!("{}-{}-golden", cat, task));
+    let golden_db = golden_db_name(&cat, &task, route_tag);
     let llm_db = sanitize_db_name(&format!("{}-{}-{}-llm", cat, task, route_tag));
 
     Box::new(SqlExecBothScorer {
@@ -160,7 +160,7 @@ pub fn make_reducer_call_both_scorer_with_attempts(
     attempts: usize,
 ) -> Box<dyn Scorer> {
     let (cat, task) = derive_cat_task_from_file(src_file);
-    let golden_db = sanitize_db_name(&format!("{}-{}-golden", cat, task));
+    let golden_db = golden_db_name(&cat, &task, route_tag);
     let llm_db = sanitize_db_name(&format!("{}-{}-{}-llm", cat, task, route_tag));
 
     Box::new(ReducerCallBothScorer {
@@ -195,7 +195,7 @@ pub fn make_call_output_parity_scorer_with_attempts(
     attempts: usize,
 ) -> Box<dyn Scorer> {
     let (cat, task) = derive_cat_task_from_file(src_file);
-    let golden_db = sanitize_db_name(&format!("{}-{}-golden", cat, task));
+    let golden_db = golden_db_name(&cat, &task, route_tag);
     let llm_db = sanitize_db_name(&format!("{}-{}-{}-llm", cat, task, route_tag));
     Box::new(CallOutputParityScorer {
         server: host_url.to_string(),
@@ -218,7 +218,7 @@ pub fn make_http_route_parity_scorer(
     id_str: &'static str,
 ) -> Box<dyn Scorer> {
     let (cat, task) = derive_cat_task_from_file(src_file);
-    let golden_db = sanitize_db_name(&format!("{}-{}-golden", cat, task));
+    let golden_db = golden_db_name(&cat, &task, route_tag);
     let llm_db = sanitize_db_name(&format!("{}-{}-{}-llm", cat, task, route_tag));
     Box::new(HttpRouteParityScorer {
         server: host_url.to_string(),
@@ -226,6 +226,7 @@ pub fn make_http_route_parity_scorer(
         llm_db,
         id_str,
         compare_content_type,
+        timeout: Duration::from_secs(10),
         cases: cases
             .into_iter()
             .map(|(method, path, body)| HttpRouteCase {

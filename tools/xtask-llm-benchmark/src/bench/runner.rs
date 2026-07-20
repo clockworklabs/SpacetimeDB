@@ -16,7 +16,7 @@ use crate::bench::types::{BenchRunContext, PublishParams, RunContext, RunOneErro
 pub(crate) use crate::bench::types::{RunOutcome, TaskPaths};
 use crate::bench::utils::{
     bench_concurrency, bench_csharp_concurrency, bench_rust_concurrency, category_slug, debug_llm, fmt_dur,
-    print_llm_output, sanitize_db_name, task_slug, work_server_dir_scoped,
+    golden_db_name, print_llm_output, run_scope_tag, sanitize_db_name, task_slug, work_server_dir_scoped,
 };
 use crate::bench::Publisher;
 use crate::eval::scorers::call_reducer_json_out;
@@ -38,7 +38,7 @@ struct PendingRetry {
     error: anyhow::Error,
 }
 
-fn build_key(lang: Lang, selectors: Option<&[String]>) -> String {
+fn build_key(lang: Lang, selectors: Option<&[String]>, golden_scope: &str) -> String {
     let v = match selectors {
         Some(s) if !s.is_empty() => {
             let mut t = s.to_vec();
@@ -48,18 +48,19 @@ fn build_key(lang: Lang, selectors: Option<&[String]>) -> String {
         _ => vec!["ALL".to_string()],
     };
     let joined = v.join(",");
-    format!("{lang:?}:{joined}")
+    format!("{lang:?}:{golden_scope}:{joined}")
 }
 
-/// Build goldens **once per (lang, selector-set)** in this process.
+/// Build goldens once per language, route/mode scope, and selector set.
 /// If selectors is None/empty, that means "ALL tasks".
 pub async fn ensure_goldens_built_once(
     host: Option<String>,
     bench_root: &Path,
     lang: Lang,
     selectors: Option<&[String]>,
+    golden_scope: &str,
 ) -> Result<()> {
-    let key = build_key(lang, selectors);
+    let key = build_key(lang, selectors, golden_scope);
     let set = BUILT_KEYS.get_or_init(|| Mutex::new(HashSet::new()));
     {
         let set = set.lock();
@@ -74,7 +75,7 @@ pub async fn ensure_goldens_built_once(
     }
 
     // IMPORTANT: pass selectors through so we only build needed goldens
-    build_goldens_only_for_lang(host, bench_root, lang, selectors).await?;
+    build_goldens_only_for_lang(host, bench_root, lang, selectors, golden_scope).await?;
 
     // mark as built
     drop(set_guard);
@@ -129,30 +130,8 @@ impl TaskRunner {
         }
     }
 
-    pub async fn publish_golden_only(
-        &self,
-        lang: Lang,
-        category: &str,
-        task_id: &str,
-        golden_src_text: &str,
-        golden_db: String,
-        host: Option<String>,
-        clear_database: bool,
-    ) -> Result<()> {
-        self.publish(
-            PublishParams {
-                lang,
-                category,
-                task_id,
-                route_tag: "",
-                source_text: golden_src_text,
-                db_name: golden_db,
-                host,
-                clear_database,
-            },
-            "golden",
-        )
-        .await
+    pub async fn publish_golden_only(&self, params: PublishParams<'_>) -> Result<()> {
+        self.publish(params, "golden").await
     }
 
     async fn publish_llm(&self, params: PublishParams<'_>) -> Result<()> {
@@ -208,8 +187,8 @@ impl TaskRunner {
 
         let category = category_slug(&task.root);
         let task_id = task_slug(&task.root);
-        let route_tag = sanitize_db_name(&cfg.route.display_name);
-        let golden_db = sanitize_db_name(&format!("{}-{}-golden", category, task_id));
+        let route_tag = run_scope_tag(cfg.mode, cfg.route.vendor.slug(), &cfg.route.api_model);
+        let golden_db = golden_db_name(&category, &task_id, &route_tag);
         let llm_db = sanitize_db_name(&format!("{}-{}-{}-llm", category, task_id, route_tag));
 
         let ctor = resolve_by_path(&task.root)?;
@@ -415,7 +394,7 @@ impl TaskRunner {
             golden_db: Some(golden_db),
             llm_db: Some(llm_db),
             work_dir_golden: Some(
-                work_server_dir_scoped(&category, &task_id, cfg.lang_name, "golden", "")
+                work_server_dir_scoped(&category, &task_id, cfg.lang_name, "golden", &route_tag)
                     .to_string_lossy()
                     .into_owned(),
             ),
@@ -947,6 +926,7 @@ pub async fn build_goldens_only_for_lang(
     bench_root: &Path,
     lang: Lang,
     selectors: Option<&[String]>,
+    golden_scope: &str,
 ) -> Result<()> {
     let tasks = if let Some(sels) = selectors {
         let wanted: HashSet<String> = sels.iter().map(|s| normalize_task_selector(s)).collect::<Result<_>>()?;
@@ -989,38 +969,49 @@ pub async fn build_goldens_only_for_lang(
         async move {
             let category = category_slug(&task.root);
             let task_id = task_slug(&task.root);
-            let golden_db = sanitize_db_name(&format!("{}-{}-golden", category, task_id));
+            let golden_db = golden_db_name(&category, &task_id, golden_scope);
             let golden_src_text = load_golden_source(&task, lang)?;
             let migration_setup = load_migration_setup_source(&task, lang)?;
             println!("→ [{}] build golden {} {}", lang_name, category, task_id);
             if let Some(setup_source) = migration_setup {
                 runner
-                    .publish_golden_only(
+                    .publish_golden_only(PublishParams {
                         lang,
-                        &category,
-                        &task_id,
-                        &setup_source,
-                        golden_db.clone(),
-                        host_clone.clone(),
-                        true,
-                    )
+                        category: &category,
+                        task_id: &task_id,
+                        route_tag: golden_scope,
+                        source_text: &setup_source,
+                        db_name: golden_db.clone(),
+                        host: host_clone.clone(),
+                        clear_database: true,
+                    })
                     .await?;
                 call_reducer_json_out(&golden_db, "seed", &[], Some(host_clone.as_deref().unwrap_or("local")))
                     .map_err(anyhow::Error::msg)?;
                 runner
-                    .publish_golden_only(
+                    .publish_golden_only(PublishParams {
                         lang,
-                        &category,
-                        &task_id,
-                        &golden_src_text,
-                        golden_db,
-                        host_clone,
-                        false,
-                    )
+                        category: &category,
+                        task_id: &task_id,
+                        route_tag: golden_scope,
+                        source_text: &golden_src_text,
+                        db_name: golden_db,
+                        host: host_clone,
+                        clear_database: false,
+                    })
                     .await
             } else {
                 runner
-                    .publish_golden_only(lang, &category, &task_id, &golden_src_text, golden_db, host_clone, true)
+                    .publish_golden_only(PublishParams {
+                        lang,
+                        category: &category,
+                        task_id: &task_id,
+                        route_tag: golden_scope,
+                        source_text: &golden_src_text,
+                        db_name: golden_db,
+                        host: host_clone,
+                        clear_database: true,
+                    })
                     .await
             }
         }
@@ -1045,7 +1036,8 @@ pub async fn validate_goldens_for_lang(
     lang: Lang,
     selectors: Option<&[String]>,
 ) -> Result<()> {
-    build_goldens_only_for_lang(host.clone(), bench_root, lang, selectors).await?;
+    let route_tag = "golden-validation";
+    build_goldens_only_for_lang(host.clone(), bench_root, lang, selectors, route_tag).await?;
 
     let tasks = if let Some(sels) = selectors {
         let wanted: HashSet<String> = sels.iter().map(|s| normalize_task_selector(s)).collect::<Result<_>>()?;
@@ -1071,7 +1063,6 @@ pub async fn validate_goldens_for_lang(
         TypeScriptPublisher,
     );
     let lang_name = lang.as_str();
-    let route_tag = "golden-validation";
     let host_url = host.as_deref().unwrap_or("local");
     let mut failures = Vec::new();
 

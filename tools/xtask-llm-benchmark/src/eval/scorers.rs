@@ -1,9 +1,9 @@
 use crate::bench::utils::debug_llm_verbose;
-use crate::eval::{normalize, sql_exec, ScoreDetails};
+use crate::eval::utils::{run_with_timeout, sql_exec_with_timeout};
+use crate::eval::{normalize, spacetime_command, ScoreDetails};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
-use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 use std::{io, thread};
 
@@ -18,6 +18,14 @@ pub struct SchemaParityScorer {
     pub llm_db: String,
     pub timeout: Duration,
     pub id_str: &'static str,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct SchemaSnapshot {
+    tables: BTreeMap<String, BTreeMap<String, String>>,
+    reducers: BTreeSet<String>,
+    exports: BTreeSet<String>,
+    row_level_security: BTreeSet<String>,
 }
 
 impl Scorer for SchemaParityScorer {
@@ -44,13 +52,14 @@ impl Scorer for SchemaParityScorer {
             }
         }
 
-        let (tables_a, reducers_a, rls_a) = extract_schema(&golden);
-        let (tables_b, reducers_b, rls_b) = extract_schema(&llm);
+        let schema_a = extract_schema(&golden);
+        let schema_b = extract_schema(&llm);
 
-        let tables_diff = diff_maps(&tables_a, &tables_b);
-        let reducers_diff = diff_sets(&reducers_a, &reducers_b);
-        let rls_diff = diff_sets(&rls_a, &rls_b);
-        let pass = tables_diff.is_null() && reducers_diff.is_null() && rls_diff.is_null();
+        let tables_diff = diff_maps(&schema_a.tables, &schema_b.tables);
+        let reducers_diff = diff_sets(&schema_a.reducers, &schema_b.reducers);
+        let exports_diff = diff_sets(&schema_a.exports, &schema_b.exports);
+        let rls_diff = diff_sets(&schema_a.row_level_security, &schema_b.row_level_security);
+        let pass = tables_diff.is_null() && reducers_diff.is_null() && exports_diff.is_null() && rls_diff.is_null();
 
         ScoreDetails {
             pass,
@@ -61,9 +70,11 @@ impl Scorer for SchemaParityScorer {
                 "llm_db": self.llm_db,
                 "tables_equal": tables_diff.is_null(),
                 "reducers_equal": reducers_diff.is_null(),
+                "exports_equal": exports_diff.is_null(),
                 "row_level_security_equal": rls_diff.is_null(),
                 "tables_diff": tables_diff,
                 "reducers_diff": reducers_diff,
+                "exports_diff": exports_diff,
                 "row_level_security_diff": rls_diff,
             }),
         }
@@ -72,32 +83,12 @@ impl Scorer for SchemaParityScorer {
 
 /* helpers */
 
-fn run_with_timeout(mut cmd: Command, cwd: &Path, timeout: Duration) -> io::Result<(i32, Vec<u8>, Vec<u8>)> {
-    let mut child = cmd
-        .current_dir(cwd)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    let start = Instant::now();
-    loop {
-        if let Some(status) = child.try_wait()? {
-            let out = child.wait_with_output()?;
-            let code = status.code().unwrap_or(-1);
-            return Ok((code, out.stdout, out.stderr));
-        }
-        if start.elapsed() > timeout {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(io::Error::new(io::ErrorKind::TimedOut, "process timeout"));
-        }
-        thread::sleep(Duration::from_millis(30));
-    }
-}
-
 fn describe_db(server: &str, db: &str, timeout: Duration) -> io::Result<Value> {
-    let mut cmd = Command::new("spacetime");
+    let mut cmd = spacetime_command();
     cmd.arg("describe")
         .arg("--json")
+        .arg("--schema-version")
+        .arg("10")
         .arg("-s")
         .arg(server)
         .arg("-y")
@@ -113,25 +104,18 @@ fn describe_db(server: &str, db: &str, timeout: Duration) -> io::Result<Value> {
     Ok(v)
 }
 
-fn extract_schema(
-    v: &Value,
-) -> (
-    BTreeMap<String, BTreeMap<String, String>>,
-    BTreeSet<String>,
-    BTreeSet<String>,
-) {
-    let mut tables: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
-    let mut reducers: BTreeSet<String> = BTreeSet::new();
-    let mut row_level_security: BTreeSet<String> = BTreeSet::new();
-    let types = v
-        .pointer("/typespace/types")
+fn extract_schema(v: &Value) -> SchemaSnapshot {
+    let mut schema = SchemaSnapshot::default();
+    let typespace = v.get("typespace").or_else(|| section(v, "Typespace"));
+    let types = typespace
+        .and_then(|value| value.get("types"))
         .and_then(Value::as_array)
         .map(Vec::as_slice)
         .unwrap_or_default();
 
-    if let Some(ts) = v.get("tables").and_then(|x| x.as_array()) {
+    if let Some(ts) = schema_array(v, "tables", "Tables") {
         for t in ts {
-            let name = t.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let name = schema_name(t.get("source_name").or_else(|| t.get("name")));
             let mut cols = BTreeMap::new();
 
             // Older CLI descriptions put columns directly on the table. Keep
@@ -187,44 +171,141 @@ fn extract_schema(
             insert_schema_property(&mut cols, "schedule", canonical_value(t.get("schedule")));
             insert_schema_property(&mut cols, "table_type", canonical_value(t.get("table_type")));
             insert_schema_property(&mut cols, "table_access", canonical_value(t.get("table_access")));
-            tables.insert(name, cols);
+            insert_schema_property(&mut cols, "default_values", canonical_value(t.get("default_values")));
+            insert_schema_property(&mut cols, "is_event", canonical_value(t.get("is_event")));
+            schema.tables.insert(name, cols);
         }
     }
 
-    if let Some(rs) = v.get("reducers").and_then(|x| x.as_array()) {
+    if let Some(rs) = schema_array(v, "reducers", "Reducers") {
         for r in rs {
-            let name = r.get("name").and_then(|x| x.as_str()).unwrap_or("");
-            let params = r
-                .pointer("/params/elements")
-                .and_then(Value::as_array)
-                .or_else(|| r.get("args").and_then(Value::as_array));
-            let params = params
-                .into_iter()
-                .flatten()
-                .map(|param| {
-                    param
-                        .get("algebraic_type")
-                        .map(|ty| canonical_type(ty, types, &mut BTreeSet::new()).to_string())
-                        .or_else(|| param.get("type").and_then(Value::as_str).map(str::to_owned))
-                        .unwrap_or_default()
-                })
-                .collect::<Vec<_>>();
-            let sig = format!("{}({})", name, params.join(","));
-            reducers.insert(sig);
+            let name = schema_name(r.get("source_name").or_else(|| r.get("name")));
+            let mut sig = format!("{}({})", name, parameter_types(r, types).join(","));
+            append_field(&mut sig, "visibility", r.get("visibility"));
+            append_type(&mut sig, "ok", r.get("ok_return_type"), types);
+            append_type(&mut sig, "err", r.get("err_return_type"), types);
+            append_field(&mut sig, "lifecycle", r.get("lifecycle"));
+            schema.reducers.insert(sig);
         }
     }
 
-    for rule in v
-        .get("row_level_security")
-        .or_else(|| v.get("rowLevelSecurity"))
-        .and_then(Value::as_array)
+    for export in v.get("misc_exports").and_then(Value::as_array).into_iter().flatten() {
+        if let Some(procedure) = export.get("Procedure") {
+            schema.exports.insert(function_export("procedure", procedure, types));
+        } else if let Some(view) = export.get("View") {
+            schema.exports.insert(view_export(view, types));
+        } else if let Some(default) = export.get("ColumnDefaultValue") {
+            schema
+                .exports
+                .insert(format!("column_default:{}", canonical_value(Some(default))));
+        }
+    }
+
+    for procedure in schema_array(v, "procedures", "Procedures").into_iter().flatten() {
+        schema.exports.insert(function_export("procedure", procedure, types));
+    }
+    for view in schema_array(v, "views", "Views").into_iter().flatten() {
+        schema.exports.insert(view_export(view, types));
+    }
+    insert_canonical_exports(&mut schema.exports, v, "schedules", "Schedules", "schedule");
+    insert_canonical_exports(
+        &mut schema.exports,
+        v,
+        "life_cycle_reducers",
+        "LifeCycleReducers",
+        "lifecycle",
+    );
+    insert_canonical_exports(&mut schema.exports, v, "http_handlers", "HttpHandlers", "http_handler");
+    insert_canonical_exports(&mut schema.exports, v, "http_routes", "HttpRoutes", "http_route");
+    insert_canonical_exports(
+        &mut schema.exports,
+        v,
+        "view_primary_keys",
+        "ViewPrimaryKeys",
+        "view_primary_key",
+    );
+
+    for rule in schema_array(v, "row_level_security", "RowLevelSecurity")
         .into_iter()
         .flatten()
     {
-        row_level_security.insert(canonical_value(Some(rule)));
+        schema.row_level_security.insert(canonical_value(Some(rule)));
     }
 
-    (tables, reducers, row_level_security)
+    schema
+}
+
+fn section<'a>(v: &'a Value, name: &str) -> Option<&'a Value> {
+    v.get("sections")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find_map(|item| item.get(name))
+}
+
+fn schema_array<'a>(v: &'a Value, direct_name: &str, section_name: &str) -> Option<&'a Vec<Value>> {
+    v.get(direct_name)
+        .or_else(|| section(v, section_name))
+        .and_then(Value::as_array)
+}
+
+fn parameter_types(function: &Value, types: &[Value]) -> Vec<String> {
+    function
+        .pointer("/params/elements")
+        .and_then(Value::as_array)
+        .or_else(|| function.get("args").and_then(Value::as_array))
+        .into_iter()
+        .flatten()
+        .map(|param| {
+            param
+                .get("algebraic_type")
+                .map(|ty| canonical_type(ty, types, &mut BTreeSet::new()).to_string())
+                .or_else(|| param.get("type").and_then(Value::as_str).map(str::to_owned))
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
+fn append_field(signature: &mut String, label: &str, value: Option<&Value>) {
+    if let Some(value) = value {
+        signature.push_str(&format!("|{label}={}", canonical_value(Some(value))));
+    }
+}
+
+fn append_type(signature: &mut String, label: &str, value: Option<&Value>, types: &[Value]) {
+    if let Some(value) = value {
+        signature.push_str(&format!(
+            "|{label}={}",
+            canonical_type(value, types, &mut BTreeSet::new())
+        ));
+    }
+}
+
+fn function_export(kind: &str, function: &Value, types: &[Value]) -> String {
+    let name = schema_name(function.get("source_name").or_else(|| function.get("name")));
+    let mut signature = format!("{kind}:{name}({})", parameter_types(function, types).join(","));
+    append_type(&mut signature, "return", function.get("return_type"), types);
+    append_field(&mut signature, "visibility", function.get("visibility"));
+    signature
+}
+
+fn view_export(view: &Value, types: &[Value]) -> String {
+    let mut signature = function_export("view", view, types);
+    append_field(&mut signature, "public", view.get("is_public"));
+    append_field(&mut signature, "anonymous", view.get("is_anonymous"));
+    signature
+}
+
+fn insert_canonical_exports(
+    exports: &mut BTreeSet<String>,
+    schema: &Value,
+    direct_name: &str,
+    section_name: &str,
+    kind: &str,
+) {
+    for export in schema_array(schema, direct_name, section_name).into_iter().flatten() {
+        exports.insert(format!("{kind}:{}", canonical_value(Some(export))));
+    }
 }
 
 fn schema_name(value: Option<&Value>) -> String {
@@ -328,8 +409,13 @@ fn normalize_sequences(value: Option<&Value>, columns: &[String]) -> String {
             .get("column")
             .map(|value| column_name(value, columns))
             .unwrap_or_default();
-        let increment = sequence.get("increment").and_then(Value::as_i64).unwrap_or_default();
-        sequences.insert(format!("{column}:{increment}"));
+        let increment = canonical_value(sequence.get("increment"));
+        let start = canonical_value(sequence.get("start"));
+        let min = canonical_value(sequence.get("min_value"));
+        let max = canonical_value(sequence.get("max_value"));
+        sequences.insert(format!(
+            "{column}:increment={increment}:start={start}:min={min}:max={max}"
+        ));
     }
     sequences.into_iter().collect::<Vec<_>>().join(";")
 }
@@ -394,7 +480,17 @@ fn err_details(phase: &str, e: io::Error) -> ScoreDetails {
 /* reducer/sql helpers */
 
 pub fn call_reducer_json_out(db: &str, reducer: &str, args: &[Value], host: Option<&str>) -> Result<String, String> {
-    let mut cmd = Command::new("spacetime");
+    call_reducer_json_out_with_timeout(db, reducer, args, host, Duration::from_secs(30))
+}
+
+fn call_reducer_json_out_with_timeout(
+    db: &str,
+    reducer: &str,
+    args: &[Value],
+    host: Option<&str>,
+    timeout: Duration,
+) -> Result<String, String> {
+    let mut cmd = spacetime_command();
     cmd.arg("call").arg(db).arg(reducer);
 
     for v in args {
@@ -409,7 +505,7 @@ pub fn call_reducer_json_out(db: &str, reducer: &str, args: &[Value], host: Opti
         eprintln!("[dbg] spacetime call: {:?}", cmd);
     }
 
-    let (code, stdout, stderr) = run_with_timeout(cmd, Path::new("."), Duration::from_secs(30))
+    let (code, stdout, stderr) = run_with_timeout(cmd, Path::new("."), timeout)
         .map_err(|e| format!("spacetime call failed or timed out: {e}"))?;
     if debug_llm_verbose() {
         eprintln!(
@@ -426,7 +522,11 @@ pub fn call_reducer_json_out(db: &str, reducer: &str, args: &[Value], host: Opti
 }
 
 pub fn sql_raw(db: &str, query: &str, host: Option<&str>) -> Result<String, String> {
-    let mut cmd = Command::new("spacetime");
+    sql_raw_with_timeout(db, query, host, Duration::from_secs(30))
+}
+
+fn sql_raw_with_timeout(db: &str, query: &str, host: Option<&str>, timeout: Duration) -> Result<String, String> {
+    let mut cmd = spacetime_command();
     cmd.arg("sql").arg(db).arg(query);
     if let Some(h) = host {
         cmd.arg("--server").arg(h);
@@ -436,28 +536,28 @@ pub fn sql_raw(db: &str, query: &str, host: Option<&str>) -> Result<String, Stri
         eprintln!("[dbg] spacetime sql: {:?}", cmd);
     }
 
-    let out = cmd
-        .output()
-        .map_err(|e| format!("failed to spawn spacetime sql: {e}"))?;
+    let (code, stdout, stderr) = run_with_timeout(cmd, Path::new("."), timeout)
+        .map_err(|e| format!("spacetime sql failed or timed out: {e}"))?;
     if debug_llm_verbose() {
         eprintln!(
             "[dbg] spacetime sql exit={} stdout:\n{}\n-- stderr:\n{}\n",
-            out.status.code().unwrap_or(-1),
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr)
+            code,
+            String::from_utf8_lossy(&stdout),
+            String::from_utf8_lossy(&stderr)
         );
     }
-    if !out.status.success() {
-        return Err(format!(
-            "spacetime sql failed:\n{}",
-            String::from_utf8_lossy(&out.stderr)
-        ));
+    if code != 0 {
+        return Err(format!("spacetime sql failed:\n{}", String::from_utf8_lossy(&stderr)));
     }
-    Ok(String::from_utf8_lossy(&out.stdout).to_string())
+    Ok(String::from_utf8_lossy(&stdout).to_string())
 }
 
 pub fn sql_count(db: &str, query: &str, host: Option<&str>) -> Result<i64, String> {
-    let mut cmd = Command::new("spacetime");
+    sql_count_with_timeout(db, query, host, Duration::from_secs(30))
+}
+
+fn sql_count_with_timeout(db: &str, query: &str, host: Option<&str>, timeout: Duration) -> Result<i64, String> {
+    let mut cmd = spacetime_command();
     cmd.arg("sql").arg(db).arg(query);
     if let Some(h) = host {
         cmd.arg("--server").arg(h);
@@ -467,24 +567,20 @@ pub fn sql_count(db: &str, query: &str, host: Option<&str>) -> Result<i64, Strin
         eprintln!("[dbg] spacetime sql-count: {:?}", cmd);
     }
 
-    let out = cmd
-        .output()
-        .map_err(|e| format!("failed to spawn spacetime sql: {e}"))?;
+    let (code, stdout, stderr) = run_with_timeout(cmd, Path::new("."), timeout)
+        .map_err(|e| format!("spacetime sql failed or timed out: {e}"))?;
     if debug_llm_verbose() {
         eprintln!(
             "[dbg] spacetime sql-count exit={} stdout:\n{}\n-- stderr:\n{}\n",
-            out.status.code().unwrap_or(-1),
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr)
+            code,
+            String::from_utf8_lossy(&stdout),
+            String::from_utf8_lossy(&stderr)
         );
     }
-    if !out.status.success() {
-        return Err(format!(
-            "spacetime sql failed:\n{}",
-            String::from_utf8_lossy(&out.stderr)
-        ));
+    if code != 0 {
+        return Err(format!("spacetime sql failed:\n{}", String::from_utf8_lossy(&stderr)));
     }
-    let s = String::from_utf8_lossy(&out.stdout);
+    let s = String::from_utf8_lossy(&stdout);
     for tok in s.split_whitespace() {
         if let Ok(n) = tok.parse::<i64>() {
             if debug_llm_verbose() {
@@ -522,7 +618,8 @@ impl Scorer for ReducerSqlEqualsScorer {
                 self.reducer, self.args, self.db, self.server
             );
         }
-        let call_res = call_reducer_json_out(&self.db, &self.reducer, &self.args, Some(&self.server));
+        let call_res =
+            call_reducer_json_out_with_timeout(&self.db, &self.reducer, &self.args, Some(&self.server), self.timeout);
         if let Err(e) = call_res {
             return ScoreDetails {
                 pass: false,
@@ -534,7 +631,7 @@ impl Scorer for ReducerSqlEqualsScorer {
         if debug_llm_verbose() {
             eprintln!("[dbg] ReducerSqlEqualsScorer: running sql: {}", self.sql);
         }
-        match sql_raw(&self.db, &self.sql, Some(&self.server)) {
+        match sql_raw_with_timeout(&self.db, &self.sql, Some(&self.server), self.timeout) {
             Ok(out) => {
                 let actual = normalize(&out, self.collapse_ws);
                 let expected = normalize(&self.expected, self.collapse_ws);
@@ -591,7 +688,8 @@ impl Scorer for ReducerSqlCountScorer {
                 self.reducer, self.args, self.db, self.server
             );
         }
-        let call = call_reducer_json_out(&self.db, &self.reducer, &self.args, Some(&self.server));
+        let call =
+            call_reducer_json_out_with_timeout(&self.db, &self.reducer, &self.args, Some(&self.server), self.timeout);
         if let Err(e) = call {
             return ScoreDetails {
                 pass: false,
@@ -603,7 +701,7 @@ impl Scorer for ReducerSqlCountScorer {
         if debug_llm_verbose() {
             eprintln!("[dbg] ReducerSqlCountScorer: running sql: {}", self.sql);
         }
-        match sql_count(&self.db, &self.sql, Some(&self.server)) {
+        match sql_count_with_timeout(&self.db, &self.sql, Some(&self.server), self.timeout) {
             Ok(n) => {
                 let pass = n == self.expected;
                 if debug_llm_verbose() {
@@ -649,14 +747,26 @@ impl Scorer for ReducerDataParityScorer {
             );
         }
 
-        if let Err(e) = call_reducer_json_out(&self.golden_db, &self.reducer, &self.args, Some(&self.server)) {
+        if let Err(e) = call_reducer_json_out_with_timeout(
+            &self.golden_db,
+            &self.reducer,
+            &self.args,
+            Some(&self.server),
+            self.timeout,
+        ) {
             return ScoreDetails {
                 pass: false,
                 partial: 0.0,
                 notes: json!({"phase":"call_reducer_golden","error":e}),
             };
         }
-        if let Err(e) = call_reducer_json_out(&self.llm_db, &self.reducer, &self.args, Some(&self.server)) {
+        if let Err(e) = call_reducer_json_out_with_timeout(
+            &self.llm_db,
+            &self.reducer,
+            &self.args,
+            Some(&self.server),
+            self.timeout,
+        ) {
             return ScoreDetails {
                 pass: false,
                 partial: 0.0,
@@ -667,7 +777,7 @@ impl Scorer for ReducerDataParityScorer {
         if debug_llm_verbose() {
             eprintln!("[dbg] query for parity: {}", self.query);
         }
-        let g = match sql_raw(&self.golden_db, &self.query, Some(&self.server)) {
+        let g = match sql_raw_with_timeout(&self.golden_db, &self.query, Some(&self.server), self.timeout) {
             Ok(s) => s,
             Err(e) => {
                 return ScoreDetails {
@@ -677,7 +787,7 @@ impl Scorer for ReducerDataParityScorer {
                 }
             }
         };
-        let l = match sql_raw(&self.llm_db, &self.query, Some(&self.server)) {
+        let l = match sql_raw_with_timeout(&self.llm_db, &self.query, Some(&self.server), self.timeout) {
             Ok(s) => s,
             Err(e) => {
                 return ScoreDetails {
@@ -750,7 +860,15 @@ impl Scorer for EventuallySqlCountScorer {
     fn score(&self, _llm_output: &str) -> ScoreDetails {
         let started = Instant::now();
         loop {
-            let last = match sql_count(&self.db, &self.sql, Some(&self.server)) {
+            let remaining = self.timeout.saturating_sub(started.elapsed());
+            if remaining.is_zero() {
+                return ScoreDetails {
+                    pass: false,
+                    partial: 0.0,
+                    notes: json!({ "sql": self.sql, "expected": self.expected, "last": { "error": "timeout" } }),
+                };
+            }
+            let last = match sql_count_with_timeout(&self.db, &self.sql, Some(&self.server), remaining) {
                 Ok(actual) if actual == self.expected => {
                     return ScoreDetails {
                         pass: true,
@@ -778,7 +896,7 @@ impl Scorer for SqlCountOnlyScorer {
         self.id_str
     }
     fn score(&self, _llm_output: &str) -> ScoreDetails {
-        match sql_count(&self.db, &self.sql, Some(&self.server)) {
+        match sql_count_with_timeout(&self.db, &self.sql, Some(&self.server), self.timeout) {
             Ok(n) => {
                 let pass = n == self.expected;
                 ScoreDetails {
@@ -847,14 +965,14 @@ impl Scorer for SqlExecBothScorer {
                 self.sql, self.golden_db, self.llm_db, self.server
             );
         }
-        if let Err(e) = sql_exec(&self.golden_db, &self.sql, Some(&self.server)) {
+        if let Err(e) = sql_exec_with_timeout(&self.golden_db, &self.sql, Some(&self.server), self.timeout) {
             return ScoreDetails {
                 pass: false,
                 partial: 0.0,
                 notes: json!({ "phase":"sql_golden", "error": e, "sql": self.sql }),
             };
         }
-        if let Err(e) = sql_exec(&self.llm_db, &self.sql, Some(&self.server)) {
+        if let Err(e) = sql_exec_with_timeout(&self.llm_db, &self.sql, Some(&self.server), self.timeout) {
             return ScoreDetails {
                 pass: false,
                 partial: 0.0,
@@ -926,10 +1044,16 @@ pub struct HttpRouteParityScorer {
     pub llm_db: String,
     pub cases: Vec<HttpRouteCase>,
     pub compare_content_type: bool,
+    pub timeout: Duration,
     pub id_str: &'static str,
 }
 
-fn call_http_route(server: &str, db: &str, case: &HttpRouteCase) -> Result<(u16, String, String), String> {
+fn call_http_route(
+    server: &str,
+    db: &str,
+    case: &HttpRouteCase,
+    timeout: Duration,
+) -> Result<(u16, String, String), String> {
     let server = server.trim_end_matches('/').to_string();
     let db = db.to_string();
     let method = case.method.clone();
@@ -940,7 +1064,11 @@ fn call_http_route(server: &str, db: &str, case: &HttpRouteCase) -> Result<(u16,
         runtime.block_on(async move {
             let method = reqwest::Method::from_bytes(method.as_bytes()).map_err(|error| error.to_string())?;
             let url = format!("{server}/v1/database/{db}/route{path}");
-            let mut request = reqwest::Client::new().request(method, url);
+            let client = reqwest::Client::builder()
+                .timeout(timeout)
+                .build()
+                .map_err(|error| error.to_string())?;
+            let mut request = client.request(method, url);
             if let Some(body) = body {
                 request = request.header("content-type", "text/plain").body(body);
             }
@@ -981,7 +1109,7 @@ impl Scorer for HttpRouteParityScorer {
         let mut golden_results = Vec::new();
         let mut llm_results = Vec::new();
         for case in &self.cases {
-            match call_http_route(&self.server, &self.golden_db, case) {
+            match call_http_route(&self.server, &self.golden_db, case, self.timeout) {
                 Ok(result) => golden_results.push(result),
                 Err(error) => {
                     return ScoreDetails {
@@ -991,7 +1119,7 @@ impl Scorer for HttpRouteParityScorer {
                     }
                 }
             }
-            match call_http_route(&self.server, &self.llm_db, case) {
+            match call_http_route(&self.server, &self.llm_db, case, self.timeout) {
                 Ok(result) => llm_results.push(result),
                 Err(error) => {
                     return ScoreDetails {
@@ -1092,6 +1220,10 @@ impl Scorer for ReducerCallBothScorer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spacetimedb_lib::db::raw_def::v10::{MethodOrAny, RawModuleDefV10Builder};
+    use spacetimedb_lib::db::raw_def::v9::Lifecycle;
+    use spacetimedb_lib::sats::serde::SerdeWrapper;
+    use spacetimedb_lib::sats::{AlgebraicType, ProductType};
 
     fn current_schema(include_owner_index: bool) -> Value {
         let mut indexes = vec![json!({ "algorithm": { "BTree": [0] } })];
@@ -1126,26 +1258,26 @@ mod tests {
 
     #[test]
     fn current_schema_extracts_columns_and_table_properties() {
-        let (tables, reducers, row_level_security) = extract_schema(&current_schema(true));
-        let child_item = &tables["child_item"];
+        let schema = extract_schema(&current_schema(true));
+        let child_item = &schema.tables["child_item"];
 
         assert_eq!(child_item["id"], r#"{"U64":[]}"#);
         assert_eq!(child_item["owner_id"], r#"{"U64":[]}"#);
         assert_eq!(child_item["@primary_key"], "id");
         assert_eq!(child_item["@indexes"], "BTree(id);BTree(owner_id)");
         assert_eq!(child_item["@constraints"], "Unique(id)");
-        assert_eq!(child_item["@sequences"], "id:1");
+        assert_eq!(child_item["@sequences"], "id:increment=1:start=:min=:max=");
         assert_eq!(child_item["@table_access"], r#"{"Public":[]}"#);
-        assert!(reducers.is_empty());
-        assert!(row_level_security.is_empty());
+        assert!(schema.reducers.is_empty());
+        assert!(schema.row_level_security.is_empty());
     }
 
     #[test]
     fn missing_index_produces_a_schema_diff() {
-        let (golden, _, _) = extract_schema(&current_schema(true));
-        let (candidate, _, _) = extract_schema(&current_schema(false));
+        let golden = extract_schema(&current_schema(true));
+        let candidate = extract_schema(&current_schema(false));
 
-        assert!(!diff_maps(&golden, &candidate).is_null());
+        assert!(!diff_maps(&golden.tables, &candidate.tables).is_null());
     }
 
     #[test]
@@ -1153,10 +1285,10 @@ mod tests {
         let mut golden = current_schema(true);
         golden["row_level_security"] = json!([{ "sql": "SELECT * FROM users WHERE identity = :sender" }]);
         let candidate = current_schema(true);
-        let (_, _, golden_rls) = extract_schema(&golden);
-        let (_, _, candidate_rls) = extract_schema(&candidate);
+        let golden = extract_schema(&golden);
+        let candidate = extract_schema(&candidate);
 
-        assert!(!diff_sets(&golden_rls, &candidate_rls).is_null());
+        assert!(!diff_sets(&golden.row_level_security, &candidate.row_level_security).is_null());
     }
 
     #[test]
@@ -1172,7 +1304,7 @@ mod tests {
             }
         }]);
 
-        let (_, reducers, _) = extract_schema(&schema);
+        let reducers = extract_schema(&schema).reducers;
 
         assert_eq!(
             reducers,
@@ -1196,8 +1328,8 @@ mod tests {
                 { "name": { "some": "owner" }, "algebraic_type": { "U64": [] } }
             ] }
         }]);
-        let (_, golden_reducers, _) = extract_schema(&golden);
-        let (_, candidate_reducers, _) = extract_schema(&candidate);
+        let golden_reducers = extract_schema(&golden).reducers;
+        let candidate_reducers = extract_schema(&candidate).reducers;
 
         assert!(!diff_sets(&golden_reducers, &candidate_reducers).is_null());
     }
@@ -1218,8 +1350,8 @@ mod tests {
                 { "name": { "some": "reminder" }, "algebraic_type": { "U64": [] } }
             ] }
         }]);
-        let (_, golden_reducers, _) = extract_schema(&golden);
-        let (_, candidate_reducers, _) = extract_schema(&candidate);
+        let golden_reducers = extract_schema(&golden).reducers;
+        let candidate_reducers = extract_schema(&candidate).reducers;
 
         assert!(diff_sets(&golden_reducers, &candidate_reducers).is_null());
     }
@@ -1232,7 +1364,7 @@ mod tests {
             "args": [{ "name": "owner", "type": "String" }]
         }]);
 
-        let (_, reducers, _) = extract_schema(&schema);
+        let reducers = extract_schema(&schema).reducers;
 
         assert_eq!(reducers, BTreeSet::from(["set_owner(String)".to_owned()]));
     }
@@ -1244,5 +1376,99 @@ mod tests {
 
         assert!(http_route_results_equal(&golden, &candidate, false));
         assert!(!http_route_results_equal(&golden, &candidate, true));
+    }
+
+    #[test]
+    fn v10_schema_extracts_lifecycle_procedures_views_and_http_exports() {
+        let schema = json!({
+            "sections": [
+                { "Typespace": { "types": [] } },
+                { "Tables": [] },
+                { "Reducers": [{
+                    "source_name": "connected",
+                    "params": { "elements": [] },
+                    "visibility": { "Private": [] },
+                    "ok_return_type": { "Unit": [] },
+                    "err_return_type": { "String": [] }
+                }] },
+                { "Procedures": [{
+                    "source_name": "fetch",
+                    "params": { "elements": [] },
+                    "return_type": { "String": [] },
+                    "visibility": { "ClientCallable": [] }
+                }] },
+                { "Views": [{
+                    "source_name": "profile",
+                    "params": { "elements": [] },
+                    "return_type": { "String": [] },
+                    "is_public": true,
+                    "is_anonymous": false
+                }] },
+                { "LifeCycleReducers": [{
+                    "lifecycle_spec": { "OnConnect": [] },
+                    "function_name": "connected"
+                }] },
+                { "HttpHandlers": [{ "source_name": "webhook" }] },
+                { "HttpRoutes": [{
+                    "handler_function": "webhook",
+                    "method": { "Any": [] },
+                    "path": "/hook"
+                }] },
+                { "ViewPrimaryKeys": [{ "view_source_name": "profile", "columns": ["id"] }] }
+            ]
+        });
+
+        let extracted = extract_schema(&schema);
+
+        assert_eq!(extracted.reducers.len(), 1);
+        assert!(extracted
+            .exports
+            .iter()
+            .any(|value| value.starts_with("procedure:fetch")));
+        assert!(extracted.exports.iter().any(|value| value.starts_with("view:profile")));
+        assert!(extracted.exports.iter().any(|value| value.starts_with("lifecycle:")));
+        assert!(extracted.exports.iter().any(|value| value.starts_with("http_handler:")));
+        assert!(extracted.exports.iter().any(|value| value.starts_with("http_route:")));
+        assert!(extracted
+            .exports
+            .iter()
+            .any(|value| value.starts_with("view_primary_key:")));
+    }
+
+    #[test]
+    fn extracts_exports_from_actual_v10_serialization() {
+        let mut module = RawModuleDefV10Builder::new();
+        module.add_lifecycle_reducer(Lifecycle::OnConnect, "connected", ProductType::unit());
+        module.add_procedure("fetch", ProductType::unit(), AlgebraicType::unit());
+        module.add_view("profile", 0, true, false, ProductType::unit(), AlgebraicType::unit());
+        module.add_view_primary_key("profile", ["id"]);
+        module.add_http_handler("webhook");
+        module.add_http_route("webhook", MethodOrAny::Any, "/hook");
+        let module = module.finish();
+        let json = serde_json::to_value(SerdeWrapper::from_ref(&module)).unwrap();
+
+        let extracted = extract_schema(&json);
+
+        assert_eq!(extracted.reducers.len(), 1, "serialized schema was {json}");
+        assert_eq!(extracted.exports.len(), 6, "serialized schema was {json}");
+        assert!(
+            extracted
+                .exports
+                .iter()
+                .any(|value| value.starts_with("procedure:fetch")),
+            "serialized schema was {json}"
+        );
+        assert!(
+            extracted.exports.iter().any(|value| value.starts_with("view:profile")),
+            "serialized schema was {json}"
+        );
+
+        let mut missing_assignments = json.clone();
+        missing_assignments["sections"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|section| section.get("LifeCycleReducers").is_none() && section.get("ViewPrimaryKeys").is_none());
+        let missing_assignments = extract_schema(&missing_assignments);
+        assert!(!diff_sets(&extracted.exports, &missing_assignments.exports).is_null());
     }
 }

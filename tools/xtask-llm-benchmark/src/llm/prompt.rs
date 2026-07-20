@@ -138,6 +138,16 @@ fn find_tasks_file(task_root: &Path, lang: Lang) -> Option<PathBuf> {
     }
 }
 
+fn find_setup_file(task_root: &Path, lang: Lang) -> Option<PathBuf> {
+    let file = match lang {
+        Lang::CSharp => "csharp.cs",
+        Lang::Rust => "rust.rs",
+        Lang::TypeScript => "typescript.ts",
+    };
+    let path = task_root.join("setup").join(file);
+    path.exists().then_some(path)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::eval::Lang;
@@ -176,14 +186,4 @@ mod tests {
         assert!(prompt.instructions.contains("name: String"));
         assert!(prompt.instructions.contains("pub fn touch"));
     }
-}
-
-fn find_setup_file(task_root: &Path, lang: Lang) -> Option<PathBuf> {
-    let file = match lang {
-        Lang::CSharp => "csharp.cs",
-        Lang::Rust => "rust.rs",
-        Lang::TypeScript => "typescript.ts",
-    };
-    let path = task_root.join("setup").join(file);
-    path.exists().then_some(path)
 }

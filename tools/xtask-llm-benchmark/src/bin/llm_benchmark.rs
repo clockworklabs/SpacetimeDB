@@ -313,14 +313,6 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
     }
 
     let llm_provider = if !config.goldens_only && !config.hash_only {
-        let rt = runtime.as_ref().expect("failed to initialize runtime for goldens");
-        rt.block_on(ensure_goldens_built_once(
-            config.host.clone(),
-            &bench_root,
-            config.lang,
-            selectors_ref,
-        ))?;
-
         let provider = make_provider_from_env()?;
         let rt = runtime.as_ref().expect("failed to initialize runtime for preflight");
         let routes = filter_routes(&config);
@@ -762,6 +754,9 @@ async fn run_many_routes_for_mode(
 
         async move {
             println!("\u{2192} running {}", route.display_name);
+
+            let golden_scope = xtask_llm_benchmark::bench::run_scope_tag(mode, route.vendor.slug(), &route.api_model);
+            ensure_goldens_built_once(host.clone(), bench_root, lang, selectors, &golden_scope).await?;
 
             let per = BenchRunContext {
                 bench_root,

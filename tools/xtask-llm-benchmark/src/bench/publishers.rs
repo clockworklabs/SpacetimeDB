@@ -1,4 +1,5 @@
 use crate::bench::utils::sanitize_db_name;
+use crate::eval::spacetime_command;
 use anyhow::{bail, Context, Result};
 use regex::Regex;
 use std::borrow::Cow;
@@ -131,8 +132,7 @@ impl CliRootDir {
 }
 
 fn spacetime_cmd(cli_root: &CliRootDir) -> Command {
-    let spacetime = env::var_os("LLM_BENCH_SPACETIME_BIN").unwrap_or_else(|| "spacetime".into());
-    let mut cmd = Command::new(spacetime);
+    let mut cmd = spacetime_command();
     cmd.arg("--root-dir").arg(cli_root.path());
     cmd
 }

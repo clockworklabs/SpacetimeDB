@@ -9,4 +9,4 @@ pub(crate) mod utils;
 pub use publishers::{DotnetPublisher, Publisher, SpacetimeRustPublisher, TypeScriptPublisher};
 pub use runner::TaskRunner;
 pub use types::{RunOutcome, TaskPaths};
-pub use utils::bench_route_concurrency;
+pub use utils::{bench_route_concurrency, run_scope_tag};
