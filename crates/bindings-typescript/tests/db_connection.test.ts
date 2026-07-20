@@ -1076,4 +1076,15 @@ describe('DbConnectionBuilder.withReconnectOptions', () => {
       })
     ).toThrow(TypeError);
   });
+
+  test('rejects a single field that conflicts with the default of the other', () => {
+    // baseDelayMs above the default maxDelayMs (30000).
+    expect(() =>
+      DbConnection.builder().withReconnectOptions({ baseDelayMs: 40_000 })
+    ).toThrow(TypeError);
+    // maxDelayMs below the default baseDelayMs (1000).
+    expect(() =>
+      DbConnection.builder().withReconnectOptions({ maxDelayMs: 500 })
+    ).toThrow(TypeError);
+  });
 });
