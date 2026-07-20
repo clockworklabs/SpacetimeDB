@@ -188,6 +188,8 @@ ctx.from.subscription().right_semijoin(
 )
 ```
 
+Query-builder comparisons against a `String` column take an owned `String`, for example `row.label.eq("active".to_string())`.
+
 ## Client Visibility Filters
 
 ```rust
@@ -296,6 +298,8 @@ fn health(_ctx: &mut HandlerContext, _request: Request) -> Response {
 #[router]
 fn routes() -> Router { Router::new().get("/health", health) }
 ```
+
+`HandlerContext` does not expose `db`; open database access with `ctx.with_tx(|tx| ...)`. HTTP response bodies must own their data or borrow `'static` data, so convert dynamic borrowed text to an owned `String` before passing it to `Body::from_bytes`.
 
 ## Logging
 
