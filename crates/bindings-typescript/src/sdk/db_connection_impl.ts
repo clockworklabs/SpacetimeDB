@@ -547,16 +547,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     const rows: Operation[] = [];
 
     const deserializeRow = this.#rowDeserializers[tableName];
-    const rowIdInfo = this.#rowIdMetadata[tableName];
-    if (!deserializeRow || !rowIdInfo) {
-      // Likely a client/server schema mismatch (e.g. stale generated bindings).
-      stdbLogger(
-        'warn',
-        `Received row data for unknown table '${tableName}'; ignoring. Regenerate your module bindings if this table should exist.`
-      );
-      return [];
-    }
-    const { primaryKeyColName, primaryKeyColType } = rowIdInfo;
+    const { primaryKeyColName, primaryKeyColType } =
+      this.#rowIdMetadata[tableName];
     let previousOffset = 0;
     while (reader.remaining > 0) {
       const row = deserializeRow(reader);
@@ -845,14 +837,6 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       // Get table information for the table being updated
       const tableName = tableUpdate.tableName;
       const tableDef = this.#sourceNameToTableDef[tableName];
-      if (!tableDef) {
-        // Likely a client/server schema mismatch (e.g. stale generated bindings).
-        stdbLogger(
-          'warn',
-          `Received update for unknown table '${tableName}'; ignoring. Regenerate your module bindings if this table should exist.`
-        );
-        continue;
-      }
       const table = this.clientCache.getOrCreateTable(tableDef);
       const newCallbacks = table.applyOperations(
         tableUpdate.operations as Operation<

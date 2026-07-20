@@ -4,6 +4,7 @@
 import { ScheduleAt } from 'spacetimedb';
 import {
   schema,
+  SyncResponse,
   table,
   t,
   type Infer,
@@ -540,11 +541,15 @@ export const use_submodule_procedure = spacetimedb.procedure(
   (ctx) => libSubmodule.lib_count(ctx.as.lib, {})
 );
 
+export const getSimple = spacetimedb.httpHandler(
+  (_ctx, _req) => new SyncResponse('ok')
+);
+
 // Delegates to the lib submodule's HTTP handler, demonstrating cross-namespace HTTP dispatch.
 export const lib_hello = spacetimedb.httpHandler((ctx, req) => {
   return libSubmodule.lib_hello(ctx.as.lib, req);
 });
 
 export const router = spacetimedb.httpRouter(
-  new Router().get('/lib-hello', lib_hello)
+  new Router().get('/get', getSimple).get('/lib-hello', lib_hello)
 );

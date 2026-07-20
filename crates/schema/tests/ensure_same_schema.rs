@@ -10,6 +10,36 @@ fn get_normalized_schema(module_name: &str) -> ModuleDef {
     module.extract_schema_blocking()
 }
 
+/// The namespaced name a step refers to, if it carries one.
+///
+/// Returns `None` for steps whose payload is not an item name (row-level security,
+/// which is keyed by SQL text, and `DisconnectAllUsers`, which has no payload).
+fn step_name(step: &AutoMigrateStep) -> Option<&str> {
+    match step {
+        AutoMigrateStep::RemoveIndex(name)
+        | AutoMigrateStep::RemoveConstraint(name)
+        | AutoMigrateStep::RemoveSequence(name)
+        | AutoMigrateStep::RemoveSchedule(name)
+        | AutoMigrateStep::RemoveView(name)
+        | AutoMigrateStep::RemoveTable(name)
+        | AutoMigrateStep::ChangeColumns(name)
+        | AutoMigrateStep::ReschemaEventTable(name)
+        | AutoMigrateStep::AddColumns(name)
+        | AutoMigrateStep::AddTable(name)
+        | AutoMigrateStep::AddIndex(name)
+        | AutoMigrateStep::AddConstraint(name)
+        | AutoMigrateStep::AddSequence(name)
+        | AutoMigrateStep::AddSchedule(name)
+        | AutoMigrateStep::AddView(name)
+        | AutoMigrateStep::ChangeAccess(name)
+        | AutoMigrateStep::ChangePrimaryKey(name)
+        | AutoMigrateStep::UpdateView(name) => Some(name),
+        AutoMigrateStep::AddRowLevelSecurity(_)
+        | AutoMigrateStep::RemoveRowLevelSecurity(_)
+        | AutoMigrateStep::DisconnectAllUsers => None,
+    }
+}
+
 fn assert_identical_modules(module_name_prefix: &str, lang_name: &str, suffix: &str) {
     let rs = get_normalized_schema(module_name_prefix);
     let cs = get_normalized_schema(&format!("{module_name_prefix}-{suffix}"));
@@ -38,6 +68,12 @@ fn assert_identical_modules(module_name_prefix: &str, lang_name: &str, suffix: &
                 | AutoMigrateStep::UpdateView(_)
         )
     });
+
+    // TODO: Remove this once Rust and C# support submodules.
+    // Only TypeScript can mount submodules today, so its modules emit namespaced items
+    // (e.g. `lib.lib_data`) that the other languages cannot produce. Ignoring those steps
+    // keeps the root-level schema comparison meaningful instead of disabling it wholesale.
+    diff.retain(|step| step_name(step).is_none_or(|name| !name.contains('.')));
 
     assert!(
         diff.is_empty(),
@@ -81,30 +117,9 @@ macro_rules! declare_tests {
 
 declare_tests! {
     benchmarks => "benchmarks",
-    // module_test is excluded here and handled explicitly below.
+    module_test => "module-test",
     sdk_test_connect_disconnect => "sdk-test-connect-disconnect",
     sdk_test => "sdk-test",
-}
-
-// These are written out explicitly rather than via the macro so we can
-// temporarily disable just the TypeScript variant.
-mod ensure_same_schema_module_test {
-    use super::*;
-
-    #[test]
-    #[serial]
-    fn csharp() {
-        super::assert_identical_modules("module-test", "C#", "cs");
-    }
-
-    // TODO: Re-enable once Rust supports namespaced tables (sub-module mounts).
-    // TypeScript's module-test now includes a sub-module that emits namespaced tables
-    // (e.g. "lib.lib_data"), which Rust does not yet produce, causing a spurious diff.
-    // #[test]
-    // #[serial]
-    // fn typescript() {
-    //     super::assert_identical_modules("module-test", "typescript", "ts");
-    // }
 }
 
 #[test]

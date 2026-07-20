@@ -1,6 +1,6 @@
 use super::{
-    ArgsTuple, FunctionArgs, InvalidProcedureArguments, InvalidReducerArguments, ReducerCallResult, ReducerId,
-    ReducerOutcome, Scheduler,
+    ArgsTuple, FunctionArgs, InvalidProcedureArguments, InvalidReducerArguments, ReducerCallResult,
+    ReducerCallResultWithTxOffset, ReducerId, ReducerOutcome, Scheduler,
 };
 use crate::client::messages::{OneOffQueryResponseMessage, ProcedureResultMessage, SerializableMessage};
 use crate::client::{ClientActorId, ClientConnectionSender, WsVersion};
@@ -10,7 +10,7 @@ use crate::db::sql::ast::SchemaViewer;
 use crate::error::DBError;
 use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::hash::Hash;
-use crate::host::host_controller::{CallProcedureReturn, ProcedureCallResult, ReducerCallResultWithTxOffset};
+use crate::host::host_controller::{CallProcedureReturn, ProcedureCallResult};
 use crate::host::scheduler::{CallScheduledFunctionError, CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::v8::{JsFatalHook, JsMainInstance, JsProcedureCallCompletion, JsProcedureInstance};
 pub use crate::host::wasm_common::module_host_actor::{InstanceCommon, WasmInstance};
@@ -2883,11 +2883,10 @@ impl ModuleHost {
     }
 
     /// Materializes the views return by the `view_collector`, if not already materialized,
-    /// and updates `st_view_sub` accordingly.
+    /// and updates view lifecycle state accordingly.
     ///
-    /// Passing [`Workload::Sql`] will update `st_view_sub.last_called`.
-    /// Passing [`Workload::Subscribe`] will also increment `st_view_sub.num_subscribers`,
-    /// in addition to updating `st_view_sub.last_called`.
+    /// Passing [`Workload::Sql`] will update the instance's last-used timestamp.
+    /// Passing [`Workload::Subscribe`] will also increment the subscriber's refcount.
     pub fn materialize_views<I: WasmInstance>(
         mut tx: MutTxId,
         instance: &mut RefInstance<'_, I>,
