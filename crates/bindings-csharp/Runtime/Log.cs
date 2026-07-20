@@ -17,7 +17,7 @@ public static class Log
         string message,
         [CallerMemberName] string RESERVED_target = "",
         [CallerFilePath] string RESERVED_filename = "",
-        [CallerLineNumber] uint RESERVED_lineNumber = 0
+        [CallerLineNumber] int RESERVED_lineNumber = 0
     ) =>
         LogInternal(
             message,
@@ -38,7 +38,7 @@ public static class Log
         string message,
         [CallerMemberName] string RESERVED_target = "",
         [CallerFilePath] string RESERVED_filename = "",
-        [CallerLineNumber] uint RESERVED_lineNumber = 0
+        [CallerLineNumber] int RESERVED_lineNumber = 0
     ) =>
         LogInternal(
             message,
@@ -59,7 +59,7 @@ public static class Log
         string message,
         [CallerMemberName] string RESERVED_target = "",
         [CallerFilePath] string RESERVED_filename = "",
-        [CallerLineNumber] uint RESERVED_lineNumber = 0
+        [CallerLineNumber] int RESERVED_lineNumber = 0
     ) =>
         LogInternal(
             message,
@@ -80,7 +80,7 @@ public static class Log
         string message,
         [CallerMemberName] string RESERVED_target = "",
         [CallerFilePath] string RESERVED_filename = "",
-        [CallerLineNumber] uint RESERVED_lineNumber = 0
+        [CallerLineNumber] int RESERVED_lineNumber = 0
     ) =>
         LogInternal(
             message,
@@ -101,7 +101,7 @@ public static class Log
         string message,
         [CallerMemberName] string RESERVED_target = "",
         [CallerFilePath] string RESERVED_filename = "",
-        [CallerLineNumber] uint RESERVED_lineNumber = 0
+        [CallerLineNumber] int RESERVED_lineNumber = 0
     ) =>
         LogInternal(
             message,
@@ -122,7 +122,7 @@ public static class Log
         string message,
         [CallerMemberName] string RESERVED_target = "",
         [CallerFilePath] string RESERVED_filename = "",
-        [CallerLineNumber] uint RESERVED_lineNumber = 0
+        [CallerLineNumber] int RESERVED_lineNumber = 0
     ) =>
         LogInternal(
             message,
@@ -143,7 +143,7 @@ public static class Log
         Exception exception,
         [CallerMemberName] string RESERVED_target = "",
         [CallerFilePath] string RESERVED_filename = "",
-        [CallerLineNumber] uint RESERVED_lineNumber = 0
+        [CallerLineNumber] int RESERVED_lineNumber = 0
     ) =>
         LogInternal(
             exception.ToString(),
@@ -158,7 +158,7 @@ public static class Log
         FFI.LogLevel level,
         string target,
         string filename,
-        uint lineNumber
+        int lineNumber
     )
     {
         var target_bytes = Encoding.UTF8.GetBytes(target);
@@ -171,7 +171,7 @@ public static class Log
             (uint)target_bytes.Length,
             filename_bytes,
             (uint)filename_bytes.Length,
-            lineNumber,
+            (uint)lineNumber,
             text_bytes,
             (uint)text_bytes.Length
         );
