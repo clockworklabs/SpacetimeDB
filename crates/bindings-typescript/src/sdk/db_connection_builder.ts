@@ -301,7 +301,7 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
 
   /** The reconnect backoff overrides set via {@link withReconnectOptions}, if any. */
   getReconnectOptions(): ReconnectOptions | undefined {
-    return this.#reconnectOptions;
+return this.#reconnectOptions ? { ...this.#reconnectOptions } : undefined;
   }
 
   /**
