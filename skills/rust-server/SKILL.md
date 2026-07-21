@@ -181,6 +181,8 @@ Declare a procedural view primary key in the view attribute:
 fn catalog_entry(ctx: &AnonymousViewContext) -> Vec<CatalogEntry> { ... }
 ```
 
+Procedural-view primary keys are explicit schema metadata. Add one only when the view itself is required to expose a primary key; a source table's primary key is not inherited by the view.
+
 Query-builder views use `ViewContext`, `ctx.from`, and return `impl Query<Row>`. Use `filter` for predicates and `right_semijoin` when the result should contain right-side rows that have a matching left-side row:
 
 ```rust
@@ -271,9 +273,9 @@ pub fn inspect(_ctx: &mut ProcedureContext, input: String) -> ResultValue {
 }
 ```
 
-Outbound HTTP is available through `ctx.http`. Convenience methods such as `get` return a response, and other methods use `Request::builder()` with `ctx.http.send(request)`. Consume a response body as text with `response.into_body().into_string_lossy()`.
+Outbound HTTP is available through `ctx.http`. Convenience methods such as `get` return a response, and other methods use `Request::builder()` with `ctx.http.send(request)`. Consume a response body as text with `response.into_body().into_string_lossy()`. Header values use the fallible `to_str()` conversion; they do not provide `as_str()`.
 
-Open short database transactions with `ctx.with_tx(|tx| ...)`. The callback implements `Fn`, so clone captured owned values when storing them rather than moving them out of the closure. Perform network I/O before opening the transaction.
+Open short database transactions with `ctx.with_tx(|tx| ...)`. It returns the callback's value directly, so do not call `unwrap` or `expect` on the result unless the callback itself returns a `Result`. The callback implements `Fn`, so clone captured owned values when storing them rather than moving them out of the closure. Perform network I/O before opening the transaction.
 
 For an outbound request without a convenience method:
 

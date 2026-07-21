@@ -8,6 +8,15 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::LazyLock;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+static CLI_SESSION_TAG: LazyLock<String> = LazyLock::new(|| {
+    let started_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    format!("{}-{started_at}", std::process::id())
+});
 
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -182,7 +191,7 @@ pub trait Publisher: Send + Sync {
 
 fn database_cli_root(module_name: &str) -> Result<CliRootDir> {
     let db = sanitize_db_name(module_name);
-    let path = env::temp_dir().join(format!("stdb-llm-cli-{}-{db}", std::process::id()));
+    let path = env::temp_dir().join(format!("stdb-llm-cli-{}-{db}", CLI_SESSION_TAG.as_str()));
     fs::create_dir_all(&path)?;
     Ok(CliRootDir { path })
 }
@@ -200,7 +209,7 @@ fn signal_killed_by(_status: &std::process::ExitStatus) -> Option<i32> {
 }
 
 /// Check if the failure is a transient error that should be retried.
-/// These are resource contention issues in the dotnet WASI SDK.
+/// These are resource contention issues and diagnostic-free child-process crashes.
 fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
     let combined = format!("{stderr}{stdout}");
     let diagnostic = combined.to_ascii_lowercase();
@@ -212,6 +221,7 @@ fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
                 !message.starts_with("could not compile `")
                     && !message.starts_with("process didn't exit successfully")
                     && !message.starts_with("command [\"cargo\", \"build\"")
+                    && !message.starts_with("failed to run custom build command for `")
             })
     });
     let silent_rustc_exit = diagnostic.contains("process didn't exit successfully")
@@ -221,6 +231,22 @@ fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
     let silent_cargo_exit = diagnostic.contains("error: command [\"cargo\", \"build\"")
         && diagnostic.contains("exited with code 1")
         && !has_actionable_compiler_diagnostic;
+    let silent_rust_lld_exit = diagnostic.contains("error: linking with `rust-lld.exe` failed: exit code: 1")
+        && !diagnostic.contains("rust-lld: error:")
+        && !diagnostic.contains("lld-link: error:");
+    let silent_build_script_exit = diagnostic.contains("failed to run custom build command for `")
+        && diagnostic.contains("build-script-build` (exit code: 1)")
+        && !diagnostic.contains("--- stderr")
+        && !diagnostic.contains("panicked at")
+        && !has_actionable_compiler_diagnostic;
+    let has_terminal_failure_marker = diagnostic.lines().any(|line| {
+        let line = line.trim_start();
+        line.starts_with("error: could not compile `")
+            || line.starts_with("failed:")
+            || line.starts_with("exception:")
+            || line.contains("build failed")
+            || line.contains("panicked at")
+    });
     let has_actionable_dotnet_diagnostic = diagnostic.lines().any(|line| {
         line.contains(".cs(")
             && (line.contains(": error cs") || line.contains(": error stdb") || line.contains(": error il"))
@@ -244,6 +270,8 @@ fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
         // diagnostic. This is a transient child-process failure, not bad source.
         || silent_rustc_exit
         || silent_cargo_exit
+        || silent_rust_lld_exit
+        || silent_build_script_exit
         // The .NET linker occasionally exits without a source diagnostic and
         // MSBuild reports only MSB6006 + NETSDK1144. Do not retry when the
         // output also contains a C#, SpacetimeDB codegen, or IL source error.
@@ -251,9 +279,7 @@ fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
         // A child process can occasionally disappear on Windows after login but
         // before the CLI emits a compiler/MSBuild diagnostic. Retrying is safe:
         // benchmark publishes always use their own temporary CLI root and database.
-        || (!diagnostic.contains("error")
-            && !diagnostic.contains("failed")
-            && !diagnostic.contains("exception"))
+        || (!has_actionable_compiler_diagnostic && !has_terminal_failure_marker)
 }
 
 #[cfg(test)]
@@ -272,6 +298,14 @@ mod tests {
     fn does_not_retry_source_compile_error() {
         assert!(!is_transient_build_error(
             "error: could not compile `spacetime-module`",
+            ""
+        ));
+    }
+
+    #[test]
+    fn retries_partial_cargo_output_containing_error_in_crate_name() {
+        assert!(is_transient_build_error(
+            "Compiling thiserror v1.0.69\nCompiling anyhow v1.0.104",
             ""
         ));
     }
@@ -296,6 +330,38 @@ mod tests {
     fn retries_silent_cargo_exit() {
         assert!(is_transient_build_error(
             "Error: command [\"cargo\", \"build\", \"--release\"] exited with code 1",
+            ""
+        ));
+    }
+
+    #[test]
+    fn retries_rust_lld_exit_without_linker_diagnostic() {
+        assert!(is_transient_build_error(
+            "error: linking with `rust-lld.exe` failed: exit code: 1\n  = note: some arguments are omitted\n  = note:\n\nerror: could not compile `rustversion` (lib) due to 1 previous error",
+            ""
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_rust_lld_exit_with_linker_diagnostic() {
+        assert!(!is_transient_build_error(
+            "error: linking with `rust-lld.exe` failed: exit code: 1\n  = note: rust-lld: error: undefined symbol: missing",
+            ""
+        ));
+    }
+
+    #[test]
+    fn retries_build_script_exit_without_diagnostic() {
+        assert!(is_transient_build_error(
+            "error: failed to run custom build command for `anyhow v1.0.104`\n\nCaused by:\n  process didn't exit successfully: `target/release/build/anyhow/build-script-build` (exit code: 1)\n  --- stdout\n  cargo:rerun-if-changed=src/nightly.rs",
+            ""
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_build_script_exit_with_diagnostic() {
+        assert!(!is_transient_build_error(
+            "error: failed to run custom build command for `native-dependency v1.0.0`\n\nCaused by:\n  process didn't exit successfully: `target/release/build/native-dependency/build-script-build` (exit code: 1)\n  --- stderr\n  error: required native compiler was not found",
             ""
         ));
     }
