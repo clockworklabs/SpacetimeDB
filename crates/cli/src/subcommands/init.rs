@@ -1902,6 +1902,28 @@ fn configure_csharp_project_files(project_path: &Path, dotnet_major: u8) -> anyh
     Ok(())
 }
 
+fn csproj_has_package_reference(content: &str, include: &str, version: &str) -> bool {
+    fn element_has_package_reference(element: &xmltree::Element, include: &str, version: &str) -> bool {
+        if element.name == "PackageReference"
+            && element.attributes.get("Include").map(String::as_str) == Some(include)
+            && element.attributes.get("Version").map(String::as_str) == Some(version)
+        {
+            return true;
+        }
+
+        element.children.iter().any(|node| {
+            let xmltree::XMLNode::Element(child) = node else {
+                return false;
+            };
+            element_has_package_reference(child, include, version)
+        })
+    }
+
+    xmltree::Element::parse(content.as_bytes())
+        .map(|root| element_has_package_reference(&root, include, version))
+        .unwrap_or(false)
+}
+
 /// Adds NativeAOT-LLVM project configuration to an existing C# .csproj file and creates NuGet.Config.
 ///
 /// The configuration differs depending on the target .NET version:
@@ -1923,18 +1945,30 @@ fn add_native_aot_packages_to_csproj(project_path: &Path, dotnet_major: Option<u
     let content = std::fs::read_to_string(&csproj_path)?;
 
     let new_content = if dotnet_major == Some(8) {
-        // .NET 8 AOT: keep net8.0 TFM, add explicit ILCompiler.LLVM package references.
-        let native_aot_config = r#"
+        let has_net8_native_aot_refs =
+            csproj_has_package_reference(&content, "Microsoft.DotNet.ILCompiler.LLVM", "8.0.0-*")
+                && csproj_has_package_reference(
+                    &content,
+                    "runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM",
+                    "8.0.0-*",
+                );
+
+        if has_net8_native_aot_refs {
+            content
+        } else {
+            // .NET 8 AOT: keep net8.0 TFM, add explicit ILCompiler.LLVM package references.
+            let native_aot_config = r#"
   <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
     <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
     <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
   </ItemGroup>
 "#;
-        if let Some(pos) = content.rfind("</Project>") {
-            let (before, after) = content.split_at(pos);
-            format!("{}{}{}", before.trim_end(), native_aot_config, after)
-        } else {
-            anyhow::bail!("Invalid .csproj file: missing </Project> tag");
+            if let Some(pos) = content.rfind("</Project>") {
+                let (before, after) = content.split_at(pos);
+                format!("{}{}{}", before.trim_end(), native_aot_config, after)
+            } else {
+                anyhow::bail!("Invalid .csproj file: missing </Project> tag");
+            }
         }
     } else {
         // .NET 10 AOT: directly set TFM to net10.0 (no conditional needed).
@@ -2535,6 +2569,33 @@ bytes.workspace = true
         let net10 = csharp_csproj_for_target(template, 10).unwrap();
         assert!(net10.contains("<TargetFramework>net10.0</TargetFramework>"));
         assert!(!net10.contains("<TargetFrameworks"));
+    }
+
+    #[test]
+    fn test_add_native_aot_packages_does_not_duplicate_template_refs() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let csproj = temp.path().join("StdbModule.csproj");
+        let template = include_str!("../../../../templates/basic-cs/spacetimedb/StdbModule.csproj");
+        let net8 = csharp_csproj_for_target(template, 8).unwrap();
+        std::fs::write(&csproj, net8).unwrap();
+
+        add_native_aot_packages_to_csproj(temp.path(), Some(8)).unwrap();
+
+        let content = std::fs::read_to_string(csproj).unwrap();
+        assert_eq!(
+            content
+                .matches(r#"PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*""#)
+                .count(),
+            1
+        );
+        assert_eq!(
+            content
+                .matches(
+                    r#"PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*""#
+                )
+                .count(),
+            1
+        );
     }
 
     #[test]
