@@ -51,6 +51,7 @@ use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
+use spacetimedb_schema::identifier::NamespacePath;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{
     ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
@@ -1234,7 +1235,7 @@ impl RelationalDB {
         tx: &mut MutTx,
         owning_def: &ModuleDef,
         view_def: &ViewDef,
-        name_prefix: &str,
+        name_prefix: &NamespacePath,
     ) -> Result<(ViewId, TableId), DBError> {
         Ok(tx.create_view_with_prefix(owning_def, view_def, name_prefix)?)
     }

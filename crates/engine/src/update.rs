@@ -13,7 +13,7 @@ use spacetimedb_primitives::{ColSet, ConstraintId, TableId};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::auto_migrate::{AutoMigratePlan, AutoMigrateStep, ManualMigratePlan, MigratePlan};
 use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
-use spacetimedb_schema::identifier::{Identifier, NamespacedIdentifier};
+use spacetimedb_schema::identifier::{Identifier, NamespacePath, NamespacedIdentifier};
 use spacetimedb_schema::schema::{
     column_schemas_from_defs, ConstraintSchema, IndexSchema, Schema, SequenceSchema, TableSchema,
 };
@@ -61,7 +61,7 @@ fn stale_view_backing_table_recreate_steps(
 
         for view in module_def.views() {
             if view_backing_table_needs_recreate(stdb, tx, module_def, view)? {
-                let name = NamespacedIdentifier::new_assume_valid(view.name.to_string());
+                let name = NamespacedIdentifier::from(view.name.clone());
                 steps.extend([
                     AutoMigrateStep::RemoveView(name.clone()),
                     AutoMigrateStep::AddView(name),
@@ -533,7 +533,7 @@ pub fn create_table_from_def(
     module_def: &ModuleDef,
     table_def: &TableDef,
 ) -> anyhow::Result<()> {
-    create_table_from_def_with_prefix(stdb, tx, module_def, table_def, "")
+    create_table_from_def_with_prefix(stdb, tx, module_def, table_def, &NamespacePath::root())
 }
 
 /// Creates a submodule table in `stdb`, applying the namespace to its canonical name.
@@ -543,12 +543,11 @@ pub fn create_table_from_def_with_prefix(
     tx: &mut MutTxId,
     owning_def: &ModuleDef,
     table_def: &TableDef,
-    name_prefix: &str,
+    name_prefix: &NamespacePath,
 ) -> anyhow::Result<()> {
     let mut schema = TableSchema::from_module_def(owning_def, table_def, (), TableId::SENTINEL);
     if !name_prefix.is_empty() {
-        let prefixed_name = format!("{}{}", name_prefix, &*table_def.accessor_name);
-        schema.table_name = TableName::new_raw(RawIdentifier::from(prefixed_name));
+        schema.table_name = TableName::from(name_prefix.join(table_def.accessor_name.clone()));
 
         // No alias needed
         schema.alias = None;
@@ -600,7 +599,7 @@ pub fn create_table_from_view_def_with_prefix(
     tx: &mut MutTxId,
     owning_def: &ModuleDef,
     view_def: &ViewDef,
-    name_prefix: &str,
+    name_prefix: &NamespacePath,
 ) -> anyhow::Result<()> {
     stdb.create_view_with_prefix(tx, owning_def, view_def, name_prefix)
         .with_context(|| format!("failed to create table for view {}{}", name_prefix, &view_def.name))?;
@@ -945,7 +944,7 @@ mod test {
         let MigratePlan::Auto(plan) = &plan else {
             panic!("expected auto migration");
         };
-        let my_view = NamespacedIdentifier::new_assume_valid("my_view");
+        let my_view = NamespacedIdentifier::from(Identifier::for_test("my_view"));
         assert!(plan.steps.contains(&AutoMigrateStep::RemoveView(my_view.clone())));
         assert!(plan.steps.contains(&AutoMigrateStep::AddView(my_view.clone())));
         assert!(plan.steps.contains(&AutoMigrateStep::DisconnectAllUsers));

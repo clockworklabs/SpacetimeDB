@@ -15,9 +15,9 @@ use crate::def::validate::v9::{
 };
 use crate::def::*;
 use crate::error::ValidationError;
-use crate::identifier::validate_identifier;
 use crate::type_for_generate::ProductTypeDef;
 use crate::{def::validate::Result, error::TypeLocation};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 // Utitility struct to look up canonical names for tables, functions, and indexes based on the
 // explicit names provided in the `RawModuleDefV10`.
 #[derive(Default)]
@@ -326,15 +326,11 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
 /// that no two submodules share the same namespace, and that no submodule declares lifecycle
 /// reducers (lifecycle reducers are only permitted in the root module).
 /// This function will inspect each sub-submodule and recursively collect errors.
-fn validate_submodules(submodules: Vec<RawSubmoduleV10>) -> Result<IndexMap<String, ModuleDef>> {
+fn validate_submodules(submodules: Vec<RawSubmoduleV10>) -> Result<IndexMap<Identifier, ModuleDef>> {
     let mut errors = vec![];
     let mut map = IndexMap::with_capacity(submodules.len());
 
     for submodule in submodules {
-        if let Err(e) = validate_identifier(&submodule.namespace) {
-            errors.push(ValidationError::IdentifierError { error: e });
-        }
-
         if submodule.namespace.len() > 63 {
             errors.push(ValidationError::NamespaceTooLong {
                 namespace: submodule.namespace.clone().into(),
@@ -342,7 +338,15 @@ fn validate_submodules(submodules: Vec<RawSubmoduleV10>) -> Result<IndexMap<Stri
             });
         }
 
-        if map.contains_key(&submodule.namespace) {
+        let namespace = match Identifier::new(RawIdentifier::from(submodule.namespace.clone())) {
+            Ok(namespace) => namespace,
+            Err(error) => {
+                errors.push(ValidationError::IdentifierError { error });
+                continue;
+            }
+        };
+
+        if map.contains_key(&namespace) {
             errors.push(ValidationError::DuplicateName {
                 name: submodule.namespace.into(),
             });
@@ -357,7 +361,7 @@ fn validate_submodules(submodules: Vec<RawSubmoduleV10>) -> Result<IndexMap<Stri
                             });
                         }
                     }
-                    map.insert(submodule.namespace, def);
+                    map.insert(namespace, def);
                 }
                 Err(e) => errors.extend(e.into_iter()),
             }

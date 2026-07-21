@@ -598,7 +598,7 @@ fn init_database_inner(
             }
 
             // Create all in-memory views defined by the module (root + submodule).
-            let mut view_defs: Vec<(String, &ModuleDef, &ViewDef)> = module_def.all_views_with_prefix();
+            let mut view_defs = module_def.all_views_with_prefix();
             view_defs.sort_by(|(p1, _, d1), (p2, _, d2)| {
                 let n1 = format!("{}{}", p1, d1.name);
                 let n2 = format!("{}{}", p2, d2.name);

@@ -56,7 +56,7 @@ use spacetimedb_sats::{
 };
 use spacetimedb_schema::{
     def::{ModuleDef, ViewColumnDef, ViewDef, ViewParamDef},
-    identifier::Identifier,
+    identifier::{Identifier, NamespacePath},
     reducer_name::ReducerName,
     schema::{
         ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema,
@@ -806,11 +806,11 @@ impl MutTxId {
         &mut self,
         owning_def: &ModuleDef,
         view_def: &ViewDef,
-        name_prefix: &str,
+        name_prefix: &NamespacePath,
     ) -> Result<(ViewId, TableId)> {
         let mut table_schema = TableSchema::from_view_def_for_datastore(owning_def, view_def);
         let prefixed_name = format!("{}{}", name_prefix, &*view_def.name);
-        table_schema.table_name = TableName::new_raw(RawIdentifier::from(prefixed_name.clone()));
+        table_schema.table_name = TableName::from(name_prefix.join(view_def.name.clone()));
 
         // Clear alias so st_table_accessor doesn't get the bare (un-prefixed) accessor name,
         // which would conflict when two mounts have views with the same local name.

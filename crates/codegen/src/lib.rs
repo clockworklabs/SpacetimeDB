@@ -1,5 +1,6 @@
 use spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, TypeDef, ViewDef};
+use spacetimedb_schema::identifier::NamespacePath;
 use spacetimedb_schema::schema::{Schema, TableSchema};
 mod code_indenter;
 pub mod cpp;
@@ -99,25 +100,35 @@ pub trait Lang {
     /// Uses `owning_def`'s typespace for type resolution.
     /// Filename goes in a subdirectory named after the namespace:
     /// e.g. `alias/table_name_table.ts` for namespace `"alias."`, table `tableName`.
-    fn generate_submodule_table_file(&self, owning_def: &ModuleDef, namespace: &str, table: &TableDef) -> OutputFile {
+    fn generate_submodule_table_file(
+        &self,
+        owning_def: &ModuleDef,
+        namespace: &NamespacePath,
+        table: &TableDef,
+    ) -> OutputFile {
         let schema = TableSchema::from_module_def(owning_def, table, (), 0.into())
             .validated()
             .expect("Failed to generate submodule table file");
         let mut file = self.generate_table_file_from_schema(owning_def, table, schema);
-        let ns_path = namespace.trim_end_matches('.').replace('.', "/");
+        let ns_path = namespace.join_segments("/");
         file.filename = format!("{}/{}", ns_path, file.filename);
         file
     }
 
     /// Generate a row-type file for a view from a submodule.
     /// Filename goes in a subdirectory named after the namespace prefix.
-    fn generate_submodule_view_file(&self, owning_def: &ModuleDef, namespace: &str, view: &ViewDef) -> OutputFile {
+    fn generate_submodule_view_file(
+        &self,
+        owning_def: &ModuleDef,
+        namespace: &NamespacePath,
+        view: &ViewDef,
+    ) -> OutputFile {
         let tbl = TableDef::from(view.clone());
         let schema = TableSchema::from_view_def_for_codegen(owning_def, view)
             .validated()
             .expect("Failed to generate submodule view file");
         let mut file = self.generate_table_file_from_schema(owning_def, &tbl, schema);
-        let ns_path = namespace.trim_end_matches('.').replace('.', "/");
+        let ns_path = namespace.join_segments("/");
         file.filename = format!("{}/{}", ns_path, file.filename);
         file
     }
@@ -127,11 +138,11 @@ pub trait Lang {
     fn generate_submodule_reducer_file(
         &self,
         owning_def: &ModuleDef,
-        prefix: &str,
+        prefix: &NamespacePath,
         reducer: &ReducerDef,
     ) -> OutputFile {
         let mut file = self.generate_reducer_file(owning_def, reducer);
-        let ns_path = prefix.trim_end_matches('.').replace('.', "/");
+        let ns_path = prefix.join_segments("/");
         file.filename = format!("{}/{}", ns_path, file.filename);
         file
     }
@@ -141,11 +152,11 @@ pub trait Lang {
     fn generate_submodule_procedure_file(
         &self,
         owning_def: &ModuleDef,
-        prefix: &str,
+        prefix: &NamespacePath,
         procedure: &ProcedureDef,
     ) -> OutputFile {
         let mut file = self.generate_procedure_file(owning_def, procedure);
-        let ns_path = prefix.trim_end_matches('.').replace('.', "/");
+        let ns_path = prefix.join_segments("/");
         file.filename = format!("{}/{}", ns_path, file.filename);
         file
     }

@@ -20,7 +20,7 @@ use std::fmt::{self, Debug, Write};
 use std::hash::Hash;
 
 use crate::error::{IdentifierError, ValidationErrors};
-use crate::identifier::Identifier;
+use crate::identifier::{Identifier, NamespacePath};
 use crate::reducer_name::ReducerName;
 use crate::schema::{Schema, TableSchema};
 use crate::type_for_generate::{AlgebraicTypeUse, ProductTypeDef, TypespaceForGenerate};
@@ -166,7 +166,7 @@ pub struct ModuleDef {
     raw_module_def_version: RawModuleDefVersion,
 
     /// Submodules, keyed by the namespace they are registered under.
-    submodules: IndexMap<String, ModuleDef>,
+    submodules: IndexMap<Identifier, ModuleDef>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -184,7 +184,7 @@ impl ModuleDef {
     }
 
     /// The submodules of the module definition.
-    pub fn submodules(&self) -> &IndexMap<String, ModuleDef> {
+    pub fn submodules(&self) -> &IndexMap<Identifier, ModuleDef> {
         &self.submodules
     }
 
@@ -215,60 +215,69 @@ impl ModuleDef {
 
     /// All tables across this module and all submodules, in depth-first order.
     ///
-    /// Each item is `(namespace, owning_def, table_def)` where `namespace` is the dot-terminated
-    /// namespace string (e.g., `"alias."`) to be prepended to the table's name for database storage.
-    /// The consumer module's own tables yield namespace `""`.
-    pub fn all_tables_with_prefix(&self) -> Vec<(String, &ModuleDef, &TableDef)> {
+    /// Each item is `(path, owning_def, table_def)` where `path` is the namespace path
+    /// to be prepended to the table's name for database storage (empty for the root).
+    pub fn all_tables_with_prefix(&self) -> Vec<(NamespacePath, &ModuleDef, &TableDef)> {
         let mut out = Vec::new();
-        self.collect_tables_with_prefix("", &mut out);
+        self.collect_tables_with_prefix(&NamespacePath::root(), &mut out);
         out
     }
 
-    fn collect_tables_with_prefix<'a>(&'a self, prefix: &str, out: &mut Vec<(String, &'a ModuleDef, &'a TableDef)>) {
+    fn collect_tables_with_prefix<'a>(
+        &'a self,
+        prefix: &NamespacePath,
+        out: &mut Vec<(NamespacePath, &'a ModuleDef, &'a TableDef)>,
+    ) {
         for table in self.tables.values() {
-            out.push((prefix.to_string(), self, table));
+            out.push((prefix.clone(), self, table));
         }
         for (ns, submodule) in &self.submodules {
-            submodule.collect_tables_with_prefix(&format!("{prefix}{ns}."), out);
+            submodule.collect_tables_with_prefix(&prefix.child(ns.clone()), out);
         }
     }
 
     /// All views across this module and all submodules, in depth-first order.
     ///
-    /// Each item is `(namespace, owning_def, view_def)` where `namespace` is the dot-terminated
-    /// namespace string (e.g., `"alias."`) to be prepended to the view's name.
-    /// The consumer module's own views yield namespace `""`.
-    pub fn all_views_with_prefix(&self) -> Vec<(String, &ModuleDef, &ViewDef)> {
+    /// Each item is `(path, owning_def, view_def)` where `path` is the namespace path
+    /// to be prepended to the view's name (empty for the root).
+    pub fn all_views_with_prefix(&self) -> Vec<(NamespacePath, &ModuleDef, &ViewDef)> {
         let mut out = Vec::new();
-        self.collect_views_with_prefix("", &mut out);
+        self.collect_views_with_prefix(&NamespacePath::root(), &mut out);
         out
     }
 
-    fn collect_views_with_prefix<'a>(&'a self, prefix: &str, out: &mut Vec<(String, &'a ModuleDef, &'a ViewDef)>) {
+    fn collect_views_with_prefix<'a>(
+        &'a self,
+        prefix: &NamespacePath,
+        out: &mut Vec<(NamespacePath, &'a ModuleDef, &'a ViewDef)>,
+    ) {
         for view in self.views.values() {
-            out.push((prefix.to_string(), self, view));
+            out.push((prefix.clone(), self, view));
         }
         for (ns, submodule) in &self.submodules {
-            submodule.collect_views_with_prefix(&format!("{prefix}{ns}."), out);
+            submodule.collect_views_with_prefix(&prefix.child(ns.clone()), out);
         }
     }
 
     /// Look up a table by its full namespaced name (e.g., `"lib.library_table"` or `"user"`).
-    pub fn find_table_by_full_name(&self, full_name: &str) -> Option<(String, &ModuleDef, &TableDef)> {
+    pub fn find_table_by_full_name(&self, full_name: &str) -> Option<(NamespacePath, &ModuleDef, &TableDef)> {
         self.all_tables_with_prefix()
             .into_iter()
             .find(|(prefix, _, table_def)| format!("{}{}", prefix, &*table_def.accessor_name) == full_name)
     }
 
     /// Look up a view by its full namespaced name (e.g., `"lib.library_view"` or `"my_view"`).
-    pub fn find_view_by_full_name(&self, full_name: &str) -> Option<(String, &ModuleDef, &ViewDef)> {
+    pub fn find_view_by_full_name(&self, full_name: &str) -> Option<(NamespacePath, &ModuleDef, &ViewDef)> {
         self.all_views_with_prefix()
             .into_iter()
             .find(|(prefix, _, view_def)| format!("{}{}", prefix, &*view_def.name) == full_name)
     }
 
     /// Look up an index by its full namespaced name (e.g., `"lib.library_table_id_idx_btree"`).
-    pub fn find_index_by_full_name(&self, full_name: &str) -> Option<(String, &ModuleDef, &TableDef, &IndexDef)> {
+    pub fn find_index_by_full_name(
+        &self,
+        full_name: &str,
+    ) -> Option<(NamespacePath, &ModuleDef, &TableDef, &IndexDef)> {
         for (prefix, owning, table) in self.all_tables_with_prefix() {
             for idx in table.indexes.values() {
                 if format!("{}{}", prefix, &*idx.name) == full_name {
@@ -280,7 +289,10 @@ impl ModuleDef {
     }
 
     /// Look up a sequence by its full namespaced name (e.g., `"lib.library_table_id_seq"`).
-    pub fn find_sequence_by_full_name(&self, full_name: &str) -> Option<(String, &ModuleDef, &TableDef, &SequenceDef)> {
+    pub fn find_sequence_by_full_name(
+        &self,
+        full_name: &str,
+    ) -> Option<(NamespacePath, &ModuleDef, &TableDef, &SequenceDef)> {
         for (prefix, owning, table) in self.all_tables_with_prefix() {
             for seq in table.sequences.values() {
                 if format!("{}{}", prefix, &*seq.name) == full_name {
@@ -295,7 +307,7 @@ impl ModuleDef {
     pub fn find_constraint_by_full_name(
         &self,
         full_name: &str,
-    ) -> Option<(String, &ModuleDef, &TableDef, &ConstraintDef)> {
+    ) -> Option<(NamespacePath, &ModuleDef, &TableDef, &ConstraintDef)> {
         for (prefix, owning, table) in self.all_tables_with_prefix() {
             for constraint in table.constraints.values() {
                 if format!("{}{}", prefix, &*constraint.name) == full_name {
@@ -339,49 +351,47 @@ impl ModuleDef {
 
     /// All reducers across this module and all submodules, in depth-first order.
     ///
-    /// Each item is `(prefix, owning_def, reducer_def)` where `prefix` is the dot-terminated
-    /// namespace string (e.g., `"lib."`) to be prepended to the reducer's name as its wire name.
-    /// The consumer module's own reducers yield prefix `""`.
-    pub fn all_reducers_with_prefix(&self) -> Vec<(String, &ModuleDef, &ReducerDef)> {
+    /// Each item is `(path, owning_def, reducer_def)` where `path` is the namespace path
+    /// to be prepended to the reducer's name as its wire name (empty for the root).
+    pub fn all_reducers_with_prefix(&self) -> Vec<(NamespacePath, &ModuleDef, &ReducerDef)> {
         let mut out = Vec::new();
-        self.collect_reducers_with_prefix("", &mut out);
+        self.collect_reducers_with_prefix(&NamespacePath::root(), &mut out);
         out
     }
 
     fn collect_reducers_with_prefix<'a>(
         &'a self,
-        prefix: &str,
-        out: &mut Vec<(String, &'a ModuleDef, &'a ReducerDef)>,
+        prefix: &NamespacePath,
+        out: &mut Vec<(NamespacePath, &'a ModuleDef, &'a ReducerDef)>,
     ) {
         for reducer in self.reducers.values() {
-            out.push((prefix.to_string(), self, reducer));
+            out.push((prefix.clone(), self, reducer));
         }
         for (ns, submodule) in &self.submodules {
-            submodule.collect_reducers_with_prefix(&format!("{prefix}{ns}."), out);
+            submodule.collect_reducers_with_prefix(&prefix.child(ns.clone()), out);
         }
     }
 
     /// All procedures across this module and all submodules, in depth-first order.
     ///
-    /// Each item is `(prefix, owning_def, procedure_def)` where `prefix` is the dot-terminated
-    /// namespace string (e.g., `"lib."`) to be prepended to the procedure's name as its wire name.
-    /// The consumer module's own procedures yield prefix `""`.
-    pub fn all_procedures_with_prefix(&self) -> Vec<(String, &ModuleDef, &ProcedureDef)> {
+    /// Each item is `(path, owning_def, procedure_def)` where `path` is the namespace path
+    /// to be prepended to the procedure's name as its wire name (empty for the root).
+    pub fn all_procedures_with_prefix(&self) -> Vec<(NamespacePath, &ModuleDef, &ProcedureDef)> {
         let mut out = Vec::new();
-        self.collect_procedures_with_prefix("", &mut out);
+        self.collect_procedures_with_prefix(&NamespacePath::root(), &mut out);
         out
     }
 
     fn collect_procedures_with_prefix<'a>(
         &'a self,
-        prefix: &str,
-        out: &mut Vec<(String, &'a ModuleDef, &'a ProcedureDef)>,
+        prefix: &NamespacePath,
+        out: &mut Vec<(NamespacePath, &'a ModuleDef, &'a ProcedureDef)>,
     ) {
         for procedure in self.procedures.values() {
-            out.push((prefix.to_string(), self, procedure));
+            out.push((prefix.clone(), self, procedure));
         }
         for (ns, submodule) in &self.submodules {
-            submodule.collect_procedures_with_prefix(&format!("{prefix}{ns}."), out);
+            submodule.collect_procedures_with_prefix(&prefix.child(ns.clone()), out);
         }
     }
 
@@ -1155,7 +1165,7 @@ impl From<ModuleDef> for RawModuleDefV10 {
         let submodules: Vec<_> = submodules
             .into_iter()
             .map(|(namespace, module)| RawSubmoduleV10 {
-                namespace,
+                namespace: namespace.to_string(),
                 module: module.into(),
             })
             .collect();

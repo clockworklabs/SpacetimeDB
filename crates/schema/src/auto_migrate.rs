@@ -525,51 +525,42 @@ fn auto_migrate_views(plan: &mut AutoMigratePlan<'_>) -> Result<()> {
     let new_module = plan.new;
 
     // Build full-name maps for views across all submodules.
-    let old_views: HashMap<String, (&ModuleDef, &ViewDef)> = old_module
+    let old_views: HashMap<NamespacedIdentifier, (&ModuleDef, &ViewDef)> = old_module
         .all_views_with_prefix()
         .into_iter()
-        .map(|(prefix, owning, view)| (format!("{}{}", prefix, &*view.name), (owning, view)))
+        .map(|(prefix, owning, view)| (prefix.join(view.name.clone()), (owning, view)))
         .collect();
-    let new_views: HashMap<String, (&ModuleDef, &ViewDef)> = new_module
+    let new_views: HashMap<NamespacedIdentifier, (&ModuleDef, &ViewDef)> = new_module
         .all_views_with_prefix()
         .into_iter()
-        .map(|(prefix, owning, view)| (format!("{}{}", prefix, &*view.name), (owning, view)))
+        .map(|(prefix, owning, view)| (prefix.join(view.name.clone()), (owning, view)))
         .collect();
 
-    type ViewEntry<'a> = (String, (&'a ModuleDef, &'a ViewDef), (&'a ModuleDef, &'a ViewDef));
+    type ViewEntry<'a> = (
+        NamespacedIdentifier,
+        (&'a ModuleDef, &'a ViewDef),
+        (&'a ModuleDef, &'a ViewDef),
+    );
     let mut maybe_change: Vec<ViewEntry<'_>> = vec![];
     for (full_name, old_entry) in &old_views {
-        match new_views.get(full_name.as_str()) {
+        match new_views.get(full_name) {
             Some(new_entry) => maybe_change.push((full_name.clone(), *old_entry, *new_entry)),
             None => {
-                plan.steps
-                    .push(AutoMigrateStep::RemoveView(NamespacedIdentifier::new_assume_valid(
-                        full_name.clone(),
-                    )));
+                plan.steps.push(AutoMigrateStep::RemoveView(full_name.clone()));
                 plan.ensure_disconnect_all_users();
             }
         }
     }
-    for (full_name, _) in &new_views {
-        if !old_views.contains_key(full_name.as_str()) {
-            plan.steps
-                .push(AutoMigrateStep::AddView(NamespacedIdentifier::new_assume_valid(
-                    full_name.clone(),
-                )));
+    for full_name in new_views.keys() {
+        if !old_views.contains_key(full_name) {
+            plan.steps.push(AutoMigrateStep::AddView(full_name.clone()));
         }
     }
 
     let results: Vec<Result<()>> = maybe_change
         .into_iter()
         .map(|(full_name, (old_owning, old_view), (new_owning, new_view))| {
-            auto_migrate_view(
-                plan,
-                NamespacedIdentifier::new_assume_valid(full_name),
-                old_owning,
-                old_view,
-                new_owning,
-                new_view,
-            )
+            auto_migrate_view(plan, full_name, old_owning, old_view, new_owning, new_view)
         })
         .collect();
     results.into_iter().collect_all_errors::<Vec<()>>().map(|_| ())
@@ -689,44 +680,42 @@ fn auto_migrate_tables(plan: &mut AutoMigratePlan<'_>) -> Result<()> {
     // the old module and `events` (accessor + canonical) in the new module are treated as the same
     // logical table, preventing spurious Remove+Add steps when only the accessor casing changed.
     // Step payloads use accessor names (prefix + accessor_name) since that's what the DB stores.
-    let old_tables: HashMap<String, (String, &ModuleDef, &TableDef)> = old_module
+    let old_tables: HashMap<String, (NamespacedIdentifier, &ModuleDef, &TableDef)> = old_module
         .all_tables_with_prefix()
         .into_iter()
         .map(|(prefix, owning, table)| {
             let canonical = format!("{}{}", prefix, &*table.name);
-            let accessor = format!("{}{}", prefix, &*table.accessor_name);
+            let accessor = prefix.join(table.accessor_name.clone());
             (canonical, (accessor, owning, table))
         })
         .collect();
-    let new_tables: HashMap<String, (String, &ModuleDef, &TableDef)> = new_module
+    let new_tables: HashMap<String, (NamespacedIdentifier, &ModuleDef, &TableDef)> = new_module
         .all_tables_with_prefix()
         .into_iter()
         .map(|(prefix, owning, table)| {
             let canonical = format!("{}{}", prefix, &*table.name);
-            let accessor = format!("{}{}", prefix, &*table.accessor_name);
+            let accessor = prefix.join(table.accessor_name.clone());
             (canonical, (accessor, owning, table))
         })
         .collect();
 
     for (canonical, (accessor, _, _)) in &old_tables {
         if !new_tables.contains_key(canonical.as_str()) {
-            plan.steps
-                .push(AutoMigrateStep::RemoveTable(NamespacedIdentifier::new_assume_valid(
-                    accessor.clone(),
-                )));
+            plan.steps.push(AutoMigrateStep::RemoveTable(accessor.clone()));
             plan.ensure_disconnect_all_users();
         }
     }
     for (canonical, (accessor, _, _)) in &new_tables {
         if !old_tables.contains_key(canonical.as_str()) {
-            plan.steps
-                .push(AutoMigrateStep::AddTable(NamespacedIdentifier::new_assume_valid(
-                    accessor.clone(),
-                )));
+            plan.steps.push(AutoMigrateStep::AddTable(accessor.clone()));
         }
     }
 
-    type TableEntry<'a> = (String, (&'a ModuleDef, &'a TableDef), (&'a ModuleDef, &'a TableDef));
+    type TableEntry<'a> = (
+        NamespacedIdentifier,
+        (&'a ModuleDef, &'a TableDef),
+        (&'a ModuleDef, &'a TableDef),
+    );
     let maybe_change: Vec<TableEntry<'_>> = old_tables
         .iter()
         .filter_map(|(canonical, (_, old_owning, old_table))| {
@@ -745,14 +734,7 @@ fn auto_migrate_tables(plan: &mut AutoMigratePlan<'_>) -> Result<()> {
     let results: Vec<Result<()>> = maybe_change
         .into_iter()
         .map(|(full_name, (old_owning, old_table), (new_owning, new_table))| {
-            auto_migrate_table(
-                plan,
-                NamespacedIdentifier::new_assume_valid(full_name),
-                old_owning,
-                old_table,
-                new_owning,
-                new_table,
-            )
+            auto_migrate_table(plan, full_name, old_owning, old_table, new_owning, new_table)
         })
         .collect();
     results.into_iter().collect_all_errors::<Vec<()>>().map(|_| ())
@@ -1102,6 +1084,13 @@ fn ensure_old_ty_upgradable_to_new(
     }
 }
 
+/// Convert a def-level name to a validated `Identifier`.
+/// Index/sequence/constraint names are validated as identifiers when the `ModuleDef` is built,
+/// but stored as `RawIdentifier`.
+fn def_ident(name: &RawIdentifier) -> Identifier {
+    Identifier::new(name.clone()).expect("names in a validated ModuleDef are valid identifiers")
+}
+
 fn auto_migrate_indexes(
     plan: &mut AutoMigratePlan<'_>,
     new_tables: &HashSet<String>,
@@ -1112,24 +1101,24 @@ fn auto_migrate_indexes(
 
     // key = full index name (e.g. "lib.library_table_id_idx_btree")
     // value = (full_table_name, &IndexDef)
-    let old_indexes: HashMap<String, (String, &IndexDef)> = {
+    let old_indexes: HashMap<NamespacedIdentifier, (String, &IndexDef)> = {
         let mut map = HashMap::new();
         for (prefix, _, table) in old_module.all_tables_with_prefix() {
             // Canonical table name: must match the added/removed table sets computed in `ponder_auto_migrate`.
             let table_full = format!("{}{}", prefix, &*table.name);
             for idx in table.indexes.values() {
-                map.insert(format!("{}{}", prefix, &*idx.name), (table_full.clone(), idx));
+                map.insert(prefix.join(def_ident(&idx.name)), (table_full.clone(), idx));
             }
         }
         map
     };
-    let new_indexes: HashMap<String, (String, &IndexDef)> = {
+    let new_indexes: HashMap<NamespacedIdentifier, (String, &IndexDef)> = {
         let mut map = HashMap::new();
         for (prefix, _, table) in new_module.all_tables_with_prefix() {
             // Canonical table name: must match the added/removed table sets computed in `ponder_auto_migrate`.
             let table_full = format!("{}{}", prefix, &*table.name);
             for idx in table.indexes.values() {
-                map.insert(format!("{}{}", prefix, &*idx.name), (table_full.clone(), idx));
+                map.insert(prefix.join(def_ident(&idx.name)), (table_full.clone(), idx));
             }
         }
         map
@@ -1137,21 +1126,15 @@ fn auto_migrate_indexes(
 
     // Removed indexes: in old but not in new, and not part of a removed table.
     for (full_idx_name, (table_full_name, _)) in &old_indexes {
-        if !new_indexes.contains_key(full_idx_name.as_str()) && !removed_tables.contains(table_full_name) {
-            plan.steps
-                .push(AutoMigrateStep::RemoveIndex(NamespacedIdentifier::new_assume_valid(
-                    full_idx_name.clone(),
-                )));
+        if !new_indexes.contains_key(full_idx_name) && !removed_tables.contains(table_full_name) {
+            plan.steps.push(AutoMigrateStep::RemoveIndex(full_idx_name.clone()));
         }
     }
 
     // Added indexes: in new but not in old, and not part of a newly added table.
     for (full_idx_name, (table_full_name, _)) in &new_indexes {
-        if !old_indexes.contains_key(full_idx_name.as_str()) && !new_tables.contains(table_full_name) {
-            plan.steps
-                .push(AutoMigrateStep::AddIndex(NamespacedIdentifier::new_assume_valid(
-                    full_idx_name.clone(),
-                )));
+        if !old_indexes.contains_key(full_idx_name) && !new_tables.contains(table_full_name) {
+            plan.steps.push(AutoMigrateStep::AddIndex(full_idx_name.clone()));
         }
     }
 
@@ -1160,7 +1143,7 @@ fn auto_migrate_indexes(
         .iter()
         .filter_map(|(full_idx_name, (_, old_idx))| {
             new_indexes
-                .get(full_idx_name.as_str())
+                .get(full_idx_name)
                 .map(|(_, new_idx)| (full_idx_name, old_idx, new_idx))
         })
         .map(|(full_idx_name, old_idx, new_idx)| {
@@ -1173,14 +1156,8 @@ fn auto_migrate_indexes(
                 .into())
             } else {
                 if old_idx.algorithm != new_idx.algorithm {
-                    plan.steps
-                        .push(AutoMigrateStep::RemoveIndex(NamespacedIdentifier::new_assume_valid(
-                            full_idx_name.clone(),
-                        )));
-                    plan.steps
-                        .push(AutoMigrateStep::AddIndex(NamespacedIdentifier::new_assume_valid(
-                            full_idx_name.clone(),
-                        )));
+                    plan.steps.push(AutoMigrateStep::RemoveIndex(full_idx_name.clone()));
+                    plan.steps.push(AutoMigrateStep::AddIndex(full_idx_name.clone()));
                 }
                 Ok(())
             }
@@ -1199,24 +1176,24 @@ fn auto_migrate_sequences(
 
     // key = full sequence name (e.g. "lib.Bananas_id_seq")
     // value = (full_table_name, &SequenceDef)
-    let old_seqs: HashMap<String, (String, &SequenceDef)> = {
+    let old_seqs: HashMap<NamespacedIdentifier, (String, &SequenceDef)> = {
         let mut map = HashMap::new();
         for (prefix, _, table) in old_module.all_tables_with_prefix() {
             // Canonical table name: must match the added/removed table sets computed in `ponder_auto_migrate`.
             let table_full = format!("{}{}", prefix, &*table.name);
             for seq in table.sequences.values() {
-                map.insert(format!("{}{}", prefix, &*seq.name), (table_full.clone(), seq));
+                map.insert(prefix.join(def_ident(&seq.name)), (table_full.clone(), seq));
             }
         }
         map
     };
-    let new_seqs: HashMap<String, (String, &SequenceDef)> = {
+    let new_seqs: HashMap<NamespacedIdentifier, (String, &SequenceDef)> = {
         let mut map = HashMap::new();
         for (prefix, _, table) in new_module.all_tables_with_prefix() {
             // Canonical table name: must match the added/removed table sets computed in `ponder_auto_migrate`.
             let table_full = format!("{}{}", prefix, &*table.name);
             for seq in table.sequences.values() {
-                map.insert(format!("{}{}", prefix, &*seq.name), (table_full.clone(), seq));
+                map.insert(prefix.join(def_ident(&seq.name)), (table_full.clone(), seq));
             }
         }
         map
@@ -1224,39 +1201,25 @@ fn auto_migrate_sequences(
 
     // Removed sequences: in old but not in new, and not part of a removed table.
     for (full_seq_name, (table_full_name, _)) in &old_seqs {
-        if !new_seqs.contains_key(full_seq_name.as_str()) && !removed_tables.contains(table_full_name) {
-            plan.steps
-                .push(AutoMigrateStep::RemoveSequence(NamespacedIdentifier::new_assume_valid(
-                    full_seq_name.clone(),
-                )));
+        if !new_seqs.contains_key(full_seq_name) && !removed_tables.contains(table_full_name) {
+            plan.steps.push(AutoMigrateStep::RemoveSequence(full_seq_name.clone()));
         }
     }
 
     // Added or changed sequences.
     for (full_seq_name, (table_full_name, new_seq)) in &new_seqs {
-        if let Some((_, old_seq)) = old_seqs.get(full_seq_name.as_str()) {
+        if let Some((_, old_seq)) = old_seqs.get(full_seq_name) {
             // we do not need to check column ids, since in an automigrate, column ids are not changed.
             if *old_seq != *new_seq {
-                plan.prechecks.push(AutoMigratePrecheck::CheckAddSequenceRangeValid(
-                    NamespacedIdentifier::new_assume_valid(full_seq_name.clone()),
-                ));
-                plan.steps
-                    .push(AutoMigrateStep::RemoveSequence(NamespacedIdentifier::new_assume_valid(
-                        full_seq_name.clone(),
-                    )));
-                plan.steps
-                    .push(AutoMigrateStep::AddSequence(NamespacedIdentifier::new_assume_valid(
-                        full_seq_name.clone(),
-                    )));
+                plan.prechecks
+                    .push(AutoMigratePrecheck::CheckAddSequenceRangeValid(full_seq_name.clone()));
+                plan.steps.push(AutoMigrateStep::RemoveSequence(full_seq_name.clone()));
+                plan.steps.push(AutoMigrateStep::AddSequence(full_seq_name.clone()));
             }
         } else if !new_tables.contains(table_full_name) {
-            plan.prechecks.push(AutoMigratePrecheck::CheckAddSequenceRangeValid(
-                NamespacedIdentifier::new_assume_valid(full_seq_name.clone()),
-            ));
-            plan.steps
-                .push(AutoMigrateStep::AddSequence(NamespacedIdentifier::new_assume_valid(
-                    full_seq_name.clone(),
-                )));
+            plan.prechecks
+                .push(AutoMigratePrecheck::CheckAddSequenceRangeValid(full_seq_name.clone()));
+            plan.steps.push(AutoMigrateStep::AddSequence(full_seq_name.clone()));
         }
     }
 
@@ -1273,28 +1236,28 @@ fn auto_migrate_constraints(
 
     // key = full constraint name (e.g. "lib.Apples_id_key")
     // value = (full_table_name, &ConstraintDef)
-    let old_constraints: HashMap<String, (String, &ConstraintDef)> = {
+    let old_constraints: HashMap<NamespacedIdentifier, (String, &ConstraintDef)> = {
         let mut map = HashMap::new();
         for (prefix, _, table) in old_module.all_tables_with_prefix() {
             // Canonical table name: must match the added/removed table sets computed in `ponder_auto_migrate`.
             let table_full = format!("{}{}", prefix, &*table.name);
             for constraint in table.constraints.values() {
                 map.insert(
-                    format!("{}{}", prefix, &*constraint.name),
+                    prefix.join(def_ident(&constraint.name)),
                     (table_full.clone(), constraint),
                 );
             }
         }
         map
     };
-    let new_constraints: HashMap<String, (String, &ConstraintDef)> = {
+    let new_constraints: HashMap<NamespacedIdentifier, (String, &ConstraintDef)> = {
         let mut map = HashMap::new();
         for (prefix, _, table) in new_module.all_tables_with_prefix() {
             // Canonical table name: must match the added/removed table sets computed in `ponder_auto_migrate`.
             let table_full = format!("{}{}", prefix, &*table.name);
             for constraint in table.constraints.values() {
                 map.insert(
-                    format!("{}{}", prefix, &*constraint.name),
+                    prefix.join(def_ident(&constraint.name)),
                     (table_full.clone(), constraint),
                 );
             }
@@ -1306,28 +1269,25 @@ fn auto_migrate_constraints(
 
     // Added constraints.
     for (full_constraint_name, (table_full_name, _new_constraint)) in &new_constraints {
-        if !old_constraints.contains_key(full_constraint_name.as_str()) && !new_tables.contains(table_full_name) {
+        if !old_constraints.contains_key(full_constraint_name) && !new_tables.contains(table_full_name) {
             // existing table — duplicate detection happens inside create_constraint
             plan.steps
-                .push(AutoMigrateStep::AddConstraint(NamespacedIdentifier::new_assume_valid(
-                    full_constraint_name.clone(),
-                )));
+                .push(AutoMigrateStep::AddConstraint(full_constraint_name.clone()));
             // it's okay to add a constraint in a new table — AddTable covers it.
         }
     }
 
     // Removed constraints: not part of a removed table.
     for (full_constraint_name, (table_full_name, _)) in &old_constraints {
-        if !new_constraints.contains_key(full_constraint_name.as_str()) && !removed_tables.contains(table_full_name) {
-            plan.steps.push(AutoMigrateStep::RemoveConstraint(
-                NamespacedIdentifier::new_assume_valid(full_constraint_name.clone()),
-            ));
+        if !new_constraints.contains_key(full_constraint_name) && !removed_tables.contains(table_full_name) {
+            plan.steps
+                .push(AutoMigrateStep::RemoveConstraint(full_constraint_name.clone()));
         }
     }
 
     // Changed constraints.
     for (full_constraint_name, (_, new_constraint)) in &new_constraints {
-        if let Some((_, old_constraint)) = old_constraints.get(full_constraint_name.as_str())
+        if let Some((_, old_constraint)) = old_constraints.get(full_constraint_name)
             && *old_constraint != *new_constraint
         {
             results.push(Err(AutoMigrateError::ChangeUniqueConstraint {
@@ -1379,6 +1339,13 @@ mod tests {
     use v10::{ExplicitNames, RawModuleDefV10Builder, RawModuleDefV10Section, RawSubmoduleV10};
     use v9::{RawModuleDefV9Builder, TableAccess};
     use validate::tests::expect_identifier;
+
+    /// Test helper: build a `NamespacedIdentifier` from a dotted string.
+    fn namespaced_ident(s: &str) -> NamespacedIdentifier {
+        s.split('.')
+            .map(|seg| Identifier::new(RawIdentifier::new(seg)).expect("test identifiers are valid"))
+            .collect()
+    }
 
     fn create_module_def(build_module: impl Fn(&mut RawModuleDefV9Builder)) -> ModuleDef {
         let mut builder = RawModuleDefV9Builder::new();
@@ -1612,7 +1579,7 @@ mod tests {
         assert_eq!(plan.prechecks.len(), 1);
         assert_eq!(
             plan.prechecks[0],
-            AutoMigratePrecheck::CheckAddSequenceRangeValid(NamespacedIdentifier::new_assume_valid("Bananas_id_seq"))
+            AutoMigratePrecheck::CheckAddSequenceRangeValid(namespaced_ident("Bananas_id_seq"))
         );
 
         let steps = &plan.steps[..];
@@ -1620,61 +1587,47 @@ mod tests {
         assert!(steps.is_sorted());
 
         assert!(
-            steps.contains(&AutoMigrateStep::RemoveSequence(
-                NamespacedIdentifier::new_assume_valid("Apples_id_seq")
-            )),
+            steps.contains(&AutoMigrateStep::RemoveSequence(namespaced_ident("Apples_id_seq"))),
             "{steps:?}"
         );
         assert!(
-            steps.contains(&AutoMigrateStep::RemoveConstraint(
-                NamespacedIdentifier::new_assume_valid("Apples_id_key")
-            )),
+            steps.contains(&AutoMigrateStep::RemoveConstraint(namespaced_ident("Apples_id_key"))),
             "{steps:?}"
         );
         assert!(
-            steps.contains(&AutoMigrateStep::RemoveIndex(NamespacedIdentifier::new_assume_valid(
+            steps.contains(&AutoMigrateStep::RemoveIndex(namespaced_ident(
                 "Apples_id_name_idx_btree"
             ))),
             "{steps:?}"
         );
         assert!(
-            steps.contains(&AutoMigrateStep::AddIndex(NamespacedIdentifier::new_assume_valid(
+            steps.contains(&AutoMigrateStep::AddIndex(namespaced_ident(
                 "Apples_id_count_idx_btree"
             ))),
             "{steps:?}"
         );
 
         assert!(
-            steps.contains(&AutoMigrateStep::ChangeAccess(NamespacedIdentifier::new_assume_valid(
-                "Bananas"
-            ))),
+            steps.contains(&AutoMigrateStep::ChangeAccess(namespaced_ident("Bananas"))),
             "{steps:?}"
         );
         assert!(
-            steps.contains(&AutoMigrateStep::AddSequence(NamespacedIdentifier::new_assume_valid(
-                "Bananas_id_seq"
-            ))),
+            steps.contains(&AutoMigrateStep::AddSequence(namespaced_ident("Bananas_id_seq"))),
             "{steps:?}"
         );
 
         assert!(
-            steps.contains(&AutoMigrateStep::AddTable(NamespacedIdentifier::new_assume_valid(
-                "Oranges"
-            ))),
+            steps.contains(&AutoMigrateStep::AddTable(namespaced_ident("Oranges"))),
             "{steps:?}"
         );
 
         // Schedule steps are keyed by TABLE name (schedules are 1:1 with tables).
         assert!(
-            steps.contains(&AutoMigrateStep::RemoveSchedule(
-                NamespacedIdentifier::new_assume_valid("Deliveries")
-            )),
+            steps.contains(&AutoMigrateStep::RemoveSchedule(namespaced_ident("Deliveries"))),
             "{steps:?}"
         );
         assert!(
-            steps.contains(&AutoMigrateStep::AddSchedule(NamespacedIdentifier::new_assume_valid(
-                "Inspections"
-            ))),
+            steps.contains(&AutoMigrateStep::AddSchedule(namespaced_ident("Inspections"))),
             "{steps:?}"
         );
 
@@ -1692,43 +1645,31 @@ mod tests {
         );
 
         assert!(
-            steps.contains(&AutoMigrateStep::ChangeColumns(NamespacedIdentifier::new_assume_valid(
-                "Apples"
-            ))),
+            steps.contains(&AutoMigrateStep::ChangeColumns(namespaced_ident("Apples"))),
             "{steps:?}"
         );
         assert!(
-            steps.contains(&AutoMigrateStep::ChangeColumns(NamespacedIdentifier::new_assume_valid(
-                "Deliveries"
-            ))),
+            steps.contains(&AutoMigrateStep::ChangeColumns(namespaced_ident("Deliveries"))),
             "{steps:?}"
         );
 
         assert!(steps.contains(&AutoMigrateStep::DisconnectAllUsers), "{steps:?}");
         assert!(
-            steps.contains(&AutoMigrateStep::AddColumns(NamespacedIdentifier::new_assume_valid(
-                "Bananas"
-            ))),
+            steps.contains(&AutoMigrateStep::AddColumns(namespaced_ident("Bananas"))),
             "{steps:?}"
         );
         // Column is changed but it will not reflect in steps due to `AutoMigrateStep::AddColumns`
         assert!(
-            !steps.contains(&AutoMigrateStep::ChangeColumns(NamespacedIdentifier::new_assume_valid(
-                "Bananas"
-            ))),
+            !steps.contains(&AutoMigrateStep::ChangeColumns(namespaced_ident("Bananas"))),
             "{steps:?}"
         );
 
         assert!(
-            steps.contains(&AutoMigrateStep::RemoveView(NamespacedIdentifier::new_assume_valid(
-                "my_view"
-            ))),
+            steps.contains(&AutoMigrateStep::RemoveView(namespaced_ident("my_view"))),
             "{steps:?}"
         );
         assert!(
-            steps.contains(&AutoMigrateStep::AddView(NamespacedIdentifier::new_assume_valid(
-                "my_view"
-            ))),
+            steps.contains(&AutoMigrateStep::AddView(namespaced_ident("my_view"))),
             "{steps:?}"
         );
     }
@@ -2157,15 +2098,11 @@ mod tests {
 
         assert!(!plan.disconnects_all_users(), "{plan:#?}");
         assert!(
-            steps.contains(&AutoMigrateStep::AddView(NamespacedIdentifier::new_assume_valid(
-                "my_view"
-            ))),
+            steps.contains(&AutoMigrateStep::AddView(namespaced_ident("my_view"))),
             "{steps:?}"
         );
         assert!(
-            !steps.contains(&AutoMigrateStep::RemoveView(NamespacedIdentifier::new_assume_valid(
-                "my_view"
-            ))),
+            !steps.contains(&AutoMigrateStep::RemoveView(namespaced_ident("my_view"))),
             "{steps:?}"
         );
     }
@@ -2196,7 +2133,7 @@ mod tests {
 
         let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
         let steps = &plan.steps[..];
-        let my_view = NamespacedIdentifier::new_assume_valid("my_view");
+        let my_view = namespaced_ident("my_view");
 
         assert!(!plan.disconnects_all_users(), "{plan:#?}");
         assert!(
@@ -2232,15 +2169,11 @@ mod tests {
 
         assert!(plan.disconnects_all_users(), "{plan:#?}");
         assert!(
-            steps.contains(&AutoMigrateStep::RemoveView(NamespacedIdentifier::new_assume_valid(
-                "my_view"
-            ))),
+            steps.contains(&AutoMigrateStep::RemoveView(namespaced_ident("my_view"))),
             "{steps:?}"
         );
         assert!(
-            !steps.contains(&AutoMigrateStep::AddView(NamespacedIdentifier::new_assume_valid(
-                "my_view"
-            ))),
+            !steps.contains(&AutoMigrateStep::AddView(namespaced_ident("my_view"))),
             "{steps:?}"
         );
     }
@@ -2335,21 +2268,15 @@ mod tests {
             assert!(!plan.disconnects_all_users(), "{name}, plan: {plan:#?}");
 
             assert!(
-                steps.contains(&AutoMigrateStep::UpdateView(NamespacedIdentifier::new_assume_valid(
-                    "my_view"
-                ))),
+                steps.contains(&AutoMigrateStep::UpdateView(namespaced_ident("my_view"))),
                 "{name}, steps: {steps:?}"
             );
             assert!(
-                !steps.contains(&AutoMigrateStep::AddView(NamespacedIdentifier::new_assume_valid(
-                    "my_view"
-                ))),
+                !steps.contains(&AutoMigrateStep::AddView(namespaced_ident("my_view"))),
                 "{name}, steps: {steps:?}"
             );
             assert!(
-                !steps.contains(&AutoMigrateStep::RemoveView(NamespacedIdentifier::new_assume_valid(
-                    "my_view"
-                ))),
+                !steps.contains(&AutoMigrateStep::RemoveView(namespaced_ident("my_view"))),
                 "{name}, steps: {steps:?}"
             );
         }
@@ -2387,21 +2314,15 @@ mod tests {
 
         assert!(!plan.disconnects_all_users(), "{plan:#?}");
         assert!(
-            steps.contains(&AutoMigrateStep::UpdateView(NamespacedIdentifier::new_assume_valid(
-                "Level2Person"
-            ))),
+            steps.contains(&AutoMigrateStep::UpdateView(namespaced_ident("Level2Person"))),
             "steps: {steps:?}"
         );
         assert!(
-            !steps.contains(&AutoMigrateStep::AddView(NamespacedIdentifier::new_assume_valid(
-                "Level2Person"
-            ))),
+            !steps.contains(&AutoMigrateStep::AddView(namespaced_ident("Level2Person"))),
             "steps: {steps:?}"
         );
         assert!(
-            !steps.contains(&AutoMigrateStep::RemoveView(NamespacedIdentifier::new_assume_valid(
-                "Level2Person"
-            ))),
+            !steps.contains(&AutoMigrateStep::RemoveView(namespaced_ident("Level2Person"))),
             "steps: {steps:?}"
         );
     }
@@ -2741,21 +2662,15 @@ mod tests {
             assert!(plan.disconnects_all_users(), "{name}, plan: {plan:?}");
 
             assert!(
-                steps.contains(&AutoMigrateStep::AddView(NamespacedIdentifier::new_assume_valid(
-                    "my_view"
-                ))),
+                steps.contains(&AutoMigrateStep::AddView(namespaced_ident("my_view"))),
                 "{name}, steps: {steps:?}"
             );
             assert!(
-                steps.contains(&AutoMigrateStep::RemoveView(NamespacedIdentifier::new_assume_valid(
-                    "my_view"
-                ))),
+                steps.contains(&AutoMigrateStep::RemoveView(namespaced_ident("my_view"))),
                 "{name}, steps: {steps:?}"
             );
             assert!(
-                !steps.contains(&AutoMigrateStep::UpdateView(NamespacedIdentifier::new_assume_valid(
-                    "my_view"
-                ))),
+                !steps.contains(&AutoMigrateStep::UpdateView(namespaced_ident("my_view"))),
                 "{name}, steps: {steps:?}"
             );
         }
@@ -2889,7 +2804,7 @@ mod tests {
         assert_eq!(
             plan.steps,
             &[
-                AutoMigrateStep::RemoveTable(NamespacedIdentifier::new_assume_valid("Drop")),
+                AutoMigrateStep::RemoveTable(namespaced_ident("Drop")),
                 AutoMigrateStep::DisconnectAllUsers,
             ],
         );
@@ -2911,7 +2826,7 @@ mod tests {
         assert_eq!(
             plan.steps,
             &[
-                AutoMigrateStep::RemoveTable(NamespacedIdentifier::new_assume_valid("Drop")),
+                AutoMigrateStep::RemoveTable(namespaced_ident("Drop")),
                 AutoMigrateStep::DisconnectAllUsers,
             ],
             "plan should only contain RemoveTable + DisconnectAllUsers, no orphan sub-object steps"
@@ -2987,9 +2902,7 @@ mod tests {
 
         assert!(!plan.disconnects_all_users(), "{plan:#?}");
         assert!(
-            steps.contains(&AutoMigrateStep::AddTable(NamespacedIdentifier::new_assume_valid(
-                "lib.tokens"
-            ))),
+            steps.contains(&AutoMigrateStep::AddTable(namespaced_ident("lib.tokens"))),
             "{steps:?}"
         );
     }
@@ -3018,9 +2931,7 @@ mod tests {
 
         assert!(plan.disconnects_all_users(), "{plan:#?}");
         assert!(
-            steps.contains(&AutoMigrateStep::RemoveTable(NamespacedIdentifier::new_assume_valid(
-                "lib.tokens"
-            ))),
+            steps.contains(&AutoMigrateStep::RemoveTable(namespaced_ident("lib.tokens"))),
             "{steps:?}"
         );
     }
@@ -3048,7 +2959,7 @@ mod tests {
         let steps = &plan.steps[..];
 
         assert!(
-            steps.contains(&AutoMigrateStep::AddIndex(NamespacedIdentifier::new_assume_valid(
+            steps.contains(&AutoMigrateStep::AddIndex(namespaced_ident(
                 "lib.sessions_id_idx_btree"
             ))),
             "{steps:?}"
@@ -3078,7 +2989,7 @@ mod tests {
         let steps = &plan.steps[..];
 
         assert!(
-            steps.contains(&AutoMigrateStep::RemoveIndex(NamespacedIdentifier::new_assume_valid(
+            steps.contains(&AutoMigrateStep::RemoveIndex(namespaced_ident(
                 "lib.sessions_id_idx_btree"
             ))),
             "{steps:?}"
@@ -3154,9 +3065,7 @@ mod tests {
 
         assert!(!plan.disconnects_all_users(), "{plan:#?}");
         assert!(
-            steps.contains(&AutoMigrateStep::AddView(NamespacedIdentifier::new_assume_valid(
-                "lib.lib_view"
-            ))),
+            steps.contains(&AutoMigrateStep::AddView(namespaced_ident("lib.lib_view"))),
             "{steps:?}"
         );
     }
@@ -3191,9 +3100,7 @@ mod tests {
 
         assert!(plan.disconnects_all_users(), "{plan:#?}");
         assert!(
-            steps.contains(&AutoMigrateStep::RemoveView(NamespacedIdentifier::new_assume_valid(
-                "lib.lib_view"
-            ))),
+            steps.contains(&AutoMigrateStep::RemoveView(namespaced_ident("lib.lib_view"))),
             "{steps:?}"
         );
     }
@@ -3216,15 +3123,11 @@ mod tests {
 
         assert!(!plan.disconnects_all_users(), "{plan:#?}");
         assert!(
-            steps.contains(&AutoMigrateStep::AddTable(NamespacedIdentifier::new_assume_valid(
-                "lib.sessions"
-            ))),
+            steps.contains(&AutoMigrateStep::AddTable(namespaced_ident("lib.sessions"))),
             "{steps:?}"
         );
         assert!(
-            steps.contains(&AutoMigrateStep::AddTable(NamespacedIdentifier::new_assume_valid(
-                "lib.tokens"
-            ))),
+            steps.contains(&AutoMigrateStep::AddTable(namespaced_ident("lib.tokens"))),
             "{steps:?}"
         );
     }
@@ -3247,15 +3150,11 @@ mod tests {
 
         assert!(plan.disconnects_all_users(), "{plan:#?}");
         assert!(
-            steps.contains(&AutoMigrateStep::RemoveTable(NamespacedIdentifier::new_assume_valid(
-                "lib.sessions"
-            ))),
+            steps.contains(&AutoMigrateStep::RemoveTable(namespaced_ident("lib.sessions"))),
             "{steps:?}"
         );
         assert!(
-            steps.contains(&AutoMigrateStep::RemoveTable(NamespacedIdentifier::new_assume_valid(
-                "lib.tokens"
-            ))),
+            steps.contains(&AutoMigrateStep::RemoveTable(namespaced_ident("lib.tokens"))),
             "{steps:?}"
         );
     }
@@ -3302,9 +3201,7 @@ mod tests {
 
         assert!(!plan.disconnects_all_users(), "{plan:#?}");
         assert!(
-            steps.contains(&AutoMigrateStep::AddTable(NamespacedIdentifier::new_assume_valid(
-                "auth.baz.baz_items"
-            ))),
+            steps.contains(&AutoMigrateStep::AddTable(namespaced_ident("auth.baz.baz_items"))),
             "{steps:?}"
         );
     }
@@ -3327,7 +3224,7 @@ mod tests {
         assert_eq!(
             plan.steps,
             &[
-                AutoMigrateStep::RemoveTable(NamespacedIdentifier::new_assume_valid("lib.sessions")),
+                AutoMigrateStep::RemoveTable(namespaced_ident("lib.sessions")),
                 AutoMigrateStep::DisconnectAllUsers,
             ],
             "should only contain RemoveTable + DisconnectAllUsers, no orphan sub-object steps"
