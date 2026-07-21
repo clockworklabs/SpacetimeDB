@@ -221,6 +221,7 @@ fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
                 !message.starts_with("could not compile `")
                     && !message.starts_with("process didn't exit successfully")
                     && !message.starts_with("command [\"cargo\", \"build\"")
+                    && !message.starts_with("command [\"dotnet\", \"publish\"")
                     && !message.starts_with("failed to run custom build command for `")
             })
     });
@@ -251,6 +252,10 @@ fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
         line.contains(".cs(")
             && (line.contains(": error cs") || line.contains(": error stdb") || line.contains(": error il"))
     });
+    let silent_dotnet_exit = diagnostic.contains("error: command [\"dotnet\", \"publish\"")
+        && diagnostic.contains("exited with code 1")
+        && !has_actionable_compiler_diagnostic
+        && !has_actionable_dotnet_diagnostic;
     let dotnet_linker_exit = diagnostic.contains("error msb6006")
         && diagnostic.contains("\"dotnet.exe\" exited with code 1")
         && diagnostic.contains("error netsdk1144")
@@ -272,6 +277,7 @@ fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
         || silent_cargo_exit
         || silent_rust_lld_exit
         || silent_build_script_exit
+        || silent_dotnet_exit
         // The .NET linker occasionally exits without a source diagnostic and
         // MSBuild reports only MSB6006 + NETSDK1144. Do not retry when the
         // output also contains a C#, SpacetimeDB codegen, or IL source error.
@@ -279,7 +285,9 @@ fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
         // A child process can occasionally disappear on Windows after login but
         // before the CLI emits a compiler/MSBuild diagnostic. Retrying is safe:
         // benchmark publishes always use their own temporary CLI root and database.
-        || (!has_actionable_compiler_diagnostic && !has_terminal_failure_marker)
+        || (!has_actionable_compiler_diagnostic
+            && !has_actionable_dotnet_diagnostic
+            && !has_terminal_failure_marker)
 }
 
 #[cfg(test)]
@@ -371,6 +379,22 @@ mod tests {
         assert!(is_transient_build_error(
             "Error: command [\"dotnet\", \"publish\"] exited with code 1",
             "Microsoft.NET.ILLink.targets(134,5): error MSB6006: \"dotnet.exe\" exited with code 1.\nMicrosoft.NET.ILLink.targets(87,5): error NETSDK1144: Optimizing assemblies for size failed."
+        ));
+    }
+
+    #[test]
+    fn retries_dotnet_publish_exit_without_diagnostic() {
+        assert!(is_transient_build_error(
+            "Error: command [\"dotnet\", \"publish\", \"-c\", \"Release\", \"-v\", \"quiet\"] exited with code 1",
+            ""
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_dotnet_publish_exit_with_source_diagnostic() {
+        assert!(!is_transient_build_error(
+            "Error: command [\"dotnet\", \"publish\", \"-c\", \"Release\"] exited with code 1",
+            "src/Module.cs(10,5): error CS0122: method is inaccessible due to its protection level"
         ));
     }
 

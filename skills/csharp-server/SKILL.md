@@ -17,6 +17,8 @@ metadata:
 
 Reducers are static methods in a `static partial class`; tables are `public partial struct`s. This reference keeps everything in one `public static partial class Module`, which needs only `using SpacetimeDB;`:
 
+Methods exported through SpacetimeDB attributes, including reducers, procedures, views, HTTP handlers, and routers, must be `public static`; generated bindings invoke them from another class.
+
 ```csharp
 using SpacetimeDB;
 
@@ -193,6 +195,8 @@ ctx.From.Subscription().RightSemijoin(
 ```
 
 Declare a procedural view primary key in its attribute: `[SpacetimeDB.View(Accessor = "CatalogEntry", Public = true, PrimaryKey = nameof(CatalogRow.Sku))]`.
+
+Procedural-view primary keys are explicit schema metadata. Add one only when the view itself is required to expose a primary key; a source table's primary key is not inherited by the view.
 
 Inclusive btree ranges use tuples, for example `ctx.Db.Shipment.DeliverBy.Filter((new Timestamp(1_000), new Timestamp(2_000)))`.
 
