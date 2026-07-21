@@ -580,6 +580,7 @@ fn scheduled_item_id(item: &QueueItem) -> Option<ScheduledFunctionId> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn call_scheduled_reducer_with_tx(
     module_info: &ModuleInfo,
     db: &RelationalDB,
