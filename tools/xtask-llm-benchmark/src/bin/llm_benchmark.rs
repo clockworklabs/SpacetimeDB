@@ -13,7 +13,8 @@ use tokio::runtime::Runtime;
 use xtask_llm_benchmark::api::ApiClient;
 use xtask_llm_benchmark::bench::bench_route_concurrency;
 use xtask_llm_benchmark::bench::runner::{
-    ensure_goldens_built_once, run_selected_or_all_for_model_async_for_lang, validate_goldens_for_lang,
+    delete_databases, ensure_goldens_built_once, run_selected_or_all_for_model_async_for_lang,
+    validate_goldens_for_lang,
 };
 use xtask_llm_benchmark::bench::types::{BenchRunContext, RouteRun, RunConfig, RunOutcome};
 use xtask_llm_benchmark::context::constants::ALL_MODES;
@@ -286,7 +287,7 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
         eprintln!("[warn] failed to upload task catalog: {e}");
     }
 
-    let RuntimeInit { runtime, guard } = initialize_runtime(config.hash_only)?;
+    let RuntimeInit { runtime, mut guard } = initialize_runtime(config.hash_only)?;
 
     config.host = guard.as_ref().map(|g| g.host_url.clone());
 
@@ -325,14 +326,21 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
     let mut all_outcomes: Vec<RunOutcome> = Vec::new();
 
     for mode in modes {
-        let outcomes = run_mode_benchmarks(
+        let result = run_mode_benchmarks(
             &mode,
             config.lang,
             &config,
             &bench_root,
             runtime.as_ref(),
             llm_provider.as_ref(),
-        )?;
+        );
+        let outcomes = match result {
+            Ok(outcomes) => outcomes,
+            Err(error) => {
+                report_server_status(guard.as_mut());
+                return Err(error);
+            }
+        };
         all_outcomes.extend(outcomes);
     }
 
@@ -355,6 +363,17 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn report_server_status(guard: Option<&mut SpacetimeDbGuard>) {
+    let Some(guard) = guard else {
+        return;
+    };
+    match guard.child.try_wait() {
+        Ok(Some(status)) => eprintln!("[server] local SpacetimeDB exited unexpectedly: {status}"),
+        Ok(None) => eprintln!("[server] local SpacetimeDB is still running after benchmark failure"),
+        Err(error) => eprintln!("[server] failed to read local SpacetimeDB exit status: {error}"),
+    }
 }
 
 /* ------------------------------ analyze ------------------------------ */
@@ -756,7 +775,8 @@ async fn run_many_routes_for_mode(
             println!("\u{2192} running {}", route.display_name);
 
             let golden_scope = xtask_llm_benchmark::bench::run_scope_tag(mode, route.vendor.slug(), &route.api_model);
-            ensure_goldens_built_once(host.clone(), bench_root, lang, selectors, &golden_scope).await?;
+            let golden_databases =
+                ensure_goldens_built_once(host.clone(), bench_root, lang, selectors, &golden_scope).await?;
 
             let per = BenchRunContext {
                 bench_root,
@@ -774,7 +794,16 @@ async fn run_many_routes_for_mode(
                 dry_run_id,
             };
 
-            let outcomes = run_selected_or_all_for_model_async_for_lang(&per).await?;
+            let run_result = run_selected_or_all_for_model_async_for_lang(&per).await;
+            let cleanup_result = delete_databases(golden_databases).await;
+            let outcomes = match (run_result, cleanup_result) {
+                (Ok(outcomes), Ok(())) => outcomes,
+                (Err(error), Ok(())) => return Err(error),
+                (Ok(_), Err(error)) => return Err(error.context("failed to delete golden databases")),
+                (Err(error), Err(cleanup_error)) => {
+                    return Err(error.context(format!("also failed to delete golden databases: {cleanup_error:#}")))
+                }
+            };
 
             Ok::<_, anyhow::Error>(RouteRun {
                 route_name: route.display_name.to_string(),

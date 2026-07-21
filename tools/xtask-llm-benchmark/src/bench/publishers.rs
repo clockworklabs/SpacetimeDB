@@ -185,8 +185,75 @@ fn strip_ansi_codes(s: &str) -> Cow<'_, str> {
 /* Shared                                                                     */
 /* -------------------------------------------------------------------------- */
 
+pub struct PublishedDatabase {
+    host_url: String,
+    db: String,
+    // Keep the publishing CLI session alive so deletion uses the database
+    // owner's credentials without sharing mutable CLI state across routes.
+    cli_root: CliRootDir,
+    deleted: bool,
+}
+
+impl PublishedDatabase {
+    fn new(host_url: &str, db: String, cli_root: CliRootDir) -> Self {
+        Self {
+            host_url: host_url.to_owned(),
+            db,
+            cli_root,
+            deleted: false,
+        }
+    }
+
+    fn delete_inner(&self) -> Result<()> {
+        let mut cmd = spacetime_cmd(&self.cli_root);
+        cmd.arg("delete")
+            .arg("-y")
+            .arg("--no-config")
+            .arg("--server")
+            .arg(&self.host_url)
+            .arg(&self.db);
+        run(&mut cmd, "spacetime delete").with_context(|| {
+            format!(
+                "failed to clean up benchmark database `{}` on {}",
+                self.db, self.host_url
+            )
+        })
+    }
+
+    pub fn delete(mut self) -> Result<()> {
+        self.delete_inner()?;
+        self.deleted = true;
+        Ok(())
+    }
+
+    /// Relinquish cleanup ownership after another handle for the same database
+    /// has been created by a migration republish.
+    pub fn relinquish(mut self) {
+        self.deleted = true;
+    }
+}
+
+impl Drop for PublishedDatabase {
+    fn drop(&mut self) {
+        if !self.deleted
+            && let Err(error) = self.delete_inner()
+        {
+            eprintln!(
+                "[cleanup] failed to delete benchmark database `{}` during fallback cleanup: {error:#}",
+                self.db
+            );
+        }
+    }
+}
+
 pub trait Publisher: Send + Sync {
-    fn publish(&self, host_url: &str, source: &Path, module_name: &str, clear_database: bool) -> Result<()>;
+    fn publish(
+        &self,
+        host_url: &str,
+        source: &Path,
+        module_name: &str,
+        clear_database: bool,
+    ) -> Result<PublishedDatabase>;
 }
 
 fn database_cli_root(module_name: &str) -> Result<CliRootDir> {
@@ -511,7 +578,13 @@ impl DotnetPublisher {
 }
 
 impl Publisher for DotnetPublisher {
-    fn publish(&self, host_url: &str, source: &Path, module_name: &str, clear_database: bool) -> Result<()> {
+    fn publish(
+        &self,
+        host_url: &str,
+        source: &Path,
+        module_name: &str,
+        clear_database: bool,
+    ) -> Result<PublishedDatabase> {
         if !source.exists() {
             bail!("no source: {}", source.display());
         }
@@ -541,7 +614,7 @@ impl Publisher for DotnetPublisher {
         Self::configure_dotnet_env(&mut pubcmd);
         run(&mut pubcmd, "spacetime publish (csharp)")?;
 
-        Ok(())
+        Ok(PublishedDatabase::new(host_url, db, cli_root))
     }
 }
 /* -------------------------------------------------------------------------- */
@@ -561,7 +634,13 @@ impl SpacetimeRustPublisher {
 }
 
 impl Publisher for SpacetimeRustPublisher {
-    fn publish(&self, host_url: &str, source: &Path, module_name: &str, clear_database: bool) -> Result<()> {
+    fn publish(
+        &self,
+        host_url: &str,
+        source: &Path,
+        module_name: &str,
+        clear_database: bool,
+    ) -> Result<PublishedDatabase> {
         if !source.exists() {
             bail!("no source: {}", source.display());
         }
@@ -591,7 +670,7 @@ impl Publisher for SpacetimeRustPublisher {
         }
         run(&mut pubcmd, "spacetime publish")?;
 
-        Ok(())
+        Ok(PublishedDatabase::new(host_url, db, cli_root))
     }
 }
 
@@ -612,7 +691,13 @@ impl TypeScriptPublisher {
 }
 
 impl Publisher for TypeScriptPublisher {
-    fn publish(&self, host_url: &str, source: &Path, module_name: &str, clear_database: bool) -> Result<()> {
+    fn publish(
+        &self,
+        host_url: &str,
+        source: &Path,
+        module_name: &str,
+        clear_database: bool,
+    ) -> Result<PublishedDatabase> {
         if !source.exists() {
             bail!("no source: {}", source.display());
         }
@@ -716,6 +801,6 @@ impl Publisher for TypeScriptPublisher {
         }
         run(&mut publish_cmd, "spacetime publish (typescript)")?;
 
-        Ok(())
+        Ok(PublishedDatabase::new(host_url, db, cli_root))
     }
 }

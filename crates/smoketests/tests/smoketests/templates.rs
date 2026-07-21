@@ -12,6 +12,7 @@
 use anyhow::{bail, Context, Result};
 use regex::Regex;
 use serde_json::Value;
+use spacetimedb_guard::ensure_binaries_built;
 use spacetimedb_smoketests::{pnpm, random_string, workspace_root, Smoketest};
 use std::env;
 use std::fs;
@@ -94,11 +95,21 @@ fn normalize_dependency_path(local_path: &Path) -> String {
 /// Runs `spacetime init --template <id>` into a fresh temp directory.
 /// Returns `(tmpdir, project_path)` - caller must keep `tmpdir` alive.
 fn init_template(test: &Smoketest, template_id: &str) -> Result<(TempDir, PathBuf)> {
+    init_template_with_dotnet_version(test, template_id, None)
+}
+
+/// Runs `spacetime init --template <id> --dotnet-version <version>` into a fresh temp directory.
+/// Returns `(tmpdir, project_path)` - caller must keep `tmpdir` alive.
+fn init_template_with_dotnet_version(
+    test: &Smoketest,
+    template_id: &str,
+    dotnet_version: Option<&str>,
+) -> Result<(TempDir, PathBuf)> {
     let tmpdir = tempfile::tempdir().context("Failed to create temp dir")?;
     let project_name = format!("test-{}", template_id);
     let project_path = tmpdir.path().join(&project_name);
 
-    test.spacetime(&[
+    let mut init_args: Vec<&str> = vec![
         "init",
         "--template",
         template_id,
@@ -106,14 +117,145 @@ fn init_template(test: &Smoketest, template_id: &str) -> Result<(TempDir, PathBu
         project_path.to_str().unwrap(),
         "--non-interactive",
         &project_name,
-    ])
-    .with_context(|| format!("spacetime init --template {} failed", template_id))?;
+    ];
+    if let Some(dotnet_version) = dotnet_version {
+        init_args.extend(["--dotnet-version", dotnet_version]);
+    }
+
+    test.spacetime(&init_args)
+        .with_context(|| format!("spacetime init --template {} failed", template_id))?;
 
     if !project_path.exists() {
         bail!("Project directory not created for template {}", template_id);
     }
 
     Ok((tmpdir, project_path))
+}
+
+fn fake_dotnet_path(dir: &Path, sdk_list_output: &str) -> Result<PathBuf> {
+    let executable_name = if cfg!(windows) { "dotnet.exe" } else { "dotnet" };
+    let dotnet_path = dir.join(executable_name);
+    let echo_lines = sdk_list_output
+        .lines()
+        .map(|line| format!("echo {line}"))
+        .collect::<Vec<_>>()
+        .join(if cfg!(windows) { "\r\n" } else { "\n" });
+
+    if cfg!(windows) {
+        let source_path = dir.join("fake_dotnet.rs");
+        fs::write(
+            &source_path,
+            format!(
+                r#"fn main() {{
+    if std::env::args().nth(1).as_deref() == Some("--list-sdks") {{
+        print!("{{}}", {sdk_list_output:?});
+        return;
+    }}
+
+    std::process::exit(1);
+}}
+"#
+            ),
+        )
+        .with_context(|| format!("Failed to write fake dotnet source {:?}", source_path))?;
+
+        let output = Command::new("rustc")
+            .arg(&source_path)
+            .arg("-o")
+            .arg(&dotnet_path)
+            .output()
+            .context("Failed to spawn rustc for fake dotnet")?;
+        if !output.status.success() {
+            bail!(
+                "rustc failed to compile fake dotnet:\nstdout: {}\nstderr: {}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    } else {
+        fs::write(
+            &dotnet_path,
+            format!("#!/usr/bin/env sh\nif [ \"$1\" = \"--list-sdks\" ]; then\n{echo_lines}\nexit 0\nfi\nexit 1\n"),
+        )
+        .with_context(|| format!("Failed to write fake dotnet executable {:?}", dotnet_path))?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = fs::metadata(&dotnet_path)?.permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&dotnet_path, permissions)?;
+        }
+    }
+
+    Ok(dotnet_path)
+}
+
+fn init_basic_cs_with_fake_dotnet(sdk_list_output: &str) -> Result<(TempDir, PathBuf)> {
+    let tmpdir = tempfile::tempdir().context("Failed to create temp dir")?;
+    let fake_bin = tmpdir.path().join("bin");
+    fs::create_dir(&fake_bin).context("Failed to create fake dotnet bin dir")?;
+    fake_dotnet_path(&fake_bin, sdk_list_output)?;
+
+    let current_path = env::var_os("PATH").unwrap_or_default();
+    let test_path = env::join_paths(std::iter::once(fake_bin).chain(env::split_paths(&current_path)))
+        .context("Failed to build test PATH")?;
+
+    let project_name = "test-basic-cs-default-dotnet";
+    let project_path = tmpdir.path().join(project_name);
+    let config_path = tmpdir.path().join("config.toml");
+    let output = Command::new(ensure_binaries_built())
+        .arg("--config-path")
+        .arg(&config_path)
+        .args([
+            "init",
+            "--template",
+            "basic-cs",
+            "--project-path",
+            project_path.to_str().unwrap(),
+            "--non-interactive",
+            project_name,
+        ])
+        .env("PATH", test_path)
+        .current_dir(tmpdir.path())
+        .output()
+        .context("Failed to execute spacetime init")?;
+
+    if !output.status.success() {
+        bail!(
+            "spacetime init with fake dotnet failed:\nstdout: {}\nstderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    Ok((tmpdir, project_path))
+}
+
+fn assert_basic_cs_default_dotnet(sdk_list_output: &str, expected_major: u8) -> Result<()> {
+    let (_tmpdir, project_path) = init_basic_cs_with_fake_dotnet(sdk_list_output)?;
+    let server_path = project_path.join("spacetimedb");
+
+    let global_json = fs::read_to_string(server_path.join("global.json")).context("Failed to read global.json")?;
+    assert!(
+        global_json.contains(&format!("\"version\": \"{expected_major}.0.100\"")),
+        "global.json did not target .NET {expected_major}:\n{global_json}"
+    );
+
+    let csproj_path = find_csproj(&server_path)?;
+    let csproj = fs::read_to_string(&csproj_path).with_context(|| format!("Failed to read {:?}", csproj_path))?;
+    assert!(
+        csproj.contains(&format!("<TargetFramework>net{expected_major}.0</TargetFramework>")),
+        "{:?} did not target net{expected_major}.0:\n{csproj}",
+        csproj_path
+    );
+    assert!(
+        !csproj.contains("<TargetFrameworks>"),
+        "{:?} should use a single TargetFramework after init:\n{csproj}",
+        csproj_path
+    );
+
+    Ok(())
 }
 
 /// Updates a `[dependencies]` entry in a `Cargo.toml` to use a local path.
@@ -642,43 +784,72 @@ fn setup_csharp_nuget(project_path: &Path) -> Result<PathBuf> {
         clear_cached_nuget_package(package)?;
     }
 
+    let bindings = workspace_root().join("crates/bindings-csharp");
+    let bsatn_runtime_output = bindings.join("BSATN.Runtime").join("bin").join("Release");
+    let runtime_output = bindings.join("Runtime").join("bin").join("Release");
+    let bsatn_codegen_output = bindings.join("BSATN.Codegen").join("bin").join("Release");
+    let codegen_output = bindings.join("Codegen").join("bin").join("Release");
+    let client_sdk = workspace_root().join("sdks/csharp");
+    let client_sdk_output = client_sdk.join("bin~").join("Release");
+
     let nuget_config = project_path.join("nuget.config");
     if !nuget_config.exists() {
         fs::write(
             &nuget_config,
-            r#"<?xml version="1.0" encoding="utf-8"?>
+            format!(
+                r#"<?xml version="1.0" encoding="utf-8"?>
 <configuration>
   <packageSources>
     <clear />
+    <add key="SpacetimeDB.BSATN.Runtime" value="{}" />
+    <add key="SpacetimeDB.Runtime" value="{}" />
+    <add key="SpacetimeDB.BSATN.Codegen" value="{}" />
+    <add key="SpacetimeDB.Codegen" value="{}" />
+    <add key="SpacetimeDB.ClientSDK" value="{}" />
     <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+    <add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />
   </packageSources>
+  <packageSourceMapping>
+    <packageSource key="SpacetimeDB.BSATN.Runtime">
+      <package pattern="SpacetimeDB.BSATN.Runtime" />
+    </packageSource>
+    <packageSource key="SpacetimeDB.Runtime">
+      <package pattern="SpacetimeDB.Runtime" />
+    </packageSource>
+    <packageSource key="SpacetimeDB.BSATN.Codegen">
+      <package pattern="SpacetimeDB.BSATN.Codegen" />
+    </packageSource>
+    <packageSource key="SpacetimeDB.Codegen">
+      <package pattern="SpacetimeDB.Codegen" />
+    </packageSource>
+    <packageSource key="SpacetimeDB.ClientSDK">
+      <package pattern="SpacetimeDB.ClientSDK" />
+    </packageSource>
+    <packageSource key="dotnet-experimental">
+      <package pattern="Microsoft.DotNet.ILCompiler.LLVM" />
+      <package pattern="runtime.*" />
+    </packageSource>
+    <packageSource key="nuget.org">
+      <package pattern="*" />
+    </packageSource>
+  </packageSourceMapping>
 </configuration>
 "#,
+                normalize_dependency_path(&bsatn_runtime_output),
+                normalize_dependency_path(&runtime_output),
+                normalize_dependency_path(&bsatn_codegen_output),
+                normalize_dependency_path(&codegen_output),
+                normalize_dependency_path(&client_sdk_output),
+            ),
         )
         .context("Failed to write nuget.config")?;
     }
 
-    let bindings = workspace_root().join("crates/bindings-csharp");
     for pkg in &["BSATN.Runtime", "Runtime", "BSATN.Codegen", "Codegen"] {
         run_dotnet(&["pack", "-c", "Release"], &bindings.join(pkg))?;
-        let pkg_output = bindings.join(pkg).join("bin").join("Release");
-        run_dotnet(
-            &[
-                "nuget",
-                "add",
-                "source",
-                pkg_output.to_str().unwrap(),
-                "-n",
-                &format!("SpacetimeDB.{}", pkg),
-                "--configfile",
-                nuget_config.to_str().unwrap(),
-            ],
-            project_path,
-        )?;
     }
 
     // Pack and register the client SDK (needed by client templates).
-    let client_sdk = workspace_root().join("sdks/csharp");
     let client_sdk_proj = client_sdk.join("SpacetimeDB.ClientSDK.csproj");
     run_dotnet(
         &[
@@ -686,20 +857,6 @@ fn setup_csharp_nuget(project_path: &Path) -> Result<PathBuf> {
             client_sdk_proj.to_str().unwrap(),
             "-c",
             "Release",
-            "--configfile",
-            nuget_config.to_str().unwrap(),
-        ],
-        project_path,
-    )?;
-    let client_sdk_output = client_sdk.join("bin~").join("Release");
-    run_dotnet(
-        &[
-            "nuget",
-            "add",
-            "source",
-            client_sdk_output.to_str().unwrap(),
-            "-n",
-            "SpacetimeDB.ClientSDK",
             "--configfile",
             nuget_config.to_str().unwrap(),
         ],
@@ -789,7 +946,21 @@ fn test_typescript_template(test: &Smoketest, template: &Template, project_path:
 }
 
 /// Publishes a C# server module and verifies the C# client builds.
-fn test_csharp_template(test: &Smoketest, template: &Template, project_path: &Path) -> Result<()> {
+fn test_csharp_template(test: &Smoketest, template: &Template) -> Result<()> {
+    for dotnet_version in ["8", "10"] {
+        let (_tmpdir, project_path) = init_template_with_dotnet_version(test, &template.id, Some(dotnet_version))?;
+        test_csharp_template_for_dotnet_version(test, template, &project_path, dotnet_version)?;
+    }
+
+    Ok(())
+}
+
+fn test_csharp_template_for_dotnet_version(
+    test: &Smoketest,
+    template: &Template,
+    project_path: &Path,
+    dotnet_version: &str,
+) -> Result<()> {
     // Use one nuget.config at the project root, shared between server and client.
     setup_csharp_nuget(project_path)?;
 
@@ -797,16 +968,18 @@ fn test_csharp_template(test: &Smoketest, template: &Template, project_path: &Pa
     pin_csharp_server_runtime_package_version(&server_path)?;
     // Copy nuget.config into the server directory so `spacetime publish` (which runs
     // `dotnet publish` from the server dir) can find the local package sources.
+    // Overwrite any template-provided NuGet.Config; .NET 10 templates include one
+    // for the experimental feed, but this test needs the local packed packages too.
     let root_nuget = project_path.join("nuget.config");
     let server_nuget = server_path.join("nuget.config");
-    if root_nuget.exists() && !server_nuget.exists() {
+    if root_nuget.exists() {
         fs::copy(&root_nuget, &server_nuget).context("Failed to copy nuget.config to server dir")?;
     }
 
     // Debug package resolution to diagnose CI/local NuGet source/version drift.
     debug_log_csharp_packages(&server_path);
 
-    let domain = format!("test-{}-{}", template.id, random_string());
+    let domain = format!("test-{}-net{}-{}", template.id, dotnet_version, random_string());
     test.spacetime(&[
         "publish",
         "--server",
@@ -814,9 +987,16 @@ fn test_csharp_template(test: &Smoketest, template: &Template, project_path: &Pa
         "--yes",
         "--module-path",
         server_path.to_str().unwrap(),
+        "--dotnet-version",
+        dotnet_version,
         &domain,
     ])
-    .with_context(|| format!("spacetime publish failed for C# server in template {}", template.id))?;
+    .with_context(|| {
+        format!(
+            "spacetime publish failed for C# server in template {} with .NET {}",
+            template.id, dotnet_version
+        )
+    })?;
     let _ = test.spacetime(&["delete", "--server", &test.server_url, "--yes", &domain]);
 
     if template.client_lang.as_deref() == Some("csharp") {
@@ -830,12 +1010,21 @@ fn test_csharp_template(test: &Smoketest, template: &Template, project_path: &Pa
 fn test_template(test: &Smoketest, template: &Template) -> Result<()> {
     eprintln!("[TEMPLATES] Testing template: {}", template.id);
 
+    // While we support both .NET 8 and .NET 10, C# templates need a fresh init per
+    // target so the generated global.json and single TargetFramework match the
+    // publish target. Once .NET 8 is dropped, this can move back into the match
+    // below and share the generic init path again.
+    if template.server_lang.as_deref() == Some("csharp") {
+        test_csharp_template(test, template)?;
+        return Ok(());
+    }
+
     let (_tmpdir, project_path) = init_template(test, &template.id)?;
 
     match template.server_lang.as_deref() {
         Some("rust") => test_rust_template(test, template, &project_path)?,
         Some("typescript") => test_typescript_template(test, template, &project_path)?,
-        Some("csharp") => test_csharp_template(test, template, &project_path)?,
+        Some("csharp") => unreachable!("C# templates are handled before generic template init"),
         Some(other) => {
             eprintln!(
                 "[TEMPLATES] Skipping template {} with unsupported server language: {}",
@@ -888,6 +1077,16 @@ fn test_basic_template_dependency_versions() -> Result<()> {
     let cs_client_version =
         read_csproj_package_reference_version(&basic_cs_path.join("client.csproj"), "SpacetimeDB.ClientSDK")?;
     assert_major_minor_patch_wildcard(&cs_client_version, "basic-cs C# client SpacetimeDB.ClientSDK")?;
+
+    Ok(())
+}
+
+#[test]
+fn test_basic_cs_init_default_dotnet_selection() -> Result<()> {
+    assert_basic_cs_default_dotnet("8.0.416 [/usr/share/dotnet/sdk]", 8)?;
+    assert_basic_cs_default_dotnet("10.0.100 [/usr/share/dotnet/sdk]", 10)?;
+    assert_basic_cs_default_dotnet("8.0.416 [/usr/share/dotnet/sdk]\n10.0.100 [/usr/share/dotnet/sdk]", 10)?;
+    assert_basic_cs_default_dotnet("", 10)?;
 
     Ok(())
 }
