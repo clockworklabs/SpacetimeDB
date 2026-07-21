@@ -268,6 +268,9 @@ enum DisconnectCause {
     IdleTimeout = 2,
     /// The websocket stream yielded an error (e.g. the TCP connection was
     /// reset or timed out).
+    ///
+    /// Retained for compatibility; the receive loop now records one of the
+    /// more specific `Recv*` causes below instead.
     RecvError = 3,
     /// Sending on the websocket failed.
     SendError = 4,
@@ -279,6 +282,30 @@ enum DisconnectCause {
     IncomingBacklog = 6,
     /// The module was shut down.
     ModuleExit = 7,
+    /// The websocket receive stream reported that the connection was already closed.
+    RecvConnectionClosed = 8,
+    /// The websocket receive stream was polled after it had already closed.
+    RecvAlreadyClosed = 9,
+    /// The websocket receive stream returned an IO error.
+    RecvIo = 10,
+    /// The websocket receive stream returned a TLS error.
+    RecvTls = 11,
+    /// The websocket receive stream returned a capacity error.
+    RecvCapacity = 12,
+    /// The websocket receive stream returned a protocol error.
+    RecvProtocol = 13,
+    /// The websocket receive stream reported a full write buffer while receiving.
+    RecvWriteBufferFull = 14,
+    /// The websocket receive stream returned a UTF-8 error.
+    RecvUtf8 = 15,
+    /// The websocket receive stream detected an attack attempt.
+    RecvAttackAttempt = 16,
+    /// The websocket receive stream returned a URL error.
+    RecvUrl = 17,
+    /// The websocket receive stream returned an HTTP error.
+    RecvHttp = 18,
+    /// The websocket receive stream returned an HTTP format error.
+    RecvHttpFormat = 19,
 }
 
 impl DisconnectCause {
@@ -291,6 +318,18 @@ impl DisconnectCause {
             5 => Self::ClientError,
             6 => Self::IncomingBacklog,
             7 => Self::ModuleExit,
+            8 => Self::RecvConnectionClosed,
+            9 => Self::RecvAlreadyClosed,
+            10 => Self::RecvIo,
+            11 => Self::RecvTls,
+            12 => Self::RecvCapacity,
+            13 => Self::RecvProtocol,
+            14 => Self::RecvWriteBufferFull,
+            15 => Self::RecvUtf8,
+            16 => Self::RecvAttackAttempt,
+            17 => Self::RecvUrl,
+            18 => Self::RecvHttp,
+            19 => Self::RecvHttpFormat,
             _ => Self::Unknown,
         }
     }
@@ -310,6 +349,18 @@ impl DisconnectCause {
             Self::ClientError => "client_error",
             Self::IncomingBacklog => "incoming_backlog",
             Self::ModuleExit => "module_exit",
+            Self::RecvConnectionClosed => "recv_connection_closed",
+            Self::RecvAlreadyClosed => "recv_already_closed",
+            Self::RecvIo => "recv_io",
+            Self::RecvTls => "recv_tls",
+            Self::RecvCapacity => "recv_capacity",
+            Self::RecvProtocol => "recv_protocol",
+            Self::RecvWriteBufferFull => "recv_write_buffer_full",
+            Self::RecvUtf8 => "recv_utf8",
+            Self::RecvAttackAttempt => "recv_attack_attempt",
+            Self::RecvUrl => "recv_url",
+            Self::RecvHttp => "recv_http",
+            Self::RecvHttpFormat => "recv_http_format",
         }
     }
 }
@@ -999,6 +1050,23 @@ fn ws_recv_loop(
     idle_tx: Arc<watch::Sender<Instant>>,
     mut ws: impl Stream<Item = Result<WsMessage, WsError>> + Unpin,
 ) -> impl Stream<Item = ClientMessage> {
+    fn receive_error_cause(error: &WsError) -> DisconnectCause {
+        match error {
+            WsError::ConnectionClosed => DisconnectCause::RecvConnectionClosed,
+            WsError::AlreadyClosed => DisconnectCause::RecvAlreadyClosed,
+            WsError::Io(_) => DisconnectCause::RecvIo,
+            WsError::Tls(_) => DisconnectCause::RecvTls,
+            WsError::Capacity(_) => DisconnectCause::RecvCapacity,
+            WsError::Protocol(_) => DisconnectCause::RecvProtocol,
+            WsError::WriteBufferFull(_) => DisconnectCause::RecvWriteBufferFull,
+            WsError::Utf8(_) => DisconnectCause::RecvUtf8,
+            WsError::AttackAttempt => DisconnectCause::RecvAttackAttempt,
+            WsError::Url(_) => DisconnectCause::RecvUrl,
+            WsError::Http(_) => DisconnectCause::RecvHttp,
+            WsError::HttpFormat(_) => DisconnectCause::RecvHttpFormat,
+        }
+    }
+
     // Get the next message from `ws`, or `None` if the stream is exhausted.
     //
     // If `state.closed`, `ws` is drained until it either yields an `Err`, is
@@ -1054,27 +1122,13 @@ fn ws_recv_loop(
                     log::trace!("message received while already closed");
                 }
                 // None of the error cases can be meaningfully recovered from
-                // (and some can't even occur on the `ws` stream).
-                // Exit here but spell out an exhaustive match
-                // in order to bring any future library changes to our attention.
-                Err(e) => match e {
-                    e @ (WsError::ConnectionClosed
-                    | WsError::AlreadyClosed
-                    | WsError::Io(_)
-                    | WsError::Tls(_)
-                    | WsError::Capacity(_)
-                    | WsError::Protocol(_)
-                    | WsError::WriteBufferFull(_)
-                    | WsError::Utf8(_)
-                    | WsError::AttackAttempt
-                    | WsError::Url(_)
-                    | WsError::Http(_)
-                    | WsError::HttpFormat(_)) => {
-                        log::warn!("Websocket receive error: {e}");
-                        state.set_disconnect_cause(DisconnectCause::RecvError);
-                        break;
-                    }
-                },
+                // (and some can't even occur on the `ws` stream), so record the
+                // specific receive error cause and terminate the stream.
+                Err(e) => {
+                    log::warn!("Websocket receive error: {e}");
+                    state.set_disconnect_cause(receive_error_cause(&e));
+                    break;
+                }
             }
         }
     }
@@ -1826,11 +1880,12 @@ mod tests {
         ]);
         pin_mut!(input);
 
-        let recv_loop = ws_recv_loop(state, Arc::new(idle_tx), input);
+        let recv_loop = ws_recv_loop(state.clone(), Arc::new(idle_tx), input);
         pin_mut!(recv_loop);
 
         assert_matches!(recv_loop.next().await, Some(ClientMessage::Ping(_)));
         assert_matches!(recv_loop.next().await, None);
+        assert_eq!(state.disconnect_cause(), DisconnectCause::RecvConnectionClosed);
     }
 
     #[tokio::test]
