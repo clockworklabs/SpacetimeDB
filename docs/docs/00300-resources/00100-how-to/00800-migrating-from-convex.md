@@ -21,49 +21,49 @@ tables. Use procedures only when you need side effects such as outbound HTTP.
 
 ## Terminology Map
 
-| Convex term | SpacetimeDB term | Migration notes |
-|-------------|------------------|-----------------|
-| Project | Project plus module source tree | A SpacetimeDB project contains module code, generated bindings, and client code. |
-| Deployment | Database | A published SpacetimeDB module creates or updates a database on Maincloud or a self-hosted host. |
-| Backend | Database plus module | Your module contains tables and callable functions that run inside the database. |
-| `convex/` directory | Module source directory | TypeScript templates usually put module code in `spacetimedb/src/index.ts`. Rust, C#, and C++ use their normal project layouts. |
-| `schema.ts` | Table definitions in module code | SpacetimeDB schema is declared in the module language using [tables](/docs/tables). |
-| `defineSchema` | `schema(...)` or language-specific module schema | In TypeScript, pass tables to `schema({ tableName })`. |
-| `defineTable` | Table | Tables store rows and define columns, constraints, indexes, visibility, and optional scheduling. |
-| Table | Table | Both systems organize persistent data into named tables. |
-| Document | Row | SpacetimeDB tables are relational rows, not JSON-like documents. |
-| Document field | Column | Columns have static SpacetimeDB types. |
-| Document ID / `Id<"table">` | Primary key, unique key, or `Identity` | Choose the key based on access pattern. Use `autoInc()` for generated numeric IDs, `Identity` for users, and unique constraints for alternate lookup keys. |
-| `_id` | Primary key column | Name it explicitly, commonly `id`. SpacetimeDB does not require a universal `_id` column. |
-| `_creationTime` | Explicit timestamp column | Add a `Timestamp` column and set it from `ctx.timestamp` if you need creation time. |
-| Validators (`v.string()`, `v.id()`, etc.) | Column and argument types (`t.string()`, `t.u64()`, `t.identity()`, etc.) | SpacetimeDB validates values through the module schema and generated bindings. |
-| Query | View function, subscription, or SQL query | Use a [view](/docs/functions/views) for server-side computed read results. Use a [subscription](/docs/clients/subscriptions) when the client needs live rows in its cache. |
-| Mutation | Reducer | Use a [reducer](/docs/functions/reducers) for every normal state-changing operation. Reducers are transactional and deterministic. |
-| Action | Procedure | Use a [procedure](/docs/functions/procedures) when the function needs side effects, especially outbound HTTP. If it only updates database state, migrate it to a reducer. |
-| HTTP Action | HTTP handler | Use an [HTTP handler](/docs/functions/http-handlers) for inbound HTTP routes such as webhooks or public HTTP APIs. Use a procedure for callable side-effecting functions that are not HTTP endpoints. |
-| Internal query / mutation / action | Private reducer, private procedure, helper function, or private table | Keep helper logic unexported when it should not be callable by clients. Use private tables for server-only data. |
-| Function args | Reducer, procedure, or view arguments | Reducers and procedures accept typed arguments. Views currently do not accept user-defined arguments beyond the context. |
-| Function return value | Procedure return value, view result, subscribed rows, or event table row | Reducers should not return data. Put durable state in tables, derived read results in views, one-shot notifications in event tables, and side-effect results in procedure returns. |
-| `ctx.db` | `ctx.db` / `ctx.Db` / `ctx.db.*()` | Reducers and views get transactional database access through their context. Procedures must open a transaction explicitly with `withTx` / `WithTx`. |
-| `ctx.auth.getUserIdentity()` | `ctx.sender`, `ctx.Sender`, `ctx.sender()` and `sender_auth` claims | Use the caller's `Identity` for authorization. Use auth claims when you need issuer, subject, audience, or custom claims. |
-| Auth provider config | OIDC provider plus SpacetimeDB authentication config | SpacetimeDB works with OIDC providers including SpacetimeAuth, Auth0, Clerk, and others. |
-| Public function | Public reducer, procedure, view, or HTTP route | Exported reducers and procedures can be called by connected clients unless you enforce authorization in module code. |
-| `api.foo.bar` | Generated module bindings | SpacetimeDB generates strongly typed client APIs from the published module. |
-| `useQuery` | Subscription plus client cache, or view subscription | Subscribe to the rows or views your UI needs, then render from the generated client cache. |
-| `useMutation` | Generated reducer call | Client SDKs expose generated methods for calling reducers. |
-| `useAction` | Generated procedure call | Use only when the server function needs procedure capabilities. |
-| Realtime query updates | Subscription updates | SpacetimeDB pushes table and view changes for active subscriptions. |
-| Index | Index | Define indexes on columns used for lookup, filtering, joins, and subscription performance. |
-| Filter | SQL predicate or indexed table lookup | Prefer indexed lookups for hot paths. Subscription queries should be supported by suitable indexes. |
-| Pagination | Limit/range query, cursor table, or application-level pagination | Model pagination around stable ordering columns, usually timestamps or monotonic IDs. |
-| Scheduled function | Schedule table | Insert rows into a schedule table to run a reducer or procedure at a time or interval. |
-| Cron job | Schedule table with interval rows | Use interval schedules for recurring jobs. |
-| File Storage | Binary column or external storage reference | Store small binary data inline when it should participate in transactions. Store large objects externally and keep metadata/URLs in tables. |
-| Components | Submodules or separate modules/databases | Convex Components package isolated code and data. In SpacetimeDB, use submodules where available, or isolate reusable systems as separate modules/databases with explicit APIs. |
-| Environment variables | Module configuration and host environment | Keep secrets out of reducers. Use procedures or external services for operations that require secret-backed side effects. |
-| Dashboard logs | `spacetime logs` and host logs | Use CLI and host logs to debug module execution. |
-| `npx convex dev` | `spacetime dev` | Runs development mode with rebuild, publish, and binding generation. |
-| `npx convex deploy` | `spacetime publish` | Publishes a module to a SpacetimeDB database. |
+| Convex term                               | SpacetimeDB term                                                          | Migration notes                                                                                                                                                                                       |
+| ----------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Project                                   | Project plus module source tree                                           | A SpacetimeDB project contains module code, generated bindings, and client code.                                                                                                                      |
+| Deployment                                | Database                                                                  | A published SpacetimeDB module creates or updates a database on Maincloud or a self-hosted host.                                                                                                      |
+| Backend                                   | Database plus module                                                      | Your module contains tables and callable functions that run inside the database.                                                                                                                      |
+| `convex/` directory                       | `spacetimedb` directory                                                   | TypeScript templates usually put module code in `spacetimedb/src/index.ts`. Rust, C#, and C++ use their normal project layouts.                                                                       |
+| `schema.ts`                               | Table definitions in module code                                          | SpacetimeDB schema is declared in the module language using [tables](/docs/tables).                                                                                                                   |
+| `defineSchema`                            | `schema(...)` or language-specific module schema                          | In TypeScript, pass tables created with `table()` to `schema({ tableName })`.                                                                                                                         |
+| `defineTable`                             | `table()`                                                                 | Tables store rows and define columns, constraints, indexes, visibility, and optional scheduling.                                                                                                      |
+| Table                                     | Table                                                                     | Both systems organize persistent data into named tables.                                                                                                                                              |
+| Document                                  | Row                                                                       | SpacetimeDB tables are relational rows, not JSON-like documents.                                                                                                                                      |
+| Document field                            | Column                                                                    | Columns have static SpacetimeDB types.                                                                                                                                                                |
+| Document ID / `Id<"table">`               | Primary key, unique key, or `Identity`                                    | Choose the key based on access pattern. Use `autoInc()` for generated numeric IDs, `Identity` for users, and unique constraints for alternate lookup keys.                                            |
+| `_id`                                     | Primary key column                                                        | Name it explicitly, commonly `id`. SpacetimeDB does not require a universal `_id` column.                                                                                                             |
+| `_creationTime`                           | Explicit timestamp column                                                 | Add a `Timestamp` column and set it from `ctx.timestamp` if you need creation time.                                                                                                                   |
+| Validators (`v.string()`, `v.id()`, etc.) | Column and argument types (`t.string()`, `t.u64()`, `t.identity()`, etc.) | SpacetimeDB validates values through the module schema and generated bindings.                                                                                                                        |
+| Query                                     | View function, subscription, or SQL query                                 | Use a [view](/docs/functions/views) for server-side computed read results. Use a [subscription](/docs/clients/subscriptions) when the client needs live rows in its cache.                            |
+| Mutation                                  | Reducer                                                                   | Use a [reducer](/docs/functions/reducers) for every normal state-changing operation. Reducers are transactional and deterministic.                                                                    |
+| Action                                    | Procedure                                                                 | Use a [procedure](/docs/functions/procedures) when the function needs side effects, especially outbound HTTP. If it only updates database state, migrate it to a reducer.                             |
+| HTTP Action                               | HTTP handler                                                              | Use an [HTTP handler](/docs/functions/http-handlers) for inbound HTTP routes such as webhooks or public HTTP APIs. Use a procedure for callable side-effecting functions that are not HTTP endpoints. |
+| Internal query / mutation / action        | Private reducer, private procedure, helper function, or private table     | Keep helper logic unexported when it should not be callable by clients. Use private tables for server-only data.                                                                                      |
+| Function args                             | Reducer, procedure, or view arguments                                     | Reducers and procedures accept typed arguments. Views currently do not accept user-defined arguments beyond the context.                                                                              |
+| Function return value                     | Procedure return value, view result, subscribed rows, or event table row  | Reducers should not return data. Put durable state in tables, derived read results in views, one-shot notifications in event tables, and side-effect results in procedure returns.                    |
+| `ctx.db`                                  | `ctx.db` / `ctx.Db` / `ctx.db.*()`                                        | Reducers and views get transactional database access through their context. Procedures must open a transaction explicitly with `withTx` / `WithTx`.                                                   |
+| `ctx.auth.getUserIdentity()`              | `ctx.sender`, `ctx.Sender`, `ctx.sender()` and `sender_auth` claims       | Use the caller's `Identity` for authorization. Use auth claims when you need issuer, subject, audience, or custom claims.                                                                             |
+| Auth provider config                      | OIDC provider plus SpacetimeDB authentication config                      | SpacetimeDB works with OIDC providers including SpacetimeAuth, Auth0, Clerk, and others.                                                                                                              |
+| Public function                           | Public reducer, procedure, view, or HTTP route                            | Exported reducers and procedures can be called by connected clients unless you enforce authorization in module code.                                                                                  |
+| `api.foo.bar`                             | Generated module bindings                                                 | SpacetimeDB generates strongly typed client APIs from the published module.                                                                                                                           |
+| `useQuery`                                | Subscription plus client cache, or view subscription                      | Subscribe to the rows or views your UI needs, then render from the generated client cache.                                                                                                            |
+| `useMutation`                             | Generated reducer call                                                    | Client SDKs expose generated methods for calling reducers.                                                                                                                                            |
+| `useAction`                               | Generated procedure call                                                  | Use only when the server function needs procedure capabilities.                                                                                                                                       |
+| Realtime query updates                    | Subscription updates                                                      | SpacetimeDB pushes table and view changes for active subscriptions.                                                                                                                                   |
+| Index                                     | Index                                                                     | Define indexes on columns used for lookup, filtering, joins, and subscription performance.                                                                                                            |
+| Filter                                    | SQL predicate or indexed table lookup                                     | Prefer indexed lookups for hot paths. Subscription queries should be supported by suitable indexes.                                                                                                   |
+| Pagination                                | Limit/range query, cursor table, or application-level pagination          | Model pagination around stable ordering columns, usually timestamps or monotonic IDs.                                                                                                                 |
+| Scheduled function                        | Schedule table                                                            | Insert rows into a schedule table to run a reducer or procedure at a time or interval.                                                                                                                |
+| Cron job                                  | Schedule table with interval rows                                         | Use interval schedules for recurring jobs.                                                                                                                                                            |
+| File Storage                              | Binary column or external storage reference                               | Store small binary data inline when it should participate in transactions. Store large objects externally and keep metadata/URLs in tables.                                                           |
+| Components                                | Submodules or separate modules/databases                                  | Convex Components package isolated code and data. In SpacetimeDB, use submodules where available, or isolate reusable systems as separate modules/databases with explicit APIs.                       |
+| Environment variables                     | Module configuration and host environment                                 | Keep secrets out of reducers. Use procedures or external services for operations that require secret-backed side effects.                                                                             |
+| Dashboard logs                            | `spacetime logs` and host logs                                            | Use CLI and host logs to debug module execution.                                                                                                                                                      |
+| `npx convex dev`                          | `spacetime dev`                                                           | Runs development mode with rebuild, publish, and binding generation.                                                                                                                                  |
+| `npx convex deploy`                       | `spacetime publish`                                                       | Publishes a module to a SpacetimeDB database.                                                                                                                                                         |
 
 ## Migration Strategy
 
@@ -110,7 +110,7 @@ users: defineTable({
     emailNotifications: v.boolean(),
   }),
   lastSeenAt: v.number(),
-})
+});
 ```
 
 might become separate SpacetimeDB tables:
@@ -125,7 +125,7 @@ const user = table(
     name: t.string(),
     avatarUrl: t.option(t.string()),
     lastSeenAt: t.timestamp().index('btree'),
-  },
+  }
 );
 
 const userPreference = table(
@@ -134,11 +134,11 @@ const userPreference = table(
     identity: t.identity().primaryKey(),
     theme: t.string(),
     emailNotifications: t.bool(),
-  },
+  }
 );
 
-const spacetimedb = schema({ user, userPreference });
-export default spacetimedb;
+const spacetimeDb = schema({ user, userPreference });
+export default spacetimeDb;
 ```
 
 Use this rule of thumb: if two fields are read or updated at different rates,
@@ -182,13 +182,13 @@ const message = table(
     author: t.identity().index('btree'),
     body: t.string(),
     createdAt: t.timestamp().index('btree'),
-  },
+  }
 );
 
-const spacetimedb = schema({ message });
-export default spacetimedb;
+const spacetimeDb = schema({ message });
+export default spacetimeDb;
 
-export const send_message = spacetimedb.reducer(
+export const sendMessage = spacetimeDb.reducer(
   { channelId: t.u64(), body: t.string() },
   (ctx, { channelId, body }) => {
     if (body.trim() === '') {
@@ -202,7 +202,7 @@ export const send_message = spacetimedb.reducer(
       body,
       createdAt: ctx.timestamp,
     });
-  },
+  }
 );
 ```
 
@@ -263,10 +263,10 @@ const messageWithAuthor = t.row('MessageWithAuthor', {
   createdAt: t.timestamp(),
 });
 
-export const messages_with_authors = spacetimedb.anonymousView(
+export const messagesWithAuthors = spacetimeDb.anonymousView(
   { name: 'messages_with_authors', public: true },
   t.array(messageWithAuthor),
-  (ctx) => {
+  ctx => {
     const rows: Array<{
       id: bigint;
       channelId: bigint;
@@ -287,7 +287,7 @@ export const messages_with_authors = spacetimedb.anonymousView(
       }
     }
     return rows;
-  },
+  }
 );
 ```
 
@@ -333,10 +333,10 @@ const user = table(
     identity: t.identity().primaryKey(),
     displayName: t.string(),
     createdAt: t.timestamp(),
-  },
+  }
 );
 
-export const create_profile = spacetimedb.reducer(
+export const createProfile = spacetimeDb.reducer(
   { displayName: t.string() },
   (ctx, { displayName }) => {
     ctx.db.user.insert({
@@ -344,7 +344,7 @@ export const create_profile = spacetimedb.reducer(
       displayName,
       createdAt: ctx.timestamp,
     });
-  },
+  }
 );
 ```
 
