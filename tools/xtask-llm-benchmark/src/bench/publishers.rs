@@ -132,11 +132,38 @@ fn resolve_node_exe(nodejs_dir: Option<&Path>) -> Option<PathBuf> {
 
 struct CliRootDir {
     path: PathBuf,
+    remove_on_drop: bool,
 }
 
 impl CliRootDir {
     fn path(&self) -> &Path {
         &self.path
+    }
+
+    fn remove(&self) -> Result<()> {
+        match fs::remove_dir_all(&self.path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error).with_context(|| format!("failed to remove CLI root {}", self.path.display())),
+        }
+    }
+
+    fn claim_cleanup(&mut self) {
+        self.remove_on_drop = true;
+    }
+
+    fn relinquish_cleanup(&mut self) {
+        self.remove_on_drop = false;
+    }
+}
+
+impl Drop for CliRootDir {
+    fn drop(&mut self) {
+        if self.remove_on_drop
+            && let Err(error) = self.remove()
+        {
+            eprintln!("[cleanup] failed to remove CLI root {}: {error:#}", self.path.display());
+        }
     }
 }
 
@@ -195,7 +222,8 @@ pub struct PublishedDatabase {
 }
 
 impl PublishedDatabase {
-    fn new(host_url: &str, db: String, cli_root: CliRootDir) -> Self {
+    fn new(host_url: &str, db: String, mut cli_root: CliRootDir) -> Self {
+        cli_root.claim_cleanup();
         Self {
             host_url: host_url.to_owned(),
             db,
@@ -223,6 +251,8 @@ impl PublishedDatabase {
     pub fn delete(mut self) -> Result<()> {
         self.delete_inner()?;
         self.deleted = true;
+        self.cli_root.remove()?;
+        self.cli_root.relinquish_cleanup();
         Ok(())
     }
 
@@ -230,6 +260,7 @@ impl PublishedDatabase {
     /// has been created by a migration republish.
     pub fn relinquish(mut self) {
         self.deleted = true;
+        self.cli_root.relinquish_cleanup();
     }
 }
 
@@ -256,11 +287,11 @@ pub trait Publisher: Send + Sync {
     ) -> Result<PublishedDatabase>;
 }
 
-fn database_cli_root(module_name: &str) -> Result<CliRootDir> {
+fn database_cli_root(module_name: &str, remove_on_drop: bool) -> Result<CliRootDir> {
     let db = sanitize_db_name(module_name);
     let path = env::temp_dir().join(format!("stdb-llm-cli-{}-{db}", CLI_SESSION_TAG.as_str()));
     fs::create_dir_all(&path)?;
-    Ok(CliRootDir { path })
+    Ok(CliRootDir { path, remove_on_drop })
 }
 
 /// Check if the process was killed by a signal (e.g., SIGSEGV = 11)
@@ -359,7 +390,35 @@ fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::is_transient_build_error;
+    use super::{is_transient_build_error, CliRootDir};
+    use std::fs;
+
+    #[test]
+    fn cli_root_cleans_up_when_it_owns_the_directory() {
+        let path = std::env::temp_dir().join(format!("stdb-cli-root-cleanup-test-{}", std::process::id()));
+        fs::create_dir_all(&path).unwrap();
+
+        drop(CliRootDir {
+            path: path.clone(),
+            remove_on_drop: true,
+        });
+
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn cli_root_can_relinquish_cleanup_to_a_republish() {
+        let path = std::env::temp_dir().join(format!("stdb-cli-root-republish-test-{}", std::process::id()));
+        fs::create_dir_all(&path).unwrap();
+
+        drop(CliRootDir {
+            path: path.clone(),
+            remove_on_drop: false,
+        });
+
+        assert!(path.exists());
+        fs::remove_dir_all(path).unwrap();
+    }
 
     #[test]
     fn retries_publish_exit_without_actionable_diagnostic() {
@@ -596,7 +655,7 @@ impl Publisher for DotnetPublisher {
         let source = source
             .canonicalize()
             .with_context(|| format!("failed to resolve C# source path {}", source.display()))?;
-        let cli_root = database_cli_root(module_name)?;
+        let cli_root = database_cli_root(module_name, clear_database)?;
 
         let mut pubcmd = spacetime_cmd(&cli_root);
         pubcmd.arg("publish");
@@ -651,7 +710,7 @@ impl Publisher for SpacetimeRustPublisher {
 
         // sanitize db + server
         let db = sanitize_db_name(module_name);
-        let cli_root = database_cli_root(module_name)?;
+        let cli_root = database_cli_root(module_name, clear_database)?;
 
         // 2) Publish
         let mut pubcmd = spacetime_cmd(&cli_root);
@@ -705,7 +764,7 @@ impl Publisher for TypeScriptPublisher {
 
         Self::ensure_package_json(source)?;
         let db = sanitize_db_name(module_name);
-        let cli_root = database_cli_root(module_name)?;
+        let cli_root = database_cli_root(module_name, clear_database)?;
 
         // Install dependencies (--ignore-workspace to avoid parent workspace interference).
         let nodejs_dir = configured_nodejs_dir();

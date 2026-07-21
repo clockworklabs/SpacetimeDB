@@ -6,6 +6,8 @@ TABLE
     - id: u64 (primary key)
     - url: string
     - size: u64
+    - status: u16
+    - responseBodyPresent: bool
 
 HANDLER
 - POST /upload
@@ -16,7 +18,7 @@ PROCEDURE
 - upload_and_register(uploadUrl: string, data: u8[]) -> string
   - POST the binary data to the supplied public URL
   - Require a successful response
-  - Open a transaction and store id 1, the supplied URL, and the byte length
+  - Open a transaction and store id 1, the supplied URL, the byte length, the response status, and whether the response body is non-empty
   - Return the supplied URL
 
 ROUTER

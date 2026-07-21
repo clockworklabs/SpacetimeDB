@@ -6,6 +6,8 @@ TABLE
     - Id: ulong (primary key)
     - Url: string
     - Size: ulong
+    - Status: ushort
+    - ResponseBodyPresent: bool
 
 HANDLER
 - POST /upload
@@ -16,7 +18,7 @@ PROCEDURE
 - UploadAndRegister(uploadUrl: string, data: byte[]) -> string
   - POST the binary data to the supplied public URL
   - Require a successful response
-  - Open a transaction and store Id 1, the supplied URL, and the byte length
+  - Open a transaction and store Id 1, the supplied URL, the byte length, the response status, and whether the response body is non-empty
   - Return the supplied URL
 
 ROUTER

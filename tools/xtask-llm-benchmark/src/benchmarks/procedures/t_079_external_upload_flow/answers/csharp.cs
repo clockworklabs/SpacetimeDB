@@ -4,7 +4,14 @@ using SpacetimeDB;
 public static partial class Module
 {
     [Table(Accessor = "UploadedAsset", Public = true)]
-    public partial struct UploadedAsset { [PrimaryKey] public ulong Id; public string Url; public ulong Size; }
+    public partial struct UploadedAsset
+    {
+        [PrimaryKey] public ulong Id;
+        public string Url;
+        public ulong Size;
+        public ushort Status;
+        public bool ResponseBodyPresent;
+    }
 
     [SpacetimeDB.HttpHandler]
     public static HttpResponse Upload(HandlerContext ctx, HttpRequest request) => new(
@@ -25,7 +32,17 @@ public static partial class Module
         };
         return ctx.Http.Send(request).Match(response => {
             if (response.StatusCode < 200 || response.StatusCode >= 300) throw new Exception($"upload failed: {response.StatusCode}");
-            ctx.WithTx(tx => { tx.Db.UploadedAsset.Insert(new UploadedAsset { Id = 1, Url = uploadUrl, Size = (ulong)data.Length }); return 0; });
+            var responseBodyPresent = response.Body.ToBytes().Length > 0;
+            ctx.WithTx(tx => {
+                tx.Db.UploadedAsset.Insert(new UploadedAsset {
+                    Id = 1,
+                    Url = uploadUrl,
+                    Size = (ulong)data.Length,
+                    Status = response.StatusCode,
+                    ResponseBodyPresent = responseBodyPresent,
+                });
+                return 0;
+            });
             return uploadUrl;
         }, error => throw new Exception(error.Message));
     }

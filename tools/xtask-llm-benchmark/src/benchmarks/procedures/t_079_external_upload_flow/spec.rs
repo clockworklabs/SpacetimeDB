@@ -10,8 +10,12 @@ pub fn spec() -> BenchmarkSpec {
     BenchmarkSpec::from_tasks_auto(file!(), |lang, route_tag, host_url| {
         let mut scorers = default_schema_parity_scorers(host_url, file!(), route_tag);
         scorers.push(make_call_output_parity_scorer(
-            host_url, file!(), route_tag, "upload_and_register",
-            vec![json!("https://postman-echo.com/post"), json!([1, 2, 3, 4])], "upload_return_url",
+            host_url,
+            file!(),
+            route_tag,
+            "upload_and_register",
+            vec![json!("https://postman-echo.com/post"), json!([1, 2, 3, 4])],
+            "upload_return_url",
         ));
         scorers.push(make_http_route_parity_scorer(
             host_url,
@@ -24,9 +28,13 @@ pub fn spec() -> BenchmarkSpec {
         let table = table_name("uploaded_asset", lang);
         let url = ident("url", casing_for_lang(lang));
         let size = ident("size", casing_for_lang(lang));
+        let status = ident("status", casing_for_lang(lang));
+        let response_body_present = ident("response_body_present", casing_for_lang(lang));
         scorers.push(make_sql_count_only_scorer(
             host_url, file!(), route_tag,
-            format!("SELECT COUNT(*) AS n FROM {table} WHERE {url}='https://postman-echo.com/post' AND {size}=4"),
+            format!(
+                "SELECT COUNT(*) AS n FROM {table} WHERE {url}='https://postman-echo.com/post' AND {size}=4 AND {status}=200 AND {response_body_present}=true"
+            ),
             1, "upload_metadata_stored", Duration::from_secs(10),
         ));
         scorers

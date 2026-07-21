@@ -1,5 +1,5 @@
 use std::env;
-use std::io;
+use std::io::{self, Read};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::thread;
@@ -57,19 +57,39 @@ pub(crate) fn run_with_timeout(mut cmd: Command, cwd: &Path, timeout: Duration) 
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
+    let mut stdout = child.stdout.take().expect("stdout was configured as piped");
+    let mut stderr = child.stderr.take().expect("stderr was configured as piped");
+    let stdout_reader = thread::spawn(move || {
+        let mut output = Vec::new();
+        stdout.read_to_end(&mut output)?;
+        Ok::<_, io::Error>(output)
+    });
+    let stderr_reader = thread::spawn(move || {
+        let mut output = Vec::new();
+        stderr.read_to_end(&mut output)?;
+        Ok::<_, io::Error>(output)
+    });
     let start = Instant::now();
-    loop {
+    let status = loop {
         if let Some(status) = child.try_wait()? {
-            let out = child.wait_with_output()?;
-            return Ok((status.code().unwrap_or(-1), out.stdout, out.stderr));
+            break status;
         }
         if start.elapsed() >= timeout {
             let _ = child.kill();
             let _ = child.wait();
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
             return Err(io::Error::new(io::ErrorKind::TimedOut, "process timeout"));
         }
         thread::sleep(Duration::from_millis(30));
-    }
+    };
+    let stdout = stdout_reader
+        .join()
+        .map_err(|_| io::Error::other("stdout reader thread panicked"))??;
+    let stderr = stderr_reader
+        .join()
+        .map_err(|_| io::Error::other("stderr reader thread panicked"))??;
+    Ok((status.code().unwrap_or(-1), stdout, stderr))
 }
 
 pub fn normalize(s: &str, collapse_ws: bool) -> String {
@@ -105,5 +125,35 @@ mod tests {
 
         assert_eq!(error.kind(), io::ErrorKind::TimedOut);
         assert!(started.elapsed() < Duration::from_secs(3));
+    }
+
+    #[test]
+    fn process_output_is_drained_while_the_command_runs() {
+        #[cfg(windows)]
+        let command = {
+            let mut command = Command::new("powershell");
+            command.args([
+                "-NoProfile",
+                "-Command",
+                "$chunk = 'x' * 4096; 1..256 | ForEach-Object { [Console]::Out.Write($chunk); [Console]::Error.Write($chunk) }",
+            ]);
+            command
+        };
+        #[cfg(not(windows))]
+        let command = {
+            let mut command = Command::new("sh");
+            command.args([
+                "-c",
+                "dd if=/dev/zero bs=4096 count=256 2>/dev/null; dd if=/dev/zero bs=4096 count=256 1>&2 2>/dev/null",
+            ]);
+            command
+        };
+
+        let (code, stdout, stderr) = run_with_timeout(command, Path::new("."), Duration::from_secs(10))
+            .expect("large output should not deadlock");
+
+        assert_eq!(code, 0);
+        assert_eq!(stdout.len(), 4096 * 256);
+        assert_eq!(stderr.len(), 4096 * 256);
     }
 }
