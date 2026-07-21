@@ -28,5 +28,21 @@ services:
       timeout: 5s
       retries: 5
 
+  # Standard MERN-stack MongoDB: single node, manual Socket.io for real-time
+  # (deliberately NOT a replica set / change streams — keeps the comparison
+  # symmetric with the Postgres backend).
+  mongodb:
+    image: mongo:7
+    ports:
+      - "6437:27017"
+    volumes:
+      - llm-sequential-upgrade-mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping:1})"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   llm-sequential-upgrade-pgdata:
+  llm-sequential-upgrade-mongodata:
