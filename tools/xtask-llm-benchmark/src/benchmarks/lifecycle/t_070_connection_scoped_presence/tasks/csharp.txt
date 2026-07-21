@@ -19,5 +19,6 @@ REDUCERS
 - ExercisePresence()
   - Insert synthetic connection IDs 1 and 2 for the caller
   - Use the 128-bit numeric values 1 and 2
+  - Construct the IDs from 16-byte little-endian values
   - Remove connection ID 1
   - Leave connection ID 2 intact
