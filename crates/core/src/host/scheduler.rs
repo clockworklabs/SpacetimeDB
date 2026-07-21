@@ -548,11 +548,11 @@ fn call_scheduled_reducer_until_done(
     let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
 
     let params = reducer_call_params_for_queued_item(module_info, db, &tx, item);
-    let params = match params {
+    let (timestamp, instant, params) = match params {
         // If the function was already deleted, leave the `ScheduledFunction`
         // in the database for when the module restarts.
         Ok(None) => return (CallScheduledFunctionResult { reschedule: None }, false),
-        Ok(Some((_timestamp, _instant, params))) => params,
+        Ok(Some(params)) => params,
         Err(err) => {
             // All we can do here is log an error.
             log::error!("could not determine scheduled reducer or its parameters: {err:#}");
@@ -561,7 +561,16 @@ fn call_scheduled_reducer_until_done(
         }
     };
 
-    call_scheduled_reducer_with_tx(module_info, db, id, tx, params, inst_common, inst)
+    call_scheduled_reducer_with_tx(
+        module_info,
+        db,
+        id,
+        tx,
+        Some((timestamp, instant)),
+        params,
+        inst_common,
+        inst,
+    )
 }
 
 fn scheduled_item_id(item: &QueueItem) -> Option<ScheduledFunctionId> {
@@ -576,6 +585,7 @@ fn call_scheduled_reducer_with_tx(
     db: &RelationalDB,
     id: Option<ScheduledFunctionId>,
     mut tx: MutTxId,
+    reschedule_from: Option<(Timestamp, Instant)>,
     params: CallReducerParams,
     inst_common: &mut InstanceCommon,
     inst: &mut impl WasmInstance,
@@ -605,7 +615,7 @@ fn call_scheduled_reducer_with_tx(
     let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
         inst_common.call_reducer_with_tx(Some(tx), params, inst)
     }));
-    let reschedule = delete_scheduled_function_row(module_info, db, id, None, None, inst_common, inst);
+    let reschedule = delete_scheduled_function_row(module_info, db, id, None, reschedule_from, inst_common, inst);
     // Currently, we drop the return value from the function call. In the future,
     // we might want to handle it somehow.
     let trapped = match result {
