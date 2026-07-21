@@ -8,6 +8,7 @@
 use crate::db::raw_def::v9::{Lifecycle, RawIndexAlgorithm, TableAccess, TableType};
 use core::fmt;
 use spacetimedb_primitives::{ColId, ColList};
+use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::typespace::TypespaceBuilder;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, SpacetimeType, Typespace};
@@ -98,6 +99,9 @@ pub enum RawModuleDefV10Section {
 
     /// Primary key metadata for views.
     ViewPrimaryKeys(Vec<RawViewPrimaryKeyDefV10>),
+
+    /// Guest-defined logic for manual migrations.
+    ManualMigrationFunctions(Vec<RawManualMigrationFunctionDefV10>),
 }
 
 #[derive(Debug, Clone, SpacetimeType)]
@@ -557,6 +561,19 @@ pub struct RawViewPrimaryKeyDefV10 {
     pub columns: Vec<RawIdentifier>,
 }
 
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawManualMigrationFunctionDefV10 {
+    pub function_source_name: RawIdentifier,
+    /// The Blake3 hash of the raw module def of the module version from which this function migrates.
+    ///
+    /// Stored here as a [`Hash`] rather than a [`blake3::Hash`] as the former type implements [`SpacetimeType`] and [`Ord`].
+    // TODO(manual-migrations): determine precise semantics for computing this.
+    // Is it always the hash of the BSATN-ified `RawModuleDefV10`, even if the previous module exports a `RawModuleDefV9` or earlier?
+    pub previous_raw_module_def_bsatn_blake3_hash: Hash,
+}
+
 impl RawModuleDefV10 {
     /// Get the types section, if present.
     pub fn types(&self) -> Option<&Vec<RawTypeDefV10>> {
@@ -675,6 +692,13 @@ impl RawModuleDefV10 {
     pub fn http_routes(&self) -> Option<&Vec<RawHttpRouteDefV10>> {
         self.sections.iter().find_map(|s| match s {
             RawModuleDefV10Section::HttpRoutes(routes) => Some(routes),
+            _ => None,
+        })
+    }
+
+    pub fn manual_migration_functions(&self) -> Option<&Vec<RawManualMigrationFunctionDefV10>> {
+        self.sections.iter().find_map(|s| match s {
+            RawModuleDefV10Section::ManualMigrationFunctions(migrations) => Some(migrations),
             _ => None,
         })
     }
@@ -932,6 +956,26 @@ impl RawModuleDefV10Builder {
         match &mut self.module.sections[idx] {
             RawModuleDefV10Section::HttpRoutes(routes) => routes,
             _ => unreachable!("Just ensured HttpRoutes section exists"),
+        }
+    }
+
+    /// Get mutable access to the manual migration functions section, creating it if missing.
+    fn manual_migration_functions_mut(&mut self) -> &mut Vec<RawManualMigrationFunctionDefV10> {
+        let idx = self
+            .module
+            .sections
+            .iter()
+            .position(|s| matches!(s, RawModuleDefV10Section::ManualMigrationFunctions(_)))
+            .unwrap_or_else(|| {
+                self.module
+                    .sections
+                    .push(RawModuleDefV10Section::ManualMigrationFunctions(Vec::new()));
+                self.module.sections.len() - 1
+            });
+
+        match &mut self.module.sections[idx] {
+            RawModuleDefV10Section::ManualMigrationFunctions(migrations) => migrations,
+            _ => unreachable!("Just ensured ManualMigrationFunctions section exists"),
         }
     }
 
@@ -1215,6 +1259,18 @@ impl RawModuleDefV10Builder {
 
     pub fn add_explicit_names(&mut self, names: ExplicitNames) {
         self.explicit_names_mut().merge(names);
+    }
+
+    pub fn add_manual_migration_function(
+        &mut self,
+        source_name: impl Into<RawIdentifier>,
+        previous_raw_module_def_bsatn_blake3_hash: Hash,
+    ) {
+        self.manual_migration_functions_mut()
+            .push(RawManualMigrationFunctionDefV10 {
+                function_source_name: source_name.into(),
+                previous_raw_module_def_bsatn_blake3_hash,
+            });
     }
 
     /// Set the case conversion policy for this module.

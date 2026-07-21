@@ -49,10 +49,10 @@ use spacetimedb_lib::{bsatn, http as st_http, ConnectionId, Hash, ProductType, R
 use spacetimedb_primitives::{HttpHandlerId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, Deserialize, ProductValue, Typespace, WithTypespace};
-use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use spacetimedb_schema::def::deserialize::FunctionDef;
 use spacetimedb_schema::def::{ModuleDef, ViewDef};
 use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_subscription::SubscriptionPlan;
 use std::collections::HashMap;
@@ -662,7 +662,9 @@ impl InstanceCommon {
             Ok(plan) => plan,
             Err(e) => {
                 return match e {
-                    MigrationPolicyError::AutoMigrateFailure(e) => Ok(UpdateDatabaseResult::AutoMigrateError(e.into())),
+                    MigrationPolicyError::PlanningFailure(e) => {
+                        Ok(UpdateDatabaseResult::MigrationPlanningError(e.into()))
+                    }
                     _ => Ok(UpdateDatabaseResult::ErrorExecutingMigration(e.into())),
                 }
             }

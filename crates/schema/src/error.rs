@@ -176,6 +176,12 @@ pub enum ValidationError {
         ok_type: PrettyAlgebraicType,
         err_type: PrettyAlgebraicType,
     },
+    #[error("multiple manual migration functions defined to update from module def hash {previous_raw_module_def_bsatn_blake3_hash}, with identifiers {function_source_name_a} and {function_source_name_b}")]
+    DuplicateManualMigrationPreviousHash {
+        previous_raw_module_def_bsatn_blake3_hash: spacetimedb_lib::Hash,
+        function_source_name_a: RawIdentifier,
+        function_source_name_b: RawIdentifier,
+    },
 }
 
 /// A wrapper around an `AlgebraicType` that implements `fmt::Display`.

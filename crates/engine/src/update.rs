@@ -9,8 +9,8 @@ use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColSet, TableId};
-use spacetimedb_schema::auto_migrate::{AutoMigratePlan, AutoMigrateStep, ManualMigratePlan, MigratePlan};
 use spacetimedb_schema::def::{ModuleDef, ModuleDefLookup, TableDef, ViewDef};
+use spacetimedb_schema::migrate::{AutoMigratePlan, AutoMigrateStep, ManualMigratePlan, MigratePlan};
 use spacetimedb_schema::schema::{
     column_schemas_from_defs, ConstraintSchema, IndexSchema, Schema, SequenceSchema, TableSchema,
 };
@@ -185,7 +185,7 @@ fn auto_migrate_database(
 
     for precheck in plan.prechecks {
         match precheck {
-            spacetimedb_schema::auto_migrate::AutoMigratePrecheck::CheckAddSequenceRangeValid(sequence_name) => {
+            spacetimedb_schema::migrate::AutoMigratePrecheck::CheckAddSequenceRangeValid(sequence_name) => {
                 let table_def = plan.new.stored_in_table_def(sequence_name).unwrap();
                 let sequence_def = &table_def.sequences[sequence_name];
                 let table_id = stdb.table_id_from_name_mut(tx, &table_def.name)?.unwrap();
@@ -225,7 +225,7 @@ fn auto_migrate_database(
 
     for step in plan.steps {
         match step {
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveTable(table_name) => {
+            AutoMigrateStep::RemoveTable(table_name) => {
                 let table_id = stdb.table_id_from_name_mut(tx, table_name)?.unwrap();
 
                 if stdb.table_row_count_mut(tx, table_id).unwrap_or(0) > 0 {
@@ -238,7 +238,7 @@ fn auto_migrate_database(
                 log!(logger, "Dropping table `{table_name}`");
                 stdb.drop_table(tx, table_id)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddTable(table_name) => {
+            AutoMigrateStep::AddTable(table_name) => {
                 let table_def: &TableDef = plan.new.expect_lookup(table_name);
 
                 // Recursively sets IDs to 0.
@@ -249,22 +249,22 @@ fn auto_migrate_database(
 
                 stdb.create_table(tx, table_schema)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddView(view_name) => {
+            AutoMigrateStep::AddView(view_name) => {
                 let view_def: &ViewDef = plan.new.expect_lookup(view_name);
                 stdb.create_view(tx, plan.new, view_def)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveView(view_name) => {
+            AutoMigrateStep::RemoveView(view_name) => {
                 let view_id = stdb.view_id_from_name_mut(tx, view_name)?.unwrap();
                 stdb.drop_view(tx, view_id)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::UpdateView(_) => {
+            AutoMigrateStep::UpdateView(_) => {
                 // if we already have to disconnect clients, no need to set
                 // `EvaluateSubscribedViews` as clients will be disconnected anyway
                 if !matches!(res, UpdateResult::RequiresClientDisconnect) {
                     res = UpdateResult::EvaluateSubscribedViews;
                 }
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddIndex(index_name) => {
+            AutoMigrateStep::AddIndex(index_name) => {
                 let table_def = plan.new.stored_in_table_def(index_name).unwrap();
                 let index_def = table_def.indexes.get(index_name).unwrap();
                 let table_id = stdb.table_id_from_name_mut(tx, &table_def.name)?.unwrap();
@@ -283,7 +283,7 @@ fn auto_migrate_database(
 
                 stdb.create_index(tx, index_schema, is_unique)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveIndex(index_name) => {
+            AutoMigrateStep::RemoveIndex(index_name) => {
                 let table_def = plan.old.stored_in_table_def(index_name).unwrap();
 
                 let table_id = stdb.table_id_from_name_mut(tx, &table_def.name)?.unwrap();
@@ -298,7 +298,7 @@ fn auto_migrate_database(
                 log!(logger, "Dropping index `{}` on table `{}`", index_name, table_def.name);
                 stdb.drop_index(tx, index_schema.index_id)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveConstraint(constraint_name) => {
+            AutoMigrateStep::RemoveConstraint(constraint_name) => {
                 let table_def = plan.old.stored_in_table_def(constraint_name).unwrap();
 
                 let table_id = stdb.table_id_from_name_mut(tx, &table_def.name)?.unwrap();
@@ -317,7 +317,7 @@ fn auto_migrate_database(
                 );
                 stdb.drop_constraint(tx, constraint_schema.constraint_id)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddConstraint(constraint_name) => {
+            AutoMigrateStep::AddConstraint(constraint_name) => {
                 let table_def = plan
                     .new
                     .stored_in_table_def(constraint_name)
@@ -340,7 +340,7 @@ fn auto_migrate_database(
                 );
                 stdb.create_constraint(tx, constraint_schema)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddSequence(sequence_name) => {
+            AutoMigrateStep::AddSequence(sequence_name) => {
                 let table_def = plan.new.stored_in_table_def(sequence_name).unwrap();
                 let sequence_def = table_def.sequences.get(sequence_name).unwrap();
 
@@ -357,7 +357,7 @@ fn auto_migrate_database(
                     SequenceSchema::from_module_def(plan.new, sequence_def, table_schema.table_id, 0.into());
                 stdb.create_sequence(tx, sequence_schema)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveSequence(sequence_name) => {
+            AutoMigrateStep::RemoveSequence(sequence_name) => {
                 let table_def = plan.old.stored_in_table_def(sequence_name).unwrap();
 
                 let table_id = stdb.table_id_from_name_mut(tx, &table_def.name)?.unwrap();
@@ -376,7 +376,7 @@ fn auto_migrate_database(
                 );
                 stdb.drop_sequence(tx, sequence_schema.sequence_id)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeColumns(table_name) => {
+            AutoMigrateStep::ChangeColumns(table_name) => {
                 let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
                 let table_id = stdb.table_id_from_name_mut(tx, table_name).unwrap().unwrap();
                 let column_schemas = column_schemas_from_defs(plan.new, &table_def.columns, table_id);
@@ -385,7 +385,7 @@ fn auto_migrate_database(
 
                 stdb.alter_table_row_type(tx, table_id, column_schemas)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::ReschemaEventTable(table_name) => {
+            AutoMigrateStep::ReschemaEventTable(table_name) => {
                 let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
                 let table_id = stdb.table_id_from_name_mut(tx, table_name).unwrap().unwrap();
                 let column_schemas = column_schemas_from_defs(plan.new, &table_def.columns, table_id);
@@ -394,33 +394,33 @@ fn auto_migrate_database(
 
                 stdb.alter_event_table_row_type(tx, table_id, column_schemas)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeAccess(table_name) => {
+            AutoMigrateStep::ChangeAccess(table_name) => {
                 let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
                 stdb.alter_table_access(tx, table_name, table_def.table_access.into())?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangePrimaryKey(table_name) => {
+            AutoMigrateStep::ChangePrimaryKey(table_name) => {
                 let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
                 log!(logger, "Changing primary key for table `{table_name}`");
                 stdb.alter_table_primary_key(tx, table_name, table_def.primary_key)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddSchedule(_) => {
+            AutoMigrateStep::AddSchedule(_) => {
                 anyhow::bail!("Adding schedules is not yet implemented");
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveSchedule(_) => {
+            AutoMigrateStep::RemoveSchedule(_) => {
                 anyhow::bail!("Removing schedules is not yet implemented");
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddRowLevelSecurity(sql_rls) => {
+            AutoMigrateStep::AddRowLevelSecurity(sql_rls) => {
                 log!(logger, "Adding row-level security `{sql_rls}`");
                 let rls = plan.new.lookup_expect(sql_rls);
                 let rls = RowLevelExpr::build_row_level_expr(tx, &auth_ctx, rls)?;
 
                 stdb.create_row_level_security(tx, rls.def)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveRowLevelSecurity(sql_rls) => {
+            AutoMigrateStep::RemoveRowLevelSecurity(sql_rls) => {
                 log!(logger, "Removing-row level security `{sql_rls}`");
                 stdb.drop_row_level_security(tx, sql_rls.clone())?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddColumns(table_name) => {
+            AutoMigrateStep::AddColumns(table_name) => {
                 let table_def = plan
                     .new
                     .stored_in_table_def(&table_name.clone().into())
@@ -435,7 +435,7 @@ fn auto_migrate_database(
                     .collect();
                 stdb.add_columns_to_table_mut_tx(tx, table_id, column_schemas, default_values)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::DisconnectAllUsers => {
+            AutoMigrateStep::DisconnectAllUsers => {
                 log!(logger, "Disconnecting all users");
                 // It does not disconnect clients right away,
                 // but send response indicated that caller should drop clients

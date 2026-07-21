@@ -15,8 +15,8 @@ use spacetimedb::Identity;
 use spacetimedb_client_api::auth::SpacetimeAuth;
 use spacetimedb_client_api::routes::subscribe::{generate_random_connection_id, WebSocketOptions};
 use spacetimedb_paths::{RootDir, SpacetimePaths};
-use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use spacetimedb_schema::def::ModuleDef;
+use spacetimedb_schema::migrate::MigrationPolicy;
 use tokio::runtime::{Builder, Runtime};
 
 use spacetimedb::client::messages::SerializableMessage;

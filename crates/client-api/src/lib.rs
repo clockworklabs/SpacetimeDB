@@ -19,7 +19,7 @@ use spacetimedb_client_api_messages::http::{SqlStmtResult, SqlStmtStats};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
 use spacetimedb_lib::{ProductTypeElement, ProductValue};
 use spacetimedb_paths::server::ModuleLogsDir;
-use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
+use spacetimedb_schema::migrate::{MigrationPolicy, PrettyPrintStyle};
 use thiserror::Error;
 use tokio::sync::watch;
 

@@ -29,7 +29,6 @@ use log::{info, trace, warn};
 use parking_lot::Mutex;
 use scopeguard::defer;
 use spacetimedb_commitlog::SizeOnDisk;
-use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{IntMap, IntSet};
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
@@ -41,8 +40,8 @@ use spacetimedb_lib::{identity::AuthCtx, AlgebraicValue, Identity, Timestamp};
 use spacetimedb_paths::server::{ModuleLogsDir, ServerDataDir};
 use spacetimedb_runtime::AbortHandle;
 use spacetimedb_sats::hash::Hash;
-use spacetimedb_schema::auto_migrate::{ponder_migrate, AutoMigrateError, MigrationPolicy, PrettyPrintStyle};
 use spacetimedb_schema::def::{ModuleDef, RawModuleDefVersion};
+use spacetimedb_schema::migrate::{ponder_migrate, MigrationPolicy, PonderMigrateError, PrettyPrintStyle};
 use spacetimedb_table::page_pool::PagePool;
 use std::future::Future;
 use std::ops::Deref;
@@ -1444,7 +1443,7 @@ impl Host {
                 plan: plan.pretty_print(style)?.into(),
                 major_version_upgrade,
             },
-            Err(e) => MigratePlanResult::AutoMigrationError {
+            Err(e) => MigratePlanResult::PlanningError {
                 error: e,
                 major_version_upgrade,
             },
@@ -1474,8 +1473,8 @@ pub enum MigratePlanResult {
         breaks_client: bool,
         major_version_upgrade: bool,
     },
-    AutoMigrationError {
-        error: ErrorStream<AutoMigrateError>,
+    PlanningError {
+        error: PonderMigrateError,
         major_version_upgrade: bool,
     },
 }

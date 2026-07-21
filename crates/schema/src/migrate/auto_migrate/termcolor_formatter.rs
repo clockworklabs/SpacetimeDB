@@ -6,8 +6,8 @@ use spacetimedb_primitives::ColId;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use termcolor::{Buffer, Color, ColorChoice, ColorSpec, WriteColor};
 
-use crate::auto_migrate::formatter::ViewInfo;
 use crate::identifier::Identifier;
+use crate::migrate::auto_migrate::formatter::ViewInfo;
 
 use super::formatter::{
     AccessChangeInfo, Action, ColumnChange, ColumnChanges, ConstraintInfo, IndexInfo, MigrationFormatter, NewColumns,

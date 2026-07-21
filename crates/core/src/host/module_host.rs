@@ -43,7 +43,6 @@ use spacetimedb_client_api_messages::energy::FunctionBudget;
 use spacetimedb_client_api_messages::websocket::common::{ByteListLen as _, RowListLen as _};
 use spacetimedb_client_api_messages::websocket::v1::{self as ws_v1};
 use spacetimedb_client_api_messages::websocket::v2::{self as ws_v2};
-use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashSet};
 use spacetimedb_datastore::error::DatastoreError;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
@@ -64,9 +63,9 @@ use spacetimedb_primitives::{HttpHandlerId, ProcedureId, TableId, ViewFnPtr, Vie
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue};
-use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, ViewDef};
 use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::migrate::{MigrationPolicy, PonderMigrateError};
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::table_name::TableName;
 use std::collections::VecDeque;
@@ -1477,7 +1476,7 @@ pub enum UpdateDatabaseResult {
         /// `None` if the database is in-memory only.
         durable_offset: Option<DurableOffset>,
     },
-    AutoMigrateError(Box<ErrorStream<AutoMigrateError>>),
+    MigrationPlanningError(Box<PonderMigrateError>),
     ErrorExecutingMigration(anyhow::Error),
 }
 impl UpdateDatabaseResult {

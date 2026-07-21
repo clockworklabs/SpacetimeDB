@@ -248,6 +248,10 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         validate_http_routes_are_unique(&routes)?;
         Ok((handlers, routes))
     });
+
+    let migration_functions =
+        validate_migration_function_hashes_are_unique(def.manual_migration_functions().unwrap_or(&Vec::new()));
+
     // Combine all validation results
     let tables_types_reducers_procedures_views = (
         tables,
@@ -258,10 +262,21 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         schedules,
         lifecycle_validations,
         http_handlers_and_routes,
+        migration_functions,
     )
         .combine_errors()
         .and_then(
-            |(mut tables, types, reducers, procedures, views, schedules, lifecycles, http_handlers_and_routes)| {
+            |(
+                mut tables,
+                types,
+                reducers,
+                procedures,
+                views,
+                schedules,
+                lifecycles,
+                http_handlers_and_routes,
+                migration_functions,
+            )| {
                 let (mut reducers, mut procedures, mut views) =
                     check_function_names_are_unique(reducers, procedures, views)?;
                 // Attach lifecycles to their respective reducers
@@ -275,7 +290,15 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 attach_view_primary_keys(&mut views, view_primary_keys)?;
                 assign_query_view_primary_keys(&tables, &mut views);
 
-                Ok((tables, types, reducers, procedures, views, http_handlers_and_routes))
+                Ok((
+                    tables,
+                    types,
+                    reducers,
+                    procedures,
+                    views,
+                    http_handlers_and_routes,
+                    migration_functions,
+                ))
             },
         );
     let CoreValidator {
@@ -292,11 +315,20 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .map(|rls| (rls.sql.clone(), rls.to_owned()))
         .collect();
 
-    let (tables, types, reducers, procedures, views, http_handlers, http_routes) =
+    let (tables, types, reducers, procedures, views, http_handlers, http_routes, migration_functions) =
         tables_types_reducers_procedures_views
             .map(
-                |(tables, types, reducers, procedures, views, (http_handlers, http_routes))| {
-                    (tables, types, reducers, procedures, views, http_handlers, http_routes)
+                |(tables, types, reducers, procedures, views, (http_handlers, http_routes), migration_functions)| {
+                    (
+                        tables,
+                        types,
+                        reducers,
+                        procedures,
+                        views,
+                        http_handlers,
+                        http_routes,
+                        migration_functions,
+                    )
                 },
             )
             .map_err(|errors: ValidationErrors| errors.sort_deduplicate())?;
@@ -318,6 +350,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         http_handlers,
         http_routes,
         raw_module_def_version: RawModuleDefVersion::V10,
+        manual_migration_functions: migration_functions,
     })
 }
 
@@ -410,6 +443,34 @@ fn check_http_handler_names_are_unique(
     }
 
     ErrorStream::add_extra_errors(Ok(handlers_map), errors)
+}
+
+fn validate_migration_function_hashes_are_unique(
+    migrations: &[RawManualMigrationFunctionDefV10],
+) -> Result<IndexMap<spacetimedb_lib::Hash, ManualMigrationFunctionDef>> {
+    let mut errors = vec![];
+    let mut migrations_map: IndexMap<spacetimedb_lib::Hash, ManualMigrationFunctionDef> =
+        IndexMap::with_capacity(migrations.len());
+
+    for migration in migrations {
+        if let Some(other_migration) = migrations_map.get(&migration.previous_raw_module_def_bsatn_blake3_hash) {
+            errors.push(ValidationError::DuplicateManualMigrationPreviousHash {
+                previous_raw_module_def_bsatn_blake3_hash: migration.previous_raw_module_def_bsatn_blake3_hash,
+                function_source_name_a: other_migration.function_source_name.clone(),
+                function_source_name_b: migration.function_source_name.clone(),
+            });
+        } else {
+            migrations_map.insert(
+                migration.previous_raw_module_def_bsatn_blake3_hash,
+                ManualMigrationFunctionDef {
+                    function_source_name: migration.function_source_name.clone(),
+                    previous_raw_module_def_bsatn_blake3_hash: migration.previous_raw_module_def_bsatn_blake3_hash,
+                },
+            );
+        }
+    }
+
+    ErrorStream::add_extra_errors(Ok(migrations_map), errors)
 }
 
 struct ModuleValidatorV10<'a> {

@@ -46,7 +46,7 @@ use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::{http as st_http, ConnectionId};
 use spacetimedb_lib::{sats, AlgebraicValue, Hash, ProductValue, Timestamp};
-use spacetimedb_schema::auto_migrate::{
+use spacetimedb_schema::migrate::{
     MigrationPolicy as SchemaMigrationPolicy, MigrationToken, PrettyPrintStyle as AutoMigratePrettyPrintStyle,
 };
 use tokio::sync::oneshot;
@@ -1074,7 +1074,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         })
     };
     match maybe_updated {
-        Some(UpdateDatabaseResult::AutoMigrateError(errs)) => {
+        Some(UpdateDatabaseResult::MigrationPlanningError(errs)) => {
             Err(bad_request(format!("Database update rejected: {errs}").into()))
         }
         Some(UpdateDatabaseResult::ErrorExecutingMigration(err)) => Err(bad_request(
@@ -1296,7 +1296,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
                 major_version_upgrade,
             }))
         }
-        MigratePlanResult::AutoMigrationError {
+        MigratePlanResult::PlanningError {
             error: e,
             major_version_upgrade,
         } => {

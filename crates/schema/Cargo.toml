@@ -17,6 +17,7 @@ spacetimedb-data-structures.workspace = true
 spacetimedb-memory-usage.workspace = true
 spacetimedb-sql-parser.workspace = true
 anyhow.workspace = true
+blake3.workspace = true
 derive_more.workspace = true
 indexmap.workspace = true
 itertools.workspace = true

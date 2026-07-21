@@ -33,9 +33,9 @@ use spacetimedb_data_structures::map::{Equivalent, HashMap};
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v10::{
     ExplicitNames, MethodOrAny, RawConstraintDefV10, RawHttpHandlerDefV10, RawHttpRouteDefV10, RawIndexDefV10,
-    RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section, RawProcedureDefV10, RawReducerDefV10,
-    RawRowLevelSecurityDefV10, RawScheduleDefV10, RawScopedTypeNameV10, RawSequenceDefV10, RawTableDefV10,
-    RawTypeDefV10, RawViewDefV10, RawViewPrimaryKeyDefV10,
+    RawLifeCycleReducerDefV10, RawManualMigrationFunctionDefV10, RawModuleDefV10, RawModuleDefV10Section,
+    RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10, RawScopedTypeNameV10,
+    RawSequenceDefV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10, RawViewPrimaryKeyDefV10,
 };
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIndexAlgorithm, RawIndexDefV9,
@@ -44,7 +44,7 @@ use spacetimedb_lib::db::raw_def::v9::{
     RawUniqueConstraintDataV9, RawViewDefV9, TableAccess, TableType,
 };
 use spacetimedb_lib::db::view::{extract_view_return_product_type_ref, ViewKind};
-use spacetimedb_lib::{ProductType, RawModuleDef};
+use spacetimedb_lib::{bsatn, ProductType, RawModuleDef};
 use spacetimedb_primitives::{
     ColId, ColList, ColOrCols, ColSet, HttpHandlerId, ProcedureId, ReducerId, TableId, ViewFnPtr,
 };
@@ -164,6 +164,13 @@ pub struct ModuleDef {
     /// was authored under.
     #[allow(unused)]
     raw_module_def_version: RawModuleDefVersion,
+
+    /// Manual migration functions defined by the module,
+    /// keyed on the Blake3 hash of the raw module def of the previous module version.
+    ///
+    /// Uses [`IndexMap`] to preserve order so that `__call_manual_migration_function__`
+    /// receives stable integer IDs.
+    manual_migration_functions: IndexMap<spacetimedb_lib::Hash, ManualMigrationFunctionDef>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -460,6 +467,24 @@ impl ModuleDef {
             panic!("expected ModuleDef to contain {:?}, but it does not", def.key());
         }
     }
+
+    pub fn manual_migration_function_for_previous_module_def_hash(
+        &self,
+        prev_hash: spacetimedb_lib::Hash,
+    ) -> Option<&ManualMigrationFunctionDef> {
+        self.manual_migration_functions.get(&prev_hash)
+    }
+
+    /// Compute the hash of this module def,
+    /// for use as an identifier a manual migration can use to reference its expected previous state.
+    ///
+    /// This takes the Blake3 hash of the BSATN bytes of the `RawModuleDefV10` representation of `self`.
+    pub fn manual_migration_hash(&self) -> Result<spacetimedb_lib::Hash, bsatn::EncodeError> {
+        let raw_def = RawModuleDefV10::from(self.clone());
+        let bsatn_bytes = bsatn::to_vec(&raw_def)?;
+        let hash = blake3::hash(&bsatn_bytes);
+        Ok(spacetimedb_lib::Hash::from_byte_array(*hash.as_bytes()))
+    }
 }
 
 impl TryFrom<RawModuleDef> for ModuleDef {
@@ -507,6 +532,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
             http_handlers: _,
             http_routes: _,
             raw_module_def_version: _,
+            manual_migration_functions: _,
         } = val;
 
         // Extract column defaults from tables before consuming tables
@@ -565,6 +591,7 @@ impl From<ModuleDef> for RawModuleDefV10 {
             http_handlers,
             http_routes,
             raw_module_def_version: _,
+            manual_migration_functions: _,
         } = val;
 
         let mut sections = Vec::new();
@@ -1911,6 +1938,25 @@ impl From<ProcedureDef> for RawMiscModuleExportV9 {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct ManualMigrationFunctionDef {
+    pub function_source_name: RawIdentifier,
+    /// The Blake3 hash of the raw module def of the module version from which this function migrates.
+    // TODO(manual-migrations): determine precise semantics for computing this.
+    // Is it always the hash of the BSATN-ified `RawModuleDefV10`, even if the previous module exports a `RawModuleDefV9` or earlier?
+    pub previous_raw_module_def_bsatn_blake3_hash: spacetimedb_lib::Hash,
+}
+
+impl From<ManualMigrationFunctionDef> for RawManualMigrationFunctionDefV10 {
+    fn from(def: ManualMigrationFunctionDef) -> Self {
+        RawManualMigrationFunctionDefV10 {
+            function_source_name: def.function_source_name,
+            previous_raw_module_def_bsatn_blake3_hash: def.previous_raw_module_def_bsatn_blake3_hash,
+        }
+    }
+}
+
 impl ModuleDefLookup for TableDef {
     type Key<'a> = &'a Identifier;
 
@@ -2087,6 +2133,16 @@ impl ModuleDefLookup for ViewDef {
 
     fn lookup<'a>(view_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
         view_def.views.get(key)
+    }
+}
+
+impl ModuleDefLookup for ManualMigrationFunctionDef {
+    type Key<'a> = &'a spacetimedb_lib::Hash;
+    fn key(&self) -> Self::Key<'_> {
+        &self.previous_raw_module_def_bsatn_blake3_hash
+    }
+    fn lookup<'def>(module_def: &'def ModuleDef, key: Self::Key<'_>) -> Option<&'def Self> {
+        module_def.manual_migration_functions.get(key)
     }
 }
 
