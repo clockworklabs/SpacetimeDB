@@ -8,29 +8,36 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>SpacetimeDB</RootNamespace>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
-    <RestoreAdditionalProjectSources Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json;$(RestoreAdditionalProjectSources)</RestoreAdditionalProjectSources>
+    <RestoreAdditionalProjectSources Condition="$(TargetFramework.StartsWith('net10.')) Or '$(EXPERIMENTAL_WASM_AOT)' == '1'">https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json;$(RestoreAdditionalProjectSources)</RestoreAdditionalProjectSources>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$(TargetFramework.StartsWith('net10.'))">
+    <DefineConstants>$(DefineConstants);EXPERIMENTAL_WASM_AOT</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- Note: BSATN.Codegen is included in the BSATN.Runtime NuGet package. -->
-    <ProjectReference Include="../BSATN.Runtime/BSATN.Runtime.csproj" />
+    <ProjectReference Include="../BSATN.Runtime/BSATN.Runtime.csproj" SetTargetFramework="TargetFramework=$(TargetFramework)" SkipGetTargetFrameworkProperties="true" />
     <!-- ...But we also need BSATN.Codegen to transform `[SpacetimeDB.Type]` usages in source of Runtime itself. -->
     <!-- For that, it has to be included as an explicit private dependency. -->
-    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" SetTargetFramework="TargetFramework=netstandard2.0" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained" SkipGetTargetFrameworkProperties="true" />
     <!-- Codegen package must be built before this one so that it's included in NuGet Runtime package, but we don't depend on it. -->
     <!-- (*not* with OutputItemType=analyzer because we don't want to use that source generator on source of Runtime itself) -->
-    <ProjectReference Include="../Codegen/Codegen.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../Codegen/Codegen.csproj" ReferenceOutputAssembly="false" SetTargetFramework="TargetFramework=netstandard2.0" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
 
   <!-- These must be explicit package dependencies so NuGet consumers can resolve the LLVM toolchain. -->
-  <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
+  <ItemGroup Condition="$(TargetFramework.StartsWith('net8.')) And '$(EXPERIMENTAL_WASM_AOT)' == '1'">
     <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" IncludeAssets="All" />
     <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" IncludeAssets="All" />
-    <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="8.0.0-*" Condition="'$(ILLinkTargetsPath)' == ''" IncludeAssets="All" />
+  </ItemGroup>
+  <ItemGroup Condition="$(TargetFramework.StartsWith('net10.'))">
+    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" IncludeAssets="All" />
+    <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="10.0.0-*" IncludeAssets="All" />
   </ItemGroup>
 
   <ItemGroup>
