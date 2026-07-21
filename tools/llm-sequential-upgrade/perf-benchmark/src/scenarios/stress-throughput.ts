@@ -29,6 +29,14 @@ import {
   stdbSendMessage,
   stdbSetName,
 } from '../clients/spacetime-client.ts';
+import {
+  type MongoConfig,
+  createMongoUser,
+  createMongoRoom,
+  joinMongoRoom,
+  connectMongoClient,
+  mongoSendRest,
+} from '../clients/mongodb-client.ts';
 
 export interface StressOpts {
   writers: number;
@@ -162,6 +170,85 @@ export async function runStressPostgres(cfg: PgConfig, opts: StressOpts): Promis
     ackLatencyMs: ack.summary(),
     fanoutLatencyMs: fanout.summary(),
     notes: `${opts.writers} writers firing as fast as possible`,
+  };
+}
+
+export async function runStressMongo(cfg: MongoConfig, opts: StressOpts): Promise<ScenarioResult> {
+  const tag = `ms${Date.now().toString(36)}`;
+
+  // N writers + 1 listener; one public room they all join.
+  const writerNames = Array.from({ length: opts.writers }, (_, i) => `${tag}_w${i}`);
+  await Promise.all(writerNames.map((n) => createMongoUser(cfg, n)));
+  const listenerName = `${tag}_listener`;
+  await createMongoUser(cfg, listenerName);
+  const room = await createMongoRoom(cfg, tag, listenerName);
+  await Promise.all(writerNames.map((n) => joinMongoRoom(cfg, room.id, n)));
+
+  const ack = new LatencyHistogram();   // POST HTTP round-trip (server insert + respond)
+  const fanout = new LatencyHistogram(); // writer send → listener observes broadcast
+  let received = 0;     // delivered to listener (true fan-out)
+  let ackedSends = 0;   // HTTP-confirmed sends
+  let sent = 0;
+  let measuring = false;
+
+  // Listener: joined to the room over a socket; measures true fan-out latency.
+  const listener = await connectMongoClient(cfg, listenerName, room.id, (msg) => {
+    if (!measuring) return;
+    const stamp = parseStamp(msg.text);
+    if (!stamp) return;
+    received += 1;
+    fanout.record(nsToMs(process.hrtime.bigint() - stamp.sentNs));
+  });
+
+  // Warmup
+  await mongoSendRest(cfg, room.id, writerNames[0]!, `${'__bench:'}${process.hrtime.bigint()}:0:warmup`);
+  await new Promise((r) => setTimeout(r, 500));
+
+  measuring = true;
+  const startedAt = new Date().toISOString();
+  const endTime = Date.now() + opts.durationSec * 1000;
+  let seq = 1;
+
+  // Each writer posts as fast as its REST round-trip allows; throughput scales
+  // via concurrent writers. (No app-level rate limit in the Mongo app.)
+  const writerLoop = async (name: string): Promise<void> => {
+    while (Date.now() < endTime) {
+      const s = seq++;
+      const t0 = process.hrtime.bigint();
+      sent += 1;
+      try {
+        const resp = await mongoSendRest(cfg, room.id, name, stampMessage(s));
+        if (resp) {
+          ackedSends += 1;
+          ack.record(nsToMs(process.hrtime.bigint() - t0));
+        }
+      } catch { /* ignore */ }
+    }
+  };
+  await Promise.all(writerNames.map(writerLoop));
+
+  // Drain in-flight broadcasts
+  await new Promise((r) => setTimeout(r, 3000));
+  measuring = false;
+  listener.close();
+
+  // Throughput: prefer true delivered (listener); if the single listener socket
+  // was event-loop-bottlenecked under heavy stress, fall back to acked sends.
+  const deliveredForRate = received > 0 ? received : ackedSends;
+
+  return {
+    scenario: 'stress-throughput',
+    backend: 'mongodb',
+    startedAt,
+    durationSec: opts.durationSec,
+    writers: opts.writers,
+    sent,
+    received,
+    errors: sent - ackedSends,
+    msgsPerSec: deliveredForRate / opts.durationSec,
+    ackLatencyMs: ack.summary(),
+    fanoutLatencyMs: fanout.summary(),
+    notes: `${opts.writers} writers REST-POST as fast as possible; ack=HTTP round-trip, fanout=listener socket. NOTE: Mongo app has NO per-user send rate limit (the PG app throttles 500ms/user) — stress throughput is NOT directly comparable to PG; use the realistic scenario for that.`,
   };
 }
 
