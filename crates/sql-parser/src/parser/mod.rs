@@ -200,13 +200,21 @@ pub(crate) fn parse_project_elem(item: SelectItem) -> SqlParseResult<ProjectElem
 pub(crate) fn parse_proj(expr: Expr) -> SqlParseResult<ProjectExpr> {
     match expr {
         Expr::Identifier(ident) => Ok(ProjectExpr::Var(ident.into())),
-        Expr::CompoundIdentifier(mut idents) if idents.len() == 2 => {
-            let table = idents.swap_remove(0).into();
-            let field = idents.swap_remove(0).into();
+        Expr::CompoundIdentifier(idents) if idents.len() >= 2 => {
+            let (table, field) = parse_qualified_field(idents)?;
             Ok(ProjectExpr::Field(table, field))
         }
         _ => Err(SqlUnsupported::ProjectionExpr(expr).into()),
     }
+}
+
+/// Parse a qualified column reference.
+/// The last part is the column; the rest is the (possibly namespaced) table name or alias,
+/// joined with dots to match [`parse_parts`].
+pub(crate) fn parse_qualified_field(mut idents: Vec<Ident>) -> SqlParseResult<(SqlIdent, SqlIdent)> {
+    let field = idents.pop().expect("caller checked idents.len() >= 2").into();
+    let table = parse_parts(idents)?;
+    Ok((table, field))
 }
 
 // These types determine the size of [`parse_expr`]'s stack frame on 64-bit targets.
@@ -241,9 +249,8 @@ fn parse_expr(expr: Expr, depth: usize) -> SqlParseResult<SqlExpr> {
             SqlUnsupported::Expr,
         )?)),
         Expr::Identifier(ident) => Ok(SqlExpr::Var(ident.into())),
-        Expr::CompoundIdentifier(mut idents) if idents.len() == 2 => {
-            let table = idents.swap_remove(0).into();
-            let field = idents.swap_remove(0).into();
+        Expr::CompoundIdentifier(idents) if idents.len() >= 2 => {
+            let (table, field) = parse_qualified_field(idents)?;
             Ok(SqlExpr::Field(table, field))
         }
         Expr::BinaryOp {

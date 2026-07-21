@@ -430,6 +430,11 @@ mod tests {
             "select a from t",
             // Multi-part names are joined with dots for namespace-qualified tables
             "select a from s.t",
+            // Qualified columns of namespaced tables: last part is the column
+            "select a from s.t where s.t.a = 1",
+            "select s.t.a from s.t",
+            "select a from x.s.t where x.s.t.a = 1",
+            r#"SELECT * FROM "s"."t" WHERE "s"."t"."a" = 1"#,
             "select a from t where x = :sender",
             "select count(*) as n from t",
             "select count(*) as n from t join s on t.id = s.id where s.x = 1",

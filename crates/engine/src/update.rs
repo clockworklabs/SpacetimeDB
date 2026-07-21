@@ -370,8 +370,14 @@ fn auto_migrate_database(
                 let table_id = stdb
                     .table_id_from_name_mut(tx, &table_full_name)?
                     .expect("table should exist in the database for AddConstraint");
-                let constraint_schema =
+                let mut constraint_schema =
                     ConstraintSchema::from_module_def(owning_def, constraint_def, table_id, ConstraintId::SENTINEL);
+
+                // Apply namespace prefix for submodule constraints
+                if !prefix.is_empty() {
+                    constraint_schema.constraint_name =
+                        RawIdentifier::from(format!("{}{}", prefix, constraint_schema.constraint_name));
+                }
                 log!(
                     logger,
                     "Adding constraint `{constraint_name}` on table `{table_full_name}`"
@@ -388,8 +394,14 @@ fn auto_migrate_database(
                 let table_schema = stdb.schema_for_table_mut(tx, table_id)?;
 
                 log!(logger, "Adding sequence `{sequence_name}` to table `{table_full_name}`");
-                let sequence_schema =
+                let mut sequence_schema =
                     SequenceSchema::from_module_def(owning_def, sequence_def, table_schema.table_id, 0.into());
+
+                // Apply namespace prefix for submodule sequences
+                if !prefix.is_empty() {
+                    sequence_schema.sequence_name =
+                        RawIdentifier::from(format!("{}{}", prefix, sequence_schema.sequence_name));
+                }
                 stdb.create_sequence(tx, sequence_schema)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveSequence(sequence_name) => {
@@ -555,6 +567,14 @@ pub fn create_table_from_def_with_prefix(
                 index.alias = Some(RawIdentifier::from(format!("{}{}", name_prefix, alias)));
             }
         }
+
+        // Same for constraint and sequence names.
+        for constraint in &mut schema.constraints {
+            constraint.constraint_name = RawIdentifier::from(format!("{}{}", name_prefix, constraint.constraint_name));
+        }
+        for sequence in &mut schema.sequences {
+            sequence.sequence_name = RawIdentifier::from(format!("{}{}", name_prefix, sequence.sequence_name));
+        }
     }
     stdb.create_table(tx, schema)
         .with_context(|| format!("failed to create table {}{}", name_prefix, &*table_def.accessor_name))?;
@@ -598,7 +618,7 @@ mod test {
     use spacetimedb_datastore::system_tables::ST_EVENT_TABLE_ID;
     use spacetimedb_lib::{
         db::raw_def::{
-            v10::RawModuleDefV10Builder,
+            v10::{RawModuleDefV10Builder, RawModuleDefV10Section, RawSubmoduleV10},
             v9::{btree, RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess},
         },
         Identity,
@@ -787,6 +807,86 @@ mod test {
             .finish()
             .try_into()
             .expect("should be a valid module definition")
+    }
+
+    fn submodule_table_module(with_sub_objects: bool) -> ModuleDef {
+        let mut sub = RawModuleDefV10Builder::new();
+        let table = sub.build_table_with_new_type("sessions", ProductType::from([("id", U64)]), true);
+        if with_sub_objects {
+            table
+                .with_index(btree(0), "sessions_id_idx", "sessions_id_idx")
+                .with_unique_constraint(0)
+                .with_column_sequence(0)
+                .finish();
+        } else {
+            table.finish();
+        }
+        let mut root = RawModuleDefV10Builder::new().finish();
+        root.sections
+            .push(RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "lib".to_string(),
+                module: sub.finish(),
+            }]));
+        root.try_into().expect("should be a valid module definition")
+    }
+
+    #[test]
+    fn submodule_constraint_and_sequence_migration() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        let old = submodule_table_module(true);
+        let new = submodule_table_module(false);
+
+        let mut tx = begin_mut_tx(&stdb);
+        for (prefix, owning_def, def) in old.all_tables_with_prefix() {
+            create_table_from_def_with_prefix(&stdb, &mut tx, owning_def, def, &prefix)?;
+        }
+        stdb.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        let table_id = stdb
+            .table_id_from_name_mut(&tx, "lib.sessions")?
+            .expect("submodule table should exist");
+        let schema = stdb.schema_for_table_mut(&tx, table_id)?;
+        assert!(!schema.constraints.is_empty());
+        assert!(!schema.sequences.is_empty());
+        assert!(
+            schema.constraints.iter().all(|c| c.constraint_name.starts_with("lib.")),
+            "constraint names should be namespace-prefixed: {:?}",
+            schema.constraints
+        );
+        assert!(
+            schema.sequences.iter().all(|s| s.sequence_name.starts_with("lib.")),
+            "sequence names should be namespace-prefixed: {:?}",
+            schema.sequences
+        );
+
+        // Removing the constraint and sequence must resolve them by their prefixed names.
+        let plan = ponder_migrate(&old, &new)?;
+        let _ = update_database(&stdb, &mut tx, auth_ctx.clone(), plan, &TestLogger)?;
+
+        let schema = stdb.schema_for_table_mut(&tx, table_id)?;
+        assert!(schema.constraints.is_empty(), "{:?}", schema.constraints);
+        assert!(schema.sequences.is_empty(), "{:?}", schema.sequences);
+
+        // And adding them back must store prefixed names again.
+        let plan = ponder_migrate(&new, &old)?;
+        let _ = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+
+        let schema = stdb.schema_for_table_mut(&tx, table_id)?;
+        assert!(
+            !schema.constraints.is_empty() && schema.constraints.iter().all(|c| c.constraint_name.starts_with("lib.")),
+            "{:?}",
+            schema.constraints
+        );
+        assert!(
+            !schema.sequences.is_empty() && schema.sequences.iter().all(|s| s.sequence_name.starts_with("lib.")),
+            "{:?}",
+            schema.sequences
+        );
+
+        Ok(())
     }
 
     fn view_module() -> ModuleDef {
