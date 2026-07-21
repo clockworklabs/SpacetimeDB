@@ -94,10 +94,6 @@ If this publish is a major upgrade from 1.x to 2.0, read [1.x to 2.0 Upgrade Not
 
 To completely reset your database and delete all data:
 
-<!-- Docs maintenance: keep the simple reset example as bare `--delete-data`.
-The CLI default mode is `always`; spell out `--delete-data=<mode>` only when
-documenting the available modes or showing non-interactive/scripted usage. -->
-
 ```bash
 spacetime publish <DATABASE_NAME> --delete-data
 ```

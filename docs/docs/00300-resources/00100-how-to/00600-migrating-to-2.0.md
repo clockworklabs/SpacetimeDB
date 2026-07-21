@@ -190,15 +190,15 @@ spacetimedb.reducer('deal_damage', { target: t.identity(), amount: t.u32() }, (c
 **Server (module) -- after:**
 ```typescript
 // 2.0 server -- explicitly publish events via an event table
-const damage_event = table({ name: 'damage_event', event: true }, {
+const damageEvent = table({ name: 'damage_event', event: true }, {
     target: t.identity(),
     amount: t.u32(),
 })
-// schema() takes an object: schema({ damage_event }), never schema(damage_event)
-const spacetimedb = schema({ damage_event });
+// schema() takes an object: schema({ damageEvent }), never schema(damageEvent)
+const spacetimedb = schema({ damageEvent });
 
 export const dealDamage = spacetimedb.reducer({ target: t.identity(), amount: t.u32() }, (ctx, { target, amount }) => {
-  ctx.db.damage_event.insert({ target, amount });
+  ctx.db.damageEvent.insert({ target, amount });
 });
 ```
 
@@ -1366,14 +1366,14 @@ spacetimedb.reducer('runMyTimer', myTimer.rowType, (ctx, timer) => {
 ```
 
 ```typescript
-const my_timer = table({ name: "my_timer", scheduled: (): any => runMyTimer }, {
-  scheduled_id: t.u64().primaryKey().autoInc(),
-  scheduled_at: t.scheduleAt(),
+const myTimer = table({ name: 'my_timer', scheduled: (): any => runMyTimer }, {
+  scheduledId: t.u64().primaryKey().autoInc(),
+  scheduledAt: t.scheduleAt(),
 });
-const spacetimedb = schema({ my_timer }); // schema({ table }), never schema(table)
+const spacetimedb = schema({ myTimer }); // schema({ table }), never schema(table)
 
 // 2.0 -- Can only be called by the database
-export const runMyTimer = spacetimedb.reducer({ arg: my_timer.rowType }, (ctx, { arg }) => {
+export const runMyTimer = spacetimedb.reducer({ arg: myTimer.rowType }, (ctx, { arg }) => {
   // Do stuff
 })
 ```
@@ -1479,17 +1479,17 @@ In the rare event that you have a reducer or procedure which is intended to be i
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-const my_timer = table({ name: "my_timer", scheduled: (): any => runMyTimerPrivate }, {
-  scheduled_id: t.u64().primaryKey().autoInc(),
-  scheduled_at: t.scheduleAt(),
+const myTimer = table({ name: 'my_timer', scheduled: (): any => runMyTimerPrivate }, {
+  scheduledId: t.u64().primaryKey().autoInc(),
+  scheduledAt: t.scheduleAt(),
 });
-const spacetimedb = schema({ my_timer }); // schema({ table }), never schema(table)
+const spacetimedb = schema({ myTimer }); // schema({ table }), never schema(table)
 
-export const runMyTimerPrivate = spacetimedb.reducer({ arg: my_timer.rowType }, (ctx, { arg }) => {
+export const runMyTimerPrivate = spacetimedb.reducer({ arg: myTimer.rowType }, (ctx, { arg }) => {
   // Do stuff...
 });
 
-export const runMyTimer = spacetimedb.reducer({ arg: my_timer.rowType }, (ctx, { arg }) => {
+export const runMyTimer = spacetimedb.reducer({ arg: myTimer.rowType }, (ctx, { arg }) => {
   // Same logic as runMyTimerPrivate — extract to a helper if needed
 });
 ```
