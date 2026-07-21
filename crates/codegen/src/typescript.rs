@@ -19,7 +19,7 @@ use spacetimedb_primitives::ColId;
 use spacetimedb_schema::def::{
     ColumnDef, ConstraintDef, IndexDef, ModuleDef, ProcedureDef, ReducerDef, TableDef, TypeDef, ViewDef,
 };
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::identifier::{Identifier, NamespacePath};
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse};
@@ -811,9 +811,9 @@ impl Lang for TypeScript {
         // Generate types.ts for each submodule namespace so that the
         // namespace-scoped reducer/procedure/table files can resolve their
         // `import { … } from "./types"` imports.
-        let mut submodule_namespaces: BTreeMap<String, &ModuleDef> = BTreeMap::new();
-        collect_submodule_namespaces(module, "", &mut submodule_namespaces);
-        for (prefix, owning_def) in &submodule_namespaces {
+        let mut submodule_namespaces: BTreeMap<String, (NamespacePath, &ModuleDef)> = BTreeMap::new();
+        collect_submodule_namespaces(module, &NamespacePath::root(), &mut submodule_namespaces);
+        for (prefix, owning_def) in submodule_namespaces.values() {
             let ns_path = submodule_ns_path(prefix);
             let filename = format!("{ns_path}/types.ts");
             files.push(generate_types_file_with_path(owning_def, filename));
@@ -939,10 +939,14 @@ fn generate_types_file_with_path(module: &ModuleDef, filename: String) -> Output
 /// Recursively collect all submodule namespaces in depth-first order.
 /// Keys are dot-terminated prefix strings (e.g. `"lib."`, `"lib.sublib."`).
 /// Values are references to the `ModuleDef` that owns that namespace.
-fn collect_submodule_namespaces<'a>(module: &'a ModuleDef, prefix: &str, out: &mut BTreeMap<String, &'a ModuleDef>) {
+fn collect_submodule_namespaces<'a>(
+    module: &'a ModuleDef,
+    prefix: &NamespacePath,
+    out: &mut BTreeMap<String, (NamespacePath, &'a ModuleDef)>,
+) {
     for (ns, submodule_def) in module.submodules() {
-        let full_prefix = format!("{prefix}{ns}.");
-        out.insert(full_prefix.clone(), submodule_def);
+        let full_prefix = prefix.child(ns.clone());
+        out.insert(full_prefix.to_string(), (full_prefix.clone(), submodule_def));
         collect_submodule_namespaces(submodule_def, &full_prefix, out);
     }
 }
@@ -1325,15 +1329,15 @@ fn table_module_name(table_name: &Identifier) -> String {
 
 /// Source name (wire name) for a submodule namespace table/view.
 /// E.g. namespace="alias.", accessor_name="tableName" → "alias.tableName"
-fn submodule_source_name(namespace: &str, accessor_name: &str) -> String {
+fn submodule_source_name(namespace: &NamespacePath, accessor_name: &str) -> String {
     format!("{}{}", namespace, accessor_name)
 }
 
 /// TypeScript import symbol for a submodule namespace table/view row type.
 /// Uses `_` separator to avoid colliding with root tables that share the same PascalCase prefix.
 /// E.g. namespace="lib.", accessor_name="library_table" → "Lib_LibraryTable"
-fn submodule_row_type_name(namespace: &str, accessor_name: &str) -> String {
-    let ns_part = namespace.trim_end_matches('.').replace('.', "_").to_case(Case::Pascal);
+fn submodule_row_type_name(namespace: &NamespacePath, accessor_name: &str) -> String {
+    let ns_part = namespace.join_segments("_").to_case(Case::Pascal);
     format!("{}_{}", ns_part, accessor_name.to_case(Case::Pascal))
 }
 
@@ -1354,23 +1358,23 @@ fn procedure_module_name(procedure_name: &Identifier) -> String {
 }
 
 /// Converts a dot-terminated namespace like `"lib."` or `"lib.sublib."` to a path like `"lib"` or `"lib/sublib"`.
-fn submodule_ns_path(namespace: &str) -> String {
-    namespace.trim_end_matches('.').replace('.', "/")
+fn submodule_ns_path(namespace: &NamespacePath) -> String {
+    namespace.join_segments("/")
 }
 
 /// TypeScript import symbol for a submodule namespace reducer/procedure.
 /// Uses `_` separator to avoid colliding with root reducers/procedures sharing the same prefix.
 /// E.g. prefix="lib.", accessor_name="library_reducer" → "Lib_LibraryReducer"
-fn submodule_fn_type_name(prefix: &str, accessor_name: &str) -> String {
-    let ns_part = prefix.trim_end_matches('.').replace('.', "_").to_case(Case::Pascal);
+fn submodule_fn_type_name(prefix: &NamespacePath, accessor_name: &str) -> String {
+    let ns_part = prefix.join_segments("_").to_case(Case::Pascal);
     format!("{}_{}", ns_part, accessor_name.to_case(Case::Pascal))
 }
 
-fn submodule_reducer_args_type_name(prefix: &str, accessor_name: &ReducerName) -> String {
+fn submodule_reducer_args_type_name(prefix: &NamespacePath, accessor_name: &ReducerName) -> String {
     submodule_fn_type_name(prefix, accessor_name.deref()) + "Reducer"
 }
 
-fn submodule_procedure_args_type_name(prefix: &str, accessor_name: &Identifier) -> String {
+fn submodule_procedure_args_type_name(prefix: &NamespacePath, accessor_name: &Identifier) -> String {
     submodule_fn_type_name(prefix, accessor_name.deref()) + "Procedure"
 }
 
@@ -1404,15 +1408,14 @@ impl NsTree {
 
 /// Build the namespace tree from all submodule tables and views.
 fn build_ns_tree<'a>(
-    ns_tables: &[(String, &'a ModuleDef, &'a TableDef)],
-    ns_views: &[(String, &'a ModuleDef, &'a ViewDef)],
+    ns_tables: &[(NamespacePath, &'a ModuleDef, &'a TableDef)],
+    ns_views: &[(NamespacePath, &'a ModuleDef, &'a ViewDef)],
 ) -> BTreeMap<String, NsTree> {
     let mut tree: BTreeMap<String, NsTree> = BTreeMap::new();
     for (prefix, _, table) in ns_tables {
         let source_name = submodule_source_name(prefix, table.accessor_name.deref());
         let local = table.accessor_name.deref().to_case(Case::Camel);
-        // prefix like "lib." → segments ["lib"], or "lib.sublib." → ["lib", "sublib"]
-        let segs: Vec<&str> = prefix.trim_end_matches('.').split('.').collect();
+        let segs: Vec<&str> = prefix.segments().iter().map(|s| &**s).collect();
         if let Some((first, rest)) = segs.split_first() {
             tree.entry(first.to_string())
                 .or_insert_with(NsTree::new)
@@ -1423,7 +1426,7 @@ fn build_ns_tree<'a>(
         // Canonical name: must match the tablesSchema key and the DB backing table name.
         let source_name = submodule_source_name(prefix, view.name.deref());
         let local = view.accessor_name.deref().to_case(Case::Camel);
-        let segs: Vec<&str> = prefix.trim_end_matches('.').split('.').collect();
+        let segs: Vec<&str> = prefix.segments().iter().map(|s| &**s).collect();
         if let Some((first, rest)) = segs.split_first() {
             tree.entry(first.to_string())
                 .or_insert_with(NsTree::new)
@@ -1451,7 +1454,9 @@ fn emit_ns_tree(out: &mut Indenter, tree: &BTreeMap<String, NsTree>) {
 /// `flat_key` matches SDK's `accessorName = toCamelCase(wireName)`.
 /// SDK toCamelCase only splits on `_`/`-`, so `/` is kept verbatim:
 /// `"lib.library_reducer"` → `"lib.libraryReducer"`.  Bracket notation is required.
-fn build_reducer_ns_tree<'a>(ns_reducers: &[(String, &'a ModuleDef, &'a ReducerDef)]) -> BTreeMap<String, NsTree> {
+fn build_reducer_ns_tree<'a>(
+    ns_reducers: &[(NamespacePath, &'a ModuleDef, &'a ReducerDef)],
+) -> BTreeMap<String, NsTree> {
     let mut tree: BTreeMap<String, NsTree> = BTreeMap::new();
     for (prefix, _, reducer) in ns_reducers {
         if !is_reducer_invokable(reducer) {
@@ -1459,7 +1464,7 @@ fn build_reducer_ns_tree<'a>(ns_reducers: &[(String, &'a ModuleDef, &'a ReducerD
         }
         let flat_key = format!("{}{}", prefix, reducer.accessor_name.deref().to_case(Case::Camel));
         let local = reducer.accessor_name.deref().to_case(Case::Camel);
-        let segs: Vec<&str> = prefix.trim_end_matches('.').split('.').collect();
+        let segs: Vec<&str> = prefix.segments().iter().map(|s| &**s).collect();
         if let Some((first, rest)) = segs.split_first() {
             tree.entry(first.to_string())
                 .or_insert_with(NsTree::new)
@@ -1471,13 +1476,13 @@ fn build_reducer_ns_tree<'a>(ns_reducers: &[(String, &'a ModuleDef, &'a ReducerD
 
 /// Build namespace tree for submodule procedures (uses `.` path separator).
 fn build_procedure_ns_tree<'a>(
-    ns_procedures: &[(String, &'a ModuleDef, &'a ProcedureDef)],
+    ns_procedures: &[(NamespacePath, &'a ModuleDef, &'a ProcedureDef)],
 ) -> BTreeMap<String, NsTree> {
     let mut tree: BTreeMap<String, NsTree> = BTreeMap::new();
     for (prefix, _, procedure) in ns_procedures {
         let flat_key = format!("{}{}", prefix, procedure.accessor_name.deref().to_case(Case::Camel));
         let local = procedure.accessor_name.deref().to_case(Case::Camel);
-        let segs: Vec<&str> = prefix.trim_end_matches('.').split('.').collect();
+        let segs: Vec<&str> = prefix.segments().iter().map(|s| &**s).collect();
         if let Some((first, rest)) = segs.split_first() {
             tree.entry(first.to_string())
                 .or_insert_with(NsTree::new)

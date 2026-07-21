@@ -13,6 +13,7 @@ use spacetimedb_lib::sats::WithTypespace;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::{bsatn, AlgebraicType};
 use spacetimedb_schema::def::ModuleDef;
+use spacetimedb_schema::identifier::NamespacePath;
 use std::collections::VecDeque;
 use std::io;
 use std::sync::atomic::AtomicU32;
@@ -694,8 +695,7 @@ fn format_output_json_from_tables(formatted: &HashMap<&str, SubscriptionTable>) 
 /// (e.g. `lib.my_table`). The returned type is resolved against the owning
 /// module's typespace, since that is where its type refs point.
 fn type_for_table_like<'a>(module_def: &'a ModuleDef, name: &str) -> Option<WithTypespace<'a, AlgebraicType>> {
-    let matches_wire_name =
-        |prefix: &str, plain_name: &str| name.strip_prefix(prefix).is_some_and(|rest| rest == plain_name);
+    let matches_wire_name = |prefix: &NamespacePath, plain_name: &str| format!("{prefix}{plain_name}") == name;
 
     let (owning_def, type_ref) = module_def
         .all_tables_with_prefix()

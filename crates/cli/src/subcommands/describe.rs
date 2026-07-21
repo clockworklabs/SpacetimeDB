@@ -119,11 +119,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
                 let (_, _, table) = module_def
                     .all_tables_with_prefix()
                     .into_iter()
-                    .find(|(prefix, _, t)| {
-                        table_name
-                            .strip_prefix(prefix.as_str())
-                            .is_some_and(|rest| rest == &*t.name)
-                    })
+                    .find(|(prefix, _, t)| format!("{}{}", prefix, &*t.name) == *table_name)
                     .context("no such table")?;
                 sats_to_json(&RawTableDefV10::from(table.clone()))?
             }

@@ -207,7 +207,7 @@ pub struct TxDataTableEntry {
     pub ephemeral: bool,
 }
 
-static_assert_size!(TxDataTableEntry, 56);
+static_assert_size!(TxDataTableEntry, 72);
 
 impl TxDataTableEntry {
     /// Create a new, empty `TxDataTableEntry` for `table_name`.
