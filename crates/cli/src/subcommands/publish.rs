@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::{env, fs};
 
+use crate::common_args::parse_optional_dotnet_version;
 use crate::common_args::ClearMode;
 use crate::config::Config;
 use crate::spacetime_config::{
@@ -96,6 +97,7 @@ pub fn build_publish_schema(command: &clap::Command) -> Result<CommandSchema, an
         .key(Key::new("parent"))
         .key(Key::new("organization"))
         .key(Key::new("native_aot").module_specific())
+        .key(Key::new("dotnet_version").module_specific())
         .exclude("clear-database")
         .exclude("yes")
         .exclude("no_config")
@@ -316,6 +318,7 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
                 .action(SetTrue)
                 .help("Use NativeAOT-LLVM compilation for C# modules (experimental, Windows only)")
         )
+        .arg(common_args::dotnet_version())
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
@@ -518,6 +521,12 @@ async fn execute_publish_configs<'a>(
         let org_opt = command_config.get_one::<String>("organization")?;
         let org = org_opt.as_deref();
         let native_aot = command_config.get_one::<bool>("native_aot")?.unwrap_or(false);
+        let dotnet_version = if command_config.is_from_cli("dotnet_version") {
+            command_config.get_one::<u8>("dotnet_version")?
+        } else {
+            let dotnet_version = command_config.get_one::<String>("dotnet_version")?;
+            parse_optional_dotnet_version(dotnet_version.as_deref())?
+        };
 
         // If the user didn't specify an identity and we didn't specify an anonymous identity, then
         // we want to use the default identity
@@ -545,21 +554,13 @@ async fn execute_publish_configs<'a>(
             println!("(JS) Skipping build. Instead we are publishing {}", path.display());
             (path.clone(), "Js")
         } else {
-            // Set EXPERIMENTAL_WASM_AOT environment variable if native_aot is enabled
-            // This is read by the C# build system (MSBuild) and by csharp.rs to determine output paths
-            if native_aot {
-                println!("Using NativeAOT-LLVM compilation (experimental)");
-                // SAFETY: We are single-threaded at this point and no other code is reading
-                // this environment variable concurrently.
-                unsafe {
-                    env::set_var("EXPERIMENTAL_WASM_AOT", "1");
-                }
-            }
             build::exec_with_argstring(
                 path_to_project
                     .as_ref()
                     .expect("path_to_project must exist when publishing from source"),
                 &build_options,
+                native_aot,
+                dotnet_version,
             )
             .await?
         };
@@ -1272,6 +1273,22 @@ mod tests {
         let matches = cmd.clone().get_matches_from(vec!["publish", ""]);
         let result = get_filtered_publish_configs(&spacetime_config, &cmd, &schema, &matches);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_publish_cli_parses_dotnet_version_as_supported_sdk_major() {
+        let matches = cli()
+            .try_get_matches_from(["publish", "--dotnet-version", "10"])
+            .unwrap();
+
+        assert_eq!(matches.get_one::<u8>("dotnet_version").copied(), Some(10));
+    }
+
+    #[test]
+    fn test_publish_cli_rejects_unsupported_dotnet_version() {
+        assert!(cli()
+            .try_get_matches_from(["publish", "--dotnet-version", "9"])
+            .is_err());
     }
 
     #[test]

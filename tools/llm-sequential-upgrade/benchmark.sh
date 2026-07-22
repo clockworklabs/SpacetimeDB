@@ -21,7 +21,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NUM_RUNS=3
 VARIANT="sequential-upgrade"
 RULES="guided"
-TEST_MODE=""
 LEVEL=""
 BACKENDS=("spacetime" "postgres")
 
@@ -30,17 +29,11 @@ while [[ $# -gt 0 ]]; do
     --runs) NUM_RUNS="$2"; shift 2 ;;
     --variant) VARIANT="$2"; shift 2 ;;
     --rules) RULES="$2"; shift 2 ;;
-    --test) TEST_MODE="$2"; shift 2 ;;
     --level) LEVEL="$2"; shift 2 ;;
     --backend) BACKENDS=("$2"); shift 2 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
-
-TEST_FLAG=""
-if [[ -n "$TEST_MODE" ]]; then
-  TEST_FLAG="--test $TEST_MODE"
-fi
 
 # ─── Compute total parallel instances ────────────────────────────────────────
 
@@ -135,7 +128,6 @@ for run_num in $(seq 1 "$NUM_RUNS"); do
         --variant "$VARIANT" \
         --level "${LEVEL:-7}" \
         --rules "$RULES" \
-        $TEST_FLAG \
         --run-index "$RUN_INDEX"
       update_status "$RUN_INDEX" "$backend" "completed" "exit=$?"
     ) > "$LOG_FILE" 2>&1 &
