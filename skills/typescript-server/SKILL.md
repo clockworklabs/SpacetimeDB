@@ -108,7 +108,7 @@ Treat requested table options and column modifiers as part of the schema contrac
 
 ## Indexes
 
-Prefer inline `.index('btree')` for single-column. Use named indexes only for multi-column:
+Use inline `.index('btree')` when a single-column index does not need a named accessor. Use an `indexes` entry when the accessor is named explicitly or the index spans multiple columns. Every `indexes` entry requires `columns`; do not also add `.index('btree')` to the same column.
 
 ```typescript
 // Inline (preferred for single-column):
@@ -183,6 +183,14 @@ export const onDisconnect = spacetimedb.clientDisconnected((ctx) => { ... });
 ## Reducer Context API
 
 `ctx` is the only source of sender identity, time, and randomness; stdlib clocks and RNG are unavailable in modules. Let exported callbacks infer their context type. In helpers, use `ReducerCtx<InferSchema<typeof spacetimedb>>`; do not annotate a context as `any`, because that erases table row types and can make `bigint` expressions infer as `number`.
+
+```typescript
+type Ctx = ReducerCtx<InferSchema<typeof spacetimedb>>;
+
+function findRecord(ctx: Ctx, id: bigint) {
+  return ctx.db.score_record.id.find(id);
+}
+```
 
 ```typescript
 // Auth: ctx.sender is the caller's Identity
@@ -310,7 +318,9 @@ ctx => ctx.from.subscription.rightSemijoin(
 )
 ```
 
-For `A.leftSemijoin(B, ...)`, the result contains rows from `A`; for `A.rightSemijoin(B, ...)`, it contains rows from `B`. Semijoins do not project combined columns from both tables. Use a procedural view when the result is a custom row assembled from multiple tables.
+The method name identifies which side is returned: `A.leftSemijoin(B, ...)` returns rows from `A`, while `A.rightSemijoin(B, ...)` returns rows from `B`. To return one table's rows when another table has a match, put the returned table on the corresponding side. Semijoins do not project combined columns from both tables.
+
+Procedural views read through `ctx.db` and return materialized values such as arrays. Query-builder values from `ctx.from` are returned directly; they are not iterators and cannot be spread, looped over, or mixed with array methods. Use a procedural view when the result is a custom row assembled from multiple tables.
 
 ## Client Visibility Filters
 

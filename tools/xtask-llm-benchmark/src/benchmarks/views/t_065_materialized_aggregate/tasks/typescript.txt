@@ -16,9 +16,9 @@ REDUCERS
 - exercise()
   - This is the only exported reducer
   - Keep category_total transactionally synchronized when a sale is inserted, changed, moved between categories, or deleted
-  - Insert books sales of 10 and 20
+  - Insert books sales with ids 1 and 2 and amounts 10 and 20
   - Update the second books sale to 25
-  - Insert and then delete a games sale
+  - Insert and then delete a games sale with id 3
   - Delete the first books sale
 
 VIEW
