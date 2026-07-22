@@ -106,7 +106,9 @@ jobs:
       - name: Checkout specific tag
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.release_tag }}
+          # TODO: Before merging, update this!
+          # ref: ${{ github.event.inputs.release_tag }}
+          ref: jdetter/fix-release-flow
           submodules: recursive
 
       - name: Set up Rust
