@@ -27,7 +27,7 @@ namespace SpacetimeDB
 
     public readonly partial struct QueryBuilder
     {
-        public global::SpacetimeDB.TableQuery<
+        public global::SpacetimeDB.Table<
             global::InAnotherNamespace.TestDuplicateTableName,
             TestDuplicateTableNameCols,
             TestDuplicateTableNameIxCols
@@ -59,7 +59,7 @@ namespace SpacetimeDB
 
     public readonly partial struct QueryBuilder
     {
-        public global::SpacetimeDB.TableQuery<global::Player, PlayerCols, PlayerIxCols> Player() =>
+        public global::SpacetimeDB.Table<global::Player, PlayerCols, PlayerIxCols> Player() =>
             new("Player", new PlayerCols("Player"), new PlayerIxCols("Player"));
     }
 
@@ -91,7 +91,7 @@ namespace SpacetimeDB
 
     public readonly partial struct QueryBuilder
     {
-        public global::SpacetimeDB.TableQuery<
+        public global::SpacetimeDB.Table<
             global::TestAutoIncNotInteger,
             TestAutoIncNotIntegerCols,
             TestAutoIncNotIntegerIxCols
@@ -209,7 +209,7 @@ namespace SpacetimeDB
 
     public readonly partial struct QueryBuilder
     {
-        public global::SpacetimeDB.TableQuery<
+        public global::SpacetimeDB.Table<
             global::TestDefaultFieldValues,
             TestDefaultFieldValuesCols,
             TestDefaultFieldValuesIxCols
@@ -233,7 +233,7 @@ namespace SpacetimeDB
 
     public readonly partial struct QueryBuilder
     {
-        public global::SpacetimeDB.TableQuery<
+        public global::SpacetimeDB.Table<
             global::TestDuplicateTableName,
             TestDuplicateTableNameCols,
             TestDuplicateTableNameIxCols
@@ -289,7 +289,7 @@ namespace SpacetimeDB
 
     public readonly partial struct QueryBuilder
     {
-        public global::SpacetimeDB.TableQuery<
+        public global::SpacetimeDB.Table<
             global::TestIndexIssues,
             TestIndexIssuesCols,
             TestIndexIssuesIxCols
@@ -342,7 +342,7 @@ namespace SpacetimeDB
 
     public readonly partial struct QueryBuilder
     {
-        public global::SpacetimeDB.TableQuery<
+        public global::SpacetimeDB.Table<
             global::TestScheduleIssues,
             TestScheduleWithoutPrimaryKeyCols,
             TestScheduleWithoutPrimaryKeyIxCols
@@ -403,7 +403,7 @@ namespace SpacetimeDB
 
     public readonly partial struct QueryBuilder
     {
-        public global::SpacetimeDB.TableQuery<
+        public global::SpacetimeDB.Table<
             global::TestScheduleIssues,
             TestScheduleWithWrongPrimaryKeyTypeCols,
             TestScheduleWithWrongPrimaryKeyTypeIxCols
@@ -464,7 +464,7 @@ namespace SpacetimeDB
 
     public readonly partial struct QueryBuilder
     {
-        public global::SpacetimeDB.TableQuery<
+        public global::SpacetimeDB.Table<
             global::TestScheduleIssues,
             TestScheduleWithoutScheduleAtCols,
             TestScheduleWithoutScheduleAtIxCols
@@ -525,7 +525,7 @@ namespace SpacetimeDB
 
     public readonly partial struct QueryBuilder
     {
-        public global::SpacetimeDB.TableQuery<
+        public global::SpacetimeDB.Table<
             global::TestScheduleIssues,
             TestScheduleWithWrongScheduleAtTypeCols,
             TestScheduleWithWrongScheduleAtTypeIxCols
@@ -578,7 +578,7 @@ namespace SpacetimeDB
 
     public readonly partial struct QueryBuilder
     {
-        public global::SpacetimeDB.TableQuery<
+        public global::SpacetimeDB.Table<
             global::TestScheduleIssues,
             TestScheduleWithMissingScheduleAtFieldCols,
             TestScheduleWithMissingScheduleAtFieldIxCols
@@ -633,7 +633,7 @@ namespace SpacetimeDB
 
     public readonly partial struct QueryBuilder
     {
-        public global::SpacetimeDB.TableQuery<
+        public global::SpacetimeDB.Table<
             global::TestUniqueNotEquatable,
             TestUniqueNotEquatableCols,
             TestUniqueNotEquatableIxCols

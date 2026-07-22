@@ -110,10 +110,10 @@ internal static class PublicTableViewRegressions
         }
     }
 
-    private static TableQuery<PublicTable, PublicTableCols, PublicTableIxCols> MakeTable()
+    private static Table<PublicTable, PublicTableCols, PublicTableIxCols> MakeTable()
     {
         const string tableName = "PublicTable";
-        return new TableQuery<PublicTable, PublicTableCols, PublicTableIxCols>(
+        return new Table<PublicTable, PublicTableCols, PublicTableIxCols>(
             tableName,
             new PublicTableCols(tableName),
             new PublicTableIxCols(tableName)

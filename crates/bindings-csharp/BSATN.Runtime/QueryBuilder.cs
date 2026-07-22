@@ -187,13 +187,13 @@ public readonly struct IxCol<TRow, TValue>
     public override string ToString() => RefSql;
 }
 
-public sealed class TableQuery<TRow, TCols, TIxCols> : IQuery<TRow>
+public sealed class Table<TRow, TCols, TIxCols> : IQuery<TRow>
 {
     private readonly string tableName;
     private readonly TCols cols;
     private readonly TIxCols ixCols;
 
-    public TableQuery(string tableName, TCols cols, TIxCols ixCols)
+    public Table(string tableName, TCols cols, TIxCols ixCols)
     {
         this.tableName = tableName;
         this.cols = cols;
@@ -227,7 +227,7 @@ public sealed class TableQuery<TRow, TCols, TIxCols> : IQuery<TRow>
         TRightCols,
         TRightIxCols
     >(
-        TableQuery<TRightRow, TRightCols, TRightIxCols> right,
+        Table<TRightRow, TRightCols, TRightIxCols> right,
         Func<TIxCols, TRightIxCols, IxJoinEq<TRow, TRightRow>> on
     ) => new(this, right, on(ixCols, right.ixCols), whereExpr: null);
 
@@ -236,17 +236,17 @@ public sealed class TableQuery<TRow, TCols, TIxCols> : IQuery<TRow>
         TRightCols,
         TRightIxCols
     >(
-        TableQuery<TRightRow, TRightCols, TRightIxCols> right,
+        Table<TRightRow, TRightCols, TRightIxCols> right,
         Func<TIxCols, TRightIxCols, IxJoinEq<TRow, TRightRow>> on
     ) => new(this, right, on(ixCols, right.ixCols), leftWhereExpr: null);
 }
 
 public sealed class FromWhere<TRow, TCols, TIxCols> : IQuery<TRow>
 {
-    private readonly TableQuery<TRow, TCols, TIxCols> table;
+    private readonly Table<TRow, TCols, TIxCols> table;
     private readonly BoolExpr<TRow> expr;
 
-    internal FromWhere(TableQuery<TRow, TCols, TIxCols> table, BoolExpr<TRow> expr)
+    internal FromWhere(Table<TRow, TCols, TIxCols> table, BoolExpr<TRow> expr)
     {
         this.table = table;
         this.expr = expr;
@@ -274,7 +274,7 @@ public sealed class FromWhere<TRow, TCols, TIxCols> : IQuery<TRow>
         TRightCols,
         TRightIxCols
     >(
-        TableQuery<TRightRow, TRightCols, TRightIxCols> right,
+        Table<TRightRow, TRightCols, TRightIxCols> right,
         Func<TIxCols, TRightIxCols, IxJoinEq<TRow, TRightRow>> on
     ) => new(table, right, on(table.IxCols, right.IxCols), expr);
 
@@ -283,7 +283,7 @@ public sealed class FromWhere<TRow, TCols, TIxCols> : IQuery<TRow>
         TRightCols,
         TRightIxCols
     >(
-        TableQuery<TRightRow, TRightCols, TRightIxCols> right,
+        Table<TRightRow, TRightCols, TRightIxCols> right,
         Func<TIxCols, TRightIxCols, IxJoinEq<TRow, TRightRow>> on
     ) => new(table, right, on(table.IxCols, right.IxCols), expr);
 }
@@ -297,15 +297,15 @@ public sealed class LeftSemiJoin<
     TRightIxCols
 > : IQuery<TLeftRow>
 {
-    private readonly TableQuery<TLeftRow, TLeftCols, TLeftIxCols> left;
-    private readonly TableQuery<TRightRow, TRightCols, TRightIxCols> right;
+    private readonly Table<TLeftRow, TLeftCols, TLeftIxCols> left;
+    private readonly Table<TRightRow, TRightCols, TRightIxCols> right;
     private readonly string leftJoinRefSql;
     private readonly string rightJoinRefSql;
     private readonly BoolExpr<TLeftRow>? whereExpr;
 
     internal LeftSemiJoin(
-        TableQuery<TLeftRow, TLeftCols, TLeftIxCols> left,
-        TableQuery<TRightRow, TRightCols, TRightIxCols> right,
+        Table<TLeftRow, TLeftCols, TLeftIxCols> left,
+        Table<TRightRow, TRightCols, TRightIxCols> right,
         IxJoinEq<TLeftRow, TRightRow> join,
         BoolExpr<TLeftRow>? whereExpr
     )
@@ -408,16 +408,16 @@ public sealed class RightSemiJoin<
     TRightIxCols
 > : IQuery<TRightRow>
 {
-    private readonly TableQuery<TLeftRow, TLeftCols, TLeftIxCols> left;
-    private readonly TableQuery<TRightRow, TRightCols, TRightIxCols> right;
+    private readonly Table<TLeftRow, TLeftCols, TLeftIxCols> left;
+    private readonly Table<TRightRow, TRightCols, TRightIxCols> right;
     private readonly string leftJoinRefSql;
     private readonly string rightJoinRefSql;
     private readonly BoolExpr<TLeftRow>? leftWhereExpr;
     private readonly BoolExpr<TRightRow>? rightWhereExpr;
 
     internal RightSemiJoin(
-        TableQuery<TLeftRow, TLeftCols, TLeftIxCols> left,
-        TableQuery<TRightRow, TRightCols, TRightIxCols> right,
+        Table<TLeftRow, TLeftCols, TLeftIxCols> left,
+        Table<TRightRow, TRightCols, TRightIxCols> right,
         IxJoinEq<TLeftRow, TRightRow> join,
         BoolExpr<TLeftRow>? leftWhereExpr,
         BoolExpr<TRightRow>? rightWhereExpr
@@ -432,8 +432,8 @@ public sealed class RightSemiJoin<
     }
 
     internal RightSemiJoin(
-        TableQuery<TLeftRow, TLeftCols, TLeftIxCols> left,
-        TableQuery<TRightRow, TRightCols, TRightIxCols> right,
+        Table<TLeftRow, TLeftCols, TLeftIxCols> left,
+        Table<TRightRow, TRightCols, TRightIxCols> right,
         IxJoinEq<TLeftRow, TRightRow> join,
         BoolExpr<TLeftRow>? leftWhereExpr
     )
