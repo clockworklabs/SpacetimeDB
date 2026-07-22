@@ -263,20 +263,20 @@ llm-sequential-upgrade/
   DEVELOP.md                       # This file (for humans)
   run.sh                           # Code Agent launcher (generate/fix/upgrade)
   grade.sh                         # Grade Agent launcher (interactive Chrome MCP)
-  grade-playwright.sh              # Grade via Playwright (optional, deterministic)
+  templates/                       # BUG_REPORT.md / ITERATION_LOG.md formats
   docker-compose.otel.yaml         # OTel Collector container
   otel-collector-config.yaml       # Collector config (OTLP → JSON files)
   parse-telemetry.mjs              # Telemetry → COST_REPORT.md
   backends/
     spacetime.md                   # SpacetimeDB-specific phases
-    spacetime-sdk-rules.md         # SpacetimeDB SDK patterns
     spacetime-templates.md         # Code templates
+    # SDK reference = the official skills/typescript-{server,client}/SKILL.md
     postgres.md                    # PostgreSQL-specific phases
+    mongodb.md                     # MongoDB-specific phases
   test-plans/
     feature-01-basic-chat.md       # Per-feature browser test scripts
     ...
     feature-15-anonymous-migration.md
-    playwright/                    # Optional Playwright test suite
   telemetry/                       # Shared OTel Collector output
   sequential-upgrade/              # Sequential upgrade test variant
     sequential-upgrade-YYYYMMDD/   # Dated run with results, telemetry, inputs
