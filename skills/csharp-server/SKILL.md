@@ -312,7 +312,7 @@ var result = ctx.Http.Send(new HttpRequest
 });
 ```
 
-`HttpResponse.StatusCode` is `ushort`. HTTP headers are `HttpHeader` values, not tuples, and each header's `Value` is `byte[]`; decode text values with `System.Text.Encoding.UTF8.GetString(header.Value)`. Treat bodies as bytes: use `HttpBody.FromString(...)` to create text, `new HttpBody(bytes)` to supply raw bytes, and `ToStringUtf8Lossy()` to read text. There is no `HttpBody.FromBytes`, and `ToString()` does not return body contents. Qualify `SpacetimeDB.HttpMethod` when .NET's implicit `System.Net.Http` imports could make the name ambiguous.
+`HttpResponse.StatusCode` is `ushort`. HTTP headers are `HttpHeader` values, not tuples, and each header's `Value` is `byte[]`; decode text values with `System.Text.Encoding.UTF8.GetString(header.Value)`. Treat bodies as bytes: use `HttpBody.FromString(...)` to create text, `new HttpBody(bytes)` to supply raw bytes, `ToBytes()` to read raw bytes, and `ToStringUtf8Lossy()` to read text. There is no `HttpBody.FromBytes`, and `ToString()` does not return body contents. Qualify `SpacetimeDB.HttpMethod` when .NET's implicit `System.Net.Http` imports could make the name ambiguous.
 
 Scheduled procedures use the ordinary scheduled-table shape. Its `Scheduled` name refers to a `[SpacetimeDB.Procedure]` method taking `ProcedureContext` plus the scheduled row, and database access inside that procedure goes through `ctx.WithTx`.
 
@@ -327,6 +327,8 @@ public static HttpResponse Health(HandlerContext ctx, HttpRequest request) => ne
 [SpacetimeDB.HttpRouter]
 public static Router Routes() => SpacetimeDB.Router.New().Get("/health", Handlers.Health);
 ```
+
+`Handlers` is generated from methods marked `[SpacetimeDB.HttpHandler]`; do not declare it yourself. Reference an attributed method in a router as `Handlers.MethodName`.
 
 ## Custom Types
 

@@ -273,9 +273,9 @@ pub fn inspect(_ctx: &mut ProcedureContext, input: String) -> ResultValue {
 }
 ```
 
-Outbound HTTP is available through `ctx.http`. Convenience methods such as `get` return a response, and other methods use `Request::builder()` with `ctx.http.send(request)`. Consume a response body as text with `response.into_body().into_string_lossy()`. Header values use the fallible `to_str()` conversion; they do not provide `as_str()`.
+Outbound HTTP is available through `ctx.http`. Convenience methods such as `get` return a response, and other methods use `Request::builder()` with `ctx.http.send(request)`. `response.status()` returns a `StatusCode`; use `is_success()` to test it or `as_u16()` when a numeric status is needed. Responses are not cloneable, so inspect status and headers before consuming the body with `response.into_body().into_string_lossy()`. Header values use the fallible `to_str()` conversion; they do not provide `as_str()`.
 
-Open short database transactions with `ctx.with_tx(|tx| ...)`. It returns the callback's value directly, so do not call `unwrap` or `expect` on the result unless the callback itself returns a `Result`. The callback implements `Fn`, so clone captured owned values when storing them rather than moving them out of the closure. Perform network I/O before opening the transaction.
+Open short database transactions with `ctx.with_tx(|tx| ...)`. Access tables inside the callback through `tx.db`, not directly on `tx`. It returns the callback's value directly, so do not call `unwrap` or `expect` on the result unless the callback itself returns a `Result`. The callback implements `Fn`, so clone captured owned values when storing them rather than moving them out of the closure. Perform network I/O before opening the transaction.
 
 For an outbound request without a convenience method:
 
