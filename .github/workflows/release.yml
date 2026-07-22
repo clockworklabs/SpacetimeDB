@@ -330,7 +330,7 @@ jobs:
       - name: Checkout specific tag
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.release_tag }}
+          ref: jdetter/tmp-docker-release
           submodules: recursive
 
       - name: Download cargo-release
