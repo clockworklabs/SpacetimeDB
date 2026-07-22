@@ -1,7 +1,7 @@
 use std::env;
 use std::io::{self, Read};
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -52,6 +52,12 @@ pub(crate) fn sql_exec_with_timeout(
 }
 
 pub(crate) fn run_with_timeout(mut cmd: Command, cwd: &Path, timeout: Duration) -> io::Result<(i32, Vec<u8>, Vec<u8>)> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+
     let mut child = cmd
         .current_dir(cwd)
         .stdout(Stdio::piped())
@@ -75,10 +81,7 @@ pub(crate) fn run_with_timeout(mut cmd: Command, cwd: &Path, timeout: Duration) 
             break status;
         }
         if start.elapsed() >= timeout {
-            let _ = child.kill();
-            let _ = child.wait();
-            let _ = stdout_reader.join();
-            let _ = stderr_reader.join();
+            kill_process_tree(&mut child);
             return Err(io::Error::new(io::ErrorKind::TimedOut, "process timeout"));
         }
         thread::sleep(Duration::from_millis(30));
@@ -90,6 +93,28 @@ pub(crate) fn run_with_timeout(mut cmd: Command, cwd: &Path, timeout: Duration) 
         .join()
         .map_err(|_| io::Error::other("stderr reader thread panicked"))??;
     Ok((status.code().unwrap_or(-1), stdout, stderr))
+}
+
+fn kill_process_tree(child: &mut Child) {
+    #[cfg(windows)]
+    let killed = Command::new("taskkill")
+        .args(["/F", "/T", "/PID", &child.id().to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .is_ok();
+
+    #[cfg(unix)]
+    let killed = Command::new("kill")
+        .args(["-KILL", &format!("-{}", child.id())])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success());
+
+    if !killed {
+        let _ = child.kill();
+    }
 }
 
 pub fn normalize(s: &str, collapse_ws: bool) -> String {

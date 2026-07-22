@@ -137,24 +137,35 @@ impl Scorer for SchemaParityScorer {
 /* helpers */
 
 fn describe_db(server: &str, db: &str, timeout: Duration) -> io::Result<Value> {
-    let mut cmd = spacetime_command();
-    cmd.arg("describe")
-        .arg("--json")
-        .arg("--schema-version")
-        .arg("10")
-        .arg("-s")
-        .arg(server)
-        .arg("-y")
-        .arg(db);
-    let (code, out, err) = run_with_timeout(cmd, Path::new("."), timeout)?;
-    if code != 0 {
-        return Err(io::Error::other(format!(
-            "describe failed: {}",
-            String::from_utf8_lossy(&err)
-        )));
+    thread::scope(|scope| {
+        scope
+            .spawn(|| describe_db_blocking(server, db, timeout))
+            .join()
+            .map_err(|_| io::Error::other("schema request thread panicked"))?
+    })
+}
+
+fn describe_db_blocking(server: &str, db: &str, timeout: Duration) -> io::Result<Value> {
+    let url = format!(
+        "{}/v1/database/{}/schema",
+        server.trim_end_matches('/'),
+        urlencoding::encode(db)
+    );
+    let client = reqwest::blocking::Client::builder()
+        .timeout(timeout)
+        .build()
+        .map_err(io::Error::other)?;
+    let response = client
+        .get(url)
+        .query(&[("version", "10")])
+        .send()
+        .map_err(io::Error::other)?;
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().unwrap_or_default();
+        return Err(io::Error::other(format!("schema request failed ({status}): {body}")));
     }
-    let v: Value = serde_json::from_slice(&out).map_err(|e| io::Error::other(format!("parse json: {}", e)))?;
-    Ok(v)
+    response.json().map_err(io::Error::other)
 }
 
 fn extract_schema(v: &Value) -> SchemaSnapshot {

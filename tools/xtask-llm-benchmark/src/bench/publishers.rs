@@ -310,10 +310,16 @@ fn signal_killed_by(_status: &std::process::ExitStatus) -> Option<i32> {
 /// These are resource contention issues and diagnostic-free child-process crashes.
 fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
     let combined = format!("{stderr}{stdout}");
-    let diagnostic = combined.to_ascii_lowercase();
-    let has_actionable_compiler_diagnostic = diagnostic.lines().any(|line| {
+    let output = combined.to_ascii_lowercase();
+    let has_source_diagnostic = output.lines().any(|line| {
         let line = line.trim_start();
         line.starts_with("error[")
+            || line.contains(": error cs")
+            || line.contains(": error stdb")
+            || line.contains(": error il")
+            || line.starts_with("error ts")
+            || line.contains("rust-lld: error:")
+            || line.contains("lld-link: error:")
             || line.strip_prefix("error:").is_some_and(|message| {
                 let message = message.trim_start();
                 !message.starts_with("could not compile `")
@@ -321,24 +327,14 @@ fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
                     && !message.starts_with("command [\"cargo\", \"build\"")
                     && !message.starts_with("command [\"dotnet\", \"publish\"")
                     && !message.starts_with("failed to run custom build command for `")
+                    && !message.starts_with("linking with `rust-lld.exe` failed")
             })
     });
-    let silent_rustc_exit = diagnostic.contains("process didn't exit successfully")
-        && diagnostic.contains("--crate-name")
-        && diagnostic.contains("(exit code: 1)")
-        && !has_actionable_compiler_diagnostic;
-    let silent_cargo_exit = diagnostic.contains("error: command [\"cargo\", \"build\"")
-        && diagnostic.contains("exited with code 1")
-        && !has_actionable_compiler_diagnostic;
-    let silent_rust_lld_exit = diagnostic.contains("error: linking with `rust-lld.exe` failed: exit code: 1")
-        && !diagnostic.contains("rust-lld: error:")
-        && !diagnostic.contains("lld-link: error:");
-    let silent_build_script_exit = diagnostic.contains("failed to run custom build command for `")
-        && diagnostic.contains("build-script-build` (exit code: 1)")
-        && !diagnostic.contains("--- stderr")
-        && !diagnostic.contains("panicked at")
-        && !has_actionable_compiler_diagnostic;
-    let has_terminal_failure_marker = diagnostic.lines().any(|line| {
+    if has_source_diagnostic {
+        return false;
+    }
+
+    let has_terminal_failure = output.lines().any(|line| {
         let line = line.trim_start();
         line.starts_with("error: could not compile `")
             || line.starts_with("failed:")
@@ -346,46 +342,18 @@ fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
             || line.contains("build failed")
             || line.contains("panicked at")
     });
-    let has_actionable_dotnet_diagnostic = diagnostic.lines().any(|line| {
-        line.contains(".cs(")
-            && (line.contains(": error cs") || line.contains(": error stdb") || line.contains(": error il"))
-    });
-    let silent_dotnet_exit = diagnostic.contains("error: command [\"dotnet\", \"publish\"")
-        && diagnostic.contains("exited with code 1")
-        && !has_actionable_compiler_diagnostic
-        && !has_actionable_dotnet_diagnostic;
-    let dotnet_linker_exit = diagnostic.contains("error msb6006")
-        && diagnostic.contains("\"dotnet.exe\" exited with code 1")
-        && diagnostic.contains("error netsdk1144")
-        && !has_actionable_dotnet_diagnostic;
-    // "Pipe is broken" errors from WASI SDK parallel builds
+    let diagnostic_free_rust_exit = (output.contains("process didn't exit successfully")
+        && output.contains("--crate-name"))
+        || output.contains("linking with `rust-lld.exe` failed: exit code: 1");
+
     combined.contains("Pipe is broken")
         || combined.contains("EmitBundleObjectFiles")
-        // Other transient resource errors
         || combined.contains("Unable to read data from the transport connection")
-        // WASI SDK tar extraction race condition - multiple parallel builds
-        // trying to extract the same tarball simultaneously
         || (combined.contains("wasi-sdk") && combined.contains("tar"))
         || (combined.contains("MSB3073") && combined.contains("exited with code 2"))
-        // dotnet can crash below spacetime while spacetime exits 1.
         || combined.contains("code <signal")
-        // Cargo sometimes reports only a failed rustc command with no compiler
-        // diagnostic. This is a transient child-process failure, not bad source.
-        || silent_rustc_exit
-        || silent_cargo_exit
-        || silent_rust_lld_exit
-        || silent_build_script_exit
-        || silent_dotnet_exit
-        // The .NET linker occasionally exits without a source diagnostic and
-        // MSBuild reports only MSB6006 + NETSDK1144. Do not retry when the
-        // output also contains a C#, SpacetimeDB codegen, or IL source error.
-        || dotnet_linker_exit
-        // A child process can occasionally disappear on Windows after login but
-        // before the CLI emits a compiler/MSBuild diagnostic. Retrying is safe:
-        // benchmark publishes always use their own temporary CLI root and database.
-        || (!has_actionable_compiler_diagnostic
-            && !has_actionable_dotnet_diagnostic
-            && !has_terminal_failure_marker)
+        || diagnostic_free_rust_exit
+        || !has_terminal_failure
 }
 
 #[cfg(test)]

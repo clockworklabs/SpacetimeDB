@@ -38,13 +38,6 @@ pub fn cli() -> clap::Command {
                 .action(ArgAction::SetTrue)
                 .help("Ignore spacetime.json configuration"),
         )
-        .arg(
-            Arg::new("schema_version")
-                .long("schema-version")
-                .value_parser(["9", "10"])
-                .default_value("9")
-                .help("Schema ABI version to request"),
-        )
         .after_help("Run `spacetime help describe` for more detailed information.\n")
 }
 
@@ -59,10 +52,6 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
     let json = args.get_flag("json");
     let no_config = args.get_flag("no_config");
-    let schema_version = args
-        .get_one::<String>("schema_version")
-        .map(String::as_str)
-        .unwrap_or("9");
     let raw_parts: Vec<String> = args
         .get_many::<String>("describe_parts")
         .map(|vals| vals.cloned().collect())
@@ -108,41 +97,30 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     };
     let api = ClientApi::new(conn);
 
+    let module_def = api.module_def().await?;
+
     if json {
         fn sats_to_json<T: sats::Serialize>(v: &T) -> serde_json::Result<String> {
             serde_json::to_string_pretty(sats::serde::SerdeWrapper::from_ref(v))
         }
-        let json = match schema_version {
-            "9" => {
-                let module_def = api.module_def().await?;
-                match entity {
-                    Some((EntityType::Reducer, reducer_name)) => {
-                        let reducer = module_def
-                            .reducers
-                            .iter()
-                            .find(|r| *r.name == *reducer_name)
-                            .context("no such reducer")?;
-                        sats_to_json(reducer)?
-                    }
-                    Some((EntityType::Table, table_name)) => {
-                        let table = module_def
-                            .tables
-                            .iter()
-                            .find(|t| *t.name == *table_name)
-                            .context("no such table")?;
-                        sats_to_json(table)?
-                    }
-                    None => sats_to_json(&module_def)?,
-                }
+        let json = match entity {
+            Some((EntityType::Reducer, reducer_name)) => {
+                let reducer = module_def
+                    .reducers
+                    .iter()
+                    .find(|r| *r.name == *reducer_name)
+                    .context("no such reducer")?;
+                sats_to_json(reducer)?
             }
-            "10" => {
-                anyhow::ensure!(
-                    entity.is_none(),
-                    "entity filtering is only supported for schema version 9"
-                );
-                sats_to_json(&api.module_def_v10().await?)?
+            Some((EntityType::Table, table_name)) => {
+                let table = module_def
+                    .tables
+                    .iter()
+                    .find(|t| *t.name == *table_name)
+                    .context("no such table")?;
+                sats_to_json(table)?
             }
-            _ => unreachable!("clap validates schema_version"),
+            None => sats_to_json(&module_def)?,
         };
 
         // TODO: validate the JSON output
