@@ -1350,6 +1350,20 @@ mod tests {
     }
 
     #[test]
+    fn missing_default_value_produces_a_schema_diff() {
+        let mut golden = current_schema(true);
+        golden["tables"][0]["default_values"] = json!([{
+            "col_id": 1,
+            "value": [1]
+        }]);
+
+        let golden = extract_schema(&golden);
+        let candidate = extract_schema(&current_schema(true));
+
+        assert!(!diff_maps(&golden.tables, &candidate.tables).is_null());
+    }
+
+    #[test]
     fn v10_schema_compares_explicit_canonical_table_names() {
         let schema = |source_name: &str| {
             json!({

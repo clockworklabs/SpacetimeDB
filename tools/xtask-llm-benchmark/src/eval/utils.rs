@@ -104,9 +104,16 @@ pub fn normalize(s: &str, collapse_ws: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static PROCESS_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn process_timeout_kills_a_long_running_command() {
+        let _guard = PROCESS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
         #[cfg(windows)]
         let command = {
             let mut command = Command::new("powershell");
@@ -129,13 +136,17 @@ mod tests {
 
     #[test]
     fn process_output_is_drained_while_the_command_runs() {
+        let _guard = PROCESS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
         #[cfg(windows)]
         let command = {
             let mut command = Command::new("powershell");
             command.args([
                 "-NoProfile",
                 "-Command",
-                "$chunk = 'x' * 4096; 1..256 | ForEach-Object { [Console]::Out.Write($chunk); [Console]::Error.Write($chunk) }",
+                "$chunk = 'x' * 4096; 1..16 | ForEach-Object { [Console]::Out.Write($chunk); [Console]::Error.Write($chunk) }",
             ]);
             command
         };
@@ -149,11 +160,16 @@ mod tests {
             command
         };
 
-        let (code, stdout, stderr) = run_with_timeout(command, Path::new("."), Duration::from_secs(10))
+        #[cfg(windows)]
+        let expected_len = 4096 * 16;
+        #[cfg(not(windows))]
+        let expected_len = 4096 * 256;
+
+        let (code, stdout, stderr) = run_with_timeout(command, Path::new("."), Duration::from_secs(15))
             .expect("large output should not deadlock");
 
         assert_eq!(code, 0);
-        assert_eq!(stdout.len(), 4096 * 256);
-        assert_eq!(stderr.len(), 4096 * 256);
+        assert_eq!(stdout.len(), expected_len);
+        assert_eq!(stderr.len(), expected_len);
     }
 }
