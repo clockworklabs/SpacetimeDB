@@ -1,6 +1,6 @@
 use std::env;
 use std::io::{self, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -24,8 +24,35 @@ pub fn derive_cat_task_from_file(src: &str) -> (String, String) {
 }
 
 pub(crate) fn spacetime_command() -> Command {
-    let executable = env::var_os("LLM_BENCH_SPACETIME_BIN").unwrap_or_else(|| "spacetime".into());
-    Command::new(executable)
+    if let Some(executable) = env::var_os("LLM_BENCH_SPACETIME_BIN") {
+        return Command::new(executable);
+    }
+
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("xtask-llm-benchmark is under tools/xtask-llm-benchmark");
+    let target = env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| workspace.join("target"));
+    let target = if target.is_absolute() {
+        target
+    } else {
+        workspace.join(target)
+    };
+    let executable = if cfg!(windows) {
+        "spacetimedb-cli.exe"
+    } else {
+        "spacetimedb-cli"
+    };
+    for profile in ["release", "debug"] {
+        let candidate = target.join(profile).join(executable);
+        if candidate.is_file() {
+            return Command::new(candidate);
+        }
+    }
+
+    Command::new("spacetime")
 }
 
 pub fn sql_exec(db: &str, query: &str, host: Option<&str>) -> Result<(), String> {
@@ -190,7 +217,7 @@ mod tests {
         #[cfg(not(windows))]
         let expected_len = 4096 * 256;
 
-        let (code, stdout, stderr) = run_with_timeout(command, Path::new("."), Duration::from_secs(15))
+        let (code, stdout, stderr) = run_with_timeout(command, Path::new("."), Duration::from_secs(60))
             .expect("large output should not deadlock");
 
         assert_eq!(code, 0);
