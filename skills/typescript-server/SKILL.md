@@ -107,6 +107,14 @@ indexes: [{ accessor: 'by_group_user', algorithm: 'btree', columns: ['groupId', 
 
 Prefer a multi-column index over filtering by one column and looping. Filter takes an array in index column order; a prefix scan passes the leading value bare: `filter(groupId)`.
 
+The published module's **entry file must export the schema as default**. If you split tables
+(`schema.ts`) from reducers/lifecycle (`index.ts`), re-export it from the entry:
+
+```typescript
+// index.ts
+export { default } from './schema';   // re-export the schema for the module entry
+```
+
 ## Reducers
 
 Reducers are created with `spacetimedb.reducer(...)`; the export name becomes the reducer name:
@@ -157,6 +165,10 @@ export const onDisconnect = spacetimedb.clientDisconnected((ctx) => { ... });
 // Auth: ctx.sender is the caller's Identity
 if (!row.owner.equals(ctx.sender)) throw new SenderError('unauthorized');
 
+// ctx.connectionId: the per-connection id, NULLABLE (ConnectionId | null) — null-check before use.
+// One Identity can hold several connections (multiple tabs/devices).
+if (ctx.connectionId) { /* ... */ }
+
 // Server timestamp (deterministic per reducer call)
 ctx.db.item.insert({ id: 0n, createdAt: ctx.timestamp });
 
@@ -191,6 +203,8 @@ export const tick = spacetimedb.reducer(
 
 // One-time: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch + delayMicros)
 // Repeating: ScheduleAt.interval(60_000_000n)
+// Read time back from a scheduleAt value (tagged union):
+//   const micros = at.tag === 'time' ? at.value : at.value.microsSinceUnixEpoch;  // bigint
 ```
 
 ## Custom Types
@@ -212,6 +226,10 @@ const Shape = t.enum('Shape', {
 ```
 
 ## Views
+
+A client subscribing to a view receives only the rows it returns. Use a per-user view
+(keyed on `ctx.sender`) for per-viewer access control: deleting a row it depends on
+(e.g. a membership row) automatically drops the rows it was exposing from that client.
 
 ```typescript
 // Anonymous view (same for all clients):

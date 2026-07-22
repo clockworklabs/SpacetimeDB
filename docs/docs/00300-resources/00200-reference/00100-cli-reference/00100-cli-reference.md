@@ -131,6 +131,7 @@ Run `spacetime help publish` for more detailed information.
 * `--no-config` — Ignore spacetime.json configuration
 * `--env <ENV>` — Environment name for config file layering (e.g., dev, staging)
 * `--native-aot` — Use NativeAOT-LLVM compilation for C# modules (experimental, Windows only)
+* `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.
 
 
 
@@ -264,6 +265,7 @@ Start development mode with auto-regenerate client module bindings, auto-rebuild
   Possible values: `always`, `on-conflict`, `never`
 
 * `-t`, `--template <TEMPLATE>` — Template ID or GitHub repository (owner/repo or URL) for project initialization
+* `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.
 * `--run <COMMAND>` — Command to run the client development server (overrides spacetime.json config)
 * `--server-only` — Only run the server (module) without starting the client
 * `--no-config` — Ignore spacetime.json configuration
@@ -355,6 +357,7 @@ Run `spacetime help generate` for more detailed information.
 * `--build-options <BUILD_OPTIONS>` — Options to pass to the build command, for example --build-options='--lint-dir='
 
   Default value: ``
+* `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.
 * `--include-private` — Include private tables and functions in generated code (types are always included).
 
   Default value: `false`
@@ -441,6 +444,7 @@ Initializes a new spacetime project.
 * `--local` — Use local deployment instead of Maincloud
 * `--non-interactive` — Run in non-interactive mode
 * `--native-aot` — Configure C# project for NativeAOT-LLVM compilation (experimental, Windows only)
+* `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Defaults to 10 except on macOS or when only .NET 8 is installed.
 
 
 
@@ -457,6 +461,7 @@ Builds a spacetime module.
 
   Default value: `src`
 * `-d`, `--debug` — Builds the module using debug instead of release (intended to speed up local iteration, not recommended for CI)
+* `--dotnet-version <VERSION>` — Target .NET SDK major version for C# projects (e.g. 8 or 10). Auto-detected when omitted.
 
 
 
