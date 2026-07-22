@@ -3716,7 +3716,7 @@ name = "keynote-bench-harness"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "reqwest",
+ "reqwest 0.12.24",
  "serde_json",
  "tempfile",
 ]
@@ -8357,6 +8357,16 @@ dependencies = [
  "portpicker",
  "reqwest 0.12.24",
  "tempfile",
+]
+
+[[package]]
+name = "spacetimedb-index-scan-gate"
+version = "2.7.0"
+dependencies = [
+ "anyhow",
+ "spacetimedb-sats",
+ "spacetimedb-testing",
+ "tikv-jemallocator",
 ]
 
 [[package]]
