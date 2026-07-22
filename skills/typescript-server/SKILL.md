@@ -98,13 +98,11 @@ Every column is a `t` builder value:
 
 Modifiers: `.primaryKey()`, `.autoInc()`, `.unique()`, `.index('btree')`, `.default(value)`.
 
-Use `.default(value)` only for a newly appended migration-safe field. Preserve existing fields and reducers exactly, and do not put defaults on primary-key, unique, or auto-increment columns.
+Use `.default(value)` only for a newly appended migration-safe field. Do not put defaults on primary-key, unique, or auto-increment columns.
 
 Optional columns: `nickname: t.option(t.string())`
 
 Schema builders describe the database's wire types; they are not TypeScript type names. For example, a `t.u16()` value is a TypeScript `number`, not a value cast to a type named `u16`.
-
-Treat requested table options and column modifiers as part of the schema contract. Do not add `event`, `autoInc`, `unique`, indexes, or defaults unless the module requirements call for them.
 
 ## Indexes
 

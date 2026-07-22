@@ -74,7 +74,7 @@ Options: `accessor = snake_case` (required), `public`, `scheduled(reducer_fn)`, 
 #[default(true)]        // migration-safe default for a newly appended column
 ```
 
-Defaults are for compatible schema upgrades. Append the defaulted field, preserve all existing fields and reducers exactly, and do not place `#[default(...)]` on primary-key, unique, or auto-increment columns.
+Defaults support compatible addition of a newly appended field. Do not place `#[default(...)]` on primary-key, unique, or auto-increment columns.
 
 ## Indexes
 

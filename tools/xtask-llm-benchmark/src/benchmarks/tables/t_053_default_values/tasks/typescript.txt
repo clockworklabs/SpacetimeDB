@@ -13,4 +13,3 @@ REDUCERS
 
 MIGRATION
 - A compatible republish must backfill existing rows
-- Do not put the default on a primary-key, unique, or auto-increment column

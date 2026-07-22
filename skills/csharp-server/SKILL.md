@@ -97,7 +97,7 @@ The complete set of column attributes:
 [Default(true)]       // migration-safe default for a newly appended field
 ```
 
-Defaults are for compatible schema upgrades. Preserve existing fields and reducers, append the defaulted field, and do not apply `[Default(...)]` to primary-key, unique, or auto-increment fields.
+Defaults support compatible addition of a newly appended field. Do not apply `[Default(...)]` to primary-key, unique, or auto-increment fields.
 
 ## Indexes
 

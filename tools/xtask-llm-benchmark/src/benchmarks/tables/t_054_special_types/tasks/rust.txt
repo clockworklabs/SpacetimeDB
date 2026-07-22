@@ -11,6 +11,5 @@ TABLE
     - signed_128: i128
     - unsigned_256: u256
     - signed_256: i256
-  - Use the SpacetimeDB integer types for 256-bit values
 
 No reducers are required.
