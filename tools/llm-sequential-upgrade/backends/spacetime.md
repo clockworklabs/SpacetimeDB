@@ -1,6 +1,6 @@
 # Backend: SpacetimeDB
 
-Instructions for generating, building, and deploying the **SpacetimeDB** backend.
+Server module + React client built on the SpacetimeDB TypeScript SDK.
 
 ---
 
@@ -114,17 +114,21 @@ Wait for the dev server to be ready (poll `http://localhost:6173` up to 30 secon
 
 ## App Identity
 
-- HTML `<title>` MUST be **"SpacetimeDB Chat"** (not "Chat App" or anything generic)
+- HTML `<title>` MUST be **"SpacetimeDB Chat"** (not a generic "Chat App")
 - The app MUST show **"SpacetimeDB Chat"** as the visible header/title in the UI
-- This distinguishes it from the PostgreSQL version during testing
 
 ---
 
-## Redeploy (for fix iterations)
+## Redeploy (fix iterations & upgrades)
 
 - If **backend changed**: re-publish module, regenerate bindings if schema changed
   ```bash
   spacetime publish chat-app-<timestamp> --module-path <backend-dir>
   spacetime generate --lang typescript --out-dir <client>/src/module_bindings --module-path <backend-dir>
+  ```
+  **If the schema changed (common on upgrades)**, a plain publish aborts needing a migration and
+  prompts `[y/N]` (hangs headless). Skip it — go straight to the non-interactive wipe-and-publish:
+  ```bash
+  echo y | spacetime publish chat-app-<timestamp> --module-path <backend-dir> --delete-data
   ```
 - If **client changed**: Vite HMR handles it automatically (or restart dev server if needed)
