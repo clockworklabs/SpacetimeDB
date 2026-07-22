@@ -267,7 +267,7 @@ ctx.Db.TickTimer.Insert(new TickTimer { ScheduledId = 0, ScheduledAt = at });
 
 Scheduled reducer callbacks use the ordinary `[SpacetimeDB.Reducer]` attribute. There is no `ReducerKind.Scheduled`; the table's `Scheduled` option associates the callback.
 
-Construct a connection ID from 16 bytes with `ConnectionId.From(bytes)`; the result is nullable and must be checked.
+To construct a `ConnectionId` from a 128-bit numeric representation, encode it as exactly 16 little-endian bytes and call `ConnectionId.From(bytes)`. The result is nullable and must be checked before use.
 
 ## Procedures and HTTP
 

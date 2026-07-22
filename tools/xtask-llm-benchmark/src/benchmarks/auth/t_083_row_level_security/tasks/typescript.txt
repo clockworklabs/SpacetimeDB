@@ -7,8 +7,7 @@ TABLE
     - name: string
 
 CLIENT VISIBILITY FILTER
-- SQL exactly: `SELECT * FROM user_record WHERE identity = :sender`
-- Each caller can see only its own row
+- Restrict user_record so each caller can see only rows whose identity matches the caller
 
 REDUCERS
 - register_self(name: string)
