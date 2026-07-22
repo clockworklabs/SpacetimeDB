@@ -8118,6 +8118,7 @@ dependencies = [
  "futures",
  "headers",
  "http",
+ "http-body",
  "http-body-util",
  "humantime",
  "hyper",

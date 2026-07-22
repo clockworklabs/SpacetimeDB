@@ -49,6 +49,8 @@ pub struct SqlResult {
 /// If a `ModuleHost` is provided, the SQL query is executed via the module host,
 /// meaning the module’s core is used to run the statement.
 /// If no module host is provided, the SQL query is executed on the current thread.
+///
+/// Callers that send the returned rows to a client must record `bytes_sent_to_clients` themselves.
 pub async fn run(
     db: Arc<RelationalDB>,
     sql_text: String,
@@ -1683,6 +1685,39 @@ pub(crate) mod tests {
             vec![product!(2u8)]
         );
         check(db.clone(), "DELETE FROM T", internal_auth, del)?;
+
+        Ok(())
+    }
+
+    // Egress is charged by the transport that sends the rows; charging here would double count.
+    #[test]
+    fn test_select_does_not_charge_egress() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
+        with_auto_commit(&db, |tx| -> Result<_, DBError> {
+            for i in 0..4u8 {
+                insert(&db, tx, table_id, &product!(i))?;
+            }
+            Ok(())
+        })?;
+
+        let rt = db.runtime().expect("runtime should be there");
+
+        let server = Identity::from_claims("issuer", "server");
+        let auth = AuthCtx::new(server, server);
+
+        let result = rt.block_on(run(
+            db.clone(),
+            "SELECT * FROM T".to_string(),
+            auth,
+            None,
+            None,
+            &mut vec![],
+        ))?;
+
+        assert_eq!(result.rows.len(), 4);
+        assert_eq!(result.metrics.bytes_sent_to_clients, 0);
 
         Ok(())
     }

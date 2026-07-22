@@ -16,6 +16,7 @@ spacetimedb-paths.workspace = true
 spacetimedb-schema.workspace = true
 
 base64.workspace = true
+http-body.workspace = true
 http-body-util.workspace = true
 tokio = { version = "1.2", features = ["full"] }
 lazy_static = "1.4.0"
