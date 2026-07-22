@@ -367,8 +367,7 @@ mod tests {
             .as_object()
             .ok_or_else(|| anyhow::anyhow!("Failed to parse JWT payload as object"))?;
         let keys: HashSet<String> = as_object.keys().map(|s| s.to_string()).collect();
-        // No-expiration tokens used to include `"exp": null`; new tokens omit it.
-        let expected_keys = vec!["iss", "sub", "aud", "iat", "hex_identity"]
+        let expected_keys = vec!["iss", "sub", "aud", "iat", "exp", "hex_identity"]
             .into_iter()
             .map(|s| s.to_string())
             .collect::<HashSet<String>>();

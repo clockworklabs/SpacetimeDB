@@ -209,10 +209,10 @@ jobs:
         shell: bash
         run: |
           find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
+          if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
             echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean --release -p v8 || true
-            cargo build --release -p v8
+            cargo clean -p v8 || true
+            cargo build -p v8
           fi
 
       - name: Install cargo-nextest
@@ -296,16 +296,6 @@ jobs:
           save-if: false
           prefix-key: v1
 
-      - name: Check v8 outputs
-        shell: bash
-        run: |
-          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
-            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean --release -p v8 || true
-            cargo build --release -p v8
-          fi
-
       - uses: actions/setup-dotnet@v3
         with:
           global-json-file: global.json
@@ -388,6 +378,21 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.GIT_REF }}
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          save-if: false
+          prefix-key: v1
+
+      - name: Build keynote benchmark binaries
+        run: cargo build --release -p spacetimedb-cli -p spacetimedb-standalone
 
       # Node 24 is the current Active LTS line.
       - name: Set up Node.js
