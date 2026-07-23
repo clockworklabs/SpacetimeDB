@@ -9,7 +9,7 @@ import type { UntypedRemoteModule } from './spacetime_module';
 import {
   isRowTypedQuery,
   toSql,
-  type SubscriptionFromBuilder,
+  type NamespacedQueryBuilder,
   type RowTypedQuery,
 } from '../lib/query';
 import type { UntypedSchemaDef } from '../lib/schema';
@@ -89,7 +89,7 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
    */
   addQuery(
     queryFn: (q: {
-      from: SubscriptionFromBuilder<RemoteModule & UntypedSchemaDef>;
+      from: NamespacedQueryBuilder<RemoteModule & UntypedSchemaDef>;
     }) => RowTypedQuery<any, any>
   ): this {
     const from = this.db.getFromBuilder<RemoteModule & UntypedSchemaDef>();

@@ -522,7 +522,7 @@ impl Lang for Cpp<'_> {
         let name = type_def.accessor_name.name();
 
         // Special handling for AlgebraicType due to circular dependencies
-        if name.to_string() == "AlgebraicType" {
+        if name == "AlgebraicType" {
             return vec![OutputFile {
                 filename: format!("{name}.g.h"),
                 code: self.generate_algebraic_type_special(),

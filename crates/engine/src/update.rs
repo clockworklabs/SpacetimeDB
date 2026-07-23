@@ -6,7 +6,7 @@ use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
 use spacetimedb_datastore::system_tables::{StViewFields, StViewRow, ST_VIEW_ID};
 use spacetimedb_lib::db::auth::StTableType;
-use spacetimedb_lib::db::raw_def::v9::TableAccess;
+use spacetimedb_lib::db::raw_def::v9::{RawRowLevelSecurityDefV9, TableAccess};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColSet, ConstraintId, TableId};
@@ -483,13 +483,9 @@ fn auto_migrate_database(
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddRowLevelSecurity(sql_rls) => {
                 log!(logger, "Adding row-level security `{sql_rls}`");
-                let rls = plan
-                    .new
-                    .row_level_security()
-                    .find(|r| *r.sql == *sql_rls)
-                    .ok_or_else(|| {
-                        anyhow::anyhow!("AddRowLevelSecurity: RLS `{sql_rls}` not found in new module def")
-                    })?;
+                let rls = plan.new.lookup::<RawRowLevelSecurityDefV9>(&sql_rls).ok_or_else(|| {
+                    anyhow::anyhow!("AddRowLevelSecurity: RLS `{sql_rls}` not found in new module def")
+                })?;
                 let rls = RowLevelExpr::build_row_level_expr(tx, &auth_ctx, rls)?;
 
                 stdb.create_row_level_security(tx, rls.def)?;
@@ -553,10 +549,18 @@ pub fn create_table_from_def_with_prefix(
         schema.alias = None;
 
         // Apply the namespace to the scheduled reducer/procedure name so the scheduler can
-        // resolve it via the namespaced reducer_by_name / procedure_by_name
+        // resolve it via the namespaced reducer_by_name / procedure_by_name.
+        //
+        // `ScheduleSchema::function_name` is typed as `Identifier`, but for submodule tables it
+        // must hold the full dot-joined name.
+        // TODO: Consider updating `function_name` to `NamespacedIdentifier`. Not done for now
+        // as the type propagates into the scheduler and datastore's function-name resolution and
+        // complicates things quite a lot.
+        // For now we build the namespaced name via `NamespacePath::join`, and bypass `Identifier`'s
+        // single-segment validation at the last step.
         if let Some(schedule) = &mut schema.schedule {
-            let prefixed_fn = format!("{}{}", name_prefix, &*schedule.function_name);
-            schedule.function_name = Identifier::new_assume_valid(RawIdentifier::from(prefixed_fn));
+            let namespaced_fn = name_prefix.join(schedule.function_name.clone());
+            schedule.function_name = Identifier::new_assume_valid(namespaced_fn.into());
         }
 
         // Apply the namespace to index canonical names and aliases for global uniqueness.

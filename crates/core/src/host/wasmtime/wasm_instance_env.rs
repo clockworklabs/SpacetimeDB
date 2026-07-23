@@ -25,6 +25,7 @@ use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use spacetimedb_primitives::{errno, ColId, ViewFnPtr};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::def::ModuleDef;
+use spacetimedb_schema::identifier::NamespacedIdentifier;
 use std::future::Future;
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -1846,7 +1847,7 @@ impl WasmInstanceEnv {
     fn call_view<'a>(
         caller: &mut Caller<'a, Self>,
         view_call: &ViewCallInfo,
-        view_name: &RawIdentifier,
+        view_name: &NamespacedIdentifier,
         fn_ptr: ViewFnPtr,
         sender: Option<Identity>,
     ) -> anyhow::Result<ViewReturnData> {

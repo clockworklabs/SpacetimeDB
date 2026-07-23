@@ -168,7 +168,7 @@ pub enum Action {
 pub trait MigrationFormatter {
     fn format_header(&mut self) -> io::Result<()>;
     fn format_add_table(&mut self, table_info: &TableInfo) -> io::Result<()>;
-    fn format_remove_table(&mut self, table_name: &str) -> io::Result<()>;
+    fn format_remove_table(&mut self, table_name: &NamespacedIdentifier) -> io::Result<()>;
     fn format_view(&mut self, view_info: &ViewInfo, action: Action) -> io::Result<()>;
     fn format_index(&mut self, index_info: &IndexInfo, action: Action) -> io::Result<()>;
     fn format_constraint(&mut self, constraint_info: &ConstraintInfo, action: Action) -> io::Result<()>;
@@ -176,7 +176,7 @@ pub trait MigrationFormatter {
     fn format_change_access(&mut self, access_info: &AccessChangeInfo) -> io::Result<()>;
     fn format_change_primary_key(
         &mut self,
-        table_name: &str,
+        table_name: &NamespacedIdentifier,
         old_pk: Option<ColId>,
         new_pk: Option<ColId>,
     ) -> io::Result<()>;
@@ -192,7 +192,7 @@ pub trait MigrationFormatter {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TableInfo {
-    pub name: RawIdentifier,
+    pub name: NamespacedIdentifier,
     pub is_system: bool,
     pub access: TableAccess,
     pub columns: Vec<ColumnInfo>,
@@ -204,7 +204,7 @@ pub struct TableInfo {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ViewInfo {
-    pub name: RawIdentifier,
+    pub name: NamespacedIdentifier,
     pub params: Vec<ViewParamInfo>,
     pub columns: Vec<ViewColumnInfo>,
     pub is_anonymous: bool,
@@ -231,34 +231,40 @@ pub struct ColumnInfo {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConstraintInfo {
+    /// The constraint's own name. Table-relative (not namespaced) when reported as
+    /// part of a [`TableInfo`]; the full namespaced name otherwise.
     pub name: RawIdentifier,
     pub columns: Vec<Identifier>,
-    pub table_name: RawIdentifier,
+    pub table_name: NamespacedIdentifier,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct IndexInfo {
+    /// The index's own name. Table-relative (not namespaced) when reported as
+    /// part of a [`TableInfo`]; the full namespaced name otherwise.
     pub name: RawIdentifier,
     pub columns: Vec<Identifier>,
-    pub table_name: RawIdentifier,
+    pub table_name: NamespacedIdentifier,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SequenceInfo {
+    /// The sequence's own name. Table-relative (not namespaced) when reported as
+    /// part of a [`TableInfo`]; the full namespaced name otherwise.
     pub name: RawIdentifier,
     pub column_name: Identifier,
-    pub table_name: RawIdentifier,
+    pub table_name: NamespacedIdentifier,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AccessChangeInfo {
-    pub table_name: RawIdentifier,
+    pub table_name: NamespacedIdentifier,
     pub new_access: TableAccess,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScheduleInfo {
-    pub table_name: RawIdentifier,
+    pub table_name: NamespacedIdentifier,
     pub function_name: Identifier,
     pub function_kind: FunctionKind,
 }
@@ -270,7 +276,7 @@ pub struct RlsInfo {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ColumnChanges {
-    pub table_name: RawIdentifier,
+    pub table_name: NamespacedIdentifier,
     pub changes: Vec<ColumnChange>,
 }
 
@@ -289,16 +295,19 @@ pub enum ColumnChange {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct NewColumns {
-    pub table_name: RawIdentifier,
+    pub table_name: NamespacedIdentifier,
     pub columns: Vec<ColumnInfo>,
 }
 
-fn extract_table_info(full_name: &str, plan: &super::AutoMigratePlan) -> Result<TableInfo, FormattingErrors> {
+fn extract_table_info(
+    full_name: &NamespacedIdentifier,
+    plan: &super::AutoMigratePlan,
+) -> Result<TableInfo, FormattingErrors> {
     let (_, owning_def, table_def) =
         plan.new
             .find_table_by_full_name(full_name)
             .ok_or_else(|| FormattingErrors::TableNotFound {
-                table: full_name.into(),
+                table: full_name.as_ref().into(),
             })?;
 
     let columns = table_def
@@ -332,7 +341,7 @@ fn extract_table_info(full_name: &str, plan: &super::AutoMigratePlan) -> Result<
                         Ok(column.name.clone())
                     })
                     .collect::<Result<Vec<_>, FormattingErrors>>()?,
-                table_name: RawIdentifier::new(full_name),
+                table_name: full_name.clone(),
             })
         })
         .collect::<Result<Vec<_>, FormattingErrors>>()?;
@@ -355,7 +364,7 @@ fn extract_table_info(full_name: &str, plan: &super::AutoMigratePlan) -> Result<
             Ok(IndexInfo {
                 name: index.name.clone(),
                 columns,
-                table_name: RawIdentifier::new(full_name),
+                table_name: full_name.clone(),
             })
         })
         .collect::<Result<Vec<_>, FormattingErrors>>()?;
@@ -371,19 +380,19 @@ fn extract_table_info(full_name: &str, plan: &super::AutoMigratePlan) -> Result<
             Ok(SequenceInfo {
                 name: sequence.name.clone(),
                 column_name: column.name.clone(),
-                table_name: RawIdentifier::new(full_name),
+                table_name: full_name.clone(),
             })
         })
         .collect::<Result<Vec<_>, FormattingErrors>>()?;
 
     let schedule = table_def.schedule.as_ref().map(|schedule| ScheduleInfo {
-        table_name: RawIdentifier::new(full_name),
+        table_name: full_name.clone(),
         function_name: schedule.function_name.clone(),
         function_kind: schedule.function_kind,
     });
 
     Ok(TableInfo {
-        name: RawIdentifier::new(full_name),
+        name: full_name.clone(),
         is_system: table_def.table_type == TableType::System,
         access: table_def.table_access,
         columns,
@@ -394,12 +403,15 @@ fn extract_table_info(full_name: &str, plan: &super::AutoMigratePlan) -> Result<
     })
 }
 
-fn extract_view_info(full_name: &str, module_def: &ModuleDef) -> Result<ViewInfo, FormattingErrors> {
-    let (_, owning_def, view_def) = module_def
-        .find_view_by_full_name(full_name)
-        .ok_or_else(|| FormattingErrors::ViewNotFound { view: full_name.into() })?;
+fn extract_view_info(full_name: &NamespacedIdentifier, module_def: &ModuleDef) -> Result<ViewInfo, FormattingErrors> {
+    let (_, owning_def, view_def) =
+        module_def
+            .find_view_by_full_name(full_name)
+            .ok_or_else(|| FormattingErrors::ViewNotFound {
+                view: full_name.as_ref().into(),
+            })?;
 
-    let name = RawIdentifier::new(full_name);
+    let name = full_name.clone();
     let is_anonymous = view_def.is_anonymous;
 
     let params = view_def
@@ -438,7 +450,7 @@ fn extract_view_info(full_name: &str, module_def: &ModuleDef) -> Result<ViewInfo
     })
 }
 
-fn extract_index_info(full_name: &str, module_def: &ModuleDef) -> Result<IndexInfo, FormattingErrors> {
+fn extract_index_info(full_name: &NamespacedIdentifier, module_def: &ModuleDef) -> Result<IndexInfo, FormattingErrors> {
     let (prefix, _, table_def, index_def) = module_def
         .find_index_by_full_name(full_name)
         .ok_or(FormattingErrors::IndexNotFound)?;
@@ -454,13 +466,16 @@ fn extract_index_info(full_name: &str, module_def: &ModuleDef) -> Result<IndexIn
         .collect::<Result<Vec<_>, FormattingErrors>>()?;
 
     Ok(IndexInfo {
-        name: RawIdentifier::new(full_name),
+        name: index_def.name.clone(),
         columns,
-        table_name: RawIdentifier::new(format!("{}{}", prefix, &*table_def.accessor_name)),
+        table_name: prefix.join(table_def.accessor_name.clone()),
     })
 }
 
-fn extract_constraint_info(full_name: &str, module_def: &ModuleDef) -> Result<ConstraintInfo, FormattingErrors> {
+fn extract_constraint_info(
+    full_name: &NamespacedIdentifier,
+    module_def: &ModuleDef,
+) -> Result<ConstraintInfo, FormattingErrors> {
     let (prefix, _, table_def, constraint_def) = module_def
         .find_constraint_by_full_name(full_name)
         .ok_or(FormattingErrors::ConstraintNotFound)?;
@@ -476,13 +491,16 @@ fn extract_constraint_info(full_name: &str, module_def: &ModuleDef) -> Result<Co
         .collect::<Result<Vec<_>, FormattingErrors>>()?;
 
     Ok(ConstraintInfo {
-        name: RawIdentifier::new(full_name),
+        name: constraint_def.name.clone(),
         columns,
-        table_name: RawIdentifier::new(format!("{}{}", prefix, &*table_def.accessor_name)),
+        table_name: prefix.join(table_def.accessor_name.clone()),
     })
 }
 
-fn extract_sequence_info(full_name: &str, module_def: &ModuleDef) -> Result<SequenceInfo, FormattingErrors> {
+fn extract_sequence_info(
+    full_name: &NamespacedIdentifier,
+    module_def: &ModuleDef,
+) -> Result<SequenceInfo, FormattingErrors> {
     let (prefix, _, table_def, sequence_def) = module_def
         .find_sequence_by_full_name(full_name)
         .ok_or(FormattingErrors::SequenceNotFound)?;
@@ -492,37 +510,40 @@ fn extract_sequence_info(full_name: &str, module_def: &ModuleDef) -> Result<Sequ
         .ok_or(FormattingErrors::ColumnNotFound)?;
 
     Ok(SequenceInfo {
-        name: RawIdentifier::new(full_name),
+        name: sequence_def.name.clone(),
         column_name: column.name.clone(),
-        table_name: RawIdentifier::new(format!("{}{}", prefix, &*table_def.accessor_name)),
+        table_name: prefix.join(table_def.accessor_name.clone()),
     })
 }
 
 fn extract_access_change_info(
-    full_name: &str,
+    full_name: &NamespacedIdentifier,
     plan: &super::AutoMigratePlan,
 ) -> Result<AccessChangeInfo, FormattingErrors> {
     let (_, _, table_def) =
         plan.new
             .find_table_by_full_name(full_name)
             .ok_or_else(|| FormattingErrors::TableNotFound {
-                table: full_name.into(),
+                table: full_name.as_ref().into(),
             })?;
 
     Ok(AccessChangeInfo {
-        table_name: RawIdentifier::new(full_name),
+        table_name: full_name.clone(),
         new_access: table_def.table_access,
     })
 }
 
-fn extract_schedule_info(table_full_name: &str, module_def: &ModuleDef) -> Result<ScheduleInfo, FormattingErrors> {
+fn extract_schedule_info(
+    table_full_name: &NamespacedIdentifier,
+    module_def: &ModuleDef,
+) -> Result<ScheduleInfo, FormattingErrors> {
     let (_, _, table_def) = module_def
         .find_table_by_full_name(table_full_name)
         .ok_or(FormattingErrors::ScheduleNotFound)?;
     let schedule_def = table_def.schedule.as_ref().ok_or(FormattingErrors::ScheduleNotFound)?;
 
     Ok(ScheduleInfo {
-        table_name: RawIdentifier::new(table_full_name),
+        table_name: table_full_name.clone(),
         function_name: schedule_def.function_name.clone(),
         function_kind: schedule_def.function_kind,
     })
@@ -541,18 +562,21 @@ fn extract_rls_info(rls: &str, plan: &super::AutoMigratePlan) -> Result<Option<R
     }))
 }
 
-fn extract_column_changes(full_name: &str, plan: &super::AutoMigratePlan) -> Result<ColumnChanges, FormattingErrors> {
+fn extract_column_changes(
+    full_name: &NamespacedIdentifier,
+    plan: &super::AutoMigratePlan,
+) -> Result<ColumnChanges, FormattingErrors> {
     let (_, old_owning, old_table) =
         plan.old
             .find_table_by_full_name(full_name)
             .ok_or_else(|| FormattingErrors::TableNotFound {
-                table: full_name.into(),
+                table: full_name.as_ref().into(),
             })?;
     let (_, new_owning, new_table) =
         plan.new
             .find_table_by_full_name(full_name)
             .ok_or_else(|| FormattingErrors::TableNotFound {
-                table: full_name.into(),
+                table: full_name.as_ref().into(),
             })?;
 
     let mut changes = Vec::new();
@@ -583,23 +607,26 @@ fn extract_column_changes(full_name: &str, plan: &super::AutoMigratePlan) -> Res
     }
 
     Ok(ColumnChanges {
-        table_name: RawIdentifier::new(full_name),
+        table_name: full_name.clone(),
         changes,
     })
 }
 
-fn extract_new_columns(full_name: &str, plan: &super::AutoMigratePlan) -> Result<NewColumns, FormattingErrors> {
+fn extract_new_columns(
+    full_name: &NamespacedIdentifier,
+    plan: &super::AutoMigratePlan,
+) -> Result<NewColumns, FormattingErrors> {
     let (_, new_owning, table_def) =
         plan.new
             .find_table_by_full_name(full_name)
             .ok_or_else(|| FormattingErrors::TableNotFound {
-                table: full_name.into(),
+                table: full_name.as_ref().into(),
             })?;
     let (_, _, old_table_def) =
         plan.old
             .find_table_by_full_name(full_name)
             .ok_or_else(|| FormattingErrors::TableNotFound {
-                table: full_name.into(),
+                table: full_name.as_ref().into(),
             })?;
 
     let mut new_columns = Vec::new();
@@ -617,7 +644,7 @@ fn extract_new_columns(full_name: &str, plan: &super::AutoMigratePlan) -> Result
     }
 
     Ok(NewColumns {
-        table_name: RawIdentifier::new(full_name),
+        table_name: full_name.clone(),
         columns: new_columns,
     })
 }

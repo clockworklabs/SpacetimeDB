@@ -66,7 +66,7 @@ use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue, Typespace};
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, ViewDef};
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::identifier::{Identifier, NamespacedIdentifier};
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::table_name::TableName;
 use std::collections::VecDeque;
@@ -1079,7 +1079,7 @@ impl ProcedureResultTarget {
 }
 
 pub struct CallViewParams {
-    pub view_name: RawIdentifier,
+    pub view_name: NamespacedIdentifier,
     pub view_id: ViewId,
     pub table_id: TableId,
     pub fn_ptr: ViewFnPtr,
@@ -1105,7 +1105,7 @@ pub(crate) struct ResolvedViewForRefresh<'a> {
     pub table_id: TableId,
     pub view_def: &'a ViewDef,
     /// The full namespaced view name as stored in `st_view` (e.g. `"lib.library_view"`).
-    pub view_name: RawIdentifier,
+    pub view_name: NamespacedIdentifier,
     /// The globally-offset fn_ptr expected by the guest dispatch layer.
     /// For submodule views this differs from `view_def.fn_ptr`, which is local to the owning module.
     pub global_fn_ptr: ViewFnPtr,
@@ -2899,7 +2899,7 @@ impl ModuleHost {
         view_collector.collect_views(&mut view_ids);
         for view_id in view_ids {
             let st_view_row = tx.lookup_st_view(view_id)?;
-            let view_name: RawIdentifier = st_view_row.view_name.into();
+            let view_name: NamespacedIdentifier = st_view_row.view_name.into();
             let view_id = st_view_row.view_id;
             let table_id = st_view_row.table_id.ok_or(ViewCallError::TableDoesNotExist(view_id))?;
             let is_anonymous = st_view_row.is_anonymous;
@@ -3044,7 +3044,7 @@ impl ModuleHost {
     fn call_view<I: WasmInstance>(
         instance: &mut RefInstance<'_, I>,
         tx: MutTxId,
-        view_name: &RawIdentifier,
+        view_name: &NamespacedIdentifier,
         view_id: ViewId,
         table_id: TableId,
         args: FunctionArgs,
@@ -3067,7 +3067,7 @@ impl ModuleHost {
     fn call_view_at<I: WasmInstance>(
         instance: &mut RefInstance<'_, I>,
         tx: MutTxId,
-        view_name: &RawIdentifier,
+        view_name: &NamespacedIdentifier,
         view_id: ViewId,
         table_id: TableId,
         args: FunctionArgs,
@@ -3103,7 +3103,7 @@ impl ModuleHost {
     fn call_view_inner<I: WasmInstance>(
         instance: &mut RefInstance<'_, I>,
         tx: MutTxId,
-        name: &RawIdentifier,
+        name: &NamespacedIdentifier,
         view_id: ViewId,
         table_id: TableId,
         fn_ptr: ViewFnPtr,

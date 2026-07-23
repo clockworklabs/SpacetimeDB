@@ -231,7 +231,7 @@ impl MigrationFormatter for TermColorFormatter {
         self.write_line("")
     }
 
-    fn format_remove_table(&mut self, table_name: &str) -> io::Result<()> {
+    fn format_remove_table(&mut self, table_name: &NamespacedIdentifier) -> io::Result<()> {
         self.write_action_prefix(&Action::Removed)?;
         self.buffer.write_all(b" table: ")?;
         self.write_colored(table_name, Some(self.colors.table_name), true)?;
@@ -327,7 +327,7 @@ impl MigrationFormatter for TermColorFormatter {
 
     fn format_change_primary_key(
         &mut self,
-        table_name: &str,
+        table_name: &NamespacedIdentifier,
         old_pk: Option<ColId>,
         new_pk: Option<ColId>,
     ) -> io::Result<()> {
