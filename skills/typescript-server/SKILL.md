@@ -160,6 +160,8 @@ ctx.db.score_record.id.delete(recordId);                   // Delete by PK
 
 Insert through the table accessor (`ctx.db.score_record.insert(...)`). Primary-key, unique, and index accessors support lookup or mutation of existing rows, but do not have `insert(...)`.
 
+`insert(...)` returns the inserted row, including database-assigned auto-increment fields.
+
 The accessor for a primary key or index is the declared column name. For example, a primary key named `eventId` is accessed as `ctx.db.event.eventId`, not `ctx.db.event.id`.
 
 The schema value registers module exports but does not expose database rows. Pass a context into any helper that needs `ctx.db`.
