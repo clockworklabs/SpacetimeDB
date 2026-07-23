@@ -35,11 +35,7 @@ import type {
 } from './message_types.ts';
 import type { ReducerEvent } from './reducer_event.ts';
 import { type UntypedRemoteModule } from './spacetime_module.ts';
-import {
-  makeFromBuilder,
-  makeQueryBuilder,
-  type NamespacedQueryBuilder,
-} from '../lib/query';
+import { makeFromBuilder, type NamespacedQueryBuilder } from '../lib/query';
 import {
   type TableCache,
   type Operation,
@@ -488,10 +484,6 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   subscriptionBuilder = (): SubscriptionBuilderImpl<RemoteModule> => {
     return new SubscriptionBuilderImpl(this);
   };
-
-  getTablesMap(): any {
-    return makeQueryBuilder({ tables: this.#remoteModule.tables } as any);
-  }
 
   getFromBuilder<
     SchemaDef extends UntypedSchemaDef,
