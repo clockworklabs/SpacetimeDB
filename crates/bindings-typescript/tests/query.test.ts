@@ -429,8 +429,6 @@ describe('makeFromBuilder', () => {
 
     // Root `person` is unaffected by the `lib.orders` namespace grouping.
     expect(toSql(from.person.build())).toBe('SELECT * FROM "person"');
-    expect(toSql(from.lib.orders.build())).toBe(
-      'SELECT * FROM "lib"."orders"'
-    );
+    expect(toSql(from.lib.orders.build())).toBe('SELECT * FROM "lib"."orders"');
   });
 });
