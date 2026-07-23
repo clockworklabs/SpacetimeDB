@@ -1541,7 +1541,7 @@ fn collect_subscribed_view_calls(
         let view_typespace = Arc::new(owning_def.typespace().clone());
 
         if *is_anonymous {
-            if !subs.iter().any(|a| matches!(a, ViewInstanceArgs::Anonymous)) {
+            if subs.is_empty() {
                 continue;
             }
             view_calls.push(CallViewParams {
