@@ -27,8 +27,8 @@ use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCal
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_primitives::{ColId, IndexId, ProcedureId, TableId, ViewFnPtr};
 use spacetimedb_sats::bsatn;
-use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::def::ModuleDef;
+use spacetimedb_schema::identifier::NamespacedIdentifier;
 use v8::{FunctionCallbackArguments, Isolate, Local, PinScope, Value};
 
 /// Calls the `__call_procedure__` function `fun`.
@@ -860,7 +860,7 @@ fn call_view(
     scope: &mut PinScope<'_, '_>,
     hooks: &HookFunctions<'_>,
     view_call: &ViewCallInfo,
-    view_name: &RawIdentifier,
+    view_name: &NamespacedIdentifier,
     table_id: TableId,
     fn_ptr: ViewFnPtr,
     sender: Option<Identity>,

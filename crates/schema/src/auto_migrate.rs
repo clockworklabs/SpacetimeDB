@@ -251,8 +251,23 @@ pub enum AutoMigratePrecheck {
 /// handled uniformly. Row-level security payloads are SQL text (`Box<str>`) rather than
 /// identifiers.
 ///
-/// IMPORTANT: Remove variants MUST be declared before Add variants in this enum. The ordering
-/// is used to sort steps of an auto-migration so that removes precede adds for the same name.
+/// It is important FOR CORRECTNESS that `Remove` variants are declared before `Add` variants in this enum!
+///
+/// The ordering is used to sort the steps of an auto-migration.
+/// If adds go before removes, and the user tries to remove an index and then re-add it with new configuration,
+/// the following can occur:
+///
+/// 1. `AddIndex("indexname")`
+/// 2. `RemoveIndex("indexname")`
+///
+/// This results in the existing index being re-added -- which, at time of writing, does nothing -- and then removed,
+/// resulting in the intended index not being created.
+///
+/// For now, we just ensure that we declare all `Remove` variants before `Add` variants
+/// and let `#[derive(PartialOrd)]` take care of the rest.
+///
+/// TODO: when this enum is made serializable, a more durable fix will be needed here.
+/// Probably we will want to have separate arrays of add and remove steps.
 #[derive(PartialEq, Eq, Debug, PartialOrd, Ord)]
 pub enum AutoMigrateStep {
     /// Remove an index. Payload is the full namespaced index name.
@@ -490,18 +505,18 @@ pub fn ponder_auto_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> 
     // dropped without any AddTable/RemoveTable step to compensate.
     let old_module = plan.old;
     let new_module = plan.new;
-    let old_table_names: HashSet<String> = old_module
+    let old_table_names: HashSet<NamespacedIdentifier> = old_module
         .all_tables_with_prefix()
         .into_iter()
-        .map(|(prefix, _, t)| format!("{}{}", prefix, &*t.name))
+        .map(|(prefix, _, t)| prefix.join(t.name.clone()))
         .collect();
-    let new_table_names: HashSet<String> = new_module
+    let new_table_names: HashSet<NamespacedIdentifier> = new_module
         .all_tables_with_prefix()
         .into_iter()
-        .map(|(prefix, _, t)| format!("{}{}", prefix, &*t.name))
+        .map(|(prefix, _, t)| prefix.join(t.name.clone()))
         .collect();
-    let added_tables: HashSet<String> = new_table_names.difference(&old_table_names).cloned().collect();
-    let removed_tables: HashSet<String> = old_table_names.difference(&new_table_names).cloned().collect();
+    let added_tables: HashSet<NamespacedIdentifier> = new_table_names.difference(&old_table_names).cloned().collect();
+    let removed_tables: HashSet<NamespacedIdentifier> = old_table_names.difference(&new_table_names).cloned().collect();
 
     let indexes_ok = auto_migrate_indexes(&mut plan, &added_tables, &removed_tables);
     let sequences_ok = auto_migrate_sequences(&mut plan, &added_tables, &removed_tables);
@@ -546,6 +561,8 @@ fn auto_migrate_views(plan: &mut AutoMigratePlan<'_>) -> Result<()> {
         match new_views.get(full_name) {
             Some(new_entry) => maybe_change.push((full_name.clone(), *old_entry, *new_entry)),
             None => {
+                // From the user's perspective, views do not have persistent state.
+                // Hence removal does not require a manual migration - just disconnecting clients.
                 plan.steps.push(AutoMigrateStep::RemoveView(full_name.clone()));
                 plan.ensure_disconnect_all_users();
             }
@@ -680,33 +697,33 @@ fn auto_migrate_tables(plan: &mut AutoMigratePlan<'_>) -> Result<()> {
     // the old module and `events` (accessor + canonical) in the new module are treated as the same
     // logical table, preventing spurious Remove+Add steps when only the accessor casing changed.
     // Step payloads use accessor names (prefix + accessor_name) since that's what the DB stores.
-    let old_tables: HashMap<String, (NamespacedIdentifier, &ModuleDef, &TableDef)> = old_module
+    let old_tables: HashMap<NamespacedIdentifier, (NamespacedIdentifier, &ModuleDef, &TableDef)> = old_module
         .all_tables_with_prefix()
         .into_iter()
         .map(|(prefix, owning, table)| {
-            let canonical = format!("{}{}", prefix, &*table.name);
+            let canonical = prefix.join(table.name.clone());
             let accessor = prefix.join(table.accessor_name.clone());
             (canonical, (accessor, owning, table))
         })
         .collect();
-    let new_tables: HashMap<String, (NamespacedIdentifier, &ModuleDef, &TableDef)> = new_module
+    let new_tables: HashMap<NamespacedIdentifier, (NamespacedIdentifier, &ModuleDef, &TableDef)> = new_module
         .all_tables_with_prefix()
         .into_iter()
         .map(|(prefix, owning, table)| {
-            let canonical = format!("{}{}", prefix, &*table.name);
+            let canonical = prefix.join(table.name.clone());
             let accessor = prefix.join(table.accessor_name.clone());
             (canonical, (accessor, owning, table))
         })
         .collect();
 
     for (canonical, (accessor, _, _)) in &old_tables {
-        if !new_tables.contains_key(canonical.as_str()) {
+        if !new_tables.contains_key(canonical) {
             plan.steps.push(AutoMigrateStep::RemoveTable(accessor.clone()));
             plan.ensure_disconnect_all_users();
         }
     }
     for (canonical, (accessor, _, _)) in &new_tables {
-        if !old_tables.contains_key(canonical.as_str()) {
+        if !old_tables.contains_key(canonical) {
             plan.steps.push(AutoMigrateStep::AddTable(accessor.clone()));
         }
     }
@@ -719,15 +736,13 @@ fn auto_migrate_tables(plan: &mut AutoMigratePlan<'_>) -> Result<()> {
     let maybe_change: Vec<TableEntry<'_>> = old_tables
         .iter()
         .filter_map(|(canonical, (_, old_owning, old_table))| {
-            new_tables
-                .get(canonical.as_str())
-                .map(|(new_accessor, new_owning, new_table)| {
-                    (
-                        new_accessor.clone(),
-                        (*old_owning, *old_table),
-                        (*new_owning, *new_table),
-                    )
-                })
+            new_tables.get(canonical).map(|(new_accessor, new_owning, new_table)| {
+                (
+                    new_accessor.clone(),
+                    (*old_owning, *old_table),
+                    (*new_owning, *new_table),
+                )
+            })
         })
         .collect();
 
@@ -1093,30 +1108,30 @@ fn def_ident(name: &RawIdentifier) -> Identifier {
 
 fn auto_migrate_indexes(
     plan: &mut AutoMigratePlan<'_>,
-    new_tables: &HashSet<String>,
-    removed_tables: &HashSet<String>,
+    new_tables: &HashSet<NamespacedIdentifier>,
+    removed_tables: &HashSet<NamespacedIdentifier>,
 ) -> Result<()> {
     let old_module = plan.old;
     let new_module = plan.new;
 
     // key = full index name (e.g. "lib.library_table_id_idx_btree")
     // value = (full_table_name, &IndexDef)
-    let old_indexes: HashMap<NamespacedIdentifier, (String, &IndexDef)> = {
+    let old_indexes: HashMap<NamespacedIdentifier, (NamespacedIdentifier, &IndexDef)> = {
         let mut map = HashMap::new();
         for (prefix, _, table) in old_module.all_tables_with_prefix() {
             // Canonical table name: must match the added/removed table sets computed in `ponder_auto_migrate`.
-            let table_full = format!("{}{}", prefix, &*table.name);
+            let table_full = prefix.join(table.name.clone());
             for idx in table.indexes.values() {
                 map.insert(prefix.join(def_ident(&idx.name)), (table_full.clone(), idx));
             }
         }
         map
     };
-    let new_indexes: HashMap<NamespacedIdentifier, (String, &IndexDef)> = {
+    let new_indexes: HashMap<NamespacedIdentifier, (NamespacedIdentifier, &IndexDef)> = {
         let mut map = HashMap::new();
         for (prefix, _, table) in new_module.all_tables_with_prefix() {
             // Canonical table name: must match the added/removed table sets computed in `ponder_auto_migrate`.
-            let table_full = format!("{}{}", prefix, &*table.name);
+            let table_full = prefix.join(table.name.clone());
             for idx in table.indexes.values() {
                 map.insert(prefix.join(def_ident(&idx.name)), (table_full.clone(), idx));
             }
@@ -1168,30 +1183,30 @@ fn auto_migrate_indexes(
 
 fn auto_migrate_sequences(
     plan: &mut AutoMigratePlan,
-    new_tables: &HashSet<String>,
-    removed_tables: &HashSet<String>,
+    new_tables: &HashSet<NamespacedIdentifier>,
+    removed_tables: &HashSet<NamespacedIdentifier>,
 ) -> Result<()> {
     let old_module = plan.old;
     let new_module = plan.new;
 
     // key = full sequence name (e.g. "lib.Bananas_id_seq")
     // value = (full_table_name, &SequenceDef)
-    let old_seqs: HashMap<NamespacedIdentifier, (String, &SequenceDef)> = {
+    let old_seqs: HashMap<NamespacedIdentifier, (NamespacedIdentifier, &SequenceDef)> = {
         let mut map = HashMap::new();
         for (prefix, _, table) in old_module.all_tables_with_prefix() {
             // Canonical table name: must match the added/removed table sets computed in `ponder_auto_migrate`.
-            let table_full = format!("{}{}", prefix, &*table.name);
+            let table_full = prefix.join(table.name.clone());
             for seq in table.sequences.values() {
                 map.insert(prefix.join(def_ident(&seq.name)), (table_full.clone(), seq));
             }
         }
         map
     };
-    let new_seqs: HashMap<NamespacedIdentifier, (String, &SequenceDef)> = {
+    let new_seqs: HashMap<NamespacedIdentifier, (NamespacedIdentifier, &SequenceDef)> = {
         let mut map = HashMap::new();
         for (prefix, _, table) in new_module.all_tables_with_prefix() {
             // Canonical table name: must match the added/removed table sets computed in `ponder_auto_migrate`.
-            let table_full = format!("{}{}", prefix, &*table.name);
+            let table_full = prefix.join(table.name.clone());
             for seq in table.sequences.values() {
                 map.insert(prefix.join(def_ident(&seq.name)), (table_full.clone(), seq));
             }
@@ -1228,19 +1243,19 @@ fn auto_migrate_sequences(
 
 fn auto_migrate_constraints(
     plan: &mut AutoMigratePlan,
-    new_tables: &HashSet<String>,
-    removed_tables: &HashSet<String>,
+    new_tables: &HashSet<NamespacedIdentifier>,
+    removed_tables: &HashSet<NamespacedIdentifier>,
 ) -> Result<()> {
     let old_module = plan.old;
     let new_module = plan.new;
 
     // key = full constraint name (e.g. "lib.Apples_id_key")
     // value = (full_table_name, &ConstraintDef)
-    let old_constraints: HashMap<NamespacedIdentifier, (String, &ConstraintDef)> = {
+    let old_constraints: HashMap<NamespacedIdentifier, (NamespacedIdentifier, &ConstraintDef)> = {
         let mut map = HashMap::new();
         for (prefix, _, table) in old_module.all_tables_with_prefix() {
             // Canonical table name: must match the added/removed table sets computed in `ponder_auto_migrate`.
-            let table_full = format!("{}{}", prefix, &*table.name);
+            let table_full = prefix.join(table.name.clone());
             for constraint in table.constraints.values() {
                 map.insert(
                     prefix.join(def_ident(&constraint.name)),
@@ -1250,11 +1265,11 @@ fn auto_migrate_constraints(
         }
         map
     };
-    let new_constraints: HashMap<NamespacedIdentifier, (String, &ConstraintDef)> = {
+    let new_constraints: HashMap<NamespacedIdentifier, (NamespacedIdentifier, &ConstraintDef)> = {
         let mut map = HashMap::new();
         for (prefix, _, table) in new_module.all_tables_with_prefix() {
             // Canonical table name: must match the added/removed table sets computed in `ponder_auto_migrate`.
-            let table_full = format!("{}{}", prefix, &*table.name);
+            let table_full = prefix.join(table.name.clone());
             for constraint in table.constraints.values() {
                 map.insert(
                     prefix.join(def_ident(&constraint.name)),

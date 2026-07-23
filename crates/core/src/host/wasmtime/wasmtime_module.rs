@@ -21,6 +21,7 @@ use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef};
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::def::ModuleDef;
+use spacetimedb_schema::identifier::NamespacedIdentifier;
 use wasmtime::{
     AsContext, AsContextMut, Caller, ExternType, Instance, InstancePre, Linker, Store, TypedFunc, WasmBacktrace,
     WasmParams, WasmResults,
@@ -244,7 +245,7 @@ pub(super) fn call_view_export(
     mut ctx: impl AsContextMut<Data = WasmInstanceEnv>,
     call_view: Option<CallViewType>,
     call_view_anon: Option<CallViewAnonType>,
-    view_name: &RawIdentifier,
+    view_name: &NamespacedIdentifier,
     fn_ptr: u32,
     sender: Option<Identity>,
     args_source: u32,
@@ -686,7 +687,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (args_source, errors_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name.clone(), args_bytes, op.timestamp, op.call_type());
+                .start_funcall(op.name.clone().into(), args_bytes, op.timestamp, op.call_type());
 
         let call_result = call_view_export(
             &mut *store,
@@ -723,7 +724,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (args_source, errors_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name.clone(), args_bytes, op.timestamp, op.call_type());
+                .start_funcall(op.name.clone().into(), args_bytes, op.timestamp, op.call_type());
 
         let call_result = call_view_export(
             &mut *store,

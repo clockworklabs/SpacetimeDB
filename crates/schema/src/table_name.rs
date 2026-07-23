@@ -40,6 +40,12 @@ impl From<NamespacedIdentifier> for TableName {
     }
 }
 
+impl From<TableName> for NamespacedIdentifier {
+    fn from(id: TableName) -> Self {
+        id.0
+    }
+}
+
 impl Deref for TableName {
     type Target = str;
 

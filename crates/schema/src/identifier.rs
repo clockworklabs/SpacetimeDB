@@ -192,6 +192,12 @@ impl FromIterator<Identifier> for NamespacedIdentifier {
     }
 }
 
+impl From<NamespacedIdentifier> for RawIdentifier {
+    fn from(id: NamespacedIdentifier) -> Self {
+        RawIdentifier::new(&*id)
+    }
+}
+
 // Comparisons and hashing use the joined form. This is equivalent to comparing
 // segment-wise, since '.' orders below every character valid in an identifier.
 impl PartialEq for NamespacedIdentifier {

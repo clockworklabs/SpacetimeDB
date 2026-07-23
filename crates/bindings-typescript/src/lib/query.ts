@@ -225,7 +225,8 @@ export type QueryBuilder<SchemaDef extends UntypedSchemaDef> = {
 } & {};
 
 /**
- * The type of `q.from` in an `addQuery` callback.
+ * Like `QueryBuilder`, but with declared namespaces also exposed as sub-objects.
+ * This is the type of `q.from` in an `addQuery` callback.
  *
  * Root-level tables appear as direct properties (same as `QueryBuilder`).
  * Declared namespaces appear as sub-objects — each is itself a `QueryBuilder` for that
@@ -234,7 +235,7 @@ export type QueryBuilder<SchemaDef extends UntypedSchemaDef> = {
  * When `SchemaDef['namespaces']` is absent or `{}`, no namespace properties appear —
  * accessing an undeclared namespace is a compile error.
  */
-export type SubscriptionFromBuilder<SchemaDef extends UntypedSchemaDef> =
+export type NamespacedQueryBuilder<SchemaDef extends UntypedSchemaDef> =
   QueryBuilder<SchemaDef> & {
     readonly [NS in keyof NonNullable<SchemaDef['namespaces']>]: NonNullable<
       SchemaDef['namespaces']
@@ -365,7 +366,7 @@ export function makeQueryBuilder<SchemaDef extends UntypedSchemaDef>(
  */
 export function makeFromBuilder<SchemaDef extends UntypedSchemaDef>(
   tables: SchemaDef['tables']
-): SubscriptionFromBuilder<SchemaDef> {
+): NamespacedQueryBuilder<SchemaDef> {
   const result: Record<string, unknown> = Object.create(null);
   const namespaces: Record<string, Record<string, unknown>> = Object.create(
     null
@@ -388,7 +389,7 @@ export function makeFromBuilder<SchemaDef extends UntypedSchemaDef>(
     result[ns] = Object.freeze(nsTables);
   }
 
-  return Object.freeze(result) as unknown as SubscriptionFromBuilder<SchemaDef>;
+  return Object.freeze(result) as unknown as NamespacedQueryBuilder<SchemaDef>;
 }
 
 function createRowExpr<TableDef extends TypedTableDef>(

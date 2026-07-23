@@ -49,12 +49,11 @@ use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{bsatn, http as st_http, ConnectionId, Hash, ProductType, RawModuleDef, Timestamp};
 use spacetimedb_primitives::{HttpHandlerId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
-use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, Deserialize, ProductValue, Typespace, WithTypespace};
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use spacetimedb_schema::def::deserialize::FunctionDef;
 use spacetimedb_schema::def::{ModuleDef, ViewDef};
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::identifier::{Identifier, NamespacedIdentifier};
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_subscription::SubscriptionPlan;
 use std::collections::HashMap;
@@ -1524,22 +1523,21 @@ fn collect_subscribed_view_calls(
 
         // Full namespaced canonical name: matches both the st_view registration
         // (create_view / create_view_with_prefix) and `view_by_name_with_global_fn_ptr`.
-        let display_name = format!("{}{}", prefix, local_name);
+        let view_name = prefix.join(local_name.clone());
 
         let (global_fn_ptr, _, _) = module_def
-            .view_by_name_with_global_fn_ptr(&display_name)
-            .ok_or_else(|| anyhow::anyhow!("view {} not found in module_def", display_name))?;
+            .view_by_name_with_global_fn_ptr(&view_name)
+            .ok_or_else(|| anyhow::anyhow!("view {} not found in module_def", view_name))?;
 
         let st_view = tx
-            .view_from_name(&display_name)?
-            .ok_or_else(|| anyhow::anyhow!("view {} not found in database", display_name))?;
+            .view_from_name(&view_name)?
+            .ok_or_else(|| anyhow::anyhow!("view {} not found in database", view_name))?;
 
         let view_id = st_view.view_id;
         let table_id = st_view
             .table_id
-            .ok_or_else(|| anyhow::anyhow!("view {} does not have a backing table in database", display_name))?;
+            .ok_or_else(|| anyhow::anyhow!("view {} does not have a backing table in database", view_name))?;
         let subs = tx.materialized_view_instances_for_view(view_id);
-        let view_name = RawIdentifier::from(display_name);
         let view_typespace = Arc::new(owning_def.typespace().clone());
 
         if *is_anonymous {
@@ -1851,7 +1849,7 @@ fn lifecyle_modifications_to_tx(
 */
 
 pub trait InstanceOp {
-    fn name(&self) -> &RawIdentifier;
+    fn name(&self) -> &str;
     fn timestamp(&self) -> Timestamp;
     fn call_type(&self) -> FuncCallType;
 }
@@ -1859,7 +1857,7 @@ pub trait InstanceOp {
 /// Describes a view call in a cheaply shareable way.
 #[derive(Clone, Debug)]
 pub struct ViewOp<'a> {
-    pub name: &'a RawIdentifier,
+    pub name: &'a NamespacedIdentifier,
     pub view_id: ViewId,
     pub table_id: TableId,
     pub fn_ptr: ViewFnPtr,
@@ -1869,7 +1867,7 @@ pub struct ViewOp<'a> {
 }
 
 impl InstanceOp for ViewOp<'_> {
-    fn name(&self) -> &RawIdentifier {
+    fn name(&self) -> &str {
         self.name
     }
 
@@ -1885,7 +1883,7 @@ impl InstanceOp for ViewOp<'_> {
 /// Describes an anonymous view call in a cheaply shareable way.
 #[derive(Clone, Debug)]
 pub struct AnonymousViewOp<'a> {
-    pub name: &'a RawIdentifier,
+    pub name: &'a NamespacedIdentifier,
     pub view_id: ViewId,
     pub table_id: TableId,
     pub fn_ptr: ViewFnPtr,
@@ -1894,7 +1892,7 @@ pub struct AnonymousViewOp<'a> {
 }
 
 impl InstanceOp for AnonymousViewOp<'_> {
-    fn name(&self) -> &RawIdentifier {
+    fn name(&self) -> &str {
         self.name
     }
 
@@ -1920,8 +1918,8 @@ pub struct ReducerOp<'a> {
 }
 
 impl InstanceOp for ReducerOp<'_> {
-    fn name(&self) -> &RawIdentifier {
-        self.name.as_identifier().as_raw()
+    fn name(&self) -> &str {
+        self.name
     }
     fn timestamp(&self) -> Timestamp {
         self.timestamp
@@ -1964,8 +1962,8 @@ pub struct ProcedureOp {
 }
 
 impl InstanceOp for ProcedureOp {
-    fn name(&self) -> &RawIdentifier {
-        self.name.as_raw()
+    fn name(&self) -> &str {
+        &self.name
     }
     fn timestamp(&self) -> Timestamp {
         self.timestamp
@@ -1986,8 +1984,8 @@ pub struct HttpHandlerOp {
 }
 
 impl InstanceOp for HttpHandlerOp {
-    fn name(&self) -> &RawIdentifier {
-        self.name.as_raw()
+    fn name(&self) -> &str {
+        &self.name
     }
     fn timestamp(&self) -> Timestamp {
         self.timestamp

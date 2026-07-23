@@ -38,7 +38,7 @@ import { type UntypedRemoteModule } from './spacetime_module.ts';
 import {
   makeFromBuilder,
   makeQueryBuilder,
-  type SubscriptionFromBuilder,
+  type NamespacedQueryBuilder,
 } from '../lib/query';
 import {
   type TableCache,
@@ -495,7 +495,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
   getFromBuilder<
     SchemaDef extends UntypedSchemaDef,
-  >(): SubscriptionFromBuilder<SchemaDef> {
+  >(): NamespacedQueryBuilder<SchemaDef> {
     return makeFromBuilder<SchemaDef>(
       this.#remoteModule.tables as SchemaDef['tables']
     );

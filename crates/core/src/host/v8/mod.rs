@@ -1987,7 +1987,7 @@ where
 
         // Start the timer.
         // We'd like this tightly around `call`.
-        env.start_funcall(op.name().clone(), op.timestamp(), op.call_type());
+        env.start_funcall(RawIdentifier::new(op.name()), op.timestamp(), op.call_type());
 
         // Wrap the call in `TryCatch`.
         //
