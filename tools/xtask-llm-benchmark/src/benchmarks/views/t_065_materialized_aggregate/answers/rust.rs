@@ -1,10 +1,20 @@
 use spacetimedb::{reducer, table, view, Query, ReducerContext, Table, ViewContext};
 
 #[table(accessor = sale, public)]
-pub struct Sale { #[primary_key] pub id: u64, pub category: String, pub amount: i64 }
+pub struct Sale {
+    #[primary_key]
+    pub id: u64,
+    pub category: String,
+    pub amount: i64,
+}
 
 #[table(accessor = category_total, public)]
-pub struct CategoryTotal { #[primary_key] pub category: String, pub total_amount: i64, pub sale_count: u64 }
+pub struct CategoryTotal {
+    #[primary_key]
+    pub category: String,
+    pub total_amount: i64,
+    pub sale_count: u64,
+}
 
 fn add_to_total(ctx: &ReducerContext, category: &String, amount: i64) {
     if let Some(mut total) = ctx.db.category_total().category().find(category) {
@@ -12,12 +22,21 @@ fn add_to_total(ctx: &ReducerContext, category: &String, amount: i64) {
         total.sale_count += 1;
         ctx.db.category_total().category().update(total);
     } else {
-        ctx.db.category_total().insert(CategoryTotal { category: category.clone(), total_amount: amount, sale_count: 1 });
+        ctx.db.category_total().insert(CategoryTotal {
+            category: category.clone(),
+            total_amount: amount,
+            sale_count: 1,
+        });
     }
 }
 
 fn remove_from_total(ctx: &ReducerContext, category: &String, amount: i64) {
-    let mut total = ctx.db.category_total().category().find(category).expect("missing category total");
+    let mut total = ctx
+        .db
+        .category_total()
+        .category()
+        .find(category)
+        .expect("missing category total");
     if total.sale_count == 1 {
         ctx.db.category_total().category().delete(category);
     } else {
@@ -50,13 +69,43 @@ fn delete_sale(ctx: &ReducerContext, id: u64) {
 
 #[reducer]
 pub fn exercise(ctx: &ReducerContext) {
-    upsert_sale(ctx, Sale { id: 1, category: "books".into(), amount: 10 });
-    upsert_sale(ctx, Sale { id: 2, category: "books".into(), amount: 20 });
-    upsert_sale(ctx, Sale { id: 2, category: "books".into(), amount: 25 });
-    upsert_sale(ctx, Sale { id: 3, category: "games".into(), amount: 40 });
+    upsert_sale(
+        ctx,
+        Sale {
+            id: 1,
+            category: "books".into(),
+            amount: 10,
+        },
+    );
+    upsert_sale(
+        ctx,
+        Sale {
+            id: 2,
+            category: "books".into(),
+            amount: 20,
+        },
+    );
+    upsert_sale(
+        ctx,
+        Sale {
+            id: 2,
+            category: "books".into(),
+            amount: 25,
+        },
+    );
+    upsert_sale(
+        ctx,
+        Sale {
+            id: 3,
+            category: "games".into(),
+            amount: 40,
+        },
+    );
     delete_sale(ctx, 3);
     delete_sale(ctx, 1);
 }
 
 #[view(accessor = category_summary, public)]
-pub fn category_summary(ctx: &ViewContext) -> impl Query<CategoryTotal> { ctx.from.category_total() }
+pub fn category_summary(ctx: &ViewContext) -> impl Query<CategoryTotal> {
+    ctx.from.category_total()
+}

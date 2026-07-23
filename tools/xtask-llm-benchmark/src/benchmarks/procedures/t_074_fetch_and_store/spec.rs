@@ -21,9 +21,13 @@ pub fn spec() -> BenchmarkSpec {
         let status = ident("status", casing_for_lang(lang));
         let valid = ident("valid_body", casing_for_lang(lang));
         scorers.push(make_sql_count_only_scorer(
-            host_url, file!(), route_tag,
+            host_url,
+            file!(),
+            route_tag,
             format!("SELECT COUNT(*) AS n FROM {table} WHERE {status}=200 AND {valid}=true"),
-            1, "fetched_row_stored", Duration::from_secs(10),
+            1,
+            "fetched_row_stored",
+            Duration::from_secs(10),
         ));
         scorers
     })

@@ -16,7 +16,10 @@ pub struct Category {
 
 #[spacetimedb::reducer]
 pub fn seed(ctx: &ReducerContext) {
-    ctx.db.product().insert(Product { id: 1, name: "legacy".into() });
+    ctx.db.product().insert(Product {
+        id: 1,
+        name: "legacy".into(),
+    });
 }
 
 #[spacetimedb::reducer]

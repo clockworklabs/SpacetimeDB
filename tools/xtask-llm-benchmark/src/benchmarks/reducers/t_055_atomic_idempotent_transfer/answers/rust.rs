@@ -30,7 +30,12 @@ pub fn transfer(ctx: &ReducerContext, request_id: String, from_id: u64, to_id: u
         return Err("invalid transfer".into());
     }
     let mut from = ctx.db.account().id().find(from_id).ok_or("source account not found")?;
-    let mut to = ctx.db.account().id().find(to_id).ok_or("destination account not found")?;
+    let mut to = ctx
+        .db
+        .account()
+        .id()
+        .find(to_id)
+        .ok_or("destination account not found")?;
     if from.balance < amount {
         return Err("insufficient balance".into());
     }

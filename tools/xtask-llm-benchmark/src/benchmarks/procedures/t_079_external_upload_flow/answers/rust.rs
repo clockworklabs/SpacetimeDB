@@ -1,5 +1,5 @@
-use spacetimedb::{procedure, table, ProcedureContext, Table};
 use spacetimedb::http::{handler, router, Body, HandlerContext, Request, Response, Router};
+use spacetimedb::{procedure, table, ProcedureContext, Table};
 
 #[table(accessor = uploaded_asset, public)]
 pub struct UploadedAsset {
@@ -13,16 +13,25 @@ pub struct UploadedAsset {
 
 #[handler]
 fn upload(_ctx: &mut HandlerContext, _request: Request) -> Response {
-    Response::builder().status(201).body(Body::from_bytes("https://files.local/object-1")).unwrap()
+    Response::builder()
+        .status(201)
+        .body(Body::from_bytes("https://files.local/object-1"))
+        .unwrap()
 }
 
 #[router]
-fn routes() -> Router { Router::new().post("/upload", upload) }
+fn routes() -> Router {
+    Router::new().post("/upload", upload)
+}
 
 #[procedure]
 pub fn upload_and_register(ctx: &mut ProcedureContext, upload_url: String, data: Vec<u8>) -> String {
-    let request = Request::builder().method("POST").uri(upload_url.clone()).header("content-type", "application/octet-stream")
-        .body(Body::from_bytes(data.clone())).unwrap();
+    let request = Request::builder()
+        .method("POST")
+        .uri(upload_url.clone())
+        .header("content-type", "application/octet-stream")
+        .body(Body::from_bytes(data.clone()))
+        .unwrap();
     let response = ctx.http.send(request).expect("upload failed");
     assert!(response.status().is_success(), "upload failed: {}", response.status());
     let status = response.status().as_u16();

@@ -5,7 +5,12 @@ pub fn spec() -> BenchmarkSpec {
     BenchmarkSpec::from_tasks_auto(file!(), |_lang, route_tag, host_url| {
         let mut scorers = default_schema_parity_scorers(host_url, file!(), route_tag);
         scorers.push(make_http_route_parity_scorer(
-            host_url, file!(), route_tag, vec![("POST", "/echo", Some("hello"))], true, "http_handler_response",
+            host_url,
+            file!(),
+            route_tag,
+            vec![("POST", "/echo", Some("hello"))],
+            true,
+            "http_handler_response",
         ));
         scorers
     })

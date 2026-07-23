@@ -9,5 +9,8 @@ pub struct LegacyItem {
 
 #[spacetimedb::reducer]
 pub fn seed(ctx: &ReducerContext) {
-    ctx.db.legacy_item().insert(LegacyItem { id: 1, value: "old".into() });
+    ctx.db.legacy_item().insert(LegacyItem {
+        id: 1,
+        value: "old".into(),
+    });
 }

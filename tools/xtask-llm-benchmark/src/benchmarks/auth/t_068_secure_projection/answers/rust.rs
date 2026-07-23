@@ -11,7 +11,10 @@ pub struct SecretNote {
 }
 
 #[derive(SpacetimeType)]
-pub struct SafeNote { pub id: u64, pub title: String }
+pub struct SafeNote {
+    pub id: u64,
+    pub title: String,
+}
 
 #[reducer]
 pub fn seed_private_note(ctx: &ReducerContext) {
@@ -25,5 +28,13 @@ pub fn seed_private_note(ctx: &ReducerContext) {
 
 #[view(accessor = my_safe_note, public)]
 pub fn my_safe_note(ctx: &ViewContext) -> Vec<SafeNote> {
-    ctx.db.secret_note().owner().filter(ctx.sender()).map(|note| SafeNote { id: note.id, title: note.title }).collect()
+    ctx.db
+        .secret_note()
+        .owner()
+        .filter(ctx.sender())
+        .map(|note| SafeNote {
+            id: note.id,
+            title: note.title,
+        })
+        .collect()
 }

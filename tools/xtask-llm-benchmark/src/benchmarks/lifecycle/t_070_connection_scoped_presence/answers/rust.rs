@@ -11,7 +11,9 @@ pub struct PresenceSession {
 
 fn add_session(ctx: &ReducerContext, connection_id: ConnectionId) {
     ctx.db.presence_session().insert(PresenceSession {
-        connection_id, identity: ctx.sender(), connected_at: ctx.timestamp,
+        connection_id,
+        identity: ctx.sender(),
+        connected_at: ctx.timestamp,
     });
 }
 
@@ -20,10 +22,14 @@ fn remove_session(ctx: &ReducerContext, connection_id: ConnectionId) {
 }
 
 #[reducer(client_connected)]
-pub fn client_connected(ctx: &ReducerContext) { add_session(ctx, ctx.connection_id().expect("connection id missing")); }
+pub fn client_connected(ctx: &ReducerContext) {
+    add_session(ctx, ctx.connection_id().expect("connection id missing"));
+}
 
 #[reducer(client_disconnected)]
-pub fn client_disconnected(ctx: &ReducerContext) { remove_session(ctx, ctx.connection_id().expect("connection id missing")); }
+pub fn client_disconnected(ctx: &ReducerContext) {
+    remove_session(ctx, ctx.connection_id().expect("connection id missing"));
+}
 
 #[reducer]
 pub fn exercise_presence(ctx: &ReducerContext) {

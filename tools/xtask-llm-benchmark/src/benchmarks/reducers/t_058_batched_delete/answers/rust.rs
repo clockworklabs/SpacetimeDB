@@ -29,16 +29,25 @@ fn enqueue(ctx: &ReducerContext, group_id: u64) {
 #[reducer]
 pub fn seed_group(ctx: &ReducerContext, group_id: u64, count: u32) {
     for offset in 0..count {
-        ctx.db.work_item().insert(WorkItem { id: group_id * 100 + offset as u64, group_id });
+        ctx.db.work_item().insert(WorkItem {
+            id: group_id * 100 + offset as u64,
+            group_id,
+        });
     }
 }
 
 #[reducer]
-pub fn request_delete(ctx: &ReducerContext, group_id: u64) { enqueue(ctx, group_id); }
+pub fn request_delete(ctx: &ReducerContext, group_id: u64) {
+    enqueue(ctx, group_id);
+}
 
 #[reducer]
 pub fn run_delete_batch(ctx: &ReducerContext, job: DeleteJob) {
     let rows: Vec<_> = ctx.db.work_item().group_id().filter(job.group_id).take(2).collect();
-    for row in rows { ctx.db.work_item().id().delete(row.id); }
-    if ctx.db.work_item().group_id().filter(job.group_id).next().is_some() { enqueue(ctx, job.group_id); }
+    for row in rows {
+        ctx.db.work_item().id().delete(row.id);
+    }
+    if ctx.db.work_item().group_id().filter(job.group_id).next().is_some() {
+        enqueue(ctx, job.group_id);
+    }
 }
