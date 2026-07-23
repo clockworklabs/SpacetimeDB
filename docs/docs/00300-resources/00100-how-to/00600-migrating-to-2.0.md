@@ -107,9 +107,9 @@ conn.Reducers.OnDealDamage += (ctx, _, _) =>
     {
         Console.WriteLine("Reducer succeeded");
     }
-    else if (ctx.Event.Status is Status.Failed failed)
+    else if (ctx.Event.Status is Status.Failed(var reason))
     {
-        Console.WriteLine($"Reducer failed: {failed}");
+        Console.WriteLine($"Reducer failed: {reason}");
     }
     else if (ctx.Event.Status is Status.OutOfEnergy)
     {
