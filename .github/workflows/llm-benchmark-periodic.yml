@@ -145,7 +145,6 @@ jobs:
           LLM_BENCH_RUST_CONCURRENCY: "4"
           LLM_BENCH_CSHARP_CONCURRENCY: "2"
           LLM_BENCH_ROUTE_CONCURRENCY: ${{ matrix.lang == 'typescript' && '4' || '2' }}
-          LLM_BENCH_RUST_TARGET_DIR: ${{ runner.temp }}/llm-benchmark-rust-target
           INPUT_LANGUAGE: ${{ matrix.lang }}
           INPUT_MODEL_SET: ${{ inputs.model_set || 'website_active' }}
           INPUT_MODELS: ${{ inputs.models || '' }}
