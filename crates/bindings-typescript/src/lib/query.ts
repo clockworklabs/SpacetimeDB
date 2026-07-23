@@ -226,11 +226,11 @@ export type QueryBuilder<SchemaDef extends UntypedSchemaDef> = {
 
 /**
  * Like `QueryBuilder`, but with declared namespaces also exposed as sub-objects.
- * This is the type of `q.from` in an `addQuery` callback.
+ * This is the type of the `tables` argument in a `subscribe` query-builder callback.
  *
  * Root-level tables appear as direct properties (same as `QueryBuilder`).
  * Declared namespaces appear as sub-objects — each is itself a `QueryBuilder` for that
- * namespace's schema, so `q.from.<namespace>.<table>` is fully typed.
+ * namespace's schema, so `tables.<namespace>.<table>` is fully typed.
  *
  * When `SchemaDef['namespaces']` is absent or `{}`, no namespace properties appear —
  * accessing an undeclared namespace is a compile error.
@@ -357,7 +357,7 @@ export function makeQueryBuilder<SchemaDef extends UntypedSchemaDef>(
 }
 
 /**
- * Builds the `q.from` object for use in `addQuery` callbacks.
+ * Builds the namespace-aware `tables` object passed to `subscribe`'s query-builder callback.
  *
  * Tables whose `sourceName` contains no `.` are placed at the root.
  * Tables with a dotted `sourceName` (e.g. `"namespace.table"`) are grouped under a
