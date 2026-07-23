@@ -345,6 +345,34 @@ fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
     let diagnostic_free_rust_exit = (output.contains("process didn't exit successfully")
         && output.contains("--crate-name"))
         || output.contains("linking with `rust-lld.exe` failed: exit code: 1");
+    let wrapper_command_exit = output.contains("error: command [\"cargo\", \"build\"")
+        || output.contains("error: command [\"dotnet\", \"publish\"")
+        || (output.contains("error: failed to run custom build command for")
+            && output.contains("process didn't exit successfully"));
+    let progress_only_exit = output.trim().is_empty()
+        || output.lines().filter(|line| !line.trim().is_empty()).all(|line| {
+            let line = line.trim_start();
+            [
+                "building ",
+                "compiling ",
+                "downloaded ",
+                "downloading ",
+                "finished ",
+                "logged in with identity ",
+                "optimizing ",
+                "packages: ",
+                "progress: ",
+                "recreating ",
+                "restored ",
+                "restoring ",
+                "saving config ",
+                "warning: this login will not work for any other servers.",
+                "we have logged in directly to your target server.",
+            ]
+            .iter()
+            .any(|prefix| line.starts_with(prefix))
+                || line.chars().all(|character| matches!(character, '+' | '-'))
+        });
 
     combined.contains("Pipe is broken")
         || combined.contains("EmitBundleObjectFiles")
@@ -353,7 +381,8 @@ fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
         || (combined.contains("MSB3073") && combined.contains("exited with code 2"))
         || combined.contains("code <signal")
         || diagnostic_free_rust_exit
-        || !has_terminal_failure
+        || wrapper_command_exit
+        || (!has_terminal_failure && progress_only_exit)
 }
 
 #[cfg(test)]
@@ -497,6 +526,27 @@ mod tests {
         assert!(!is_transient_build_error(
             "Error: command [\"dotnet\", \"publish\"] exited with code 1",
             "Lib.cs(10,5): error CS0103: The name 'missing' does not exist.\nMicrosoft.NET.ILLink.targets(134,5): error MSB6006: \"dotnet.exe\" exited with code 1.\nMicrosoft.NET.ILLink.targets(87,5): error NETSDK1144: Optimizing assemblies for size failed."
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_permanent_package_error() {
+        assert!(!is_transient_build_error(
+            "ERR_PNPM_NO_MATCHING_VERSION No matching version found for missing-package@1.0.0",
+            ""
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_authentication_error() {
+        assert!(!is_transient_build_error("authentication token expired", ""));
+    }
+
+    #[test]
+    fn retries_incomplete_pnpm_progress() {
+        assert!(is_transient_build_error(
+            "",
+            "Recreating generated/node_modules\nProgress: resolved 1, reused 0, downloaded 0, added 0\nPackages: +10\n++++++++++"
         ));
     }
 }

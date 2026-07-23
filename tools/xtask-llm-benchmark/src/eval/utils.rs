@@ -108,8 +108,14 @@ pub(crate) fn run_with_timeout(mut cmd: Command, cwd: &Path, timeout: Duration) 
             break status;
         }
         if start.elapsed() >= timeout {
-            kill_process_tree(&mut child);
-            return Err(io::Error::new(io::ErrorKind::TimedOut, "process timeout"));
+            let termination_error = kill_process_tree(&mut child).err();
+            let _ = child.wait();
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
+            let message = termination_error
+                .map(|error| format!("process timeout; failed to terminate process tree: {error}"))
+                .unwrap_or_else(|| "process timeout".to_string());
+            return Err(io::Error::new(io::ErrorKind::TimedOut, message));
         }
         thread::sleep(Duration::from_millis(30));
     };
@@ -122,14 +128,14 @@ pub(crate) fn run_with_timeout(mut cmd: Command, cwd: &Path, timeout: Duration) 
     Ok((status.code().unwrap_or(-1), stdout, stderr))
 }
 
-fn kill_process_tree(child: &mut Child) {
+fn kill_process_tree(child: &mut Child) -> io::Result<()> {
     #[cfg(windows)]
     let killed = Command::new("taskkill")
         .args(["/F", "/T", "/PID", &child.id().to_string()])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .spawn()
-        .is_ok();
+        .status()
+        .is_ok_and(|status| status.success());
 
     #[cfg(unix)]
     let killed = Command::new("kill")
@@ -139,8 +145,10 @@ fn kill_process_tree(child: &mut Child) {
         .status()
         .is_ok_and(|status| status.success());
 
-    if !killed {
-        let _ = child.kill();
+    if killed {
+        Ok(())
+    } else {
+        child.kill()
     }
 }
 

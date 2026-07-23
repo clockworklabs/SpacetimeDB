@@ -1,8 +1,8 @@
 use crate::bench::utils::{golden_db_name, sanitize_db_name};
 use crate::eval::scorers::{
     CallOutputParityScorer, EventuallySqlCountScorer, HttpRouteCase, HttpRouteParityScorer, ReducerCallBothScorer,
-    ReducerDataParityScorer, ReducerSqlCountScorer, SchemaParityScorer, Scorer, SqlCountOnlyScorer, SqlExecBothScorer,
-    SqlOutputExcludesScorer,
+    ReducerDataParityScorer, ReducerSqlCountScorer, SchemaParityScorer, Scorer, SqlCountOnlyScorer,
+    SqlDistinctRowsScorer, SqlExecBothScorer, SqlOutputExcludesScorer,
 };
 use crate::eval::{derive_cat_task_from_file, ReducerDataParityConfig, ReducerSqlCountConfig};
 use std::time::Duration;
@@ -50,6 +50,27 @@ pub fn make_sql_count_only_scorer(
     let (cat, task) = derive_cat_task_from_file(src_file);
     let llm_db = sanitize_db_name(&format!("{}-{}-{}-llm", cat, task, route_tag));
     Box::new(SqlCountOnlyScorer {
+        server: host_url.to_string(),
+        db: llm_db,
+        sql: sql.into(),
+        expected,
+        timeout,
+        id_str,
+    })
+}
+
+pub fn make_sql_distinct_rows_scorer(
+    host_url: &str,
+    src_file: &str,
+    route_tag: &str,
+    sql: impl Into<String>,
+    expected: usize,
+    id_str: &'static str,
+    timeout: Duration,
+) -> Box<dyn Scorer> {
+    let (cat, task) = derive_cat_task_from_file(src_file);
+    let llm_db = sanitize_db_name(&format!("{}-{}-{}-llm", cat, task, route_tag));
+    Box::new(SqlDistinctRowsScorer {
         server: host_url.to_string(),
         db: llm_db,
         sql: sql.into(),

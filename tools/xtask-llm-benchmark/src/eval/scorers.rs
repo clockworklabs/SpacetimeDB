@@ -632,6 +632,31 @@ fn sql_raw_with_timeout(db: &str, query: &str, host: Option<&str>, timeout: Dura
     Ok(String::from_utf8_lossy(&stdout).to_string())
 }
 
+fn sql_json_with_timeout(db: &str, query: &str, host: Option<&str>, timeout: Duration) -> Result<Value, String> {
+    let mut cmd = spacetime_command();
+    cmd.arg("sql").arg(db).arg(query).args(["--format", "json"]);
+    if let Some(h) = host {
+        cmd.arg("--server").arg(h);
+    }
+
+    let (code, stdout, stderr) = run_with_timeout(cmd, Path::new("."), timeout)
+        .map_err(|e| format!("spacetime sql failed or timed out: {e}"))?;
+    if code != 0 {
+        return Err(format!("spacetime sql failed:\n{}", String::from_utf8_lossy(&stderr)));
+    }
+    serde_json::from_slice(&stdout).map_err(|error| format!("invalid JSON SQL output: {error}"))
+}
+
+fn distinct_sql_row_count(output: &Value) -> Result<usize, String> {
+    let rows = output
+        .as_array()
+        .and_then(|statements| statements.first())
+        .and_then(|statement| statement.get("rows"))
+        .and_then(Value::as_array)
+        .ok_or_else(|| "JSON SQL output is missing rows".to_string())?;
+    Ok(rows.iter().map(Value::to_string).collect::<BTreeSet<_>>().len())
+}
+
 pub fn sql_count(db: &str, query: &str, host: Option<&str>) -> Result<i64, String> {
     sql_count_with_timeout(db, query, host, Duration::from_secs(30))
 }
@@ -915,6 +940,15 @@ pub struct SqlCountOnlyScorer {
     pub id_str: &'static str,
 }
 
+pub struct SqlDistinctRowsScorer {
+    pub server: String,
+    pub db: String,
+    pub sql: String,
+    pub expected: usize,
+    pub timeout: Duration,
+    pub id_str: &'static str,
+}
+
 pub struct SqlOutputExcludesScorer {
     pub server: String,
     pub db: String,
@@ -989,6 +1023,40 @@ impl Scorer for SqlCountOnlyScorer {
                 pass: false,
                 partial: 0.0,
                 notes: json!({ "phase":"sql","error": e }),
+            },
+        }
+    }
+}
+
+impl Scorer for SqlDistinctRowsScorer {
+    fn id(&self) -> &'static str {
+        self.id_str
+    }
+
+    fn score(&self, _llm_output: &str) -> ScoreDetails {
+        let output = match sql_json_with_timeout(&self.db, &self.sql, Some(&self.server), self.timeout) {
+            Ok(output) => output,
+            Err(error) => {
+                return ScoreDetails {
+                    pass: false,
+                    partial: 0.0,
+                    notes: json!({ "phase": "sql", "error": error }),
+                }
+            }
+        };
+        match distinct_sql_row_count(&output) {
+            Ok(actual) => {
+                let pass = actual == self.expected;
+                ScoreDetails {
+                    pass,
+                    partial: if pass { 1.0 } else { 0.0 },
+                    notes: json!({ "sql": self.sql, "expected": self.expected, "actual": actual }),
+                }
+            }
+            Err(error) => ScoreDetails {
+                pass: false,
+                partial: 0.0,
+                notes: json!({ "phase": "parse_sql", "error": error, "output": output }),
             },
         }
     }
@@ -1304,6 +1372,17 @@ mod tests {
     use spacetimedb_lib::db::raw_def::v9::Lifecycle;
     use spacetimedb_lib::sats::serde::SerdeWrapper;
     use spacetimedb_lib::sats::{AlgebraicType, ProductType};
+
+    #[test]
+    fn counts_distinct_rows_in_json_sql_output() {
+        let output = json!([{
+            "rows": [[1], [2], [1]],
+            "schema": { "elements": [] },
+            "total_duration_micros": 1
+        }]);
+
+        assert_eq!(distinct_sql_row_count(&output).unwrap(), 2);
+    }
 
     fn current_schema(include_owner_index: bool) -> Value {
         let mut indexes = vec![json!({ "algorithm": { "BTree": [0] } })];
