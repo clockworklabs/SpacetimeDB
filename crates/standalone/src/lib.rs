@@ -328,8 +328,10 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     let desired_replicas = num_replicas as usize;
                     if desired_replicas == 0 {
                         log::info!("Decommissioning all replicas of database {database_identity}");
+                        // The database itself isn't being deleted, it's paused with zero
+                        // replicas and can be scaled back up later, so `stop` must not fire.
                         for instance in replicas {
-                            self.delete_replica(instance.id).await?;
+                            self.delete_replica(instance.id, false).await?;
                         }
                     } else if desired_replicas > replicas.len() {
                         let n = desired_replicas - replicas.len();
@@ -357,7 +359,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                             n
                         );
                         for instance in replicas.into_iter().filter(|instance| !instance.leader).take(n) {
-                            self.delete_replica(instance.id).await?;
+                            self.delete_replica(instance.id, false).await?;
                         }
                     } else {
                         log::debug!(
@@ -404,8 +406,10 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         };
         self.control_db.delete_database(database.id)?;
 
+        // The database is being permanently destroyed: run each replica's `stop`
+        // reducer, if any, before it goes away.
         for instance in self.control_db.get_replicas_by_database(database.id)? {
-            self.delete_replica(instance.id).await?;
+            self.delete_replica(instance.id, true).await?;
         }
 
         Ok(())
@@ -436,8 +440,10 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         }
         self.control_db.update_database(database)?;
 
+        // The database's data is being wiped and reinitialized from scratch: run
+        // each replica's `stop` reducer, if any, before it goes away.
         for instance in self.control_db.get_replicas_by_database(database_id)? {
-            self.delete_replica(instance.id).await?;
+            self.delete_replica(instance.id, true).await?;
         }
         // Standalone only support a single replica.
         let num_replicas = 1;
@@ -559,9 +565,10 @@ impl StandaloneEnv {
         Ok(())
     }
 
-    async fn delete_replica(&self, replica_id: u64) -> Result<(), anyhow::Error> {
+    /// Delete a single replica.
+    async fn delete_replica(&self, replica_id: u64, is_final_teardown: bool) -> Result<(), anyhow::Error> {
         self.control_db.delete_replica(replica_id)?;
-        self.on_delete_replica(replica_id).await?;
+        self.on_delete_replica(replica_id, is_final_teardown).await?;
 
         Ok(())
     }
@@ -598,13 +605,13 @@ impl StandaloneEnv {
         Ok(())
     }
 
-    async fn on_delete_replica(&self, replica_id: u64) -> anyhow::Result<()> {
+    async fn on_delete_replica(&self, replica_id: u64, is_final_teardown: bool) -> anyhow::Result<()> {
         // TODO(cloutiertyler): We should think about how to clean up
         // replicas which have been deleted. This will just drop
         // them from memory, but will not remove them from disk.  We need
         // some kind of database lifecycle manager long term.
         self.host_controller
-            .exit_module_host(replica_id, Duration::from_secs(30))
+            .exit_module_host(replica_id, Duration::from_secs(30), is_final_teardown)
             .await?;
 
         Ok(())

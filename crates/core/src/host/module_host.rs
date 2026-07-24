@@ -2198,6 +2198,62 @@ impl ModuleHost {
         )?
     }
 
+    /// Invoke the module's `stop` reducer, if it has one.
+    ///
+    /// This is called exactly once, immediately before a database is permanently
+    /// destroyed (e.g. by `spacetime delete`, or a database reset), and never on
+    /// an ordinary module update/hot-reload, since the database's data survives those.
+    pub(crate) fn call_module_stop_inner(
+        info: &ModuleInfo,
+        call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResult, bool),
+        trapped_slot: &mut bool,
+    ) {
+        let Some((reducer_id, reducer_def)) = info.module_def.lifecycle_reducer(Lifecycle::Stop) else {
+            return;
+        };
+
+        let stdb = info.relational_db();
+        let owner_identity = info.owner_identity;
+        let workload = Workload::reducer_no_args(reducer_def.name.clone(), owner_identity, ConnectionId::ZERO);
+        let mut_tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload);
+
+        let params = match Self::call_reducer_params(
+            info,
+            owner_identity,
+            None,
+            None,
+            None,
+            None,
+            reducer_id,
+            reducer_def,
+            FunctionArgs::Nullary,
+        ) {
+            Ok(params) => params,
+            Err(e) => {
+                log::error!("failed to build call params for `stop` reducer: {e:#?}");
+                return;
+            }
+        };
+
+        let (result, trapped) = call_reducer(Some(mut_tx), params);
+        *trapped_slot = trapped;
+
+        if let Err(e) = result.outcome.into_result() {
+            log::error!("`stop` reducer did not commit cleanly, proceeding with deletion anyway: {e:#}");
+        }
+    }
+
+    /// Invoke the module's `stop` reducer, if it has one. See [`Self::call_module_stop_inner`].
+    pub async fn call_module_stop(&self) -> Result<(), NoSuchModule> {
+        call_instance!(
+            self,
+            "call_module_stop",
+            (),
+            |_, inst| inst.call_module_stop(),
+            |_, inst| inst.call_module_stop().await,
+        )
+    }
+
     /// Empty the system tables tracking clients without running any lifecycle reducers.
     pub async fn clear_all_clients(&self) -> anyhow::Result<()> {
         call_instance!(
