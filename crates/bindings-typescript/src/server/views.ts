@@ -24,7 +24,11 @@ import {
 import type { IsUnion } from '../lib/type_util';
 import { bsatnBaseSize, toPascalCase } from '../lib/util';
 import type { ReadonlyDbView } from './db_view';
-import { type QueryBuilder, type RowTypedQuery } from './query';
+import {
+  isRowTypedQuery,
+  type QueryBuilder,
+  type RowTypedQuery,
+} from './query';
 import {
   exportContext,
   registerExport,
@@ -260,7 +264,7 @@ export function registerView<
     const originalFn = fn;
     fn = ((ctx: ViewCtx<S>, args: InferTypeOfRow<Params>) => {
       const ret = originalFn(ctx, args);
-      return ret == null ? [] : [ret];
+      return isRowTypedQuery(ret) ? ret : ret == null ? [] : [ret];
     }) as any;
     returnType = AlgebraicType.Array(
       returnType.value.variants[0].algebraicType
