@@ -228,6 +228,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Test Discord formatter
+        run: python3 tools/xtask-llm-benchmark/scripts/test_discord_summary.py
+
       - name: Download analysis reports
         continue-on-error: true
         uses: actions/download-artifact@v4
@@ -261,130 +267,12 @@ jobs:
         env:
           RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
           RUN_LABEL: ${{ github.event_name == 'schedule' && 'Weekly scheduled run' || 'Manual run' }}
-        run: |
-          python3 - <<'PY'
-          import json
-          import os
-          import re
-          from collections import defaultdict
-          from pathlib import Path
-
-          reports = sorted(Path("reports").rglob("*.md"))
-          totals = [0, 0]
-          by_language = defaultdict(lambda: [0, 0])
-          actions = []
-          other_findings = []
-
-          def language_name(language):
-              return {
-                  "csharp": "C#",
-                  "rust": "Rust",
-                  "typescript": "TypeScript",
-              }.get(language, language)
-
-          for report in reports:
-              text = report.read_text(encoding="utf-8")
-
-              def field(name):
-                  match = re.search(rf"^- {name}: (.+)$", text, re.MULTILINE)
-                  return match.group(1) if match else "unknown"
-
-              language = field("Language")
-              mode = field("Mode")
-              model = field("Model")
-              tasks = re.match(r"(\d+)/(\d+)", field("Tasks"))
-              if tasks:
-                  passed, total = map(int, tasks.groups())
-                  totals[0] += passed
-                  totals[1] += total
-                  by_language[language][0] += passed
-                  by_language[language][1] += total
-
-              recommended = text.partition("## Recommended actions")[2].partition("## Failure patterns")[0]
-              for line in recommended.splitlines():
-                  action = f"- {language_name(language)} / {mode}: {line[2:]}"
-                  if line.startswith("- **[") and action not in actions:
-                      actions.append(action)
-
-              failures = text.partition("## Failure patterns")[2]
-              for section in failures.split("\n### ")[1:]:
-                  title = section.splitlines()[0].rsplit(" (", 1)[0]
-                  classification = re.search(r"^- \*\*Classification:\*\* (.+)$", section, re.MULTILINE)
-                  if classification and classification.group(1) in {
-                      "Model limitation",
-                      "Infrastructure/provider problem",
-                      "No action",
-                  }:
-                      finding = (
-                          f"- {language_name(language)} / {mode} / {model}: "
-                          f"{title} - {classification.group(1)}"
-                      )
-                      if finding not in other_findings:
-                          other_findings.append(finding)
-
-          def rate(passed, total):
-              percent = passed * 100 / total if total else 0
-              return f"{passed}/{total} ({percent:.1f}%)"
-
-          def field_value(lines, empty, overflow_label):
-              visible = lines[:5] or [empty]
-              if len(lines) > 5:
-                  visible.append(f"- ...and {len(lines) - 5} more {overflow_label}(s)")
-              value = "\n".join(visible)
-              return value if len(value) <= 1000 else value[:970].rstrip() + "\n... View the full analysis."
-
-          passed, total = totals
-          pass_percent = passed * 100 / total if total else 0
-          has_infrastructure_failure = any("Infrastructure/provider problem" in item for item in other_findings)
-          if not total or pass_percent < 90 or has_infrastructure_failure:
-              color = 0xED4245
-          elif actions or pass_percent < 95:
-              color = 0xFEE75C
-          else:
-              color = 0x57F287
-
-          language_rates = [
-              f"- **{language_name(language)}:** {rate(*counts)}"
-              for language, counts in sorted(by_language.items())
-          ]
-          payload = {
-              "username": "SpacetimeDB LLM Benchmarks",
-              "embeds": [
-                  {
-                      "title": "LLM Benchmark Analysis",
-                      "url": os.environ["RUN_URL"],
-                      "description": f"**{rate(*totals)}** task runs passed",
-                      "color": color,
-                      "fields": [
-                          {
-                              "name": "By language",
-                              "value": field_value(
-                                  language_rates,
-                                  "No analysis reports were produced.",
-                                  "language",
-                              ),
-                              "inline": False,
-                          },
-                          {
-                              "name": "Action items",
-                              "value": field_value(actions, "None", "action"),
-                              "inline": False,
-                          },
-                          {
-                              "name": "Other failures",
-                              "value": field_value(other_findings, "None", "finding"),
-                              "inline": False,
-                          },
-                      ],
-                      "footer": {"text": os.environ["RUN_LABEL"]},
-                  }
-              ],
-          }
-          Path("discord-payload.json").write_text(
-              json.dumps(payload, ensure_ascii=False),
-              encoding="utf-8",
-          )
-          PY
+        run: >
+          python3 tools/xtask-llm-benchmark/scripts/discord_summary.py
+          --reports-dir reports
+          --run-url "$RUN_URL"
+          --run-label "$RUN_LABEL"
+          --output discord-payload.json
 
       - name: Post Discord summary
         if: github.event_name == 'schedule' || inputs.post_discord
