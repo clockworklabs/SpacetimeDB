@@ -257,10 +257,10 @@ jobs:
       - name: Skip duplicate merge queue smoketest
         run: echo "Merge queue commit has the same tree as the PR head; smoketest already ran for the PR."
 
-  test:
+  build_test_archives:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
-    name: Test Suite
+    name: Build Test Suite Archives
     runs-on: spacetimedb-new-runner-2
 
     env:
@@ -287,13 +287,24 @@ jobs:
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Enable sccache
+        shell: bash
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >>"$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >>"$GITHUB_ENV"
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ github.workspace }}
           shared-key: spacetimedb
-          # Let the smoketests job save the cache since it builds the most things
-          save-if: false
+          cache-on-failure: false
+          cache-all-crates: true
+          cache-workspace-crates: true
           prefix-key: v1
 
       - name: Check v8 outputs
@@ -353,11 +364,331 @@ jobs:
 
           wasm-bindgen --version
 
-        # Source emsdk environment to make emcc (Emscripten compiler) available in PATH.
-      - name: Run tests
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Build TypeScript bindings
+        run: pnpm build
+        working-directory: crates/bindings-typescript
+
+      - name: Build release runtime binaries
+        run: |
+          cargo build \
+            --release \
+            -p spacetimedb-cli \
+            -p spacetimedb-standalone \
+            --features spacetimedb-standalone/allow_loopback_http_for_tests
+
+      - name: Build workspace test archive
         run: |
           source ~/emsdk/emsdk_env.sh
-          cargo ci test
+          cargo nextest archive \
+            --workspace \
+            --exclude spacetimedb-smoketests \
+            --exclude spacetimedb-sdk \
+            --exclude spacetimedb \
+            --archive-file "${{ github.workspace }}/public-test-workspace.tar.zst"
+
+      - name: Build unstable spacetimedb test archive
+        run: |
+          source ~/emsdk/emsdk_env.sh
+          cargo nextest archive \
+            -p spacetimedb \
+            --features unstable \
+            --archive-file "${{ github.workspace }}/public-test-spacetimedb-unstable.tar.zst"
+
+      - name: Build native SDK test archive
+        run: |
+          source ~/emsdk/emsdk_env.sh
+          cargo nextest archive \
+            -p spacetimedb-sdk \
+            --features allow_loopback_http_for_tests \
+            --archive-file "${{ github.workspace }}/public-test-sdk-native.tar.zst"
+
+      - name: Build browser SDK test archive
+        run: |
+          source ~/emsdk/emsdk_env.sh
+          cargo nextest archive \
+            -p spacetimedb-sdk \
+            --features allow_loopback_http_for_tests,browser \
+            --archive-file "${{ github.workspace }}/public-test-sdk-browser.tar.zst"
+
+      - name: Build durability fallocate test archive
+        run: |
+          source ~/emsdk/emsdk_env.sh
+          cargo nextest archive \
+            -p spacetimedb-durability \
+            --features fallocate \
+            --archive-file "${{ github.workspace }}/public-test-durability-fallocate.tar.zst"
+
+      - name: Check for build-time source changes
+        run: bash tools/check-diff.sh
+
+      - name: Upload test suite archives
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-test-suite-archives
+          path: |
+            public-test-workspace.tar.zst
+            public-test-spacetimedb-unstable.tar.zst
+            public-test-sdk-native.tar.zst
+            public-test-sdk-browser.tar.zst
+            public-test-durability-fallocate.tar.zst
+            target/release/spacetimedb-cli
+            target/release/spacetimedb-standalone
+          if-no-files-found: error
+          overwrite: true
+
+  test_partitions:
+    needs: [build_test_archives]
+    name: Test Suite (${{ matrix.name }})
+    runs-on: spacetimedb-new-runner-2
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: workspace 1/4
+            archive: public-test-workspace.tar.zst
+            partition: 1
+            partitions: 4
+            jobs: 2
+            skip_unreal: true
+          - name: workspace 2/4
+            archive: public-test-workspace.tar.zst
+            partition: 2
+            partitions: 4
+            jobs: 2
+            skip_unreal: true
+          - name: workspace 3/4
+            archive: public-test-workspace.tar.zst
+            partition: 3
+            partitions: 4
+            jobs: 2
+            skip_unreal: true
+          - name: workspace 4/4
+            archive: public-test-workspace.tar.zst
+            partition: 4
+            partitions: 4
+            jobs: 2
+            skip_unreal: true
+          - name: spacetimedb unstable 1/2
+            archive: public-test-spacetimedb-unstable.tar.zst
+            partition: 1
+            partitions: 2
+            jobs: 2
+            skip_unreal: false
+          - name: spacetimedb unstable 2/2
+            archive: public-test-spacetimedb-unstable.tar.zst
+            partition: 2
+            partitions: 2
+            jobs: 2
+            skip_unreal: false
+          - name: sdk native 1/2
+            archive: public-test-sdk-native.tar.zst
+            partition: 1
+            partitions: 2
+            jobs: 2
+            skip_unreal: true
+          - name: sdk native 2/2
+            archive: public-test-sdk-native.tar.zst
+            partition: 2
+            partitions: 2
+            jobs: 2
+            skip_unreal: true
+          - name: sdk browser 1/2
+            archive: public-test-sdk-browser.tar.zst
+            partition: 1
+            partitions: 2
+            jobs: 2
+            skip_unreal: true
+          - name: sdk browser 2/2
+            archive: public-test-sdk-browser.tar.zst
+            partition: 2
+            partitions: 2
+            jobs: 2
+            skip_unreal: true
+          - name: durability fallocate
+            archive: public-test-durability-fallocate.tar.zst
+            partition: 1
+            partitions: 1
+            jobs: 1
+            skip_unreal: false
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
+    steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - uses: actions/setup-dotnet@v3
+        with:
+          global-json-file: global.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          run_install: true
+
+      # Install cmake and emscripten for C++ module compilation tests.
+      - name: Install cmake and emscripten
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake
+          git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
+          cd ~/emsdk
+          ./emsdk install 4.0.21
+          ./emsdk activate 4.0.21
+
+      - name: Install wasm-bindgen CLI
+        run: |
+          REQUIRED_WASM_BINDGEN_VERSION="$(
+            awk '
+              $1 == "name" && $3 == "\"wasm-bindgen\"" { in_pkg = 1; next }
+              in_pkg && $1 == "version" {
+                gsub(/"/, "", $3);
+                print $3;
+                exit;
+              }
+            ' Cargo.lock
+          )"
+          if [ -z "${REQUIRED_WASM_BINDGEN_VERSION}" ]; then
+            echo "Failed to determine wasm-bindgen version from Cargo.lock"
+            exit 1
+          fi
+
+          INSTALLED_WASM_BINDGEN_VERSION="$(wasm-bindgen --version 2>/dev/null | awk '{print $2}' || true)"
+          if [ "${INSTALLED_WASM_BINDGEN_VERSION}" != "${REQUIRED_WASM_BINDGEN_VERSION}" ]; then
+            cargo install --locked --force wasm-bindgen-cli --version "${REQUIRED_WASM_BINDGEN_VERSION}"
+          fi
+
+          wasm-bindgen --version
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Download test suite archives
+        uses: actions/download-artifact@v4
+        with:
+          name: public-test-suite-archives
+
+      - name: Mark restored runtime binaries executable
+        run: chmod +x target/release/spacetimedb-cli target/release/spacetimedb-standalone
+
+      - name: Build TypeScript bindings
+        run: pnpm build
+        working-directory: crates/bindings-typescript
+
+      - name: Run test partition
+        run: |
+          source ~/emsdk/emsdk_env.sh
+          args=(
+            nextest run
+            --archive-file "${{ matrix.archive }}"
+            --workspace-remap "${{ github.workspace }}"
+            --partition "hash:${{ matrix.partition }}/${{ matrix.partitions }}"
+            --no-fail-fast
+            --no-tests pass
+            -j "${{ matrix.jobs }}"
+          )
+          if [ "${{ matrix.skip_unreal }}" = "true" ]; then
+            args+=(-- --skip unreal)
+          fi
+          cargo "${args[@]}"
+          bash tools/check-diff.sh
+
+  test_post_checks:
+    needs: [merge_queue_noop, build_test_archives, test_partitions]
+    if: ${{ always() && needs.merge_queue_noop.outputs.skip != 'true' && needs.build_test_archives.result == 'success' }}
+    name: Test Suite Post Checks
+    runs-on: spacetimedb-new-runner-2
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
+    steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Enable sccache
+        shell: bash
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >>"$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >>"$GITHUB_ENV"
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          save-if: false
+          prefix-key: v1
+
+      - uses: actions/setup-dotnet@v3
+        with:
+          global-json-file: global.json
+
+      - name: Run post-test checks
+        run: |
+          bash tools/check-diff.sh
+          cargo run -p spacetimedb-codegen --example regen-csharp-moduledef
+          bash tools/check-diff.sh crates/bindings-csharp
+          (cd crates/bindings-csharp && dotnet test -warnaserror)
+
+  test:
+    name: Test Suite
+    needs: [merge_queue_noop, test_partitions, test_post_checks]
+    if: ${{ always() && needs.merge_queue_noop.outputs.skip != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check test suite jobs
+        env:
+          TEST_PARTITIONS_RESULT: ${{ needs.test_partitions.result }}
+          TEST_POST_CHECKS_RESULT: ${{ needs.test_post_checks.result }}
+        run: |
+          test "${TEST_PARTITIONS_RESULT}" = "success"
+          test "${TEST_POST_CHECKS_RESULT}" = "success"
 
   keynote_bench:
     needs: [merge_queue_noop, lints]
