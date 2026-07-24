@@ -23,8 +23,9 @@ use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCal
 use spacetimedb_lib::{bsatn, ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use spacetimedb_primitives::{errno, ColId, ViewFnPtr};
+use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::def::ModuleDef;
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::identifier::NamespacedIdentifier;
 use std::future::Future;
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -333,7 +334,7 @@ impl WasmInstanceEnv {
     /// as well as the handle used to write the reducer error message or procedure return value.
     pub fn start_funcall(
         &mut self,
-        name: Identifier,
+        name: RawIdentifier,
         args: bytes::Bytes,
         ts: Timestamp,
         func_type: FuncCallType,
@@ -1775,8 +1776,8 @@ impl WasmInstanceEnv {
 
                 let table_id = resolved.table_id;
                 let view_def = resolved.view_def;
-                let view_name = &view_def.name;
-                let fn_ptr = view_def.fn_ptr;
+                let view_name = &resolved.view_name;
+                let fn_ptr = resolved.global_fn_ptr;
                 let sender = tx
                     .as_ref()
                     .expect("procedure tx missing while looking up refreshed view args")
@@ -1796,7 +1797,7 @@ impl WasmInstanceEnv {
                 tx = Some(next_tx);
                 let return_data = call_result?;
 
-                let typespace = module_def.typespace();
+                let typespace = resolved.owning_def.typespace();
                 let row_product_type = typespace
                     .resolve(view_def.product_type_ref)
                     .resolve_refs()?
@@ -1846,7 +1847,7 @@ impl WasmInstanceEnv {
     fn call_view<'a>(
         caller: &mut Caller<'a, Self>,
         view_call: &ViewCallInfo,
-        view_name: &Identifier,
+        view_name: &NamespacedIdentifier,
         fn_ptr: ViewFnPtr,
         sender: Option<Identity>,
     ) -> anyhow::Result<ViewReturnData> {

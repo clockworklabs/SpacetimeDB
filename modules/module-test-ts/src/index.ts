@@ -3,7 +3,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { ScheduleAt } from 'spacetimedb';
 import {
-  Router,
   schema,
   SyncResponse,
   table,
@@ -11,7 +10,9 @@ import {
   type Infer,
   type InferTypeOfRow,
   errors,
+  Router,
 } from 'spacetimedb/server';
+import * as libSubmodule from './lib_submodule';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPE ALIASES
@@ -247,6 +248,7 @@ const spacetimedb = schema({
     playerLikeRow
   ),
   tableToRemove: table({ name: 'table_to_remove' }, { id: t.u32() }),
+  lib: libSubmodule,
 });
 export default spacetimedb;
 
@@ -525,10 +527,29 @@ export const getMySchemaViaHttp = spacetimedb.procedure(t.string(), ctx => {
   }
 });
 
+// use_submodule: calls the lib submodule's lib_insert reducer cross-namespace.
+export const use_submodule = spacetimedb.reducer(
+  { value: t.string() },
+  (ctx, { value }) => {
+    libSubmodule.lib_insert(ctx.as.lib, { value });
+  }
+);
+
+// use_submodule_procedure: calls the lib submodule's lib_count procedure and returns the result.
+export const use_submodule_procedure = spacetimedb.procedure(
+  t.u64(),
+  (ctx) => libSubmodule.lib_count(ctx.as.lib, {})
+);
+
 export const getSimple = spacetimedb.httpHandler(
   (_ctx, _req) => new SyncResponse('ok')
 );
 
+// Delegates to the lib submodule's HTTP handler, demonstrating cross-namespace HTTP dispatch.
+export const lib_hello = spacetimedb.httpHandler((ctx, req) => {
+  return libSubmodule.lib_hello(ctx.as.lib, req);
+});
+
 export const router = spacetimedb.httpRouter(
-  new Router().get('/get', getSimple)
+  new Router().get('/get', getSimple).get('/lib-hello', lib_hello)
 );

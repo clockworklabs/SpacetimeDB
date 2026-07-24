@@ -20,7 +20,7 @@ use std::fmt::{self, Debug, Write};
 use std::hash::Hash;
 
 use crate::error::{IdentifierError, ValidationErrors};
-use crate::identifier::Identifier;
+use crate::identifier::{Identifier, NamespacePath};
 use crate::reducer_name::ReducerName;
 use crate::schema::{Schema, TableSchema};
 use crate::type_for_generate::{AlgebraicTypeUse, ProductTypeDef, TypespaceForGenerate};
@@ -35,7 +35,7 @@ use spacetimedb_lib::db::raw_def::v10::{
     ExplicitNames, MethodOrAny, RawColumnDefaultValueV10, RawConstraintDefV10, RawHttpHandlerDefV10,
     RawHttpRouteDefV10, RawIndexDefV10, RawLifeCycleReducerDefV10, RawModuleDefV10, RawModuleDefV10Section,
     RawProcedureDefV10, RawReducerDefV10, RawRowLevelSecurityDefV10, RawScheduleDefV10, RawScopedTypeNameV10,
-    RawSequenceDefV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10, RawViewPrimaryKeyDefV10,
+    RawSequenceDefV10, RawSubmoduleV10, RawTableDefV10, RawTypeDefV10, RawViewDefV10, RawViewPrimaryKeyDefV10,
 };
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIndexAlgorithm, RawIndexDefV9,
@@ -164,6 +164,9 @@ pub struct ModuleDef {
     /// was authored under.
     #[allow(unused)]
     raw_module_def_version: RawModuleDefVersion,
+
+    /// Submodules, keyed by the namespace they are registered under.
+    submodules: IndexMap<Identifier, ModuleDef>,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -178,6 +181,11 @@ impl ModuleDef {
     /// The raw module definition version this module was authored under.
     pub fn raw_module_def_version(&self) -> RawModuleDefVersion {
         self.raw_module_def_version
+    }
+
+    /// The submodules of the module definition.
+    pub fn submodules(&self) -> &IndexMap<Identifier, ModuleDef> {
+        &self.submodules
     }
 
     /// The tables of the module definition.
@@ -205,14 +213,186 @@ impl ModuleDef {
         self.tables().filter_map(|table| table.schedule.as_ref())
     }
 
+    /// All tables across this module and all submodules, in depth-first order.
+    ///
+    /// Each item is `(path, owning_def, table_def)` where `path` is the namespace path
+    /// to be prepended to the table's name for database storage (empty for the root).
+    pub fn all_tables_with_prefix(&self) -> Vec<(NamespacePath, &ModuleDef, &TableDef)> {
+        let mut out = Vec::new();
+        self.collect_tables_with_prefix(&NamespacePath::root(), &mut out);
+        out
+    }
+
+    fn collect_tables_with_prefix<'a>(
+        &'a self,
+        prefix: &NamespacePath,
+        out: &mut Vec<(NamespacePath, &'a ModuleDef, &'a TableDef)>,
+    ) {
+        for table in self.tables.values() {
+            out.push((prefix.clone(), self, table));
+        }
+        for (ns, submodule) in &self.submodules {
+            submodule.collect_tables_with_prefix(&prefix.child(ns.clone()), out);
+        }
+    }
+
+    /// All views across this module and all submodules, in depth-first order.
+    ///
+    /// Each item is `(path, owning_def, view_def)` where `path` is the namespace path
+    /// to be prepended to the view's name (empty for the root).
+    pub fn all_views_with_prefix(&self) -> Vec<(NamespacePath, &ModuleDef, &ViewDef)> {
+        let mut out = Vec::new();
+        self.collect_views_with_prefix(&NamespacePath::root(), &mut out);
+        out
+    }
+
+    fn collect_views_with_prefix<'a>(
+        &'a self,
+        prefix: &NamespacePath,
+        out: &mut Vec<(NamespacePath, &'a ModuleDef, &'a ViewDef)>,
+    ) {
+        for view in self.views.values() {
+            out.push((prefix.clone(), self, view));
+        }
+        for (ns, submodule) in &self.submodules {
+            submodule.collect_views_with_prefix(&prefix.child(ns.clone()), out);
+        }
+    }
+
+    /// Look up a table by its full namespaced name (e.g., `"lib.library_table"` or `"user"`).
+    pub fn find_table_by_full_name(&self, full_name: &str) -> Option<(NamespacePath, &ModuleDef, &TableDef)> {
+        self.all_tables_with_prefix()
+            .into_iter()
+            .find(|(prefix, _, table_def)| format!("{}{}", prefix, &*table_def.accessor_name) == full_name)
+    }
+
+    /// Look up a view by its full namespaced name (e.g., `"lib.library_view"` or `"my_view"`).
+    pub fn find_view_by_full_name(&self, full_name: &str) -> Option<(NamespacePath, &ModuleDef, &ViewDef)> {
+        self.all_views_with_prefix()
+            .into_iter()
+            .find(|(prefix, _, view_def)| format!("{}{}", prefix, &*view_def.name) == full_name)
+    }
+
+    /// Look up an index by its full namespaced name (e.g., `"lib.library_table_id_idx_btree"`).
+    pub fn find_index_by_full_name(
+        &self,
+        full_name: &str,
+    ) -> Option<(NamespacePath, &ModuleDef, &TableDef, &IndexDef)> {
+        for (prefix, owning, table) in self.all_tables_with_prefix() {
+            for idx in table.indexes.values() {
+                if format!("{}{}", prefix, &*idx.name) == full_name {
+                    return Some((prefix, owning, table, idx));
+                }
+            }
+        }
+        None
+    }
+
+    /// Look up a sequence by its full namespaced name (e.g., `"lib.library_table_id_seq"`).
+    pub fn find_sequence_by_full_name(
+        &self,
+        full_name: &str,
+    ) -> Option<(NamespacePath, &ModuleDef, &TableDef, &SequenceDef)> {
+        for (prefix, owning, table) in self.all_tables_with_prefix() {
+            for seq in table.sequences.values() {
+                if format!("{}{}", prefix, &*seq.name) == full_name {
+                    return Some((prefix, owning, table, seq));
+                }
+            }
+        }
+        None
+    }
+
+    /// Look up a constraint by its full namespaced name (e.g., `"lib.library_table_id_unique"`).
+    pub fn find_constraint_by_full_name(
+        &self,
+        full_name: &str,
+    ) -> Option<(NamespacePath, &ModuleDef, &TableDef, &ConstraintDef)> {
+        for (prefix, owning, table) in self.all_tables_with_prefix() {
+            for constraint in table.constraints.values() {
+                if format!("{}{}", prefix, &*constraint.name) == full_name {
+                    return Some((prefix, owning, table, constraint));
+                }
+            }
+        }
+        None
+    }
+
     /// The reducers of the module definition.
     pub fn reducers(&self) -> impl Iterator<Item = &ReducerDef> {
         self.reducers.values()
     }
 
-    /// Returns an iterator over all reducer ids and definitions.
-    pub fn reducer_ids_and_defs(&self) -> impl ExactSizeIterator<Item = (ReducerId, &ReducerDef)> {
-        self.reducers.values().enumerate().map(|(idx, def)| (idx.into(), def))
+    /// Returns all reducer ids and definitions in depth-first submodule order.
+    ///
+    /// IDs are assigned as follows: consumer's own reducers first (0..N), then each
+    /// submodule's reducers in the order they appear in `submodules`, recursively.
+    pub fn reducer_ids_and_defs(&self) -> Vec<(ReducerId, &ReducerDef)> {
+        let mut out = Vec::with_capacity(self.reducer_count());
+        self.collect_reducers(0, &mut out);
+        out
+    }
+
+    /// Total reducer count including all submodules (depth-first sum).
+    pub fn reducer_count(&self) -> usize {
+        self.reducers.len() + self.submodules.values().map(|m| m.reducer_count()).sum::<usize>()
+    }
+
+    fn collect_reducers<'a>(&'a self, offset: usize, out: &mut Vec<(ReducerId, &'a ReducerDef)>) {
+        for (i, def) in self.reducers.values().enumerate() {
+            out.push(((offset + i).into(), def));
+        }
+        let mut child_offset = offset + self.reducers.len();
+        for submodule in self.submodules.values() {
+            submodule.collect_reducers(child_offset, out);
+            child_offset += submodule.reducer_count();
+        }
+    }
+
+    /// All reducers across this module and all submodules, in depth-first order.
+    ///
+    /// Each item is `(path, owning_def, reducer_def)` where `path` is the namespace path
+    /// to be prepended to the reducer's name as its wire name (empty for the root).
+    pub fn all_reducers_with_prefix(&self) -> Vec<(NamespacePath, &ModuleDef, &ReducerDef)> {
+        let mut out = Vec::new();
+        self.collect_reducers_with_prefix(&NamespacePath::root(), &mut out);
+        out
+    }
+
+    fn collect_reducers_with_prefix<'a>(
+        &'a self,
+        prefix: &NamespacePath,
+        out: &mut Vec<(NamespacePath, &'a ModuleDef, &'a ReducerDef)>,
+    ) {
+        for reducer in self.reducers.values() {
+            out.push((prefix.clone(), self, reducer));
+        }
+        for (ns, submodule) in &self.submodules {
+            submodule.collect_reducers_with_prefix(&prefix.child(ns.clone()), out);
+        }
+    }
+
+    /// All procedures across this module and all submodules, in depth-first order.
+    ///
+    /// Each item is `(path, owning_def, procedure_def)` where `path` is the namespace path
+    /// to be prepended to the procedure's name as its wire name (empty for the root).
+    pub fn all_procedures_with_prefix(&self) -> Vec<(NamespacePath, &ModuleDef, &ProcedureDef)> {
+        let mut out = Vec::new();
+        self.collect_procedures_with_prefix(&NamespacePath::root(), &mut out);
+        out
+    }
+
+    fn collect_procedures_with_prefix<'a>(
+        &'a self,
+        prefix: &NamespacePath,
+        out: &mut Vec<(NamespacePath, &'a ModuleDef, &'a ProcedureDef)>,
+    ) {
+        for procedure in self.procedures.values() {
+            out.push((prefix.clone(), self, procedure));
+        }
+        for (ns, submodule) in &self.submodules {
+            submodule.collect_procedures_with_prefix(&prefix.child(ns.clone()), out);
+        }
     }
 
     /// The procedures of the module definition.
@@ -228,6 +408,26 @@ impl ModuleDef {
     /// The HTTP routes of the module definition.
     pub fn http_routes(&self) -> &[HttpRouteDef] {
         &self.http_routes
+    }
+
+    /// Returns warnings about this module's definition that will not prevent publishing.
+    ///
+    /// - Warns when a submodule registers HTTP routes via a top-level router export
+    ///   because those routes are ignored by the host.
+    pub fn collect_warnings(&self) -> Vec<String> {
+        let mut warnings = Vec::new();
+        for (namespace, submodule_def) in self.submodules() {
+            if !submodule_def.http_routes().is_empty() {
+                warnings.push(format!(
+                    "The submodule under namespace '{namespace}' registers HTTP routes via a router. \
+                     Route registrations in submodules are ignored. Only the root module's routes \
+                     are served. Define routes in the root module and call the submodule's HTTP handler \
+                     functions via `ctx.as.{namespace}`."
+                ));
+            }
+            warnings.extend(submodule_def.collect_warnings());
+        }
+        warnings
     }
 
     /// Returns an iterator over all HTTP handler ids and definitions.
@@ -364,14 +564,59 @@ impl ModuleDef {
         self.reducers.get_full(name).map(|(idx, _, def)| (idx.into(), def))
     }
 
-    /// Look up a reducer by its id.
-    pub fn reducer_by_id(&self, id: ReducerId) -> &ReducerDef {
-        &self.reducers[id.idx()]
+    /// Look up a reducer by its wire name, resolving qualified names like `"myauth.verify_token"`.
+    ///
+    /// A plain name searches the consumer's own reducers. A dot-qualified name routes to
+    /// the matching submodule and recurses. Nesting is supported: `"auth.baz.cleanup"`.
+    /// Returns the depth-first `ReducerId` and the `ReducerDef`.
+    pub fn reducer_by_name(&self, name: &str) -> Option<(ReducerId, &ReducerDef)> {
+        self.reducer_by_name_with_module(name).map(|(id, def, _)| (id, def))
     }
 
-    /// Look up a reducer by its id.
+    /// Like `reducer_by_name` but also returns the `ModuleDef` that owns the reducer.
+    /// Use the returned `ModuleDef` (not `self`) when calling `arg_seed_for`, so that
+    /// type-index references in the `ReducerDef` are resolved against the correct typespace.
+    pub fn reducer_by_name_with_module<'a>(&'a self, name: &str) -> Option<(ReducerId, &'a ReducerDef, &'a ModuleDef)> {
+        match name.split_once('.') {
+            None => self
+                .reducers
+                .get_full(name)
+                .map(|(idx, _, def)| (idx.into(), def, self)),
+            Some((namespace, rest)) => {
+                let mut offset = self.reducers.len();
+                for (ns, submodule) in &self.submodules {
+                    if ns == namespace {
+                        let (inner_id, def, owning) = submodule.reducer_by_name_with_module(rest)?;
+                        return Some(((offset + inner_id.idx()).into(), def, owning));
+                    }
+                    offset += submodule.reducer_count();
+                }
+                None
+            }
+        }
+    }
+
+    /// Look up a reducer by its depth-first id.
+    pub fn reducer_by_id(&self, id: ReducerId) -> &ReducerDef {
+        self.get_reducer_by_id(id)
+            .unwrap_or_else(|| panic!("reducer id {id:?} out of range"))
+    }
+
+    /// Look up a reducer by its depth-first id, returning `None` if it doesn't exist.
     pub fn get_reducer_by_id(&self, id: ReducerId) -> Option<&ReducerDef> {
-        self.reducers.get_index(id.idx()).map(|(_, def)| def)
+        let idx = id.idx();
+        if idx < self.reducers.len() {
+            return self.reducers.get_index(idx).map(|(_, def)| def);
+        }
+        let mut offset = self.reducers.len();
+        for submodule in self.submodules.values() {
+            let count = submodule.reducer_count();
+            if idx < offset + count {
+                return submodule.get_reducer_by_id(ReducerId::from(idx - offset));
+            }
+            offset += count;
+        }
+        None
     }
 
     /// Look up a view by its id, and whether it is anonymous.
@@ -380,6 +625,139 @@ impl ModuleDef {
             .iter()
             .find(|(_, def)| def.fn_ptr == id && def.is_anonymous == is_anonymous)
             .map(|(_, def)| def)
+    }
+
+    /// Look up a view by its globally-unique fn_ptr (the offset-adjusted id used by the WASM dispatch layer).
+    /// Returns the `ViewDef` and the owning `ModuleDef`.
+    pub fn get_view_by_global_id_with_module(
+        &self,
+        global_id: ViewFnPtr,
+        is_anonymous: bool,
+    ) -> Option<(&ViewDef, &ModuleDef)> {
+        self.get_view_by_global_id_inner(global_id.0, is_anonymous, 0, 0)
+    }
+
+    fn get_view_by_global_id_inner(
+        &self,
+        global_id: u32,
+        is_anonymous: bool,
+        anon_offset: u32,
+        non_anon_offset: u32,
+    ) -> Option<(&ViewDef, &ModuleDef)> {
+        let local_count = if is_anonymous {
+            self.anon_view_count() as u32
+        } else {
+            self.non_anon_view_count() as u32
+        };
+        let offset = if is_anonymous { anon_offset } else { non_anon_offset };
+        if global_id < offset + local_count {
+            return self
+                .views
+                .values()
+                .find(|def| def.fn_ptr.0 + offset == global_id && def.is_anonymous == is_anonymous)
+                .map(|def| (def, self));
+        }
+        let mut anon_off = anon_offset + self.anon_view_count() as u32;
+        let mut non_anon_off = non_anon_offset + self.non_anon_view_count() as u32;
+        for submodule in self.submodules.values() {
+            let submodule_anon = submodule.total_anon_view_count() as u32;
+            let submodule_non_anon = submodule.total_non_anon_view_count() as u32;
+            let submodule_count = if is_anonymous {
+                submodule_anon
+            } else {
+                submodule_non_anon
+            };
+            let submodule_off = if is_anonymous { anon_off } else { non_anon_off };
+            if global_id < submodule_off + submodule_count {
+                return submodule.get_view_by_global_id_inner(global_id, is_anonymous, anon_off, non_anon_off);
+            }
+            anon_off += submodule_anon;
+            non_anon_off += submodule_non_anon;
+        }
+        None
+    }
+
+    /// Look up a view by its wire name, resolving dot-qualified names like `"lib.library_view"`.
+    ///
+    /// A plain name searches this module's own views. A dot-qualified name routes to
+    /// the matching submodule and recurses. Returns the `ViewDef` and the owning `ModuleDef`.
+    pub fn view_by_name_with_module<'a>(&'a self, name: &str) -> Option<(&'a ViewDef, &'a ModuleDef)> {
+        match name.split_once('.') {
+            None => self.views.get(name).map(|def| (def, self)),
+            Some((namespace, rest)) => {
+                let submodule = self.submodules.get(namespace)?;
+                submodule.view_by_name_with_module(rest)
+            }
+        }
+    }
+
+    /// Like [`view_by_name_with_module`] but also returns the globally-unique `ViewFnPtr`
+    /// that the WASM dispatch layer expects (offset by all anon/non-anon views that precede
+    /// this one in depth-first module order).
+    pub fn view_by_name_with_global_fn_ptr<'a>(
+        &'a self,
+        name: &str,
+    ) -> Option<(ViewFnPtr, &'a ViewDef, &'a ModuleDef)> {
+        let anon_offset = 0u32;
+        let non_anon_offset = 0u32;
+        self.view_by_name_with_global_fn_ptr_inner(name, anon_offset, non_anon_offset)
+    }
+
+    fn view_by_name_with_global_fn_ptr_inner<'a>(
+        &'a self,
+        name: &str,
+        anon_offset: u32,
+        non_anon_offset: u32,
+    ) -> Option<(ViewFnPtr, &'a ViewDef, &'a ModuleDef)> {
+        match name.split_once('.') {
+            None => {
+                let def = self.views.get(name)?;
+                let offset = if def.is_anonymous { anon_offset } else { non_anon_offset };
+                Some((ViewFnPtr(def.fn_ptr.0 + offset), def, self))
+            }
+            Some((namespace, rest)) => {
+                let mut anon_off = anon_offset + self.anon_view_count() as u32;
+                let mut non_anon_off = non_anon_offset + self.non_anon_view_count() as u32;
+                for (ns, submodule) in &self.submodules {
+                    if ns == namespace {
+                        return submodule.view_by_name_with_global_fn_ptr_inner(rest, anon_off, non_anon_off);
+                    }
+                    anon_off += submodule.total_anon_view_count() as u32;
+                    non_anon_off += submodule.total_non_anon_view_count() as u32;
+                }
+                None
+            }
+        }
+    }
+
+    /// Count of anonymous views in this module (not including submodules).
+    pub fn anon_view_count(&self) -> usize {
+        self.views.values().filter(|v| v.is_anonymous).count()
+    }
+
+    /// Count of non-anonymous views in this module (not including submodules).
+    pub fn non_anon_view_count(&self) -> usize {
+        self.views.values().filter(|v| !v.is_anonymous).count()
+    }
+
+    /// Total anonymous view count including all submodules (depth-first sum).
+    pub fn total_anon_view_count(&self) -> usize {
+        self.anon_view_count()
+            + self
+                .submodules
+                .values()
+                .map(|m| m.total_anon_view_count())
+                .sum::<usize>()
+    }
+
+    /// Total non-anonymous view count including all submodules (depth-first sum).
+    pub fn total_non_anon_view_count(&self) -> usize {
+        self.non_anon_view_count()
+            + self
+                .submodules
+                .values()
+                .map(|m| m.total_non_anon_view_count())
+                .sum::<usize>()
     }
 
     /// Convenience method to look up a procedure, possibly by a string.
@@ -399,17 +777,73 @@ impl ModuleDef {
 
     /// Look up a procuedure by its id, panicking if it doesn't exist.
     pub fn procedure_by_id(&self, id: ProcedureId) -> &ProcedureDef {
-        &self.procedures[id.idx()]
+        self.get_procedure_by_id(id)
+            .unwrap_or_else(|| panic!("procedure id {id:?} out of range"))
     }
 
     /// Look up a procuedure by its id, returning `None` if it doesn't exist.
     pub fn get_procedure_by_id(&self, id: ProcedureId) -> Option<&ProcedureDef> {
-        self.procedures.get_index(id.idx()).map(|(_, def)| def)
+        let idx = id.idx();
+        if idx < self.procedures.len() {
+            return self.procedures.get_index(idx).map(|(_, def)| def);
+        }
+        let mut offset = self.procedures.len();
+        for submodule in self.submodules.values() {
+            let count = submodule.procedure_count();
+            if idx < offset + count {
+                return submodule.get_procedure_by_id(ProcedureId::from(idx - offset));
+            }
+            offset += count;
+        }
+        None
+    }
+
+    /// Total procedure count including all submodules (depth-first sum).
+    pub fn procedure_count(&self) -> usize {
+        self.procedures.len() + self.submodules.values().map(|m| m.procedure_count()).sum::<usize>()
+    }
+
+    /// Look up a procedure by its wire name, resolving qualified names like `"mylib.proc_name"`.
+    ///
+    /// A plain name searches the module's own procedures. A dot-qualified name routes to
+    /// the matching submodule and recurses. Returns the depth-first `ProcedureId` and the `ProcedureDef`.
+    pub fn procedure_by_name(&self, name: &str) -> Option<(ProcedureId, &ProcedureDef)> {
+        self.procedure_by_name_with_module(name).map(|(id, def, _)| (id, def))
+    }
+
+    /// Like `procedure_by_name` but also returns the `ModuleDef` that owns the procedure.
+    /// Use the returned `ModuleDef` (not `self`) when calling `arg_seed_for`.
+    pub fn procedure_by_name_with_module<'a>(
+        &'a self,
+        name: &str,
+    ) -> Option<(ProcedureId, &'a ProcedureDef, &'a ModuleDef)> {
+        match name.split_once('.') {
+            None => self
+                .procedures
+                .get_full(name)
+                .map(|(idx, _, def)| (idx.into(), def, self)),
+            Some((namespace, rest)) => {
+                let mut offset = self.procedures.len();
+                for (ns, submodule) in &self.submodules {
+                    if ns == namespace {
+                        let (inner_id, def, owning) = submodule.procedure_by_name_with_module(rest)?;
+                        return Some(((offset + inner_id.idx()).into(), def, owning));
+                    }
+                    offset += submodule.procedure_count();
+                }
+                None
+            }
+        }
     }
 
     /// Looks up a lifecycle reducer defined in the module.
     pub fn lifecycle_reducer(&self, lifecycle: Lifecycle) -> Option<(ReducerId, &ReducerDef)> {
         self.lifecycle_reducers[lifecycle].map(|i| (i, &self.reducers[i.idx()]))
+    }
+
+    /// All lifecycle reducer assignments for this module (does not include submodules).
+    pub fn lifecycle_reducers_map(&self) -> &EnumMap<Lifecycle, Option<ReducerId>> {
+        &self.lifecycle_reducers
     }
 
     /// Returns a `DeserializeSeed` that can pull data from a `Deserializer` for `def`.
@@ -490,6 +924,9 @@ impl TryFrom<raw_def::v9::RawModuleDefV9> for ModuleDef {
         validate::v9::validate(v9_mod)
     }
 }
+/// Note: this conversion is lossy for modules with submodules. `RawModuleDefV9` has no
+/// submodule representation, so submodules (and everything defined in them) are dropped.
+/// Callers serving V9 to old clients should be aware those clients see a partial module.
 impl From<ModuleDef> for RawModuleDefV9 {
     fn from(val: ModuleDef) -> Self {
         let ModuleDef {
@@ -507,6 +944,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
             http_handlers: _,
             http_routes: _,
             raw_module_def_version: _,
+            submodules: _,
         } = val;
 
         // Extract column defaults from tables before consuming tables
@@ -565,6 +1003,7 @@ impl From<ModuleDef> for RawModuleDefV10 {
             http_handlers,
             http_routes,
             raw_module_def_version: _,
+            submodules,
         } = val;
 
         let mut sections = Vec::new();
@@ -722,6 +1161,17 @@ impl From<ModuleDef> for RawModuleDefV10 {
 
         // Always emit ExplicitNames so canonical names survive the round-trip.
         sections.push(RawModuleDefV10Section::ExplicitNames(explicit_names));
+
+        let submodules: Vec<_> = submodules
+            .into_iter()
+            .map(|(namespace, module)| RawSubmoduleV10 {
+                namespace: namespace.to_string(),
+                module: module.into(),
+            })
+            .collect();
+        if !submodules.is_empty() {
+            sections.push(RawModuleDefV10Section::Submodules(submodules));
+        }
 
         RawModuleDefV10 { sections }
     }
@@ -2210,5 +2660,83 @@ mod tests {
             .filter(|e| matches!(e, ValidationError::ColumnDefaultValueMalformed { .. }))
             .count()
             == 2))
+    }
+
+    #[test]
+    fn submodule_reducer_ids_are_depth_first() {
+        use spacetimedb_lib::db::raw_def::v10::{RawModuleDefV10Builder, RawModuleDefV10Section, RawSubmoduleV10};
+
+        // baz library: 1 reducer
+        let mut baz_builder = RawModuleDefV10Builder::new();
+        baz_builder.add_reducer("baz_reduce", ProductType::unit());
+
+        // auth library: 1 own reducer, uses baz as a submodule
+        let mut auth_builder = RawModuleDefV10Builder::new();
+        auth_builder.add_reducer("auth_verify", ProductType::unit());
+        let mut auth_raw = auth_builder.finish();
+        auth_raw
+            .sections
+            .push(RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "baz".to_string(),
+                module: baz_builder.finish(),
+            }]));
+
+        // consumer: 2 own reducers, uses auth as a submodule
+        let mut consumer_builder = RawModuleDefV10Builder::new();
+        consumer_builder.add_reducer("consumer_a", ProductType::unit());
+        consumer_builder.add_reducer("consumer_b", ProductType::unit());
+        let mut consumer_raw = consumer_builder.finish();
+        consumer_raw
+            .sections
+            .push(RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "auth".to_string(),
+                module: auth_raw,
+            }]));
+
+        let def: ModuleDef = consumer_raw.try_into().expect("valid module");
+
+        // Total count: 2 consumer + 1 auth + 1 baz
+        assert_eq!(def.reducer_count(), 4);
+
+        // Depth-first order: consumer_a=0, consumer_b=1, auth_verify=2, baz_reduce=3
+        let ids_and_defs = def.reducer_ids_and_defs();
+        assert_eq!(ids_and_defs.len(), 4);
+        assert_eq!(ids_and_defs[0].0, ReducerId(0));
+        assert_eq!(&*ids_and_defs[0].1.name, "consumer_a");
+        assert_eq!(ids_and_defs[1].0, ReducerId(1));
+        assert_eq!(&*ids_and_defs[1].1.name, "consumer_b");
+        assert_eq!(ids_and_defs[2].0, ReducerId(2));
+        assert_eq!(&*ids_and_defs[2].1.name, "auth_verify");
+        assert_eq!(ids_and_defs[3].0, ReducerId(3));
+        assert_eq!(&*ids_and_defs[3].1.name, "baz_reduce");
+
+        // get_reducer_by_id resolves submodule reducer IDs correctly
+        assert_eq!(&*def.reducer_by_id(ReducerId(2)).name, "auth_verify");
+        assert_eq!(&*def.reducer_by_id(ReducerId(3)).name, "baz_reduce");
+        assert!(def.get_reducer_by_id(ReducerId(4)).is_none());
+
+        // reducer_by_name routes plain names to own reducers
+        let (id, rdef) = def.reducer_by_name("consumer_a").expect("plain name resolves");
+        assert_eq!(id, ReducerId(0));
+        assert_eq!(&*rdef.name, "consumer_a");
+
+        // reducer_by_name routes qualified names to submodule reducers
+        let (id, rdef) = def
+            .reducer_by_name("auth.auth_verify")
+            .expect("qualified name resolves");
+        assert_eq!(id, ReducerId(2));
+        assert_eq!(&*rdef.name, "auth_verify");
+
+        // reducer_by_name routes deeply nested qualified names
+        let (id, rdef) = def
+            .reducer_by_name("auth.baz.baz_reduce")
+            .expect("nested qualified name resolves");
+        assert_eq!(id, ReducerId(3));
+        assert_eq!(&*rdef.name, "baz_reduce");
+
+        // Non-existent names return None
+        assert!(def.reducer_by_name("auth.nonexistent").is_none());
+        assert!(def.reducer_by_name("nonexistent").is_none());
+        assert!(def.reducer_by_name("nonamespace.auth_verify").is_none());
     }
 }

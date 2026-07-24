@@ -35,6 +35,47 @@ impl_st!([] Identifier, ts => RawIdentifier::make_type(ts));
 impl_serialize!([] Identifier, (self, ser) => ser.serialize_str(&self.id));
 impl_deserialize!([] Identifier, de => RawIdentifier::deserialize(de).map(Self::new_assume_valid));
 
+/// Validates that `name` is a valid identifier string
+pub fn validate_identifier(name: &str) -> Result<(), IdentifierError> {
+    if name.is_empty() {
+        return Err(IdentifierError::Empty {});
+    }
+
+    // Convert to Unicode Normalization Form C (canonical decomposition followed by composition).
+    if name.nfc().zip(name.chars()).any(|(a, b)| a != b) {
+        return Err(IdentifierError::NotCanonicalized {
+            name: RawIdentifier::new(name),
+        });
+    }
+
+    let mut chars = name.chars();
+
+    let start = chars.next().ok_or(IdentifierError::Empty {})?;
+    if !is_xid_start(start) && start != '_' {
+        return Err(IdentifierError::InvalidStart {
+            name: RawIdentifier::new(name),
+            invalid_start: start,
+        });
+    }
+
+    for char_ in chars {
+        if !is_xid_continue(char_) {
+            return Err(IdentifierError::InvalidContinue {
+                name: RawIdentifier::new(name),
+                invalid_continue: char_,
+            });
+        }
+    }
+
+    if Identifier::is_reserved(name) {
+        return Err(IdentifierError::Reserved {
+            name: RawIdentifier::new(name),
+        });
+    }
+
+    Ok(())
+}
+
 impl Identifier {
     /// Returns a new identifier without validating the input.
     pub fn new_assume_valid(name: RawIdentifier) -> Self {
@@ -46,38 +87,7 @@ impl Identifier {
     /// Currently, this rejects non-canonicalized identifiers.
     /// Eventually, it will be changed to canonicalize the input string.
     pub fn new(name: RawIdentifier) -> Result<Self, IdentifierError> {
-        if name.is_empty() {
-            return Err(IdentifierError::Empty {});
-        }
-
-        // Convert to Unicode Normalization Form C (canonical decomposition followed by composition).
-        if name.nfc().zip(name.chars()).any(|(a, b)| a != b) {
-            return Err(IdentifierError::NotCanonicalized { name });
-        }
-
-        let mut chars = name.chars();
-
-        let start = chars.next().ok_or(IdentifierError::Empty {})?;
-        if !is_xid_start(start) && start != '_' {
-            return Err(IdentifierError::InvalidStart {
-                name,
-                invalid_start: start,
-            });
-        }
-
-        for char_ in chars {
-            if !is_xid_continue(char_) {
-                return Err(IdentifierError::InvalidContinue {
-                    name,
-                    invalid_continue: char_,
-                });
-            }
-        }
-
-        if Identifier::is_reserved(&name) {
-            return Err(IdentifierError::Reserved { name });
-        }
-
+        validate_identifier(&name)?;
         Ok(Identifier { id: name })
     }
 
@@ -122,9 +132,168 @@ impl Equivalent<Identifier> for str {
     }
 }
 
+impl PartialEq<str> for Identifier {
+    fn eq(&self, other: &str) -> bool {
+        &self.id[..] == other
+    }
+}
+
 impl From<Identifier> for RawIdentifier {
     fn from(id: Identifier) -> Self {
         id.id
+    }
+}
+
+/// A non-empty, dot-separated sequence of validated [`Identifier`] segments.
+///
+/// Used for fully-qualified names of submodule items, e.g.:
+/// - `"lib.library_table"` (table name)
+/// - `"lib.library_table_id_idx_btree"` (index name)
+///
+/// Root-level items have a single segment (e.g., `"user"`).
+/// Constructed only from already-validated [`Identifier`]s.
+#[derive(Clone)]
+pub struct NamespacedIdentifier {
+    /// always non-empty.
+    segments: Box<[Identifier]>,
+    /// Cached dot-joined rendering of `segments`.
+    joined: Box<str>,
+}
+
+impl NamespacedIdentifier {
+    /// Construct from validated segments. Panics if `segments` is empty.
+    pub fn from_segments(segments: Vec<Identifier>) -> Self {
+        assert!(
+            !segments.is_empty(),
+            "NamespacedIdentifier must have at least one segment"
+        );
+        let joined = segments.iter().map(|s| &**s).collect::<Vec<_>>().join(".").into();
+        Self {
+            segments: segments.into(),
+            joined,
+        }
+    }
+
+    pub fn segments(&self) -> &[Identifier] {
+        &self.segments
+    }
+}
+
+impl From<Identifier> for NamespacedIdentifier {
+    fn from(id: Identifier) -> Self {
+        Self::from_segments(vec![id])
+    }
+}
+
+impl FromIterator<Identifier> for NamespacedIdentifier {
+    /// Panics if the iterator is empty.
+    fn from_iter<I: IntoIterator<Item = Identifier>>(iter: I) -> Self {
+        Self::from_segments(iter.into_iter().collect())
+    }
+}
+
+impl From<NamespacedIdentifier> for RawIdentifier {
+    fn from(id: NamespacedIdentifier) -> Self {
+        RawIdentifier::new(&*id)
+    }
+}
+
+// Comparisons and hashing use the joined form. This is equivalent to comparing
+// segment-wise, since '.' orders below every character valid in an identifier.
+impl PartialEq for NamespacedIdentifier {
+    fn eq(&self, other: &Self) -> bool {
+        self.joined == other.joined
+    }
+}
+impl Eq for NamespacedIdentifier {}
+impl PartialOrd for NamespacedIdentifier {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for NamespacedIdentifier {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.joined.cmp(&other.joined)
+    }
+}
+impl std::hash::Hash for NamespacedIdentifier {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.joined.hash(state)
+    }
+}
+
+impl std::fmt::Debug for NamespacedIdentifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", &*self.joined)
+    }
+}
+
+impl std::fmt::Display for NamespacedIdentifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.joined)
+    }
+}
+
+impl std::ops::Deref for NamespacedIdentifier {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.joined
+    }
+}
+
+impl AsRef<str> for NamespacedIdentifier {
+    fn as_ref(&self) -> &str {
+        &self.joined
+    }
+}
+
+/// A possibly-empty path of validated namespace [`Identifier`]s.
+///
+/// Displays as a dot-terminated prefix (`"lib."`, `"auth.baz."`, or `""` for the root),
+/// matching how namespaced names are built by prepending the prefix to a local name.
+#[derive(Clone, Default, PartialEq, Eq, Hash, Debug)]
+pub struct NamespacePath(Vec<Identifier>);
+
+impl NamespacePath {
+    /// The root (empty) path.
+    pub fn root() -> Self {
+        Self(Vec::new())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn segments(&self) -> &[Identifier] {
+        &self.0
+    }
+
+    /// This path extended with the namespace `ns`.
+    pub fn child(&self, ns: Identifier) -> Self {
+        let mut segments = self.0.clone();
+        segments.push(ns);
+        Self(segments)
+    }
+
+    /// The full name of an item named `last` under this path.
+    pub fn join(&self, last: Identifier) -> NamespacedIdentifier {
+        let mut segments = self.0.clone();
+        segments.push(last);
+        NamespacedIdentifier::from_segments(segments)
+    }
+
+    /// The segments joined with `sep` (e.g. `"/"` for a directory path).
+    pub fn join_segments(&self, sep: &str) -> String {
+        self.0.iter().map(|s| &**s).collect::<Vec<_>>().join(sep)
+    }
+}
+
+impl std::fmt::Display for NamespacePath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for segment in &self.0 {
+            write!(f, "{segment}.")?;
+        }
+        Ok(())
     }
 }
 

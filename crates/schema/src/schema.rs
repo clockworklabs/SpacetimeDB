@@ -983,7 +983,23 @@ impl Schema for TableSchema {
     }
 
     fn check_compatible(&self, module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
-        ensure_eq!(&self.table_name[..], &def.name[..], "Table name mismatch");
+        // Submodule tables are stored with a namespace prefix (e.g. "lib.library_table") and are
+        // registered under their accessor name; only the last dot-separated segment can match the
+        // def. Root tables must match the def's name exactly.
+        match self.table_name.rsplit_once('.') {
+            None => {
+                ensure_eq!(&self.table_name[..], &def.name[..], "Table name mismatch");
+            }
+            Some((_, local_name)) => {
+                anyhow::ensure!(
+                    local_name == &def.name[..] || local_name == &def.accessor_name[..],
+                    "Table name mismatch: {} does not match def name {} or accessor {}",
+                    local_name,
+                    def.name,
+                    def.accessor_name,
+                );
+            }
+        }
         ensure_eq!(self.primary_key, def.primary_key, "Primary key mismatch");
         let def_table_access: StAccess = (def.table_access).into();
         ensure_eq!(self.table_access, def_table_access, "Table access mismatch");
@@ -999,19 +1015,29 @@ impl Schema for TableSchema {
         }
         ensure_eq!(self.columns.len(), def.columns.len(), "Column count mismatch");
 
+        // Index names in the DB are prefixed for submodule tables (e.g. "lib.library_table_id_idx_btree"),
+        // but def.indexes is keyed by the bare name. Identifiers cannot contain dots, so the
+        // bare name is the last dot-separated segment.
         for index in &self.indexes {
+            let bare_name = index.index_name.rsplit('.').next().unwrap_or(&index.index_name);
             let index_def = def
                 .indexes
-                .get(&index.index_name)
+                .get(bare_name)
                 .ok_or_else(|| anyhow::anyhow!("Index {} not found in definition", index.index_id.0))?;
             index.check_compatible(module_def, index_def)?;
         }
         ensure_eq!(self.indexes.len(), def.indexes.len(), "Index count mismatch");
 
+        // Like index names, constraint names are namespace-prefixed in the DB for submodule tables.
         for constraint in &self.constraints {
+            let bare_name = constraint
+                .constraint_name
+                .rsplit('.')
+                .next()
+                .unwrap_or(&constraint.constraint_name);
             let constraint_def = def
                 .constraints
-                .get(&constraint.constraint_name)
+                .get(bare_name)
                 .ok_or_else(|| anyhow::anyhow!("Constraint {} not found in definition", constraint.constraint_id.0))?;
             constraint.check_compatible(module_def, constraint_def)?;
         }
@@ -1021,10 +1047,16 @@ impl Schema for TableSchema {
             "Constraint count mismatch"
         );
 
+        // Like index names, sequence names are namespace-prefixed in the DB for submodule tables.
         for sequence in &self.sequences {
+            let bare_name = sequence
+                .sequence_name
+                .rsplit('.')
+                .next()
+                .unwrap_or(&sequence.sequence_name);
             let sequence_def = def
                 .sequences
-                .get(&sequence.sequence_name)
+                .get(bare_name)
                 .ok_or_else(|| anyhow::anyhow!("Sequence {} not found in definition", sequence.sequence_id.0))?;
             sequence.check_compatible(module_def, sequence_def)?;
         }
@@ -1282,7 +1314,9 @@ impl Schema for SequenceSchema {
     }
 
     fn check_compatible(&self, _module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
-        ensure_eq!(&self.sequence_name[..], &def.name[..], "Sequence name mismatch");
+        // Sequence names are namespace-prefixed in the DB for submodule tables; def.name is bare.
+        let bare_name = self.sequence_name.rsplit('.').next().unwrap_or(&self.sequence_name);
+        ensure_eq!(bare_name, &def.name[..], "Sequence name mismatch");
         ensure_eq!(self.col_pos, def.column, "Sequence column mismatch");
         ensure_eq!(self.increment, def.increment, "Sequence increment mismatch");
         if let Some(start) = &def.start {
@@ -1352,11 +1386,11 @@ impl Schema for ScheduleSchema {
 
     fn check_compatible(&self, _module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
         ensure_eq!(&self.schedule_name[..], &def.name[..], "Schedule name mismatch");
-        ensure_eq!(
-            &self.function_name[..],
-            &def.function_name[..],
-            "Schedule function name mismatch"
-        );
+        // For submodule tables, schedule function names in the DB are namespace-prefixed using '.'
+        // (e.g. "lib.library_scheduled_procedure") while def.function_name is the bare name.
+        // Identifiers cannot contain dots, so the bare name is the last dot-separated segment.
+        let bare_fn_name = self.function_name.rsplit('.').next().unwrap_or(&self.function_name);
+        ensure_eq!(bare_fn_name, &def.function_name[..], "Schedule function name mismatch");
         Ok(())
     }
 }
@@ -1421,7 +1455,11 @@ impl Schema for IndexSchema {
     }
 
     fn check_compatible(&self, _module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
-        ensure_eq!(&self.index_name[..], &def.name[..], "Index name mismatch");
+        // For submodule tables, the DB stores index names with a namespace prefix
+        // (e.g. "lib.library_table_id_idx_btree") while def.name is the bare name.
+        // Identifiers cannot contain dots, so the bare name is the last dot-separated segment.
+        let bare_index_name = self.index_name.rsplit('.').next().unwrap_or(&self.index_name);
+        ensure_eq!(bare_index_name, &def.name[..], "Index name mismatch");
         ensure_eq!(&self.index_algorithm, &def.algorithm, "Index algorithm mismatch");
         Ok(())
     }
@@ -1505,7 +1543,9 @@ impl Schema for ConstraintSchema {
     }
 
     fn check_compatible(&self, _module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error> {
-        ensure_eq!(&self.constraint_name[..], &def.name[..], "Constraint name mismatch");
+        // Constraint names are namespace-prefixed in the DB for submodule tables; def.name is bare.
+        let bare_name = self.constraint_name.rsplit('.').next().unwrap_or(&self.constraint_name);
+        ensure_eq!(bare_name, &def.name[..], "Constraint name mismatch");
         ensure_eq!(&self.data, &def.data, "Constraint data mismatch");
         Ok(())
     }
@@ -1516,4 +1556,47 @@ impl Schema for ConstraintSchema {
 pub struct RowLevelSecuritySchema {
     pub table_id: TableId,
     pub sql: RawSql,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10Builder;
+    use spacetimedb_sats::AlgebraicType;
+
+    fn module_with_table() -> ModuleDef {
+        let mut builder = RawModuleDefV10Builder::new();
+        builder
+            .build_table_with_new_type("MyTable", ProductType::from([("id", AlgebraicType::U64)]), true)
+            .finish();
+        builder
+            .finish()
+            .try_into()
+            .expect("should be a valid module definition")
+    }
+
+    #[test]
+    fn check_compatible_table_name() {
+        let def = module_with_table();
+        let table_def = def.tables().next().expect("table should exist");
+        assert_eq!(&table_def.name[..], "my_table");
+        assert_eq!(&table_def.accessor_name[..], "MyTable");
+
+        let mut schema = TableSchema::from_module_def(&def, table_def, (), TableId::SENTINEL);
+        assert!(schema.check_compatible(&def, table_def).is_ok());
+
+        // A root table must match the def's canonical name exactly.
+        schema.table_name = TableName::for_test("MyTable");
+        assert!(schema.check_compatible(&def, table_def).is_err());
+        schema.table_name = TableName::for_test("other");
+        assert!(schema.check_compatible(&def, table_def).is_err());
+
+        // A submodule table matches on the last segment, by name or accessor.
+        schema.table_name = TableName::for_test("lib.MyTable");
+        assert!(schema.check_compatible(&def, table_def).is_ok());
+        schema.table_name = TableName::for_test("lib.my_table");
+        assert!(schema.check_compatible(&def, table_def).is_ok());
+        schema.table_name = TableName::for_test("lib.other");
+        assert!(schema.check_compatible(&def, table_def).is_err());
+    }
 }

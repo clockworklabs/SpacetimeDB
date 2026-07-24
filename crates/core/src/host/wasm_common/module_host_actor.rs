@@ -6,18 +6,19 @@ use crate::db::sql::ast::SchemaViewer;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
 use crate::error::DBError;
 use crate::host::host_controller::CallProcedureReturn;
+use crate::host::host_controller::ReducerCallResultWithTxOffset;
 use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::{
     call_identity_connected, init_database, CallHttpHandlerParams, CallProcedureParams, CallReducerParams,
-    CallViewParams, ClientConnectedError, DatabaseUpdate, EventStatus, HttpHandlerCallError, ModuleEvent,
-    ModuleFunctionCall, ModuleInfo, RefInstance, SqlCommand, SqlCommandResult, ViewCallResult, ViewCommand,
-    ViewCommandResult, ViewOutcome,
+    CallViewParams, ClientConnectedError, DatabaseUpdate, EventStatus, HttpHandlerCallError, InitDatabaseResult,
+    ModuleEvent, ModuleFunctionCall, ModuleInfo, RefInstance, SqlCommand, SqlCommandResult, ViewCallResult,
+    ViewCommand, ViewCommandResult, ViewOutcome,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::{
-    ArgsTuple, InitDatabaseResult, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError,
-    ReducerCallResult, ReducerCallResultWithTxOffset, ReducerId, ReducerOutcome, Scheduler, UpdateDatabaseResult,
+    ArgsTuple, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError, ReducerCallResult, ReducerId,
+    ReducerOutcome, Scheduler, UpdateDatabaseResult,
 };
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
@@ -37,7 +38,7 @@ use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, ViewError};
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
-use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo, ViewInstanceArgs};
 use spacetimedb_datastore::traits::{IsolationLevel, Program};
 use spacetimedb_execution::ExecutionParams;
 use spacetimedb_lib::buffer::DecodeError;
@@ -52,7 +53,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, Deserialize, ProductValu
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use spacetimedb_schema::def::deserialize::FunctionDef;
 use spacetimedb_schema::def::{ModuleDef, ViewDef};
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::identifier::{Identifier, NamespacedIdentifier};
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_subscription::SubscriptionPlan;
 use std::collections::HashMap;
@@ -590,7 +591,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 impl<T: WasmInstance> WasmModuleInstance<T> {
     #[tracing::instrument(level = "trace", skip_all)]
     fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> (ReducerCallResult, bool) {
-        let (res, trapped) = self.call_reducer_with_tx_offset(tx, params);
+        let (res, trapped) = crate::callgrind_flag::invoke_allowing_callgrind(|| {
+            self.common.call_reducer_with_tx(tx, params, &mut self.instance)
+        });
         (res.result, trapped)
     }
 
@@ -601,7 +604,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         params: CallReducerParams,
     ) -> (ReducerCallResultWithTxOffset, bool) {
         crate::callgrind_flag::invoke_allowing_callgrind(|| {
-            self.common.call_reducer_with_tx_offset(tx, params, &mut self.instance)
+            self.common.call_reducer_with_tx(tx, params, &mut self.instance)
         })
     }
 
@@ -956,16 +959,6 @@ impl InstanceCommon {
         tx: Option<MutTxId>,
         params: CallReducerParams,
         inst: &mut I,
-    ) -> (ReducerCallResult, bool) {
-        let (res, trapped) = self.call_reducer_with_tx_offset(tx, params, inst);
-        (res.result, trapped)
-    }
-
-    pub(crate) fn call_reducer_with_tx_offset<I: WasmInstance>(
-        &mut self,
-        tx: Option<MutTxId>,
-        params: CallReducerParams,
-        inst: &mut I,
     ) -> (ReducerCallResultWithTxOffset, bool) {
         let CallReducerParams {
             timestamp,
@@ -1316,6 +1309,7 @@ impl InstanceCommon {
             args,
             row_type,
             timestamp,
+            view_typespace,
         } = params;
 
         let _outer_span = start_call_function_span(&view_name, &caller, None);
@@ -1370,19 +1364,18 @@ impl InstanceCommon {
                 // This is wrapped in a closure to simplify error handling.
                 let outcome: Result<ViewOutcome, anyhow::Error> = (|| {
                     let view_call = match sender {
-                        Some(sender) => ViewCallInfo::sender(view_id, sender),
+                        Some(s) => ViewCallInfo::sender(view_id, s),
                         None => ViewCallInfo::anonymous(view_id),
                     };
                     let result = ViewResult::from_return_data(raw).context("Error parsing view result")?;
-                    let typespace = self.info.module_def.typespace();
-                    let row_product_type = typespace
+                    let row_product_type = view_typespace
                         .resolve(row_type)
                         .resolve_refs()?
                         .into_product()
                         .map_err(|_| anyhow!("Error resolving row type for view"))?;
 
                     let rows = match result {
-                        ViewResult::Rows(bytes) => deserialize_view_rows(row_type, bytes, typespace)
+                        ViewResult::Rows(bytes) => deserialize_view_rows(row_type, bytes, &view_typespace)
                             .context("Error deserializing rows returned by view".to_string())?,
                         ViewResult::RawSql(query) => self
                             .run_query_for_view(&mut tx, &query, &row_product_type, &view_call)
@@ -1520,57 +1513,67 @@ fn collect_subscribed_view_calls(
 ) -> Result<Vec<CallViewParams>, anyhow::Error> {
     let mut view_calls = Vec::new();
 
-    for view in module_def.views() {
+    for (prefix, owning_def, view) in module_def.all_views_with_prefix() {
         let ViewDef {
-            name: view_name,
+            name: local_name,
             is_anonymous,
-            fn_ptr,
             product_type_ref,
             ..
         } = view;
 
+        // Full namespaced canonical name: matches both the st_view registration
+        // (create_view / create_view_with_prefix) and `view_by_name_with_global_fn_ptr`.
+        let view_name = prefix.join(local_name.clone());
+
+        let (global_fn_ptr, _, _) = module_def
+            .view_by_name_with_global_fn_ptr(&view_name)
+            .ok_or_else(|| anyhow::anyhow!("view {} not found in module_def", view_name))?;
+
         let st_view = tx
-            .view_from_name(view_name)?
-            .ok_or_else(|| anyhow::anyhow!("view {} not found in database", &view_name))?;
+            .view_from_name(&view_name)?
+            .ok_or_else(|| anyhow::anyhow!("view {} not found in database", view_name))?;
 
         let view_id = st_view.view_id;
         let table_id = st_view
             .table_id
-            .ok_or_else(|| anyhow::anyhow!("view {} does not have a backing table in database", &view_name))?;
-        let view_instances = tx.materialized_view_instances_for_view(view_id);
+            .ok_or_else(|| anyhow::anyhow!("view {} does not have a backing table in database", view_name))?;
+        let subs = tx.materialized_view_instances_for_view(view_id);
+        let view_typespace = Arc::new(owning_def.typespace().clone());
 
         if *is_anonymous {
-            if view_instances.is_empty() {
+            if subs.is_empty() {
                 continue;
             }
             view_calls.push(CallViewParams {
                 view_name: view_name.clone(),
                 view_id,
                 table_id,
-                fn_ptr: *fn_ptr,
+                fn_ptr: global_fn_ptr,
                 caller: owner_identity,
                 sender: None,
                 args: ArgsTuple::nullary(),
                 row_type: *product_type_ref,
                 timestamp: Timestamp::now(),
+                view_typespace: view_typespace.clone(),
             });
             continue;
         }
 
-        for args in view_instances {
-            let Some(sender) = args.sender() else {
+        for sub in subs {
+            let ViewInstanceArgs::Sender(identity) = sub else {
                 continue;
             };
             view_calls.push(CallViewParams {
                 view_name: view_name.clone(),
                 view_id,
                 table_id,
-                fn_ptr: *fn_ptr,
+                fn_ptr: global_fn_ptr,
                 caller: owner_identity,
-                sender: Some(sender),
+                sender: Some(identity),
                 args: ArgsTuple::nullary(),
                 row_type: *product_type_ref,
                 timestamp: Timestamp::now(),
+                view_typespace: view_typespace.clone(),
             });
         }
     }
@@ -1599,7 +1602,7 @@ impl AllVmMetrics {
         let def = &info.module_def;
         let reducers = def.reducer_ids_and_defs();
         let num_reducers = reducers.len() as u32;
-        let reducers = reducers.map(|(_, def)| def.name());
+        let reducers = reducers.into_iter().map(|(_, def)| def.name());
 
         // Pre-fetch the metrics for both:
         let reducer_counters = reducers
@@ -1846,7 +1849,7 @@ fn lifecyle_modifications_to_tx(
 */
 
 pub trait InstanceOp {
-    fn name(&self) -> &Identifier;
+    fn name(&self) -> &str;
     fn timestamp(&self) -> Timestamp;
     fn call_type(&self) -> FuncCallType;
 }
@@ -1854,7 +1857,7 @@ pub trait InstanceOp {
 /// Describes a view call in a cheaply shareable way.
 #[derive(Clone, Debug)]
 pub struct ViewOp<'a> {
-    pub name: &'a Identifier,
+    pub name: &'a NamespacedIdentifier,
     pub view_id: ViewId,
     pub table_id: TableId,
     pub fn_ptr: ViewFnPtr,
@@ -1864,7 +1867,7 @@ pub struct ViewOp<'a> {
 }
 
 impl InstanceOp for ViewOp<'_> {
-    fn name(&self) -> &Identifier {
+    fn name(&self) -> &str {
         self.name
     }
 
@@ -1880,7 +1883,7 @@ impl InstanceOp for ViewOp<'_> {
 /// Describes an anonymous view call in a cheaply shareable way.
 #[derive(Clone, Debug)]
 pub struct AnonymousViewOp<'a> {
-    pub name: &'a Identifier,
+    pub name: &'a NamespacedIdentifier,
     pub view_id: ViewId,
     pub table_id: TableId,
     pub fn_ptr: ViewFnPtr,
@@ -1889,7 +1892,7 @@ pub struct AnonymousViewOp<'a> {
 }
 
 impl InstanceOp for AnonymousViewOp<'_> {
-    fn name(&self) -> &Identifier {
+    fn name(&self) -> &str {
         self.name
     }
 
@@ -1915,8 +1918,8 @@ pub struct ReducerOp<'a> {
 }
 
 impl InstanceOp for ReducerOp<'_> {
-    fn name(&self) -> &Identifier {
-        self.name.as_identifier()
+    fn name(&self) -> &str {
+        self.name
     }
     fn timestamp(&self) -> Timestamp {
         self.timestamp
@@ -1959,7 +1962,7 @@ pub struct ProcedureOp {
 }
 
 impl InstanceOp for ProcedureOp {
-    fn name(&self) -> &Identifier {
+    fn name(&self) -> &str {
         &self.name
     }
     fn timestamp(&self) -> Timestamp {
@@ -1981,7 +1984,7 @@ pub struct HttpHandlerOp {
 }
 
 impl InstanceOp for HttpHandlerOp {
-    fn name(&self) -> &Identifier {
+    fn name(&self) -> &str {
         &self.name
     }
     fn timestamp(&self) -> Timestamp {
@@ -2036,9 +2039,16 @@ mod tests {
 
         let mut tx = begin_mut_tx(&stdb);
         let (view_id, _table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
-        let view_call = ViewCallInfo::anonymous(view_id);
-        tx.subscribe_view(view_call.clone(), ViewInstanceArgs::Anonymous, Identity::ZERO)?;
-        tx.subscribe_view(view_call, ViewInstanceArgs::Anonymous, Identity::ONE)?;
+        tx.subscribe_view(
+            ViewCallInfo::anonymous(view_id),
+            ViewInstanceArgs::Anonymous,
+            Identity::ZERO,
+        )?;
+        tx.subscribe_view(
+            ViewCallInfo::anonymous(view_id),
+            ViewInstanceArgs::Anonymous,
+            Identity::ONE,
+        )?;
 
         // Two subscriber rows exist, but anonymous views should still be reevaluated once
         // because they share a single materialization.
@@ -2066,10 +2076,16 @@ mod tests {
 
         let mut tx = begin_mut_tx(&stdb);
         let (view_id, _table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
-        let zero_args = ViewInstanceArgs::Sender(Identity::ZERO);
-        let one_args = ViewInstanceArgs::Sender(Identity::ONE);
-        tx.subscribe_view(ViewCallInfo::from_args(view_id, zero_args), zero_args, Identity::ZERO)?;
-        tx.subscribe_view(ViewCallInfo::from_args(view_id, one_args), one_args, Identity::ONE)?;
+        tx.subscribe_view(
+            ViewCallInfo::sender(view_id, Identity::ZERO),
+            ViewInstanceArgs::Sender(Identity::ZERO),
+            Identity::ZERO,
+        )?;
+        tx.subscribe_view(
+            ViewCallInfo::sender(view_id, Identity::ONE),
+            ViewInstanceArgs::Sender(Identity::ONE),
+            Identity::ONE,
+        )?;
 
         // Sender-backed views keep one materialization per sender, so reevaluation must
         // preserve both callers.

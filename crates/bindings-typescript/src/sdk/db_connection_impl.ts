@@ -35,7 +35,7 @@ import type {
 } from './message_types.ts';
 import type { ReducerEvent } from './reducer_event.ts';
 import { type UntypedRemoteModule } from './spacetime_module.ts';
-import { makeQueryBuilder } from '../lib/query';
+import { makeFromBuilder, type NamespacedQueryBuilder } from '../lib/query';
 import {
   type TableCache,
   type Operation,
@@ -57,6 +57,7 @@ import type {
 } from './reducers.ts';
 import type { ClientDbView } from './db_view.ts';
 import type { RowType, UntypedTableDef } from '../lib/table.ts';
+import type { UntypedSchemaDef } from '../lib/schema';
 import type { ProceduresView } from './procedures.ts';
 import type { Values } from '../lib/type_util.ts';
 import type { TransactionUpdate } from './client_api/types.ts';
@@ -484,8 +485,12 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     return new SubscriptionBuilderImpl(this);
   };
 
-  getTablesMap(): any {
-    return makeQueryBuilder({ tables: this.#remoteModule.tables } as any);
+  getFromBuilder<
+    SchemaDef extends UntypedSchemaDef,
+  >(): NamespacedQueryBuilder<SchemaDef> {
+    return makeFromBuilder<SchemaDef>(
+      this.#remoteModule.tables as SchemaDef['tables']
+    );
   }
 
   registerSubscription(
