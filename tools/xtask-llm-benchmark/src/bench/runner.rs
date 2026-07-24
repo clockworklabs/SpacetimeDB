@@ -522,11 +522,31 @@ fn dry_run_analysis_path(run_id: &str, lang_name: &str, mode: &str, route: &Mode
         .join(format!("run-{run_id}-{lang_name}-{mode}-{route_tag}-analysis.md"))
 }
 
+fn configured_analysis_path(lang_name: &str, mode: &str, route: &ModelRoute) -> Option<PathBuf> {
+    let report_dir = std::env::var_os("LLM_BENCHMARK_REPORT_DIR").filter(|value| !value.is_empty())?;
+    let route_tag = sanitize_db_name(&route.display_name);
+    Some(PathBuf::from(report_dir).join(format!("{lang_name}-{mode}-{route_tag}.md")))
+}
+
+fn write_analysis_report(
+    path: &Path,
+    cfg: &BenchRunContext<'_>,
+    outcomes: &[RunOutcome],
+    analysis: Option<&str>,
+) -> Result<()> {
+    fs::create_dir_all(path.parent().unwrap_or_else(|| Path::new(".")))?;
+    let report =
+        crate::bench::analysis::build_report(outcomes, cfg.lang.as_str(), cfg.mode, &cfg.route.display_name, analysis);
+    fs::write(path, report)?;
+    Ok(())
+}
+
 async fn maybe_generate_analysis(cfg: &BenchRunContext<'_>, outcomes: &[RunOutcome]) -> Result<Option<String>> {
+    let configured_path = configured_analysis_path(cfg.lang.as_str(), cfg.mode, cfg.route);
     let should_run = if cfg.dry_run {
         cfg.local_analysis
     } else {
-        cfg.api_client.is_some()
+        cfg.api_client.is_some() || configured_path.is_some()
     };
 
     if !should_run {
@@ -538,27 +558,30 @@ async fn maybe_generate_analysis(cfg: &BenchRunContext<'_>, outcomes: &[RunOutco
         cfg.lang.as_str(),
         cfg.mode,
         &cfg.route.display_name,
+        cfg.context,
         cfg.bench_root,
         cfg.llm,
     )
     .await?;
 
     if cfg.dry_run
-        && let (Some(text), Some(run_id)) = (analysis.as_deref(), cfg.dry_run_id.as_deref())
+        && let Some(run_id) = cfg.dry_run_id.as_deref()
     {
         let path = dry_run_analysis_path(run_id, cfg.lang.as_str(), cfg.mode, cfg.route);
-        let _ = fs::create_dir_all(path.parent().unwrap_or_else(|| Path::new(".")));
-        let contents = format!(
-            "# Local Benchmark Analysis\n\n- Lang: {}\n- Mode: {}\n- Model: {}\n\n{}",
-            cfg.lang.as_str(),
-            cfg.mode,
-            cfg.route.display_name,
-            text
-        );
-        match fs::write(&path, contents) {
+        match write_analysis_report(&path, cfg, outcomes, analysis.as_deref()) {
             Ok(()) => println!("Local analysis: {}", path.display()),
             Err(e) => eprintln!("[warn] failed to write local analysis: {e}"),
         }
+    }
+
+    if let Some(path) = configured_path {
+        match write_analysis_report(&path, cfg, outcomes, analysis.as_deref()) {
+            Ok(()) => println!("Analysis report: {}", path.display()),
+            Err(e) => eprintln!("[warn] failed to write analysis report: {e}"),
+        }
+    }
+
+    if cfg.dry_run {
         return Ok(None);
     }
 

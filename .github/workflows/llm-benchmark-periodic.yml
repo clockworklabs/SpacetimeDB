@@ -39,6 +39,11 @@ on:
         description: 'Run benchmarks without uploading results'
         required: false
         default: 'false'
+      post_discord:
+        description: 'Post the analysis summary to Discord'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -145,6 +150,7 @@ jobs:
           LLM_BENCH_RUST_CONCURRENCY: "4"
           LLM_BENCH_CSHARP_CONCURRENCY: "2"
           LLM_BENCH_ROUTE_CONCURRENCY: ${{ matrix.lang == 'typescript' && '4' || '2' }}
+          LLM_BENCHMARK_REPORT_DIR: ${{ runner.temp }}/llm-benchmark-reports
           INPUT_LANGUAGE: ${{ matrix.lang }}
           INPUT_MODEL_SET: ${{ inputs.model_set || 'website_active' }}
           INPUT_MODELS: ${{ inputs.models || '' }}
@@ -205,3 +211,115 @@ jobs:
           else
             llm_benchmark run --lang "$LANG" --modes "$MODES" --models "${MODEL_ARGS[@]}" "${EXTRA_ARGS[@]}"
           fi
+
+      - name: Upload analysis reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-benchmark-analysis-${{ matrix.lang }}
+          path: ${{ runner.temp }}/llm-benchmark-reports
+          if-no-files-found: ignore
+          retention-days: 14
+
+  summarize:
+    name: Summarize benchmark analysis
+    if: always()
+    needs: run-benchmarks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download analysis reports
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: llm-benchmark-analysis-*
+          path: reports
+          merge-multiple: true
+
+      - name: Publish workflow summary
+        run: |
+          echo "# LLM benchmark analysis" >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+
+          if [ ! -d reports ] || ! find reports -type f -name '*.md' -print -quit | grep -q .; then
+            echo "No analysis reports were produced." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "Full per-model reports are available in the workflow artifacts." >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+
+          find reports -type f -name '*.md' -print | sort | while IFS= read -r report; do
+            awk '/^## Failure patterns/{exit} NR <= 80 {print}' "$report" >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+            echo "---" >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Prepare Discord summary
+        if: github.event_name == 'schedule' || inputs.post_discord
+        env:
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          reports = sorted(Path("reports").rglob("*.md"))
+          rates = []
+          actions = []
+
+          for report in reports:
+              text = report.read_text(encoding="utf-8")
+
+              def field(name):
+                  match = re.search(rf"^- {name}: (.+)$", text, re.MULTILINE)
+                  return match.group(1) if match else "unknown"
+
+              rates.append(
+                  f"• {field('Language')} / {field('Mode')} / {field('Model')}: "
+                  f"{field('Tasks')} tasks, {field('Scorers')} scorers"
+              )
+
+              recommended = text.partition("## Recommended actions")[2].partition("## Failure patterns")[0]
+              for line in recommended.splitlines():
+                  if line.startswith("- **[") and line not in actions:
+                      actions.append(line.replace("- ", "• ", 1))
+
+          lines = [
+              "**LLM benchmark analysis**",
+              f"[View workflow run]({os.environ['RUN_URL']})",
+              "",
+              "**Pass rates**",
+              *(rates[:8] or ["• No analysis reports were produced."]),
+          ]
+          if len(rates) > 8:
+              lines.append(f"• …and {len(rates) - 8} more report(s)")
+
+          lines.extend(["", "**Recommended actions**", *(actions[:5] or ["• None"])])
+          if len(actions) > 5:
+              lines.append(f"• …and {len(actions) - 5} more action(s)")
+
+          message = "\n".join(lines)
+          if len(message) > 1900:
+              message = message[:1860].rstrip() + "\n… See the workflow for the full report."
+          Path("discord-summary.txt").write_text(message, encoding="utf-8")
+          PY
+
+      - name: Post Discord summary
+        if: github.event_name == 'schedule' || inputs.post_discord
+        continue-on-error: true
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.LLM_BENCHMARK_DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "::warning::LLM_BENCHMARK_DISCORD_WEBHOOK_URL is not configured"
+            exit 0
+          fi
+
+          payload="$(jq -n --rawfile content discord-summary.txt '{content: $content}')"
+          curl --fail --silent --show-error \
+            --header 'Content-Type: application/json' \
+            --data "$payload" \
+            "$DISCORD_WEBHOOK_URL"
