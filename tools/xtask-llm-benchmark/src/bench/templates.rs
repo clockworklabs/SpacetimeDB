@@ -235,6 +235,7 @@ fn write_csharp_nuget_config(root: &Path) -> Result<()> {
     <clear />
     <add key="spacetimedb-runtime" value="{}" />
     <add key="spacetimedb-bsatn-runtime" value="{}" />
+    <add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />
     <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
   </packageSources>
   <packageSourceMapping>
@@ -243,6 +244,10 @@ fn write_csharp_nuget_config(root: &Path) -> Result<()> {
     </packageSource>
     <packageSource key="spacetimedb-bsatn-runtime">
       <package pattern="SpacetimeDB.BSATN.Runtime" />
+    </packageSource>
+    <packageSource key="dotnet-experimental">
+      <package pattern="Microsoft.DotNet.ILCompiler.LLVM" />
+      <package pattern="runtime.*" />
     </packageSource>
     <packageSource key="nuget.org">
       <package pattern="*" />
