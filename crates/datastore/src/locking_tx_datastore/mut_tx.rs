@@ -4,10 +4,12 @@ use super::{
     delete_table::DeleteTable,
     sequence::{Sequence, SequencesState},
     state_view::{IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, StateView},
+    time::{now_timestamp, Instant},
     tx::TxId,
     tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
     SharedMutexGuard, SharedWriteGuard,
 };
+use crate::traits::TxOffset;
 use crate::{
     error::ViewError,
     system_tables::{
@@ -38,7 +40,7 @@ use core::{cell::RefCell, iter, mem, ops::RangeBounds};
 use itertools::Either;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap};
-use spacetimedb_durability::TxOffset;
+#[cfg(feature = "execution")]
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
 use spacetimedb_lib::{
     db::raw_def::v9::RawSql,
@@ -74,11 +76,7 @@ use spacetimedb_table::{
     },
     table_index::{IndexCannotSeekRange, IndexKey, IndexSeekRangeResult, PointOrRange, TableIndex},
 };
-use std::{
-    marker::PhantomData,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{marker::PhantomData, sync::Arc, time::Duration};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ViewCallInfo {
@@ -613,6 +611,7 @@ impl MutTxId {
     }
 }
 
+#[cfg(feature = "execution")]
 impl Datastore for MutTxId {
     type TableIter<'a>
         = IterMutTx<'a>
@@ -676,6 +675,7 @@ impl Datastore for MutTxId {
 
 /// Note, deltas are evaluated using read-only transactions, not mutable ones.
 /// Nevertheless this contract is still required for query evaluation.
+#[cfg(feature = "execution")]
 impl DeltaStore for MutTxId {
     fn num_inserts(&self, _: TableId) -> usize {
         0
@@ -718,6 +718,7 @@ impl DeltaStore for MutTxId {
     }
 }
 
+#[cfg(feature = "execution")]
 impl MutDatastore for MutTxId {
     fn insert_product_value(&mut self, table_id: TableId, row: &ProductValue) -> anyhow::Result<bool> {
         Ok(match self.insert_via_serialize_bsatn(table_id, row)?.1 {
@@ -2849,7 +2850,7 @@ impl MutTxId {
     /// This is invoked when calling a view, but not subscribing to it.
     /// Such is the case for the sql http api.
     pub fn update_view_timestamp(&mut self, call: ViewCallInfo, args: ViewInstanceArgs) -> Result<()> {
-        self.update_view_timestamp_at(call, args, Timestamp::now())
+        self.update_view_timestamp_at(call, args, now_timestamp())
     }
 
     /// Updates the `last_used` timestamp for a materialized view argument to an explicit value.
@@ -2870,12 +2871,13 @@ impl MutTxId {
 
     /// Increment this subscriber's refcount for a materialized view argument.
     pub fn subscribe_view(&mut self, call: ViewCallInfo, args: ViewInstanceArgs, subscriber: Identity) -> Result<()> {
+        let now = now_timestamp();
         let mut state = self
             .get_view_instance_cloned(&call)
-            .unwrap_or_else(|| ViewInstanceState::new(args, Timestamp::now()));
+            .unwrap_or_else(|| ViewInstanceState::new(args, now));
         state.args = args;
         *state.active_subscribers.entry(subscriber).or_default() += 1;
-        state.last_used = Timestamp::now();
+        state.last_used = now;
         self.view_instances.set(call, state);
         Ok(())
     }
@@ -2891,7 +2893,7 @@ impl MutTxId {
             if *count == 0 {
                 state.active_subscribers.remove(&subscriber);
             }
-            state.last_used = Timestamp::now();
+            state.last_used = now_timestamp();
             self.view_instances.set(call, state);
         }
 
@@ -2928,8 +2930,8 @@ impl MutTxId {
         max_duration: Duration,
         batch_size: usize,
     ) -> Result<ViewCleanupResult> {
-        let start = std::time::Instant::now();
-        let expiration_threshold = Timestamp::now() - expiration_duration;
+        let start = Instant::now();
+        let expiration_threshold = now_timestamp() - expiration_duration;
         let is_expired = |state: &ViewInstanceState| !state.has_subscribers() && state.last_used < expiration_threshold;
         let mut cleaned = 0;
         let batch_size = batch_size.max(1);

@@ -11,6 +11,7 @@ import type { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
 import type { ParamsObj, ReducerCtx } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
+import type { TimeDuration } from '../lib/time_duration';
 import type { ScheduleTableForParams } from '../lib/table_schema';
 import { Timestamp } from '../lib/timestamp';
 import {
@@ -23,8 +24,9 @@ import { bsatnBaseSize } from '../lib/util';
 import { Uuid } from '../lib/uuid';
 import { httpClient, type HttpClient } from './http_internal';
 import type { DbView } from './db_view';
-import { makeRandom, type Random } from './rng';
-import { callUserFunction, ReducerCtxImpl, runWithTx, sys } from './runtime';
+import { makeRandom, makeRandomFromSeed, type Random } from './rng';
+import { callUserFunction, ReducerCtxImpl } from './runtime';
+import { hostBackend, type DatastoreBackend } from './backend';
 import {
   exportContext,
   registerExport,
@@ -102,6 +104,7 @@ export interface ProcedureCtx<S extends UntypedSchemaDef> {
   readonly http: HttpClient;
   readonly random: Random;
   withTx<T>(body: (ctx: TransactionCtx<S>) => T): T;
+  sleep(duration: TimeDuration): void;
   newUuidV4(): Uuid;
   newUuidV7(): Uuid;
 }
@@ -111,10 +114,6 @@ export interface TransactionCtx<S extends UntypedSchemaDef>
   extends ReducerCtx<S> {}
 
 type ITransactionCtx<S extends UntypedSchemaDef> = TransactionCtx<S>;
-
-const TransactionCtxImpl = class TransactionCtx<S extends UntypedSchemaDef>
-  extends ReducerCtxImpl<S>
-  implements ITransactionCtx<S> {};
 
 function registerProcedure<
   S extends UntypedSchemaDef,
@@ -199,25 +198,41 @@ export function callProcedure(
 }
 
 type IProcedureCtx<S extends UntypedSchemaDef> = ProcedureCtx<S>;
-const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
+export const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   implements IProcedureCtx<S>
 {
   #identity: Identity | undefined;
   #uuidCounter: { value: 0 } | undefined;
   #random: Random | undefined;
   #dbView: () => DbView<any>;
+  #backend: DatastoreBackend;
+  #http: HttpClient;
+  #sleep: (duration: TimeDuration) => void;
+  #childSeedRandom: Random | undefined;
 
   constructor(
     readonly sender: Identity,
     readonly timestamp: Timestamp,
     readonly connectionId: ConnectionId | null,
-    dbView: () => DbView<any>
+    dbView: () => DbView<any>,
+    backend: DatastoreBackend = hostBackend,
+    http: HttpClient = httpClient,
+    sleep: (duration: TimeDuration) => void = () => {
+      throw new Error('procedure sleep is not available in this runtime');
+    },
+    random?: Random,
+    childSeedRandom?: Random
   ) {
     this.#dbView = dbView;
+    this.#backend = backend;
+    this.#http = http;
+    this.#sleep = sleep;
+    this.#random = random;
+    this.#childSeedRandom = childSeedRandom;
   }
 
   get databaseIdentity() {
-    return (this.#identity ??= new Identity(sys.identity()));
+    return (this.#identity ??= new Identity(this.#backend.identity()));
   }
 
   get identity() {
@@ -229,20 +244,50 @@ const ProcedureCtxImpl = class ProcedureCtx<S extends UntypedSchemaDef>
   }
 
   get http() {
-    return httpClient;
+    return this.#http;
+  }
+
+  sleep(duration: TimeDuration): void {
+    this.#sleep(duration);
   }
 
   withTx<T>(body: (ctx: TransactionCtx<S>) => T): T {
-    return runWithTx(
-      timestamp =>
-        new TransactionCtxImpl(
+    const txSeed = this.#childSeedRandom?.bigintInRange(0n, (1n << 64n) - 1n);
+    const run = () => {
+      const timestamp = new Timestamp(this.#backend.procedureStartMutTx());
+
+      try {
+        const ctx: ITransactionCtx<S> = new ReducerCtxImpl(
           this.sender,
           timestamp,
           this.connectionId,
-          this.#dbView()
-        ) as TransactionCtx<S>,
-      body
-    );
+          this.#dbView(),
+          this.#backend,
+          undefined,
+          txSeed == null ? undefined : makeRandomFromSeed(txSeed)
+        ) as ITransactionCtx<S>;
+        return body(ctx);
+      } catch (e) {
+        this.#backend.procedureAbortMutTx();
+        throw e;
+      }
+    };
+
+    let res = run();
+    try {
+      this.#backend.procedureCommitMutTx();
+      return res;
+    } catch {
+      // ignore the commit error
+    }
+    console.warn('committing anonymous transaction failed');
+    res = run();
+    try {
+      this.#backend.procedureCommitMutTx();
+      return res;
+    } catch (e) {
+      throw new Error('transaction retry failed again', { cause: e });
+    }
   }
 
   newUuidV4(): Uuid {

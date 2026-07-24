@@ -28,4 +28,13 @@ packages:
   - 'modules/sdk-test-ts'
   - 'modules/sdk-test-case-conversion-ts'
   - 'docs'
+allowBuilds:
+  '@parcel/watcher': false
+  better-sqlite3: false
+  bun: true
+  core-js: false
+  core-js-pure: false
+  esbuild: false
+  lmdb: false
+  msgpackr-extract: false
 minimumReleaseAge: 1440

@@ -1,7 +1,30 @@
 #[cfg(feature = "browser")]
 use std::path::Path;
+#[cfg(feature = "browser")]
+use std::process::{Command, Stdio};
+#[cfg(feature = "browser")]
+use std::sync::OnceLock;
 
 use spacetimedb_testing::sdk::{Test, TestBuilder};
+
+#[cfg(feature = "browser")]
+fn node_websocket_flag() -> &'static str {
+    static FLAG: OnceLock<&'static str> = OnceLock::new();
+    FLAG.get_or_init(|| {
+        let supports_experimental_flag = Command::new("node")
+            .args(["--experimental-websocket", "-e", ""])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success());
+
+        if supports_experimental_flag {
+            "--experimental-websocket "
+        } else {
+            ""
+        }
+    })
+}
 
 fn platform_test_builder(client_project: &str, run_selector: Option<&str>) -> TestBuilder {
     let builder = Test::builder();
@@ -72,7 +95,7 @@ fn platform_test_builder(client_project: &str, run_selector: Option<&str>) -> Te
             }})().catch((e) => {{ console.error(e); process.exit(1); }});"
         );
         let node_script = shlex::try_quote(&node_script).expect("inline Node script should be shell-quotable");
-        let run_command = format!("node --experimental-websocket -e {node_script}");
+        let run_command = format!("node {}-e {node_script}", node_websocket_flag());
 
         builder
             .with_compile_command(compile_command)

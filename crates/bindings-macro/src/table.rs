@@ -1,6 +1,6 @@
 use crate::sats;
 use crate::sym;
-use crate::util::{check_duplicate, check_duplicate_msg, match_meta};
+use crate::util::{check_duplicate, check_duplicate_msg, match_meta, native_test_utils_registration};
 use core::slice;
 use heck::ToSnakeCase;
 use proc_macro2::{Span, TokenStream};
@@ -589,7 +589,7 @@ impl ValidatedIndex<'_> {
         quote! {
             #[doc = #doc]
             #vis fn #column_ident(&self) -> #unique_ty<#tbl_token, #col_ty, __indices::#index_ident> {
-                #unique_ty::__NEW
+                #unique_ty::__new(self.__backend.clone())
             }
         }
     }
@@ -630,7 +630,7 @@ impl ValidatedIndex<'_> {
         quote! {
             #[doc = #doc]
             #vis fn #index_ident(&self) -> #handle_ty<#tbl_token, (#(#col_tys,)*), __indices::#index_ident> {
-                #handle_ty::__NEW
+                #handle_ty::__new(self.__backend.clone())
             }
         }
     }
@@ -677,6 +677,7 @@ impl ValidatedIndex<'_> {
             #vis struct #index_ident;
             impl spacetimedb::table::#index_kind_trait for #index_ident {}
             impl spacetimedb::table::Index for #index_ident {
+                const INDEX_NAME: &'static str = #index_name;
                 const NUM_COLS_INDEXED: usize = #num_cols;
                 fn index_id() -> spacetimedb::table::IndexId {
                     static INDEX_ID: std::sync::OnceLock<spacetimedb::table::IndexId> = std::sync::OnceLock::new();
@@ -1136,6 +1137,9 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             #(const SCHEDULE: Option<spacetimedb::table::ScheduleDesc<'static>> = Some(#schedule);)*
 
             #table_id_from_name_func
+            fn __backend(&self) -> &spacetimedb::table::TableHandleBackend {
+                &self.__backend
+            }
             #default_fn
         }
     };
@@ -1157,12 +1161,14 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         #[allow(non_camel_case_types, dead_code)]
         #vis trait #table_ident {
             #[allow(non_camel_case_types, dead_code)]
-            fn #table_ident(&self) -> &#tablehandle_ident;
+            fn #table_ident(&self) -> #tablehandle_ident;
         }
         impl #table_ident for spacetimedb::Local {
             #[allow(non_camel_case_types, dead_code)]
-            fn #table_ident(&self) -> &#tablehandle_ident {
-                &#tablehandle_ident {}
+            fn #table_ident(&self) -> #tablehandle_ident {
+                #tablehandle_ident {
+                    __backend: self.__table_backend(),
+                }
             }
         }
     };
@@ -1171,12 +1177,14 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         #[allow(non_camel_case_types, dead_code)]
         #vis trait #view_trait_ident {
             #[allow(non_camel_case_types, dead_code)]
-            fn #table_ident(&self) -> &#viewhandle_ident;
+            fn #table_ident(&self) -> #viewhandle_ident;
         }
         impl #view_trait_ident for spacetimedb::LocalReadOnly {
             #[inline]
-            fn #table_ident(&self) -> &#viewhandle_ident {
-                &#viewhandle_ident {}
+            fn #table_ident(&self) -> #viewhandle_ident {
+                #viewhandle_ident {
+                    __backend: self.__table_backend(),
+                }
             }
         }
     };
@@ -1263,13 +1271,19 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let tablehandle_def = quote! {
         #[allow(non_camel_case_types)]
         #[non_exhaustive]
-        #vis struct #tablehandle_ident {}
+        #vis struct #tablehandle_ident {
+            #[doc(hidden)]
+            pub __backend: spacetimedb::table::TableHandleBackend,
+        }
     };
 
     let viewhandle_def = quote! {
         #[allow(non_camel_case_types)]
         #[non_exhaustive]
-        #vis struct #viewhandle_ident {}
+        #vis struct #viewhandle_ident {
+            #[doc(hidden)]
+            pub __backend: spacetimedb::table::TableHandleBackend,
+        }
     };
 
     let struct_name = original_struct_ident.to_string();
@@ -1280,6 +1294,13 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     } else {
         quote! {}
     };
+
+    let test_utils_registration = native_test_utils_registration(quote! {
+        spacetimedb::rt::register_table::<#tablehandle_ident>();
+        spacetimedb::test_utils::__register_table_name(
+            <#tablehandle_ident as spacetimedb::table::TableInternal>::TABLE_NAME,
+        );
+    });
 
     let emission = quote! {
         const _: () = {
@@ -1304,7 +1325,13 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             impl #viewhandle_ident {
                 #[inline]
                 pub fn count(&self) -> u64 {
-                    spacetimedb::table::count::<#tablehandle_ident>()
+                    let table_id = self
+                        .__backend
+                        .table_id(<#tablehandle_ident as spacetimedb::table::TableInternal>::TABLE_NAME)
+                        .expect("table_id_from_name() call failed");
+                    self.__backend
+                        .table_row_count(table_id)
+                        .expect("datastore_table_row_count() call failed")
                 }
 
                 #(#index_accessors_ro)*
@@ -1322,6 +1349,8 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             }
 
             #describe_table_func
+
+            #test_utils_registration
         };
     };
 

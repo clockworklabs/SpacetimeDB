@@ -1,11 +1,18 @@
+#![cfg_attr(not(feature = "metrics"), allow(dead_code))]
+
 use super::{
-    committed_state::CommittedState, mut_tx::MutTxId, sequence::SequencesState, state_view::StateView, tx::TxId,
-    tx_state::TxState,
+    committed_state::CommittedState, mut_tx::MutTxId, sequence::SequencesState, state_view::StateView, time::Instant,
+    tx::TxId, tx_state::TxState,
 };
+#[cfg(feature = "metrics")]
+use crate::db_metrics::DB_METRICS;
 use crate::execution_context::{Workload, WorkloadType};
+#[cfg(feature = "durability")]
 use crate::locking_tx_datastore::replay::{build_sequence_state, ErrorBehavior, Replay};
+#[cfg(feature = "durability")]
+use crate::system_tables::system_table_schema;
+use crate::traits::TxOffset;
 use crate::{
-    db_metrics::DB_METRICS,
     error::{DatastoreError, TableError},
     locking_tx_datastore::{
         state_view::{IterByColEqMutTx, IterByColRangeMutTx, IterMutTx},
@@ -16,8 +23,8 @@ use crate::{
 use crate::{
     execution_context::ExecutionContext,
     system_tables::{
-        read_hash_from_col, read_identity_from_col, system_table_schema, StClientRow, StModuleFields, StModuleRow,
-        StTableFields, ST_CLIENT_ID, ST_MODULE_ID, ST_TABLE_ID,
+        read_hash_from_col, read_identity_from_col, StClientRow, StModuleFields, StModuleRow, StTableFields,
+        ST_CLIENT_ID, ST_MODULE_ID, ST_TABLE_ID,
     },
     traits::{
         DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, Program, RowTypeForTable, Tx, TxData, TxDatastore,
@@ -27,7 +34,6 @@ use anyhow::anyhow;
 use core::ops::RangeBounds;
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_data_structures::map::{HashCollectionExt, HashMap};
-use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId, ViewId};
@@ -38,6 +44,7 @@ use spacetimedb_schema::{
     reducer_name::ReducerName,
     schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema, TableSchema},
 };
+#[cfg(feature = "durability")]
 use spacetimedb_snapshot::{BoxedPendingSnapshot, DynSnapshotRepo, ReconstructedSnapshot};
 use spacetimedb_table::{
     indexes::RowPointer,
@@ -46,7 +53,7 @@ use spacetimedb_table::{
 };
 use std::borrow::Cow;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 pub type Result<T> = std::result::Result<T, DatastoreError>;
 
@@ -116,7 +123,8 @@ impl Locking {
         commit_state.bootstrap_system_tables(database_identity)?;
         // The database tables are now initialized with the correct data.
         // Now we have to build our in memory structures.
-        build_sequence_state(&datastore, &mut commit_state)?;
+        let sequence_state = commit_state.build_sequence_state()?;
+        *datastore.sequence_state.lock() = sequence_state;
 
         // We don't want to build indexes here; we'll build those later,
         // in `rebuild_state_after_replay`.
@@ -133,6 +141,7 @@ impl Locking {
     /// The provided closure will be called for each transaction found in the
     /// history, the parameter is the transaction's offset. The closure is called
     /// _before_ the transaction is applied to the database state.
+    #[cfg(feature = "durability")]
     pub fn replay<F: FnMut(u64)>(&self, progress: F, error_behavior: ErrorBehavior) -> Replay<'_, F> {
         let committed_state = self.committed_state.write();
         Replay::new(self.database_identity, committed_state, progress, error_behavior)
@@ -148,6 +157,7 @@ impl Locking {
     /// - Notably, **do not** construct indexes or sequences.
     ///   This should be done by [`Self::rebuild_state_after_replay`],
     ///   after replaying the suffix of the commitlog.
+    #[cfg(feature = "durability")]
     pub fn restore_from_snapshot(snapshot: ReconstructedSnapshot, page_pool: PagePool) -> Result<Self> {
         let ReconstructedSnapshot {
             database_identity,
@@ -227,6 +237,7 @@ impl Locking {
     ///
     /// Returns an error if [`DynSnapshotRepo::create_snapshot`] returns an
     /// error.
+    #[cfg(feature = "durability")]
     pub fn take_snapshot(&self, repo: &DynSnapshotRepo) -> Result<Option<TxOffset>> {
         Self::take_snapshot_internal(&self.committed_state, repo)?
             .map(|(_offset, snap)| snap.sync_all())
@@ -253,6 +264,7 @@ impl Locking {
         self.committed_state.read().datastore_memory_bytes()
     }
 
+    #[cfg(feature = "durability")]
     pub fn take_snapshot_internal(
         committed_state: &RwLock<CommittedState>,
         repo: &DynSnapshotRepo,
@@ -779,6 +791,7 @@ impl TxMetrics {
     }
 
     /// Reports the metrics for `reducer` using `get_exec_counter` to retrieve the metrics counters.
+    #[cfg(feature = "metrics")]
     pub fn report<'a, R: MetricsRecorder + 'a>(
         &self,
         tx_data: Option<&TxData>,
@@ -978,6 +991,14 @@ impl Locking {
 
     pub fn rollback_mut_tx_downgrade(&self, tx: MutTxId, workload: Workload) -> (TxMetrics, TxId) {
         tx.rollback_downgrade(workload)
+    }
+
+    #[cfg(feature = "portable")]
+    pub fn rebuild_sequence_state_from_committed(&self) -> Result<()> {
+        let mut committed_state = self.committed_state.write();
+        let sequence_state = committed_state.build_sequence_state()?;
+        *self.sequence_state.lock() = sequence_state;
+        Ok(())
     }
 
     /// This method only updates the in-memory `committed_state`.

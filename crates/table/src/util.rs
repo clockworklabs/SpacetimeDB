@@ -17,6 +17,7 @@ pub const fn range_move(r: Range<usize>, by: usize) -> Range<usize> {
 #[macro_export]
 macro_rules! static_assert_size {
     ($ty:ty, $size:expr) => {
+        #[cfg(not(target_pointer_width = "32"))]
         const _: [(); $size] = [(); ::core::mem::size_of::<$ty>()];
     };
 }

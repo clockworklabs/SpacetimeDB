@@ -44,7 +44,7 @@ export const insert_unique_0_u32_u64_str = spacetimedb.reducer(
   { name: 'insert_unique_0_u32_u64_str' },
   { id: t.u32(), age: t.u64(), name: t.string() },
   (ctx, { id, age, name }) => {
-    ctx.db.unique0U32U64Str.insert({ id, name, age });
+    ctx.db.unique_0_u32_u64_str.insert({ id, name, age });
   }
 );
 
@@ -52,7 +52,7 @@ export const insert_no_index_u32_u64_str = spacetimedb.reducer(
   { name: 'insert_no_index_u32_u64_str' },
   { id: t.u32(), age: t.u64(), name: t.string() },
   (ctx, { id, age, name }) => {
-    ctx.db.noIndexU32U64Str.insert({ id, name, age });
+    ctx.db.no_index_u32_u64_str.insert({ id, name, age });
   }
 );
 
@@ -60,7 +60,7 @@ export const insert_btree_each_column_u32_u64_str = spacetimedb.reducer(
   { name: 'insert_btree_each_column_u32_u64_str' },
   { id: t.u32(), age: t.u64(), name: t.string() },
   (ctx, { id, age, name }) => {
-    ctx.db.btreeEachColumnU32U64Str.insert({ id, name, age });
+    ctx.db.btree_each_column_u32_u64_str.insert({ id, name, age });
   }
 );
 
@@ -68,7 +68,7 @@ export const insert_unique_0_u32_u64_u64 = spacetimedb.reducer(
   { name: 'insert_unique_0_u32_u64_u64' },
   { id: t.u32(), x: t.u64(), y: t.u64() },
   (ctx, { id, x, y }) => {
-    ctx.db.unique0U32U64U64.insert({ id, x, y });
+    ctx.db.unique_0_u32_u64_u64.insert({ id, x, y });
   }
 );
 
@@ -76,7 +76,7 @@ export const insert_no_index_u32_u64_u64 = spacetimedb.reducer(
   { name: 'insert_no_index_u32_u64_u64' },
   { id: t.u32(), x: t.u64(), y: t.u64() },
   (ctx, { id, x, y }) => {
-    ctx.db.noIndexU32U64U64.insert({ id, x, y });
+    ctx.db.no_index_u32_u64_u64.insert({ id, x, y });
   }
 );
 
@@ -84,7 +84,7 @@ export const insert_btree_each_column_u32_u64_u64 = spacetimedb.reducer(
   { name: 'insert_btree_each_column_u32_u64_u64' },
   { id: t.u32(), x: t.u64(), y: t.u64() },
   (ctx, { id, x, y }) => {
-    ctx.db.btreeEachColumnU32U64U64.insert({ id, x, y });
+    ctx.db.btree_each_column_u32_u64_u64.insert({ id, x, y });
   }
 );
 
@@ -95,7 +95,7 @@ export const insert_bulk_unique_0_u32_u64_u64 = spacetimedb.reducer(
   { locs: t.array(unique_0_u32_u64_u64_tRow) },
   (ctx, { locs }) => {
     for (const loc of locs) {
-      ctx.db.unique0U32U64U64.insert(loc);
+      ctx.db.unique_0_u32_u64_u64.insert(loc);
     }
   }
 );
@@ -105,7 +105,7 @@ export const insert_bulk_no_index_u32_u64_u64 = spacetimedb.reducer(
   { locs: t.array(no_index_u32_u64_u64_tRow) },
   (ctx, { locs }) => {
     for (const loc of locs) {
-      ctx.db.noIndexU32U64U64.insert(loc);
+      ctx.db.no_index_u32_u64_u64.insert(loc);
     }
   }
 );
@@ -115,7 +115,7 @@ export const insert_bulk_btree_each_column_u32_u64_u64 = spacetimedb.reducer(
   { locs: t.array(btree_each_column_u32_u64_u64_tRow) },
   (ctx, { locs }) => {
     for (const loc of locs) {
-      ctx.db.btreeEachColumnU32U64U64.insert(loc);
+      ctx.db.btree_each_column_u32_u64_u64.insert(loc);
     }
   }
 );
@@ -125,7 +125,7 @@ export const insert_bulk_unique_0_u32_u64_str = spacetimedb.reducer(
   { people: t.array(unique_0_u32_u64_str_tRow) },
   (ctx, { people }) => {
     for (const p of people) {
-      ctx.db.unique0U32U64Str.insert(p);
+      ctx.db.unique_0_u32_u64_str.insert(p);
     }
   }
 );
@@ -135,7 +135,7 @@ export const insert_bulk_no_index_u32_u64_str = spacetimedb.reducer(
   { people: t.array(no_index_u32_u64_str_tRow) },
   (ctx, { people }) => {
     for (const p of people) {
-      ctx.db.noIndexU32U64Str.insert(p);
+      ctx.db.no_index_u32_u64_str.insert(p);
     }
   }
 );
@@ -145,7 +145,7 @@ export const insert_bulk_btree_each_column_u32_u64_str = spacetimedb.reducer(
   { people: t.array(btree_each_column_u32_u64_str_tRow) },
   (ctx, { people }) => {
     for (const p of people) {
-      ctx.db.btreeEachColumnU32U64Str.insert(p);
+      ctx.db.btree_each_column_u32_u64_str.insert(p);
     }
   }
 );
@@ -163,13 +163,13 @@ export const update_bulk_unique_0_u32_u64_u64 = spacetimedb.reducer(
   { row_count: t.u32() },
   (ctx, { row_count }) => {
     let hit = 0;
-    for (const loc of ctx.db.unique0U32U64U64.iter()) {
+    for (const loc of ctx.db.unique_0_u32_u64_u64.iter()) {
       if (hit == row_count) {
         break;
       }
 
       hit += 1;
-      ctx.db.unique0U32U64U64.id?.update({
+      ctx.db.unique_0_u32_u64_u64.id?.update({
         id: loc.id,
         x: loc.x + 1n,
         y: loc.y,
@@ -185,13 +185,13 @@ export const update_bulk_unique_0_u32_u64_str = spacetimedb.reducer(
   { row_count: t.u32() },
   (ctx, { row_count }) => {
     let hit = 0;
-    for (const p of ctx.db.unique0U32U64Str.iter()) {
+    for (const p of ctx.db.unique_0_u32_u64_str.iter()) {
       if (hit == row_count) {
         break;
       }
 
       hit += 1;
-      ctx.db.unique0U32U64Str.id?.update({
+      ctx.db.unique_0_u32_u64_str.id?.update({
         id: p.id,
         age: p.age + 1n,
         name: p.name,
@@ -207,7 +207,7 @@ export const update_bulk_unique_0_u32_u64_str = spacetimedb.reducer(
 export const iterate_unique_0_u32_u64_str = spacetimedb.reducer(
   { name: 'iterate_unique_0_u32_u64_str' },
   ctx => {
-    for (const x of ctx.db.unique0U32U64Str.iter()) {
+    for (const x of ctx.db.unique_0_u32_u64_str.iter()) {
       blackBox(x);
     }
   }
@@ -216,7 +216,7 @@ export const iterate_unique_0_u32_u64_str = spacetimedb.reducer(
 export const iterate_unique_0_u32_u64_u64 = spacetimedb.reducer(
   { name: 'iterate_unique_0_u32_u64_u64' },
   ctx => {
-    for (const x of ctx.db.unique0U32U64U64.iter()) {
+    for (const x of ctx.db.unique_0_u32_u64_u64.iter()) {
       blackBox(x);
     }
   }
@@ -228,7 +228,7 @@ export const filter_unique_0_u32_u64_str_by_id = spacetimedb.reducer(
   { name: 'filter_unique_0_u32_u64_str_by_id' },
   { id: t.u32() },
   (ctx, { id }) => {
-    blackBox(ctx.db.unique0U32U64Str.id?.find(id));
+    blackBox(ctx.db.unique_0_u32_u64_str.id?.find(id));
   }
 );
 
@@ -236,7 +236,7 @@ export const filter_no_index_u32_u64_str_by_id = spacetimedb.reducer(
   { name: 'filter_no_index_u32_u64_str_by_id' },
   { id: t.u32() },
   (ctx, { id }) => {
-    for (const r of ctx.db.noIndexU32U64Str.iter()) {
+    for (const r of ctx.db.no_index_u32_u64_str.iter()) {
       if (r.id == id) {
         blackBox(r);
       }
@@ -248,7 +248,7 @@ export const filter_btree_each_column_u32_u64_str_by_id = spacetimedb.reducer(
   { name: 'filter_btree_each_column_u32_u64_str_by_id' },
   { id: t.u32() },
   (ctx, { id }) => {
-    const idIndex = ctx.db.btreeEachColumnU32U64Str.id;
+    const idIndex = ctx.db.btree_each_column_u32_u64_str.id;
     if (idIndex) {
       for (const r of idIndex.filter(id)) {
         blackBox(r);
@@ -261,7 +261,7 @@ export const filter_unique_0_u32_u64_str_by_name = spacetimedb.reducer(
   { name: 'filter_unique_0_u32_u64_str_by_name' },
   { name: t.string() },
   (ctx, { name }) => {
-    for (const r of ctx.db.unique0U32U64Str.iter()) {
+    for (const r of ctx.db.unique_0_u32_u64_str.iter()) {
       if (r.name == name) {
         blackBox(r);
       }
@@ -273,7 +273,7 @@ export const filter_no_index_u32_u64_str_by_name = spacetimedb.reducer(
   { name: 'filter_no_index_u32_u64_str_by_name' },
   { name: t.string() },
   (ctx, { name }) => {
-    for (const r of ctx.db.noIndexU32U64Str.iter()) {
+    for (const r of ctx.db.no_index_u32_u64_str.iter()) {
       if (r.name == name) {
         blackBox(r);
       }
@@ -285,7 +285,7 @@ export const filter_btree_each_column_u32_u64_str_by_name = spacetimedb.reducer(
   { name: 'filter_btree_each_column_u32_u64_str_by_name' },
   { name: t.string() },
   (ctx, { name }) => {
-    const nameIndex = ctx.db.btreeEachColumnU32U64Str.name;
+    const nameIndex = ctx.db.btree_each_column_u32_u64_str.name;
     if (nameIndex) {
       for (const r of nameIndex.filter(name)) {
         blackBox(r);
@@ -298,7 +298,7 @@ export const filter_unique_0_u32_u64_u64_by_id = spacetimedb.reducer(
   { name: 'filter_unique_0_u32_u64_u64_by_id' },
   { id: t.u32() },
   (ctx, { id }) => {
-    blackBox(ctx.db.unique0U32U64U64.id?.find(id));
+    blackBox(ctx.db.unique_0_u32_u64_u64.id?.find(id));
   }
 );
 
@@ -306,7 +306,7 @@ export const filter_no_index_u32_u64_u64_by_id = spacetimedb.reducer(
   { name: 'filter_no_index_u32_u64_u64_by_id' },
   { id: t.u32() },
   (ctx, { id }) => {
-    for (const r of ctx.db.noIndexU32U64U64.iter()) {
+    for (const r of ctx.db.no_index_u32_u64_u64.iter()) {
       if (r.id == id) {
         blackBox(r);
       }
@@ -318,7 +318,7 @@ export const filter_btree_each_column_u32_u64_u64_by_id = spacetimedb.reducer(
   { name: 'filter_btree_each_column_u32_u64_u64_by_id' },
   { id: t.u32() },
   (ctx, { id }) => {
-    const idIndex = ctx.db.btreeEachColumnU32U64U64.id;
+    const idIndex = ctx.db.btree_each_column_u32_u64_u64.id;
     if (idIndex) {
       for (const r of idIndex.filter(id)) {
         blackBox(r);
@@ -331,7 +331,7 @@ export const filter_unique_0_u32_u64_u64_by_x = spacetimedb.reducer(
   { name: 'filter_unique_0_u32_u64_u64_by_x' },
   { x: t.u64() },
   (ctx, { x }) => {
-    for (const r of ctx.db.unique0U32U64U64.iter()) {
+    for (const r of ctx.db.unique_0_u32_u64_u64.iter()) {
       if (r.x == x) {
         blackBox(r);
       }
@@ -343,7 +343,7 @@ export const filter_no_index_u32_u64_u64_by_x = spacetimedb.reducer(
   { name: 'filter_no_index_u32_u64_u64_by_x' },
   { x: t.u64() },
   (ctx, { x }) => {
-    for (const r of ctx.db.noIndexU32U64U64.iter()) {
+    for (const r of ctx.db.no_index_u32_u64_u64.iter()) {
       if (r.x == x) {
         blackBox(r);
       }
@@ -355,7 +355,7 @@ export const filter_btree_each_column_u32_u64_u64_by_x = spacetimedb.reducer(
   { name: 'filter_btree_each_column_u32_u64_u64_by_x' },
   { x: t.u64() },
   (ctx, { x }) => {
-    const xIndex = ctx.db.btreeEachColumnU32U64U64.x;
+    const xIndex = ctx.db.btree_each_column_u32_u64_u64.x;
     if (xIndex) {
       for (const r of xIndex.filter(x)) {
         blackBox(r);
@@ -368,7 +368,7 @@ export const filter_unique_0_u32_u64_u64_by_y = spacetimedb.reducer(
   { name: 'filter_unique_0_u32_u64_u64_by_y' },
   { y: t.u64() },
   (ctx, { y }) => {
-    for (const r of ctx.db.unique0U32U64U64.iter()) {
+    for (const r of ctx.db.unique_0_u32_u64_u64.iter()) {
       if (r.y == y) {
         blackBox(r);
       }
@@ -380,7 +380,7 @@ export const filter_no_index_u32_u64_u64_by_y = spacetimedb.reducer(
   { name: 'filter_no_index_u32_u64_u64_by_y' },
   { y: t.u64() },
   (ctx, { y }) => {
-    for (const r of ctx.db.noIndexU32U64U64.iter()) {
+    for (const r of ctx.db.no_index_u32_u64_u64.iter()) {
       if (r.y == y) {
         blackBox(r);
       }
@@ -392,7 +392,7 @@ export const filter_btree_each_column_u32_u64_u64_by_y = spacetimedb.reducer(
   { name: 'filter_btree_each_column_u32_u64_u64_by_y' },
   { y: t.u64() },
   (ctx, { y }) => {
-    const yIndex = ctx.db.btreeEachColumnU32U64U64.y;
+    const yIndex = ctx.db.btree_each_column_u32_u64_u64.y;
     if (yIndex) {
       for (const r of yIndex.filter(y)) {
         blackBox(r);
@@ -409,7 +409,7 @@ export const delete_unique_0_u32_u64_str_by_id = spacetimedb.reducer(
   { name: 'delete_unique_0_u32_u64_str_by_id' },
   { id: t.u32() },
   (ctx, { id }) => {
-    ctx.db.unique0U32U64Str.id?.delete(id);
+    ctx.db.unique_0_u32_u64_str.id?.delete(id);
   }
 );
 
@@ -417,7 +417,7 @@ export const delete_unique_0_u32_u64_u64_by_id = spacetimedb.reducer(
   { name: 'delete_unique_0_u32_u64_u64_by_id' },
   { id: t.u32() },
   (ctx, { id }) => {
-    ctx.db.unique0U32U64U64.id?.delete(id);
+    ctx.db.unique_0_u32_u64_u64.id?.delete(id);
   }
 );
 
@@ -464,7 +464,7 @@ export const clear_table_btree_each_column_u32_u64_u64 = spacetimedb.reducer(
 export const count_unique_0_u32_u64_str = spacetimedb.reducer(
   { name: 'count_unique_0_u32_u64_str' },
   ctx => {
-    const count = ctx.db.unique0U32U64Str.count();
+    const count = ctx.db.unique_0_u32_u64_str.count();
     console.info!(`COUNT: ${count}`);
   }
 );
@@ -472,7 +472,7 @@ export const count_unique_0_u32_u64_str = spacetimedb.reducer(
 export const count_no_index_u32_u64_str = spacetimedb.reducer(
   { name: 'count_no_index_u32_u64_str' },
   ctx => {
-    const count = ctx.db.noIndexU32U64Str.count();
+    const count = ctx.db.no_index_u32_u64_str.count();
     console.info!(`COUNT: ${count}`);
   }
 );
@@ -480,7 +480,7 @@ export const count_no_index_u32_u64_str = spacetimedb.reducer(
 export const count_btree_each_column_u32_u64_str = spacetimedb.reducer(
   { name: 'count_btree_each_column_u32_u64_str' },
   ctx => {
-    const count = ctx.db.btreeEachColumnU32U64Str.count();
+    const count = ctx.db.btree_each_column_u32_u64_str.count();
     console.info!(`COUNT: ${count}`);
   }
 );
@@ -488,7 +488,7 @@ export const count_btree_each_column_u32_u64_str = spacetimedb.reducer(
 export const count_unique_0_u32_u64_u64 = spacetimedb.reducer(
   { name: 'count_unique_0_u32_u64_u64' },
   ctx => {
-    const count = ctx.db.unique0U32U64U64.count();
+    const count = ctx.db.unique_0_u32_u64_u64.count();
     console.info!(`COUNT: ${count}`);
   }
 );
@@ -496,7 +496,7 @@ export const count_unique_0_u32_u64_u64 = spacetimedb.reducer(
 export const count_no_index_u32_u64_u64 = spacetimedb.reducer(
   { name: 'count_no_index_u32_u64_u64' },
   ctx => {
-    const count = ctx.db.noIndexU32U64U64.count();
+    const count = ctx.db.no_index_u32_u64_u64.count();
     console.info!(`COUNT: ${count}`);
   }
 );
@@ -504,7 +504,7 @@ export const count_no_index_u32_u64_u64 = spacetimedb.reducer(
 export const count_btree_each_column_u32_u64_u64 = spacetimedb.reducer(
   { name: 'count_btree_each_column_u32_u64_u64' },
   ctx => {
-    const count = ctx.db.btreeEachColumnU32U64U64.count();
+    const count = ctx.db.btree_each_column_u32_u64_u64.count();
     console.info!(`COUNT: ${count}`);
   }
 );
