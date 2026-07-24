@@ -211,7 +211,7 @@ These apply to all selected databases:
 
 - `--server`: target server
 - `--break-clients`: allow breaking changes
-- `--delete-data`: clear database data
+- `--delete-data=<mode>`: clear database data (`always`, `on-conflict`, or `never`)
 - `--yes` / `--force`: skip confirmation prompts
 
 ### Per-database overrides

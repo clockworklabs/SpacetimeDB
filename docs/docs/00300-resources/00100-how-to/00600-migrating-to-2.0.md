@@ -107,9 +107,9 @@ conn.Reducers.OnDealDamage += (ctx, _, _) =>
     {
         Console.WriteLine("Reducer succeeded");
     }
-    else if (ctx.Event.Status is Status.Failed failed)
+    else if (ctx.Event.Status is Status.Failed(var reason))
     {
-        Console.WriteLine($"Reducer failed: {failed}");
+        Console.WriteLine($"Reducer failed: {reason}");
     }
     else if (ctx.Event.Status is Status.OutOfEnergy)
     {
@@ -190,7 +190,7 @@ spacetimedb.reducer('deal_damage', { target: t.identity(), amount: t.u32() }, (c
 **Server (module) -- after:**
 ```typescript
 // 2.0 server -- explicitly publish events via an event table
-const damageEvent = table({ event: true }, {
+const damageEvent = table({ name: 'damage_event', event: true }, {
     target: t.identity(),
     amount: t.u32(),
 })
@@ -1366,7 +1366,7 @@ spacetimedb.reducer('runMyTimer', myTimer.rowType, (ctx, timer) => {
 ```
 
 ```typescript
-const myTimer = table({ scheduled: () => runMyTimer }, {
+const myTimer = table({ name: 'my_timer', scheduled: (): any => runMyTimer }, {
   scheduledId: t.u64().primaryKey().autoInc(),
   scheduledAt: t.scheduleAt(),
 });
@@ -1479,7 +1479,7 @@ In the rare event that you have a reducer or procedure which is intended to be i
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-const myTimer = table({ scheduled: () => runMyTimerPrivate }, {
+const myTimer = table({ name: 'my_timer', scheduled: (): any => runMyTimerPrivate }, {
   scheduledId: t.u64().primaryKey().autoInc(),
   scheduledAt: t.scheduleAt(),
 });

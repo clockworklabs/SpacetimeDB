@@ -332,7 +332,7 @@ SPACETIMEDB_REDUCER(register_document, ReducerContext ctx,
     std::string filename, std::string mime_type, uint64_t size_bytes, std::string storage_url) {
     ctx.db[document].insert(Document{
         .id = 0,  // auto-increment
-        .owner_id = ctx.sender,
+        .owner_id = ctx.sender(),
         .filename = filename,
         .mime_type = mime_type,
         .size_bytes = size_bytes,
@@ -579,7 +579,7 @@ pub fn upload_to_s3(
     ctx.with_tx(|tx_ctx| {
         tx_ctx.db.document().insert(Document {
             id: 0,
-            owner_id: tx_ctx.sender,
+            owner_id: tx_ctx.sender(),
             filename: filename_clone.clone(),
             s3_key: s3_key_clone.clone(),
             uploaded_at: tx_ctx.timestamp,
@@ -719,7 +719,7 @@ pub fn get_upload_url(
 pub fn confirm_upload(ctx: &ReducerContext, filename: String, s3_key: String) {
     ctx.db.document().insert(Document {
         id: 0,
-        owner_id: ctx.sender,
+        owner_id: ctx.sender(),
         filename,
         s3_key,
         uploaded_at: ctx.timestamp,
