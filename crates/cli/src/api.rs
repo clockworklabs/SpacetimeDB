@@ -31,6 +31,10 @@ impl Connection {
         ]
         .concat()
     }
+
+    pub fn host_uri(&self, endpoint: &str) -> String {
+        [&self.host, "/v1/", endpoint].concat()
+    }
 }
 
 pub fn build_client(con: &Connection) -> Client {
