@@ -108,6 +108,34 @@ namespace SpacetimeDB
             new("BTreeViews", new BTreeViewsCols("BTreeViews"), new BTreeViewsIxCols("BTreeViews"));
     }
 
+    public readonly struct ItemCols
+    {
+        public readonly global::SpacetimeDB.Col<global::Item, ItemKey> Key;
+        public readonly global::SpacetimeDB.Col<global::Item, string> Name;
+
+        internal ItemCols(string tableName)
+        {
+            Key = new global::SpacetimeDB.Col<global::Item, ItemKey>(tableName, "Key");
+            Name = new global::SpacetimeDB.Col<global::Item, string>(tableName, "Name");
+        }
+    }
+
+    public readonly struct ItemIxCols
+    {
+        public readonly global::SpacetimeDB.IxCol<global::Item, ItemKey> Key;
+
+        internal ItemIxCols(string tableName)
+        {
+            Key = new global::SpacetimeDB.IxCol<global::Item, ItemKey>(tableName, "Key");
+        }
+    }
+
+    public readonly partial struct QueryBuilder
+    {
+        public global::SpacetimeDB.Table<global::Item, ItemCols, ItemIxCols> Item() =>
+            new("Item", new ItemCols("Item"), new ItemIxCols("Item"));
+    }
+
     public readonly struct MultiTable1Cols
     {
         public readonly global::SpacetimeDB.Col<global::MultiTableRow, string> Name;
@@ -713,6 +741,7 @@ namespace SpacetimeDB
         internal global::SpacetimeDB.Internal.TableHandles.BTreeMultiColumn BTreeMultiColumn =>
             new();
         internal global::SpacetimeDB.Internal.TableHandles.BTreeViews BTreeViews => new();
+        public global::SpacetimeDB.Internal.TableHandles.Item Item => new();
         public global::SpacetimeDB.Internal.TableHandles.MultiTable1 MultiTable1 => new();
         public global::SpacetimeDB.Internal.TableHandles.MultiTable2 MultiTable2 => new();
         public global::SpacetimeDB.Internal.TableHandles.PrivateTable PrivateTable => new();
@@ -1126,6 +1155,77 @@ namespace SpacetimeDB.Internal.TableHandles
         }
 
         internal FactionIndex Faction => new();
+    }
+
+    public readonly struct Item : global::SpacetimeDB.Internal.ITableView<Item, global::Item>
+    {
+        public static global::Item ReadGenFields(System.IO.BinaryReader reader, global::Item row)
+        {
+            return row;
+        }
+
+        public static SpacetimeDB.Internal.RawTableDefV10 MakeTableDesc(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) =>
+            new(
+                SourceName: nameof(Item),
+                ProductTypeRef: (uint)new global::Item.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [0],
+                Indexes:
+                [
+                    new(
+                        SourceName: "Item_Key_idx_btree",
+                        AccessorName: "Key",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                    )
+                ],
+                Constraints:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        Item,
+                        global::Item
+                    >.MakeUniqueConstraint(0)
+                ],
+                Sequences: [],
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Public,
+                DefaultValues: [],
+                IsEvent: false
+            );
+
+        public static SpacetimeDB.Internal.RawScheduleDefV10? MakeScheduleDesc() => null;
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
+        public ulong Count => global::SpacetimeDB.Internal.ITableView<Item, global::Item>.DoCount();
+
+        public IEnumerable<global::Item> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<Item, global::Item>.DoIter();
+
+        public global::Item Insert(global::Item row) =>
+            global::SpacetimeDB.Internal.ITableView<Item, global::Item>.DoInsert(row);
+
+        public bool Delete(global::Item row) =>
+            global::SpacetimeDB.Internal.ITableView<Item, global::Item>.DoDelete(row);
+
+        public ulong Clear() =>
+            global::SpacetimeDB.Internal.ITableView<Item, global::Item>.DoClear();
+
+        public sealed class KeyUniqueIndex : UniqueIndex<Item, global::Item, ItemKey, ItemKey.BSATN>
+        {
+            internal KeyUniqueIndex()
+                : base("Item_Key_idx_btree") { }
+
+            public global::Item? Find(ItemKey key) => FindSingle(key);
+
+            public global::Item Update(global::Item row) => DoUpdate(row);
+        }
+
+        public KeyUniqueIndex Key => new();
     }
 
     public readonly struct MultiTable1
@@ -2086,6 +2186,36 @@ namespace SpacetimeDB.Internal.ViewHandles
         internal FactionIndex Faction => new();
     }
 
+    public sealed class ItemReadOnly : global::SpacetimeDB.Internal.ReadOnlyTableView<global::Item>
+    {
+        internal ItemReadOnly()
+            : base("Item") { }
+
+        /// <summary>
+        /// Returns the number of rows in this table.
+        ///
+        /// This reads datastore metadata, so it runs in constant time.
+        /// It also takes into account modifications by the current transaction.
+        /// </summary>
+        public ulong Count => DoCount();
+
+        public sealed class KeyIndex
+            : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
+                global::SpacetimeDB.Internal.ViewHandles.ItemReadOnly,
+                global::Item,
+                ItemKey,
+                ItemKey.BSATN
+            >
+        {
+            internal KeyIndex()
+                : base("Item_Key_idx_btree") { }
+
+            public global::Item? Find(ItemKey key) => FindSingle(key);
+        }
+
+        public KeyIndex Key => new();
+    }
+
     public sealed class MultiTable1ReadOnly
         : global::SpacetimeDB.Internal.ReadOnlyTableView<global::MultiTableRow>
     {
@@ -2309,6 +2439,7 @@ namespace SpacetimeDB.Internal
         internal global::SpacetimeDB.Internal.ViewHandles.BTreeMultiColumnReadOnly BTreeMultiColumn =>
             new();
         internal global::SpacetimeDB.Internal.ViewHandles.BTreeViewsReadOnly BTreeViews => new();
+        public global::SpacetimeDB.Internal.ViewHandles.ItemReadOnly Item => new();
         public global::SpacetimeDB.Internal.ViewHandles.MultiTable1ReadOnly MultiTable1 => new();
         public global::SpacetimeDB.Internal.ViewHandles.MultiTable2ReadOnly MultiTable2 => new();
         public global::SpacetimeDB.Internal.ViewHandles.PrivateTableReadOnly PrivateTable => new();
@@ -2497,6 +2628,8 @@ static class ModuleRegistration
             (identity, connectionId, random, time) =>
                 new SpacetimeDB.ProcedureContext(identity, connectionId, random, time)
         );
+        SpacetimeDB.Internal.Module.RegisterExplicitTableName("Item", "item");
+
         SpacetimeDB.Internal.Module.SetHandlerContextConstructor(
             (random, time) => new SpacetimeDB.HandlerContext(random, time)
         );
@@ -2524,6 +2657,10 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.RegisterTable<
             global::BTreeViews,
             SpacetimeDB.Internal.TableHandles.BTreeViews
+        >();
+        SpacetimeDB.Internal.Module.RegisterTable<
+            global::Item,
+            SpacetimeDB.Internal.TableHandles.Item
         >();
         SpacetimeDB.Internal.Module.RegisterTable<
             global::MultiTableRow,

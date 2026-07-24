@@ -269,6 +269,25 @@ partial struct FormerlyForbiddenFieldNames
     public uint GetAlgebraicType;
 }
 
+[SpacetimeDB.Type]
+public partial struct ItemKey
+{
+    public ulong Value;
+
+    public static implicit operator ulong(ItemKey key) => key.Value;
+
+    public static implicit operator ItemKey(ulong value) => new() { Value = value };
+}
+
+[SpacetimeDB.Table(Name = "item", Public = true)]
+public partial struct Item
+{
+    [SpacetimeDB.PrimaryKey]
+    public ItemKey Key;
+
+    public string Name;
+}
+
 public class Module
 {
     [SpacetimeDB.ClientVisibilityFilter]
