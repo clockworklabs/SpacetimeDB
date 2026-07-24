@@ -34,6 +34,12 @@ fn run_cargo_ci_dlls() -> Result<(), String> {
 fn push_nuget_packages(version: &str, dry_run: bool) -> Result<(), String> {
     println!("\n=== Publishing NuGet Packages ===");
 
+    // The NuGet package version comes from the csproj `<Version>`, which is not bumped
+    // for a hotfix. So `dotnet pack` produces e.g. `SpacetimeDB.Runtime.2.7.0.nupkg`
+    // even when releasing tag `v2.7.0-hotfix2`. Strip the `-hotfix<N>` suffix so we look
+    // up the packages that were actually produced.
+    let version = version.split_once("-hotfix").map_or(version, |(base, _)| base);
+
     let packages = vec![
         format!(
             "crates/bindings-csharp/BSATN.Runtime/bin/Release/SpacetimeDB.BSATN.Runtime.{}.nupkg",
@@ -361,11 +367,14 @@ impl ReleaseTarget for CSharpRelease {
 
         println!("\n=== C# SDK Release Complete ===");
         if !self.dry_run {
+            // NuGet package versions come from the csproj `<Version>` and are not bumped
+            // for a hotfix, so report the base version here (see push_nuget_packages).
+            let package_version = version.split_once("-hotfix").map_or(version, |(base, _)| base);
             println!("NuGet packages published:");
-            println!("  - SpacetimeDB.BSATN.Runtime.{}", version);
-            println!("  - SpacetimeDB.Runtime.{}", version);
-            println!("  - SpacetimeDB.ClientSDK.{}", version);
-            println!("  - SpacetimeDB.ClientSDK.Godot.{}", version);
+            println!("  - SpacetimeDB.BSATN.Runtime.{}", package_version);
+            println!("  - SpacetimeDB.Runtime.{}", package_version);
+            println!("  - SpacetimeDB.ClientSDK.{}", package_version);
+            println!("  - SpacetimeDB.ClientSDK.Godot.{}", package_version);
             println!("\nUnity SDK published:");
             println!("  - Branch: release/latest");
             println!("  - Tag: v{}", version);

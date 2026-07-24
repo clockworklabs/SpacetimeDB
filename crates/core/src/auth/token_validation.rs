@@ -6,13 +6,13 @@ use faststr::FastStr;
 use jsonwebtoken::decode_header;
 pub use jsonwebtoken::errors::Error as JwtError;
 pub use jsonwebtoken::errors::ErrorKind as JwtErrorKind;
-use jsonwebtoken::jwk::JwkSet;
-use jsonwebtoken::{decode, AlgorithmFamily, Validation};
+use jsonwebtoken::{decode, Validation};
 pub use jsonwebtoken::{DecodingKey, EncodingKey};
+use jwks::Jwks;
 use lazy_static::lazy_static;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 use thiserror;
 
 use super::identity::{IncomingClaims, SpacetimeIdentityClaims};
@@ -29,9 +29,10 @@ pub enum TokenValidationError {
     #[error("Specified key ID not found in JWKs")]
     KeyIDNotFound,
 
-    #[error("OIDC/JWKS request failed: {0}")]
-    OidcRequestError(#[from] reqwest::Error),
-
+    #[error(transparent)]
+    JwkError(#[from] jwks::JwkError),
+    #[error(transparent)]
+    JwksError(#[from] jwks::JwksError),
     // The other case is a catch-all for unexpected errors.
     #[error(transparent)]
     Other(#[from] anyhow::Error),
@@ -145,44 +146,20 @@ lazy_static! {
 impl TokenValidator for DecodingKey {
     async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims, TokenValidationError> {
         let mut validation = Validation::new(jsonwebtoken::Algorithm::ES256);
-        validation.algorithms = match self.family() {
-            AlgorithmFamily::Ec => vec![jsonwebtoken::Algorithm::ES256],
-            AlgorithmFamily::Rsa => vec![jsonwebtoken::Algorithm::RS256],
-            AlgorithmFamily::Hmac => vec![jsonwebtoken::Algorithm::HS256],
-            AlgorithmFamily::Ed => {
-                // Preserve the pre-upgrade policy: SpacetimeDB only accepted ES256, RS256, and HS256 here.
-                return Err(TokenValidationError::TokenError(JwtErrorKind::InvalidAlgorithm.into()));
-            }
-        };
+        validation.algorithms = vec![
+            jsonwebtoken::Algorithm::ES256,
+            jsonwebtoken::Algorithm::RS256,
+            jsonwebtoken::Algorithm::HS256,
+        ];
         validation.set_required_spec_claims(&REQUIRED_CLAIMS);
 
         // TODO: We should require a specific audience at some point.
         validation.validate_aud = false;
 
-        // Note, `jsonwebtoken` rejects `"exp": null` before deserializing claims.
-        // However, older SpacetimeDB tokens used `"exp": null` to encoded no expiration.
-        // Those tokens may still be cached by clients, so we verify the signature with the crate
-        // but preserve our historical `None` means no expiry semantics below.
-        validation.validate_exp = false;
-
         let data = decode::<IncomingClaims>(token, self, &validation)?;
         let claims = data.claims;
-        validate_expiration(&claims)?;
         claims.try_into().map_err(TokenValidationError::Other)
     }
-}
-
-fn validate_expiration(claims: &IncomingClaims) -> Result<(), JwtError> {
-    if let Some(exp) = claims.exp {
-        // Match jsonwebtoken's default 60s leeway while allowing `None`/`null` to mean no expiration.
-        if SystemTime::now()
-            .duration_since(exp)
-            .is_ok_and(|elapsed| elapsed > Duration::from_secs(60))
-        {
-            return Err(JwtErrorKind::ExpiredSignature.into());
-        }
-    }
-    Ok(())
 }
 
 #[async_trait]
@@ -232,7 +209,7 @@ impl async_cache::Fetcher<Arc<JwksValidator>> for KeyFetcher {
         let raw_issuer = key.deref();
         log::info!("Fetching key for issuer {}", raw_issuer);
         let oidc_url = format!("{}/.well-known/openid-configuration", raw_issuer.trim_end_matches('/'));
-        let key_or_error = JsonWebKeySet::from_oidc_url(&oidc_url).await;
+        let key_or_error = Jwks::from_oidc_url(oidc_url).await;
         // TODO: We should probably add debouncing to avoid spamming the logs.
         // Alternatively we could add a backoff before retrying.
         if let Err(e) = &key_or_error {
@@ -268,10 +245,12 @@ pub struct OidcTokenValidator;
 
 // Get the issuer out of a token without validating the signature.
 fn get_raw_issuer(token: &str) -> Result<Box<str>, TokenValidationError> {
-    // We need the issuer before we know which key to use.
-    // This intentionally does not validate the token.
-    // Callers must only use it for key discovery and must verify the token afterwards.
-    let data = jsonwebtoken::dangerous::insecure_decode::<IncomingClaims>(token)?;
+    let mut validation = Validation::new(jsonwebtoken::Algorithm::ES256);
+    validation.set_required_spec_claims(&REQUIRED_CLAIMS);
+    validation.validate_aud = false;
+    // We are disabling signature validation, because we need to get the issuer before we can validate.
+    validation.insecure_disable_signature_validation();
+    let data = decode::<IncomingClaims>(token, &DecodingKey::from_secret(b"fake"), &validation)?;
     Ok(data.claims.issuer)
 }
 
@@ -282,7 +261,7 @@ impl TokenValidator for OidcTokenValidator {
         let raw_issuer = get_raw_issuer(token)?;
         let oidc_url = format!("{}/.well-known/openid-configuration", raw_issuer.trim_end_matches('/'));
         log::debug!("Fetching key for issuer {}", raw_issuer.clone());
-        let key_or_error = JsonWebKeySet::from_oidc_url(&oidc_url).await;
+        let key_or_error = Jwks::from_oidc_url(oidc_url).await;
         // TODO: We should probably add debouncing to avoid spamming the logs.
         // Alternatively we could add a backoff before retrying.
         if let Err(e) = &key_or_error {
@@ -299,45 +278,40 @@ impl TokenValidator for OidcTokenValidator {
 
 struct JwksValidator {
     pub issuer: Box<str>,
-    pub keyset: JsonWebKeySet,
+    pub keyset: Jwks,
 }
 
 #[async_trait]
 impl TokenValidator for JwksValidator {
     async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims, TokenValidationError> {
         let header = decode_header(token)?;
-        if let Some(kid) = header.kid.as_deref() {
-            if let Some(key) = self.keyset.key_with_id(kid) {
-                return self.validate_with_key(token, key).await;
-            }
-
-            log::debug!("Key id {kid} not found in JWKS. Trying keys without key ids.");
-            let mut last_error = TokenValidationError::KeyIDNotFound;
-            for key in self.keyset.keys_without_ids() {
-                match self.validate_with_key(token, key).await {
-                    Ok(claims) => return Ok(claims),
-                    Err(e) => {
-                        last_error = e;
-                        log::debug!("Validating with key without kid failed");
-                    }
-                }
-            }
-            return Err(last_error);
+        if let Some(kid) = header.kid {
+            let key = self
+                .keyset
+                .keys
+                .get(&kid)
+                .ok_or_else(|| TokenValidationError::KeyIDNotFound)?;
+            let validator = BasicTokenValidator {
+                public_key: key.decoding_key.clone(),
+                issuer: Some(self.issuer.clone()),
+            };
+            return validator.validate_token(token).await;
         }
         log::debug!("No key id in header. Trying all keys.");
         // TODO: Consider returning an error if no kid is given?
         // For now, lets just try all the keys.
         let mut last_error = TokenValidationError::Other(anyhow::anyhow!("No kid found"));
-        for key in &self.keyset.keys {
-            match &key.kid {
-                Some(kid) => log::debug!("Trying key {kid}"),
-                None => log::debug!("Trying key without kid"),
-            }
-            match self.validate_with_key(token, key).await {
+        for (kid, key) in &self.keyset.keys {
+            log::debug!("Trying key {kid}");
+            let validator = BasicTokenValidator {
+                public_key: key.decoding_key.clone(),
+                issuer: Some(self.issuer.clone()),
+            };
+            match validator.validate_token(token).await {
                 Ok(claims) => return Ok(claims),
                 Err(e) => {
                     last_error = e;
-                    log::debug!("Validating with JWKS key failed");
+                    log::debug!("Validating with key {kid} failed");
                     continue;
                 }
             }
@@ -347,92 +321,14 @@ impl TokenValidator for JwksValidator {
     }
 }
 
-impl JwksValidator {
-    async fn validate_with_key(
-        &self,
-        token: &str,
-        key: &JsonWebKey,
-    ) -> Result<SpacetimeIdentityClaims, TokenValidationError> {
-        let validator = BasicTokenValidator {
-            public_key: key.decoding_key.clone(),
-            issuer: Some(self.issuer.clone()),
-        };
-        validator.validate_token(token).await
-    }
-}
-
-#[derive(Deserialize)]
-struct OidcConfig {
-    jwks_uri: String,
-}
-
-struct JsonWebKeySet {
-    keys: Vec<JsonWebKey>,
-}
-
-struct JsonWebKey {
-    kid: Option<Box<str>>,
-    decoding_key: DecodingKey,
-}
-
-impl JsonWebKeySet {
-    async fn from_oidc_url(oidc_url: &str) -> Result<Self, TokenValidationError> {
-        // We used to depend on the `jwks` crate for this small amount of glue code.
-        // Keep the fetch path local so the jsonwebtoken 10 upgrade does not force in
-        // jwks' reqwest 0.13/rustls dependency tree alongside the workspace reqwest.
-        validate_url_scheme(oidc_url)?;
-        let client = reqwest::Client::default();
-        let oidc_config = client.get(oidc_url).send().await?.json::<OidcConfig>().await?;
-        let jwks = client.get(oidc_config.jwks_uri).send().await?.json::<JwkSet>().await?;
-        jwks.try_into()
-    }
-}
-
-impl TryFrom<JwkSet> for JsonWebKeySet {
-    type Error = TokenValidationError;
-
-    fn try_from(jwks: JwkSet) -> Result<Self, Self::Error> {
-        let mut keys = Vec::with_capacity(jwks.keys.len());
-        for jwk in jwks.keys {
-            // `kid` is optional in both JWT headers and JWKs.
-            // Use it as a fast path when present,
-            // but keep JWKs without `kid` so standards-compliant providers work.
-            let kid = jwk.common.key_id.clone().map(Into::into);
-            let decoding_key = DecodingKey::from_jwk(&jwk)?;
-            keys.push(JsonWebKey { kid, decoding_key });
-        }
-        Ok(Self { keys })
-    }
-}
-
-impl JsonWebKeySet {
-    fn key_with_id(&self, kid: &str) -> Option<&JsonWebKey> {
-        self.keys.iter().find(|key| key.kid.as_deref() == Some(kid))
-    }
-
-    fn keys_without_ids(&self) -> impl Iterator<Item = &JsonWebKey> {
-        self.keys.iter().filter(|key| key.kid.is_none())
-    }
-}
-
-fn validate_url_scheme(url: &str) -> Result<(), TokenValidationError> {
-    if url.starts_with("http://") || url.starts_with("https://") {
-        Ok(())
-    } else {
-        Err(TokenValidationError::Other(anyhow::anyhow!(
-            "Invalid OIDC URL scheme: {url}"
-        )))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
     use crate::auth::identity::{IncomingClaims, SpacetimeIdentityClaims};
     use crate::auth::token_validation::{
-        BasicTokenValidator, CachingOidcTokenValidator, FullTokenValidator, JwtErrorKind, OidcTokenValidator,
-        TokenSigner, TokenValidationError, TokenValidator,
+        BasicTokenValidator, CachingOidcTokenValidator, FullTokenValidator, OidcTokenValidator, TokenSigner,
+        TokenValidator,
     };
     use crate::auth::JwtKeys;
     use base64::Engine;
@@ -528,53 +424,6 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
-    async fn accept_legacy_null_exp_tokens() -> anyhow::Result<()> {
-        let kp = JwtKeys::generate()?;
-        let issuer = "test1";
-        let subject = "test_subject";
-        let orig_claims = LegacyIdentityClaims {
-            identity: Identity::from_claims(issuer, subject),
-            subject: subject.into(),
-            issuer: issuer.into(),
-            audience: [].into(),
-            iat: std::time::SystemTime::now(),
-            exp: None,
-        };
-        let token = kp.private.sign(&orig_claims)?;
-
-        let parsed_claims = kp.public.validate_token(&token).await?;
-        assert_eq!(&*parsed_claims.issuer, issuer);
-        assert_eq!(&*parsed_claims.subject, subject);
-        assert_eq!(parsed_claims.identity, Identity::from_claims(issuer, subject));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn reject_explicit_expired_tokens() -> anyhow::Result<()> {
-        let kp = JwtKeys::generate()?;
-        let issuer = "test1";
-        let subject = "test_subject";
-        let orig_claims = LegacyIdentityClaims {
-            identity: Identity::from_claims(issuer, subject),
-            subject: subject.into(),
-            issuer: issuer.into(),
-            audience: [].into(),
-            iat: std::time::SystemTime::now(),
-            exp: Some(std::time::SystemTime::now() - Duration::from_secs(120)),
-        };
-        let token = kp.private.sign(&orig_claims)?;
-
-        let err = kp.public.validate_token(&token).await.unwrap_err();
-        match err {
-            TokenValidationError::TokenError(err) => {
-                assert_eq!(err.kind(), &JwtErrorKind::ExpiredSignature);
-            }
-            err => anyhow::bail!("expected expired signature, got {err:?}"),
-        }
-        Ok(())
-    }
-
     async fn assert_validation_fails<T: TokenValidator>(validator: &T, token: &str) -> anyhow::Result<()> {
         let result = validator.validate_token(token).await;
         if let Ok(claims) = result {
@@ -639,25 +488,6 @@ mod tests {
     #[derive(Deserialize, Serialize, Clone)]
     struct OIDCConfig {
         jwks_uri: String,
-    }
-
-    #[serde_with::serde_as]
-    #[derive(Serialize)]
-    struct LegacyIdentityClaims {
-        #[serde(rename = "hex_identity")]
-        identity: Identity,
-        #[serde(rename = "sub")]
-        subject: Box<str>,
-        #[serde(rename = "iss")]
-        issuer: Box<str>,
-        #[serde(rename = "aud")]
-        audience: Box<[Box<str>]>,
-        #[serde_as(as = "serde_with::TimestampSeconds")]
-        iat: std::time::SystemTime,
-        // This intentionally lacks `skip_serializing_if`.
-        // It models no-expiration tokens minted by the previous JWT fork as `"exp": null`.
-        #[serde_as(as = "Option<serde_with::TimestampSeconds>")]
-        exp: Option<std::time::SystemTime>,
     }
 
     async fn oidc_config_handler(config: OIDCConfig) -> Json<OIDCConfig> {
@@ -744,19 +574,9 @@ mod tests {
         }
     }
 
-    #[derive(Debug, Copy, Clone)]
+    #[derive(Debug, Default, Copy, Clone)]
     struct TestOptions {
         pub issuer_trailing_slash: bool,
-        pub jwks_key_ids: bool,
-    }
-
-    impl Default for TestOptions {
-        fn default() -> Self {
-            Self {
-                issuer_trailing_slash: false,
-                jwks_key_ids: true,
-            }
-        }
     }
 
     async fn run_oidc_test<T: TokenValidator>(validator: T, opts: &TestOptions) -> anyhow::Result<()> {
@@ -764,10 +584,10 @@ mod tests {
         let mut kp1 = JwtKeys::generate()?;
         let mut kp2 = JwtKeys::generate()?;
 
-        if opts.jwks_key_ids {
-            kp1.kid = Some("key1".to_string());
-            kp2.kid = Some("key2".to_string());
-        }
+        // Note: our fetcher library requires these, even though they are optional in the spec.
+        // We should replace the jwks fetcher at some point, but most OIDC providers will have these.
+        kp1.kid = Some("key1".to_string());
+        kp2.kid = Some("key2".to_string());
 
         // We won't put this in the keyset.
         let invalid_kp = JwtKeys::generate()?;
@@ -824,19 +644,6 @@ mod tests {
     async fn test_issuer_slash() -> anyhow::Result<()> {
         let opts = TestOptions {
             issuer_trailing_slash: true,
-            ..Default::default()
-        };
-
-        run_oidc_test(OidcTokenValidator, &opts).await?;
-        run_oidc_test(CachingOidcTokenValidator::get_default(), &opts).await?;
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_oidc_flow_without_jwks_key_ids() -> anyhow::Result<()> {
-        let opts = TestOptions {
-            jwks_key_ids: false,
-            ..Default::default()
         };
 
         run_oidc_test(OidcTokenValidator, &opts).await?;
