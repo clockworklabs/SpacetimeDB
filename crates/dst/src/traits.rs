@@ -1,4 +1,10 @@
-use anyhow::Error;
+use std::{
+    fmt::Debug,
+    panic::{resume_unwind, AssertUnwindSafe},
+};
+
+use anyhow::{Context, Error};
+use futures::FutureExt;
 use spacetimedb_runtime::sim::Rng;
 
 /// This should be implemented by System under test.
@@ -23,8 +29,8 @@ pub type TestSuiteParts<S> = (
 );
 
 pub trait TestSuite {
-    type Interaction: std::fmt::Debug;
-    type Interactions: Iterator<Item = Self::Interaction> + std::fmt::Debug;
+    type Interaction: Debug;
+    type Interactions: Iterator<Item = Self::Interaction> + Debug;
     type Target: TargetDriver<Self::Interaction>;
     type Properties: Properties<Self::Interaction, <Self::Target as TargetDriver<Self::Interaction>>::Observation>;
 
@@ -39,19 +45,30 @@ pub trait TestSuite {
         async move {
             let (mut interactions, mut target, mut properties) = self.build(rng).await?;
 
-            let result = async {
-                for interaction in interactions.by_ref().take(max_interactions) {
-                    let observation = target.execute(&interaction).await?;
-                    properties.observe(&interaction, &observation)?;
+            let result = AssertUnwindSafe(async {
+                for (step, interaction) in interactions.by_ref().take(max_interactions).enumerate() {
+                    let observation = target
+                        .execute(&interaction)
+                        .await
+                        .with_context(|| format!("DST target failed at interaction #{step}: {interaction:?}"))?;
+
+                    properties
+                        .observe(&interaction, &observation)
+                        .with_context(|| format!("DST property failed at interaction #{step}: {interaction:?}"))?;
                 }
 
                 Ok(())
-            }
+            })
+            .catch_unwind()
             .await;
 
+            eprintln!("final interaction counts: {interactions:?}");
             tracing::info!(interaction_counts = ?interactions, "final interaction counts");
 
-            result
+            match result {
+                Ok(result) => result,
+                Err(payload) => resume_unwind(payload),
+            }
         }
     }
 }

@@ -1,7 +1,9 @@
-use super::workload::{
-    normalize_rows, CommitDelta, CountState, InsertOutcome, Interaction, Observation, Row, TableDelta, TableRowCount,
-};
-use crate::schema::SchemaPlan;
+use spacetimedb_lib::{AlgebraicValue, ProductValue};
+
+use super::row::{normalize_rows, Row};
+use super::state::{schema_state_for_plan, CommitDelta, CountState, TableDelta, TableRowCount, TableRows};
+use super::workload::{InsertOutcome, Interaction, Observation};
+use crate::schema::{ColumnPlan, SchemaPlan, TablePlan, Type};
 
 #[derive(Debug)]
 pub struct Model {
@@ -13,11 +15,32 @@ pub struct Model {
 #[derive(Debug)]
 struct TableState {
     rows: Vec<Row>,
+    ever_inserted: bool,
 }
 
 #[derive(Debug)]
 struct PendingTx {
     tables: Vec<PendingTable>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ColumnDomain {
+    pub(crate) ty: Type,
+    pub(crate) values: Vec<AlgebraicValue>,
+    pub(crate) unique: bool,
+    pub(crate) single_column_unique: bool,
+    pub(crate) single_column_indexed: bool,
+    pub(crate) sequenced: bool,
+}
+
+impl ColumnDomain {
+    pub(crate) fn integral_values(&self) -> impl Iterator<Item = i128> + '_ {
+        self.values.iter().filter_map(|value| match value {
+            AlgebraicValue::U64(value) => Some(*value as i128),
+            AlgebraicValue::I64(value) => Some(*value as i128),
+            _ => None,
+        })
+    }
 }
 
 // Keep mutable transactions as an overlay: committed rows stay shared, while
@@ -44,7 +67,14 @@ impl PendingTx {
 
 impl Model {
     pub fn new(schema: SchemaPlan) -> Self {
-        let committed_tables = schema.tables.iter().map(|_| TableState { rows: vec![] }).collect();
+        let committed_tables = schema
+            .tables
+            .iter()
+            .map(|_| TableState {
+                rows: vec![],
+                ever_inserted: false,
+            })
+            .collect();
         Self {
             schema,
             committed_tables,
@@ -114,6 +144,7 @@ impl Model {
             }
             Interaction::Insert { table, row } => {
                 debug_assert!(self.pending_tx.is_some());
+                self.committed_tables[*table].ever_inserted = true;
                 // Properties feed the target-returned row here, so sequence-generated
                 // values become part of the oracle before commit/replay checks run.
                 if self.any_visible_row(*table, |visible_row| visible_row == row) {
@@ -124,7 +155,9 @@ impl Model {
 
                 if self.violates_unique_constraint(*table, row) {
                     return Observation::Inserted {
-                        outcome: InsertOutcome::UniqueConstraintViolation,
+                        outcome: InsertOutcome::UniqueConstraintViolation {
+                            details: "model unique constraint".into(),
+                        },
                     };
                 }
 
@@ -150,6 +183,13 @@ impl Model {
                 let pending_tx = self.pending_tx.take().expect("active transaction");
                 let delta = self.commit_pending(pending_tx);
                 Observation::Committed { delta }
+            }
+            Interaction::Migrate(migration) => {
+                debug_assert!(self.pending_tx.is_none());
+                let old_schema = std::mem::replace(&mut self.schema, migration.schema().clone());
+                let old_tables = std::mem::take(&mut self.committed_tables);
+                self.committed_tables = remap_table_states(&old_schema, &self.schema, old_tables);
+                Observation::Migrated
             }
             Interaction::Replay => {
                 self.pending_tx = None;
@@ -217,6 +257,56 @@ impl Model {
         self.visible_count(table) as usize
     }
 
+    pub fn ever_inserted(&self, table: usize) -> bool {
+        self.committed_tables[table].ever_inserted
+    }
+
+    pub(crate) fn row_count_by_table_name(&self, table: &str) -> usize {
+        self.table_index(table).map_or(0, |table| self.row_count(table))
+    }
+
+    pub(crate) fn ever_inserted_by_table_name(&self, table: &str) -> bool {
+        self.table_index(table)
+            .is_some_and(|table| self.committed_tables[table].ever_inserted)
+    }
+
+    pub(crate) fn column_domain_by_name(&self, table: &str, column: &str) -> Option<ColumnDomain> {
+        let table = self.table_index(table)?;
+        let column = self.schema.tables[table]
+            .columns
+            .iter()
+            .position(|column_plan| column_plan.name == column)?;
+        Some(self.column_domain(table, column))
+    }
+
+    fn table_index(&self, table: &str) -> Option<usize> {
+        self.schema
+            .tables
+            .iter()
+            .position(|table_plan| table_plan.name == table)
+    }
+
+    pub(crate) fn column_domain(&self, table: usize, column: usize) -> ColumnDomain {
+        let table_plan = &self.schema.tables[table];
+        ColumnDomain {
+            ty: table_plan.columns[column].ty,
+            values: self
+                .visible_rows(table)
+                .map(|row| row.elements[column].clone())
+                .collect(),
+            unique: table_plan
+                .unique_constraints
+                .iter()
+                .any(|constraint| constraint.columns.contains(&column)),
+            single_column_unique: table_plan
+                .unique_constraints
+                .iter()
+                .any(|constraint| constraint.columns == [column]),
+            single_column_indexed: table_plan.indexes.iter().any(|index| index.columns == [column]),
+            sequenced: table_plan.sequences.iter().any(|sequence| sequence.column == column),
+        }
+    }
+
     pub fn row(&self, table: usize, row: usize) -> Option<&Row> {
         self.visible_rows(table).nth(row)
     }
@@ -233,8 +323,80 @@ impl Model {
                 count: self.visible_count(table),
             })
             .collect();
-        CountState { row_counts }
+        let table_rows = (0..self.schema.tables.len())
+            .map(|table| TableRows {
+                table,
+                rows: normalize_rows(self.visible_rows(table).cloned().collect()),
+            })
+            .collect();
+
+        CountState {
+            row_counts,
+            table_rows,
+            schema: schema_state_for_plan(&self.schema),
+        }
     }
+}
+
+fn remap_table_states(
+    old_schema: &SchemaPlan,
+    new_schema: &SchemaPlan,
+    old_tables: Vec<TableState>,
+) -> Vec<TableState> {
+    let mut old_tables = old_tables.into_iter().map(Some).collect::<Vec<_>>();
+    new_schema
+        .tables
+        .iter()
+        .map(|new_table| {
+            let Some(old_table_idx) = old_schema
+                .tables
+                .iter()
+                .position(|old_table| old_table.name == new_table.name)
+            else {
+                return TableState {
+                    rows: vec![],
+                    ever_inserted: false,
+                };
+            };
+
+            let old_table = &old_schema.tables[old_table_idx];
+            let old_state = old_tables[old_table_idx]
+                .take()
+                .expect("old table state is consumed once");
+            remap_table_state(old_table, new_table, old_state)
+        })
+        .collect()
+}
+
+fn remap_table_state(old_table: &TablePlan, new_table: &TablePlan, state: TableState) -> TableState {
+    TableState {
+        rows: state
+            .rows
+            .into_iter()
+            .map(|row| remap_row(old_table, new_table, row))
+            .collect(),
+        ever_inserted: state.ever_inserted,
+    }
+}
+
+fn remap_row(old_table: &TablePlan, new_table: &TablePlan, row: Row) -> Row {
+    let elements = new_table
+        .columns
+        .iter()
+        .map(|new_column| remap_value(old_table, new_column, &row))
+        .collect::<Vec<_>>();
+    ProductValue {
+        elements: elements.into_boxed_slice(),
+    }
+}
+
+fn remap_value(old_table: &TablePlan, new_column: &ColumnPlan, row: &Row) -> AlgebraicValue {
+    old_table
+        .columns
+        .iter()
+        .position(|old_column| old_column.name == new_column.name)
+        .map(|old_column| row.elements[old_column].clone())
+        .unwrap_or_else(|| new_column.ty.default_value())
 }
 
 #[cfg(test)]
@@ -260,6 +422,7 @@ mod tests {
                 unique_constraints: vec![UniqueConstraintPlan { columns: vec![0] }],
                 sequences: vec![],
                 is_public: true,
+                is_event: false,
             }],
         }
     }
