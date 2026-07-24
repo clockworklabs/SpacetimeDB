@@ -497,6 +497,11 @@ metrics_group!(
         #[labels(database_identity: Identity, module_type: HostType)]
         pub module_instances: IntGaugeVec,
 
+        #[name = spacetime_worker_module_host_exiting]
+        #[help = "Whether the module host for this database is currently exiting."]
+        #[labels(database_identity: Identity)]
+        pub module_host_exiting: IntGaugeVec,
+
         #[name = spacetime_reducer_wait_time_sec]
         #[help = "The amount of time (in seconds) a reducer spends in the queue waiting to run"]
         #[labels(db: Identity, reducer: str)]
