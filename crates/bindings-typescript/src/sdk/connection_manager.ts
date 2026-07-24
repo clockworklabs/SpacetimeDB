@@ -92,6 +92,98 @@ function defaultState(): ConnectionState {
 class ConnectionManagerImpl {
   #connections = new Map<string, ManagedConnection>();
 
+  constructor() {
+    // Auto-reconnect otherwise relies entirely on the browser firing
+    // `onclose` plus a `setTimeout` backoff. Both are unreliable across a
+    // backgrounded/frozen tab: the close event may never be delivered (the
+    // socket dies while the event loop is suspended), and background timers
+    // are heavily throttled or paused, so a scheduled reconnect can stall
+    // indefinitely and never resume when the window is refocused.
+    //
+    // These listeners make the manager proactively re-check liveness when the
+    // page comes back to the foreground / the network returns, bringing any
+    // stalled reconnect forward and rebuilding sockets that died silently.
+    if (
+      typeof document !== 'undefined' &&
+      typeof document.addEventListener === 'function'
+    ) {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          this.#handleResume();
+        }
+      });
+    }
+    if (
+      typeof window !== 'undefined' &&
+      typeof window.addEventListener === 'function'
+    ) {
+      window.addEventListener('focus', this.#handleResume);
+      window.addEventListener('online', this.#handleResume);
+      // `pageshow` fires on bfcache restores, where `visibilitychange` may not.
+      window.addEventListener('pageshow', this.#handleResume);
+    }
+  }
+
+  /**
+   * Called when the page is likely resuming from a background/frozen state:
+   * the tab became visible, the window regained focus, the network came back,
+   * or a bfcache page was restored. For each retained connection this brings a
+   * stalled reconnect forward immediately (resetting backoff) and rebuilds any
+   * socket that died silently while we were hidden.
+   */
+  #handleResume = (): void => {
+    for (const managed of this.#connections.values()) {
+      if (managed.refCount <= 0 || managed.pendingRelease) {
+        continue;
+      }
+
+      // A reconnect was scheduled but its timer is stuck behind background
+      // timer throttling / page freezing. Fire it now and reset backoff so we
+      // reconnect promptly instead of waiting out a (capped 30s, possibly
+      // paused) delay.
+      if (managed.reconnectTimer && !managed.connection) {
+        clearTimeout(managed.reconnectTimer);
+        managed.reconnectTimer = null;
+        managed.reconnectAttempt = 0;
+        if (managed.builder) {
+          this.#buildManagedConnection(managed, managed.builder);
+        }
+        continue;
+      }
+
+      // We believe we're connected, but the socket may have died silently.
+      this.#reviveIfZombie(managed);
+    }
+  };
+
+  /**
+   * If `managed` holds a connection whose socket has entered CLOSING/CLOSED
+   * without a clean `onclose` (see {@link DbConnectionImpl.isSocketClosed}),
+   * for example because it was torn down while the tab was frozen, tear it down
+   * and build a fresh one immediately, resetting backoff.
+   */
+  #reviveIfZombie(managed: ManagedConnection): void {
+    const connection = managed.connection;
+    if (
+      !connection ||
+      connection.isDisconnectRequested ||
+      !connection.isSocketClosed
+    ) {
+      return;
+    }
+
+    this.#detachCallbacks(managed, connection);
+    managed.connection = undefined;
+    // Close the dead socket in case it is only CLOSING; callbacks are already
+    // detached, so this won't trigger a duplicate reconnect.
+    connection.disconnect();
+    this.#updateState(managed, { isActive: false });
+    managed.reconnectAttempt = 0;
+    if (managed.builder) {
+      this.#buildManagedConnection(managed, managed.builder);
+    }
+  }
+
   /** Generates a unique key for a connection based on URI and module name. */
   static getKey(uri: string, moduleName: string): string {
     return `${uri}::${moduleName}`;

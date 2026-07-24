@@ -5,6 +5,9 @@ export class WebsocketDecompressAdapter implements WebSocketAdapter {
   get protocol(): string {
     return this.#ws.protocol;
   }
+  get readyState(): number {
+    return this.#ws.readyState;
+  }
   set onclose(handler: (ev: CloseEvent) => void) {
     this.#ws.onclose = handler;
   }

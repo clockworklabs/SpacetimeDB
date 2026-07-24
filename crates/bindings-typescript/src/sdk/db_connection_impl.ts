@@ -151,6 +151,11 @@ const CLIENT_MESSAGE_CALL_PROCEDURE_TAG =
 // path or create very large websocket writes.
 const MAX_V3_OUTBOUND_FRAME_BYTES = 256 * 1024;
 
+// WebSocket `readyState` values from the WHATWG spec. Uses literals rather than
+// the `WebSocket` global, which is not defined on earlier Node versions we
+const WS_READY_STATE_CLOSING = 2;
+const WS_READY_STATE_CLOSED = 3;
+
 export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   implements DbContext<RemoteModule>
 {
@@ -166,6 +171,27 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    * after an intentional disconnect.
    */
   isDisconnectRequested = false;
+
+  /**
+   * Whether the underlying websocket has entered `CLOSING` (2) or `CLOSED`
+   * (3). This becomes true even when the browser never delivered an
+   * `onclose` event, for example if the socket was torn down while the tab was
+   * frozen or the machine was asleep. The `ConnectionManager` uses this to detect
+   * such "zombie" connections when the page resumes and to force a reconnect.
+   *
+   * Returns false while the socket is still `CONNECTING`/`OPEN`, or before
+   * the socket has been created.
+   */
+  get isSocketClosed(): boolean {
+    const ws = this.ws;
+    if (!ws) {
+      return false;
+    }
+    return (
+      ws.readyState === WS_READY_STATE_CLOSING ||
+      ws.readyState === WS_READY_STATE_CLOSED
+    );
+  }
 
   /**
    * This connection's public identity.
