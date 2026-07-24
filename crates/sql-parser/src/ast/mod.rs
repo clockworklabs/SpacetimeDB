@@ -199,6 +199,8 @@ impl From<Ident> for SqlIdent {
 /// A SQL constant expression
 #[derive(Debug)]
 pub enum SqlLiteral {
+    /// Null literal
+    Null,
     /// A boolean constant
     Bool(bool),
     /// A hex value like 0xFF or x'FF'
