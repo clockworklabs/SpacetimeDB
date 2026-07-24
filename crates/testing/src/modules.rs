@@ -276,6 +276,7 @@ impl CompiledModule {
             spacetimedb_standalone::StandaloneOptions {
                 db_config: config,
                 durability: Default::default(),
+                retention: Default::default(),
                 websocket: WebSocketOptions::default(),
                 wasm: Default::default(),
                 v8: Default::default(),

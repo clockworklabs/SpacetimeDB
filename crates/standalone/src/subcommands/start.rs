@@ -11,7 +11,7 @@ use axum::extract::DefaultBodyLimit;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
 use spacetimedb::config::{parse_config, CertificateAuthority};
-use spacetimedb::db::persistence::{CommitlogConfig, DurabilityConfig};
+use spacetimedb::db::persistence::{CommitlogConfig, DurabilityConfig, RetentionConfig};
 use spacetimedb::db::{self, Storage};
 use spacetimedb::startup::{self, TracingOptions};
 use spacetimedb::util::jobs::JobCores;
@@ -102,6 +102,8 @@ struct ConfigFile {
     #[serde(default)]
     commitlog: CommitlogConfig,
     #[serde(default)]
+    retention: RetentionConfig,
+    #[serde(default)]
     websocket: WebSocketOptions,
 }
 
@@ -187,6 +189,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
             durability: DurabilityConfig {
                 commitlog: config.commitlog,
             },
+            retention: config.retention,
             websocket: config.websocket,
             wasm: config.common.wasm,
             v8: config.common.v8,
@@ -510,6 +513,7 @@ fn banner() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spacetimedb::db::persistence::RetentionPolicy;
     use std::time::Duration;
 
     #[test]
@@ -544,6 +548,10 @@ mod tests {
             offset-index-require-segment-fsync = false
             preallocate-segments = true
             write-buffer-size = 131072
+
+            [retention]
+            policy = "keep"
+            retain-snapshots = 5
 "#;
 
         let config: ConfigFile = toml::from_str(toml).unwrap();
@@ -586,6 +594,24 @@ mod tests {
                 ..<_>::default()
             }
         );
+
+        assert_eq!(config.retention.policy, RetentionPolicy::Keep);
+        assert_eq!(config.retention.retain_snapshots.get(), 5);
+    }
+
+    /// The shipped `config.toml` template, which is written into every newly
+    /// created data directory, deletes historical data after it has been
+    /// snapshotted. A config without a `[retention]` section, as found in
+    /// data directories that predate the option, keeps historical data.
+    #[test]
+    fn retention_defaults() {
+        let template: ConfigFile = toml::from_str(include_str!("../../config.toml")).unwrap();
+        assert_eq!(template.retention.policy, RetentionPolicy::Delete);
+        assert_eq!(template.retention.retain_snapshots.get(), 2);
+
+        let unconfigured: ConfigFile = toml::from_str("").unwrap();
+        assert_eq!(unconfigured.retention.policy, RetentionPolicy::Keep);
+        assert_eq!(unconfigured.retention.retain_snapshots.get(), 2);
     }
 
     #[test]
