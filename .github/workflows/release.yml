@@ -175,6 +175,7 @@ jobs:
       - name: Install NuGet
         shell: bash
         run: |
+          sudo apt update
           sudo apt install -y mono-complete
           mkdir bin
           cd bin
