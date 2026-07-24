@@ -148,6 +148,20 @@ pub enum ValidationError {
     TableNotFound { table: RawIdentifier },
     #[error("Name {name} is used for multiple reducers, procedures and/or views")]
     DuplicateFunctionName { name: Identifier },
+    #[error("reducer accessor `{reducer}` conflicts with type name `{type_name}` in generated client identifiers")]
+    ReducerAccessorTypeNameConflict {
+        reducer: Identifier,
+        type_name: ScopedTypeName,
+    },
+    #[error("procedure accessor `{procedure}` conflicts with type name `{type_name}` in generated client identifiers")]
+    ProcedureAccessorTypeNameConflict {
+        procedure: Identifier,
+        type_name: ScopedTypeName,
+    },
+    #[error(
+        "procedure accessor `{procedure}` conflicts with reducer accessor `{reducer}` in generated client identifiers"
+    )]
+    ProcedureAccessorReducerAccessorNameConflict { procedure: Identifier, reducer: Identifier },
     #[error("HTTP handler name {name} is used for multiple HTTP handlers")]
     DuplicateHttpHandlerName { name: Identifier },
     #[error("HTTP route duplicates method {method:?} for path {path}")]
