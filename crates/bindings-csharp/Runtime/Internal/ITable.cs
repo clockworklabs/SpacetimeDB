@@ -23,24 +23,23 @@ internal abstract class RawTableIterBase<T>
             {
                 return false;
             }
-
-            uint buffer_len;
+            
             while (true)
             {
-                var requested_len = (uint)buffer.Length;
-                buffer_len = requested_len;
-                var ret = FFI.row_iter_bsatn_advance(handle, buffer, ref buffer_len);
+                var requestedLen = buffer.Length;
+                var bufferLen = requestedLen;
+                var ret = FFI.row_iter_bsatn_advance(handle, buffer, ref bufferLen);
                 if (ret == Errno.EXHAUSTED)
                 {
                     handle = FFI.RowIter.INVALID;
-                    if (buffer_len == requested_len)
+                    if (bufferLen == requestedLen)
                     {
-                        buffer_len = 0;
+                        bufferLen = 0;
                     }
                 }
                 // On success, the only way `buffer_len == 0` is for the iterator to be exhausted.
                 // This happens when the host iterator was empty from the start.
-                System.Diagnostics.Debug.Assert(!(ret == Errno.OK && buffer_len == 0));
+                System.Diagnostics.Debug.Assert(!(ret == Errno.OK && bufferLen == 0));
                 switch (ret)
                 {
                     // Iterator advanced and may also be `EXHAUSTED`.
@@ -48,8 +47,8 @@ internal abstract class RawTableIterBase<T>
                     // In both cases, update `Current` to point at the valid range in the scratch `buffer`.
                     case Errno.EXHAUSTED
                     or Errno.OK:
-                        Current = new ArraySegment<byte>(buffer, 0, (int)buffer_len);
-                        return buffer_len != 0;
+                        Current = new ArraySegment<byte>(buffer, 0, bufferLen);
+                        return bufferLen != 0;
                     // Couldn't find the iterator, error!
                     case Errno.NO_SUCH_ITER:
                         throw new NoSuchIterException();
@@ -58,7 +57,7 @@ internal abstract class RawTableIterBase<T>
                     // The `buffer_len` will have been updated with the necessary size.
                     case Errno.BUFFER_TOO_SMALL:
                         ArrayPool<byte>.Shared.Return(buffer);
-                        buffer = ArrayPool<byte>.Shared.Rent((int)buffer_len);
+                        buffer = ArrayPool<byte>.Shared.Rent(bufferLen);
                         continue;
                     default:
                         throw new UnknownException(ret);
@@ -142,11 +141,13 @@ public interface ITableView<View, T>
         new(() =>
         {
             var name_bytes = System.Text.Encoding.UTF8.GetBytes(tableName);
-            FFI.table_id_from_name(name_bytes, (uint)name_bytes.Length, out var out_);
+            FFI.table_id_from_name(name_bytes, name_bytes.Length, out var out_);
             return out_;
         });
 
+#pragma warning disable IDE1006 // Used by static interface member call sites.
     internal static FFI.TableId tableId => tableId_.Value;
+#pragma warning restore IDE1006
 
     ulong Count { get; }
 
@@ -170,16 +171,16 @@ public interface ITableView<View, T>
     {
         // Insert the row.
         var bytes = IStructuralReadWrite.ToBytes(row);
-        var bytes_len = (uint)bytes.Length;
+        var bytes_len = bytes.Length;
         FFI.datastore_insert_bsatn(tableId, bytes, ref bytes_len);
 
         return IntegrateGeneratedColumns(row, bytes, bytes_len);
     }
 
     // Writes back any generated column values.
-    static T IntegrateGeneratedColumns(T row, byte[] bytes, uint gen_len)
+    static T IntegrateGeneratedColumns(T row, byte[] bytes, int gen_len)
     {
-        using var stream = new MemoryStream(bytes, 0, (int)gen_len);
+        using var stream = new MemoryStream(bytes, 0, gen_len);
         using var reader = new BinaryReader(stream);
         return View.ReadGenFields(reader, row);
     }
@@ -196,7 +197,7 @@ public interface ITableView<View, T>
         FFI.datastore_delete_all_by_eq_bsatn(
             tableId,
             stream.GetBuffer(),
-            (uint)stream.Length,
+            checked((int)stream.Length),
             out var out_
         );
         return out_ > 0;

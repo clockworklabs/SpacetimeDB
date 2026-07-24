@@ -31,11 +31,11 @@ partial class RawModuleDefV10
     // Fix it up to a different mangling scheme if it causes problems.
     private static string GetFriendlyName(Type type) =>
         type.IsGenericType
-            ? $"{type.Name.Remove(type.Name.IndexOf('`'))}_{string.Join("_", type.GetGenericArguments().Select(GetFriendlyName))}"
+            ? $"{type.Name[..type.Name.IndexOf('`')]}_{string.Join("_", type.GetGenericArguments().Select(GetFriendlyName))}"
             : type.Name;
 
     private static RawScopedTypeNameV10 MakeScopedTypeName(Type type) =>
-        new(new List<string>(), GetFriendlyName(type));
+        new([], GetFriendlyName(type));
 
     internal AlgebraicType.Ref RegisterType<T>(Func<AlgebraicType.Ref, AlgebraicType> makeType)
     {
@@ -84,7 +84,7 @@ partial class RawModuleDefV10
     internal void RegisterView(RawViewDefV10 view) => viewDefs.Add(view);
 
     internal void RegisterViewPrimaryKey(string viewSourceName, IEnumerable<string> columns) =>
-        viewPrimaryKeyDefs.Add(new RawViewPrimaryKeyDefV10(viewSourceName, columns.ToList()));
+        viewPrimaryKeyDefs.Add(new RawViewPrimaryKeyDefV10(viewSourceName, [.. columns]));
 
     internal void RegisterRowLevelSecurity(RawRowLevelSecurityDefV9 rls) =>
         rowLevelSecurityDefs.Add(rls);
@@ -96,7 +96,7 @@ partial class RawModuleDefV10
             defaults = [];
             defaultValuesByTable.Add(table, defaults);
         }
-        defaults.Add(new RawColumnDefaultValueV10(colId, new List<byte>(value)));
+        defaults.Add(new RawColumnDefaultValueV10(colId, [.. value]));
     }
 
     internal void SetCaseConversionPolicy(SpacetimeDB.CaseConversionPolicy policy) =>
@@ -129,9 +129,7 @@ partial class RawModuleDefV10
                     Sequences: table.Sequences,
                     TableType: table.TableType,
                     TableAccess: table.TableAccess,
-                    DefaultValues: defaults is null
-                        ? []
-                        : new List<RawColumnDefaultValueV10>(defaults),
+                    DefaultValues: defaults is null ? [] : [.. defaults],
                     IsEvent: table.IsEvent
                 )
             );
@@ -211,9 +209,7 @@ partial class RawModuleDefV10
         if (explicitNames.Count > 0)
         {
             sections.Add(
-                new RawModuleDefV10Section.ExplicitNames(
-                    new ExplicitNames(new List<ExplicitNameEntry>(explicitNames))
-                )
+                new RawModuleDefV10Section.ExplicitNames(new ExplicitNames([.. explicitNames]))
             );
         }
         if (rowLevelSecurityDefs.Count > 0)
@@ -244,7 +240,9 @@ public static class Module
         // These constructions are never executed at runtime — they exist solely
         // to make the IL scanner compute vtables for TaggedEnum subtypes.
         // The condition is always false but the scanner must assume it could be true.
+#pragma warning disable IDE0078 // Keep this opaque to the NativeAOT IL scanner.
         if (Environment.TickCount < 0 && Environment.TickCount > 0)
+#pragma warning restore IDE0078
         {
             _ = new RawIndexAlgorithm.BTree(null!);
             _ = new RawConstraintDataV9.Unique(null!);
@@ -460,8 +458,8 @@ public static class Module
                 throw new UnknownException(ret);
         }
 
-        var buffer = new byte[len];
-        var written = 0U;
+        var buffer = new byte[checked((int)len)];
+        var written = 0;
         // Because we've reserved space in our buffer already, this loop should be unnecessary.
         // We expect the first call to `bytes_source_read` to always return `-1`.
         // I (pgoldman 2025-09-26) am leaving the loop here because there's no downside to it,
@@ -471,15 +469,15 @@ public static class Module
         while (true)
         {
             // Write into the spare capacity of the buffer.
-            var spare = buffer.AsSpan((int)written);
-            var buf_len = (uint)spare.Length;
+            var spare = buffer.AsSpan(written);
+            var buf_len = spare.Length;
             ret = FFI.bytes_source_read(source, spare, ref buf_len);
             written += buf_len;
             switch (ret)
             {
                 // Host side source exhausted, we're done.
                 case Errno.EXHAUSTED:
-                    Array.Resize(ref buffer, (int)written);
+                    Array.Resize(ref buffer, written);
                     return buffer;
                 // Wrote the entire spare capacity.
                 // Need to reserve more space in the buffer.
@@ -500,15 +498,13 @@ public static class Module
         }
     }
 
-    private static void Write(this BytesSink sink, byte[] bytes)
+    private static void Write(this BytesSink sink, ReadOnlySpan<byte> bytes)
     {
-        var start = 0U;
-        while (start != bytes.Length)
+        while (!bytes.IsEmpty)
         {
-            var written = (uint)bytes.Length;
-            var buffer = bytes.AsSpan((int)start);
-            FFI.bytes_sink_write(sink, buffer, ref written);
-            start += written;
+            var written = bytes.Length;
+            FFI.bytes_sink_write(sink, bytes, ref written);
+            bytes = bytes[written..];
         }
     }
 
@@ -531,7 +527,7 @@ public static class Module
     }
 
     public static Errno __call_reducer__(
-        uint id,
+        int id,
         ulong sender_0,
         ulong sender_1,
         ulong sender_2,
@@ -546,10 +542,10 @@ public static class Module
         try
         {
             var senderIdentity = Identity.From(
-                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
+                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3])
             );
             var connectionId = ConnectionId.From(
-                MemoryMarshal.AsBytes([conn_id_0, conn_id_1]).ToArray()
+                MemoryMarshal.AsBytes([conn_id_0, conn_id_1])
             );
             var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
             var time = timestamp.ToStd();
@@ -558,7 +554,7 @@ public static class Module
 
             using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);
-            reducers[(int)id].Invoke(reader, ctx);
+            reducers[id].Invoke(reader, ctx);
             if (stream.Position != stream.Length)
             {
                 throw new Exception("Unrecognised extra bytes in the reducer arguments");
@@ -575,7 +571,7 @@ public static class Module
     }
 
     public static Errno __call_procedure__(
-        uint id,
+        int id,
         ulong sender_0,
         ulong sender_1,
         ulong sender_2,
@@ -590,10 +586,10 @@ public static class Module
         try
         {
             var sender = Identity.From(
-                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
+                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3])
             );
             var connectionId = ConnectionId.From(
-                MemoryMarshal.AsBytes([conn_id_0, conn_id_1]).ToArray()
+                MemoryMarshal.AsBytes([conn_id_0, conn_id_1])
             );
             var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
             var time = timestamp.ToStd();
@@ -602,7 +598,7 @@ public static class Module
 
             using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);
-            var bytes = procedures[(int)id].Invoke(reader, ctx);
+            var bytes = procedures[id].Invoke(reader, ctx);
             if (stream.Position != stream.Length)
             {
                 throw new Exception("Unrecognised extra bytes in the procedure arguments");
@@ -622,7 +618,7 @@ public static class Module
     }
 
     public static Errno __call_http_handler__(
-        uint id,
+        int id,
         Timestamp timestamp,
         BytesSource request,
         BytesSource requestBody,
@@ -645,7 +641,7 @@ public static class Module
                 throw new Exception("Unrecognised extra bytes in the HTTP handler request");
             }
 
-            var response = httpHandlers[(int)id]
+            var response = httpHandlers[id]
                 .Invoke(ctx, SpacetimeDB.HttpClient.FromWire(requestWire, requestBody.Consume()));
             var (responseWire, responseBody) = SpacetimeDB.HttpClient.ToWire(response);
             responseSink.Write(
@@ -687,7 +683,7 @@ public static class Module
     /// </para>
     /// </remarks>
     public static Errno __call_view__(
-        uint id,
+        int id,
         ulong sender_0,
         ulong sender_1,
         ulong sender_2,
@@ -699,12 +695,12 @@ public static class Module
         try
         {
             var sender = Identity.From(
-                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
+                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3])
             );
             var ctx = newViewContext!(sender);
             using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);
-            var bytes = viewDispatchers[(int)id].Invoke(reader, ctx);
+            var bytes = viewDispatchers[id].Invoke(reader, ctx);
             rows.Write(bytes);
             return (Errno)2;
         }
@@ -735,14 +731,14 @@ public static class Module
     /// The current ABI is identified by returning error code <c>2</c>.
     /// </para>
     /// </remarks>
-    public static Errno __call_view_anon__(uint id, BytesSource args, BytesSink rows)
+    public static Errno __call_view_anon__(int id, BytesSource args, BytesSink rows)
     {
         try
         {
             var ctx = newAnonymousViewContext!();
             using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);
-            var bytes = anonymousViewDispatchers[(int)id].Invoke(reader, ctx);
+            var bytes = anonymousViewDispatchers[id].Invoke(reader, ctx);
             rows.Write(bytes);
             return (Errno)2;
         }

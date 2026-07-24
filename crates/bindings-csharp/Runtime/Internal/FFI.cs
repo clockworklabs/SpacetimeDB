@@ -199,16 +199,16 @@ internal static partial class FFI
     [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus table_id_from_name(
-        [In] byte[] name,
-        uint name_len,
+        ReadOnlySpan<byte> name,
+        int name_len,
         out TableId out_
     );
 
     [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus index_id_from_name(
-        [In] byte[] name,
-        uint name_len,
+        ReadOnlySpan<byte> name,
+        int name_len,
         out IndexId out_
     );
 
@@ -228,7 +228,7 @@ internal static partial class FFI
     public static partial CheckedStatus datastore_index_scan_point_bsatn(
         IndexId index_id,
         ReadOnlySpan<byte> point,
-        uint point_len,
+        int point_len,
         out RowIter out_
     );
 
@@ -237,7 +237,7 @@ internal static partial class FFI
     public static partial CheckedStatus datastore_delete_by_index_scan_point_bsatn(
         IndexId index_id,
         ReadOnlySpan<byte> point,
-        uint point_len,
+        int point_len,
         out uint out_
     );
 
@@ -246,12 +246,12 @@ internal static partial class FFI
     public static partial CheckedStatus datastore_index_scan_range_bsatn(
         IndexId index_id,
         ReadOnlySpan<byte> prefix,
-        uint prefix_len,
+        int prefix_len,
         ColId prefix_elems,
         ReadOnlySpan<byte> rstart,
-        uint rstart_len,
+        int rstart_len,
         ReadOnlySpan<byte> rend,
-        uint rend_len,
+        int rend_len,
         out RowIter out_
     );
 
@@ -259,8 +259,8 @@ internal static partial class FFI
     [LibraryImport(StdbNamespace10_0)]
     public static partial Errno row_iter_bsatn_advance(
         RowIter iter_handle,
-        [MarshalUsing(CountElementName = nameof(buffer_len))] [Out] byte[] buffer,
-        ref uint buffer_len
+        Span<byte> buffer,
+        ref int buffer_len
     );
 
     [WasmImportLinkage]
@@ -272,7 +272,7 @@ internal static partial class FFI
     public static partial CheckedStatus datastore_insert_bsatn(
         TableId table_id,
         Span<byte> row,
-        ref uint row_len
+        ref int row_len
     );
 
     [WasmImportLinkage]
@@ -281,7 +281,7 @@ internal static partial class FFI
         TableId table_id,
         IndexId index_id,
         Span<byte> row,
-        ref uint row_len
+        ref int row_len
     );
 
     [WasmImportLinkage]
@@ -289,12 +289,12 @@ internal static partial class FFI
     public static partial CheckedStatus datastore_delete_by_index_scan_range_bsatn(
         IndexId index_id,
         ReadOnlySpan<byte> prefix,
-        uint prefix_len,
+        int prefix_len,
         ColId prefix_elems,
         ReadOnlySpan<byte> rstart,
-        uint rstart_len,
+        int rstart_len,
         ReadOnlySpan<byte> rend,
-        uint rend_len,
+        int rend_len,
         out uint out_
     );
 
@@ -302,8 +302,8 @@ internal static partial class FFI
     [LibraryImport(StdbNamespace10_0)]
     public static partial CheckedStatus datastore_delete_all_by_eq_bsatn(
         TableId table_id,
-        [In] byte[] relation,
-        uint relation_len,
+        ReadOnlySpan<byte> relation,
+        int relation_len,
         out uint out_
     );
 
@@ -316,7 +316,7 @@ internal static partial class FFI
     public static partial Errno bytes_source_read(
         BytesSource source,
         Span<byte> buffer,
-        ref uint buffer_len
+        ref int buffer_len
     );
 
     [WasmImportLinkage]
@@ -324,7 +324,7 @@ internal static partial class FFI
     public static partial CheckedStatus bytes_sink_write(
         BytesSink sink,
         ReadOnlySpan<byte> buffer,
-        ref uint buffer_len
+        ref int buffer_len
     );
 
     public enum LogLevel : byte
@@ -341,13 +341,13 @@ internal static partial class FFI
     [LibraryImport(StdbNamespace10_0)]
     public static partial void console_log(
         LogLevel level,
-        [In] byte[] target,
-        uint target_len,
-        [In] byte[] filename,
-        uint filename_len,
+        ReadOnlySpan<byte> target,
+        int target_len,
+        ReadOnlySpan<byte> filename,
+        int filename_len,
         uint line_number,
-        [In] byte[] message,
-        uint message_len
+        ReadOnlySpan<byte> message,
+        int message_len
     );
 
     [NativeMarshalling(typeof(ConsoleTimerIdMarshaller))]
@@ -369,7 +369,7 @@ internal static partial class FFI
         )]
         internal static class ConsoleTimerIdMarshaller
         {
-            public static ConsoleTimerId ConvertToManaged(uint id) => new ConsoleTimerId(id);
+            public static ConsoleTimerId ConvertToManaged(uint id) => new(id);
 
             public static uint ConvertToUnmanaged(ConsoleTimerId id) => id.timer_id;
         }
@@ -377,7 +377,7 @@ internal static partial class FFI
 
     [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_0)]
-    public static partial ConsoleTimerId console_timer_start([In] byte[] name, uint name_len);
+    public static partial ConsoleTimerId console_timer_start(ReadOnlySpan<byte> name, int name_len);
 
     [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_0)]
@@ -386,10 +386,10 @@ internal static partial class FFI
     [WasmImportLinkage]
     [LibraryImport(StdbNamespace10_0)]
     public static partial void volatile_nonatomic_schedule_immediate(
-        [In] byte[] name,
-        uint name_len,
-        [In] byte[] args,
-        uint args_len
+        ReadOnlySpan<byte> name,
+        int name_len,
+        ReadOnlySpan<byte> args,
+        int args_len
     );
 
     // Note #1: our Identity type has the same layout as a fixed-size 32-byte little-endian buffer,
@@ -436,9 +436,9 @@ internal static partial class FFI
     [LibraryImport(StdbNamespace10_3, EntryPoint = "procedure_http_request")]
     public static partial Errno procedure_http_request(
         ReadOnlySpan<byte> request,
-        uint request_len,
+        int request_len,
         ReadOnlySpan<byte> body,
-        uint body_len,
+        int body_len,
         out BytesSourcePair out_
     );
 }
