@@ -1619,11 +1619,11 @@ where
                 scope_with_context!(let scope, &mut isolate, Context::new(scope, Default::default()));
 
                 // Setup the instance environment.
-                let (replica_ctx, scheduler) = match &generation_module_or_mcc {
-                    Either::Left(module) => (module.replica_ctx(), module.scheduler()),
-                    Either::Right(mcc) => (&mcc.replica_ctx, &mcc.scheduler),
+                let (replica_ctx, scheduler, http_egress_policy) = match &generation_module_or_mcc {
+                    Either::Left(module) => (module.replica_ctx(), module.scheduler(), module.http_egress_policy()),
+                    Either::Right(mcc) => (&mcc.replica_ctx, &mcc.scheduler, mcc.http_egress_policy),
                 };
-                let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler.clone());
+                let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler.clone(), http_egress_policy);
                 scope.set_slot(JsInstanceEnv::new(instance_env));
 
                 let startup_result = panic::catch_unwind(AssertUnwindSafe(|| {

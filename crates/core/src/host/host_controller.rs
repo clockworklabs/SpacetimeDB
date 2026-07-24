@@ -4,7 +4,7 @@ use super::v8::V8HeapMetrics;
 use super::wasmtime::{WasmMemoryBytesMetric, WasmtimeRuntime};
 use super::{Scheduler, UpdateDatabaseResult};
 use crate::client::{ClientActorId, ClientName};
-use crate::config::{V8Config, WasmConfig};
+use crate::config::{HttpEgressPolicy, V8Config, WasmConfig};
 use crate::database_logger::DatabaseLogger;
 use crate::db::persistence::PersistenceProvider;
 use crate::db::relational_db::{self, spawn_view_cleanup_loop, DiskSizeFn, RelationalDB, Txdata};
@@ -203,17 +203,23 @@ pub struct HostController {
 pub(crate) struct HostRuntimes {
     wasmtime: WasmtimeRuntime,
     v8: V8Runtime,
+    http_egress_policy: HttpEgressPolicy,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct HostRuntimeConfig {
     pub wasm: WasmConfig,
     pub v8: V8Config,
+    pub http_egress_policy: HttpEgressPolicy,
 }
 
 impl HostRuntimeConfig {
-    pub fn new(wasm: WasmConfig, v8: V8Config) -> Self {
-        Self { wasm, v8 }
+    pub fn new(wasm: WasmConfig, v8: V8Config, http_egress_policy: HttpEgressPolicy) -> Self {
+        Self {
+            wasm,
+            v8,
+            http_egress_policy,
+        }
     }
 }
 
@@ -221,7 +227,11 @@ impl HostRuntimes {
     fn new(data_dir: Option<&ServerDataDir>, config: HostRuntimeConfig) -> Arc<Self> {
         let wasmtime = WasmtimeRuntime::new(data_dir, config.wasm);
         let v8 = V8Runtime::new(config.v8);
-        Arc::new(Self { wasmtime, v8 })
+        Arc::new(Self {
+            wasmtime,
+            v8,
+            http_egress_policy: config.http_egress_policy,
+        })
     }
 }
 
@@ -838,6 +848,7 @@ async fn make_module_host(
         scheduler,
         program_hash: program.hash,
         energy_monitor,
+        http_egress_policy: runtimes.http_egress_policy,
     };
 
     match HostType::from(program.kind) {

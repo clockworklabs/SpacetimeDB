@@ -2,6 +2,7 @@
 //! like WASM and V8.
 
 use crate::{
+    config::HttpEgressPolicy,
     energy::EnergyMonitor,
     host::{
         module_host::ModuleInfo,
@@ -37,7 +38,13 @@ pub fn build_common_module_from_raw(
         replica_ctx.subscriptions.clone(),
     );
 
-    Ok(ModuleCommon::new(replica_ctx, mcc.scheduler, info, mcc.energy_monitor))
+    Ok(ModuleCommon::new(
+        replica_ctx,
+        mcc.scheduler,
+        info,
+        mcc.energy_monitor,
+        mcc.http_egress_policy,
+    ))
 }
 
 /// Non-runtime-specific parts of a module.
@@ -47,6 +54,7 @@ pub(crate) struct ModuleCommon {
     scheduler: Scheduler,
     info: Arc<ModuleInfo>,
     energy_monitor: Arc<dyn EnergyMonitor>,
+    http_egress_policy: HttpEgressPolicy,
 }
 
 impl ModuleCommon {
@@ -56,12 +64,14 @@ impl ModuleCommon {
         scheduler: Scheduler,
         info: Arc<ModuleInfo>,
         energy_monitor: Arc<dyn EnergyMonitor>,
+        http_egress_policy: HttpEgressPolicy,
     ) -> Self {
         Self {
             replica_context,
             scheduler,
             info,
             energy_monitor,
+            http_egress_policy,
         }
     }
 
@@ -73,6 +83,10 @@ impl ModuleCommon {
     /// Returns the energy monitor.
     pub fn energy_monitor(&self) -> Arc<dyn EnergyMonitor> {
         self.energy_monitor.clone()
+    }
+
+    pub fn http_egress_policy(&self) -> HttpEgressPolicy {
+        self.http_egress_policy
     }
 }
 
