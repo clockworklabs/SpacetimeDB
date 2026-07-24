@@ -1047,7 +1047,8 @@ jobs:
         run: dotnet restore --configfile ../../../NuGet.Config blackholio.csproj
 
       - name: Build Godot project
-        run: godot --headless --verbose --path demo/Blackholio/client-godot --build-solutions --quit
+        working-directory: demo/Blackholio/client-godot
+        run: godot --headless --verbose --build-solutions --quit
 
       - name: Start SpacetimeDB
         run: |
@@ -1061,7 +1062,8 @@ jobs:
           bash ./publish.sh
 
       - name: Run Godot tests
-        run: godot --headless --path demo/Blackholio/client-godot --scene res://tests/GodotPlayModeTests.tscn
+        working-directory: demo/Blackholio/client-godot
+        run: godot --headless --scene res://tests/GodotPlayModeTests.tscn
 
   csharp-testsuite:
     needs: [merge_queue_noop, lints]

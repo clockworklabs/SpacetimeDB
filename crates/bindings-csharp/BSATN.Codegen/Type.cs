@@ -624,16 +624,32 @@ public abstract record BaseTypeDeclaration<M>
 
         if (Kind is TypeKind.Sum)
         {
+            extensions.BaseTypes.Add("SpacetimeDB.BSATN.IStructuralWrite");
+            extensions.ExtraAttrs.Add("abstract");
+
+            extensions.Contents.Append(
+                $$"""
+                private {{ShortNameIdentifier}}() { }
+
+            """
+            );
+
             extensions.Contents.Append(
                 string.Join(
                     "\n",
-                    Members.Select(m =>
+                    Members.Select((m, i) =>
                         // C# puts field names in the same namespace as records themselves, and will complain about clashes if they match.
                         // To avoid this, we append an underscore to the field name.
                         // In most cases the field name shouldn't matter anyway as you'll idiomatically use pattern matching to extract the value.
                         $$"""
                             public sealed record {{m.Identifier}}({{m.Type.Name}} {{m.Identifier}}_) : {{ShortNameIdentifier}}
                             {
+                                public override void WriteFields(System.IO.BinaryWriter writer)
+                                {
+                                    writer.Write((byte){{i}});
+                                    BSATN.{{m.Identifier}}{{TypeUse.BsatnFieldSuffix}}.Write(writer, {{m.Identifier}}_);
+                                }
+
                                 public override string ToString() =>
                                     $"{{m.Name}}({ SpacetimeDB.BSATN.StringUtil.GenericToString({{m.Identifier}}_) })";
                             }
@@ -655,18 +671,7 @@ public abstract record BaseTypeDeclaration<M>
                     };
             """;
 
-            write = $$"""
-            switch (value) {
-            {{string.Join(
-                "\n",
-                bsatnDecls.Select((m, i) => $"""
-                                                            case {m.Identifier}(var inner):
-                                                                writer.Write((byte){i});
-                                                                {m.Identifier}{TypeUse.BsatnFieldSuffix}.Write(writer, inner);
-                                                                break;
-                                                """))}}
-                        }
-            """;
+            write = "value.WriteFields(writer);";
 
             getHashCode = $$"""
             switch (this) {
@@ -740,13 +745,13 @@ public abstract record BaseTypeDeclaration<M>
 
             write = "value.WriteFields(writer);";
 
-            var declHashName = (MemberDeclaration decl) => $"___hash{decl.Name}";
+            static string DeclHashName(MemberDeclaration decl) => $"___hash{decl.Name}";
 
             getHashCode = $$"""
-                {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.GetHashCodeStatement(decl.Identifier, declHashName(decl))))}}
+                {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.GetHashCodeStatement(decl.Identifier, DeclHashName(decl))))}}
                 return {{JoinOrValue(
                     " ^\n            ",
-                    bsatnDecls.Select(declHashName),
+                    bsatnDecls.Select(DeclHashName),
                     "0" // if there are no members, the hash is 0.
                 )}};
                 """;
@@ -789,7 +794,7 @@ public abstract record BaseTypeDeclaration<M>
             // If we are a reference type, various equality methods need to take nullable references.
             // If we are a value type, everything is pleasantly by-value.
             var fullNameMaybeRef = $"{FullName}{(Scope.IsStruct ? "" : "?")}";
-            var declEqualsName = (MemberDeclaration decl) => $"___eq{decl.Name}";
+            static string DeclEqualsName(MemberDeclaration decl) => $"___eq{decl.Name}";
 
             extensions.Contents.Append(
                 $$"""
@@ -798,10 +803,10 @@ public abstract record BaseTypeDeclaration<M>
                 public bool Equals({{fullNameMaybeRef}} that)
                 {
                     {{(Scope.IsStruct ? "" : "if (((object?)that) == null) { return false; }\n        ")}}
-                    {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.EqualsStatement($"this.{decl.Identifier}", $"that.{decl.Identifier}", declEqualsName(decl))))}}
+                    {{string.Join("\n", bsatnDecls.Select(decl => decl.Type.EqualsStatement($"this.{decl.Identifier}", $"that.{decl.Identifier}", DeclEqualsName(decl))))}}
                     return {{JoinOrValue(
                         " &&\n        ",
-                        bsatnDecls.Select(declEqualsName),
+                        bsatnDecls.Select(DeclEqualsName),
                         "true" // if there are no elements, the structs are equal :)
                     )}};
                 }
