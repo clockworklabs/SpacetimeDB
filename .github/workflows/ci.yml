@@ -392,12 +392,19 @@ jobs:
       - name: Check for build-time source changes
         run: bash tools/check-diff.sh
 
-      - name: Upload test suite archives
+      - name: Upload workspace test archive
         uses: actions/upload-artifact@v4
         with:
-          name: public-test-suite-archives
+          name: public-test-suite-archive
+          path: public-test-workspace.tar.zst
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Upload runtime binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-runtime-binaries
           path: |
-            public-test-workspace.tar.zst
             target/release/spacetimedb-cli
             target/release/spacetimedb-standalone
           if-no-files-found: error
@@ -510,10 +517,16 @@ jobs:
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
 
-      - name: Download test suite archives
+      - name: Download workspace test archive
         uses: actions/download-artifact@v4
         with:
-          name: public-test-suite-archives
+          name: public-test-suite-archive
+
+      - name: Download runtime binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: public-runtime-binaries
+          path: target/release
 
       - name: Mark restored runtime binaries executable
         run: chmod +x target/release/spacetimedb-cli target/release/spacetimedb-standalone
@@ -540,11 +553,20 @@ jobs:
           cargo "${args[@]}"
           bash tools/check-diff.sh
 
-  test_post_checks:
+  sdk_tests:
     needs: [merge_queue_noop, build_test_archives]
     if: ${{ always() && needs.merge_queue_noop.outputs.skip != 'true' && needs.build_test_archives.result == 'success' }}
-    name: Test Suite Post Checks
+    name: SDK Tests (${{ matrix.name }})
     runs-on: spacetimedb-new-runner-2
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: native
+            features: allow_loopback_http_for_tests
+          - name: browser
+            features: allow_loopback_http_for_tests,browser
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
@@ -587,7 +609,184 @@ jobs:
           save-if: false
           prefix-key: v1
 
-      - uses: actions/setup-dotnet@v3
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          run_install: true
+
+      # Install cmake and emscripten for C++ module compilation tests.
+      - name: Install cmake and emscripten
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake
+          git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
+          cd ~/emsdk
+          ./emsdk install 4.0.21
+          ./emsdk activate 4.0.21
+
+      - name: Install wasm-bindgen CLI
+        run: |
+          REQUIRED_WASM_BINDGEN_VERSION="$(
+            awk '
+              $1 == "name" && $3 == "\"wasm-bindgen\"" { in_pkg = 1; next }
+              in_pkg && $1 == "version" {
+                gsub(/"/, "", $3);
+                print $3;
+                exit;
+              }
+            ' Cargo.lock
+          )"
+          if [ -z "${REQUIRED_WASM_BINDGEN_VERSION}" ]; then
+            echo "Failed to determine wasm-bindgen version from Cargo.lock"
+            exit 1
+          fi
+
+          INSTALLED_WASM_BINDGEN_VERSION="$(wasm-bindgen --version 2>/dev/null | awk '{print $2}' || true)"
+          if [ "${INSTALLED_WASM_BINDGEN_VERSION}" != "${REQUIRED_WASM_BINDGEN_VERSION}" ]; then
+            cargo install --locked --force wasm-bindgen-cli --version "${REQUIRED_WASM_BINDGEN_VERSION}"
+          fi
+
+          wasm-bindgen --version
+
+      - name: Download runtime binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: public-runtime-binaries
+          path: target/release
+
+      - name: Mark restored runtime binaries executable
+        run: chmod +x target/release/spacetimedb-cli target/release/spacetimedb-standalone
+
+      - name: Build TypeScript bindings
+        run: pnpm build
+        working-directory: crates/bindings-typescript
+
+      - name: Run SDK tests
+        run: |
+          source ~/emsdk/emsdk_env.sh
+          cargo test \
+            -p spacetimedb-sdk \
+            --features "${{ matrix.features }}" \
+            -- \
+            --test-threads=2 \
+            --skip unreal
+          bash tools/check-diff.sh
+
+  feature_tests:
+    needs: [merge_queue_noop, lints]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' && needs.lints.result == 'success' }}
+    name: Feature Tests
+    runs-on: spacetimedb-new-runner-2
+    timeout-minutes: 20
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
+    steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Enable sccache
+        shell: bash
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >>"$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >>"$GITHUB_ENV"
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          save-if: false
+          prefix-key: v1
+
+      - name: Run unstable bindings tests
+        run: cargo test -p spacetimedb --features unstable -- --test-threads=2
+
+      - name: Run durability tests with `fallocate`
+        run: |
+          cargo test -p spacetimedb-durability --features fallocate -- --test-threads=1
+
+      - name: Check for test-time source changes
+        run: bash tools/check-diff.sh
+
+  test_post_checks:
+    needs: [merge_queue_noop, lints]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' && needs.lints.result == 'success' }}
+    name: Test Suite Post Checks
+    runs-on: spacetimedb-new-runner-2
+    timeout-minutes: 20
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
+    steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Enable sccache
+        shell: bash
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >>"$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >>"$GITHUB_ENV"
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          save-if: false
+          prefix-key: v1
+
+      - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
 
@@ -663,16 +862,20 @@ jobs:
 
   test:
     name: Test Suite
-    needs: [merge_queue_noop, test_partitions, test_post_checks]
+    needs: [merge_queue_noop, test_partitions, sdk_tests, feature_tests, test_post_checks]
     if: ${{ always() && needs.merge_queue_noop.outputs.skip != 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Check test suite jobs
         env:
           TEST_PARTITIONS_RESULT: ${{ needs.test_partitions.result }}
+          SDK_TESTS_RESULT: ${{ needs.sdk_tests.result }}
+          FEATURE_TESTS_RESULT: ${{ needs.feature_tests.result }}
           TEST_POST_CHECKS_RESULT: ${{ needs.test_post_checks.result }}
         run: |
           test "${TEST_PARTITIONS_RESULT}" = "success"
+          test "${SDK_TESTS_RESULT}" = "success"
+          test "${FEATURE_TESTS_RESULT}" = "success"
           test "${TEST_POST_CHECKS_RESULT}" = "success"
 
   keynote_bench:
