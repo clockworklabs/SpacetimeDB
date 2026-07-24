@@ -125,6 +125,9 @@ pub async fn exec_with_argstring(
     };
     let build_debug = arg_matches.get_flag("debug");
     let dotnet_version = dotnet_version.or_else(|| arg_matches.get_one::<u8>("dotnet_version").copied());
+    if native_aot {
+        common_args::ensure_nativeaot_supported_on_host(dotnet_version)?;
+    }
 
     run_build(module_path, lint_dir, build_debug, features, native_aot, dotnet_version)
 }
