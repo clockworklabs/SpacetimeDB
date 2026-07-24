@@ -672,7 +672,7 @@ fn product_type_layout<C: FromIterator<ProductTypeElementLayout>>(ty: ProductTyp
     let mut max_child_align = 1;
 
     let mut fixed = true;
-    let elements = Vec::from(ty.elements)
+    let elements = ty
         .into_iter()
         .map(|elem| {
             let layout_type: AlgebraicTypeLayout = elem.algebraic_type.into();

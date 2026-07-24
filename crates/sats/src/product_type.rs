@@ -66,6 +66,24 @@ impl Deref for ProductType {
     }
 }
 
+impl IntoIterator for ProductType {
+    type Item = ProductTypeElement;
+    type IntoIter = std::vec::IntoIter<ProductTypeElement>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Vec::from(self.elements).into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a ProductType {
+    type Item = &'a ProductTypeElement;
+    type IntoIter = std::slice::Iter<'a, ProductTypeElement>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.elements.iter()
+    }
+}
+
 impl std::fmt::Debug for ProductType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("ProductType ")?;
@@ -358,3 +376,26 @@ where
 }
 
 impl<'a, I> ExactSizeIterator for ElementValuesWithType<'a, I> where I: ExactSizeIterator<Item = &'a AlgebraicValue> {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn product_type_into_iterator() {
+        let product = ProductType::from([AlgebraicType::U8, AlgebraicType::String]);
+        let expected = vec![AlgebraicType::U8, AlgebraicType::String];
+
+        let borrowed = (&product)
+            .into_iter()
+            .map(|element| element.algebraic_type.clone())
+            .collect::<Vec<_>>();
+        let owned = product
+            .into_iter()
+            .map(|element| element.algebraic_type)
+            .collect::<Vec<_>>();
+
+        assert_eq!(borrowed, expected);
+        assert_eq!(owned, expected);
+    }
+}
