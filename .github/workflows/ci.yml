@@ -389,38 +389,6 @@ jobs:
             --exclude spacetimedb \
             --archive-file "${{ github.workspace }}/public-test-workspace.tar.zst"
 
-      - name: Build unstable spacetimedb test archive
-        run: |
-          source ~/emsdk/emsdk_env.sh
-          cargo nextest archive \
-            -p spacetimedb \
-            --features unstable \
-            --archive-file "${{ github.workspace }}/public-test-spacetimedb-unstable.tar.zst"
-
-      - name: Build native SDK test archive
-        run: |
-          source ~/emsdk/emsdk_env.sh
-          cargo nextest archive \
-            -p spacetimedb-sdk \
-            --features allow_loopback_http_for_tests \
-            --archive-file "${{ github.workspace }}/public-test-sdk-native.tar.zst"
-
-      - name: Build browser SDK test archive
-        run: |
-          source ~/emsdk/emsdk_env.sh
-          cargo nextest archive \
-            -p spacetimedb-sdk \
-            --features allow_loopback_http_for_tests,browser \
-            --archive-file "${{ github.workspace }}/public-test-sdk-browser.tar.zst"
-
-      - name: Build durability fallocate test archive
-        run: |
-          source ~/emsdk/emsdk_env.sh
-          cargo nextest archive \
-            -p spacetimedb-durability \
-            --features fallocate \
-            --archive-file "${{ github.workspace }}/public-test-durability-fallocate.tar.zst"
-
       - name: Check for build-time source changes
         run: bash tools/check-diff.sh
 
@@ -430,10 +398,6 @@ jobs:
           name: public-test-suite-archives
           path: |
             public-test-workspace.tar.zst
-            public-test-spacetimedb-unstable.tar.zst
-            public-test-sdk-native.tar.zst
-            public-test-sdk-browser.tar.zst
-            public-test-durability-fallocate.tar.zst
             target/release/spacetimedb-cli
             target/release/spacetimedb-standalone
           if-no-files-found: error
@@ -451,68 +415,26 @@ jobs:
             archive: public-test-workspace.tar.zst
             partition: 1
             partitions: 4
-            jobs: 2
+            jobs: 1
             skip_unreal: true
           - name: workspace 2/4
             archive: public-test-workspace.tar.zst
             partition: 2
             partitions: 4
-            jobs: 2
+            jobs: 1
             skip_unreal: true
           - name: workspace 3/4
             archive: public-test-workspace.tar.zst
             partition: 3
             partitions: 4
-            jobs: 2
+            jobs: 1
             skip_unreal: true
           - name: workspace 4/4
             archive: public-test-workspace.tar.zst
             partition: 4
             partitions: 4
-            jobs: 2
-            skip_unreal: true
-          - name: spacetimedb unstable 1/2
-            archive: public-test-spacetimedb-unstable.tar.zst
-            partition: 1
-            partitions: 2
-            jobs: 2
-            skip_unreal: false
-          - name: spacetimedb unstable 2/2
-            archive: public-test-spacetimedb-unstable.tar.zst
-            partition: 2
-            partitions: 2
-            jobs: 2
-            skip_unreal: false
-          - name: sdk native 1/2
-            archive: public-test-sdk-native.tar.zst
-            partition: 1
-            partitions: 2
-            jobs: 2
-            skip_unreal: true
-          - name: sdk native 2/2
-            archive: public-test-sdk-native.tar.zst
-            partition: 2
-            partitions: 2
-            jobs: 2
-            skip_unreal: true
-          - name: sdk browser 1/2
-            archive: public-test-sdk-browser.tar.zst
-            partition: 1
-            partitions: 2
-            jobs: 2
-            skip_unreal: true
-          - name: sdk browser 2/2
-            archive: public-test-sdk-browser.tar.zst
-            partition: 2
-            partitions: 2
-            jobs: 2
-            skip_unreal: true
-          - name: durability fallocate
-            archive: public-test-durability-fallocate.tar.zst
-            partition: 1
-            partitions: 1
             jobs: 1
-            skip_unreal: false
+            skip_unreal: true
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
@@ -619,7 +541,7 @@ jobs:
           bash tools/check-diff.sh
 
   test_post_checks:
-    needs: [merge_queue_noop, build_test_archives, test_partitions]
+    needs: [merge_queue_noop, build_test_archives]
     if: ${{ always() && needs.merge_queue_noop.outputs.skip != 'true' && needs.build_test_archives.result == 'success' }}
     name: Test Suite Post Checks
     runs-on: spacetimedb-new-runner-2
@@ -668,6 +590,69 @@ jobs:
       - uses: actions/setup-dotnet@v3
         with:
           global-json-file: global.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          run_install: true
+
+      # Install cmake and emscripten for C++ module compilation tests.
+      - name: Install cmake and emscripten
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake
+          git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
+          cd ~/emsdk
+          ./emsdk install 4.0.21
+          ./emsdk activate 4.0.21
+
+      - name: Install wasm-bindgen CLI
+        run: |
+          REQUIRED_WASM_BINDGEN_VERSION="$(
+            awk '
+              $1 == "name" && $3 == "\"wasm-bindgen\"" { in_pkg = 1; next }
+              in_pkg && $1 == "version" {
+                gsub(/"/, "", $3);
+                print $3;
+                exit;
+              }
+            ' Cargo.lock
+          )"
+          if [ -z "${REQUIRED_WASM_BINDGEN_VERSION}" ]; then
+            echo "Failed to determine wasm-bindgen version from Cargo.lock"
+            exit 1
+          fi
+
+          INSTALLED_WASM_BINDGEN_VERSION="$(wasm-bindgen --version 2>/dev/null | awk '{print $2}' || true)"
+          if [ "${INSTALLED_WASM_BINDGEN_VERSION}" != "${REQUIRED_WASM_BINDGEN_VERSION}" ]; then
+            cargo install --locked --force wasm-bindgen-cli --version "${REQUIRED_WASM_BINDGEN_VERSION}"
+          fi
+
+          wasm-bindgen --version
+
+      - name: Download test suite artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: public-test-suite-archives
+
+      - name: Mark restored runtime binaries executable
+        run: chmod +x target/release/spacetimedb-cli target/release/spacetimedb-standalone
+
+      - name: Build TypeScript bindings
+        run: pnpm build
+        working-directory: crates/bindings-typescript
+
+      - name: Run package-specific tests
+        run: |
+          source ~/emsdk/emsdk_env.sh
+          cargo test -p spacetimedb --features unstable -- --test-threads=2
+          cargo test -p spacetimedb-sdk --features allow_loopback_http_for_tests -- --test-threads=2 --skip unreal
+          cargo test -p spacetimedb-sdk --features allow_loopback_http_for_tests,browser -- --test-threads=2 --skip unreal
+          cargo test -p spacetimedb-durability --features fallocate -- --test-threads=1
 
       - name: Run post-test checks
         run: |
