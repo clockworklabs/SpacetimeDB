@@ -18,7 +18,8 @@ use std::process::{Command, Stdio};
 
 use crate::common_args::parse_optional_dotnet_version;
 use crate::spacetime_config::{
-    find_and_load_with_env, CommandConfig, CommandSchema, CommandSchemaBuilder, Key, LoadedConfig, SpacetimeConfig,
+    find_and_load_with_env, CommandConfig, CommandSchema, CommandSchemaBuilder, FlatTarget, Key, LoadedConfig,
+    SpacetimeConfig,
 };
 use crate::tasks::csharp::dotnet_format;
 use crate::tasks::rust::rustfmt;
@@ -73,46 +74,7 @@ fn get_filtered_generate_configs<'a>(
     schema: &'a CommandSchema,
     args: &'a clap::ArgMatches,
 ) -> Result<Vec<CommandConfig<'a>>, anyhow::Error> {
-    // Get all database targets from config with parent→child inheritance
-    let all_targets = spacetime_config.collect_all_targets_with_inheritance();
-
-    if all_targets.is_empty() {
-        return Ok(vec![]);
-    }
-
-    // Filter by database name pattern (glob) if provided via CLI
-    let filtered_targets = if let Some(cli_database) = args.get_one::<String>("database") {
-        let pattern =
-            glob::Pattern::new(cli_database).with_context(|| format!("Invalid glob pattern: {cli_database}"))?;
-
-        let matched: Vec<_> = all_targets
-            .into_iter()
-            .filter(|target| {
-                target
-                    .fields
-                    .get("database")
-                    .and_then(|v| v.as_str())
-                    .is_some_and(|db| pattern.matches(db))
-            })
-            .collect();
-
-        if matched.is_empty() {
-            anyhow::bail!(
-                "No database target matches '{}'. Available databases: {}",
-                cli_database,
-                spacetime_config
-                    .collect_all_targets_with_inheritance()
-                    .iter()
-                    .filter_map(|t| t.fields.get("database").and_then(|v| v.as_str()))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
-        }
-
-        matched
-    } else {
-        all_targets
-    };
+    let filtered_targets = get_filtered_generate_targets(spacetime_config, args)?;
 
     // Collect generate entries from matched targets, inheriting entity fields
     // Deduplicate by (module_path, serialized_generate_entry)
@@ -165,6 +127,87 @@ fn get_filtered_generate_configs<'a>(
     )?;
 
     Ok(generate_configs)
+}
+
+fn get_filtered_generate_targets(
+    spacetime_config: &SpacetimeConfig,
+    args: &clap::ArgMatches,
+) -> Result<Vec<FlatTarget>, anyhow::Error> {
+    // Get all database targets from config with parent→child inheritance
+    let all_targets = spacetime_config.collect_all_targets_with_inheritance();
+
+    if all_targets.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Filter by database name pattern (glob) if provided via CLI
+    if let Some(cli_database) = args.get_one::<String>("database") {
+        let pattern =
+            glob::Pattern::new(cli_database).with_context(|| format!("Invalid glob pattern: {cli_database}"))?;
+
+        let matched: Vec<_> = all_targets
+            .into_iter()
+            .filter(|target| {
+                target
+                    .fields
+                    .get("database")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|db| pattern.matches(db))
+            })
+            .collect();
+
+        if matched.is_empty() {
+            anyhow::bail!(
+                "No database target matches '{}'. Available databases: {}",
+                cli_database,
+                spacetime_config
+                    .collect_all_targets_with_inheritance()
+                    .iter()
+                    .filter_map(|t| t.fields.get("database").and_then(|v| v.as_str()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+
+        Ok(matched)
+    } else {
+        Ok(all_targets)
+    }
+}
+
+/// Builds synthetic generate configs from publish/database targets when a config
+/// file has targets but no explicit `generate` entries.
+///
+/// This preserves the pre-config behavior of `spacetime generate <database>`:
+/// select targets by database name or glob, inherit target fields into each
+/// generated config, and reject CLI options that would be ambiguous across
+/// multiple generated targets.
+fn fallback_generate_configs_from_targets<'a>(
+    spacetime_config: &SpacetimeConfig,
+    command: &clap::Command,
+    schema: &'a CommandSchema,
+    args: &'a clap::ArgMatches,
+) -> anyhow::Result<Vec<CommandConfig<'a>>> {
+    let targets = get_filtered_generate_targets(spacetime_config, args)?;
+    let mut configs = Vec::with_capacity(targets.len());
+    for target in targets {
+        configs.push(CommandConfig::new(
+            schema,
+            schema.filter_config_values(&target.fields),
+            args,
+        )?);
+    }
+
+    schema.validate_no_generate_entry_specific_cli_args(command, args, configs.len())?;
+    schema.validate_no_module_specific_cli_args_for_multiple_targets(
+        command,
+        args,
+        configs.len(),
+        "generating for multiple targets",
+        "Please specify the database name to select a single target, or remove these arguments.",
+    )?;
+
+    Ok(configs)
 }
 
 pub fn cli() -> clap::Command {
@@ -646,7 +689,12 @@ pub async fn exec_ex(
     let (using_config, generate_configs) = if let Some(loaded) = loaded_config_ref {
         let filtered = get_filtered_generate_configs(&loaded.config, &cmd, &schema, args)?;
         if filtered.is_empty() {
-            (false, vec![CommandConfig::new(&schema, HashMap::new(), args)?])
+            let fallback = fallback_generate_configs_from_targets(&loaded.config, &cmd, &schema, args)?;
+            if fallback.is_empty() {
+                (false, vec![CommandConfig::new(&schema, HashMap::new(), args)?])
+            } else {
+                (true, fallback)
+            }
         } else {
             (true, filtered)
         }
@@ -1387,6 +1435,71 @@ mod tests {
         assert!(
             err_msg.contains("No database target matches"),
             "Error should mention no match, got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn test_fallback_generate_config_uses_selected_child_target_fields() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+
+        let mut root_fields = HashMap::new();
+        root_fields.insert("module-path".to_string(), serde_json::json!("./root-module"));
+
+        let mut child_fields = HashMap::new();
+        child_fields.insert("database".to_string(), serde_json::json!("child-db"));
+        child_fields.insert("module-path".to_string(), serde_json::json!("./child-module"));
+
+        let spacetime_config = SpacetimeConfig {
+            additional_fields: root_fields,
+            children: Some(vec![SpacetimeConfig {
+                additional_fields: child_fields,
+                ..Default::default()
+            }]),
+            ..Default::default()
+        };
+
+        let matches = cmd.clone().get_matches_from(vec![
+            "generate",
+            "child-db",
+            "--lang",
+            "rust",
+            "--bin-path",
+            "dummy.wasm",
+        ]);
+        let fallback = fallback_generate_configs_from_targets(&spacetime_config, &cmd, &schema, &matches).unwrap();
+
+        assert_eq!(fallback.len(), 1);
+        assert_eq!(
+            fallback[0].get_one::<PathBuf>("module_path").unwrap(),
+            Some(PathBuf::from("./child-module"))
+        );
+    }
+
+    #[test]
+    fn test_fallback_generate_config_filters_unsupported_entity_fields() {
+        let cmd = cli();
+        let schema = build_generate_config_schema(&cmd).unwrap();
+
+        let mut root_fields = HashMap::new();
+        root_fields.insert("database".to_string(), serde_json::json!("my-db"));
+        root_fields.insert("server".to_string(), serde_json::json!("local"));
+        root_fields.insert("module-path".to_string(), serde_json::json!("./server"));
+
+        let spacetime_config = SpacetimeConfig {
+            additional_fields: root_fields,
+            ..Default::default()
+        };
+
+        let matches = cmd
+            .clone()
+            .get_matches_from(vec!["generate", "--lang", "rust", "--bin-path", "dummy.wasm"]);
+        let fallback = fallback_generate_configs_from_targets(&spacetime_config, &cmd, &schema, &matches).unwrap();
+
+        assert_eq!(fallback.len(), 1);
+        assert_eq!(
+            fallback[0].get_one::<PathBuf>("module_path").unwrap(),
+            Some(PathBuf::from("./server"))
         );
     }
 
