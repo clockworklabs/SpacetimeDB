@@ -639,7 +639,7 @@ public:
           index_name_(index_name),
           column_list_(column_list) {}
     
-    // Exact match on all columns (template method - types deduced from call)
+    // Exact supplied prefix, optionally terminated by a range.
     template<typename... FieldTypes>
     IndexIteratorRange<TableType> filter(const std::tuple<FieldTypes...>& values) const 
         requires (sizeof...(FieldTypes) > 0 && sizeof...(FieldTypes) <= 6)
@@ -652,11 +652,23 @@ public:
         
         return IndexIteratorRange<TableType>(IndexIterator<TableType>(id, values));
     }
+
+    // Range on the first indexed column.
+    template<typename FieldType>
+    IndexIteratorRange<TableType> filter(const Range<FieldType>& range) const {
+        IndexId id = resolve_index_id();
+        
+        if (id.inner == 0) {
+            return IndexIteratorRange<TableType>(IndexIterator<TableType>());
+        }
+        
+        return IndexIteratorRange<TableType>(IndexIterator<TableType>(id, range));
+    }
     
-    // Prefix-only match: find all rows where first N-1 columns match
+    // Prefix-only match: find all rows where the first indexed column matches.
     template<typename FirstColType>
-    IndexIteratorRange<TableType> filter(const FirstColType& prefix_value) const 
-        requires (!is_tuple_v<FirstColType>)
+    IndexIteratorRange<TableType> filter(const FirstColType& prefix_value) const
+        requires (!is_tuple_v<FirstColType> && !is_range_v<FirstColType>)
     {
         IndexId id = resolve_index_id();
         
@@ -666,20 +678,6 @@ public:
         
         // Use prefix_match_tag to disambiguate constructor
         return IndexIteratorRange<TableType>(IndexIterator<TableType>(prefix_match_tag{}, id, prefix_value));
-    }
-    
-    // Prefix + range match: find rows where first N-1 columns match and last is in range
-    template<typename FirstColType, typename RangeType>
-    IndexIteratorRange<TableType> filter(const std::tuple<FirstColType, RangeType>& values) const 
-        requires (is_range_v<RangeType>)
-    {
-        IndexId id = resolve_index_id();
-        
-        if (id.inner == 0) {
-            return IndexIteratorRange<TableType>(IndexIterator<TableType>());
-        }
-        
-        return IndexIteratorRange<TableType>(IndexIterator<TableType>(id, values));
     }
 };
 

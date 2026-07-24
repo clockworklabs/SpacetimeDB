@@ -195,6 +195,59 @@ public:
         return writer.take_buffer();
     }
 
+    template<typename... FieldTypes>
+    void init_prefix_range_scan(IndexId index_id, const std::tuple<FieldTypes...>& values) {
+        constexpr std::size_t N = sizeof...(FieldTypes);
+        constexpr std::size_t prefix_count = N - 1;
+
+        SpacetimeDB::bsatn::Writer prefix_writer;
+        serialize_tuple_prefix(prefix_writer, values, std::make_index_sequence<prefix_count>{});
+        auto prefix_buffer = prefix_writer.take_buffer();
+
+        const auto& range = std::get<N - 1>(values);
+        auto rstart_buffer = serialize_range_start(range);
+        auto rend_buffer = serialize_range_end(range);
+
+        Status status = FFI::datastore_index_scan_range_bsatn(
+            index_id,
+            prefix_buffer.data(), prefix_buffer.size(), ColId{static_cast<uint16_t>(prefix_count)},
+            rstart_buffer.data(), rstart_buffer.size(),
+            rend_buffer.data(), rend_buffer.size(),
+            &iter_handle_
+        );
+
+        if (status != StatusCode::OK) {
+            std::abort(); // IndexIterator: multi-column prefix+range scan failed
+        }
+    }
+
+    template<typename... FieldTypes>
+    void init_exact_prefix_scan(IndexId index_id, const std::tuple<FieldTypes...>& values) {
+        constexpr std::size_t N = sizeof...(FieldTypes);
+        constexpr std::size_t prefix_count = N - 1;
+
+        SpacetimeDB::bsatn::Writer prefix_writer;
+        serialize_tuple_prefix(prefix_writer, values, std::make_index_sequence<prefix_count>{});
+        auto prefix_buffer = prefix_writer.take_buffer();
+
+        SpacetimeDB::bsatn::Writer bound_writer;
+        bound_writer.write_u8(0);  // Bound::Inclusive
+        serialize(bound_writer, std::get<N - 1>(values));
+        auto bound_buffer = bound_writer.take_buffer();
+
+        Status status = FFI::datastore_index_scan_range_bsatn(
+            index_id,
+            prefix_buffer.data(), prefix_buffer.size(), ColId{static_cast<uint16_t>(prefix_count)},
+            bound_buffer.data(), bound_buffer.size(),
+            bound_buffer.data(), bound_buffer.size(),
+            &iter_handle_
+        );
+
+        if (status != StatusCode::OK) {
+            std::abort(); // IndexIterator: multi-column exact prefix scan failed
+        }
+    }
+
     /**
      * @brief Create iterator for prefix-only match (N-1 columns specified)
      * 
@@ -245,97 +298,45 @@ public:
     }
 
     /**
-     * @brief Create iterator for prefix match with range on last column
+     * @brief Create iterator for multi-column exact prefix or prefix+range scan
      * 
-     * Finds all rows where the first N-1 columns match exactly and the last column
-     * falls within the specified range.
-     * 
-     * @example Range on last column - find scores for a player at specific levels:
-     * @code
-     * FIELD_NamedMultiColumnIndex(score, by_player_and_level, player_id, level)
-     * 
-     * // Find scores for player 123 at levels 1-10
-     * auto scores = ctx.db[score_by_player_and_level].filter(
-     *     std::make_tuple(uint32_t(123), range_inclusive(1u, 10u))
-     * );
-     * @endcode
-     */
-    template<typename PrefixType, typename RangeType>
-    IndexIterator(IndexId index_id, const std::tuple<PrefixType, RangeType>& values)
-        requires (is_range_v<RangeType>)
-    {
-        // Serialize prefix value
-        SpacetimeDB::bsatn::Writer prefix_writer;
-        serialize(prefix_writer, std::get<0>(values));
-        auto prefix_buffer = prefix_writer.take_buffer();
-
-        // Serialize range as start/end bounds
-        const auto& range = std::get<1>(values);
-        auto rstart_buffer = serialize_range_start(range);
-        auto rend_buffer = serialize_range_end(range);
-
-        // Call FFI with prefix_elems = 1 (only the prefix column)
-        Status status = FFI::datastore_index_scan_range_bsatn(
-            index_id,
-            prefix_buffer.data(), prefix_buffer.size(), ColId{1},
-            rstart_buffer.data(), rstart_buffer.size(),
-            rend_buffer.data(), rend_buffer.size(),
-            &iter_handle_
-        );
-        
-        if (status != StatusCode::OK) {
-            std::abort(); // IndexIterator: prefix+range match failed
-        }
-        advance();
-    }
-
-    /**
-     * @brief Create iterator for multi-column exact match
-     * 
-     * Efficiently finds all rows where all indexed columns exactly match the tuple values.
+     * Scans rows where all supplied prefix columns match exactly. If the final
+     * supplied tuple element is a Range<T>, that range is applied to the final
+     * supplied column.
      * 
      * @tparam FieldTypes The types of the indexed fields
      * @param index_id The multi-column index to scan
-     * @param values Tuple of values to match (one per column)
+     * @param values Tuple of exact values optionally terminated by Range<T>
      * 
-     * @example Multi-column exact match:
+     * @example Multi-column exact and range matches:
      * @code
      * FIELD_NamedMultiColumnIndex(score, by_player_and_level, player_id, level)
      * 
      * // Find exact score for player 123 at level 5
      * auto iter = IndexIterator<Score>(index_id, std::make_tuple(uint32_t(123), uint32_t(5)));
+     *
+     * // Find scores for player 123 at levels 1-10
+     * auto scores = IndexIterator<Score>(
+     *     index_id,
+     *     std::make_tuple(uint32_t(123), range_inclusive(1u, 10u))
+     * );
      * @endcode
      */
     template<typename... FieldTypes>
     IndexIterator(IndexId index_id, const std::tuple<FieldTypes...>& values) 
-        requires (sizeof...(FieldTypes) > 1 && sizeof...(FieldTypes) <= 6)
+        requires (sizeof...(FieldTypes) > 0 && sizeof...(FieldTypes) <= 6)
     {
-        constexpr std::size_t N = sizeof...(FieldTypes);
-        constexpr std::size_t prefix_count = N - 1;
-        
-        // Serialize first N-1 elements into prefix buffer
-        SpacetimeDB::bsatn::Writer prefix_writer;
-        serialize_tuple_prefix(prefix_writer, values, std::make_index_sequence<prefix_count>{});
-        auto prefix_buffer = prefix_writer.take_buffer();
-        
-        // Serialize the last element as both start and end bounds (exact match)
-        SpacetimeDB::bsatn::Writer bound_writer;
-        bound_writer.write_u8(0);  // Bound::Included
-        serialize(bound_writer, std::get<N - 1>(values));  // Last element only
-        auto bound_buffer = bound_writer.take_buffer();
-
-        // Call FFI with prefix_elems = N-1 (as per C# pattern)
-        Status status = FFI::datastore_index_scan_range_bsatn(
-            index_id,
-            prefix_buffer.data(), prefix_buffer.size(), ColId{static_cast<uint16_t>(prefix_count)},
-            bound_buffer.data(), bound_buffer.size(),  // Last value as start
-            bound_buffer.data(), bound_buffer.size(),  // Last value as end
-            &iter_handle_
+        static_assert(
+            detail::valid_index_scan_tuple_v<FieldTypes...>,
+            "Range<T> in a multi-column index filter must be the final supplied element"
         );
-        
-        if (status != StatusCode::OK) {
-            std::abort(); // IndexIterator: multi-column exact match failed
+
+        if constexpr (detail::last_is_range_arg_v<FieldTypes...>) {
+            init_prefix_range_scan(index_id, values);
+        } else {
+            init_exact_prefix_scan(index_id, values);
         }
+
         advance();
     }
     
@@ -521,12 +522,12 @@ private:
     // For now we rely on btree scan to handle bounds correctly
     
     // Constants for performance tuning
-    static constexpr size_t INITIAL_ROW_BUFFER_SIZE = 4096;
+    static constexpr size_t INITIAL_ROW_BUFFER_SIZE = 128 * 1024;
     static constexpr size_t MAX_ROW_BUFFER_SIZE = 1024 * 1024;
     static constexpr size_t TYPICAL_BATCH_SIZE = 32;
     static constexpr int16_t ITER_EXHAUSTED = -1;
     static constexpr int16_t ITER_OK = 0;
-    static constexpr uint16_t ERROR_BUFFER_TOO_SMALL = 3;
+    static constexpr int16_t ERROR_BUFFER_TOO_SMALL = static_cast<int16_t>(StatusCode::BUFFER_TOO_SMALL.inner);
     
     // Helper to serialize tuple elements without treating tuple as a type
     template<typename... FieldTypes, std::size_t... Is>
@@ -586,13 +587,19 @@ private:
             return;
         }
         
-        if (ret == ERROR_BUFFER_TOO_SMALL) {
-            if (buffer_len > MAX_ROW_BUFFER_SIZE) {
+        while (ret == ERROR_BUFFER_TOO_SMALL) {
+            const size_t requested_size = buffer_len;
+            size_t new_size = requested_size;
+            if (new_size <= row_buffer_.size()) {
+                new_size = row_buffer_.size() * 2;
+            }
+            if (new_size > MAX_ROW_BUFFER_SIZE) {
                 std::abort(); // Buffer size exceeds maximum
             }
-            row_buffer_.resize(buffer_len);
-            ret = FFI::row_iter_bsatn_advance(iter_handle_, 
-                                             row_buffer_.data(), 
+            row_buffer_.resize(new_size);
+            buffer_len = row_buffer_.size();
+            ret = FFI::row_iter_bsatn_advance(iter_handle_,
+                                             row_buffer_.data(),
                                              &buffer_len);
         }
         
