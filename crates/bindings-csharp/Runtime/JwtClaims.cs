@@ -72,11 +72,13 @@ public sealed class JwtClaims
 
         return aud.ValueKind switch
         {
-            JsonValueKind.String => new List<string> { aud.GetString()! },
-            JsonValueKind.Array => aud.EnumerateArray()
-                .Where(e => e.ValueKind == JsonValueKind.String)
-                .Select(e => e.GetString()!)
-                .ToList(),
+            JsonValueKind.String => [aud.GetString()!],
+            JsonValueKind.Array =>
+            [
+                .. aud.EnumerateArray()
+                    .Where(e => e.ValueKind == JsonValueKind.String)
+                    .Select(e => e.GetString()!),
+            ],
             _ => throw new InvalidOperationException("Unexpected type for 'aud' claim in JWT"),
         };
     }
