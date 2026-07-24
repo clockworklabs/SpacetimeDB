@@ -49,11 +49,30 @@ pub mod sync {
     pub use tokio::sync::watch;
 }
 
-#[derive(Clone)]
 pub enum Handle {
     Tokio(TokioHandle),
     #[cfg(feature = "simulation")]
     Simulation(sim::Handle),
+}
+
+impl Clone for Handle {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Tokio(handle) => Self::Tokio(handle.clone()),
+            #[cfg(feature = "simulation")]
+            Self::Simulation(handle) => Self::Simulation(handle.clone()),
+        }
+    }
+}
+
+impl fmt::Debug for Handle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Tokio(_) => f.write_str("Handle::Tokio"),
+            #[cfg(feature = "simulation")]
+            Self::Simulation(_) => f.write_str("Handle::Simulation"),
+        }
+    }
 }
 
 pub struct JoinHandle<T> {
@@ -132,6 +151,16 @@ impl JoinErrorInner {
 impl fmt::Display for JoinError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.inner.fmt(f)
+    }
+}
+
+impl JoinError {
+    pub fn is_panic(&self) -> bool {
+        match &self.inner {
+            JoinErrorInner::Tokio(err) => err.is_panic(),
+            #[cfg(feature = "simulation")]
+            JoinErrorInner::Simulation(err) => err.is_panic(),
+        }
     }
 }
 
@@ -231,8 +260,36 @@ impl Handle {
 
 #[cfg(feature = "simulation")]
 impl Handle {
+    pub fn now(&self) -> Duration {
+        match self {
+            Self::Tokio(_) => panic!("Handle::now requires a simulation runtime"),
+            Self::Simulation(handle) => handle.now(),
+        }
+    }
+
     pub fn simulation(handle: sim::Handle) -> Self {
         Self::Simulation(handle)
+    }
+
+    pub fn on_simulation_node(&self, node: sim::NodeId) -> Self {
+        match self {
+            Self::Tokio(_) => panic!("Handle::on_simulation_node requires a simulation runtime"),
+            Self::Simulation(handle) => Self::Simulation(handle.on_node(node)),
+        }
+    }
+
+    pub fn create_simulation_node(&self) -> Option<sim::NodeBuilder> {
+        match self {
+            Self::Tokio(_) => panic!("Handle::create_simulation_node requires a simulation runtime"),
+            Self::Simulation(handle) => Some(handle.create_node()),
+        }
+    }
+
+    pub fn drain_simulation_task_panics(&self) -> Vec<sim::TaskPanic> {
+        match self {
+            Self::Tokio(_) => panic!("Handle::drain_simulation_task_panics requires a simulation runtime"),
+            Self::Simulation(handle) => handle.drain_task_panics(),
+        }
     }
 }
 
@@ -244,7 +301,7 @@ impl Handle {
             },
             #[cfg(feature = "simulation")]
             Self::Simulation(handle) => JoinHandle {
-                inner: JoinHandleInner::Simulation(handle.spawn_on(sim::NodeId::MAIN, future)),
+                inner: JoinHandleInner::Simulation(handle.spawn(future)),
             },
         }
     }
@@ -268,7 +325,7 @@ impl Handle {
             // the simulation backend.
             #[cfg(feature = "simulation")]
             Self::Simulation(handle) => handle
-                .spawn_on(sim::NodeId::MAIN, async move { f() })
+                .spawn(async move { f() })
                 .await
                 .expect("simulation spawn_blocking task should not be cancelled"),
         }
@@ -293,6 +350,29 @@ impl Handle {
             Self::Tokio(_) => tokio::time::sleep(duration).await,
             #[cfg(feature = "simulation")]
             Self::Simulation(handle) => handle.sleep(duration).await,
+        }
+    }
+
+    pub async fn yield_now(&self) {
+        match self {
+            Self::Tokio(_) => tokio::task::yield_now().await,
+            #[cfg(feature = "simulation")]
+            Self::Simulation(handle) => handle.yield_now().await,
+        }
+    }
+
+    /// Blocks the current thread until `future` completes.
+    ///
+    /// For Tokio, this uses `block_in_place` before re-entering the runtime with
+    /// `Handle::block_on`, so it is supported from multi-thread runtime workers.
+    /// Do not call this from a current-thread Tokio runtime; Tokio panics on
+    /// that path. For simulation, this runs on the deterministic executor
+    /// thread; blocking inside the future blocks simulated progress.
+    pub fn block_on<F: Future>(&self, future: F) -> F::Output {
+        match self {
+            Self::Tokio(handle) => tokio::task::block_in_place(|| handle.block_on(future)),
+            #[cfg(feature = "simulation")]
+            Self::Simulation(handle) => handle.block_on(future),
         }
     }
 }
@@ -323,10 +403,7 @@ mod tests {
             drop(jh);
 
             // Yield so the spawned task gets polled.
-            handle
-                .timeout(std::time::Duration::from_millis(50), async {})
-                .await
-                .ok();
+            handle.yield_now().await;
         });
 
         assert!(flag.load(Ordering::Acquire));

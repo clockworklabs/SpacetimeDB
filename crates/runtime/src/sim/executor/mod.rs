@@ -83,6 +83,11 @@ pub struct Node {
     config: Arc<NodeConfig>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskPanic {
+    pub node: NodeId,
+}
+
 impl Node {
     /// Return the stable identifier for this simulated node.
     pub fn id(&self) -> NodeId {
@@ -158,10 +163,15 @@ impl Runtime {
         self.executor.elapsed()
     }
 
+    pub fn drain_task_panics(&self) -> Vec<TaskPanic> {
+        self.executor.drain_task_panics()
+    }
+
     /// Get a cloneable handle for spawning tasks and accessing runtime services.
     pub fn handle(&self) -> Handle {
         Handle {
             executor: Arc::clone(&self.executor),
+            node: NodeId::MAIN,
         }
     }
 
@@ -244,9 +254,32 @@ impl Runtime {
 #[derive(Clone)]
 pub struct Handle {
     executor: Arc<Executor>,
+    node: NodeId,
 }
 
 impl Handle {
+    /// Return a handle that spawns default work on `node`.
+    pub fn on_node(&self, node: NodeId) -> Self {
+        Self {
+            executor: Arc::clone(&self.executor),
+            node,
+        }
+    }
+
+    /// Return the node this handle uses for default spawned work.
+    pub fn node(&self) -> NodeId {
+        self.node
+    }
+
+    /// Spawn a `Send` future onto this handle's current simulated node.
+    pub fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        self.spawn_on(self.node, future)
+    }
+
     /// Create a new simulated node owned by this runtime.
     pub fn create_node(&self) -> NodeBuilder {
         NodeBuilder {
@@ -260,7 +293,7 @@ impl Handle {
         let config = self.executor.node_config(id);
         Node {
             id,
-            handle: self.clone(),
+            handle: self.on_node(id),
             config,
         }
     }
@@ -319,6 +352,15 @@ impl Handle {
         self.executor.time.timeout(duration, future).await
     }
 
+    /// Yield this task back to the simulation scheduler once.
+    pub async fn yield_now(&self) {
+        yield_now().await
+    }
+
+    pub fn block_on<F: Future>(&self, future: F) -> F::Output {
+        self.executor.block_on(future)
+    }
+
     pub fn enable_buggify(&self) {
         self.executor.enable_buggify();
     }
@@ -342,6 +384,10 @@ impl Handle {
     pub fn buggify_with_prob(&self, probability: f64) -> bool {
         self.executor.buggify_with_prob(probability)
     }
+
+    pub fn drain_task_panics(&self) -> Vec<TaskPanic> {
+        self.executor.drain_task_panics()
+    }
 }
 
 /// Core single-threaded scheduler backing a simulation [`Runtime`].
@@ -356,6 +402,7 @@ struct Executor {
     next_node: AtomicU64,
     rng: Rng,
     time: TimeHandle,
+    task_panics: Arc<Mutex<Vec<TaskPanic>>>,
 }
 
 impl Executor {
@@ -371,11 +418,16 @@ impl Executor {
             next_node: AtomicU64::new(1),
             rng: Rng::new(config.seed),
             time: TimeHandle::new(),
+            task_panics: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
     fn elapsed(&self) -> Duration {
         self.time.now()
+    }
+
+    fn drain_task_panics(&self) -> Vec<TaskPanic> {
+        core::mem::take(&mut *self.task_panics.lock())
     }
 
     fn enable_buggify(&self) {
@@ -439,7 +491,7 @@ impl Executor {
         self.assert_known_node(node);
 
         let abort = AbortHandle::new();
-        let abortable = Abortable::new(future, abort.clone());
+        let abortable = Abortable::new(future, abort.clone(), node, Arc::clone(&self.task_panics));
         let sender = self.sender.clone();
         let (runnable, task) = async_task::Builder::new()
             .metadata(node)
@@ -458,7 +510,7 @@ impl Executor {
         self.assert_known_node(node);
 
         let abort = AbortHandle::new();
-        let abortable = Abortable::new(future, abort.clone());
+        let abortable = Abortable::new(future, abort.clone(), node, Arc::clone(&self.task_panics));
         let sender = self.sender.clone();
         let (runnable, task) = unsafe {
             async_task::Builder::new()
@@ -731,7 +783,30 @@ mod tests {
         let err = runtime
             .block_on(task)
             .expect_err("aborted task should surface JoinError instead of panicking");
-        assert_eq!(err, JoinError);
+        assert_eq!(err, JoinError::Cancelled);
+    }
+
+    #[test]
+    fn spawned_task_panic_is_captured_without_stopping_runtime() {
+        let mut runtime = Runtime::new(10);
+        let node = runtime.create_node().name("panic").build();
+        let node_id = node.id();
+        let task = node.spawn(async move {
+            yield_now().await;
+            panic!("node boom");
+        });
+
+        runtime.block_on(async {
+            yield_now().await;
+            yield_now().await;
+        });
+
+        let panics = runtime.drain_task_panics();
+        assert_eq!(panics, vec![TaskPanic { node: node_id }]);
+        let err = runtime
+            .block_on(task)
+            .expect_err("panicked task should surface JoinError instead of unwinding");
+        assert!(err.is_panic());
     }
 
     #[cfg(feature = "simulation")]
