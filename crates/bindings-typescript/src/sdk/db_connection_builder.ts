@@ -9,6 +9,11 @@ import type {
 import { ensureMinimumVersionOrThrow } from './version';
 import { WebsocketDecompressAdapter } from './websocket_decompress_adapter';
 import type { WebSocketFactory } from './ws';
+import {
+  CONNECTION_MANAGER_RECONNECT_BASE_DELAY_MS,
+  CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS,
+  type ReconnectOptions,
+} from './connection_manager';
 
 /**
  * The database client connection to a SpacetimeDB server.
@@ -28,6 +33,7 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
   #lightMode: boolean = false;
   #confirmedReads?: boolean;
   #createWSFn: WebSocketFactory;
+  #reconnectOptions?: ReconnectOptions;
 
   /**
    * Creates a new `DbConnectionBuilder` database client and set the initial parameters.
@@ -85,6 +91,61 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
 
   withWSFn(createWSFn: WebSocketFactory): this {
     this.#createWSFn = createWSFn;
+    return this;
+  }
+
+  /**
+   * Configure the auto-reconnect backoff. `baseDelayMs` is the delay before the
+   * first retry (the minimum backoff); it doubles on each consecutive failure
+   * up to `maxDelayMs`. Unset fields keep the defaults (1000 ms base, 30000 ms
+   * max).
+   *
+   * Auto-reconnect is performed by the `ConnectionManager`, so these options
+   * apply to any connection retained through it. That currently means the
+   * `SpacetimeDBProvider` for React and Solid. It has no effect on a connection
+   * built and used directly via `build()`, which does not auto-reconnect.
+   *
+   * @example
+   *
+   * ```ts
+   * DbConnection.builder().withReconnectOptions({
+   *   baseDelayMs: 500,
+   *   maxDelayMs: 10_000,
+   * });
+   * ```
+   */
+  withReconnectOptions(options: ReconnectOptions): this {
+    const { baseDelayMs, maxDelayMs } = options;
+    if (
+      baseDelayMs !== undefined &&
+      (!Number.isFinite(baseDelayMs) || baseDelayMs <= 0)
+    ) {
+      throw new TypeError(
+        'withReconnectOptions: baseDelayMs must be a positive number'
+      );
+    }
+    if (
+      maxDelayMs !== undefined &&
+      (!Number.isFinite(maxDelayMs) || maxDelayMs <= 0)
+    ) {
+      throw new TypeError(
+        'withReconnectOptions: maxDelayMs must be a positive number'
+      );
+    }
+    // Resolve against the defaults the ConnectionManager will apply, so that
+    // supplying only one of the two fields is still validated against the value
+    // actually used for the other. e.g. baseDelayMs: 40000 with the default
+    // maxDelayMs of 30000 must be rejected.
+    const resolvedBaseDelayMs =
+      baseDelayMs ?? CONNECTION_MANAGER_RECONNECT_BASE_DELAY_MS;
+    const resolvedMaxDelayMs =
+      maxDelayMs ?? CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS;
+    if (resolvedBaseDelayMs > resolvedMaxDelayMs) {
+      throw new TypeError(
+        'withReconnectOptions: baseDelayMs must be less than or equal to maxDelayMs'
+      );
+    }
+    this.#reconnectOptions = { baseDelayMs, maxDelayMs };
     return this;
   }
 
@@ -244,6 +305,11 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
 
   getModuleName(): string {
     return this.#nameOrAddress ?? '';
+  }
+
+  /** The reconnect backoff overrides set via {@link withReconnectOptions}, if any. */
+  getReconnectOptions(): ReconnectOptions | undefined {
+    return this.#reconnectOptions ? { ...this.#reconnectOptions } : undefined;
   }
 
   /**

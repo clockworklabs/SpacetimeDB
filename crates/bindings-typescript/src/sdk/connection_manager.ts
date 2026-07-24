@@ -50,15 +50,40 @@ export const CONNECTION_MANAGER_RECONNECT_BASE_DELAY_MS = 1000;
 export const CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS = 30_000;
 
 /**
+ * Options controlling the auto-reconnect backoff. Set them per connection via
+ * {@link DbConnectionBuilder.withReconnectOptions}. Any field left undefined
+ * falls back to the module default.
+ */
+export type ReconnectOptions = {
+  /**
+   * Delay before the first reconnect attempt, in milliseconds. This is the
+   * minimum backoff; each subsequent attempt doubles it up to `maxDelayMs`.
+   * Defaults to {@link CONNECTION_MANAGER_RECONNECT_BASE_DELAY_MS} (1000).
+   */
+  baseDelayMs?: number;
+  /**
+   * Maximum delay between reconnect attempts, in milliseconds. The exponential
+   * backoff is capped here. Defaults to
+   * {@link CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS} (30000).
+   */
+  maxDelayMs?: number;
+};
+
+/**
  * Computes the reconnect delay for the given attempt (0-based) using
  * exponential backoff: the base delay doubles with each consecutive failed
- * attempt, capped at the maximum delay.
+ * attempt, capped at the maximum delay. `options` overrides the base and/or
+ * maximum delay; unset fields use the module defaults.
  */
-export function connectionManagerReconnectDelayMs(attempt: number): number {
-  return Math.min(
-    CONNECTION_MANAGER_RECONNECT_BASE_DELAY_MS * 2 ** attempt,
-    CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS
-  );
+export function connectionManagerReconnectDelayMs(
+  attempt: number,
+  options?: ReconnectOptions
+): number {
+  const baseDelay =
+    options?.baseDelayMs ?? CONNECTION_MANAGER_RECONNECT_BASE_DELAY_MS;
+  const maxDelay =
+    options?.maxDelayMs ?? CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS;
+  return Math.min(baseDelay * 2 ** attempt, maxDelay);
 }
 
 type ManagedConnection = {
@@ -244,7 +269,10 @@ class ConnectionManagerImpl {
       return;
     }
 
-    const delay = connectionManagerReconnectDelayMs(managed.reconnectAttempt);
+    const delay = connectionManagerReconnectDelayMs(
+      managed.reconnectAttempt,
+      managed.builder?.getReconnectOptions()
+    );
     managed.reconnectAttempt += 1;
     managed.reconnectTimer = setTimeout(() => {
       managed.reconnectTimer = null;
