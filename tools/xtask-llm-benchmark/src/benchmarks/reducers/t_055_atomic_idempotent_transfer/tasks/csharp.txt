@@ -1,0 +1,22 @@
+Write a SpacetimeDB backend module in C# that performs atomic, idempotent transfers between accounts.
+
+TABLES
+- Account (public, accessor Account)
+  - Fields:
+    - Id: ulong (primary key)
+    - Balance: long
+- TransferRequest (public, accessor TransferRequest)
+  - Fields:
+    - RequestId: string (primary key)
+    - FromId: ulong
+    - ToId: ulong
+    - Amount: long
+
+REDUCERS
+- CreateAccount(id: ulong, balance: long)
+  - Insert an Account with the supplied values
+- Transfer(requestId: string, fromId: ulong, toId: ulong, amount: long)
+  - Reject invalid or insufficient transfers
+  - Update both Account balances atomically
+  - Record RequestId in TransferRequest
+  - If RequestId is already recorded, make no changes

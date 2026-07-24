@@ -1,0 +1,25 @@
+Write a SpacetimeDB backend module in C# that performs a nested cascade delete across normalized tables.
+
+TABLES
+- Workspace (public, accessor Workspace)
+  - Fields:
+    - Id: ulong (primary key)
+- Project (public, accessor Project)
+  - Fields:
+    - Id: ulong (primary key)
+    - WorkspaceId: ulong (btree index)
+- TaskItem (public, accessor TaskItem)
+  - Fields:
+    - Id: ulong (primary key)
+    - ProjectId: ulong (btree index)
+- TaskNote (public, accessor TaskNote)
+  - Fields:
+    - Id: ulong (primary key)
+    - TaskId: ulong (btree index)
+
+REDUCERS
+- Seed()
+  - Create two independent Workspace -> Project -> TaskItem -> TaskNote chains using IDs 1 and 2
+- DeleteWorkspace(id: ulong)
+  - Delete the selected Workspace and every level of its descendants
+  - Preserve the unrelated chain

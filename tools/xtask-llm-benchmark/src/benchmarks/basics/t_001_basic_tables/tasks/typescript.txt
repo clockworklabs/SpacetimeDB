@@ -1,21 +1,21 @@
 Write a SpacetimeDB backend module in TypeScript that defines three tables with basic columns.
 
 TABLES
-- user
+- user (private)
   - Fields:
     - id: number (i32, primary key)
     - name: string
     - age: number (i32)
     - active: boolean
 
-- product
+- product (private)
   - Fields:
     - id: number (i32, primary key)
     - title: string
     - price: number (f32)
     - inStock: boolean
 
-- note
+- note (private)
   - Fields:
     - id: number (i32, primary key)
     - body: string

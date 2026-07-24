@@ -1,0 +1,18 @@
+Write a SpacetimeDB backend module in C# that defines a query-builder filter view.
+
+TABLE
+- Ticket (public, accessor Ticket)
+  - Fields:
+    - Id: ulong (primary key)
+    - Status: string (btree index)
+    - Title: string
+
+REDUCERS
+- Seed()
+  - Insert open Ticket Id 1 titled "A"
+  - Insert closed Ticket Id 2 titled "B"
+
+VIEW
+- OpenTicket (public, non-anonymous query-builder)
+  - Return the query-builder filter for Status "open"
+  - Do not materialize rows manually

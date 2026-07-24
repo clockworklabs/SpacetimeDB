@@ -1,0 +1,23 @@
+Write a SpacetimeDB backend module in Rust that schedules a procedure which writes inside a transaction.
+
+TABLES
+- procedure_result (public), struct ProcedureResult
+  - Fields:
+    - id: u64 (primary key)
+    - value: u32
+- procedure_job (private, scheduled for run_scheduled_procedure), struct ProcedureJob
+  - Fields, in this order:
+    - scheduled_id: u64 (primary key, auto-increment)
+    - scheduled_at: ScheduleAt
+    - id: u64
+    - lhs: u32
+    - rhs: u32
+
+REDUCERS
+- schedule_procedure(id: u64, lhs: u32, rhs: u32)
+  - Enqueue run_scheduled_procedure for one millisecond later
+
+PROCEDURE
+- run_scheduled_procedure(job: ProcedureJob) -> () (scheduled procedure)
+  - Open a transaction
+  - Insert id and value lhs + rhs into procedure_result

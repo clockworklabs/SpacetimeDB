@@ -1,0 +1,14 @@
+Write a SpacetimeDB backend module in C# that records deterministic reducer time and randomness.
+
+TABLE
+- GeneratedValue (public, accessor GeneratedValue)
+  - Fields:
+    - Id: ulong (primary key, auto-increment)
+    - CreatedAt: Timestamp
+    - RandomValue: long
+
+REDUCERS
+- Generate()
+  - Store ctx.Timestamp in CreatedAt
+  - Store a random long from ctx.Rng in RandomValue
+  - Do not use a host clock or a separately seeded Random

@@ -1,0 +1,29 @@
+Write a SpacetimeDB backend module in Rust that defines a public view joining three normalized tables.
+
+TABLES
+- customer (public), struct Customer
+  - Fields:
+    - id: u64 (primary key)
+    - name: String
+- purchase (public), struct Purchase
+  - Fields:
+    - id: u64 (primary key)
+    - customer_id: u64 (btree index)
+- line_item (public), struct LineItem
+  - Fields:
+    - id: u64 (primary key)
+    - purchase_id: u64 (btree index)
+    - sku: String
+    - visible: bool (btree index)
+
+REDUCERS
+- seed()
+  - Insert one complete visible customer -> purchase -> line_item chain
+  - Use customer id 1 named "Ada"
+  - Use purchase id 10 for customer 1
+  - Use visible line_item id 100 for purchase 10 with sku "SKU-1"
+
+VIEW
+- order_line_detail (anonymous procedural, public)
+  - Returns rows with line_id: u64, customer_name: String, and sku: String
+  - Return only rows connected through matching customer, purchase, and line-item IDs

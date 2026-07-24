@@ -1,0 +1,15 @@
+Write a SpacetimeDB backend module in C# that applies row-level visibility to a public table.
+
+TABLE
+- UserRecord (public, accessor UserRecord)
+  - Fields:
+    - Identity: Identity (primary key)
+    - Name: string
+
+CLIENT VISIBILITY FILTER
+- Restrict UserRecord so each caller can see only rows whose Identity matches the caller
+
+REDUCERS
+- RegisterSelf(name: string)
+  - Insert a UserRecord using ctx.Sender
+  - Do not accept an identity argument

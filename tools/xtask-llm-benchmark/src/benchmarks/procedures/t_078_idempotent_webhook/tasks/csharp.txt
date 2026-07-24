@@ -1,0 +1,22 @@
+Write a SpacetimeDB backend module in C# that handles idempotent, ordered webhook events.
+
+TABLES
+- ProcessedEvent (private, accessor ProcessedEvent)
+  - Fields:
+    - EventId: string (primary key)
+- WebhookState (public, accessor WebhookState)
+  - Fields:
+    - Key: string (primary key)
+    - LastSequence: ulong
+    - Value: string
+
+HANDLER
+- POST /webhook
+  - Accept a pipe-delimited body: event_id|sequence|value
+  - Store state under Key "account"
+  - For a newly applied event, return status 200 and body "applied"
+  - For a duplicate EventId, return status 200 and body "duplicate" without applying twice
+  - When sequence is not newer, return status 200 and body "stale" without replacing state
+
+ROUTER
+- Register POST /webhook through an HTTP router

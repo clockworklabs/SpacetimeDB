@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in Rust that defines an order table and a stats table, with a reducer that computes aggregate statistics from filtered orders.
 
 TABLES
-- order
+- order (private)
   - Struct: Order
   - Fields:
     - id: u64 (primary key, auto_inc)
@@ -9,7 +9,7 @@ TABLES
     - amount: u64
     - fulfilled: bool
 
-- category_stats
+- category_stats (private)
   - Struct: CategoryStats
   - Fields:
     - category: String (primary key)

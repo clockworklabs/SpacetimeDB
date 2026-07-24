@@ -1,0 +1,20 @@
+Write a SpacetimeDB backend module in C# that defines a procedural view over an inclusive timestamp range.
+
+TABLE
+- Event (public, accessor Event)
+  - Fields:
+    - Id: ulong (primary key)
+    - OccurredAt: Timestamp (btree index)
+    - Label: string
+
+REDUCERS
+- Seed()
+  - Insert events at 100, 200, 300, 400, and 500 microseconds after the Unix epoch
+  - Assign Ids 1 through 5 in timestamp order
+  - Set each Label to "event-{microseconds}", such as "event-100"
+
+VIEW
+- WindowEvent (anonymous procedural, public)
+  - Use the OccurredAt index
+  - Return the inclusive range from 200 through 400 microseconds
+  - Return rows in ascending OccurredAt order

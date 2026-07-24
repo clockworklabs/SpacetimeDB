@@ -1,0 +1,15 @@
+Write a SpacetimeDB backend module in C# that separates stable profile data from frequently updated connection presence.
+
+TABLES
+- UserProfile (public, accessor UserProfile)
+  - Identity: Identity (primary key)
+  - DisplayName: string
+  - CreatedAt: Timestamp
+- ConnectionPresence (public, accessor ConnectionPresence)
+  - ConnectionId: ConnectionId (primary key)
+  - UserIdentity: Identity
+  - LastHeartbeat: Timestamp
+  - Online: bool
+  - index by_user: btree(UserIdentity)
+
+Do not put LastHeartbeat or Online on UserProfile. No reducers are required.

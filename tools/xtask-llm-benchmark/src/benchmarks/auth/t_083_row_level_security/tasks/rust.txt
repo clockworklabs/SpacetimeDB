@@ -1,0 +1,15 @@
+Write a SpacetimeDB backend module in Rust that applies row-level visibility to a public table.
+
+TABLE
+- user_record (public), struct UserRecord
+  - Fields:
+    - identity: Identity (primary key)
+    - name: String
+
+CLIENT VISIBILITY FILTER
+- Restrict user_record so each caller can see only rows whose identity matches the caller
+
+REDUCERS
+- register_self(name: String)
+  - Insert a UserRecord using ctx.sender()
+  - Do not accept an identity argument

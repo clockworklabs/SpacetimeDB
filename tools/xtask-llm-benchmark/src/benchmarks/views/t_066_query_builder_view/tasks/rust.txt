@@ -1,0 +1,18 @@
+Write a SpacetimeDB backend module in Rust that defines a query-builder filter view.
+
+TABLE
+- ticket (public), struct Ticket
+  - Fields:
+    - id: u64 (primary key)
+    - status: String (btree index)
+    - title: String
+
+REDUCERS
+- seed()
+  - Insert open ticket id 1 titled "A"
+  - Insert closed ticket id 2 titled "B"
+
+VIEW
+- open_ticket (public, non-anonymous query-builder)
+  - Return the query-builder filter for status "open"
+  - Do not materialize rows manually
