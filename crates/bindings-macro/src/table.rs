@@ -1013,10 +1013,21 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             if let Some(val) = &col.default_value {
                 let ty = &col.ty;
                 let ident_span = col.ident.span();
-                Some(quote_spanned! { ident_span =>
+
+                // The upper branch of this if clause is special handling for the string type.
+                if let syn::Type::Path(type_path) = ty
+                    && let Some(segment) = type_path.path.segments.last()
+                    && segment.ident.to_string() == "String"
+                {
+                    Some(quote_spanned! { ident_span =>
+                        let _check: &'static str = #val;
+                    })
+                } else {
                     // This closure enforces that `val` is of type `ty` at compile-time.
-                    let _check: #ty = #val;
-                })
+                    Some(quote_spanned! { ident_span =>
+                               let _check: #ty = #val;
+                    })
+                }
             } else {
                 None
             }
@@ -1026,6 +1037,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let col_defaults: Vec<TokenStream> = columns.iter().filter_map(|col| {
         if let Some(val) = &col.default_value {
             let col_id = col.index;
+            let ty=&col.ty;
             Some(quote! {
                 spacetimedb::table::ColumnDefault {
                     col_id: #col_id,

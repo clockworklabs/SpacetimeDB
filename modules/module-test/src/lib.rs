@@ -26,6 +26,8 @@ pub struct Person {
     age: u8,
     #[default(false)]
     edited: bool,
+    #[default("test")]
+    string: String,
 }
 
 #[cfg(not(feature = "test-add-column"))]
@@ -274,6 +276,7 @@ pub fn add(ctx: &ReducerContext, name: String, age: u8) {
         name,
         age,
         edited: false,
+        string: String::new(),
     });
     #[cfg(not(feature = "test-add-column"))]
     ctx.db.person().insert(Person { id: 0, name, age });
