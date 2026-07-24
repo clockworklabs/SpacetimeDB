@@ -417,6 +417,22 @@ impl MigrationFormatter for TermColorFormatter {
         Ok(())
     }
 
+    fn format_change_table_accessor_name(&mut self, table_name: &str) -> io::Result<()> {
+        self.write_action_prefix(&Action::Changed)?;
+        self.buffer.write_all(b" table accessor name for ")?;
+        self.write_colored(table_name, Some(self.colors.table_name), true)?;
+        self.buffer.write_all(b"\n")
+    }
+
+    fn format_change_column_accessor_name(&mut self, table_name: &str, col_name: &str) -> io::Result<()> {
+        self.write_action_prefix(&Action::Changed)?;
+        self.buffer.write_all(b" column accessor name for ")?;
+        self.write_colored(table_name, Some(self.colors.table_name), true)?;
+        self.buffer.write_all(b".")?;
+        self.write_colored(col_name, Some(self.colors.column_type), true)?;
+        self.buffer.write_all(b"\n")
+    }
+
     fn format_disconnect_warning(&mut self) -> io::Result<()> {
         self.write_indent()?;
         self.write_with_background(

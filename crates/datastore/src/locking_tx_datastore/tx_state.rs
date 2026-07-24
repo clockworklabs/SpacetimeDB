@@ -1,8 +1,9 @@
 use super::{delete_table::DeleteTable, sequence::Sequence};
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::db::auth::StAccess;
-use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
+use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::memory_usage::MemoryUsage;
+use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
@@ -111,6 +112,19 @@ pub enum PendingSchemaChange {
     /// If adding this index caused the pointer map to be removed,
     /// it will be present here.
     IndexAdded(TableId, IndexId, Option<PointerMap>),
+    /// The source-name alias of the index with [`IndexId`] changed.
+    /// The old alias is stored for rollback.
+    IndexAlterSourceName(
+        TableId,
+        IndexId,
+        Option<spacetimedb_sats::raw_identifier::RawIdentifier>,
+    ),
+    /// The accessor name alias of the table with [`TableId`] changed.
+    /// The old alias is stored for rollback.
+    TableAlterAccessorName(TableId, Option<Identifier>),
+    /// The accessor name alias of the column with [`ColId`] in the table with [`TableId`] changed.
+    /// The old alias is stored for rollback.
+    ColumnAlterAccessorName(TableId, ColId, Option<Identifier>),
     /// The [`Table`] with [`TableId`] was removed.
     TableRemoved(TableId, Table),
     /// The table with [`TableId`] was added.
@@ -153,6 +167,9 @@ impl MemoryUsage for PendingSchemaChange {
             Self::IndexAdded(table_id, index_id, pointer_map) => {
                 table_id.heap_usage() + index_id.heap_usage() + pointer_map.heap_usage()
             }
+            Self::IndexAlterSourceName(table_id, index_id, alias) => {
+                table_id.heap_usage() + index_id.heap_usage() + alias.heap_usage()
+            }
             Self::TableRemoved(table_id, table) => table_id.heap_usage() + table.heap_usage(),
             Self::TableAdded(table_id) => table_id.heap_usage(),
             Self::TableAlterAccess(table_id, st_access) => table_id.heap_usage() + st_access.heap_usage(),
@@ -168,6 +185,14 @@ impl MemoryUsage for PendingSchemaChange {
                 table_id.heap_usage() + sequence.heap_usage() + sequence_schema.heap_usage()
             }
             Self::SequenceAdded(table_id, sequence_id) => table_id.heap_usage() + sequence_id.heap_usage(),
+            Self::TableAlterAccessorName(table_id, alias) => {
+                table_id.heap_usage() + alias.as_ref().map(|a| a.as_raw().heap_usage()).unwrap_or(0)
+            }
+            Self::ColumnAlterAccessorName(table_id, col_id, alias) => {
+                table_id.heap_usage()
+                    + col_id.heap_usage()
+                    + alias.as_ref().map(|a| a.as_raw().heap_usage()).unwrap_or(0)
+            }
             Self::ReschemaEventTable(table_id, column_schemas) => table_id.heap_usage() + column_schemas.heap_usage(),
         }
     }

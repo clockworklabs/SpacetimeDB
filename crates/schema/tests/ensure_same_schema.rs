@@ -36,6 +36,9 @@ fn assert_identical_modules(module_name_prefix: &str, lang_name: &str, suffix: &
                 | AutoMigrateStep::AddView(_)
                 | AutoMigrateStep::RemoveView(_)
                 | AutoMigrateStep::UpdateView(_)
+                | AutoMigrateStep::ChangeIndexSourceName(_)
+                | AutoMigrateStep::ChangeTableAccessorName(_)
+                | AutoMigrateStep::ChangeColumnAccessorName(_, _)
         )
     });
 
