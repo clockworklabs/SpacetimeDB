@@ -10,18 +10,10 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export const Accounts = __t.object("Accounts", {
-  id: __t.u32(),
-  balance: __t.i64(),
-});
-export type Accounts = __Infer<typeof Accounts>;
-
-export const TransferAudit = __t.object("TransferAudit", {
-  id: __t.u64(),
+export default __t.row({
+  id: __t.u64().primaryKey(),
   from: __t.u32(),
   to: __t.u32(),
   amount: __t.i64(),
   ts: __t.timestamp(),
 });
-export type TransferAudit = __Infer<typeof TransferAudit>;
-
