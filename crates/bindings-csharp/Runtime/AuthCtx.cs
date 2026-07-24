@@ -4,6 +4,8 @@ using System;
 
 public sealed class AuthCtx
 {
+    private static byte[] jwtBuffer = new byte[0x10_000];
+
     private readonly bool _isInternal;
     private readonly Lazy<JwtClaims?> _jwtLazy;
 
@@ -47,11 +49,12 @@ public sealed class AuthCtx
             {
                 var result = SpacetimeDB.Internal.FFI.get_jwt(ref connectionId, out var source);
                 SpacetimeDB.Internal.FFI.CheckedStatus.Marshaller.ConvertToManaged(result);
-                var bytes = SpacetimeDB.Internal.Module.Consume(source);
-                if (bytes == null || bytes.Length == 0)
+                using var stream = SpacetimeDB.Internal.Module.Consume(source, ref jwtBuffer);
+                if (stream.Length == 0)
                 {
                     return null;
                 }
+                var bytes = stream.ToArray();
                 var jwt = System.Text.Encoding.UTF8.GetString(bytes);
                 return jwt != null ? new JwtClaims(jwt, identity) : null;
             }

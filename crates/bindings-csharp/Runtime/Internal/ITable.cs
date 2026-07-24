@@ -1,34 +1,26 @@
 namespace SpacetimeDB.Internal;
 
 using System.Buffers;
+using System.Collections;
 using SpacetimeDB.BSATN;
 
-internal abstract class RawTableIterBase<T>
+internal abstract class RawTableIterBase<T> : IEnumerable<T>
     where T : IStructuralReadWrite, new()
 {
-    public sealed class Enumerator(FFI.RowIter handle) : IDisposable
+    private const int InitialBufferSize = 1024;
+
+    protected abstract void IterStart(out FFI.RowIter handle);
+
+    public IEnumerator<T> GetEnumerator()
     {
-        private const int InitialBufferSize = 1024;
-        private byte[]? buffer = ArrayPool<byte>.Shared.Rent(InitialBufferSize);
-        public ArraySegment<byte> Current { get; private set; } = ArraySegment<byte>.Empty;
-
-        public bool MoveNext()
+        IterStart(out var handle);
+        var buffer = ArrayPool<byte>.Shared.Rent(InitialBufferSize);
+        try
         {
-            if (handle == FFI.RowIter.INVALID)
-            {
-                return false;
-            }
-
-            if (buffer is null)
-            {
-                return false;
-            }
-
-            uint buffer_len;
-            while (true)
+            while (handle != FFI.RowIter.INVALID)
             {
                 var requested_len = (uint)buffer.Length;
-                buffer_len = requested_len;
+                var buffer_len = requested_len;
                 var ret = FFI.row_iter_bsatn_advance(handle, buffer, ref buffer_len);
                 if (ret == Errno.EXHAUSTED)
                 {
@@ -38,82 +30,50 @@ internal abstract class RawTableIterBase<T>
                         buffer_len = 0;
                     }
                 }
+
                 // On success, the only way `buffer_len == 0` is for the iterator to be exhausted.
                 // This happens when the host iterator was empty from the start.
                 System.Diagnostics.Debug.Assert(!(ret == Errno.OK && buffer_len == 0));
                 switch (ret)
                 {
-                    // Iterator advanced and may also be `EXHAUSTED`.
-                    // When `OK`, we'll need to advance the iterator in the next call to `MoveNext`.
-                    // In both cases, update `Current` to point at the valid range in the scratch `buffer`.
                     case Errno.EXHAUSTED
                     or Errno.OK:
-                        Current = new ArraySegment<byte>(buffer, 0, (int)buffer_len);
-                        return buffer_len != 0;
-                    // Couldn't find the iterator, error!
-                    case Errno.NO_SUCH_ITER:
-                        throw new NoSuchIterException();
-                    // The scratch `buffer` is too small to fit a row / chunk.
-                    // Grow `buffer` and try again.
-                    // The `buffer_len` will have been updated with the necessary size.
+                    {
+                        using var stream = new MemoryStream(
+                            buffer,
+                            0,
+                            (int)buffer_len,
+                            writable: false,
+                            publiclyVisible: true
+                        );
+                        using var reader = new BinaryReader(stream);
+                        while (stream.Position < stream.Length)
+                        {
+                            yield return IStructuralReadWrite.Read<T>(reader);
+                        }
+                        break;
+                    }
                     case Errno.BUFFER_TOO_SMALL:
                         ArrayPool<byte>.Shared.Return(buffer);
                         buffer = ArrayPool<byte>.Shared.Rent((int)buffer_len);
-                        continue;
+                        break;
                     default:
-                        throw new UnknownException(ret);
+                        ret.Check();
+                        break;
                 }
             }
         }
-
-        public void Dispose()
+        finally
         {
             if (handle != FFI.RowIter.INVALID)
             {
                 FFI.row_iter_bsatn_close(handle);
-                handle = FFI.RowIter.INVALID;
             }
-
-            if (buffer is not null)
-            {
-                ArrayPool<byte>.Shared.Return(buffer);
-                buffer = null;
-            }
-        }
-
-        public void Reset()
-        {
-            throw new NotImplementedException();
+            ArrayPool<byte>.Shared.Return(buffer);
         }
     }
 
-    protected abstract void IterStart(out FFI.RowIter handle);
-
-    // Note: using the GetEnumerator() duck-typing protocol instead of IEnumerable to avoid extra boxing.
-    public Enumerator GetEnumerator()
-    {
-        IterStart(out var handle);
-        return new(handle);
-    }
-
-    public IEnumerable<T> Parse()
-    {
-        foreach (var chunk in this)
-        {
-            using var stream = new MemoryStream(
-                chunk.Array!,
-                chunk.Offset,
-                chunk.Count,
-                writable: false,
-                publiclyVisible: true
-            );
-            using var reader = new BinaryReader(stream);
-            while (stream.Position < stream.Length)
-            {
-                yield return IStructuralReadWrite.Read<T>(reader);
-            }
-        }
-    }
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 }
 
 public interface ITableView<View, T>
@@ -146,7 +106,9 @@ public interface ITableView<View, T>
             return out_;
         });
 
+#pragma warning disable IDE1006 // Used by static interface member call sites.
     internal static FFI.TableId tableId => tableId_.Value;
+#pragma warning restore IDE1006
 
     ulong Count { get; }
 
@@ -164,7 +126,7 @@ public interface ITableView<View, T>
         return count;
     }
 
-    protected static IEnumerable<T> DoIter() => new RawTableIter(tableId).Parse();
+    protected static IEnumerable<T> DoIter() => new RawTableIter(tableId);
 
     protected static T DoInsert(T row)
     {

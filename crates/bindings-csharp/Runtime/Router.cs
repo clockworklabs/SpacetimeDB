@@ -91,7 +91,7 @@ public sealed class Router
         return new Router(merged);
     }
 
-    private List<RouteSpec> CloneRoutes() => new(routes);
+    private List<RouteSpec> CloneRoutes() => [.. routes];
 
     private static void AddRoute(
         List<RouteSpec> routes,
@@ -160,5 +160,5 @@ public sealed class Router
     }
 
     private static bool CharacterIsAcceptableForRoutePath(char c) =>
-        (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c is '-' or '_' or '~' or '/';
+        c is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-' or '_' or '~' or '/';
 }

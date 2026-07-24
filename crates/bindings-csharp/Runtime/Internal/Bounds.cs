@@ -1,6 +1,3 @@
-using System.IO;
-using SpacetimeDB.BSATN;
-
 namespace SpacetimeDB
 {
     public readonly struct Bound<T>(T min, T max)
@@ -16,6 +13,8 @@ namespace SpacetimeDB
 
 namespace SpacetimeDB.Internal
 {
+    using SpacetimeDB.BSATN;
+
     enum BoundVariant : byte
     {
         Inclusive,
