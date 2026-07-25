@@ -11,10 +11,12 @@ import type { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
 import type { ParamsObj, ReducerCtx } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
+import type { ScheduleTableForParams } from '../lib/table_schema';
 import { Timestamp } from '../lib/timestamp';
 import {
   type Infer,
   type InferTypeOfRow,
+  type t,
   type TypeBuilder,
 } from '../lib/type_builders';
 import { bsatnBaseSize } from '../lib/util';
@@ -42,7 +44,7 @@ export function makeProcedureExport<
   Ret extends TypeBuilder<any, any>,
 >(
   ctx: SchemaInner,
-  opts: ProcedureOpts | undefined,
+  opts: ProcedureOptsWithOptionalName<Params, Ret> | undefined,
   params: Params,
   ret: Ret,
   fn: ProcedureFn<S, Params, Ret>
@@ -58,6 +60,12 @@ export function makeProcedureExport<
       procedureExport as ProcedureExport<any, any, any>,
       name ?? exportName
     );
+    if (opts?.onSchedule !== undefined) {
+      ctx.pendingSchedules.push({
+        table: opts.onSchedule,
+        functionName: name ?? exportName,
+      });
+    }
   };
 
   return procedureExport;
@@ -69,9 +77,20 @@ export type ProcedureFn<
   Ret extends TypeBuilder<any, any>,
 > = (ctx: ProcedureCtx<S>, args: InferTypeOfRow<Params>) => Infer<Ret>;
 
-export interface ProcedureOpts {
+export interface ProcedureOpts<
+  Params extends ParamsObj = ParamsObj,
+  Ret extends TypeBuilder<any, any> = TypeBuilder<any, any>,
+> {
   name: string;
+  onSchedule?: Ret extends ReturnType<typeof t.unit>
+    ? ScheduleTableForParams<Params>
+    : never;
 }
+
+export type ProcedureOptsWithOptionalName<
+  Params extends ParamsObj = ParamsObj,
+  Ret extends TypeBuilder<any, any> = TypeBuilder<any, any>,
+> = Omit<ProcedureOpts<Params, Ret>, 'name'> & { name?: string };
 
 export interface ProcedureCtx<S extends UntypedSchemaDef> {
   readonly sender: Identity;
@@ -107,7 +126,7 @@ function registerProcedure<
   params: Params,
   ret: Ret,
   fn: ProcedureFn<S, Params, Ret>,
-  opts?: ProcedureOpts
+  opts?: ProcedureOptsWithOptionalName<any, any>
 ) {
   ctx.defineFunction(exportName);
   const paramsType: ProductType = {

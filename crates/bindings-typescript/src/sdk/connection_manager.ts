@@ -294,6 +294,72 @@ class ConnectionManagerImpl {
     return this.#buildManagedConnection(managed, builder);
   }
 
+  /**
+   * Tears down the current connection and builds a fresh one from `builder`,
+   * preserving the entry's ref count and listener set.
+   *
+   * `retain()` deliberately ignores the builder once a connection is live —
+   * the right behaviour for ref-counting, but it blocks "reconnect with a
+   * fresh token" flows (e.g. swapping an anonymous session for a signed-in one
+   * after an auth change). `rebuild()` is the supported escape hatch: pass a
+   * builder carrying the new token and the pool swaps the live connection
+   * under the same subscribers, so framework hooks (`useTable`, `useReducer`,
+   * …) re-bind to the new connection automatically.
+   *
+   * The old connection's callbacks are detached before it is closed, so its
+   * disconnect event never leaks into pool state, and any pending auto-reconnect
+   * is cancelled (the caller is driving the reconnect explicitly). Returns the
+   * newly-built connection, or `null` if the key has no retained entry.
+   *
+   * @param key - Unique identifier for the connection (use getKey to generate)
+   * @param builder - Fresh connection builder; its handlers are rewired into the pool
+   */
+  rebuild<T extends DbConnectionImpl<any>>(
+    key: string,
+    builder: DbConnectionBuilder<T>
+  ): T | null {
+    const managed = this.#connections.get(key);
+    if (!managed || managed.refCount <= 0) {
+      return null;
+    }
+
+    // The caller is taking over the connection lifecycle explicitly; cancel a
+    // deferred release or a pending auto-reconnect so neither races the fresh
+    // connection, and reset the backoff so the next unexpected drop starts over.
+    if (managed.pendingRelease) {
+      clearTimeout(managed.pendingRelease);
+      managed.pendingRelease = null;
+    }
+    if (managed.reconnectTimer) {
+      clearTimeout(managed.reconnectTimer);
+      managed.reconnectTimer = null;
+    }
+    managed.reconnectAttempt = 0;
+
+    const connection = managed.connection;
+    if (connection) {
+      this.#detachCallbacks(managed, connection);
+      connection.disconnect();
+    }
+    managed.connection = undefined;
+
+    try {
+      return this.#buildManagedConnection(managed, builder) as T;
+    } catch (error) {
+      // The old connection is already torn down, so a failed rebuild would
+      // otherwise leave the pool reporting a stale "live" connection. Surface
+      // the failure into pool state (matching the onConnectError shape) so
+      // subscribers see a disconnected/errored connection, then re-throw so
+      // the caller can handle it.
+      this.#updateState(managed, {
+        isActive: false,
+        connectionError:
+          error instanceof Error ? error : new Error(String(error)),
+      });
+      throw error;
+    }
+  }
+
   release(key: string): void {
     const managed = this.#connections.get(key);
     if (!managed) {

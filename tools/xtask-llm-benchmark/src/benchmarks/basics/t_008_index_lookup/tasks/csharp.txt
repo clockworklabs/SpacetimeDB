@@ -9,7 +9,7 @@ TABLES
     - Age: int
     - Active: bool
 
-- Result
+- Result (public)
   - Struct: Result
   - Fields:
     - Id: ulong (primary key)

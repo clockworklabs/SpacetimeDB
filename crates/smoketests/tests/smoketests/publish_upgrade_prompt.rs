@@ -36,14 +36,22 @@ fn upgrade_prompt_on_publish() {
     let deny_err = test
         .publish()
         .name(&db_name)
-        .force(false)
+        // Needed when running smoketests against a remote server.
+        .force(Some("remote"))
         .run()
         .unwrap_err()
         .to_string();
     assert!(deny_err.contains("major version upgrade from 1.0 to 2.0"));
     assert!(deny_err.contains("Please type 'upgrade' to accept this change:"));
 
-    let accepted_identity = test.publish().name(&db_name).stdin("upgrade\n").run().unwrap();
+    let accepted_identity = test
+        .publish()
+        .name(&db_name)
+        .stdin("upgrade\n")
+        // Needed when running smoketests against a remote server.
+        .force(Some("remote"))
+        .run()
+        .unwrap();
     assert_eq!(accepted_identity, initial_identity);
 }
 

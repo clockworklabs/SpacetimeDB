@@ -2,6 +2,7 @@ use spacetimedb::{reducer, table, ReducerContext, Table};
 
 #[table(
     accessor = log,
+    public,
     index(accessor = by_user_day, btree(columns = [user_id, day]))
 )]
 pub struct Log {

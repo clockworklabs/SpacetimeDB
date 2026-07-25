@@ -1,14 +1,19 @@
 use super::relational_db::RelationalDB;
 use crate::sql::rls::RowLevelExpr;
 use anyhow::Context;
-use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+use spacetimedb_datastore::execution_context::Workload;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
+use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
+use spacetimedb_datastore::system_tables::{StViewFields, StViewRow, ST_VIEW_ID};
 use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColSet, TableId};
-use spacetimedb_schema::auto_migrate::{AutoMigratePlan, ManualMigratePlan, MigratePlan};
-use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
-use spacetimedb_schema::schema::{column_schemas_from_defs, IndexSchema, Schema, SequenceSchema, TableSchema};
+use spacetimedb_schema::auto_migrate::{AutoMigratePlan, AutoMigrateStep, ManualMigratePlan, MigratePlan};
+use spacetimedb_schema::def::{ModuleDef, ModuleDefLookup, TableDef, ViewDef};
+use spacetimedb_schema::schema::{
+    column_schemas_from_defs, ConstraintSchema, IndexSchema, Schema, SequenceSchema, TableSchema,
+};
 
 /// The logger used for by [`update_database`] and friends.
 pub trait UpdateLogger {
@@ -22,6 +27,91 @@ pub enum UpdateResult {
     Success,
     RequiresClientDisconnect,
     EvaluateSubscribedViews,
+}
+
+/// Build a repair-only migration plan for views whose stored backing table row
+/// layout is stale compared to the currently loaded module definition.
+pub fn stale_view_backing_table_recreate_plan<'def>(
+    stdb: &RelationalDB,
+    module_def: &'def ModuleDef,
+) -> anyhow::Result<Option<MigratePlan<'def>>> {
+    let steps = stale_view_backing_table_recreate_steps(stdb, module_def)?;
+    if steps.is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some(MigratePlan::Auto(AutoMigratePlan {
+        old: module_def,
+        new: module_def,
+        prechecks: Vec::new(),
+        steps,
+    })))
+}
+
+fn stale_view_backing_table_recreate_steps<'def>(
+    stdb: &RelationalDB,
+    module_def: &'def ModuleDef,
+) -> anyhow::Result<Vec<AutoMigrateStep<'def>>> {
+    stdb.with_read_only(Workload::Internal, |tx| -> anyhow::Result<_> {
+        let mut steps = Vec::new();
+
+        for view in module_def.views() {
+            if view_backing_table_needs_recreate(stdb, tx, module_def, view)? {
+                steps.extend([
+                    AutoMigrateStep::RemoveView(view.key()),
+                    AutoMigrateStep::AddView(view.key()),
+                ]);
+            }
+        }
+
+        if !steps.is_empty() {
+            ensure_disconnect_all_users(&mut steps);
+            steps.sort();
+        }
+
+        Ok(steps)
+    })
+}
+
+fn view_backing_table_needs_recreate(
+    stdb: &RelationalDB,
+    tx: &mut TxId,
+    module_def: &ModuleDef,
+    view: &ViewDef,
+) -> anyhow::Result<bool> {
+    let Some(table_id) = view_backing_table_id(tx, view)? else {
+        return Ok(false);
+    };
+
+    let actual = stdb.schema_for_table(tx, table_id)?;
+    let expected = TableSchema::from_view_def_for_datastore(module_def, view);
+
+    Ok(view_backing_row_layout_changed(&actual, &expected))
+}
+
+fn view_backing_table_id(tx: &mut TxId, view: &ViewDef) -> anyhow::Result<Option<TableId>> {
+    let view_name = AlgebraicValue::from(<Box<str>>::from(&*view.name));
+    let Some(row) = tx
+        .iter_by_col_eq(ST_VIEW_ID, StViewFields::ViewName, &view_name)?
+        .next()
+    else {
+        return Ok(None);
+    };
+
+    Ok(StViewRow::try_from(row)?.table_id)
+}
+
+fn view_backing_row_layout_changed(actual: &TableSchema, expected: &TableSchema) -> bool {
+    actual.row_type != expected.row_type
+}
+
+fn ensure_disconnect_all_users(steps: &mut Vec<AutoMigrateStep<'_>>) {
+    if !steps
+        .iter()
+        .any(|step| matches!(step, AutoMigrateStep::DisconnectAllUsers))
+    {
+        steps.push(AutoMigrateStep::DisconnectAllUsers);
+    }
 }
 
 /// Update the database according to the migration plan.
@@ -109,16 +199,21 @@ fn auto_migrate_database(
                     .clone();
 
                 // Convert `SequenceDef` min/max to `AlgebraicValue`s of the correct type.
-                let min = AlgebraicValue::from_i128(&ty, sequence_def.min_value.unwrap_or(1)).ok_or_else(|| {
-                    anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid min value")
-                })?;
-
-                let max =
-                    AlgebraicValue::from_i128(&ty, sequence_def.max_value.unwrap_or(i128::MAX)).ok_or_else(|| {
-                        anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid max value")
+                let min = ty
+                    .saturating_value_from_i128(sequence_def.min_value.unwrap_or(1))
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid min value")
                     })?;
 
-                let range = min..max;
+                let max = match sequence_def.max_value {
+                    Some(max) => ty.saturating_value_from_i128(max),
+                    None => ty.saturating_value_from_i128(i128::MAX),
+                }
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid max value")
+                })?;
+
+                let range = min..=max;
                 if stdb
                     .iter_by_col_range_mut(tx, table_id, sequence_def.column, range)?
                     .next()
@@ -226,6 +321,29 @@ fn auto_migrate_database(
                     table_def.name
                 );
                 stdb.drop_constraint(tx, constraint_schema.constraint_id)?;
+            }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddConstraint(constraint_name) => {
+                let table_def = plan
+                    .new
+                    .stored_in_table_def(constraint_name)
+                    .expect("AddConstraint references a table that should exist in the new module def");
+                let constraint_def = &table_def.constraints[constraint_name];
+                let table_id = stdb
+                    .table_id_from_name_mut(tx, &table_def.name)?
+                    .expect("table should exist in the database for AddConstraint");
+                let constraint_schema = ConstraintSchema::from_module_def(
+                    plan.new,
+                    constraint_def,
+                    table_id,
+                    spacetimedb_primitives::ConstraintId::SENTINEL,
+                );
+                log!(
+                    logger,
+                    "Adding constraint `{}` on table `{}`",
+                    constraint_name,
+                    table_def.name
+                );
+                stdb.create_constraint(tx, constraint_schema)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddSequence(sequence_name) => {
                 let table_def = plan.new.stored_in_table_def(sequence_name).unwrap();
@@ -550,6 +668,86 @@ mod test {
             .expect("should be a valid module definition")
     }
 
+    fn view_module() -> ModuleDef {
+        let mut builder = RawModuleDefV10Builder::new();
+        let return_type_ref = builder.add_algebraic_type(
+            [],
+            "my_view_return_type",
+            AlgebraicType::product([("a", AlgebraicType::U64)]),
+            true,
+        );
+        builder.add_view(
+            "my_view",
+            0,
+            true,
+            true,
+            ProductType::unit(),
+            AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+        );
+        builder.add_view_primary_key("my_view", ["a"]);
+        builder
+            .finish()
+            .try_into()
+            .expect("should be a valid module definition")
+    }
+
+    fn old_view_backing_schema(module_def: &ModuleDef) -> TableSchema {
+        let view = module_def.view("my_view").unwrap();
+        let mut schema = TableSchema::from_view_def_for_datastore(module_def, view);
+
+        schema.columns.remove(0);
+        for (pos, col) in schema.columns.iter_mut().enumerate() {
+            col.col_pos = pos.into();
+        }
+        schema.indexes.clear();
+        schema.constraints.clear();
+        schema.reset();
+
+        schema
+    }
+
+    fn create_backing_table(stdb: &TestDB, schema: TableSchema) -> anyhow::Result<()> {
+        let mut tx = begin_mut_tx(stdb);
+        stdb.create_table(&mut tx, schema)?;
+        stdb.commit_tx(tx)?;
+        Ok(())
+    }
+
+    #[test]
+    fn stale_view_backing_schema_generates_startup_repair_plan() -> anyhow::Result<()> {
+        let stdb = TestDB::durable()?;
+        let module_def = view_module();
+        create_backing_table(&stdb, old_view_backing_schema(&module_def))?;
+
+        let plan = stale_view_backing_table_recreate_plan(&stdb, &module_def)?.expect("expected repair plan");
+
+        let MigratePlan::Auto(plan) = &plan else {
+            panic!("expected auto migration");
+        };
+        let my_view = module_def.view("my_view").unwrap().key();
+        assert!(plan.steps.contains(&AutoMigrateStep::RemoveView(my_view)));
+        assert!(plan.steps.contains(&AutoMigrateStep::AddView(my_view)));
+        assert!(plan.steps.contains(&AutoMigrateStep::DisconnectAllUsers));
+        assert!(!plan.steps.contains(&AutoMigrateStep::UpdateView(my_view)));
+
+        Ok(())
+    }
+
+    #[test]
+    fn current_view_backing_schema_skips_startup_repair_plan() -> anyhow::Result<()> {
+        let stdb = TestDB::durable()?;
+        let module_def = view_module();
+        let view = module_def.view("my_view").unwrap();
+        let backing_schema = TableSchema::from_view_def_for_datastore(&module_def, view);
+        create_backing_table(&stdb, backing_schema)?;
+
+        let plan = stale_view_backing_table_recreate_plan(&stdb, &module_def)?;
+
+        assert!(plan.is_none(), "{plan:#?}");
+
+        Ok(())
+    }
+
     enum TakeSnapshot {
         None,
         BeforeAutomigration,
@@ -792,6 +990,51 @@ mod test {
             "failed migration should leave no pending schema changes: {:?}",
             tx.pending_schema_changes()
         );
+        Ok(())
+    }
+
+    #[test]
+    fn add_sequence_precheck_rejects_existing_column_max_value() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        let module_v1: ModuleDef = {
+            let mut b = RawModuleDefV9Builder::new();
+            b.build_table_with_new_type("seq_t", [("id", AlgebraicType::U8)], true)
+                .with_access(TableAccess::Public)
+                .finish();
+            b.finish().try_into().expect("valid module v1")
+        };
+
+        let module_v2: ModuleDef = {
+            let mut b = RawModuleDefV9Builder::new();
+            b.build_table_with_new_type("seq_t", [("id", AlgebraicType::U8)], true)
+                .with_column_sequence(0)
+                .with_access(TableAccess::Public)
+                .finish();
+            b.finish().try_into().expect("valid module v2")
+        };
+
+        {
+            let mut tx = begin_mut_tx(&stdb);
+            for def in module_v1.tables() {
+                create_table_from_def(&stdb, &mut tx, &module_v1, def)?;
+            }
+            let table_id = stdb.table_id_from_name_mut(&tx, "seq_t")?.expect("seq_t should exist");
+            insert(&stdb, &mut tx, table_id, &product![u8::MAX])?;
+            stdb.commit_tx(tx)?;
+        }
+
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&module_v1, &module_v2)?;
+        let err = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)
+            .err()
+            .expect("adding a sequence over an existing max value should fail");
+        assert!(
+            err.to_string().contains("already has values in range"),
+            "error should mention existing values in range, got: {err}"
+        );
+
         Ok(())
     }
 

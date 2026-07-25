@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_macros, clippy::type_complexity, clippy::enum_variant_names)]
 
 use anyhow::{Context, Result};
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use futures::{StreamExt, TryStreamExt};
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, HashSet};
 use spacetimedb_guard::SpacetimeDbGuard;
@@ -71,6 +71,12 @@ struct Cli {
     command: Commands,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum ModelSource {
+    Static,
+    Remote,
+}
+
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Run benchmarks / build goldens / compute hashes.
@@ -124,6 +130,10 @@ struct RunArgs {
     #[arg(long, num_args = 1..)]
     models: Option<Vec<ModelGroup>>,
 
+    /// Where to resolve models when --models is not provided
+    #[arg(long, value_enum, default_value_t = ModelSource::Static)]
+    model_source: ModelSource,
+
     /// Run benchmarks without uploading results
     #[arg(long)]
     dry_run: bool,
@@ -131,6 +141,9 @@ struct RunArgs {
     /// When used with --dry-run, also generate local markdown analysis files
     #[arg(long, requires = "dry_run")]
     local_analysis: bool,
+
+    #[arg(skip)]
+    route_overrides: Option<Vec<ModelRoute>>,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -218,14 +231,17 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
     let dry_run = args.dry_run;
     let local_analysis = args.local_analysis;
     let dry_run_id = dry_run.then(|| chrono::Utc::now().format("%Y-%m-%d_%H%M%S").to_string());
+    let should_fetch_remote_routes = should_fetch_remote_routes(&args);
 
-    let api_client = if dry_run {
-        None
-    } else {
+    let needs_api_client = should_fetch_remote_routes || !dry_run;
+    let api_client = if needs_api_client {
         ApiClient::from_env().context("failed to initialize API client")?
+    } else {
+        None
     };
+    let upload_client = if dry_run { None } else { api_client.clone() };
 
-    if api_client.is_none() && !dry_run {
+    if upload_client.is_none() && !dry_run {
         eprintln!("[warn] LLM_BENCHMARK_UPLOAD_URL not set; results will not be uploaded");
     }
 
@@ -240,31 +256,30 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
         categories: categories_to_set(args.categories),
         model_filter: model_filter_from_groups(args.models),
         host: None,
-        api_client: api_client.clone(),
+        api_client: upload_client.clone(),
         dry_run,
         local_analysis,
         dry_run_id: dry_run_id.clone(),
+        route_overrides: args.route_overrides,
     };
+
+    if should_fetch_remote_routes {
+        let api = api_client
+            .as_ref()
+            .context("LLM_BENCHMARK_UPLOAD_URL required when --model-source remote is used")?;
+        config.route_overrides = Some(api.fetch_model_routes()?);
+    }
 
     let bench_root = find_bench_root();
 
     // Upload task catalog before running benchmarks
-    if let Some(ref api) = api_client
+    if let Some(ref api) = upload_client
         && let Err(e) = api.upload_task_catalog(&bench_root)
     {
         eprintln!("[warn] failed to upload task catalog: {e}");
     }
 
-    let modes = config
-        .modes
-        .clone()
-        .unwrap_or_else(|| ALL_MODES.iter().map(|s| s.to_string()).collect());
-
-    let RuntimeInit {
-        runtime,
-        provider: llm_provider,
-        guard,
-    } = initialize_runtime_and_provider(config.hash_only, config.goldens_only)?;
+    let RuntimeInit { runtime, guard } = initialize_runtime(config.hash_only)?;
 
     config.host = guard.as_ref().map(|g| g.host_url.clone());
 
@@ -273,7 +288,24 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
     let selectors: Option<Vec<String>> = config.selectors.clone();
     let selectors_ref: Option<&[String]> = selectors.as_deref();
 
-    if !config.goldens_only && !config.hash_only {
+    let modes = config
+        .modes
+        .clone()
+        .unwrap_or_else(|| ALL_MODES.iter().map(|s| s.to_string()).collect());
+
+    if config.goldens_only {
+        let rt = runtime.as_ref().expect("runtime required for --goldens-only");
+        rt.block_on(build_goldens_only_for_lang(
+            config.host.clone(),
+            &bench_root,
+            config.lang,
+            selectors_ref,
+        ))?;
+        println!("[{}] goldens-only build complete", config.lang.as_str());
+        return Ok(());
+    }
+
+    let llm_provider = if !config.goldens_only && !config.hash_only {
         let rt = runtime.as_ref().expect("failed to initialize runtime for goldens");
         rt.block_on(ensure_goldens_built_once(
             config.host.clone(),
@@ -281,7 +313,15 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
             config.lang,
             selectors_ref,
         ))?;
-    }
+
+        let provider = make_provider_from_env()?;
+        let rt = runtime.as_ref().expect("failed to initialize runtime for preflight");
+        let routes = filter_routes(&config);
+        preflight_llm_routes(rt, provider.as_ref(), &routes, &modes)?;
+        Some(provider)
+    } else {
+        None
+    };
 
     let mut all_outcomes: Vec<RunOutcome> = Vec::new();
 
@@ -379,10 +419,10 @@ fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
     let provider = make_provider_from_env()?;
 
     let analysis_route = ModelRoute::new(
-        "gpt-4.1-mini",
+        "gpt-5.4-mini",
         xtask_llm_benchmark::llm::types::Vendor::OpenAi,
-        "gpt-4.1-mini",
-        Some("openai/gpt-4.1-mini"),
+        "gpt-5.4-mini",
+        Some("openai/gpt-5.4-mini"),
     );
 
     for ((lang, mode, model), group_failures) in &groups {
@@ -517,6 +557,59 @@ fn short_hash(s: &str) -> &str {
     &s[..s.len().min(12)]
 }
 
+fn should_fetch_remote_routes(args: &RunArgs) -> bool {
+    args.model_source == ModelSource::Remote
+        && args.models.is_none()
+        && args.route_overrides.is_none()
+        && !args.hash_only
+        && !args.goldens_only
+}
+
+fn preflight_llm_routes(
+    runtime: &Runtime,
+    llm_provider: &dyn LlmProvider,
+    routes: &[ModelRoute],
+    modes: &[String],
+) -> Result<()> {
+    if routes.is_empty() {
+        return Ok(());
+    }
+
+    let mut search_flags = Vec::new();
+    if modes.iter().any(|mode| mode == "search") {
+        search_flags.push(true);
+    }
+    if modes.iter().any(|mode| mode != "search") {
+        search_flags.push(false);
+    }
+
+    let mut failures = Vec::new();
+    for route in routes {
+        for search_enabled in &search_flags {
+            let mode_label = if *search_enabled {
+                "search/OpenRouter online"
+            } else {
+                "standard"
+            };
+
+            if let Err(err) = runtime.block_on(llm_provider.preflight_route(route, *search_enabled)) {
+                let msg = format!("{} ({mode_label}): {err:#}", route.display_name);
+                eprintln!("[preflight] FAILED {msg}");
+                failures.push(msg);
+            }
+        }
+    }
+
+    if !failures.is_empty() {
+        anyhow::bail!(
+            "LLM provider preflight failed before benchmark run:\n  - {}",
+            failures.join("\n  - ")
+        );
+    }
+
+    Ok(())
+}
+
 /// Run benchmarks for a single mode.
 fn run_mode_benchmarks(
     mode: &str,
@@ -535,15 +628,6 @@ fn run_mode_benchmarks(
     println!("{:<12} [{:<10}] hash: {}", mode, lang_str, short_hash(&hash));
 
     if config.hash_only {
-        return Ok(Vec::new());
-    }
-
-    if config.goldens_only {
-        let rt = runtime.expect("runtime required for --goldens-only");
-        let sels = config.selectors.as_deref();
-
-        rt.block_on(build_goldens_only_for_lang(config.host.clone(), bench_root, lang, sels))?;
-        println!("{:<12} [{:<10}] goldens-only build complete", mode, lang_str);
         return Ok(Vec::new());
     }
 
@@ -598,7 +682,12 @@ fn run_mode_benchmarks(
 /// When explicit `openrouter:vendor/model` entries are passed they won't appear in
 /// `default_model_routes`, so we synthesize ad-hoc routes for them here.
 fn filter_routes(config: &RunConfig) -> Vec<ModelRoute> {
-    let mut routes: Vec<ModelRoute> = default_model_routes()
+    let base_routes: Vec<ModelRoute> = config
+        .route_overrides
+        .clone()
+        .unwrap_or_else(|| default_model_routes().to_vec());
+
+    let mut routes: Vec<ModelRoute> = base_routes
         .iter()
         .filter(|r| config.providers_filter.as_ref().is_none_or(|f| f.contains(&r.vendor)))
         .filter(|r| match &config.model_filter {
@@ -627,6 +716,7 @@ fn filter_routes(config: &RunConfig) -> Vec<ModelRoute> {
                 let already_matched = routes.iter().any(|r| {
                     r.vendor == *vendor
                         && (r.api_model == model_id.as_str()
+                            || r.display_name.to_ascii_lowercase() == model_id.as_str()
                             || r.openrouter_model.as_deref() == Some(model_id.as_str()))
                 });
                 if !already_matched {
@@ -708,15 +798,13 @@ fn categories_to_set(v: Option<Vec<String>>) -> Option<HashSet<String>> {
 
 pub struct RuntimeInit {
     pub runtime: Option<Runtime>,
-    pub provider: Option<Arc<dyn LlmProvider>>,
     pub guard: Option<SpacetimeDbGuard>,
 }
 
-fn initialize_runtime_and_provider(hash_only: bool, goldens_only: bool) -> Result<RuntimeInit> {
+fn initialize_runtime(hash_only: bool) -> Result<RuntimeInit> {
     if hash_only {
         return Ok(RuntimeInit {
             runtime: None,
-            provider: None,
             guard: None,
         });
     }
@@ -726,18 +814,8 @@ fn initialize_runtime_and_provider(hash_only: bool, goldens_only: bool) -> Resul
 
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
 
-    if goldens_only {
-        return Ok(RuntimeInit {
-            runtime: Some(runtime),
-            provider: None,
-            guard: Some(spacetime),
-        });
-    }
-
-    let llm_provider = make_provider_from_env()?;
     Ok(RuntimeInit {
         runtime: Some(runtime),
-        provider: Some(llm_provider),
         guard: Some(spacetime),
     })
 }
@@ -753,8 +831,8 @@ fn find_bench_root() -> PathBuf {
     start.join("src").join("benchmarks")
 }
 
-fn collect_task_numbers_in_categories(bench_root: &Path, cats: &HashSet<String>) -> Result<HashSet<u32>> {
-    let mut nums = HashSet::new();
+fn collect_task_names_in_categories(bench_root: &Path, cats: &HashSet<String>) -> Result<HashSet<String>> {
+    let mut tasks = HashSet::new();
     for c in cats {
         let dir = bench_root.join(c);
         if !dir.is_dir() {
@@ -765,24 +843,38 @@ fn collect_task_numbers_in_categories(bench_root: &Path, cats: &HashSet<String>)
             if !entry.file_type()?.is_dir() {
                 continue;
             }
-            let name = entry.file_name().to_string_lossy().into_owned();
-            if let Some(rest) = name.strip_prefix("t_")
-                && let Some((num_str, _)) = rest.split_once('_')
-                && num_str.len() == 3
-                && let Ok(n) = num_str.parse::<u32>()
-            {
-                nums.insert(n);
-            }
+            tasks.insert(entry.file_name().to_string_lossy().to_ascii_lowercase());
         }
     }
-    Ok(nums)
+    Ok(tasks)
 }
 
-fn normalize_numeric_selectors(raw: &[String]) -> Vec<u32> {
-    raw.iter()
-        .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()))
-        .filter_map(|s| s.parse::<u32>().ok())
-        .collect()
+fn task_selector_matches_any(selector: &str, allowed_tasks: &HashSet<String>) -> bool {
+    allowed_tasks.iter().any(|task| task.starts_with(selector))
+}
+
+fn normalize_task_filter_selector(raw: &str) -> Result<String> {
+    let s = raw.trim().to_ascii_lowercase();
+    if s.is_empty() {
+        anyhow::bail!("empty task selector");
+    }
+    if let Some(rest) = s.strip_prefix("t_") {
+        if rest.chars().all(|c| c.is_ascii_digit()) {
+            let n: u32 = rest.parse()?;
+            return Ok(format!("t_{:03}", n));
+        }
+        if rest.chars().next().is_some_and(|c| c.is_ascii_digit())
+            && rest.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            return Ok(s);
+        }
+        anyhow::bail!("invalid task selector: {raw}");
+    }
+    if s.chars().all(|c| c.is_ascii_digit()) {
+        let n: u32 = s.parse()?;
+        return Ok(format!("t_{:03}", n));
+    }
+    anyhow::bail!("invalid task selector: {raw}")
 }
 
 fn apply_category_filter(
@@ -796,23 +888,148 @@ fn apply_category_filter(
             Ok(selectors.map(|s| s.to_vec()))
         }
         Some(cats) => {
-            let allowed = collect_task_numbers_in_categories(bench_root, cats)?;
-            let out_nums: Vec<u32> = match selectors {
+            let allowed = collect_task_names_in_categories(bench_root, cats)?;
+            let mut out: Vec<String> = match selectors {
                 Some(user) => {
-                    let nums = normalize_numeric_selectors(user);
-                    nums.into_iter().filter(|n| allowed.contains(n)).collect()
+                    let mut selected = Vec::new();
+                    for selector in user {
+                        let normalized = normalize_task_filter_selector(selector)?;
+                        if task_selector_matches_any(&normalized, &allowed) {
+                            selected.push(normalized);
+                        }
+                    }
+                    selected
                 }
                 None => {
-                    let mut v: Vec<u32> = allowed.into_iter().collect();
+                    let mut v: Vec<String> = allowed.into_iter().collect();
                     v.sort_unstable();
                     v
                 }
             };
-            if out_nums.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(out_nums.into_iter().map(|n| n.to_string()).collect()))
+            out.sort();
+            out.dedup();
+            if out.is_empty() {
+                anyhow::bail!("no tasks matched category/task filters");
             }
+            Ok(Some(out))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn base_run_args() -> RunArgs {
+        RunArgs {
+            modes: None,
+            lang: Lang::Rust,
+            hash_only: false,
+            goldens_only: false,
+            force: false,
+            categories: None,
+            tasks: None,
+            providers: None,
+            models: None,
+            model_source: ModelSource::Static,
+            dry_run: false,
+            local_analysis: false,
+            route_overrides: None,
+        }
+    }
+
+    fn base_config(route_overrides: Option<Vec<ModelRoute>>) -> RunConfig {
+        RunConfig {
+            modes: None,
+            hash_only: false,
+            goldens_only: false,
+            lang: Lang::Rust,
+            providers_filter: None,
+            selectors: None,
+            force: false,
+            categories: None,
+            model_filter: None,
+            host: None,
+            api_client: None,
+            dry_run: false,
+            local_analysis: false,
+            dry_run_id: None,
+            route_overrides,
+        }
+    }
+
+    #[test]
+    fn explicit_models_bypass_remote_model_source() {
+        let mut args = base_run_args();
+        args.model_source = ModelSource::Remote;
+        assert!(should_fetch_remote_routes(&args));
+
+        args.models = Some(vec![ModelGroup {
+            vendor: Vendor::OpenAi,
+            models: vec!["gpt-test".to_string()],
+        }]);
+        assert!(!should_fetch_remote_routes(&args));
+
+        args.dry_run = true;
+        assert!(!should_fetch_remote_routes(&args));
+    }
+
+    #[test]
+    fn filter_routes_uses_remote_route_override() {
+        let remote_route = ModelRoute::new(
+            "Remote Model",
+            Vendor::OpenRouter,
+            "openai/remote-model",
+            Some("openai/remote-model"),
+        );
+        let config = base_config(Some(vec![remote_route]));
+
+        let routes = filter_routes(&config);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].display_name, "Remote Model");
+        assert_eq!(routes[0].api_model, "openai/remote-model");
+    }
+
+    #[test]
+    fn filter_routes_does_not_synthesize_duplicate_for_display_name_match() {
+        let remote_route = ModelRoute::new(
+            "DeepSeek V4 Flash",
+            Vendor::DeepSeek,
+            "deepseek-v4-flash",
+            Some("deepseek/deepseek-v4-flash"),
+        );
+        let mut config = base_config(Some(vec![remote_route]));
+        let mut allowed = HashSet::new();
+        allowed.insert("deepseek v4 flash".to_string());
+        let mut filter = HashMap::new();
+        filter.insert(Vendor::DeepSeek, allowed);
+        config.model_filter = Some(filter);
+
+        let routes = filter_routes(&config);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].display_name, "DeepSeek V4 Flash");
+        assert_eq!(routes[0].api_model, "deepseek-v4-flash");
+    }
+
+    #[test]
+    fn category_filter_accepts_full_task_ids() {
+        let root = std::env::temp_dir().join(format!(
+            "llm-benchmark-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(root.join("basics").join("t_001_basic_tables")).unwrap();
+        fs::create_dir_all(root.join("schema").join("t_012_product_type")).unwrap();
+
+        let mut categories = HashSet::new();
+        categories.insert("basics".to_string());
+        let selectors = vec!["t_001_basic_tables".to_string(), "t_012_product_type".to_string()];
+
+        let filtered = apply_category_filter(&root, Some(&categories), Some(&selectors)).unwrap();
+        fs::remove_dir_all(&root).unwrap();
+
+        assert_eq!(filtered, Some(vec!["t_001_basic_tables".to_string()]));
     }
 }

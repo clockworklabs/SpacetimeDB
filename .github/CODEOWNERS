@@ -8,9 +8,11 @@ LICENSE.txt @cloutiertyler
 /crates/cli/src/ @bfops @cloutiertyler @jdetter
 /tools/ci/ @bfops @cloutiertyler @jdetter
 /tools/ci/src/keynote_bench.rs @joshua-spacetime @cloutiertyler @jdetter
-/tools/upgrade-version/ @bfops @jdetter @cloutiertyler
+/tools/upgrade-version/ @bfops @jdetter @cloutiertyler @rekhoff
+/tools/release/ @bfops @jdetter @cloutiertyler @rekhoff
 /tools/license-check/ @bfops @jdetter @cloutiertyler
 /.github/ @bfops @jdetter @cloutiertyler
+/.github/workflows/release.yml @bfops @jdetter @cloutiertyler @rekhoff
 
 /crates/sdk/examples/quickstart-chat/ @gefjon
 /modules/quickstart-chat/ @gefjon

@@ -1,5 +1,12 @@
+use std::path::PathBuf;
+
 use serde_json::{json, Value};
-use spacetimedb_smoketests::{require_dotnet, require_pnpm, ModuleLanguage, Smoketest};
+use spacetimedb_smoketests::{
+    random_string, require_dotnet, require_local_server, require_pnpm, workspace_root, ModuleLanguage, Smoketest,
+};
+
+const STALE_VIEW_BACKING_TABLE_FIXTURE_IDENTITY: &str =
+    "c200f6ec405075e508c2ed6474019332d6a2a46c69614306cc4bd980e0b8b767";
 
 const TS_VIEWS_SUBSCRIBE_MODULE: &str = r#"import { schema, t, table } from "spacetimedb/server";
 
@@ -216,6 +223,27 @@ fn project_fields(events: Vec<Value>, view_name: &str, projected_fields: &[&str]
             })
         })
         .collect()
+}
+
+fn stale_view_backing_table_fixture() -> PathBuf {
+    workspace_root()
+        .join("crates")
+        .join("smoketests")
+        .join("fixtures")
+        .join("stale-view-backing-table-v2.6.0")
+}
+
+fn stale_view_backing_table_test() -> Smoketest {
+    let test = Smoketest::builder()
+        .data_dir_fixture(
+            stale_view_backing_table_fixture(),
+            STALE_VIEW_BACKING_TABLE_FIXTURE_IDENTITY,
+        )
+        .autopublish(false)
+        .build();
+
+    test.new_identity().unwrap();
+    test
 }
 
 fn assert_count_view_refresh_behavior(test: &Smoketest, view_name: &str, id: &str, value: &str, updated_value: &str) {
@@ -622,6 +650,78 @@ fn test_view_primary_key_auto_migration_disconnects_clients() {
 }
 
 #[test]
+fn test_repair_stale_sender_scoped_view_backing_table_on_startup() {
+    require_local_server!();
+
+    let test = stale_view_backing_table_test();
+
+    let sender_view_sub = test
+        .subscribe(&["select * from player"])
+        .expect_rows(2)
+        .background()
+        .unwrap();
+
+    test.call("set_player_state", &["42", "1"]).unwrap();
+    test.call("set_player_state", &["42", "2"]).unwrap();
+
+    let sender_view_events = sender_view_sub.collect().unwrap();
+    let sender_view_projection = project_fields(sender_view_events, "player", &["id", "level"]);
+    assert_eq!(
+        serde_json::json!(sender_view_projection),
+        json!([
+            {
+                "player": {
+                    "deletes": [],
+                    "inserts": [{ "id": 42, "level": 1 }]
+                }
+            },
+            {
+                "player": {
+                    "deletes": [{ "id": 42, "level": 1 }],
+                    "inserts": [{ "id": 42, "level": 2 }]
+                }
+            }
+        ])
+    );
+}
+
+#[test]
+fn test_repair_stale_anonymous_view_backing_table_on_startup() {
+    require_local_server!();
+
+    let test = stale_view_backing_table_test();
+
+    let anonymous_view_sub = test
+        .subscribe(&["select * from player_and_level"])
+        .expect_rows(2)
+        .background()
+        .unwrap();
+
+    test.call("add_player_level", &["1", "2"]).unwrap();
+    test.call("add_player_level", &["2", "2"]).unwrap();
+
+    let anonymous_view_events = anonymous_view_sub.collect().unwrap();
+    let anonymous_view_projection = project_fields(anonymous_view_events, "player_and_level", &["id", "level"]);
+    assert_eq!(
+        serde_json::json!(anonymous_view_projection),
+        json!([
+            {
+                "player_and_level": {
+                    "deletes": [],
+                    "inserts": [{ "id": 1, "level": 2 }]
+                }
+            },
+            {
+                "player_and_level": {
+                    "deletes": [],
+                    "inserts": [{ "id": 2, "level": 2 }]
+                }
+            }
+        ])
+    );
+}
+
+#[test]
 fn test_view_accessibility() {
     let test = Smoketest::builder().precompiled_module("views-callable").build();
 
@@ -781,8 +881,9 @@ fn test_procedure_triggers_subscription_updates() {
 fn test_typescript_procedure_triggers_subscription_updates() {
     require_pnpm!();
     let mut test = Smoketest::builder().autopublish(false).build();
+    let database_name = format!("views-subscribe-typescript-{}", random_string());
     test.publish()
-        .name("views-subscribe-typescript")
+        .name(&database_name)
         .source(
             ModuleLanguage::TypeScript,
             "views-subscribe-typescript",
@@ -833,8 +934,9 @@ fn test_typescript_count_view_subscription_refreshes() {
     require_pnpm!();
 
     let mut test = Smoketest::builder().autopublish(false).build();
+    let database_name = format!("views-count-typescript-{}", random_string());
     test.publish()
-        .name("views-count-typescript")
+        .name(&database_name)
         .source(
             ModuleLanguage::TypeScript,
             "views-count-typescript",
@@ -931,8 +1033,9 @@ fn test_disconnect_does_not_break_anonymous_view() {
 fn test_typescript_query_builder_view_query() {
     require_pnpm!();
     let mut test = Smoketest::builder().autopublish(false).build();
+    let database_name = format!("views-query-builder-typescript-{}", random_string());
     test.publish()
-        .name("views-query-builder-typescript")
+        .name(&database_name)
         .source(
             ModuleLanguage::TypeScript,
             "views-query-builder-typescript",

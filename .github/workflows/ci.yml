@@ -110,6 +110,15 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Enable sccache
+        shell: bash
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >>"$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >>"$GITHUB_ENV"
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
@@ -175,7 +184,13 @@ jobs:
           cd modules
           # the sdk-manifests on windows-latest are messed up, so we need to update them
           dotnet workload config --update-mode manifests
-          dotnet workload update
+          dotnet workload update --from-previous-sdk
+          # Explicitly install wasi-experimental for .NET 8 SDK (needed for test_build_csharp_module)
+          # Create temp global.json to target .NET 8 SDK for workload install
+          $sdk8Json = '{"sdk":{"version":"8.0.400","rollForward":"latestFeature"}}'
+          $sdk8Json | Out-File -FilePath global.json -Encoding utf8
+          dotnet workload install wasi-experimental
+          Remove-Item global.json
 
       - name: Override NuGet packages
         shell: bash
@@ -194,10 +209,10 @@ jobs:
         shell: bash
         run: |
           find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
+          if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
             echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean -p v8 || true
-            cargo build -p v8
+            cargo clean --release -p v8 || true
+            cargo build --release -p v8
           fi
 
       - name: Install cargo-nextest
@@ -281,6 +296,16 @@ jobs:
           save-if: false
           prefix-key: v1
 
+      - name: Check v8 outputs
+        shell: bash
+        run: |
+          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
+          if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
+            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
+            cargo clean --release -p v8 || true
+            cargo build --release -p v8
+          fi
+
       - uses: actions/setup-dotnet@v3
         with:
           global-json-file: global.json
@@ -328,9 +353,6 @@ jobs:
 
           wasm-bindgen --version
 
-      - name: Check engine simulation build
-        run: cargo check -p spacetimedb-engine --no-default-features --features simulation
-
         # Source emsdk environment to make emcc (Emscripten compiler) available in PATH.
       - name: Run tests
         run: |
@@ -367,21 +389,6 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
 
-      - uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          save-if: false
-          prefix-key: v1
-
-      - name: Build keynote benchmark binaries
-        run: cargo build --release -p spacetimedb-cli -p spacetimedb-standalone
-
       # Node 24 is the current Active LTS line.
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -390,11 +397,14 @@ jobs:
 
       - uses: ./.github/actions/setup-pnpm
         with:
-          run_install: true
+          package_json_file: package.json
+          working_directory: .
+          run_install: "true"
 
-      - name: Build TypeScript SDK
-        run: pnpm build
-        working-directory: crates/bindings-typescript
+      - uses: ./.github/actions/keynote-bench-setup
+        with:
+          public_root: .
+          rust_cache_workspaces: ${{ github.workspace }}
 
       - name: Run keynote-2 benchmark regression check
         run: cargo ci keynote-bench
@@ -433,16 +443,24 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Enable sccache
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >>"$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >>"$GITHUB_ENV"
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          save-if: false
+          shared-key: spacetimedb-index-scan
+          cache-on-failure: false
           prefix-key: v1
 
       - name: Run index scan benchmark regression check
-        run: cargo bench -p spacetimedb-bench --bench index_scan_gate
+        run: cargo run --release -p spacetimedb-index-scan-gate
 
   lints:
     needs: [merge_queue_noop]
@@ -1063,6 +1081,16 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Install .NET workloads
+        run: |
+          dotnet workload config --update-mode manifests
+          dotnet workload update --from-previous-sdk
+          # Explicitly install wasi-experimental for .NET 8 SDK (needed for test_build_csharp_module)
+          # Create temp global.json to target .NET 8 SDK for workload install
+          echo '{"sdk":{"version":"8.0.100","rollForward":"latestFeature"}}' > global.json
+          dotnet workload install wasi-experimental
+          rm global.json
+
       - name: Override NuGet packages
         run: |
           dotnet pack crates/bindings-csharp/BSATN.Runtime
@@ -1134,9 +1162,11 @@ jobs:
 
       - name: Check quickstart-chat bindings are up to date
         run: |
-          bash sdks/csharp/tools~/gen-quickstart.sh
+          for dotnet_version in 8 10; do
+            bash sdks/csharp/tools~/gen-quickstart.sh "$dotnet_version"
+          done
           tools/check-diff.sh templates/chat-console-cs/module_bindings || {
-              echo 'Error: quickstart-chat bindings have changed. Please run `sdks/csharp/tools~/gen-quickstart.sh`.'
+              echo 'Error: quickstart-chat bindings have changed. Please run `sdks/csharp/tools~/gen-quickstart.sh 10`.'
               exit 1
           }
 
@@ -1158,6 +1188,21 @@ jobs:
       - name: Run regression tests
         run: |
           bash sdks/csharp/tools~/run-regression-tests.sh
+          # Restore global.json symlinks (we replaced them with files to work around .NET 10 SDK bug)
+          # server is 5 levels deep from root, republishing dirs are 6 levels deep
+          if [ -f sdks/csharp/examples~/regression-tests/server/global.json ] && [ ! -L sdks/csharp/examples~/regression-tests/server/global.json ]; then
+            echo "Restoring symlink at server/global.json"
+            rm -f sdks/csharp/examples~/regression-tests/server/global.json
+            ln -s ../../../../../global.json sdks/csharp/examples~/regression-tests/server/global.json
+          fi
+          for dir in sdks/csharp/examples~/regression-tests/republishing/server-initial \
+                     sdks/csharp/examples~/regression-tests/republishing/server-republish; do
+            if [ -f "$dir/global.json" ] && [ ! -L "$dir/global.json" ]; then
+              echo "Restoring symlink at $dir/global.json"
+              rm -f "$dir/global.json"
+              ln -s ../../../../../../global.json "$dir/global.json"
+            fi
+          done
           tools/check-diff.sh sdks/csharp/examples~/regression-tests || {
               echo 'Error: Bindings are dirty. Please run `sdks/csharp/tools~/gen-regression-tests.sh`.'
               exit 1

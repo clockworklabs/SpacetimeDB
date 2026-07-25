@@ -13,16 +13,16 @@ pub struct ModelRoute {
 static DEFAULT_ROUTES: LazyLock<Vec<ModelRoute>> = LazyLock::new(|| {
     use Vendor::*;
     vec![
-        // OpenAI: Best GPT-5.2-Codex, Cheaper GPT-5-mini
-        ModelRoute::new("GPT-5.2-Codex", OpenAi, "gpt-5.2-codex", Some("openai/gpt-5.2-codex")),
-        ModelRoute::new("GPT-5-mini", OpenAi, "gpt-5-mini", Some("openai/gpt-5-mini")),
-        // Claude: Best Opus 4.6, Cheaper Sonnet 4.6
-        // Direct API uses dashes (claude-opus-4-6); OpenRouter uses dots (claude-opus-4.6)
+        // OpenAI: Best GPT-5.5, Cheaper GPT-5.4-mini
+        ModelRoute::new("GPT-5.5", OpenAi, "gpt-5.5", Some("openai/gpt-5.5")),
+        ModelRoute::new("GPT-5.4-mini", OpenAi, "gpt-5.4-mini", Some("openai/gpt-5.4-mini")),
+        // Claude: Best Opus 4.8, Cheaper Sonnet 4.6
+        // Direct API uses dashes (claude-opus-4-8); OpenRouter uses dots (claude-opus-4.8)
         ModelRoute::new(
-            "Claude Opus 4.6",
+            "Claude Opus 4.8",
             Anthropic,
-            "claude-opus-4-6",
-            Some("anthropic/claude-opus-4.6"),
+            "claude-opus-4-8",
+            Some("anthropic/claude-opus-4.8"),
         ),
         ModelRoute::new(
             "Claude Sonnet 4.6",
@@ -30,9 +30,9 @@ static DEFAULT_ROUTES: LazyLock<Vec<ModelRoute>> = LazyLock::new(|| {
             "claude-sonnet-4-6",
             Some("anthropic/claude-sonnet-4.6"),
         ),
-        // Grok: Best Grok 4, Cheaper Grok Code
-        ModelRoute::new("Grok 4", Xai, "grok-4", Some("x-ai/grok-4.20-beta")),
-        ModelRoute::new("Grok Code", Xai, "grok-code-fast-1", Some("x-ai/grok-code-fast-1")),
+        // Grok: Best Grok 4.3, coding-specialized Grok Build
+        ModelRoute::new("Grok 4.3", Xai, "grok-4.3", Some("x-ai/grok-4.3")),
+        ModelRoute::new("Grok Build 0.1", Xai, "grok-build-0.1", Some("x-ai/grok-build-0.1")),
         // Gemini: direct via GOOGLE_API_KEY, falls back to OpenRouter if not set
         ModelRoute::new(
             "Gemini 3.1 Pro",
@@ -41,24 +41,23 @@ static DEFAULT_ROUTES: LazyLock<Vec<ModelRoute>> = LazyLock::new(|| {
             Some("google/gemini-3.1-pro-preview"),
         ),
         ModelRoute::new(
-            "Gemini 3 Flash",
+            "Gemini 3.5 Flash",
             Google,
-            "gemini-3-flash-preview",
-            Some("google/gemini-3-flash-preview"),
+            "gemini-3.5-flash",
+            Some("google/gemini-3.5-flash"),
         ),
-        // DeepSeek: Reasoner (thinking), Chat (general)
-        // deepseek-reasoner is listed as deepseek-r1 on OpenRouter
+        // DeepSeek: Pro (highest capability), Flash (cheaper/faster)
         ModelRoute::new(
-            "DeepSeek Reasoner",
+            "DeepSeek V4 Pro",
             DeepSeek,
-            "deepseek-reasoner",
-            Some("deepseek/deepseek-r1"),
+            "deepseek-v4-pro",
+            Some("deepseek/deepseek-v4-pro"),
         ),
         ModelRoute::new(
-            "DeepSeek Chat",
+            "DeepSeek V4 Flash",
             DeepSeek,
-            "deepseek-chat",
-            Some("deepseek/deepseek-chat"),
+            "deepseek-v4-flash",
+            Some("deepseek/deepseek-v4-flash"),
         ),
     ]
 });

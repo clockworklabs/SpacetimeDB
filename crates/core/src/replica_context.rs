@@ -4,6 +4,7 @@ use super::database_logger::DatabaseLogger;
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use crate::messages::control_db::Database;
+use crate::resource::ModuleInstanceMemoryTracker;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use std::io;
 use std::ops::Deref;
@@ -18,6 +19,7 @@ pub struct ReplicaContext {
     pub replica_id: u64,
     pub logger: Arc<DatabaseLogger>,
     pub subscriptions: ModuleSubscriptions,
+    pub module_instance_memory_tracker: ModuleInstanceMemoryTracker,
 }
 
 impl ReplicaContext {

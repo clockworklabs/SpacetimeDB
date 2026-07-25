@@ -117,6 +117,16 @@ pub trait BlobStore: Sync {
             .sum()
     }
 
+    /// Returns the physical bytes represented by unique blob entries.
+    ///
+    /// This counts each unique [`BlobHash`] key once plus the payload bytes for that key.
+    /// It intentionally does not consider refcounts, as it is primarily used for memory tracking.
+    fn physical_bytes_used_by_blobs(&self) -> u64 {
+        self.iter_blobs()
+            .map(|(_, _, data)| data.len() as u64 + mem::size_of::<BlobHash>() as u64)
+            .sum()
+    }
+
     /// Returns the number of blobs, or more precisely, blob-usages, recorded in this `BlobStore`.
     ///
     /// Duplicate blobs are counted a number of times equal to their refcount.
@@ -165,11 +175,16 @@ pub struct HashMapBlobStore {
     /// For testing, we use a hash map with a reference count
     /// to handle freeing and cloning correctly.
     map: HashMap<BlobHash, BlobObject>,
+    /// Total number of bytes in the map used by blobs and their keys
+    physical_blob_payload_bytes: u64,
 }
 
 impl MemoryUsage for HashMapBlobStore {
     fn heap_usage(&self) -> usize {
-        let Self { map } = self;
+        let Self {
+            map,
+            physical_blob_payload_bytes: _,
+        } = self;
         map.heap_usage()
     }
 }
@@ -198,22 +213,28 @@ impl BlobStore for HashMapBlobStore {
 
     fn insert_blob(&mut self, bytes: &[u8]) -> BlobHash {
         let hash = BlobHash::hash_from_bytes(bytes);
-        self.map
-            .entry(hash)
-            .and_modify(|v| v.uses += 1)
-            .or_insert_with(|| BlobObject {
-                blob: bytes.into(),
-                uses: 1,
-            });
+        match self.map.entry(hash) {
+            Entry::Occupied(mut entry) => entry.get_mut().uses += 1,
+            Entry::Vacant(entry) => {
+                self.physical_blob_payload_bytes += bytes.len() as u64;
+                entry.insert(BlobObject {
+                    blob: bytes.into(),
+                    uses: 1,
+                });
+            }
+        }
         hash
     }
 
     fn insert_with_uses(&mut self, hash: &BlobHash, uses: usize, bytes: Box<[u8]>) {
         debug_assert_eq!(hash, &BlobHash::hash_from_bytes(&bytes));
-        self.map
-            .entry(*hash)
-            .and_modify(|v| v.uses += uses)
-            .or_insert_with(|| BlobObject { blob: bytes, uses });
+        match self.map.entry(*hash) {
+            Entry::Occupied(mut entry) => entry.get_mut().uses += uses,
+            Entry::Vacant(entry) => {
+                self.physical_blob_payload_bytes += bytes.len() as u64;
+                entry.insert(BlobObject { blob: bytes, uses });
+            }
+        }
     }
 
     fn retrieve_blob(&self, hash: &BlobHash) -> Result<&[u8], NoSuchBlobError> {
@@ -223,7 +244,10 @@ impl BlobStore for HashMapBlobStore {
     fn free_blob(&mut self, hash: &BlobHash) -> Result<(), NoSuchBlobError> {
         match self.map.entry(*hash) {
             Entry::Vacant(_) => return Err(NoSuchBlobError),
-            Entry::Occupied(entry) if entry.get().uses == 1 => drop(entry.remove()),
+            Entry::Occupied(entry) if entry.get().uses == 1 => {
+                let removed = entry.remove();
+                self.physical_blob_payload_bytes -= removed.blob.len() as u64;
+            }
             Entry::Occupied(mut entry) => entry.get_mut().uses -= 1,
         }
         Ok(())
@@ -232,14 +256,27 @@ impl BlobStore for HashMapBlobStore {
     fn iter_blobs(&self) -> BlobsIter<'_> {
         Box::new(self.map.iter().map(|(hash, obj)| (hash, obj.uses, &obj.blob[..])))
     }
+
+    fn physical_bytes_used_by_blobs(&self) -> u64 {
+        self.physical_blob_payload_bytes + self.map.len() as u64 * mem::size_of::<BlobHash>() as u64
+    }
 }
 
 impl HashMapBlobStore {
     /// Merge `src_bs` into `self`.
     pub fn merge_from(&mut self, src_bs: Self) {
-        for (hash, mut obj) in src_bs.map {
-            let uses = mem::take(&mut obj.uses);
-            self.map.entry(hash).or_insert(obj).uses += uses;
+        let Self {
+            map,
+            physical_blob_payload_bytes: _,
+        } = src_bs;
+        for (hash, obj) in map {
+            match self.map.entry(hash) {
+                Entry::Occupied(mut entry) => entry.get_mut().uses += obj.uses,
+                Entry::Vacant(entry) => {
+                    self.physical_blob_payload_bytes += obj.blob.len() as u64;
+                    entry.insert(obj);
+                }
+            }
         }
     }
 }

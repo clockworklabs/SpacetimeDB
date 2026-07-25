@@ -120,7 +120,7 @@ ctx.db.entity().identity().find(ctx.sender());                     // Find by un
 ctx.db.item().author_id().filter(author_id);                       // Filter by index → iterator
 ctx.db.entity().iter();                                            // All rows → iterator
 ctx.db.entity().count();                                           // Count rows
-ctx.db.entity().id().update(Entity { ..existing, name: new_name }); // Update (spread + override)
+ctx.db.entity().id().update(Entity { name: new_name, ..existing }); // Update (override + spread)
 ctx.db.entity().id().delete(entity_id);                            // Delete by PK
 ctx.db.entity().name().delete("Alice");                            // Delete by indexed column
 ```
@@ -164,7 +164,7 @@ fn my_profile(ctx: &ViewContext) -> Option<Entity> {
 
 ## Reducer Context API
 
-`ReducerContext` is the single source of sender identity, deterministic time, and deterministic randomness inside a reducer. Always go through `ctx` for these. Standard library clocks and random sources are not available in modules.
+`ReducerContext` (`ctx`) is the only source of sender identity, time, and randomness; stdlib clocks and RNG are unavailable in modules.
 
 ```rust
 // Auth: ctx.sender() is the caller's Identity

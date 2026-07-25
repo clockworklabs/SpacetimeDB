@@ -32,7 +32,7 @@ use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, HashSet}
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
-use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
+use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, TxData};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::ExecutionParams;
@@ -42,7 +42,6 @@ use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
 use spacetimedb_lib::{bsatn, identity::AuthCtx};
 use spacetimedb_physical_plan::plan::ProjectPlan;
-use spacetimedb_primitives::ArgId;
 use spacetimedb_schema::def::RawModuleDefVersion;
 use spacetimedb_table::static_assert_size;
 use std::{
@@ -1855,7 +1854,7 @@ impl ModuleSubscriptions {
     /// and subsequently downgrades to a read-only transaction.
     ///
     /// Unlike [`Self::materialize_views_and_downgrade_tx`] which populates the views' backing tables,
-    /// this method just decrements the subscriber count in `st_view_sub`.
+    /// this method just decrements the subscriber count in view lifecycle state.
     /// Views without any subscribers are cleaned up async.
     fn unsubscribe_views_and_downgrade_tx(
         &self,
@@ -1869,7 +1868,7 @@ impl ModuleSubscriptions {
         Ok(self.guard_tx(tx, opts))
     }
 
-    /// We unsubscribe from views by decrementing the subscriber count in `st_view_sub`.
+    /// We unsubscribe from views by decrementing the subscriber count in the view lifecycle state.
     /// Views without any subscribers are cleaned up async.
     fn _unsubscribe_views(
         tx: &mut MutTxId,
@@ -1879,7 +1878,13 @@ impl ModuleSubscriptions {
         let mut view_ids = HashSet::new();
         view_collector.collect_views(&mut view_ids);
         for view_id in view_ids {
-            tx.unsubscribe_view(view_id, ArgId::SENTINEL, sender)?;
+            let is_anonymous = tx.lookup_st_view(view_id)?.is_anonymous;
+            let view_call = if is_anonymous {
+                ViewCallInfo::anonymous(view_id)
+            } else {
+                ViewCallInfo::sender(view_id, sender)
+            };
+            tx.unsubscribe_view(view_call, sender)?;
         }
         Ok(())
     }

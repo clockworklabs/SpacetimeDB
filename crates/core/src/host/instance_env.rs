@@ -1347,6 +1347,7 @@ mod test {
         host::Scheduler,
         messages::control_db::{Database, HostType},
         replica_context::ReplicaContext,
+        resource::ModuleInstanceMemoryTracker,
         subscription::module_subscription_actor::ModuleSubscriptions,
     };
     use anyhow::{anyhow, Result};
@@ -1376,10 +1377,12 @@ mod test {
                     owner_identity: Identity::ZERO,
                     host_type: HostType::Wasm,
                     initial_program: Hash::ZERO,
+                    bootstrap_generation: 0,
                 },
                 replica_id: 0,
                 logger,
                 subscriptions: subs,
+                module_instance_memory_tracker: ModuleInstanceMemoryTracker::new(Identity::ZERO, Arc::new(())),
             },
             runtime,
         ))

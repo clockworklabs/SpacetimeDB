@@ -1,6 +1,6 @@
 use spacetimedb::{
-    duration, procedure, reducer, table, DbContext, ProcedureContext, ReducerContext, ScheduleAt, SpacetimeType, Table,
-    Timestamp, TxContext, Uuid,
+    duration, procedure, reducer, table, ProcedureContext, ReducerContext, ScheduleAt, SpacetimeType, Table, Timestamp,
+    TxContext, Uuid,
 };
 
 #[derive(SpacetimeType)]
@@ -108,7 +108,7 @@ fn insert_with_tx_rollback(ctx: &mut ProcedureContext) {
 #[reducer]
 fn schedule_proc(ctx: &ReducerContext) {
     // Schedule the procedure to run in 1s.
-    ctx.db().scheduled_proc_table().insert(ScheduledProcTable {
+    ctx.db.scheduled_proc_table().insert(ScheduledProcTable {
         scheduled_id: 0,
         scheduled_at: duration!("1000ms").into(),
         // Store the timestamp at which this reducer was called.
@@ -136,7 +136,7 @@ fn scheduled_proc(ctx: &mut ProcedureContext, data: ScheduledProcTable) {
     let ScheduledProcTable { reducer_ts, x, y, .. } = data;
     let procedure_ts = ctx.timestamp;
     ctx.with_tx(|ctx| {
-        ctx.db().proc_inserts_into().insert(ProcInsertsInto {
+        ctx.db.proc_inserts_into().insert(ProcInsertsInto {
             reducer_ts,
             procedure_ts,
             x,

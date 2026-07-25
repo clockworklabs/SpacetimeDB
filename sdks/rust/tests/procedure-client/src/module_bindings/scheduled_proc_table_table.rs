@@ -18,6 +18,18 @@ pub struct ScheduledProcTableTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `scheduled_proc_table`.
+pub struct ScheduledProcTableTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for ScheduledProcTableTableAccessor {
+    type Row = ScheduledProcTable;
+    type Handle<'db> = ScheduledProcTableTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.scheduled_proc_table()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `scheduled_proc_table`.
 ///
@@ -39,6 +51,18 @@ impl ScheduledProcTableTableAccess for super::RemoteTables {
 
 pub struct ScheduledProcTableInsertCallbackId(__sdk::CallbackId);
 pub struct ScheduledProcTableDeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for ScheduledProcTableTableHandle<'ctx> {
+    type Row = ScheduledProcTable;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = ScheduledProcTable> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for ScheduledProcTableTableHandle<'ctx> {
     type Row = ScheduledProcTable;
@@ -78,9 +102,54 @@ impl<'ctx> __sdk::Table for ScheduledProcTableTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithInsert for ScheduledProcTableTableHandle<'ctx> {
+    type InsertCallbackId = ScheduledProcTableInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> ScheduledProcTableInsertCallbackId {
+        ScheduledProcTableInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: ScheduledProcTableInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for ScheduledProcTableTableHandle<'ctx> {
+    type DeleteCallbackId = ScheduledProcTableDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> ScheduledProcTableDeleteCallbackId {
+        ScheduledProcTableDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: ScheduledProcTableDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
 pub struct ScheduledProcTableUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for ScheduledProcTableTableHandle<'ctx> {
+    type UpdateCallbackId = ScheduledProcTableUpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> ScheduledProcTableUpdateCallbackId {
+        ScheduledProcTableUpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: ScheduledProcTableUpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithUpdate for ScheduledProcTableTableHandle<'ctx> {
     type UpdateCallbackId = ScheduledProcTableUpdateCallbackId;
 
     fn on_update(

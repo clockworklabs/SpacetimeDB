@@ -39,3 +39,24 @@ declare_tests! {
     test_codegen_typescript => TypeScript,
     test_codegen_rust => Rust,
 }
+
+#[test]
+fn test_typescript_table_handles_are_camel_case() {
+    let module = compiled_module();
+    let index = generate(module, &TypeScript, &CodegenOptions::default())
+        .into_iter()
+        .find(|file| file.filename == "index.ts")
+        .expect("typescript codegen should emit index.ts")
+        .code;
+
+    assert!(index.contains("loggedOutPlayer: __table({"));
+    assert!(!index.contains("logged_out_player: __table({"));
+    assert!(index.contains("myPlayer: __table({"));
+    assert!(!index.contains("my_player: __table({"));
+    assert!(index.contains(r#""logged_out_player": "loggedOutPlayer""#));
+    assert!(index.contains(r#"readonly "logged_out_player": __TablesBase["loggedOutPlayer"];"#));
+    assert!(index.contains(r#"readonly "logged_out_player": __DbViewBase["loggedOutPlayer"];"#));
+    assert!(index.contains(
+        r#"/** @deprecated Use `loggedOutPlayer` instead. This alias will be removed in the next major version. */"#
+    ));
+}

@@ -8,7 +8,7 @@ TABLES
     - age: number (i32)
     - active: boolean
 
-- result
+- result (public)
   - Fields:
     - id: number (u64, primary key)
     - name: string

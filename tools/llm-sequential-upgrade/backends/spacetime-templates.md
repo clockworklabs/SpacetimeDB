@@ -10,6 +10,9 @@
   "version": "1.0.0",
   "dependencies": {
     "spacetimedb": "^2.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
   }
 }
 ```
@@ -20,7 +23,7 @@
   "compilerOptions": {
     "target": "ES2020",
     "module": "ESNext",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -50,8 +53,7 @@ Why this structure? Avoids circular dependency issues between tables and reducer
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "kill-port": "npx kill-port 6173 2>nul || true",
-    "dev": "npm run kill-port && vite",
+    "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },
@@ -99,8 +101,8 @@ export default defineConfig({
     "noEmit": true,
     "jsx": "react-jsx",
     "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"]

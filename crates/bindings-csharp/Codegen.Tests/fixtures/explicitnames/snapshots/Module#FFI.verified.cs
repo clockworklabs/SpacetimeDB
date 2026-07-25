@@ -559,7 +559,7 @@ static class ModuleRegistration
     public static List<T> ToListOrEmpty<T>(T? value)
         where T : class => value is null ? new List<T>() : new List<T> { value };
 
-#if EXPERIMENTAL_WASM_AOT
+#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
     // In AOT mode we're building a library.
     // Main method won't be called automatically, so we need to export it as a preinit function.
     [UnmanagedCallersOnly(EntryPoint = "__preinit__10_init_csharp")]
@@ -628,7 +628,7 @@ static class ModuleRegistration
     }
 
     // Exports only work from the main assembly, so we need to generate forwarding methods.
-#if EXPERIMENTAL_WASM_AOT
+#if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
     [UnmanagedCallersOnly(EntryPoint = "__describe_module__")]
     public static void __describe_module__(SpacetimeDB.Internal.BytesSink d) =>
         SpacetimeDB.Internal.Module.__describe_module__(d);

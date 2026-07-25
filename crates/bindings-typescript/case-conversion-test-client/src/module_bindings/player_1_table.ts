@@ -12,10 +12,10 @@ import {
 import { Player2Status } from './types';
 
 export default __t.row({
-  player1Id: __t.u32().primaryKey().name('Player1Id'),
+  player1Id: __t.u32().primaryKey().name('player_1_id'),
   playerName: __t.string().name('player_name'),
-  currentLevel2: __t.u32(),
+  currentLevel2: __t.u32().name('current_level_2'),
   get status3Field() {
-    return Player2Status;
+    return Player2Status.name('status_3_field');
   },
 });

@@ -21,6 +21,7 @@ import {
   type RowObj,
   type TypeBuilder,
 } from '../lib/type_builders';
+import type { IsUnion } from '../lib/type_util';
 import { bsatnBaseSize, toPascalCase } from '../lib/util';
 import type { ReadonlyDbView } from './db_view';
 import { type QueryBuilder, type RowTypedQuery } from './query';
@@ -121,18 +122,6 @@ type PrimaryKeyColumnNames<Row extends RowObj> = {
       : never
     : never;
 }[keyof Row & string];
-
-// Standard conditional-type trick for distinguishing a single type from a
-// union. We use it because zero or one primary-key column is valid, but a union
-// of two or more column names means the row builder marked multiple primary
-// keys.
-type IsUnion<T, U = T> = [T] extends [never]
-  ? false
-  : T extends any
-    ? [U] extends [T]
-      ? false
-      : true
-    : false;
 
 // In generic code, row keys may widen from literal names like "id" | "name"
 // to plain `string`. That means "unknown column name", not "multiple primary

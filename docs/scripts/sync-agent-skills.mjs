@@ -11,13 +11,13 @@ const outputDir = path.join(
   'docs/static/.well-known/agent-skills'
 );
 function readFrontmatter(markdown, sourcePath) {
-  const match = markdown.match(/^---\n([\s\S]*?)\n---\n/);
+  const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
   if (!match) {
     throw new Error(`${sourcePath} is missing YAML frontmatter`);
   }
 
   const frontmatter = {};
-  for (const line of match[1].split('\n')) {
+  for (const line of match[1].split(/\r?\n/)) {
     const field = line.match(/^([a-zA-Z0-9_-]+):\s*(.*)$/);
     if (field) {
       frontmatter[field[1]] = field[2].replace(/^"(.*)"$/, '$1');

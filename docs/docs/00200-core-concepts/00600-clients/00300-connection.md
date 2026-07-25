@@ -26,9 +26,10 @@ Create a connection using the `DbConnection` builder pattern:
 ```typescript
 import { DbConnection } from './module_bindings';
 
-const conn = new DbConnection.builder()
+const conn = DbConnection.builder()
     .withUri("https://maincloud.spacetimedb.com")
-    .withDatabaseName("my_database");
+    .withDatabaseName("my_database")
+    .build();
 ```
 
 </TabItem>
@@ -80,9 +81,10 @@ To connect to a database hosted on MainCloud:
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-const conn = new DbConnection.builder()
+const conn = DbConnection.builder()
     .withUri("https://maincloud.spacetimedb.com")
-    .withDatabaseName("my_database");
+    .withDatabaseName("my_database")
+    .build();
 ```
 
 </TabItem>
@@ -126,10 +128,11 @@ To authenticate with a token (for example, from [SpacetimeAuth](../00500-authent
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-const conn = new DbConnection.builder()
+const conn = DbConnection.builder()
     .withUri("https://maincloud.spacetimedb.com")
     .withDatabaseName("my_database")
-    .withToken("your_auth_token_here");
+    .withToken("your_auth_token_here")
+    .build();
 ```
 
 </TabItem>

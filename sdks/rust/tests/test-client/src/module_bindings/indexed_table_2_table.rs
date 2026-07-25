@@ -18,6 +18,18 @@ pub struct IndexedTable2TableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `indexed_table_2`.
+pub struct IndexedTable2TableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for IndexedTable2TableAccessor {
+    type Row = IndexedTable2;
+    type Handle<'db> = IndexedTable2TableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.indexed_table_2()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `indexed_table_2`.
 ///
@@ -39,6 +51,18 @@ impl IndexedTable2TableAccess for super::RemoteTables {
 
 pub struct IndexedTable2InsertCallbackId(__sdk::CallbackId);
 pub struct IndexedTable2DeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for IndexedTable2TableHandle<'ctx> {
+    type Row = IndexedTable2;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = IndexedTable2> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for IndexedTable2TableHandle<'ctx> {
     type Row = IndexedTable2;
@@ -64,6 +88,36 @@ impl<'ctx> __sdk::Table for IndexedTable2TableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = IndexedTable2DeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> IndexedTable2DeleteCallbackId {
+        IndexedTable2DeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: IndexedTable2DeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for IndexedTable2TableHandle<'ctx> {
+    type InsertCallbackId = IndexedTable2InsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> IndexedTable2InsertCallbackId {
+        IndexedTable2InsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: IndexedTable2InsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for IndexedTable2TableHandle<'ctx> {
     type DeleteCallbackId = IndexedTable2DeleteCallbackId;
 
     fn on_delete(

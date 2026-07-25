@@ -1,11 +1,3 @@
-#[cfg(all(feature = "tokio", feature = "simulation"))]
-compile_error!(
-    "spacetimedb-runtime requires exactly one runtime backend: enable either `tokio` or `simulation`, not both"
-);
-
-#[cfg(not(any(feature = "tokio", feature = "simulation")))]
-compile_error!("spacetimedb-runtime requires exactly one runtime backend: enable either `tokio` or `simulation`");
-
 #[cfg(feature = "simulation")]
 extern crate alloc;
 
@@ -27,8 +19,8 @@ pub type TokioHandle = tokio::runtime::Handle;
 pub type TokioRuntime = tokio::runtime::Runtime;
 pub type TokioRuntimeBuilder = tokio::runtime::Builder;
 
-// We intentionally expose a small subset of `tokio::sync` under the simulation
-// backend. Tokio's async synchronization primitives are runtime-agnostic: they
+// We intentionally expose a small subset of `tokio::sync` for use under the
+// simulation backend. Tokio's async synchronization primitives are runtime-agnostic: they
 // can be polled by this executor instead of a Tokio runtime.
 //
 // Runtime-agnostic does not translate to deterministic by itself. For
@@ -59,7 +51,6 @@ pub mod sync {
 
 #[derive(Clone)]
 pub enum Handle {
-    #[cfg(feature = "tokio")]
     Tokio(TokioHandle),
     #[cfg(feature = "simulation")]
     Simulation(sim::Handle),
@@ -74,7 +65,6 @@ pub struct AbortHandle {
 }
 
 enum JoinHandleInner<T> {
-    #[cfg(feature = "tokio")]
     Tokio(tokio::task::JoinHandle<T>),
     #[cfg(feature = "simulation")]
     Simulation(sim::JoinHandle<T>),
@@ -94,7 +84,6 @@ enum JoinHandleInner<T> {
 }
 
 enum AbortHandleInner {
-    #[cfg(feature = "tokio")]
     Tokio(tokio::task::AbortHandle),
     #[cfg(feature = "simulation")]
     Simulation(sim::AbortHandle),
@@ -107,13 +96,11 @@ pub struct JoinError {
 
 #[derive(Debug)]
 enum JoinErrorInner {
-    #[cfg(feature = "tokio")]
     Tokio(tokio::task::JoinError),
     #[cfg(feature = "simulation")]
     Simulation(sim::JoinError),
 }
 
-#[cfg(feature = "tokio")]
 impl From<tokio::task::AbortHandle> for AbortHandle {
     fn from(handle: tokio::task::AbortHandle) -> Self {
         Self {
@@ -125,7 +112,6 @@ impl From<tokio::task::AbortHandle> for AbortHandle {
 impl AbortHandle {
     pub fn abort(&self) {
         match &self.inner {
-            #[cfg(feature = "tokio")]
             AbortHandleInner::Tokio(handle) => handle.abort(),
             #[cfg(feature = "simulation")]
             AbortHandleInner::Simulation(handle) => handle.abort(),
@@ -136,7 +122,6 @@ impl AbortHandle {
 impl JoinErrorInner {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            #[cfg(feature = "tokio")]
             Self::Tokio(err) => fmt::Display::fmt(err, f),
             #[cfg(feature = "simulation")]
             Self::Simulation(err) => fmt::Display::fmt(err, f),
@@ -155,7 +140,6 @@ impl std::error::Error for JoinError {}
 impl<T> JoinHandleInner<T> {
     fn abort_handle(&self) -> AbortHandle {
         match self {
-            #[cfg(feature = "tokio")]
             Self::Tokio(handle) => AbortHandle {
                 inner: AbortHandleInner::Tokio(handle.abort_handle()),
             },
@@ -169,7 +153,6 @@ impl<T> JoinHandleInner<T> {
 
     fn poll_result(&mut self, cx: &mut Context<'_>) -> Poll<Result<T, JoinError>> {
         match self {
-            #[cfg(feature = "tokio")]
             Self::Tokio(handle) => match Pin::new(handle).poll(cx) {
                 Poll::Ready(Ok(output)) => Poll::Ready(Ok(output)),
                 Poll::Ready(Err(err)) => Poll::Ready(Err(JoinError {
@@ -214,13 +197,12 @@ impl<T> Future for JoinHandle<T> {
 impl<T> Drop for JoinHandle<T> {
     fn drop(&mut self) {
         let inner = core::mem::replace(&mut self.inner, JoinHandleInner::Detached(PhantomData));
-        #[cfg(feature = "simulation")]
-        if let JoinHandleInner::Simulation(handle) = inner {
-            handle.detach();
-            return;
+        match inner {
+            #[cfg(feature = "simulation")]
+            JoinHandleInner::Simulation(handle) => handle.detach(),
+            // For Tokio (and Detached), dropping the handle does not cancel the task.
+            other => drop(other),
         }
-        // For Tokio (and Detached), dropping the handle does not cancel the task.
-        drop(inner);
     }
 }
 
@@ -239,26 +221,11 @@ impl std::error::Error for RuntimeTimeout {}
 
 impl Handle {
     pub fn tokio(handle: TokioHandle) -> Self {
-        #[cfg(feature = "tokio")]
-        {
-            Self::Tokio(handle)
-        }
-        #[cfg(not(feature = "tokio"))]
-        {
-            let _ = handle;
-            panic!("spacetimedb-runtime tokio handle requested without the `tokio` backend enabled")
-        }
+        Self::Tokio(handle)
     }
 
     pub fn tokio_current() -> Self {
-        #[cfg(feature = "tokio")]
-        {
-            Self::tokio(TokioHandle::current())
-        }
-        #[cfg(not(feature = "tokio"))]
-        {
-            panic!("spacetimedb-runtime current tokio handle requested without the `tokio` backend enabled")
-        }
+        Self::tokio(TokioHandle::current())
     }
 }
 
@@ -272,7 +239,6 @@ impl Handle {
 impl Handle {
     pub fn spawn<T: Send + 'static>(&self, future: impl Future<Output = T> + Send + 'static) -> JoinHandle<T> {
         match self {
-            #[cfg(feature = "tokio")]
             Self::Tokio(handle) => JoinHandle {
                 inner: JoinHandleInner::Tokio(handle.spawn(future)),
             },
@@ -289,7 +255,6 @@ impl Handle {
         R: Send + 'static,
     {
         match self {
-            #[cfg(feature = "tokio")]
             Self::Tokio(_) => tokio::task::spawn_blocking(f)
                 .await
                 .unwrap_or_else(|e| match e.try_into_panic() {
@@ -315,7 +280,6 @@ impl Handle {
         future: impl Future<Output = T>,
     ) -> Result<T, RuntimeTimeout> {
         match self {
-            #[cfg(feature = "tokio")]
             Self::Tokio(_) => tokio::time::timeout(timeout_after, future)
                 .await
                 .map_err(|_| RuntimeTimeout),
@@ -326,7 +290,6 @@ impl Handle {
 
     pub async fn sleep(&self, duration: Duration) {
         match self {
-            #[cfg(feature = "tokio")]
             Self::Tokio(_) => tokio::time::sleep(duration).await,
             #[cfg(feature = "simulation")]
             Self::Simulation(handle) => handle.sleep(duration).await,

@@ -9,7 +9,7 @@ TYPES
   - rectangle: Rect
 
 TABLE
-- drawing
+- drawing (public)
   - Fields:
     - id: number (u64, primary key, autoInc)
     - a: Shape
