@@ -28,6 +28,7 @@ namespace SpacetimeDB
             new ConsoleLogger();
 #endif
 
+#if UNITY_5_3_OR_NEWER
         /// <summary>
         /// Resets the static instance to prevent data persistence when Enter Play Mode Options (Disable Domain Reloading) is active.
         /// RuntimeInitializeOnLoadMethod is used since it is supported in older versions of Unity.
@@ -42,6 +43,7 @@ namespace SpacetimeDB
         {
             Current = new UnityDebugLogger();
         }
+#endif
 
         public static void Debug(string message) => Current.Debug(message);
         public static void Trace(string message) => Current.Trace(message);
