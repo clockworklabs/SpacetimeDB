@@ -45,11 +45,9 @@ use spacetimedb_schema::auto_migrate::{ponder_migrate, AutoMigrateError, Migrati
 use spacetimedb_schema::def::{ModuleDef, RawModuleDefVersion};
 use spacetimedb_table::page_pool::PagePool;
 use std::future::Future;
-use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{watch, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock as AsyncRwLock};
-use tokio::time::error::Elapsed;
 use tokio::time::{interval_at, timeout, Instant};
 
 // TODO:
@@ -64,11 +62,76 @@ use tokio::time::{interval_at, timeout, Instant};
 // when the config applies to individual databases (as opposed to globally).
 const IN_MEMORY_DATABASE_LOGGER_MAX_SIZE: u64 = 0x1_000_000;
 
-/// A shared mutable cell containing a module host and associated database.
-type HostCell = Arc<AsyncRwLock<Option<Host>>>;
+/// A shared mutable cell containing the current lifecycle state for a replica's module host.
+type HostCell = Arc<AsyncRwLock<HostCellState>>;
 
 /// The registry of all running hosts.
 type Hosts = Arc<Mutex<IntMap<u64, HostCell>>>;
+
+#[derive(Debug)]
+enum HostCellLockError {
+    Timeout,
+    Removed,
+}
+
+#[derive(Default)]
+enum HostCellState {
+    #[default]
+    Empty,
+    Running(Host),
+    Exiting,
+}
+
+impl HostCellState {
+    fn running(&self) -> Option<&Host> {
+        match self {
+            Self::Running(host) => Some(host),
+            Self::Empty | Self::Exiting => None,
+        }
+    }
+
+    fn is_running(&self) -> bool {
+        matches!(self, Self::Running(_))
+    }
+}
+
+/// Remove `cell` from `hosts` if it is still the mapped cell.
+fn remove_current_host_cell(hosts: &Hosts, replica_id: u64, cell: &HostCell) {
+    let mut hosts = hosts.lock();
+    if let Some(current) = hosts.get(&replica_id)
+        && Arc::ptr_eq(current, cell)
+    {
+        hosts.remove(&replica_id);
+    }
+}
+
+type HostExitStatuses = Arc<Mutex<IntMap<u64, HostExitStatus>>>;
+
+#[derive(Clone, Copy, Debug)]
+struct HostExitStatus {
+    started: Instant,
+    database_identity: Option<Identity>,
+    phase: HostExitPhase,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum HostExitPhase {
+    WaitingForHostWriteLock,
+    ExitingModule,
+    ShuttingDownDatabase,
+    RemovingHostCell,
+}
+
+impl HostExitPhase {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::WaitingForHostWriteLock => "waiting_for_host_write_lock",
+            Self::ExitingModule => "exiting_module",
+            Self::ShuttingDownDatabase => "shutting_down_database",
+            Self::RemovingHostCell => "removing_host_cell",
+        }
+    }
+}
 
 pub type ExternalDurability = (Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn);
 
@@ -177,6 +240,8 @@ pub struct HostController {
     /// Map of all hosts managed by this controller,
     /// keyed by replica id.
     hosts: Hosts,
+    /// Replica exits currently in progress, keyed by replica id.
+    exiting_hosts: HostExitStatuses,
     /// The root directory for database data.
     pub data_dir: Arc<ServerDataDir>,
     /// The default configuration to use for databases created by this
@@ -319,6 +384,7 @@ impl HostController {
     ) -> Self {
         Self {
             hosts: <_>::default(),
+            exiting_hosts: <_>::default(),
             default_config,
             program_storage,
             energy_monitor,
@@ -408,7 +474,7 @@ impl HostController {
         // Try a read lock first.
         {
             if let Ok(guard) = self.acquire_read_lock(replica_id).await
-                && let Some(host) = &*guard
+                && let Some(host) = guard.running()
             {
                 trace!("cached host {}/{}", database.database_identity, replica_id);
                 return Ok((host.module.subscribe(), None));
@@ -418,13 +484,22 @@ impl HostController {
         // We didn't find a running module, so take a write lock.
         // Since [`tokio::sync::RwLock`] doesn't support upgrading of read locks,
         // we'll need to check again if a module was added meanwhile.
-        let Ok(mut guard) = self.acquire_write_lock(replica_id).await else {
-            bail!(
-                "unable to lock database {} for initialization",
-                database.database_identity
-            );
+        let mut guard = match self.acquire_write_lock(replica_id).await {
+            Ok(guard) => guard,
+            Err(HostCellLockError::Timeout) => {
+                bail!(
+                    "timed out locking database {} for initialization",
+                    database.database_identity
+                );
+            }
+            Err(HostCellLockError::Removed) => {
+                bail!(
+                    "database {} was removed while waiting for initialization",
+                    database.database_identity
+                );
+            }
         };
-        if let Some(host) = &*guard {
+        if let Some(host) = guard.running() {
             trace!(
                 "cached host {}/{} (lock upgrade)",
                 database.database_identity,
@@ -458,7 +533,7 @@ impl HostController {
             } = initialized;
 
             let rx = host.module.subscribe();
-            *guard = Some(host);
+            *guard = HostCellState::Running(host);
 
             Ok::<_, anyhow::Error>((rx, bootstrap_completion))
         })
@@ -527,8 +602,17 @@ impl HostController {
             program.hash
         );
 
-        let Ok(mut guard) = self.acquire_write_lock(replica_id).await else {
-            bail!("unable to lock database {} for update", database.database_identity);
+        let mut guard = match self.acquire_write_lock(replica_id).await {
+            Ok(guard) => guard,
+            Err(HostCellLockError::Timeout) => {
+                bail!("timed out locking database {} for update", database.database_identity);
+            }
+            Err(HostCellLockError::Removed) => {
+                bail!(
+                    "database {} was removed while waiting for update",
+                    database.database_identity
+                );
+            }
         };
 
         // `HostController::clone` is fast,
@@ -539,7 +623,7 @@ impl HostController {
         // which hold a filesystem lock past when `try_init_host` returns or is cancelled.
         // This means that, if `try_init_host` is cancelled, subsequent calls will fail.
         //
-        // The rest of this future is also not cancel safe, as it will `Option::take` out of the guard
+        // The rest of this future is also not cancel safe, as it will take the host out of the guard
         // at the start of the block and then store back into it at the end.
         //
         // This is problematic because Axum will cancel its handler tasks if the client disconnects,
@@ -550,14 +634,18 @@ impl HostController {
         // Note that `tokio::spawn` only cancels its tasks when the runtime shuts down,
         // at which point we won't be calling `try_init_host` again anyways.
         let update_result = tokio::spawn(async move {
-            let mut host = match guard.take() {
-                None => {
+            let mut host = match std::mem::replace(&mut *guard, HostCellState::Empty) {
+                HostCellState::Empty => {
                     trace!("host not running, try_init");
                     this.try_init_host(database, replica_id).await?.host
                 }
-                Some(host) => {
+                HostCellState::Running(host) => {
                     trace!("host found, updating");
                     host
+                }
+                HostCellState::Exiting => {
+                    *guard = HostCellState::Exiting;
+                    bail!("database {} is exiting", database.database_identity);
                 }
             };
             let update_result = host
@@ -571,7 +659,7 @@ impl HostController {
                 )
                 .await?;
 
-            *guard = Some(host);
+            *guard = HostCellState::Running(host);
 
             Ok::<_, anyhow::Error>(update_result)
         })
@@ -597,13 +685,22 @@ impl HostController {
             program.hash
         );
 
-        let Ok(guard) = self.acquire_read_lock(replica_id).await else {
-            bail!(
-                "unable to lock database {} for migration planning",
-                database.database_identity
-            );
+        let guard = match self.acquire_read_lock(replica_id).await {
+            Ok(guard) => guard,
+            Err(HostCellLockError::Timeout) => {
+                bail!(
+                    "timed out locking database {} for migration planning",
+                    database.database_identity
+                );
+            }
+            Err(HostCellLockError::Removed) => {
+                bail!(
+                    "database {} was removed while waiting for migration planning",
+                    database.database_identity
+                );
+            }
         };
-        let host = guard.as_ref().ok_or(NoSuchModule)?;
+        let host = guard.running().ok_or(NoSuchModule)?;
 
         host.migrate_plan(
             self.page_pool.clone(),
@@ -617,59 +714,161 @@ impl HostController {
     }
 
     /// Release all resources of the [`ModuleHost`] identified by `replica_id`,
-    /// and deregister it from the controller.
+    /// and deregister it from the controller once no other task is using its
+    /// host cell.
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn exit_module_host(&self, replica_id: u64, timeout: Duration) -> Result<(), anyhow::Error> {
-        let Some(lock) = self.hosts.lock().remove(&replica_id) else {
+        let Some(cell) = self.hosts.lock().get(&replica_id).cloned() else {
             return Ok(());
         };
-        // To debug the potential deadlock issue reported in
-        // https://github.com/clockworklabs/SpacetimeDBPrivate/issues/2337
-        // we'll log a warning every 5s if we can't acquire an exclusive lock.
-        let start = Instant::now();
-        let mut t = interval_at(start + Duration::from_secs(5), Duration::from_secs(5));
-        let warn_blocked = tokio::spawn(async move {
-            loop {
-                t.tick().await;
-                warn!(
-                    "blocked waiting to exit module for replica {} since {}s",
-                    replica_id,
-                    start.elapsed().as_secs_f32()
-                );
-            }
-        });
-        defer!(warn_blocked.abort());
+        let started = Instant::now();
+        self.record_host_exit_status(
+            replica_id,
+            HostExitStatus {
+                started,
+                database_identity: None,
+                phase: HostExitPhase::WaitingForHostWriteLock,
+            },
+        );
+        let this = self.clone();
+        let cleanup_cell = cell.clone();
+        let shutdown = tokio::spawn(async move {
+            let clear_status = this.clone();
+            defer!(clear_status.clear_host_exit_status(replica_id));
 
-        let shutdown = tokio::time::timeout(timeout, async {
-            let mut guard = lock.write_owned().await;
-            let Some(host) = guard.take() else {
-                return;
+            let warn_status = this.clone();
+            let mut t = interval_at(started + Duration::from_secs(5), Duration::from_secs(5));
+            let warn_blocked = tokio::spawn(async move {
+                loop {
+                    t.tick().await;
+                    let Some(status) = warn_status.host_exit_status(replica_id) else {
+                        break;
+                    };
+                    warn_status.warn_host_exit_blocked(replica_id, status, timeout);
+                }
+            });
+            defer!(warn_blocked.abort());
+
+            let mut guard = cell.write_owned().await;
+            let host = match std::mem::replace(&mut *guard, HostCellState::Exiting) {
+                HostCellState::Running(host) => host,
+                HostCellState::Empty | HostCellState::Exiting => {
+                    remove_current_host_cell(&this.hosts, replica_id, &cleanup_cell);
+                    drop(guard);
+                    return;
+                }
             };
             let module = host.module.borrow().clone();
             let info = module.info();
 
             let database_identity = info.database_identity;
-            let table_names = info.module_def.tables().map(|t| t.name.deref());
+            let table_names: Vec<_> = info.module_def.tables().map(|t| t.name.to_string()).collect();
 
-            // Ensure we clear the metrics even if the future is cancelled.
-            defer!(remove_database_gauges(&database_identity, table_names));
+            let module_host_exiting = WORKER_METRICS.module_host_exiting.with_label_values(&database_identity);
+            module_host_exiting.set(1);
 
+            this.update_host_exit_phase(replica_id, HostExitPhase::ExitingModule, Some(database_identity));
             info!("replica={replica_id} database={database_identity} exiting module");
-            module.exit().await;
-            info!("replica={replica_id} database={database_identity} exiting database");
-            module.relational_db().shutdown().await;
+            {
+                defer!(module_host_exiting.set(0));
+                module.exit().await;
+                this.update_host_exit_phase(replica_id, HostExitPhase::ShuttingDownDatabase, Some(database_identity));
+                info!("replica={replica_id} database={database_identity} exiting database");
+                module.relational_db().shutdown().await;
+            }
+            remove_database_gauges(&database_identity, table_names.iter().map(String::as_str));
+            this.update_host_exit_phase(replica_id, HostExitPhase::RemovingHostCell, Some(database_identity));
             info!("replica={replica_id} database={database_identity} module host exited");
-        })
-        .await;
 
-        if shutdown.is_err() {
-            warn!(
-                "replica={replica_id} shutdown timed out after {}s",
-                start.elapsed().as_secs_f32()
-            );
+            remove_current_host_cell(&this.hosts, replica_id, &cleanup_cell);
+            drop(guard);
+        });
+
+        match tokio::time::timeout(timeout, shutdown).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
+                warn!("replica={replica_id} shutdown task failed: {e}");
+                return Err(anyhow!("replica {replica_id} shutdown task failed: {e}"));
+            }
+            Err(_) => {
+                warn!(
+                    "replica={replica_id} shutdown timed out after {}s; shutdown will continue in the background",
+                    started.elapsed().as_secs_f32()
+                );
+            }
         }
 
         Ok(())
+    }
+
+    fn record_host_exit_status(&self, replica_id: u64, status: HostExitStatus) {
+        self.exiting_hosts.lock().insert(replica_id, status);
+    }
+
+    fn update_host_exit_phase(&self, replica_id: u64, phase: HostExitPhase, database_identity: Option<Identity>) {
+        let mut exiting_hosts = self.exiting_hosts.lock();
+        let Some(status) = exiting_hosts.get_mut(&replica_id) else {
+            return;
+        };
+        status.phase = phase;
+        if let Some(database_identity) = database_identity {
+            status.database_identity = Some(database_identity);
+        }
+    }
+
+    fn clear_host_exit_status(&self, replica_id: u64) {
+        self.exiting_hosts.lock().remove(&replica_id);
+    }
+
+    fn host_exit_status(&self, replica_id: u64) -> Option<HostExitStatus> {
+        self.exiting_hosts.lock().get(&replica_id).copied()
+    }
+
+    fn warn_host_exit_blocked(&self, replica_id: u64, status: HostExitStatus, timeout: Duration) {
+        let database = status
+            .database_identity
+            .map(|database_identity| database_identity.to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+        let elapsed = status.started.elapsed();
+        if elapsed >= timeout {
+            warn!(
+                "replica {replica_id} database {database} has been inaccessible for {}s while waiting for module host exit phase {}; exceeded expected shutdown timeout of {}s",
+                elapsed.as_secs_f32(),
+                status.phase.as_str(),
+                timeout.as_secs_f32()
+            );
+        } else {
+            warn!(
+                "replica {replica_id} database {database} has been inaccessible for {}s while waiting for module host exit phase {}",
+                elapsed.as_secs_f32(),
+                status.phase.as_str()
+            );
+        }
+    }
+
+    fn warn_if_host_exit_blocks_lock(&self, replica_id: u64, operation: &str) {
+        if let Some(status) = self.host_exit_status(replica_id) {
+            let database = status
+                .database_identity
+                .map(|database_identity| database_identity.to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+            warn!(
+                "timeout waiting for {operation} lock on replica {replica_id}; replica is inaccessible because database {database} has been exiting for {}s in phase {}",
+                status.started.elapsed().as_secs_f32(),
+                status.phase.as_str()
+            );
+        }
+    }
+
+    fn warn_host_cell_lock_error(&self, replica_id: u64, operation: &str, context: &str, error: HostCellLockError) {
+        match error {
+            HostCellLockError::Timeout => {
+                warn!("timeout waiting for {operation} lock on replica {replica_id} in `{context}`");
+            }
+            HostCellLockError::Removed => {
+                trace!("replica {replica_id} host cell was removed while waiting for {operation} lock in `{context}`");
+            }
+        }
     }
 
     /// Get the [`ModuleHost`] identified by `replica_id` or return an error
@@ -680,12 +879,12 @@ impl HostController {
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn get_module_host(&self, replica_id: u64) -> Result<ModuleHost, NoSuchModule> {
         trace!("get module host {replica_id}");
-        let guard = self.acquire_read_lock(replica_id).await.map_err(|_| {
-            warn!("timeout waiting for read lock on replica {replica_id} in `get_module_host`");
+        let guard = self.acquire_read_lock(replica_id).await.map_err(|e| {
+            self.warn_host_cell_lock_error(replica_id, "read", "get_module_host", e);
             NoSuchModule
         })?;
         guard
-            .as_ref()
+            .running()
             .map(|Host { module, .. }| module.borrow().clone())
             .ok_or(NoSuchModule)
     }
@@ -698,12 +897,12 @@ impl HostController {
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn watch_module_host(&self, replica_id: u64) -> Result<watch::Receiver<ModuleHost>, NoSuchModule> {
         trace!("watch module host {replica_id}");
-        let guard = self.acquire_read_lock(replica_id).await.map_err(|_| {
-            warn!("timeout waiting for read lock on {replica_id} in `watch_module_host`");
+        let guard = self.acquire_read_lock(replica_id).await.map_err(|e| {
+            self.warn_host_cell_lock_error(replica_id, "read", "watch_module_host", e);
             NoSuchModule
         })?;
         guard
-            .as_ref()
+            .running()
             .map(|Host { module, .. }| module.subscribe())
             .ok_or(NoSuchModule)
     }
@@ -711,13 +910,20 @@ impl HostController {
     /// `true` if the module host `replica_id` is currently registered with
     /// the controller.
     pub async fn has_module_host(&self, replica_id: u64) -> bool {
-        let Ok(maybe_host) = self.acquire_read_lock(replica_id).await else {
-            warn!("timeout waiting for read lock on replica {replica_id} in `has_module_host`");
-            // Technically, we have it.
-            return true;
+        let maybe_host = match self.acquire_read_lock(replica_id).await {
+            Ok(maybe_host) => maybe_host,
+            Err(HostCellLockError::Timeout) => {
+                warn!("timeout waiting for read lock on replica {replica_id} in `has_module_host`");
+                // Technically, we have it.
+                return true;
+            }
+            Err(HostCellLockError::Removed) => {
+                trace!("replica {replica_id} host cell was removed while waiting for read lock in `has_module_host`");
+                return false;
+            }
         };
 
-        maybe_host.is_some()
+        maybe_host.is_running()
     }
 
     /// Obtain a snapshot of the replica ids of all hosts currently registered
@@ -742,18 +948,47 @@ impl HostController {
     ///
     /// This will time out after 5s to aid debugging of
     /// https://github.com/clockworklabs/SpacetimeDBPrivate/issues/2337
-    async fn acquire_write_lock(&self, replica_id: u64) -> Result<OwnedRwLockWriteGuard<Option<Host>>, Elapsed> {
-        let lock = self.hosts.lock().entry(replica_id).or_default().clone();
-        timeout(Duration::from_secs(5), lock.write_owned()).await
+    fn is_current_host_cell(&self, replica_id: u64, cell: &HostCell) -> bool {
+        self.hosts
+            .lock()
+            .get(&replica_id)
+            .is_some_and(|current| Arc::ptr_eq(current, cell))
+    }
+
+    async fn acquire_write_lock(
+        &self,
+        replica_id: u64,
+    ) -> Result<OwnedRwLockWriteGuard<HostCellState>, HostCellLockError> {
+        let cell = self.hosts.lock().entry(replica_id).or_default().clone();
+        match timeout(Duration::from_secs(5), cell.clone().write_owned()).await {
+            Ok(guard) if self.is_current_host_cell(replica_id, &cell) => Ok(guard),
+            Ok(_) => Err(HostCellLockError::Removed),
+            Err(e) => {
+                self.warn_if_host_exit_blocks_lock(replica_id, "write");
+                let _ = e;
+                Err(HostCellLockError::Timeout)
+            }
+        }
     }
 
     /// Acquire a read lock on the [HostCell] for `replica_id`.
     ///
     /// This will time out after 5s to aid debugging of
     /// https://github.com/clockworklabs/SpacetimeDBPrivate/issues/2337
-    async fn acquire_read_lock(&self, replica_id: u64) -> Result<OwnedRwLockReadGuard<Option<Host>>, Elapsed> {
-        let lock = self.hosts.lock().entry(replica_id).or_default().clone();
-        timeout(Duration::from_secs(5), lock.read_owned()).await
+    async fn acquire_read_lock(
+        &self,
+        replica_id: u64,
+    ) -> Result<OwnedRwLockReadGuard<HostCellState>, HostCellLockError> {
+        let cell = self.hosts.lock().entry(replica_id).or_default().clone();
+        match timeout(Duration::from_secs(5), cell.clone().read_owned()).await {
+            Ok(guard) if self.is_current_host_cell(replica_id, &cell) => Ok(guard),
+            Ok(_) => Err(HostCellLockError::Removed),
+            Err(e) => {
+                self.warn_if_host_exit_blocks_lock(replica_id, "read");
+                let _ = e;
+                Err(HostCellLockError::Timeout)
+            }
+        }
     }
 
     async fn try_init_host(&self, database: Database, replica_id: u64) -> anyhow::Result<HostInit> {
@@ -1604,4 +1839,5 @@ where
     V8HeapMetrics::remove_all_metric_label_values_for_database(db);
 
     let _ = WORKER_METRICS.v8_request_queue_length.remove_label_values(db);
+    let _ = WORKER_METRICS.module_host_exiting.remove_label_values(db);
 }
