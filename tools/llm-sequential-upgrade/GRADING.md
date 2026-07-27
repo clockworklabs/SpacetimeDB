@@ -11,6 +11,7 @@ You need TWO Chrome browser profiles so each user gets completely separate ident
 1. **Browser A (default profile):** Navigate to the app URL and register as "Alice"
    - SpacetimeDB: `http://localhost:6173`
    - PostgreSQL: `http://localhost:6273`
+   - MongoDB: `http://localhost:6373`
 
 2. **Switch to Browser B:** Use `switch_browser` to switch to the second Chrome profile
 

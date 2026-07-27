@@ -1,4 +1,4 @@
-# Backend: PostgreSQL
+# Backend: MongoDB
 
 Standard Node.js/TypeScript backend — you only need this file from `backends/`.
 
@@ -6,41 +6,44 @@ Standard Node.js/TypeScript backend — you only need this file from `backends/`
 
 ## Architecture
 
-- **Server:** Node.js + Express + Drizzle ORM + Socket.io
+- **Server:** Node.js + Express + Mongoose (ODM) + Socket.io
 - **Client:** React + Vite + TypeScript + Socket.io-client
-- **Database:** PostgreSQL (running in Docker)
+- **Database:** MongoDB (running in Docker)
 
 The server handles:
 - REST API endpoints for CRUD operations
 - Socket.io for real-time events (messages, typing, presence, etc.)
-- Drizzle ORM for database queries
+- Mongoose models/queries for the database
 - Session/identity management
+
+**Real-time:** Use Socket.io to broadcast changes (messages, typing, presence) to
+connected clients. Do NOT use MongoDB change streams — the database runs as a single
+node, and the real-time layer is the application's responsibility (same model as a
+standard MERN-stack app).
 
 ---
 
-## PostgreSQL Connection
+## MongoDB Connection
 
-PostgreSQL is already running in a Docker container.
+MongoDB is already running in a Docker container.
 
 | Parameter | Value |
 |-----------|-------|
 | Host | `localhost` |
-| Port | `6432` (mapped from container 5432) |
-| User | `spacetime` |
-| Password | `spacetime` |
-| Database | `spacetime` |
-| Container | `spacetime-web-postgres-1` |
-| Connection URL | `postgresql://spacetime:spacetime@localhost:6432/spacetime` |
+| Port | `6437` (mapped from container 27017) |
+| Database | `chat-app` |
+| Container | `llm-sequential-upgrade-mongodb-1` |
+| Connection URL | `mongodb://localhost:6437/chat-app` |
 
 ---
 
 ## Pre-flight Check
 
 ```bash
-docker exec spacetime-web-postgres-1 psql -U spacetime -d spacetime -c "SELECT 1"
+docker exec llm-sequential-upgrade-mongodb-1 mongosh --quiet --eval "db.runCommand({ping:1})"
 ```
 
-If PostgreSQL is not reachable, STOP and report the error.
+If MongoDB is not reachable, STOP and report the error.
 
 ---
 
@@ -51,10 +54,9 @@ If PostgreSQL is not reachable, STOP and report the error.
   server/
     package.json
     tsconfig.json
-    drizzle.config.ts
     .env
     src/
-      schema.ts      # Drizzle ORM table definitions
+      models.ts      # Mongoose schema/model definitions
       index.ts       # Express server + Socket.io + routes
   client/
     package.json
@@ -85,14 +87,11 @@ Create the Express + Socket.io server:
     "dependencies": {
       "express": "^4.18.2",
       "@types/express": "^4.17.21",
-      "drizzle-orm": "^0.39.0",
-      "pg": "^8.13.0",
-      "@types/pg": "^8.11.0",
+      "mongoose": "^8.9.0",
       "socket.io": "^4.7.4",
       "cors": "^2.8.5",
       "@types/cors": "^2.8.17",
       "dotenv": "^16.4.5",
-      "drizzle-kit": "^0.30.0",
       "tsx": "^4.19.0",
       "typescript": "^5.4.0"
     }
@@ -118,43 +117,32 @@ Create the Express + Socket.io server:
 
 - `server/.env`:
   ```
-  DATABASE_URL=postgresql://spacetime:spacetime@localhost:6432/spacetime
+  DATABASE_URL=mongodb://localhost:6437/chat-app
   PORT=6001
   ```
 
-- `server/drizzle.config.ts`:
-  ```typescript
-  import { defineConfig } from 'drizzle-kit';
-
-  export default defineConfig({
-    schema: './src/schema.ts',
-    out: './drizzle',
-    dialect: 'postgresql',
-    dbCredentials: {
-      url: process.env.DATABASE_URL || 'postgresql://spacetime:spacetime@localhost:6432/spacetime',
-    },
-  });
-  ```
-
-- `server/src/schema.ts` — Drizzle ORM table definitions for all features
+- `server/src/models.ts` — Mongoose schemas/models for all features
 - `server/src/index.ts` — Express server with:
-  - CORS configured for `http://localhost:6273`
+  - CORS configured for `http://localhost:6373`
   - Socket.io with CORS
   - REST endpoints for the app's resources (per the feature spec)
   - Socket.io events for real-time updates (per the feature spec)
-  - Database queries via Drizzle ORM
+  - Database access via Mongoose (`mongoose.connect(process.env.DATABASE_URL)`)
 
-Install and push schema:
+Install:
 ```bash
 cd <server-dir> && npm install
-npx drizzle-kit push
 ```
+
+MongoDB is schemaless and Mongoose creates collections/indexes on first use — there
+is **no migration / schema-push step**. (If you declare indexes on a schema, they are
+built automatically when the model is first used.)
 
 ---
 
 ## Phase 2: (No bindings step)
 
-Skip — PostgreSQL has no binding generation. The client calls REST/Socket.io APIs directly.
+Skip — MongoDB has no binding generation. The client calls REST/Socket.io APIs directly.
 
 ---
 
@@ -184,7 +172,7 @@ Skip — PostgreSQL has no binding generation. The client calls REST/Socket.io A
   }
   ```
 
-- `client/vite.config.ts` — port **6273** (do not use 6173 or 6373 — they may be in use), proxy `/api` and `/socket.io` to `http://localhost:6001`
+- `client/vite.config.ts` — port **6373** (do not use 6173 or 6273 — they may be in use), proxy `/api` and `/socket.io` to `http://localhost:6001`
   ```typescript
   import { defineConfig } from 'vite';
   import react from '@vitejs/plugin-react';
@@ -192,7 +180,7 @@ Skip — PostgreSQL has no binding generation. The client calls REST/Socket.io A
   export default defineConfig({
     plugins: [react()],
     server: {
-      port: 6273,
+      port: 6373,
       proxy: {
         '/api': 'http://localhost:6001',
         '/socket.io': {
@@ -238,7 +226,7 @@ Both must pass. If either fails:
 
 ```bash
 # Kill any existing servers
-npx kill-port 6273 2>/dev/null || true
+npx kill-port 6373 2>/dev/null || true
 npx kill-port 6001 2>/dev/null || true
 
 # Start the API server in background
@@ -252,7 +240,7 @@ cd <client-dir> && npm run dev &
 
 Wait for both servers to be ready:
 - API server at `http://localhost:6001`
-- Client dev server at `http://localhost:6273`
+- Client dev server at `http://localhost:6373`
 
 ---
 
@@ -263,18 +251,16 @@ Wait for both servers to be ready:
   npx kill-port 6001 2>/dev/null || true
   cd <server-dir> && npx tsx src/index.ts &
   ```
-- If **schema changed**: push new schema before restarting
-  ```bash
-  cd <server-dir> && npx drizzle-kit push
-  ```
+- If **models/schema changed**: no migration step — Mongoose applies the new schema
+  on connect (existing documents are not rewritten). Just restart the Express server.
 - If **client changed**: Vite HMR handles it automatically (or restart dev server if needed)
 
 ---
 
 ## App Identity
 
-- HTML `<title>` MUST be **"PostgreSQL Chat"** (not a generic "Chat App")
-- The app MUST show **"PostgreSQL Chat"** as the visible header/title in the UI
+- HTML `<title>` MUST be **"MongoDB Chat"** (not a generic "Chat App")
+- The app MUST show **"MongoDB Chat"** as the visible header/title in the UI
 
 ---
 
@@ -282,6 +268,6 @@ Wait for both servers to be ready:
 
 | Service | Port | Notes |
 |---------|------|-------|
-| PostgreSQL (Docker) | 6432 | Database |
+| MongoDB (Docker) | 6437 | Database |
 | Express API server | 6001 | REST + Socket.io |
-| Vite dev server | **6273** | React client — do not use 6173 or 6373 |
+| Vite dev server | **6373** | React client — do not use 6173 or 6273 |

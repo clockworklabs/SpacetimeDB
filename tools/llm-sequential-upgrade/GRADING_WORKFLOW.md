@@ -25,10 +25,12 @@ Code generation and fix iterations are token-tracked (the benchmark metric). Gra
 ```
 
 After generation, apps are running at:
-- **SpacetimeDB**: `http://localhost:5173` (run-index 0)
-- **PostgreSQL**: `http://localhost:5274` (run-index 1)
+- **SpacetimeDB**: `http://localhost:6173`
+- **PostgreSQL**: `http://localhost:6273`
+- **MongoDB**: `http://localhost:6373`
 
-Port offsets for parallel runs: run-index N uses ports `5173 + N*100` (spacetime) and `5174 + N*100` (postgres).
+Port offsets for parallel runs: run-index N adds N to the base port —
+`6173 + N` (spacetime), `6273 + N` (postgres), `6373 + N` (mongodb).
 
 ---
 
