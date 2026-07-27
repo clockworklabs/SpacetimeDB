@@ -307,6 +307,11 @@ jobs:
         with:
           node-version: '22.x'
 
+      - name: Install npm with trusted publishing support
+        run: |
+          npm install --global npm@11.5.1
+          npm --version
+
       - name: Install pnpm
         run: npm install -g pnpm
 
