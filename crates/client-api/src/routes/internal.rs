@@ -132,6 +132,64 @@ mod jemalloc_profiling {
     }
 }
 
+mod tokio_dump {
+    use axum::response::IntoResponse;
+    use http::StatusCode;
+
+    #[cfg(all(
+        tokio_unstable,
+        feature = "tokio-taskdump",
+        target_os = "linux",
+        any(target_arch = "aarch64", target_arch = "x86", target_arch = "x86_64")
+    ))]
+    async fn handle_get_tokio_dump() -> Result<axum::response::Response, (StatusCode, String)> {
+        use axum::body::Body;
+        use http::header::CONTENT_TYPE;
+        use std::fmt::Write as _;
+        use std::time::Duration;
+        use tokio::runtime::Handle;
+        use tokio::time::timeout;
+
+        let dump = timeout(Duration::from_secs(2), Handle::current().dump())
+            .await
+            .map_err(|_| {
+                (
+                    StatusCode::GATEWAY_TIMEOUT,
+                    "timed out while collecting tokio runtime dump".into(),
+                )
+            })?;
+
+        let mut output = String::new();
+        for (i, task) in dump.tasks().iter().enumerate() {
+            let _ = writeln!(output, "TASK {i}:");
+            let _ = writeln!(output, "{}\n", task.trace());
+        }
+
+        axum::response::Response::builder()
+            .header(CONTENT_TYPE, "text/plain; charset=utf-8")
+            .body(Body::from(output))
+            .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))
+    }
+
+    #[cfg(not(all(
+        tokio_unstable,
+        feature = "tokio-taskdump",
+        target_os = "linux",
+        any(target_arch = "aarch64", target_arch = "x86", target_arch = "x86_64")
+    )))]
+    async fn handle_get_tokio_dump() -> impl IntoResponse {
+        (
+            StatusCode::NOT_IMPLEMENTED,
+            "tokio runtime dumps require --cfg tokio_unstable, the spacetimedb-client-api/tokio-taskdump feature, Linux, and a supported CPU architecture.",
+        )
+    }
+
+    pub fn tokio_router<S: Clone + Send + Sync + 'static>() -> axum::Router<S> {
+        use axum::routing::get;
+        axum::Router::new().route("/dump", get(handle_get_tokio_dump))
+    }
+}
+
 #[cfg(target_env = "msvc")]
 mod jemalloc_profiling {
     use axum::response::IntoResponse;
@@ -158,5 +216,7 @@ pub fn router<S>() -> axum::Router<S>
 where
     S: NodeDelegate + Clone + 'static,
 {
-    axum::Router::new().nest("/heap", jemalloc_profiling::jemalloc_router())
+    axum::Router::new()
+        .nest("/heap", jemalloc_profiling::jemalloc_router())
+        .nest("/tokio", tokio_dump::tokio_router())
 }
