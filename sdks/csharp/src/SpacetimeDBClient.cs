@@ -292,6 +292,7 @@ namespace SpacetimeDB
 
         private static readonly Status Committed = new Status.Committed(default);
 
+#if UNITY_5_3_OR_NEWER
         /// <summary>
         /// Resets the static instance to prevent data persistence when Enter Play Mode Options (Disable Domain Reloading) is active.
         /// RuntimeInitializeOnLoadMethod is used since it is supported in older versions of Unity.
@@ -306,6 +307,7 @@ namespace SpacetimeDB
         {
             IsTesting = false;
         }
+#endif
 
         /// <summary>
         /// Get a description of a message suitable for storing in the tracker metadata.
