@@ -53,7 +53,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, Deserialize, ProductValu
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use spacetimedb_schema::def::deserialize::FunctionDef;
 use spacetimedb_schema::def::{ModuleDef, ViewDef};
-use spacetimedb_schema::identifier::{Identifier, NamespacedIdentifier};
+use spacetimedb_schema::identifier::NamespacedIdentifier;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_subscription::SubscriptionPlan;
 use std::collections::HashMap;
@@ -797,7 +797,7 @@ impl InstanceCommon {
 
         let op = ProcedureOp {
             id: procedure_id,
-            name: procedure_name.clone(),
+            name: procedure_name.clone().into(),
             caller_identity,
             caller_connection_id,
             timestamp,
@@ -890,7 +890,7 @@ impl InstanceCommon {
 
         let op = HttpHandlerOp {
             id: handler_id,
-            name: handler_name.clone(),
+            name: handler_name.clone().into(),
             timestamp,
             request_bytes,
             request_body_bytes: request_body,
@@ -1364,7 +1364,7 @@ impl InstanceCommon {
                 // This is wrapped in a closure to simplify error handling.
                 let outcome: Result<ViewOutcome, anyhow::Error> = (|| {
                     let view_call = match sender {
-                        Some(s) => ViewCallInfo::sender(view_id, s),
+                        Some(sender) => ViewCallInfo::sender(view_id, sender),
                         None => ViewCallInfo::anonymous(view_id),
                     };
                     let result = ViewResult::from_return_data(raw).context("Error parsing view result")?;
@@ -1854,7 +1854,8 @@ fn lifecyle_modifications_to_tx(
 */
 
 pub trait InstanceOp {
-    fn name(&self) -> &str;
+    /// The full namespaced name of the function being called.
+    fn name(&self) -> &NamespacedIdentifier;
     fn timestamp(&self) -> Timestamp;
     fn call_type(&self) -> FuncCallType;
 }
@@ -1872,7 +1873,7 @@ pub struct ViewOp<'a> {
 }
 
 impl InstanceOp for ViewOp<'_> {
-    fn name(&self) -> &str {
+    fn name(&self) -> &NamespacedIdentifier {
         self.name
     }
 
@@ -1897,7 +1898,7 @@ pub struct AnonymousViewOp<'a> {
 }
 
 impl InstanceOp for AnonymousViewOp<'_> {
-    fn name(&self) -> &str {
+    fn name(&self) -> &NamespacedIdentifier {
         self.name
     }
 
@@ -1923,8 +1924,8 @@ pub struct ReducerOp<'a> {
 }
 
 impl InstanceOp for ReducerOp<'_> {
-    fn name(&self) -> &str {
-        self.name
+    fn name(&self) -> &NamespacedIdentifier {
+        self.name.as_namespaced()
     }
     fn timestamp(&self) -> Timestamp {
         self.timestamp
@@ -1959,7 +1960,7 @@ impl From<ReducerOp<'_>> for execution_context::ReducerContext {
 #[derive(Clone, Debug)]
 pub struct ProcedureOp {
     pub id: ProcedureId,
-    pub name: Identifier,
+    pub name: NamespacedIdentifier,
     pub caller_identity: Identity,
     pub caller_connection_id: ConnectionId,
     pub timestamp: Timestamp,
@@ -1967,7 +1968,7 @@ pub struct ProcedureOp {
 }
 
 impl InstanceOp for ProcedureOp {
-    fn name(&self) -> &str {
+    fn name(&self) -> &NamespacedIdentifier {
         &self.name
     }
     fn timestamp(&self) -> Timestamp {
@@ -1982,14 +1983,14 @@ impl InstanceOp for ProcedureOp {
 #[derive(Clone, Debug)]
 pub struct HttpHandlerOp {
     pub id: HttpHandlerId,
-    pub name: Identifier,
+    pub name: NamespacedIdentifier,
     pub timestamp: Timestamp,
     pub request_bytes: Bytes,
     pub request_body_bytes: Bytes,
 }
 
 impl InstanceOp for HttpHandlerOp {
-    fn name(&self) -> &str {
+    fn name(&self) -> &NamespacedIdentifier {
         &self.name
     }
     fn timestamp(&self) -> Timestamp {

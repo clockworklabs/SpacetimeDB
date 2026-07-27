@@ -1,29 +1,28 @@
-import { schema, table, t, SyncResponse, Router } from 'spacetimedb/server';
+import { schema, table, t, SyncResponse } from 'spacetimedb/server';
 
-const lib_data = table(
-  { name: 'lib_data', public: true },
+const libData = table(
+  { name: 'libData', public: true },
   {
     id: t.u64().primaryKey().autoInc(),
     value: t.string(),
   }
 );
 
-const libSubmoduleSchema = schema({ lib_data });
+const libSubmoduleSchema = schema({ libData });
 export default libSubmoduleSchema;
 
-export const lib_insert = libSubmoduleSchema.reducer(
+export const libInsert = libSubmoduleSchema.reducer(
   { value: t.string() },
   (ctx, { value }) => {
-    console.info(`lib_insert: ${value}`);
-    ctx.db.lib_data.insert({ id: 0n, value });
+    console.info(`libInsert: ${value}`);
+    ctx.db.libData.insert({ id: 0n, value });
   }
 );
 
-export const lib_count = libSubmoduleSchema.procedure(
-  t.u64(),
-  (ctx) => ctx.withTx(tx => tx.db.lib_data.count())
+export const libCount = libSubmoduleSchema.procedure(t.u64(), ctx =>
+  ctx.withTx(tx => tx.db.libData.count())
 );
 
-export const lib_hello = libSubmoduleSchema.httpHandler((_ctx, _req) => {
+export const libHello = libSubmoduleSchema.httpHandler((_ctx, _req) => {
   return new SyncResponse('Hello from lib submodule!');
 });

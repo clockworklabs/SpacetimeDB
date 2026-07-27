@@ -20,7 +20,7 @@ use std::fmt::{self, Debug, Write};
 use std::hash::Hash;
 
 use crate::error::{IdentifierError, ValidationErrors};
-use crate::identifier::{Identifier, NamespacePath};
+use crate::identifier::{Identifier, NamespacePath, NamespacedIdentifier};
 use crate::reducer_name::ReducerName;
 use crate::schema::{Schema, TableSchema};
 use crate::type_for_generate::{AlgebraicTypeUse, ProductTypeDef, TypespaceForGenerate};
@@ -76,7 +76,7 @@ pub type StrMap<T> = HashMap<RawIdentifier, T>;
 /// use spacetimedb_lib::RawModuleDef;
 /// use spacetimedb_sats::raw_identifier::RawIdentifier;
 /// use spacetimedb_schema::def::{ModuleDef, TableDef, IndexDef, TypeDef, ModuleDefLookup, ScopedTypeName};
-/// use spacetimedb_schema::identifier::Identifier;
+/// use spacetimedb_schema::identifier::{Identifier, NamespacePath};
 ///
 /// fn read_raw_module_def_from_file() -> RawModuleDef {
 ///     // ...
@@ -90,8 +90,13 @@ pub type StrMap<T> = HashMap<RawIdentifier, T>;
 /// let index_name: RawIdentifier = "my_table_my_column_idx_btree".into();
 /// let scoped_type_name = ScopedTypeName::try_new([], "MyType").expect("valid scoped type name");
 ///
-/// let table: Option<&TableDef> = module_def.lookup(&table_name);
-/// let index: Option<&IndexDef> = module_def.lookup(&index_name);
+/// // Items owned by a module are keyed by `(namespace, name)`, where the namespace is the
+/// // path the owning module is mounted under -- empty for the root module.
+/// let root = NamespacePath::root();
+///
+/// let table: Option<&TableDef> = module_def.lookup((&root, &table_name));
+/// let index: Option<&IndexDef> = module_def.lookup((&root, &index_name));
+/// // Types are keyed by their scoped name, which is already unique across the module.
 /// let type_def: Option<&TypeDef> = module_def.lookup(&scoped_type_name);
 /// // etc.
 /// ```
@@ -105,6 +110,13 @@ pub type StrMap<T> = HashMap<RawIdentifier, T>;
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct ModuleDef {
+    /// The namespace path this module is mounted under, empty for the root.
+    ///
+    /// Maintained by [`ModuleDef::apply_namespace`] alongside the `namespace` of every def,
+    /// and used to resolve namespace-qualified keys relative to whichever module they are
+    /// looked up in.
+    path: NamespacePath,
+
     /// The tables of the module definition.
     tables: IdentifierMap<TableDef>,
 
@@ -259,63 +271,91 @@ impl ModuleDef {
         }
     }
 
-    /// Look up a table by its full namespaced name (e.g., `"lib.library_table"` or `"user"`).
-    pub fn find_table_by_full_name(&self, full_name: &str) -> Option<(NamespacePath, &ModuleDef, &TableDef)> {
-        self.all_tables_with_prefix()
-            .into_iter()
-            .find(|(prefix, _, table_def)| format!("{}{}", prefix, &*table_def.accessor_name) == full_name)
-    }
-
-    /// Look up a view by its full namespaced name (e.g., `"lib.library_view"` or `"my_view"`).
-    pub fn find_view_by_full_name(&self, full_name: &str) -> Option<(NamespacePath, &ModuleDef, &ViewDef)> {
-        self.all_views_with_prefix()
-            .into_iter()
-            .find(|(prefix, _, view_def)| format!("{}{}", prefix, &*view_def.name) == full_name)
-    }
-
-    /// Look up an index by its full namespaced name (e.g., `"lib.library_table_id_idx_btree"`).
-    pub fn find_index_by_full_name(
-        &self,
-        full_name: &str,
-    ) -> Option<(NamespacePath, &ModuleDef, &TableDef, &IndexDef)> {
-        for (prefix, owning, table) in self.all_tables_with_prefix() {
-            for idx in table.indexes.values() {
-                if format!("{}{}", prefix, &*idx.name) == full_name {
-                    return Some((prefix, owning, table, idx));
-                }
+    /// Record the namespace path of this module on every def it owns, recursively.
+    ///
+    /// A def's [`ModuleDefLookup`] key is `(namespace, name)`, and a def cannot otherwise
+    /// know which namespace it is mounted under: submodules are validated in isolation, so
+    /// this runs once the module tree is assembled.
+    fn apply_namespace(&mut self, path: &NamespacePath) {
+        self.path = path.clone();
+        for table in self.tables.values_mut() {
+            table.namespace = path.clone();
+            for index in table.indexes.values_mut() {
+                index.namespace = path.clone();
+            }
+            for sequence in table.sequences.values_mut() {
+                sequence.namespace = path.clone();
+            }
+            for constraint in table.constraints.values_mut() {
+                constraint.namespace = path.clone();
+            }
+            if let Some(schedule) = &mut table.schedule {
+                schedule.namespace = path.clone();
             }
         }
-        None
+        for view in self.views.values_mut() {
+            view.namespace = path.clone();
+        }
+        for reducer in self.reducers.values_mut() {
+            reducer.name = ReducerName::new(path.join(reducer.name.local().clone()));
+        }
+        for (namespace, submodule) in &mut self.submodules {
+            submodule.apply_namespace(&path.child(namespace.clone()));
+        }
     }
 
-    /// Look up a sequence by its full namespaced name (e.g., `"lib.library_table_id_seq"`).
-    pub fn find_sequence_by_full_name(
-        &self,
-        full_name: &str,
-    ) -> Option<(NamespacePath, &ModuleDef, &TableDef, &SequenceDef)> {
-        for (prefix, owning, table) in self.all_tables_with_prefix() {
-            for seq in table.sequences.values() {
-                if format!("{}{}", prefix, &*seq.name) == full_name {
-                    return Some((prefix, owning, table, seq));
-                }
+    /// Debug-only check that every def's recorded namespace matches its module.
+    #[cfg(debug_assertions)]
+    fn assert_namespaces_applied(&self, path: &NamespacePath) {
+        for table in self.tables.values() {
+            debug_assert_eq!(&table.namespace, path, "table namespace stale");
+            for index in table.indexes.values() {
+                debug_assert_eq!(&index.namespace, path, "index namespace stale");
             }
         }
-        None
+        for view in self.views.values() {
+            debug_assert_eq!(&view.namespace, path, "view namespace stale");
+        }
+        for (namespace, submodule) in &self.submodules {
+            submodule.assert_namespaces_applied(&path.child(namespace.clone()));
+        }
     }
 
-    /// Look up a constraint by its full namespaced name (e.g., `"lib.library_table_id_unique"`).
-    pub fn find_constraint_by_full_name(
-        &self,
-        full_name: &str,
-    ) -> Option<(NamespacePath, &ModuleDef, &TableDef, &ConstraintDef)> {
-        for (prefix, owning, table) in self.all_tables_with_prefix() {
-            for constraint in table.constraints.values() {
-                if format!("{}{}", prefix, &*constraint.name) == full_name {
-                    return Some((prefix, owning, table, constraint));
-                }
-            }
+    /// Resolve the submodule mounted at `path`, relative to this module.
+    fn resolve_path(&self, path: &NamespacePath) -> Option<&ModuleDef> {
+        // Keys are qualified from the root, so drop the part of the path we already are.
+        let rest = path.segments().strip_prefix(self.path.segments())?;
+        let mut owning = self;
+        for namespace in rest {
+            owning = owning.submodules.get(namespace)?;
         }
-        None
+        Some(owning)
+    }
+
+    /// Look up a table by its [`ModuleDefLookup`] key, also returning the module that owns it.
+    ///
+    /// The owning module is needed to resolve the table's type refs, which point into that
+    /// module's typespace rather than the root's.
+    pub fn find_table(&self, key: <TableDef as ModuleDefLookup>::Key<'_>) -> Option<(&ModuleDef, &TableDef)> {
+        let owning = self.resolve_path(key.0)?;
+        Some((owning, owning.tables.get(key.1)?))
+    }
+
+    /// Look up a view by its [`ModuleDefLookup`] key, also returning the module that owns it.
+    pub fn find_view(&self, key: <ViewDef as ModuleDefLookup>::Key<'_>) -> Option<(&ModuleDef, &ViewDef)> {
+        let owning = self.resolve_path(key.0)?;
+        Some((owning, owning.views.get(key.1)?))
+    }
+
+    /// The table that stores the sub-object (index, sequence, constraint or schedule)
+    /// named `name` in the module mounted at `namespace`.
+    pub fn find_storing_table(
+        &self,
+        namespace: &NamespacePath,
+        name: &RawIdentifier,
+    ) -> Option<(&ModuleDef, &TableDef)> {
+        let owning = self.resolve_path(namespace)?;
+        Some((owning, owning.stored_in_table_def(name)?))
     }
 
     /// The reducers of the module definition.
@@ -696,7 +736,7 @@ impl ModuleDef {
     /// this one in depth-first module order).
     pub fn view_by_name_with_global_fn_ptr<'a>(
         &'a self,
-        name: &str,
+        name: &NamespacedIdentifier,
     ) -> Option<(ViewFnPtr, &'a ViewDef, &'a ModuleDef)> {
         let anon_offset = 0u32;
         let non_anon_offset = 0u32;
@@ -930,6 +970,7 @@ impl TryFrom<raw_def::v9::RawModuleDefV9> for ModuleDef {
 impl From<ModuleDef> for RawModuleDefV9 {
     fn from(val: ModuleDef) -> Self {
         let ModuleDef {
+            path: _,
             tables,
             views,
             reducers,
@@ -989,6 +1030,7 @@ impl TryFrom<raw_def::v10::RawModuleDefV10> for ModuleDef {
 impl From<ModuleDef> for RawModuleDefV10 {
     fn from(val: ModuleDef) -> Self {
         let ModuleDef {
+            path: _,
             tables,
             views,
             reducers,
@@ -1211,6 +1253,14 @@ pub struct TableDef {
     /// Unique within a module, acts as the table's identifier.
     /// Must be a valid [crate::db::identifier::Identifier].
     pub name: Identifier,
+
+    /// The namespace path this table's module is mounted under, empty for the root.
+    ///
+    /// Together with `name` this forms the table's [`ModuleDefLookup`] key. Storing the
+    /// path rather than a pre-joined qualified name keeps the local name un-duplicated;
+    /// the joined form is built at the few places that need it (see
+    /// [`NamespacePath::join`]). Maintained by [`ModuleDef::apply_namespace`].
+    pub namespace: NamespacePath,
     /// The table identifier as defined in the module source.
     ///
     /// All the codegens should use `accessor_name` to derive the table identifier for clients.
@@ -1308,6 +1358,7 @@ impl From<TableDef> for RawTableDefV10 {
     fn from(val: TableDef) -> Self {
         let TableDef {
             name: _,
+            namespace: _,
             product_type_ref,
             primary_key,
             columns, // names/types are reconstructed from the product type; only defaults are read here.
@@ -1358,6 +1409,7 @@ impl From<ViewDef> for TableDef {
             ..
         } = def;
         Self {
+            namespace: NamespacePath::root(),
             name,
             product_type_ref,
             primary_key,
@@ -1379,6 +1431,12 @@ impl From<ViewDef> for TableDef {
 pub struct SequenceDef {
     /// The name of the sequence. Must be unique within the containing `ModuleDef`.
     pub name: RawIdentifier,
+
+    /// The namespace path this sequence's module is mounted under.
+    ///
+    /// Together with `name` this forms the sequence's [`ModuleDefLookup`] key. A pair is used
+    /// rather than a dotted name because `name` is not guaranteed to be dot-free.
+    pub namespace: NamespacePath,
 
     /// The position of the column associated with this sequence.
     /// This refers to a column in the same `RawTableDef` that contains this `RawSequenceDef`.
@@ -1442,6 +1500,12 @@ pub struct IndexDef {
     /// in V10, this can be optionally passed in by the user, but if not passed in, it will be
     /// generated by the system using the same algorithm as V9 and earlier.
     pub name: RawIdentifier,
+
+    /// The namespace path this index's module is mounted under.
+    ///
+    /// Together with `name` this forms the index's [`ModuleDefLookup`] key. A pair is used
+    /// rather than a dotted name because `name` is not guaranteed to be dot-free.
+    pub namespace: NamespacePath,
 
     /// This will be the same as `name` for [`RawModuleDefV9`].
     /// For [`RawModuleDefV10`], this is an auto-generated globally unique name
@@ -1752,6 +1816,12 @@ pub struct ConstraintDef {
     /// The name of the constraint. Unique within the containing `ModuleDef`.
     pub name: RawIdentifier,
 
+    /// The namespace path this constraint's module is mounted under.
+    ///
+    /// Together with `name` this forms the constraint's [`ModuleDefLookup`] key. A pair is used
+    /// rather than a dotted name because `name` is not guaranteed to be dot-free.
+    pub namespace: NamespacePath,
+
     /// The data for the constraint.
     pub data: ConstraintData,
 }
@@ -1878,6 +1948,10 @@ impl fmt::Display for FunctionKind {
 pub struct ScheduleDef {
     /// The name of the schedule. Must be unique within the containing `ModuleDef`.
     pub name: Identifier,
+
+    /// The namespace path this schedule's module is mounted under.
+    /// See [`TableDef::namespace`].
+    pub namespace: NamespacePath,
 
     /// The name of the column that stores the desired invocation time.
     ///
@@ -2052,6 +2126,10 @@ impl From<ScopedTypeName> for RawScopedTypeNameV10 {
 pub struct ViewDef {
     /// The name of the view. This must be unique within the module.
     pub name: Identifier,
+
+    /// The namespace path this view's module is mounted under.
+    /// See [`TableDef::namespace`].
+    pub namespace: NamespacePath,
 
     /// The view identifier as defined in the module source.
     ///
@@ -2231,7 +2309,8 @@ impl From<FunctionVisibility> for RawFunctionVisibility {
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct ReducerDef {
-    /// The name of the reducer. This must be unique within the module's set of reducers and procedures.
+    /// The name of the reducer. This must be unique within the module's set of reducers and
+    /// procedures. Qualified by the namespace the module is mounted under; see [`ReducerName`].
     pub name: ReducerName,
 
     /// The reducer name as defined in the module source.
@@ -2371,38 +2450,43 @@ impl From<ProcedureDef> for RawMiscModuleExportV9 {
 }
 
 impl ModuleDefLookup for TableDef {
-    type Key<'a> = &'a Identifier;
+    // (namespace, name). See [`TableDef::namespace`].
+    type Key<'a> = (&'a NamespacePath, &'a Identifier);
 
     fn key(&self) -> Self::Key<'_> {
-        &self.name
+        (&self.namespace, &self.name)
     }
 
-    fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
-        module_def.tables.get(key)
+    fn lookup<'a>(module_def: &'a ModuleDef, (namespace, name): Self::Key<'_>) -> Option<&'a Self> {
+        module_def.resolve_path(namespace)?.tables.get(name)
     }
 }
 
 impl ModuleDefLookup for SequenceDef {
-    type Key<'a> = &'a RawIdentifier;
+    // (namespace, name). See [`SequenceDef::namespace`].
+    type Key<'a> = (&'a NamespacePath, &'a RawIdentifier);
 
     fn key(&self) -> Self::Key<'_> {
-        &self.name
+        (&self.namespace, &self.name)
     }
 
-    fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
-        module_def.stored_in_table_def(key)?.sequences.get(key)
+    fn lookup<'a>(module_def: &'a ModuleDef, (namespace, name): Self::Key<'_>) -> Option<&'a Self> {
+        let owning = module_def.resolve_path(namespace)?;
+        owning.stored_in_table_def(name)?.sequences.get(name)
     }
 }
 
 impl ModuleDefLookup for IndexDef {
-    type Key<'a> = &'a RawIdentifier;
+    // (namespace, name). See [`IndexDef::namespace`].
+    type Key<'a> = (&'a NamespacePath, &'a RawIdentifier);
 
     fn key(&self) -> Self::Key<'_> {
-        &self.name
+        (&self.namespace, &self.name)
     }
 
-    fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
-        module_def.stored_in_table_def(key)?.indexes.get(key)
+    fn lookup<'a>(module_def: &'a ModuleDef, (namespace, name): Self::Key<'_>) -> Option<&'a Self> {
+        let owning = module_def.resolve_path(namespace)?;
+        owning.stored_in_table_def(name)?.indexes.get(name)
     }
 }
 
@@ -2459,14 +2543,16 @@ impl ModuleDefLookup for ViewParamDef {
 }
 
 impl ModuleDefLookup for ConstraintDef {
-    type Key<'a> = &'a RawIdentifier;
+    // (namespace, name). See [`ConstraintDef::namespace`].
+    type Key<'a> = (&'a NamespacePath, &'a RawIdentifier);
 
     fn key(&self) -> Self::Key<'_> {
-        &self.name
+        (&self.namespace, &self.name)
     }
 
-    fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
-        module_def.stored_in_table_def(key)?.constraints.get(key)
+    fn lookup<'a>(module_def: &'a ModuleDef, (namespace, name): Self::Key<'_>) -> Option<&'a Self> {
+        let owning = module_def.resolve_path(namespace)?;
+        owning.stored_in_table_def(name)?.constraints.get(name)
     }
 }
 
@@ -2483,19 +2569,17 @@ impl ModuleDefLookup for RawRowLevelSecurityDefV9 {
 }
 
 impl ModuleDefLookup for ScheduleDef {
-    type Key<'a> = &'a Identifier;
+    // (namespace, name). See [`ScheduleDef::namespace`].
+    type Key<'a> = (&'a NamespacePath, &'a Identifier);
 
     fn key(&self) -> Self::Key<'_> {
-        &self.name
+        (&self.namespace, &self.name)
     }
 
-    fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
-        let schedule = module_def.stored_in_table_def(key.as_raw())?.schedule.as_ref()?;
-        if &schedule.name == key {
-            Some(schedule)
-        } else {
-            None
-        }
+    fn lookup<'a>(module_def: &'a ModuleDef, (namespace, name): Self::Key<'_>) -> Option<&'a Self> {
+        let owning = module_def.resolve_path(namespace)?;
+        let schedule = owning.stored_in_table_def(name.as_raw())?.schedule.as_ref()?;
+        (&schedule.name == name).then_some(schedule)
     }
 }
 
@@ -2538,14 +2622,15 @@ impl ModuleDefLookup for ProcedureDef {
 }
 
 impl ModuleDefLookup for ViewDef {
-    type Key<'a> = &'a Identifier;
+    // (namespace, name). See [`TableDef::namespace`].
+    type Key<'a> = (&'a NamespacePath, &'a Identifier);
 
     fn key(&self) -> Self::Key<'_> {
-        &self.name
+        (&self.namespace, &self.name)
     }
 
-    fn lookup<'a>(view_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
-        view_def.views.get(key)
+    fn lookup<'a>(module_def: &'a ModuleDef, (namespace, name): Self::Key<'_>) -> Option<&'a Self> {
+        module_def.resolve_path(namespace)?.views.get(name)
     }
 }
 
@@ -2706,13 +2791,16 @@ mod tests {
         assert_eq!(ids_and_defs[1].0, ReducerId(1));
         assert_eq!(&*ids_and_defs[1].1.name, "consumer_b");
         assert_eq!(ids_and_defs[2].0, ReducerId(2));
-        assert_eq!(&*ids_and_defs[2].1.name, "auth_verify");
+        // A submodule reducer's `name` is qualified; `local()` is the name within its module.
+        assert_eq!(&*ids_and_defs[2].1.name, "auth.auth_verify");
+        assert_eq!(&**ids_and_defs[2].1.name.local(), "auth_verify");
         assert_eq!(ids_and_defs[3].0, ReducerId(3));
-        assert_eq!(&*ids_and_defs[3].1.name, "baz_reduce");
+        assert_eq!(&*ids_and_defs[3].1.name, "auth.baz.baz_reduce");
+        assert_eq!(&**ids_and_defs[3].1.name.local(), "baz_reduce");
 
         // get_reducer_by_id resolves submodule reducer IDs correctly
-        assert_eq!(&*def.reducer_by_id(ReducerId(2)).name, "auth_verify");
-        assert_eq!(&*def.reducer_by_id(ReducerId(3)).name, "baz_reduce");
+        assert_eq!(&*def.reducer_by_id(ReducerId(2)).name, "auth.auth_verify");
+        assert_eq!(&*def.reducer_by_id(ReducerId(3)).name, "auth.baz.baz_reduce");
         assert!(def.get_reducer_by_id(ReducerId(4)).is_none());
 
         // reducer_by_name routes plain names to own reducers
@@ -2725,14 +2813,14 @@ mod tests {
             .reducer_by_name("auth.auth_verify")
             .expect("qualified name resolves");
         assert_eq!(id, ReducerId(2));
-        assert_eq!(&*rdef.name, "auth_verify");
+        assert_eq!(&*rdef.name, "auth.auth_verify");
 
         // reducer_by_name routes deeply nested qualified names
         let (id, rdef) = def
             .reducer_by_name("auth.baz.baz_reduce")
             .expect("nested qualified name resolves");
         assert_eq!(id, ReducerId(3));
-        assert_eq!(&*rdef.name, "baz_reduce");
+        assert_eq!(&*rdef.name, "auth.baz.baz_reduce");
 
         // Non-existent names return None
         assert!(def.reducer_by_name("auth.nonexistent").is_none());

@@ -34,7 +34,7 @@ const sessions = table(
   { name: 'sessions' },
   {
     id: t.u64().primaryKey().autoInc(),
-    user_identity: t.identity(),
+    userIdentity: t.identity(),
     token: t.string(),
   }
 );
@@ -42,18 +42,18 @@ const sessions = table(
 const spacetimedb = schema({ users, sessions });
 export default spacetimedb;
 
-export const verify_token = spacetimedb.reducer(
+export const verifyToken = spacetimedb.reducer(
   { token: t.string() },
   (ctx, { token }) => { /* ... */ }
 );
 
-export const session_count = spacetimedb.procedure(
+export const sessionCount = spacetimedb.procedure(
   t.u64(),
   (ctx) => ctx.withTx(tx => tx.db.sessions.count())
 );
 
-export const active_sessions = spacetimedb.anonymousView(
-  { name: 'active_sessions', public: true },
+export const activeSessions = spacetimedb.anonymousView(
+  { name: 'activeSessions', public: true },
   t.array(sessions.rowType),
   (ctx) => [...ctx.db.sessions.iter()]
 );
@@ -108,7 +108,7 @@ A default-only import exposes only the submodule's schema, not its named exports
 
 ## Accessing Submodule Tables and Views
 
-Submodule tables appear under a namespace field on `ctx.db`. The field matches the alias you chose. Views exported by a submodule behave like tables from the client's perspective: they are accessible as `<namespace>.<view_name>` in subscriptions and SQL queries.
+Submodule tables appear under a namespace field on `ctx.db`. The field matches the alias you chose. Views exported by a submodule behave like tables from the client's perspective: they are accessible as `<namespace>.<view_name>` in subscriptions and SQL queries, where `<view_name>` is the canonical snake_case name — `activeSessions` in TypeScript is `active_sessions` in SQL. The generated client bindings expose the camelCase accessor instead, as shown below.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -145,9 +145,9 @@ export function sessionCountHelper(ctx: ReducerContext<typeof spacetimedb>): num
 }
 
 // my-database: call submodule reducer and helper from a consumer reducer
-spacetimedb.reducer('on_login', { token: t.string() }, (ctx, { token }) => {
+spacetimedb.reducer('onLogin', { token: t.string() }, (ctx, { token }) => {
   // call a submodule reducer
-  authLib.verify_token(ctx.as.myauth, { token });
+  authLib.verifyToken(ctx.as.myauth, { token });
 
   // call a submodule helper function
   const count = authLib.sessionCountHelper(ctx.as.myauth);
@@ -173,19 +173,19 @@ Use `ctx.as.<alias>` to pass a submodule-scoped `ProcedureContext` to a submodul
 // call a submodule procedure
 export const stats = spacetimedb.procedure(
   t.u64(),
-  (ctx) => authLib.session_count(ctx.as.myauth)
+  (ctx) => authLib.sessionCount(ctx.as.myauth)
 );
 
 // call a submodule reducer inside a withTx block
-export const transact_and_count = spacetimedb.procedure(
+export const transactAndCount = spacetimedb.procedure(
   { token: t.string() },
   t.u64(),
   (ctx, { token }) => {
     ctx.withTx(tx => {
       // tx is a root ReducerContext; narrow to the submodule namespace
-      authLib.verify_token(tx.as.myauth, { token });
+      authLib.verifyToken(tx.as.myauth, { token });
     });
-    return authLib.session_count(ctx.as.myauth);
+    return authLib.sessionCount(ctx.as.myauth);
   }
 );
 ```
@@ -204,12 +204,12 @@ Delegate to a submodule's HTTP handler by passing `ctx.as.<alias>` and the reque
 import { Router } from 'spacetimedb/server';
 
 // delegate the /health route to the submodule's handler
-export const health_check = spacetimedb.httpHandler((ctx, req) => {
+export const healthCheck = spacetimedb.httpHandler((ctx, req) => {
   return authLib.health(ctx.as.myauth, req);
 });
 
 export const router = spacetimedb.httpRouter(
-  new Router().get('/health', health_check)
+  new Router().get('/health', healthCheck)
 );
 ```
 
@@ -259,11 +259,11 @@ Client subscriptions use the same namespace structure as server-side access. Sub
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-conn.subscriptionBuilder()
-  .addQuery(q => q.from.players.build())                   // public.players
-  .addQuery(q => q.from.myauth.users.build())              // myauth.users
-  .addQuery(q => q.from.myauth.activeSessions.build())     // myauth.active_sessions view
-  .subscribe();
+conn.subscriptionBuilder().subscribe(tables => [
+  tables.players.build(),                   // public.players
+  tables.myauth.users.build(),              // myauth.users
+  tables.myauth.activeSessions.build(),     // myauth.activeSessions view
+]);
 ```
 
 </TabItem>
@@ -331,7 +331,9 @@ POST /v1/database/my-database/call/myauth/verify_token
 spacetime call my-database "myauth/verify_token" '{"token": "abc123"}'
 ```
 
-The namespace prefix is the alias you chose, and the function name after `/` is the snake_case export name from the submodule.
+The namespace prefix is the alias you chose, and the function name after `/` is the canonical
+snake_case form of the submodule's export name -- `verifyToken` in TypeScript is `verify_token`
+on the wire. Generated client bindings expose the camelCase accessor instead, as shown above.
 
 ## Namespace Name Rules
 

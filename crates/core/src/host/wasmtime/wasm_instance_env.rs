@@ -23,7 +23,6 @@ use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCal
 use spacetimedb_lib::{bsatn, ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use spacetimedb_primitives::{errno, ColId, ViewFnPtr};
-use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::identifier::NamespacedIdentifier;
 use std::future::Future;
@@ -334,7 +333,7 @@ impl WasmInstanceEnv {
     /// as well as the handle used to write the reducer error message or procedure return value.
     pub fn start_funcall(
         &mut self,
-        name: RawIdentifier,
+        name: NamespacedIdentifier,
         args: bytes::Bytes,
         ts: Timestamp,
         func_type: FuncCallType,

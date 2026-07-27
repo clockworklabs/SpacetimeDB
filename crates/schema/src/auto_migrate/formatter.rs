@@ -5,11 +5,14 @@ use std::io;
 use super::AutoMigratePlan;
 use crate::{
     auto_migrate::AutoMigrateStep,
-    def::{ConstraintData, FunctionKind, ModuleDef},
-    identifier::{Identifier, NamespacedIdentifier},
+    def::{
+        ConstraintData, ConstraintDef, FunctionKind, IndexDef, ModuleDef, ModuleDefLookup, ScheduleDef, SequenceDef,
+        TableDef, ViewDef,
+    },
+    identifier::{Identifier, NamespacePath, NamespacedIdentifier},
 };
 use itertools::Itertools;
-use spacetimedb_lib::db::raw_def::v9::{TableAccess, TableType};
+use spacetimedb_lib::db::raw_def::v9::{RawRowLevelSecurityDefV9, TableAccess, TableType};
 use spacetimedb_primitives::ColId;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, WithTypespace};
@@ -25,6 +28,13 @@ pub fn format_plan<F: MigrationFormatter>(f: &mut F, plan: &AutoMigratePlan) -> 
     Ok(())
 }
 
+/// The joined, qualified form of a `(namespace, name)` key.
+///
+/// Built on demand: this is display output, so the allocation is incidental.
+fn joined<N: Clone + Into<Identifier>>((namespace, name): (&NamespacePath, &N)) -> NamespacedIdentifier {
+    namespace.join(name.clone().into())
+}
+
 fn format_step<F: MigrationFormatter>(
     f: &mut F,
     step: &AutoMigrateStep,
@@ -32,101 +42,93 @@ fn format_step<F: MigrationFormatter>(
 ) -> Result<(), FormattingErrors> {
     match step {
         AutoMigrateStep::AddView(view) => {
-            let view_info = extract_view_info(view, plan.new)?;
+            let view_info = extract_view_info(*view, plan.new)?;
             f.format_view(&view_info, Action::Created)
         }
         AutoMigrateStep::RemoveView(view) => {
-            let view_info = extract_view_info(view, plan.old)?;
+            let view_info = extract_view_info(*view, plan.old)?;
             f.format_view(&view_info, Action::Removed)
         }
         // This means the body of the view may have been updated.
         // So we must recompute it and send any updates to clients.
         // No need to include this step in the formatted plan.
         AutoMigrateStep::UpdateView(_) => Ok(()),
-        AutoMigrateStep::RemoveTable(t) => f.format_remove_table(t),
+        AutoMigrateStep::RemoveTable(t) => f.format_remove_table(&joined(*t)),
         AutoMigrateStep::AddTable(t) => {
-            let table_info = extract_table_info(t, plan)?;
+            let table_info = extract_table_info(*t, plan)?;
             f.format_add_table(&table_info)
         }
         AutoMigrateStep::AddIndex(index) => {
-            let index_info = extract_index_info(index, plan.new)?;
+            let index_info = extract_index_info(*index, plan.new)?;
             f.format_index(&index_info, Action::Created)
         }
         AutoMigrateStep::RemoveIndex(index) => {
-            let index_info = extract_index_info(index, plan.old)?;
+            let index_info = extract_index_info(*index, plan.old)?;
             f.format_index(&index_info, Action::Removed)
         }
         AutoMigrateStep::RemoveConstraint(constraint) => {
-            let constraint_info = extract_constraint_info(constraint, plan.old)?;
+            let constraint_info = extract_constraint_info(*constraint, plan.old)?;
             f.format_constraint(&constraint_info, Action::Removed)
         }
         AutoMigrateStep::AddConstraint(constraint) => {
-            let constraint_info = extract_constraint_info(constraint, plan.new)?;
+            let constraint_info = extract_constraint_info(*constraint, plan.new)?;
             f.format_constraint(&constraint_info, Action::Created)
         }
         AutoMigrateStep::AddSequence(sequence) => {
-            let sequence_info = extract_sequence_info(sequence, plan.new)?;
+            let sequence_info = extract_sequence_info(*sequence, plan.new)?;
             f.format_sequence(&sequence_info, Action::Created)
         }
         AutoMigrateStep::RemoveSequence(sequence) => {
-            let sequence_info = extract_sequence_info(sequence, plan.old)?;
+            let sequence_info = extract_sequence_info(*sequence, plan.old)?;
             f.format_sequence(&sequence_info, Action::Removed)
         }
         AutoMigrateStep::ChangeAccess(table) => {
-            let access_info = extract_access_change_info(table, plan)?;
+            let access_info = extract_access_change_info(*table, plan)?;
             f.format_change_access(&access_info)
         }
         AutoMigrateStep::ChangePrimaryKey(table) => {
-            let (_, _, old_table) =
-                plan.old
-                    .find_table_by_full_name(table)
-                    .ok_or_else(|| FormattingErrors::TableNotFound {
-                        table: (&**table).into(),
-                    })?;
-            let (_, _, new_table) =
-                plan.new
-                    .find_table_by_full_name(table)
-                    .ok_or_else(|| FormattingErrors::TableNotFound {
-                        table: (&**table).into(),
-                    })?;
-            f.format_change_primary_key(table, old_table.primary_key, new_table.primary_key)
+            let name = joined(*table);
+            let not_found = || FormattingErrors::TableNotFound { table: (&*name).into() };
+            let (_, old_table) = plan.old.find_table(*table).ok_or_else(not_found)?;
+            let (_, new_table) = plan.new.find_table(*table).ok_or_else(not_found)?;
+            f.format_change_primary_key(&name, old_table.primary_key, new_table.primary_key)
         }
         AutoMigrateStep::AddSchedule(schedule) => {
-            let schedule_info = extract_schedule_info(schedule, plan.new)?;
+            let schedule_info = extract_schedule_info(*schedule, plan.new)?;
             f.format_schedule(&schedule_info, Action::Created)
         }
         AutoMigrateStep::RemoveSchedule(schedule) => {
-            let schedule_info = extract_schedule_info(schedule, plan.old)?;
+            let schedule_info = extract_schedule_info(*schedule, plan.old)?;
             f.format_schedule(&schedule_info, Action::Removed)
         }
         AutoMigrateStep::AddRowLevelSecurity(rls) => {
-            if let Some(rls_info) = extract_rls_info(rls.as_ref(), plan)? {
+            if let Some(rls_info) = extract_rls_info(rls, plan)? {
                 f.format_rls(&rls_info, Action::Created)?;
             }
             Ok(())
         }
         AutoMigrateStep::RemoveRowLevelSecurity(rls) => {
-            if let Some(rls_info) = extract_rls_info(rls.as_ref(), plan)? {
+            if let Some(rls_info) = extract_rls_info(rls, plan)? {
                 f.format_rls(&rls_info, Action::Removed)?;
             }
             Ok(())
         }
         AutoMigrateStep::ChangeColumns(table) => {
-            let column_changes = extract_column_changes(table, plan)?;
+            let column_changes = extract_column_changes(*table, plan)?;
             f.format_change_columns(&column_changes)
         }
         AutoMigrateStep::AddColumns(table) => {
             // FIXME: It looks (pgoldman 2026-06-10) like `super::auto_migrate_table` will emit only `AddColumns`
             // in the case where a table has both new columns and changed columns.
             // As such, we probably need to call `extract_column_changes` here too.
-            let new_columns = extract_new_columns(table, plan)?;
+            let new_columns = extract_new_columns(*table, plan)?;
             f.format_add_columns(&new_columns)
         }
         AutoMigrateStep::DisconnectAllUsers => f.format_disconnect_warning(),
 
         // TODO(format-event-table-reschema): I (pgoldman 2026-06-10) didn't have time to meaningfully format event table reschemas,
         // so for now we're just printing the table name.
-        AutoMigrateStep::ReschemaEventTable(table) => f.format_event_table_reschema(table),
+        AutoMigrateStep::ReschemaEventTable(table) => f.format_event_table_reschema(&joined(*table)),
     }?;
 
     Ok(())
@@ -300,15 +302,15 @@ pub struct NewColumns {
 }
 
 fn extract_table_info(
-    full_name: &NamespacedIdentifier,
+    key: <TableDef as ModuleDefLookup>::Key<'_>,
     plan: &super::AutoMigratePlan,
 ) -> Result<TableInfo, FormattingErrors> {
-    let (_, owning_def, table_def) =
-        plan.new
-            .find_table_by_full_name(full_name)
-            .ok_or_else(|| FormattingErrors::TableNotFound {
-                table: full_name.as_ref().into(),
-            })?;
+    let (owning_def, table_def) = plan
+        .new
+        .find_table(key)
+        .ok_or_else(|| FormattingErrors::TableNotFound {
+            table: (&*joined(key)).into(),
+        })?;
 
     let columns = table_def
         .columns
@@ -341,7 +343,7 @@ fn extract_table_info(
                         Ok(column.name.clone())
                     })
                     .collect::<Result<Vec<_>, FormattingErrors>>()?,
-                table_name: full_name.clone(),
+                table_name: joined(key),
             })
         })
         .collect::<Result<Vec<_>, FormattingErrors>>()?;
@@ -364,7 +366,7 @@ fn extract_table_info(
             Ok(IndexInfo {
                 name: index.name.clone(),
                 columns,
-                table_name: full_name.clone(),
+                table_name: joined(key),
             })
         })
         .collect::<Result<Vec<_>, FormattingErrors>>()?;
@@ -380,19 +382,19 @@ fn extract_table_info(
             Ok(SequenceInfo {
                 name: sequence.name.clone(),
                 column_name: column.name.clone(),
-                table_name: full_name.clone(),
+                table_name: joined(key),
             })
         })
         .collect::<Result<Vec<_>, FormattingErrors>>()?;
 
     let schedule = table_def.schedule.as_ref().map(|schedule| ScheduleInfo {
-        table_name: full_name.clone(),
+        table_name: joined(key),
         function_name: schedule.function_name.clone(),
         function_kind: schedule.function_kind,
     });
 
     Ok(TableInfo {
-        name: full_name.clone(),
+        name: joined(key),
         is_system: table_def.table_type == TableType::System,
         access: table_def.table_access,
         columns,
@@ -403,15 +405,17 @@ fn extract_table_info(
     })
 }
 
-fn extract_view_info(full_name: &NamespacedIdentifier, module_def: &ModuleDef) -> Result<ViewInfo, FormattingErrors> {
-    let (_, owning_def, view_def) =
-        module_def
-            .find_view_by_full_name(full_name)
-            .ok_or_else(|| FormattingErrors::ViewNotFound {
-                view: full_name.as_ref().into(),
-            })?;
+fn extract_view_info(
+    key: <ViewDef as ModuleDefLookup>::Key<'_>,
+    module_def: &ModuleDef,
+) -> Result<ViewInfo, FormattingErrors> {
+    let (owning_def, view_def) = module_def
+        .find_view(key)
+        .ok_or_else(|| FormattingErrors::ViewNotFound {
+            view: (&*joined(key)).into(),
+        })?;
 
-    let name = full_name.clone();
+    let name = joined(key);
     let is_anonymous = view_def.is_anonymous;
 
     let params = view_def
@@ -450,10 +454,15 @@ fn extract_view_info(full_name: &NamespacedIdentifier, module_def: &ModuleDef) -
     })
 }
 
-fn extract_index_info(full_name: &NamespacedIdentifier, module_def: &ModuleDef) -> Result<IndexInfo, FormattingErrors> {
-    let (prefix, _, table_def, index_def) = module_def
-        .find_index_by_full_name(full_name)
+fn extract_index_info(
+    key: <IndexDef as ModuleDefLookup>::Key<'_>,
+    module_def: &ModuleDef,
+) -> Result<IndexInfo, FormattingErrors> {
+    let (namespace, name) = key;
+    let (_, table_def) = module_def
+        .find_storing_table(namespace, name)
         .ok_or(FormattingErrors::IndexNotFound)?;
+    let index_def: &IndexDef = module_def.lookup(key).ok_or(FormattingErrors::IndexNotFound)?;
 
     let columns = index_def
         .algorithm
@@ -468,17 +477,19 @@ fn extract_index_info(full_name: &NamespacedIdentifier, module_def: &ModuleDef) 
     Ok(IndexInfo {
         name: index_def.name.clone(),
         columns,
-        table_name: prefix.join(table_def.accessor_name.clone()),
+        table_name: namespace.join(table_def.name.clone()),
     })
 }
 
 fn extract_constraint_info(
-    full_name: &NamespacedIdentifier,
+    key: <ConstraintDef as ModuleDefLookup>::Key<'_>,
     module_def: &ModuleDef,
 ) -> Result<ConstraintInfo, FormattingErrors> {
-    let (prefix, _, table_def, constraint_def) = module_def
-        .find_constraint_by_full_name(full_name)
+    let (namespace, name) = key;
+    let (_, table_def) = module_def
+        .find_storing_table(namespace, name)
         .ok_or(FormattingErrors::ConstraintNotFound)?;
+    let constraint_def: &ConstraintDef = module_def.lookup(key).ok_or(FormattingErrors::ConstraintNotFound)?;
 
     let ConstraintData::Unique(unique_constraint_data) = &constraint_def.data;
     let columns = unique_constraint_data
@@ -493,17 +504,19 @@ fn extract_constraint_info(
     Ok(ConstraintInfo {
         name: constraint_def.name.clone(),
         columns,
-        table_name: prefix.join(table_def.accessor_name.clone()),
+        table_name: namespace.join(table_def.name.clone()),
     })
 }
 
 fn extract_sequence_info(
-    full_name: &NamespacedIdentifier,
+    key: <SequenceDef as ModuleDefLookup>::Key<'_>,
     module_def: &ModuleDef,
 ) -> Result<SequenceInfo, FormattingErrors> {
-    let (prefix, _, table_def, sequence_def) = module_def
-        .find_sequence_by_full_name(full_name)
+    let (namespace, name) = key;
+    let (_, table_def) = module_def
+        .find_storing_table(namespace, name)
         .ok_or(FormattingErrors::SequenceNotFound)?;
+    let sequence_def: &SequenceDef = module_def.lookup(key).ok_or(FormattingErrors::SequenceNotFound)?;
 
     let column = table_def
         .get_column(sequence_def.column)
@@ -512,46 +525,53 @@ fn extract_sequence_info(
     Ok(SequenceInfo {
         name: sequence_def.name.clone(),
         column_name: column.name.clone(),
-        table_name: prefix.join(table_def.accessor_name.clone()),
+        table_name: namespace.join(table_def.name.clone()),
     })
 }
 
 fn extract_access_change_info(
-    full_name: &NamespacedIdentifier,
+    key: <TableDef as ModuleDefLookup>::Key<'_>,
     plan: &super::AutoMigratePlan,
 ) -> Result<AccessChangeInfo, FormattingErrors> {
-    let (_, _, table_def) =
-        plan.new
-            .find_table_by_full_name(full_name)
-            .ok_or_else(|| FormattingErrors::TableNotFound {
-                table: full_name.as_ref().into(),
-            })?;
+    let (_, table_def) = plan
+        .new
+        .find_table(key)
+        .ok_or_else(|| FormattingErrors::TableNotFound {
+            table: (&*joined(key)).into(),
+        })?;
 
     Ok(AccessChangeInfo {
-        table_name: full_name.clone(),
+        table_name: joined(key),
         new_access: table_def.table_access,
     })
 }
 
 fn extract_schedule_info(
-    table_full_name: &NamespacedIdentifier,
+    schedule_name: <ScheduleDef as ModuleDefLookup>::Key<'_>,
     module_def: &ModuleDef,
 ) -> Result<ScheduleInfo, FormattingErrors> {
-    let (_, _, table_def) = module_def
-        .find_table_by_full_name(table_full_name)
+    // Schedules are keyed by their own name; the table they annotate is the one that stores them.
+    let (namespace, name) = schedule_name;
+    let schedule_def: &ScheduleDef = module_def
+        .lookup(schedule_name)
         .ok_or(FormattingErrors::ScheduleNotFound)?;
-    let schedule_def = table_def.schedule.as_ref().ok_or(FormattingErrors::ScheduleNotFound)?;
+    let (_, table_def) = module_def
+        .find_storing_table(namespace, name.as_raw())
+        .ok_or(FormattingErrors::ScheduleNotFound)?;
 
     Ok(ScheduleInfo {
-        table_name: table_full_name.clone(),
+        table_name: namespace.join(table_def.name.clone()),
         function_name: schedule_def.function_name.clone(),
         function_kind: schedule_def.function_kind,
     })
 }
 
-fn extract_rls_info(rls: &str, plan: &super::AutoMigratePlan) -> Result<Option<RlsInfo>, FormattingErrors> {
-    let in_old = plan.old.row_level_security().any(|r| &*r.sql == rls);
-    let in_new = plan.new.row_level_security().any(|r| &*r.sql == rls);
+fn extract_rls_info(
+    rls: <RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'_>,
+    plan: &super::AutoMigratePlan,
+) -> Result<Option<RlsInfo>, FormattingErrors> {
+    let in_old = plan.old.row_level_security().any(|r| r.sql == *rls);
+    let in_new = plan.new.row_level_security().any(|r| r.sql == *rls);
     // Skip if policy is unchanged (present in both old and new).
     if in_old == in_new {
         return Ok(None);
@@ -563,21 +583,21 @@ fn extract_rls_info(rls: &str, plan: &super::AutoMigratePlan) -> Result<Option<R
 }
 
 fn extract_column_changes(
-    full_name: &NamespacedIdentifier,
+    key: <TableDef as ModuleDefLookup>::Key<'_>,
     plan: &super::AutoMigratePlan,
 ) -> Result<ColumnChanges, FormattingErrors> {
-    let (_, old_owning, old_table) =
-        plan.old
-            .find_table_by_full_name(full_name)
-            .ok_or_else(|| FormattingErrors::TableNotFound {
-                table: full_name.as_ref().into(),
-            })?;
-    let (_, new_owning, new_table) =
-        plan.new
-            .find_table_by_full_name(full_name)
-            .ok_or_else(|| FormattingErrors::TableNotFound {
-                table: full_name.as_ref().into(),
-            })?;
+    let (old_owning, old_table) = plan
+        .old
+        .find_table(key)
+        .ok_or_else(|| FormattingErrors::TableNotFound {
+            table: (&*joined(key)).into(),
+        })?;
+    let (new_owning, new_table) = plan
+        .new
+        .find_table(key)
+        .ok_or_else(|| FormattingErrors::TableNotFound {
+            table: (&*joined(key)).into(),
+        })?;
 
     let mut changes = Vec::new();
 
@@ -607,27 +627,27 @@ fn extract_column_changes(
     }
 
     Ok(ColumnChanges {
-        table_name: full_name.clone(),
+        table_name: joined(key),
         changes,
     })
 }
 
 fn extract_new_columns(
-    full_name: &NamespacedIdentifier,
+    key: <TableDef as ModuleDefLookup>::Key<'_>,
     plan: &super::AutoMigratePlan,
 ) -> Result<NewColumns, FormattingErrors> {
-    let (_, new_owning, table_def) =
-        plan.new
-            .find_table_by_full_name(full_name)
-            .ok_or_else(|| FormattingErrors::TableNotFound {
-                table: full_name.as_ref().into(),
-            })?;
-    let (_, _, old_table_def) =
-        plan.old
-            .find_table_by_full_name(full_name)
-            .ok_or_else(|| FormattingErrors::TableNotFound {
-                table: full_name.as_ref().into(),
-            })?;
+    let (new_owning, table_def) = plan
+        .new
+        .find_table(key)
+        .ok_or_else(|| FormattingErrors::TableNotFound {
+            table: (&*joined(key)).into(),
+        })?;
+    let (_, old_table_def) = plan
+        .old
+        .find_table(key)
+        .ok_or_else(|| FormattingErrors::TableNotFound {
+            table: (&*joined(key)).into(),
+        })?;
 
     let mut new_columns = Vec::new();
     for column in &table_def.columns {
@@ -644,7 +664,7 @@ fn extract_new_columns(
     }
 
     Ok(NewColumns {
-        table_name: full_name.clone(),
+        table_name: joined(key),
         columns: new_columns,
     })
 }

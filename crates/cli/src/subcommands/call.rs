@@ -285,7 +285,7 @@ fn add_reducer_procedure_ctx_to_err(error: &mut String, module_def: &ModuleDef, 
         .all_reducers_with_prefix()
         .into_iter()
         .filter(|(_, _, r)| r.lifecycle.is_none())
-        .map(|(prefix, _, r)| format!("{prefix}{}", &*r.name))
+        .map(|(_, _, r)| r.name.to_string())
         .collect::<Vec<_>>();
     let reducers = reducer_names.iter().map(String::as_str).collect::<Vec<_>>();
 

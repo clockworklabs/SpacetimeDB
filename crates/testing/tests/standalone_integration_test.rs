@@ -467,7 +467,8 @@ fn test_submodule_in_module(module_name: &'static str) {
         DEFAULT_CONFIG,
         |mut module| async move {
             // ── 1. Cross-namespace reducer call ──────────────────────────────────
-            // use_submodule calls lib_insert in the lib submodule.
+            // `useSubmodule` is exported as camelCase; its wire name is the canonical
+            // snake_case form.
             let json =
                 r#"{"CallReducer": {"reducer": "use_submodule", "args": "[\"hello_submodule\"]", "request_id": 0, "flags": 0}}"#
                     .to_string();
@@ -478,19 +479,19 @@ fn test_submodule_in_module(module_name: &'static str) {
                 .into_iter()
                 .filter(|l| !is_scheduled_test_log(l))
                 .collect();
-            assert_eq!(relevant, ["lib_insert: hello_submodule"].map(String::from));
+            assert_eq!(relevant, ["libInsert: hello_submodule"].map(String::from));
 
             // ── 2. Cross-namespace procedure call ─────────────────────────────────
-            // use_submodule_procedure calls lib_count in the lib submodule.
+            // useSubmoduleProcedure calls libCount in the lib submodule.
             // We inserted one row above, so the count should be 1.
             let return_val = module
                 .call_procedure_with_args("use_submodule_procedure", "[]")
                 .await
                 .expect("use_submodule_procedure should succeed");
-            assert_eq!(return_val, AlgebraicValue::U64(1), "lib_count should return 1 after one insert");
+            assert_eq!(return_val, AlgebraicValue::U64(1), "libCount should return 1 after one insert");
 
             // ── 3. Cross-namespace HTTP handler ───────────────────────────────────
-            // The root module's /lib-hello route delegates to lib_submodule's lib_hello handler.
+            // The root module's /lib-hello route delegates to lib_submodule's libHello handler.
             let body = module
                 .call_http_route_get("/lib-hello")
                 .await

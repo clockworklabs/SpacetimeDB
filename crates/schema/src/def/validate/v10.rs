@@ -15,6 +15,7 @@ use crate::def::validate::v9::{
 };
 use crate::def::*;
 use crate::error::ValidationError;
+use crate::identifier::NamespacePath;
 use crate::type_for_generate::ProductTypeDef;
 use crate::{def::validate::Result, error::TypeLocation};
 use spacetimedb_sats::raw_identifier::RawIdentifier;
@@ -303,7 +304,9 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
 
     let typespace_for_generate = typespace_for_generate.finish();
 
-    Ok(ModuleDef {
+    let mut module_def = ModuleDef {
+        // Set by `apply_namespace` below.
+        path: NamespacePath::root(),
         tables,
         reducers,
         views,
@@ -319,7 +322,16 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         http_routes,
         raw_module_def_version: RawModuleDefVersion::V10,
         submodules,
-    })
+    };
+
+    // Submodules were validated in isolation, so their defs carry root-relative names.
+    // Now that the tree is assembled, qualify every name by the namespace it is mounted
+    // under. This recurses, so nesting resolves at whichever level ends up outermost.
+    module_def.apply_namespace(&NamespacePath::root());
+    #[cfg(debug_assertions)]
+    module_def.assert_namespaces_applied(&NamespacePath::root());
+
+    Ok(module_def)
 }
 
 /// Validate that each submodule's namespace is a valid identifier of at most 63 characters,
@@ -636,8 +648,11 @@ impl<'a> ModuleValidatorV10<'a> {
         )
             .combine_errors()?;
 
+        let name = identifier(name)?;
         Ok(TableDef {
-            name: identifier(name)?,
+            // Set by `ModuleDef::apply_namespace` once the module tree is assembled.
+            namespace: NamespacePath::root(),
+            name,
             product_type_ref,
             primary_key,
             columns,
@@ -940,6 +955,7 @@ impl<'a> ModuleValidatorV10<'a> {
             (return_type_for_generate, return_columns, param_columns).combine_errors()?;
 
         Ok(ViewDef {
+            namespace: NamespacePath::root(),
             name,
             accessor_name: identifier(accessor_name)?,
             is_anonymous,
@@ -1140,6 +1156,7 @@ mod tests {
     };
     use crate::error::*;
     use crate::identifier::Identifier;
+    use crate::identifier::NamespacePath;
     use crate::type_for_generate::ClientCodegenError;
 
     use itertools::Itertools;
@@ -1304,6 +1321,8 @@ mod tests {
             [
                 &IndexDef {
                     name: "apples_apple_name_count_fresh_idx_btree".into(),
+
+                    namespace: NamespacePath::root(),
                     source_name: "apples_id".into(),
                     accessor_name: None,
                     algorithm: BTreeAlgorithm {
@@ -1313,12 +1332,16 @@ mod tests {
                 },
                 &IndexDef {
                     name: "apples_count_fresh_idx_direct".into(),
+
+                    namespace: NamespacePath::root(),
                     accessor_name: None,
                     source_name: "Apples_count_direct".into(),
                     algorithm: DirectAlgorithm { column: ColId(2) }.into()
                 },
                 &IndexDef {
                     name: "apples_type_idx_btree".into(),
+
+                    namespace: NamespacePath::root(),
                     source_name: "Apples_type_btree".into(),
                     accessor_name: None,
                     algorithm: BTreeAlgorithm {
@@ -1526,6 +1549,58 @@ mod tests {
             &def[..] == "bananas_b_col_55_idx_btree" &&
             column == &55.into()
         });
+    }
+
+    /// Defs in a submodule must carry namespace-qualified keys, and `lookup` must round-trip
+    /// through them. Nesting resolves at whichever level ends up outermost.
+    #[test]
+    fn submodule_defs_have_namespaced_keys() {
+        use crate::def::{ModuleDefLookup, TableDef};
+
+        let mut inner = RawModuleDefV10Builder::new();
+        inner
+            .build_table_with_new_type("sessions", ProductType::from([("id", AlgebraicType::U64)]), true)
+            .finish();
+
+        let mut middle = RawModuleDefV10Builder::new().finish();
+        middle
+            .sections
+            .push(RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "inner".to_string(),
+                module: inner.finish(),
+            }]));
+
+        let mut root = RawModuleDefV10Builder::new().finish();
+        root.sections
+            .push(RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "outer".to_string(),
+                module: middle,
+            }]));
+
+        let def: ModuleDef = root.try_into().expect("should validate");
+
+        let (_, _, table) = def
+            .all_tables_with_prefix()
+            .into_iter()
+            .next()
+            .expect("nested submodule table should exist");
+
+        // The recorded namespace is the full mount path, not just the innermost segment,
+        // and the local name is untouched.
+        assert_eq!(table.namespace.to_string(), "outer.inner.");
+        assert_eq!(&*table.name, "sessions");
+        // The joined form is built on demand from the two.
+        assert_eq!(&*table.namespace.join(table.name.clone()), "outer.inner.sessions");
+
+        // And the key round-trips through `lookup` from the root.
+        let found = <TableDef as ModuleDefLookup>::lookup(&def, table.key()).expect("lookup by key");
+        assert_eq!(found.key(), table.key());
+
+        // A namespace that does not resolve to a real mount yields nothing.
+        let bogus = NamespacePath::root()
+            .child(Identifier::for_test("outer"))
+            .child(Identifier::for_test("nope"));
+        assert!(<TableDef as ModuleDefLookup>::lookup(&def, (&bogus, &table.name)).is_none());
     }
 
     #[test]
@@ -2305,7 +2380,7 @@ mod tests {
             def.reducers.contains_key(&do_delivery),
             "reducer 'do_delivery' not found"
         );
-        assert_eq!(def.reducers[&do_delivery].name.as_identifier(), &do_delivery);
+        assert_eq!(def.reducers[&do_delivery].name.local(), &do_delivery);
 
         // "ProcessItem" (PascalCase) → "process_item"
         let process_item = id("process_item");
@@ -2313,7 +2388,7 @@ mod tests {
             def.reducers.contains_key(&process_item),
             "reducer 'process_item' not found"
         );
-        assert_eq!(def.reducers[&process_item].name.as_identifier(), &process_item);
+        assert_eq!(def.reducers[&process_item].name.local(), &process_item);
 
         // ═══════════════════════════════════════════════════════════════════════════
         // TYPE NAMES — PascalCase; scoped names keep their scope segments unchanged
@@ -2574,7 +2649,7 @@ mod tests {
             !def.reducers.contains_key(&id("do_delivery")),
             "'do_delivery' must not exist when overridden"
         );
-        assert_eq!(def.reducers[&deliver_ident].name.as_identifier(), &deliver_ident);
+        assert_eq!(def.reducers[&deliver_ident].name.local(), &deliver_ident);
 
         // Non-overridden reducer still follows SnakeCase.
         assert!(def.reducers.contains_key(&id("process_item")));

@@ -527,18 +527,17 @@ export const getMySchemaViaHttp = spacetimedb.procedure(t.string(), ctx => {
   }
 });
 
-// use_submodule: calls the lib submodule's lib_insert reducer cross-namespace.
-export const use_submodule = spacetimedb.reducer(
+// useSubmodule: calls the lib submodule's libInsert reducer cross-namespace.
+export const useSubmodule = spacetimedb.reducer(
   { value: t.string() },
   (ctx, { value }) => {
-    libSubmodule.lib_insert(ctx.as.lib, { value });
+    libSubmodule.libInsert(ctx.as.lib, { value });
   }
 );
 
-// use_submodule_procedure: calls the lib submodule's lib_count procedure and returns the result.
-export const use_submodule_procedure = spacetimedb.procedure(
-  t.u64(),
-  (ctx) => libSubmodule.lib_count(ctx.as.lib, {})
+// useSubmoduleProcedure: calls the lib submodule's libCount procedure and returns the result.
+export const useSubmoduleProcedure = spacetimedb.procedure(t.u64(), ctx =>
+  libSubmodule.libCount(ctx.as.lib, {})
 );
 
 export const getSimple = spacetimedb.httpHandler(
@@ -546,10 +545,10 @@ export const getSimple = spacetimedb.httpHandler(
 );
 
 // Delegates to the lib submodule's HTTP handler, demonstrating cross-namespace HTTP dispatch.
-export const lib_hello = spacetimedb.httpHandler((ctx, req) => {
-  return libSubmodule.lib_hello(ctx.as.lib, req);
+export const libHello = spacetimedb.httpHandler((ctx, req) => {
+  return libSubmodule.libHello(ctx.as.lib, req);
 });
 
 export const router = spacetimedb.httpRouter(
-  new Router().get('/get', getSimple).get('/lib-hello', lib_hello)
+  new Router().get('/get', getSimple).get('/lib-hello', libHello)
 );

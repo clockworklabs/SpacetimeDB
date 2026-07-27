@@ -19,7 +19,6 @@ use futures_util::FutureExt;
 use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef};
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
-use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::identifier::NamespacedIdentifier;
 use wasmtime::{
@@ -643,7 +642,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         // Prepare arguments to the reducer + the error sink & start timings.
         let args_bytes = op.args.get_bsatn().clone();
 
-        let reducer_name: RawIdentifier = op.name.clone().into();
+        let reducer_name: NamespacedIdentifier = op.name().clone();
         let (args_source, errors_sink) =
             store
                 .data_mut()
@@ -687,7 +686,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (args_source, errors_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name.clone().into(), args_bytes, op.timestamp, op.call_type());
+                .start_funcall(op.name().clone(), args_bytes, op.timestamp, op.call_type());
 
         let call_result = call_view_export(
             &mut *store,
@@ -724,7 +723,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (args_source, errors_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name.clone().into(), args_bytes, op.timestamp, op.call_type());
+                .start_funcall(op.name().clone(), args_bytes, op.timestamp, op.call_type());
 
         let call_result = call_view_export(
             &mut *store,
@@ -767,12 +766,10 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let [conn_id_0, conn_id_1] = prepare_connection_id_for_call(op.caller_connection_id);
 
         // Prepare arguments to the reducer + the error sink & start timings.
-        let (args_source, result_sink) = store.data_mut().start_funcall(
-            op.name.clone().into(),
-            op.arg_bytes,
-            op.timestamp,
-            FuncCallType::Procedure,
-        );
+        let (args_source, result_sink) =
+            store
+                .data_mut()
+                .start_funcall(op.name().clone(), op.arg_bytes, op.timestamp, FuncCallType::Procedure);
 
         let Some(call_procedure) = self.call_procedure.as_ref() else {
             let res = module_host_actor::ProcedureExecuteResult {
@@ -840,7 +837,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (request_source, response_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name.clone().into(), op.request_bytes, op.timestamp, call_type);
+                .start_funcall(op.name().clone(), op.request_bytes, op.timestamp, call_type);
         let request_body_source = store
             .data_mut()
             .create_extra_bytes_source(op.request_body_bytes)

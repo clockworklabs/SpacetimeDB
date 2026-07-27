@@ -207,6 +207,10 @@ pub struct TxDataTableEntry {
     pub ephemeral: bool,
 }
 
+// Grew from 56 when `TableName` became a `NamespacedIdentifier`: it keeps both the
+// validated segments and their dot-joined rendering (2 words each) where it previously
+// held a single `RawIdentifier` (1 word). The extra word is per table per transaction,
+// which is not a hot allocation; keeping the segments typed is worth it.
 static_assert_size!(TxDataTableEntry, 72);
 
 impl TxDataTableEntry {

@@ -320,7 +320,7 @@ impl Lang for TypeScript {
         }
         // Namespace tables from submodules
         for (prefix, owning_def, table) in &ns_tables {
-            let source_name = submodule_source_name(prefix, table.accessor_name.deref());
+            let source_name = submodule_source_name(prefix, table.name.deref());
             let row_type = submodule_row_type_name(prefix, table.accessor_name.deref());
             let type_ref = table.product_type_ref;
             writeln!(out, "\"{source_name}\": __table({{");
@@ -377,7 +377,8 @@ impl Lang for TypeScript {
             if !is_reducer_invokable(reducer) {
                 continue;
             }
-            let wire_name = format!("{}{}", prefix, reducer.name);
+            // `reducer.name` is already qualified; do not prefix it again.
+            let wire_name = reducer.name.to_string();
             let args_type = submodule_reducer_args_type_name(prefix, &reducer.accessor_name);
             writeln!(out, "__reducerSchema(\"{wire_name}\", {args_type}),");
         }
@@ -593,18 +594,18 @@ impl Lang for TypeScript {
                 );
             }
         } else {
-            writeln!(out, "const _qb = __makeQueryBuilder(tablesSchema.schemaType);");
+            writeln!(out, "const __qb = __makeQueryBuilder(tablesSchema.schemaType);");
             writeln!(out, "export const tables = {{");
             out.indent(1);
             // Root tables (use camelCase accessor, matching tablesSchema keys)
             for table in iter_tables(module, options.visibility) {
                 let key = table.accessor_name.deref().to_case(Case::Camel);
-                writeln!(out, "{key}: _qb.{key},");
+                writeln!(out, "{key}: __qb.{key},");
             }
             // Root views
             for view in iter_views(module) {
                 let key = view.accessor_name.deref().to_case(Case::Camel);
-                writeln!(out, "{key}: _qb.{key},");
+                writeln!(out, "{key}: __qb.{key},");
             }
             // Build and emit namespace tree
             let tree = build_ns_tree(&ns_tables, &ns_views);
@@ -622,7 +623,7 @@ impl Lang for TypeScript {
         } else {
             writeln!(
                 out,
-                "const _reducers = __convertToAccessorMap(reducersSchema.reducersType.reducers);"
+                "const __reducerAccessors = __convertToAccessorMap(reducersSchema.reducersType.reducers);"
             );
             writeln!(out, "export const reducers = {{");
             out.indent(1);
@@ -631,10 +632,10 @@ impl Lang for TypeScript {
                     continue;
                 }
                 let key = reducer.accessor_name.deref().to_case(Case::Camel);
-                writeln!(out, "{key}: _reducers.{key},");
+                writeln!(out, "{key}: __reducerAccessors.{key},");
             }
             let tree = build_reducer_ns_tree(&ns_reducers);
-            emit_fn_ns_tree(out, "_reducers", &tree);
+            emit_fn_ns_tree(out, "__reducerAccessors", &tree);
             out.dedent(1);
             writeln!(out, "}} as const;");
         }
@@ -652,16 +653,16 @@ impl Lang for TypeScript {
         } else {
             writeln!(
                 out,
-                "const _procedures = __convertToAccessorMap(proceduresSchema.procedures);"
+                "const __procedureAccessors = __convertToAccessorMap(proceduresSchema.procedures);"
             );
             writeln!(out, "export const procedures = {{");
             out.indent(1);
             for procedure in iter_procedures(module, options.visibility) {
                 let key = procedure.accessor_name.deref().to_case(Case::Camel);
-                writeln!(out, "{key}: _procedures.{key},");
+                writeln!(out, "{key}: __procedureAccessors.{key},");
             }
             let tree = build_procedure_ns_tree(&ns_procedures);
-            emit_fn_ns_tree(out, "_procedures", &tree);
+            emit_fn_ns_tree(out, "__procedureAccessors", &tree);
             out.dedent(1);
             writeln!(out, "}} as const;");
         }
@@ -1328,9 +1329,11 @@ fn table_module_name(table_name: &Identifier) -> String {
 }
 
 /// Source name (wire name) for a submodule namespace table/view.
-/// E.g. namespace="alias.", accessor_name="tableName" → "alias.tableName"
-fn submodule_source_name(namespace: &NamespacePath, accessor_name: &str) -> String {
-    format!("{}{}", namespace, accessor_name)
+///
+/// This is the *canonical* name, not the accessor name: it is what the host stores and
+/// what appears on the wire. E.g. namespace="lib.", name="fruit_basket" → "lib.fruit_basket".
+fn submodule_source_name(namespace: &NamespacePath, canonical_name: &str) -> String {
+    format!("{}{}", namespace, canonical_name)
 }
 
 /// TypeScript import symbol for a submodule namespace table/view row type.
@@ -1413,7 +1416,7 @@ fn build_ns_tree<'a>(
 ) -> BTreeMap<String, NsTree> {
     let mut tree: BTreeMap<String, NsTree> = BTreeMap::new();
     for (prefix, _, table) in ns_tables {
-        let source_name = submodule_source_name(prefix, table.accessor_name.deref());
+        let source_name = submodule_source_name(prefix, table.name.deref());
         let local = table.accessor_name.deref().to_case(Case::Camel);
         let segs: Vec<&str> = prefix.segments().iter().map(|s| &**s).collect();
         if let Some((first, rest)) = segs.split_first() {
@@ -1442,7 +1445,7 @@ fn emit_ns_tree(out: &mut Indenter, tree: &BTreeMap<String, NsTree>) {
         writeln!(out, "{ns}: {{");
         out.indent(1);
         for (qb_key, local_key) in &node.entries {
-            writeln!(out, "{local_key}: _qb[\"{qb_key}\"],");
+            writeln!(out, "{local_key}: __qb[\"{qb_key}\"],");
         }
         emit_ns_tree(out, &node.children);
         out.dedent(1);

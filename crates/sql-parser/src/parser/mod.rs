@@ -5,7 +5,7 @@ use sqlparser::ast::{
     WildcardAdditionalOptions,
 };
 
-use spacetimedb_lib::sats::raw_identifier::RawIdentifier;
+use spacetimedb_lib::sats::raw_identifier::RawNamespacedIdentifier;
 
 use crate::ast::{
     BinOp, LogOp, Parameter, Project, ProjectElem, ProjectExpr, SqlExpr, SqlFrom, SqlIdent, SqlJoin, SqlLiteral,
@@ -364,5 +364,5 @@ pub(crate) fn parse_parts(mut parts: Vec<Ident>) -> SqlParseResult<SqlIdent> {
         return Ok(parts.swap_remove(0).into());
     }
     let joined = parts.iter().map(|p| p.value.as_str()).collect::<Vec<_>>().join(".");
-    Ok(SqlIdent(RawIdentifier::new(joined)))
+    Ok(SqlIdent(RawNamespacedIdentifier::new(joined)))
 }

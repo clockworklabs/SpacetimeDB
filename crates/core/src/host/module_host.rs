@@ -682,7 +682,7 @@ pub fn call_identity_connected(
     let reducer_lookup = module.module_def.lifecycle_reducer(Lifecycle::OnConnect);
     let stdb = module.relational_db();
     let workload = Workload::reducer_no_args(
-        ReducerName::new(Identifier::new_assume_valid("call_identity_connected".into())),
+        ReducerName::new(Identifier::new_unsafe_assume_valid("call_identity_connected".into())),
         caller_auth.claims.identity,
         caller_connection_id,
     );
@@ -1131,7 +1131,7 @@ pub(crate) fn resolve_view_for_refresh<'a>(
         .ok_or_else(|| anyhow::anyhow!("view {:?} does not have a backing table", view_id))?;
 
     let (global_fn_ptr, view_def, owning_def) = module_def
-        .view_by_name_with_global_fn_ptr(st_view.view_name.as_ref())
+        .view_by_name_with_global_fn_ptr(&st_view.view_name.clone().into())
         .ok_or_else(|| {
             anyhow::anyhow!(
                 "view `{}` for view id `{}` not found in current module",
@@ -2095,7 +2095,9 @@ impl ModuleHost {
         let reducer_name = reducer_lookup
             .as_ref()
             .map(|(_, def)| def.name.clone())
-            .unwrap_or_else(|| ReducerName::new(Identifier::new_assume_valid("__identity_disconnected__".into())));
+            .unwrap_or_else(|| {
+                ReducerName::new(Identifier::new_unsafe_assume_valid("__identity_disconnected__".into()))
+            });
 
         let is_client_exist = |mut_tx: &MutTxId| mut_tx.st_client_row(caller_identity, caller_connection_id).is_some();
 
@@ -3077,7 +3079,7 @@ impl ModuleHost {
     ) -> Result<(ViewCallResult, bool), ViewCallError> {
         let module_def = &instance.common.info().module_def;
         let (global_fn_ptr, view_def, owning_def) = module_def
-            .view_by_name_with_global_fn_ptr(view_name.as_ref())
+            .view_by_name_with_global_fn_ptr(view_name)
             .ok_or(ViewCallError::NoSuchView)?;
         let row_type = view_def.product_type_ref;
         let args = args
@@ -3359,7 +3361,10 @@ impl ModuleHost {
             .map(PipelinedProject::from)
             .collect::<Vec<_>>();
 
-        let table_name = table_name.into();
+        // The v1/v2 wire types carry table names as a plain `RawIdentifier`. A submodule
+        // table's name is namespaced, but the protocol has always sent it as an opaque
+        // string, so narrow here rather than changing those message types.
+        let table_name = RawIdentifier::new(&*table_name);
         let delta_tx = DeltaTx::from(tx);
         let params = ExecutionParams::from_auth(auth);
         let plan_fragments = optimized.iter();
