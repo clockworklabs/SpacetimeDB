@@ -3,13 +3,16 @@ use itertools::Itertools;
 use spacetimedb_paths::server::{ConfigToml, LogsDir};
 use std::io::IsTerminal;
 use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tracing_appender::rolling;
-use tracing_core::LevelFilter;
+use tracing_core::callsite;
+use tracing_core::subscriber::Interest;
+use tracing_core::{span, Event, LevelFilter, Metadata, Subscriber};
 use tracing_flame::FlameLayer;
-use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::layer::{Context, Filter, SubscriberExt};
 use tracing_subscriber::prelude::*;
-use tracing_subscriber::{reload, EnvFilter};
+use tracing_subscriber::EnvFilter;
 
 use crate::config::{ConfigFile, LogConfig};
 use crate::util::jobs::JobCores;
@@ -27,6 +30,8 @@ pub struct TracingOptions {
     pub edition: String,
     /// Enables tracy profiling.
     pub tracy: bool,
+    /// Enables tokio-console.
+    pub tokio_console: bool,
     pub flamegraph: Option<PathBuf>,
 }
 
@@ -38,6 +43,7 @@ impl Default for TracingOptions {
             disk_logging: None,
             edition: "standalone".to_owned(),
             tracy: false,
+            tokio_console: false,
             flamegraph: None,
         }
     }
@@ -59,6 +65,8 @@ pub fn configure_tracing(opts: TracingOptions) {
 
     let use_ansi = std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none_or(|v| v.is_empty());
 
+    let log_filter = SharedLogFilter::new(conf_to_filter(opts.config));
+
     let file_fmt_layer = if let Some(logs_dir) = opts.disk_logging {
         let roller = rolling::Builder::new()
             .filename_prefix(LogsDir::filename_prefix(&opts.edition))
@@ -69,7 +77,8 @@ pub fn configure_tracing(opts: TracingOptions) {
             tracing_subscriber::fmt::Layer::default()
                 .with_ansi(false)
                 .with_writer(roller)
-                .event_format(format.clone()),
+                .event_format(format.clone())
+                .with_filter(log_filter.clone()),
         )
     } else {
         None
@@ -78,12 +87,17 @@ pub fn configure_tracing(opts: TracingOptions) {
     let fmt_layer = tracing_subscriber::fmt::Layer::default()
         .with_ansi(use_ansi)
         .with_writer(std::io::stdout)
-        .event_format(format);
-
-    let env_filter_layer = conf_to_filter(opts.config);
+        .event_format(format)
+        .with_filter(log_filter.clone());
 
     let tracy_layer = if opts.tracy {
-        Some(tracing_tracy::TracyLayer::new())
+        Some(tracing_tracy::TracyLayer::new().with_filter(log_filter.clone()))
+    } else {
+        None
+    };
+
+    let tokio_console_layer = if opts.tokio_console {
+        Some(console_subscriber::spawn())
     } else {
         None
     };
@@ -91,7 +105,7 @@ pub fn configure_tracing(opts: TracingOptions) {
     let (flame_guard, flame_layer) = if let Some(flamegraph_path) = opts.flamegraph {
         let (flame_layer, guard) = FlameLayer::with_file(flamegraph_path).unwrap();
         let flame_layer = flame_layer.with_file_and_line(false).with_empty_samples(false);
-        (Some(guard), Some(flame_layer))
+        (Some(guard), Some(flame_layer.with_filter(log_filter.clone())))
     } else {
         (None, None)
     };
@@ -99,17 +113,16 @@ pub fn configure_tracing(opts: TracingOptions) {
     // Is important for `tracy_layer` to be before `fmt_layer` to not print ascii codes...
     let subscriber = tracing_subscriber::Registry::default()
         .with(tracy_layer)
+        .with(tokio_console_layer)
         .with(fmt_layer)
         .with(file_fmt_layer)
         .with(flame_layer);
 
     if let Some(conf_file) = opts.reload_config {
-        let (reload_layer, reload_handle) = tracing_subscriber::reload::Layer::new(env_filter_layer);
-        std::thread::spawn(move || reload_config(&conf_file, &reload_handle));
-        subscriber.with(reload_layer).init();
-    } else {
-        subscriber.with(env_filter_layer).init();
-    };
+        std::thread::spawn(move || reload_config(&conf_file, log_filter));
+    }
+
+    subscriber.init();
 
     if let Some(guard) = flame_guard {
         tokio::spawn(async move {
@@ -127,6 +140,61 @@ fn conf_to_filter(conf: LogConfig) -> EnvFilter {
         .parse_lossy(conf.directives.join(","))
 }
 
+#[derive(Clone)]
+struct SharedLogFilter(Arc<RwLock<EnvFilter>>);
+
+impl SharedLogFilter {
+    fn new(filter: EnvFilter) -> Self {
+        Self(Arc::new(RwLock::new(filter)))
+    }
+
+    fn reload(&self, filter: EnvFilter) {
+        *self.0.write().unwrap() = filter;
+        callsite::rebuild_interest_cache();
+    }
+}
+
+impl<S> Filter<S> for SharedLogFilter
+where
+    S: Subscriber,
+{
+    fn enabled(&self, meta: &Metadata<'_>, cx: &Context<'_, S>) -> bool {
+        <EnvFilter as Filter<S>>::enabled(&*self.0.read().unwrap(), meta, cx)
+    }
+
+    fn callsite_enabled(&self, meta: &'static Metadata<'static>) -> Interest {
+        <EnvFilter as Filter<S>>::callsite_enabled(&*self.0.read().unwrap(), meta)
+    }
+
+    fn event_enabled(&self, event: &Event<'_>, cx: &Context<'_, S>) -> bool {
+        <EnvFilter as Filter<S>>::event_enabled(&*self.0.read().unwrap(), event, cx)
+    }
+
+    fn max_level_hint(&self) -> Option<LevelFilter> {
+        <EnvFilter as Filter<S>>::max_level_hint(&*self.0.read().unwrap())
+    }
+
+    fn on_new_span(&self, attrs: &span::Attributes<'_>, id: &span::Id, ctx: Context<'_, S>) {
+        <EnvFilter as Filter<S>>::on_new_span(&*self.0.read().unwrap(), attrs, id, ctx);
+    }
+
+    fn on_record(&self, id: &span::Id, values: &span::Record<'_>, ctx: Context<'_, S>) {
+        <EnvFilter as Filter<S>>::on_record(&*self.0.read().unwrap(), id, values, ctx);
+    }
+
+    fn on_enter(&self, id: &span::Id, ctx: Context<'_, S>) {
+        <EnvFilter as Filter<S>>::on_enter(&*self.0.read().unwrap(), id, ctx);
+    }
+
+    fn on_exit(&self, id: &span::Id, ctx: Context<'_, S>) {
+        <EnvFilter as Filter<S>>::on_exit(&*self.0.read().unwrap(), id, ctx);
+    }
+
+    fn on_close(&self, id: span::Id, ctx: Context<'_, S>) {
+        <EnvFilter as Filter<S>>::on_close(&*self.0.read().unwrap(), id, ctx);
+    }
+}
+
 fn parse_from_file(path: &ConfigToml) -> EnvFilter {
     let conf = match ConfigFile::read(path) {
         Ok(Some(conf)) => conf.logs,
@@ -141,7 +209,7 @@ fn parse_from_file(path: &ConfigToml) -> EnvFilter {
 }
 
 const RELOAD_INTERVAL: Duration = Duration::from_secs(5);
-fn reload_config<S>(conf_file: &ConfigToml, reload_handle: &reload::Handle<EnvFilter, S>) {
+fn reload_config(conf_file: &ConfigToml, log_filter: SharedLogFilter) {
     let mut prev_time = conf_file.metadata().and_then(|m| m.modified()).ok();
     loop {
         std::thread::sleep(RELOAD_INTERVAL);
@@ -150,9 +218,7 @@ fn reload_config<S>(conf_file: &ConfigToml, reload_handle: &reload::Handle<EnvFi
         {
             log::info!("reloading log config...");
             prev_time = Some(modified);
-            if reload_handle.reload(parse_from_file(conf_file)).is_err() {
-                break;
-            }
+            log_filter.reload(parse_from_file(conf_file));
         }
     }
 }

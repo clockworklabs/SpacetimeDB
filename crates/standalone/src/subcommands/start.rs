@@ -52,6 +52,12 @@ pub fn cli() -> clap::Command {
                 .help("Enable Tracy profiling"),
         )
         .arg(
+            Arg::new("enable_tokio_console")
+                .long("enable-tokio-console")
+                .action(SetTrue)
+                .help("Enable tokio-console tracing support"),
+        )
+        .arg(
             Arg::new("jwt_key_dir")
                 .hide(true)
                 .long("jwt-key-dir")
@@ -126,6 +132,8 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     });
     let data_dir = args.get_one::<ServerDataDir>("data_dir").unwrap();
     let enable_tracy = args.get_flag("enable_tracy") || std::env::var_os("SPACETIMEDB_TRACY").is_some();
+    let enable_tokio_console =
+        args.get_flag("enable_tokio_console") || std::env::var_os("SPACETIMEDB_TOKIO_CONSOLE").is_some();
     let storage = if args.get_flag("in_memory") {
         Storage::Memory
     } else {
@@ -167,7 +175,8 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
             .is_none()
             .then(|| data_dir.logs()),
         edition: "standalone".to_owned(),
-        tracy: enable_tracy || std::env::var_os("SPACETIMEDB_TRACY").is_some(),
+        tracy: enable_tracy,
+        tokio_console: enable_tokio_console,
         flamegraph: std::env::var_os("SPACETIMEDB_FLAMEGRAPH").map(|_| {
             std::env::var_os("SPACETIMEDB_FLAMEGRAPH_PATH")
                 .unwrap_or("/var/log/flamegraph.folded".into())

@@ -109,6 +109,7 @@ tokio-util.workspace = true
 tokio.workspace = true
 tokio-stream = { workspace = true, features = ["sync"] }
 tokio-metrics = { version = "0.4.0", features = ["rt"] }
+console-subscriber.workspace = true
 toml.workspace = true
 tracing-appender.workspace = true
 tracing-core.workspace = true
