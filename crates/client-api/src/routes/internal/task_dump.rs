@@ -1,4 +1,4 @@
-use axum::{extract::Extension, routing::get};
+use axum::routing::get;
 
 #[cfg(all(
     tokio_unstable,
@@ -6,7 +6,7 @@ use axum::{extract::Extension, routing::get};
     any(target_arch = "aarch64", target_arch = "x86", target_arch = "x86_64")
 ))]
 mod imp {
-    use std::{collections::BTreeMap, fmt::Write as _, sync::Arc, time::Duration};
+    use std::{collections::BTreeMap, fmt::Write as _, num::NonZeroU64, sync::Arc, time::Duration};
 
     use axum::{
         extract::{Extension, Query},
@@ -14,110 +14,59 @@ mod imp {
     };
     use http::{header::CONTENT_TYPE, StatusCode};
     use serde::Deserialize;
-    use tokio::{runtime::Handle, sync::Mutex};
+    use tokio::runtime::Handle;
 
-    const MAX_TIMEOUT_MS: u64 = 30_000;
-
-    #[derive(Clone)]
-    struct Runtime {
-        handle: Handle,
-        dump_lock: Arc<Mutex<()>>,
-    }
+    const DEFAULT_TIMEOUT_MS: u64 = 2_000;
 
     /// The Tokio runtimes which can be inspected by the internal task dump endpoint.
     #[derive(Clone, Default)]
     pub struct TaskDumpRegistry {
-        runtimes: Arc<BTreeMap<&'static str, Runtime>>,
+        runtimes: Arc<BTreeMap<&'static str, Handle>>,
     }
 
     impl TaskDumpRegistry {
         pub fn new(runtimes: impl IntoIterator<Item = (&'static str, Handle)>) -> Self {
-            let runtimes = runtimes
-                .into_iter()
-                .map(|(name, handle)| {
-                    (
-                        name,
-                        Runtime {
-                            handle,
-                            dump_lock: Arc::new(Mutex::new(())),
-                        },
-                    )
-                })
-                .collect();
             Self {
-                runtimes: Arc::new(runtimes),
+                runtimes: Arc::new(runtimes.into_iter().collect()),
             }
-        }
-
-        fn get(&self, name: &str) -> Option<&Runtime> {
-            self.runtimes.get(name)
-        }
-
-        fn names(&self) -> impl Iterator<Item = &'static str> + '_ {
-            self.runtimes.keys().copied()
         }
     }
 
     #[derive(Deserialize)]
     pub(super) struct TaskDumpQuery {
         runtime: String,
-        timeout_ms: u64,
-    }
-
-    impl TaskDumpQuery {
-        fn validate(&self) -> Result<(), (StatusCode, String)> {
-            if !(1..=MAX_TIMEOUT_MS).contains(&self.timeout_ms) {
-                return Err((
-                    StatusCode::BAD_REQUEST,
-                    format!("timeout_ms must be between 1 and {MAX_TIMEOUT_MS}"),
-                ));
-            }
-            Ok(())
-        }
+        timeout_ms: Option<NonZeroU64>,
     }
 
     pub(super) async fn handle_get_task_dump(
-        Extension(registry): Extension<TaskDumpRegistry>,
+        registry: Option<Extension<TaskDumpRegistry>>,
         Query(query): Query<TaskDumpQuery>,
     ) -> Result<Response, (StatusCode, String)> {
-        query.validate()?;
+        let Some(Extension(registry)) = registry else {
+            return Err((
+                StatusCode::NOT_IMPLEMENTED,
+                "Tokio task dumps are not configured for this server".into(),
+            ));
+        };
 
-        let Some(runtime) = registry.get(&query.runtime).cloned() else {
-            let valid = registry.names().collect::<Vec<_>>().join(", ");
+        let Some(runtime) = registry.runtimes.get(query.runtime.as_str()).cloned() else {
+            let valid = registry.runtimes.keys().copied().collect::<Vec<_>>().join(", ");
             return Err((
                 StatusCode::BAD_REQUEST,
                 format!("unknown Tokio runtime {:?}; valid runtimes: {valid}", query.runtime),
             ));
         };
 
-        let permit = runtime.dump_lock.try_lock_owned().map_err(|_| {
-            (
-                StatusCode::CONFLICT,
-                format!("a task dump is already in progress for runtime {:?}", query.runtime),
-            )
-        })?;
-
-        // Keep the permit in the spawned task so that a timed-out dump continues
-        // to exclude new requests until Tokio's dump future actually finishes.
-        let dump_task = tokio::spawn(async move {
-            let dump = runtime.handle.dump().await;
-            (permit, dump)
-        });
-        let (_permit, dump) = tokio::time::timeout(Duration::from_millis(query.timeout_ms), dump_task)
+        let timeout_ms = query.timeout_ms.map_or(DEFAULT_TIMEOUT_MS, NonZeroU64::get);
+        let dump = tokio::time::timeout(Duration::from_millis(timeout_ms), runtime.dump())
             .await
             .map_err(|_| {
                 (
                     StatusCode::GATEWAY_TIMEOUT,
                     format!(
-                        "timed out after {}ms while dumping Tokio runtime {:?}",
-                        query.timeout_ms, query.runtime
+                        "timed out after {timeout_ms}ms while dumping Tokio runtime {:?}",
+                        query.runtime
                     ),
-                )
-            })?
-            .map_err(|err| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("task dump worker failed for runtime {:?}: {err}", query.runtime),
                 )
             })?;
 
@@ -155,44 +104,16 @@ mod imp {
     mod tests {
         use super::*;
         use http_body_util::BodyExt as _;
-
-        #[tokio::test]
-        async fn registry_names_are_sorted() {
-            let handle = Handle::current();
-            let registry = TaskDumpRegistry::new([("replication", handle.clone()), ("main", handle)]);
-
-            assert_eq!(registry.names().collect::<Vec<_>>(), ["main", "replication"]);
-        }
-
-        #[test]
-        fn timeout_must_be_in_range() {
-            for timeout_ms in [1, MAX_TIMEOUT_MS] {
-                assert!(TaskDumpQuery {
-                    runtime: "main".into(),
-                    timeout_ms,
-                }
-                .validate()
-                .is_ok());
-            }
-
-            for timeout_ms in [0, MAX_TIMEOUT_MS + 1] {
-                assert!(TaskDumpQuery {
-                    runtime: "main".into(),
-                    timeout_ms,
-                }
-                .validate()
-                .is_err());
-            }
-        }
+        use tokio::runtime::Handle;
 
         #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-        async fn dumps_registered_runtime() {
+        async fn dumps_registered_runtime_with_default_timeout() {
             let registry = TaskDumpRegistry::new([("main", Handle::current())]);
             let response = handle_get_task_dump(
-                Extension(registry),
+                Some(Extension(registry)),
                 Query(TaskDumpQuery {
                     runtime: "main".into(),
-                    timeout_ms: 10_000,
+                    timeout_ms: None,
                 }),
             )
             .await
@@ -248,8 +169,6 @@ mod imp {
 use imp::handle_get_task_dump;
 pub use imp::TaskDumpRegistry;
 
-pub fn router<S: Clone + Send + Sync + 'static>(registry: TaskDumpRegistry) -> axum::Router<S> {
-    axum::Router::new()
-        .route("/", get(handle_get_task_dump))
-        .layer(Extension(registry))
+pub fn router<S: Clone + Send + Sync + 'static>() -> axum::Router<S> {
+    axum::Router::new().route("/", get(handle_get_task_dump))
 }

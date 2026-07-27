@@ -158,11 +158,11 @@ mod jemalloc_profiling {
 }
 
 // The internal router is for things that are not meant to be exposed to the public API.
-pub fn router<S>(task_dumps: TaskDumpRegistry) -> axum::Router<S>
+pub fn router<S>() -> axum::Router<S>
 where
     S: NodeDelegate + Clone + 'static,
 {
     axum::Router::new()
         .nest("/heap", jemalloc_profiling::jemalloc_router())
-        .nest("/task-dump", task_dump::router(task_dumps))
+        .nest("/task-dump", task_dump::router())
 }

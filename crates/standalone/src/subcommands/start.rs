@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::{StandaloneEnv, StandaloneOptions};
 use anyhow::Context;
-use axum::extract::DefaultBodyLimit;
+use axum::extract::{DefaultBodyLimit, Extension};
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
 use spacetimedb::config::{parse_config, CertificateAuthority};
@@ -17,7 +17,7 @@ use spacetimedb::startup::{self, TracingOptions};
 use spacetimedb::util::jobs::JobCores;
 use spacetimedb::worker_metrics;
 use spacetimedb_client_api::routes::database::DatabaseRoutes;
-use spacetimedb_client_api::routes::router_with_task_dumps;
+use spacetimedb_client_api::routes::router;
 use spacetimedb_client_api::routes::subscribe::WebSocketOptions;
 use spacetimedb_client_api::routes::TaskDumpRegistry;
 use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
@@ -208,8 +208,9 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     db_routes.pre_publish = db_routes.pre_publish.layer(DefaultBodyLimit::disable());
     let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
     let task_dumps = TaskDumpRegistry::new([("main", main_rt)]);
-    let service =
-        router_with_task_dumps(&ctx, db_routes, IdentityRoutes::default(), extra, task_dumps).with_state(ctx.clone());
+    let service = router(&ctx, db_routes, IdentityRoutes::default(), extra)
+        .layer(Extension(task_dumps))
+        .with_state(ctx.clone());
 
     // Check if the requested port is available on both IPv4 and IPv6.
     // If not, offer to find an available port by incrementing (unless non-interactive).
