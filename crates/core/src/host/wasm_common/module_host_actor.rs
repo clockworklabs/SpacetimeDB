@@ -1816,7 +1816,12 @@ fn log_reducer_error(
         .with_label_values(&replica_ctx.database_identity, module_hash, reducer)
         .inc();
 
-    log::info!("reducer returned error: {message}");
+    log::info!(
+        "reducer `{}` of database `{}` returned error: {}",
+        reducer,
+        replica_ctx.database_identity,
+        message
+    );
 
     let record = Record {
         ts: chrono::DateTime::from_timestamp_micros(timestamp.to_micros_since_unix_epoch()).unwrap(),
