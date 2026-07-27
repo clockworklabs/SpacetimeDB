@@ -529,6 +529,8 @@ jobs:
           save-if: false
           prefix-key: v1
 
+      - uses: ./.github/actions/setup-pnpm
+
       - name: Run bindgen tests
         run: cargo ci wasm-bindings
 
