@@ -207,6 +207,10 @@ unsafe extern "C" fn getentropy(buf: *mut u8, buflen: usize) -> i32 {
     if buflen > 256 {
         return -1;
     }
+    if in_simulation() {
+        eprintln!("warning: randomness requested; delegating to host OS");
+        eprintln!("{}", std::backtrace::Backtrace::force_capture());
+    }
     match unsafe { getrandom(buf, buflen, 0) } {
         -1 => -1,
         _ => 0,

@@ -5,7 +5,9 @@
 //! The [`get`](HttpClient::get) helper can be used for simple `GET` requests,
 //! while [`send`](HttpClient::send) allows more complex requests with headers, bodies and other methods.
 
+#[cfg(target_arch = "wasm32")]
 use crate::rt::{read_bytes_source_as, read_bytes_source_into};
+#[cfg(target_arch = "wasm32")]
 use crate::IterBuf;
 // Imports used only by the (still-unstable) HTTP handler machinery.
 #[cfg(all(feature = "unstable", feature = "rand08"))]
@@ -15,20 +17,25 @@ use crate::{try_with_tx, with_tx, Timestamp, TxContext};
 use bytes::Bytes;
 #[cfg(all(feature = "rand08", feature = "unstable"))]
 use rand08::RngCore;
+#[cfg(target_arch = "wasm32")]
+use spacetimedb_lib::bsatn;
 #[cfg(feature = "unstable")]
 use spacetimedb_lib::db::raw_def::v10::MethodOrAny;
+#[cfg(any(target_arch = "wasm32", feature = "unstable"))]
 use spacetimedb_lib::http as st_http;
 #[cfg(feature = "unstable")]
 use spacetimedb_lib::http::{character_is_acceptable_for_route_path, ACCEPTABLE_ROUTE_PATH_CHARS_HUMAN_DESCRIPTION};
 #[cfg(feature = "unstable")]
 use spacetimedb_lib::Identity;
+use spacetimedb_lib::TimeDuration;
 #[cfg(all(feature = "unstable", feature = "rand08"))]
 use spacetimedb_lib::Uuid;
-use spacetimedb_lib::{bsatn, TimeDuration};
 #[cfg(all(feature = "unstable", feature = "rand08"))]
 use std::cell::Cell;
 #[cfg(all(feature = "unstable", feature = "rand08"))]
 use std::cell::OnceCell;
+#[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+use std::rc::Rc;
 #[cfg(feature = "unstable")]
 use std::str::FromStr;
 
@@ -118,7 +125,7 @@ impl HandlerContext {
     pub(crate) fn new(timestamp: Timestamp) -> Self {
         Self {
             timestamp,
-            http: HttpClient {},
+            http: HttpClient::host(),
             #[cfg(feature = "rand08")]
             rng: OnceCell::new(),
             #[cfg(feature = "rand08")]
@@ -431,9 +438,36 @@ fn routes_overlap(a: &RouteSpec, b: &RouteSpec) -> bool {
 /// Access an `HttpClient` from within [procedures](crate::procedure)
 /// via [the `http` field of the `ProcedureContext`](crate::ProcedureContext::http).
 #[non_exhaustive]
-pub struct HttpClient {}
+pub struct HttpClient {
+    backend: HttpClientBackend,
+}
+
+enum HttpClientBackend {
+    Host,
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    Test {
+        context: crate::test_utils::TestContext,
+        responder: TestHttpResponder,
+    },
+}
+
+#[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+pub type TestHttpResponder = Rc<dyn Fn(&crate::test_utils::TestContext, Request) -> Result<Response, Error>>;
 
 impl HttpClient {
+    pub(crate) fn host() -> Self {
+        Self {
+            backend: HttpClientBackend::Host,
+        }
+    }
+
+    #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+    pub(crate) fn test(context: crate::test_utils::TestContext, responder: TestHttpResponder) -> Self {
+        Self {
+            backend: HttpClientBackend::Test { context, responder },
+        }
+    }
+
     /// Send the HTTP request `request` and wait for its response.
     ///
     /// For simple `GET` requests with no headers, use [`HttpClient::get`] instead.
@@ -484,29 +518,50 @@ impl HttpClient {
     ///
     /// ```
     pub fn send<B: Into<Body>>(&self, request: http::Request<B>) -> Result<Response, Error> {
-        let (request, body) = request.map(Into::into).into_parts();
-        let request = convert_request(request);
-        let request = bsatn::to_vec(&request).expect("Failed to BSATN-serialize `spacetimedb_lib::http::Request`");
+        let request = request.map(Into::into);
 
-        match spacetimedb_bindings_sys::procedure::http_request(&request, &body.into_bytes()) {
-            Ok((response_source, body_source)) => {
-                let response = read_bytes_source_as::<st_http::Response>(response_source);
-                let response = convert_response(response).expect("Invalid http response returned from host");
-                let body = if body_source == spacetimedb_bindings_sys::raw::BytesSource::INVALID {
-                    // Empty response body — host returns INVALID source for empty bytes
-                    Body::from_bytes(Vec::<u8>::new())
-                } else {
-                    let mut buf = IterBuf::take();
-                    read_bytes_source_into(body_source, &mut buf);
-                    Body::from_bytes(buf.clone())
-                };
+        match &self.backend {
+            HttpClientBackend::Host => {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    let (request, body) = request.into_parts();
+                    let request = convert_request(request);
+                    let request =
+                        bsatn::to_vec(&request).expect("Failed to BSATN-serialize `spacetimedb_lib::http::Request`");
 
-                Ok(http::Response::from_parts(response, body))
+                    match spacetimedb_bindings_sys::procedure::http_request(&request, &body.into_bytes()) {
+                        Ok((response_source, body_source)) => {
+                            let response = read_bytes_source_as::<st_http::Response>(response_source);
+                            let response =
+                                convert_response(response).expect("Invalid http response returned from host");
+                            let body = if body_source == spacetimedb_bindings_sys::raw::BytesSource::INVALID {
+                                // Empty response body — host returns INVALID source for empty bytes
+                                Body::from_bytes(Vec::<u8>::new())
+                            } else {
+                                let mut buf = IterBuf::take();
+                                read_bytes_source_into(body_source, &mut buf);
+                                Body::from_bytes(buf.clone())
+                            };
+
+                            Ok(http::Response::from_parts(response, body))
+                        }
+                        Err(err_source) => {
+                            let message = read_bytes_source_as::<String>(err_source);
+                            Err(Error { message })
+                        }
+                    }
+                }
+
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let _ = request;
+                    Err(Error::new(
+                        "procedure HTTP is only available in wasm or native test-utils contexts",
+                    ))
+                }
             }
-            Err(err_source) => {
-                let message = read_bytes_source_as::<String>(err_source);
-                Err(Error { message })
-            }
+            #[cfg(all(feature = "test-utils", not(target_arch = "wasm32")))]
+            HttpClientBackend::Test { context, responder } => responder(context, request),
         }
     }
 
@@ -545,6 +600,7 @@ impl HttpClient {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 fn convert_request(parts: http::request::Parts) -> st_http::Request {
     let http::request::Parts {
         method,
@@ -589,6 +645,7 @@ fn convert_request(parts: http::request::Parts) -> st_http::Request {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 fn convert_response(response: st_http::Response) -> http::Result<http::response::Parts> {
     let st_http::Response { headers, version, code } = response;
 
@@ -807,6 +864,15 @@ impl std::fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+impl Error {
+    /// Construct an HTTP error for tests or adapters.
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
 
 impl From<http::Error> for Error {
     fn from(err: http::Error) -> Self {

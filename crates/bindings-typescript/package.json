@@ -23,7 +23,7 @@
     "./src/server/polyfills.ts"
   ],
   "scripts": {
-    "build:js": "tsup",
+    "build:js": "tsup && node scripts/copy-test-utils-wasm.mjs",
     "build:types": "tsc -p tsconfig.build.json",
     "build": "pnpm -s build:js && pnpm -s build:types",
     "format": "prettier . --write --ignore-path ../../.prettierignore",
@@ -71,6 +71,21 @@
       "import": "./dist/server/index.mjs",
       "require": "./dist/server/index.cjs",
       "default": "./dist/server/index.mjs"
+    },
+    "./server/test-utils": {
+      "types": "./dist/server/test-utils/index.d.ts",
+      "import": "./dist/server/test-utils/index.mjs",
+      "default": "./dist/server/test-utils/index.mjs"
+    },
+    "./server/test-utils/vitest": {
+      "types": "./dist/server/test-utils/vitest.d.ts",
+      "import": "./dist/server/test-utils/vitest.mjs",
+      "default": "./dist/server/test-utils/vitest.mjs"
+    },
+    "./server/test-utils/wasm": {
+      "types": "./dist/server/test-utils/wasm.d.ts",
+      "import": "./dist/server/test-utils/wasm.mjs",
+      "default": "./dist/server/test-utils/wasm.mjs"
     },
     "./vue": {
       "types": "./dist/vue/index.d.ts",

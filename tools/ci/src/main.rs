@@ -7,6 +7,7 @@ use serde_json::Value;
 use std::ffi::OsString;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
 use std::{env, fs};
 
 const README_PATH: &str = "tools/ci/README.md";
@@ -103,6 +104,31 @@ fn package_json_pnpm_version(package_manager: &str) -> Option<&str> {
 fn git_tracked_files(pathspec: &str) -> Result<Vec<PathBuf>> {
     let output = cmd!("git", "ls-files", pathspec).read()?;
     Ok(output.lines().map(PathBuf::from).collect())
+}
+
+fn executable_on_path(name: &str) -> bool {
+    let Some(paths) = env::var_os("PATH") else {
+        return false;
+    };
+
+    env::split_paths(&paths).any(|path| path.join(name).is_file())
+}
+
+fn have_emscripten() -> bool {
+    executable_on_path("emcc") || executable_on_path("emcc.bat")
+}
+
+fn node_has_browser_websocket() -> bool {
+    let Ok(status) = Command::new("node")
+        .args(["-e", "if (typeof globalThis.WebSocket !== 'function') process.exit(1)"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+    else {
+        return false;
+    };
+
+    status.success()
 }
 
 fn package_json_string_value(package_json: &Value, key: &str) -> Option<String> {
@@ -311,6 +337,11 @@ enum CiCmd {
     ///
     /// Runs tests for the codegen crate and builds a test module with the wasm bindings.
     WasmBindings,
+    /// Checks the portable datastore wasm boundary
+    ///
+    /// Ensures the table, datastore portable feature, portable datastore crate, and wasm adapter
+    /// compile for wasm32-unknown-unknown, then runs the portable datastore unit tests natively.
+    PortableDatastore,
     /// Deprecated; use `cargo regen csharp dlls`.
     ///
     /// Builds and packs C# DLLs and NuGet packages for local Unity workflows.
@@ -490,8 +521,7 @@ fn main() -> Result<()> {
 
             // Exclude smoketests from `cargo test --all` since they require pre-built binaries.
             // Smoketests have their own dedicated command: `cargo ci smoketests`
-            cmd!(
-                "cargo",
+            let mut test_args: Vec<OsString> = [
                 "test",
                 "--all",
                 "--exclude",
@@ -503,9 +533,16 @@ fn main() -> Result<()> {
                 "--",
                 "--test-threads=2",
                 "--skip",
-                "unreal"
-            )
-            .run()?;
+                "unreal",
+            ]
+            .into_iter()
+            .map(OsString::from)
+            .collect();
+            if !have_emscripten() {
+                eprintln!("Skipping C++ integration tests because `emcc` was not found in PATH");
+                test_args.extend(["--skip", "cpp"].into_iter().map(OsString::from));
+            }
+            cmd("cargo", test_args).run()?;
             // Bindings snapshot tests rely on the unstable feature,
             // as they compile and test APIs which are gated behind that feature,
             // e.g. procedures, HTTP handlers.
@@ -515,7 +552,7 @@ fn main() -> Result<()> {
                 "-p",
                 "spacetimedb",
                 "--features",
-                "unstable",
+                "unstable,test-utils",
                 "--",
                 "--test-threads=2",
             )
@@ -535,8 +572,7 @@ fn main() -> Result<()> {
             )
             .run()?;
             // SDK procedure tests intentionally make localhost HTTP requests.
-            cmd!(
-                "cargo",
+            let mut sdk_test_args: Vec<OsString> = [
                 "test",
                 "-p",
                 "spacetimedb-sdk",
@@ -545,23 +581,40 @@ fn main() -> Result<()> {
                 "--",
                 "--test-threads=2",
                 "--skip",
-                "unreal"
-            )
-            .run()?;
+                "unreal",
+            ]
+            .into_iter()
+            .map(OsString::from)
+            .collect();
+            if !have_emscripten() {
+                eprintln!("Skipping C++ SDK tests because `emcc` was not found in PATH");
+                sdk_test_args.extend(["--skip", "cpp"].into_iter().map(OsString::from));
+            }
+            cmd("cargo", sdk_test_args).env("CI", "true").run()?;
             // Run the same SDK suite against wasm/browser test clients.
-            cmd!(
-                "cargo",
-                "test",
-                "-p",
-                "spacetimedb-sdk",
-                "--features",
-                "allow_loopback_http_for_tests,browser",
-                "--",
-                "--test-threads=2",
-                "--skip",
-                "unreal"
-            )
-            .run()?;
+            if node_has_browser_websocket() {
+                let mut browser_sdk_test_args: Vec<OsString> = [
+                    "test",
+                    "-p",
+                    "spacetimedb-sdk",
+                    "--features",
+                    "allow_loopback_http_for_tests,browser",
+                    "--",
+                    "--test-threads=2",
+                    "--skip",
+                    "unreal",
+                ]
+                .into_iter()
+                .map(OsString::from)
+                .collect();
+                if !have_emscripten() {
+                    eprintln!("Skipping C++ SDK browser tests because `emcc` was not found in PATH");
+                    browser_sdk_test_args.extend(["--skip", "cpp"].into_iter().map(OsString::from));
+                }
+                cmd("cargo", browser_sdk_test_args).env("CI", "true").run()?;
+            } else {
+                eprintln!("Skipping SDK browser tests because `node` does not provide `globalThis.WebSocket`");
+            }
             // TODO: This should check for a diff at the start. If there is one, we should alert the user
             // that we're disabling diff checks because they have a dirty git repo, and to re-run in a clean one
             // if they want those checks.
@@ -672,6 +725,49 @@ fn main() -> Result<()> {
                 .join("target/debug/spacetimedb-cli")
                 .with_extension(std::env::consts::EXE_EXTENSION);
             cmd!(cli_path, "build", "--module-path", "modules/module-test",).run()?;
+        }
+
+        Some(CiCmd::PortableDatastore) => {
+            cmd!(
+                "cargo",
+                "check",
+                "-p",
+                "spacetimedb-table",
+                "--target",
+                "wasm32-unknown-unknown"
+            )
+            .run()?;
+            cmd!(
+                "cargo",
+                "check",
+                "-p",
+                "spacetimedb-datastore",
+                "--no-default-features",
+                "--features",
+                "portable",
+                "--target",
+                "wasm32-unknown-unknown"
+            )
+            .run()?;
+            cmd!(
+                "cargo",
+                "check",
+                "-p",
+                "spacetimedb-portable-datastore",
+                "--target",
+                "wasm32-unknown-unknown"
+            )
+            .run()?;
+            cmd!(
+                "cargo",
+                "check",
+                "-p",
+                "spacetimedb-portable-datastore-wasm",
+                "--target",
+                "wasm32-unknown-unknown"
+            )
+            .run()?;
+            cmd!("cargo", "test", "-p", "spacetimedb-portable-datastore").run()?;
         }
 
         Some(CiCmd::Dlls) => {

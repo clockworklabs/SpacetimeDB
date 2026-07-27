@@ -25,6 +25,8 @@ members = [
   "crates/paths",
   "crates/pg",
   "crates/physical-plan",
+  "crates/portable-datastore",
+  "crates/portable-datastore-wasm",
   "crates/primitives",
   "crates/query",
   "crates/runtime",
@@ -39,6 +41,7 @@ members = [
   "crates/standalone",
   "crates/subscription",
   "crates/table",
+  "crates/test-datastore",
   "crates/testing",
   "crates/update",
   "modules/benchmarks",
@@ -159,6 +162,7 @@ spacetimedb-standalone = { path = "crates/standalone", version = "=2.7.0" }
 spacetimedb-subscription = { path = "crates/subscription", version = "=2.7.0" }
 spacetimedb-sql-parser = { path = "crates/sql-parser", version = "=2.7.0" }
 spacetimedb-table = { path = "crates/table", version = "=2.7.0" }
+spacetimedb-test-datastore = { path = "crates/test-datastore", version = "=2.7.0" }
 
 # Prevent `ahash` from pulling in `getrandom` by disabling default features.
 # Modules use `getrandom02` and we need to prevent an incompatible version

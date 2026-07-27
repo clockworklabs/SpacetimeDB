@@ -7733,11 +7733,13 @@ dependencies = [
  "rand 0.8.5",
  "scoped-tls",
  "serde_json",
+ "spacetimedb-auth",
  "spacetimedb-bindings-macro",
  "spacetimedb-bindings-sys",
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-query-builder",
+ "spacetimedb-test-datastore",
  "trybuild",
 ]
 
@@ -8500,6 +8502,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-portable-datastore"
+version = "2.7.0"
+dependencies = [
+ "anyhow",
+ "serde_json",
+ "spacetimedb-datastore",
+ "spacetimedb-expr",
+ "spacetimedb-lib",
+ "spacetimedb-primitives",
+ "spacetimedb-query",
+ "spacetimedb-schema",
+ "spacetimedb-table",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "spacetimedb-portable-datastore-wasm"
+version = "2.7.0"
+dependencies = [
+ "js-sys",
+ "spacetimedb-lib",
+ "spacetimedb-portable-datastore",
+ "spacetimedb-primitives",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "spacetimedb-primitives"
 version = "2.7.0"
 dependencies = [
@@ -8821,6 +8850,22 @@ dependencies = [
  "spacetimedb-memory-usage",
  "spacetimedb-primitives",
  "spacetimedb-sats",
+ "spacetimedb-schema",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "spacetimedb-test-datastore"
+version = "2.7.0"
+dependencies = [
+ "anyhow",
+ "scopeguard",
+ "spacetimedb-core",
+ "spacetimedb-datastore",
+ "spacetimedb-expr",
+ "spacetimedb-lib",
+ "spacetimedb-primitives",
+ "spacetimedb-query",
  "spacetimedb-schema",
  "thiserror 1.0.69",
 ]
