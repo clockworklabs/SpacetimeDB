@@ -245,6 +245,8 @@ namespace SpacetimeDB
             }
         }
 
+
+#if UNITY_5_3_OR_NEWER
         /// <summary>
         /// Resets the static instance to prevent data persistence when Enter Play Mode Options (Disable Domain Reloading) is active.
         /// RuntimeInitializeOnLoadMethod is used since it is supported in older versions of Unity.
@@ -259,6 +261,7 @@ namespace SpacetimeDB
         {
             _serializer = null;
         }
+#endif
 
         // The function to use for decoding a type value.
         Row DecodeValue(BinaryReader reader) => Serializer.Read(reader);
