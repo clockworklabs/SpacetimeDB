@@ -45,7 +45,7 @@ export interface LatencySummary {
 
 export interface ScenarioResult {
   scenario: string;
-  backend: 'postgres' | 'spacetime';
+  backend: 'postgres' | 'spacetime' | 'mongodb';
   startedAt: string;
   durationSec: number;
   writers: number;

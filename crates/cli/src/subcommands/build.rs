@@ -1,3 +1,4 @@
+use crate::common_args;
 use crate::util::find_module_path;
 use crate::Config;
 use clap::ArgAction::SetTrue;
@@ -39,6 +40,7 @@ pub fn cli() -> clap::Command {
                 .action(SetTrue)
                 .help("Builds the module using debug instead of release (intended to speed up local iteration, not recommended for CI)"),
         )
+        .arg(common_args::dotnet_version())
 }
 
 pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(PathBuf, &'static str), anyhow::Error> {
@@ -60,8 +62,9 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(PathBuf, &'stat
     };
     let build_debug = args.get_flag("debug");
     let features = features.cloned();
+    let dotnet_version = args.get_one::<u8>("dotnet_version").copied();
 
-    run_build(module_path, lint_dir, build_debug, features)
+    run_build(module_path, lint_dir, build_debug, features, false, dotnet_version)
 }
 
 pub fn run_build(
@@ -69,6 +72,8 @@ pub fn run_build(
     lint_dir: Option<PathBuf>,
     build_debug: bool,
     features: Option<OsString>,
+    native_aot: bool,
+    dotnet_version: Option<u8>,
 ) -> Result<(PathBuf, &'static str), anyhow::Error> {
     // Create the project path, or make sure the target project path is empty.
     if module_path.exists() {
@@ -85,7 +90,14 @@ pub fn run_build(
         ));
     }
 
-    let result = crate::tasks::build(&module_path, lint_dir.as_deref(), build_debug, features.as_ref())?;
+    let result = crate::tasks::build(
+        &module_path,
+        lint_dir.as_deref(),
+        build_debug,
+        features.as_ref(),
+        native_aot,
+        dotnet_version,
+    )?;
     println!("Build finished successfully.");
 
     Ok(result)
@@ -94,6 +106,8 @@ pub fn run_build(
 pub async fn exec_with_argstring(
     project_path: &Path,
     arg_string: &str,
+    native_aot: bool,
+    dotnet_version: Option<u8>,
 ) -> Result<(PathBuf, &'static str), anyhow::Error> {
     let argv = exec_with_argstring_argv(project_path, arg_string);
     let arg_matches = cli().get_matches_from(argv);
@@ -110,8 +124,9 @@ pub async fn exec_with_argstring(
         Some(PathBuf::from(lint_dir))
     };
     let build_debug = arg_matches.get_flag("debug");
+    let dotnet_version = dotnet_version.or_else(|| arg_matches.get_one::<u8>("dotnet_version").copied());
 
-    run_build(module_path, lint_dir, build_debug, features)
+    run_build(module_path, lint_dir, build_debug, features, native_aot, dotnet_version)
 }
 
 fn exec_with_argstring_argv(project_path: &Path, arg_string: &str) -> Vec<OsString> {
@@ -126,7 +141,7 @@ fn exec_with_argstring_argv(project_path: &Path, arg_string: &str) -> Vec<OsStri
 
 #[cfg(test)]
 mod tests {
-    use super::exec_with_argstring_argv;
+    use super::{cli, exec_with_argstring_argv};
     use std::path::Path;
 
     #[test]
@@ -143,5 +158,17 @@ mod tests {
             argv[5].to_string_lossy(),
             "SpacetimeDB Projects/My SpacetimeDB App/spacetimedb"
         );
+    }
+
+    #[test]
+    fn build_cli_parses_dotnet_version_as_supported_sdk_major() {
+        let matches = cli().try_get_matches_from(["build", "--dotnet-version", "10"]).unwrap();
+
+        assert_eq!(matches.get_one::<u8>("dotnet_version").copied(), Some(10));
+    }
+
+    #[test]
+    fn build_cli_rejects_unsupported_dotnet_version() {
+        assert!(cli().try_get_matches_from(["build", "--dotnet-version", "9"]).is_err());
     }
 }
