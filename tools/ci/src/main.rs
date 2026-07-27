@@ -655,6 +655,8 @@ fn main() -> Result<()> {
         }
 
         Some(CiCmd::WasmBindings) => {
+            pnpm(["install", "--filter", "./modules/module-test-ts..."]).run()?;
+            pnpm(["build"]).dir("crates/bindings-typescript").run()?;
             cmd!("cargo", "test", "-p", "spacetimedb-codegen").run()?;
             // Pre-build the CLI so that it _doesn't_ get `cargo update`d, since that may break the build.
             cmd!("cargo", "build", "-p", "spacetimedb-cli").run()?;
