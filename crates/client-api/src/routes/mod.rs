@@ -13,6 +13,7 @@ pub mod metrics;
 pub mod prometheus;
 pub mod subscribe;
 
+pub use self::internal::TaskDumpRegistry;
 use self::{database::DatabaseRoutes, identity::IdentityRoutes};
 
 /// This API call is just designed to allow clients to determine whether or not they can
@@ -25,6 +26,25 @@ pub fn router<S>(
     database_routes: DatabaseRoutes<S>,
     identity_routes: IdentityRoutes<S>,
     extra: axum::Router<S>,
+) -> axum::Router<S>
+where
+    S: NodeDelegate + ControlStateDelegate + Authorization + Clone + 'static,
+{
+    router_with_task_dumps(
+        ctx,
+        database_routes,
+        identity_routes,
+        extra,
+        TaskDumpRegistry::default(),
+    )
+}
+
+pub fn router_with_task_dumps<S>(
+    ctx: &S,
+    database_routes: DatabaseRoutes<S>,
+    identity_routes: IdentityRoutes<S>,
+    extra: axum::Router<S>,
+    task_dumps: TaskDumpRegistry,
 ) -> axum::Router<S>
 where
     S: NodeDelegate + ControlStateDelegate + Authorization + Clone + 'static,
@@ -46,5 +66,5 @@ where
 
     axum::Router::new()
         .nest("/v1", router.layer(cors))
-        .nest("/internal", internal::router())
+        .nest("/internal", internal::router(task_dumps))
 }

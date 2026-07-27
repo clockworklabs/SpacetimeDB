@@ -17,8 +17,9 @@ use spacetimedb::startup::{self, TracingOptions};
 use spacetimedb::util::jobs::JobCores;
 use spacetimedb::worker_metrics;
 use spacetimedb_client_api::routes::database::DatabaseRoutes;
-use spacetimedb_client_api::routes::router;
+use spacetimedb_client_api::routes::router_with_task_dumps;
 use spacetimedb_client_api::routes::subscribe::WebSocketOptions;
+use spacetimedb_client_api::routes::TaskDumpRegistry;
 use spacetimedb_paths::cli::{PrivKeyPath, PubKeyPath};
 use spacetimedb_paths::server::{ConfigToml, ServerDataDir};
 use tokio::net::TcpListener;
@@ -197,11 +198,8 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     )
     .await?;
     worker_metrics::spawn_jemalloc_stats(listen_addr.clone());
-    worker_metrics::spawn_tokio_stats(
-        listen_addr.clone(),
-        "main".to_string(),
-        tokio::runtime::Handle::current(),
-    );
+    let main_rt = tokio::runtime::Handle::current();
+    worker_metrics::spawn_tokio_stats(listen_addr.clone(), "main".to_string(), main_rt.clone());
     worker_metrics::spawn_page_pool_stats(listen_addr.clone(), ctx.page_pool().clone());
     worker_metrics::spawn_bsatn_rlb_pool_stats(listen_addr.clone(), ctx.bsatn_rlb_pool().clone());
     let mut db_routes = DatabaseRoutes::default();
@@ -209,7 +207,9 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     db_routes.db_put = db_routes.db_put.layer(DefaultBodyLimit::disable());
     db_routes.pre_publish = db_routes.pre_publish.layer(DefaultBodyLimit::disable());
     let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
-    let service = router(&ctx, db_routes, IdentityRoutes::default(), extra).with_state(ctx.clone());
+    let task_dumps = TaskDumpRegistry::new([("main", main_rt)]);
+    let service =
+        router_with_task_dumps(&ctx, db_routes, IdentityRoutes::default(), extra, task_dumps).with_state(ctx.clone());
 
     // Check if the requested port is available on both IPv4 and IPv6.
     // If not, offer to find an available port by incrementing (unless non-interactive).
