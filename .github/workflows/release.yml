@@ -309,6 +309,7 @@ jobs:
 
       - name: Install npm with trusted publishing support
         run: |
+          # this is the minimum version required to use trusted publishing
           npm install --global npm@11.5.1
           npm --version
 
